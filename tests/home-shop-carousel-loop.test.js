@@ -65,6 +65,9 @@ test('homepage prefetch script stores ticker data with current speed keys and ca
 
     assert.match(script, /const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';/);
     assert.match(script, /const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';/);
+    assert.match(script, /function getHomepagePrefetchCacheKey\(site = getCurrentSite\(\)\)/);
+    assert.match(script, /function getHomepageConfigLastUpdatedKey\(site = getCurrentSite\(\)\)/);
+    assert.match(script, /sessionStorage\.setItem\(getHomepagePrefetchCacheKey\(currentSite\), JSON\.stringify\(/);
     assert.match(script, /const productCategories = Array\.from\(new Set/);
     assert.match(script, /bottom: productCategories/);
     assert.match(script, /speed: config\.ticker\?\.speed \|\| 30/);

@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=20260331_ADMIN_LOADING_SKELETON_SWEEP_1">
+    <link rel="stylesheet" href="admin-studio.css?v=20260401_POINTS_PACKAGE_EDITOR_1">
     <link rel="stylesheet" href="admin-sidebar.css?v=20260331_ADMIN_MODULE_GUARDS_1">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260331_ADMIN_CHAT_LOADING_SKELETON_1">
 
@@ -107,7 +107,7 @@
                 <div class="sidebar-divider"></div>
                 <div class="sidebar-item" data-module="points" data-admin-action="switch-module" data-module-id="points">
                     <i class="fas fa-coins"></i>
-                    <span>积分管理</span>
+                    <span>兑换码/套餐</span>
                 </div>
                 <!-- Phase 4 Tickets -->
                 <div class="sidebar-item" data-module="tickets" data-admin-action="switch-module" data-module-id="tickets">
@@ -185,6 +185,10 @@
                     <button class="admin-tab" data-view="manage" data-admin-action="switch-gallery-view">Manage</button>
                     <div class="admin-tab-indicator"></div>
                 </nav>
+                <div class="config-inline-note">
+                    <i class="fas fa-globe"></i>
+                    <span>Gallery 里的 Prompt 内容资产仍是全局共享；顶部站点筛选不会切换这份内容列表，但卡片现在会同步展示 CN / INTL 的互动摘要，并继续用于写保护。</span>
+                </div>
 
                 <!-- Main Content -->
 
@@ -301,6 +305,63 @@
                                     <textarea id="promptText" rows="6"
                                         placeholder="Enter the prompt text used to generate this image..."></textarea>
                                 </div>
+
+                                <section class="gallery-bilingual-panel">
+                                    <button type="button" class="btn-secondary gallery-bilingual-toggle" id="promptBilingualToggleBtn" aria-expanded="false">
+                                        <i class="fas fa-language"></i>
+                                        <span id="promptBilingualToggleLabel">展开高级语言字段</span>
+                                    </button>
+                                    <div class="config-inline-note gallery-bilingual-note">
+                                        <i class="fas fa-circle-info"></i>
+                                        <span>主字段仍按当前工作流保存；这里用于显式校对和覆盖 `zh / en` 双语文案，避免继续黑盒翻译。</span>
+                                    </div>
+                                    <div class="gallery-bilingual-fields admin-studio-inline-style-attr-3" id="promptBilingualFields">
+                                        <div class="gallery-bilingual-grid">
+                                            <div class="form-group">
+                                                <label for="promptTitleZh">
+                                                    <i class="fas fa-language"></i>
+                                                    标题（中文）
+                                                </label>
+                                                <input type="text" id="promptTitleZh" placeholder="校对或填写中文标题">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="promptTitleEn">
+                                                    <i class="fas fa-language"></i>
+                                                    Title (EN)
+                                                </label>
+                                                <input type="text" id="promptTitleEn" placeholder="Review or override the English title">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="promptDescriptionZh">
+                                                    <i class="fas fa-align-left"></i>
+                                                    描述（中文）
+                                                </label>
+                                                <textarea id="promptDescriptionZh" rows="3" placeholder="校对或填写中文描述"></textarea>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="promptDescriptionEn">
+                                                    <i class="fas fa-align-left"></i>
+                                                    Description (EN)
+                                                </label>
+                                                <textarea id="promptDescriptionEn" rows="3" placeholder="Review or override the English description"></textarea>
+                                            </div>
+                                            <div class="form-group form-group--full">
+                                                <label for="promptTextZh">
+                                                    <i class="fas fa-terminal"></i>
+                                                    提示词（中文）
+                                                </label>
+                                                <textarea id="promptTextZh" rows="4" placeholder="校对或填写中文提示词"></textarea>
+                                            </div>
+                                            <div class="form-group form-group--full">
+                                                <label for="promptTextEn">
+                                                    <i class="fas fa-terminal"></i>
+                                                    Prompt Text (EN)
+                                                </label>
+                                                <textarea id="promptTextEn" rows="4" placeholder="Review or override the English prompt text"></textarea>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </section>
 
                                 <!-- Description (Hidden - still analyzed in background) -->
                                 <div class="form-group admin-studio-inline-style-attr-3">
@@ -485,7 +546,25 @@
                         <div class="admin-tab-indicator"></div>
                     </nav>
 
-                    <!-- Stats moved to Analytics module -->
+                    <div class="comment-stats-compact" id="commentStatsCompact">
+                        <div class="stat-badge accent">
+                            <span class="stat-badge-value" id="totalCommentsCount">0</span>
+                            <span class="stat-badge-label">总评论</span>
+                        </div>
+                        <div class="stat-badge">
+                            <span class="stat-badge-value" id="todayCommentsCount">0</span>
+                            <span class="stat-badge-label">今日新增</span>
+                        </div>
+                        <div class="stat-badge">
+                            <span class="stat-badge-value" id="activeUsersCount">0</span>
+                            <span class="stat-badge-label">活跃用户</span>
+                        </div>
+                        <div class="stat-badge">
+                            <span class="stat-badge-value" id="weekGrowth">+0%</span>
+                            <span class="stat-badge-label">周增长</span>
+                        </div>
+                    </div>
+
                     <!-- Unified Compact Toolbar -->
                     <div class="comment-toolbar-compact">
                         <!-- Left: Search + Filters -->
@@ -654,24 +733,19 @@
                                     </div>
                                 </div>
                                 <div class="config-card-body">
-                                    <table class="config-table" id="packagesTable">
-                                        <thead>
-                                            <tr>
-                                                <th>名称</th>
-                                                <th>积分</th>
-                                                <th>赠送</th>
-                                                <th>价格 (¥)</th>
-                                                <th>状态</th>
-                                                <th></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="packagesTableBody">
-                                            <!-- Dynamic rows -->
-                                        </tbody>
-                                    </table>
-                                    <button class="btn-add-config" type="button" data-admin-action="settings-add-package-row">
-                                        <i class="fas fa-plus"></i> 添加礼包
-                                    </button>
+                                    <div class="config-inline-note">
+                                        <i class="fas fa-info-circle"></i>
+                                        <span>套餐编辑已经迁到 Points 模块的“套餐目录”里；这里不再承担日常套餐运营，只保留支付相关开关和迁移说明。</span>
+                                    </div>
+                                    <div class="settings-package-shortcut">
+                                        <div class="settings-package-shortcut__copy">
+                                            <strong>套餐主数据</strong>
+                                            <span>前往 `兑换码/套餐 -> 套餐目录` 统一维护名称、价格、赠送和启停状态；站点筛选只影响写操作语境，不会拆分两份套餐主数据。</span>
+                                        </div>
+                                        <button class="btn-secondary" type="button" data-admin-action="settings-open-points-catalog">
+                                            <i class="fas fa-arrow-right"></i> 前往套餐目录
+                                        </button>
+                                    </div>
                                     <div class="config-row">
                                         <div class="config-info">
                                             <div class="config-label">自定义充值入口</div>
@@ -5525,12 +5599,19 @@
                 <nav class="admin-tabs">
                     <button class="admin-tab active" data-points-view="batches" data-admin-action="points-switch-view" data-points-view-target="batches">📦
                         批次管理</button>
+                    <button class="admin-tab" data-points-view="catalog" data-admin-action="points-switch-view" data-points-view-target="catalog">🧾
+                        套餐目录</button>
                     <button class="admin-tab" data-points-view="generate" data-admin-action="points-switch-view" data-points-view-target="generate">➕
                         生成兑换码</button>
                     <button class="admin-tab" data-points-view="lookup" data-admin-action="points-switch-view" data-points-view-target="lookup">🔍
                         查询</button>
                     <div class="admin-tab-indicator"></div>
                 </nav>
+
+                <div class="config-inline-note points-module-note">
+                    <i class="fas fa-ticket-alt"></i>
+                    <span>这里当前主要管理兑换码批次、套餐目录和兑换追踪；真实积分余额与资产流水仍在用户详情、支付链路里收口。套餐主数据已经统一走 Points 域 handler，Settings 里只保留支付相关开关和迁移提示。</span>
+                </div>
 
                 <!-- BATCHES VIEW -->
                 <div id="points-view-batches" class="view-section active">
@@ -5690,6 +5771,122 @@
                                 <!-- Populated by JS -->
                             </tbody>
                         </table>
+                    </div>
+                </div>
+
+                <!-- PACKAGE CATALOG VIEW -->
+                <div id="points-view-catalog" class="view-section">
+                    <div class="glass-panel points-catalog-panel">
+                        <div class="section-title">
+                            <i class="fas fa-box-open"></i> 套餐目录
+                        </div>
+                        <div class="config-inline-note points-catalog-note">
+                            <i class="fas fa-circle-info"></i>
+                            <span>套餐内容本身是全站共享资产；下方的 CN / INTL 指标代表各站点下兑换码批次的发放与使用表现，不会拆成两份套餐主数据。</span>
+                        </div>
+                        <div class="points-catalog-summary" id="pointsCatalogSummary"></div>
+                        <div class="points-catalog-workspace">
+                            <aside class="points-package-editor-shell">
+                                <div class="section-title points-package-editor-shell__title">
+                                    <i class="fas fa-pen-ruler"></i> 套餐编辑
+                                </div>
+                                <div class="config-inline-note points-package-editor-note">
+                                    <i class="fas fa-circle-info"></i>
+                                    <span>套餐是全站共享资产。请先在顶部站点筛选里明确当前写入语境，再保存名称、价格、赠送和启停状态。</span>
+                                </div>
+                                <div class="points-package-editor-toolbar">
+                                    <button class="btn-secondary" type="button" data-points-action="new-package">
+                                        <i class="fas fa-plus"></i> 新建套餐
+                                    </button>
+                                    <button class="btn-secondary" type="button" data-points-action="reset-package-editor">
+                                        <i class="fas fa-rotate-left"></i> 重置
+                                    </button>
+                                </div>
+                                <div class="points-package-editor-meta">
+                                    <span class="points-package-editor-badge" id="pointsPackageEditorModeBadge">新建</span>
+                                    <span class="points-package-editor-hint" id="pointsPackageEditorHint">选择右侧套餐开始编辑，或直接新建一条全局套餐。</span>
+                                </div>
+                                <form class="prompt-form points-package-form" id="pointsPackageForm" data-points-submit="save-package">
+                                    <input type="hidden" id="pointsPackageId" value="">
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label for="pointsPackageName">套餐名称</label>
+                                            <input type="text" id="pointsPackageName" placeholder="如：超值进阶包" required>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="pointsPackageNameEn">名称（EN）</label>
+                                            <input type="text" id="pointsPackageNameEn" placeholder="如：Value Pack">
+                                        </div>
+                                    </div>
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label for="pointsPackageBasePoints">基础积分</label>
+                                            <input type="number" id="pointsPackageBasePoints" min="0" step="1" placeholder="500" required>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="pointsPackageBonusPoints">赠送积分</label>
+                                            <input type="number" id="pointsPackageBonusPoints" min="0" step="1" placeholder="100">
+                                        </div>
+                                    </div>
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label for="pointsPackagePrice">价格 (¥)</label>
+                                            <input type="number" id="pointsPackagePrice" min="0" step="0.01" placeholder="9.90">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="pointsPackageSortOrder">排序</label>
+                                            <input type="number" id="pointsPackageSortOrder" min="0" step="1" placeholder="1">
+                                        </div>
+                                    </div>
+                                    <div class="config-row points-package-form__toggle-row">
+                                        <div class="config-info">
+                                            <div class="config-label">启用状态</div>
+                                            <div class="config-desc">停用后不会影响历史兑换码和流水，但生成批次和前台套餐购买入口会停止使用该套餐。</div>
+                                        </div>
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="pointsPackageEnabled" checked>
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="points-package-form__metrics" id="pointsPackageEditorMetrics">
+                                        <div class="points-package-editor-metric">
+                                            <span class="label">CN 运营表现</span>
+                                            <span class="value">批次 0 · 发码 0 · 已用 0</span>
+                                        </div>
+                                        <div class="points-package-editor-metric">
+                                            <span class="label">INTL 运营表现</span>
+                                            <span class="value">批次 0 · 发码 0 · 已用 0</span>
+                                        </div>
+                                    </div>
+                                    <div class="points-package-form__actions">
+                                        <button class="btn-primary" type="submit" id="pointsPackageSaveBtn">
+                                            <i class="fas fa-save"></i> 保存套餐
+                                        </button>
+                                        <button class="btn-danger" type="button" id="pointsPackageDeleteBtn" data-points-action="delete-current-package" disabled>
+                                            <i class="fas fa-trash"></i> 删除套餐
+                                        </button>
+                                    </div>
+                                </form>
+                            </aside>
+                            <div class="points-catalog-table-shell">
+                                <table class="admin-table points-catalog-table">
+                                    <thead>
+                                        <tr>
+                                            <th>套餐</th>
+                                            <th>积分结构</th>
+                                            <th>价格</th>
+                                            <th>状态</th>
+                                            <th>CN 运营表现</th>
+                                            <th>INTL 运营表现</th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="pointsPackagesTableBody">
+                                        <tr><td colspan="7" class="loading-cell">正在加载套餐目录...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -8682,6 +8879,10 @@
                         </div>
                     </div>
                 </div>
+                <div class="config-inline-note points-module-note admin-ticket-workbench-note">
+                    <i class="fas fa-circle-info"></i>
+                    <span>工单现在支持直接回到客服会话、订单、用户详情和原始站内代办，适合把客服接手、售后处理和风险排查串成同一条工作链。</span>
+                </div>
 
                 <!-- Table Container -->
                 <div class="glass-panel table-view users-table-panel">
@@ -9102,27 +9303,29 @@
     <script src="js/admin-studio-bootstrap.js?v=20260331_ADMIN_MODULE_GUARDS_1"></script>
     <script src="js/ios-scroll-lock.js"></script>
     <script src="admin-users.js?v=20260331_USER_TABLE_SKELETON_10"></script>
-    <script src="admin-points.js?v=20260331_ADMIN_POINTS_LOADING_SKELETONS_1"></script>
+    <script src="admin-points.js?v=20260401_ADMIN_POINTS_READ_HANDLERS_1"></script>
     <script src="admin-discounts.js?v=20260331_ADMIN_DISCOUNT_LOADING_SKELETON_1"></script>
     <script src="starry-sky.js"></script>
     <!-- Flatpickr JS -->
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh.js"></script>
     <script src="js/admin-ai.js"></script>
-    <script src="admin-comments.js?v=20260331_ADMIN_COMMENTS_LOADING_SKELETONS_1"></script>
+    <script src="admin-comments.js?v=20260401_ADMIN_COMMENTS_BLOCKS_1"></script>
     <script src="admin-analytics.js?v=20260331_ANALYTICS_EXPERIMENT_OVERLAY_CLOSE_1"></script>
     <script src="js/admin-payments.js?v=20260331_ADMIN_PAYMENTS_FOCUS_ORDER_3"></script>
-    <script src="js/local-smoke-fixtures.js?v=20260331_LOCAL_SMOKE_FIXTURES_6"></script>
-    <script src="admin-config.js?v=20260331_OPS_ALERT_QUICK_REPLY_COLLAPSE_10"></script>
-    <script src="admin-homepage.js?v=20260329_HOMEPAGE_CACHE_SYNC_3"></script>
+    <script src="js/local-smoke-fixtures.js?v=20260401_LOCAL_SMOKE_FIXTURES_21"></script>
+    <script src="js/admin-workbench.js?v=20260401_ADMIN_WORKBENCH_SHARED_46"></script>
+    <script src="js/admin-ticket-links.js?v=20260401_ADMIN_TICKET_LINK_PROTOCOL_1"></script>
+    <script src="admin-config.js?v=20260401_ADMIN_WORKBENCH_SHARED_61"></script>
+    <script src="admin-homepage.js?v=20260331_HOMEPAGE_DUAL_SITE_ADMIN_1"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js?v=20260323_SITE_FILTER_DELEGATION_1"></script>
-    <script src="js/admin-tickets.js?v=20260331_ADMIN_TICKETS_LOADING_SKELETON_1"></script>
+    <script src="js/admin-tickets.js?v=20260401_ADMIN_TICKETS_WORKBENCH_PAYLOADS_4"></script>
     <script src="js/admin-access.js?v=20260329_ADMIN_ENTRY_TRAMPOLINE_1"></script>
-    <script src="admin-studio.js?v=20260331_ADMIN_MODAL_OUTSIDE_CLOSE_2"></script>
+    <script src="admin-studio.js?v=20260401_ADMIN_WORKBENCH_CONTEXT_1"></script>
     <script src="js/admin-shop.js?v=20260331_SHOP_LOADING_SKELETONS_1"></script>
 </body>
 
 <!-- Admin Chat Script -->
-<script src="js/admin-chat.js?v=20260331_ADMIN_CHAT_LOADING_SKELETON_1"></script>
+<script src="js/admin-chat.js?v=20260401_ADMIN_CHAT_CASE_PROTOCOL_7"></script>
 </html>

@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const Module = require('node:module');
+const adminLib = require('../api/_lib/admin');
 
 function createMockResponse() {
     const state = {
@@ -50,6 +51,8 @@ async function withAdminHandler(handlerRelativePath, callback) {
                 async parseJsonBody(req) {
                     return req.body || {};
                 },
+                normalizeAdminSite: adminLib.normalizeAdminSite,
+                requireWritableAdminSite: adminLib.requireWritableAdminSite,
                 sendJson(res, status, payload) {
                     res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
                     res.end(JSON.stringify(payload));
@@ -88,6 +91,130 @@ test('shop mutate handler requires shop.manage permission', async () => {
     });
 });
 
+test('homepage config handler requires homepage.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/homepage/config.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'homepage.manage' });
+    });
+});
+
+test('points catalog handler requires points.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/points/catalog.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'points.manage' });
+    });
+});
+
+test('points batches handler requires points.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/points/batches.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'points.manage' });
+    });
+});
+
+test('points lookup handler requires points.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/points/lookup.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'points.manage' });
+    });
+});
+
+test('points packages handler allows either points.manage or settings.manage', async () => {
+    await withAdminHandler('../server/api-handlers/admin/points/packages.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, {
+            anyOf: ['points.manage', 'settings.manage']
+        });
+    });
+});
+
+test('points manage handler requires points.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/points/manage.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'POST', body: { action: 'generate_codes', site: 'cn' }, headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'points.manage' });
+    });
+});
+
+test('prompts manage handler allows prompts.manage or content.moderate for reads', async () => {
+    await withAdminHandler('../server/api-handlers/admin/prompts/manage.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, {
+            anyOf: ['prompts.manage', 'content.moderate']
+        });
+    });
+});
+
+test('prompts manage handler requires prompts.manage permission for writes', async () => {
+    await withAdminHandler('../server/api-handlers/admin/prompts/manage.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'POST', body: { action: 'create' }, headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'prompts.manage' });
+    });
+});
+
+test('comments list handler requires content.moderate permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/comments/list.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'content.moderate' });
+    });
+});
+
+test('comments blocks handler requires users.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/comments/blocks.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', url: '/api/admin/comments/blocks?userId=user_1', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'users.manage' });
+    });
+});
+
+test('comments summary handler requires content.moderate permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/comments/summary.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'content.moderate' });
+    });
+});
+
+test('comments moderate handler requires content.moderate permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/comments/moderate.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'POST', body: {}, headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'content.moderate' });
+    });
+});
+
 test('payments cleanup handler requires payments.manage permission', async () => {
     await withAdminHandler('../server/api-handlers/admin/payments/cleanup.js', async ({ handler, state }) => {
         const res = createMockResponse();
@@ -95,6 +222,16 @@ test('payments cleanup handler requires payments.manage permission', async () =>
 
         assert.equal(res.statusCode, 418);
         assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'payments.manage' });
+    });
+});
+
+test('shop refund handler requires shop.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/payments/shop-refund.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'POST', body: {}, headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'shop.manage' });
     });
 });
 

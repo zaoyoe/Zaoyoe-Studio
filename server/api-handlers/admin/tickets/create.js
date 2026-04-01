@@ -4,6 +4,9 @@ const {
     sendJson,
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
+const {
+    buildLinkedTicketDescription
+} = require('../../../../js/admin-ticket-links');
 
 function sanitizeText(value, maxLength = 4000) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
@@ -19,46 +22,6 @@ function normalizeAlertType(value) {
 
 function normalizeSource(value) {
     return sanitizeText(value, 80).toLowerCase();
-}
-
-function buildTicketDescription(body = {}, actorLabel = '') {
-    const source = normalizeSource(body.source || body.source_type || body.sourceType);
-    const title = sanitizeText(body.title, 240);
-    const alertType = normalizeAlertType(body.alert_type || body.alertType);
-    const referenceLabel = sanitizeText(body.reference_label || body.referenceLabel, 120);
-    const referenceValue = sanitizeText(body.reference_value || body.referenceValue, 240);
-    const content = sanitizeText(body.content, 900);
-    const targetId = sanitizeText(body.target_id || body.targetId, 200);
-    const orderId = sanitizeText(body.order_id || body.orderId, 120);
-    const paymentOrderId = sanitizeText(body.payment_order_id || body.paymentOrderId, 120);
-    const userEmail = sanitizeText(body.user_email || body.userEmail, 255);
-    const sessionId = sanitizeText(body.session_id || body.sessionId, 160);
-    const note = sanitizeText(body.note || body.admin_note || body.adminNote, 800);
-    const entryPath = sanitizeText(body.entry_path || body.entryPath, 160);
-
-    const lines = [source === 'chat_session' ? '[客服会话转工单]' : '[站内代办转工单]'];
-    if (title) lines.push(`告警标题：${title}`);
-    if (source === 'chat_session') {
-        if (userEmail) lines.push(`用户邮箱：${userEmail}`);
-        if (sessionId) lines.push(`会话标识：${sessionId}`);
-    } else if (alertType) {
-        lines.push(`告警类型：${alertType}`);
-    }
-    if (referenceLabel && referenceValue) {
-        lines.push(`${referenceLabel}：${referenceValue}`);
-    }
-    if (orderId) lines.push(`订单号：${orderId}`);
-    if (paymentOrderId) lines.push(`支付单号：${paymentOrderId}`);
-    if (targetId) lines.push(`告警标识：${targetId}`);
-    if (entryPath) lines.push(`处理入口：${entryPath}`);
-    if (actorLabel) lines.push(`转单管理员：${actorLabel}`);
-    if (note) lines.push(`${source === 'chat_session' ? '客服备注' : '补充说明'}：${note}`);
-    if (content) {
-        lines.push(source === 'chat_session' ? '会话摘要：' : '原始告警：');
-        lines.push(content);
-    }
-
-    return sanitizeText(lines.join('\n'), 1500);
 }
 
 async function resolveTicketUserId(supabase, body = {}) {
@@ -141,7 +104,7 @@ module.exports = async (req, res) => {
             });
         }
 
-        const description = buildTicketDescription(body, actorLabel);
+        const description = buildLinkedTicketDescription(body, actorLabel);
         if (!description) {
             return sendJson(res, 400, {
                 success: false,

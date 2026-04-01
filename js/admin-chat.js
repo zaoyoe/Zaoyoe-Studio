@@ -1817,6 +1817,140 @@ class AdminChat {
             .find((item) => item && typeof item === 'object') || null;
     }
 
+    buildUserContextWorkbenchEntry(kind = '', payload = {}) {
+        const normalizedKind = String(kind || '').trim().toLowerCase();
+        const sharedRuntime = window || {};
+
+        if (normalizedKind === 'user') {
+            if (typeof sharedRuntime.buildUserWorkbenchEntry === 'function') {
+                return sharedRuntime.buildUserWorkbenchEntry(payload);
+            }
+            const userId = String(payload.userId || '').trim();
+            const email = String(payload.email || '').trim();
+            const searchValue = String(payload.referenceValue || userId || email || '').trim();
+            if (!searchValue) {
+                return null;
+            }
+            return {
+                workspaceKey: 'shop-risk-users',
+                context: {
+                    userId,
+                    email,
+                    targetId: searchValue,
+                    target_id: searchValue,
+                    referenceLabel: String(payload.referenceLabel || '').trim() || (userId ? '用户' : '邮箱'),
+                    referenceValue: searchValue
+                }
+            };
+        }
+
+        if (normalizedKind === 'order') {
+            if (typeof sharedRuntime.buildShopOrderWorkbenchEntry === 'function') {
+                return sharedRuntime.buildShopOrderWorkbenchEntry(payload);
+            }
+            const orderId = String(payload.orderId || '').trim();
+            if (!orderId) {
+                return null;
+            }
+            return {
+                workspaceKey: 'shop-risk-orders',
+                context: {
+                    orderId,
+                    targetId: orderId,
+                    target_id: orderId,
+                    referenceLabel: String(payload.referenceLabel || '').trim() || '订单',
+                    referenceValue: String(payload.referenceValue || orderId).trim() || orderId
+                }
+            };
+        }
+
+        if (normalizedKind === 'ticket') {
+            if (typeof sharedRuntime.buildTicketQueueWorkbenchEntry === 'function') {
+                return sharedRuntime.buildTicketQueueWorkbenchEntry(payload);
+            }
+            const ticketId = String(payload.ticketId || '').trim();
+            if (!ticketId) {
+                return null;
+            }
+            const ticketStatus = String(payload.ticketStatus || '').trim().toLowerCase();
+            return {
+                workspaceKey: ticketStatus === 'resolved' ? 'tickets-resolved' : 'tickets-pending',
+                context: {
+                    ticketId,
+                    ticketStatus,
+                    targetId: ticketId,
+                    target_id: ticketId,
+                    referenceLabel: '工单号',
+                    referenceValue: ticketId
+                }
+            };
+        }
+
+        if (normalizedKind === 'payment') {
+            if (typeof sharedRuntime.buildPaymentWorkbenchEntry === 'function') {
+                return sharedRuntime.buildPaymentWorkbenchEntry(payload);
+            }
+            const paymentOrderId = String(payload.paymentOrderId || '').trim();
+            const userId = String(payload.userId || '').trim();
+            const email = String(payload.email || '').trim();
+            const referenceValue = String(
+                payload.referenceValue
+                || (userId ? (paymentOrderId || payload.packageName || '最近充值') : (email || paymentOrderId || payload.packageName || '最近充值'))
+            ).trim();
+            if (userId || email) {
+                return {
+                    workspaceKey: 'shop-risk-users',
+                    context: {
+                        userId,
+                        email,
+                        paymentOrderId,
+                        targetId: userId || email,
+                        target_id: userId || email,
+                        referenceLabel: String(payload.referenceLabel || '').trim() || (userId ? '支付单' : '邮箱'),
+                        referenceValue,
+                        defaultTab: 'payments',
+                        tab: 'payments'
+                    }
+                };
+            }
+            if (!paymentOrderId && !referenceValue) {
+                return null;
+            }
+            return {
+                workspaceKey: 'payments-overview',
+                context: {
+                    paymentOrderId,
+                    targetId: paymentOrderId || referenceValue,
+                    target_id: paymentOrderId || referenceValue,
+                    referenceLabel: String(payload.referenceLabel || '').trim() || (paymentOrderId ? '支付单' : '充值'),
+                    referenceValue
+                }
+            };
+        }
+
+        if (normalizedKind === 'verify') {
+            if (typeof sharedRuntime.buildVerifyWorkbenchEntry === 'function') {
+                return sharedRuntime.buildVerifyWorkbenchEntry(payload);
+            }
+            const verificationId = String(payload.verificationId || '').trim();
+            if (!verificationId) {
+                return null;
+            }
+            return {
+                workspaceKey: 'verify-monitor',
+                context: {
+                    verificationId,
+                    targetId: verificationId,
+                    target_id: verificationId,
+                    referenceLabel: String(payload.referenceLabel || '').trim() || '验证任务',
+                    referenceValue: String(payload.referenceValue || verificationId).trim() || verificationId
+                }
+            };
+        }
+
+        return null;
+    }
+
     getUserContextQuickActions(context = {}) {
         const actions = [];
         const latestOrder = this.getLatestUserContextRecord(context.orders);
@@ -1827,58 +1961,53 @@ class AdminChat {
             .find((ticket) => !['resolved', 'rejected'].includes(String(ticket?.status || '').trim().toLowerCase()));
 
         const userSearchValue = String(context.userId || context.email || '').trim();
-        if (userSearchValue) {
+        const userEntry = userSearchValue ? this.buildUserContextWorkbenchEntry('user', {
+            userId: context.userId || '',
+            email: context.email || '',
+            referenceLabel: context.userId ? '用户' : '邮箱',
+            referenceValue: userSearchValue
+        }) : null;
+        if (userEntry) {
             actions.push({
                 key: 'user',
                 label: '查用户',
                 hint: context.userId
                     ? `UUID ${String(context.userId || '').slice(0, 8)}`
                     : this.truncateText(context.email || '当前会话', 24),
-                workspaceKey: 'shop-risk-users',
-                context: {
-                    userId: context.userId || '',
-                    email: context.email || '',
-                    targetId: context.userId || userSearchValue,
-                    target_id: context.userId || userSearchValue,
-                    referenceLabel: context.userId ? '用户' : '邮箱',
-                    referenceValue: userSearchValue
-                }
+                workspaceKey: userEntry.workspaceKey,
+                context: userEntry.context
             });
         }
 
         const orderId = String(latestOrder?.id || latestTicket?.order_id || '').trim();
-        if (orderId) {
+        const orderEntry = orderId ? this.buildUserContextWorkbenchEntry('order', {
+            orderId,
+            referenceLabel: '订单',
+            referenceValue: orderId
+        }) : null;
+        if (orderEntry) {
             actions.push({
                 key: 'order',
                 label: '打开订单',
                 hint: `订单 ${orderId.slice(0, 8)}`,
-                workspaceKey: 'shop-risk-orders',
-                context: {
-                    orderId,
-                    targetId: orderId,
-                    target_id: orderId,
-                    referenceLabel: '订单',
-                    referenceValue: orderId
-                }
+                workspaceKey: orderEntry.workspaceKey,
+                context: orderEntry.context
             });
         }
 
         const ticketId = String(latestTicket?.id || '').trim();
-        if (ticketId) {
+        const ticketEntry = ticketId ? this.buildUserContextWorkbenchEntry('ticket', {
+            ticketId,
+            ticketStatus: latestTicket?.status || ''
+        }) : null;
+        if (ticketEntry) {
             const isResolved = String(latestTicket?.status || '').trim().toLowerCase() === 'resolved';
             actions.push({
                 key: 'ticket',
                 label: isResolved ? '查看工单' : '处理工单',
                 hint: `工单 ${ticketId.slice(0, 8)}`,
-                workspaceKey: isResolved ? 'tickets-resolved' : 'tickets-pending',
-                context: {
-                    ticketId,
-                    ticketStatus: latestTicket?.status || '',
-                    targetId: ticketId,
-                    target_id: ticketId,
-                    referenceLabel: '工单号',
-                    referenceValue: ticketId
-                }
+                workspaceKey: ticketEntry.workspaceKey,
+                context: ticketEntry.context
             });
         }
 
@@ -1895,47 +2024,44 @@ class AdminChat {
             const paymentId = String(latestPayment.id || '').trim();
             const paymentUserId = String(latestPayment.user_id || context.userId || '').trim();
             const paymentUserReference = String(paymentUserId || context.email || '').trim();
+            const paymentEntry = this.buildUserContextWorkbenchEntry('payment', {
+                userId: paymentUserId,
+                email: context.email || '',
+                paymentOrderId: paymentId,
+                packageName: latestPayment.package_name || '',
+                referenceLabel: paymentUserReference
+                    ? (paymentUserId ? '支付单' : '邮箱')
+                    : (paymentId ? '支付单' : '充值'),
+                referenceValue: paymentUserReference
+                    ? (paymentUserId
+                        ? (paymentId || String(latestPayment.package_name || '最近充值').trim())
+                        : paymentUserReference)
+                    : (paymentId || String(latestPayment.package_name || '最近充值').trim())
+            });
+            if (paymentEntry) {
             actions.push({
                 key: 'payment',
                 label: '充值记录',
                 hint: paymentId ? `支付单 ${paymentId.slice(0, 8)}` : '最近充值',
-                workspaceKey: paymentUserReference ? 'shop-risk-users' : 'payments-overview',
-                context: paymentUserReference ? {
-                    userId: paymentUserId,
-                    email: context.email || '',
-                    paymentOrderId: paymentId,
-                    targetId: paymentUserId || paymentUserReference,
-                    target_id: paymentUserId || paymentUserReference,
-                    referenceLabel: paymentUserId ? '支付单' : '邮箱',
-                    referenceValue: paymentUserId
-                        ? (paymentId || String(latestPayment.package_name || '最近充值').trim())
-                        : paymentUserReference,
-                    defaultTab: 'payments',
-                    tab: 'payments'
-                } : {
-                    paymentOrderId: paymentId,
-                    targetId: paymentId,
-                    target_id: paymentId,
-                    referenceLabel: paymentId ? '支付单' : '充值',
-                    referenceValue: paymentId || String(latestPayment.package_name || '最近充值').trim()
-                }
+                workspaceKey: paymentEntry.workspaceKey,
+                context: paymentEntry.context
             });
+            }
         }
 
         const verificationId = String(latestVerification?.verification_id || '').trim();
-        if (verificationId) {
+        const verifyEntry = verificationId ? this.buildUserContextWorkbenchEntry('verify', {
+            verificationId,
+            referenceLabel: '验证任务',
+            referenceValue: verificationId
+        }) : null;
+        if (verifyEntry) {
             actions.push({
                 key: 'verify',
                 label: '验证面板',
                 hint: this.truncateText(verificationId, 22),
-                workspaceKey: 'verify-monitor',
-                context: {
-                    verificationId,
-                    targetId: verificationId,
-                    target_id: verificationId,
-                    referenceLabel: '验证任务',
-                    referenceValue: verificationId
-                }
+                workspaceKey: verifyEntry.workspaceKey,
+                context: verifyEntry.context
             });
         }
 
@@ -2009,10 +2135,14 @@ class AdminChat {
             };
             this.userContextCache.set(context.cacheKey, nextContext);
             this.currentUserContext = nextContext;
+            const ticketEntry = this.buildUserContextWorkbenchEntry('ticket', {
+                ticketId: String(ticket.id || '').trim(),
+                ticketStatus: ticket.status || ''
+            });
             this.rememberUserContextAction(nextContext, {
                 label: '处理工单',
-                workspaceKey: 'tickets-pending',
-                context: {
+                workspaceKey: ticketEntry?.workspaceKey || 'tickets-pending',
+                context: ticketEntry?.context || {
                     ticketId: String(ticket.id || '').trim(),
                     targetId: String(ticket.id || '').trim(),
                     target_id: String(ticket.id || '').trim(),
@@ -2338,8 +2468,9 @@ class AdminChat {
 
         try {
             let result = false;
-            if (typeof window.openOpsAlertWorkspace === 'function') {
-                result = await window.openOpsAlertWorkspace(workspaceKey, action.context || {});
+            const launcher = this.getWorkbenchLauncher();
+            if (typeof launcher === 'function') {
+                result = await this.openWorkbenchEntry(workspaceKey, action.context || {});
             } else {
                 window.showToast?.('当前页面暂时无法打开对应工作区', 'warning');
                 result = false;
@@ -2360,18 +2491,17 @@ class AdminChat {
 
         if (kind === 'order') {
             const orderId = String(item.id || '').trim();
-            if (!orderId) return null;
+            const entry = this.buildUserContextWorkbenchEntry('order', {
+                orderId,
+                referenceLabel: '订单',
+                referenceValue: orderId
+            });
+            if (!entry) return null;
             return {
                 key: 'order',
                 label: '打开订单',
-                workspaceKey: 'shop-risk-orders',
-                context: {
-                    orderId,
-                    targetId: orderId,
-                    target_id: orderId,
-                    referenceLabel: '订单',
-                    referenceValue: orderId
-                }
+                workspaceKey: entry.workspaceKey,
+                context: entry.context
             };
         }
 
@@ -2379,65 +2509,57 @@ class AdminChat {
             const paymentId = String(item.id || '').trim();
             const paymentUserId = String(item.user_id || context.userId || '').trim();
             const paymentUserReference = String(paymentUserId || context.email || '').trim();
+            const entry = this.buildUserContextWorkbenchEntry('payment', {
+                userId: paymentUserId,
+                email: context.email || '',
+                paymentOrderId: paymentId,
+                packageName: item.package_name || '',
+                referenceLabel: paymentUserReference
+                    ? (paymentUserId ? '支付单' : '邮箱')
+                    : (paymentId ? '支付单' : '充值'),
+                referenceValue: paymentUserReference
+                    ? (paymentUserId
+                        ? (paymentId || String(item.package_name || '最近充值').trim())
+                        : paymentUserReference)
+                    : (paymentId || String(item.package_name || '最近充值').trim())
+            });
+            if (!entry) return null;
             return {
                 key: 'payment',
                 label: '查看充值记录',
-                workspaceKey: paymentUserReference ? 'shop-risk-users' : 'payments-overview',
-                context: paymentUserReference ? {
-                    userId: paymentUserId,
-                    email: context.email || '',
-                    paymentOrderId: paymentId,
-                    targetId: paymentUserId || paymentUserReference,
-                    target_id: paymentUserId || paymentUserReference,
-                    referenceLabel: paymentUserId ? '支付单' : '邮箱',
-                    referenceValue: paymentUserId
-                        ? (paymentId || String(item.package_name || '最近充值').trim())
-                        : paymentUserReference,
-                    defaultTab: 'payments',
-                    tab: 'payments'
-                } : {
-                    paymentOrderId: paymentId,
-                    targetId: paymentId,
-                    target_id: paymentId,
-                    referenceLabel: paymentId ? '支付单' : '充值',
-                    referenceValue: paymentId || String(item.package_name || '最近充值').trim()
-                }
+                workspaceKey: entry.workspaceKey,
+                context: entry.context
             };
         }
 
         if (kind === 'verify') {
             const verificationId = String(item.verification_id || '').trim();
-            if (!verificationId) return null;
+            const entry = this.buildUserContextWorkbenchEntry('verify', {
+                verificationId,
+                referenceLabel: '验证任务',
+                referenceValue: verificationId
+            });
+            if (!entry) return null;
             return {
                 key: 'verify',
                 label: '打开验证面板',
-                workspaceKey: 'verify-monitor',
-                context: {
-                    verificationId,
-                    targetId: verificationId,
-                    target_id: verificationId,
-                    referenceLabel: '验证任务',
-                    referenceValue: verificationId
-                }
+                workspaceKey: entry.workspaceKey,
+                context: entry.context
             };
         }
 
         if (kind === 'ticket') {
-            const ticketId = String(item.id || '').trim();
-            if (!ticketId) return null;
             const isResolved = String(item.status || '').trim().toLowerCase() === 'resolved';
+            const entry = this.buildUserContextWorkbenchEntry('ticket', {
+                ticketId: String(item.id || '').trim(),
+                ticketStatus: item.status || ''
+            });
+            if (!entry) return null;
             return {
                 key: 'ticket',
                 label: isResolved ? '查看工单' : '处理工单',
-                workspaceKey: isResolved ? 'tickets-resolved' : 'tickets-pending',
-                context: {
-                    ticketId,
-                    ticketStatus: item.status || '',
-                    targetId: ticketId,
-                    target_id: ticketId,
-                    referenceLabel: '工单号',
-                    referenceValue: ticketId
-                }
+                workspaceKey: entry.workspaceKey,
+                context: entry.context
             };
         }
 
@@ -2960,6 +3082,9 @@ class AdminChat {
     }
 
     getOpsAlertCaseStatusTone(status = '') {
+        if (typeof window.getAdminWorkbenchOpsAlertCaseStatusTone === 'function') {
+            return window.getAdminWorkbenchOpsAlertCaseStatusTone(status, { variant: 'chat' });
+        }
         const normalized = String(status || '').trim().toLowerCase() || 'open';
         if (normalized === 'resolved') return 'resolved';
         if (normalized === 'claimed') return 'claimed';
@@ -2967,6 +3092,9 @@ class AdminChat {
     }
 
     getOpsAlertCaseStatusLabel(status = '') {
+        if (typeof window.getAdminWorkbenchOpsAlertCaseStatusLabel === 'function') {
+            return window.getAdminWorkbenchOpsAlertCaseStatusLabel(status);
+        }
         const normalized = String(status || '').trim().toLowerCase() || 'open';
         const labelMap = {
             open: '待处理',
@@ -2977,6 +3105,9 @@ class AdminChat {
     }
 
     getOpsAlertCaseEventActionLabel(action = '') {
+        if (typeof window.getOpsAlertCaseEventActionLabel === 'function') {
+            return window.getOpsAlertCaseEventActionLabel(action);
+        }
         const normalized = String(action || '').trim().toLowerCase();
         const labelMap = {
             claim: '认领处理',
@@ -3147,6 +3278,12 @@ class AdminChat {
     }
 
     getOpsAlertCaseRecentEventText(event = {}) {
+        if (typeof window.getAdminWorkbenchOpsAlertCaseRecentEventText === 'function') {
+            return window.getAdminWorkbenchOpsAlertCaseRecentEventText(event, {
+                formatTime: (value) => this.formatDetailTime(value),
+                muteVerb: '已静音至'
+            });
+        }
         const normalized = this.normalizeOpsAlertCaseEventRecord(event);
         if (!normalized) {
             return '';
@@ -3223,6 +3360,16 @@ class AdminChat {
     }
 
     buildOpsAlertCaseSummary(alert = {}) {
+        if (typeof window.getAdminWorkbenchOpsAlertCaseSummaryText === 'function') {
+            return window.getAdminWorkbenchOpsAlertCaseSummaryText(alert, {
+                formatTime: (value) => this.formatDetailTime(value),
+                muteVerb: '已静音至',
+                includeStatusLabel: false,
+                resolutionPrefix: '结论：',
+                notePrefix: '备注：',
+                includeModuleMuteAllowCriticalSuffix: true
+            });
+        }
         const caseRecord = alert.caseRecord || null;
         const parts = [];
         if (alert.moduleMuteActive && alert.moduleMuteUntil) {
@@ -3297,37 +3444,132 @@ class AdminChat {
             .join('\n');
     }
 
+    buildOpsAlertCaseMutationContext(alert = {}) {
+        const baseContext = {
+            ...this.buildOpsAlertContext(alert.alertType || alert.alert_type || '', alert.payload || {}, alert.title || ''),
+            title: String(alert.title || '').trim(),
+            alertType: String(alert.alertType || alert.alert_type || '').trim().toLowerCase(),
+            alert_type: String(alert.alertType || alert.alert_type || '').trim().toLowerCase(),
+            category: String(alert.caseCategoryKey || alert.category || alert.category_key || '').trim().toLowerCase(),
+            category_key: String(alert.caseCategoryKey || alert.category || alert.category_key || '').trim().toLowerCase(),
+            referenceLabel: String(alert.referenceLabel || alert.reference_label || '').trim(),
+            referenceValue: String(alert.referenceValue || alert.reference_value || '').trim(),
+            targetId: String(alert.caseTargetId || alert.targetId || alert.target_id || '').trim(),
+            target_id: String(alert.caseTargetId || alert.targetId || alert.target_id || '').trim(),
+            userId: String(alert.userId || alert.user_id || alert.payload?.user_id || '').trim(),
+            user_id: String(alert.userId || alert.user_id || alert.payload?.user_id || '').trim(),
+            clientIp: String(alert.clientIp || alert.client_ip || alert.payload?.client_ip || '').trim(),
+            client_ip: String(alert.clientIp || alert.client_ip || alert.payload?.client_ip || '').trim(),
+            discountCode: String(alert.discountCode || alert.discount_code || alert.payload?.discount_code || '').trim(),
+            discount_code: String(alert.discountCode || alert.discount_code || alert.payload?.discount_code || '').trim(),
+            signalType: String(alert.signalType || alert.signal_type || alert.payload?.signal_type || '').trim(),
+            signal_type: String(alert.signalType || alert.signal_type || alert.payload?.signal_type || '').trim(),
+            sessionId: String(alert.sessionId || alert.session_id || alert.payload?.session_id || '').trim(),
+            session_id: String(alert.sessionId || alert.session_id || alert.payload?.session_id || '').trim(),
+            caseStatus: String(alert.case_status || alert.caseStatus || '').trim().toLowerCase(),
+            case_status: String(alert.case_status || alert.caseStatus || '').trim().toLowerCase(),
+            caseOwnerAdminId: String(alert.case_owner_admin_id || alert.caseOwnerAdminId || '').trim(),
+            case_owner_admin_id: String(alert.case_owner_admin_id || alert.caseOwnerAdminId || '').trim(),
+            caseOwnerLabel: String(alert.case_owner_label || alert.caseOwnerLabel || '').trim(),
+            case_owner_label: String(alert.case_owner_label || alert.caseOwnerLabel || '').trim()
+        };
+
+        if (typeof window.buildOpsAlertCaseMutationContext === 'function') {
+            return window.buildOpsAlertCaseMutationContext(baseContext);
+        }
+
+        return baseContext;
+    }
+
+    async submitOpsAlertCaseMutationRequest(action, alert = {}, options = {}) {
+        const headers = await this.getOpsAlertCaseApiHeaders();
+        const context = this.buildOpsAlertCaseMutationContext(alert);
+
+        if (typeof window.submitOpsAlertCaseMutationRequest === 'function') {
+            return window.submitOpsAlertCaseMutationRequest(headers, action, context, {
+                ...options,
+                errorMessage: options.errorMessage || '站内代办处理失败'
+            });
+        }
+
+        const requestBody = typeof window.buildOpsAlertCaseMutationRequest === 'function'
+            ? window.buildOpsAlertCaseMutationRequest(action, context, options)
+            : (() => {
+                const requestItems = (Array.isArray(options.items) ? options.items : [])
+                    .map((item) => ({
+                        category_key: String(item.category_key || item.category || item.caseCategoryKey || context.category || '').trim().toLowerCase(),
+                        target_id: String(item.target_id || item.targetId || item.caseTargetId || '').trim(),
+                        alert_type: String(item.alert_type || item.alertType || '').trim().toLowerCase(),
+                        title: String(item.title || '').trim(),
+                        reference_label: String(item.reference_label || item.referenceLabel || '').trim(),
+                        reference_value: String(item.reference_value || item.referenceValue || '').trim(),
+                        metadata: item.metadata && typeof item.metadata === 'object' && !Array.isArray(item.metadata)
+                            ? item.metadata
+                            : undefined
+                    }))
+                    .filter((item) => item.category_key && item.target_id);
+                const requestBody = {
+                    action: String(action || '').trim().toLowerCase(),
+                    note: String(options.note || '').trim(),
+                    resolution: String(options.resolution || '').trim(),
+                    metadata: {
+                        category: context.category || '',
+                        alert_type: context.alertType || '',
+                        reference_label: context.referenceLabel || '',
+                        reference_value: context.referenceValue || '',
+                        signal_type: context.signalType || '',
+                        title: context.title || '',
+                        ...(options.metadata && typeof options.metadata === 'object' && !Array.isArray(options.metadata)
+                            ? options.metadata
+                            : {})
+                    }
+                };
+
+                if (requestItems.length) {
+                    requestBody.items = requestItems;
+                } else {
+                    requestBody.category_key = context.category || '';
+                    requestBody.target_id = context.targetId || '';
+                    requestBody.alert_type = context.alertType || '';
+                    requestBody.title = context.title || '';
+                }
+
+                const ownerAdminId = String(options.ownerAdminId || options.owner_admin_id || '').trim();
+                const ownerLabel = String(options.ownerLabel || options.owner_label || '').trim();
+                if (ownerAdminId) {
+                    requestBody.owner_admin_id = ownerAdminId;
+                }
+                if (ownerLabel) {
+                    requestBody.owner_label = ownerLabel;
+                }
+
+                return requestBody;
+            })();
+
+        const response = await fetch('/api/admin/settings/ops-alert-monitor-cases', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(requestBody)
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.success === false) {
+            throw new Error(payload.message || options.errorMessage || '站内代办处理失败');
+        }
+
+        return payload;
+    }
+
     async appendOpsAlertCaseNote(alert = {}, note = '') {
         const normalizedNote = String(note || '').trim();
         if (!normalizedNote || !alert.caseCategoryKey || !alert.caseTargetId) {
             return null;
         }
 
-        const headers = await this.getOpsAlertCaseApiHeaders();
-        const response = await fetch('/api/admin/settings/ops-alert-monitor-cases', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-                action: 'add_note',
-                category_key: alert.caseCategoryKey,
-                target_id: alert.caseTargetId,
-                alert_type: alert.alertType || '',
-                title: alert.title || '',
-                note: normalizedNote,
-                metadata: {
-                    category: alert.caseCategoryKey,
-                    alert_type: alert.alertType || '',
-                    reference_label: alert.referenceLabel || '',
-                    reference_value: alert.referenceValue || '',
-                    title: alert.title || ''
-                }
-            })
+        const payload = await this.submitOpsAlertCaseMutationRequest('add_note', alert, {
+            note: normalizedNote,
+            errorMessage: '回写工单备注失败'
         });
-
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || payload.success === false) {
-            throw new Error(payload.message || '回写工单备注失败');
-        }
         return payload.case || null;
     }
 
@@ -3338,7 +3580,8 @@ class AdminChat {
             return false;
         }
 
-        if (typeof window.openOpsAlertWorkspace !== 'function') {
+        const launcher = this.getWorkbenchLauncher();
+        if (typeof launcher !== 'function') {
             window.showToast?.('当前页面暂时无法直接打开工单', 'warning');
             return false;
         }
@@ -3350,7 +3593,7 @@ class AdminChat {
             targetId: ticketId,
             target_id: ticketId
         };
-        return window.openOpsAlertWorkspace('tickets-pending', context);
+        return this.openWorkbenchEntry('tickets-pending', context);
     }
 
     async handleCreateOpsAlertTicket(alert = {}) {
@@ -3628,41 +3871,26 @@ class AdminChat {
                 return false;
             }
 
-            const headers = await this.getOpsAlertCaseApiHeaders();
-            const response = await fetch('/api/admin/settings/ops-alert-monitor-cases', {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({
-                    action: 'assign',
-                    owner_admin_id: selectedOwner.id,
-                    owner_label: selectedOwner.label,
-                    note,
+            const payload = await this.submitOpsAlertCaseMutationRequest('assign', alerts[0] || {}, {
+                ownerAdminId: selectedOwner.id,
+                ownerLabel: selectedOwner.label,
+                note,
+                metadata: {
+                    source: 'admin_chat_toolbar_batch_assign',
+                    filter_view: this.opsAlertViewFilter,
+                    filter_owner: this.opsAlertOwnerFilter
+                },
+                items: alerts.map((item) => ({
+                    ...item,
                     metadata: {
-                        source: 'admin_chat_toolbar_batch_assign',
-                        filter_view: this.opsAlertViewFilter,
-                        filter_owner: this.opsAlertOwnerFilter
-                    },
-                    items: alerts.map((alert) => ({
-                        category_key: alert.caseCategoryKey,
-                        target_id: alert.caseTargetId,
-                        alert_type: alert.alertType || '',
-                        title: alert.title || '',
-                        reference_label: alert.referenceLabel || '',
-                        reference_value: alert.referenceValue || '',
-                        metadata: {
-                            title: alert.title || '',
-                            reference_label: alert.referenceLabel || '',
-                            reference_value: alert.referenceValue || '',
-                            alert_type: alert.alertType || ''
-                        }
-                    }))
-                })
+                        title: item.title || '',
+                        reference_label: item.referenceLabel || '',
+                        reference_value: item.referenceValue || '',
+                        alert_type: item.alertType || ''
+                    }
+                })),
+                errorMessage: '批量转交站内代办失败'
             });
-
-            const payload = await response.json().catch(() => ({}));
-            if (!response.ok || payload.success === false) {
-                throw new Error(payload.message || '批量转交站内代办失败');
-            }
 
             this.applyOpsAlertCasesToMessages(payload.cases || []);
             await this.refreshOpsAlertCaseStateForAlerts(alerts);
@@ -4158,34 +4386,13 @@ class AdminChat {
             }
         }
 
-        const headers = await this.getOpsAlertCaseApiHeaders();
-        const response = await fetch('/api/admin/settings/ops-alert-monitor-cases', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-                action: normalizedAction,
-                category_key: alert.caseCategoryKey,
-                target_id: alert.caseTargetId,
-                alert_type: alert.alertType || '',
-                title: alert.title || '',
-                owner_admin_id: ownerAdminId,
-                owner_label: ownerLabel,
-                note,
-                resolution,
-                metadata: {
-                    category: alert.caseCategoryKey,
-                    alert_type: alert.alertType || '',
-                    reference_label: alert.referenceLabel || '',
-                    reference_value: alert.referenceValue || '',
-                    title: alert.title || ''
-                }
-            })
+        const payload = await this.submitOpsAlertCaseMutationRequest(normalizedAction, alert, {
+            ownerAdminId,
+            ownerLabel,
+            note,
+            resolution,
+            errorMessage: '站内代办处理失败'
         });
-
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || payload.success === false) {
-            throw new Error(payload.message || '站内代办处理失败');
-        }
         return payload.case || null;
     }
 
@@ -4293,105 +4500,15 @@ class AdminChat {
     }
 
     resolveEntryPathWorkspace(entryPath = '', baseContext = {}) {
-        const normalized = String(entryPath || '').trim();
-        if (!normalized) {
-            return { kind: 'none' };
+        if (typeof window.resolveOpsAlertEntryWorkspace === 'function') {
+            return window.resolveOpsAlertEntryWorkspace(entryPath, baseContext);
         }
-
-        if (normalized.includes('客服消息')) {
-            return {
-                kind: 'chat-session',
-                context: baseContext
-            };
-        }
-        if (normalized.includes('订单列表 / 优惠券码')) {
-            return {
-                kind: 'ops-workspace',
-                workspaceKey: 'shop-risk-discounts',
-                context: baseContext
-            };
-        }
-        if (normalized.includes('订单列表 / 用户详情') || normalized.includes('用户详情')) {
-            return {
-                kind: 'ops-workspace',
-                workspaceKey: 'shop-risk-users',
-                context: baseContext
-            };
-        }
-        if (normalized.includes('履约任务') || normalized.includes('异常订单')) {
-            return {
-                kind: 'ops-workspace',
-                workspaceKey: 'shop-fulfillment',
-                context: baseContext
-            };
-        }
-        if (normalized.includes('库存 / 补货') || normalized.includes('库存')) {
-            return {
-                kind: 'ops-workspace',
-                workspaceKey: 'shop-inventory',
-                context: baseContext
-            };
-        }
-        if (normalized.includes('支付配置审计') || normalized.includes('异常登录信号')) {
-            return {
-                kind: 'ops-workspace',
-                workspaceKey: 'admin-audit-monitor',
-                context: baseContext
-            };
-        }
-        if (normalized.includes('验证服务配置')) {
-            return {
-                kind: 'ops-workspace',
-                workspaceKey: 'verify-monitor',
-                context: baseContext
-            };
-        }
-        if (normalized.includes('售后工单')) {
-            return {
-                kind: 'ops-workspace',
-                workspaceKey: normalized.includes('已处理') ? 'tickets-resolved' : 'tickets-pending',
-                context: baseContext
-            };
-        }
-        if (normalized.includes('支付总览') || normalized.includes('异常运维')) {
-            return {
-                kind: 'ops-workspace',
-                workspaceKey: 'payments-ops',
-                context: baseContext
-            };
-        }
-        if (normalized.includes('最近订单')) {
-            return {
-                kind: 'ops-workspace',
-                workspaceKey: 'payments-overview',
-                context: baseContext
-            };
-        }
-        if (normalized.includes('订单列表')) {
-            return {
-                kind: 'shop-orders',
-                context: baseContext
-            };
-        }
-
         return { kind: 'none' };
     }
 
     resolveShopRiskWorkspace(baseContext = {}, payload = {}) {
-        const signalType = String(payload.signal_type || '').trim().toLowerCase();
-        if (String(payload.discount_code || '').trim()) {
-            return {
-                kind: 'ops-workspace',
-                workspaceKey: 'shop-risk-discounts',
-                context: baseContext
-            };
-        }
-        if (String(payload.user_id || '').trim() && signalType === 'user_velocity') {
-            return {
-                kind: 'ops-workspace',
-                workspaceKey: 'shop-risk-users',
-                context: baseContext
-            };
+        if (typeof window.resolveShopRiskWorkspace === 'function') {
+            return window.resolveShopRiskWorkspace(baseContext, payload);
         }
         return {
             kind: 'ops-workspace',
@@ -4403,99 +4520,10 @@ class AdminChat {
     resolveOpsAlertWorkspace(alertType = '', payload = {}, title = '', entryPath = '') {
         const baseContext = this.buildOpsAlertContext(alertType, payload, title);
 
-        switch (String(alertType || '').trim().toLowerCase()) {
-            case 'customer_chat_message_received':
-            case 'customer_chat_message_summary':
-                return {
-                    kind: 'chat-session',
-                    context: baseContext
-                };
-            case 'shop_purchase_succeeded':
-            case 'shop_purchase_summary':
-                return {
-                    kind: 'shop-orders',
-                    context: baseContext
-                };
-            case 'wallet_recharge_succeeded':
-            case 'wallet_recharge_summary':
-                return {
-                    kind: 'ops-workspace',
-                    workspaceKey: 'payments-overview',
-                    context: baseContext
-                };
-            case 'shop_inventory_summary':
-            case 'shop_inventory_low':
-            case 'shop_inventory_empty':
-            case 'shop_inventory_recovered':
-                return {
-                    kind: 'ops-workspace',
-                    workspaceKey: 'shop-inventory',
-                    context: baseContext
-                };
-            case 'ticket_new':
-            case 'ticket_sla_summary':
-            case 'ticket_sla_overdue':
-                return {
-                    kind: 'ops-workspace',
-                    workspaceKey: 'tickets-pending',
-                    context: baseContext
-                };
-            case 'ticket_sla_recovered':
-                return {
-                    kind: 'ops-workspace',
-                    workspaceKey: 'tickets-resolved',
-                    context: baseContext
-                };
-            case 'shop_order_delivery_summary':
-            case 'shop_order_delivery_failed':
-            case 'shop_order_delivery_recovered':
-            case 'shop_order_delivery_incident':
-            case 'shop_order_delivery_incident_recovered':
-                return {
-                    kind: 'ops-workspace',
-                    workspaceKey: 'shop-fulfillment',
-                    context: baseContext
-                };
-            case 'payment_gateway_summary':
-            case 'payment_gateway_degraded':
-            case 'payment_gateway_recovered':
-            case 'payment_refund_ops':
-            case 'payment_refund_alert':
-                return {
-                    kind: 'ops-workspace',
-                    workspaceKey: 'payments-ops',
-                    context: baseContext
-                };
-            case 'payment_config_changed':
-            case 'payment_config_recovered':
-            case 'payment_config_incident':
-            case 'payment_config_incident_recovered':
-            case 'security_admin_login_anomaly':
-                return {
-                    kind: 'ops-workspace',
-                    workspaceKey: 'admin-audit-monitor',
-                    context: baseContext
-                };
-            case 'verify_quota_summary':
-            case 'verify_quota_low':
-            case 'verify_service_disabled':
-            case 'verify_queue_summary':
-            case 'verify_queue_backlog':
-            case 'verify_failure_summary':
-            case 'verify_failure_rate_spike':
-            case 'verify_incident_escalated':
-            case 'verify_incident_recovered':
-                return {
-                    kind: 'ops-workspace',
-                    workspaceKey: 'verify-monitor',
-                    context: baseContext
-                };
-            case 'shop_order_risk_anomaly':
-            case 'shop_order_risk_recovered':
-                return this.resolveShopRiskWorkspace(baseContext, payload);
-            default:
-                return this.resolveEntryPathWorkspace(entryPath, baseContext);
+        if (typeof window.resolveOpsAlertWorkspace === 'function') {
+            return window.resolveOpsAlertWorkspace(alertType, payload, baseContext, entryPath);
         }
+        return this.resolveEntryPathWorkspace(entryPath, baseContext);
     }
 
     normalizeOpsAlertJob(row = {}) {
@@ -5711,8 +5739,41 @@ class AdminChat {
         }, 40);
     }
 
+    getWorkbenchLauncher() {
+        return window.openAdminWorkbenchEntry || window.openOpsAlertWorkspace || null;
+    }
+
+    async openWorkbenchEntry(workspaceKey, context = {}) {
+        const launcher = this.getWorkbenchLauncher();
+        if (typeof launcher !== 'function') {
+            return false;
+        }
+        return launcher(workspaceKey, context);
+    }
+
     async openChatSessionFromAlert(context = {}) {
-        const sessionId = String(context.sessionId || context.session_id || context.referenceValue || '').trim();
+        const launcher = this.getWorkbenchLauncher();
+        if (typeof launcher === 'function') {
+            return this.openWorkbenchEntry('chat-session', context);
+        }
+
+        const sessionId = String(
+            context.sessionId
+            || context.session_id
+            || ((context.referenceLabel === '会话ID' || context.reference_label === '会话ID')
+                ? (context.referenceValue || context.reference_value || '')
+                : '')
+            || ''
+        ).trim();
+        const searchValue = String(
+            sessionId
+            || context.email
+            || context.userId
+            || context.user_id
+            || context.referenceValue
+            || context.reference_value
+            || ''
+        ).trim();
         window.switchModule?.('chat');
         await this.settleWorkspace(80);
 
@@ -5723,6 +5784,13 @@ class AdminChat {
         }
 
         instance.backToSessions();
+        if (searchValue) {
+            instance.filterSessions?.(searchValue);
+            const searchInput = document.getElementById('sessionSearch');
+            if (searchInput) {
+                searchInput.value = searchValue;
+            }
+        }
         return true;
     }
 
@@ -5738,6 +5806,19 @@ class AdminChat {
     }
 
     async openShopOrdersFromAlert(context = {}) {
+        const launcher = this.getWorkbenchLauncher();
+        if (typeof launcher === 'function') {
+            const searchValue = this.getContextSearchValue(context);
+            return this.openWorkbenchEntry('shop-risk-orders', {
+                ...context,
+                orderId: context.orderId || context.order_id || searchValue,
+                referenceLabel: context.referenceLabel || context.reference_label || '订单号',
+                referenceValue: context.referenceValue || context.reference_value || searchValue,
+                targetId: context.targetId || context.target_id || searchValue,
+                target_id: context.target_id || context.targetId || searchValue
+            });
+        }
+
         const searchValue = this.getContextSearchValue(context);
         window.switchModule?.('shop');
         await this.settleWorkspace(80);
@@ -5757,7 +5838,12 @@ class AdminChat {
         return true;
     }
 
-    async openPaymentsOverviewFromAlert() {
+    async openPaymentsOverviewFromAlert(context = {}) {
+        const launcher = this.getWorkbenchLauncher();
+        if (typeof launcher === 'function') {
+            return this.openWorkbenchEntry('payments-overview', context);
+        }
+
         window.switchModule?.('payments');
         await this.settleWorkspace(80);
 
@@ -5772,6 +5858,7 @@ class AdminChat {
 
     async handleOpsAlertNavigation(alert = {}) {
         const workspace = alert.workspace || { kind: 'none' };
+        const launcher = this.getWorkbenchLauncher();
 
         try {
             if (workspace.kind === 'chat-session') {
@@ -5782,11 +5869,12 @@ class AdminChat {
                 return await this.openShopOrdersFromAlert(workspace.context || {});
             }
 
-            if (workspace.kind === 'ops-workspace' && typeof window.openOpsAlertWorkspace === 'function') {
-                if (workspace.workspaceKey === 'payments-overview') {
-                    return await this.openPaymentsOverviewFromAlert();
-                }
-                return await window.openOpsAlertWorkspace(workspace.workspaceKey, workspace.context || {});
+            if (workspace.kind === 'ops-workspace' && workspace.workspaceKey === 'payments-overview') {
+                return await this.openPaymentsOverviewFromAlert(workspace.context || {});
+            }
+
+            if (workspace.kind === 'ops-workspace' && typeof launcher === 'function') {
+                return await this.openWorkbenchEntry(workspace.workspaceKey, workspace.context || {});
             }
 
             window.showToast?.('这条告警暂时没有可跳转的处理页', 'warning');

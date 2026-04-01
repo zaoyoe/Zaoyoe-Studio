@@ -21,9 +21,28 @@
         return window.SiteConfig?.site || 'cn';
     }
 
+    function getHomepagePrefetchCacheKey(site = getCurrentSite()) {
+        return `${HOMEPAGE_PREFETCH_CACHE_KEY}_${site === 'intl' ? 'intl' : 'cn'}`;
+    }
+
+    function getHomepageConfigLastUpdatedKey(site = getCurrentSite()) {
+        return `${HOMEPAGE_CONFIG_LAST_UPDATED_KEY}_${site === 'intl' ? 'intl' : 'cn'}`;
+    }
+
+    async function loadHomepageConfigRows(site = getCurrentSite()) {
+        const { data, error } = await window.supabaseClient
+            .rpc('fn_get_homepage_config', {
+                p_site: site,
+                p_include_hidden: false
+            });
+
+        if (error) throw error;
+        return Array.isArray(data) ? data : [];
+    }
+
     function getHomepageConfigLastUpdatedAt() {
         try {
-            const raw = localStorage.getItem(HOMEPAGE_CONFIG_LAST_UPDATED_KEY);
+            const raw = localStorage.getItem(getHomepageConfigLastUpdatedKey());
             const parsed = Number.parseInt(raw || '0', 10);
             return Number.isFinite(parsed) ? parsed : 0;
         } catch (e) {
@@ -45,12 +64,17 @@
 
     function checkAndPrefetch() {
         if (prefetching) return;
+        const currentSite = getCurrentSite();
 
         // Check if fresh data already exists
         try {
-            const raw = sessionStorage.getItem(HOMEPAGE_PREFETCH_CACHE_KEY);
+            const raw = sessionStorage.getItem(getHomepagePrefetchCacheKey(currentSite));
             if (raw) {
                 const data = JSON.parse(raw);
+                if (data?.site && data.site !== currentSite) {
+                    sessionStorage.removeItem(getHomepagePrefetchCacheKey(currentSite));
+                    return;
+                }
                 const age = Date.now() - data.timestamp;
                 const configUpdatedAt = getHomepageConfigLastUpdatedAt();
                 const isFreshConfig = !configUpdatedAt || (data.timestamp || 0) >= configUpdatedAt;
@@ -58,7 +82,7 @@
                     // Data is fresh (< 5 min), no need to prefetch
                     return;
                 }
-                sessionStorage.removeItem(HOMEPAGE_PREFETCH_CACHE_KEY);
+                sessionStorage.removeItem(getHomepagePrefetchCacheKey(currentSite));
             }
         } catch (e) { /* ignore */ }
 
@@ -110,12 +134,7 @@
             // Fetch homepage config
             const config = Cache
                 ? await Cache.loadWithCache('homepage_config', async () => {
-                    const { data, error } = await window.supabaseClient
-                        .from('homepage_config')
-                        .select('*')
-                        .eq('is_visible', true)
-                        .order('display_order', { ascending: true });
-                    if (error) throw error;
+                    const data = await loadHomepageConfigRows(getCurrentSite());
                     const cfg = {};
                     data.forEach(item => { cfg[item.section] = item.content; });
                     return cfg;
@@ -203,7 +222,8 @@
             };
 
             // Save to sessionStorage
-            sessionStorage.setItem(HOMEPAGE_PREFETCH_CACHE_KEY, JSON.stringify({
+            const currentSite = getCurrentSite();
+            sessionStorage.setItem(getHomepagePrefetchCacheKey(currentSite), JSON.stringify({
                 cachedData: {
                     hero,
                     prompts,
@@ -214,7 +234,8 @@
                     shopCategories: []
                 },
                 config,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                site: currentSite
             }));
 
             console.log('⚡ Homepage data prefetched on logo hover');

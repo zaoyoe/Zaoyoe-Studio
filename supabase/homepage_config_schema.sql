@@ -5,7 +5,8 @@
 -- 主表：homepage_config (主页配置)
 CREATE TABLE IF NOT EXISTS homepage_config (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    section VARCHAR(50) NOT NULL UNIQUE, -- 区块标识: 'hero', 'prompts', 'shop', 'verify', 'guestbook', 'ticker'
+    site VARCHAR(10) NOT NULL DEFAULT 'cn' CHECK (site IN ('cn', 'intl')), -- 站点: 'cn' | 'intl'
+    section VARCHAR(50) NOT NULL, -- 区块标识: 'hero', 'prompts', 'shop', 'verify', 'guestbook', 'ticker', 'footer'
     
     -- 内容配置 (JSON 格式)
     content JSONB NOT NULL DEFAULT '{}'::JSONB,
@@ -54,8 +55,8 @@ CREATE POLICY "Admins manage homepage config"
     WITH CHECK (public.is_admin());
 
 -- 初始化默认配置
-INSERT INTO homepage_config (section, content, display_order) VALUES
-('hero', '{
+INSERT INTO homepage_config (site, section, content, display_order) VALUES
+('cn', 'hero', '{
     "enable_auto": true,
     "title": "早鸟工作室",
     "subtitle": "创意 · 效率 · 无限可能",
@@ -65,7 +66,19 @@ INSERT INTO homepage_config (section, content, display_order) VALUES
     }
 }'::JSONB, 1),
 
-('prompts', '{
+('intl', 'hero', '{
+    "enable_auto": true,
+    "title": "Zaoyoe Studio",
+    "subtitle": "Creativity · Speed · Endless Possibility",
+    "title_zh": "早鸟工作室",
+    "subtitle_zh": "创意 · 效率 · 无限可能",
+    "cta": {
+        "primary": {"text": "开始探索", "link": "#prompts"},
+        "secondary": {"text": "了解更多", "link": "#about"}
+    }
+}'::JSONB, 1),
+
+('cn', 'prompts', '{
     "enable_auto": true,
     "max_items": 6,
     "sort": "popular",
@@ -73,7 +86,17 @@ INSERT INTO homepage_config (section, content, display_order) VALUES
     "section_subtitle": "让创作更高效，让灵感更自由"
 }'::JSONB, 2),
 
-('shop', '{
+('intl', 'prompts', '{
+    "enable_auto": true,
+    "max_items": 6,
+    "sort": "popular",
+    "section_title": "AI Prompt Studio",
+    "section_subtitle": "Create faster, ideate freer",
+    "section_title_zh": "AI 提示词工作室",
+    "section_subtitle_zh": "让创作更高效，让灵感更自由"
+}'::JSONB, 2),
+
+('cn', 'shop', '{
     "enable_auto": true,
     "max_items": 8,
     "category": "all",
@@ -82,7 +105,18 @@ INSERT INTO homepage_config (section, content, display_order) VALUES
     "section_subtitle": "优质资源，助力成长"
 }'::JSONB, 3),
 
-('verify', '{
+('intl', 'shop', '{
+    "enable_auto": true,
+    "max_items": 8,
+    "category": "all",
+    "sort": "popular",
+    "section_title": "Curated Marketplace",
+    "section_subtitle": "Premium resources for faster growth",
+    "section_title_zh": "精选资源商城",
+    "section_subtitle_zh": "优质资源，助力成长"
+}'::JSONB, 3),
+
+('cn', 'verify', '{
     "enable_auto": true,
     "screenshot_path": "/assets/verify-preview.png",
     "section_title": "Gemini API 验证",
@@ -90,23 +124,54 @@ INSERT INTO homepage_config (section, content, display_order) VALUES
     "features": ["免费", "实时", "安全"]
 }'::JSONB, 4),
 
-('guestbook', '{
+('intl', 'verify', '{
+    "enable_auto": true,
+    "screenshot_path": "/assets/verify-preview.png",
+    "section_title": "Gemini API Check",
+    "section_subtitle": "Validate your API key and get instant feedback",
+    "section_title_zh": "Gemini API 验证",
+    "section_subtitle_zh": "快速验证您的 API 密钥，实时返回结果",
+    "features": ["Free", "Realtime", "Secure"]
+}'::JSONB, 4),
+
+('cn', 'guestbook', '{
     "enable_auto": true,
     "max_items": 5,
     "section_title": "留言板",
     "section_subtitle": "用户的声音"
 }'::JSONB, 5),
 
-('ticker', '{
+('intl', 'guestbook', '{
+    "enable_auto": true,
+    "max_items": 5,
+    "section_title": "Guestbook",
+    "section_subtitle": "Hear from the community",
+    "section_title_zh": "留言板",
+    "section_subtitle_zh": "用户的声音"
+}'::JSONB, 5),
+
+('cn', 'ticker', '{
     "enable_auto": true,
     "speed": 30,
     "enable_prompts": true,
     "enable_products": true
-}'::JSONB, 6);
+}'::JSONB, 6),
+
+('intl', 'ticker', '{
+    "enable_auto": true,
+    "speed": 30,
+    "enable_prompts": true,
+    "enable_products": true
+}'::JSONB, 6),
+
+('cn', 'footer', '{}'::JSONB, 7),
+
+('intl', 'footer', '{}'::JSONB, 7);
 
 -- 添加索引
+CREATE UNIQUE INDEX IF NOT EXISTS idx_homepage_config_site_section ON homepage_config(site, section);
 CREATE INDEX IF NOT EXISTS idx_homepage_config_section ON homepage_config(section);
-CREATE INDEX IF NOT EXISTS idx_homepage_config_visible ON homepage_config(is_visible);
+CREATE INDEX IF NOT EXISTS idx_homepage_config_site_visible_order ON homepage_config(site, is_visible, display_order);
 
 -- 添加触发器：自动更新 updated_at
 CREATE OR REPLACE FUNCTION update_homepage_config_timestamp()
@@ -136,6 +201,7 @@ BEGIN
                     ELSE 'homepage_config.update'
                 END,
                 jsonb_build_object(
+                    'site', COALESCE(NEW.site, OLD.site),
                     'section', COALESCE(NEW.section, OLD.section),
                     'operation', TG_OP,
                     'old', CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE to_jsonb(OLD) END,
@@ -158,7 +224,10 @@ CREATE TRIGGER trigger_audit_homepage_config_changes
     EXECUTE FUNCTION audit_homepage_config_changes();
 
 -- 辅助函数：获取公开配置（供前端使用）
-CREATE OR REPLACE FUNCTION fn_get_homepage_config()
+CREATE OR REPLACE FUNCTION fn_get_homepage_config(
+    p_site VARCHAR DEFAULT 'cn',
+    p_include_hidden BOOLEAN DEFAULT false
+)
 RETURNS TABLE (
     section VARCHAR,
     content JSONB,
@@ -169,14 +238,20 @@ LANGUAGE sql
 SECURITY DEFINER
 STABLE
 AS $$
-    SELECT section, content, is_visible, display_order
-    FROM homepage_config
-    WHERE is_visible = true
+    SELECT
+        hc.section,
+        hc.content,
+        hc.is_visible,
+        hc.display_order
+    FROM homepage_config hc
+    WHERE hc.site = CASE WHEN p_site = 'intl' THEN 'intl' ELSE 'cn' END
+      AND (p_include_hidden OR hc.is_visible = true)
     ORDER BY display_order ASC;
 $$;
 
 COMMENT ON TABLE homepage_config IS '主页内容配置表，存储各区块的自定义内容和展示设置';
-COMMENT ON COLUMN homepage_config.section IS '区块标识符，唯一';
+COMMENT ON COLUMN homepage_config.site IS '站点标识符，仅允许 cn 或 intl';
+COMMENT ON COLUMN homepage_config.section IS '区块标识符，在每个站点内唯一';
 COMMENT ON COLUMN homepage_config.content IS 'JSON 格式的配置数据，结构根据 section 类型而异';
 COMMENT ON COLUMN homepage_config.is_visible IS '是否在主页显示该区块';
 COMMENT ON COLUMN homepage_config.display_order IS '显示顺序，数字越小越靠前';

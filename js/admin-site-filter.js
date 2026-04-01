@@ -6,14 +6,93 @@
 (function () {
     'use strict';
 
+    const VALID_SITE_FILTERS = new Set(['all', 'cn', 'intl']);
+
     // Current admin site filter: 'all' | 'cn' | 'intl'
-    let currentFilter = localStorage.getItem('admin_site_filter') || 'all';
+    let currentFilter = normalizeSiteFilterValue(localStorage.getItem('admin_site_filter'));
 
     const SITE_LABELS = {
         all: '🌐 全部',
         cn: 'CN',
         intl: 'EN'
     };
+    const WRITABLE_ACTION_LABELS = Object.freeze({
+        'comments-batch-delete': '批量删除评论',
+        'homepage-save-section': '保存首页分区',
+        'payments-handle-anomaly-action': '执行支付异常处理',
+        'points-batch-invalidate': '批量作废兑换码',
+        'points-batch-delete': '批量删除积分批次',
+        'discounts-delete-code': '删除折扣码',
+        'discounts-submit-generate': '生成折扣码'
+    });
+    const WRITABLE_FORM_LABELS = Object.freeze({
+        promptForm: '保存 Prompt',
+        generateCodesForm: '生成兑换码',
+        discountGenerateForm: '生成折扣码'
+    });
+
+    function normalizeSiteFilterValue(value) {
+        const normalized = String(value || '').trim().toLowerCase();
+        return VALID_SITE_FILTERS.has(normalized) ? normalized : 'all';
+    }
+
+    function isAllSitesSelected() {
+        return currentFilter === 'all';
+    }
+
+    function getWritableSite() {
+        return isAllSitesSelected() ? null : currentFilter;
+    }
+
+    function actionRequiresWritableSite(action) {
+        return Object.prototype.hasOwnProperty.call(WRITABLE_ACTION_LABELS, String(action || '').trim());
+    }
+
+    function formRequiresWritableSite(formId) {
+        return Object.prototype.hasOwnProperty.call(WRITABLE_FORM_LABELS, String(formId || '').trim());
+    }
+
+    function getWritableGuardLabel(options = {}) {
+        const action = String(options.action || '').trim();
+        if (action && actionRequiresWritableSite(action)) {
+            return WRITABLE_ACTION_LABELS[action];
+        }
+
+        const formId = String(options.formId || '').trim();
+        if (formId && formRequiresWritableSite(formId)) {
+            return WRITABLE_FORM_LABELS[formId];
+        }
+
+        return String(options.label || '').trim();
+    }
+
+    function notifyWritableSiteRequired(message) {
+        if (typeof window.showToast === 'function') {
+            window.showToast(message, 'warning');
+            return;
+        }
+
+        console.warn(`[AdminSiteFilter] ${message}`);
+    }
+
+    function requireWritableSite(options = {}) {
+        const writableSite = getWritableSite();
+        if (writableSite) {
+            return writableSite;
+        }
+
+        if (options.notify === false) {
+            return null;
+        }
+
+        const label = getWritableGuardLabel(options);
+        const message = String(options.message || '').trim()
+            || (label
+                ? `请先选择 CN 或 EN 站点后再执行「${label}」`
+                : '请先选择 CN 或 EN 站点后再执行当前操作');
+        notifyWritableSiteRequired(message);
+        return null;
+    }
 
     /**
      * Get the current admin site filter value
@@ -76,8 +155,8 @@
     }
 
     function select(value) {
-        currentFilter = value;
-        localStorage.setItem('admin_site_filter', value);
+        currentFilter = normalizeSiteFilterValue(value);
+        localStorage.setItem('admin_site_filter', currentFilter);
 
         // Close dropdown
         const menu = document.getElementById('siteSelectorMenu');
@@ -85,15 +164,21 @@
 
         // Update button label
         const label = document.querySelector('.site-selector-label');
-        if (label) label.textContent = SITE_LABELS[value];
+        if (label) label.textContent = SITE_LABELS[currentFilter];
 
         // Update active state
         document.querySelectorAll('.site-selector-option').forEach(opt => {
-            opt.classList.toggle('active', opt.textContent.trim() === SITE_LABELS[value].trim());
+            opt.classList.toggle('active', opt.textContent.trim() === SITE_LABELS[currentFilter].trim());
         });
 
         // Dispatch custom event for modules to react
-        window.dispatchEvent(new CustomEvent('admin-site-changed', { detail: { site: value } }));
+        window.dispatchEvent(new CustomEvent('admin-site-changed', {
+            detail: {
+                site: currentFilter,
+                writableSite: getWritableSite(),
+                isAllSitesSelected: isAllSitesSelected()
+            }
+        }));
 
         // Reload current module data
         reloadCurrentModule();
@@ -154,9 +239,14 @@
 
     // Export
     window.AdminSiteFilter = {
+        actionRequiresWritableSite,
         getSiteFilter,
         applySiteFilter,
         getSiteParam,
+        getWritableSite,
+        isAllSitesSelected,
+        formRequiresWritableSite,
+        requireWritableSite,
         renderSiteSelector,
         toggleDropdown,
         select

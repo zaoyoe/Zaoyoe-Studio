@@ -37,6 +37,8 @@ function createState(overrides = {}) {
         user: { id: 'admin-processor-1', email: 'ops@example.com' },
         tickets: [],
         orders: [],
+        refundCalls: [],
+        refundResult: null,
         chatMessages: [],
         notifications: [],
         auditLogs: [],
@@ -243,10 +245,28 @@ async function withHandler(stateOverrides, callback) {
                 }
             };
         }
-        if (request === '../../../../api/_lib/payments/rpc') {
+        if (request === '../../../../api/_lib/shop/admin-refunds') {
             return {
-                async rechargePointsForPayment() {
-                    return { error: null };
+                async applyShopOrderRefund(payload) {
+                    state.refundCalls.push(payload);
+                    if (state.refundResult instanceof Error) {
+                        throw state.refundResult;
+                    }
+
+                    if (state.refundResult) {
+                        return state.refundResult;
+                    }
+
+                    return {
+                        order: state.orders[0] || null,
+                        orderSite: String(state.orders[0]?.site || 'cn'),
+                        refundedAmount: Number(state.orders[0]?.price_paid || state.orders[0]?.total_price || 0),
+                        duplicate: false,
+                        result: {
+                            success: true,
+                            message: '退款成功'
+                        }
+                    };
                 }
             };
         }
@@ -417,5 +437,125 @@ test('ticket process syncs the result back into the linked chat session when the
         assert.equal(state.notifications[0].category, 'ticket_result');
         assert.equal(state.auditLogs.length, 1);
         assert.deepEqual(state.auditLogs[0].details.linked_chat_session, payload.linkedChatSession);
+    });
+});
+
+test('ticket process routes refunds through the shared shop refund helper and uses the actual paid amount', async () => {
+    await withHandler({
+        tickets: [{
+            id: 'ticket-refund-1',
+            user_id: 'user-refund-1',
+            order_id: 'order-refund-1',
+            status: 'PENDING',
+            description: '普通售后工单',
+            created_at: '2026-03-30T10:00:00.000Z',
+            updated_at: '2026-03-30T10:00:00.000Z'
+        }],
+        orders: [{
+            id: 'order-refund-1',
+            user_id: 'user-refund-1',
+            site: 'intl',
+            price_paid: 88,
+            total_price: 120,
+            refund_status: 'none'
+        }]
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            headers: {},
+            body: {
+                ticketId: 'ticket-refund-1',
+                newStatus: 'RESOLVED',
+                adminReply: '已处理并退款',
+                doRefund: true
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.refundAmount, 88);
+        assert.equal(payload.refundDuplicate, false);
+        assert.equal(state.refundCalls.length, 1);
+        assert.deepEqual(state.refundCalls[0], {
+            supabase: state.refundCalls[0].supabase,
+            adminId: 'admin-processor-1',
+            orderId: 'order-refund-1',
+            targetStatus: 'frozen',
+            remark: '已处理并退款'
+        });
+        assert.equal(state.notifications.length, 1);
+        assert.match(state.notifications[0].content, /已退回 88 积分/);
+        assert.equal(state.auditLogs[0].details.refunded, true);
+        assert.equal(state.auditLogs[0].details.refund_amount, 88);
+        assert.equal(state.auditLogs[0].details.refund_duplicate, false);
+    });
+});
+
+test('ticket process suppresses duplicate refund messaging when the order was already refunded', async () => {
+    await withHandler({
+        tickets: [{
+            id: 'ticket-refund-dup-1',
+            user_id: 'user-refund-dup-1',
+            order_id: 'order-refund-dup-1',
+            status: 'PENDING',
+            description: '重复售后工单',
+            created_at: '2026-03-30T10:00:00.000Z',
+            updated_at: '2026-03-30T10:00:00.000Z'
+        }],
+        orders: [{
+            id: 'order-refund-dup-1',
+            user_id: 'user-refund-dup-1',
+            site: 'cn',
+            price_paid: 66,
+            total_price: 66,
+            refund_status: 'refunded'
+        }],
+        refundResult: {
+            order: {
+                id: 'order-refund-dup-1',
+                user_id: 'user-refund-dup-1',
+                site: 'cn',
+                refund_status: 'refunded',
+                price_paid: 66,
+                total_price: 66
+            },
+            orderSite: 'cn',
+            refundedAmount: 66,
+            duplicate: true,
+            result: {
+                success: true,
+                duplicate: true,
+                message: '该订单已退款'
+            }
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            headers: {},
+            body: {
+                ticketId: 'ticket-refund-dup-1',
+                newStatus: 'RESOLVED',
+                adminReply: '重复工单，记录处理结果',
+                doRefund: true
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.refundAmount, 66);
+        assert.equal(payload.refundDuplicate, true);
+        assert.equal(state.refundCalls.length, 1);
+        assert.equal(state.notifications.length, 1);
+        assert.doesNotMatch(state.notifications[0].content, /已退回 66 积分/);
+        assert.equal(state.auditLogs[0].details.refunded, false);
+        assert.equal(state.auditLogs[0].details.refund_duplicate, true);
     });
 });

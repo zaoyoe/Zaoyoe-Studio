@@ -1,5 +1,5 @@
 /**
- * Admin Points Module - Redemption Code Management
+ * Admin Points Module - Redemption Batches and Package Catalog
  */
 
 // Get supabase client (lazy load to ensure it's ready)
@@ -49,6 +49,203 @@ function hydratePointsUsageFills(scope = document) {
     });
 }
 
+function requireWritablePointsSite(options = {}) {
+    return window.AdminSiteFilter?.requireWritableSite?.(options) || null;
+}
+
+function getPointsReadSite() {
+    return window.AdminSiteFilter?.getSiteFilter?.() || 'all';
+}
+
+function buildAdminPointsUrl(route, params = {}) {
+    const url = new URL(`/api/admin/${route}`, window.location.origin);
+
+    Object.entries(params || {}).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === '') return;
+        url.searchParams.set(key, String(value));
+    });
+
+    return `${url.pathname}${url.search}`;
+}
+
+async function parseAdminPointsResponse(response) {
+    let payload = {};
+
+    try {
+        payload = await response.json();
+    } catch (_) {
+        payload = {};
+    }
+
+    if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.message || `Points request failed (${response.status})`);
+    }
+
+    return payload;
+}
+
+let pointsCatalogSnapshot = null;
+let pointsCatalogSite = '';
+let pointsCatalogRows = [];
+let pointsPackageEditorState = {
+    mode: 'create',
+    packageId: ''
+};
+let pointsPackageEditorInitialized = false;
+
+function invalidatePointsCatalogSnapshot() {
+    pointsCatalogSnapshot = null;
+    pointsCatalogSite = '';
+}
+
+async function fetchPointsCatalogSnapshot({ site = getPointsReadSite(), force = false } = {}) {
+    const normalizedSite = String(site || '').trim().toLowerCase() === 'intl'
+        ? 'intl'
+        : (String(site || '').trim().toLowerCase() === 'cn' ? 'cn' : 'all');
+
+    if (!force && pointsCatalogSnapshot && pointsCatalogSite === normalizedSite) {
+        return pointsCatalogSnapshot;
+    }
+
+    const response = await fetch(buildAdminPointsUrl('points/catalog', { site: normalizedSite }), {
+        credentials: 'include'
+    });
+    const payload = await parseAdminPointsResponse(response);
+    pointsCatalogSnapshot = payload;
+    pointsCatalogSite = normalizedSite;
+    return payload;
+}
+
+function buildEmptyPointsPackageMetrics() {
+    return {
+        cn: { batch_count: 0, generated_count: 0, used_count: 0 },
+        intl: { batch_count: 0, generated_count: 0, used_count: 0 },
+        total: { batch_count: 0, generated_count: 0, used_count: 0 }
+    };
+}
+
+function normalizePointsCatalogPackageRow(row = {}) {
+    const normalizedPoints = Math.max(0, Math.round(Number(row.points_amount) || 0));
+    const normalizedBonus = Math.max(0, Math.round(Number(row.bonus_points) || 0));
+    const normalizedPrice = row.price_cny == null || row.price_cny === ''
+        ? null
+        : Math.max(0, Math.round((Number(row.price_cny) || 0) * 100) / 100);
+    const normalizedSort = Math.max(0, Math.round(Number(row.sort_order) || 0));
+
+    return {
+        ...row,
+        id: String(row.id || '').trim(),
+        name: String(row.name || '').trim(),
+        name_en: String(row.name_en || '').trim(),
+        points_amount: normalizedPoints,
+        bonus_points: normalizedBonus,
+        price_cny: normalizedPrice,
+        is_active: row.is_active !== false,
+        sort_order: normalizedSort,
+        total_points: Math.max(0, Number(row.total_points) || 0) || (normalizedPoints + normalizedBonus),
+        metrics: getPointsPackageMetrics(row)
+    };
+}
+
+function setPointsCatalogRows(rows = []) {
+    pointsCatalogRows = (Array.isArray(rows) ? rows : []).map(normalizePointsCatalogPackageRow);
+    allPackages = pointsCatalogRows.map((row) => ({ ...row }));
+    return pointsCatalogRows;
+}
+
+function getPointsCatalogRows() {
+    return Array.isArray(pointsCatalogRows) ? pointsCatalogRows : [];
+}
+
+function getPointsPackageById(packageId = '') {
+    const normalizedId = String(packageId || '').trim();
+    return getPointsCatalogRows().find((row) => row.id === normalizedId) || null;
+}
+
+function getActivePointsPackageRow() {
+    return getPointsPackageById(pointsPackageEditorState.packageId);
+}
+
+function getNextPointsPackageSortOrder(rows = getPointsCatalogRows()) {
+    return rows.reduce((maxSort, row) => Math.max(maxSort, Number(row?.sort_order) || 0), 0) + 1;
+}
+
+function setPointsPackageEditorState(mode = 'create', packageId = '') {
+    pointsPackageEditorState = {
+        mode: mode === 'edit' ? 'edit' : 'create',
+        packageId: String(packageId || '').trim()
+    };
+}
+
+function getPointsPackageEditorElements() {
+    return {
+        form: document.getElementById('pointsPackageForm'),
+        idInput: document.getElementById('pointsPackageId'),
+        nameInput: document.getElementById('pointsPackageName'),
+        nameEnInput: document.getElementById('pointsPackageNameEn'),
+        basePointsInput: document.getElementById('pointsPackageBasePoints'),
+        bonusPointsInput: document.getElementById('pointsPackageBonusPoints'),
+        priceInput: document.getElementById('pointsPackagePrice'),
+        sortInput: document.getElementById('pointsPackageSortOrder'),
+        enabledInput: document.getElementById('pointsPackageEnabled'),
+        modeBadge: document.getElementById('pointsPackageEditorModeBadge'),
+        hint: document.getElementById('pointsPackageEditorHint'),
+        metrics: document.getElementById('pointsPackageEditorMetrics'),
+        saveBtn: document.getElementById('pointsPackageSaveBtn'),
+        deleteBtn: document.getElementById('pointsPackageDeleteBtn')
+    };
+}
+
+function setPointsPackageSaveButtonState(loading, text = '保存套餐') {
+    const { saveBtn } = getPointsPackageEditorElements();
+    if (!saveBtn) return;
+    saveBtn.disabled = !!loading;
+    saveBtn.innerHTML = loading
+        ? '<i class="fas fa-spinner fa-spin"></i> 保存中...'
+        : `<i class="fas fa-save"></i> ${text}`;
+}
+
+function renderBatchPackageFilterOptions(packages = []) {
+    const popup = document.getElementById('batchPackagePopup');
+    if (!popup) return;
+
+    const existingOptions = popup.querySelectorAll('.filter-option:not([data-value="all"])');
+    existingOptions.forEach((option) => option.remove());
+
+    (Array.isArray(packages) ? packages : []).forEach((pkg) => {
+        const opt = document.createElement('div');
+        opt.className = 'filter-option';
+        opt.dataset.value = pkg.id;
+        opt.textContent = pkg.name;
+        opt.onclick = () => filterBatchByPackage(pkg.id);
+        popup.appendChild(opt);
+    });
+}
+
+function getPointsPackageMetrics(pkg = {}) {
+    const raw = pkg && typeof pkg.metrics === 'object' && pkg.metrics ? pkg.metrics : {};
+    const normalizeMetric = (metric = {}) => ({
+        batch_count: Math.max(0, Number(metric.batch_count) || 0),
+        generated_count: Math.max(0, Number(metric.generated_count) || 0),
+        used_count: Math.max(0, Number(metric.used_count) || 0)
+    });
+
+    return {
+        cn: normalizeMetric(raw.cn),
+        intl: normalizeMetric(raw.intl),
+        total: normalizeMetric(raw.total)
+    };
+}
+
+function formatPointsPackageMetricText(metric = {}) {
+    return `批次 ${metric.batch_count} · 发码 ${metric.generated_count} · 已用 ${metric.used_count}`;
+}
+
+function formatPointsPackagePrice(value) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? `¥${parsed.toFixed(2)}` : '-';
+}
+
 // ========================================
 // GLOBAL UTILITY: Enable horizontal scroll with mouse wheel
 // ========================================
@@ -94,6 +291,7 @@ function switchPointsView(viewName) {
 
     // Load data for specific views
     if (viewName === 'batches') loadBatches();
+    if (viewName === 'catalog') loadPointsPackageCatalog();
     if (viewName === 'generate') {
         loadPackagesForSelect();
         initBatchExpiresPicker(); // Initialize Flatpickr when switching to generate view
@@ -197,18 +395,9 @@ async function loadBatches() {
     tbody.innerHTML = buildPointsBatchLoadingSkeleton();
 
     try {
-        // Load batches
-        const { data, error } = await getSupabase()
-            .from('redemption_batches')
-            .select(`
-                *,
-                points_packages(id, name, points_amount)
-            `)
-            .order('created_at', { ascending: false });
-
-        if (error) throw error;
-
-        allBatches = data || [];
+        const currentSite = getPointsReadSite();
+        const payload = await fetchPointsBatchesPayload({ site: currentSite });
+        allBatches = Array.isArray(payload?.batches) ? payload.batches : [];
 
         // Also load packages for filter dropdown (if not already loaded)
         if (allPackages.length === 0) {
@@ -235,29 +424,9 @@ function initBatchTableHorizontalScroll() {
 // Load packages for filter dropdown
 async function loadPackagesForFilter() {
     try {
-        const { data, error } = await getSupabase()
-            .from('points_packages')
-            .select('id, name')
-            .order('name');
-
-        if (error) throw error;
-        allPackages = data || [];
-
-        // Populate package filter dropdown
-        const popup = document.getElementById('batchPackagePopup');
-        if (popup) {
-            const existingOptions = popup.querySelectorAll('.filter-option:not([data-value="all"])');
-            existingOptions.forEach(o => o.remove());
-
-            allPackages.forEach(pkg => {
-                const opt = document.createElement('div');
-                opt.className = 'filter-option';
-                opt.dataset.value = pkg.id;
-                opt.textContent = pkg.name;
-                opt.onclick = () => filterBatchByPackage(pkg.id);
-                popup.appendChild(opt);
-            });
-        }
+        const payload = await fetchPointsCatalogSnapshot();
+        allPackages = Array.isArray(payload?.packages) ? payload.packages : [];
+        renderBatchPackageFilterOptions(allPackages);
     } catch (err) {
         console.error('Failed to load packages for filter:', err);
     }
@@ -333,6 +502,412 @@ function renderBatches() {
     updateSelectAllCheckbox();
 }
 
+function buildPointsCatalogSummaryCard(iconClass, label, value, tone = 'default') {
+    return `
+        <article class="points-catalog-summary-card points-catalog-summary-card--${tone}">
+            <div class="points-catalog-summary-card__icon"><i class="${iconClass}"></i></div>
+            <div class="points-catalog-summary-card__body">
+                <div class="points-catalog-summary-card__label">${label}</div>
+                <div class="points-catalog-summary-card__value">${value}</div>
+            </div>
+        </article>
+    `;
+}
+
+function updatePointsPackageTableSelection() {
+    const tbody = document.getElementById('pointsPackagesTableBody');
+    if (!tbody) return;
+    tbody.querySelectorAll('tr[data-package-id]').forEach((row) => {
+        row.classList.toggle('is-selected', row.getAttribute('data-package-id') === pointsPackageEditorState.packageId);
+    });
+}
+
+function renderPointsPackageEditor() {
+    const {
+        idInput,
+        nameInput,
+        nameEnInput,
+        basePointsInput,
+        bonusPointsInput,
+        priceInput,
+        sortInput,
+        enabledInput,
+        modeBadge,
+        hint,
+        metrics,
+        deleteBtn
+    } = getPointsPackageEditorElements();
+
+    if (!nameInput || !basePointsInput) {
+        return;
+    }
+
+    const row = getActivePointsPackageRow();
+    const isEditMode = pointsPackageEditorState.mode === 'edit' && !!row;
+    const source = row || {
+        id: '',
+        name: '',
+        name_en: '',
+        points_amount: 100,
+        bonus_points: 0,
+        price_cny: null,
+        is_active: true,
+        sort_order: getNextPointsPackageSortOrder(),
+        metrics: buildEmptyPointsPackageMetrics()
+    };
+    const metricsValue = getPointsPackageMetrics(source);
+
+    if (idInput) idInput.value = source.id || '';
+    nameInput.value = source.name || '';
+    if (nameEnInput) nameEnInput.value = source.name_en || '';
+    basePointsInput.value = String(Math.max(0, Number(source.points_amount) || 0));
+    if (bonusPointsInput) bonusPointsInput.value = String(Math.max(0, Number(source.bonus_points) || 0));
+    if (priceInput) priceInput.value = source.price_cny == null ? '' : String(source.price_cny);
+    if (sortInput) sortInput.value = String(Math.max(0, Number(source.sort_order) || 0));
+    if (enabledInput) enabledInput.checked = source.is_active !== false;
+
+    if (modeBadge) {
+        modeBadge.textContent = isEditMode ? '编辑中' : '新建';
+    }
+
+    if (hint) {
+        hint.textContent = isEditMode
+            ? `当前编辑：${source.name || '未命名套餐'}${source.id ? ` · ID ${source.id}` : ''}`
+            : '创建一条新的全局套餐。保存时仍要求你先在顶部站点筛选中选择 cn 或 intl。';
+    }
+
+    if (metrics) {
+        metrics.innerHTML = `
+            <div class="points-package-editor-metric">
+                <span class="label">CN 运营表现</span>
+                <span class="value">${formatPointsPackageMetricText(metricsValue.cn)}</span>
+            </div>
+            <div class="points-package-editor-metric">
+                <span class="label">INTL 运营表现</span>
+                <span class="value">${formatPointsPackageMetricText(metricsValue.intl)}</span>
+            </div>
+        `;
+    }
+
+    if (deleteBtn) {
+        deleteBtn.disabled = !isEditMode;
+    }
+
+    setPointsPackageSaveButtonState(false, isEditMode ? '保存套餐' : '创建套餐');
+    updatePointsPackageTableSelection();
+}
+
+function startNewPointsPackage() {
+    setPointsPackageEditorState('create', '');
+    renderPointsPackageEditor();
+    document.getElementById('pointsPackageName')?.focus();
+}
+
+function openPointsPackageEditor(packageId = '') {
+    const row = getPointsPackageById(packageId);
+    if (!row) return;
+    setPointsPackageEditorState('edit', row.id);
+    renderPointsPackageEditor();
+}
+
+function resetPointsPackageEditor() {
+    if (pointsPackageEditorState.mode === 'edit' && getActivePointsPackageRow()) {
+        renderPointsPackageEditor();
+        return;
+    }
+    startNewPointsPackage();
+}
+
+function collectPointsPackageFormPayload() {
+    const {
+        nameInput,
+        nameEnInput,
+        basePointsInput,
+        bonusPointsInput,
+        priceInput,
+        sortInput,
+        enabledInput
+    } = getPointsPackageEditorElements();
+
+    const name = String(nameInput?.value || '').trim();
+    if (!name) {
+        throw new Error('请先填写套餐名称');
+    }
+
+    const pointsAmount = Math.max(0, Math.round(Number(basePointsInput?.value) || 0));
+    if (pointsAmount <= 0) {
+        throw new Error('基础积分需要大于 0');
+    }
+
+    const bonusPoints = Math.max(0, Math.round(Number(bonusPointsInput?.value) || 0));
+    const sortOrder = Math.max(0, Math.round(Number(sortInput?.value) || 0));
+    const rawPrice = String(priceInput?.value || '').trim();
+    const normalizedPrice = rawPrice
+        ? Math.max(0, Math.round((Number(rawPrice) || 0) * 100) / 100)
+        : null;
+
+    return {
+        name,
+        name_en: String(nameEnInput?.value || '').trim(),
+        points: pointsAmount,
+        bonus: bonusPoints,
+        price: normalizedPrice,
+        sort: sortOrder,
+        enabled: enabledInput?.checked !== false
+    };
+}
+
+function setPointsPackageSaveButtonState(loading, text = '保存套餐') {
+    const { saveBtn } = getPointsPackageEditorElements();
+    if (!saveBtn) return;
+    saveBtn.disabled = !!loading;
+    saveBtn.innerHTML = loading
+        ? '<i class="fas fa-spinner fa-spin"></i> 保存中...'
+        : `<i class="fas fa-save"></i> ${text}`;
+}
+
+async function mutatePointsPackage({ action = 'update', id = '', payload = {}, label = '保存套餐', method = 'POST' } = {}) {
+    const writableSite = requireWritablePointsSite({ label });
+    if (!writableSite) {
+        return null;
+    }
+
+    const response = await fetch(buildAdminPointsUrl('points/packages'), {
+        method,
+        credentials: 'include',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(method === 'DELETE'
+            ? { id, site: writableSite }
+            : {
+                action,
+                id,
+                site: writableSite,
+                ...(payload && typeof payload === 'object' ? payload : {})
+            })
+    });
+
+    return parseAdminPointsResponse(response);
+}
+
+async function mutatePointsManage({ action = '', site = '', payload = {} } = {}) {
+    const response = await fetch(buildAdminPointsUrl('points/manage'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            action,
+            site,
+            ...(payload && typeof payload === 'object' ? payload : {})
+        })
+    });
+
+    return parseAdminPointsResponse(response);
+}
+
+async function fetchPointsBatchesPayload(params = {}) {
+    const response = await fetch(buildAdminPointsUrl('points/batches', params), {
+        credentials: 'include'
+    });
+    return parseAdminPointsResponse(response);
+}
+
+async function fetchPointsLookupPayload(params = {}) {
+    const response = await fetch(buildAdminPointsUrl('points/lookup', params), {
+        credentials: 'include'
+    });
+    return parseAdminPointsResponse(response);
+}
+
+async function reloadPointsCatalogAfterMutation({ nextMode = 'edit', nextPackageId = '' } = {}) {
+    invalidatePointsCatalogSnapshot();
+    const payload = await fetchPointsCatalogSnapshot({ site: getPointsReadSite(), force: true });
+    const rows = Array.isArray(payload?.packages) ? payload.packages : [];
+    const hasNextPackage = rows.some((row) => String(row?.id || '') === String(nextPackageId || ''));
+
+    if (nextMode === 'create') {
+        setPointsPackageEditorState('create', '');
+    } else if (hasNextPackage) {
+        setPointsPackageEditorState('edit', nextPackageId);
+    } else if (rows.length > 0) {
+        setPointsPackageEditorState('edit', rows[0].id);
+    } else {
+        setPointsPackageEditorState('create', '');
+    }
+
+    renderPointsPackageCatalog(payload);
+    return payload;
+}
+
+async function savePointsPackageForm(event) {
+    event.preventDefault();
+
+    try {
+        const payload = collectPointsPackageFormPayload();
+        const isCreate = pointsPackageEditorState.mode !== 'edit' || !pointsPackageEditorState.packageId;
+        setPointsPackageSaveButtonState(true, isCreate ? '创建套餐' : '保存套餐');
+
+        const result = await mutatePointsPackage({
+            action: isCreate ? 'create' : 'update',
+            id: pointsPackageEditorState.packageId,
+            payload,
+            label: isCreate ? '创建套餐' : '保存套餐'
+        });
+
+        if (!result) {
+            return;
+        }
+
+        await reloadPointsCatalogAfterMutation({
+            nextMode: 'edit',
+            nextPackageId: result.row?.id || pointsPackageEditorState.packageId
+        });
+
+        if (typeof showToast === 'function') {
+            showToast(isCreate ? '套餐已创建' : '套餐已保存', 'success');
+        }
+    } catch (error) {
+        console.error('Failed to save points package:', error);
+        if (typeof showToast === 'function') {
+            showToast(`保存套餐失败: ${error.message}`, 'error');
+        }
+    } finally {
+        setPointsPackageSaveButtonState(false, '保存套餐');
+    }
+}
+
+async function deleteCurrentPointsPackage() {
+    const row = getActivePointsPackageRow();
+    if (!row) return;
+
+    if (!confirm(`确定删除套餐「${row.name || '未命名套餐'}」吗？`)) {
+        return;
+    }
+
+    try {
+        const result = await mutatePointsPackage({
+            method: 'DELETE',
+            id: row.id,
+            label: '删除套餐'
+        });
+
+        if (!result) {
+            return;
+        }
+
+        await reloadPointsCatalogAfterMutation({ nextMode: 'create' });
+        if (typeof showToast === 'function') {
+            showToast('套餐已删除', 'success');
+        }
+    } catch (error) {
+        console.error('Failed to delete points package:', error);
+        if (typeof showToast === 'function') {
+            showToast(`删除套餐失败: ${error.message}`, 'error');
+        }
+    }
+}
+
+function renderPointsPackageCatalog(payload = {}) {
+    const summary = payload?.summary && typeof payload.summary === 'object' ? payload.summary : {};
+    const packages = setPointsCatalogRows(Array.isArray(payload?.packages) ? payload.packages : []);
+    const summaryEl = document.getElementById('pointsCatalogSummary');
+    const tbody = document.getElementById('pointsPackagesTableBody');
+    const currentSite = getPointsReadSite();
+    renderBatchPackageFilterOptions(allPackages);
+
+    if (summaryEl) {
+        summaryEl.innerHTML = [
+            buildPointsCatalogSummaryCard('fas fa-box-open', '套餐总数', summary.package_count || 0, 'blue'),
+            buildPointsCatalogSummaryCard('fas fa-check-circle', '启用套餐', summary.active_package_count || 0, 'green'),
+            buildPointsCatalogSummaryCard('fas fa-layer-group', currentSite === 'all' ? '全部批次' : `${currentSite.toUpperCase()} 批次`, summary.batch_count || 0, 'amber'),
+            buildPointsCatalogSummaryCard('fas fa-ticket-alt', currentSite === 'all' ? '已发兑换码' : `${currentSite.toUpperCase()} 发码`, summary.generated_code_count || 0, 'violet'),
+            buildPointsCatalogSummaryCard('fas fa-bolt', currentSite === 'all' ? '已使用兑换码' : `${currentSite.toUpperCase()} 已用`, summary.used_code_count || 0, 'rose'),
+            buildPointsCatalogSummaryCard('fas fa-pen-ruler', '自定义批次', summary.custom_batch_count || 0, 'slate')
+        ].join('');
+    }
+
+    if (!tbody) return;
+
+    if (!packages.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-cell">暂无套餐目录</td></tr>';
+        setPointsPackageEditorState('create', '');
+        renderPointsPackageEditor();
+        return;
+    }
+
+    if (!pointsPackageEditorInitialized) {
+        setPointsPackageEditorState('edit', packages[0].id);
+        pointsPackageEditorInitialized = true;
+    } else if (pointsPackageEditorState.mode === 'edit' && !getActivePointsPackageRow()) {
+        setPointsPackageEditorState('edit', packages[0].id);
+    }
+
+    tbody.innerHTML = packages.map((pkg) => {
+        const metrics = getPointsPackageMetrics(pkg);
+        const statusClass = pkg.is_active === false ? 'is-inactive' : 'is-active';
+        const secondaryName = String(pkg.name_en || '').trim();
+        const totalPoints = Math.max(0, Number(pkg.total_points) || 0);
+        const isSelected = pointsPackageEditorState.packageId === pkg.id;
+
+        return `
+            <tr class="points-package-row ${isSelected ? 'is-selected' : ''}" data-package-id="${pkg.id}">
+                <td>
+                    <div class="points-package-name">
+                        <strong>${pkg.name || '-'}</strong>
+                        ${secondaryName ? `<span class="points-package-name__secondary">${secondaryName}</span>` : ''}
+                    </div>
+                </td>
+                <td>
+                    <div class="points-package-balance">
+                        <strong>${totalPoints}</strong>
+                        <span>基础 ${pkg.points_amount || 0} / 赠送 ${pkg.bonus_points || 0}</span>
+                    </div>
+                </td>
+                <td>${formatPointsPackagePrice(pkg.price_cny)}</td>
+                <td><span class="points-package-status ${statusClass}">${pkg.is_active === false ? '停用' : '启用'}</span></td>
+                <td class="points-package-metric-cell">${formatPointsPackageMetricText(metrics.cn)}</td>
+                <td class="points-package-metric-cell">${formatPointsPackageMetricText(metrics.intl)}</td>
+                <td class="points-package-actions">
+                    <button class="btn-icon" type="button" data-points-action="edit-package" data-package-id="${encodeURIComponent(pkg.id)}" title="编辑套餐">
+                        <i class="fas fa-pen"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    renderPointsPackageEditor();
+}
+
+async function loadPointsPackageCatalog({ force = false } = {}) {
+    const summaryEl = document.getElementById('pointsCatalogSummary');
+    const tbody = document.getElementById('pointsPackagesTableBody');
+
+    if (summaryEl) {
+        summaryEl.innerHTML = [
+            buildPointsCatalogSummaryCard('fas fa-box-open', '套餐总数', '...', 'blue'),
+            buildPointsCatalogSummaryCard('fas fa-check-circle', '启用套餐', '...', 'green'),
+            buildPointsCatalogSummaryCard('fas fa-layer-group', '批次', '...', 'amber')
+        ].join('');
+    }
+    if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="7" class="loading-cell">正在加载套餐目录...</td></tr>';
+    }
+
+    try {
+        const payload = await fetchPointsCatalogSnapshot({ site: getPointsReadSite(), force });
+        renderPointsPackageCatalog(payload);
+    } catch (error) {
+        console.error('Failed to load points package catalog:', error);
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="7" class="error-cell">加载套餐目录失败: ${error.message}</td></tr>`;
+        }
+    }
+}
+
 // ========================================
 // LOAD PACKAGES FOR SELECT
 // ========================================
@@ -346,17 +921,9 @@ async function loadPackagesForSelect() {
     displayText.textContent = '加载中...';
 
     try {
-        let packages = [];
-
-        // Always load from points_packages table (has UUID IDs required by fn_generate_codes)
-        const { data, error } = await getSupabase()
-            .from('points_packages')
-            .select('id, name, points_amount, bonus_points')
-            .eq('is_active', true)
-            .order('points_amount');
-
-        if (error) throw error;
-        packages = data || [];
+        const payload = await fetchPointsCatalogSnapshot();
+        const packages = (Array.isArray(payload?.packages) ? payload.packages : [])
+            .filter((pkg) => pkg.is_active !== false);
 
         // Build options with custom option at the end
         let optionsHtml = packages.map((pkg, index) => {
@@ -464,6 +1031,11 @@ let generatedCodes = [];
 async function generateCodes(event) {
     event.preventDefault();
 
+    const currentSite = requireWritablePointsSite({ formId: 'generateCodesForm' });
+    if (!currentSite) {
+        return;
+    }
+
     const batchName = document.getElementById('batchName').value.trim();
     const packageIdValue = document.getElementById('batchPackageId').value;
     const count = parseInt(document.getElementById('batchCount').value);
@@ -494,38 +1066,22 @@ async function generateCodes(event) {
     btn.disabled = true;
 
     try {
-        // Use different RPC call based on whether custom points or package
-        let data, error;
+        const payload = await mutatePointsManage({
+            action: 'generate_codes',
+            site: currentSite,
+            payload: {
+                batch_name: batchName,
+                package_id: isCustomPoints ? null : packageIdValue,
+                custom_points_amount: isCustomPoints ? customPointsAmount : null,
+                count,
+                channel,
+                expires_at: expiresAt
+            }
+        });
 
-        // Get current site from AdminSiteFilter (default to 'cn')
-        const currentSite = (window.AdminSiteFilter && AdminSiteFilter.getSiteParam()) || 'cn';
-
-        if (isCustomPoints) {
-            // Custom points - use fn_generate_custom_codes
-            ({ data, error } = await getSupabase().rpc('fn_generate_custom_codes', {
-                p_batch_name: batchName,
-                p_points_amount: customPointsAmount,
-                p_count: count,
-                p_channel: channel,
-                p_expires_at: expiresAt,
-                p_site: currentSite
-            }));
-        } else {
-            // Standard package - use existing fn_generate_codes
-            ({ data, error } = await getSupabase().rpc('fn_generate_codes', {
-                p_batch_name: batchName,
-                p_package_id: packageIdValue,
-                p_count: count,
-                p_channel: channel,
-                p_expires_at: expiresAt,
-                p_site: currentSite
-            }));
-        }
-
-        if (error) throw error;
-
-        generatedCodes = data.map(row => row.code);
+        generatedCodes = Array.isArray(payload?.codes) ? payload.codes : [];
         displayGeneratedCodes();
+        invalidatePointsCatalogSnapshot();
 
     } catch (err) {
         console.error('Failed to generate codes:', err);
@@ -595,6 +1151,18 @@ function bindAdminPointsRuntimeDelegates() {
         switch (actionEl.dataset.pointsAction) {
             case 'batch-row-stop':
                 event.stopPropagation();
+                break;
+            case 'new-package':
+                startNewPointsPackage();
+                break;
+            case 'reset-package-editor':
+                resetPointsPackageEditor();
+                break;
+            case 'edit-package':
+                openPointsPackageEditor(decodeURIComponent(actionEl.dataset.packageId || ''));
+                break;
+            case 'delete-current-package':
+                deleteCurrentPointsPackage();
                 break;
             case 'view-batch-codes':
                 viewBatchCodes(actionEl.dataset.batchId || actionEl.getAttribute('data-batch-id') || '');
@@ -676,6 +1244,9 @@ function bindAdminPointsRuntimeDelegates() {
         }
 
         switch (form.dataset.pointsSubmit) {
+            case 'save-package':
+                savePointsPackageForm(event);
+                break;
             case 'save-batch-edit':
                 saveBatchEdit(event, decodeURIComponent(form.dataset.batchId || ''));
                 break;
@@ -890,6 +1461,7 @@ function applyBatchFilters() {
 async function searchCodeInBatches() {
     const searchInput = document.getElementById('batchSearchInput');
     const searchTerm = searchInput?.value.trim().toUpperCase();
+    const currentSite = getPointsReadSite();
 
     if (!searchTerm) return;
 
@@ -902,27 +1474,21 @@ async function searchCodeInBatches() {
 
     // It's a redemption code - search in database
     try {
-        const { data, error } = await getSupabase()
-            .from('redemption_codes')
-            .select('batch_id, batch:redemption_batches(id, name, channel, total_count, used_count, created_at, expires_at, notes, package_id, points_packages(id, name, points_amount))')
-            .eq('code', searchTerm)
-            .maybeSingle();
+        const payload = await fetchPointsBatchesPayload({ site: currentSite, code: searchTerm });
 
-        if (error) throw error;
-
-        if (data && data.batch_id && data.batch) {
+        if (payload?.batch) {
             // Found the code - display only this batch in the table
             isCodeSearchInProgress = true;
 
             // Override the filtered batches to show only this batch
-            filteredBatches = [data.batch];
+            filteredBatches = [payload.batch];
             batchCurrentPage = 1;
             renderBatches();
 
             isCodeSearchInProgress = false;
 
             // Then open its batch details modal
-            viewBatchCodes(data.batch_id);
+            viewBatchCodes(payload.batch.id);
         } else {
             alert('❌ 未找到该兑换码，请检查输入是否正确');
         }
@@ -935,19 +1501,13 @@ async function searchCodeInBatches() {
 // Search for code without opening modal (for real-time input search)
 async function searchCodeInBatchesNoModal(code) {
     try {
-        const { data, error } = await getSupabase()
-            .from('redemption_codes')
-            .select('batch_id, batch:redemption_batches(id, name, channel, total_count, used_count, created_at, expires_at, notes, package_id, points_packages(id, name, points_amount))')
-            .eq('code', code)
-            .maybeSingle();
+        const payload = await fetchPointsBatchesPayload({ site: getPointsReadSite(), code });
 
-        if (error) throw error;
-
-        if (data && data.batch_id && data.batch) {
+        if (payload?.batch) {
             // Found the code - display only this batch in the table
             isCodeSearchInProgress = true;
 
-            filteredBatches = [data.batch];
+            filteredBatches = [payload.batch];
             batchCurrentPage = 1;
             renderBatches();
 
@@ -1211,24 +1771,9 @@ async function batchDeleteBatches() {
 
     // First, check if any selected batches have used codes
     const idsArray = Array.from(selectedBatchIds);
-    let usedCodesCount = 0;
-    let totalCodesCount = 0;
-
-    try {
-        const { data, error } = await getSupabase()
-            .from('redemption_codes')
-            .select('status')
-            .in('batch_id', idsArray);
-
-        if (error) throw error;
-
-        totalCodesCount = data?.length || 0;
-        usedCodesCount = data?.filter(c => c.status === 'used').length || 0;
-
-    } catch (err) {
-        alert('查询失败: ' + err.message);
-        return;
-    }
+    const selectedBatches = allBatches.filter((batch) => idsArray.includes(batch.id));
+    const usedCodesCount = selectedBatches.reduce((sum, batch) => sum + (Math.max(0, Number(batch?.used_count) || 0)), 0);
+    const totalCodesCount = selectedBatches.reduce((sum, batch) => sum + (Math.max(0, Number(batch?.total_count) || 0)), 0);
 
     // Show delete options modal
     showDeleteOptionsModal(idsArray, usedCodesCount, totalCodesCount);
@@ -1314,6 +1859,11 @@ function closeDeleteOptionsModal(event) {
 }
 
 async function executeDeleteWithOption(batchIdsStr) {
+    const writableSite = requireWritablePointsSite({ action: 'points-batch-delete' });
+    if (!writableSite) {
+        return;
+    }
+
     const batchIds = batchIdsStr.split(',');
     const selectedOption = document.querySelector('input[name="deleteOption"]:checked')?.value;
 
@@ -1327,70 +1877,22 @@ async function executeDeleteWithOption(batchIdsStr) {
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 处理中...';
 
     try {
-        if (selectedOption === 'revoke') {
-            // Option B: Revoke all used codes first
-            const { data: usedCodes, error: fetchError } = await getSupabase()
-                .from('redemption_codes')
-                .select('code')
-                .in('batch_id', batchIds)
-                .eq('status', 'used');
-
-            if (fetchError) throw fetchError;
-
-            // Revoke each code
-            let revokedCount = 0;
-            for (const code of (usedCodes || [])) {
-                try {
-                    await getSupabase().rpc('fn_revoke_code', {
-                        p_code: code.code,
-                        p_reason: '批次删除-自动撤销'
-                    });
-                    revokedCount++;
-                } catch (e) {
-                    console.warn(`Failed to revoke ${code.code}:`, e);
-                }
+        const payload = await mutatePointsManage({
+            action: 'delete_batches',
+            site: writableSite,
+            payload: {
+                batch_ids: batchIds,
+                delete_mode: selectedOption
             }
+        });
 
-            // Now delete all codes and batches
-            await getSupabase().from('redemption_codes').delete().in('batch_id', batchIds);
-            await getSupabase().from('redemption_batches').delete().in('id', batchIds);
-
-            alert(`✅ 已撤销 ${revokedCount} 个兑换码的积分，并删除 ${batchIds.length} 个批次`);
-
-        } else if (selectedOption === 'block') {
-            // Option C: Only delete unused codes, keep used ones
-            // Delete only pending/disabled codes
-            await getSupabase()
-                .from('redemption_codes')
-                .delete()
-                .in('batch_id', batchIds)
-                .in('status', ['pending', 'disabled', 'locked']);
-
-            // Check if any codes remain
-            const { data: remaining } = await getSupabase()
-                .from('redemption_codes')
-                .select('id')
-                .in('batch_id', batchIds);
-
-            if (remaining && remaining.length > 0) {
-                alert(`✅ 已删除未使用的兑换码\n\n⚠️ ${remaining.length} 个已使用的码被保留，批次未删除`);
-            } else {
-                // No codes remain, delete batches too
-                await getSupabase().from('redemption_batches').delete().in('id', batchIds);
-                alert(`✅ 已删除 ${batchIds.length} 个批次`);
-            }
-
-        } else {
-            // Option A: Just delete records, keep user points
-            await getSupabase().from('redemption_codes').delete().in('batch_id', batchIds);
-            await getSupabase().from('redemption_batches').delete().in('id', batchIds);
-            alert(`✅ 已删除 ${batchIds.length} 个批次（用户积分保留）`);
-        }
+        alert(`✅ ${payload?.message || '批次已处理'}`);
 
         closeDeleteOptionsModal();
         selectedBatchIds.clear();
         updateSelectedCount();
         if (batchSelectMode) toggleBatchSelectMode();
+        invalidatePointsCatalogSnapshot();
         loadBatches();
 
     } catch (err) {
@@ -1489,35 +1991,11 @@ async function viewBatchCodes(batchId) {
     window.currentViewBatchId = batchId;
 
     try {
-        // Query with user profile join
-        const { data, error } = await getSupabase()
-            .from('redemption_codes')
-            .select(`
-                id, code, status, used_at, used_by, external_order_id, 
-                revoke_reason, revoked_at, revoked_by, expires_at,
-                profiles:used_by ( username, email )
-            `)
-            .eq('batch_id', batchId)
-            .order('created_at');
-
-        if (error) throw error;
-
-        // Collect unique revoker IDs to fetch their names
-        const revokerIds = [...new Set(data.filter(c => c.revoked_by).map(c => c.revoked_by))];
-        let revokerMap = {};
-
-        if (revokerIds.length > 0) {
-            const { data: revokers } = await getSupabase()
-                .from('profiles')
-                .select('id, username, email')
-                .in('id', revokerIds);
-
-            if (revokers) {
-                revokers.forEach(r => {
-                    revokerMap[r.id] = r.username || r.email || '未知';
-                });
-            }
-        }
+        const payload = await fetchPointsBatchesPayload({
+            site: getPointsReadSite(),
+            batchId
+        });
+        const data = Array.isArray(payload?.codes) ? payload.codes : [];
 
         // Update modal content (replace loading with actual data)
         const modalBody = document.querySelector('.codes-modal-body');
@@ -1538,8 +2016,8 @@ async function viewBatchCodes(batchId) {
 
             // Build detail info
             let detailHtml = '-';
-            if (c.status === 'used' && c.profiles) {
-                const userName = c.profiles.username || c.profiles.email || '未知用户';
+            if (c.status === 'used' && c.used_profile) {
+                const userName = c.used_profile.username || c.used_profile.email || '未知用户';
                 const usedAt = c.used_at ? new Date(c.used_at).toLocaleString('zh-CN') : '';
                 // Make user clickable to navigate to user management
                 detailHtml = `<div class="code-detail">
@@ -1549,9 +2027,9 @@ async function viewBatchCodes(batchId) {
             } else if (c.status === 'revoked') {
                 const reason = c.revoke_reason || '无原因';
                 const revokedAt = c.revoked_at ? new Date(c.revoked_at).toLocaleString('zh-CN') : '';
-                const userName = c.profiles ? (c.profiles.username || c.profiles.email) : null;
+                const userName = c.used_profile ? (c.used_profile.username || c.used_profile.email) : null;
                 const usedAt = c.used_at ? new Date(c.used_at).toLocaleString('zh-CN') : '';
-                const revokerName = c.revoked_by ? (revokerMap[c.revoked_by] || '管理员') : '系统';
+                const revokerName = c.revoked_by ? (c.revoker_name || '管理员') : '系统';
                 detailHtml = `<div class="code-detail revoked-detail">
                     ${userName ? `<span class="detail-user strikethrough user-link" data-points-action="navigate-user" data-user-id="${encodeURIComponent(c.used_by)}" title="查看用户详情">👤 ${userName} (${usedAt})</span>` : ''}
                     <span class="detail-reason">📝 撤销: ${reason}</span>
@@ -1647,6 +2125,11 @@ function closeCodesModal(event) {
 // SET CODE EXPIRY
 // ========================================
 async function setCodeExpiry(code, currentExpiry) {
+    const writableSite = requireWritablePointsSite({ label: '设置兑换码有效期' });
+    if (!writableSite) {
+        return;
+    }
+
     // Format current expiry for input
     let defaultValue = '';
     if (currentExpiry) {
@@ -1678,14 +2161,16 @@ async function setCodeExpiry(code, currentExpiry) {
     }
 
     try {
-        const { error } = await getSupabase()
-            .from('redemption_codes')
-            .update({ expires_at: expiresAt })
-            .eq('code', code);
+        const payload = await mutatePointsManage({
+            action: 'set_code_expiry',
+            site: writableSite,
+            payload: {
+                code,
+                expires_at: expiresAt
+            }
+        });
 
-        if (error) throw error;
-
-        alert(`✅ 有效期已${expiresAt ? '设置为 ' + new Date(expiresAt).toLocaleDateString('zh-CN') : '清除'}`);
+        alert(`✅ ${payload?.message || '有效期已更新'}`);
 
         // Refresh modal
         if (window.currentViewBatchId) {
@@ -1700,33 +2185,36 @@ async function setCodeExpiry(code, currentExpiry) {
 // REVOKE CODE
 // ========================================
 async function revokeCode(code) {
+    const writableSite = requireWritablePointsSite({ label: '撤销兑换码' });
+    if (!writableSite) {
+        return;
+    }
+
     const reason = prompt(`确定要撤销兑换码 ${code} 吗？\n\n请输入撤销原因（可选）：`);
 
     if (reason === null) return; // User cancelled
 
     try {
-        const { data, error } = await getSupabase()
-            .rpc('fn_revoke_code', {
-                p_code: code,
-                p_reason: reason || '管理员撤销'
-            });
-
-        if (error) throw error;
-
-        if (data.success) {
-            const deducted = data.points_deducted || 0;
-            alert(`✅ 撤销成功！${deducted > 0 ? `\n已扣除用户 ${deducted} 积分` : ''} `);
-
-            // Refresh modal
-            if (window.currentViewBatchId) {
-                viewBatchCodes(window.currentViewBatchId);
+        const payload = await mutatePointsManage({
+            action: 'revoke_code',
+            site: writableSite,
+            payload: {
+                code,
+                reason: reason || '管理员撤销'
             }
+        });
 
-            // Refresh batch list
-            loadBatches();
-        } else {
-            alert('❌ 撤销失败: ' + data.message);
+        const deducted = payload?.points_deducted || 0;
+        alert(`✅ ${payload?.message || '撤销成功'}${deducted > 0 ? `\n已扣除用户 ${deducted} 积分` : ''}`);
+
+        // Refresh modal
+        if (window.currentViewBatchId) {
+            viewBatchCodes(window.currentViewBatchId);
         }
+
+        // Refresh batch list
+        invalidatePointsCatalogSnapshot();
+        loadBatches();
     } catch (err) {
         alert('❌ 撤销失败: ' + err.message);
     }
@@ -1901,32 +2389,11 @@ async function exportBatchCodes(batchId) {
 
 // Helper: Get batch codes data for export
 async function getBatchCodesData(batchId) {
-    const { data, error } = await getSupabase()
-        .from('redemption_codes')
-        .select(`
-            code, status, created_at, used_at, 
-            revoke_reason, revoked_at, revoked_by,
-            profiles:used_by ( username, email )
-        `)
-        .eq('batch_id', batchId)
-        .order('created_at');
-
-    if (error) throw error;
-
-    // Get revoker info
-    const revokerIds = [...new Set(data.filter(c => c.revoked_by).map(c => c.revoked_by))];
-    let revokerMap = {};
-    if (revokerIds.length > 0) {
-        const { data: revokers } = await getSupabase()
-            .from('profiles')
-            .select('id, username, email')
-            .in('id', revokerIds);
-        if (revokers) {
-            revokers.forEach(r => {
-                revokerMap[r.id] = r.username || r.email || '未知';
-            });
-        }
-    }
+    const payload = await fetchPointsBatchesPayload({
+        site: getPointsReadSite(),
+        batchId
+    });
+    const data = Array.isArray(payload?.codes) ? payload.codes : [];
 
     const statusMap = { pending: '待使用', used: '已使用', revoked: '已撤销', locked: '已锁定', expired: '已过期', disabled: '已禁用' };
 
@@ -1934,10 +2401,10 @@ async function getBatchCodesData(batchId) {
         '兑换码': c.code,
         '状态': statusMap[c.status] || c.status,
         '创建时间': c.created_at ? new Date(c.created_at).toLocaleString('zh-CN') : '',
-        '使用者': c.profiles ? (c.profiles.username || c.profiles.email || '') : '',
+        '使用者': c.used_profile ? (c.used_profile.username || c.used_profile.email || '') : '',
         '使用时间': c.used_at ? new Date(c.used_at).toLocaleString('zh-CN') : '',
         '撤销原因': c.revoke_reason || '',
-        '撤销者': c.revoked_by ? (revokerMap[c.revoked_by] || '管理员') : '',
+        '撤销者': c.revoked_by ? (c.revoker_name || '管理员') : '',
         '撤销时间': c.revoked_at ? new Date(c.revoked_at).toLocaleString('zh-CN') : ''
     }));
 }
@@ -2023,6 +2490,11 @@ function closeBatchEditModal(event) {
 async function saveBatchEdit(event, batchId) {
     event.preventDefault();
 
+    const writableSite = requireWritablePointsSite({ label: '保存兑换码批次' });
+    if (!writableSite) {
+        return;
+    }
+
     const name = document.getElementById('editBatchName').value.trim();
     const notes = document.getElementById('editBatchNotes').value.trim();
     const expiresInput = document.getElementById('editBatchExpires').value.trim();
@@ -2038,19 +2510,20 @@ async function saveBatchEdit(event, batchId) {
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 保存中...';
 
     try {
-        const { error } = await getSupabase()
-            .from('redemption_batches')
-            .update({
+        const payload = await mutatePointsManage({
+            action: 'update_batch',
+            site: writableSite,
+            payload: {
+                batch_id: batchId,
                 name: name,
                 notes: notes || null,
                 expires_at: expiresAt
-            })
-            .eq('id', batchId);
+            }
+        });
 
-        if (error) throw error;
-
-        alert('✅ 保存成功');
+        alert(`✅ ${payload?.message || '保存成功'}`);
         closeBatchEditModal();
+        invalidatePointsCatalogSnapshot();
         loadBatches();
 
     } catch (err) {
@@ -2066,18 +2539,25 @@ async function saveBatchEdit(event, batchId) {
 
 // Disable a single code (mark as disabled/invalid)
 async function disableCode(code) {
+    const writableSite = requireWritablePointsSite({ label: '禁用兑换码' });
+    if (!writableSite) {
+        return;
+    }
+
     const confirmed = confirm(`确定要禁用兑换码 ${code} 吗？\n\n禁用后该码将无法被使用。`);
     if (!confirmed) return;
 
     try {
-        const { error } = await getSupabase()
-            .from('redemption_codes')
-            .update({ status: 'disabled' })
-            .eq('code', code);
+        const payload = await mutatePointsManage({
+            action: 'set_code_status',
+            site: writableSite,
+            payload: {
+                code,
+                status: 'disabled'
+            }
+        });
 
-        if (error) throw error;
-
-        alert('✅ 已禁用该兑换码');
+        alert(`✅ ${payload?.message || '已禁用该兑换码'}`);
 
         // Refresh modal if open
         if (window.currentViewBatchId) {
@@ -2092,16 +2572,22 @@ async function disableCode(code) {
 
 // Enable a previously disabled code
 async function enableCode(code) {
+    const writableSite = requireWritablePointsSite({ label: '启用兑换码' });
+    if (!writableSite) {
+        return;
+    }
+
     try {
-        const { error } = await getSupabase()
-            .from('redemption_codes')
-            .update({ status: 'pending' })
-            .eq('code', code)
-            .eq('status', 'disabled');
+        const payload = await mutatePointsManage({
+            action: 'set_code_status',
+            site: writableSite,
+            payload: {
+                code,
+                status: 'pending'
+            }
+        });
 
-        if (error) throw error;
-
-        alert('✅ 已启用该兑换码');
+        alert(`✅ ${payload?.message || '已启用该兑换码'}`);
 
         if (window.currentViewBatchId) {
             viewBatchCodes(window.currentViewBatchId);
@@ -2115,6 +2601,11 @@ async function enableCode(code) {
 
 // Batch invalidate all unused codes in selected batches
 async function batchInvalidateCodes() {
+    const writableSite = requireWritablePointsSite({ action: 'points-batch-invalidate' });
+    if (!writableSite) {
+        return;
+    }
+
     if (selectedBatchIds.size === 0) {
         alert('请先选择要操作的批次');
         return;
@@ -2130,21 +2621,21 @@ async function batchInvalidateCodes() {
 
     try {
         const idsArray = Array.from(selectedBatchIds);
+        const payload = await mutatePointsManage({
+            action: 'invalidate_batches',
+            site: writableSite,
+            payload: {
+                batch_ids: idsArray
+            }
+        });
 
-        const { data, error } = await getSupabase()
-            .from('redemption_codes')
-            .update({ status: 'disabled' })
-            .in('batch_id', idsArray)
-            .eq('status', 'pending');
-
-        if (error) throw error;
-
-        alert(`✅ 操作完成`);
+        alert(`✅ ${payload?.message || '操作完成'}`);
 
         // Close menu and refresh
         const menu = document.getElementById('pointsBatchActionsMenu');
         if (menu) menu.classList.remove('show');
 
+        invalidatePointsCatalogSnapshot();
         loadBatches();
 
     } catch (err) {
@@ -2189,50 +2680,11 @@ async function lookupCode() {
     setAdminPointsPanelVisible(resultDiv, true);
 
     try {
-        // 1. Try Redeem Code RPC first
-        const { data: codeData, error: codeError } = await getSupabase().rpc('fn_check_code_status', {
-            p_code: code.toUpperCase() // Codes are usually uppercase
+        const payload = await fetchPointsLookupPayload({
+            site: getPointsReadSite(),
+            q: code
         });
-
-        if (codeData && codeData.valid) {
-            renderLookupResult(codeData, 'code');
-            return;
-        }
-
-        // 2. If not a valid code, check if it is a Transaction ID (UUID) in points_ledger
-        // UUID Regex check
-        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(code);
-
-        if (isUUID) {
-            const { data: ledgerData, error: ledgerError } = await getSupabase()
-                .from('points_ledger')
-                .select('*, profiles:user_id(username, email)')
-                .eq('id', code)
-                .maybeSingle();
-
-            if (ledgerData) {
-                // If unlock_prompt, try to fetch prompt title
-                if (ledgerData.reason === 'unlock_prompt' && ledgerData.reference_id) {
-                    const { data: promptData } = await getSupabase()
-                        .from('prompts')
-                        .select('title')
-                        .eq('id', ledgerData.reference_id)
-                        .maybeSingle();
-
-                    if (promptData) {
-                        ledgerData.prompt_title = promptData.title;
-                    }
-                }
-
-                renderLookupResult(ledgerData, 'ledger');
-                return;
-            }
-        }
-
-        // If neither found or error
-        if (codeError && !isUUID) throw codeError;
-
-        throw new Error('未找到该兑换码/订单号');
+        renderLookupResult(payload?.result || {}, payload?.kind === 'ledger' ? 'ledger' : 'code');
 
     } catch (err) {
         resultDiv.innerHTML = `<div class="lookup-card invalid"><div class="lookup-status">❌ 查询失败</div><p>${err.message}</p></div>`;
@@ -2406,4 +2858,23 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
     window.addEventListener('adminStudioAccessGranted', initPointsIndicator, { once: true });
+});
+
+window.addEventListener('admin-site-changed', async () => {
+    invalidatePointsCatalogSnapshot();
+
+    const pointsModule = document.getElementById('module-points');
+    if (!pointsModule?.classList.contains('active')) {
+        return;
+    }
+
+    const activeView = document.querySelector('#module-points .view-section.active')?.id || '';
+    if (activeView === 'points-view-catalog') {
+        await loadPointsPackageCatalog({ force: true });
+        return;
+    }
+
+    if (activeView === 'points-view-batches') {
+        await loadBatches();
+    }
 });

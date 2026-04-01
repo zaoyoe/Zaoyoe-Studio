@@ -24,6 +24,7 @@ BEGIN
         FROM prompt_comments c
         INNER JOIN profiles p ON c.user_id = p.id
         WHERE c.prompt_id = NEW.prompt_id
+          AND c.site = NEW.site
           AND LOWER(p.username) = LOWER(mentioned_username)
           AND c.created_at < NEW.created_at  -- Parent must be older
           AND c.parent_id IS NULL  -- Only link to top-level comments (avoid deep nesting)

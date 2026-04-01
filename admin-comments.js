@@ -31,6 +31,128 @@ const filterState = {
     searchTags: []         // Array of search strings
 };
 
+function getCommentsReadSite() {
+    return window.AdminSiteFilter?.getSiteFilter?.() || 'all';
+}
+
+function requireWritableCommentsSite(options = {}) {
+    return window.AdminSiteFilter?.requireWritableSite?.(options) || null;
+}
+
+function buildAdminCommentsUrl(route, params = {}) {
+    const url = new URL(`/api/admin/${route}`, window.location.origin);
+
+    Object.entries(params || {}).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === '') return;
+        url.searchParams.set(key, String(value));
+    });
+
+    return `${url.pathname}${url.search}`;
+}
+
+async function parseAdminCommentsResponse(response) {
+    let payload = {};
+
+    try {
+        payload = await response.json();
+    } catch (_) {
+        payload = {};
+    }
+
+    if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.message || `Comments request failed (${response.status})`);
+    }
+
+    return payload;
+}
+
+async function fetchAdminCommentSummary(site = getCommentsReadSite()) {
+    const response = await fetch(buildAdminCommentsUrl('comments/summary', { site }), {
+        credentials: 'include'
+    });
+
+    return parseAdminCommentsResponse(response);
+}
+
+async function fetchAdminCommentsList({ view, site = getCommentsReadSite(), dateFrom = '', dateTo = '' } = {}) {
+    const response = await fetch(buildAdminCommentsUrl('comments/list', {
+        view,
+        site,
+        dateFrom,
+        dateTo
+    }), {
+        credentials: 'include'
+    });
+
+    return parseAdminCommentsResponse(response);
+}
+
+async function moderateCommentsViaAdminApi({ items = [], site, action = 'delete_many' } = {}) {
+    const response = await fetch('/api/admin/comments/moderate', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            action,
+            site,
+            items
+        })
+    });
+
+    return parseAdminCommentsResponse(response);
+}
+
+async function fetchAdminCommentBlockState(userId, site = getCommentsReadSite()) {
+    const response = await fetch(buildAdminCommentsUrl('comments/blocks', {
+        userId,
+        site
+    }), {
+        credentials: 'include'
+    });
+
+    return parseAdminCommentsResponse(response);
+}
+
+async function mutateAdminCommentBlockState({ action, userId, scope, days = null, site } = {}) {
+    const response = await fetch('/api/admin/comments/blocks', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            action,
+            userId,
+            scope,
+            days,
+            site
+        })
+    });
+
+    return parseAdminCommentsResponse(response);
+}
+
+async function toggleCommentPinViaAdminApi({ id, promptId, currentStatus, site } = {}) {
+    const response = await fetch('/api/admin/comments/moderate', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            action: 'toggle_pin',
+            site,
+            id,
+            promptId,
+            currentStatus
+        })
+    });
+
+    return parseAdminCommentsResponse(response);
+}
+
 function buildCommentLoadingSkeleton(count = 6) {
     const itemCount = Math.max(3, Number.parseInt(count, 10) || 6);
     return Array.from({ length: itemCount }, (_, index) => `
@@ -79,6 +201,7 @@ function initCommentsModule() {
         return;
     }
     commentsInitialized = true;
+    window.currentCommentView = currentCommentView;
 
     loadCommentStats();
     loadComments(currentCommentView);
@@ -294,6 +417,14 @@ function getDefaultLabel(filterType) {
     return labels[filterType] || filterType;
 }
 
+function getCommentReplyCount(comment) {
+    return Math.max(0, Number(comment?.reply_count || 0));
+}
+
+function isReplyLevelComment(comment) {
+    return String(comment?.level || '').trim() === 'reply';
+}
+
 /**
  * Apply filters to comments array
  */
@@ -359,9 +490,14 @@ function applyFilters(comments) {
             }
         }
 
+        // Status filter
+        const replyCount = getCommentReplyCount(comment);
+        if (filterState.status === 'replied' && replyCount <= 0) return false;
+        if (filterState.status === 'unreplied' && replyCount > 0) return false;
+
         // Type filter
-        if (filterState.type === 'top' && comment.parent_id) return false;
-        if (filterState.type === 'reply' && !comment.parent_id) return false;
+        if (filterState.type === 'top' && isReplyLevelComment(comment)) return false;
+        if (filterState.type === 'reply' && !isReplyLevelComment(comment)) return false;
 
         // Has image filter
         if (filterState.hasImage && !comment.image_url) return false;
@@ -378,74 +514,11 @@ function applyFilters(comments) {
  */
 async function loadCommentStats() {
     try {
-        const { count: guestbookCount } = await (function () {
-            let q = getSupabase().from('guestbook_messages').select('*', { count: 'exact', head: true });
-            if (window.AdminSiteFilter) q = AdminSiteFilter.applySiteFilter(q);
-            return q;
-        })();
-
-        const { count: galleryCount } = await (function () {
-            let q = getSupabase().from('prompt_comments').select('*', { count: 'exact', head: true });
-            if (window.AdminSiteFilter) q = AdminSiteFilter.applySiteFilter(q);
-            return q;
-        })();
-
-        const totalCount = (guestbookCount || 0) + (galleryCount || 0);
-
-        // Get today's comments
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const todayISO = today.toISOString();
-
-        const { count: todayGuestbook } = await (function () {
-            let q = getSupabase().from('guestbook_messages').select('*', { count: 'exact', head: true }).gte('created_at', todayISO);
-            if (window.AdminSiteFilter) q = AdminSiteFilter.applySiteFilter(q);
-            return q;
-        })();
-
-        const { count: todayGallery } = await (function () {
-            let q = getSupabase().from('prompt_comments').select('*', { count: 'exact', head: true }).gte('created_at', todayISO);
-            if (window.AdminSiteFilter) q = AdminSiteFilter.applySiteFilter(q);
-            return q;
-        })();
-
-        const todayCount = (todayGuestbook || 0) + (todayGallery || 0);
-
-        // Get unique users (simplified - based on gallery comments with user_id)
-        const { data: uniqueUsers } = await (function () {
-            let q = getSupabase().from('prompt_comments').select('user_id').not('user_id', 'is', null);
-            if (window.AdminSiteFilter) q = AdminSiteFilter.applySiteFilter(q);
-            return q;
-        })();
-
-        const uniqueUserIds = new Set(uniqueUsers?.map(u => u.user_id) || []);
-        const activeUsersCount = uniqueUserIds.size;
-
-        // Get last week's comments for growth calculation
-        const lastWeek = new Date();
-        lastWeek.setDate(lastWeek.getDate() - 7);
-        const lastWeekISO = lastWeek.toISOString();
-
-        const twoWeeksAgo = new Date();
-        twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
-        const twoWeeksAgoISO = twoWeeksAgo.toISOString();
-
-        const { count: thisWeekCount } = await (function () {
-            let q = getSupabase().from('prompt_comments').select('*', { count: 'exact', head: true }).gte('created_at', lastWeekISO);
-            if (window.AdminSiteFilter) q = AdminSiteFilter.applySiteFilter(q);
-            return q;
-        })();
-
-        const { count: prevWeekCount } = await (function () {
-            let q = getSupabase().from('prompt_comments').select('*', { count: 'exact', head: true }).gte('created_at', twoWeeksAgoISO).lt('created_at', lastWeekISO);
-            if (window.AdminSiteFilter) q = AdminSiteFilter.applySiteFilter(q);
-            return q;
-        })();
-
-        let weekGrowth = 0;
-        if (prevWeekCount && prevWeekCount > 0) {
-            weekGrowth = Math.round(((thisWeekCount - prevWeekCount) / prevWeekCount) * 100);
-        }
+        const payload = await fetchAdminCommentSummary(getCommentsReadSite());
+        const totalCount = Number(payload?.summary?.totalCount || 0);
+        const todayCount = Number(payload?.summary?.todayCount || 0);
+        const activeUsersCount = Number(payload?.summary?.activeUsersCount || 0);
+        const weekGrowth = Number(payload?.summary?.weekGrowth || 0);
 
         // Update UI
         document.getElementById('totalCommentsCount').textContent = totalCount;
@@ -464,6 +537,7 @@ async function loadCommentStats() {
  */
 function switchCommentView(view) {
     currentCommentView = view;
+    window.currentCommentView = view;
 
     // Update tab active state
     document.querySelectorAll('[data-comment-view]').forEach(tab => {
@@ -616,131 +690,17 @@ async function loadComments(view) {
     listContainer.innerHTML = buildCommentLoadingSkeleton();
 
     try {
-        const client = getSupabase();
-        if (!client) {
-            throw new Error('Supabase client not initialized');
-        }
-
-        const searchQuery = document.getElementById('commentSearch')?.value?.trim() || '';
         const dateFrom = document.getElementById('filterDateFrom')?.value || ''; // Fixed ID
         const dateTo = document.getElementById('filterDateTo')?.value || ''; // Fixed ID
 
-        console.log('Fetching comments...', { view, searchQuery, dateFrom, dateTo });
-
-        let data = [];
-
-        if (view === 'guestbook') {
-            // Load guestbook messages
-            console.log('Loading guestbook messages...');
-
-            let query = client
-                .from('guestbook_messages')
-                .select(`
-                    id,
-                    content,
-                    user_id,
-                    created_at,
-                    image_url,
-                    like_count,
-                    profiles:user_id (username, avatar_url, email)
-                `)
-                .order('created_at', { ascending: false })
-                .limit(50);
-
-            // Apply admin site filter
-            if (window.AdminSiteFilter) query = AdminSiteFilter.applySiteFilter(query);
-
-            // Time filtering
-            if (dateFrom) {
-                query = query.gte('created_at', dateFrom);
-            }
-            if (dateTo) {
-                const endDate = new Date(dateTo);
-                endDate.setDate(endDate.getDate() + 1);
-                query = query.lt('created_at', endDate.toISOString());
-            }
-
-            const { data: messages, error } = await query;
-
-            if (error) {
-                console.error('Error fetching guestbook messages:', error);
-                throw error;
-            }
-
-            console.log('Guestbook messages fetched:', messages?.length);
-
-            data = (messages || []).map(msg => ({
-                id: msg.id,
-                type: 'guestbook',
-                content: msg.content || '',
-                author: msg.profiles?.username || '未知用户',
-                email: msg.profiles?.email || '',
-                avatar: msg.profiles?.avatar_url || null,
-                created_at: msg.created_at,
-                context: '',
-                prompt_title: '',
-                likes: msg.like_count || 0,
-                user_id: msg.user_id,
-                parent_id: null,
-                image_url: msg.image_url || null
-            }));
-
-        } else {
-            // Load gallery comments
-            let query = client
-                .from('prompt_comments')
-                .select(`
-                    *,
-                    is_pinned,
-                    is_featured,
-                    profiles:user_id (username, avatar_url, email),
-                    prompts:prompt_id (title),
-                    comment_likes (count)
-                `)
-                .order('created_at', { ascending: false })
-                .limit(50);
-
-            // Apply admin site filter
-            if (window.AdminSiteFilter) query = AdminSiteFilter.applySiteFilter(query);
-
-
-            // Note: Search filtering is done client-side via applyFilters
-            if (dateFrom) {
-                query = query.gte('created_at', dateFrom);
-            }
-            if (dateTo) {
-                const endDate = new Date(dateTo);
-                endDate.setDate(endDate.getDate() + 1);
-                query = query.lt('created_at', endDate.toISOString());
-            }
-
-            const { data: comments, error } = await query;
-            if (error) {
-                console.error('Error fetching gallery comments:', error);
-                throw error;
-            }
-
-            console.log('Gallery comments fetched:', comments?.length);
-            console.log('Admin: Fetched Comments:', comments.length, 'First is_pinned:', comments[0]?.is_pinned, 'is_featured:', comments[0]?.is_featured);
-
-            data = (comments || []).map(comment => ({
-                id: comment.id,
-                type: 'gallery',
-                content: comment.content,
-                author: comment.profiles?.username || '未知用户',
-                email: comment.profiles?.email || '',
-                avatar: comment.profiles?.avatar_url,
-                created_at: comment.created_at,
-                context: comment.prompt_id,
-                prompt_title: comment.prompts?.title || 'Unknown',
-                likes: comment.comment_likes ? (comment.comment_likes[0]?.count || 0) : 0,
-                user_id: comment.user_id,
-                parent_id: comment.parent_id,
-                image_url: comment.image_url || null,
-                is_pinned: comment.is_pinned || false,
-                is_featured: comment.is_featured || false
-            }));
-        }
+        console.log('Fetching comments...', { view, dateFrom, dateTo, site: getCommentsReadSite() });
+        const payload = await fetchAdminCommentsList({
+            view,
+            site: getCommentsReadSite(),
+            dateFrom,
+            dateTo
+        });
+        const data = Array.isArray(payload?.comments) ? payload.comments : [];
 
         commentsData = data;
         // Apply filters before rendering
@@ -778,21 +738,20 @@ function renderCommentList(comments) {
             ? `<img class="item-avatar-image" src="${escapeHtml(comment.avatar)}" alt="" loading="lazy" decoding="async">`
             : avatarInitial;
         const timeStr = formatTimeAgo(comment.created_at);
-        // Reply badge (English) - shown at bottom-left if this is a reply
-        const isReply = comment.parent_id ? true : false;
+        // Reply badge - shown for guestbook replies and nested gallery replies
+        const isReply = isReplyLevelComment(comment);
         const replyBadge = isReply ? `<span class="reply-badge">Reply</span>` : '';
-        const sourceLabel = comment.type === 'guestbook' ? '留言板' : '画廊';
 
         // Context Pill for List (inline) or Grid (in content)
         // We put it in content for Grid, and List view will handle flow via CSS
 
         return `
-            <div class="comment-admin-item" data-id="${comment.id}" data-type="${comment.type}" data-comments-action="toggle-selection" data-checkbox-id="cb-${comment.id}">
+            <div class="comment-admin-item" data-id="${comment.id}" data-type="${comment.type}" data-record-type="${comment.record_type || ''}" data-comments-action="toggle-selection" data-checkbox-id="cb-${comment.id}">
                 
                 <!-- 1. Checkbox Wrapper -->
                 <div class="item-checkbox-wrapper">
                     <input type="checkbox" class="comment-checkbox" id="cb-${comment.id}" 
-                        data-id="${comment.id}" data-type="${comment.type}"
+                        data-id="${comment.id}" data-type="${comment.type}" data-record-type="${comment.record_type || ''}"
                         data-comments-change="selection">
                 </div>
 
@@ -846,7 +805,7 @@ function renderCommentList(comments) {
                     </button>` : ''}
                     
                     ${window.hasPermission && window.hasPermission('content.moderate') ? `
-                    <button class="action-delete" type="button" data-comments-action="delete-comment" data-comment-id="${encodeURIComponent(comment.id)}" data-comment-type="${encodeURIComponent(comment.type)}" title="删除">
+                    <button class="action-delete" type="button" data-comments-action="delete-comment" data-comment-id="${encodeURIComponent(comment.id)}" data-comment-type="${encodeURIComponent(comment.type)}" data-comment-record-type="${encodeURIComponent(comment.record_type || '')}" title="删除">
                         <i class="fas fa-trash"></i>
                     </button>
                     ` : ''}
@@ -1050,62 +1009,29 @@ async function batchDeleteComments() {
     const checked = document.querySelectorAll('.comment-checkbox:checked');
     if (checked.length === 0) return;
 
+    const writableSite = requireWritableCommentsSite({ action: 'comments-batch-delete' });
+    if (!writableSite) {
+        return;
+    }
+
     if (!confirm(`确定要删除选中的 ${checked.length} 条评论吗？此操作无法撤销。`)) return;
 
     const items = Array.from(checked).map(cb => ({
         id: cb.dataset.id,
-        type: cb.dataset.type
+        type: cb.dataset.type,
+        recordType: cb.dataset.recordType || ''
     }));
 
-    // Group by type for batch deletion
-    const guestbookIds = items.filter(i => i.type === 'guestbook').map(i => i.id);
-    const galleryIds = items.filter(i => i.type === 'gallery').map(i => i.id);
-
-    let deleted = 0;
-    let errors = 0;
-
     try {
-        // Delete guestbook messages
-        if (guestbookIds.length > 0) {
-            const { error } = await getSupabase()
-                .from('guestbook_messages')
-                .delete()
-                .in('id', guestbookIds);
-
-            if (error) {
-                console.error('Error deleting guestbook messages:', error);
-                errors += guestbookIds.length;
-            } else {
-                deleted += guestbookIds.length;
-            }
-        }
-
-        // Delete gallery comments
-        if (galleryIds.length > 0) {
-            const { error } = await getSupabase()
-                .from('prompt_comments')
-                .delete()
-                .in('id', galleryIds);
-
-            if (error) {
-                console.error('Error deleting gallery comments:', error);
-                errors += galleryIds.length;
-            } else {
-                deleted += galleryIds.length;
-            }
-        }
-
-        // Update UI
-        if (deleted > 0) {
-            showToast(`成功删除 ${deleted} 条评论`, 'success');
-            loadCommentStats();
-            loadComments(currentCommentView);
-        }
-
-        if (errors > 0) {
-            showToast(`${errors} 条评论删除失败`, 'error');
-        }
-
+        const payload = await moderateCommentsViaAdminApi({
+            items,
+            site: writableSite,
+            action: 'delete_many'
+        });
+        const deleted = Number(payload?.deletedCount || 0);
+        showToast(`成功删除 ${deleted} 条评论`, 'success');
+        loadCommentStats();
+        loadComments(currentCommentView);
     } catch (error) {
         console.error('Batch delete error:', error);
         showToast('批量删除失败: ' + error.message, 'error');
@@ -1115,17 +1041,26 @@ async function batchDeleteComments() {
 /**
  * Delete a comment
  */
-async function deleteComment(id, type) {
+async function deleteComment(id, type, recordType = '') {
+    const writableSite = requireWritableCommentsSite({
+        label: recordType === 'message' ? '删除留言主贴' : '删除评论'
+    });
+    if (!writableSite) {
+        return;
+    }
+
     if (!confirm('确定要删除这条评论吗？此操作无法撤销。')) return;
 
     try {
-        const table = type === 'guestbook' ? 'guestbook_messages' : 'prompt_comments';
-        const { error } = await getSupabase()
-            .from(table)
-            .delete()
-            .eq('id', id);
-
-        if (error) throw error;
+        await moderateCommentsViaAdminApi({
+            site: writableSite,
+            action: 'delete',
+            items: [{
+                id,
+                type,
+                recordType
+            }]
+        });
 
         // Remove from UI
         const item = document.querySelector(`.comment-admin-item[data-id="${id}"]`);
@@ -1136,6 +1071,7 @@ async function deleteComment(id, type) {
 
         // Refresh stats
         loadCommentStats();
+        loadComments(currentCommentView);
         showToast('评论已删除', 'success');
 
     } catch (error) {
@@ -1337,7 +1273,8 @@ function bindAdminCommentsRuntimeDelegates() {
                 event.stopPropagation();
                 window.deleteComment?.(
                     decodeURIComponent(actionEl.dataset.commentId || ''),
-                    decodeURIComponent(actionEl.dataset.commentType || '')
+                    decodeURIComponent(actionEl.dataset.commentType || ''),
+                    decodeURIComponent(actionEl.dataset.commentRecordType || '')
                 );
                 break;
             case 'block-user': {
@@ -1398,27 +1335,19 @@ bindAdminCommentsRuntimeDelegates();
 window.togglePin = async function (id, currentStatus, promptId) {
     console.log('togglePin called:', id, 'current:', currentStatus, 'prompt:', promptId);
     try {
-        // If pinning (not unpinning), first unpin any existing pinned comment for this prompt
-        if (!currentStatus && promptId) {
-            const { error: unpinError } = await getSupabase()
-                .from('prompt_comments')
-                .update({ is_pinned: false })
-                .eq('prompt_id', promptId)
-                .eq('is_pinned', true);
-
-            if (unpinError) console.warn('Failed to unpin existing:', unpinError);
+        const writableSite = requireWritableCommentsSite({ label: currentStatus ? '取消评论置顶' : '置顶评论' });
+        if (!writableSite) {
+            return;
         }
 
-        // Now pin/unpin the target comment
-        const { data, error } = await getSupabase()
-            .from('prompt_comments')
-            .update({ is_pinned: !currentStatus })
-            .eq('id', id)
-            .select();
+        const payload = await toggleCommentPinViaAdminApi({
+            id,
+            promptId,
+            currentStatus,
+            site: writableSite
+        });
 
-        console.log('togglePin result:', { data, error });
-
-        if (error) throw error;
+        console.log('togglePin result:', payload);
 
         showToast(currentStatus ? '已取消置顶' : '评论已置顶', 'success');
         loadComments(currentCommentView); // Refresh list
@@ -1446,6 +1375,7 @@ window.toggleBlockDropdown = function (userId, btnElement) {
     let blockedScopes = [];
     let isGuestbookBlocked = false;
     let isGalleryBlocked = false;
+    let hasGlobalBlock = false;
 
     // Create dropdown
     const dropdown = document.createElement('div');
@@ -1453,7 +1383,8 @@ window.toggleBlockDropdown = function (userId, btnElement) {
     dropdown.dataset.triggerId = userId;
     dropdown.innerHTML = renderBlockDropdownMenu(userId, {
         isGuestbookBlocked,
-        isGalleryBlocked
+        isGalleryBlocked,
+        hasGlobalBlock
     });
 
     btnElement.parentNode.appendChild(dropdown);
@@ -1494,30 +1425,44 @@ window.toggleBlockDropdown = function (userId, btnElement) {
 
     // -- Async Status Update --
     // Check status in background and update UI if user is blocked
-    getSupabase()
-        .from('blocked_users')
-        .select('scope')
-        .eq('user_id', userId)
-        .then(({ data }) => {
-            if (activeBlockDropdown === dropdown && data && data.length > 0) {
-                const updatedScopes = data.map(d => d.scope);
-                const isGuestbookBlocked = updatedScopes.includes('guestbook') || updatedScopes.includes('all');
-                const isGalleryBlocked = updatedScopes.includes('gallery') || updatedScopes.includes('all');
-
-                if (isGuestbookBlocked || isGalleryBlocked) {
-                    dropdown.innerHTML = renderBlockDropdownMenu(userId, {
-                        isGuestbookBlocked,
-                        isGalleryBlocked
-                    });
-                }
+    fetchAdminCommentBlockState(userId)
+        .then((payload) => {
+            if (activeBlockDropdown !== dropdown) {
+                return;
             }
+
+            blockedScopes = Array.isArray(payload?.scopes) ? payload.scopes : [];
+            isGuestbookBlocked = payload?.isGuestbookBlocked === true;
+            isGalleryBlocked = payload?.isGalleryBlocked === true;
+            hasGlobalBlock = payload?.hasGlobalBlock === true;
+
+            dropdown.innerHTML = renderBlockDropdownMenu(userId, {
+                isGuestbookBlocked,
+                isGalleryBlocked,
+                hasGlobalBlock
+            });
         })
         .catch(console.error);
 };
 
-function renderBlockDropdownMenu(userId, { isGuestbookBlocked = false, isGalleryBlocked = false } = {}) {
+function renderBlockDropdownMenu(userId, { isGuestbookBlocked = false, isGalleryBlocked = false, hasGlobalBlock = false } = {}) {
     const encodedUserId = encodeURIComponent(userId || '');
-    let html = `<div class="block-menu-header">封禁管理</div>`;
+    let html = `
+        <div class="block-menu-header">封禁管理</div>
+        <div class="block-menu-note">当前封禁按 scope 全站生效，不区分 CN / EN 站点。</div>
+    `;
+
+    if (hasGlobalBlock) {
+        html += `
+            <div class="block-menu-divider"></div>
+            <button class="block-menu-btn" type="button" data-comments-action="unblock-user" data-user-id="${encodedUserId}" data-user-scope="all">🚫 解封全站</button>
+        `;
+        html += `
+            <div class="block-menu-divider"></div>
+            <button class="block-menu-btn" type="button" data-comments-action="check-user-status" data-user-id="${encodedUserId}">查看状态详情</button>
+        `;
+        return html;
+    }
 
     if (isGuestbookBlocked) {
         html += `<button class="block-menu-btn" type="button" data-comments-action="unblock-user" data-user-id="${encodedUserId}" data-user-scope="guestbook">🚫 解封留言板</button>`;
@@ -1548,32 +1493,33 @@ function renderBlockDropdownMenu(userId, { isGuestbookBlocked = false, isGallery
 
 window.blockUser = async function (userId, scope, days) {
     const durationStr = days ? `${days}天` : '永久';
-    const scopeStr = scope === 'guestbook' ? '留言板' : '画廊';
+    const scopeStr = scope === 'guestbook' ? '留言板' : (scope === 'all' ? '全站' : '画廊');
 
     if (!confirm(`确定要 [${durationStr}] 封禁该用户在 [${scopeStr}] 的权限吗？`)) return;
 
     try {
-        const payload = {
-            user_id: userId,
-            scope: scope,
-            blocked_by: (await getSupabase().auth.getUser()).data.user.id,
-            blocked_at: new Date().toISOString()
-        };
-
-        if (days) {
-            const expiresAt = new Date();
-            expiresAt.setDate(expiresAt.getDate() + days);
-            payload.expires_at = expiresAt.toISOString();
-        } else {
-            payload.expires_at = null; // Permanent
+        const writableSite = requireWritableCommentsSite({ label: `${scopeStr}用户封禁` });
+        if (!writableSite) {
+            return;
         }
 
-        const { error } = await getSupabase()
-            .from('blocked_users')
-            .upsert(payload, { onConflict: 'user_id, scope' });
+        const payload = await mutateAdminCommentBlockState({
+            action: 'block',
+            userId,
+            scope,
+            days,
+            site: writableSite
+        });
 
-        if (error) throw error;
-        showToast(`已${durationStr}封禁用户 ${scopeStr} 权限`, 'success');
+        if (activeBlockDropdown && activeBlockDropdown.dataset.triggerId === userId) {
+            activeBlockDropdown.innerHTML = renderBlockDropdownMenu(userId, {
+                isGuestbookBlocked: payload?.isGuestbookBlocked === true,
+                isGalleryBlocked: payload?.isGalleryBlocked === true,
+                hasGlobalBlock: payload?.hasGlobalBlock === true
+            });
+        }
+
+        showToast(`已${durationStr}封禁用户 ${scopeStr} 权限（全站生效）`, 'success');
     } catch (err) {
         console.error('Block user error:', err);
         showToast('操作失败: ' + err.message, 'error');
@@ -1582,18 +1528,22 @@ window.blockUser = async function (userId, scope, days) {
 
 window.checkUserStatus = async function (userId) {
     try {
-        const { data, error } = await getSupabase()
-            .from('blocked_users')
-            .select('*')
-            .eq('user_id', userId);
+        const payload = await fetchAdminCommentBlockState(userId);
+        const blocks = Array.isArray(payload?.blocks) ? payload.blocks : [];
 
-        if (error) throw error;
-
-        if (!data || data.length === 0) {
+        if (!blocks.length) {
             alert('该用户未被封禁');
         } else {
-            const scopes = data.map(d => d.scope).join(', ');
-            alert(`用户当前封禁状态：\n权限范围: ${scopes}\n封禁时间: ${new Date(data[0].blocked_at).toLocaleString()}`);
+            const lines = blocks.map((block) => {
+                const scopeLabel = block.scope === 'all'
+                    ? '全部（留言板 / 画廊全站生效）'
+                    : (block.scope === 'guestbook' ? '留言板（全站生效）' : '画廊（全站生效）');
+                const expiryLabel = block.expires_at
+                    ? `${new Date(block.expires_at).toLocaleDateString()} 到期`
+                    : '永久';
+                return `- [${scopeLabel}] ${expiryLabel}${block.reason ? `\n  原因: ${block.reason}` : ''}`;
+            });
+            alert(`用户当前封禁状态：\n\n${lines.join('\n\n')}`);
         }
     } catch (err) {
         console.error('Check status error:', err);
@@ -1602,17 +1552,34 @@ window.checkUserStatus = async function (userId) {
 };
 
 window.unblockUser = async function (userId, scope) {
-    if (!confirm(`确定要解除该用户在 [${scope === 'guestbook' ? '留言板' : '画廊'}] 的封禁吗？`)) return;
+    const scopeLabel = scope === 'guestbook'
+        ? '留言板'
+        : (scope === 'all' ? '全站' : '画廊');
+
+    if (!confirm(`确定要解除该用户在 [${scopeLabel}] 的封禁吗？`)) return;
 
     try {
-        const { error } = await getSupabase()
-            .from('blocked_users')
-            .delete()
-            .eq('user_id', userId)
-            .eq('scope', scope);
+        const writableSite = requireWritableCommentsSite({ label: `${scopeLabel}用户解封` });
+        if (!writableSite) {
+            return;
+        }
 
-        if (error) throw error;
-        showToast(`已解封用户 ${scope === 'guestbook' ? '留言板' : '画廊'} 权限`, 'success');
+        const payload = await mutateAdminCommentBlockState({
+            action: 'unblock',
+            userId,
+            scope,
+            site: writableSite
+        });
+
+        if (activeBlockDropdown && activeBlockDropdown.dataset.triggerId === userId) {
+            activeBlockDropdown.innerHTML = renderBlockDropdownMenu(userId, {
+                isGuestbookBlocked: payload?.isGuestbookBlocked === true,
+                isGalleryBlocked: payload?.isGalleryBlocked === true,
+                hasGlobalBlock: payload?.hasGlobalBlock === true
+            });
+        }
+
+        showToast(`已解封用户 ${scopeLabel} 权限`, 'success');
     } catch (err) {
         console.error('Unblock user error:', err);
         showToast('操作失败: ' + err.message, 'error');

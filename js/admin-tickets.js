@@ -7,6 +7,18 @@ const AdminTickets = {
     searchQuery: '',
     focusedTicketId: '',
 
+    settleWorkspace: async function (delayMs = 60) {
+        await new Promise((resolve) => {
+            window.requestAnimationFrame(() => {
+                window.requestAnimationFrame(resolve);
+            });
+        });
+
+        if (delayMs > 0) {
+            await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+        }
+    },
+
     fetchProfilesByIds: async function (userIds = []) {
         const uniqueIds = Array.from(new Set(
             (userIds || [])
@@ -358,6 +370,289 @@ const AdminTickets = {
         return String(value);
     },
 
+    getTicketLinkProtocol: function () {
+        return window.AdminTicketLinks || null;
+    },
+
+    parseLinkedChatSessionContext: function (description = '') {
+        const protocol = this.getTicketLinkProtocol();
+        if (protocol?.parseLinkedChatSessionContext) {
+            return protocol.parseLinkedChatSessionContext(this.safeText(description));
+        }
+        return null;
+    },
+
+    inferLinkedOpsAlertCategoryKey: function (context = {}) {
+        const protocol = this.getTicketLinkProtocol();
+        if (protocol?.inferLinkedOpsAlertCategoryKey) {
+            return protocol.inferLinkedOpsAlertCategoryKey(context);
+        }
+        return '';
+    },
+
+    parseLinkedOpsAlertContext: function (description = '') {
+        const protocol = this.getTicketLinkProtocol();
+        if (protocol?.parseLinkedOpsAlertContext) {
+            return protocol.parseLinkedOpsAlertContext(this.safeText(description));
+        }
+        return null;
+    },
+
+    getOpsAlertWorkspaceActionForContext: function (context = {}) {
+        if (typeof window.getOpsAlertWorkspaceAction !== 'function') {
+            return null;
+        }
+
+        return window.getOpsAlertWorkspaceAction({
+            categoryKey: this.safeText(context.category_key).trim().toLowerCase(),
+            alertType: this.safeText(context.alert_type).trim().toLowerCase(),
+            targetId: this.safeText(context.target_id).trim().toLowerCase()
+        }, {
+            labelVariant: 'ticket'
+        });
+    },
+
+    resolveTicketRecord: async function (ticketOrId) {
+        if (ticketOrId && typeof ticketOrId === 'object') {
+            return ticketOrId;
+        }
+
+        const normalizedTicketId = this.safeText(ticketOrId).trim();
+        if (!normalizedTicketId) {
+            return null;
+        }
+
+        return this.tickets.find((ticket) => this.safeText(ticket?.id).trim() === normalizedTicketId)
+            || this.filteredTickets.find((ticket) => this.safeText(ticket?.id).trim() === normalizedTicketId)
+            || await this.fetchTicketById(normalizedTicketId);
+    },
+
+    getWorkbenchLauncher: function () {
+        return window.openAdminWorkbenchEntry || window.openOpsAlertWorkspace || null;
+    },
+
+    openWorkbenchEntry: async function (workspaceKey, context = {}) {
+        const launcher = this.getWorkbenchLauncher();
+        if (typeof launcher !== 'function') {
+            return false;
+        }
+        return launcher(workspaceKey, context);
+    },
+
+    buildTicketWorkbenchEntry: function (ticket = {}, target = 'chat') {
+        const linkedChatContext = this.parseLinkedChatSessionContext(ticket.description);
+        const linkedOpsAlertContext = this.parseLinkedOpsAlertContext(ticket.description);
+        const sourceAction = linkedOpsAlertContext ? this.getOpsAlertWorkspaceActionForContext(linkedOpsAlertContext) : null;
+
+        if (typeof window.buildTicketWorkbenchEntry === 'function') {
+            return window.buildTicketWorkbenchEntry(target, ticket, {
+                linkedChatContext,
+                linkedOpsAlertContext,
+                workspaceAction: sourceAction
+            });
+        }
+
+        const normalizedTarget = this.safeText(target).trim().toLowerCase() || 'chat';
+        if (normalizedTarget === 'chat') {
+            const searchValue = this.safeText(
+                linkedChatContext?.session_id
+                || linkedChatContext?.user_email
+                || ticket.user_email
+                || ticket.user_id
+            ).trim();
+            if (!searchValue) {
+                return null;
+            }
+            return {
+                workspaceKey: 'chat-session',
+                context: {
+                    sessionId: linkedChatContext?.session_id || '',
+                    session_id: linkedChatContext?.session_id || '',
+                    email: linkedChatContext?.user_email || ticket.user_email || '',
+                    userId: this.safeText(ticket.user_id).trim(),
+                    referenceLabel: linkedChatContext?.session_id
+                        ? '会话ID'
+                        : (linkedChatContext?.user_email || ticket.user_email ? '邮箱' : '用户ID'),
+                    referenceValue: searchValue,
+                    targetId: this.safeText(ticket.id).trim(),
+                    target_id: this.safeText(ticket.id).trim(),
+                    ticketId: this.safeText(ticket.id).trim(),
+                    ticketStatus: this.safeText(ticket.status).trim()
+                }
+            };
+        }
+
+        if (normalizedTarget === 'order') {
+            const orderId = this.safeText(ticket.order_id).trim();
+            if (!orderId) {
+                return null;
+            }
+            return {
+                workspaceKey: 'shop-risk-orders',
+                context: {
+                    orderId,
+                    targetId: orderId,
+                    target_id: orderId,
+                    referenceLabel: '订单号',
+                    referenceValue: orderId
+                }
+            };
+        }
+
+        if (normalizedTarget === 'user') {
+            const userId = this.safeText(ticket.user_id).trim();
+            const userEmail = this.safeText(ticket.user_email).trim();
+            const searchValue = userId || userEmail;
+            if (!searchValue) {
+                return null;
+            }
+            return {
+                workspaceKey: 'shop-risk-users',
+                context: {
+                    userId,
+                    email: userEmail,
+                    targetId: searchValue,
+                    target_id: searchValue,
+                    referenceLabel: userId ? '用户' : '邮箱',
+                    referenceValue: searchValue
+                }
+            };
+        }
+
+        if (normalizedTarget === 'source' && linkedOpsAlertContext && sourceAction?.target && !['tickets-pending', 'tickets-resolved'].includes(sourceAction.target)) {
+            return {
+                workspaceKey: sourceAction.target,
+                label: sourceAction.label || '',
+                context: {
+                    alertType: linkedOpsAlertContext.alert_type,
+                    targetId: linkedOpsAlertContext.target_id,
+                    target_id: linkedOpsAlertContext.target_id,
+                    referenceLabel: linkedOpsAlertContext.reference_label,
+                    referenceValue: linkedOpsAlertContext.reference_value,
+                    ticketId: this.safeText(ticket.id).trim(),
+                    ticketStatus: this.safeText(ticket.status).trim()
+                }
+            };
+        }
+
+        return null;
+    },
+
+    openWorkbench: async function (ticketOrId, target = 'chat') {
+        const ticket = await this.resolveTicketRecord(ticketOrId);
+        if (!ticket) {
+            window.showToast?.('未找到可处理的工单上下文', 'warning');
+            return false;
+        }
+
+        const normalizedTarget = this.safeText(target).trim().toLowerCase() || 'chat';
+        const launcher = this.getWorkbenchLauncher();
+        const workbenchEntry = this.buildTicketWorkbenchEntry(ticket, normalizedTarget);
+
+        if (!workbenchEntry) {
+            if (normalizedTarget === 'chat') {
+                window.showToast?.('这张工单没有关联可回溯的客服会话', 'info');
+                return false;
+            }
+            if (normalizedTarget === 'order') {
+                window.showToast?.('这张工单没有关联订单', 'info');
+                return false;
+            }
+            if (normalizedTarget === 'user') {
+                window.showToast?.('这张工单没有关联用户', 'info');
+                return false;
+            }
+            if (normalizedTarget === 'source') {
+                const linkedOpsAlertContext = this.parseLinkedOpsAlertContext(ticket.description);
+                if (!linkedOpsAlertContext) {
+                    window.showToast?.('这张工单没有关联原始站内代办', 'info');
+                } else {
+                    window.showToast?.('当前原始代办仍指向工单处理页，无需重复跳转', 'info');
+                }
+                return false;
+            }
+            window.showToast?.('未识别的工单工作台入口', 'warning');
+            return false;
+        }
+
+        if (typeof launcher !== 'function') {
+            if (normalizedTarget === 'chat') {
+                window.showToast?.('客服工作台尚未就绪', 'warning');
+            } else if (normalizedTarget === 'source') {
+                window.showToast?.('当前页面暂时无法回到原始处理入口', 'warning');
+            } else if (normalizedTarget === 'order') {
+                window.showToast?.('当前页面暂时无法打开关联订单', 'warning');
+            } else if (normalizedTarget === 'user') {
+                window.showToast?.('当前页面暂时无法打开关联用户', 'warning');
+            } else {
+                window.showToast?.('当前页面暂时无法打开对应工作区', 'warning');
+            }
+            return false;
+        }
+
+        if (normalizedTarget === 'chat') {
+            return this.openWorkbenchEntry(workbenchEntry.workspaceKey, workbenchEntry.context || {}) || false;
+        }
+
+        if (normalizedTarget === 'order') {
+            return this.openWorkbenchEntry(workbenchEntry.workspaceKey, workbenchEntry.context || {}) || false;
+        }
+
+        if (normalizedTarget === 'user') {
+            return this.openWorkbenchEntry(workbenchEntry.workspaceKey, workbenchEntry.context || {}) || false;
+        }
+
+        if (normalizedTarget === 'source') {
+            return this.openWorkbenchEntry(workbenchEntry.workspaceKey, workbenchEntry.context || {}) || false;
+        }
+
+        window.showToast?.('未识别的工单工作台入口', 'warning');
+        return false;
+    },
+
+    buildWorkbenchActionDefinitions: function (ticket = {}) {
+        const actions = [];
+
+        if (this.buildTicketWorkbenchEntry(ticket, 'chat')) {
+            actions.push({
+                icon: 'fa-comments',
+                title: '回到客服会话',
+                variant: 'chat',
+                target: 'chat'
+            });
+        }
+
+        if (this.buildTicketWorkbenchEntry(ticket, 'order')) {
+            actions.push({
+                icon: 'fa-bag-shopping',
+                title: '查看关联订单',
+                variant: 'order',
+                target: 'order'
+            });
+        }
+
+        if (this.buildTicketWorkbenchEntry(ticket, 'user')) {
+            actions.push({
+                icon: 'fa-user',
+                title: '查看用户详情',
+                variant: 'user',
+                target: 'user'
+            });
+        }
+
+        const sourceEntry = this.buildTicketWorkbenchEntry(ticket, 'source');
+        if (sourceEntry) {
+            actions.push({
+                icon: 'fa-sitemap',
+                title: `回到原始处理入口：${sourceEntry.label || '站内代办'}`,
+                variant: 'source',
+                target: 'source'
+            });
+        }
+
+        return actions.slice(0, 4);
+    },
+
     truncateText: function (value, maxLength) {
         const text = this.safeText(value);
         return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
@@ -519,6 +814,15 @@ const AdminTickets = {
             const actionCell = document.createElement('td');
             const actionWrap = document.createElement('div');
             actionWrap.className = 'admin-ticket-action-wrap';
+
+            this.buildWorkbenchActionDefinitions(ticket).forEach((action) => {
+                actionWrap.appendChild(this.createActionButton({
+                    icon: action.icon,
+                    title: action.title,
+                    variant: action.variant,
+                    onClick: () => this.openWorkbench(ticket, action.target)
+                }));
+            });
 
             if (status === 'PENDING') {
                 actionWrap.appendChild(this.createActionButton({

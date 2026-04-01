@@ -1,11 +1,26 @@
-const { sendJson } = require('./_lib/admin');
+const {
+    normalizeAdminSite,
+    sendJson
+} = require('./_lib/admin');
 const geminiHandler = require('../server/api-handlers/admin/gemini');
+const commentsListHandler = require('../server/api-handlers/admin/comments/list');
+const commentsBlocksHandler = require('../server/api-handlers/admin/comments/blocks');
+const commentsModerateHandler = require('../server/api-handlers/admin/comments/moderate');
+const commentsSummaryHandler = require('../server/api-handlers/admin/comments/summary');
+const homepageConfigHandler = require('../server/api-handlers/admin/homepage/config');
+const pointsBatchesHandler = require('../server/api-handlers/admin/points/batches');
+const pointsCatalogHandler = require('../server/api-handlers/admin/points/catalog');
+const pointsLookupHandler = require('../server/api-handlers/admin/points/lookup');
+const pointsManageHandler = require('../server/api-handlers/admin/points/manage');
+const pointsPackagesHandler = require('../server/api-handlers/admin/points/packages');
+const promptsManageHandler = require('../server/api-handlers/admin/prompts/manage');
 const accessSessionHandler = require('../server/api-handlers/admin/access/session');
 const shopMutateHandler = require('../server/api-handlers/admin/shop/mutate');
 const shopDeliveryActionsHandler = require('../server/api-handlers/admin/shop/delivery-actions');
 const shopDeliveryTasksHandler = require('../server/api-handlers/admin/shop/delivery-tasks');
 const paymentsActionsHandler = require('../server/api-handlers/admin/payments/actions');
 const paymentsCleanupHandler = require('../server/api-handlers/admin/payments/cleanup');
+const paymentsShopRefundHandler = require('../server/api-handlers/admin/payments/shop-refund');
 const paymentsSummaryHandler = require('../server/api-handlers/admin/payments/summary');
 const settingsGeminiKeyHandler = require('../server/api-handlers/admin/settings/gemini-key');
 const settingsAdminAuditMonitorHandler = require('../server/api-handlers/admin/settings/admin-audit-monitor');
@@ -22,6 +37,17 @@ const ticketProcessHandler = require('../server/api-handlers/admin/tickets/proce
 
 const ROUTE_HANDLERS = {
     gemini: geminiHandler,
+    'comments/list': commentsListHandler,
+    'comments/blocks': commentsBlocksHandler,
+    'comments/moderate': commentsModerateHandler,
+    'comments/summary': commentsSummaryHandler,
+    'homepage/config': homepageConfigHandler,
+    'points/batches': pointsBatchesHandler,
+    'points/catalog': pointsCatalogHandler,
+    'points/lookup': pointsLookupHandler,
+    'points/manage': pointsManageHandler,
+    'points/packages': pointsPackagesHandler,
+    'prompts/manage': promptsManageHandler,
     'access/session': accessSessionHandler,
     'settings/admin-audit-monitor': settingsAdminAuditMonitorHandler,
     'settings/gemini-key': settingsGeminiKeyHandler,
@@ -41,12 +67,14 @@ const ROUTE_HANDLERS = {
     'shop/delivery-strategy': shopDeliveryTasksHandler,
     'payments/actions': paymentsActionsHandler,
     'payments/cleanup': paymentsCleanupHandler,
+    'payments/shop-refund': paymentsShopRefundHandler,
     'payments/summary': paymentsSummaryHandler
 };
 
 module.exports = async function handler(req, res) {
     const url = new URL(req.url || '', 'http://localhost');
     const route = String(url.searchParams.get('route') || '').trim().toLowerCase();
+    const querySite = normalizeAdminSite(url.searchParams.get('site'));
     const resolvedHandler = ROUTE_HANDLERS[route];
 
     if (!resolvedHandler) {
@@ -59,6 +87,11 @@ module.exports = async function handler(req, res) {
     if (route === 'shop/delivery-strategy') {
         url.searchParams.set('route', 'delivery-strategy');
         req.url = `${url.pathname}${url.search}`;
+    }
+
+    req.adminRoute = route;
+    if (querySite) {
+        req.adminSite = querySite;
     }
 
     return resolvedHandler(req, res);

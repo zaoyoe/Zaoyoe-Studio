@@ -1,6 +1,6 @@
 /**
  * Section Visibility Module
- * 分栏可见性控制 - 根据站点配置动态隐藏/显示页面分栏
+ * 分栏可见性控制 - 根据 homepage_config 的站点行动态隐藏/显示页面分栏
  * 
  * 用法：
  *   SectionVisibility.isVisible('shop')     → true/false
@@ -12,10 +12,17 @@
 (function () {
     'use strict';
 
-    const CONFIG_KEY = 'section_visibility';
     const CACHE_KEY_PREFIX = 'zaoyoe_section_vis_';
     const SECTIONS = ['hero', 'gallery', 'shop', 'verify', 'guestbook', 'footer'];
     const HIDDEN_CLASS = 'section-visibility-hidden';
+    const HOMEPAGE_SECTION_MAP = {
+        hero: 'hero',
+        gallery: 'prompts',
+        shop: 'shop',
+        verify: 'verify',
+        guestbook: 'guestbook',
+        footer: 'footer'
+    };
 
     // Section → page mapping
     const SECTION_PAGES = {
@@ -86,6 +93,10 @@
         return 'cn';
     }
 
+    function normalizeSite(site) {
+        return site === 'intl' ? 'intl' : 'cn';
+    }
+
     /**
      * Get cache key for current site
      */
@@ -122,35 +133,37 @@
     /**
      * Load config from Supabase (async)
      */
-    async function loadFromDatabase() {
+    function mapHomepageRowsToVisibility(rows, site) {
+        const config = getDefaults();
+
+        Object.entries(HOMEPAGE_SECTION_MAP).forEach(([logicalSection, rowSection]) => {
+            const row = (rows || []).find((item) => item?.section === rowSection);
+            if (row) {
+                config[logicalSection] = row.is_visible !== false;
+            }
+        });
+
+        return config;
+    }
+
+    async function loadFromDatabase(site = getCurrentSite()) {
         try {
             if (!window.supabaseClient) return null;
 
+            const normalizedSite = normalizeSite(site);
             const { data, error } = await window.supabaseClient
-                .rpc('get_all_system_config');
+                .rpc('fn_get_homepage_config', {
+                    p_site: normalizedSite,
+                    p_include_hidden: true
+                });
 
             if (error) throw error;
 
-            const configItem = (data || []).find(item => item.config_key === CONFIG_KEY);
-            if (configItem && configItem.config_value) {
-                return configItem.config_value;
-            }
+            return mapHomepageRowsToVisibility(data || [], normalizedSite);
         } catch (e) {
             console.warn('[SectionVisibility] Failed to load from database:', e.message);
         }
         return null;
-    }
-
-    /**
-     * Get visibility config for current site
-     */
-    function getConfigForSite(fullConfig, site) {
-        if (!fullConfig) return getDefaults();
-        const siteConfig = fullConfig[site || getCurrentSite()];
-        if (!siteConfig) return getDefaults();
-        // Merge with defaults to ensure all keys exist
-        const defaults = getDefaults();
-        return { ...defaults, ...siteConfig };
     }
 
     function setDomVisibility(element, visible) {
@@ -288,9 +301,8 @@
         }
 
         // Step 2: Load from database (async) and update
-        const fullConfig = await loadFromDatabase();
-        if (fullConfig) {
-            const siteConfig = getConfigForSite(fullConfig, site);
+        const siteConfig = await loadFromDatabase(site);
+        if (siteConfig) {
             visibilityConfig = siteConfig;
             saveToCache(siteConfig);
             applySectionVisibility();
@@ -325,8 +337,14 @@
          * Get full config for all sites (for admin use)
          */
         async getFullConfig() {
-            const fullConfig = await loadFromDatabase();
-            return fullConfig || { cn: getDefaults(), intl: getDefaults() };
+            const [cn, intl] = await Promise.all([
+                loadFromDatabase('cn'),
+                loadFromDatabase('intl')
+            ]);
+            return {
+                cn: cn || getDefaults(),
+                intl: intl || getDefaults()
+            };
         }
     };
 

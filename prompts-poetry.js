@@ -6990,15 +6990,41 @@ function closeImageLightbox() {
 // ===========================================
 
 let realtimeChannel = null;
+let realtimeChannelSite = null;
+
+function normalizePromptInteractionSite(site) {
+    return site === 'intl' ? 'intl' : 'cn';
+}
+
+function getPromptInteractionSite() {
+    return normalizePromptInteractionSite(window.SiteConfig?.site);
+}
+
+function getPromptCommentCacheKey(promptId, site = getPromptInteractionSite()) {
+    return `${normalizePromptInteractionSite(site)}:${String(promptId || '')}`;
+}
 
 // Initialize Supabase Realtime for comments
 function initCommentRealtime() {
-    if (!window.supabaseClient || realtimeChannel) return;
+    if (!window.supabaseClient) return;
 
+    const site = getPromptInteractionSite();
+    if (realtimeChannel && realtimeChannelSite === site) return;
+
+    if (realtimeChannel && realtimeChannelSite !== site) {
+        try {
+            realtimeChannel.unsubscribe?.();
+        } catch (_) {
+            // Ignore cleanup failures during local dev/site swaps.
+        }
+        realtimeChannel = null;
+    }
+
+    realtimeChannelSite = site;
     realtimeChannel = window.supabaseClient
-        .channel('prompt-comments-updates')
+        .channel(`prompt-comments-updates-${site}`)
         .on('postgres_changes',
-            { event: 'INSERT', schema: 'public', table: 'prompt_comments' },
+            { event: 'INSERT', schema: 'public', table: 'prompt_comments', filter: `site=eq.${site}` },
             handleRealtimeCommentInsert
         )
         .subscribe();
@@ -7007,7 +7033,10 @@ function initCommentRealtime() {
 // Handle new comment from realtime
 async function handleRealtimeCommentInsert(payload) {
     const comment = payload.new;
+    const currentSite = getPromptInteractionSite();
     const { data: { user } } = await window.supabaseClient.auth.getUser();
+
+    if (normalizePromptInteractionSite(comment.site) !== currentSite) return;
 
     // Ignore own comments (already rendered optimistically)
     if (user && comment.user_id === user.id) return;
@@ -7057,10 +7086,12 @@ async function renderRealtimeComment(comment) {
 
 // Update comment count for a specific prompt (Gallery cards)
 async function updateCommentCountForPrompt(promptId) {
+    const site = getPromptInteractionSite();
     const { count } = await window.supabaseClient
         .from('prompt_comments')
         .select('*', { count: 'exact', head: true })
-        .eq('prompt_id', promptId);
+        .eq('prompt_id', promptId)
+        .eq('site', site);
 
     // Update count in gallery card if visible
     const cards = document.querySelectorAll('.gallery-card');
@@ -7079,10 +7110,12 @@ async function updateCommentCountForPrompt(promptId) {
 
 async function fetchCommentCount(promptId) {
     if (!window.supabaseClient) return;
+    const site = getPromptInteractionSite();
     const { count } = await window.supabaseClient
         .from('prompt_comments')
         .select('*', { count: 'exact', head: true })
-        .eq('prompt_id', promptId);
+        .eq('prompt_id', promptId)
+        .eq('site', site);
 
     document.getElementById('commentCountBadge').textContent = count || 0;
     updateCommentSectionHeading(count || 0);
@@ -7188,9 +7221,11 @@ function renderCommentsFromCache(cached, list) {
 async function fetchComments(promptId, forceRefresh = false) {
     if (!window.supabaseClient) return;
     const list = document.getElementById('commentList');
+    const site = getPromptInteractionSite();
+    const cacheKey = getPromptCommentCacheKey(promptId, site);
 
     // Check cache first
-    const cached = commentCache.get(promptId);
+    const cached = commentCache.get(cacheKey);
     const isCacheValid = cached && (Date.now() - cached.timestamp < COMMENT_CACHE_TTL);
 
     // Strategy: Stale-While-Revalidate
@@ -7227,12 +7262,14 @@ async function fetchComments(promptId, forceRefresh = false) {
             .from('prompt_comments')
             .select(`*, is_pinned, is_featured, profiles:user_id (id, username, avatar_url)`)
             .eq('prompt_id', promptId)
+            .eq('site', site)
             .order('is_pinned', { ascending: false })
             .order('created_at', { ascending: true }),
         // Fetch ALL likes for this prompt's comments in one query
         window.supabaseClient
             .from('comment_likes')
             .select('comment_id, user_id')
+            .eq('site', site)
     ]);
 
     // Process user
@@ -7286,7 +7323,7 @@ async function fetchComments(promptId, forceRefresh = false) {
     }
 
     // Cache the results
-    commentCache.set(promptId, {
+    commentCache.set(cacheKey, {
         timestamp: Date.now(),
         data,
         currentUserId,
@@ -7583,6 +7620,8 @@ async function handleLikeComment(commentId, button) {
         return;
     }
 
+    const site = getPromptInteractionSite();
+
     const isLiked = button.dataset.liked === 'true';
     const icon = button.querySelector('i');
     const countSpan = button.querySelector('.like-count');
@@ -7611,12 +7650,13 @@ async function handleLikeComment(commentId, button) {
                 .from('comment_likes')
                 .delete()
                 .eq('comment_id', commentId)
-                .eq('user_id', user.id);
+                .eq('user_id', user.id)
+                .eq('site', site);
         } else {
             // Add like to comment_likes table
             await window.supabaseClient
                 .from('comment_likes')
-                .insert({ comment_id: commentId, user_id: user.id });
+                .insert({ comment_id: commentId, user_id: user.id, site });
         }
     } catch (err) {
         console.error('Like error:', err);
@@ -7814,6 +7854,7 @@ async function submitComment() {
 
     const input = getActiveCommentInput();
     const content = input.value.trim();
+    const site = getPromptInteractionSite();
 
     // Check auth first so unauthenticated users always get feedback
     const { data: { user } } = await window.supabaseClient.auth.getUser();
@@ -7891,6 +7932,7 @@ async function submitComment() {
         user_id: user.id,
         content: originalContent || '[图片]' // Default text for image-only comments
     };
+    insertData.site = site;
 
     if (originalParentId) {
         insertData.parent_id = originalParentId;
@@ -7918,6 +7960,7 @@ async function submitComment() {
     const newComment = {
         id: data.id,
         prompt_id: currentPromptId,
+        site,
         user_id: user.id,
         content: originalContent,
         parent_id: originalParentId,
@@ -7974,7 +8017,7 @@ async function submitComment() {
     }
 
     // Invalidate cache
-    commentCache.delete(currentPromptId);
+    commentCache.delete(getPromptCommentCacheKey(currentPromptId, site));
 }
 
 // --- Sorting UI Logic ---
@@ -8062,7 +8105,7 @@ function setupCommentSorting() {
             setCommentSortDropdownOpen(false);
 
             // Trigger Re-render if we have cached data
-            const cached = commentCache.get(currentPromptId);
+            const cached = commentCache.get(getPromptCommentCacheKey(currentPromptId));
             if (cached) {
                 const list = document.getElementById('commentList');
                 // clear list first to show change

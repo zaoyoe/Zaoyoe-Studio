@@ -7,6 +7,11 @@ const {
 
 let supabaseAdmin = null;
 let supabasePublic = null;
+const ADMIN_SITE_VALUES = Object.freeze(new Set(['all', 'cn', 'intl']));
+const WRITABLE_ADMIN_SITE_VALUES = Object.freeze(new Set(['cn', 'intl']));
+const ADMIN_SITE_ALIASES = Object.freeze({
+    global: 'all'
+});
 
 function getEnv(name) {
     const value = process.env[name];
@@ -191,6 +196,54 @@ function normalizeAdminPermissionList(value) {
     )];
 }
 
+function normalizeAdminSite(value, options = {}) {
+    const rawValue = Array.isArray(value) ? value[0] : value;
+    const normalizedDefault = Object.prototype.hasOwnProperty.call(options, 'defaultValue')
+        ? normalizeAdminSite(options.defaultValue)
+        : '';
+    const normalized = String(rawValue || '').trim().toLowerCase();
+
+    if (!normalized) {
+        return normalizedDefault;
+    }
+
+    const aliased = ADMIN_SITE_ALIASES[normalized] || normalized;
+    if (ADMIN_SITE_VALUES.has(aliased)) {
+        return aliased;
+    }
+
+    return normalizedDefault;
+}
+
+function requireWritableAdminSite(value, options = {}) {
+    const rawValue = Array.isArray(value) ? value[0] : value;
+    const rawSite = String(rawValue || '').trim();
+    const normalizedSite = normalizeAdminSite(rawSite);
+
+    if (WRITABLE_ADMIN_SITE_VALUES.has(normalizedSite)) {
+        return normalizedSite;
+    }
+
+    const isExplicitAll = normalizedSite === 'all';
+    const isMissing = !rawSite;
+    const error = new Error(
+        options.message
+        || (isExplicitAll
+            ? 'Writable admin site must be cn or intl; received all'
+            : (isMissing
+                ? 'Writable admin site is required'
+                : `Writable admin site must be cn or intl; received ${rawSite}`))
+    );
+
+    error.statusCode = 400;
+    error.code = isExplicitAll
+        ? 'admin_site_not_writable'
+        : (isMissing ? 'admin_site_required' : 'admin_site_invalid');
+    error.site = normalizedSite || null;
+    error.input = rawSite || null;
+    throw error;
+}
+
 function collectAdminRolePermissions(roles = []) {
     const permissions = new Set();
     let isSuperAdmin = false;
@@ -343,17 +396,39 @@ async function requireAdmin(req, options = {}) {
     };
 }
 
-async function writeAdminAuditLog({ supabase, adminId, targetUserId = null, actionType, details = {} }) {
+async function writeAdminAuditLog({
+    supabase,
+    adminId,
+    targetUserId = null,
+    actionType,
+    details = {},
+    site = '',
+    module = ''
+}) {
     if (!supabase || !adminId || !actionType) return;
 
     try {
+        const normalizedDetails = (details && typeof details === 'object' && !Array.isArray(details))
+            ? { ...details }
+            : {};
+        const normalizedSite = normalizeAdminSite(site);
+        const normalizedModule = String(module || '').trim();
+
+        if (normalizedSite && !Object.prototype.hasOwnProperty.call(normalizedDetails, 'site')) {
+            normalizedDetails.site = normalizedSite;
+        }
+
+        if (normalizedModule && !Object.prototype.hasOwnProperty.call(normalizedDetails, 'module')) {
+            normalizedDetails.module = normalizedModule;
+        }
+
         await supabase
             .from('admin_audit_logs')
             .insert({
                 admin_id: adminId,
                 target_user_id: targetUserId,
                 action_type: actionType,
-                details
+                details: normalizedDetails
             });
     } catch (error) {
         console.warn('[AdminAPI] Failed to write audit log:', error.message);
@@ -373,7 +448,9 @@ module.exports = {
     parseJsonBody,
     requireAuthenticatedUser,
     requireAdmin,
+    requireWritableAdminSite,
     normalizeAdminPermissionList,
+    normalizeAdminSite,
     hasRequiredAdminPermissions,
     sendJson,
     writeAdminAuditLog

@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS public.comment_likes (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   comment_id UUID REFERENCES public.prompt_comments(id) ON DELETE CASCADE NOT NULL,
   user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+  site VARCHAR(10) DEFAULT 'cn' NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(comment_id, user_id) -- Prevent double-liking
 );
@@ -27,3 +28,4 @@ CREATE POLICY "Users can delete own likes"
 -- Index for faster lookups
 CREATE INDEX IF NOT EXISTS idx_comment_likes_comment_id ON public.comment_likes(comment_id);
 CREATE INDEX IF NOT EXISTS idx_comment_likes_user_id ON public.comment_likes(user_id);
+CREATE INDEX IF NOT EXISTS idx_comment_likes_site ON public.comment_likes(site);
