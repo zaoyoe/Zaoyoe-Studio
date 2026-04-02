@@ -9,13 +9,36 @@
  * @param {string} url - Original image URL
  * @returns {string} Thumbnail URL for R2 CDN images, original for others
  */
-function getOptimizedImageUrl(url) {
+function getOptimizedImageUrl(url, options = {}) {
     if (!url) return '';
+    const { format = 'avif' } = options;
 
     // R2 CDN images - use pre-generated thumbnails
     if (url.includes('cdn.zaoyoe.com/prompts/') && !url.includes('/thumb/')) {
         // Convert: /prompts/xxx.webp → /prompts/thumb/xxx.webp
         return url.replace('/prompts/', '/prompts/thumb/');
+    }
+
+    // Supabase Storage images - use the built-in transform endpoint for card-sized WebP delivery
+    if (url.includes('supabase.co/storage/v1/object/public/prompt-images/')) {
+        try {
+            const optimizedUrl = new URL(url);
+            optimizedUrl.pathname = optimizedUrl.pathname.replace(
+                '/storage/v1/object/public/',
+                '/storage/v1/render/image/public/'
+            );
+            optimizedUrl.searchParams.set('width', '360');
+            optimizedUrl.searchParams.set('height', '270');
+            optimizedUrl.searchParams.set('quality', '80');
+            if (format) {
+                optimizedUrl.searchParams.set('format', format);
+            } else {
+                optimizedUrl.searchParams.delete('format');
+            }
+            return optimizedUrl.toString();
+        } catch (error) {
+            console.warn('Failed to build Supabase prompt image transform URL:', error);
+        }
     }
 
     // Return original URL for other images or already-thumbnail URLs
@@ -2457,6 +2480,11 @@ initTheme();
 // ========================================
 // SUPABASE DATA LOADING
 // ========================================
+const PROMPT_GALLERY_SKELETON_COUNT = 8;
+const PROMPT_NAV_SKELETON_COUNT = 8;
+const PROMPT_GALLERY_EAGER_IMAGE_COUNT = 4;
+const promptGalleryImageWarmCache = new Set();
+
 async function loadPromptsFromSupabase() {
     if (!window.supabaseClient) {
         console.log('Supabase client not available, using static data');
@@ -2518,9 +2546,116 @@ async function loadPromptsFromSupabase() {
     }
 }
 
+function buildPromptCardSkeletonMarkup(index = 0) {
+    const titleWidthClasses = [
+        'prompt-card-skeleton-title--wide',
+        'prompt-card-skeleton-title--medium',
+        'prompt-card-skeleton-title--short'
+    ];
+    const titleWidthClass = titleWidthClasses[index % titleWidthClasses.length];
+
+    return `
+        <div class="prompt-card-media-skeleton" aria-hidden="true">
+            <div class="skeleton prompt-card-skeleton-image"></div>
+            <div class="prompt-card-skeleton-overlay">
+                <div class="skeleton prompt-card-skeleton-title ${titleWidthClass}"></div>
+                <div class="prompt-card-skeleton-dots">
+                    <span class="skeleton prompt-card-skeleton-dot"></span>
+                    <span class="skeleton prompt-card-skeleton-dot"></span>
+                    <span class="skeleton prompt-card-skeleton-dot"></span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function buildPromptNavSkeletonMarkup(count = PROMPT_NAV_SKELETON_COUNT) {
+    const titleWidthClasses = [
+        'nav-item-skeleton--title-wide',
+        'nav-item-skeleton--title-medium',
+        'nav-item-skeleton--title-short',
+        'nav-item-skeleton--title-medium'
+    ];
+    const subtitleWidthClasses = [
+        'nav-item-skeleton--subtitle-wide',
+        'nav-item-skeleton--subtitle-medium',
+        'nav-item-skeleton--subtitle-short',
+        'nav-item-skeleton--subtitle-medium'
+    ];
+    const safeCount = Math.min(Math.max(Number.parseInt(count, 10) || PROMPT_NAV_SKELETON_COUNT, 6), 10);
+
+    return Array.from({ length: safeCount }, (_, index) => `
+        <div class="nav-item nav-item--skeleton" aria-hidden="true" data-nav-skeleton-index="${index}">
+            <span class="skeleton nav-item-skeleton nav-item-skeleton--title ${titleWidthClasses[index % titleWidthClasses.length]}"></span>
+            <span class="skeleton nav-item-skeleton nav-item-skeleton--subtitle ${subtitleWidthClasses[index % subtitleWidthClasses.length]}"></span>
+        </div>
+    `).join('');
+}
+
+function renderPromptNavSkeletons(count = PROMPT_NAV_SKELETON_COUNT) {
+    const navContainer = document.getElementById('navItems');
+    if (!navContainer) return;
+
+    navContainer.classList.remove('loaded', 'nav-items--hydrated');
+    navContainer.classList.add('nav-items--skeleton');
+    navContainer.innerHTML = buildPromptNavSkeletonMarkup(count);
+}
+
+function warmPromptGalleryLeadImages(items = []) {
+    const leadItems = (Array.isArray(items) ? items : []).slice(0, PROMPT_GALLERY_EAGER_IMAGE_COUNT);
+
+    leadItems.forEach((item) => {
+        const optimizedUrl = getOptimizedImageUrl(item?.images?.[0]);
+        if (!optimizedUrl || promptGalleryImageWarmCache.has(optimizedUrl)) return;
+        if (optimizedUrl.includes('supabase.co/storage/v1/render/image/public/')) return;
+
+        promptGalleryImageWarmCache.add(optimizedUrl);
+        const warmImage = new Image();
+        warmImage.decoding = 'async';
+        if ('fetchPriority' in warmImage) {
+            warmImage.fetchPriority = 'high';
+        }
+        warmImage.src = optimizedUrl;
+    });
+}
+
+function renderPromptGallerySkeletons(count = PROMPT_GALLERY_SKELETON_COUNT) {
+    const grid = document.querySelector('.gallery-container');
+    if (!grid) return;
+
+    const safeCount = Math.min(Math.max(Number.parseInt(count, 10) || PROMPT_GALLERY_SKELETON_COUNT, 4), 12);
+    grid.classList.add('visible');
+    grid.innerHTML = Array.from({ length: safeCount }, (_, index) => `
+        <div class="prompt-card prompt-card--skeleton" aria-hidden="true" data-skeleton-index="${index}">
+            ${buildPromptCardSkeletonMarkup(index)}
+        </div>
+    `).join('');
+}
+
+function markPromptCardImageReady(card, cardImage) {
+    if (!card) return;
+    card.classList.remove('prompt-card--loading');
+    card.classList.add('prompt-card--loaded');
+    cardImage?.classList.add('loaded');
+}
+
+function setPromptCardImageSource(cardImage, originalUrl) {
+    if (!cardImage || !originalUrl) return;
+
+    const primaryUrl = getOptimizedImageUrl(originalUrl);
+    const transformFallbackUrl = getOptimizedImageUrl(originalUrl, { format: '' });
+
+    cardImage.dataset.originalSrc = originalUrl;
+    cardImage.dataset.transformFallbackSrc = transformFallbackUrl !== primaryUrl ? transformFallbackUrl : '';
+    cardImage.dataset.fallbackStage = '';
+    cardImage.src = primaryUrl;
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     initializePromptStaticControls();
     syncPromptNavOffset();
+    renderPromptNavSkeletons();
+    renderPromptGallerySkeletons();
 
     // Try to load from Supabase first
     await loadPromptsFromSupabase();
@@ -2530,6 +2665,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Build search index for fast lookups
     buildSearchIndex();
+    void preloadPromptCommentCounts();
 
     initSpotlight();
     initAmbientLight(); // New: Living background
@@ -3120,6 +3256,8 @@ function generateDynamicNav() {
         </div>
     `;
 
+    navContainer.classList.remove('nav-items--skeleton');
+    navContainer.classList.add('nav-items--hydrated');
     navContainer.innerHTML = navHTML;
 
     // Store for back navigation
@@ -3581,10 +3719,12 @@ function renderCurrentPage() {
     if (itemsToLoad.length === 0 && totalItems > 0) return;
 
     isLoading = true;
+    warmPromptGalleryLeadImages(itemsToLoad);
 
     itemsToLoad.forEach((item, index) => {
+        const shouldLoadImageEagerly = index < PROMPT_GALLERY_EAGER_IMAGE_COUNT;
         const card = document.createElement('div');
-        card.className = 'prompt-card card-enter';
+        card.className = 'prompt-card card-enter prompt-card--loading';
         card.dataset.tags = item.tags.join(','); // For CSS filtering
         card.dataset.id = item.id;
         card.dataset.images = JSON.stringify(item.images); // Store all images
@@ -3607,10 +3747,11 @@ function renderCurrentPage() {
         });
 
         card.innerHTML = `
+            ${buildPromptCardSkeletonMarkup(index)}
             <button class="card-fav-btn ${isSaved ? 'saved' : ''}" type="button">
                 <i class="fas fa-heart"></i>
             </button>
-            <img src="${getOptimizedImageUrl(item.images[0])}" class="card-image" loading="lazy" alt="${getLocalizedField(item, 'title')}">
+            <img class="card-image" loading="${shouldLoadImageEagerly ? 'eager' : 'lazy'}" decoding="async" alt="${getLocalizedField(item, 'title')}">
             <div class="card-overlay">
                 <div class="card-title">${getLocalizedField(item, 'title')}</div>
                 ${indicators}
@@ -3623,15 +3764,39 @@ function renderCurrentPage() {
         });
 
         const cardImage = card.querySelector('.card-image');
+        if (cardImage) {
+            cardImage.loading = shouldLoadImageEagerly ? 'eager' : 'lazy';
+            cardImage.decoding = 'async';
+            cardImage.setAttribute('fetchpriority', shouldLoadImageEagerly ? 'high' : 'auto');
+            if ('fetchPriority' in cardImage) {
+                cardImage.fetchPriority = shouldLoadImageEagerly ? 'high' : 'auto';
+            }
+            setPromptCardImageSource(cardImage, item.images[0]);
+        }
         cardImage?.addEventListener('load', () => {
-            cardImage.classList.add('loaded');
+            markPromptCardImageReady(card, cardImage);
         });
         cardImage?.addEventListener('error', () => {
-            if (cardImage.dataset.fallback === '1') return;
-            cardImage.dataset.fallback = '1';
-            cardImage.src = item.images[0];
-            cardImage.classList.add('loaded');
+            const transformFallbackSrc = cardImage.dataset.transformFallbackSrc;
+            const originalSrc = cardImage.dataset.originalSrc || item.images[0];
+
+            if (!cardImage.dataset.fallbackStage && transformFallbackSrc && cardImage.src !== transformFallbackSrc) {
+                cardImage.dataset.fallbackStage = 'transform';
+                cardImage.src = transformFallbackSrc;
+                return;
+            }
+
+            if (cardImage.dataset.fallbackStage !== 'original' && originalSrc && cardImage.src !== originalSrc) {
+                cardImage.dataset.fallbackStage = 'original';
+                cardImage.src = originalSrc;
+                return;
+            }
+
+            markPromptCardImageReady(card, cardImage);
         });
+        if (cardImage?.complete && cardImage.naturalWidth > 0) {
+            markPromptCardImageReady(card, cardImage);
+        }
 
         // Add hover carousel for cards with multiple images
         if (hasMultiple) {
@@ -3645,7 +3810,7 @@ function renderCurrentPage() {
 
                 hoverInterval = setInterval(() => {
                     currentIndex = (currentIndex + 1) % images.length;
-                    img.src = getOptimizedImageUrl(images[currentIndex]);
+                    setPromptCardImageSource(img, images[currentIndex]);
                     dots.forEach((dot, i) => dot.classList.toggle('active', i === currentIndex));
                 }, 1500);
             });
@@ -3656,7 +3821,7 @@ function renderCurrentPage() {
                 const img = card.querySelector('.card-image');
                 const dots = card.querySelectorAll('.indicator-dot');
                 const images = JSON.parse(card.dataset.images);
-                img.src = getOptimizedImageUrl(images[0]);
+                setPromptCardImageSource(img, images[0]);
                 dots.forEach((dot, i) => dot.classList.toggle('active', i === 0));
             });
         }
@@ -5490,13 +5655,15 @@ function openPromptModal(id) {
         commentList.classList.remove('comment-list-empty');
         commentList.innerHTML = '';
     }
-    document.getElementById('commentCountBadge').textContent = '0';
+    applyPromptCommentCount(currentPromptId, getCachedPromptCommentCount(currentPromptId));
 
     // Check unlock status (if logged in)
     checkUnlockStatus(currentPromptId);
 
     // Fetch comment count
-    fetchCommentCount(currentPromptId);
+    void preloadPromptCommentCounts();
+    void fetchCommentCount(currentPromptId);
+    void prefetchComments(currentPromptId);
 
     // Initialize image upload functionality
     initCommentImageUpload();
@@ -7081,7 +7248,9 @@ async function renderRealtimeComment(comment) {
 
     // Update count badge
     const badge = document.getElementById('commentCountBadge');
-    badge.textContent = parseInt(badge.textContent) + 1;
+    const nextCount = normalizePromptCommentCount(parseInt(badge?.textContent || '0', 10) + 1);
+    setCachedPromptCommentCount(comment.prompt_id, nextCount, normalizePromptInteractionSite(comment.site));
+    applyPromptCommentCount(comment.prompt_id, nextCount);
 }
 
 // Update comment count for a specific prompt (Gallery cards)
@@ -7092,6 +7261,9 @@ async function updateCommentCountForPrompt(promptId) {
         .select('*', { count: 'exact', head: true })
         .eq('prompt_id', promptId)
         .eq('site', site);
+
+    setCachedPromptCommentCount(promptId, count || 0, site);
+    promptCommentCountLoadedAt.set(site, Date.now());
 
     // Update count in gallery card if visible
     const cards = document.querySelectorAll('.gallery-card');
@@ -7111,19 +7283,277 @@ async function updateCommentCountForPrompt(promptId) {
 async function fetchCommentCount(promptId) {
     if (!window.supabaseClient) return;
     const site = getPromptInteractionSite();
+    const cacheKey = getPromptCommentCacheKey(promptId, site);
+    const cachedCount = getCachedPromptCommentCount(promptId, site);
+
+    if (cachedCount !== null) {
+        applyPromptCommentCount(promptId, cachedCount);
+        return cachedCount;
+    }
+
+    try {
+        await preloadPromptCommentCounts();
+        const preloadedCount = getCachedPromptCommentCount(promptId, site);
+        if (preloadedCount !== null) {
+            applyPromptCommentCount(promptId, preloadedCount);
+            return preloadedCount;
+        }
+    } catch (error) {
+        console.warn('[Comments] Count prefetch fallback failed:', error);
+    }
+
     const { count } = await window.supabaseClient
         .from('prompt_comments')
         .select('*', { count: 'exact', head: true })
         .eq('prompt_id', promptId)
         .eq('site', site);
 
-    document.getElementById('commentCountBadge').textContent = count || 0;
-    updateCommentSectionHeading(count || 0);
+    const normalizedCount = normalizePromptCommentCount(count);
+    promptCommentCountCache.set(cacheKey, normalizedCount);
+    promptCommentCountLoadedAt.set(site, Date.now());
+    applyPromptCommentCount(promptId, normalizedCount);
+    return normalizedCount;
 }
 
 // Comment cache to avoid re-fetching
+const promptCommentCountCache = new Map();
+const promptCommentCountRequests = new Map();
+const promptCommentCountLoadedAt = new Map();
 const commentCache = new Map();
+const commentRequestCache = new Map();
+const commentCacheVersions = new Map();
 const COMMENT_CACHE_TTL = 30000; // 30 seconds
+
+function normalizePromptCommentCount(count) {
+    const parsed = Number.parseInt(count, 10);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+        return 0;
+    }
+    return parsed;
+}
+
+function getCachedPromptCommentCount(promptId, site = getPromptInteractionSite()) {
+    const fullCommentCache = commentCache.get(getPromptCommentCacheKey(promptId, site));
+    if (fullCommentCache?.data && Array.isArray(fullCommentCache.data)) {
+        return fullCommentCache.data.length;
+    }
+
+    const cacheKey = getPromptCommentCacheKey(promptId, site);
+    return promptCommentCountCache.has(cacheKey)
+        ? normalizePromptCommentCount(promptCommentCountCache.get(cacheKey))
+        : null;
+}
+
+function setCachedPromptCommentCount(promptId, count, site = getPromptInteractionSite()) {
+    const cacheKey = getPromptCommentCacheKey(promptId, site);
+    promptCommentCountCache.set(cacheKey, normalizePromptCommentCount(count));
+}
+
+function applyPromptCommentCount(promptId, count = null) {
+    if (promptId !== currentPromptId) return false;
+
+    const badge = document.getElementById('commentCountBadge');
+    if (!badge) return false;
+
+    if (count === null || count === undefined) {
+        badge.textContent = '';
+        badge.classList.add('comment-count--hidden');
+        updateCommentSectionHeading(0);
+        return false;
+    }
+
+    const normalizedCount = normalizePromptCommentCount(count);
+    badge.textContent = String(normalizedCount);
+    badge.classList.remove('comment-count--hidden');
+    updateCommentSectionHeading(normalizedCount);
+    return true;
+}
+
+async function preloadPromptCommentCounts(forceRefresh = false) {
+    if (!window.supabaseClient || typeof PROMPTS === 'undefined' || PROMPTS.length === 0) {
+        return null;
+    }
+
+    const site = getPromptInteractionSite();
+    const lastLoadedAt = promptCommentCountLoadedAt.get(site) || 0;
+    const isFresh = !forceRefresh && (Date.now() - lastLoadedAt < COMMENT_CACHE_TTL);
+    if (isFresh) {
+        return promptCommentCountCache;
+    }
+
+    const existingRequest = promptCommentCountRequests.get(site);
+    if (existingRequest) {
+        return existingRequest;
+    }
+
+    const promptIds = Array.from(new Set(
+        PROMPTS
+            .map((prompt) => String(prompt?.supabaseId || prompt?.id || '').trim())
+            .filter(Boolean)
+    ));
+    if (promptIds.length === 0) {
+        return null;
+    }
+
+    const request = window.supabaseClient
+        .from('prompt_comments')
+        .select('prompt_id')
+        .eq('site', site)
+        .then(({ data, error }) => {
+            if (error) {
+                throw error;
+            }
+
+            const counts = new Map(promptIds.map((promptId) => [promptId, 0]));
+            (data || []).forEach((row) => {
+                const promptId = String(row?.prompt_id || '').trim();
+                if (!promptId) return;
+                counts.set(promptId, (counts.get(promptId) || 0) + 1);
+            });
+
+            counts.forEach((count, promptId) => {
+                setCachedPromptCommentCount(promptId, count, site);
+            });
+
+            promptCommentCountLoadedAt.set(site, Date.now());
+            if (currentPromptId) {
+                applyPromptCommentCount(currentPromptId, getCachedPromptCommentCount(currentPromptId, site));
+            }
+
+            return counts;
+        })
+        .finally(() => {
+            if (promptCommentCountRequests.get(site) === request) {
+                promptCommentCountRequests.delete(site);
+            }
+        });
+
+    promptCommentCountRequests.set(site, request);
+    return request;
+}
+
+function invalidatePromptCommentsCache(promptId, site = getPromptInteractionSite()) {
+    const cacheKey = getPromptCommentCacheKey(promptId, site);
+    commentCache.delete(cacheKey);
+    commentRequestCache.delete(cacheKey);
+    commentCacheVersions.set(cacheKey, (commentCacheVersions.get(cacheKey) || 0) + 1);
+}
+
+async function loadPromptCommentsData(promptId, forceRefresh = false) {
+    if (!window.supabaseClient) return null;
+
+    const site = getPromptInteractionSite();
+    const cacheKey = getPromptCommentCacheKey(promptId, site);
+    const cached = commentCache.get(cacheKey);
+    const isCacheValid = cached && (Date.now() - cached.timestamp < COMMENT_CACHE_TTL);
+
+    if (!forceRefresh && isCacheValid) {
+        return cached;
+    }
+
+    const existingRequest = commentRequestCache.get(cacheKey);
+    if (existingRequest) {
+        return existingRequest;
+    }
+
+    const requestVersion = commentCacheVersions.get(cacheKey) || 0;
+    const request = (async () => {
+        let currentUserId = window._cachedUserId;
+        let currentUserAvatar = window._cachedUserAvatar;
+
+        const [userResult, commentsResult, allLikes] = await Promise.all([
+            !currentUserId ? window.supabaseClient.auth.getUser() : Promise.resolve({ data: { user: { id: currentUserId } } }),
+            window.supabaseClient
+                .from('prompt_comments')
+                .select(`*, is_pinned, is_featured, profiles:user_id (id, username, avatar_url)`)
+                .eq('prompt_id', promptId)
+                .eq('site', site)
+                .order('is_pinned', { ascending: false })
+                .order('created_at', { ascending: true }),
+            window.supabaseClient
+                .from('comment_likes')
+                .select('comment_id, user_id')
+                .eq('site', site)
+        ]);
+
+        if (!currentUserId && userResult.data?.user) {
+            currentUserId = userResult.data.user.id;
+            window._cachedUserId = currentUserId;
+
+            if (!currentUserAvatar && currentUserId) {
+                const { data: profile } = await window.supabaseClient
+                    .from('profiles')
+                    .select('avatar_url')
+                    .eq('id', currentUserId)
+                    .single();
+
+                const dbAvatar = profile?.avatar_url;
+                if (dbAvatar && dbAvatar.trim() !== '' &&
+                    (dbAvatar.startsWith('http') || (dbAvatar.startsWith('data:') && dbAvatar.length > 100))) {
+                    currentUserAvatar = dbAvatar;
+                    window._cachedUserAvatar = currentUserAvatar;
+                }
+            }
+        }
+
+        const { data, error } = commentsResult;
+        if (error) {
+            throw error;
+        }
+
+        const commentIds = new Set(data.map(c => c.id));
+        const userLikedCommentIds = new Set();
+        const commentLikeCounts = new Map();
+
+        if (allLikes.data) {
+            allLikes.data.forEach((like) => {
+                if (!commentIds.has(like.comment_id)) return;
+
+                if (like.user_id === currentUserId) {
+                    userLikedCommentIds.add(like.comment_id);
+                }
+                commentLikeCounts.set(
+                    like.comment_id,
+                    (commentLikeCounts.get(like.comment_id) || 0) + 1
+                );
+            });
+        }
+
+        const payload = {
+            timestamp: Date.now(),
+            data,
+            currentUserId,
+            currentUserAvatar,
+            userLikedCommentIds: [...userLikedCommentIds],
+            commentLikeCounts: Object.fromEntries(commentLikeCounts)
+        };
+
+        if ((commentCacheVersions.get(cacheKey) || 0) !== requestVersion) {
+            return commentCache.get(cacheKey) || null;
+        }
+
+        commentCache.set(cacheKey, payload);
+        setCachedPromptCommentCount(promptId, data.length, site);
+        promptCommentCountLoadedAt.set(site, Date.now());
+        return payload;
+    })().finally(() => {
+        if (commentRequestCache.get(cacheKey) === request) {
+            commentRequestCache.delete(cacheKey);
+        }
+    });
+
+    commentRequestCache.set(cacheKey, request);
+    return request;
+}
+
+function prefetchComments(promptId, forceRefresh = false) {
+    if (!promptId) return Promise.resolve(null);
+
+    return loadPromptCommentsData(promptId, forceRefresh).catch((error) => {
+        console.warn('[Comments] Prefetch failed:', error);
+        return null;
+    });
+}
 
 // Render comments from cache (instant, no network)
 function renderCommentsFromCache(cached, list) {
@@ -7249,158 +7679,20 @@ async function fetchComments(promptId, forceRefresh = false) {
         list.innerHTML = `<div class="comment-empty-state" data-state="loading"><div class="comment-empty-subtitle">${window.i18n?.t('common.loading') || 'Loading...'}</div></div>`;
     }
 
-    // Get cached user ID if available (avoid re-calling getUser if we have it)
-    let currentUserId = window._cachedUserId;
-    let currentUserAvatar = window._cachedUserAvatar;
-
-    // Single Promise.all with ALL queries for minimal latency
-    const [userResult, commentsResult, allLikes] = await Promise.all([
-        // Only fetch user if not cached
-        !currentUserId ? window.supabaseClient.auth.getUser() : Promise.resolve({ data: { user: { id: currentUserId } } }),
-        // Fetch comments with profiles
-        window.supabaseClient
-            .from('prompt_comments')
-            .select(`*, is_pinned, is_featured, profiles:user_id (id, username, avatar_url)`)
-            .eq('prompt_id', promptId)
-            .eq('site', site)
-            .order('is_pinned', { ascending: false })
-            .order('created_at', { ascending: true }),
-        // Fetch ALL likes for this prompt's comments in one query
-        window.supabaseClient
-            .from('comment_likes')
-            .select('comment_id, user_id')
-            .eq('site', site)
-    ]);
-
-    // Process user
-    if (!currentUserId && userResult.data?.user) {
-        currentUserId = userResult.data.user.id;
-        window._cachedUserId = currentUserId;
-
-        // Fetch user avatar only once and cache it
-        if (!currentUserAvatar && currentUserId) {
-            const { data: profile } = await window.supabaseClient
-                .from('profiles')
-                .select('avatar_url')
-                .eq('id', currentUserId)
-                .single();
-
-            const dbAvatar = profile?.avatar_url;
-            if (dbAvatar && dbAvatar.trim() !== '' &&
-                (dbAvatar.startsWith('http') || (dbAvatar.startsWith('data:') && dbAvatar.length > 100))) {
-                currentUserAvatar = dbAvatar;
-                window._cachedUserAvatar = currentUserAvatar;
-            }
-        }
-    }
-
-    const { data, error } = commentsResult;
-
-    if (error) {
+    let loadedComments;
+    try {
+        loadedComments = await loadPromptCommentsData(promptId, forceRefresh);
+    } catch (error) {
         console.error("Comment Load Error:", error);
         list.classList.add('comment-list-empty');
         list.innerHTML = `<div class="comment-empty-state" data-state="error"><div class="comment-empty-subtitle comment-empty-subtitle--error">${window.i18n?.t('common.error') || 'Failed to load comments'}</div></div>`;
         return;
     }
+    if (!loadedComments) return;
+    if (promptId !== currentPromptId) return;
 
-    // Filter likes to only those for this prompt's comments
-    const commentIds = new Set(data.map(c => c.id));
-    let userLikedCommentIds = new Set();
-    let commentLikeCounts = new Map();
+    renderCommentsFromCache(loadedComments, list);
 
-    if (allLikes.data) {
-        allLikes.data.forEach(like => {
-            if (commentIds.has(like.comment_id)) {
-                if (like.user_id === currentUserId) {
-                    userLikedCommentIds.add(like.comment_id);
-                }
-                commentLikeCounts.set(
-                    like.comment_id,
-                    (commentLikeCounts.get(like.comment_id) || 0) + 1
-                );
-            }
-        });
-    }
-
-    // Cache the results
-    commentCache.set(cacheKey, {
-        timestamp: Date.now(),
-        data,
-        currentUserId,
-        currentUserAvatar,
-        userLikedCommentIds: [...userLikedCommentIds],
-        commentLikeCounts: Object.fromEntries(commentLikeCounts)
-    });
-
-    list.classList.remove('comment-list-empty');
-    list.innerHTML = '';
-    if (data.length === 0) {
-        updateCommentSectionHeading(0);
-        renderCommentEmptyState(list);
-        return;
-    }
-    updateCommentSectionHeading(data.length);
-
-    // Build comment lookup map for finding parent info
-    const commentMap = new Map();
-    data.forEach(c => commentMap.set(c.id, c));
-
-    // Build reply map: parent_id -> [replies]
-    const replyMap = new Map();
-    data.filter(c => c.parent_id).forEach(reply => {
-        if (!replyMap.has(reply.parent_id)) {
-            replyMap.set(reply.parent_id, []);
-        }
-        replyMap.get(reply.parent_id).push(reply);
-    });
-
-    // Get root-level comments (no parent)
-    const rootComments = data.filter(c => !c.parent_id);
-
-    // Recursive function to collect all replies in a thread (flattened)
-    const collectAllReplies = (commentId, collected = []) => {
-        const directReplies = replyMap.get(commentId) || [];
-        directReplies.forEach(reply => {
-            collected.push(reply);
-            collectAllReplies(reply.id, collected); // Recursively collect nested replies
-        });
-        return collected;
-    };
-
-    // Render a single comment
-    const renderSingleComment = (comment, isReply, isLastInThread) => {
-        const overrideAvatar = (comment.user_id === currentUserId) ? currentUserAvatar : null;
-        const hasReplies = (replyMap.get(comment.id) || []).length > 0;
-
-        // Get parent profile for "Replying to" display
-        const parentProfile = comment.parent_id ? commentMap.get(comment.parent_id)?.profiles : null;
-
-        // Check if current user has liked this comment
-        const isLiked = userLikedCommentIds.has(comment.id);
-
-        // Get like count from our fresh count map
-        const likeCount = commentLikeCounts.get(comment.id) || 0;
-
-        renderComment(comment, overrideAvatar, parentProfile, hasReplies, isLastInThread, isLiked, likeCount);
-    };
-
-    // Render all root comments and their flattened replies
-    rootComments.forEach(rootComment => {
-        // Render root comment
-        renderSingleComment(rootComment, false, false);
-
-        // Collect ALL replies (nested) and render them flatly
-        const allReplies = collectAllReplies(rootComment.id);
-        allReplies.forEach((reply, index) => {
-            const isLast = index === allReplies.length - 1;
-            renderSingleComment(reply, true, isLast);
-        });
-    });
-
-    // Apply Instagram-style collapse (show only 3 newest comments)
-    initCommentCollapse();
-
-    // Scroll to top to show first comments
     setTimeout(() => {
         list.scrollTop = 0;
     }, 100);
@@ -8005,7 +8297,9 @@ async function submitComment() {
 
     // Update badge
     const badge = document.getElementById('commentCountBadge');
-    badge.textContent = parseInt(badge.textContent) + 1;
+    const nextCount = normalizePromptCommentCount(parseInt(badge?.textContent || '0', 10) + 1);
+    setCachedPromptCommentCount(currentPromptId, nextCount, site);
+    applyPromptCommentCount(currentPromptId, nextCount);
 
     // Clear image selection after successful submission
     if (selectedCommentImage) {
@@ -8017,7 +8311,7 @@ async function submitComment() {
     }
 
     // Invalidate cache
-    commentCache.delete(getPromptCommentCacheKey(currentPromptId, site));
+    invalidatePromptCommentsCache(currentPromptId, site);
 }
 
 // --- Sorting UI Logic ---

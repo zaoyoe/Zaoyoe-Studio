@@ -405,6 +405,29 @@ test('admin chat workspace stays inside the viewport on desktop overlays', () =>
     }
 });
 
+test('admin chat workspace vertically centers fullscreen desktop windows', () => {
+    const chatWidgetSource = readRepoFile('js/components/ChatWidget.js');
+
+    const markers = [
+        '_shouldUseDesktopEdgeSafeInset() {',
+        'const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;',
+        "if (window.matchMedia('(display-mode: fullscreen)').matches) {",
+        'return widthDelta <= 24 && heightDelta <= 24 && browserChromeHeight <= 96;',
+        "_toggleElementClass(this.chatWindow, 'chat-window--desktop-edge-safe', useEdgeSafeInset);",
+        '.chat-window.admin-mode-layout.chat-window--desktop-edge-safe {',
+        '--chat-admin-top-gap: clamp(56px, 9vh, 96px);',
+        'top: 50% !important;',
+        'transform: translateY(calc(-50% + 20px)) scale(0.95) !important;',
+        'transform-origin: center right !important;',
+        '.chat-window.admin-mode-layout.chat-window--desktop-edge-safe.active {',
+        'transform: translateY(-50%) scale(1) !important;'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(chatWidgetSource.includes(marker), true, `js/components/ChatWidget.js should contain ${marker}`);
+    }
+});
+
 test('chat widget restores authenticated session ids quickly and hydrates linked history in the background', () => {
     const chatWidgetSource = readRepoFile('js/components/ChatWidget.js');
 
@@ -7597,6 +7620,47 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'gallery-toast--visible',
         "setPromptsDisplayState(loginBtn, false, 'prompts-display-flex')",
         'buildPromptsStaggerClass(i)',
+        "const { format = 'avif' } = options;",
+        "url.includes('supabase.co/storage/v1/object/public/prompt-images/')",
+        "'/storage/v1/render/image/public/'",
+        "optimizedUrl.searchParams.set('width', '360');",
+        "optimizedUrl.searchParams.set('height', '270');",
+        "optimizedUrl.searchParams.set('quality', '80');",
+        "optimizedUrl.searchParams.set('format', format);",
+        "optimizedUrl.searchParams.delete('format');",
+        'const PROMPT_GALLERY_SKELETON_COUNT = 8;',
+        'const PROMPT_NAV_SKELETON_COUNT = 8;',
+        'const PROMPT_GALLERY_EAGER_IMAGE_COUNT = 4;',
+        'function buildPromptCardSkeletonMarkup(index = 0) {',
+        'function buildPromptNavSkeletonMarkup(count = PROMPT_NAV_SKELETON_COUNT) {',
+        'function renderPromptNavSkeletons(count = PROMPT_NAV_SKELETON_COUNT) {',
+        'function renderPromptGallerySkeletons(count = PROMPT_GALLERY_SKELETON_COUNT) {',
+        'function warmPromptGalleryLeadImages(items = []) {',
+        'function setPromptCardImageSource(cardImage, originalUrl) {',
+        "const primaryUrl = getOptimizedImageUrl(originalUrl);",
+        "const transformFallbackUrl = getOptimizedImageUrl(originalUrl, { format: '' });",
+        "cardImage.dataset.transformFallbackSrc = transformFallbackUrl !== primaryUrl ? transformFallbackUrl : '';",
+        "if (optimizedUrl.includes('supabase.co/storage/v1/render/image/public/')) return;",
+        'const commentRequestCache = new Map();',
+        'function invalidatePromptCommentsCache(promptId, site = getPromptInteractionSite()) {',
+        'async function loadPromptCommentsData(promptId, forceRefresh = false) {',
+        'function prefetchComments(promptId, forceRefresh = false) {',
+        'const promptCommentCountCache = new Map();',
+        'function getCachedPromptCommentCount(promptId, site = getPromptInteractionSite()) {',
+        'function applyPromptCommentCount(promptId, count = null) {',
+        'async function preloadPromptCommentCounts(forceRefresh = false) {',
+        'renderPromptNavSkeletons();',
+        "navContainer.classList.add('nav-items--hydrated');",
+        'warmPromptGalleryLeadImages(itemsToLoad);',
+        "card.className = 'prompt-card card-enter prompt-card--loading';",
+        'const shouldLoadImageEagerly = index < PROMPT_GALLERY_EAGER_IMAGE_COUNT;',
+        "card.classList.add('prompt-card--loaded');",
+        "cardImage.fetchPriority = shouldLoadImageEagerly ? 'high' : 'auto';",
+        'setPromptCardImageSource(cardImage, item.images[0]);',
+        "cardImage.dataset.fallbackStage = 'transform';",
+        "cardImage.dataset.fallbackStage = 'original';",
+        'void preloadPromptCommentCounts();',
+        'void prefetchComments(currentPromptId);',
         'featured-banner--revealed',
         'search-cooldown-msg',
         'comment-empty-subtitle comment-empty-subtitle--error',
@@ -7636,8 +7700,13 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
     const styleMarkers = [
         '.gallery-toast',
         '.gallery-toast--visible',
+        '@keyframes promptSkeletonShimmer',
         '.prompts-display-flex',
         '.prompts-nav-transition',
+        '.nav-items.nav-items--skeleton',
+        '.nav-items.nav-items--hydrated',
+        '.nav-item.nav-item--skeleton',
+        '.nav-item-skeleton--title-wide',
         '.featured-banner--revealed',
         '.prompts-pagination-nav',
         '.search-cooldown-msg',
@@ -7645,6 +7714,12 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         '.comment-empty-subtitle--error',
         '.modal-img-nav.is-visible',
         '.poetry-modal.poetry-modal--visible',
+        '.comment-count.comment-count--hidden',
+        '.prompt-card--skeleton',
+        '.prompt-card-media-skeleton',
+        '.prompt-card--loaded .prompt-card-media-skeleton',
+        '.prompt-card-skeleton-title--wide',
+        '.prompt-card-skeleton-dot',
         '.prompt-card.prompt-card-exiting',
         '.prompt-card.card-visible.prompt-card-stagger-11',
         '.prompt-status-bar-shield',
@@ -7663,14 +7738,44 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.css?v=20260324_PROMPTS_UI_STATE_STYLES_4'),
+        promptsHtml.includes('prompts-poetry.css?v=20260402_PROMPTS_NAV_STABILITY_1'),
         true,
         'prompts.html should load the latest prompts gallery stylesheet version'
     );
     assert.equal(
-        promptsHtml.includes('prompts-poetry.js?v=20260401_PROMPTS_SITE_ISOLATION_1'),
+        promptsHtml.includes('prompts-poetry.js?v=20260402_PROMPTS_IMAGE_PIPELINE_4'),
         true,
         'prompts.html should load the latest prompts gallery runtime version'
+    );
+});
+
+test('prompt image delivery optimizes admin previews and cacheable fallback uploads', () => {
+    const adminStudioScript = readRepoFile('admin-studio.js');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const markers = [
+        'function getOptimizedPromptCardImageUrl(url) {',
+        "trimmed.includes('cdn.zaoyoe.com/prompts/') && !trimmed.includes('/thumb/')",
+        "trimmed.includes('supabase.co/storage/v1/object/public/prompt-images/')",
+        "optimizedUrl.searchParams.set('width', '320');",
+        "optimizedUrl.searchParams.set('height', '220');",
+        "optimizedUrl.searchParams.set('quality', '80');",
+        'function sanitizePromptImageUrl(url) {',
+        "const imageUrl = sanitizePromptImageUrl(Array.isArray(prompt.images) ? prompt.images[0] : '');",
+        'const client = getAdminStudioSupabaseClient();',
+        'const originalImagesToUpload = imagesToUpload.filter(({ isThumb }) => !isThumb);',
+        "cacheControl: '31536000'",
+        'upsert: false'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('admin-studio.js?v=20260402_PROMPT_UPLOAD_PIPELINE_3'),
+        true,
+        'admin-studio.html should reference the latest prompt upload runtime version'
     );
 });
 

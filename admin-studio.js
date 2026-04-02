@@ -318,6 +318,40 @@ function sanitizeImageUrl(url) {
     return '';
 }
 
+function getOptimizedPromptCardImageUrl(url) {
+    if (typeof url !== 'string' || !url.trim()) return '';
+
+    const trimmed = url.trim();
+
+    if (trimmed.includes('cdn.zaoyoe.com/prompts/') && !trimmed.includes('/thumb/')) {
+        return trimmed.replace('/prompts/', '/prompts/thumb/');
+    }
+
+    if (trimmed.includes('supabase.co/storage/v1/object/public/prompt-images/')) {
+        try {
+            const optimizedUrl = new URL(trimmed);
+            optimizedUrl.pathname = optimizedUrl.pathname.replace(
+                '/storage/v1/object/public/',
+                '/storage/v1/render/image/public/'
+            );
+            optimizedUrl.searchParams.set('width', '320');
+            optimizedUrl.searchParams.set('height', '220');
+            optimizedUrl.searchParams.set('quality', '80');
+            return optimizedUrl.toString();
+        } catch (error) {
+            console.warn('Failed to optimize prompt card image URL:', trimmed, error);
+        }
+    }
+
+    return trimmed;
+}
+
+function sanitizePromptImageUrl(url) {
+    const safeUrl = sanitizeImageUrl(url);
+    if (!safeUrl) return '';
+    return getOptimizedPromptCardImageUrl(safeUrl);
+}
+
 function getAdminStudioSupabaseClient() {
     const client = window.supabaseClient;
     if (!client) {
@@ -2358,7 +2392,7 @@ function renderAdminCard(prompt) {
     image.decoding = 'async';
     image.referrerPolicy = 'no-referrer';
 
-    const imageUrl = sanitizeImageUrl(Array.isArray(prompt.images) ? prompt.images[0] : '');
+    const imageUrl = sanitizePromptImageUrl(Array.isArray(prompt.images) ? prompt.images[0] : '');
     if (imageUrl) {
         image.src = imageUrl;
     } else {
@@ -3963,8 +3997,8 @@ async function uploadImages() {
 
     // Upload to R2 via Edge Function
     if (imagesToUpload.length > 0) {
+        const client = getAdminStudioSupabaseClient();
         try {
-            const client = getAdminStudioSupabaseClient();
             // Get current session
             const { data: { session } } = await client.auth.getSession();
 
@@ -4006,8 +4040,10 @@ async function uploadImages() {
             // Fallback to Supabase Storage if R2 fails
             console.warn('⚠️ Falling back to Supabase Storage...');
 
-            for (let i = 0; i < imagesToUpload.length; i++) {
-                const { base64, filename } = imagesToUpload[i];
+            const originalImagesToUpload = imagesToUpload.filter(({ isThumb }) => !isThumb);
+
+            for (let i = 0; i < originalImagesToUpload.length; i++) {
+                const { base64, filename } = originalImagesToUpload[i];
 
                 try {
                     // Convert base64 to blob
@@ -4015,7 +4051,11 @@ async function uploadImages() {
 
                     const { data, error } = await client.storage
                         .from('prompt-images')
-                        .upload(filename, blob, { contentType: 'image/webp' });
+                        .upload(filename, blob, {
+                            contentType: 'image/webp',
+                            cacheControl: '31536000',
+                            upsert: false
+                        });
 
                     if (error) throw error;
 
