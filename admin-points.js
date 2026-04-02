@@ -107,7 +107,7 @@ async function fetchPointsCatalogSnapshot({ site = getPointsReadSite(), force = 
         return pointsCatalogSnapshot;
     }
 
-    const response = await fetch(buildAdminPointsUrl('points/catalog', { site: normalizedSite }), {
+    const response = await (window.AdminApi?.fetch || fetch)(buildAdminPointsUrl('points/catalog', { site: normalizedSite }), {
         credentials: 'include'
     });
     const payload = await parseAdminPointsResponse(response);
@@ -672,7 +672,7 @@ async function mutatePointsPackage({ action = 'update', id = '', payload = {}, l
         return null;
     }
 
-    const response = await fetch(buildAdminPointsUrl('points/packages'), {
+    const response = await (window.AdminApi?.fetch || fetch)(buildAdminPointsUrl('points/packages'), {
         method,
         credentials: 'include',
         headers: {
@@ -692,7 +692,7 @@ async function mutatePointsPackage({ action = 'update', id = '', payload = {}, l
 }
 
 async function mutatePointsManage({ action = '', site = '', payload = {} } = {}) {
-    const response = await fetch(buildAdminPointsUrl('points/manage'), {
+    const response = await (window.AdminApi?.fetch || fetch)(buildAdminPointsUrl('points/manage'), {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -709,14 +709,14 @@ async function mutatePointsManage({ action = '', site = '', payload = {} } = {})
 }
 
 async function fetchPointsBatchesPayload(params = {}) {
-    const response = await fetch(buildAdminPointsUrl('points/batches', params), {
+    const response = await (window.AdminApi?.fetch || fetch)(buildAdminPointsUrl('points/batches', params), {
         credentials: 'include'
     });
     return parseAdminPointsResponse(response);
 }
 
 async function fetchPointsLookupPayload(params = {}) {
-    const response = await fetch(buildAdminPointsUrl('points/lookup', params), {
+    const response = await (window.AdminApi?.fetch || fetch)(buildAdminPointsUrl('points/lookup', params), {
         credentials: 'include'
     });
     return parseAdminPointsResponse(response);

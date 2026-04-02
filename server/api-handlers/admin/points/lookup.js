@@ -24,12 +24,27 @@ function isUuid(value) {
 async function loadLedgerRow(supabase, id) {
     const { data, error } = await supabase
         .from('points_ledger')
-        .select('id, site, reason, reference_id, amount, user_id, created_at, profiles:user_id(username, email)')
+        .select('id, site, reason, reference_id, amount, user_id, created_at')
         .eq('id', id)
         .maybeSingle();
 
     if (error) throw error;
-    return data || null;
+    if (!data?.user_id) {
+        return data || null;
+    }
+
+    const { data: profileRow, error: profileError } = await supabase
+        .from('profiles')
+        .select('username, email')
+        .eq('id', data.user_id)
+        .maybeSingle();
+
+    if (profileError) throw profileError;
+
+    return {
+        ...data,
+        profiles: profileRow || null
+    };
 }
 
 async function maybeAttachPromptTitle(supabase, ledgerRow) {

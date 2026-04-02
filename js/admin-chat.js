@@ -7,6 +7,8 @@ class AdminChat {
 
         this.supabase = window.supabaseClient;
         this.currentSessionId = null;
+        this.currentSessionKey = null;
+        this.currentSessionIds = [];
         this.sessions = [];
         this.chatSessions = [];
         this.opsAlertMessages = [];
@@ -23,6 +25,7 @@ class AdminChat {
         this.sessionQueueFilter = 'all';
         this.sessionQueueDefaultView = 'all';
         this.sessionQueueDefaultFilter = 'all';
+        this.sidebarInsightsCollapsed = true;
         this.opsAlertCaseActionLocks = new Set();
         this.opsAlertBatchAssignBusy = false;
         this.opsAlertViewFilter = 'all';
@@ -35,6 +38,24 @@ class AdminChat {
         this.userContextRecentActions = new Map();
         this.currentUserContext = null;
         this.currentSessionInfo = null;
+        this.userContextPanelCollapsed = true;
+        this.currentAdminUserId = '';
+        this.currentAdminUserPromise = null;
+        this.isSessionBootstrapPending = false;
+        this.sessionBootstrapPromise = null;
+        this.sessionDeferredHydrationPromise = null;
+        this.sessionDeferredHydrationHandle = null;
+        this.sessionHistoryConsistencyPromise = null;
+        this.sessionHistoryConsistencyHandle = null;
+        this.sessionRealtimeHydrationHandle = null;
+        this.pendingRealtimeSessionUserIds = new Set();
+        this.pendingRealtimeSessionEmailKeys = new Set();
+        this.backgroundServicesStarted = false;
+        this.opsAlertSettingsConfigCache = null;
+        this.opsAlertSettingsConfigLoadedAt = 0;
+        this.chatScrollbarAutoHideClass = 'admin-scrollbar-auto-hide';
+        this.chatScrollbarAutoHideVisibleClass = 'admin-scrollbar-auto-hide--visible';
+        this.chatScrollbarAutoHideBoundAttr = 'data-admin-chat-scrollbar-auto-hide-bound';
         this.replyTemplateConfigTemplates = null;
         this.replyTemplateConfigLoadedAt = 0;
         this.replyTemplateConfigPromise = null;
@@ -44,8 +65,11 @@ class AdminChat {
         this.opsAlertSessionId = '__admin_ops_todo__';
         this.handleDocumentClick = this.handleDocumentClick.bind(this);
         this.handleOpsAlertConfigUpdated = this.handleOpsAlertConfigUpdated.bind(this);
+        this.handleWindowResize = this.updateChatContextPanelLayout.bind(this);
         this.restoreSessionQueuePreferences();
+        this.restoreSidebarInsightsPreference();
         window.addEventListener('ops-alerts-config-updated', this.handleOpsAlertConfigUpdated);
+        window.addEventListener('resize', this.handleWindowResize);
 
         window.adminChatInstance = this;
         this.init();
@@ -82,8 +106,32 @@ class AdminChat {
             this.sessionSlaTimer = null;
         }
 
+        if (this.sessionDeferredHydrationHandle) {
+            if (this.sessionDeferredHydrationHandle.type === 'idle' && typeof window.cancelIdleCallback === 'function') {
+                window.cancelIdleCallback(this.sessionDeferredHydrationHandle.id);
+            } else if (this.sessionDeferredHydrationHandle.type === 'timeout') {
+                window.clearTimeout(this.sessionDeferredHydrationHandle.id);
+            }
+            this.sessionDeferredHydrationHandle = null;
+        }
+
+        if (this.sessionHistoryConsistencyHandle) {
+            if (this.sessionHistoryConsistencyHandle.type === 'idle' && typeof window.cancelIdleCallback === 'function') {
+                window.cancelIdleCallback(this.sessionHistoryConsistencyHandle.id);
+            } else if (this.sessionHistoryConsistencyHandle.type === 'timeout') {
+                window.clearTimeout(this.sessionHistoryConsistencyHandle.id);
+            }
+            this.sessionHistoryConsistencyHandle = null;
+        }
+
+        if (this.sessionRealtimeHydrationHandle) {
+            window.clearTimeout(this.sessionRealtimeHydrationHandle);
+            this.sessionRealtimeHydrationHandle = null;
+        }
+
         document.removeEventListener('click', this.handleDocumentClick);
         window.removeEventListener('ops-alerts-config-updated', this.handleOpsAlertConfigUpdated);
+        window.removeEventListener('resize', this.handleWindowResize);
     }
 
     // i18n helper with fallback
@@ -136,6 +184,210 @@ class AdminChat {
         return 'zaoyoe_admin_support_queue_preferences_v1';
     }
 
+    getSidebarInsightsPreferenceStorageKey() {
+        return 'zaoyoe_admin_support_sidebar_insights_v1';
+    }
+
+    getChatSessionCacheStorageKey() {
+        return `zaoyoe_admin_support_session_cache_v1:${this.getActiveSiteFilter()}`;
+    }
+
+    getChatSessionCacheMaxAgeMs() {
+        return 5 * 60 * 1000;
+    }
+
+    getChatBootstrapMessageLimit() {
+        return 500;
+    }
+
+    getChatHistoryPageSize() {
+        return 1000;
+    }
+
+    async ensureCurrentAdminUserId() {
+        if (this.currentAdminUserId) {
+            return this.currentAdminUserId;
+        }
+
+        if (this.currentAdminUserPromise) {
+            return this.currentAdminUserPromise;
+        }
+
+        this.currentAdminUserPromise = this.supabase?.auth?.getUser?.()
+            .then(({ data }) => {
+                const userId = String(data?.user?.id || '').trim();
+                this.currentAdminUserId = userId;
+                return userId;
+            })
+            .catch((error) => {
+                console.warn('[AdminChat] Failed to resolve current admin user id:', error);
+                return '';
+            })
+            .finally(() => {
+                this.currentAdminUserPromise = null;
+            });
+
+        return this.currentAdminUserPromise;
+    }
+
+    cloneChatSessionCacheValue(value, depth = 0) {
+        if (depth > 4 || value == null) {
+            return value ?? null;
+        }
+
+        if (value instanceof Date) {
+            return value.toISOString();
+        }
+
+        if (Array.isArray(value)) {
+            return value
+                .map((entry) => this.cloneChatSessionCacheValue(entry, depth + 1))
+                .filter((entry) => entry !== undefined);
+        }
+
+        if (typeof value === 'object') {
+            return Object.entries(value).reduce((accumulator, [key, entryValue]) => {
+                if (typeof entryValue === 'function' || entryValue === undefined) {
+                    return accumulator;
+                }
+                accumulator[key] = this.cloneChatSessionCacheValue(entryValue, depth + 1);
+                return accumulator;
+            }, {});
+        }
+
+        return value;
+    }
+
+    serializeChatProfileForCache(profile = null) {
+        if (!profile || typeof profile !== 'object') {
+            return null;
+        }
+
+        return this.cloneChatSessionCacheValue({
+            id: profile.id || '',
+            email: profile.email || '',
+            username: profile.username || '',
+            display_name: profile.display_name || '',
+            avatar_url: profile.avatar_url || ''
+        });
+    }
+
+    serializeChatSessionForCache(session = {}) {
+        return this.cloneChatSessionCacheValue({
+            sessionId: session.sessionId || '',
+            sessionIds: Array.isArray(session.sessionIds) ? session.sessionIds : [],
+            nickname: session.nickname || '',
+            email: session.email || '',
+            lastMessage: session.lastMessage || '',
+            timestamp: session.timestamp instanceof Date ? session.timestamp.toISOString() : (session.timestamp || ''),
+            userId: session.userId || '',
+            unread: Number(session.unread || 0),
+            profile: this.serializeChatProfileForCache(session.profile),
+            lastUserMessageAt: session.lastUserMessageAt || '',
+            lastAdminMessageAt: session.lastAdminMessageAt || '',
+            replySummary: session.replySummary || null,
+            ticketSummary: session.ticketSummary || null,
+            paymentSummary: session.paymentSummary || null,
+            verificationSummary: session.verificationSummary || null
+        });
+    }
+
+    restoreChatSessionCache() {
+        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+            return false;
+        }
+
+        try {
+            const rawValue = window.localStorage.getItem(this.getChatSessionCacheStorageKey());
+            if (!rawValue) return false;
+
+            const parsed = JSON.parse(rawValue);
+            const updatedAt = Date.parse(parsed?.updatedAt || '');
+            if (!Number.isFinite(updatedAt) || (Date.now() - updatedAt) > this.getChatSessionCacheMaxAgeMs()) {
+                window.localStorage.removeItem(this.getChatSessionCacheStorageKey());
+                return false;
+            }
+
+            const cachedSessions = Array.isArray(parsed?.sessions) ? parsed.sessions : [];
+            if (!cachedSessions.length) {
+                this.chatSessions = [];
+                return false;
+            }
+
+            this.chatSessions = cachedSessions
+                .map((session) => {
+                    if (!session || typeof session !== 'object') {
+                        return null;
+                    }
+
+                    const sessionId = String(session.sessionId || '').trim();
+                    const sessionIds = Array.isArray(session.sessionIds)
+                        ? session.sessionIds.map((value) => String(value || '').trim()).filter(Boolean)
+                        : [];
+                    if (!sessionId || !sessionIds.length) {
+                        return null;
+                    }
+
+                    const timestamp = session.timestamp ? new Date(session.timestamp) : null;
+                    if (!(timestamp instanceof Date) || Number.isNaN(timestamp.getTime())) {
+                        return null;
+                    }
+
+                    return {
+                        sessionId,
+                        sessionIds,
+                        nickname: String(session.nickname || '').trim(),
+                        email: String(session.email || '').trim(),
+                        lastMessage: String(session.lastMessage || ''),
+                        timestamp,
+                        userId: String(session.userId || '').trim(),
+                        unread: Number(session.unread || 0),
+                        profile: session.profile && typeof session.profile === 'object'
+                            ? { ...session.profile }
+                            : null,
+                        lastUserMessageAt: session.lastUserMessageAt || '',
+                        lastAdminMessageAt: session.lastAdminMessageAt || '',
+                        replySummary: session.replySummary && typeof session.replySummary === 'object'
+                            ? { ...session.replySummary }
+                            : this.buildSessionReplySummary(session.lastUserMessageAt, session.lastAdminMessageAt),
+                        ticketSummary: session.ticketSummary && typeof session.ticketSummary === 'object'
+                            ? this.cloneChatSessionCacheValue(session.ticketSummary)
+                            : null,
+                        paymentSummary: session.paymentSummary && typeof session.paymentSummary === 'object'
+                            ? this.cloneChatSessionCacheValue(session.paymentSummary)
+                            : null,
+                        verificationSummary: session.verificationSummary && typeof session.verificationSummary === 'object'
+                            ? this.cloneChatSessionCacheValue(session.verificationSummary)
+                            : null
+                    };
+                })
+                .filter(Boolean);
+
+            return this.chatSessions.length > 0;
+        } catch (error) {
+            console.warn('[AdminChat] Failed to restore chat session cache:', error);
+            return false;
+        }
+    }
+
+    persistChatSessionCache() {
+        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+            return;
+        }
+
+        try {
+            const sessions = Array.isArray(this.chatSessions)
+                ? this.chatSessions.map((session) => this.serializeChatSessionForCache(session)).filter(Boolean)
+                : [];
+            window.localStorage.setItem(this.getChatSessionCacheStorageKey(), JSON.stringify({
+                updatedAt: new Date().toISOString(),
+                sessions
+            }));
+        } catch (error) {
+            console.warn('[AdminChat] Failed to persist chat session cache:', error);
+        }
+    }
+
     normalizeSessionQueueView(value = 'all') {
         const normalized = String(value || 'all').trim() || 'all';
         const allowed = new Set(['all', 'priority', 'ticket_followup', 'payment_verify']);
@@ -169,6 +421,141 @@ class AdminChat {
         return labels[this.normalizeSessionQueueFilter(value)] || '全部';
     }
 
+    getUserContextPanelSummaryText(context = {}) {
+        const items = this.getUserContextHeaderStatusItems(context);
+        if (items.length) {
+            return items.map((item) => `${item.label} ${item.value}`).join(' · ');
+        }
+
+        const summaryParts = [];
+        if (context.accountState) {
+            summaryParts.push(String(context.accountState).trim());
+        }
+
+        const counts = [
+            { label: '订单', value: Array.isArray(context.orders) ? context.orders.length : 0 },
+            { label: '充值', value: Array.isArray(context.payments) ? context.payments.length : 0 },
+            { label: '验证', value: Array.isArray(context.verifications) ? context.verifications.length : 0 },
+            { label: '工单', value: Array.isArray(context.tickets) ? context.tickets.length : 0 }
+        ]
+            .filter((item) => item.value > 0)
+            .slice(0, 3)
+            .map((item) => `${item.label} ${item.value}`);
+
+        if (counts.length) {
+            summaryParts.push(...counts);
+        }
+
+        return summaryParts.join(' · ') || '账号、订单、充值与工单概览';
+    }
+
+    setUserContextPanelCollapsed(collapsed = false) {
+        this.userContextPanelCollapsed = Boolean(collapsed);
+
+        const shell = document.querySelector('#chatContextPanel .user-context-shell');
+        const toggle = document.querySelector('#chatContextPanel #userContextPanelToggle');
+        const toggleText = toggle?.querySelector('.user-context-shell__toggle-text');
+
+        if (shell) {
+            shell.classList.toggle('is-collapsed', this.userContextPanelCollapsed);
+        }
+
+        if (toggle) {
+            toggle.setAttribute('aria-expanded', this.userContextPanelCollapsed ? 'false' : 'true');
+            toggle.setAttribute('title', this.userContextPanelCollapsed ? '展开 360 信息' : '收起 360 信息');
+        }
+
+        if (toggleText) {
+            toggleText.textContent = this.userContextPanelCollapsed ? '展开' : '收起';
+        }
+
+        this.updateChatContextPanelLayout();
+    }
+
+    updateChatContextPanelLayout() {
+        const interfaceEl = document.getElementById('chatInterface');
+        const headerEl = interfaceEl?.querySelector('.chat-main-header');
+        const inputWrapper = interfaceEl?.querySelector('#chatInputWrapper');
+        const replyBar = interfaceEl?.querySelector('#chatReplyTemplateBar');
+        const messagesArea = interfaceEl?.querySelector('#adminMessagesArea');
+        const contextPanel = interfaceEl?.querySelector('#chatContextPanel');
+        const contextShell = contextPanel?.querySelector('.user-context-shell');
+        if (!interfaceEl || !headerEl) return;
+
+        const topOffset = (headerEl.offsetHeight || 0) + 8;
+        interfaceEl.style.setProperty('--chat-context-panel-top', `${topOffset}px`);
+
+        const replyBottom = (inputWrapper?.offsetHeight || 0) + 10;
+        interfaceEl.style.setProperty('--chat-reply-templates-bottom', `${replyBottom}px`);
+
+        const replyHeight = replyBar && !replyBar.hidden ? (replyBar.offsetHeight || 0) : 0;
+        const replySpacer = replyHeight ? replyHeight + 14 : 0;
+        interfaceEl.style.setProperty('--chat-reply-templates-height', `${replySpacer}px`);
+
+        let contextSpacer = 0;
+        if (contextPanel && !contextPanel.hidden) {
+            contextSpacer = Math.max(0, contextPanel.offsetHeight || 0);
+        }
+        interfaceEl.style.setProperty('--chat-context-panel-collapsed-height', `${contextSpacer}px`);
+
+        if (messagesArea) {
+            messagesArea.classList.toggle('chat-messages-area--reply-floating', replySpacer > 0);
+            messagesArea.classList.toggle('chat-messages-area--context-collapsed', contextSpacer > 0);
+        }
+    }
+
+    getScrollbarAutoHideTargets(root = document) {
+        const selectors = [
+            '#sessionList',
+            '#chatSidebarInsightsBody',
+            '#adminMessagesArea',
+            '.user-context-shell__body-inner'
+        ].join(', ');
+
+        const targets = [];
+        if (root instanceof Element && root.matches(selectors)) {
+            targets.push(root);
+        }
+
+        if (root instanceof Element || root instanceof DocumentFragment || root === document) {
+            targets.push(...root.querySelectorAll(selectors));
+        }
+
+        return targets;
+    }
+
+    markScrollbarActive(target) {
+        if (!(target instanceof HTMLElement)) return;
+
+        target.classList.add(this.chatScrollbarAutoHideVisibleClass);
+        if (target.__adminChatScrollbarHideTimer) {
+            window.clearTimeout(target.__adminChatScrollbarHideTimer);
+        }
+
+        target.__adminChatScrollbarHideTimer = window.setTimeout(() => {
+            target.classList.remove(this.chatScrollbarAutoHideVisibleClass);
+            target.__adminChatScrollbarHideTimer = null;
+        }, 720);
+    }
+
+    bindScrollbarAutoHide(target) {
+        if (!(target instanceof HTMLElement)) return;
+        if (target.getAttribute(this.chatScrollbarAutoHideBoundAttr) === '1') return;
+
+        target.setAttribute(this.chatScrollbarAutoHideBoundAttr, '1');
+        target.classList.add(this.chatScrollbarAutoHideClass);
+        target.addEventListener('mouseenter', () => this.markScrollbarActive(target), { passive: true });
+        target.addEventListener('focusin', () => this.markScrollbarActive(target), { passive: true });
+        target.addEventListener('scroll', () => this.markScrollbarActive(target), { passive: true });
+    }
+
+    initScrollbarAutoHide(root = document) {
+        const targets = this.getScrollbarAutoHideTargets(root);
+        for (const target of targets) {
+            this.bindScrollbarAutoHide(target);
+        }
+    }
+
     formatSessionQueueModeLabel(view = 'all', filter = 'all') {
         const normalizedView = this.normalizeSessionQueueView(view);
         const normalizedFilter = this.normalizeSessionQueueFilter(filter);
@@ -199,6 +586,35 @@ class AdminChat {
         }
     }
 
+    restoreSidebarInsightsPreference() {
+        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+            return;
+        }
+
+        try {
+            const rawValue = window.localStorage.getItem(this.getSidebarInsightsPreferenceStorageKey());
+            if (!rawValue) return;
+            const parsed = JSON.parse(rawValue);
+            this.sidebarInsightsCollapsed = parsed?.collapsed !== false;
+        } catch (error) {
+            console.warn('[AdminChat] Failed to restore sidebar insights preference:', error);
+        }
+    }
+
+    persistSidebarInsightsPreference() {
+        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+            return;
+        }
+
+        try {
+            window.localStorage.setItem(this.getSidebarInsightsPreferenceStorageKey(), JSON.stringify({
+                collapsed: this.sidebarInsightsCollapsed !== false
+            }));
+        } catch (error) {
+            console.warn('[AdminChat] Failed to persist sidebar insights preference:', error);
+        }
+    }
+
     persistSessionQueuePreferences({ saveAsDefault = false } = {}) {
         if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
             return;
@@ -225,6 +641,151 @@ class AdminChat {
         } catch (error) {
             console.warn('[AdminChat] Failed to persist session queue preferences:', error);
         }
+    }
+
+    getSidebarInsightsSummary(snapshot = null) {
+        if (this.isSessionBootstrapPending && !(Array.isArray(this.chatSessions) && this.chatSessions.length)) {
+            return '正在加载会话...';
+        }
+
+        const sourceSnapshot = snapshot || this.getSessionQueueBacklogSnapshot();
+        if (!sourceSnapshot || typeof sourceSnapshot !== 'object') {
+            return '正在整理当前队列...';
+        }
+
+        const parts = [];
+        if (Number(sourceSnapshot.openTickets || 0) > 0) {
+            parts.push(`工单中 ${sourceSnapshot.openTickets}`);
+        }
+        if (Number(sourceSnapshot.pendingReply || 0) > 0) {
+            parts.push(`待回复 ${sourceSnapshot.pendingReply}`);
+        }
+        if (Number(sourceSnapshot.staleReply || 0) > 0) {
+            parts.push(`久未回复 ${sourceSnapshot.staleReply}`);
+        }
+        if (Number(sourceSnapshot.verificationAlerts || 0) > 0) {
+            parts.push(`验证异常 ${sourceSnapshot.verificationAlerts}`);
+        }
+        return parts.length ? parts.slice(0, 2).join(' · ') : '当前队列比较平稳';
+    }
+
+    setSidebarInsightsCollapsed(collapsed = false) {
+        this.sidebarInsightsCollapsed = collapsed !== false;
+        this.persistSidebarInsightsPreference();
+        this.updateSidebarInsightsShell();
+    }
+
+    updateSidebarInsightsShell(snapshot = null) {
+        const shell = document.getElementById('chatSidebarInsights');
+        const toggle = document.getElementById('chatSidebarInsightsToggle');
+        const summary = document.getElementById('chatSidebarInsightsSummary');
+        if (!shell || !toggle) {
+            return;
+        }
+
+        const collapsed = this.sidebarInsightsCollapsed !== false;
+        shell.classList.toggle('is-collapsed', collapsed);
+        toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        toggle.setAttribute('title', collapsed ? '展开值班概览' : '收起值班概览');
+
+        const toggleText = toggle.querySelector('.chat-sidebar-insights__toggle-text');
+        if (toggleText) {
+            toggleText.textContent = collapsed ? '展开' : '收起';
+        }
+
+        if (summary) {
+            summary.textContent = this.getSidebarInsightsSummary(snapshot);
+        }
+    }
+
+    syncCurrentSessionFromSessions() {
+        if (!this.currentSessionKey) {
+            return;
+        }
+
+        const refreshedSession = this.sessions.find((item) => item.sessionId === this.currentSessionKey) || null;
+        if (!refreshedSession) {
+            return;
+        }
+
+        this.currentSessionInfo = refreshedSession;
+        this.currentSessionIds = Array.isArray(refreshedSession.sessionIds) && refreshedSession.sessionIds.length
+            ? refreshedSession.sessionIds.map((value) => String(value || '').trim()).filter(Boolean)
+            : [String(refreshedSession.sessionId || '').trim()].filter(Boolean);
+
+        if (!this.isOpsAlertSession(refreshedSession)) {
+            this.currentSessionId = this.currentSessionIds[0] || this.currentSessionKey;
+        }
+    }
+
+    startBackgroundServices() {
+        if (this.backgroundServicesStarted || this.destroyed) {
+            return;
+        }
+
+        this.backgroundServicesStarted = true;
+        this.subscribeToRealtime();
+        this.startSessionSlaTicker();
+    }
+
+    scheduleDeferredSessionHydration() {
+        if (this.destroyed || this.sessionDeferredHydrationPromise || this.sessionDeferredHydrationHandle) {
+            return;
+        }
+
+        const runHydration = () => {
+            this.sessionDeferredHydrationHandle = null;
+            this.sessionDeferredHydrationPromise = this.hydrateSessionSidebarData()
+                .catch((error) => {
+                    console.warn('[AdminChat] Deferred session hydration failed:', error);
+                })
+                .finally(() => {
+                    this.sessionDeferredHydrationPromise = null;
+                });
+        };
+
+        if (typeof window.requestIdleCallback === 'function') {
+            this.sessionDeferredHydrationHandle = {
+                type: 'idle',
+                id: window.requestIdleCallback(runHydration, { timeout: 900 })
+            };
+            return;
+        }
+
+        this.sessionDeferredHydrationHandle = {
+            type: 'timeout',
+            id: window.setTimeout(runHydration, 140)
+        };
+    }
+
+    scheduleSessionHistoryConsistencySync() {
+        if (this.destroyed || this.sessionHistoryConsistencyPromise || this.sessionHistoryConsistencyHandle) {
+            return;
+        }
+
+        const runSync = () => {
+            this.sessionHistoryConsistencyHandle = null;
+            this.sessionHistoryConsistencyPromise = this.syncSessionsWithCompleteHistory()
+                .catch((error) => {
+                    console.warn('[AdminChat] Complete history session sync failed:', error);
+                })
+                .finally(() => {
+                    this.sessionHistoryConsistencyPromise = null;
+                });
+        };
+
+        if (typeof window.requestIdleCallback === 'function') {
+            this.sessionHistoryConsistencyHandle = {
+                type: 'idle',
+                id: window.requestIdleCallback(runSync, { timeout: 1600 })
+            };
+            return;
+        }
+
+        this.sessionHistoryConsistencyHandle = {
+            type: 'timeout',
+            id: window.setTimeout(runSync, 520)
+        };
     }
 
     isSessionQueueUsingDefaultView() {
@@ -327,7 +888,7 @@ class AdminChat {
             return avatar;
         }
 
-        const initialSeed = (session.sessionId || displayName || '?').trim();
+        const initialSeed = (session.nickname || session.email || session.sessionId || displayName || '?').trim();
         const defaultInitials = initialSeed.substring(0, 2).toUpperCase() || '?';
 
         if (session.profile?.avatar_url) {
@@ -345,6 +906,123 @@ class AdminChat {
 
         avatar.textContent = session.profile ? (displayName || '?').substring(0, 1).toUpperCase() : defaultInitials;
         return avatar;
+    }
+
+    async fetchChatProfiles(filterType, values = []) {
+        const uniqueValues = [...new Set((Array.isArray(values) ? values : []).filter(Boolean))];
+        if (!uniqueValues.length || !this.supabase?.from) return [];
+
+        const selectVariants = [
+            'id, email, display_name, username, avatar_url',
+            'id, email, username, avatar_url',
+            'id, username, avatar_url'
+        ];
+
+        let lastError = null;
+
+        for (const selectClause of selectVariants) {
+            try {
+                const { data, error } = await this.supabase
+                    .from('profiles')
+                    .select(selectClause)
+                    .in(filterType, uniqueValues);
+
+                if (error) {
+                    lastError = error;
+                    continue;
+                }
+
+                return Array.isArray(data) ? data : [];
+            } catch (error) {
+                lastError = error;
+            }
+        }
+
+        if (lastError) {
+            console.warn(`[AdminChat] Failed to fetch profiles by ${filterType}:`, lastError);
+        }
+        return [];
+    }
+
+    async attachSessionProfiles(sessions = []) {
+        const safeSessions = Array.isArray(sessions) ? sessions : [];
+        if (!safeSessions.length) {
+            return [];
+        }
+
+        const userIds = [...new Set(
+            safeSessions
+                .map((session) => String(session?.userId || '').trim())
+                .filter(Boolean)
+        )];
+        const emailKeys = [...new Set(
+            safeSessions
+                .filter((session) => !String(session?.userId || '').trim())
+                .map((session) => {
+                    const directEmail = String(session?.email || '').trim().toLowerCase();
+                    if (directEmail && directEmail.includes('@')) {
+                        return directEmail;
+                    }
+                    return (Array.isArray(session?.sessionIds) ? session.sessionIds : [])
+                        .map((value) => String(value || '').trim().toLowerCase())
+                        .find((value) => value.includes('@')) || '';
+                })
+                .filter(Boolean)
+        )];
+
+        const [profilesById, profilesByEmail] = await Promise.all([
+            userIds.length > 0 ? this.fetchChatProfiles('id', userIds) : Promise.resolve([]),
+            emailKeys.length > 0 ? this.fetchChatProfiles('email', emailKeys) : Promise.resolve([])
+        ]);
+
+        const userMapById = new Map((Array.isArray(profilesById) ? profilesById : []).map((profile) => [profile.id, profile]));
+        const userMapByEmail = new Map(
+            (Array.isArray(profilesByEmail) ? profilesByEmail : [])
+                .filter((profile) => profile?.email)
+                .map((profile) => [String(profile.email || '').toLowerCase(), profile])
+        );
+
+        return safeSessions.map((session) => {
+            const fallbackKey = String(session?.sessionId || '').trim();
+            const sessionIds = Array.isArray(session?.sessionIds) ? session.sessionIds : [];
+            const fallbackEmail = this.resolveSessionEmail(session?.profile || null, fallbackKey, sessionIds);
+            const profile = session?.userId
+                ? (userMapById.get(String(session.userId).trim()) || session.profile || null)
+                : (userMapByEmail.get(fallbackEmail.toLowerCase()) || session.profile || null);
+            const email = this.resolveSessionEmail(profile, fallbackKey, sessionIds);
+            const nickname = this.resolveSessionNickname(profile, fallbackKey, email);
+
+            return {
+                ...session,
+                profile,
+                email,
+                nickname
+            };
+        });
+    }
+
+    resolveSessionEmail(profile, fallbackKey = '', sessionIds = []) {
+        const email = typeof profile?.email === 'string' ? profile.email.trim() : '';
+        if (email) return email;
+
+        const normalizedFallback = typeof fallbackKey === 'string' ? fallbackKey.trim() : String(fallbackKey || '');
+        if (normalizedFallback.includes('@')) return normalizedFallback;
+
+        const emailSessionId = (Array.isArray(sessionIds) ? sessionIds : [])
+            .find((id) => typeof id === 'string' && id.includes('@'));
+        return emailSessionId ? emailSessionId.trim() : '';
+    }
+
+    resolveSessionNickname(profile, fallbackKey = '', preferredEmail = '') {
+        const displayName = typeof profile?.display_name === 'string' ? profile.display_name.trim() : '';
+        const username = typeof profile?.username === 'string' ? profile.username.trim() : '';
+        const normalizedFallback = typeof fallbackKey === 'string' ? fallbackKey.trim() : String(fallbackKey || '');
+
+        if (displayName) return displayName;
+        if (username) return username;
+        if (preferredEmail && preferredEmail.includes('@')) return preferredEmail.split('@')[0];
+        if (normalizedFallback.includes('@')) return normalizedFallback.split('@')[0];
+        return this.t('chat.guest', '访客');
     }
 
     getActiveSiteFilter() {
@@ -731,6 +1409,7 @@ class AdminChat {
         });
 
         this.composeSessions();
+        this.persistChatSessionCache();
         this.renderSessionQueueControls();
         this.renderSessionList(this.searchQuery);
     }
@@ -807,6 +1486,7 @@ class AdminChat {
         }));
 
         this.composeSessions();
+        this.persistChatSessionCache();
         this.renderSessionList(this.searchQuery);
     }
 
@@ -1274,6 +1954,7 @@ class AdminChat {
         this.renderSessionQueueSnapshot();
         this.renderSessionQueueViews();
         this.renderSessionQueueFilters();
+        this.updateSidebarInsightsShell();
     }
 
     renderSessionQueueFilters() {
@@ -1548,12 +2229,30 @@ class AdminChat {
     getUserContextRecentAction(context = {}) {
         const cacheKey = String(context.cacheKey || '').trim();
         if (!cacheKey) return null;
-        return this.userContextRecentActions.get(cacheKey) || null;
+        const recentAction = this.userContextRecentActions.get(cacheKey) || null;
+        if (!recentAction) {
+            return null;
+        }
+        if (!this.canAccessWorkbenchAction(recentAction)) {
+            this.userContextRecentActions.delete(cacheKey);
+            if (this.currentUserContext?.cacheKey === cacheKey) {
+                this.currentUserContext = {
+                    ...this.currentUserContext,
+                    recentAction: null
+                };
+            }
+            return null;
+        }
+        return recentAction;
     }
 
     rememberUserContextAction(context = {}, action = {}) {
         const cacheKey = String(context.cacheKey || action._contextCacheKey || '').trim();
         if (!cacheKey) return null;
+        if (!this.canAccessWorkbenchAction(action)) {
+            this.userContextRecentActions.delete(cacheKey);
+            return null;
+        }
 
         const contextPayload = action.context && typeof action.context === 'object'
             ? { ...action.context }
@@ -1613,12 +2312,9 @@ class AdminChat {
     }
 
     resolveSessionContextEmail(session = {}) {
-        const profileEmail = String(session?.profile?.email || '').trim();
-        if (profileEmail) {
-            return profileEmail;
-        }
-        const sessionId = String(session?.sessionId || '').trim();
-        return this.looksLikeEmail(sessionId) ? sessionId : '';
+        const explicitEmail = String(session?.email || '').trim();
+        if (explicitEmail) return explicitEmail;
+        return this.resolveSessionEmail(session?.profile || null, session?.sessionId || '', session?.sessionIds || []);
     }
 
     buildUserContextCacheKey(session = {}) {
@@ -1766,11 +2462,13 @@ class AdminChat {
         if (!text) {
             panel.hidden = true;
             panel.replaceChildren();
+            this.updateChatContextPanelLayout();
             return;
         }
         panel.hidden = false;
         panel.className = `chat-context-panel chat-context-panel--${variant}`;
         panel.innerHTML = `<div class="chat-context-panel__state">${this.escapeHtml(text)}</div>`;
+        this.updateChatContextPanelLayout();
     }
 
     createUserContextSection(title, rows = [], emptyText = '暂无记录') {
@@ -2065,11 +2763,20 @@ class AdminChat {
             });
         }
 
-        return actions.slice(0, 5);
+        return actions
+            .filter((action) => this.canAccessWorkbenchAction(action))
+            .slice(0, 5);
     }
 
     canCreateUserContextTicket(context = {}, { openTicket = null } = {}) {
         if (!context || typeof context !== 'object') {
+            return false;
+        }
+        if (!this.canAccessWorkbenchAction({
+            key: 'create_ticket',
+            action: 'create_ticket',
+            context
+        })) {
             return false;
         }
         const activeTicket = openTicket || (Array.isArray(context.tickets) ? context.tickets : [])
@@ -2107,6 +2814,14 @@ class AdminChat {
     }
 
     async handleCreateUserContextTicket(context = {}) {
+        if (!this.canAccessWorkbenchAction({
+            key: 'create_ticket',
+            action: 'create_ticket',
+            context
+        })) {
+            window.showToast?.('当前账号未分配「售后工单」模块权限', 'warning');
+            return false;
+        }
         if (!this.canCreateUserContextTicket(context)) {
             window.showToast?.('当前会话暂不适合直接转售后工单', 'info');
             return false;
@@ -2151,6 +2866,7 @@ class AdminChat {
                 },
                 _contextCacheKey: context.cacheKey
             });
+            this.renderUser360Context(nextContext);
         }
 
         window.showToast?.(payload.message || `已转工单：${payload.ticket_id || '已创建'}`, 'success');
@@ -2390,6 +3106,8 @@ class AdminChat {
             bar.hidden = false;
         }
 
+        this.updateChatContextPanelLayout();
+
         this.ensureReplyTemplateConfigLoaded()
             .then((changed) => {
                 if (changed && this._replyTemplateRenderToken === renderToken) {
@@ -2463,6 +3181,12 @@ class AdminChat {
         const workspaceKey = String(action.workspaceKey || '').trim();
         if (!workspaceKey) {
             window.showToast?.('当前动作缺少目标工作区', 'warning');
+            return false;
+        }
+        if (!this.canAccessWorkbenchAction(action)) {
+            if (this.currentUserContext) {
+                this.renderUser360Context(this.currentUserContext);
+            }
             return false;
         }
 
@@ -2571,53 +3295,65 @@ class AdminChat {
 
         (Array.isArray(context.orders) ? context.orders : []).forEach((order) => {
             const action = this.buildUserContextTimelineAction('order', order, context);
+            const accessibleAction = action && this.canAccessWorkbenchAction(action)
+                ? { ...action, _contextCacheKey: context.cacheKey || '' }
+                : null;
             entries.push({
                 kind: 'order',
                 label: '订单',
                 time: String(order.created_at || '').trim(),
                 title: this.truncateText(order.snapshot_product_name || `订单 ${String(order.id || '').slice(0, 8)}`, 48),
                 meta: `${this.formatUserContextPoints(order.price_paid)} · ${this.formatUserContextStatus(order.delivery_status || order.refund_status)}`,
-                action: action ? { ...action, _contextCacheKey: context.cacheKey || '' } : null,
-                isRecent: action ? this.isUserContextActionRecent(context, action) : false
+                action: accessibleAction,
+                isRecent: accessibleAction ? this.isUserContextActionRecent(context, accessibleAction) : false
             });
         });
 
         (Array.isArray(context.payments) ? context.payments : []).forEach((payment) => {
             const action = this.buildUserContextTimelineAction('payment', payment, context);
+            const accessibleAction = action && this.canAccessWorkbenchAction(action)
+                ? { ...action, _contextCacheKey: context.cacheKey || '' }
+                : null;
             entries.push({
                 kind: 'payment',
                 label: '充值',
                 time: String(payment.created_at || '').trim(),
                 title: this.truncateText(payment.package_name || `支付单 ${String(payment.id || '').slice(0, 8)}`, 48),
                 meta: `${this.formatUserContextCurrency(payment.paid_amount, this.formatUserContextCurrency(payment.expected_amount))} · ${this.formatUserContextStatus(payment.status)}`,
-                action: action ? { ...action, _contextCacheKey: context.cacheKey || '' } : null,
-                isRecent: action ? this.isUserContextActionRecent(context, action) : false
+                action: accessibleAction,
+                isRecent: accessibleAction ? this.isUserContextActionRecent(context, accessibleAction) : false
             });
         });
 
         (Array.isArray(context.verifications) ? context.verifications : []).forEach((item) => {
             const action = this.buildUserContextTimelineAction('verify', item, context);
+            const accessibleAction = action && this.canAccessWorkbenchAction(action)
+                ? { ...action, _contextCacheKey: context.cacheKey || '' }
+                : null;
             entries.push({
                 kind: 'verify',
                 label: '验证',
                 time: String(item.created_at || '').trim(),
                 title: this.truncateText(item.verification_id || '验证任务', 48),
                 meta: `${this.formatUserContextStatus(item.status)} · ${this.truncateText(item.message || '暂无描述', 30)}`,
-                action: action ? { ...action, _contextCacheKey: context.cacheKey || '' } : null,
-                isRecent: action ? this.isUserContextActionRecent(context, action) : false
+                action: accessibleAction,
+                isRecent: accessibleAction ? this.isUserContextActionRecent(context, accessibleAction) : false
             });
         });
 
         (Array.isArray(context.tickets) ? context.tickets : []).forEach((ticket) => {
             const action = this.buildUserContextTimelineAction('ticket', ticket, context);
+            const accessibleAction = action && this.canAccessWorkbenchAction(action)
+                ? { ...action, _contextCacheKey: context.cacheKey || '' }
+                : null;
             entries.push({
                 kind: 'ticket',
                 label: '工单',
                 time: String(ticket.created_at || '').trim(),
                 title: this.truncateText(ticket.description || `工单 ${String(ticket.id || '').slice(0, 8)}`, 48),
                 meta: `${this.formatUserContextStatus(ticket.status)}${ticket.order_id ? ` · 订单 ${String(ticket.order_id).slice(0, 8)}` : ''}`,
-                action: action ? { ...action, _contextCacheKey: context.cacheKey || '' } : null,
-                isRecent: action ? this.isUserContextActionRecent(context, action) : false
+                action: accessibleAction,
+                isRecent: accessibleAction ? this.isUserContextActionRecent(context, accessibleAction) : false
             });
         });
 
@@ -2702,6 +3438,7 @@ class AdminChat {
             panel.replaceChildren();
             this.renderUserContextHeaderStatus(null);
             this.renderReplyTemplateBar(null);
+            this.updateChatContextPanelLayout();
             return;
         }
 
@@ -2710,6 +3447,39 @@ class AdminChat {
         panel.replaceChildren();
         this.renderUserContextHeaderStatus(context);
         this.renderReplyTemplateBar(context);
+
+        const shell = document.createElement('section');
+        shell.className = 'user-context-shell';
+
+        const shellToggle = document.createElement('button');
+        shellToggle.type = 'button';
+        shellToggle.className = 'user-context-shell__toggle';
+        shellToggle.id = 'userContextPanelToggle';
+        shellToggle.setAttribute('data-user-context-panel-toggle', 'true');
+        shellToggle.innerHTML = `
+            <span class="user-context-shell__toggle-copy">
+                <span class="user-context-shell__eyebrow">用户 360</span>
+                <strong class="user-context-shell__title">账号、订单、工单与业务时间线</strong>
+                <span class="user-context-shell__summary">${this.escapeHtml(this.getUserContextPanelSummaryText(context))}</span>
+            </span>
+            <span class="user-context-shell__toggle-side">
+                <span class="user-context-shell__toggle-text">展开</span>
+                <i class="fas fa-chevron-down user-context-shell__toggle-icon" aria-hidden="true"></i>
+            </span>
+        `;
+        shellToggle.addEventListener('click', () => {
+            this.setUserContextPanelCollapsed(!this.userContextPanelCollapsed);
+        });
+        shell.appendChild(shellToggle);
+
+        const shellBody = document.createElement('div');
+        shellBody.className = 'user-context-shell__body';
+        shellBody.id = 'userContextPanelBody';
+
+        const shellBodyInner = document.createElement('div');
+        shellBodyInner.className = 'user-context-shell__body-inner';
+        shellBody.appendChild(shellBodyInner);
+        shell.appendChild(shellBody);
 
         const card = document.createElement('div');
         card.className = 'user-context-card';
@@ -2768,7 +3538,11 @@ class AdminChat {
 
         card.appendChild(grid);
         card.appendChild(this.createUserContextTimelineSection(this.buildUserContextTimelineEntries(context)));
-        panel.appendChild(card);
+        shellBodyInner.appendChild(card);
+        panel.appendChild(shell);
+        this.initScrollbarAutoHide(panel);
+        this.setUserContextPanelCollapsed(this.userContextPanelCollapsed);
+        this.updateChatContextPanelLayout();
     }
 
     async refreshCurrentUserContext({ silent = true } = {}) {
@@ -4127,7 +4901,12 @@ class AdminChat {
         return Array.from(itemMap.values());
     }
 
-    async fetchOpsAlertSettingsConfig() {
+    async fetchOpsAlertSettingsConfig({ force = false } = {}) {
+        const now = Date.now();
+        if (!force && this.opsAlertSettingsConfigCache && (now - this.opsAlertSettingsConfigLoadedAt) < 120000) {
+            return this.opsAlertSettingsConfigCache;
+        }
+
         const headers = await this.getOpsAlertCaseApiHeaders();
         const response = await fetch('/api/admin/settings/ops-alerts', {
             method: 'GET',
@@ -4141,6 +4920,8 @@ class AdminChat {
             ? payload.config
             : {};
         this.setOpsAlertModuleMuteRules(normalizedConfig);
+        this.opsAlertSettingsConfigCache = normalizedConfig;
+        this.opsAlertSettingsConfigLoadedAt = now;
         return normalizedConfig;
     }
 
@@ -4167,6 +4948,8 @@ class AdminChat {
             ? payload.config
             : {};
         this.setOpsAlertModuleMuteRules(normalizedConfig);
+        this.opsAlertSettingsConfigCache = normalizedConfig;
+        this.opsAlertSettingsConfigLoadedAt = Date.now();
         return normalizedConfig;
     }
 
@@ -4651,14 +5434,117 @@ class AdminChat {
         ];
     }
 
+    async bootstrapSessions() {
+        if (this.sessionBootstrapPromise || !this.supabase?.from) {
+            return this.sessionBootstrapPromise;
+        }
+
+        this.isSessionBootstrapPending = true;
+        this.renderSessionList(this.searchQuery);
+
+        this.sessionBootstrapPromise = (async () => {
+            try {
+                await this.ensureCurrentAdminUserId();
+                const messages = await this.fetchChatMessages();
+                if (this.destroyed) return;
+
+                await this.processSessionsData(messages, { includeOperationalSummaries: false, includeProfiles: false });
+                if (this.destroyed) return;
+                this.persistChatSessionCache();
+            } catch (error) {
+                console.error('Error bootstrapping chat sessions:', error);
+                this.chatSessions = [];
+            }
+
+            this.composeSessions();
+            this.syncCurrentSessionFromSessions();
+            this.isSessionBootstrapPending = false;
+            this.renderSessionList(this.searchQuery);
+            this.startBackgroundServices();
+            this.scheduleDeferredSessionHydration();
+            this.scheduleSessionHistoryConsistencySync();
+        })().finally(() => {
+            this.sessionBootstrapPromise = null;
+        });
+
+        return this.sessionBootstrapPromise;
+    }
+
+    async hydrateSessionSidebarData() {
+        if (!this.supabase?.from || this.destroyed) {
+            return;
+        }
+
+        const baseChatSessions = Array.isArray(this.chatSessions)
+            ? this.chatSessions.map((session) => ({
+                ...session,
+                sessionIds: Array.isArray(session.sessionIds) ? [...session.sessionIds] : [],
+                profile: session.profile && typeof session.profile === 'object'
+                    ? { ...session.profile }
+                    : session.profile
+            }))
+            : [];
+
+        const [enrichedChatSessionsResult, opsAlertResult, opsAlertMetaResult, opsAlertConfigResult] = await Promise.allSettled([
+            baseChatSessions.length
+                ? this.attachSessionProfiles(baseChatSessions)
+                    .then((sessionsWithProfiles) => this.attachSessionOperationalSummaries(sessionsWithProfiles))
+                : Promise.resolve(baseChatSessions),
+            this.fetchOpsAlertJobs(),
+            this.ensureOpsAlertMonitorMeta(),
+            this.fetchOpsAlertSettingsConfig()
+        ]);
+
+        if (this.destroyed) {
+            return;
+        }
+
+        if (enrichedChatSessionsResult.status === 'fulfilled') {
+            this.chatSessions = enrichedChatSessionsResult.value.map((session) => ({
+                ...session,
+                replySummary: session.replySummary || this.buildSessionReplySummary(session.lastUserMessageAt, session.lastAdminMessageAt)
+            }));
+            this.persistChatSessionCache();
+        } else {
+            console.warn('Failed to enrich chat session summaries:', enrichedChatSessionsResult.reason);
+        }
+
+        if (opsAlertResult.status === 'fulfilled') {
+            await this.processOpsAlertData(opsAlertResult.value);
+        } else {
+            console.error('Error fetching ops alert jobs:', opsAlertResult.reason);
+            this.opsAlertMessages = [];
+            this.opsAlertLoadError = opsAlertResult.reason?.message || '站外告警读取失败';
+        }
+
+        if (opsAlertMetaResult.status !== 'fulfilled') {
+            console.warn('Failed to fetch ops alert assignee meta:', opsAlertMetaResult.reason);
+        }
+        if (opsAlertConfigResult.status !== 'fulfilled') {
+            console.warn('Failed to fetch ops alert mute rules:', opsAlertConfigResult.reason);
+        }
+
+        this.composeSessions();
+        this.syncCurrentSessionFromSessions();
+        this.renderSessionList(this.searchQuery);
+
+        if (this.currentSessionId && this.isOpsAlertSessionId(this.currentSessionId)) {
+            this.renderOpsAlertMessages();
+        }
+    }
+
     init() {
         const container = this.targetContainer || document.getElementById('chat-admin-container');
         if (!container) return;
 
         this.renderLayout(container);
-        this.fetchSessions();
-        this.subscribeToRealtime();
-        this.startSessionSlaTicker();
+        const restoredFromCache = this.restoreChatSessionCache();
+        if (restoredFromCache) {
+            this.composeSessions();
+            this.syncCurrentSessionFromSessions();
+            this.renderSessionList(this.searchQuery);
+        }
+        this.bootstrapSessions();
 
         const searchInput = container.querySelector('#sessionSearch');
         if (searchInput) {
@@ -4680,15 +5566,26 @@ class AdminChat {
                         </button>
                         <span class="chat-sidebar-title">${this.t('chat.sidebarTitle', '客服消息')}</span>
                     </div>
-                    <div class="chat-search">
-                        <input type="text" id="sessionSearch" placeholder="${this.t('chat.searchPlaceholder', '搜索会话...')}">
-                    </div>
-                    <div class="session-queue-overview" id="sessionQueueOverview"></div>
-                    <div class="session-queue-snapshot" id="sessionQueueSnapshot"></div>
-                    <div class="session-queue-presets" id="sessionQueueViews"></div>
-                    <div class="session-filter-bar" id="sessionFilterBar"></div>
-                    <div class="session-list" id="sessionList">
-                        <!-- Sessions will be loaded here -->
+                    <div class="chat-sidebar-body">
+                        <div class="chat-search">
+                            <input type="text" id="sessionSearch" placeholder="${this.t('chat.searchPlaceholder', '搜索会话...')}">
+                        </div>
+                        <section class="chat-sidebar-insights is-collapsed" id="chatSidebarInsights">
+                            <button type="button" class="chat-sidebar-insights__header" id="chatSidebarInsightsToggle" aria-expanded="false">
+                                <span class="chat-sidebar-insights__eyebrow">值班概览</span>
+                                <span class="chat-sidebar-insights__summary" id="chatSidebarInsightsSummary">正在整理当前队列...</span>
+                                <span class="chat-sidebar-insights__toggle-text">展开</span>
+                            </button>
+                            <div class="chat-sidebar-insights__body" id="chatSidebarInsightsBody">
+                                <div class="session-queue-overview" id="sessionQueueOverview"></div>
+                                <div class="session-queue-snapshot" id="sessionQueueSnapshot"></div>
+                                <div class="session-queue-presets" id="sessionQueueViews"></div>
+                                <div class="session-filter-bar" id="sessionFilterBar"></div>
+                            </div>
+                        </section>
+                        <div class="session-list" id="sessionList">
+                            <!-- Sessions will be loaded here -->
+                        </div>
                     </div>
                 </div>
 
@@ -4713,12 +5610,12 @@ class AdminChat {
                             <!-- Messages -->
                         </div>
                         <div id="chatReplyTemplateBar" class="chat-reply-templates" hidden></div>
-                        <div class="chat-input-wrapper" id="chatInputWrapper">
+                        <div class="chat-input-wrapper chat-input-area" id="chatInputWrapper">
                             <input type="file" id="adminImageInput" class="admin-chat-file-input" accept="image/*" hidden>
                             <button class="chat-action-btn" id="adminUploadBtn"><i class="fas fa-plus"></i></button>
-                            <textarea class="admin-chat-input" id="adminChatInput" placeholder="${this.t('chat.inputPlaceholder', '输入回复...')}"></textarea>
+                            <input type="text" class="chat-input admin-chat-input" id="adminChatInput" placeholder="${this.t('chat.inputMessagePlaceholder', '输入消息...')}">
                             <button class="chat-action-btn" id="adminEmojiBtn"><i class="far fa-smile"></i></button>
-                            <button class="admin-send-btn" id="adminSendBtn"><i class="fas fa-paper-plane"></i></button>
+                            <button class="chat-send-btn admin-send-btn" id="adminSendBtn"><i class="fas fa-paper-plane"></i></button>
                         </div>
                         <div class="emoji-picker-popover admin-emoji-picker" id="adminEmojiPicker" hidden></div>
                     </div>
@@ -4737,6 +5634,7 @@ class AdminChat {
         const sessionQueueSnapshot = container.querySelector('#sessionQueueSnapshot');
         const sessionQueueViews = container.querySelector('#sessionQueueViews');
         const sessionFilterBar = container.querySelector('#sessionFilterBar');
+        const sidebarInsightsToggle = container.querySelector('#chatSidebarInsightsToggle');
 
         const emojis = ['😀', '😂', '🥰', '😍', '🤔', '👍', '👎', '🙏', '🎉', '❤️', '🔥', '✨', '💯', '😊', '😅', '🤣', '😢', '😭', '😱', '🤗'];
         if (emojiPicker) {
@@ -4817,25 +5715,69 @@ class AdminChat {
             });
         }
 
+        if (sidebarInsightsToggle) {
+            sidebarInsightsToggle.addEventListener('click', () => {
+                this.setSidebarInsightsCollapsed(!(this.sidebarInsightsCollapsed !== false));
+            });
+        }
+
+        this.updateSidebarInsightsShell();
+        this.initScrollbarAutoHide(container);
+
         document.addEventListener('click', this.handleDocumentClick);
     }
 
-    async fetchChatMessages() {
-        let query = this.supabase
-            .from('chat_messages')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(500);
+    async fetchChatMessages({ fullHistory = false } = {}) {
+        const selectFields = 'id, session_id, user_id, is_admin, content, message_type, created_at';
+        const applySiteFilter = (query) => {
+            if (window.AdminSiteFilter) {
+                return window.AdminSiteFilter.applySiteFilter(query);
+            }
+            return query;
+        };
 
-        if (window.AdminSiteFilter) {
-            query = window.AdminSiteFilter.applySiteFilter(query);
+        if (!fullHistory) {
+            let query = this.supabase
+                .from('chat_messages')
+                .select(selectFields)
+                .order('created_at', { ascending: false })
+                .limit(this.getChatBootstrapMessageLimit());
+
+            query = applySiteFilter(query);
+
+            const { data, error } = await query;
+            if (error) {
+                throw error;
+            }
+            return Array.isArray(data) ? data : [];
         }
 
-        const { data, error } = await query;
-        if (error) {
-            throw error;
+        const pageSize = this.getChatHistoryPageSize();
+        let from = 0;
+        let hasMore = true;
+        const rows = [];
+
+        while (hasMore && !this.destroyed) {
+            let query = this.supabase
+                .from('chat_messages')
+                .select(selectFields)
+                .order('created_at', { ascending: false })
+                .range(from, from + pageSize - 1);
+
+            query = applySiteFilter(query);
+
+            const { data, error } = await query;
+            if (error) {
+                throw error;
+            }
+
+            const batch = Array.isArray(data) ? data : [];
+            rows.push(...batch);
+            hasMore = batch.length === pageSize;
+            from += pageSize;
         }
-        return Array.isArray(data) ? data : [];
+
+        return rows;
     }
 
     async fetchOpsAlertJobs() {
@@ -4856,15 +5798,18 @@ class AdminChat {
             return;
         }
 
+        await this.ensureCurrentAdminUserId();
+
         const [chatResult, opsAlertResult, opsAlertMetaResult, opsAlertConfigResult] = await Promise.allSettled([
-            this.fetchChatMessages(),
+            this.fetchChatMessages({ fullHistory: true }),
             this.fetchOpsAlertJobs(),
             this.ensureOpsAlertMonitorMeta(),
             this.fetchOpsAlertSettingsConfig()
         ]);
 
         if (chatResult.status === 'fulfilled') {
-            await this.processSessionsData(chatResult.value);
+            await this.processSessionsData(chatResult.value, { includeOperationalSummaries: true });
+            this.persistChatSessionCache();
         } else {
             console.error('Error fetching chat sessions:', chatResult.reason);
             this.chatSessions = [];
@@ -4886,6 +5831,7 @@ class AdminChat {
         }
 
         this.composeSessions();
+        this.syncCurrentSessionFromSessions();
         this.renderSessionList(this.searchQuery);
 
         if (this.currentSessionId && this.isOpsAlertSessionId(this.currentSessionId)) {
@@ -4893,64 +5839,117 @@ class AdminChat {
         }
     }
 
-    async processSessionsData(messages) {
-        const sessionMap = new Map();
-        const userIdsToFetch = new Set();
+    async syncSessionsWithCompleteHistory() {
+        if (!this.supabase?.from || this.destroyed) {
+            return;
+        }
 
-        messages.forEach((msg) => {
-            if (!sessionMap.has(msg.session_id)) {
-                if (msg.user_id && msg.user_id.length > 20 && !msg.user_id.startsWith('guest')) {
-                    userIdsToFetch.add(msg.user_id);
-                }
+        await this.ensureCurrentAdminUserId();
 
-                sessionMap.set(msg.session_id, {
-                    sessionId: msg.session_id,
-                    lastMessage: msg.message_type === 'image' ? this.t('chat.image', '[图片]') : msg.content,
-                    timestamp: new Date(msg.created_at),
+        const completeMessages = await this.fetchChatMessages({ fullHistory: true });
+        if (this.destroyed || !Array.isArray(completeMessages) || !completeMessages.length) {
+            return;
+        }
+
+        if (completeMessages.length <= this.getChatBootstrapMessageLimit()
+            && Array.isArray(this.chatSessions)
+            && this.chatSessions.length
+        ) {
+            return;
+        }
+
+        await this.processSessionsData(completeMessages, {
+            includeOperationalSummaries: true,
+            includeProfiles: true
+        });
+
+        if (this.destroyed) {
+            return;
+        }
+
+        this.persistChatSessionCache();
+        this.composeSessions();
+        this.syncCurrentSessionFromSessions();
+        this.renderSessionList(this.searchQuery);
+    }
+
+    async processSessionsData(messages, { includeOperationalSummaries = true, includeProfiles = true } = {}) {
+        const safeMessages = Array.isArray(messages) ? messages : [];
+        const userMessages = safeMessages.filter((msg) => !msg.is_admin);
+        const userSessionMap = new Map();
+        const sessionIdToGroupKey = new Map();
+        const adminUserId = String(this.currentAdminUserId || '').trim();
+
+        userMessages.forEach((msg) => {
+            const groupKey = msg.user_id || msg.session_id;
+            if (!groupKey) return;
+            if (adminUserId && String(groupKey).trim() === adminUserId) return;
+
+            if (!userSessionMap.has(groupKey)) {
+                userSessionMap.set(groupKey, {
+                    lastMsg: msg,
+                    sessionIds: new Set([msg.session_id]),
                     userId: msg.user_id,
-                    unread: 0,
-                    profile: null,
                     lastUserMessageAt: null,
-                    lastAdminMessageAt: null,
-                    replySummary: null
+                    lastAdminMessageAt: null
                 });
+            } else {
+                userSessionMap.get(groupKey).sessionIds.add(msg.session_id);
             }
 
-            const session = sessionMap.get(msg.session_id);
+            sessionIdToGroupKey.set(msg.session_id, groupKey);
+        });
+
+        safeMessages.forEach((msg) => {
+            const groupKey = sessionIdToGroupKey.get(msg.session_id) || msg.user_id || msg.session_id;
+            const group = userSessionMap.get(groupKey);
+            if (!group) return;
+
             if (msg.is_admin) {
-                if (!session.lastAdminMessageAt) {
-                    session.lastAdminMessageAt = msg.created_at;
+                if (!group.lastAdminMessageAt) {
+                    group.lastAdminMessageAt = msg.created_at;
                 }
-            } else if (!session.lastUserMessageAt) {
-                session.lastUserMessageAt = msg.created_at;
+            } else if (!group.lastUserMessageAt) {
+                group.lastUserMessageAt = msg.created_at;
             }
         });
 
-        if (userIdsToFetch.size > 0) {
-            try {
-                const { data: profiles } = await this.supabase
-                    .from('profiles')
-                    .select('id, username, email, avatar_url')
-                    .in('id', Array.from(userIdsToFetch));
+        const sessions = Array.from(userSessionMap.entries()).map(([groupKey, data]) => {
+            const lastMsg = data.lastMsg || {};
+            const normalizedGroupKey = typeof groupKey === 'string' ? groupKey.trim() : String(groupKey || '');
+            const sessionIds = Array.from(data.sessionIds);
+            const profile = null;
+            const email = this.resolveSessionEmail(profile, normalizedGroupKey, sessionIds);
+            const nickname = this.resolveSessionNickname(profile, normalizedGroupKey, email);
 
-                if (profiles) {
-                    const profileMap = new Map(profiles.map((profile) => [profile.id, profile]));
-                    for (const session of sessionMap.values()) {
-                        if (session.userId && profileMap.has(session.userId)) {
-                            session.profile = profileMap.get(session.userId);
-                        }
-                    }
-                }
-            } catch (err) {
-                console.error('Failed to fetch profiles:', err);
-            }
-        }
+            return {
+                sessionId: normalizedGroupKey,
+                sessionIds,
+                nickname,
+                email,
+                lastMessage: lastMsg.message_type === 'image' ? this.t('chat.image', '[图片]') : lastMsg.content,
+                timestamp: new Date(lastMsg.created_at),
+                userId: data.userId,
+                unread: 0,
+                profile,
+                lastUserMessageAt: data.lastUserMessageAt || null,
+                lastAdminMessageAt: data.lastAdminMessageAt || null,
+                replySummary: null
+            };
+        });
 
-        this.chatSessions = (await this.attachSessionTicketSummaries(Array.from(sessionMap.values())))
-            .map((session) => ({
-                ...session,
-                replySummary: this.buildSessionReplySummary(session.lastUserMessageAt, session.lastAdminMessageAt)
-            }));
+        const sessionsWithProfiles = includeProfiles
+            ? await this.attachSessionProfiles(sessions)
+            : sessions;
+
+        const normalizedSessions = includeOperationalSummaries
+            ? await this.attachSessionTicketSummaries(sessionsWithProfiles)
+            : sessionsWithProfiles;
+
+        this.chatSessions = normalizedSessions.map((session) => ({
+            ...session,
+            replySummary: this.buildSessionReplySummary(session.lastUserMessageAt, session.lastAdminMessageAt)
+        }));
     }
 
     async processOpsAlertData(rows) {
@@ -4976,14 +5975,16 @@ class AdminChat {
             };
         }
 
-        let displayName = this.t('chat.guest', '访客');
-        let displaySub = session.sessionId.substr(0, 8) + '...';
+        const resolvedEmail = this.resolveSessionContextEmail(session);
+        let displayName = session.nickname
+            || session.profile?.display_name
+            || session.profile?.username
+            || (resolvedEmail ? resolvedEmail.split('@')[0] : this.t('chat.guest', '访客'));
+        let displaySub = resolvedEmail || this.t('chat.noEmail', '无邮箱');
 
-        if (session.profile) {
-            displayName = session.profile.username || this.t('chat.unnamed', '未命名用户');
-            displaySub = session.profile.email || this.t('chat.noEmail', '无邮箱');
-        } else if (session.sessionId.startsWith('guest')) {
-            displayName = this.t('chat.guest', '访客');
+        if (!resolvedEmail) {
+            const primarySessionId = String((session.sessionIds && session.sessionIds[0]) || session.sessionId || '').trim();
+            displaySub = primarySessionId ? `${primarySessionId.slice(0, 8)}...` : this.t('chat.noEmail', '无邮箱');
         }
 
         const prioritySignals = this.getSessionPrioritySignals(session);
@@ -5028,7 +6029,10 @@ class AdminChat {
             haystack.push(
                 session.profile?.email || '',
                 session.profile?.username || '',
+                session.nickname || '',
+                session.email || '',
                 session.sessionId || '',
+                (session.sessionIds || []).join(' '),
                 prioritySignals.map((signal) => `${signal.label} ${signal.subtext || ''}`).join(' '),
                 this.getSessionListTicketBadge(ticketSummary),
                 this.getSessionListTicketSubtext(ticketSummary),
@@ -5065,7 +6069,9 @@ class AdminChat {
         if (!visibleSessions.length) {
             const emptyEl = document.createElement('div');
             emptyEl.className = 'session-empty-state';
-            emptyEl.textContent = this.getSessionQueueEmptyMessage(filter);
+            emptyEl.textContent = this.isSessionBootstrapPending
+                ? '正在加载会话...'
+                : this.getSessionQueueEmptyMessage(filter);
             listEl.appendChild(emptyEl);
             return;
         }
@@ -5073,7 +6079,7 @@ class AdminChat {
         visibleSessions.forEach((session) => {
                 const display = this.getSessionDisplayInfo(session);
                 const el = document.createElement('div');
-                el.className = `session-item ${this.currentSessionId === session.sessionId ? 'active' : ''} ${this.isOpsAlertSession(session) ? 'session-item--ops' : ''}`;
+                el.className = `session-item ${(this.currentSessionKey || this.currentSessionId) === session.sessionId ? 'active' : ''} ${this.isOpsAlertSession(session) ? 'session-item--ops' : ''}`;
                 el.addEventListener('click', () => this.loadSession(session.sessionId));
 
                 const avatarEl = this.createSessionAvatar(session, display.name);
@@ -5129,6 +6135,7 @@ class AdminChat {
         const input = document.getElementById('adminChatInput');
         const uploadBtn = document.getElementById('adminUploadBtn');
         const emojiBtn = document.getElementById('adminEmojiBtn');
+        const sendBtn = document.getElementById('adminSendBtn');
         const templateBar = document.getElementById('chatReplyTemplateBar');
 
         this.setElementHidden(inputWrapper, readonly);
@@ -5142,10 +6149,11 @@ class AdminChat {
         }
         if (uploadBtn) uploadBtn.disabled = readonly;
         if (emojiBtn) emojiBtn.disabled = readonly;
+        if (sendBtn) sendBtn.disabled = readonly;
     }
 
     async loadSession(sessionId) {
-        this.currentSessionId = sessionId;
+        this.currentSessionKey = sessionId;
         this.renderSessionList(this.searchQuery);
 
         const container = document.getElementById('chatMainContainer');
@@ -5157,6 +6165,13 @@ class AdminChat {
 
         const session = this.sessions.find((item) => item.sessionId === sessionId);
         this.currentSessionInfo = session || null;
+        const sessionIds = Array.from(new Set(
+            (Array.isArray(session?.sessionIds) && session.sessionIds.length ? session.sessionIds : [sessionId])
+                .map((value) => String(value || '').trim())
+                .filter(Boolean)
+        ));
+        this.currentSessionIds = sessionIds;
+        this.currentSessionId = sessionIds[0] || sessionId;
         const area = document.getElementById('adminMessagesArea');
         const contextRequestId = ++this._userContextRequestId;
         if (!area) return;
@@ -5175,7 +6190,7 @@ class AdminChat {
 
         this.setReadonlyMode(false);
         this.renderReplyTemplateBar({
-            sessionId,
+            sessionId: this.currentSessionId,
             userId: session?.profile?.id || session?.userId || '',
             email: this.resolveSessionContextEmail(session),
             orders: [],
@@ -5184,13 +6199,12 @@ class AdminChat {
             tickets: []
         });
 
-        let title = sessionId.startsWith('guest') ? this.t('chat.guest', '访客') : this.t('chat.user', '用户');
-        let sub = `${this.t('chat.session', 'Session')}: ${sessionId}`;
-
-        if (session?.profile) {
-            title = session.profile.username || this.t('chat.unnamed', '未命名用户');
-            sub = session.profile.email || sessionId;
-        }
+        const resolvedEmail = this.resolveSessionContextEmail(session);
+        const title = session?.nickname
+            || session?.profile?.display_name
+            || session?.profile?.username
+            || (resolvedEmail ? resolvedEmail.split('@')[0] : (sessionId.startsWith('guest') ? this.t('chat.guest', '访客') : this.t('chat.user', '用户')));
+        const sub = resolvedEmail || `${this.t('chat.session', 'Session')}: ${this.currentSessionId}`;
 
         document.getElementById('currentChatUser').textContent = title;
         document.getElementById('currentChatId').textContent = sub;
@@ -5199,11 +6213,18 @@ class AdminChat {
         this.renderUserContextPanelState('正在整理用户上下文...', 'loading');
 
         const [messagesResult, contextResult] = await Promise.allSettled([
-            this.supabase
-                .from('chat_messages')
-                .select('*')
-                .eq('session_id', sessionId)
-                .order('created_at', { ascending: true }),
+            (() => {
+                let query = this.supabase
+                    .from('chat_messages')
+                    .select('*')
+                    .order('created_at', { ascending: true });
+
+                query = sessionIds.length === 1
+                    ? query.eq('session_id', sessionIds[0])
+                    : query.in('session_id', sessionIds);
+
+                return query;
+            })(),
             this.fetchUser360Context(session || {})
         ]);
 
@@ -5281,6 +6302,8 @@ class AdminChat {
         const container = document.getElementById('chatMainContainer');
         container?.classList.remove('mobile-chat-active');
         this.currentSessionId = null;
+        this.currentSessionKey = null;
+        this.currentSessionIds = [];
         this.currentSessionInfo = null;
         this.currentUserContext = null;
         this.renderUserContextHeaderStatus(null);
@@ -5467,6 +6490,162 @@ class AdminChat {
         }
     }
 
+    getIncomingChatMessagePreview(msg = {}) {
+        if (msg?.message_type === 'image') {
+            return this.t('chat.image', '[图片]');
+        }
+        return String(msg?.content || '');
+    }
+
+    applyIncomingUserMessage(msg = {}) {
+        const normalizedSessionId = String(msg.session_id || '').trim();
+        const normalizedUserId = String(msg.user_id || '').trim();
+        const normalizedCreatedAt = String(msg.created_at || new Date().toISOString()).trim();
+        const currentAdminUserId = String(this.currentAdminUserId || '').trim();
+        if (!normalizedSessionId || !normalizedCreatedAt) {
+            return false;
+        }
+        if (currentAdminUserId && normalizedUserId && normalizedUserId === currentAdminUserId) {
+            return false;
+        }
+
+        const preview = this.getIncomingChatMessagePreview(msg);
+        let matched = false;
+
+        this.chatSessions = (Array.isArray(this.chatSessions) ? this.chatSessions : []).map((session) => {
+            const sessionIds = Array.isArray(session?.sessionIds) && session.sessionIds.length
+                ? session.sessionIds.map((value) => String(value || '').trim()).filter(Boolean)
+                : [String(session?.sessionId || '').trim()].filter(Boolean);
+            const normalizedSessionKey = String(session?.sessionId || '').trim();
+            const normalizedSessionUserId = String(session?.userId || '').trim();
+            const matches = (normalizedUserId && (normalizedSessionUserId === normalizedUserId || normalizedSessionKey === normalizedUserId))
+                || normalizedSessionKey === normalizedSessionId
+                || sessionIds.includes(normalizedSessionId);
+
+            if (!matches) {
+                return session;
+            }
+
+            matched = true;
+            const nextSessionIds = sessionIds.includes(normalizedSessionId)
+                ? sessionIds
+                : [...sessionIds, normalizedSessionId];
+            const fallbackKey = normalizedUserId || normalizedSessionKey || normalizedSessionId;
+            const email = this.resolveSessionEmail(session?.profile || null, fallbackKey, nextSessionIds);
+            const nickname = this.resolveSessionNickname(session?.profile || null, fallbackKey, email);
+
+            return {
+                ...session,
+                sessionId: normalizedUserId || normalizedSessionKey || normalizedSessionId,
+                sessionIds: nextSessionIds,
+                userId: normalizedUserId || normalizedSessionUserId,
+                nickname,
+                email,
+                lastMessage: preview,
+                timestamp: new Date(normalizedCreatedAt),
+                lastUserMessageAt: normalizedCreatedAt,
+                replySummary: this.buildSessionReplySummary(normalizedCreatedAt, session?.lastAdminMessageAt || '')
+            };
+        });
+
+        if (!matched) {
+            const fallbackKey = normalizedUserId || normalizedSessionId;
+            const email = this.resolveSessionEmail(null, fallbackKey, [normalizedSessionId]);
+            const nickname = this.resolveSessionNickname(null, fallbackKey, email);
+            this.chatSessions = [
+                ...this.chatSessions,
+                {
+                    sessionId: fallbackKey,
+                    sessionIds: [normalizedSessionId],
+                    nickname,
+                    email,
+                    lastMessage: preview,
+                    timestamp: new Date(normalizedCreatedAt),
+                    userId: normalizedUserId,
+                    unread: 0,
+                    profile: null,
+                    lastUserMessageAt: normalizedCreatedAt,
+                    lastAdminMessageAt: '',
+                    replySummary: this.buildSessionReplySummary(normalizedCreatedAt, '')
+                }
+            ];
+        }
+
+        this.composeSessions();
+        this.syncCurrentSessionFromSessions();
+        this.persistChatSessionCache();
+        this.renderSessionList(this.searchQuery);
+        return true;
+    }
+
+    scheduleRealtimeSessionHydration(message = {}) {
+        const userId = String(message?.user_id || '').trim();
+        const sessionId = String(message?.session_id || '').trim().toLowerCase();
+
+        if (userId) {
+            this.pendingRealtimeSessionUserIds.add(userId);
+        } else if (sessionId.includes('@')) {
+            this.pendingRealtimeSessionEmailKeys.add(sessionId);
+        }
+
+        if (this.sessionRealtimeHydrationHandle) {
+            return;
+        }
+
+        this.sessionRealtimeHydrationHandle = window.setTimeout(() => {
+            this.sessionRealtimeHydrationHandle = null;
+            this.flushRealtimeSessionHydration().catch((error) => {
+                console.warn('[AdminChat] Failed to hydrate realtime chat sessions:', error);
+            });
+        }, 180);
+    }
+
+    async flushRealtimeSessionHydration() {
+        const userIds = [...this.pendingRealtimeSessionUserIds];
+        const emailKeys = [...this.pendingRealtimeSessionEmailKeys];
+        this.pendingRealtimeSessionUserIds.clear();
+        this.pendingRealtimeSessionEmailKeys.clear();
+
+        if ((!userIds.length && !emailKeys.length) || !Array.isArray(this.chatSessions) || !this.chatSessions.length) {
+            return;
+        }
+
+        const targetSessions = this.chatSessions.filter((session) => {
+            const sessionUserId = String(session?.userId || '').trim();
+            if (sessionUserId && userIds.includes(sessionUserId)) {
+                return true;
+            }
+
+            const sessionEmail = String(session?.email || '').trim().toLowerCase();
+            if (sessionEmail && emailKeys.includes(sessionEmail)) {
+                return true;
+            }
+
+            const sessionIds = Array.isArray(session?.sessionIds)
+                ? session.sessionIds.map((value) => String(value || '').trim().toLowerCase()).filter(Boolean)
+                : [];
+            return emailKeys.some((value) => sessionIds.includes(value));
+        });
+
+        if (!targetSessions.length) {
+            return;
+        }
+
+        const hydratedSessions = await this.attachSessionProfiles(targetSessions);
+        const hydratedSessionMap = new Map(hydratedSessions.map((session) => [String(session.sessionId || '').trim(), session]));
+        this.chatSessions = this.chatSessions.map((session) => hydratedSessionMap.get(String(session?.sessionId || '').trim()) || session);
+
+        if (userIds.length) {
+            await this.refreshSessionOperationalSummariesForUserIds(userIds);
+            return;
+        }
+
+        this.composeSessions();
+        this.syncCurrentSessionFromSessions();
+        this.persistChatSessionCache();
+        this.renderSessionList(this.searchQuery);
+    }
+
     async sendReply() {
         const input = document.getElementById('adminChatInput');
         const text = input?.value?.trim();
@@ -5555,7 +6734,7 @@ class AdminChat {
     }
 
     subscribeToRealtime() {
-        if (!this.supabase?.channel) {
+        if (!this.supabase?.channel || this.chatChannel) {
             return;
         }
 
@@ -5566,9 +6745,16 @@ class AdminChat {
                 { event: 'INSERT', schema: 'public', table: 'chat_messages' },
                 (payload) => {
                     const newMsg = payload.new;
+                    const currentAdminUserId = String(this.currentAdminUserId || '').trim();
+                    if (!newMsg?.is_admin && currentAdminUserId && String(newMsg.user_id || '').trim() === currentAdminUserId) {
+                        return;
+                    }
                     this.updateSessionOnNewMessage(newMsg);
 
-                    if (this.currentSessionId === newMsg.session_id && (!newMsg.is_admin || this.isTicketSyncChatMessage(newMsg))) {
+                    const activeSessionIds = Array.isArray(this.currentSessionIds) && this.currentSessionIds.length
+                        ? this.currentSessionIds
+                        : (this.currentSessionId ? [this.currentSessionId] : []);
+                    if (activeSessionIds.includes(newMsg.session_id) && (!newMsg.is_admin || this.isTicketSyncChatMessage(newMsg))) {
                         this.appendMessage(newMsg);
                     }
                 }
@@ -5662,53 +6848,38 @@ class AdminChat {
     }
 
     async updateSessionOnNewMessage(msg) {
-        const existingIndex = this.chatSessions.findIndex((session) => session.sessionId === msg.session_id);
-        const existingSession = existingIndex > -1 ? this.chatSessions[existingIndex] : null;
-        const sessionData = {
-            sessionId: msg.session_id,
-            lastMessage: msg.message_type === 'image' ? this.t('chat.image', '[图片]') : msg.content,
-            timestamp: new Date(msg.created_at),
-            userId: msg.user_id,
-            unread: 0,
-            profile: null,
-            paymentSummary: existingSession?.paymentSummary || null,
-            verificationSummary: existingSession?.verificationSummary || null,
-            ticketSummary: existingSession?.ticketSummary || null,
-            lastUserMessageAt: existingSession?.lastUserMessageAt || null,
-            lastAdminMessageAt: existingSession?.lastAdminMessageAt || null,
-            replySummary: null
-        };
+        if (msg?.is_admin && !this.isTicketSyncChatMessage(msg)) {
+            const normalizedSessionId = String(msg.session_id || '').trim();
+            const normalizedCreatedAt = String(msg.created_at || new Date().toISOString()).trim();
+            if (normalizedSessionId) {
+                this.chatSessions = (Array.isArray(this.chatSessions) ? this.chatSessions : []).map((session) => {
+                    const sessionIds = Array.isArray(session?.sessionIds) && session.sessionIds.length
+                        ? session.sessionIds.map((value) => String(value || '').trim()).filter(Boolean)
+                        : [String(session?.sessionId || '').trim()].filter(Boolean);
+                    if (!(session.sessionId === normalizedSessionId || sessionIds.includes(normalizedSessionId))) {
+                        return session;
+                    }
 
-        if (msg.is_admin) {
-            sessionData.lastAdminMessageAt = msg.created_at;
-        } else {
-            sessionData.lastUserMessageAt = msg.created_at;
-        }
-        sessionData.replySummary = this.buildSessionReplySummary(sessionData.lastUserMessageAt, sessionData.lastAdminMessageAt);
+                    return {
+                        ...session,
+                        lastAdminMessageAt: normalizedCreatedAt,
+                        replySummary: this.buildSessionReplySummary(session.lastUserMessageAt, normalizedCreatedAt)
+                    };
+                });
 
-        if (existingIndex > -1) {
-            sessionData.profile = existingSession?.profile || null;
-            this.chatSessions.splice(existingIndex, 1);
-            this.chatSessions.unshift(sessionData);
-        } else {
-            if (msg.user_id && msg.user_id.length > 20 && !msg.user_id.startsWith('guest')) {
-                const { data } = await this.supabase
-                    .from('profiles')
-                    .select('id, username, email, avatar_url')
-                    .eq('id', msg.user_id)
-                    .single();
-                if (data) sessionData.profile = data;
+                this.composeSessions();
+                this.persistChatSessionCache();
+                this.renderSessionList(this.searchQuery);
             }
-            this.chatSessions.unshift(sessionData);
-        }
-
-        if (msg.user_id) {
-            await this.refreshSessionOperationalSummariesForUserIds([msg.user_id]);
             return;
         }
 
-        this.composeSessions();
-        this.renderSessionList(this.searchQuery);
+        if (this.applyIncomingUserMessage(msg)) {
+            this.scheduleRealtimeSessionHydration(msg);
+            return;
+        }
+
+        await this.fetchSessions();
     }
 
     filterSessions(query) {
@@ -5805,6 +6976,31 @@ class AdminChat {
         ).trim();
     }
 
+    getImplicitWorkbenchWorkspaceKey(action = {}) {
+        const normalizedAction = String(action.action || action.key || '').trim().toLowerCase();
+        if (normalizedAction === 'create_ticket') {
+            return 'tickets-pending';
+        }
+        return '';
+    }
+
+    canAccessWorkbenchAction(action = {}) {
+        const workspaceKey = String(action.workspaceKey || this.getImplicitWorkbenchWorkspaceKey(action) || '').trim();
+        if (!workspaceKey) {
+            return false;
+        }
+
+        if (typeof window.canOpenAdminWorkbenchWorkspace === 'function') {
+            return window.canOpenAdminWorkbenchWorkspace(workspaceKey, action.context || {});
+        }
+
+        if (workspaceKey === 'tickets-pending' && typeof window.hasModulePermission === 'function') {
+            return window.hasModulePermission('tickets', action.context || {});
+        }
+
+        return true;
+    }
+
     async openShopOrdersFromAlert(context = {}) {
         const launcher = this.getWorkbenchLauncher();
         if (typeof launcher === 'function') {
@@ -5820,7 +7016,10 @@ class AdminChat {
         }
 
         const searchValue = this.getContextSearchValue(context);
-        window.switchModule?.('shop');
+        const opened = window.switchModule?.('shop');
+        if (opened === false) {
+            return false;
+        }
         await this.settleWorkspace(80);
 
         await window.ShopAdmin?.init?.();
@@ -5844,7 +7043,10 @@ class AdminChat {
             return this.openWorkbenchEntry('payments-overview', context);
         }
 
-        window.switchModule?.('payments');
+        const opened = window.switchModule?.('payments');
+        if (opened === false) {
+            return false;
+        }
         await this.settleWorkspace(80);
 
         await window.AdminPayments?.init?.();

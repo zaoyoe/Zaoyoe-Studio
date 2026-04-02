@@ -58,9 +58,12 @@ const HomepageAdmin = (() => {
     }
 
     async function fetchHomepageConfigRows(site = getHomepageReadSite()) {
-        const response = await fetch(`/api/admin/homepage/config?site=${encodeURIComponent(normalizeHomepageSite(site))}`, {
-            credentials: 'include'
-        });
+        const response = await (window.AdminApi?.fetch || fetch)(
+            `/api/admin/homepage/config?site=${encodeURIComponent(normalizeHomepageSite(site))}`,
+            {
+                credentials: 'include'
+            }
+        );
 
         return parseHomepageAdminResponse(response);
     }
@@ -73,7 +76,7 @@ const HomepageAdmin = (() => {
         is_visible,
         display_order
     }) {
-        const response = await fetch('/api/admin/homepage/config', {
+        const response = await (window.AdminApi?.fetch || fetch)('/api/admin/homepage/config', {
             method: 'POST',
             credentials: 'include',
             headers: {

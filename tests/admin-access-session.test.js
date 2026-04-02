@@ -152,6 +152,39 @@ test('admin access session DELETE clears the admin studio cookie', async () => {
     });
 });
 
+test('admin access session uses non-secure cookies on local preview hosts', async () => {
+    process.env.ADMIN_STUDIO_ACCESS_SECRET = 'session-secret-for-tests';
+
+    await withAdminAccessSessionHandler({}, async (handler) => {
+        const postReq = {
+            method: 'POST',
+            headers: {
+                host: '127.0.0.1:8000',
+                origin: 'http://127.0.0.1:8000'
+            },
+            socket: { remoteAddress: '127.0.0.1' }
+        };
+        const postRes = createMockResponse();
+        await handler(postReq, postRes);
+
+        assert.equal(postRes.statusCode, 200);
+        assert.doesNotMatch(String(postRes.headers['set-cookie'] || ''), /Secure/);
+
+        const deleteReq = {
+            method: 'DELETE',
+            headers: {
+                host: '127.0.0.1:8000',
+                origin: 'http://127.0.0.1:8000'
+            }
+        };
+        const deleteRes = createMockResponse();
+        await handler(deleteReq, deleteRes);
+
+        assert.equal(deleteRes.statusCode, 200);
+        assert.doesNotMatch(String(deleteRes.headers['set-cookie'] || ''), /Secure/);
+    });
+});
+
 test('admin access session POST rejects non-admin callers', async () => {
     process.env.ADMIN_STUDIO_ACCESS_SECRET = 'session-secret-for-tests';
 

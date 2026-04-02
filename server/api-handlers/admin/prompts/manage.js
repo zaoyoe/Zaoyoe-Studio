@@ -7,25 +7,47 @@ const {
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
 
-const PROMPT_SELECT_FIELDS = [
+const PROMPT_REQUIRED_SELECT_FIELDS = [
     'id',
     'title',
     'tags',
     'description',
     'prompt_text',
     'images',
+    'created_at'
+];
+
+const PROMPT_OPTIONAL_SELECT_FIELDS = [
     'dominant_colors',
     'ai_tags',
     'quality_score',
+    'updated_at'
+];
+
+const PROMPT_BILINGUAL_SELECT_FIELDS = [
     'title_en',
     'title_zh',
     'description_en',
     'description_zh',
     'prompt_text_en',
-    'prompt_text_zh',
-    'created_at',
-    'updated_at'
+    'prompt_text_zh'
+];
+
+const PROMPT_SELECT_FIELDS = [
+    ...PROMPT_REQUIRED_SELECT_FIELDS,
+    ...PROMPT_OPTIONAL_SELECT_FIELDS,
+    ...PROMPT_BILINGUAL_SELECT_FIELDS
 ].join(', ');
+
+const PROMPT_LEGACY_SELECT_FIELDS = PROMPT_REQUIRED_SELECT_FIELDS.join(', ');
+const OPTIONAL_PROMPT_COLUMN_FIELDS = [
+    ...PROMPT_OPTIONAL_SELECT_FIELDS,
+    ...PROMPT_BILINGUAL_SELECT_FIELDS
+];
+const OPTIONAL_PROMPT_MUTATION_FIELDS = new Set([
+    ...OPTIONAL_PROMPT_COLUMN_FIELDS,
+    'updated_at'
+]);
 
 function getSearchParams(req) {
     const url = new URL(req.url || '', 'http://localhost');
@@ -42,6 +64,41 @@ function normalizePromptSiteContext(value) {
 
 function normalizePromptMetricSite(value) {
     return String(value || '').trim().toLowerCase() === 'intl' ? 'intl' : 'cn';
+}
+
+function isMissingOptionalPromptColumnError(error) {
+    const message = String(error?.message || '').toLowerCase();
+    if (!message) return false;
+
+    return OPTIONAL_PROMPT_COLUMN_FIELDS.some((field) => (
+        message.includes(`column ${field}`) ||
+        message.includes(`prompts.${field}`) ||
+        message.includes(`"${field}"`)
+    ));
+}
+
+function isMissingOptionalPromptMetricSiteError(error, table) {
+    const message = String(error?.message || '').toLowerCase();
+    if (!message) return false;
+
+    return (
+        message.includes('column site') ||
+        message.includes(`${table}.site`) ||
+        message.includes('"site"')
+    );
+}
+
+function isMissingPromptMetricTableError(error, table) {
+    const message = String(error?.message || '').toLowerCase();
+    if (!message) return false;
+
+    return (
+        message.includes(`relation "${table}" does not exist`) ||
+        message.includes(`relation '${table}' does not exist`) ||
+        message.includes(`${table} does not exist`) ||
+        message.includes(`could not find the table '${table}'`) ||
+        message.includes(`could not find the table "${table}"`)
+    );
 }
 
 function toUniqueStringArray(value) {
@@ -83,6 +140,47 @@ function normalizeOptionalObject(value, fieldName) {
         throw error;
     }
     return value;
+}
+
+function applyPromptFieldFallbacks(row = {}) {
+    const safeRow = row && typeof row === 'object' ? { ...row } : {};
+
+    if (!Object.prototype.hasOwnProperty.call(safeRow, 'dominant_colors')) {
+        safeRow.dominant_colors = [];
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(safeRow, 'ai_tags')) {
+        safeRow.ai_tags = {};
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(safeRow, 'quality_score')) {
+        safeRow.quality_score = null;
+    }
+
+    for (const fieldName of PROMPT_BILINGUAL_SELECT_FIELDS) {
+        if (!Object.prototype.hasOwnProperty.call(safeRow, fieldName)) {
+            safeRow[fieldName] = '';
+        }
+    }
+
+    return safeRow;
+}
+
+function stripUnsupportedPromptPayloadFields(payload = {}) {
+    const safePayload = payload && typeof payload === 'object' ? { ...payload } : {};
+    let removed = false;
+
+    for (const fieldName of OPTIONAL_PROMPT_MUTATION_FIELDS) {
+        if (Object.prototype.hasOwnProperty.call(safePayload, fieldName)) {
+            delete safePayload[fieldName];
+            removed = true;
+        }
+    }
+
+    return {
+        payload: safePayload,
+        removed
+    };
 }
 
 function buildPromptMutationPayload(body, { action = 'create' } = {}) {
@@ -166,32 +264,65 @@ function buildPromptMutationPayload(body, { action = 'create' } = {}) {
 }
 
 async function loadPromptList(supabase) {
-    const { data, error } = await supabase
+    const primaryResult = await supabase
         .from('prompts')
         .select(PROMPT_SELECT_FIELDS)
         .order('created_at', { ascending: false });
 
-    if (error) throw error;
-    return data || [];
+    if (!primaryResult?.error) {
+        return (primaryResult.data || []).map((row) => applyPromptFieldFallbacks(row));
+    }
+
+    if (!isMissingOptionalPromptColumnError(primaryResult.error)) {
+        throw primaryResult.error;
+    }
+
+    const fallbackResult = await supabase
+        .from('prompts')
+        .select(PROMPT_LEGACY_SELECT_FIELDS)
+        .order('created_at', { ascending: false });
+
+    if (fallbackResult.error) throw fallbackResult.error;
+    return (fallbackResult.data || []).map((row) => applyPromptFieldFallbacks(row));
 }
 
 async function loadPromptById(supabase, id) {
-    const { data, error } = await supabase
+    const primaryResult = await supabase
         .from('prompts')
         .select(PROMPT_SELECT_FIELDS)
         .eq('id', id)
         .single();
 
-    if (error) {
-        if (error.code === 'PGRST116') {
+    if (!primaryResult?.error) {
+        return applyPromptFieldFallbacks(primaryResult.data);
+    }
+
+    if (isMissingOptionalPromptColumnError(primaryResult.error)) {
+        const fallbackResult = await supabase
+            .from('prompts')
+            .select(PROMPT_LEGACY_SELECT_FIELDS)
+            .eq('id', id)
+            .single();
+
+        if (!fallbackResult?.error) {
+            return applyPromptFieldFallbacks(fallbackResult.data);
+        }
+
+        if (fallbackResult.error.code === 'PGRST116') {
             const notFoundError = new Error('Prompt not found');
             notFoundError.statusCode = 404;
             throw notFoundError;
         }
-        throw error;
+        throw fallbackResult.error;
     }
 
-    return data;
+    if (primaryResult.error.code === 'PGRST116') {
+        const notFoundError = new Error('Prompt not found');
+        notFoundError.statusCode = 404;
+        throw notFoundError;
+    }
+
+    throw primaryResult.error;
 }
 
 function createEmptyPromptSiteMetrics() {
@@ -205,13 +336,39 @@ function createEmptyPromptSiteMetrics() {
 async function loadPromptMetricRows(supabase, table, promptIds) {
     if (!promptIds.length) return [];
 
-    const { data, error } = await supabase
+    const primaryResult = await supabase
         .from(table)
         .select('prompt_id, site')
         .in('prompt_id', promptIds);
 
-    if (error) throw error;
-    return data || [];
+    if (!primaryResult?.error) {
+        return primaryResult.data || [];
+    }
+
+    if (isMissingPromptMetricTableError(primaryResult.error, table)) {
+        return [];
+    }
+
+    if (!isMissingOptionalPromptMetricSiteError(primaryResult.error, table)) {
+        throw primaryResult.error;
+    }
+
+    const fallbackResult = await supabase
+        .from(table)
+        .select('prompt_id')
+        .in('prompt_id', promptIds);
+
+    if (fallbackResult.error) {
+        if (isMissingPromptMetricTableError(fallbackResult.error, table)) {
+            return [];
+        }
+        throw fallbackResult.error;
+    }
+
+    return (fallbackResult.data || []).map((row) => ({
+        ...row,
+        site: 'cn'
+    }));
 }
 
 async function attachPromptSiteMetrics(supabase, rows) {
@@ -255,6 +412,74 @@ async function attachPromptSiteMetrics(supabase, rows) {
         ...row,
         site_metrics: metricsById.get(normalizePromptId(row?.id)) || createEmptyPromptSiteMetrics()
     }));
+}
+
+async function insertPromptRow(supabase, payload) {
+    const primaryResult = await supabase
+        .from('prompts')
+        .insert(payload)
+        .select(PROMPT_SELECT_FIELDS)
+        .single();
+
+    if (!primaryResult?.error) {
+        return applyPromptFieldFallbacks(primaryResult.data);
+    }
+
+    if (!isMissingOptionalPromptColumnError(primaryResult.error)) {
+        throw primaryResult.error;
+    }
+
+    const { payload: fallbackPayload, removed } = stripUnsupportedPromptPayloadFields(payload);
+    if (!removed) {
+        throw primaryResult.error;
+    }
+
+    const fallbackResult = await supabase
+        .from('prompts')
+        .insert(fallbackPayload)
+        .select(PROMPT_LEGACY_SELECT_FIELDS)
+        .single();
+
+    if (fallbackResult.error) {
+        throw fallbackResult.error;
+    }
+
+    return applyPromptFieldFallbacks(fallbackResult.data);
+}
+
+async function updatePromptRow(supabase, id, payload) {
+    const primaryResult = await supabase
+        .from('prompts')
+        .update(payload)
+        .eq('id', id)
+        .select(PROMPT_SELECT_FIELDS)
+        .single();
+
+    if (!primaryResult?.error) {
+        return applyPromptFieldFallbacks(primaryResult.data);
+    }
+
+    if (!isMissingOptionalPromptColumnError(primaryResult.error)) {
+        throw primaryResult.error;
+    }
+
+    const { payload: fallbackPayload, removed } = stripUnsupportedPromptPayloadFields(payload);
+    if (!removed) {
+        throw primaryResult.error;
+    }
+
+    const fallbackResult = await supabase
+        .from('prompts')
+        .update(fallbackPayload)
+        .eq('id', id)
+        .select(PROMPT_LEGACY_SELECT_FIELDS)
+        .single();
+
+    if (fallbackResult.error) {
+        throw fallbackResult.error;
+    }
+
+    return applyPromptFieldFallbacks(fallbackResult.data);
 }
 
 module.exports = async (req, res) => {
@@ -341,13 +566,7 @@ module.exports = async (req, res) => {
         const payload = buildPromptMutationPayload(body, { action });
 
         if (action === 'create') {
-            const { data, error } = await supabase
-                .from('prompts')
-                .insert(payload)
-                .select(PROMPT_SELECT_FIELDS)
-                .single();
-
-            if (error) throw error;
+            const data = await insertPromptRow(supabase, payload);
 
             await writeAdminAuditLog({
                 supabase,
@@ -374,14 +593,10 @@ module.exports = async (req, res) => {
             return sendJson(res, 400, { success: false, message: 'id is required' });
         }
 
-        const { data, error } = await supabase
-            .from('prompts')
-            .update(payload)
-            .eq('id', id)
-            .select(PROMPT_SELECT_FIELDS)
-            .single();
-
-        if (error) {
+        let data;
+        try {
+            data = await updatePromptRow(supabase, id, payload);
+        } catch (error) {
             if (error.code === 'PGRST116') {
                 return sendJson(res, 404, { success: false, message: 'Prompt not found' });
             }

@@ -20,9 +20,8 @@
         }
     });
 
-    const redirectBack = () => {
-        let target = localStorage.getItem('oauth_post_login_redirect') || '/';
-        localStorage.removeItem('oauth_post_login_redirect');
+    const resolveSafeRedirectTarget = (rawTarget = '/') => {
+        let target = String(rawTarget || '').trim() || '/';
         try {
             const url = new URL(target, window.location.origin);
             if (url.origin !== window.location.origin || /\/auth-callback\.html$/i.test(url.pathname)) {
@@ -31,6 +30,15 @@
         } catch (error) {
             target = '/';
         }
+        return target;
+    };
+
+    const redirectBack = () => {
+        const url = new URL(window.location.href);
+        const nextTarget = url.searchParams.get('next') || '';
+        let target = nextTarget || localStorage.getItem('oauth_post_login_redirect') || '/';
+        localStorage.removeItem('oauth_post_login_redirect');
+        target = resolveSafeRedirectTarget(target);
         window.location.replace(target);
     };
 

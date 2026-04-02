@@ -7,6 +7,7 @@ const commentsListHandler = require('../server/api-handlers/admin/comments/list'
 const commentsBlocksHandler = require('../server/api-handlers/admin/comments/blocks');
 const commentsModerateHandler = require('../server/api-handlers/admin/comments/moderate');
 const commentsSummaryHandler = require('../server/api-handlers/admin/comments/summary');
+const discountsListHandler = require('../server/api-handlers/admin/discounts/list');
 const homepageConfigHandler = require('../server/api-handlers/admin/homepage/config');
 const pointsBatchesHandler = require('../server/api-handlers/admin/points/batches');
 const pointsCatalogHandler = require('../server/api-handlers/admin/points/catalog');
@@ -16,6 +17,7 @@ const pointsPackagesHandler = require('../server/api-handlers/admin/points/packa
 const promptsManageHandler = require('../server/api-handlers/admin/prompts/manage');
 const accessSessionHandler = require('../server/api-handlers/admin/access/session');
 const shopMutateHandler = require('../server/api-handlers/admin/shop/mutate');
+const shopOrdersHandler = require('../server/api-handlers/admin/shop/orders');
 const shopDeliveryActionsHandler = require('../server/api-handlers/admin/shop/delivery-actions');
 const shopDeliveryTasksHandler = require('../server/api-handlers/admin/shop/delivery-tasks');
 const paymentsActionsHandler = require('../server/api-handlers/admin/payments/actions');
@@ -41,6 +43,7 @@ const ROUTE_HANDLERS = {
     'comments/blocks': commentsBlocksHandler,
     'comments/moderate': commentsModerateHandler,
     'comments/summary': commentsSummaryHandler,
+    'discounts/list': discountsListHandler,
     'homepage/config': homepageConfigHandler,
     'points/batches': pointsBatchesHandler,
     'points/catalog': pointsCatalogHandler,
@@ -62,6 +65,7 @@ const ROUTE_HANDLERS = {
     'tickets/create': ticketCreateHandler,
     'tickets/process': ticketProcessHandler,
     'shop/mutate': shopMutateHandler,
+    'shop/orders': shopOrdersHandler,
     'shop/delivery-actions': shopDeliveryActionsHandler,
     'shop/delivery-tasks': shopDeliveryTasksHandler,
     'shop/delivery-strategy': shopDeliveryTasksHandler,
@@ -71,9 +75,24 @@ const ROUTE_HANDLERS = {
     'payments/summary': paymentsSummaryHandler
 };
 
+function resolveAdminRoute(url) {
+    const queryRoute = String(url.searchParams.get('route') || '').trim().toLowerCase();
+    if (queryRoute) {
+        return queryRoute;
+    }
+
+    const pathname = String(url.pathname || '').trim();
+    const pathRoute = pathname
+        .replace(/^\/api\/admin\/?/i, '')
+        .replace(/^\/+|\/+$/g, '')
+        .toLowerCase();
+
+    return pathRoute;
+}
+
 module.exports = async function handler(req, res) {
     const url = new URL(req.url || '', 'http://localhost');
-    const route = String(url.searchParams.get('route') || '').trim().toLowerCase();
+    const route = resolveAdminRoute(url);
     const querySite = normalizeAdminSite(url.searchParams.get('site'));
     const resolvedHandler = ROUTE_HANDLERS[route];
 

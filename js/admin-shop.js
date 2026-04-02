@@ -36,7 +36,18 @@ const supabaseClient = (() => {
         SHOP_ADMIN_PUBLISHABLE_KEY,
         {
             accessToken: async () => {
-                const { data: { session } = {} } = await authClient.auth.getSession();
+                if (window.AdminApi?.getAccessToken) {
+                    const accessToken = await window.AdminApi.getAccessToken();
+                    return accessToken || null;
+                }
+
+                const sessionResult = await Promise.race([
+                    authClient.auth.getSession(),
+                    new Promise((resolve) => {
+                        window.setTimeout(() => resolve(null), 4000);
+                    })
+                ]);
+                const session = sessionResult?.data?.session || null;
                 return session?.access_token ?? null;
             },
             auth: {
@@ -1064,17 +1075,6 @@ Example output format:
                 categoryDropdown.classList.remove('open');
             }
         });
-
-        // Bind New Product Button
-        if (btnNew) {
-            // Remove old listeners by cloning (optional but safe)
-            const newBtn = btnNew.cloneNode(true);
-            btnNew.parentNode.replaceChild(newBtn, btnNew);
-            newBtn.addEventListener('click', () => {
-                console.log('Button Clicked');
-                this.openProductModal();
-            });
-        }
 
         // Restore the last shop tab/filter context from URL when available.
         this.switchTab(restoredShopState?.tabName || 'products');
@@ -7492,96 +7492,28 @@ Example output format:
         tbody.innerHTML = this.buildShopTableLoadingSkeleton(6, { rowCount: 5, actionCount: 3 });
 
         const limit = this.pageSize;
-        const from = (page - 1) * limit;
-        const to = from + limit - 1;
 
         try {
-            // 1. Fetch Orders (Pagination)
-            let queryBuilder = supabaseClient
-                .from('shop_orders')
-                .select('*', { count: 'exact' })
-                .order('created_at', { ascending: false });
-
-            // Apply admin site filter
-            if (window.AdminSiteFilter) queryBuilder = AdminSiteFilter.applySiteFilter(queryBuilder);
-
-            let searchedById = false;
-            if (query && query.includes('-')) {
-                // Clean the query (remove SHOP_ORDER_ prefix if present)
-                let cleanedId = query.replace(/^SHOP_ORDER_/i, '').trim();
-                console.log('[ShopAdmin] Searching by order ID:', cleanedId);
-                queryBuilder = queryBuilder.eq('id', cleanedId);
-                searchedById = true;
-            } else {
-                queryBuilder = queryBuilder.range(from, to);
+            const site = window.AdminSiteFilter?.getSiteFilter?.() || 'all';
+            const searchParams = new URLSearchParams({
+                site,
+                page: String(page),
+                pageSize: String(limit)
+            });
+            if (query) {
+                searchParams.set('query', query);
             }
 
-            let { data, count, error } = await queryBuilder;
-
-            if (error) throw error;
-
-            // Fallback: If searched by ID but no results, try via points_ledger
-            if (searchedById && (!data || data.length === 0)) {
-                console.log('[ShopAdmin] No direct match, trying points_ledger fallback...');
-                const cleanedId = query.replace(/^SHOP_ORDER_/i, '').trim();
-
-                // Try searching by ledger record ID directly (wallet shows ledger.id as "订单号")
-                const { data: ledgerData, error: ledgerError } = await supabaseClient
-                    .from('points_ledger')
-                    .select('id, user_id, reference_id, created_at')
-                    .or(`id.eq.${cleanedId}, reference_id.ilike.% ${cleanedId}% `)
-                    .limit(5);
-
-                console.log('[ShopAdmin] Ledger search result:', ledgerData, 'Error:', ledgerError);
-
-                if (ledgerData && ledgerData.length > 0) {
-                    // Found in ledger, get user_id and extract order_id from reference_id
-                    const ledgerRecord = ledgerData[0];
-                    const userId = ledgerRecord.user_id;
-
-                    // Try to extract order_id from reference_id (format: SHOP_ORDER_uuid)
-                    let orderId = null;
-                    if (ledgerRecord.reference_id && ledgerRecord.reference_id.startsWith('SHOP_ORDER_')) {
-                        orderId = ledgerRecord.reference_id.replace('SHOP_ORDER_', '');
-                    }
-
-                    console.log('[ShopAdmin] Extracted user_id:', userId, 'order_id:', orderId);
-
-                    // First try to find by extracted order_id
-                    if (orderId) {
-                        const { data: orderById } = await supabaseClient
-                            .from('shop_orders')
-                            .select('*', { count: 'exact' })
-                            .eq('id', orderId);
-
-                        if (orderById && orderById.length > 0) {
-                            data = orderById;
-                            count = orderById.length;
-                            console.log('[ShopAdmin] Found order by extracted ID:', data);
-                        }
-                    }
-
-                    // If still not found, get user's recent orders around the ledger time
-                    if (!data || data.length === 0) {
-                        const ledgerTime = new Date(ledgerRecord.created_at);
-                        const timeWindow = 60 * 1000; // ±1 minute
-
-                        const { data: userOrders, count: userCount } = await supabaseClient
-                            .from('shop_orders')
-                            .select('*', { count: 'exact' })
-                            .eq('user_id', userId)
-                            .gte('created_at', new Date(ledgerTime.getTime() - timeWindow).toISOString())
-                            .lte('created_at', new Date(ledgerTime.getTime() + timeWindow).toISOString())
-                            .order('created_at', { ascending: false });
-
-                        if (userOrders && userOrders.length > 0) {
-                            data = userOrders;
-                            count = userCount;
-                            console.log('[ShopAdmin] Found orders via time window:', data.length);
-                        }
-                    }
-                }
+            const response = await (window.AdminApi?.fetch || fetch)(`/api/admin/shop/orders?${searchParams.toString()}`, {
+                credentials: 'include'
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.success === false) {
+                throw new Error(payload?.message || `Shop orders request failed (${response.status})`);
             }
+
+            const data = Array.isArray(payload?.rows) ? payload.rows : [];
+            const count = Number(payload?.count) || 0;
 
             if (requestToken !== this.orderSearchRequestToken) {
                 return { opened: true, matched: false, stale: true };
@@ -7597,107 +7529,12 @@ Example output format:
                 return { opened: true, matched: false };
             }
 
-            // 2. Fetch Profiles via RPC (same as user management for reliable email access)
-            const userIds = [...new Set(data.map(o => o.user_id))];
-            console.log('[ShopAdmin] User IDs to fetch:', userIds);
-            let userMap = {};
-            if (userIds.length > 0) {
-                // Try RPC first (includes email from auth.users)
-                const { data: rpcUsers, error: rpcError } = await supabaseClient.rpc('get_admin_users');
-
-                if (rpcUsers && !rpcError) {
-                    rpcUsers.forEach(u => {
-                        const id = u.out_id || u.id;
-                        userMap[id] = {
-                            id: id,
-                            email: u.out_email || u.email,
-                            username: u.out_username || u.username || 'Unknown',
-                            avatar_url: u.out_avatar_url || u.avatar_url
-                        };
-                    });
-                    console.log('[ShopAdmin] RPC users loaded:', Object.keys(userMap).length);
-                } else {
-                    console.warn('[ShopAdmin] RPC failed, fallback to profiles:', rpcError);
-                    // Fallback to profiles table
-                    const { data: users } = await supabaseClient
-                        .from('profiles')
-                        .select('id, email, display_name, username, avatar_url')
-                        .in('id', userIds);
-                    if (users) {
-                        users.forEach(u => userMap[u.id] = u);
-                    }
-                }
-            }
-            console.log('[ShopAdmin] User map:', userMap);
-
-            // 3. Fetch inventory content for orders that have inventory_id
-            const inventoryIds = [...new Set(data.filter(o => o.inventory_id).map(o => o.inventory_id))];
-            console.log('[ShopAdmin] Order data:', data);
-            console.log('[ShopAdmin] First order fields:', data[0] ? Object.keys(data[0]) : 'no orders');
-            console.log('[ShopAdmin] First order inventory_id:', data[0]?.inventory_id);
-            console.log('[ShopAdmin] First order items:', data[0]?.items);
-            console.log('[ShopAdmin] Inventory IDs:', inventoryIds);
-
-            let inventoryMap = {};
-            if (inventoryIds.length > 0) {
-                const { data: inventories, error: invError } = await supabaseClient
-                    .from('shop_inventory')
-                    .select('id, content')
-                    .in('id', inventoryIds);
-
-                console.log('[ShopAdmin] Inventory query result:', inventories, 'Error:', invError);
-
-                if (inventories) {
-                    inventories.forEach(inv => inventoryMap[inv.id] = inv.content);
-                }
-            }
-
-            // 4. Fallback: For orders without inventory_id, query by buyer_id + time window
-            const ordersNeedingFallback = data.filter(o => !o.inventory_id && o.user_id);
-            if (ordersNeedingFallback.length > 0) {
-                // Group by user_id to batch query
-                const userIds = [...new Set(ordersNeedingFallback.map(o => o.user_id))];
-
-                const { data: soldInventories } = await supabaseClient
-                    .from('shop_inventory')
-                    .select('id, content, buyer_id, sold_at, product_id')
-                    .in('buyer_id', userIds)
-                    .eq('status', 'sold')
-                    .order('sold_at', { ascending: false });
-
-                if (soldInventories) {
-                    // Build a map keyed by "user_id + product_id + approximate_time"
-                    // For simplicity, just map by "user_id:product_id" and get latest
-                    const userProductInventory = {};
-                    soldInventories.forEach(inv => {
-                        const key = `${inv.buyer_id}:${inv.product_id} `;
-                        if (!userProductInventory[key]) {
-                            userProductInventory[key] = [];
-                        }
-                        userProductInventory[key].push(inv.content);
-                    });
-
-                    // Attach to orders
-                    ordersNeedingFallback.forEach(order => {
-                        const key = `${order.user_id}:${order.product_id} `;
-                        if (userProductInventory[key]) {
-                            // Take item_count items from the array
-                            const count = order.item_count || 1;
-                            const contents = userProductInventory[key].splice(0, count);
-                            order._fallbackContents = contents;
-                        }
-                    });
-                }
-            }
-
-            console.log('[ShopAdmin] Inventory map:', inventoryMap);
-
             let matchedFocusedOrder = null;
 
             for (const order of data) {
                 const date = new Date(order.created_at).toLocaleString();
                 // Get user info from map
-                const user = userMap[order.user_id] || {};
+                const user = order.profiles || {};
                 const userName = user.username || 'Unknown';
                 const userEmail = user.email || order.user_id.substring(0, 8) + '...';
                 const userAvatar = user.avatar_url
@@ -7721,7 +7558,7 @@ Example output format:
                 `;
 
                 // Handle new items array structure
-                const items = order.items || [];
+                const items = Array.isArray(order.resolved_items) ? order.resolved_items : (order.items || []);
                 let productName = 'Unknown';
                 let contentData = '';
 
@@ -7729,24 +7566,6 @@ Example output format:
                     productName = items[0].product_name || 'Unknown';
                     // Encode items array for passing to function
                     contentData = encodeURIComponent(JSON.stringify(items)).replace(/'/g, '%27');
-                } else if (order._fallbackContents && order._fallbackContents.length > 0) {
-                    // Use fallback contents from inventory query by buyer
-                    productName = order.snapshot_product_name || 'Unknown';
-                    const itemsFromFallback = order._fallbackContents.map(content => ({
-                        product_name: productName,
-                        content: content,
-                        price: order.price_paid
-                    }));
-                    contentData = encodeURIComponent(JSON.stringify(itemsFromFallback)).replace(/'/g, '%27');
-                } else {
-                    // Get content from inventory map (original path)
-                    const inventoryContent = inventoryMap[order.inventory_id] || '无内容';
-                    productName = order.snapshot_product_name || 'Unknown';
-                    contentData = encodeURIComponent(JSON.stringify([{
-                        product_name: productName,
-                        content: inventoryContent,
-                        price: order.price_paid
-                    }])).replace(/'/g, '%27');
                 }
 
                 if (order.item_count > 1) {

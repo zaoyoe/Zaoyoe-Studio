@@ -24,6 +24,34 @@ const AdminDiscounts = {
         search: ''
     },
 
+    getReadSite: function () {
+        return window.AdminSiteFilter?.getSiteFilter?.() || 'all';
+    },
+
+    buildAdminDiscountsUrl: function (route, params = {}) {
+        const url = new URL(`/api/admin/${route}`, window.location.origin);
+        Object.entries(params || {}).forEach(([key, value]) => {
+            if (value === undefined || value === null || value === '') return;
+            url.searchParams.set(key, String(value));
+        });
+        return `${url.pathname}${url.search}`;
+    },
+
+    parseAdminDiscountsResponse: async function (response) {
+        let payload = {};
+        try {
+            payload = await response.json();
+        } catch (_) {
+            payload = {};
+        }
+
+        if (!response.ok || payload?.success === false) {
+            throw new Error(payload?.message || `Discount request failed (${response.status})`);
+        }
+
+        return payload;
+    },
+
     escapeHtml: function (value) {
         return String(value ?? '')
             .replace(/&/g, '&amp;')
@@ -448,16 +476,14 @@ const AdminDiscounts = {
         tableBody.innerHTML = this.buildTableLoadingSkeleton();
 
         try {
-            const { data, error } = await supabaseClient
-                .from('discount_codes')
-                .select('*')
-                .order('created_at', { ascending: false });
-
-            if (error) throw error;
-
-            // Optional: apply site filter if discount_codes had a 'site' column, 
-            // but these are likely global for now.
-            this.discounts = data || [];
+            const response = await (window.AdminApi?.fetch || fetch)(
+                this.buildAdminDiscountsUrl('discounts/list', {
+                    site: this.getReadSite()
+                }),
+                { credentials: 'include' }
+            );
+            const payload = await this.parseAdminDiscountsResponse(response);
+            this.discounts = Array.isArray(payload.rows) ? payload.rows : [];
             this.render();
 
         } catch (err) {

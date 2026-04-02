@@ -153,6 +153,8 @@ const ADMIN_WORKBENCH_OPS_ALERT_MONITOR_CATEGORY_LABELS = Object.freeze({
 });
 
 const ADMIN_WORKBENCH_PENDING_WORKSPACE_STORAGE_KEY = 'zaoyoe_pending_ops_alert_workspace';
+const ADMIN_WORKBENCH_URL_PARAM_KEY = 'workbench';
+const ADMIN_WORKBENCH_URL_PARAM_CONTEXT = 'workbench_context';
 
 function waitForAdminWorkbenchPaint() {
     return new Promise((resolve) => {
@@ -163,14 +165,28 @@ function waitForAdminWorkbenchPaint() {
 }
 
 async function settleAdminWorkbench(delayMs = 60) {
-    if (typeof settleOpsAlertWorkspace === 'function') {
-        return settleOpsAlertWorkspace(delayMs);
-    }
+    const normalizedDelayMs = Number(delayMs) > 0 ? Number(delayMs) : 0;
+    const fallbackWaitMs = Math.max(360, normalizedDelayMs + 360);
 
-    await waitForAdminWorkbenchPaint();
-    if (delayMs > 0) {
-        await new Promise((resolve) => window.setTimeout(resolve, delayMs));
-    }
+    const settlePromise = (async () => {
+        if (typeof settleOpsAlertWorkspace === 'function') {
+            await settleOpsAlertWorkspace(normalizedDelayMs);
+            return true;
+        }
+
+        await waitForAdminWorkbenchPaint();
+        if (normalizedDelayMs > 0) {
+            await new Promise((resolve) => window.setTimeout(resolve, normalizedDelayMs));
+        }
+        return true;
+    })().catch(() => false);
+
+    await Promise.race([
+        settlePromise,
+        new Promise((resolve) => {
+            window.setTimeout(resolve, fallbackWaitMs);
+        })
+    ]);
 }
 
 function scrollAdminWorkbenchTarget(targetId) {
@@ -1379,6 +1395,28 @@ function buildAdminWorkbenchOpsAlertMonitorBatchActionStates(categories = [], fi
     });
 }
 
+function buildAdminWorkbenchOpsAlertMonitorViewState(state = {}, filters = {}, categories = [], options = {}) {
+    const normalizedCategories = Array.isArray(categories) ? categories : [];
+    const filterDefinitions = Array.isArray(options.filterDefinitions)
+        ? options.filterDefinitions.filter(Boolean)
+        : [];
+
+    return {
+        toolbarState: buildAdminWorkbenchOpsAlertMonitorFilterToolbarState(filters, {
+            definitions: filterDefinitions
+        }),
+        panelState: buildAdminWorkbenchOpsAlertMonitorPanelState(state, filters, normalizedCategories, {
+            formatCount: options.formatCount,
+            getFilterSummaryLabel: options.getFilterSummaryLabel
+        }),
+        batchActionStates: buildAdminWorkbenchOpsAlertMonitorBatchActionStates(normalizedCategories, filters, {
+            buildBatchItems: options.buildBatchItems,
+            getBatchMuteModuleKeys: options.getBatchMuteModuleKeys,
+            formatCount: options.formatCount
+        })
+    };
+}
+
 function formatAdminWorkbenchOpsAlertSignedCount(value, options = {}) {
     const numericValue = Number(value);
     const formatCount = typeof options.formatCount === 'function'
@@ -1914,6 +1952,117 @@ function collectAdminWorkbenchOpsAlertUnifiedSummaryDraft(currentDraft = {}, opt
             1,
             50
         )
+    };
+}
+
+function buildAdminWorkbenchOpsAlertUnifiedSummaryConsensus(config = {}, options = {}) {
+    const normalizedConfig = config && typeof config === 'object' && !Array.isArray(config)
+        ? config
+        : {};
+    const definitions = Array.isArray(options.definitions)
+        ? options.definitions.filter(Boolean)
+        : [];
+    const selectedDefinitions = Array.isArray(options.selectedDefinitions)
+        ? options.selectedDefinitions.filter(Boolean)
+        : [];
+    const defaults = options.defaults && typeof options.defaults === 'object' && !Array.isArray(options.defaults)
+        ? options.defaults
+        : {};
+    const normalizeScheduleMode = typeof options.normalizeScheduleMode === 'function'
+        ? options.normalizeScheduleMode
+        : ((value, fallbackValue = 'rolling_window') => String(value || fallbackValue).trim().toLowerCase() || fallbackValue);
+    const clamp = typeof options.clamp === 'function'
+        ? options.clamp
+        : ((value, min, max) => Math.min(max, Math.max(min, Number(value || 0))));
+    const toWholeNumber = typeof options.toWholeNumber === 'function'
+        ? options.toWholeNumber
+        : ((value, fallbackValue = 0) => {
+            const parsed = Number.parseInt(value, 10);
+            return Number.isFinite(parsed) ? parsed : fallbackValue;
+        });
+    const selectedSections = selectedDefinitions.map((definition) => (
+        normalizedConfig[definition.key] || defaults[definition.key] || {}
+    ));
+    const pickConsensusValue = (consensusDefinitions, sections, resolver) => {
+        if (!consensusDefinitions.length || !sections.length) {
+            return undefined;
+        }
+
+        const values = sections.map((section, index) => resolver(section, consensusDefinitions[index]));
+        const firstValue = values[0];
+        return values.every((value) => value === firstValue) ? firstValue : undefined;
+    };
+    const workHoursDefinitions = selectedDefinitions.filter((definition) => definition.supports_work_hours_only);
+    const workHoursSections = workHoursDefinitions.map((definition) => (
+        normalizedConfig[definition.key] || defaults[definition.key] || {}
+    ));
+
+    return {
+        summary_enabled: pickConsensusValue(
+            selectedDefinitions,
+            selectedSections,
+            (section) => section.summary_enabled === true
+        ),
+        work_hours_only_enabled: workHoursDefinitions.length
+            ? pickConsensusValue(
+                workHoursDefinitions,
+                workHoursSections,
+                (section) => section.work_hours_only_enabled === true
+            )
+            : false,
+        summary_schedule_mode: pickConsensusValue(
+            selectedDefinitions,
+            selectedSections,
+            (section) => normalizeScheduleMode(section.summary_schedule_mode, 'rolling_window')
+        ),
+        summary_window_minutes: pickConsensusValue(
+            selectedDefinitions,
+            selectedSections,
+            (section) => clamp(toWholeNumber(section.summary_window_minutes, 60), 5, 24 * 60)
+        ),
+        summary_hourly_minute: pickConsensusValue(
+            selectedDefinitions,
+            selectedSections,
+            (section) => clamp(toWholeNumber(section.summary_hourly_minute, 0), 0, 59)
+        ),
+        summary_daily_hour: pickConsensusValue(
+            selectedDefinitions,
+            selectedSections,
+            (section) => clamp(toWholeNumber(section.summary_daily_hour, 9), 0, 23)
+        ),
+        summary_daily_minute: pickConsensusValue(
+            selectedDefinitions,
+            selectedSections,
+            (section) => clamp(toWholeNumber(section.summary_daily_minute, 0), 0, 59)
+        ),
+        summary_max_items: pickConsensusValue(
+            selectedDefinitions,
+            selectedSections,
+            (section) => clamp(toWholeNumber(section.summary_max_items, 10), 1, 50)
+        )
+    };
+}
+
+function buildAdminWorkbenchOpsAlertUnifiedSummaryDraftControlState(draft = {}, options = {}) {
+    const normalizedDraft = draft && typeof draft === 'object' && !Array.isArray(draft)
+        ? draft
+        : {};
+    const selectedCount = Math.max(0, Number(options.selectedCount || 0));
+    const formatCount = typeof options.formatCount === 'function'
+        ? options.formatCount
+        : ((value) => String(Math.max(0, Number(value || 0))));
+    const summaryModeControlStateBuilder = typeof options.buildSummaryModeControlState === 'function'
+        ? options.buildSummaryModeControlState
+        : buildAdminWorkbenchOpsAlertSummaryModeControlState;
+
+    return {
+        selectedCount,
+        applyDisabled: selectedCount <= 0,
+        applyLabel: `应用到所选告警${selectedCount > 0 ? `（${formatCount(selectedCount)} 类）` : ''}`,
+        summaryModeControlState: summaryModeControlStateBuilder(normalizedDraft, {
+            monitorEnabled: true,
+            summaryEnabled: normalizedDraft.summary_enabled === true
+        })
     };
 }
 
@@ -4035,6 +4184,275 @@ function buildAdminWorkbenchOpsAlertSummaryModeControlState(section = {}, option
     };
 }
 
+function buildAdminWorkbenchOpsAlertSummaryOrchestrationMonitorState(definition = {}, section = {}, options = {}) {
+    const normalizedDefinition = definition && typeof definition === 'object' && !Array.isArray(definition)
+        ? definition
+        : {};
+    const normalizedSection = section && typeof section === 'object' && !Array.isArray(section)
+        ? section
+        : {};
+    const formatCount = typeof options.formatCount === 'function'
+        ? options.formatCount
+        : ((value) => String(Math.max(0, Number(value || 0))));
+    const sweepIntervalMinutes = Math.max(1, Math.round(Number(normalizedSection.sweep_interval_ms || 0) / 60000));
+    const enabled = normalizedSection.enabled === true;
+    let text = enabled
+        ? `巡检 ${formatCount(sweepIntervalMinutes)} 分钟，回看 ${formatCount(normalizedSection.lookback_minutes || 0)} 分钟。`
+        : `巡检参数仍保留，回看 ${formatCount(normalizedSection.lookback_minutes || 0)} 分钟。`;
+
+    switch (normalizedDefinition.key) {
+        case 'shop_inventory':
+            text = enabled
+                ? `巡检 ${formatCount(sweepIntervalMinutes)} 分钟，低库存阈值 ${formatCount(normalizedSection.low_stock_threshold || 0)}。`
+                : `库存巡检参数仍保留，阈值 ${formatCount(normalizedSection.low_stock_threshold || 0)}。`;
+            break;
+        case 'tickets':
+            text = enabled
+                ? `巡检 ${formatCount(sweepIntervalMinutes)} 分钟，超时阈值 ${formatCount(normalizedSection.pending_overdue_minutes || 0)} 分钟。`
+                : `工单 SLA 阈值仍保留为 ${formatCount(normalizedSection.pending_overdue_minutes || 0)} 分钟。`;
+            break;
+        case 'shop_order_delivery':
+            text = enabled
+                ? `巡检 ${formatCount(sweepIntervalMinutes)} 分钟，重试阈值 ${formatCount(normalizedSection.retry_waiting_min_attempts || 0)} 次，事故阈值 ${formatCount(normalizedSection.incident_min_order_count || 0)} 笔。`
+                : `履约异常阈值仍保留，重试 ${formatCount(normalizedSection.retry_waiting_min_attempts || 0)} 次触发。`;
+            break;
+        case 'payment_gateway':
+            text = enabled
+                ? `巡检 ${formatCount(sweepIntervalMinutes)} 分钟，异常窗口 ${formatCount(normalizedSection.window_minutes || 0)} 分钟，失败阈值 ${formatCount(normalizedSection.min_failed_orders || 0)} 笔。`
+                : `支付通道异常阈值仍保留，窗口 ${formatCount(normalizedSection.window_minutes || 0)} 分钟。`;
+            break;
+        case 'verify_quota':
+            text = enabled
+                ? `巡检 ${formatCount(sweepIntervalMinutes)} 分钟，低余额 ${formatCount(normalizedSection.low_balance_threshold || 0)} 点 / 低剩余 ${formatCount(normalizedSection.low_remaining_jobs_threshold || 0)} 次。`
+                : `验证额度阈值仍保留，低余额 ${formatCount(normalizedSection.low_balance_threshold || 0)} 点。`;
+            break;
+        case 'verify_queue':
+            text = enabled
+                ? `巡检 ${formatCount(sweepIntervalMinutes)} 分钟，队列阈值 ${formatCount(normalizedSection.queue_size_threshold || 0)} 个，最老待处理 ${formatCount(normalizedSection.oldest_pending_minutes_threshold || 0)} 分钟。`
+                : `验证堆积阈值仍保留，队列阈值 ${formatCount(normalizedSection.queue_size_threshold || 0)} 个。`;
+            break;
+        case 'verify_failure':
+            text = enabled
+                ? `巡检 ${formatCount(sweepIntervalMinutes)} 分钟，失败率阈值 ${formatCount(normalizedSection.failure_rate_threshold || 0)}%，样本量至少 ${formatCount(normalizedSection.min_total_jobs_threshold || 0)} 次。`
+                : `验证失败率阈值仍保留，失败率 ${formatCount(normalizedSection.failure_rate_threshold || 0)}%。`;
+            break;
+        default:
+            break;
+    }
+
+    return {
+        cellId: normalizedDefinition.monitor_status_id || '',
+        tone: enabled ? 'success' : 'neutral',
+        label: enabled ? '已启用' : '已关闭',
+        text
+    };
+}
+
+function buildAdminWorkbenchOpsAlertSummaryOrchestrationWorkHoursState(definition = {}, section = {}, workHours = {}, options = {}) {
+    const normalizedDefinition = definition && typeof definition === 'object' && !Array.isArray(definition)
+        ? definition
+        : {};
+    const normalizedSection = section && typeof section === 'object' && !Array.isArray(section)
+        ? section
+        : {};
+    const normalizedWorkHours = workHours && typeof workHours === 'object' && !Array.isArray(workHours)
+        ? workHours
+        : {};
+    const formatHourMinute = typeof options.formatHourMinute === 'function'
+        ? options.formatHourMinute
+        : ((hour, minute) => `${String(Number(hour || 0)).padStart(2, '0')}:${String(Number(minute || 0)).padStart(2, '0')}`);
+    const workHoursEnabled = normalizedWorkHours.enabled === true;
+    const startLabel = formatHourMinute(normalizedWorkHours.start_hour, 0);
+    const endLabel = formatHourMinute(normalizedWorkHours.end_hour, 0);
+    const timezoneLabel = normalizedWorkHours.timezone || 'Asia/Shanghai';
+
+    if (normalizedDefinition.supports_work_hours_only !== true) {
+        return {
+            cellId: normalizedDefinition.work_hours_status_id || '',
+            tone: 'neutral',
+            label: '不适用',
+            text: '当前库存类只支持定时汇总，不支持按工作时段顺延。'
+        };
+    }
+    if (normalizedSection.enabled !== true) {
+        return {
+            cellId: normalizedDefinition.work_hours_status_id || '',
+            tone: 'neutral',
+            label: '主监控关闭',
+            text: '开启主监控后才会应用工作时段顺延。'
+        };
+    }
+    if (normalizedSection.work_hours_only_enabled === true && workHoursEnabled) {
+        return {
+            cellId: normalizedDefinition.work_hours_status_id || '',
+            tone: 'success',
+            label: '已顺延',
+            text: `非工作时段会顺延到 ${startLabel} 开始，工作时段 ${startLabel}-${endLabel}（${timezoneLabel}）。`
+        };
+    }
+    if (normalizedSection.work_hours_only_enabled === true) {
+        return {
+            cellId: normalizedDefinition.work_hours_status_id || '',
+            tone: 'warning',
+            label: '待开启工作时段',
+            text: '已勾选顺延，但全局工作时段还没启用。'
+        };
+    }
+    if (workHoursEnabled) {
+        return {
+            cellId: normalizedDefinition.work_hours_status_id || '',
+            tone: 'neutral',
+            label: '全天直发',
+            text: `全局工作时段是 ${startLabel}-${endLabel}，但该告警仍全天直接外发。`
+        };
+    }
+
+    return {
+        cellId: normalizedDefinition.work_hours_status_id || '',
+        tone: 'neutral',
+        label: '全天直发',
+        text: '当前未启用全局工作时段限制。'
+    };
+}
+
+function buildAdminWorkbenchOpsAlertSummaryOrchestrationSummaryState(definition = {}, section = {}, workHours = {}, options = {}) {
+    const normalizedDefinition = definition && typeof definition === 'object' && !Array.isArray(definition)
+        ? definition
+        : {};
+    const normalizedSection = section && typeof section === 'object' && !Array.isArray(section)
+        ? section
+        : {};
+    const normalizedWorkHours = workHours && typeof workHours === 'object' && !Array.isArray(workHours)
+        ? workHours
+        : {};
+    const formatCount = typeof options.formatCount === 'function'
+        ? options.formatCount
+        : ((value) => String(Math.max(0, Number(value || 0))));
+    const formatSummaryScheduleDescription = typeof options.formatSummaryScheduleDescription === 'function'
+        ? options.formatSummaryScheduleDescription
+        : (() => '滚动窗口 60 分钟');
+    const summaryDescription = formatSummaryScheduleDescription(normalizedSection);
+    const workHoursEnabled = normalizedWorkHours.enabled === true;
+
+    if (normalizedSection.enabled !== true) {
+        return {
+            cellId: normalizedDefinition.summary_status_id || '',
+            tone: normalizedSection.summary_enabled === true ? 'warning' : 'neutral',
+            label: normalizedSection.summary_enabled === true ? '等待主监控' : '即时通知',
+            text: normalizedSection.summary_enabled === true
+                ? `已预设 ${summaryDescription}，最多 ${formatCount(normalizedSection.summary_max_items || 0)} 条，开启主监控后生效。`
+                : '主监控关闭时不会出队汇总。'
+        };
+    }
+    if (normalizedSection.summary_enabled === true) {
+        return {
+            cellId: normalizedDefinition.summary_status_id || '',
+            tone: 'success',
+            label: '已启用汇总',
+            text: `${summaryDescription}，最多 ${formatCount(normalizedSection.summary_max_items || 0)} 条。${normalizedDefinition.supports_work_hours_only === true && normalizedSection.work_hours_only_enabled === true && workHoursEnabled ? ' 非工作时段仍会顺延到上班时间。' : ''}`
+        };
+    }
+    if (normalizedDefinition.supports_work_hours_only === true && normalizedSection.work_hours_only_enabled === true && workHoursEnabled) {
+        return {
+            cellId: normalizedDefinition.summary_status_id || '',
+            tone: 'warning',
+            label: '仅非工作时段汇总',
+            text: '工作时段内仍即时通知，非工作时段会顺延到下个上班时间。'
+        };
+    }
+
+    return {
+        cellId: normalizedDefinition.summary_status_id || '',
+        tone: 'neutral',
+        label: '即时通知',
+        text: '当前不走固定汇总，命中后按原节奏直接外发。'
+    };
+}
+
+function buildAdminWorkbenchOpsAlertSummaryOrchestrationRenderState(config = {}, options = {}) {
+    const normalizedConfig = config && typeof config === 'object' && !Array.isArray(config)
+        ? config
+        : {};
+    const definitions = Array.isArray(options.definitions)
+        ? options.definitions.filter(Boolean)
+        : [];
+    const defaults = options.defaults && typeof options.defaults === 'object' && !Array.isArray(options.defaults)
+        ? options.defaults
+        : {};
+    const formatCount = typeof options.formatCount === 'function'
+        ? options.formatCount
+        : ((value) => String(Math.max(0, Number(value || 0))));
+    const formatHourMinute = typeof options.formatHourMinute === 'function'
+        ? options.formatHourMinute
+        : ((hour, minute) => `${String(Number(hour || 0)).padStart(2, '0')}:${String(Number(minute || 0)).padStart(2, '0')}`);
+    const formatSummaryScheduleDescription = typeof options.formatSummaryScheduleDescription === 'function'
+        ? options.formatSummaryScheduleDescription
+        : ((section = {}) => buildAdminWorkbenchOpsAlertSummaryModeHintText(section, {
+            normalizeScheduleMode: options.normalizeScheduleMode,
+            formatCount,
+            formatTimeNumber: options.formatTimeNumber,
+            formatHourMinute,
+            monitorEnabled: true,
+            summaryEnabled: true
+        }).replace(/^当前会在/, '').replace(/统一发送。$/, ''));
+    const selectedDefinitions = Array.isArray(options.selectedDefinitions)
+        ? options.selectedDefinitions.filter(Boolean)
+        : [];
+    const selectedDefinitionKeys = new Set(
+        selectedDefinitions.map((definition) => String(definition?.key || '').trim()).filter(Boolean)
+    );
+    const workHours = normalizedConfig.work_hours || defaults.work_hours || {};
+    let enabledMonitorCount = 0;
+    let summaryEnabledCount = 0;
+    let workHoursOnlyCount = 0;
+
+    const definitionStates = definitions.map((definition) => {
+        const section = normalizedConfig[definition.key] || defaults[definition.key] || {};
+        if (section.enabled === true) {
+            enabledMonitorCount += 1;
+        }
+        if (section.summary_enabled === true) {
+            summaryEnabledCount += 1;
+        }
+        if (definition.supports_work_hours_only === true && section.work_hours_only_enabled === true) {
+            workHoursOnlyCount += 1;
+        }
+
+        return {
+            key: definition.key || '',
+            label: definition.label || '',
+            selected: selectedDefinitionKeys.has(definition.key),
+            monitorState: buildAdminWorkbenchOpsAlertSummaryOrchestrationMonitorState(definition, section, {
+                formatCount
+            }),
+            workHoursState: buildAdminWorkbenchOpsAlertSummaryOrchestrationWorkHoursState(definition, section, workHours, {
+                formatHourMinute
+            }),
+            summaryState: buildAdminWorkbenchOpsAlertSummaryOrchestrationSummaryState(definition, section, workHours, {
+                formatCount,
+                formatSummaryScheduleDescription
+            })
+        };
+    });
+
+    const selectedCount = Number.isFinite(options.selectedCount)
+        ? Math.max(0, Number(options.selectedCount))
+        : selectedDefinitionKeys.size;
+
+    return {
+        counts: {
+            total: definitions.length,
+            enabledMonitorCount,
+            summaryEnabledCount,
+            workHoursOnlyCount,
+            selectedCount
+        },
+        metaText: `共 ${formatCount(definitions.length)} 类告警：${formatCount(enabledMonitorCount)} 类已启用主监控，${formatCount(summaryEnabledCount)} 类已启用定时汇总，${formatCount(workHoursOnlyCount)} 类启用工作时段顺延。当前已勾选 ${formatCount(selectedCount)} 类用于批量应用。`,
+        overviewSelectionText: `已勾选 ${formatCount(selectedCount)} 类`,
+        definitionStates
+    };
+}
+
 function buildAdminWorkbenchOpsAlertMonitorControlState(section = {}, options = {}) {
     const normalizedSection = section && typeof section === 'object' && !Array.isArray(section)
         ? section
@@ -5753,6 +6171,61 @@ function getAdminWorkbenchModuleForWorkspaceKey(workspaceKey = '') {
     return ADMIN_WORKBENCH_MODULE_MAP[normalizedKey] || '';
 }
 
+function getAdminWorkbenchModuleAccessMessage(moduleName = '') {
+    const normalizedModuleName = String(moduleName || '').trim().toLowerCase();
+    const moduleLabel = window.getAdminModuleDefinition?.(normalizedModuleName)?.label || normalizedModuleName || '目标模块';
+    const requirementText = String(window.getModulePermissionRequirementText?.(normalizedModuleName) || '').trim();
+    return requirementText
+        ? `当前账号未分配「${moduleLabel}」模块权限，需要 ${requirementText}`
+        : `当前账号未分配「${moduleLabel}」模块权限`;
+}
+
+function canOpenAdminWorkbenchWorkspace(workspaceKey = '', context = {}) {
+    const normalizedKey = String(workspaceKey || '').trim().toLowerCase();
+    if (!normalizedKey) {
+        return false;
+    }
+
+    const moduleName = getAdminWorkbenchModuleForWorkspaceKey(normalizedKey);
+    if (!moduleName) {
+        return true;
+    }
+
+    if (typeof window.hasModulePermission !== 'function') {
+        return true;
+    }
+
+    return window.hasModulePermission(moduleName, context);
+}
+
+async function ensureAdminWorkbenchModule(moduleName, options = {}) {
+    const normalizedModuleName = String(moduleName || '').trim().toLowerCase();
+    if (!normalizedModuleName) {
+        return true;
+    }
+
+    if (typeof window.switchModule !== 'function') {
+        throw new Error('后台模块切换能力尚未就绪');
+    }
+
+    const switched = window.switchModule(normalizedModuleName, {
+        fallback: false,
+        silentDenied: true,
+        ...((options && typeof options === 'object') ? options : {})
+    });
+
+    await settleAdminWorkbench();
+
+    if (switched === false) {
+        if (options.notifyDenied !== false) {
+            notifyAdminWorkbench(getAdminWorkbenchModuleAccessMessage(normalizedModuleName), 'warning');
+        }
+        return false;
+    }
+
+    return true;
+}
+
 async function tryOpenOpsAlertWorkspaceUserModal(userId, options = {}) {
     const normalizedUserId = String(userId || '').trim();
     const normalizedEmail = String(options?.email || options?.userEmail || '').trim();
@@ -5762,20 +6235,28 @@ async function tryOpenOpsAlertWorkspaceUserModal(userId, options = {}) {
     const attemptCount = Number(options?.attemptCount || 6);
     const delayMs = Number(options?.delayMs || 140);
     if (!normalizedUserId && !normalizedEmail) {
-        return false;
+        return { opened: false, denied: false };
+    }
+
+    const usersOpened = await ensureAdminWorkbenchModule('users', {
+        notifyDenied: options?.notifyDenied !== false
+    });
+    if (!usersOpened) {
+        return { opened: false, denied: true };
     }
 
     if (typeof window.openUserModal === 'function') {
-        return window.openUserModal(normalizedUserId, {
+        const opened = await window.openUserModal(normalizedUserId, {
             defaultTab: normalizedTab,
             paymentOrderId: normalizedPaymentOrderId,
             fallbackEmail: normalizedEmail,
             silentOnNotFound
         });
+        return { opened: Boolean(opened), denied: false };
     }
 
     if (!normalizedUserId) {
-        return false;
+        return { opened: false, denied: false };
     }
 
     const encodedUserId = encodeURIComponent(normalizedUserId);
@@ -5792,12 +6273,12 @@ async function tryOpenOpsAlertWorkspaceUserModal(userId, options = {}) {
             } else {
                 row.click();
             }
-            return true;
+            return { opened: true, denied: false };
         }
         await settleAdminWorkbench(delayMs);
     }
 
-    return false;
+    return { opened: false, denied: false };
 }
 
 async function focusOpsAlertWorkspacePaymentOrder(paymentOrderId) {
@@ -5806,8 +6287,10 @@ async function focusOpsAlertWorkspacePaymentOrder(paymentOrderId) {
         return { opened: false, matched: false };
     }
 
-    window.switchModule?.('payments');
-    await settleAdminWorkbench();
+    const paymentsOpened = await ensureAdminWorkbenchModule('payments');
+    if (!paymentsOpened) {
+        return { opened: false, matched: false, denied: true };
+    }
     await window.AdminPayments?.init?.();
 
     if (window.AdminPayments?.focusOrder) {
@@ -5852,8 +6335,10 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
                 || ''
             ).trim();
 
-            window.switchModule?.('chat');
-            await settleAdminWorkbench();
+            const chatOpened = await ensureAdminWorkbenchModule('chat');
+            if (!chatOpened) {
+                return false;
+            }
 
             let chatInstance = window.adminChatInstance || null;
             if (!chatInstance && typeof window.AdminChat === 'function') {
@@ -5879,44 +6364,79 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
             await settleAdminWorkbench();
             scrollAdminWorkbenchTarget('module-chat');
         } else if (normalizedKey === 'verify-monitor') {
-            window.switchModule?.('settings');
+            const settingsOpened = await ensureAdminWorkbenchModule('settings');
+            if (!settingsOpened) {
+                return false;
+            }
+            window.switchSettingsView?.('content');
             await settleAdminWorkbench();
-            window.switchSettingsView?.('security');
-            await settleAdminWorkbench();
-            await window.refreshVerifyMonitor?.(true);
+            const verifyMonitorRefresh = typeof window.refreshVerifyMonitor === 'function'
+                ? window.refreshVerifyMonitor(true).catch((error) => {
+                    console.warn('[AdminWorkbench] Verify monitor refresh failed:', error);
+                    return null;
+                })
+                : Promise.resolve(null);
+            await Promise.race([
+                verifyMonitorRefresh,
+                new Promise((resolve) => {
+                    window.setTimeout(resolve, 1200);
+                })
+            ]);
             scrollAdminWorkbenchTarget('verifyMonitorPanel');
         } else if (normalizedKey === 'admin-audit-monitor') {
-            window.switchModule?.('settings');
-            await settleAdminWorkbench();
+            const settingsOpened = await ensureAdminWorkbenchModule('settings');
+            if (!settingsOpened) {
+                return false;
+            }
             window.switchSettingsView?.('security');
             await settleAdminWorkbench();
-            await window.refreshAdminAuditMonitor?.(true);
+            const adminAuditMonitorRefresh = typeof window.refreshAdminAuditMonitor === 'function'
+                ? window.refreshAdminAuditMonitor(true).catch((error) => {
+                    console.warn('[AdminWorkbench] Admin audit monitor refresh failed:', error);
+                    return null;
+                })
+                : Promise.resolve(null);
+            await Promise.race([
+                adminAuditMonitorRefresh,
+                new Promise((resolve) => {
+                    window.setTimeout(resolve, 1200);
+                })
+            ]);
             scrollAdminWorkbenchTarget('adminAuditMonitorSection');
         } else if (normalizedKey === 'payments-overview') {
             if (normalizedContext.paymentOrderId) {
                 const paymentFocusResult = await focusOpsAlertWorkspacePaymentOrder(normalizedContext.paymentOrderId);
+                if (paymentFocusResult.denied) {
+                    return false;
+                }
                 if (!paymentFocusResult.opened || !paymentFocusResult.matched) {
                     scrollAdminWorkbenchTarget('paymentsProviderStats');
                 }
             } else {
-                window.switchModule?.('payments');
-                await settleAdminWorkbench();
+                const paymentsOpened = await ensureAdminWorkbenchModule('payments');
+                if (!paymentsOpened) {
+                    return false;
+                }
                 await window.AdminPayments?.init?.();
                 window.AdminPayments?.switchTab?.('overview', { reload: false });
                 await settleAdminWorkbench();
                 scrollAdminWorkbenchTarget('paymentsProviderStats');
             }
         } else if (normalizedKey === 'payments-ops') {
-            window.switchModule?.('payments');
-            await settleAdminWorkbench();
+            const paymentsOpened = await ensureAdminWorkbenchModule('payments');
+            if (!paymentsOpened) {
+                return false;
+            }
             await window.AdminPayments?.init?.();
             await window.AdminPayments?.focusExceptionTopic?.(getOpsAlertWorkspacePaymentsTopic(normalizedContext));
         } else if (normalizedKey === 'tickets-pending' || normalizedKey === 'tickets-resolved') {
             const nextStatus = normalizedKey === 'tickets-pending' ? 'pending' : 'resolved';
             const normalizedTicketId = String(normalizedContext.ticketId || '').trim()
                 || (normalizedContext.referenceLabel === '工单号' ? String(workspaceSearchValue || '').trim() : '');
-            window.switchModule?.('tickets');
-            await settleAdminWorkbench();
+            const ticketsOpened = await ensureAdminWorkbenchModule('tickets');
+            if (!ticketsOpened) {
+                return false;
+            }
             await window.AdminTickets?.init?.();
             if (normalizedTicketId && window.AdminTickets?.focusTicket) {
                 const ticketFocusResult = await window.AdminTickets.focusTicket(normalizedTicketId, {
@@ -5949,15 +6469,19 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
             await settleAdminWorkbench();
             scrollAdminWorkbenchTarget('module-tickets');
         } else if (normalizedKey === 'shop-inventory') {
-            window.switchModule?.('shop');
-            await settleAdminWorkbench();
+            const shopOpened = await ensureAdminWorkbenchModule('shop');
+            if (!shopOpened) {
+                return false;
+            }
             await window.ShopAdmin?.init?.();
             window.ShopAdmin?.switchTab?.('inventory');
             await settleAdminWorkbench();
             scrollAdminWorkbenchTarget('shop-view-inventory');
         } else if (normalizedKey === 'shop-fulfillment') {
-            window.switchModule?.('shop');
-            await settleAdminWorkbench();
+            const shopOpened = await ensureAdminWorkbenchModule('shop');
+            if (!shopOpened) {
+                return false;
+            }
             await window.ShopAdmin?.init?.();
             window.ShopAdmin?.switchTab?.('fulfillment');
             await settleAdminWorkbench();
@@ -5989,8 +6513,10 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
                 || (['订单号', '订单'].includes(normalizedContext.referenceLabel)
                     ? String(workspaceSearchValue || '').trim()
                     : '');
-            window.switchModule?.('shop');
-            await settleAdminWorkbench();
+            const shopOpened = await ensureAdminWorkbenchModule('shop');
+            if (!shopOpened) {
+                return false;
+            }
             await window.ShopAdmin?.init?.();
             window.ShopAdmin?.switchTab?.('orders', { load: !normalizedOrderId });
             await settleAdminWorkbench();
@@ -6006,8 +6532,10 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
             scrollAdminWorkbenchTarget('shop-view-orders');
         } else if (normalizedKey === 'shop-risk-discounts') {
             const discountSearchValue = getOpsAlertWorkspaceDiscountCode(normalizedContext) || workspaceSearchValue || '';
-            window.switchModule?.('discounts');
-            await settleAdminWorkbench();
+            const discountsOpened = await ensureAdminWorkbenchModule('discounts');
+            if (!discountsOpened) {
+                return false;
+            }
             if (window.AdminDiscounts) {
                 window.AdminDiscounts.filters = {
                     ...(window.AdminDiscounts.filters || {}),
@@ -6028,17 +6556,23 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
             const riskUserId = getOpsAlertWorkspaceRiskUserId(normalizedContext);
             const riskUserEmail = String(normalizedContext.email || '').trim();
             const userSearchValue = riskUserId || workspaceSearchValue || '';
-            window.switchModule?.('users');
-            await settleAdminWorkbench();
             if (riskUserId || riskUserEmail) {
-                const modalOpened = await tryOpenOpsAlertWorkspaceUserModal(riskUserId, {
+                const modalResult = await tryOpenOpsAlertWorkspaceUserModal(riskUserId, {
                     defaultTab: normalizedContext.tab,
                     paymentOrderId: normalizedContext.paymentOrderId,
                     email: riskUserEmail,
                     silentOnNotFound: Boolean(normalizedContext.paymentOrderId)
                 });
-                if (!modalOpened) {
+                if (modalResult?.denied) {
+                    return false;
+                }
+                if (modalResult?.opened) {
+                    await settleAdminWorkbench();
+                } else {
                     const paymentFocusResult = await focusOpsAlertWorkspacePaymentOrder(normalizedContext.paymentOrderId);
+                    if (paymentFocusResult.denied) {
+                        return false;
+                    }
                     if (paymentFocusResult.opened) {
                         notifyAdminWorkbench(
                             paymentFocusResult.matched
@@ -6052,6 +6586,10 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
                     return false;
                 }
             } else {
+                const usersOpened = await ensureAdminWorkbenchModule('users');
+                if (!usersOpened) {
+                    return false;
+                }
                 const userSearchInput = document.getElementById('userSearchInput');
                 if (userSearchInput) {
                     userSearchInput.value = userSearchValue;
@@ -6094,6 +6632,11 @@ function savePendingOpsAlertWorkspace(workspaceKey = '', context = {}) {
 }
 
 function consumePendingOpsAlertWorkspace() {
+    const urlPending = consumePendingOpsAlertWorkspaceFromUrl();
+    if (urlPending) {
+        return urlPending;
+    }
+
     if (typeof window.localStorage === 'undefined') {
         return null;
     }
@@ -6124,6 +6667,45 @@ function consumePendingOpsAlertWorkspace() {
         };
     } catch (error) {
         console.warn('[AdminWorkbench] Failed to parse pending ops alert workspace:', error);
+        return null;
+    }
+}
+
+function consumePendingOpsAlertWorkspaceFromUrl() {
+    try {
+        const url = new URL(window.location.href);
+        const workspaceKey = String(url.searchParams.get(ADMIN_WORKBENCH_URL_PARAM_KEY) || '').trim();
+        if (!workspaceKey) {
+            return null;
+        }
+
+        let context = {};
+        const rawContext = String(url.searchParams.get(ADMIN_WORKBENCH_URL_PARAM_CONTEXT) || '').trim();
+        if (rawContext) {
+            try {
+                const parsed = JSON.parse(rawContext);
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                    context = parsed;
+                }
+            } catch (error) {
+                console.warn('[AdminWorkbench] Failed to parse URL workspace context:', error);
+            }
+        }
+
+        url.searchParams.delete(ADMIN_WORKBENCH_URL_PARAM_KEY);
+        url.searchParams.delete(ADMIN_WORKBENCH_URL_PARAM_CONTEXT);
+        const nextRelativeUrl = `${url.pathname}${url.search}${url.hash}`;
+        const currentRelativeUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        if (nextRelativeUrl !== currentRelativeUrl && typeof window.history?.replaceState === 'function') {
+            window.history.replaceState(window.history.state, '', nextRelativeUrl);
+        }
+
+        return {
+            workspaceKey,
+            context
+        };
+    } catch (error) {
+        console.warn('[AdminWorkbench] Failed to read pending workspace from URL:', error);
         return null;
     }
 }
@@ -6202,6 +6784,7 @@ window.getAdminWorkbenchOpsAlertMonitorCategoryLabel = getAdminWorkbenchOpsAlert
 window.getAdminWorkbenchOpsAlertMonitorFilterSummaryLabel = getAdminWorkbenchOpsAlertMonitorFilterSummaryLabel;
 window.buildAdminWorkbenchOpsAlertMonitorCategoryView = buildAdminWorkbenchOpsAlertMonitorCategoryView;
 window.buildAdminWorkbenchOpsAlertMonitorFilterToolbarState = buildAdminWorkbenchOpsAlertMonitorFilterToolbarState;
+window.buildAdminWorkbenchOpsAlertMonitorViewState = buildAdminWorkbenchOpsAlertMonitorViewState;
 window.getAdminWorkbenchOpsAlertMonitorDisplayActiveCount = getAdminWorkbenchOpsAlertMonitorDisplayActiveCount;
 window.getAdminWorkbenchOpsAlertMonitorDisplayCriticalCount = getAdminWorkbenchOpsAlertMonitorDisplayCriticalCount;
 window.getAdminWorkbenchOpsAlertMonitorCardTone = getAdminWorkbenchOpsAlertMonitorCardTone;
@@ -6228,7 +6811,10 @@ window.buildAdminWorkbenchOpsAlertSettingsRequestBody = buildAdminWorkbenchOpsAl
 window.buildAdminWorkbenchOpsAlertConfigDraft = buildAdminWorkbenchOpsAlertConfigDraft;
 window.buildAdminWorkbenchOpsAlertSummaryModeHintText = buildAdminWorkbenchOpsAlertSummaryModeHintText;
 window.collectAdminWorkbenchOpsAlertUnifiedSummaryDraft = collectAdminWorkbenchOpsAlertUnifiedSummaryDraft;
+window.buildAdminWorkbenchOpsAlertUnifiedSummaryConsensus = buildAdminWorkbenchOpsAlertUnifiedSummaryConsensus;
+window.buildAdminWorkbenchOpsAlertUnifiedSummaryDraftControlState = buildAdminWorkbenchOpsAlertUnifiedSummaryDraftControlState;
 window.buildAdminWorkbenchOpsAlertSummaryModeControlState = buildAdminWorkbenchOpsAlertSummaryModeControlState;
+window.buildAdminWorkbenchOpsAlertSummaryOrchestrationRenderState = buildAdminWorkbenchOpsAlertSummaryOrchestrationRenderState;
 window.buildAdminWorkbenchOpsAlertMonitorControlState = buildAdminWorkbenchOpsAlertMonitorControlState;
 window.buildAdminWorkbenchOpsAlertShopRiskControlState = buildAdminWorkbenchOpsAlertShopRiskControlState;
 window.collectAdminWorkbenchOpsAlertStrategyDraft = collectAdminWorkbenchOpsAlertStrategyDraft;
@@ -6291,6 +6877,7 @@ window.buildTicketWorkbenchEntry = buildTicketWorkbenchEntry;
 window.resolveOpsAlertEntryWorkspace = resolveOpsAlertEntryWorkspace;
 window.resolveShopRiskWorkspace = resolveShopRiskWorkspace;
 window.resolveOpsAlertWorkspace = resolveOpsAlertWorkspace;
+window.canOpenAdminWorkbenchWorkspace = canOpenAdminWorkbenchWorkspace;
 window.tryOpenOpsAlertWorkspaceUserModal = tryOpenOpsAlertWorkspaceUserModal;
 window.focusOpsAlertWorkspacePaymentOrder = focusOpsAlertWorkspacePaymentOrder;
 window.openAdminWorkbenchEntry = openAdminWorkbenchEntry;

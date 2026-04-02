@@ -42,6 +42,7 @@ class ChatWidget {
         this.currentUserContext = null;
         this.userContextPanelCollapsed = true;
         this.currentSessionInfo = null;
+        this.userHistoryCache = new Map();
         this.replyTemplateConfigTemplates = null;
         this.replyTemplateConfigLoadedAt = 0;
         this.replyTemplateConfigPromise = null;
@@ -51,6 +52,16 @@ class ChatWidget {
         this._adminSessionLoadRequestId = 0;
         this._sessionLoadRequestId = 0;
         this._sessionLoadingOverlayTimer = null;
+        this._adminSessionPrewarmHandle = null;
+        this._adminSessionHydrationTimer = null;
+        this._adminSessionHydrationRequestId = 0;
+        this._pendingAdminSessionHydrationUserIds = new Set();
+        this._pendingAdminSessionHydrationEmails = new Set();
+        this.currentAdminUserId = '';
+        this._authenticatedUserSessionHydrationHandle = null;
+        this._authenticatedUserSessionHydrationRequestId = 0;
+        this._userHistoryLoadRequestId = 0;
+        this._userHistorySyncHandle = null;
         this.opsAlertSessionId = '__admin_ops_todo__';
         this.opsAlertMessages = [];
         this.opsAlertLoadError = '';
@@ -117,11 +128,13 @@ class ChatWidget {
         this._onFabAmbientViewportChange = null;
         this.supportConfig = window.ZaoyoeSupportBotConfig || null;
         this.supportContextKey = this.getSupportContextKey();
-        this.supportDisplayMode = 'support';
+        this.supportDisplayMode = 'chat';
         this.supportView = { type: 'root', id: '' };
         this.supportPendingActionId = '';
         this.supportLastMenuId = '';
         this.supportInlineState = { actionId: '', value: '', result: '', error: '', loading: false };
+        this._supportPanelPrewarmHandle = null;
+        this._supportRootPrewarmed = false;
         window.addEventListener('ops-alerts-config-updated', this.handleOpsAlertConfigUpdated);
 
         this._detectRefreshRate();
@@ -241,6 +254,347 @@ class ChatWidget {
         }
     }
 
+    getAdminSessionSnapshotStorageKey() {
+        const site = window.SiteConfig?.site === 'intl' ? 'intl' : 'cn';
+        return `zaoyoe_admin_support_sessions_snapshot_v1_${site}`;
+    }
+
+    getAdminSessionSnapshotMaxAgeMs() {
+        return 10 * 60 * 1000;
+    }
+
+    getAuthenticatedUserSessionIdsStorageKey(user = null) {
+        const site = window.SiteConfig?.site === 'intl' ? 'intl' : 'cn';
+        const userId = String(user?.id || '').trim();
+        return userId ? `zaoyoe_chat_session_ids_v1_${site}_${userId}` : '';
+    }
+
+    getAuthenticatedUserSessionIdsMaxAgeMs() {
+        return 24 * 60 * 60 * 1000;
+    }
+
+    restoreAuthenticatedUserSessionIds(user = null) {
+        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+            return [];
+        }
+
+        const storageKey = this.getAuthenticatedUserSessionIdsStorageKey(user);
+        if (!storageKey) {
+            return [];
+        }
+
+        try {
+            const rawValue = window.localStorage.getItem(storageKey);
+            if (!rawValue) return [];
+
+            const parsed = JSON.parse(rawValue);
+            const savedAt = Number(parsed?.savedAt || 0);
+            if (!Number.isFinite(savedAt) || (Date.now() - savedAt) > this.getAuthenticatedUserSessionIdsMaxAgeMs()) {
+                return [];
+            }
+
+            return [...new Set(
+                (Array.isArray(parsed?.sessionIds) ? parsed.sessionIds : [])
+                    .map((value) => String(value || '').trim())
+                    .filter(Boolean)
+            )];
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to restore authenticated session ids:', error);
+            return [];
+        }
+    }
+
+    persistAuthenticatedUserSessionIds(user = null, sessionIds = []) {
+        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+            return;
+        }
+
+        const storageKey = this.getAuthenticatedUserSessionIdsStorageKey(user);
+        if (!storageKey) {
+            return;
+        }
+
+        try {
+            window.localStorage.setItem(storageKey, JSON.stringify({
+                savedAt: Date.now(),
+                sessionIds: [...new Set(
+                    (Array.isArray(sessionIds) ? sessionIds : [])
+                        .map((value) => String(value || '').trim())
+                        .filter(Boolean)
+                )]
+            }));
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to persist authenticated session ids:', error);
+        }
+    }
+
+    clearAuthenticatedUserSessionHydrationHandle() {
+        if (!this._authenticatedUserSessionHydrationHandle) return;
+
+        if (typeof this._authenticatedUserSessionHydrationHandle === 'object' && this._authenticatedUserSessionHydrationHandle.type === 'idle') {
+            window.cancelIdleCallback?.(this._authenticatedUserSessionHydrationHandle.handle);
+        } else {
+            clearTimeout(this._authenticatedUserSessionHydrationHandle);
+        }
+        this._authenticatedUserSessionHydrationHandle = null;
+    }
+
+    scheduleAuthenticatedUserSessionHydration(user = null, { immediate = false } = {}) {
+        const normalizedUserId = String(user?.id || '').trim();
+        if (!normalizedUserId) {
+            return;
+        }
+
+        this.clearAuthenticatedUserSessionHydrationHandle();
+
+        const run = () => {
+            this._authenticatedUserSessionHydrationHandle = null;
+            this.hydrateAuthenticatedUserSessionIds(user).catch((error) => {
+                console.warn('[ChatWidget] Failed to hydrate authenticated session ids:', error);
+            });
+        };
+
+        if (immediate) {
+            this._authenticatedUserSessionHydrationHandle = setTimeout(run, 0);
+            return;
+        }
+
+        if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+            const handle = window.requestIdleCallback(run, { timeout: 700 });
+            this._authenticatedUserSessionHydrationHandle = { type: 'idle', handle };
+            return;
+        }
+
+        this._authenticatedUserSessionHydrationHandle = setTimeout(run, 180);
+    }
+
+    async hydrateAuthenticatedUserSessionIds(user = null) {
+        const activeUser = user || this.currentUser || null;
+        const normalizedUserId = String(activeUser?.id || '').trim();
+        if (!normalizedUserId) {
+            return this.getActiveUserSessionIds();
+        }
+
+        const requestId = ++this._authenticatedUserSessionHydrationRequestId;
+        const previousSessionIds = this.getActiveUserSessionIds();
+        const primarySessionId = this.getAuthenticatedSessionId(activeUser);
+        const baselineSessionIds = [
+            primarySessionId,
+            ...this.getLegacyAuthenticatedSessionIds(activeUser),
+            ...previousSessionIds
+        ].filter(Boolean);
+
+        const { data, error } = await this.supabase
+            .from('chat_messages')
+            .select('session_id, created_at')
+            .eq('user_id', normalizedUserId)
+            .order('created_at', { ascending: false })
+            .limit(1000);
+
+        if (error) {
+            throw error;
+        }
+
+        if (requestId !== this._authenticatedUserSessionHydrationRequestId) {
+            return this.getActiveUserSessionIds();
+        }
+
+        const linkedSessionIds = (Array.isArray(data) ? data : [])
+            .map((entry) => String(entry?.session_id || '').trim())
+            .filter(Boolean);
+        const nextSessionIds = [...new Set([...baselineSessionIds, ...linkedSessionIds])];
+        const addedSessionIds = nextSessionIds.filter((value) => !previousSessionIds.includes(value));
+
+        this.userSessionIds = nextSessionIds;
+        this.persistAuthenticatedUserSessionIds(activeUser, nextSessionIds);
+
+        if (
+            addedSessionIds.length
+            && !this.isAdmin
+            && this.isOpen
+            && String(this.currentUser?.id || '').trim() === normalizedUserId
+        ) {
+            this.loadHistory().catch((historyError) => {
+                console.warn('[ChatWidget] Failed to refresh hydrated user history:', historyError);
+            });
+        }
+
+        return nextSessionIds;
+    }
+
+    normalizeAdminSessionSnapshotSession(session = {}) {
+        const normalizedId = String(session?.id || '').trim();
+        if (!normalizedId) return null;
+
+        const sessionIds = [...new Set(
+            (Array.isArray(session?.sessionIds) ? session.sessionIds : [normalizedId])
+                .map((value) => String(value || '').trim())
+                .filter(Boolean)
+        )];
+
+        return {
+            id: normalizedId,
+            sessionIds,
+            nickname: String(session?.nickname || '').trim() || this.t('chat.guest', '访客'),
+            email: String(session?.email || '').trim(),
+            lastLogin: String(session?.lastLogin || '').trim(),
+            lastMessage: String(session?.lastMessage || '').trim(),
+            lastTime: String(session?.lastTime || '').trim(),
+            isAdmin: Boolean(session?.isAdmin),
+            userId: String(session?.userId || '').trim(),
+            avatarUrl: String(session?.avatarUrl || '').trim(),
+            lastUserMessageAt: String(session?.lastUserMessageAt || '').trim(),
+            lastAdminMessageAt: String(session?.lastAdminMessageAt || '').trim(),
+            replySummary: session?.replySummary && typeof session.replySummary === 'object'
+                ? { ...session.replySummary }
+                : null,
+            ticketSummary: session?.ticketSummary && typeof session.ticketSummary === 'object'
+                ? { ...session.ticketSummary }
+                : null,
+            paymentSummary: session?.paymentSummary && typeof session.paymentSummary === 'object'
+                ? { ...session.paymentSummary }
+                : null,
+            verificationSummary: session?.verificationSummary && typeof session.verificationSummary === 'object'
+                ? { ...session.verificationSummary }
+                : null,
+            searchText: String(session?.searchText || '').trim(),
+            subtext: String(session?.subtext || '').trim(),
+            badge: String(session?.badge || '').trim()
+        };
+    }
+
+    restoreAdminSessionSnapshot() {
+        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+            return [];
+        }
+
+        try {
+            const rawValue = window.localStorage.getItem(this.getAdminSessionSnapshotStorageKey());
+            if (!rawValue) return [];
+
+            const parsed = JSON.parse(rawValue);
+            const savedAt = Number(parsed?.savedAt || 0);
+            if (!Number.isFinite(savedAt) || (Date.now() - savedAt) > this.getAdminSessionSnapshotMaxAgeMs()) {
+                return [];
+            }
+
+            return this.sortAdminSessions(
+                (Array.isArray(parsed?.sessions) ? parsed.sessions : [])
+                    .map((session) => this.normalizeAdminSessionSnapshotSession(session))
+                    .filter(Boolean)
+            );
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to restore admin session snapshot:', error);
+            return [];
+        }
+    }
+
+    persistAdminSessionSnapshot(chatSessions = []) {
+        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+            return;
+        }
+
+        try {
+            const normalizedSessions = (Array.isArray(chatSessions) ? chatSessions : [])
+                .map((session) => this.normalizeAdminSessionSnapshotSession(session))
+                .filter(Boolean);
+
+            window.localStorage.setItem(this.getAdminSessionSnapshotStorageKey(), JSON.stringify({
+                savedAt: Date.now(),
+                sessions: normalizedSessions
+            }));
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to persist admin session snapshot:', error);
+        }
+    }
+
+    clearAdminSessionPrewarmHandle() {
+        if (!this._adminSessionPrewarmHandle) return;
+
+        if (typeof this._adminSessionPrewarmHandle === 'object' && this._adminSessionPrewarmHandle.type === 'idle') {
+            window.cancelIdleCallback?.(this._adminSessionPrewarmHandle.handle);
+        } else {
+            clearTimeout(this._adminSessionPrewarmHandle);
+        }
+        this._adminSessionPrewarmHandle = null;
+    }
+
+    scheduleAdminSessionPrewarm({ immediate = false } = {}) {
+        this.clearAdminSessionPrewarmHandle();
+
+        const run = () => {
+            this._adminSessionPrewarmHandle = null;
+            this.loadAdminSessions();
+        };
+
+        if (immediate) {
+            this._adminSessionPrewarmHandle = setTimeout(run, 0);
+            return;
+        }
+
+        if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+            const handle = window.requestIdleCallback(run, { timeout: 450 });
+            this._adminSessionPrewarmHandle = { type: 'idle', handle };
+            return;
+        }
+
+        this._adminSessionPrewarmHandle = setTimeout(run, 120);
+    }
+
+    getUserHistorySnapshotStorageKey(sessionIds = []) {
+        const site = window.SiteConfig?.site === 'intl' ? 'intl' : 'cn';
+        const cacheKey = encodeURIComponent(this.getSessionCacheKey(sessionIds) || 'default');
+        return `zaoyoe_chat_history_snapshot_v1_${site}_${cacheKey}`;
+    }
+
+    restoreUserHistorySnapshot(sessionIds = []) {
+        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+            return [];
+        }
+
+        try {
+            const rawValue = window.localStorage.getItem(this.getUserHistorySnapshotStorageKey(sessionIds));
+            if (!rawValue) return [];
+
+            const parsed = JSON.parse(rawValue);
+            const savedAt = Number(parsed?.savedAt || 0);
+            if (!Number.isFinite(savedAt) || (Date.now() - savedAt) > this.getAdminSessionSnapshotMaxAgeMs()) {
+                return [];
+            }
+
+            return Array.isArray(parsed?.messages) ? parsed.messages : [];
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to restore user history snapshot:', error);
+            return [];
+        }
+    }
+
+    persistUserHistorySnapshot(sessionIds = [], messages = []) {
+        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+            return;
+        }
+
+        try {
+            window.localStorage.setItem(this.getUserHistorySnapshotStorageKey(sessionIds), JSON.stringify({
+                savedAt: Date.now(),
+                messages: Array.isArray(messages) ? messages : []
+            }));
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to persist user history snapshot:', error);
+        }
+    }
+
+    clearUserHistorySyncHandle() {
+        if (!this._userHistorySyncHandle) return;
+
+        if (typeof this._userHistorySyncHandle === 'object' && this._userHistorySyncHandle.type === 'idle') {
+            window.cancelIdleCallback?.(this._userHistorySyncHandle.handle);
+        } else {
+            clearTimeout(this._userHistorySyncHandle);
+        }
+        this._userHistorySyncHandle = null;
+    }
+
     isAdminSessionQueueUsingDefaultView() {
         return this.normalizeAdminSessionQueueView(this.adminSessionQueueView) === this.normalizeAdminSessionQueueView(this.adminSessionQueueDefaultView)
             && this.normalizeAdminSessionQueueFilter(this.adminSessionQueueFilter) === this.normalizeAdminSessionQueueFilter(this.adminSessionQueueDefaultFilter);
@@ -348,6 +702,43 @@ class ChatWidget {
         };
 
         return this.supportInlineState;
+    }
+
+    clearSupportPanelPrewarmHandle() {
+        if (!this._supportPanelPrewarmHandle) return;
+        if (typeof this._supportPanelPrewarmHandle === 'object' && this._supportPanelPrewarmHandle.type === 'idle') {
+            window.cancelIdleCallback?.(this._supportPanelPrewarmHandle.handle);
+        } else {
+            clearTimeout(this._supportPanelPrewarmHandle);
+        }
+        this._supportPanelPrewarmHandle = null;
+    }
+
+    scheduleSupportPanelPrewarm({ immediate = false } = {}) {
+        this.clearSupportPanelPrewarmHandle();
+        if (this.isAdmin || !this.supportPanel) return;
+        if (!this.getSupportConfig() || !this.getSupportContextConfig()) return;
+        if (this._supportRootPrewarmed || this.supportDisplayMode === 'support') return;
+
+        const run = () => {
+            this._supportPanelPrewarmHandle = null;
+            if (this.isAdmin || !this.supportPanel) return;
+            if (this._supportRootPrewarmed || this.supportDisplayMode === 'support') return;
+            this.renderSupportRootPanel({ activate: false });
+        };
+
+        if (immediate) {
+            this._supportPanelPrewarmHandle = setTimeout(run, 0);
+            return;
+        }
+
+        if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+            const handle = window.requestIdleCallback(run, { timeout: 500 });
+            this._supportPanelPrewarmHandle = { type: 'idle', handle };
+            return;
+        }
+
+        this._supportPanelPrewarmHandle = setTimeout(run, 180);
     }
 
     setSupportDisplayMode(mode = 'support') {
@@ -987,22 +1378,27 @@ class ChatWidget {
         }
     }
 
-    renderSupportRootPanel() {
+    renderSupportRootPanel(options = {}) {
         if (!this.supportPanel) return;
+        const activate = options?.activate !== false;
 
         const config = this.getSupportConfig();
         const context = this.getSupportContextConfig();
         if (!config || !context) {
-            this.setSupportDisplayMode('chat');
-            this.updateSupportInputState('');
+            if (activate) {
+                this.setSupportDisplayMode('chat');
+                this.updateSupportInputState('');
+            }
             return;
         }
 
-        this.getSupportInlineState('');
-        this.supportView = { type: 'root', id: '' };
-        this.supportLastMenuId = '';
-        this.setSupportDisplayMode('support');
-        this.updateSupportInputState('');
+        if (activate) {
+            this.getSupportInlineState('');
+            this.supportView = { type: 'root', id: '' };
+            this.supportLastMenuId = '';
+            this.setSupportDisplayMode('support');
+            this.updateSupportInputState('');
+        }
 
         const shortcutButtons = this.buildSupportMenuButtons(context.shortcuts || []);
         const menuButtons = (config.rootMenus || [])
@@ -1032,6 +1428,7 @@ class ChatWidget {
                 </div>
             </div>
         `;
+        this._supportRootPrewarmed = true;
     }
 
     renderSupportMenuPanel(menuId) {
@@ -1812,11 +2209,20 @@ class ChatWidget {
 
         if (user) {
             const primarySessionId = this.getAuthenticatedSessionId(user);
-            this.userSessionIds = [primarySessionId, ...this.getLegacyAuthenticatedSessionIds(user)].filter(Boolean);
+            const restoredSessionIds = this.restoreAuthenticatedUserSessionIds(user);
+            this.userSessionIds = [...new Set([
+                primarySessionId,
+                ...this.getLegacyAuthenticatedSessionIds(user),
+                ...restoredSessionIds
+            ].filter(Boolean))];
             this.sessionId = primarySessionId;
+            this.persistAuthenticatedUserSessionIds(user, this.userSessionIds);
+            this.scheduleAuthenticatedUserSessionHydration(user);
             return { user, sessionId: primarySessionId, sessionIds: this.getActiveUserSessionIds() };
         }
 
+        this.clearAuthenticatedUserSessionHydrationHandle();
+        this._authenticatedUserSessionHydrationRequestId += 1;
         const guestSessionId = this.getSessionId();
         this.userSessionIds = [guestSessionId];
         this.sessionId = guestSessionId;
@@ -1891,8 +2297,10 @@ class ChatWidget {
                         } else {
                             this.renderSupportActionPanel(this.supportView.id);
                         }
-                    } else {
+                    } else if (currentView === 'root' && this.supportDisplayMode === 'support') {
                         this.renderSupportRootPanel();
+                    } else {
+                        this.syncSupportShellState();
                     }
                 }
             });
@@ -2325,8 +2733,13 @@ class ChatWidget {
         // Bind events
         this.bindAdminEvents();
 
-        // Load sessions
-        this.loadAdminSessions();
+        const restoredSessions = this.restoreAdminSessionSnapshot();
+        if (restoredSessions.length > 0) {
+            this.setAdminChatSessions(restoredSessions);
+        }
+
+        // Prewarm admin conversations in the background so opening the widget feels faster.
+        this.scheduleAdminSessionPrewarm({ immediate: restoredSessions.length === 0 });
 
         // Subscribe to all messages for admin
         this.subscribeToAdminMessages();
@@ -2467,10 +2880,12 @@ class ChatWidget {
     }
 
     setAdminChatSessions(chatSessions = []) {
+        const normalizedChatSessions = this.sortAdminSessions(Array.isArray(chatSessions) ? chatSessions : []);
         this.sessions = [
             this.buildOpsAlertSession(),
-            ...this.sortAdminSessions(Array.isArray(chatSessions) ? chatSessions : [])
+            ...normalizedChatSessions
         ];
+        this.persistAdminSessionSnapshot(normalizedChatSessions);
         this.renderAdminSessionList();
     }
 
@@ -6634,6 +7049,14 @@ class ChatWidget {
         if (moduleName) {
             targetUrl.searchParams.set('module', moduleName);
         }
+        if (normalized.workspaceKey) {
+            targetUrl.searchParams.set('workbench', normalized.workspaceKey);
+            try {
+                targetUrl.searchParams.set('workbench_context', JSON.stringify(normalized.context || {}));
+            } catch (_) {
+                // Ignore context serialization failures and rely on localStorage fallback.
+            }
+        }
 
         const openedWindow = window.open(targetUrl.toString(), '_blank');
         if (openedWindow) {
@@ -6729,6 +7152,7 @@ class ChatWidget {
             // Get current admin user to exclude from list
             const { data: { user: currentUser } } = await this.supabase.auth.getUser();
             const adminUserId = currentUser?.id;
+            this.currentAdminUserId = String(adminUserId || '').trim();
 
             // Get all messages grouped by session, including user_id for lookup
             const { data: messages, error } = await this.supabase
@@ -6859,6 +7283,188 @@ class ChatWidget {
             if (requestId !== this._adminSessionLoadRequestId) return;
             this.sessionList.innerHTML = `<div class="session-loading">${this.t('chat.loadFailed', '加载失败')}</div>`;
         }
+    }
+
+    getAdminSessionHydrationEmailKey(session = {}) {
+        const email = String(session?.email || '').trim().toLowerCase();
+        if (email) return email;
+        const emailSessionId = (Array.isArray(session?.sessionIds) ? session.sessionIds : [])
+            .map((value) => String(value || '').trim().toLowerCase())
+            .find((value) => value.includes('@'));
+        return emailSessionId || '';
+    }
+
+    scheduleAdminSessionHydration({ userIds = [], emails = [] } = {}) {
+        (Array.isArray(userIds) ? userIds : []).forEach((value) => {
+            const normalized = String(value || '').trim();
+            if (normalized) this._pendingAdminSessionHydrationUserIds.add(normalized);
+        });
+        (Array.isArray(emails) ? emails : []).forEach((value) => {
+            const normalized = String(value || '').trim().toLowerCase();
+            if (normalized) this._pendingAdminSessionHydrationEmails.add(normalized);
+        });
+
+        if (!this._pendingAdminSessionHydrationUserIds.size && !this._pendingAdminSessionHydrationEmails.size) {
+            return;
+        }
+
+        if (this._adminSessionHydrationTimer) {
+            clearTimeout(this._adminSessionHydrationTimer);
+        }
+
+        this._adminSessionHydrationTimer = setTimeout(() => {
+            this._adminSessionHydrationTimer = null;
+            this.flushAdminSessionHydration();
+        }, 180);
+    }
+
+    async flushAdminSessionHydration() {
+        const userIds = [...this._pendingAdminSessionHydrationUserIds];
+        const emails = [...this._pendingAdminSessionHydrationEmails];
+        this._pendingAdminSessionHydrationUserIds.clear();
+        this._pendingAdminSessionHydrationEmails.clear();
+
+        if (!userIds.length && !emails.length) {
+            return;
+        }
+
+        const requestId = ++this._adminSessionHydrationRequestId;
+        const chatSessions = (Array.isArray(this.sessions) ? this.sessions : [])
+            .filter((session) => !this.isOpsAlertSession(session));
+
+        const [profilesById, profilesByEmail] = await Promise.all([
+            userIds.length > 0 ? this.fetchChatProfiles('id', userIds) : Promise.resolve([]),
+            emails.length > 0 ? this.fetchChatProfiles('email', emails) : Promise.resolve([])
+        ]);
+        if (requestId !== this._adminSessionHydrationRequestId) return;
+
+        const userMapById = new Map((Array.isArray(profilesById) ? profilesById : []).map((profile) => [profile.id, profile]));
+        const userMapByEmail = new Map(
+            (Array.isArray(profilesByEmail) ? profilesByEmail : [])
+                .filter((profile) => profile?.email)
+                .map((profile) => [String(profile.email || '').toLowerCase(), profile])
+        );
+
+        const nextChatSessions = chatSessions.map((session) => {
+            const normalizedUserId = String(session?.userId || '').trim();
+            const emailKey = this.getAdminSessionHydrationEmailKey(session);
+            const shouldHydrate = (normalizedUserId && userIds.includes(normalizedUserId))
+                || (emailKey && emails.includes(emailKey));
+            if (!shouldHydrate) {
+                return session;
+            }
+
+            const profile = normalizedUserId
+                ? userMapById.get(normalizedUserId)
+                : (emailKey ? userMapByEmail.get(emailKey) : null);
+            const sessionIds = Array.isArray(session?.sessionIds) ? session.sessionIds : [session?.id];
+            const resolvedEmail = this.resolveSessionEmail(profile, session.email || session.id, sessionIds);
+
+            return {
+                ...session,
+                userId: normalizedUserId || String(profile?.id || '').trim(),
+                email: resolvedEmail || session.email,
+                nickname: this.resolveSessionNickname(profile, session.id || '', resolvedEmail || session.email || ''),
+                avatarUrl: profile?.avatar_url || session.avatarUrl || ''
+            };
+        });
+
+        this.setAdminChatSessions(nextChatSessions);
+        if (userIds.length > 0) {
+            await this.refreshAdminSessionTicketSummariesForUserIds(userIds);
+        }
+        if (this.currentSessionKey) {
+            const nextCurrentSession = this.sessions.find((session) => session.id === this.currentSessionKey) || null;
+            if (nextCurrentSession) {
+                this.currentSessionInfo = nextCurrentSession;
+                this.currentSessionIds = Array.isArray(nextCurrentSession.sessionIds) && nextCurrentSession.sessionIds.length
+                    ? [...nextCurrentSession.sessionIds]
+                    : [nextCurrentSession.id];
+            }
+        }
+    }
+
+    applyIncomingAdminUserMessage(message = {}) {
+        const normalizedSessionId = String(message?.session_id || '').trim();
+        const normalizedCreatedAt = String(message?.created_at || new Date().toISOString()).trim();
+        const normalizedUserId = String(message?.user_id || '').trim();
+        const normalizedContent = String(message?.content || '').trim();
+        const normalizedMessageType = String(message?.message_type || 'text').trim() || 'text';
+
+        if (!normalizedSessionId || !normalizedCreatedAt) {
+            return false;
+        }
+
+        if (normalizedUserId && normalizedUserId === this.currentAdminUserId) {
+            return false;
+        }
+
+        const chatSessions = (Array.isArray(this.sessions) ? this.sessions : [])
+            .filter((session) => !this.isOpsAlertSession(session));
+        const fallbackEmail = normalizedSessionId.includes('@') ? normalizedSessionId : '';
+        let touched = false;
+        const nextChatSessions = chatSessions.map((session) => {
+            const sessionIds = Array.isArray(session?.sessionIds) && session.sessionIds.length
+                ? session.sessionIds.map((value) => String(value || '').trim()).filter(Boolean)
+                : [String(session?.id || '').trim()].filter(Boolean);
+            const normalizedSessionUserId = String(session?.userId || '').trim();
+            const isTargetSession = session.id === normalizedSessionId
+                || sessionIds.includes(normalizedSessionId)
+                || (normalizedUserId && normalizedSessionUserId === normalizedUserId);
+            if (!isTargetSession) {
+                return session;
+            }
+
+            touched = true;
+            const nextSessionIds = [...new Set([...sessionIds, normalizedSessionId])];
+            return {
+                ...session,
+                sessionIds: nextSessionIds,
+                userId: normalizedSessionUserId || normalizedUserId,
+                email: session.email || fallbackEmail,
+                lastLogin: normalizedCreatedAt,
+                lastTime: normalizedCreatedAt,
+                lastMessage: normalizedMessageType === 'image'
+                    ? this.t('chat.image', '[图片]')
+                    : (normalizedContent || session.lastMessage),
+                lastUserMessageAt: normalizedCreatedAt,
+                replySummary: this.buildSessionReplySummary(normalizedCreatedAt, session.lastAdminMessageAt)
+            };
+        });
+
+        if (!touched) {
+            nextChatSessions.push({
+                id: normalizedUserId || normalizedSessionId,
+                sessionIds: [normalizedSessionId],
+                nickname: normalizedUserId ? '已登录用户' : this.resolveSessionNickname(null, normalizedSessionId, fallbackEmail),
+                email: fallbackEmail,
+                lastLogin: normalizedCreatedAt,
+                lastMessage: normalizedMessageType === 'image' ? this.t('chat.image', '[图片]') : normalizedContent,
+                lastTime: normalizedCreatedAt,
+                isAdmin: false,
+                userId: normalizedUserId,
+                avatarUrl: '',
+                lastUserMessageAt: normalizedCreatedAt,
+                lastAdminMessageAt: '',
+                replySummary: this.buildSessionReplySummary(normalizedCreatedAt, '')
+            });
+        }
+
+        this.setAdminChatSessions(nextChatSessions);
+        this.scheduleAdminSessionHydration({
+            userIds: normalizedUserId ? [normalizedUserId] : [],
+            emails: !normalizedUserId && fallbackEmail ? [fallbackEmail.toLowerCase()] : []
+        });
+        if (this.currentSessionKey) {
+            const nextCurrentSession = this.sessions.find((session) => session.id === this.currentSessionKey) || null;
+            if (nextCurrentSession) {
+                this.currentSessionInfo = nextCurrentSession;
+                this.currentSessionIds = Array.isArray(nextCurrentSession.sessionIds) && nextCurrentSession.sessionIds.length
+                    ? [...nextCurrentSession.sessionIds]
+                    : [nextCurrentSession.id];
+            }
+        }
+        return true;
     }
 
     formatTime(isoString) {
@@ -7366,6 +7972,9 @@ class ChatWidget {
             const nextCurrentSession = this.sessions.find((session) => session.id === this.currentSessionKey) || null;
             if (nextCurrentSession) {
                 this.currentSessionInfo = nextCurrentSession;
+                this.currentSessionIds = Array.isArray(nextCurrentSession.sessionIds) && nextCurrentSession.sessionIds.length
+                    ? [...nextCurrentSession.sessionIds]
+                    : [nextCurrentSession.id];
             }
         }
     }
@@ -8134,12 +8743,30 @@ class ChatWidget {
     getUserContextRecentAction(context = {}) {
         const cacheKey = String(context.cacheKey || '').trim();
         if (!cacheKey) return null;
-        return this.userContextRecentActions.get(cacheKey) || null;
+        const recentAction = this.userContextRecentActions.get(cacheKey) || null;
+        if (!recentAction) {
+            return null;
+        }
+        if (!this.canAccessWorkbenchAction(recentAction)) {
+            this.userContextRecentActions.delete(cacheKey);
+            if (this.currentUserContext?.cacheKey === cacheKey) {
+                this.currentUserContext = {
+                    ...this.currentUserContext,
+                    recentAction: null
+                };
+            }
+            return null;
+        }
+        return recentAction;
     }
 
     rememberUserContextAction(context = {}, action = {}) {
         const cacheKey = String(context.cacheKey || action._contextCacheKey || '').trim();
         if (!cacheKey) return null;
+        if (!this.canAccessWorkbenchAction(action)) {
+            this.userContextRecentActions.delete(cacheKey);
+            return null;
+        }
 
         const contextPayload = action.context && typeof action.context === 'object'
             ? { ...action.context }
@@ -8348,6 +8975,165 @@ class ChatWidget {
             .find((item) => item && typeof item === 'object') || null;
     }
 
+    buildUserContextWorkbenchEntry(kind = '', payload = {}) {
+        const normalizedKind = String(kind || '').trim().toLowerCase();
+        const sharedRuntime = window || {};
+
+        if (normalizedKind === 'user') {
+            if (typeof sharedRuntime.buildUserWorkbenchEntry === 'function') {
+                return sharedRuntime.buildUserWorkbenchEntry(payload);
+            }
+            const userId = String(payload.userId || '').trim();
+            const email = String(payload.email || '').trim();
+            const searchValue = String(payload.referenceValue || userId || email || '').trim();
+            if (!searchValue) {
+                return null;
+            }
+            return {
+                workspaceKey: 'shop-risk-users',
+                context: {
+                    userId,
+                    email,
+                    targetId: searchValue,
+                    target_id: searchValue,
+                    referenceLabel: String(payload.referenceLabel || '').trim() || (userId ? '用户' : '邮箱'),
+                    referenceValue: searchValue
+                }
+            };
+        }
+
+        if (normalizedKind === 'order') {
+            if (typeof sharedRuntime.buildShopOrderWorkbenchEntry === 'function') {
+                return sharedRuntime.buildShopOrderWorkbenchEntry(payload);
+            }
+            const orderId = String(payload.orderId || '').trim();
+            if (!orderId) {
+                return null;
+            }
+            return {
+                workspaceKey: 'shop-risk-orders',
+                context: {
+                    orderId,
+                    targetId: orderId,
+                    target_id: orderId,
+                    referenceLabel: String(payload.referenceLabel || '').trim() || '订单',
+                    referenceValue: String(payload.referenceValue || orderId).trim() || orderId
+                }
+            };
+        }
+
+        if (normalizedKind === 'ticket') {
+            if (typeof sharedRuntime.buildTicketQueueWorkbenchEntry === 'function') {
+                return sharedRuntime.buildTicketQueueWorkbenchEntry(payload);
+            }
+            const ticketId = String(payload.ticketId || '').trim();
+            if (!ticketId) {
+                return null;
+            }
+            const ticketStatus = String(payload.ticketStatus || '').trim().toLowerCase();
+            return {
+                workspaceKey: ticketStatus === 'resolved' ? 'tickets-resolved' : 'tickets-pending',
+                context: {
+                    ticketId,
+                    ticketStatus,
+                    targetId: ticketId,
+                    target_id: ticketId,
+                    referenceLabel: '工单号',
+                    referenceValue: ticketId
+                }
+            };
+        }
+
+        if (normalizedKind === 'payment') {
+            if (typeof sharedRuntime.buildPaymentWorkbenchEntry === 'function') {
+                return sharedRuntime.buildPaymentWorkbenchEntry(payload);
+            }
+            const paymentOrderId = String(payload.paymentOrderId || '').trim();
+            const userId = String(payload.userId || '').trim();
+            const email = String(payload.email || '').trim();
+            const referenceValue = String(
+                payload.referenceValue
+                || (userId ? (paymentOrderId || payload.packageName || '最近充值') : (email || paymentOrderId || payload.packageName || '最近充值'))
+            ).trim();
+            if (userId || email) {
+                return {
+                    workspaceKey: 'shop-risk-users',
+                    context: {
+                        userId,
+                        email,
+                        paymentOrderId,
+                        targetId: userId || email,
+                        target_id: userId || email,
+                        referenceLabel: String(payload.referenceLabel || '').trim() || (userId ? '支付单' : '邮箱'),
+                        referenceValue,
+                        defaultTab: 'payments',
+                        tab: 'payments'
+                    }
+                };
+            }
+            if (!paymentOrderId && !referenceValue) {
+                return null;
+            }
+            return {
+                workspaceKey: 'payments-overview',
+                context: {
+                    paymentOrderId,
+                    targetId: paymentOrderId || referenceValue,
+                    target_id: paymentOrderId || referenceValue,
+                    referenceLabel: String(payload.referenceLabel || '').trim() || (paymentOrderId ? '支付单' : '充值'),
+                    referenceValue
+                }
+            };
+        }
+
+        if (normalizedKind === 'verify') {
+            if (typeof sharedRuntime.buildVerifyWorkbenchEntry === 'function') {
+                return sharedRuntime.buildVerifyWorkbenchEntry(payload);
+            }
+            const verificationId = String(payload.verificationId || '').trim();
+            if (!verificationId) {
+                return null;
+            }
+            return {
+                workspaceKey: 'verify-monitor',
+                context: {
+                    verificationId,
+                    targetId: verificationId,
+                    target_id: verificationId,
+                    referenceLabel: String(payload.referenceLabel || '').trim() || '验证任务',
+                    referenceValue: String(payload.referenceValue || verificationId).trim() || verificationId
+                }
+            };
+        }
+
+        return null;
+    }
+
+    getImplicitWorkbenchWorkspaceKey(action = {}) {
+        const normalizedAction = String(action.action || action.key || '').trim().toLowerCase();
+        if (normalizedAction === 'create_ticket') {
+            return 'tickets-pending';
+        }
+        return '';
+    }
+
+    canAccessWorkbenchAction(action = {}) {
+        const workspaceKey = String(action.workspaceKey || this.getImplicitWorkbenchWorkspaceKey(action) || '').trim();
+        if (!workspaceKey) {
+            return false;
+        }
+
+        if (typeof window.canOpenAdminWorkbenchWorkspace === 'function') {
+            return window.canOpenAdminWorkbenchWorkspace(workspaceKey, action.context || {});
+        }
+
+        if (workspaceKey === 'tickets-pending' && typeof window.hasModulePermission === 'function') {
+            return window.hasModulePermission('tickets', action.context || {});
+        }
+
+        return true;
+    }
+
     getUserContextQuickActions(context = {}) {
         const actions = [];
         const latestOrder = this.getLatestUserContextRecord(context.orders);
@@ -8358,58 +9144,53 @@ class ChatWidget {
             .find((ticket) => !['resolved', 'rejected'].includes(String(ticket?.status || '').trim().toLowerCase()));
 
         const userSearchValue = String(context.userId || context.email || '').trim();
-        if (userSearchValue) {
+        const userEntry = userSearchValue ? this.buildUserContextWorkbenchEntry('user', {
+            userId: context.userId || '',
+            email: context.email || '',
+            referenceLabel: context.userId ? '用户' : '邮箱',
+            referenceValue: userSearchValue
+        }) : null;
+        if (userEntry) {
             actions.push({
                 key: 'user',
                 label: '查用户',
                 hint: context.userId
                     ? `UUID ${String(context.userId || '').slice(0, 8)}`
                     : this.truncateText(context.email || '当前会话', 24),
-                workspaceKey: 'shop-risk-users',
-                context: {
-                    userId: context.userId || '',
-                    email: context.email || '',
-                    targetId: context.userId || userSearchValue,
-                    target_id: context.userId || userSearchValue,
-                    referenceLabel: context.userId ? '用户' : '邮箱',
-                    referenceValue: userSearchValue
-                }
+                workspaceKey: userEntry.workspaceKey,
+                context: userEntry.context
             });
         }
 
         const orderId = String(latestOrder?.id || latestTicket?.order_id || '').trim();
-        if (orderId) {
+        const orderEntry = orderId ? this.buildUserContextWorkbenchEntry('order', {
+            orderId,
+            referenceLabel: '订单',
+            referenceValue: orderId
+        }) : null;
+        if (orderEntry) {
             actions.push({
                 key: 'order',
                 label: '打开订单',
                 hint: `订单 ${orderId.slice(0, 8)}`,
-                workspaceKey: 'shop-risk-orders',
-                context: {
-                    orderId,
-                    targetId: orderId,
-                    target_id: orderId,
-                    referenceLabel: '订单',
-                    referenceValue: orderId
-                }
+                workspaceKey: orderEntry.workspaceKey,
+                context: orderEntry.context
             });
         }
 
         const ticketId = String(latestTicket?.id || '').trim();
-        if (ticketId) {
+        const ticketEntry = ticketId ? this.buildUserContextWorkbenchEntry('ticket', {
+            ticketId,
+            ticketStatus: latestTicket?.status || ''
+        }) : null;
+        if (ticketEntry) {
             const isResolved = String(latestTicket?.status || '').trim().toLowerCase() === 'resolved';
             actions.push({
                 key: 'ticket',
                 label: isResolved ? '查看工单' : '处理工单',
                 hint: `工单 ${ticketId.slice(0, 8)}`,
-                workspaceKey: isResolved ? 'tickets-resolved' : 'tickets-pending',
-                context: {
-                    ticketId,
-                    ticketStatus: latestTicket?.status || '',
-                    targetId: ticketId,
-                    target_id: ticketId,
-                    referenceLabel: '工单号',
-                    referenceValue: ticketId
-                }
+                workspaceKey: ticketEntry.workspaceKey,
+                context: ticketEntry.context
             });
         }
 
@@ -8426,55 +9207,61 @@ class ChatWidget {
             const paymentId = String(latestPayment.id || '').trim();
             const paymentUserId = String(latestPayment.user_id || context.userId || '').trim();
             const paymentUserReference = String(paymentUserId || context.email || '').trim();
-            actions.push({
-                key: 'payment',
-                label: '充值记录',
-                hint: paymentId ? `支付单 ${paymentId.slice(0, 8)}` : '最近充值',
-                workspaceKey: paymentUserReference ? 'shop-risk-users' : 'payments-overview',
-                context: paymentUserReference ? {
-                    userId: paymentUserId,
-                    email: context.email || '',
-                    paymentOrderId: paymentId,
-                    targetId: paymentUserId || paymentUserReference,
-                    target_id: paymentUserId || paymentUserReference,
-                    referenceLabel: paymentUserId ? '支付单' : '邮箱',
-                    referenceValue: paymentUserId
+            const paymentEntry = this.buildUserContextWorkbenchEntry('payment', {
+                userId: paymentUserId,
+                email: context.email || '',
+                paymentOrderId: paymentId,
+                packageName: latestPayment.package_name || '',
+                referenceLabel: paymentUserReference
+                    ? (paymentUserId ? '支付单' : '邮箱')
+                    : (paymentId ? '支付单' : '充值'),
+                referenceValue: paymentUserReference
+                    ? (paymentUserId
                         ? (paymentId || String(latestPayment.package_name || '最近充值').trim())
-                        : paymentUserReference,
-                    defaultTab: 'payments',
-                    tab: 'payments'
-                } : {
-                    paymentOrderId: paymentId,
-                    targetId: paymentId,
-                    target_id: paymentId,
-                    referenceLabel: paymentId ? '支付单' : '充值',
-                    referenceValue: paymentId || String(latestPayment.package_name || '最近充值').trim()
-                }
+                        : paymentUserReference)
+                    : (paymentId || String(latestPayment.package_name || '最近充值').trim())
             });
+            if (paymentEntry) {
+                actions.push({
+                    key: 'payment',
+                    label: '充值记录',
+                    hint: paymentId ? `支付单 ${paymentId.slice(0, 8)}` : '最近充值',
+                    workspaceKey: paymentEntry.workspaceKey,
+                    context: paymentEntry.context
+                });
+            }
         }
 
         const verificationId = String(latestVerification?.verification_id || '').trim();
-        if (verificationId) {
+        const verifyEntry = verificationId ? this.buildUserContextWorkbenchEntry('verify', {
+            verificationId,
+            referenceLabel: '验证任务',
+            referenceValue: verificationId
+        }) : null;
+        if (verifyEntry) {
             actions.push({
                 key: 'verify',
                 label: '验证面板',
                 hint: this.truncateText(verificationId, 22),
-                workspaceKey: 'verify-monitor',
-                context: {
-                    verificationId,
-                    targetId: verificationId,
-                    target_id: verificationId,
-                    referenceLabel: '验证任务',
-                    referenceValue: verificationId
-                }
+                workspaceKey: verifyEntry.workspaceKey,
+                context: verifyEntry.context
             });
         }
 
-        return actions.slice(0, 5);
+        return actions
+            .filter((action) => this.canAccessWorkbenchAction(action))
+            .slice(0, 5);
     }
 
     canCreateUserContextTicket(context = {}, { openTicket = null } = {}) {
         if (!context || typeof context !== 'object') {
+            return false;
+        }
+        if (!this.canAccessWorkbenchAction({
+            key: 'create_ticket',
+            action: 'create_ticket',
+            context
+        })) {
             return false;
         }
         const activeTicket = openTicket || (Array.isArray(context.tickets) ? context.tickets : [])
@@ -8512,6 +9299,14 @@ class ChatWidget {
     }
 
     async handleCreateUserContextTicket(context = {}) {
+        if (!this.canAccessWorkbenchAction({
+            key: 'create_ticket',
+            action: 'create_ticket',
+            context
+        })) {
+            this.showNotification('当前账号未分配「售后工单」模块权限', '💬 客服', true);
+            return false;
+        }
         if (!this.canCreateUserContextTicket(context)) {
             this.showNotification('当前会话暂不适合直接转售后工单', '💬 客服', true);
             return false;
@@ -8540,10 +9335,14 @@ class ChatWidget {
             };
             this.userContextCache.set(context.cacheKey, nextContext);
             this.currentUserContext = nextContext;
+            const ticketEntry = this.buildUserContextWorkbenchEntry('ticket', {
+                ticketId: String(ticket.id || '').trim(),
+                ticketStatus: ticket.status || ''
+            });
             this.rememberUserContextAction(nextContext, {
                 label: '处理工单',
-                workspaceKey: 'tickets-pending',
-                context: {
+                workspaceKey: ticketEntry?.workspaceKey || 'tickets-pending',
+                context: ticketEntry?.context || {
                     ticketId: String(ticket.id || '').trim(),
                     targetId: String(ticket.id || '').trim(),
                     target_id: String(ticket.id || '').trim(),
@@ -8552,6 +9351,7 @@ class ChatWidget {
                 },
                 _contextCacheKey: context.cacheKey
             });
+            this.renderUser360Context(nextContext);
         }
 
         this.showNotification(payload.message || `已转工单：${payload.ticket_id || '已创建'}`, '💬 客服', true);
@@ -8866,6 +9666,12 @@ class ChatWidget {
             this.showNotification('当前动作缺少目标工作区', '💬 客服', true);
             return false;
         }
+        if (!this.canAccessWorkbenchAction(action)) {
+            if (this.currentUserContext) {
+                this.renderUser360Context(this.currentUserContext);
+            }
+            return false;
+        }
 
         try {
             let result = false;
@@ -8895,18 +9701,17 @@ class ChatWidget {
 
         if (kind === 'order') {
             const orderId = String(item.id || '').trim();
-            if (!orderId) return null;
+            const entry = this.buildUserContextWorkbenchEntry('order', {
+                orderId,
+                referenceLabel: '订单',
+                referenceValue: orderId
+            });
+            if (!entry) return null;
             return {
                 key: 'order',
                 label: '打开订单',
-                workspaceKey: 'shop-risk-orders',
-                context: {
-                    orderId,
-                    targetId: orderId,
-                    target_id: orderId,
-                    referenceLabel: '订单',
-                    referenceValue: orderId
-                }
+                workspaceKey: entry.workspaceKey,
+                context: entry.context
             };
         }
 
@@ -8914,65 +9719,58 @@ class ChatWidget {
             const paymentId = String(item.id || '').trim();
             const paymentUserId = String(item.user_id || context.userId || '').trim();
             const paymentUserReference = String(paymentUserId || context.email || '').trim();
+            const entry = this.buildUserContextWorkbenchEntry('payment', {
+                userId: paymentUserId,
+                email: context.email || '',
+                paymentOrderId: paymentId,
+                packageName: item.package_name || '',
+                referenceLabel: paymentUserReference
+                    ? (paymentUserId ? '支付单' : '邮箱')
+                    : (paymentId ? '支付单' : '充值'),
+                referenceValue: paymentUserReference
+                    ? (paymentUserId
+                        ? (paymentId || String(item.package_name || '最近充值').trim())
+                        : paymentUserReference)
+                    : (paymentId || String(item.package_name || '最近充值').trim())
+            });
+            if (!entry) return null;
             return {
                 key: 'payment',
                 label: '查看充值记录',
-                workspaceKey: paymentUserReference ? 'shop-risk-users' : 'payments-overview',
-                context: paymentUserReference ? {
-                    userId: paymentUserId,
-                    email: context.email || '',
-                    paymentOrderId: paymentId,
-                    targetId: paymentUserId || paymentUserReference,
-                    target_id: paymentUserId || paymentUserReference,
-                    referenceLabel: paymentUserId ? '支付单' : '邮箱',
-                    referenceValue: paymentUserId
-                        ? (paymentId || String(item.package_name || '最近充值').trim())
-                        : paymentUserReference,
-                    defaultTab: 'payments',
-                    tab: 'payments'
-                } : {
-                    paymentOrderId: paymentId,
-                    targetId: paymentId,
-                    target_id: paymentId,
-                    referenceLabel: paymentId ? '支付单' : '充值',
-                    referenceValue: paymentId || String(item.package_name || '最近充值').trim()
-                }
+                workspaceKey: entry.workspaceKey,
+                context: entry.context
             };
         }
 
         if (kind === 'verify') {
             const verificationId = String(item.verification_id || '').trim();
-            if (!verificationId) return null;
+            const entry = this.buildUserContextWorkbenchEntry('verify', {
+                verificationId,
+                referenceLabel: '验证任务',
+                referenceValue: verificationId
+            });
+            if (!entry) return null;
             return {
                 key: 'verify',
                 label: '打开验证面板',
-                workspaceKey: 'verify-monitor',
-                context: {
-                    verificationId,
-                    targetId: verificationId,
-                    target_id: verificationId,
-                    referenceLabel: '验证任务',
-                    referenceValue: verificationId
-                }
+                workspaceKey: entry.workspaceKey,
+                context: entry.context
             };
         }
 
         if (kind === 'ticket') {
             const ticketId = String(item.id || '').trim();
-            if (!ticketId) return null;
             const isResolved = String(item.status || '').trim().toLowerCase() === 'resolved';
+            const entry = this.buildUserContextWorkbenchEntry('ticket', {
+                ticketId,
+                ticketStatus: item.status || ''
+            });
+            if (!entry) return null;
             return {
                 key: 'ticket',
                 label: isResolved ? '查看工单' : '处理工单',
-                workspaceKey: isResolved ? 'tickets-resolved' : 'tickets-pending',
-                context: {
-                    ticketId,
-                    ticketStatus: item.status || '',
-                    targetId: ticketId,
-                    target_id: ticketId,
-                    referenceLabel: '工单号',
-                    referenceValue: ticketId
-                }
+                workspaceKey: entry.workspaceKey,
+                context: entry.context
             };
         }
 
@@ -8984,53 +9782,65 @@ class ChatWidget {
 
         (Array.isArray(context.orders) ? context.orders : []).forEach((order) => {
             const action = this.buildUserContextTimelineAction('order', order, context);
+            const accessibleAction = action && this.canAccessWorkbenchAction(action)
+                ? { ...action, _contextCacheKey: context.cacheKey || '' }
+                : null;
             entries.push({
                 kind: 'order',
                 label: '订单',
                 time: String(order.created_at || '').trim(),
                 title: this.truncateText(order.snapshot_product_name || `订单 ${String(order.id || '').slice(0, 8)}`, 48),
                 meta: `${this.formatUserContextPoints(order.price_paid)} · ${this.formatUserContextStatus(order.delivery_status || order.refund_status)}`,
-                action: action ? { ...action, _contextCacheKey: context.cacheKey || '' } : null,
-                isRecent: action ? this.isUserContextActionRecent(context, action) : false
+                action: accessibleAction,
+                isRecent: accessibleAction ? this.isUserContextActionRecent(context, accessibleAction) : false
             });
         });
 
         (Array.isArray(context.payments) ? context.payments : []).forEach((payment) => {
             const action = this.buildUserContextTimelineAction('payment', payment, context);
+            const accessibleAction = action && this.canAccessWorkbenchAction(action)
+                ? { ...action, _contextCacheKey: context.cacheKey || '' }
+                : null;
             entries.push({
                 kind: 'payment',
                 label: '充值',
                 time: String(payment.created_at || '').trim(),
                 title: this.truncateText(payment.package_name || `支付单 ${String(payment.id || '').slice(0, 8)}`, 48),
                 meta: `${this.formatUserContextCurrency(payment.paid_amount, this.formatUserContextCurrency(payment.expected_amount))} · ${this.formatUserContextStatus(payment.status)}`,
-                action: action ? { ...action, _contextCacheKey: context.cacheKey || '' } : null,
-                isRecent: action ? this.isUserContextActionRecent(context, action) : false
+                action: accessibleAction,
+                isRecent: accessibleAction ? this.isUserContextActionRecent(context, accessibleAction) : false
             });
         });
 
         (Array.isArray(context.verifications) ? context.verifications : []).forEach((item) => {
             const action = this.buildUserContextTimelineAction('verify', item, context);
+            const accessibleAction = action && this.canAccessWorkbenchAction(action)
+                ? { ...action, _contextCacheKey: context.cacheKey || '' }
+                : null;
             entries.push({
                 kind: 'verify',
                 label: '验证',
                 time: String(item.created_at || '').trim(),
                 title: this.truncateText(item.verification_id || '验证任务', 48),
                 meta: `${this.formatUserContextStatus(item.status)} · ${this.truncateText(item.message || '暂无描述', 30)}`,
-                action: action ? { ...action, _contextCacheKey: context.cacheKey || '' } : null,
-                isRecent: action ? this.isUserContextActionRecent(context, action) : false
+                action: accessibleAction,
+                isRecent: accessibleAction ? this.isUserContextActionRecent(context, accessibleAction) : false
             });
         });
 
         (Array.isArray(context.tickets) ? context.tickets : []).forEach((ticket) => {
             const action = this.buildUserContextTimelineAction('ticket', ticket, context);
+            const accessibleAction = action && this.canAccessWorkbenchAction(action)
+                ? { ...action, _contextCacheKey: context.cacheKey || '' }
+                : null;
             entries.push({
                 kind: 'ticket',
                 label: '工单',
                 time: String(ticket.created_at || '').trim(),
                 title: this.truncateText(ticket.description || `工单 ${String(ticket.id || '').slice(0, 8)}`, 48),
                 meta: `${this.formatUserContextStatus(ticket.status)}${ticket.order_id ? ` · 订单 ${String(ticket.order_id).slice(0, 8)}` : ''}`,
-                action: action ? { ...action, _contextCacheKey: context.cacheKey || '' } : null,
-                isRecent: action ? this.isUserContextActionRecent(context, action) : false
+                action: accessibleAction,
+                isRecent: accessibleAction ? this.isUserContextActionRecent(context, accessibleAction) : false
             });
         });
 
@@ -10094,9 +10904,14 @@ class ChatWidget {
                 const msg = payload.new;
                 const isTicketSyncMessage = this.isTicketSyncChatMessage(msg);
                 const isAdminReply = Boolean(msg?.is_admin) && !isTicketSyncMessage;
+                const normalizedIncomingUserId = String(msg?.user_id || '').trim();
 
                 if (isAdminReply) {
                     this.applyAdminReplySessionUpdate(msg.session_id, msg);
+                    return;
+                }
+
+                if (normalizedIncomingUserId && normalizedIncomingUserId === this.currentAdminUserId) {
                     return;
                 }
 
@@ -10105,9 +10920,12 @@ class ChatWidget {
                 const isMobile = window.innerWidth <= 700;
                 const isInChatView = !isMobile || (this.chatWindow && this.chatWindow.classList.contains('chat-active'));
                 const activeSessionIds = this.currentSessionIds || (this.currentSessionId ? [this.currentSessionId] : []);
+                const currentSessionUserId = String(this.currentSessionInfo?.userId || '').trim();
                 const isViewingThisSession = this.isOpen &&
-                    activeSessionIds.length > 0 &&
-                    activeSessionIds.includes(msg.session_id) &&
+                    (
+                        (activeSessionIds.length > 0 && activeSessionIds.includes(msg.session_id))
+                        || (normalizedIncomingUserId && currentSessionUserId === normalizedIncomingUserId)
+                    ) &&
                     isInChatView;
 
                 if (isViewingThisSession) {
@@ -10134,8 +10952,9 @@ class ChatWidget {
                     this.unreadSessions.add(msg.session_id);
                 }
 
-                // Refresh session list to show new messages (will apply unread styling)
-                this.loadAdminSessions();
+                if (!this.applyIncomingAdminUserMessage(msg)) {
+                    this.loadAdminSessions();
+                }
             })
             .subscribe();
 
@@ -10548,7 +11367,8 @@ class ChatWidget {
         this.emojiPicker = this.chatWindow.querySelector('#emojiPicker');
         this.headerActions = this.chatWindow.querySelector('#chatHeaderActions');
         this.headerSupportToggle = this.chatWindow.querySelector('#chatHeaderSupportBtn');
-        this.renderSupportRootPanel();
+        this.syncSupportShellState();
+        this.scheduleSupportPanelPrewarm();
     }
 
     bindUserEvents() {
@@ -10588,7 +11408,8 @@ class ChatWidget {
         if (this.isOpen) {
             if (!this.isAdmin) {
                 if (this.input) this.input.value = '';
-                this.renderSupportRootPanel();
+                this.setSupportDisplayMode('chat');
+                this.scheduleSupportPanelPrewarm();
             } else {
                 this.refreshOpsAlerts({ announceNew: false }).catch((error) => {
                     console.warn('[ChatWidget] Failed to refresh ops alerts on open:', error?.message || error);
@@ -11421,8 +12242,10 @@ class ChatWidget {
         const text = this.input.value.trim();
         if (!text) return;
 
+        const optimisticCreatedAt = new Date().toISOString();
+
         // Optimistic UI update
-        this.appendMessage(text, this.getMessageRenderType(false), 'text');
+        this.appendMessage(text, this.getMessageRenderType(false), 'text', optimisticCreatedAt);
         this.input.value = '';
 
         const autoSupportAssistPromise = this.maybeRunAutoSupportAssist(text).catch((error) => {
@@ -11445,6 +12268,13 @@ class ChatWidget {
                 });
 
             if (error) throw error;
+            this.upsertUserHistoryCacheEntry({
+                session_id: sessionId,
+                content: text,
+                is_admin: false,
+                message_type: 'text',
+                created_at: optimisticCreatedAt
+            });
         } catch (err) {
             console.error('Error sending message:', err);
             // Could add retry logic or error indicator here
@@ -11520,8 +12350,10 @@ class ChatWidget {
                 .from('chat-assets')
                 .getPublicUrl(filePath);
 
+            const optimisticCreatedAt = new Date().toISOString();
+
             // Optimistic UI for Image
-            this.appendMessage(publicUrl, this.getMessageRenderType(false), 'image');
+            this.appendMessage(publicUrl, this.getMessageRenderType(false), 'image', optimisticCreatedAt);
 
             // Save to DB
             const { user, sessionId } = await this.refreshUserSessionContext();
@@ -11536,6 +12368,14 @@ class ChatWidget {
                     session_id: sessionId,
                     is_admin: false
                 });
+
+            this.upsertUserHistoryCacheEntry({
+                session_id: sessionId,
+                content: publicUrl,
+                is_admin: false,
+                message_type: 'image',
+                created_at: optimisticCreatedAt
+            });
 
         } catch (err) {
             console.error('Error uploading image:', err);
@@ -11641,6 +12481,123 @@ class ChatWidget {
         }
     }
 
+    renderUserHistoryMessages(messages = []) {
+        if (!this.messagesContainer) return;
+
+        this.removeSessionLoadingOverlay();
+        this.messagesContainer.innerHTML = '';
+        this.lastDisplayedTime = null;
+
+        const welcomeMessage = document.createElement('div');
+        welcomeMessage.className = 'message admin';
+        welcomeMessage.textContent = this.t('chat.welcomeMessage', '您好！有什么可以帮您的吗？');
+        this.messagesContainer.appendChild(welcomeMessage);
+
+        (Array.isArray(messages) ? messages : []).forEach((msg) => {
+            this.appendMessage(
+                msg.content,
+                this.getMessageRenderType(msg.is_admin),
+                msg.message_type,
+                msg.created_at
+            );
+        });
+    }
+
+    async fetchUserHistoryBatch(sessionIds = [], { fullHistory = false } = {}) {
+        const normalizedSessionIds = [...new Set((Array.isArray(sessionIds) ? sessionIds : []).filter(Boolean))];
+        if (!normalizedSessionIds.length) return [];
+
+        let query = this.supabase
+            .from('chat_messages')
+            .select('session_id, content, is_admin, message_type, created_at');
+
+        query = normalizedSessionIds.length === 1
+            ? query.eq('session_id', normalizedSessionIds[0])
+            : query.in('session_id', normalizedSessionIds);
+
+        if (fullHistory) {
+            const { data, error } = await query.order('created_at', { ascending: true });
+            if (error) throw error;
+            return Array.isArray(data) ? data : [];
+        }
+
+        const { data, error } = await query
+            .order('created_at', { ascending: false })
+            .limit(80);
+        if (error) throw error;
+        return (Array.isArray(data) ? data : []).slice().reverse();
+    }
+
+    scheduleUserHistorySync(sessionIds = [], cacheKey = '', requestId = 0) {
+        this.clearUserHistorySyncHandle();
+
+        const run = () => {
+            this._userHistorySyncHandle = null;
+            this.syncUserHistoryComplete(sessionIds, cacheKey, requestId);
+        };
+
+        if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+            const handle = window.requestIdleCallback(run, { timeout: 700 });
+            this._userHistorySyncHandle = { type: 'idle', handle };
+            return;
+        }
+
+        this._userHistorySyncHandle = setTimeout(run, 180);
+    }
+
+    async syncUserHistoryComplete(sessionIds = [], cacheKey = '', requestId = 0) {
+        try {
+            const fullHistory = await this.fetchUserHistoryBatch(sessionIds, { fullHistory: true });
+            if (requestId !== this._userHistoryLoadRequestId) return;
+            if (cacheKey !== this.getSessionCacheKey(this.getActiveUserSessionIds())) return;
+
+            this.userHistoryCache.set(cacheKey, fullHistory);
+            this.persistUserHistorySnapshot(sessionIds, fullHistory);
+            this.renderUserHistoryMessages(fullHistory);
+            this._setMessagesContainerMinHeight(null);
+            this.scrollToBottom();
+            this.unlockScroll();
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to sync complete user history:', error);
+        }
+    }
+
+    upsertUserHistoryCacheEntry(message = {}) {
+        const activeSessionIds = this.getActiveUserSessionIds();
+        const normalizedSessionId = String(message?.session_id || '').trim();
+        const normalizedCreatedAt = String(message?.created_at || '').trim();
+        if (!activeSessionIds.includes(normalizedSessionId) || !normalizedCreatedAt) {
+            return;
+        }
+
+        const cacheKey = this.getSessionCacheKey(activeSessionIds);
+        const cachedMessages = Array.isArray(this.userHistoryCache.get(cacheKey))
+            ? this.userHistoryCache.get(cacheKey)
+            : this.restoreUserHistorySnapshot(activeSessionIds);
+
+        const alreadyExists = (Array.isArray(cachedMessages) ? cachedMessages : []).some((item) => (
+            String(item?.session_id || '').trim() === normalizedSessionId
+            && String(item?.created_at || '').trim() === normalizedCreatedAt
+            && String(item?.content || '') === String(message?.content || '')
+            && String(item?.message_type || 'text') === String(message?.message_type || 'text')
+            && Boolean(item?.is_admin) === Boolean(message?.is_admin)
+        ));
+        if (alreadyExists) {
+            return;
+        }
+
+        const nextMessages = [...(Array.isArray(cachedMessages) ? cachedMessages : []), {
+            session_id: normalizedSessionId,
+            content: message?.content || '',
+            is_admin: Boolean(message?.is_admin),
+            message_type: String(message?.message_type || 'text'),
+            created_at: normalizedCreatedAt
+        }].sort((left, right) => Date.parse(left?.created_at || 0) - Date.parse(right?.created_at || 0));
+
+        this.userHistoryCache.set(cacheKey, nextMessages);
+        this.persistUserHistorySnapshot(activeSessionIds, nextMessages);
+    }
+
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
@@ -11682,6 +12639,7 @@ class ChatWidget {
                             payload.new.created_at,
                             true
                         );
+                        this.upsertUserHistoryCacheEntry(payload.new);
 
                         // Show cute notification if chat is closed
                         const messageContent = payload.new.message_type === 'image' ? '📷 发送了一张图片' : payload.new.content;
@@ -11693,44 +12651,49 @@ class ChatWidget {
     }
 
     async loadHistory() {
+        const requestId = ++this._userHistoryLoadRequestId;
         // PRELOAD STRATEGY: Lock scroll during history loading
         this.lockScroll();
 
         try {
             const sessionIds = this.getActiveUserSessionIds();
             if (!sessionIds.length) return;
+            const cacheKey = this.getSessionCacheKey(sessionIds);
+            const cachedHistory = this.userHistoryCache.get(cacheKey) || this.restoreUserHistorySnapshot(sessionIds);
 
-            let query = this.supabase
-                .from('chat_messages')
-                .select('*')
-                .order('created_at', { ascending: true });
-
-            query = sessionIds.length === 1
-                ? query.eq('session_id', sessionIds[0])
-                : query.in('session_id', sessionIds);
-
-            const { data, error } = await query;
-
-            if (data) {
-                // Batch render all history messages before enabling scroll
-                data.forEach(msg => {
-                    this.appendMessage(
-                        msg.content,
-                        this.getMessageRenderType(msg.is_admin),
-                        msg.message_type,
-                        msg.created_at
-                    );
-                });
-
-                // Scroll to bottom after all messages loaded
+            if (Array.isArray(cachedHistory) && cachedHistory.length) {
+                this.userHistoryCache.set(cacheKey, cachedHistory);
+                this.renderUserHistoryMessages(cachedHistory);
+                this._setMessagesContainerMinHeight(null);
                 this.scrollToBottom();
+                this.unlockScroll();
+                this.scheduleUserHistorySync(sessionIds, cacheKey, requestId);
+                return;
             }
 
-            // PRELOAD COMPLETE: Unlock scroll
+            const currentHeight = this.messagesContainer.offsetHeight;
+            this._setMessagesContainerMinHeight(currentHeight);
+            this.clearSessionLoadingOverlayTimer();
+            this._sessionLoadingOverlayTimer = setTimeout(() => {
+                if (this._userHistoryLoadRequestId !== requestId) return;
+                this.ensureSessionLoadingOverlay();
+            }, 180);
+
+            const recentHistory = await this.fetchUserHistoryBatch(sessionIds, { fullHistory: false });
+            if (requestId !== this._userHistoryLoadRequestId) return;
+
+            this.userHistoryCache.set(cacheKey, recentHistory);
+            this.persistUserHistorySnapshot(sessionIds, recentHistory);
+            this.renderUserHistoryMessages(recentHistory);
+            this._setMessagesContainerMinHeight(null);
+            this.scrollToBottom();
             this.unlockScroll();
+            this.scheduleUserHistorySync(sessionIds, cacheKey, requestId);
 
         } catch (err) {
             console.error('Error loading history:', err);
+            this.removeSessionLoadingOverlay();
+            this._setMessagesContainerMinHeight(null);
             // Unlock scroll even on error
             this.unlockScroll();
         }

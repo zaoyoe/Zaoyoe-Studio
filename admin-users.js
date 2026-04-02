@@ -539,7 +539,17 @@ async function loadUsers() {
         }
 
         // Fetch blocks, points, tags, and admin roles in parallel
-        const [blocksResult, pointsResult, tagsResult, rolesResult] = await Promise.all([
+        const siteFilter = window.AdminSiteFilter ? AdminSiteFilter.getSiteParam() : null;
+
+        const loginHistoryQuery = window.supabaseClient
+            .from('user_login_history')
+            .select('user_id, created_at');
+
+        if (siteFilter) {
+            loginHistoryQuery.eq('site', siteFilter);
+        }
+
+        const [blocksResult, pointsResult, tagsResult, rolesResult, loginHistoryResult] = await Promise.all([
             window.supabaseClient
                 .from('blocked_users')
                 .select('user_id, scope, expires_at'),
@@ -553,20 +563,42 @@ async function loadUsers() {
                 .select('user_id, tag'),
             window.supabaseClient
                 .from('admin_roles')
-                .select('user_id, role_name, permissions, expires_at')
+                .select('user_id, role_name, permissions, expires_at'),
+            loginHistoryQuery
         ]);
 
         const blocks = blocksResult.data || [];
         const points = pointsResult.data || [];
         const tags = tagsResult.data || [];
         const roles = rolesResult.data || [];
+        const loginHistoryRows = loginHistoryResult.data || [];
 
         // Create lookup maps
         const blockedMap = new Map();
         blocks.forEach(b => blockedMap.set(b.user_id, b));
 
         const pointsMap = new Map();
-        points.forEach(p => pointsMap.set(p.user_id, p));
+        points.forEach((row) => {
+            const userId = String(row?.user_id || '').trim();
+            if (!userId) return;
+            const current = pointsMap.get(userId) || {
+                user_id: userId,
+                total_balance: 0
+            };
+            current.total_balance += Number(row?.total_balance || 0);
+            pointsMap.set(userId, current);
+        });
+
+        const latestLoginMap = new Map();
+        loginHistoryRows.forEach((row) => {
+            const userId = String(row?.user_id || '').trim();
+            const createdAt = String(row?.created_at || '').trim();
+            if (!userId || !createdAt) return;
+            const existing = latestLoginMap.get(userId);
+            if (!existing || new Date(createdAt).getTime() > new Date(existing).getTime()) {
+                latestLoginMap.set(userId, createdAt);
+            }
+        });
 
         const tagsMap = new Map();
         tags.forEach(t => {
@@ -583,7 +615,6 @@ async function loadUsers() {
         });
 
         // Site-based user filtering: only show users with activity on selected site
-        const siteFilter = window.AdminSiteFilter ? AdminSiteFilter.getSiteParam() : null;
         if (siteFilter) {
             // Fetch user IDs with activity on this site (login, points, comments, messages)
             const [loginResult, commentsResult, messagesResult] = await Promise.all([
@@ -623,7 +654,7 @@ async function loadUsers() {
             const email = p.out_email || p.email;
             const username = p.out_username || p.username;
             const avatar_url = p.out_avatar_url || p.avatar_url;
-            const last_active = p.out_last_active_at || p.out_last_sign_in_at || p.last_sign_in_at;
+            const last_active = latestLoginMap.get(id) || p.out_last_active_at || p.out_last_sign_in_at || p.last_sign_in_at;
             const created = p.out_created_at || p.created_at;
 
             const userPoints = pointsMap.get(id);
@@ -3832,7 +3863,7 @@ async function fetchUserSummaryRecord(criteria = {}) {
         }
 
         const [pointsResult, tagsResult, blocksResult, rolesResult, loginResult] = await Promise.all([
-            pointsQuery.maybeSingle(),
+            pointsQuery,
             window.supabaseClient
                 .from('user_tags')
                 .select('tag')
@@ -3872,7 +3903,10 @@ async function fetchUserSummaryRecord(criteria = {}) {
 
         const email = profile.email || null;
         const username = profile.username || 'Unknown';
-        const pointsBalance = Number(pointsResult?.data?.total_balance || 0);
+        const pointRows = Array.isArray(pointsResult?.data)
+            ? pointsResult.data
+            : (pointsResult?.data ? [pointsResult.data] : []);
+        const pointsBalance = pointRows.reduce((sum, row) => sum + Number(row?.total_balance || 0), 0);
         const activeRole = (rolesResult?.data || []).find((role) => !role.expires_at || new Date(role.expires_at) > new Date()) || null;
         const accountFlags = classifyUserAccount({ email, username });
 

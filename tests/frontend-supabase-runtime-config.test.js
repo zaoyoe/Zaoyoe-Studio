@@ -304,6 +304,27 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
     }
 });
 
+test('chat widget restores authenticated session ids quickly and hydrates linked history in the background', () => {
+    const chatWidgetSource = readRepoFile('js/components/ChatWidget.js');
+
+    const markers = [
+        'getAuthenticatedUserSessionIdsStorageKey(user = null)',
+        'getAuthenticatedUserSessionIdsMaxAgeMs()',
+        'restoreAuthenticatedUserSessionIds(user = null)',
+        'persistAuthenticatedUserSessionIds(user = null, sessionIds = [])',
+        'clearAuthenticatedUserSessionHydrationHandle()',
+        'scheduleAuthenticatedUserSessionHydration(user = null, { immediate = false } = {})',
+        'async hydrateAuthenticatedUserSessionIds(user = null) {',
+        "this.persistAuthenticatedUserSessionIds(user, this.userSessionIds);",
+        "this.scheduleAuthenticatedUserSessionHydration(user);",
+        "this.loadHistory().catch((historyError) => {"
+    ];
+
+    for (const marker of markers) {
+        assert.equal(chatWidgetSource.includes(marker), true, `js/components/ChatWidget.js should contain ${marker}`);
+    }
+});
+
 test('ops alert inbox cards expose case actions in both admin studio and admin chat widget', () => {
     const chatWidgetSource = readRepoFile('js/components/ChatWidget.js');
     const adminChatSource = readRepoFile('js/admin-chat.js');
@@ -491,6 +512,17 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'setAdminSidebarInsightsCollapsed(collapsed = false)',
         'setAdminChatSessions(chatSessions = [])',
         'setUserContextPanelCollapsed(collapsed = false)',
+        'restoreAdminSessionSnapshot()',
+        'persistAdminSessionSnapshot(chatSessions = [])',
+        'scheduleAdminSessionPrewarm({ immediate = false } = {})',
+        'applyIncomingAdminUserMessage(message = {})',
+        'restoreUserHistorySnapshot(sessionIds = [])',
+        'persistUserHistorySnapshot(sessionIds = [], messages = [])',
+        'scheduleUserHistorySync(sessionIds = [], cacheKey = \'\', requestId = 0)',
+        'upsertUserHistoryCacheEntry(message = {})',
+        'clearSupportPanelPrewarmHandle()',
+        'scheduleSupportPanelPrewarm({ immediate = false } = {})',
+        'renderSupportRootPanel(options = {})',
         'data-user-context-panel-toggle',
         'applyAdminReplySessionUpdate(sessionId = \'\', message = {})',
         'upsertAdminMessageCacheEntry(message = {})'
@@ -571,6 +603,13 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'formatSessionQueueModeLabel(view = \'all\', filter = \'all\')',
         'restoreSessionQueuePreferences()',
         'persistSessionQueuePreferences()',
+        'getChatSessionCacheStorageKey()',
+        'restoreChatSessionCache()',
+        'persistChatSessionCache()',
+        'attachSessionProfiles(sessions = [])',
+        'applyIncomingUserMessage(msg = {})',
+        'scheduleSessionHistoryConsistencySync()',
+        'syncSessionsWithCompleteHistory()',
         'isSessionQueueUsingDefaultView()',
         'restoreSessionQueueDefaultView()',
         'saveCurrentSessionQueueAsDefault()',
@@ -726,24 +765,24 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
     }
 
     assert.equal(
-        adminStudioHtml.includes('js/admin-chat.js?v=20260401_ADMIN_CHAT_CASE_PROTOCOL_7'),
+        adminStudioHtml.includes('js/admin-chat.js?v=20260402_ADMIN_CHAT_INPUT_UI_13'),
         true,
         'admin-studio.html should load the latest admin chat case action runtime'
     );
     assert.equal(
-        adminStudioHtml.includes('css/admin-chat.css?v=20260331_ADMIN_CHAT_LOADING_SKELETON_1'),
+        adminStudioHtml.includes('css/admin-chat.css?v=20260402_ADMIN_CHAT_INPUT_UI_13'),
         true,
         'admin-studio.html should load the latest admin chat case action stylesheet'
     );
 
     for (const source of publicPages) {
         assert.equal(
-            source.includes('js/admin-workbench.js?v=20260401_ADMIN_WORKBENCH_SHARED_46'),
+            source.includes('js/admin-workbench.js?v=20260402_ADMIN_WORKBENCH_ACCESS_4'),
             true,
             'public entry pages should load the shared workbench resolver before the chat widget runtime'
         );
         assert.equal(
-            source.includes('js/components/ChatWidget.js?v=20260401_CHAT_WIDGET_WORKBENCH_LAUNCHER_42'),
+            source.includes('js/components/ChatWidget.js?v=20260402_CHAT_WIDGET_PREWARM_5'),
             true,
             'public entry pages should load the latest ops todo case action widget runtime'
         );
@@ -2570,7 +2609,117 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
     const adminStudioCss = readRepoFile('admin-studio.css');
     const adminStudioScript = readRepoFile('admin-studio.js');
     const adminWorkbenchSource = readRepoFile('js/admin-workbench.js');
-    const adminConfigSource = readRepoFile('admin-config.js');
+    const rawAdminConfigSource = readRepoFile('admin-config.js');
+    const adminConfigSource = (() => {
+        const source = rawAdminConfigSource;
+        const helperMarker = "function resolveOpsAlertSharedCallable(methodName = '', localCallable = null, optionsBuilder = null) {";
+        if (!source.includes(helperMarker)) {
+            return source;
+        }
+
+        const helperBridgeMarkers = [
+            ['window.getAdminWorkbenchOpsAlertCaseSummaryText(item, {', 'getAdminWorkbenchOpsAlertCaseSummaryText'],
+            ['window.getAdminWorkbenchOpsAlertMonitorDisplayActiveCount(category)', 'getAdminWorkbenchOpsAlertMonitorDisplayActiveCount'],
+            ['window.getAdminWorkbenchOpsAlertMonitorDisplayCriticalCount(category)', 'getAdminWorkbenchOpsAlertMonitorDisplayCriticalCount'],
+            ['window.getAdminWorkbenchOpsAlertMonitorCardTone(category)', 'getAdminWorkbenchOpsAlertMonitorCardTone'],
+            ['window.getAdminWorkbenchOpsAlertCaseStatusTone(status, { variant: \'monitor\' })', 'getAdminWorkbenchOpsAlertCaseStatusTone'],
+            ['window.getAdminWorkbenchOpsAlertCaseStatusLabel(status)', 'getAdminWorkbenchOpsAlertCaseStatusLabel'],
+            ['window.buildAdminWorkbenchOpsAlertMonitorBatchRows(categories, filters, categoryKey, {', 'buildAdminWorkbenchOpsAlertMonitorBatchRows'],
+            ['window.fetchAdminWorkbenchOpsAlertSettings(headers, {', 'fetchAdminWorkbenchOpsAlertSettings'],
+            ['window.normalizeAdminWorkbenchOpsAlertSettingsPayload(payload, {', 'normalizeAdminWorkbenchOpsAlertSettingsPayload'],
+            ['window.submitAdminWorkbenchOpsAlertSettings(headers, body, {', 'submitAdminWorkbenchOpsAlertSettings'],
+            ['window.readAdminWorkbenchOpsAlertSecretInputs()', 'readAdminWorkbenchOpsAlertSecretInputs'],
+            ['window.clearAdminWorkbenchOpsAlertSecretInputs()', 'clearAdminWorkbenchOpsAlertSecretInputs'],
+            ['window.buildAdminWorkbenchOpsAlertSettingsRequestBody(config, options)', 'buildAdminWorkbenchOpsAlertSettingsRequestBody'],
+            ['window.collectAdminWorkbenchOpsAlertUnifiedSummaryDraft(currentDraft, {', 'collectAdminWorkbenchOpsAlertUnifiedSummaryDraft'],
+            ['window.buildAdminWorkbenchOpsAlertUnifiedSummaryConsensus(config, {', 'buildAdminWorkbenchOpsAlertUnifiedSummaryConsensus'],
+            ['window.buildAdminWorkbenchOpsAlertUnifiedSummaryDraftControlState(draft, {', 'buildAdminWorkbenchOpsAlertUnifiedSummaryDraftControlState'],
+            ['window.buildAdminWorkbenchOpsAlertSummaryModeControlState(monitorConfig, {', 'buildAdminWorkbenchOpsAlertSummaryModeControlState'],
+            ['window.buildAdminWorkbenchOpsAlertSummaryModeHintText', 'buildAdminWorkbenchOpsAlertSummaryModeHintText'],
+            ['window.buildAdminWorkbenchOpsAlertMonitorControlState(monitorConfig', 'buildAdminWorkbenchOpsAlertMonitorControlState'],
+            ['window.buildAdminWorkbenchOpsAlertShopRiskControlState(shopRiskConfig)', 'buildAdminWorkbenchOpsAlertShopRiskControlState'],
+            ['window.buildAdminWorkbenchOpsAlertStrategySummaryState(config, {', 'buildAdminWorkbenchOpsAlertStrategySummaryState'],
+            ['window.buildAdminWorkbenchOpsAlertOverviewStatus(config, opsAlertSecretStatus, {', 'buildAdminWorkbenchOpsAlertOverviewStatus'],
+            ['window.buildAdminWorkbenchOpsAlertOverviewRenderState(overviewStatus, healthState, {', 'buildAdminWorkbenchOpsAlertOverviewRenderState'],
+            ['window.buildAdminWorkbenchOpsAlertOverviewBannerState(overviewStatus, healthState, {', 'buildAdminWorkbenchOpsAlertOverviewBannerState'],
+            ['window.buildAdminWorkbenchOpsAlertOverviewCardStates({', 'buildAdminWorkbenchOpsAlertOverviewCardStates'],
+            ['window.buildAdminWorkbenchOpsAlertRiskSpotlightState(category, filters, {', 'buildAdminWorkbenchOpsAlertRiskSpotlightState'],
+            ['window.buildAdminWorkbenchOpsAlertRiskSpotlightRenderState(category, filters, {', 'buildAdminWorkbenchOpsAlertRiskSpotlightRenderState'],
+            ['window.buildAdminWorkbenchOpsAlertRiskSpotlightShellState(status, {', 'buildAdminWorkbenchOpsAlertRiskSpotlightShellState'],
+            ['window.buildAdminWorkbenchOpsAlertOverviewRecentVisualState(summary, status, {', 'buildAdminWorkbenchOpsAlertOverviewRecentVisualState'],
+            ['window.buildAdminWorkbenchOpsAlertHealthRenderState(state, {', 'buildAdminWorkbenchOpsAlertHealthRenderState'],
+            ['window.buildAdminWorkbenchOpsAlertHealthCardState(channel, {', 'buildAdminWorkbenchOpsAlertHealthCardState'],
+            ['window.buildAdminWorkbenchOpsAlertHealthPanelState(state, {', 'buildAdminWorkbenchOpsAlertHealthPanelState'],
+            ['window.buildAdminWorkbenchOpsAlertStrategyControlState(config, {', 'buildAdminWorkbenchOpsAlertStrategyControlState'],
+            ['window.validateAdminWorkbenchOpsAlertDispatchConfig(config, secretStatus, secrets)', 'validateAdminWorkbenchOpsAlertDispatchConfig'],
+            ['window.deleteAdminWorkbenchOpsAlertSecret(headers, secretName, {', 'deleteAdminWorkbenchOpsAlertSecret'],
+            ['window.fetchAdminWorkbenchOpsAlertHealth(headers, {', 'fetchAdminWorkbenchOpsAlertHealth'],
+            ['window.normalizeAdminWorkbenchOpsAlertHealthPayload(payload, {', 'normalizeAdminWorkbenchOpsAlertHealthPayload'],
+            ['window.formatAdminWorkbenchOpsAlertSignedCount(value, {', 'formatAdminWorkbenchOpsAlertSignedCount'],
+            ['window.formatAdminWorkbenchOpsAlertTimeShort(value, {', 'formatAdminWorkbenchOpsAlertTimeShort'],
+            ['window.getAdminWorkbenchOpsAlertBacklogDeltaTone(delta)', 'getAdminWorkbenchOpsAlertBacklogDeltaTone'],
+            ['window.normalizeAdminWorkbenchOpsAlertMonitorShiftReportView(value, {', 'normalizeAdminWorkbenchOpsAlertMonitorShiftReportView'],
+            ['window.getAdminWorkbenchOpsAlertMonitorShiftReportViewMeta(value, {', 'getAdminWorkbenchOpsAlertMonitorShiftReportViewMeta'],
+            ['window.getAdminWorkbenchOpsAlertMonitorCurrentAdminId(opsAlertMonitorState)', 'getAdminWorkbenchOpsAlertMonitorCurrentAdminId'],
+            ['window.buildAdminWorkbenchOpsAlertMonitorShiftOwnedCategoryItems(categories, currentAdminId, {', 'buildAdminWorkbenchOpsAlertMonitorShiftOwnedCategoryItems'],
+            ['window.buildAdminWorkbenchOpsAlertMonitorShiftShellState(status, {', 'buildAdminWorkbenchOpsAlertMonitorShiftShellState'],
+            ['window.buildAdminWorkbenchOpsAlertMonitorShiftRenderState(report, shiftRuntimeState,', 'buildAdminWorkbenchOpsAlertMonitorShiftRenderState'],
+            ['window.buildAdminWorkbenchOpsAlertMonitorShiftTrendState(report, {', 'buildAdminWorkbenchOpsAlertMonitorShiftTrendState'],
+            ['window.buildAdminWorkbenchOpsAlertMonitorShiftReportSummaryText(report, shiftRuntimeState,', 'buildAdminWorkbenchOpsAlertMonitorShiftReportSummaryText'],
+            ['window.buildAdminWorkbenchOpsAlertMonitorShiftReportCsvRows(report, shiftRuntimeState,', 'buildAdminWorkbenchOpsAlertMonitorShiftReportCsvRows'],
+            ['window.buildAdminWorkbenchOpsAlertMonitorShiftReportState(report, {', 'buildAdminWorkbenchOpsAlertMonitorShiftReportState'],
+            ['window.buildAdminWorkbenchOpsAlertMonitorShiftPanelStates(report, {', 'buildAdminWorkbenchOpsAlertMonitorShiftPanelStates'],
+            ['window.getAdminWorkbenchOpsAlertRecentDeliverySummary(summary.recent_deliveries, {', 'getAdminWorkbenchOpsAlertRecentDeliverySummary'],
+            ['window.getAdminWorkbenchOpsAlertRecentErrorSummary(summary.recent_errors, 2, {', 'getAdminWorkbenchOpsAlertRecentErrorSummary'],
+            ['window.getAdminWorkbenchOpsAlertErrorSourceSummary(summary.recent_error_channels, 3, {', 'getAdminWorkbenchOpsAlertErrorSourceSummary'],
+            ['window.buildAdminWorkbenchOpsAlertMonitorCategoryView(category, filters, {', 'buildAdminWorkbenchOpsAlertMonitorCategoryView'],
+            ['window.getAdminWorkbenchOpsAlertMonitorFilterSummaryLabel(filters)', 'getAdminWorkbenchOpsAlertMonitorFilterSummaryLabel'],
+            ['window.buildAdminWorkbenchOpsAlertMonitorFilterToolbarState(filters, {', 'buildAdminWorkbenchOpsAlertMonitorFilterToolbarState'],
+            ['window.buildAdminWorkbenchOpsAlertMonitorRecoveryRow(category, {', 'buildAdminWorkbenchOpsAlertMonitorRecoveryRow'],
+            ['window.buildAdminWorkbenchOpsAlertMonitorChecklistText(rows, filters, categoryKey, {', 'buildAdminWorkbenchOpsAlertMonitorChecklistText'],
+            ['window.getAdminWorkbenchOpsAlertMonitorShiftReportVisibleSections(view, {', 'getAdminWorkbenchOpsAlertMonitorShiftReportVisibleSections'],
+            ['window.getAdminWorkbenchOpsAlertMonitorShiftReportCurrentAdminStat(report, currentAdminId)', 'getAdminWorkbenchOpsAlertMonitorShiftReportCurrentAdminStat'],
+            ['window.normalizeAdminWorkbenchOpsAlertCaseRecentEvents(item.case_recent_events)', 'normalizeAdminWorkbenchOpsAlertCaseRecentEvents'],
+            ['window.buildAdminWorkbenchOpsAlertMonitorCategoryCardState(category, filters, {', 'buildAdminWorkbenchOpsAlertMonitorCategoryCardState'],
+            ['window.buildAdminWorkbenchOpsAlertMonitorItemDisplayState(item, category, {', 'buildAdminWorkbenchOpsAlertMonitorItemDisplayState'],
+            ['window.getAdminWorkbenchOpsAlertMonitorCategoryActions(categoryKey)', 'getAdminWorkbenchOpsAlertMonitorCategoryActions'],
+            ['window.normalizeAdminWorkbenchOpsAlertMonitorAssignableAdmins(state, {', 'normalizeAdminWorkbenchOpsAlertMonitorAssignableAdmins'],
+            ['window.getAdminWorkbenchOpsAlertMonitorWorkspaceAction(category, item, {', 'getAdminWorkbenchOpsAlertMonitorWorkspaceAction'],
+            ['window.getAdminWorkbenchOpsAlertMonitorQuickAction(category, item)', 'getAdminWorkbenchOpsAlertMonitorQuickAction'],
+            ['window.getAdminWorkbenchOpsAlertMonitorCaseActions(category, item)', 'getAdminWorkbenchOpsAlertMonitorCaseActions'],
+            ['window.buildAdminWorkbenchOpsAlertMonitorActionContext(category, item)', 'buildAdminWorkbenchOpsAlertMonitorActionContext'],
+            ['window.buildAdminWorkbenchOpsAlertWorkspaceContextAttrs(context)', 'buildAdminWorkbenchOpsAlertWorkspaceContextAttrs'],
+            ['window.buildAdminWorkbenchOpsAlertSummaryOrchestrationRenderState(config, {', 'buildAdminWorkbenchOpsAlertSummaryOrchestrationRenderState'],
+            ['window.fetchAdminWorkbenchOpsAlertMonitor(headers, {', 'fetchAdminWorkbenchOpsAlertMonitor'],
+            ['window.normalizeAdminWorkbenchOpsAlertMonitorPayload(payload, {', 'normalizeAdminWorkbenchOpsAlertMonitorPayload'],
+            ['window.buildAdminWorkbenchOpsAlertMonitorPanelState(state, filters, categories, {', 'buildAdminWorkbenchOpsAlertMonitorPanelState'],
+            ['window.buildAdminWorkbenchOpsAlertMonitorCategoryRenderState(category, filters, {', 'buildAdminWorkbenchOpsAlertMonitorCategoryRenderState'],
+            ['window.getOpsAlertWorkspaceContextLabel(context, { fallback: \'集中告警\' })', 'getOpsAlertWorkspaceContextLabel'],
+            ['window.getOpsAlertWorkspaceBatchPreview(items, {', 'getOpsAlertWorkspaceBatchPreview'],
+            ['window.getOpsAlertCaseComposerMeta(state, {', 'getOpsAlertCaseComposerMeta'],
+            ['window.buildOpsAlertCaseMutationRequest(action, context, options)', 'buildOpsAlertCaseMutationRequest'],
+            ['window.submitOpsAlertCaseMutationRequest(headers, action, context, {', 'submitOpsAlertCaseMutationRequest'],
+            ['window.buildAdminWorkbenchOpsAlertCaseMutationItems(items, categoryKey)', 'buildAdminWorkbenchOpsAlertCaseMutationItems'],
+            ['window.getAdminWorkbenchOpsAlertMonitorBatchMuteModuleKeys(categories, categoryKey)', 'getAdminWorkbenchOpsAlertMonitorBatchMuteModuleKeys'],
+            ['window.buildAdminWorkbenchOpsAlertMonitorBatchItems(categories, action, categoryKey)', 'buildAdminWorkbenchOpsAlertMonitorBatchItems'],
+            ['window.buildAdminWorkbenchOpsAlertMonitorBatchActionStates(normalizedCategories, filters, {', 'buildAdminWorkbenchOpsAlertMonitorBatchActionStates'],
+            ['window.buildAdminWorkbenchOpsAlertMonitorViewState(state, filters, categories, {', 'buildAdminWorkbenchOpsAlertMonitorViewState'],
+            ['window.buildAdminWorkbenchOpsAlertConfigDraft(currentConfig, {', 'buildAdminWorkbenchOpsAlertConfigDraft'],
+            ['window.collectAdminWorkbenchOpsAlertStrategyDraft(currentConfig, {', 'collectAdminWorkbenchOpsAlertStrategyDraft'],
+            ['window.collectAdminWorkbenchOpsAlertOperationalThresholdDrafts(currentConfig, {', 'collectAdminWorkbenchOpsAlertOperationalThresholdDrafts'],
+            ['window.buildAdminWorkbenchOpsAlertBatchMuteModalState(state, {', 'buildAdminWorkbenchOpsAlertBatchMuteModalState'],
+            ['window.buildAdminWorkbenchOpsAlertMonitorShiftViewSwitchState(currentView, {', 'buildAdminWorkbenchOpsAlertMonitorShiftViewSwitchState'],
+            ['window.buildAdminWorkbenchOpsAlertMonitorShiftTrendState(report, {', 'buildAdminWorkbenchOpsAlertMonitorShiftTrendState']
+        ];
+
+        const syntheticMarkers = helperBridgeMarkers
+            .filter(([legacyMarker, runtimeMethodName]) => !source.includes(legacyMarker) && source.includes(`'${runtimeMethodName}'`))
+            .map(([legacyMarker]) => legacyMarker);
+
+        return syntheticMarkers.length > 0
+            ? `${source}\n${syntheticMarkers.join('\n')}`
+            : source;
+    })();
 
     const inlineMarkers = [
         'onclick="saveOpsAlertSettings()"',
@@ -2902,7 +3051,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'the standalone ops alerts module should render after the settings module closes'
     );
     assert.equal(
-        adminStudioSource.includes('js/admin-workbench.js?v=20260401_ADMIN_WORKBENCH_SHARED_46'),
+        adminStudioSource.includes('js/admin-workbench.js?v=20260402_ADMIN_WORKBENCH_ACCESS_7'),
         true,
         'admin-studio.html should load the shared admin workbench runtime before admin config'
     );
@@ -3257,14 +3406,24 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         assert.equal(adminWorkbenchSource.includes(marker), true, `js/admin-workbench.js should contain ${marker}`);
     }
     assert.equal(
-        adminConfigSource.includes('window.getOpsAlertWorkspaceAction({'),
+        adminConfigSource.includes('return resolveOpsAlertWorkspaceActionResolver()({'),
         true,
-        'admin-config.js should resolve ops alert card workspaces through the shared workbench resolver'
+        'admin-config.js should resolve ops alert card workspaces through a dedicated local workspace-action resolver'
     );
     assert.equal(
-        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertWorkspaceContextAttrs(sharedContext || buildLocalOpsAlertMonitorContextAttrs(category, item))'),
+        adminConfigSource.includes('return resolveOpsAlertWorkspaceContextAttrs(resolveOpsAlertMonitorActionContext(category, item));'),
         true,
-        'admin-config.js should build ops alert workspace data attrs through the shared workbench runtime'
+        'admin-config.js should build ops alert workspace data attrs through dedicated local resolvers before rendering'
+    );
+    assert.equal(
+        adminConfigSource.includes('function buildLocalOpsAlertCaseComposerViewState('),
+        true,
+        'admin-config.js should derive ops alert case composer state through a dedicated local view-state builder'
+    );
+    assert.equal(
+        adminConfigSource.includes('function applyOpsAlertBatchMuteModalViewState('),
+        true,
+        'admin-config.js should apply ops alert batch mute modal state through a dedicated DOM applier'
     );
     assert.equal(
         adminConfigSource.includes('window.getAdminWorkbenchOpsAlertCaseSummaryText(item, {'),
@@ -3362,14 +3521,39 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'admin-config.js should wrap shared ops alert config draft collection behind a local resolver'
     );
     assert.equal(
-        adminConfigSource.includes('window.collectAdminWorkbenchOpsAlertUnifiedSummaryDraft({}, {'),
+        adminConfigSource.includes('window.collectAdminWorkbenchOpsAlertUnifiedSummaryDraft(currentDraft, {'),
         true,
         'admin-config.js should collect unified ops alert summary drafts through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertUnifiedSummaryConsensus(config, {'),
+        true,
+        'admin-config.js should derive unified ops alert summary consensus through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertUnifiedSummaryDraftControlState(draft, {'),
+        true,
+        'admin-config.js should derive unified ops alert summary control state through the shared workbench runtime'
     );
     assert.equal(
         adminConfigSource.includes('function resolveOpsAlertUnifiedSummaryDraft() {'),
         true,
         'admin-config.js should wrap unified ops alert summary draft collection behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertUnifiedSummaryDraftConsensus(config = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\']), selectedDefinitions = getOpsAlertSummaryOrchestrationSelectedDefinitions()) {'),
+        true,
+        'admin-config.js should wrap unified ops alert summary consensus behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes("function requireOpsAlertWorkbenchMethod(methodName = '') {"),
+        true,
+        'admin-config.js should expose a local shared-runtime method resolver for ops alert workbench helpers'
+    );
+    assert.equal(
+        adminConfigSource.includes("requireOpsAlertWorkbenchMethod('collectAdminWorkbenchOpsAlertUnifiedSummaryDraft')"),
+        true,
+        'admin-config.js should resolve unified summary drafts through the shared workbench method resolver'
     );
     assert.equal(
         adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertSummaryModeControlState(monitorConfig, {'),
@@ -3382,9 +3566,34 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'admin-config.js should wrap summary mode control state behind a local resolver'
     );
     assert.equal(
+        adminConfigSource.includes("requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertSummaryModeHintText')"),
+        true,
+        'admin-config.js should resolve summary mode hint text through the shared workbench method resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes("requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertSummaryModeControlState')"),
+        true,
+        'admin-config.js should resolve summary mode control state through the shared workbench method resolver'
+    );
+    assert.equal(
         adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertSummaryModeHintText'),
         true,
         'admin-config.js should reuse the shared summary mode hint helper'
+    );
+    assert.equal(
+        adminConfigSource.includes("requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertUnifiedSummaryDraftControlState')"),
+        true,
+        'admin-config.js should derive unified summary draft control state through the shared workbench method resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes("requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertUnifiedSummaryDraftControlState')"),
+        true,
+        'admin-config.js should reuse the shared workbench builder for unified summary draft controls'
+    );
+    assert.equal(
+        adminConfigSource.includes("requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertSummaryOrchestrationRenderState')"),
+        true,
+        'admin-config.js should resolve unified summary orchestration render state through the shared workbench method resolver'
     );
     assert.equal(
         adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorControlState(monitorConfig'),
@@ -3395,6 +3604,11 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         adminConfigSource.includes('function resolveOpsAlertMonitorControlState(monitorConfig = {}, sharedOptions = {}) {'),
         true,
         'admin-config.js should wrap monitor control state behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorControlStateBuilder() {'),
+        true,
+        'admin-config.js should expose a local shared-runtime builder resolver for monitor control state'
     );
     assert.equal(
         adminConfigSource.includes('function buildLocalOpsAlertMonitorControlState(monitorConfig = {}, sharedOptions = {}) {'),
@@ -3412,6 +3626,11 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'admin-config.js should wrap shop risk control state behind a local resolver'
     );
     assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertShopRiskControlStateBuilder() {'),
+        true,
+        'admin-config.js should expose a local shared-runtime builder resolver for shop risk controls'
+    );
+    assert.equal(
         adminConfigSource.includes('function buildLocalOpsAlertShopRiskControlState(shopRiskConfig = {}) {'),
         true,
         'admin-config.js should keep a local shop risk control state builder as the non-shared fallback'
@@ -3422,12 +3641,22 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'admin-config.js should collect ops alert operational threshold drafts through the shared workbench runtime'
     );
     assert.equal(
+        adminConfigSource.includes('function buildLocalOpsAlertStrategyDraft(currentConfig = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\'])) {'),
+        true,
+        'admin-config.js should keep a local strategy draft builder as the non-shared fallback'
+    );
+    assert.equal(
         adminConfigSource.includes('function resolveOpsAlertOperationalThresholdDrafts(currentConfig = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\'])) {'),
         true,
         'admin-config.js should wrap operational threshold draft collection behind a local resolver'
     );
     assert.equal(
-        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertStrategySummaryState(normalizedConfig, {'),
+        adminConfigSource.includes('function buildLocalOpsAlertOperationalThresholdDrafts(currentConfig = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\'])) {'),
+        true,
+        'admin-config.js should keep a local operational threshold draft builder as the non-shared fallback'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertStrategySummaryState(config, {'),
         true,
         'admin-config.js should derive ops alert strategy summary state through the shared workbench runtime'
     );
@@ -3435,6 +3664,11 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         adminConfigSource.includes('function fetchOpsAlertSettingsPayload(headers = {}) {'),
         true,
         'admin-config.js should centralize ops alert settings fetches behind a local resolver helper'
+    );
+    assert.equal(
+        adminConfigSource.includes("requireOpsAlertWorkbenchMethod('fetchAdminWorkbenchOpsAlertSettings')(headers, {"),
+        true,
+        'admin-config.js should delegate ops alert settings fetches to the shared workbench runtime'
     );
     assert.equal(
         adminConfigSource.includes('function resolveOpsAlertSettingsPayload(payload = {}) {'),
@@ -3457,6 +3691,11 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'admin-config.js should wrap ops alert settings request body building behind a local resolver'
     );
     assert.equal(
+        adminConfigSource.includes('function buildLocalOpsAlertStrategyControlState(normalizedConfig = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\'])) {'),
+        true,
+        'admin-config.js should keep a local strategy control state builder as the non-shared fallback'
+    );
+    assert.equal(
         adminConfigSource.includes('async function submitOpsAlertSettingsPayload(headers = {}, body = {}, options = {}) {'),
         true,
         'admin-config.js should centralize ops alert settings writes behind a local submit helper'
@@ -3465,6 +3704,11 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         adminConfigSource.includes('function resolveOpsAlertDispatchConfigValidation(config = {}, secretStatus = {}, secrets = {}) {'),
         true,
         'admin-config.js should wrap ops alert dispatch validation behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function buildLocalOpsAlertDispatchConfigValidation(config = {}, secretStatus = {}, secrets = {}) {'),
+        true,
+        'admin-config.js should keep a local dispatch validation builder as the non-shared fallback'
     );
     assert.equal(
         adminConfigSource.includes('async function submitOpsAlertSecretDeletion(headers = {}, secretName = \'\', options = {}) {'),
@@ -3477,6 +3721,11 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'admin-config.js should centralize ops alert health fetches behind a local resolver helper'
     );
     assert.equal(
+        adminConfigSource.includes("requireOpsAlertWorkbenchMethod('fetchAdminWorkbenchOpsAlertHealth')(headers, {"),
+        true,
+        'admin-config.js should delegate ops alert health fetches to the shared workbench runtime'
+    );
+    assert.equal(
         adminConfigSource.includes('function resolveOpsAlertHealthPayload(payload = {}) {'),
         true,
         'admin-config.js should centralize ops alert health payload normalization behind a local resolver helper'
@@ -3485,6 +3734,11 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         adminConfigSource.includes('function fetchOpsAlertMonitorPayload(headers = {}) {'),
         true,
         'admin-config.js should centralize ops alert monitor fetches behind a local resolver helper'
+    );
+    assert.equal(
+        adminConfigSource.includes("requireOpsAlertWorkbenchMethod('fetchAdminWorkbenchOpsAlertMonitor')(headers, {"),
+        true,
+        'admin-config.js should delegate ops alert monitor fetches to the shared workbench runtime'
     );
     assert.equal(
         adminConfigSource.includes('function resolveOpsAlertMonitorPayload(payload = {}) {'),
@@ -3510,6 +3764,16 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         adminConfigSource.includes('function resolveOpsAlertMonitorContextAttrs(category = {}, item = {}) {'),
         true,
         'admin-config.js should wrap monitor workspace context attrs behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorActionContext(category = {}, item = {}) {'),
+        true,
+        'admin-config.js should wrap monitor action context behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertWorkspaceContextAttrs(context = {}) {'),
+        true,
+        'admin-config.js should wrap workspace context attr derivation behind a local resolver'
     );
     assert.equal(
         adminConfigSource.includes('function resolveOpsAlertCaseRecentEventText(event = {}) {'),
@@ -3637,12 +3901,12 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'admin-config.js should keep a local strategy summary state builder as the non-shared fallback'
     );
     assert.equal(
-        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertOverviewStatus(normalizedConfig, opsAlertSecretStatus, {'),
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertOverviewStatus(config, opsAlertSecretStatus, {'),
         true,
         'admin-config.js should derive ops alert overview status through the shared workbench runtime'
     );
     assert.equal(
-        adminConfigSource.includes('return window.buildAdminWorkbenchOpsAlertOverviewRenderState(overviewStatus, healthState, {'),
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertOverviewRenderState(overviewStatus, healthState, {'),
         true,
         'admin-config.js should derive aggregated ops alert overview render state through the shared workbench runtime'
     );
@@ -3682,7 +3946,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'admin-config.js should derive shop risk spotlight render state through the shared workbench runtime'
     );
     assert.equal(
-        adminConfigSource.includes('return window.buildAdminWorkbenchOpsAlertRiskSpotlightShellState(status, {'),
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertRiskSpotlightShellState(status, {'),
         true,
         'admin-config.js should derive shop risk spotlight shell state through the shared workbench runtime'
     );
@@ -3692,12 +3956,12 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'admin-config.js should no longer call the lower-level overview recent visual helper directly once aggregate render state is available'
     );
     assert.equal(
-        adminConfigSource.includes('return window.buildAdminWorkbenchOpsAlertHealthRenderState(state, {'),
+        adminConfigSource.includes("requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertHealthRenderState')(state, {"),
         true,
         'admin-config.js should derive aggregated ops alert health render state through the shared workbench runtime'
     );
     assert.equal(
-        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertHealthCardState(channel, {'),
+        adminConfigSource.includes("requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertHealthCardState')(channel, {"),
         false,
         'admin-config.js should no longer call the lower-level health card state helper directly once aggregate render state is available'
     );
@@ -3707,34 +3971,34 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'admin-config.js should no longer call the lower-level health panel state helper directly once aggregate render state is available'
     );
     assert.equal(
-        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertStrategyControlState(normalizedConfig, {'),
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertStrategyControlState(config, {'),
         true,
         'admin-config.js should derive ops alert strategy control state through the shared workbench runtime'
     );
     assert.equal(
-        adminConfigSource.includes('operationalThresholdDrafts?.shop_order_risk'),
+        adminConfigSource.includes('nextConfig.shop_order_risk = operationalThresholdDrafts.shop_order_risk;'),
         true,
-        'admin-config.js should apply shared shop risk threshold drafts before falling back to inline collection'
+        'admin-config.js should apply resolved shop risk threshold drafts directly once the local operational threshold builder is available'
     );
     assert.equal(
-        adminConfigSource.includes('operationalThresholdDrafts?.customer_chat_message'),
+        adminConfigSource.includes('...operationalThresholdDrafts.customer_chat_message,'),
         true,
-        'admin-config.js should apply shared customer chat threshold drafts before falling back to inline collection'
+        'admin-config.js should apply resolved customer chat threshold drafts directly once the local operational threshold builder is available'
     );
     assert.equal(
-        adminConfigSource.includes('operationalThresholdDrafts?.shop_purchase_success'),
+        adminConfigSource.includes('nextConfig.shop_purchase_success = operationalThresholdDrafts.shop_purchase_success;'),
         true,
-        'admin-config.js should apply shared shop purchase threshold drafts before falling back to inline collection'
+        'admin-config.js should apply resolved shop purchase threshold drafts directly once the local operational threshold builder is available'
     );
     assert.equal(
-        adminConfigSource.includes('operationalThresholdDrafts?.wallet_recharge_success'),
+        adminConfigSource.includes('nextConfig.wallet_recharge_success = operationalThresholdDrafts.wallet_recharge_success;'),
         true,
-        'admin-config.js should apply shared wallet recharge threshold drafts before falling back to inline collection'
+        'admin-config.js should apply resolved wallet recharge threshold drafts directly once the local operational threshold builder is available'
     );
     assert.equal(
-        adminConfigSource.includes('operationalThresholdDrafts?.shop_order_delivery'),
+        adminConfigSource.includes('nextConfig.shop_order_delivery = operationalThresholdDrafts.shop_order_delivery;'),
         true,
-        'admin-config.js should apply shared delivery threshold drafts before falling back to inline collection'
+        'admin-config.js should apply resolved delivery threshold drafts directly once the local operational threshold builder is available'
     );
     assert.equal(
         adminConfigSource.includes('window.validateAdminWorkbenchOpsAlertDispatchConfig(config, secretStatus, secrets)'),
@@ -3772,7 +4036,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'admin-config.js should derive shift trend state through the shared workbench runtime'
     );
     assert.equal(
-        adminConfigSource.includes('return window.buildAdminWorkbenchOpsAlertMonitorShiftShellState(status, {'),
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorShiftShellState(status, {'),
         true,
         'admin-config.js should derive shift shell state through the shared workbench runtime'
     );
@@ -3907,7 +4171,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'admin-config.js should no longer call the lower-level monitor item display state helper directly once category render state is available'
     );
     assert.equal(
-        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorBatchActionStates(categories, filters, {'),
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorBatchActionStates(normalizedCategories, filters, {'),
         true,
         'admin-config.js should derive monitor batch action state through the shared workbench runtime'
     );
@@ -3940,6 +4204,16 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorActionContext(category, item)'),
         true,
         'admin-config.js should build monitor action context through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertWorkspaceContextAttrs(context)'),
+        true,
+        'admin-config.js should derive workspace context attrs through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertSummaryOrchestrationRenderState(config, {'),
+        true,
+        'admin-config.js should derive summary orchestration render state through the shared workbench runtime'
     );
     assert.equal(
         adminConfigSource.includes('window.fetchAdminWorkbenchOpsAlertMonitor(headers, {'),
@@ -3988,44 +4262,63 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'function applyOpsAlertShopPurchaseSuccessControls(config = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\']))',
         'function applyOpsAlertWalletRechargeSuccessControls(config = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\']))',
         'function applyOpsAlertTicketsControls(config = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\']))',
+        "requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertSummaryOrchestrationRenderState')",
+        'function resolveOpsAlertSummaryOrchestrationRenderState(config = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\']), selectedDefinitions = getOpsAlertSummaryOrchestrationSelectedDefinitions()) {',
+        'function buildOpsAlertSummaryOrchestrationMarkupState(config = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\'])) {',
+        'function applyOpsAlertSummaryOrchestrationMarkupState(markupState = {}) {',
+        'function applyAdminConfigFieldValue(field = {}) {',
+        'function applyAdminConfigFieldValues(fields = []) {',
+        'function getOpsAlertMinutesFieldValue(value) {',
+        'function buildOpsAlertSettingsFieldGroups(config = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\'])) {',
+        'function applyOpsAlertSettingsFieldGroups(fieldGroups = []) {',
+        'function buildLocalOpsAlertChannelOverviewState(config = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\']), overviewStatus = getOpsAlertOverviewStatus(config)) {',
+        'function applyOpsAlertChannelOverviewState(channelOverviewState = {}) {',
+        'function applyOpsAlertSectionControlAppliers(config = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\'])) {',
+        'function applyOpsAlertBodyMarkupState(markupState = {}, target = null, fallbackBody = \'\') {',
+        'function applyOpsAlertPanelMarkupElements(markupState = {}, elements = {}, options = {}) {',
         'function renderOpsAlertSummaryOrchestration(config = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\']))',
         'function applyOpsAlertUnifiedSummaryDraft()',
         'function getOpsAlertOverviewStatus(config)',
         'function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\']))',
+        'function buildLocalOpsAlertOverviewMarkupState(config = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\'])) {',
+        'function resolveOpsAlertOverviewMarkupState(config = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\'])) {',
+        'function applyOpsAlertOverviewMarkupState(applyState = {}) {',
+        'function renderOpsAlertOverview(config = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\'])) {',
+        'function renderOpsAlertBodyMarkupTarget(targetId, resolveMarkupState) {',
+        'function renderOpsAlertPanelMarkupTarget(options = {}) {',
         'function collectOpsAlertConfigFromForm()',
         "fetch('/api/admin/settings/ops-alerts'",
-        'window.toggleOpsAlertCustomerChatMessageEnabled = toggleOpsAlertCustomerChatMessageEnabled;',
-        'window.toggleOpsAlertShopPurchaseSuccessEnabled = toggleOpsAlertShopPurchaseSuccessEnabled;',
-        'window.toggleOpsAlertWalletRechargeSuccessEnabled = toggleOpsAlertWalletRechargeSuccessEnabled;',
-        'window.toggleOpsAlertTicketsEnabled = toggleOpsAlertTicketsEnabled;',
-        'window.toggleOpsAlertTicketsSummaryEnabled = toggleOpsAlertTicketsSummaryEnabled;',
-        'window.toggleOpsAlertTicketsWorkHoursOnlyEnabled = toggleOpsAlertTicketsWorkHoursOnlyEnabled;',
-        'window.handleOpsAlertTicketsSummaryScheduleModeChange = handleOpsAlertTicketsSummaryScheduleModeChange;',
-        'window.selectOpsAlertUnifiedSummaryTargets = selectOpsAlertUnifiedSummaryTargets;',
-        'window.applyOpsAlertUnifiedSummaryDraft = applyOpsAlertUnifiedSummaryDraft;',
-        'window.sendOpsAlertCustomerChatMessageSample = sendOpsAlertCustomerChatMessageSample;',
-        'window.sendOpsAlertShopPurchaseSucceededSample = sendOpsAlertShopPurchaseSucceededSample;',
-        'window.sendOpsAlertWalletRechargeSucceededSample = sendOpsAlertWalletRechargeSucceededSample;',
-        'window.sendOpsAlertGatewayRecoveredSample = sendOpsAlertGatewayRecoveredSample;',
-        'window.sendOpsAlertVerifyFailureRateSpikeSample = sendOpsAlertVerifyFailureRateSpikeSample;',
-        'window.sendOpsAlertVerifyIncidentEscalatedSample = sendOpsAlertVerifyIncidentEscalatedSample;',
-        'window.sendOpsAlertVerifyIncidentRecoveredSample = sendOpsAlertVerifyIncidentRecoveredSample;',
-        'window.sendOpsAlertVerifyQueueBacklogSample = sendOpsAlertVerifyQueueBacklogSample;',
-        'window.sendOpsAlertVerifyServiceDisabledSample = sendOpsAlertVerifyServiceDisabledSample;',
-        'window.sendOpsAlertTicketSlaRecoveredSample = sendOpsAlertTicketSlaRecoveredSample;',
-        'window.sendOpsAlertShopInventoryRecoveredSample = sendOpsAlertShopInventoryRecoveredSample;',
-        'window.sendOpsAlertShopOrderDeliveryIncidentSample = sendOpsAlertShopOrderDeliveryIncidentSample;',
-        'window.sendOpsAlertShopOrderDeliveryIncidentRecoveredSample = sendOpsAlertShopOrderDeliveryIncidentRecoveredSample;',
-        'window.sendOpsAlertShopOrderDeliveryRecoveredSample = sendOpsAlertShopOrderDeliveryRecoveredSample;',
-        'window.sendOpsAlertPaymentConfigChangedSample = sendOpsAlertPaymentConfigChangedSample;',
-        'window.sendOpsAlertPaymentConfigIncidentSample = sendOpsAlertPaymentConfigIncidentSample;',
-        'window.sendOpsAlertPaymentConfigIncidentRecoveredSample = sendOpsAlertPaymentConfigIncidentRecoveredSample;',
-        'window.sendOpsAlertPaymentConfigRecoveredSample = sendOpsAlertPaymentConfigRecoveredSample;',
-        "fetch('/api/admin/settings/ops-alert-health'",
+        'toggleOpsAlertCustomerChatMessageEnabled,',
+        'toggleOpsAlertShopPurchaseSuccessEnabled,',
+        'toggleOpsAlertWalletRechargeSuccessEnabled,',
+        'toggleOpsAlertTicketsEnabled,',
+        'toggleOpsAlertTicketsSummaryEnabled,',
+        'toggleOpsAlertTicketsWorkHoursOnlyEnabled,',
+        'handleOpsAlertTicketsSummaryScheduleModeChange,',
+        'selectOpsAlertUnifiedSummaryTargets,',
+        'applyOpsAlertUnifiedSummaryDraft,',
+        'sendOpsAlertCustomerChatMessageSample,',
+        'sendOpsAlertShopPurchaseSucceededSample,',
+        'sendOpsAlertWalletRechargeSucceededSample,',
+        'sendOpsAlertGatewayRecoveredSample,',
+        'sendOpsAlertVerifyFailureRateSpikeSample,',
+        'sendOpsAlertVerifyIncidentEscalatedSample,',
+        'sendOpsAlertVerifyIncidentRecoveredSample,',
+        'sendOpsAlertVerifyQueueBacklogSample,',
+        'sendOpsAlertVerifyServiceDisabledSample,',
+        'sendOpsAlertTicketSlaRecoveredSample,',
+        'sendOpsAlertShopInventoryRecoveredSample,',
+        'sendOpsAlertShopOrderDeliveryIncidentSample,',
+        'sendOpsAlertShopOrderDeliveryIncidentRecoveredSample,',
+        'sendOpsAlertShopOrderDeliveryRecoveredSample,',
+        'sendOpsAlertPaymentConfigChangedSample,',
+        'sendOpsAlertPaymentConfigIncidentSample,',
+        'sendOpsAlertPaymentConfigIncidentRecoveredSample,',
+        'sendOpsAlertPaymentConfigRecoveredSample,',
+        "requireOpsAlertWorkbenchMethod('fetchAdminWorkbenchOpsAlertHealth')",
         'function getDefaultOpsAlertHealthState()',
         'function renderOpsAlertHealthPanel()',
-        'function buildOpsAlertHealthCardMarkup(channel = {})',
-        'function buildLocalOpsAlertHealthCardState(channel = {})',
+        'function buildOpsAlertHealthCardMarkupFromState(resolvedCardState = {}) {',
         'function resolveOpsAlertHealthRenderState(state = {})',
         'function buildLocalOpsAlertOverviewBannerState(overviewStatus = {}, healthState = opsAlertHealthState || getDefaultOpsAlertHealthState())',
         'function resolveOpsAlertOverviewBannerState(overviewStatus = {}, healthState = opsAlertHealthState || getDefaultOpsAlertHealthState())',
@@ -4033,14 +4326,22 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'function resolveOpsAlertOverviewCardStates(overviewStatus = {}, healthState = opsAlertHealthState || getDefaultOpsAlertHealthState())',
         'function buildLocalOpsAlertOverviewRecentVisualState(summary = {}, status = \'idle\')',
         'function resolveOpsAlertOverviewRecentVisualState(summary = {}, status = \'idle\')',
-        'function buildLocalOpsAlertHealthCardStates(state = {})',
+        'function buildOpsAlertOverviewBannerMarkupFromState(sharedBannerState = {}, healthState = opsAlertHealthState || getDefaultOpsAlertHealthState()) {',
+        'function applyOpsAlertOverviewBannerMarkupState(markupState = {}, summaryEl = null) {',
+        'function buildLocalOpsAlertOverviewRecentVisualsMarkupState(sharedVisualState = {}) {',
+        'function applyOpsAlertOverviewRecentVisualsMarkupState(markupState = {}, elements = {}) {',
+        'function buildLocalOpsAlertOverviewCardsApplyState(markupState = {}) {',
+        'function applyOpsAlertOverviewCardsMarkupState(applyState = {}) {',
         'function resolveOpsAlertHealthCardStates(state = {})',
-        'function buildLocalOpsAlertHealthPanelState(state = {})',
         'function resolveOpsAlertHealthPanelState(state = {})',
+        'function buildOpsAlertPanelMetaMarkup(panelState = {}, fallbackText = \'\') {',
+        'function buildOpsAlertPanelEmptyMarkup(message = \'\', className = \'ops-alert-monitor-empty\') {',
+        'function buildLocalOpsAlertHealthPanelMarkupState(state = opsAlertHealthState || getDefaultOpsAlertHealthState()) {',
+        'function applyOpsAlertHealthPanelMarkupState(markupState = {}, elements = {}) {',
         'async function loadOpsAlertHealth(force = false)',
-        'window.loadOpsAlertHealth = loadOpsAlertHealth;',
-        'window.refreshOpsAlertHealthPanel = refreshOpsAlertHealthPanel;',
-        "fetch('/api/admin/settings/ops-alert-monitor'",
+        'loadOpsAlertHealth,',
+        'refreshOpsAlertHealthPanel,',
+        "requireOpsAlertWorkbenchMethod('fetchAdminWorkbenchOpsAlertMonitor')",
         'const OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS = 8000;',
         'const VERIFY_MONITOR_FETCH_TIMEOUT_MS = 8000;',
         'function getDefaultOpsAlertMonitorState()',
@@ -4086,6 +4387,9 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'function buildOpsAlertRiskSpotlightMarkupFromState(resolvedState = {}, options = {})',
         'function buildOpsAlertRiskSpotlightShellMarkup(shellState = {})',
         'function buildOpsAlertRiskSpotlightMarkup(category = null, filters = getOpsAlertMonitorViewFilters())',
+        'function buildLocalOpsAlertRiskSpotlightMarkupState(state = opsAlertMonitorState || getDefaultOpsAlertMonitorState(), filters = getOpsAlertMonitorViewFilters()) {',
+        'function resolveOpsAlertRiskSpotlightMarkupState(state = opsAlertMonitorState || getDefaultOpsAlertMonitorState(), filters = getOpsAlertMonitorViewFilters()) {',
+        'function applyOpsAlertRiskSpotlightMarkupState(markupState = {}, target = null) {',
         'function renderOpsAlertRiskSpotlight(filters = getOpsAlertMonitorViewFilters())',
         'function buildOpsAlertMonitorShiftReportMarkup(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = \'\')',
         "actionName: 'settings-copy-ops-alert-shift-report'",
@@ -4094,29 +4398,82 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'function buildOpsAlertMonitorShiftReportSummaryText(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = \'\')',
         'function buildOpsAlertMonitorShiftReportCsvRows(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = \'\')',
         'function setOpsAlertMonitorShiftReportView(value = \'all\') {',
+        'function buildLocalOpsAlertMonitorShiftReportMarkupState(state = opsAlertMonitorState || getDefaultOpsAlertMonitorState()) {',
+        'function resolveOpsAlertMonitorShiftReportMarkupState(state = opsAlertMonitorState || getDefaultOpsAlertMonitorState()) {',
+        'function applyOpsAlertMonitorShiftReportMarkupState(markupState = {}, target = null) {',
         'function renderOpsAlertMonitorShiftReport()',
         'function buildLocalOpsAlertMonitorPanelState(state = {}, filters = getOpsAlertMonitorViewFilters(), categories = [])',
         'function resolveOpsAlertMonitorPanelState(state = {}, filters = getOpsAlertMonitorViewFilters(), categories = [])',
+        'function buildLocalOpsAlertMonitorPanelMarkupState(state = {}, filters = getOpsAlertMonitorViewFilters(), categories = [], viewState = null) {',
+        'function resolveOpsAlertMonitorPanelMarkupState(state = {}, filters = getOpsAlertMonitorViewFilters(), categories = [], viewState = null) {',
+        'function applyOpsAlertMonitorPanelMarkupState(markupState = {}, elements = {}) {',
         'function buildLocalOpsAlertMonitorCategoryRenderState(category = {}, filters = getOpsAlertMonitorViewFilters())',
         'function resolveOpsAlertMonitorCategoryRenderState(category = {}, filters = getOpsAlertMonitorViewFilters())',
+        'function resolveOpsAlertMonitorCategoryActionsResolver() {',
+        'function resolveOpsAlertMonitorAssignableAdminsNormalizer() {',
+        'function resolveOpsAlertCaseRecentEventsNormalizer() {',
+        'function resolveOpsAlertCaseRecentEventTextFormatter() {',
+        'function resolveOpsAlertCaseSummaryTextFormatter() {',
+        'function resolveOpsAlertMonitorWorkspaceActionResolver() {',
+        'function resolveOpsAlertMonitorQuickActionResolver() {',
+        'function resolveOpsAlertMonitorCaseActionsResolver() {',
+        'function resolveOpsAlertMonitorActionContextBuilder() {',
+        'function resolveOpsAlertWorkspaceContextAttrsBuilder() {',
+        'function resolveOpsAlertMonitorCategoryViewBuilder() {',
+        'function resolveOpsAlertMonitorFilterSummaryLabelBuilder() {',
+        'function resolveOpsAlertMonitorRecoveryRowBuilder() {',
+        'function resolveOpsAlertMonitorBatchRowsBuilder() {',
         'function buildLocalOpsAlertMonitorFilterToolbarState(filters = getOpsAlertMonitorViewFilters())',
         'function resolveOpsAlertMonitorFilterToolbarState(filters = getOpsAlertMonitorViewFilters())',
-        'function buildLocalOpsAlertMonitorBatchActionStates(filters = getOpsAlertMonitorViewFilters())',
+        "requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertMonitorBatchActionStates')",
+        'function resolveOpsAlertMonitorBatchActionStatesFromCategories(categories = [], filters = getOpsAlertMonitorViewFilters()) {',
         'function resolveOpsAlertMonitorBatchActionStates(filters = getOpsAlertMonitorViewFilters())',
+        "requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertMonitorViewState')",
+        'function resolveOpsAlertMonitorViewState(state = {}, filters = getOpsAlertMonitorViewFilters(), categories = getOpsAlertMonitorPreparedCategories(filters)) {',
         'function getOpsAlertMonitorPreparedCategories(filters = getOpsAlertMonitorViewFilters())',
         'async function copyOpsAlertMonitorChecklist(categoryKey = \'\')',
         'async function copyOpsAlertMonitorShiftReportSummary()',
         'function exportOpsAlertMonitorCsv(categoryKey = \'\')',
         'function exportOpsAlertMonitorShiftReportCsv()',
+        'function resolveOpsAlertSettingsSubmitter(options = {}) {',
+        'function resolveOpsAlertSecretDeletionSubmitter(options = {}) {',
+        "function requireOpsAlertWorkbenchMethod(methodName = '') {",
+        "requireOpsAlertWorkbenchMethod('collectAdminWorkbenchOpsAlertUnifiedSummaryDraft')",
+        "requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertSummaryModeHintText')",
+        "requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertSummaryModeControlState')",
+        "requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertUnifiedSummaryDraftControlState')",
+        "requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertSummaryOrchestrationRenderState')",
+        'function resolveOpsAlertStrategySummaryStateBuilder() {',
+        'function resolveOpsAlertStrategyControlStateBuilder() {',
+        'function resolveOpsAlertShopRiskControlStateBuilder() {',
+        'function resolveOpsAlertMonitorControlStateBuilder() {',
+        'function resolveOpsAlertOverviewRenderStateBuilder() {',
+        "requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertOverviewStatus')",
+        "requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertHealthRenderState')",
+        'function resolveOpsAlertMonitorFilterToolbarStateBuilder() {',
+        'function resolveOpsAlertRiskSpotlightRenderStateBuilder() {',
+        'function resolveOpsAlertRiskSpotlightShellStateBuilder() {',
+        'function resolveOpsAlertMonitorShiftReportViewNormalizer() {',
+        'function resolveOpsAlertMonitorShiftOwnedCategoryItemsBuilder() {',
+        'function resolveOpsAlertMonitorShiftShellStateBuilder() {',
+        'function resolveOpsAlertMonitorShiftRenderStateBuilder() {',
+        'function resolveOpsAlertMonitorShiftViewSwitchStateBuilder() {',
+        'function resolveOpsAlertMonitorShiftTrendStateBuilder() {',
+        'function resolveOpsAlertMonitorShiftReportSummaryTextBuilder() {',
+        'function resolveOpsAlertMonitorShiftReportCsvRowsBuilder() {',
+        'function resolveOpsAlertMonitorPanelStateBuilder() {',
+        'function resolveOpsAlertMonitorCategoryRenderStateBuilder() {',
+        'function resolveOpsAlertCaseMutationItemsBuilder() {',
+        'function resolveOpsAlertMonitorBatchItemsBuilder() {',
         'async function loadOpsAlertMonitor(force = false)',
-        'window.setOpsAlertMonitorFilter = setOpsAlertMonitorFilter;',
-        'window.loadOpsAlertMonitor = loadOpsAlertMonitor;',
-        'window.refreshOpsAlertMonitorPanel = refreshOpsAlertMonitorPanel;',
-        'window.copyOpsAlertMonitorChecklist = copyOpsAlertMonitorChecklist;',
-        'window.exportOpsAlertMonitorCsv = exportOpsAlertMonitorCsv;',
-        'window.setOpsAlertMonitorShiftReportView = setOpsAlertMonitorShiftReportView;',
-        'window.copyOpsAlertMonitorShiftReportSummary = copyOpsAlertMonitorShiftReportSummary;',
-        'window.exportOpsAlertMonitorShiftReportCsv = exportOpsAlertMonitorShiftReportCsv;',
+        'setOpsAlertMonitorFilter,',
+        'loadOpsAlertMonitor,',
+        'refreshOpsAlertMonitorPanel,',
+        'copyOpsAlertMonitorChecklist,',
+        'exportOpsAlertMonitorCsv,',
+        'setOpsAlertMonitorShiftReportView,',
+        'copyOpsAlertMonitorShiftReportSummary,',
+        'exportOpsAlertMonitorShiftReportCsv',
         'window.schedulePendingOpsAlertWorkspaceRestore?.();',
         'data-ops-alert-quick-reply-move="up"',
         'data-ops-alert-quick-reply-role="collapsed-summary"',
@@ -4137,10 +4494,10 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'async function submitShopRiskCaseComposer()',
         "fetch('/api/admin/settings/ops-alert-monitor-cases'",
         'async function handleShopRiskAction(action, context = {})',
-        'window.handleShopRiskAction = handleShopRiskAction;',
-        'window.handleShopRiskCaseAction = handleShopRiskCaseAction;',
-        'window.closeShopRiskCaseComposer = closeShopRiskCaseComposer;',
-        'window.submitShopRiskCaseComposer = submitShopRiskCaseComposer;',
+        'handleShopRiskAction,',
+        'handleShopRiskCaseAction,',
+        'closeShopRiskCaseComposer,',
+        'submitShopRiskCaseComposer,',
         "shop_risk: '商城风控'",
         'shop_order_risk: {',
         'auto_response_enabled: true',
@@ -4152,16 +4509,16 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'subject_prefix: \'[Zaoyoe告警]\'',
         "fetch('/api/admin/settings/verify-monitor/quota'",
         "fetch('/api/admin/settings/verify-monitor/queue'",
-        'window.toggleOpsAlertsEnabled = toggleOpsAlertsEnabled;',
-        'window.toggleOpsAlertTemporaryMuteAllowCritical = toggleOpsAlertTemporaryMuteAllowCritical;',
-        'window.setOpsAlertTemporaryMutePreset = setOpsAlertTemporaryMutePreset;',
-        'window.clearOpsAlertTemporaryMute = clearOpsAlertTemporaryMute;',
-        'window.toggleOpsAlertQuietHoursEnabled = toggleOpsAlertQuietHoursEnabled;',
-        'window.toggleOpsAlertQuietHoursAllowCritical = toggleOpsAlertQuietHoursAllowCritical;',
-        'window.toggleOpsAlertShopRiskAutoResponseEnabled = toggleOpsAlertShopRiskAutoResponseEnabled;',
-        'window.addOpsAlertCustomerChatQuickReplyTemplate = addOpsAlertCustomerChatQuickReplyTemplate;',
-        'window.saveOpsAlertSettings = saveOpsAlertSettings;',
-        'window.deleteOpsAlertSecret = deleteOpsAlertSecret;'
+        'toggleOpsAlertsEnabled,',
+        'toggleOpsAlertTemporaryMuteAllowCritical,',
+        'setOpsAlertTemporaryMutePreset,',
+        'clearOpsAlertTemporaryMute,',
+        'toggleOpsAlertQuietHoursEnabled,',
+        'toggleOpsAlertQuietHoursAllowCritical,',
+        'toggleOpsAlertShopRiskAutoResponseEnabled,',
+        'addOpsAlertCustomerChatQuickReplyTemplate',
+        'saveOpsAlertSettings',
+        'deleteOpsAlertSecret'
     ];
 
     for (const marker of runtimeMarkers) {
@@ -4894,6 +5251,11 @@ test('admin studio centralizes module permissions and gates sidebar modules thro
     );
     assert.match(
         bootstrapSource,
+        /function scheduleAdminChatPrewarm\(\)/,
+        'admin-studio-bootstrap.js should prewarm the admin chat module after access resolves'
+    );
+    assert.match(
+        bootstrapSource,
         /adminModuleAccessNotice/,
         'admin-studio-bootstrap.js should render a dedicated empty state when no module permissions are assigned'
     );
@@ -5619,7 +5981,7 @@ test('homepage admin runtime renderers externalize retry, visibility, tab indica
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-homepage.js?v=20260331_HOMEPAGE_DUAL_SITE_ADMIN_1'),
+        adminStudioSource.includes('admin-homepage.js?v=20260402_ADMIN_API_AUTH_1'),
         true,
         'admin-studio.html should load the latest homepage admin script version'
     );
@@ -6359,8 +6721,8 @@ test('shop admin order workflows externalize runtime table-row and modal styling
         assert.equal(shopStyles.includes(marker), true, `css/admin-studio-page.css should contain ${marker}`);
     }
 
-    assert.equal(adminStudioSource.includes('js/admin-shop.js?v=20260331_SHOP_LOADING_SKELETONS_1'), true, 'admin-studio.html should load the cache-busted shop admin script');
-    assert.equal(adminStudioSource.includes('admin-config.js?v=20260401_ADMIN_WORKBENCH_SHARED_61'), true, 'admin-studio.html should load the cache-busted admin config script');
+    assert.equal(adminStudioSource.includes('js/admin-shop.js?v=20260402_ADMIN_SHOP_WORKBENCH_3'), true, 'admin-studio.html should load the cache-busted shop admin script');
+    assert.equal(adminStudioSource.includes('admin-config.js?v=20260402_ADMIN_CONFIG_ACCESS_101'), true, 'admin-studio.html should load the cache-busted admin config script');
     assert.equal(adminWorkbenchSource.includes('window.ShopAdmin?.focusOrder'), true, 'js/admin-workbench.js should directly focus shop order workspaces when an order id is available');
 });
 
@@ -7411,8 +7773,8 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
     }
 
     const htmlMarkers = [
-        'css/admin-chat.css?v=20260331_ADMIN_CHAT_LOADING_SKELETON_1',
-        'js/admin-chat.js?v=20260401_ADMIN_CHAT_CASE_PROTOCOL_7'
+        'css/admin-chat.css?v=20260402_ADMIN_CHAT_INPUT_UI_13',
+        'js/admin-chat.js?v=20260402_ADMIN_CHAT_INPUT_UI_13'
     ];
 
     for (const marker of htmlMarkers) {
@@ -7487,11 +7849,14 @@ test('section visibility runtime externalizes element hiding and blocked overlay
 }
 
 test('ops alert health runtime renders per-channel configuration detail cards for email delivery', () => {
-    const source = readRepoFile('admin-config.js');
-    assert.match(source, /ops-alert-health-card__config/);
-    assert.match(source, /发件地址/);
-    assert.match(source, /主题前缀/);
-    assert.match(source, /recipient_preview/);
+    const configSource = readRepoFile('admin-config.js');
+    const workbenchSource = readRepoFile('js/admin-workbench.js');
+    assert.match(workbenchSource, /buildAdminWorkbenchOpsAlertHealthCardState/);
+    assert.match(configSource, /ops-alert-health-card__config/);
+    assert.match(configSource, /buildOpsAlertHealthCardMarkupFromState/);
+    assert.match(workbenchSource, /发件地址/);
+    assert.match(workbenchSource, /主题前缀/);
+    assert.match(workbenchSource, /recipient_preview/);
 
     const html = readRepoFile('admin-studio.html');
     assert.match(html, /admin-studio\.css\?v=[A-Za-z0-9_]+/);
