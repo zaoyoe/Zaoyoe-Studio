@@ -7467,13 +7467,13 @@ async function loadPromptCommentsData(promptId, forceRefresh = false) {
                 .from('prompt_comments')
                 .select(`*, is_pinned, is_featured, profiles:user_id (id, username, avatar_url)`)
                 .eq('prompt_id', promptId)
-                .eq('site', site)
-                .order('is_pinned', { ascending: false })
-                .order('created_at', { ascending: true }),
+            .eq('site', site)
+            .order('is_pinned', { ascending: false })
+            .order('created_at', { ascending: true }),
             window.supabaseClient
-                .from('comment_likes')
-                .select('comment_id, user_id')
-                .eq('site', site)
+            .from('comment_likes')
+            .select('comment_id, user_id')
+            .eq('site', site)
         ]);
 
         if (!currentUserId && userResult.data?.user) {
@@ -7532,10 +7532,12 @@ async function loadPromptCommentsData(promptId, forceRefresh = false) {
             return commentCache.get(cacheKey) || null;
         }
 
-        commentCache.set(cacheKey, payload);
+        commentCache.set(cacheKey, {
+            ...payload
+        });
         setCachedPromptCommentCount(promptId, data.length, site);
         promptCommentCountLoadedAt.set(site, Date.now());
-        return payload;
+        return commentCache.get(cacheKey);
     })().finally(() => {
         if (commentRequestCache.get(cacheKey) === request) {
             commentRequestCache.delete(cacheKey);
@@ -8311,6 +8313,7 @@ async function submitComment() {
     }
 
     // Invalidate cache
+    commentCache.delete(getPromptCommentCacheKey(currentPromptId, site));
     invalidatePromptCommentsCache(currentPromptId, site);
 }
 
