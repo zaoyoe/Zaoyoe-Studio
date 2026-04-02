@@ -106,6 +106,57 @@ function initGuestbookPage() {
         messageContainer.innerHTML = `<div class="guestbook-loading-state">${window.i18n?.t('common.loading') || '加载中...'}</div>`;
     }
 
+    const SUPABASE_BOOT_TIMEOUT_MS = 4500;
+    const supabaseWaitStartedAt = Date.now();
+    let bootErrorRendered = false;
+
+    function buildSupabaseBootErrorMessage() {
+        const initState = window.__ZAOYOE_SUPABASE_CLIENT_STATE__ || null;
+        const runtimeConfig = typeof window.getZaoyoeSupabaseConfig === 'function'
+            ? window.getZaoyoeSupabaseConfig()
+            : null;
+        const isStaticPreview = window.location.protocol === 'file:';
+
+        if (initState?.reason === 'runtime_config_missing' || initState?.reason === 'runtime_config_unavailable') {
+            if (isStaticPreview) {
+                return '当前是静态预览模式，缺少 Supabase 运行时配置，请改用 npm run preview:local 打开留言页。';
+            }
+            return '缺少 Supabase 运行时配置，请通过 npm run preview:local 或已部署环境打开此页。';
+        }
+
+        if (initState?.reason === 'sdk_missing') {
+            return 'Supabase SDK 加载失败，请检查网络或 CDN 是否可访问。';
+        }
+
+        if (window.supabaseClient && typeof loadGuestbookMessages !== 'function') {
+            return '留言脚本未完成初始化，请刷新后重试。';
+        }
+
+        if (!runtimeConfig) {
+            return '缺少 Supabase 运行时配置，请通过 npm run preview:local 或已部署环境打开此页。';
+        }
+
+        if (initState?.message) {
+            return `留言初始化失败：${initState.message}`;
+        }
+
+        return '留言初始化超时，请刷新后重试。';
+    }
+
+    function renderGuestbookBootError(message) {
+        if (bootErrorRendered || !messageContainer) return;
+        bootErrorRendered = true;
+
+        const skeletonContainer = document.getElementById('skeletonContainer');
+        if (skeletonContainer) {
+            skeletonContainer.classList.add('hidden');
+        }
+
+        setElementHidden(emptyState, true);
+        messageContainer.innerHTML = `<p class="guestbook-message-error">${escapeHtml(message)}</p>`;
+        messageContainer.classList.add('guestbook-message-container-ready');
+    }
+
     // Wait for Supabase to be ready, then load messages
     function waitForSupabase() {
         if (typeof window.supabaseClient !== 'undefined' && typeof loadGuestbookMessages === 'function') {
@@ -115,6 +166,16 @@ function initGuestbookPage() {
             console.log('🔌 首屏渲染后再启用 Supabase Realtime...');
             scheduleRealtimeSetup();
         } else {
+            const initState = window.__ZAOYOE_SUPABASE_CLIENT_STATE__ || null;
+            const waitTimedOut = (Date.now() - supabaseWaitStartedAt) >= SUPABASE_BOOT_TIMEOUT_MS;
+            const hasFatalInitError = initState?.status === 'error';
+
+            if (hasFatalInitError || waitTimedOut) {
+                console.error('❌ Guestbook boot failed before Supabase became ready:', initState || 'timeout');
+                renderGuestbookBootError(buildSupabaseBootErrorMessage());
+                return;
+            }
+
             console.log('⏳ 等待 Supabase 初始化...');
             setTimeout(waitForSupabase, 100);
         }
@@ -322,6 +383,9 @@ function initGuestbookPage() {
                     console.error('❌ htmlToElement failed for msg:', msg.id);
                     return;
                 }
+
+                // Apply the stagger delay before the element is inserted so the first paint matches the animation timing.
+                const delay = Math.min(index * 0.1, 1.0); // 100ms stagger, capped at 1s
                 setCssVariables(element, { '--guestbook-stagger-delay': `${delay}s` });
 
                 // Find shortest column and append
@@ -331,7 +395,6 @@ function initGuestbookPage() {
                 // Trigger animation with delay
                 // ⚡ CRITICAL FIX: Always use staggered animation for "cascading" effect
                 // This restores the "obvious" animation user requested
-                const delay = Math.min(index * 0.1, 1.0); // 100ms stagger, capped at 1s
 
                 setTimeout(() => {
                     element.classList.add('visible');

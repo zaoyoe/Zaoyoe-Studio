@@ -10,6 +10,7 @@
     "cleanup:payment-fixtures": "node scripts/payment-cleanup-fixtures.js",
     "check:prod-env": "node scripts/check-prod-env.js",
     "inspect:proxy-chain": "node scripts/inspect-proxy-chain.js",
+    "migrate:prompt-images": "node scripts/migrate-prompt-images-to-r2.js",
     "optimize-images": "node scripts/optimize-images.js",
     "preview:local": "node scripts/local-preview-server.js",
     "preflight:payment-rollout": "node scripts/payment-rollout-preflight.js",

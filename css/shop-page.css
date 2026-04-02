@@ -37,6 +37,32 @@
             background-color: #000000 !important;
         }
 
+        .shop-page {
+            min-height: 100vh;
+            background: transparent;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        body.shop-page #starryCanvas {
+            position: fixed;
+            top: -10vh;
+            left: -10vw;
+            width: 120vw;
+            height: 120vh;
+            z-index: 0;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateZ(0);
+            -webkit-transform: translateZ(0);
+            will-change: transform, opacity;
+            transition: opacity 1.5s ease;
+        }
+
+        [data-theme="dark"] body.shop-page #starryCanvas {
+            opacity: 1;
+        }
+
         /* Shop Card Styles (Prompt Card Style) */
         .shop-card {
             position: relative;
@@ -1650,6 +1676,16 @@
             }
         }
 
+        @keyframes shopSkeletonShimmer {
+            0% {
+                background-position: 200% 0, 0 0;
+            }
+
+            100% {
+                background-position: -200% 0, 0 0;
+            }
+        }
+
         .skeleton {
             background: linear-gradient(90deg,
                     rgba(255, 255, 255, 0.03) 25%,
@@ -1660,10 +1696,33 @@
             border-radius: 8px;
         }
 
+        body.shop-page .skeleton {
+            position: relative;
+            overflow: hidden;
+            background:
+                linear-gradient(110deg,
+                    rgba(255, 255, 255, 0.06) 8%,
+                    rgba(255, 255, 255, 0.18) 18%,
+                    rgba(255, 255, 255, 0.06) 33%),
+                linear-gradient(180deg,
+                    rgba(15, 23, 42, 0.84) 0%,
+                    rgba(15, 23, 42, 0.68) 100%);
+            background-size: 220% 100%, 100% 100%;
+            animation: shopSkeletonShimmer 1.25s linear infinite;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+            border-radius: 10px;
+        }
+
         .skeleton-filter {
             width: 60px;
             height: 36px;
             border-radius: 20px;
+        }
+
+        body.shop-page .skeleton-filter {
+            min-width: 72px;
+            height: 40px;
+            border-radius: 999px;
         }
 
         .skeleton-card {
@@ -1673,13 +1732,38 @@
             border: 1px solid rgba(255, 255, 255, 0.05);
         }
 
+        body.shop-page .skeleton-card {
+            display: flex;
+            flex-direction: column;
+            min-height: 332px;
+            background: linear-gradient(180deg,
+                    rgba(11, 18, 32, 0.94) 0%,
+                    rgba(15, 23, 42, 0.82) 100%);
+            border: 1px solid rgba(148, 163, 184, 0.16);
+            box-shadow:
+                0 18px 36px rgba(2, 6, 23, 0.28),
+                inset 0 1px 0 rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+        }
+
         .skeleton-image {
             width: 100%;
             height: 160px;
         }
 
+        body.shop-page .skeleton-image {
+            border-radius: 0;
+        }
+
         .skeleton-content {
             padding: 24px;
+        }
+
+        body.shop-page .skeleton-content {
+            display: flex;
+            flex: 1;
+            flex-direction: column;
         }
 
         .skeleton-title {

@@ -2011,6 +2011,41 @@ class ChatWidget {
         target.classList.toggle(className, enabled);
     }
 
+    _shouldUseDesktopEdgeSafeInset() {
+        if (this._isNarrowViewport() || this._isTouchPrimaryInput()) return false;
+
+        const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;
+        if (fullscreenElement) return true;
+
+        if (typeof window.matchMedia === 'function') {
+            try {
+                if (window.matchMedia('(display-mode: fullscreen)').matches) {
+                    return true;
+                }
+            } catch (error) {
+                console.warn('[ChatWidget] Failed to evaluate fullscreen display-mode:', error);
+            }
+        }
+
+        const screenWidth = Math.max(window.screen?.width || 0, window.screen?.availWidth || 0);
+        const screenHeight = Math.max(window.screen?.height || 0, window.screen?.availHeight || 0);
+        const viewportWidth = Math.max(window.innerWidth || 0, document.documentElement.clientWidth || 0);
+        const viewportHeight = Math.max(window.innerHeight || 0, document.documentElement.clientHeight || 0);
+        const outerWidth = Math.max(window.outerWidth || 0, viewportWidth);
+        const outerHeight = Math.max(window.outerHeight || 0, viewportHeight);
+        const widthDelta = screenWidth ? Math.abs(screenWidth - outerWidth) : Number.POSITIVE_INFINITY;
+        const heightDelta = screenHeight ? Math.abs(screenHeight - outerHeight) : Number.POSITIVE_INFINITY;
+        const browserChromeHeight = Math.max(0, outerHeight - viewportHeight);
+
+        return widthDelta <= 24 && heightDelta <= 24 && browserChromeHeight <= 96;
+    }
+
+    _syncDesktopViewportInsetMode() {
+        if (!this.chatWindow) return;
+        const useEdgeSafeInset = this.chatWindow.classList.contains('admin-mode-layout') && this._shouldUseDesktopEdgeSafeInset();
+        this._toggleElementClass(this.chatWindow, 'chat-window--desktop-edge-safe', useEdgeSafeInset);
+    }
+
     _setChatWindowKeyboardAnimating(enabled, durationMs = 120) {
         if (!this.chatWindow) return;
         this._toggleElementClass(this.chatWindow, 'chat-window--keyboard-animating', enabled);
@@ -2409,6 +2444,7 @@ class ChatWidget {
 
         if (!this._onFabAmbientViewportChange) {
             this._onFabAmbientViewportChange = () => {
+                this._syncDesktopViewportInsetMode();
                 if (this._fabHovering) {
                     this._pauseFabAmbientMotion();
                 } else {
@@ -2729,6 +2765,7 @@ class ChatWidget {
 
         // Inject admin layout styles
         this.injectAdminLayoutStyles();
+        this._syncDesktopViewportInsetMode();
 
         // Bind events
         this.bindAdminEvents();
@@ -2894,10 +2931,14 @@ class ChatWidget {
         style.textContent = `
             /* Admin Mode Layout - Two Column with Glassmorphism */
             .chat-window.admin-mode-layout {
+                --chat-admin-top-gap: clamp(18px, 4vh, 36px);
+                --chat-admin-bottom-gap: 24px;
                 width: min(1040px, calc(100vw - 32px)) !important;
                 max-width: 97vw;
-                height: min(760px, 92vh);
-                max-height: 92vh;
+                height: min(760px, calc(100vh - (var(--chat-admin-top-gap) + var(--chat-admin-bottom-gap)))) !important;
+                max-height: calc(100vh - (var(--chat-admin-top-gap) + var(--chat-admin-bottom-gap))) !important;
+                top: var(--chat-admin-top-gap) !important;
+                bottom: auto !important;
                 display: flex;
                 flex-direction: row;
                 border-radius: 20px;
@@ -2910,6 +2951,17 @@ class ChatWidget {
                 border: 1px solid rgba(255, 255, 255, 0.08) !important;
                 box-shadow: 
                     0 25px 50px -12px rgba(0, 0, 0, 0.6) !important;
+            }
+
+            .chat-window.admin-mode-layout.chat-window--desktop-edge-safe {
+                --chat-admin-top-gap: clamp(56px, 9vh, 96px);
+                top: 50% !important;
+                transform: translateY(calc(-50% + 20px)) scale(0.95) !important;
+                transform-origin: center right !important;
+            }
+
+            .chat-window.admin-mode-layout.chat-window--desktop-edge-safe.active {
+                transform: translateY(-50%) scale(1) !important;
             }
             
             /* Left Sidebar */
@@ -11186,20 +11238,22 @@ class ChatWidget {
             /* Narrow desktop: keep the natural desktop pop animation, only tighten size */
             @media (max-width: 700px) and (hover: hover) and (pointer: fine) {
                 .chat-window:not(.admin-mode-layout) {
+                    --chat-user-narrow-top-gap: clamp(18px, 5vh, 40px);
+                    --chat-user-narrow-bottom-gap: 24px;
                     width: min(380px, calc(100vw - 24px)) !important;
                     max-width: calc(100vw - 24px) !important;
-                    height: min(600px, calc(100vh - 88px)) !important;
-                    max-height: calc(100vh - 88px) !important;
-                    top: 50% !important;
+                    height: min(600px, calc(100vh - (var(--chat-user-narrow-top-gap) + var(--chat-user-narrow-bottom-gap)))) !important;
+                    max-height: calc(100vh - (var(--chat-user-narrow-top-gap) + var(--chat-user-narrow-bottom-gap))) !important;
+                    top: var(--chat-user-narrow-top-gap) !important;
                     left: 50% !important;
                     right: auto !important;
                     bottom: auto !important;
-                    transform: translate3d(-50%, calc(-50% + 20px), 0) scale(0.95) !important;
-                    transform-origin: center center !important;
+                    transform: translate3d(-50%, 20px, 0) scale(0.95) !important;
+                    transform-origin: center top !important;
                 }
 
                 .chat-window:not(.admin-mode-layout).active {
-                    transform: translate3d(-50%, -50%, 0) scale(1) !important;
+                    transform: translate3d(-50%, 0, 0) scale(1) !important;
                 }
             }
 
@@ -11423,6 +11477,7 @@ class ChatWidget {
             this.chatWindow.classList.remove('chat-closing');
             this.chatWindow.classList.remove('chat-closing-end');
             this.chatWindow.classList.add('chat-opening');
+            this._syncDesktopViewportInsetMode();
             this._primeOpeningAnimationFromFab();
             this._setChatWindowTransitionless(false);
             this._setChatWindowForceHidden(false);

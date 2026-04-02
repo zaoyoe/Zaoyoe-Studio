@@ -185,6 +185,51 @@ test('frontend entry pages load the shared Supabase runtime config before initia
     assert.deepEqual(missing, [], missing.join('\n'));
 });
 
+test('guestbook boot exposes Supabase init state and fails with explicit preview guidance when runtime config is unavailable', () => {
+    const guestbookSource = readRepoFile('guestbook.js');
+    const supabaseClientSource = readRepoFile('supabase-client.js');
+
+    const guestbookMarkers = [
+        'const SUPABASE_BOOT_TIMEOUT_MS = 4500;',
+        'function buildSupabaseBootErrorMessage()',
+        'function renderGuestbookBootError(message)',
+        'window.__ZAOYOE_SUPABASE_CLIENT_STATE__',
+        'npm run preview:local',
+        "const hasFatalInitError = initState?.status === 'error';",
+        'renderGuestbookBootError(buildSupabaseBootErrorMessage());'
+    ];
+
+    for (const marker of guestbookMarkers) {
+        assert.equal(guestbookSource.includes(marker), true, `guestbook.js should contain ${marker}`);
+    }
+
+    const supabaseClientMarkers = [
+        'function setSupabaseClientInitState(status, extra = {})',
+        "window.__ZAOYOE_SUPABASE_CLIENT_STATE__ = nextState;",
+        "setSupabaseClientInitState('pending');",
+        "setSupabaseClientInitState('ready');",
+        "reason: 'runtime_config_missing'",
+        "reason: 'sdk_missing'"
+    ];
+
+    for (const marker of supabaseClientMarkers) {
+        assert.equal(supabaseClientSource.includes(marker), true, `supabase-client.js should contain ${marker}`);
+    }
+});
+
+test('guestbook render batch computes stagger delay before using it in CSS variables', () => {
+    const guestbookSource = readRepoFile('guestbook.js');
+    const delayDeclaration = "const delay = Math.min(index * 0.1, 1.0); // 100ms stagger, capped at 1s";
+    const delayUsage = "setCssVariables(element, { '--guestbook-stagger-delay': `${delay}s` });";
+
+    assert.notEqual(guestbookSource.includes(delayDeclaration), false, 'guestbook.js should declare the stagger delay');
+    assert.notEqual(guestbookSource.includes(delayUsage), false, 'guestbook.js should apply the stagger delay CSS variable');
+    assert.ok(
+        guestbookSource.indexOf(delayDeclaration) < guestbookSource.indexOf(delayUsage),
+        'guestbook.js should declare delay before using it during batch rendering'
+    );
+});
+
 test('public pages wire the chat widget through the shared bootstrap loader', () => {
     const violations = [];
 
@@ -301,6 +346,85 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
 
     for (const marker of cssMarkers) {
         assert.equal(chatWidgetCss.includes(marker), true, `css/chat-widget.css should contain ${marker}`);
+    }
+});
+
+test('user chat widget keeps a top safety gap on narrow desktop windows', () => {
+    const chatWidgetSource = readRepoFile('js/components/ChatWidget.js');
+
+    const markers = [
+        '--chat-user-narrow-top-gap: clamp(18px, 5vh, 40px);',
+        '--chat-user-narrow-bottom-gap: 24px;',
+        'height: min(600px, calc(100vh - (var(--chat-user-narrow-top-gap) + var(--chat-user-narrow-bottom-gap)))) !important;',
+        'max-height: calc(100vh - (var(--chat-user-narrow-top-gap) + var(--chat-user-narrow-bottom-gap))) !important;',
+        'top: var(--chat-user-narrow-top-gap) !important;',
+        'transform: translate3d(-50%, 20px, 0) scale(0.95) !important;',
+        'transform-origin: center top !important;',
+        'transform: translate3d(-50%, 0, 0) scale(1) !important;'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(chatWidgetSource.includes(marker), true, `js/components/ChatWidget.js should contain ${marker}`);
+    }
+
+    const removedMarkers = [
+        'height: min(600px, calc(100vh - 88px)) !important;',
+        'max-height: calc(100vh - 88px) !important;',
+        'transform: translate3d(-50%, calc(-50% + 20px), 0) scale(0.95) !important;',
+        'transform-origin: center center !important;\n                }\n\n                .chat-window:not(.admin-mode-layout).active {\n                    transform: translate3d(-50%, -50%, 0) scale(1) !important;'
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(chatWidgetSource.includes(marker), false, `js/components/ChatWidget.js should not contain ${marker}`);
+    }
+});
+
+test('admin chat workspace stays inside the viewport on desktop overlays', () => {
+    const chatWidgetSource = readRepoFile('js/components/ChatWidget.js');
+
+    const markers = [
+        '--chat-admin-top-gap: clamp(18px, 4vh, 36px);',
+        '--chat-admin-bottom-gap: 24px;',
+        'height: min(760px, calc(100vh - (var(--chat-admin-top-gap) + var(--chat-admin-bottom-gap)))) !important;',
+        'max-height: calc(100vh - (var(--chat-admin-top-gap) + var(--chat-admin-bottom-gap))) !important;',
+        'top: var(--chat-admin-top-gap) !important;',
+        'bottom: auto !important;'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(chatWidgetSource.includes(marker), true, `js/components/ChatWidget.js should contain ${marker}`);
+    }
+
+    const removedMarkers = [
+        'height: min(760px, 92vh);',
+        'max-height: 92vh;'
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(chatWidgetSource.includes(marker), false, `js/components/ChatWidget.js should not contain ${marker}`);
+    }
+});
+
+test('admin chat workspace vertically centers fullscreen desktop windows', () => {
+    const chatWidgetSource = readRepoFile('js/components/ChatWidget.js');
+
+    const markers = [
+        '_shouldUseDesktopEdgeSafeInset() {',
+        'const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;',
+        "if (window.matchMedia('(display-mode: fullscreen)').matches) {",
+        'return widthDelta <= 24 && heightDelta <= 24 && browserChromeHeight <= 96;',
+        "_toggleElementClass(this.chatWindow, 'chat-window--desktop-edge-safe', useEdgeSafeInset);",
+        '.chat-window.admin-mode-layout.chat-window--desktop-edge-safe {',
+        '--chat-admin-top-gap: clamp(56px, 9vh, 96px);',
+        'top: 50% !important;',
+        'transform: translateY(calc(-50% + 20px)) scale(0.95) !important;',
+        'transform-origin: center right !important;',
+        '.chat-window.admin-mode-layout.chat-window--desktop-edge-safe.active {',
+        'transform: translateY(-50%) scale(1) !important;'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(chatWidgetSource.includes(marker), true, `js/components/ChatWidget.js should contain ${marker}`);
     }
 });
 
@@ -1560,6 +1684,7 @@ test('gallery and shop renderers no longer generate inline handler attributes in
 test('shop client runtime renderers externalize product cards, purchase feedback, and order list styling', () => {
     const shopClientSource = readRepoFile('js/shop-client.js');
     const shopCssSource = readRepoFile('css/shop-page.css');
+    const shopHtmlSource = readRepoFile('shop.html');
 
     const runtimeMarkers = [
         'buildShopStatusMessage: function (message',
@@ -1597,6 +1722,11 @@ test('shop client runtime renderers externalize product cards, purchase feedback
     }
 
     const cssMarkers = [
+        '.shop-page {',
+        'body.shop-page #starryCanvas',
+        '@keyframes shopSkeletonShimmer',
+        'body.shop-page .skeleton {',
+        'body.shop-page .skeleton-card {',
         '.shop-inline-store-title-icon',
         '.shop-card-original-price',
         '.shop-agent-badge',
@@ -1615,6 +1745,8 @@ test('shop client runtime renderers externalize product cards, purchase feedback
     for (const marker of cssMarkers) {
         assert.equal(shopCssSource.includes(marker), true, `css/shop-page.css should contain ${marker}`);
     }
+
+    assert.equal(shopHtmlSource.includes('<body class="shop-page guestbook-page">'), true, 'shop.html should scope the page with shop-page before guestbook-page compatibility styles');
 });
 
 test('homepage entry points expose delegated guestbook triggers instead of inline handlers', () => {
@@ -7488,6 +7620,47 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'gallery-toast--visible',
         "setPromptsDisplayState(loginBtn, false, 'prompts-display-flex')",
         'buildPromptsStaggerClass(i)',
+        "const { format = 'avif' } = options;",
+        "url.includes('supabase.co/storage/v1/object/public/prompt-images/')",
+        "'/storage/v1/render/image/public/'",
+        "optimizedUrl.searchParams.set('width', '360');",
+        "optimizedUrl.searchParams.set('height', '270');",
+        "optimizedUrl.searchParams.set('quality', '80');",
+        "optimizedUrl.searchParams.set('format', format);",
+        "optimizedUrl.searchParams.delete('format');",
+        'const PROMPT_GALLERY_SKELETON_COUNT = 8;',
+        'const PROMPT_NAV_SKELETON_COUNT = 8;',
+        'const PROMPT_GALLERY_EAGER_IMAGE_COUNT = 4;',
+        'function buildPromptCardSkeletonMarkup(index = 0) {',
+        'function buildPromptNavSkeletonMarkup(count = PROMPT_NAV_SKELETON_COUNT) {',
+        'function renderPromptNavSkeletons(count = PROMPT_NAV_SKELETON_COUNT) {',
+        'function renderPromptGallerySkeletons(count = PROMPT_GALLERY_SKELETON_COUNT) {',
+        'function warmPromptGalleryLeadImages(items = []) {',
+        'function setPromptCardImageSource(cardImage, originalUrl) {',
+        "const primaryUrl = getOptimizedImageUrl(originalUrl);",
+        "const transformFallbackUrl = getOptimizedImageUrl(originalUrl, { format: '' });",
+        "cardImage.dataset.transformFallbackSrc = transformFallbackUrl !== primaryUrl ? transformFallbackUrl : '';",
+        "if (optimizedUrl.includes('supabase.co/storage/v1/render/image/public/')) return;",
+        'const commentRequestCache = new Map();',
+        'function invalidatePromptCommentsCache(promptId, site = getPromptInteractionSite()) {',
+        'async function loadPromptCommentsData(promptId, forceRefresh = false) {',
+        'function prefetchComments(promptId, forceRefresh = false) {',
+        'const promptCommentCountCache = new Map();',
+        'function getCachedPromptCommentCount(promptId, site = getPromptInteractionSite()) {',
+        'function applyPromptCommentCount(promptId, count = null) {',
+        'async function preloadPromptCommentCounts(forceRefresh = false) {',
+        'renderPromptNavSkeletons();',
+        "navContainer.classList.add('nav-items--hydrated');",
+        'warmPromptGalleryLeadImages(itemsToLoad);',
+        "card.className = 'prompt-card card-enter prompt-card--loading';",
+        'const shouldLoadImageEagerly = index < PROMPT_GALLERY_EAGER_IMAGE_COUNT;',
+        "card.classList.add('prompt-card--loaded');",
+        "cardImage.fetchPriority = shouldLoadImageEagerly ? 'high' : 'auto';",
+        'setPromptCardImageSource(cardImage, item.images[0]);',
+        "cardImage.dataset.fallbackStage = 'transform';",
+        "cardImage.dataset.fallbackStage = 'original';",
+        'void preloadPromptCommentCounts();',
+        'void prefetchComments(currentPromptId);',
         'featured-banner--revealed',
         'search-cooldown-msg',
         'comment-empty-subtitle comment-empty-subtitle--error',
@@ -7527,8 +7700,13 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
     const styleMarkers = [
         '.gallery-toast',
         '.gallery-toast--visible',
+        '@keyframes promptSkeletonShimmer',
         '.prompts-display-flex',
         '.prompts-nav-transition',
+        '.nav-items.nav-items--skeleton',
+        '.nav-items.nav-items--hydrated',
+        '.nav-item.nav-item--skeleton',
+        '.nav-item-skeleton--title-wide',
         '.featured-banner--revealed',
         '.prompts-pagination-nav',
         '.search-cooldown-msg',
@@ -7536,6 +7714,12 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         '.comment-empty-subtitle--error',
         '.modal-img-nav.is-visible',
         '.poetry-modal.poetry-modal--visible',
+        '.comment-count.comment-count--hidden',
+        '.prompt-card--skeleton',
+        '.prompt-card-media-skeleton',
+        '.prompt-card--loaded .prompt-card-media-skeleton',
+        '.prompt-card-skeleton-title--wide',
+        '.prompt-card-skeleton-dot',
         '.prompt-card.prompt-card-exiting',
         '.prompt-card.card-visible.prompt-card-stagger-11',
         '.prompt-status-bar-shield',
@@ -7554,14 +7738,44 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.css?v=20260324_PROMPTS_UI_STATE_STYLES_4'),
+        promptsHtml.includes('prompts-poetry.css?v=20260402_PROMPTS_NAV_STABILITY_1'),
         true,
         'prompts.html should load the latest prompts gallery stylesheet version'
     );
     assert.equal(
-        promptsHtml.includes('prompts-poetry.js?v=20260401_PROMPTS_SITE_ISOLATION_1'),
+        promptsHtml.includes('prompts-poetry.js?v=20260402_PROMPTS_IMAGE_PIPELINE_4'),
         true,
         'prompts.html should load the latest prompts gallery runtime version'
+    );
+});
+
+test('prompt image delivery optimizes admin previews and cacheable fallback uploads', () => {
+    const adminStudioScript = readRepoFile('admin-studio.js');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const markers = [
+        'function getOptimizedPromptCardImageUrl(url) {',
+        "trimmed.includes('cdn.zaoyoe.com/prompts/') && !trimmed.includes('/thumb/')",
+        "trimmed.includes('supabase.co/storage/v1/object/public/prompt-images/')",
+        "optimizedUrl.searchParams.set('width', '320');",
+        "optimizedUrl.searchParams.set('height', '220');",
+        "optimizedUrl.searchParams.set('quality', '80');",
+        'function sanitizePromptImageUrl(url) {',
+        "const imageUrl = sanitizePromptImageUrl(Array.isArray(prompt.images) ? prompt.images[0] : '');",
+        'const client = getAdminStudioSupabaseClient();',
+        'const originalImagesToUpload = imagesToUpload.filter(({ isThumb }) => !isThumb);',
+        "cacheControl: '31536000'",
+        'upsert: false'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('admin-studio.js?v=20260402_PROMPT_UPLOAD_PIPELINE_3'),
+        true,
+        'admin-studio.html should reference the latest prompt upload runtime version'
     );
 });
 
