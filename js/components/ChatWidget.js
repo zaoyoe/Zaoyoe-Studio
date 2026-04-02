@@ -2894,10 +2894,14 @@ class ChatWidget {
         style.textContent = `
             /* Admin Mode Layout - Two Column with Glassmorphism */
             .chat-window.admin-mode-layout {
+                --chat-admin-top-gap: clamp(18px, 4vh, 36px);
+                --chat-admin-bottom-gap: 24px;
                 width: min(1040px, calc(100vw - 32px)) !important;
                 max-width: 97vw;
-                height: min(760px, 92vh);
-                max-height: 92vh;
+                height: min(760px, calc(100vh - (var(--chat-admin-top-gap) + var(--chat-admin-bottom-gap)))) !important;
+                max-height: calc(100vh - (var(--chat-admin-top-gap) + var(--chat-admin-bottom-gap))) !important;
+                top: var(--chat-admin-top-gap) !important;
+                bottom: auto !important;
                 display: flex;
                 flex-direction: row;
                 border-radius: 20px;
@@ -11186,20 +11190,22 @@ class ChatWidget {
             /* Narrow desktop: keep the natural desktop pop animation, only tighten size */
             @media (max-width: 700px) and (hover: hover) and (pointer: fine) {
                 .chat-window:not(.admin-mode-layout) {
+                    --chat-user-narrow-top-gap: clamp(18px, 5vh, 40px);
+                    --chat-user-narrow-bottom-gap: 24px;
                     width: min(380px, calc(100vw - 24px)) !important;
                     max-width: calc(100vw - 24px) !important;
-                    height: min(600px, calc(100vh - 88px)) !important;
-                    max-height: calc(100vh - 88px) !important;
-                    top: 50% !important;
+                    height: min(600px, calc(100vh - (var(--chat-user-narrow-top-gap) + var(--chat-user-narrow-bottom-gap)))) !important;
+                    max-height: calc(100vh - (var(--chat-user-narrow-top-gap) + var(--chat-user-narrow-bottom-gap))) !important;
+                    top: var(--chat-user-narrow-top-gap) !important;
                     left: 50% !important;
                     right: auto !important;
                     bottom: auto !important;
-                    transform: translate3d(-50%, calc(-50% + 20px), 0) scale(0.95) !important;
-                    transform-origin: center center !important;
+                    transform: translate3d(-50%, 20px, 0) scale(0.95) !important;
+                    transform-origin: center top !important;
                 }
 
                 .chat-window:not(.admin-mode-layout).active {
-                    transform: translate3d(-50%, -50%, 0) scale(1) !important;
+                    transform: translate3d(-50%, 0, 0) scale(1) !important;
                 }
             }
 

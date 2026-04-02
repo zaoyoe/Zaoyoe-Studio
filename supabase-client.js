@@ -11,6 +11,25 @@ window._pageLoadTime = Date.now();
 let SUPABASE_URL = '';
 let SUPABASE_KEY = '';
 
+function setSupabaseClientInitState(status, extra = {}) {
+    const nextState = {
+        status,
+        updatedAt: Date.now(),
+        ...extra
+    };
+    window.__ZAOYOE_SUPABASE_CLIENT_STATE__ = nextState;
+
+    if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+        window.dispatchEvent(new CustomEvent('zaoyoe:supabase-client-state', {
+            detail: nextState
+        }));
+    }
+
+    return nextState;
+}
+
+setSupabaseClientInitState('pending');
+
 try {
     const runtimeSupabaseConfig = typeof window.requireZaoyoeSupabaseConfig === 'function'
         ? window.requireZaoyoeSupabaseConfig()
@@ -19,6 +38,10 @@ try {
     SUPABASE_KEY = String(runtimeSupabaseConfig?.publishableKey || '').trim();
 } catch (error) {
     console.error('❌ Failed to resolve Supabase runtime config:', error);
+    setSupabaseClientInitState('error', {
+        reason: 'runtime_config_unavailable',
+        message: error?.message || 'Failed to resolve Supabase runtime config'
+    });
 }
 
 const getOrCreateChatSessionId = () => {
@@ -118,28 +141,45 @@ const guardStorage = {
 if (typeof supabase !== 'undefined' && supabase.createClient) {
     if (!SUPABASE_URL || !SUPABASE_KEY) {
         console.error('❌ Supabase runtime config is missing. Make sure /api/runtime/supabase-config loads before supabase-client.js.');
-    } else {
-        window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-            auth: {
-                persistSession: true,
-                autoRefreshToken: false,
-                detectSessionInUrl: false,
-                flowType: 'implicit',
-                storage: guardStorage
-            },
-            global: {
-                headers: CHAT_SESSION_ID ? { 'x-session-id': CHAT_SESSION_ID } : {}
-            }
+        setSupabaseClientInitState('error', {
+            reason: 'runtime_config_missing',
+            message: 'Supabase runtime config is missing'
         });
+    } else {
+        try {
+            window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+                auth: {
+                    persistSession: true,
+                    autoRefreshToken: false,
+                    detectSessionInUrl: false,
+                    flowType: 'implicit',
+                    storage: guardStorage
+                },
+                global: {
+                    headers: CHAT_SESSION_ID ? { 'x-session-id': CHAT_SESSION_ID } : {}
+                }
+            });
 
-        // After Supabase init completes, simply unlock the normal storage adapter
-        setTimeout(() => {
-            guardStorage._locked = false;
-            console.log('🔓 Storage guard unlocked');
-        }, 3000);
+            // After Supabase init completes, simply unlock the normal storage adapter
+            setTimeout(() => {
+                guardStorage._locked = false;
+                console.log('🔓 Storage guard unlocked');
+            }, 3000);
 
-        console.log('✅ Supabase client initialized (with guard storage)');
+            setSupabaseClientInitState('ready');
+            console.log('✅ Supabase client initialized (with guard storage)');
+        } catch (error) {
+            console.error('❌ Failed to initialize Supabase client:', error);
+            setSupabaseClientInitState('error', {
+                reason: 'client_init_failed',
+                message: error?.message || 'Failed to initialize Supabase client'
+            });
+        }
     }
 } else {
     console.error('❌ Supabase library not loaded. Make sure to include the CDN script first.');
+    setSupabaseClientInitState('error', {
+        reason: 'sdk_missing',
+        message: 'Supabase library not loaded'
+    });
 }

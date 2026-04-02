@@ -185,6 +185,51 @@ test('frontend entry pages load the shared Supabase runtime config before initia
     assert.deepEqual(missing, [], missing.join('\n'));
 });
 
+test('guestbook boot exposes Supabase init state and fails with explicit preview guidance when runtime config is unavailable', () => {
+    const guestbookSource = readRepoFile('guestbook.js');
+    const supabaseClientSource = readRepoFile('supabase-client.js');
+
+    const guestbookMarkers = [
+        'const SUPABASE_BOOT_TIMEOUT_MS = 4500;',
+        'function buildSupabaseBootErrorMessage()',
+        'function renderGuestbookBootError(message)',
+        'window.__ZAOYOE_SUPABASE_CLIENT_STATE__',
+        'npm run preview:local',
+        "const hasFatalInitError = initState?.status === 'error';",
+        'renderGuestbookBootError(buildSupabaseBootErrorMessage());'
+    ];
+
+    for (const marker of guestbookMarkers) {
+        assert.equal(guestbookSource.includes(marker), true, `guestbook.js should contain ${marker}`);
+    }
+
+    const supabaseClientMarkers = [
+        'function setSupabaseClientInitState(status, extra = {})',
+        "window.__ZAOYOE_SUPABASE_CLIENT_STATE__ = nextState;",
+        "setSupabaseClientInitState('pending');",
+        "setSupabaseClientInitState('ready');",
+        "reason: 'runtime_config_missing'",
+        "reason: 'sdk_missing'"
+    ];
+
+    for (const marker of supabaseClientMarkers) {
+        assert.equal(supabaseClientSource.includes(marker), true, `supabase-client.js should contain ${marker}`);
+    }
+});
+
+test('guestbook render batch computes stagger delay before using it in CSS variables', () => {
+    const guestbookSource = readRepoFile('guestbook.js');
+    const delayDeclaration = "const delay = Math.min(index * 0.1, 1.0); // 100ms stagger, capped at 1s";
+    const delayUsage = "setCssVariables(element, { '--guestbook-stagger-delay': `${delay}s` });";
+
+    assert.notEqual(guestbookSource.includes(delayDeclaration), false, 'guestbook.js should declare the stagger delay');
+    assert.notEqual(guestbookSource.includes(delayUsage), false, 'guestbook.js should apply the stagger delay CSS variable');
+    assert.ok(
+        guestbookSource.indexOf(delayDeclaration) < guestbookSource.indexOf(delayUsage),
+        'guestbook.js should declare delay before using it during batch rendering'
+    );
+});
+
 test('public pages wire the chat widget through the shared bootstrap loader', () => {
     const violations = [];
 
@@ -301,6 +346,62 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
 
     for (const marker of cssMarkers) {
         assert.equal(chatWidgetCss.includes(marker), true, `css/chat-widget.css should contain ${marker}`);
+    }
+});
+
+test('user chat widget keeps a top safety gap on narrow desktop windows', () => {
+    const chatWidgetSource = readRepoFile('js/components/ChatWidget.js');
+
+    const markers = [
+        '--chat-user-narrow-top-gap: clamp(18px, 5vh, 40px);',
+        '--chat-user-narrow-bottom-gap: 24px;',
+        'height: min(600px, calc(100vh - (var(--chat-user-narrow-top-gap) + var(--chat-user-narrow-bottom-gap)))) !important;',
+        'max-height: calc(100vh - (var(--chat-user-narrow-top-gap) + var(--chat-user-narrow-bottom-gap))) !important;',
+        'top: var(--chat-user-narrow-top-gap) !important;',
+        'transform: translate3d(-50%, 20px, 0) scale(0.95) !important;',
+        'transform-origin: center top !important;',
+        'transform: translate3d(-50%, 0, 0) scale(1) !important;'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(chatWidgetSource.includes(marker), true, `js/components/ChatWidget.js should contain ${marker}`);
+    }
+
+    const removedMarkers = [
+        'height: min(600px, calc(100vh - 88px)) !important;',
+        'max-height: calc(100vh - 88px) !important;',
+        'transform: translate3d(-50%, calc(-50% + 20px), 0) scale(0.95) !important;',
+        'transform-origin: center center !important;\n                }\n\n                .chat-window:not(.admin-mode-layout).active {\n                    transform: translate3d(-50%, -50%, 0) scale(1) !important;'
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(chatWidgetSource.includes(marker), false, `js/components/ChatWidget.js should not contain ${marker}`);
+    }
+});
+
+test('admin chat workspace stays inside the viewport on desktop overlays', () => {
+    const chatWidgetSource = readRepoFile('js/components/ChatWidget.js');
+
+    const markers = [
+        '--chat-admin-top-gap: clamp(18px, 4vh, 36px);',
+        '--chat-admin-bottom-gap: 24px;',
+        'height: min(760px, calc(100vh - (var(--chat-admin-top-gap) + var(--chat-admin-bottom-gap)))) !important;',
+        'max-height: calc(100vh - (var(--chat-admin-top-gap) + var(--chat-admin-bottom-gap))) !important;',
+        'top: var(--chat-admin-top-gap) !important;',
+        'bottom: auto !important;'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(chatWidgetSource.includes(marker), true, `js/components/ChatWidget.js should contain ${marker}`);
+    }
+
+    const removedMarkers = [
+        'height: min(760px, 92vh);',
+        'max-height: 92vh;'
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(chatWidgetSource.includes(marker), false, `js/components/ChatWidget.js should not contain ${marker}`);
     }
 });
 
@@ -1560,6 +1661,7 @@ test('gallery and shop renderers no longer generate inline handler attributes in
 test('shop client runtime renderers externalize product cards, purchase feedback, and order list styling', () => {
     const shopClientSource = readRepoFile('js/shop-client.js');
     const shopCssSource = readRepoFile('css/shop-page.css');
+    const shopHtmlSource = readRepoFile('shop.html');
 
     const runtimeMarkers = [
         'buildShopStatusMessage: function (message',
@@ -1597,6 +1699,11 @@ test('shop client runtime renderers externalize product cards, purchase feedback
     }
 
     const cssMarkers = [
+        '.shop-page {',
+        'body.shop-page #starryCanvas',
+        '@keyframes shopSkeletonShimmer',
+        'body.shop-page .skeleton {',
+        'body.shop-page .skeleton-card {',
         '.shop-inline-store-title-icon',
         '.shop-card-original-price',
         '.shop-agent-badge',
@@ -1615,6 +1722,8 @@ test('shop client runtime renderers externalize product cards, purchase feedback
     for (const marker of cssMarkers) {
         assert.equal(shopCssSource.includes(marker), true, `css/shop-page.css should contain ${marker}`);
     }
+
+    assert.equal(shopHtmlSource.includes('<body class="shop-page guestbook-page">'), true, 'shop.html should scope the page with shop-page before guestbook-page compatibility styles');
 });
 
 test('homepage entry points expose delegated guestbook triggers instead of inline handlers', () => {
