@@ -55,11 +55,11 @@ test('comments summary handler includes guestbook replies alongside messages and
 test('comments list handler loads guestbook replies and guestbook comment like counts', () => {
     const source = readRepoFile('server/api-handlers/admin/comments/list.js');
 
-    assert.match(source, /from\('guestbook_messages'\)\s*\.select\(`/);
-    assert.match(source, /from\('guestbook_comments'\)\s*\.select\(`/);
-    assert.match(source, /from\('guestbook_likes'\)\s*\.select\('target_id, target_type'\)/);
-    assert.match(source, /record_type: comment\.parent_id \? 'reply' : 'comment'/);
-    assert.match(source, /reply_count: commentReplyCounts\[comment\.id\] \|\| 0/);
+    assert.equal(/from\('guestbook_messages'\)\s*\.select\(/.test(source), true);
+    assert.equal(/from\('guestbook_comments'\)\s*\.select\(/.test(source), true);
+    assert.equal(/from\('guestbook_likes'\)\s*\.select\('target_id, target_type'\)/.test(source), true);
+    assert.equal(/record_type: comment\.parent_id \? 'reply' : 'comment'/.test(source), true);
+    assert.equal(/reply_count: commentReplyCounts\[comment\.id\] \|\| 0/.test(source), true);
 });
 
 test('comments moderation handler clears orphan guestbook likes and enforces writable site', () => {
