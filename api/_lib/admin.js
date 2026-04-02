@@ -7,6 +7,7 @@ const {
 
 let supabaseAdmin = null;
 let supabasePublic = null;
+let adminStudioAccessHelpersPromise = null;
 const ADMIN_SITE_VALUES = Object.freeze(new Set(['all', 'cn', 'intl']));
 const WRITABLE_ADMIN_SITE_VALUES = Object.freeze(new Set(['cn', 'intl']));
 const ADMIN_SITE_ALIASES = Object.freeze({
@@ -110,6 +111,61 @@ function getBearerToken(req) {
     return authHeader.slice('Bearer '.length).trim();
 }
 
+function parseCookieHeader(cookieHeader) {
+    const source = typeof cookieHeader === 'string' ? cookieHeader : '';
+    return source
+        .split(';')
+        .map((chunk) => chunk.trim())
+        .filter(Boolean)
+        .reduce((accumulator, chunk) => {
+            const separatorIndex = chunk.indexOf('=');
+            if (separatorIndex <= 0) {
+                return accumulator;
+            }
+
+            const key = chunk.slice(0, separatorIndex).trim();
+            const rawValue = chunk.slice(separatorIndex + 1).trim();
+            if (!key) {
+                return accumulator;
+            }
+
+            try {
+                accumulator[key] = decodeURIComponent(rawValue);
+            } catch (_) {
+                accumulator[key] = rawValue;
+            }
+            return accumulator;
+        }, {});
+}
+
+async function loadAdminStudioAccessHelpers() {
+    if (!adminStudioAccessHelpersPromise) {
+        adminStudioAccessHelpersPromise = import('./admin-studio-access.mjs');
+    }
+
+    return adminStudioAccessHelpersPromise;
+}
+
+async function getAdminStudioCookiePayload(req) {
+    const cookieHeader = req?.headers?.cookie || req?.headers?.Cookie || '';
+    if (!cookieHeader) {
+        return null;
+    }
+
+    const {
+        getAdminStudioCookieName,
+        verifyAdminStudioToken
+    } = await loadAdminStudioAccessHelpers();
+
+    const cookies = parseCookieHeader(cookieHeader);
+    const token = String(cookies[getAdminStudioCookieName()] || '').trim();
+    if (!token) {
+        return null;
+    }
+
+    return verifyAdminStudioToken(token);
+}
+
 async function parseJsonBody(req) {
     if (req.body && typeof req.body === 'object') {
         return req.body;
@@ -133,7 +189,31 @@ async function parseJsonBody(req) {
 async function getAuthenticatedUser(req) {
     const token = getBearerToken(req);
     if (!token) {
-        return { token: '', user: null };
+        const cookiePayload = await getAdminStudioCookiePayload(req);
+        if (!cookiePayload?.sub) {
+            return { token: '', user: null };
+        }
+
+        if (!getSupabaseServiceRoleKey()) {
+            return { token: '', user: null };
+        }
+
+        const adminSupabase = getSupabaseAdmin();
+        if (!adminSupabase?.auth?.admin?.getUserById) {
+            return { token: '', user: null };
+        }
+
+        const { data, error } = await adminSupabase.auth.admin.getUserById(cookiePayload.sub);
+        if (error || !data?.user) {
+            return { token: '', user: null, error };
+        }
+
+        return {
+            token: '',
+            user: data.user,
+            viaAdminStudioCookie: true,
+            adminStudioPayload: cookiePayload
+        };
     }
 
     let requestError = null;
@@ -167,7 +247,7 @@ async function requireAuthenticatedUser(req) {
         throw authError;
     }
 
-    const requestSupabase = hasSupabasePublicClientConfig()
+    const requestSupabase = token && hasSupabasePublicClientConfig()
         ? createSupabaseRequestClient(req)
         : null;
     const adminSupabase = getSupabaseServiceRoleKey()

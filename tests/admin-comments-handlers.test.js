@@ -284,7 +284,10 @@ async function withCommentsHandler(relativePath, options, callback) {
             guestbook_messages: deepClone(options?.tables?.guestbook_messages || []),
             guestbook_comments: deepClone(options?.tables?.guestbook_comments || []),
             guestbook_likes: deepClone(options?.tables?.guestbook_likes || []),
-            prompt_comments: deepClone(options?.tables?.prompt_comments || [])
+            prompt_comments: deepClone(options?.tables?.prompt_comments || []),
+            profiles: deepClone(options?.tables?.profiles || []),
+            prompts: deepClone(options?.tables?.prompts || []),
+            comment_likes: deepClone(options?.tables?.comment_likes || [])
         },
         fromCalls: [],
         requireAdminCalls: [],
@@ -379,8 +382,7 @@ test('comments list handler returns guestbook messages, replies, and like counts
                     user_id: 'u1',
                     created_at: '2026-03-31T10:00:00.000Z',
                     image_url: null,
-                    like_count: 5,
-                    profiles: { username: 'alice', avatar_url: null, email: 'alice@example.com' }
+                    like_count: 5
                 },
                 {
                     id: 'm2',
@@ -389,8 +391,7 @@ test('comments list handler returns guestbook messages, replies, and like counts
                     user_id: 'u9',
                     created_at: '2026-03-31T08:00:00.000Z',
                     image_url: null,
-                    like_count: 1,
-                    profiles: { username: 'bob', avatar_url: null, email: 'bob@example.com' }
+                    like_count: 1
                 }
             ],
             guestbook_comments: [
@@ -401,8 +402,7 @@ test('comments list handler returns guestbook messages, replies, and like counts
                     parent_id: null,
                     content: 'first reply',
                     user_id: 'u2',
-                    created_at: '2026-03-31T10:05:00.000Z',
-                    profiles: { username: 'charlie', avatar_url: null, email: 'charlie@example.com' }
+                    created_at: '2026-03-31T10:05:00.000Z'
                 },
                 {
                     id: 'c2',
@@ -411,8 +411,7 @@ test('comments list handler returns guestbook messages, replies, and like counts
                     parent_id: 'c1',
                     content: 'nested reply',
                     user_id: 'u3',
-                    created_at: '2026-03-31T10:06:00.000Z',
-                    profiles: { username: 'diana', avatar_url: null, email: 'diana@example.com' }
+                    created_at: '2026-03-31T10:06:00.000Z'
                 },
                 {
                     id: 'c3',
@@ -421,9 +420,14 @@ test('comments list handler returns guestbook messages, replies, and like counts
                     parent_id: null,
                     content: 'intl reply',
                     user_id: 'u4',
-                    created_at: '2026-03-31T08:05:00.000Z',
-                    profiles: { username: 'eva', avatar_url: null, email: 'eva@example.com' }
+                    created_at: '2026-03-31T08:05:00.000Z'
                 }
+            ],
+            profiles: [
+                { id: 'u1', username: 'alice', avatar_url: null, email: 'alice@example.com' },
+                { id: 'u2', username: 'charlie', avatar_url: null, email: 'charlie@example.com' },
+                { id: 'u3', username: 'diana', avatar_url: null, email: 'diana@example.com' },
+                { id: 'u4', username: 'eva', avatar_url: null, email: 'eva@example.com' }
             ],
             guestbook_likes: [
                 { id: 'l1', site: 'cn', target_type: 'comment', target_id: 'c1' },
@@ -457,6 +461,74 @@ test('comments list handler returns guestbook messages, replies, and like counts
         assert.equal(messageRow.record_type, 'message');
         assert.equal(messageRow.reply_count, 2);
         assert.equal(messageRow.site, 'cn');
+    });
+});
+
+test('comments list handler returns gallery rows without relying on schema relationship aliases', async () => {
+    await withCommentsHandler('../server/api-handlers/admin/comments/list.js', {
+        tables: {
+            prompt_comments: [
+                {
+                    id: 'g1',
+                    site: 'cn',
+                    prompt_id: 'p1',
+                    parent_id: null,
+                    content: 'gallery top comment',
+                    user_id: 'u1',
+                    created_at: '2026-03-31T11:00:00.000Z',
+                    image_url: null,
+                    is_pinned: true,
+                    is_featured: false
+                },
+                {
+                    id: 'g2',
+                    site: 'cn',
+                    prompt_id: 'p1',
+                    parent_id: 'g1',
+                    content: 'gallery reply',
+                    user_id: 'u2',
+                    created_at: '2026-03-31T11:05:00.000Z',
+                    image_url: null,
+                    is_pinned: false,
+                    is_featured: true
+                }
+            ],
+            profiles: [
+                { id: 'u1', username: 'alice', avatar_url: null, email: 'alice@example.com' },
+                { id: 'u2', username: 'bob', avatar_url: null, email: 'bob@example.com' }
+            ],
+            prompts: [
+                { id: 'p1', title: 'Prompt One', title_zh: '提示词一', title_en: 'Prompt One' }
+            ],
+            comment_likes: [
+                { id: 'like_1', site: 'cn', comment_id: 'g1', user_id: 'u9' },
+                { id: 'like_2', site: 'cn', comment_id: 'g1', user_id: 'u8' },
+                { id: 'like_3', site: 'cn', comment_id: 'g2', user_id: 'u7' }
+            ]
+        }
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/comments/list?view=gallery&site=cn',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().comments.length, 2);
+
+        const [replyRow, topRow] = res.json().comments;
+        assert.equal(replyRow.id, 'g2');
+        assert.equal(replyRow.author, 'bob');
+        assert.equal(replyRow.likes, 1);
+        assert.equal(replyRow.prompt_title, 'Prompt One');
+
+        assert.equal(topRow.id, 'g1');
+        assert.equal(topRow.author, 'alice');
+        assert.equal(topRow.reply_count, 1);
+        assert.equal(topRow.likes, 2);
+        assert.equal(topRow.is_pinned, true);
     });
 });
 

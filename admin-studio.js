@@ -368,7 +368,7 @@ async function parseAdminPromptsResponse(response) {
 }
 
 async function fetchAdminPromptList({ site = getAdminPromptsReadSite() } = {}) {
-    const response = await fetch(buildAdminPromptsUrl({ site }), {
+    const response = await (window.AdminApi?.fetch || fetch)(buildAdminPromptsUrl({ site }), {
         credentials: 'include'
     });
 
@@ -376,7 +376,7 @@ async function fetchAdminPromptList({ site = getAdminPromptsReadSite() } = {}) {
 }
 
 async function fetchAdminPromptItem(id, { site = getAdminPromptsReadSite() } = {}) {
-    const response = await fetch(buildAdminPromptsUrl({
+    const response = await (window.AdminApi?.fetch || fetch)(buildAdminPromptsUrl({
         id,
         site
     }), {
@@ -387,7 +387,7 @@ async function fetchAdminPromptItem(id, { site = getAdminPromptsReadSite() } = {
 }
 
 async function mutateAdminPrompt({ action, site, id, payload = {} } = {}) {
-    const response = await fetch('/api/admin/prompts/manage', {
+    const response = await (window.AdminApi?.fetch || fetch)('/api/admin/prompts/manage', {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -405,7 +405,7 @@ async function mutateAdminPrompt({ action, site, id, payload = {} } = {}) {
 }
 
 async function deleteAdminPrompts({ site, id, ids = [] } = {}) {
-    const response = await fetch('/api/admin/prompts/manage', {
+    const response = await (window.AdminApi?.fetch || fetch)('/api/admin/prompts/manage', {
         method: 'DELETE',
         credentials: 'include',
         headers: {
@@ -517,6 +517,12 @@ function applyResolvedAdminAccess(access = {}) {
 async function requireAdminStudioAccess() {
     renderAdminStudioAccessGate('pending');
 
+    try {
+        await Promise.resolve(window.__adminStudioSessionRestoreReady);
+    } catch (error) {
+        console.warn('[AdminStudio] Supabase session restore wait failed:', error);
+    }
+
     const accessClient = window.AdminAccess;
     if (!accessClient?.getCurrentAdminAccess) {
         renderAdminStudioAccessGate('denied', {
@@ -552,6 +558,22 @@ async function requireAdminStudioAccess() {
 
     applyResolvedAdminAccess(access);
     renderAdminStudioAccessGate('granted');
+
+    Promise.resolve()
+        .then(() => accessClient.createAdminStudioSession?.({
+            supabaseClient: window.supabaseClient
+        }))
+        .then((sessionResult) => {
+            window.adminStudioSessionGranted = Boolean(sessionResult?.ok);
+            if (!sessionResult?.ok) {
+                console.warn('[AdminStudio] Failed to issue admin studio cookie session:', sessionResult);
+            }
+        })
+        .catch((sessionError) => {
+            window.adminStudioSessionGranted = false;
+            console.warn('[AdminStudio] Failed to issue admin studio cookie session:', sessionError);
+        });
+
     return access;
 }
 
@@ -2309,7 +2331,7 @@ async function loadAdminPrompts() {
         setupAdminSearch();
     } catch (err) {
         console.error('Error loading prompts:', err);
-        showToast('Failed to load prompts', 'error');
+        showToast(`Failed to load prompts: ${err.message || 'Unknown error'}`, 'error');
     }
 }
 

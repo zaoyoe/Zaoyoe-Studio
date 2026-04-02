@@ -202,3 +202,37 @@ test('admin router exposes normalized route and site context to handlers', async
         assert.equal(state.handlerCalls[0].adminSite, 'intl');
     });
 });
+
+test('admin router resolves nested path routes without requiring query route rewrites', async () => {
+    await withAdminApiRouter(async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/homepage/config?site=cn',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.handlerCalls.length, 1);
+        assert.equal(state.handlerCalls[0].adminRoute, 'homepage/config');
+        assert.equal(state.handlerCalls[0].adminSite, 'cn');
+    });
+});
+
+test('admin router prefers explicit query route when both query and path routes are present', async () => {
+    await withAdminApiRouter(async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/homepage/config?route=comments/summary&site=all',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.handlerCalls.length, 1);
+        assert.equal(state.handlerCalls[0].adminRoute, 'comments/summary');
+        assert.equal(state.handlerCalls[0].adminSite, 'all');
+    });
+});

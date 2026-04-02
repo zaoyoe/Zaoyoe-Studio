@@ -2,7 +2,234 @@
     'use strict';
 
     const { url: SUPABASE_URL, publishableKey: SUPABASE_KEY } = window.requireZaoyoeSupabaseConfig();
-    window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    function hasValidAccessToken(value) {
+        if (!value) return false;
+
+        if (typeof value === 'string') {
+            return value.split('.').length >= 3 && value.length > 40;
+        }
+
+        if (Array.isArray(value)) {
+            return value.some(hasValidAccessToken);
+        }
+
+        if (typeof value === 'object') {
+            return hasValidAccessToken(value.access_token)
+                || hasValidAccessToken(value.currentSession)
+                || hasValidAccessToken(value.session)
+                || hasValidAccessToken(value.data);
+        }
+
+        return false;
+    }
+
+    const guardStorage = {
+        _locked: true,
+
+        getItem(key) {
+            return window.localStorage.getItem(key);
+        },
+
+        setItem(key, value) {
+            if (this._locked && key.startsWith('sb-') && key.endsWith('-auth-token')) {
+                try {
+                    const parsed = JSON.parse(value);
+                    if (hasValidAccessToken(parsed)) {
+                        window.localStorage.setItem(key, value);
+                    }
+                    return;
+                } catch (_) {
+                    return;
+                }
+            }
+
+            window.localStorage.setItem(key, value);
+        },
+
+        removeItem(key) {
+            if (this._locked && key.startsWith('sb-') && key.endsWith('-auth-token')) {
+                return;
+            }
+
+            window.localStorage.removeItem(key);
+        }
+    };
+
+    function decodeJwtPayload(token) {
+        const raw = String(token || '').trim();
+        if (!raw || raw.split('.').length < 2) {
+            return null;
+        }
+
+        try {
+            const encoded = raw.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+            const padded = encoded + '='.repeat((4 - (encoded.length % 4)) % 4);
+            return JSON.parse(window.atob(padded));
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function readPersistedSupabaseSession() {
+        try {
+            if (!window.localStorage) {
+                return null;
+            }
+
+            for (let index = 0; index < window.localStorage.length; index += 1) {
+                const key = window.localStorage.key(index);
+                if (!key || !key.startsWith('sb-') || !key.endsWith('-auth-token')) {
+                    continue;
+                }
+
+                const raw = window.localStorage.getItem(key);
+                if (!raw) {
+                    continue;
+                }
+
+                const parsed = JSON.parse(raw);
+                const session = parsed?.currentSession || parsed?.session || parsed;
+                if (session?.access_token && session?.refresh_token) {
+                    return {
+                        storageKey: key,
+                        session
+                    };
+                }
+            }
+        } catch (_) {
+            return null;
+        }
+
+        return null;
+    }
+
+    async function resolveWithTimeout(factory, timeoutMs = 6000, fallback = null) {
+        try {
+            return await Promise.race([
+                Promise.resolve().then(factory),
+                new Promise((resolve) => {
+                    window.setTimeout(() => resolve(fallback), timeoutMs);
+                })
+            ]);
+        } catch (_) {
+            return fallback;
+        }
+    }
+
+    async function resolveRuntimeAccessToken(client = window.supabaseClient) {
+        const authClient = client?.auth || null;
+        if (authClient?.getSession) {
+            const currentSessionResult = await resolveWithTimeout(() => authClient.getSession(), 1500, null);
+            const sdkAccessToken = String(currentSessionResult?.data?.session?.access_token || '').trim();
+            if (sdkAccessToken) {
+                return sdkAccessToken;
+            }
+        }
+
+        return String(readPersistedSupabaseSession()?.session?.access_token || '').trim() || null;
+    }
+
+    window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+        auth: {
+            persistSession: true,
+            autoRefreshToken: false,
+            detectSessionInUrl: false,
+            flowType: 'implicit',
+            storage: guardStorage
+        }
+    });
+
+    window.supabaseClient.accessToken = () => resolveRuntimeAccessToken(window.supabaseClient);
+    resolveRuntimeAccessToken(window.supabaseClient)
+        .then((accessToken) => {
+            if (accessToken) {
+                window.supabaseClient?.realtime?.setAuth?.(accessToken);
+            }
+        })
+        .catch((error) => {
+            console.warn('[AdminStudioBootstrap] Failed to seed realtime auth token:', error);
+        });
+
+    window.__adminStudioSessionRestoreReady = (async () => {
+        const client = window.supabaseClient;
+        if (!client?.auth?.getSession || !client?.auth?.setSession) {
+            return {
+                restored: false,
+                reason: 'auth_unavailable'
+            };
+        }
+
+        try {
+            const currentSessionResult = await resolveWithTimeout(() => client.auth.getSession(), 4000, null);
+            if (currentSessionResult?.data?.session?.access_token) {
+                return {
+                    restored: true,
+                    source: 'sdk'
+                };
+            }
+        } catch (_) {
+            // Fall through to persisted-session recovery.
+        }
+
+        const persisted = readPersistedSupabaseSession()?.session || null;
+        if (!persisted?.access_token || !persisted?.refresh_token) {
+            return {
+                restored: false,
+                reason: 'missing_persisted_session'
+            };
+        }
+
+        const payload = decodeJwtPayload(persisted.access_token) || {};
+        const normalizedSession = {
+            access_token: persisted.access_token,
+            refresh_token: persisted.refresh_token,
+            expires_at: Number(persisted.expires_at || payload.exp || 0) || undefined
+        };
+
+        const result = await resolveWithTimeout(() => client.auth.setSession(normalizedSession), 6000, null);
+        if (!result) {
+            return {
+                restored: false,
+                reason: 'set_session_timeout'
+            };
+        }
+
+        if (result?.error) {
+            return {
+                restored: false,
+                reason: 'set_session_failed',
+                error: result.error
+            };
+        }
+
+        return {
+            restored: Boolean(result?.data?.session?.access_token),
+            source: 'persisted'
+        };
+    })().catch((error) => {
+        console.warn('[AdminStudioBootstrap] Failed to restore persisted Supabase session:', error);
+        return {
+            restored: false,
+            reason: 'restore_exception',
+            error
+        };
+    }).finally(() => {
+        resolveRuntimeAccessToken(window.supabaseClient)
+            .then((accessToken) => {
+                if (accessToken) {
+                    window.supabaseClient?.realtime?.setAuth?.(accessToken);
+                }
+            })
+            .catch((error) => {
+                console.warn('[AdminStudioBootstrap] Failed to refresh realtime auth token:', error);
+            });
+    });
+
+    window.setTimeout(() => {
+        guardStorage._locked = false;
+    }, 3000);
+
     const ADMIN_PERMISSION_GROUPS = [
         {
             id: 'content',
@@ -632,6 +859,69 @@
         }
     }
 
+    function scheduleAdminStudioPendingWorkspaceRestore() {
+        if (window.__adminStudioPendingWorkspaceRestoreRequested) {
+            return;
+        }
+
+        if (typeof window.schedulePendingOpsAlertWorkspaceRestore !== 'function') {
+            return;
+        }
+
+        window.__adminStudioPendingWorkspaceRestoreRequested = true;
+        window.schedulePendingOpsAlertWorkspaceRestore();
+    }
+
+    function prewarmAdminChatModule() {
+        if (window.adminChatInstance || typeof window.AdminChat !== 'function') {
+            return false;
+        }
+
+        if (!hasModulePermission('chat')) {
+            return false;
+        }
+
+        const chatContainer = document.getElementById('chat-admin-container');
+        if (!chatContainer) {
+            return false;
+        }
+
+        window.adminChatInstance = new window.AdminChat();
+        return true;
+    }
+
+    function scheduleAdminChatPrewarm() {
+        if (window.__adminChatPrewarmScheduled || window.adminChatInstance) {
+            return;
+        }
+
+        if (!(window.adminStudioAccessGranted === true || window.isAdmin === true || window.isSuperAdmin === true)) {
+            return;
+        }
+
+        if (!hasModulePermission('chat')) {
+            return;
+        }
+
+        const runPrewarm = () => {
+            window.__adminChatPrewarmScheduled = false;
+            if (!prewarmAdminChatModule()) {
+                window.setTimeout(() => {
+                    scheduleAdminChatPrewarm();
+                }, 240);
+            }
+        };
+
+        window.__adminChatPrewarmScheduled = true;
+
+        if (typeof window.requestIdleCallback === 'function') {
+            window.requestIdleCallback(runPrewarm, { timeout: 1200 });
+            return;
+        }
+
+        window.setTimeout(runPrewarm, 280);
+    }
+
     function switchModule(moduleName, options = {}) {
         const normalizedModuleName = normalizeAdminModuleId(moduleName) || 'gallery';
         if (!hasModulePermission(normalizedModuleName)) {
@@ -649,13 +939,13 @@
             if (options.fallback !== false) {
                 const fallbackModule = getFirstAccessibleAdminModule(options.preferredModule);
                 if (fallbackModule && fallbackModule !== normalizedModuleName) {
-                    return activateAdminStudioModule(fallbackModule);
+                    activateAdminStudioModule(fallbackModule);
                 }
             }
-            return;
+            return false;
         }
 
-        activateAdminStudioModule(normalizedModuleName);
+        return activateAdminStudioModule(normalizedModuleName);
     }
 
     window.toggleMobileSidebar = toggleMobileSidebar;
@@ -666,6 +956,7 @@
     window.getAdminPermissionDefinition = getAdminPermissionDefinition;
     window.getAdminPermissionLabel = getAdminPermissionLabel;
     window.getAdminModuleDefinition = getAdminModuleDefinition;
+    window.getModulePermissionRequirementText = getModulePermissionRequirementText;
     window.hasModulePermission = hasModulePermission;
     window.getFirstAccessibleAdminModule = getFirstAccessibleAdminModule;
     window.syncAdminStudioModuleAccess = syncAdminStudioModuleAccess;
@@ -677,6 +968,8 @@
             preferredModule: restoreAdminStudioModuleFromUrl(),
             enforceActiveModule: true
         });
+        scheduleAdminStudioPendingWorkspaceRestore();
+        scheduleAdminChatPrewarm();
     });
 
     document.addEventListener('click', (event) => {
@@ -709,6 +1002,11 @@
             }
         } else {
             console.warn('ShopAdmin not found on window load');
+        }
+
+        if (window.adminStudioAccessGranted === true || window.isAdmin === true || window.isSuperAdmin === true) {
+            scheduleAdminStudioPendingWorkspaceRestore();
+            scheduleAdminChatPrewarm();
         }
     });
 }());

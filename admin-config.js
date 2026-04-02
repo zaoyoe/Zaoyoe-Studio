@@ -1947,75 +1947,47 @@ function setOpsAlertUnifiedSummaryDraftFieldValues(draft = {}) {
     }
 }
 
-function getOpsAlertUnifiedSummaryDraftConsensus(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
-    const selectedDefinitions = getOpsAlertSummaryOrchestrationSelectedDefinitions();
+function resolveOpsAlertSharedRuntimeMethod(methodName = '') {
+    const normalizedMethodName = String(methodName || '').trim();
+    if (!normalizedMethodName) {
+        return null;
+    }
+    const candidate = window[normalizedMethodName];
+    return typeof candidate === 'function' ? candidate : null;
+}
+
+function resolveOpsAlertSharedCallable(methodName = '', localCallable = null, optionsBuilder = null) {
+    const sharedMethod = resolveOpsAlertSharedRuntimeMethod(methodName);
+    if (!sharedMethod) {
+        return localCallable;
+    }
+    return (...args) => {
+        const options = typeof optionsBuilder === 'function' ? optionsBuilder(...args) : undefined;
+        return options === undefined ? sharedMethod(...args) : sharedMethod(...args, options);
+    };
+}
+
+function requireOpsAlertWorkbenchMethod(methodName = '') {
+    const sharedMethod = resolveOpsAlertSharedRuntimeMethod(methodName);
+    if (typeof sharedMethod !== 'function') {
+        throw new Error(`[Config] Missing admin workbench method: ${methodName}`);
+    }
+    return sharedMethod;
+}
+
+function resolveOpsAlertUnifiedSummaryDraftConsensus(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']), selectedDefinitions = getOpsAlertSummaryOrchestrationSelectedDefinitions()) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
     if (!selectedDefinitions.length) {
         return null;
     }
-
-    const normalizedConfig = normalizeOpsAlertConfig(config);
-    const defaults = getDefaultOpsAlertConfig();
-    const selectedSections = selectedDefinitions.map((definition) => (
-        normalizedConfig[definition.key] || defaults[definition.key] || {}
-    ));
-    const pickConsensusValue = (definitions, sections, resolver) => {
-        if (!definitions.length || !sections.length) {
-            return undefined;
-        }
-
-        const values = sections.map((section, index) => resolver(section, definitions[index]));
-        const firstValue = values[0];
-        return values.every((value) => value === firstValue) ? firstValue : undefined;
-    };
-    const workHoursDefinitions = selectedDefinitions.filter((definition) => definition.supports_work_hours_only);
-    const workHoursSections = workHoursDefinitions.map((definition) => (
-        normalizedConfig[definition.key] || defaults[definition.key] || {}
-    ));
-
-    return {
-        summary_enabled: pickConsensusValue(
-            selectedDefinitions,
-            selectedSections,
-            (section) => section.summary_enabled === true
-        ),
-        work_hours_only_enabled: workHoursDefinitions.length
-            ? pickConsensusValue(
-                workHoursDefinitions,
-                workHoursSections,
-                (section) => section.work_hours_only_enabled === true
-            )
-            : false,
-        summary_schedule_mode: pickConsensusValue(
-            selectedDefinitions,
-            selectedSections,
-            (section) => normalizeOpsAlertSummaryScheduleMode(section.summary_schedule_mode, 'rolling_window')
-        ),
-        summary_window_minutes: pickConsensusValue(
-            selectedDefinitions,
-            selectedSections,
-            (section) => clamp(toWholeNumber(section.summary_window_minutes, 60), 5, 24 * 60)
-        ),
-        summary_hourly_minute: pickConsensusValue(
-            selectedDefinitions,
-            selectedSections,
-            (section) => clamp(toWholeNumber(section.summary_hourly_minute, 0), 0, 59)
-        ),
-        summary_daily_hour: pickConsensusValue(
-            selectedDefinitions,
-            selectedSections,
-            (section) => clamp(toWholeNumber(section.summary_daily_hour, 9), 0, 23)
-        ),
-        summary_daily_minute: pickConsensusValue(
-            selectedDefinitions,
-            selectedSections,
-            (section) => clamp(toWholeNumber(section.summary_daily_minute, 0), 0, 59)
-        ),
-        summary_max_items: pickConsensusValue(
-            selectedDefinitions,
-            selectedSections,
-            (section) => clamp(toWholeNumber(section.summary_max_items, 10), 1, 50)
-        )
-    };
+    return requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertUnifiedSummaryConsensus')(normalizedConfig, {
+        definitions: OPS_ALERT_SUMMARY_ORCHESTRATION_DEFINITIONS,
+        selectedDefinitions,
+        defaults: getDefaultOpsAlertConfig(),
+        normalizeScheduleMode: normalizeOpsAlertSummaryScheduleMode,
+        clamp,
+        toWholeNumber
+    });
 }
 
 function syncOpsAlertUnifiedSummaryDraftFromSelection(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']), options = {}) {
@@ -2023,7 +1995,7 @@ function syncOpsAlertUnifiedSummaryDraftFromSelection(config = normalizeOpsAlert
         return;
     }
 
-    const consensus = getOpsAlertUnifiedSummaryDraftConsensus(config);
+    const consensus = resolveOpsAlertUnifiedSummaryDraftConsensus(config);
     if (!consensus) {
         return;
     }
@@ -2041,63 +2013,23 @@ function syncOpsAlertUnifiedSummaryDraftFromSelection(config = normalizeOpsAlert
     opsAlertUnifiedSummaryDraftDirty = false;
 }
 
-function buildLocalOpsAlertUnifiedSummaryDraft() {
-    return {
-        summary_enabled: document.getElementById('opsAlertUnifiedSummaryDraftEnabled')?.checked === true,
-        work_hours_only_enabled: document.getElementById('opsAlertUnifiedSummaryDraftWorkHoursOnlyEnabled')?.checked === true,
-        summary_schedule_mode: normalizeOpsAlertSummaryScheduleMode(
-            document.getElementById('opsAlertUnifiedSummaryDraftScheduleMode')?.value,
-            'rolling_window'
-        ),
-        summary_window_minutes: clamp(
-            toWholeNumber(document.getElementById('opsAlertUnifiedSummaryDraftWindowMinutes')?.value, 60),
-            5,
-            24 * 60
-        ),
-        summary_hourly_minute: clamp(
-            toWholeNumber(document.getElementById('opsAlertUnifiedSummaryDraftHourlyMinute')?.value, 0),
-            0,
-            59
-        ),
-        summary_daily_hour: clamp(
-            toWholeNumber(document.getElementById('opsAlertUnifiedSummaryDraftDailyHour')?.value, 9),
-            0,
-            23
-        ),
-        summary_daily_minute: clamp(
-            toWholeNumber(document.getElementById('opsAlertUnifiedSummaryDraftDailyMinute')?.value, 0),
-            0,
-            59
-        ),
-        summary_max_items: clamp(
-            toWholeNumber(document.getElementById('opsAlertUnifiedSummaryDraftMaxItems')?.value, 10),
-            1,
-            50
-        )
-    };
-}
-
 function resolveOpsAlertUnifiedSummaryDraft() {
-    if (typeof window.collectAdminWorkbenchOpsAlertUnifiedSummaryDraft === 'function') {
-        return window.collectAdminWorkbenchOpsAlertUnifiedSummaryDraft({}, {
-            document,
-            ids: {
-                summaryEnabled: 'opsAlertUnifiedSummaryDraftEnabled',
-                workHoursOnlyEnabled: 'opsAlertUnifiedSummaryDraftWorkHoursOnlyEnabled',
-                summaryScheduleMode: 'opsAlertUnifiedSummaryDraftScheduleMode',
-                summaryWindowMinutes: 'opsAlertUnifiedSummaryDraftWindowMinutes',
-                summaryHourlyMinute: 'opsAlertUnifiedSummaryDraftHourlyMinute',
-                summaryDailyHour: 'opsAlertUnifiedSummaryDraftDailyHour',
-                summaryDailyMinute: 'opsAlertUnifiedSummaryDraftDailyMinute',
-                summaryMaxItems: 'opsAlertUnifiedSummaryDraftMaxItems'
-            },
-            normalizeScheduleMode: normalizeOpsAlertSummaryScheduleMode,
-            clamp,
-            toWholeNumber
-        });
-    }
-
-    return buildLocalOpsAlertUnifiedSummaryDraft();
+    return requireOpsAlertWorkbenchMethod('collectAdminWorkbenchOpsAlertUnifiedSummaryDraft')({}, {
+        document,
+        ids: {
+            summaryEnabled: 'opsAlertUnifiedSummaryDraftEnabled',
+            workHoursOnlyEnabled: 'opsAlertUnifiedSummaryDraftWorkHoursOnlyEnabled',
+            summaryScheduleMode: 'opsAlertUnifiedSummaryDraftScheduleMode',
+            summaryWindowMinutes: 'opsAlertUnifiedSummaryDraftWindowMinutes',
+            summaryHourlyMinute: 'opsAlertUnifiedSummaryDraftHourlyMinute',
+            summaryDailyHour: 'opsAlertUnifiedSummaryDraftDailyHour',
+            summaryDailyMinute: 'opsAlertUnifiedSummaryDraftDailyMinute',
+            summaryMaxItems: 'opsAlertUnifiedSummaryDraftMaxItems'
+        },
+        normalizeScheduleMode: normalizeOpsAlertSummaryScheduleMode,
+        clamp,
+        toWholeNumber
+    });
 }
 
 function collectOpsAlertUnifiedSummaryDraftFromForm() {
@@ -2199,34 +2131,6 @@ function applyOpsAlertSummaryModeControlStateToDom(controlState = {}, ids = {}, 
     }
 }
 
-function buildLocalOpsAlertSummaryModeControlState(monitorConfig = {}, options = {}) {
-    const monitorEnabled = options.monitorEnabled === undefined
-        ? monitorConfig.enabled === true
-        : options.monitorEnabled === true;
-    const summaryEnabled = options.summaryEnabled === undefined
-        ? monitorConfig.summary_enabled === true
-        : options.summaryEnabled === true;
-    const scheduleMode = normalizeOpsAlertSummaryScheduleMode(monitorConfig.summary_schedule_mode, 'rolling_window');
-
-    return {
-        scheduleMode,
-        scheduleModeDisabled: !(monitorEnabled && summaryEnabled),
-        summaryMaxItemsDisabled: !(monitorEnabled && summaryEnabled),
-        summaryWindowMinutesDisabled: !(monitorEnabled && summaryEnabled) || scheduleMode !== 'rolling_window',
-        summaryHourlyMinuteDisabled: !(monitorEnabled && summaryEnabled) || scheduleMode !== 'hourly',
-        summaryDailyHourDisabled: !(monitorEnabled && summaryEnabled) || scheduleMode !== 'daily',
-        summaryDailyMinuteDisabled: !(monitorEnabled && summaryEnabled) || scheduleMode !== 'daily',
-        rows: {
-            summaryWindowMinutesVisible: scheduleMode === 'rolling_window',
-            summaryHourlyMinuteVisible: scheduleMode === 'hourly',
-            summaryDailyHourVisible: scheduleMode === 'daily',
-            summaryDailyMinuteVisible: scheduleMode === 'daily'
-        },
-        hintText: '',
-        hintDisabled: !(monitorEnabled && summaryEnabled)
-    };
-}
-
 function resolveOpsAlertSummaryModeControlState(monitorConfig = {}, options = {}) {
     const monitorEnabled = options.monitorEnabled === undefined
         ? monitorConfig.enabled === true
@@ -2234,236 +2138,123 @@ function resolveOpsAlertSummaryModeControlState(monitorConfig = {}, options = {}
     const summaryEnabled = options.summaryEnabled === undefined
         ? monitorConfig.summary_enabled === true
         : options.summaryEnabled === true;
-
-    if (typeof window.buildAdminWorkbenchOpsAlertSummaryModeControlState === 'function') {
-        return window.buildAdminWorkbenchOpsAlertSummaryModeControlState(monitorConfig, {
+    return requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertSummaryModeControlState')(monitorConfig, {
+        normalizeScheduleMode: normalizeOpsAlertSummaryScheduleMode,
+        getHintText: (section, hintOptions = {}) => requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertSummaryModeHintText')(section, {
             normalizeScheduleMode: normalizeOpsAlertSummaryScheduleMode,
-            getHintText: typeof window.buildAdminWorkbenchOpsAlertSummaryModeHintText === 'function'
-                ? window.buildAdminWorkbenchOpsAlertSummaryModeHintText
-                : undefined,
-            formatCount: formatVerifyMonitorInteger,
-            formatTimeNumber: formatOpsAlertTimeNumber,
-            formatHourMinute: formatOpsAlertHourMinute,
-            monitorEnabled,
-            summaryEnabled
-        });
-    }
-
-    return buildLocalOpsAlertSummaryModeControlState(monitorConfig, {
+            formatCount: typeof hintOptions.formatCount === 'function' ? hintOptions.formatCount : formatVerifyMonitorInteger,
+            formatTimeNumber: typeof hintOptions.formatTimeNumber === 'function' ? hintOptions.formatTimeNumber : formatOpsAlertTimeNumber,
+            formatHourMinute: typeof hintOptions.formatHourMinute === 'function' ? hintOptions.formatHourMinute : formatOpsAlertHourMinute,
+            monitorEnabled: hintOptions.monitorEnabled,
+            summaryEnabled: hintOptions.summaryEnabled
+        }),
+        formatCount: formatVerifyMonitorInteger,
+        formatTimeNumber: formatOpsAlertTimeNumber,
+        formatHourMinute: formatOpsAlertHourMinute,
         monitorEnabled,
         summaryEnabled
     });
 }
 
+function buildOpsAlertUnifiedSummaryDraftUiState(draft = {}, options = {}) {
+    const selectedCount = Math.max(0, Number(options.selectedCount || 0));
+    const controlState = requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertUnifiedSummaryDraftControlState')(draft, {
+        selectedCount,
+        formatCount: formatVerifyMonitorInteger,
+        buildSummaryModeControlState: (section, sectionOptions = {}) => resolveOpsAlertSummaryModeControlState(section, sectionOptions)
+    });
+    return {
+        draft,
+        selectedCount,
+        controlState,
+        applyButtonHtml: `<i class="fas fa-wand-magic-sparkles"></i> ${escapeConfigHtml(controlState.applyLabel || '应用到所选告警')}`
+    };
+}
+
+function resolveOpsAlertUnifiedSummaryDraftUiState(draft = {}, options = {}) {
+    return buildOpsAlertUnifiedSummaryDraftUiState(draft, options);
+}
+
 function applyOpsAlertUnifiedSummaryDraftControls() {
     const draft = collectOpsAlertUnifiedSummaryDraftFromForm();
-    const summaryEnabled = draft.summary_enabled === true;
     const selectedCount = getOpsAlertSummaryOrchestrationSelectedDefinitions().length;
     const applyButton = document.querySelector('[data-admin-action="settings-apply-ops-alert-unified-summary-draft"]');
-    const sharedSummaryModeState = resolveOpsAlertSummaryModeControlState(draft, {
-        monitorEnabled: true,
-        summaryEnabled
+    const uiState = resolveOpsAlertUnifiedSummaryDraftUiState(draft, {
+        selectedCount
     });
 
-    applyOpsAlertSummaryModeControlStateToDom(sharedSummaryModeState, OPS_ALERT_UNIFIED_SUMMARY_DRAFT_FIELD_IDS, {
-        valueSource: draft,
+    applyOpsAlertSummaryModeControlStateToDom(uiState.controlState.summaryModeControlState, OPS_ALERT_UNIFIED_SUMMARY_DRAFT_FIELD_IDS, {
+        valueSource: uiState.draft,
         populateAllValues: true
     });
     if (applyButton) {
-        applyButton.disabled = selectedCount <= 0;
-        applyButton.innerHTML = `<i class="fas fa-wand-magic-sparkles"></i> 应用到所选告警${selectedCount > 0 ? `（${escapeConfigHtml(formatVerifyMonitorInteger(selectedCount))} 类）` : ''}`;
+        applyButton.disabled = uiState.controlState.applyDisabled === true;
+        applyButton.innerHTML = uiState.applyButtonHtml;
     }
 }
 
-function renderOpsAlertSummaryOrchestration(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+function resolveOpsAlertSummaryOrchestrationRenderState(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']), selectedDefinitions = getOpsAlertSummaryOrchestrationSelectedDefinitions()) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
-    const defaults = getDefaultOpsAlertConfig();
-    const workHours = normalizedConfig.work_hours || defaults.work_hours;
-    let enabledMonitorCount = 0;
-    let summaryEnabledCount = 0;
-    let workHoursOnlyCount = 0;
+    return requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertSummaryOrchestrationRenderState')(normalizedConfig, {
+        definitions: OPS_ALERT_SUMMARY_ORCHESTRATION_DEFINITIONS,
+        defaults: getDefaultOpsAlertConfig(),
+        selectedDefinitions,
+        formatCount: formatVerifyMonitorInteger,
+        formatHourMinute: formatOpsAlertHourMinute,
+        formatSummaryScheduleDescription: formatOpsAlertSummaryScheduleDescription
+    });
+}
 
-    OPS_ALERT_SUMMARY_ORCHESTRATION_DEFINITIONS.forEach((definition) => {
-        const section = normalizedConfig[definition.key] || defaults[definition.key] || {};
-        const sweepIntervalMinutes = Math.max(1, Math.round(Number(section.sweep_interval_ms || 0) / 60000));
-        const summaryDescription = formatOpsAlertSummaryScheduleDescription(section);
-
-        if (section.enabled) {
-            enabledMonitorCount += 1;
-        }
-        if (section.summary_enabled === true) {
-            summaryEnabledCount += 1;
-        }
-        if (definition.supports_work_hours_only && section.work_hours_only_enabled === true) {
-            workHoursOnlyCount += 1;
-        }
-
-        if (definition.key === 'shop_inventory') {
-            setOpsAlertSummaryOrchestrationCell(
-                definition.monitor_status_id,
-                section.enabled ? 'success' : 'neutral',
-                section.enabled ? '已启用' : '已关闭',
-                section.enabled
-                    ? `巡检 ${formatVerifyMonitorInteger(sweepIntervalMinutes)} 分钟，低库存阈值 ${formatVerifyMonitorInteger(section.low_stock_threshold || 0)}。`
-                    : `库存巡检参数仍保留，阈值 ${formatVerifyMonitorInteger(section.low_stock_threshold || 0)}。`
-            );
-        } else if (definition.key === 'tickets') {
-            setOpsAlertSummaryOrchestrationCell(
-                definition.monitor_status_id,
-                section.enabled ? 'success' : 'neutral',
-                section.enabled ? '已启用' : '已关闭',
-                section.enabled
-                    ? `巡检 ${formatVerifyMonitorInteger(sweepIntervalMinutes)} 分钟，超时阈值 ${formatVerifyMonitorInteger(section.pending_overdue_minutes || 0)} 分钟。`
-                    : `工单 SLA 阈值仍保留为 ${formatVerifyMonitorInteger(section.pending_overdue_minutes || 0)} 分钟。`
-            );
-        } else if (definition.key === 'shop_order_delivery') {
-            setOpsAlertSummaryOrchestrationCell(
-                definition.monitor_status_id,
-                section.enabled ? 'success' : 'neutral',
-                section.enabled ? '已启用' : '已关闭',
-                section.enabled
-                    ? `巡检 ${formatVerifyMonitorInteger(sweepIntervalMinutes)} 分钟，重试阈值 ${formatVerifyMonitorInteger(section.retry_waiting_min_attempts || 0)} 次，事故阈值 ${formatVerifyMonitorInteger(section.incident_min_order_count || 0)} 笔。`
-                    : `履约异常阈值仍保留，重试 ${formatVerifyMonitorInteger(section.retry_waiting_min_attempts || 0)} 次触发。`
-            );
-        } else if (definition.key === 'payment_gateway') {
-            setOpsAlertSummaryOrchestrationCell(
-                definition.monitor_status_id,
-                section.enabled ? 'success' : 'neutral',
-                section.enabled ? '已启用' : '已关闭',
-                section.enabled
-                    ? `巡检 ${formatVerifyMonitorInteger(sweepIntervalMinutes)} 分钟，异常窗口 ${formatVerifyMonitorInteger(section.window_minutes || 0)} 分钟，失败阈值 ${formatVerifyMonitorInteger(section.min_failed_orders || 0)} 笔。`
-                    : `支付通道异常阈值仍保留，窗口 ${formatVerifyMonitorInteger(section.window_minutes || 0)} 分钟。`
-            );
-        } else if (definition.key === 'verify_quota') {
-            setOpsAlertSummaryOrchestrationCell(
-                definition.monitor_status_id,
-                section.enabled ? 'success' : 'neutral',
-                section.enabled ? '已启用' : '已关闭',
-                section.enabled
-                    ? `巡检 ${formatVerifyMonitorInteger(sweepIntervalMinutes)} 分钟，低余额 ${formatVerifyMonitorInteger(section.low_balance_threshold || 0)} 点 / 低剩余 ${formatVerifyMonitorInteger(section.low_remaining_jobs_threshold || 0)} 次。`
-                    : `验证额度阈值仍保留，低余额 ${formatVerifyMonitorInteger(section.low_balance_threshold || 0)} 点。`
-            );
-        } else if (definition.key === 'verify_queue') {
-            setOpsAlertSummaryOrchestrationCell(
-                definition.monitor_status_id,
-                section.enabled ? 'success' : 'neutral',
-                section.enabled ? '已启用' : '已关闭',
-                section.enabled
-                    ? `巡检 ${formatVerifyMonitorInteger(sweepIntervalMinutes)} 分钟，队列阈值 ${formatVerifyMonitorInteger(section.queue_size_threshold || 0)} 个，最老待处理 ${formatVerifyMonitorInteger(section.oldest_pending_minutes_threshold || 0)} 分钟。`
-                    : `验证堆积阈值仍保留，队列阈值 ${formatVerifyMonitorInteger(section.queue_size_threshold || 0)} 个。`
-            );
-        } else if (definition.key === 'verify_failure') {
-            setOpsAlertSummaryOrchestrationCell(
-                definition.monitor_status_id,
-                section.enabled ? 'success' : 'neutral',
-                section.enabled ? '已启用' : '已关闭',
-                section.enabled
-                    ? `巡检 ${formatVerifyMonitorInteger(sweepIntervalMinutes)} 分钟，失败率阈值 ${formatVerifyMonitorInteger(section.failure_rate_threshold || 0)}%，样本量至少 ${formatVerifyMonitorInteger(section.min_total_jobs_threshold || 0)} 次。`
-                    : `验证失败率阈值仍保留，失败率 ${formatVerifyMonitorInteger(section.failure_rate_threshold || 0)}%。`
-            );
-        } else {
-            setOpsAlertSummaryOrchestrationCell(
-                definition.monitor_status_id,
-                section.enabled ? 'success' : 'neutral',
-                section.enabled ? '已启用' : '已关闭',
-                section.enabled
-                    ? `巡检 ${formatVerifyMonitorInteger(sweepIntervalMinutes)} 分钟，回看 ${formatVerifyMonitorInteger(section.lookback_minutes || 0)} 分钟。`
-                    : `巡检参数仍保留，回看 ${formatVerifyMonitorInteger(section.lookback_minutes || 0)} 分钟。`
-            );
-        }
-
-        if (!definition.supports_work_hours_only) {
-            setOpsAlertSummaryOrchestrationCell(
-                definition.work_hours_status_id,
-                'neutral',
-                '不适用',
-                '当前库存类只支持定时汇总，不支持按工作时段顺延。'
-            );
-        } else if (!section.enabled) {
-            setOpsAlertSummaryOrchestrationCell(
-                definition.work_hours_status_id,
-                'neutral',
-                '主监控关闭',
-                '开启主监控后才会应用工作时段顺延。'
-            );
-        } else if (section.work_hours_only_enabled === true && workHours.enabled) {
-            setOpsAlertSummaryOrchestrationCell(
-                definition.work_hours_status_id,
-                'success',
-                '已顺延',
-                `非工作时段会顺延到 ${formatOpsAlertHourMinute(workHours.start_hour, 0)} 开始，工作时段 ${formatOpsAlertHourMinute(workHours.start_hour, 0)}-${formatOpsAlertHourMinute(workHours.end_hour, 0)}（${workHours.timezone || 'Asia/Shanghai'}）。`
-            );
-        } else if (section.work_hours_only_enabled === true) {
-            setOpsAlertSummaryOrchestrationCell(
-                definition.work_hours_status_id,
-                'warning',
-                '待开启工作时段',
-                '已勾选顺延，但全局工作时段还没启用。'
-            );
-        } else if (workHours.enabled) {
-            setOpsAlertSummaryOrchestrationCell(
-                definition.work_hours_status_id,
-                'neutral',
-                '全天直发',
-                `全局工作时段是 ${formatOpsAlertHourMinute(workHours.start_hour, 0)}-${formatOpsAlertHourMinute(workHours.end_hour, 0)}，但该告警仍全天直接外发。`
-            );
-        } else {
-            setOpsAlertSummaryOrchestrationCell(
-                definition.work_hours_status_id,
-                'neutral',
-                '全天直发',
-                '当前未启用全局工作时段限制。'
-            );
-        }
-
-        if (!section.enabled) {
-            setOpsAlertSummaryOrchestrationCell(
-                definition.summary_status_id,
-                section.summary_enabled === true ? 'warning' : 'neutral',
-                section.summary_enabled === true ? '等待主监控' : '即时通知',
-                section.summary_enabled === true
-                    ? `已预设 ${summaryDescription}，最多 ${formatVerifyMonitorInteger(section.summary_max_items || 0)} 条，开启主监控后生效。`
-                    : '主监控关闭时不会出队汇总。'
-            );
-        } else if (section.summary_enabled === true) {
-            setOpsAlertSummaryOrchestrationCell(
-                definition.summary_status_id,
-                'success',
-                '已启用汇总',
-                `${summaryDescription}，最多 ${formatVerifyMonitorInteger(section.summary_max_items || 0)} 条。${definition.supports_work_hours_only && section.work_hours_only_enabled === true && workHours.enabled ? ' 非工作时段仍会顺延到上班时间。' : ''}`
-            );
-        } else if (definition.supports_work_hours_only && section.work_hours_only_enabled === true && workHours.enabled) {
-            setOpsAlertSummaryOrchestrationCell(
-                definition.summary_status_id,
-                'warning',
-                '仅非工作时段汇总',
-                '工作时段内仍即时通知，非工作时段会顺延到下个上班时间。'
-            );
-        } else {
-            setOpsAlertSummaryOrchestrationCell(
-                definition.summary_status_id,
-                'neutral',
-                '即时通知',
-                '当前不走固定汇总，命中后按原节奏直接外发。'
-            );
-        }
+function applyOpsAlertSummaryOrchestrationRenderState(renderState = {}) {
+    const definitionStates = Array.isArray(renderState.definitionStates) ? renderState.definitionStates : [];
+    definitionStates.forEach((definitionState) => {
+        [definitionState?.monitorState, definitionState?.workHoursState, definitionState?.summaryState]
+            .filter(Boolean)
+            .forEach((cellState) => {
+                setOpsAlertSummaryOrchestrationCell(
+                    cellState.cellId,
+                    cellState.tone,
+                    cellState.label,
+                    cellState.text
+                );
+            });
     });
 
-    const selectedCount = getOpsAlertSummaryOrchestrationSelectedDefinitions().length;
     const metaEl = document.getElementById('opsAlertSummaryOrchestrationMeta');
     const overviewSelectionMetaEl = document.getElementById('opsAlertSummaryOverviewSelectionMeta');
     if (metaEl) {
         metaEl.innerHTML = `
             <i class="fas fa-layer-group"></i>
-            <span>共 ${escapeConfigHtml(formatVerifyMonitorInteger(OPS_ALERT_SUMMARY_ORCHESTRATION_DEFINITIONS.length))} 类告警：${escapeConfigHtml(formatVerifyMonitorInteger(enabledMonitorCount))} 类已启用主监控，${escapeConfigHtml(formatVerifyMonitorInteger(summaryEnabledCount))} 类已启用定时汇总，${escapeConfigHtml(formatVerifyMonitorInteger(workHoursOnlyCount))} 类启用工作时段顺延。当前已勾选 ${escapeConfigHtml(formatVerifyMonitorInteger(selectedCount))} 类用于批量应用。</span>
+            <span>${escapeConfigHtml(renderState.metaText || '暂无统一汇总编排状态。')}</span>
         `;
     }
     if (overviewSelectionMetaEl) {
-        overviewSelectionMetaEl.textContent = `已勾选 ${formatVerifyMonitorInteger(selectedCount)} 类`;
+        overviewSelectionMetaEl.textContent = renderState.overviewSelectionText || '已勾选 0 类';
     }
+}
 
-    syncOpsAlertUnifiedSummaryDraftFromSelection(normalizedConfig);
+function buildOpsAlertSummaryOrchestrationMarkupState(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const selectedDefinitions = getOpsAlertSummaryOrchestrationSelectedDefinitions();
+    const renderState = resolveOpsAlertSummaryOrchestrationRenderState(normalizedConfig, selectedDefinitions);
+    return {
+        config: normalizedConfig,
+        renderState
+    };
+}
+
+function applyOpsAlertSummaryOrchestrationMarkupState(markupState = {}) {
+    const renderState = markupState.renderState || {};
+    applyOpsAlertSummaryOrchestrationRenderState(renderState);
+    syncOpsAlertUnifiedSummaryDraftFromSelection(markupState.config || normalizeOpsAlertConfig(systemConfigCache['ops_alerts']));
     applyOpsAlertUnifiedSummaryDraftControls();
+    return markupState;
+}
+
+function renderOpsAlertSummaryOrchestration(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    applyOpsAlertSummaryOrchestrationMarkupState(
+        buildOpsAlertSummaryOrchestrationMarkupState(config)
+    );
 }
 
 function selectOpsAlertUnifiedSummaryTargets(preset = 'all') {
@@ -4302,6 +4093,109 @@ function setOpsAlertDeleteButtonState(secretName, status) {
         : '当前没有可删除的后台密钥。';
 }
 
+function buildLocalOpsAlertChannelOverviewState(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']), overviewStatus = getOpsAlertOverviewStatus(config)) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const normalizedOverviewStatus = overviewStatus && typeof overviewStatus === 'object' && !Array.isArray(overviewStatus)
+        ? overviewStatus
+        : {};
+
+    return {
+        masterEnabled: normalizedConfig.enabled === true,
+        channels: [
+            {
+                toggleId: 'opsAlertTelegramEnabledToggle',
+                enabled: normalizedConfig.channels.telegram.enabled === true,
+                inputIds: [
+                    'opsAlertTelegramChatIds',
+                    'opsAlertTelegramSeverity',
+                    'opsAlertTelegramBotToken'
+                ],
+                statusId: 'opsAlertTelegramBotTokenStatus',
+                secretName: 'telegram_bot_token',
+                secretStatus: normalizedOverviewStatus.telegramSecret || null
+            },
+            {
+                toggleId: 'opsAlertFeishuEnabledToggle',
+                enabled: normalizedConfig.channels.feishu.enabled === true,
+                inputIds: [
+                    'opsAlertFeishuSeverity',
+                    'opsAlertFeishuWebhookUrl'
+                ],
+                statusId: 'opsAlertFeishuWebhookStatus',
+                secretName: 'feishu_webhook_url',
+                secretStatus: normalizedOverviewStatus.feishuSecret || null
+            },
+            {
+                toggleId: 'opsAlertEmailEnabledToggle',
+                enabled: normalizedConfig.channels.email.enabled === true,
+                inputIds: [
+                    'opsAlertEmailSeverity',
+                    'opsAlertEmailRecipients',
+                    'opsAlertEmailFromAddress',
+                    'opsAlertEmailReplyTo',
+                    'opsAlertEmailSubjectPrefix',
+                    'opsAlertEmailApiKey'
+                ],
+                statusId: 'opsAlertEmailApiKeyStatus',
+                secretName: 'email_api_key',
+                secretStatus: normalizedOverviewStatus.emailSecret || null
+            }
+        ]
+    };
+}
+
+function applyOpsAlertChannelOverviewState(channelOverviewState = {}) {
+    const masterToggle = document.getElementById('opsAlertEnabledToggle');
+    if (masterToggle) {
+        masterToggle.classList.toggle('active', channelOverviewState.masterEnabled === true);
+    }
+
+    (Array.isArray(channelOverviewState.channels) ? channelOverviewState.channels : []).forEach((channel) => {
+        const toggle = document.getElementById(channel.toggleId);
+        if (toggle) {
+            toggle.classList.toggle('active', channel.enabled === true);
+        }
+
+        (Array.isArray(channel.inputIds) ? channel.inputIds : []).forEach((id) => {
+            const input = document.getElementById(id);
+            if (input) {
+                input.disabled = channel.enabled !== true;
+            }
+        });
+
+        const statusEl = document.getElementById(channel.statusId);
+        if (statusEl) {
+            statusEl.textContent = getOpsAlertSecretStatusMessage(channel.secretName);
+        }
+
+        setOpsAlertDeleteButtonState(channel.secretName, channel.secretStatus || null);
+    });
+}
+
+const OPS_ALERT_SECTION_CONTROL_APPLIERS = [
+    applyOpsAlertStrategyControls,
+    applyOpsAlertShopRiskControls,
+    applyOpsAlertShopInventoryControls,
+    applyOpsAlertCustomerChatControls,
+    applyOpsAlertShopPurchaseSuccessControls,
+    applyOpsAlertWalletRechargeSuccessControls,
+    applyOpsAlertTicketsControls,
+    applyOpsAlertShopOrderDeliveryControls,
+    applyOpsAlertVerifyQuotaControls,
+    applyOpsAlertVerifyQueueControls,
+    applyOpsAlertVerifyFailureControls,
+    applyOpsAlertPaymentGatewayControls
+];
+
+function applyOpsAlertSectionControlAppliers(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    OPS_ALERT_SECTION_CONTROL_APPLIERS.forEach((applyControls) => {
+        if (typeof applyControls === 'function') {
+            applyControls(normalizedConfig);
+        }
+    });
+}
+
 function getPaymentProviderDomRefs(providerKey) {
     const suffixMap = {
         mock: 'Mock',
@@ -4462,93 +4356,13 @@ function renderPaymentChannelsConfig() {
 function applyOpsAlertOverview(config) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
     const overviewStatus = getOpsAlertOverviewStatus(normalizedConfig);
-    const { telegramSecret, feishuSecret, emailSecret } = overviewStatus;
-
-    const masterToggle = document.getElementById('opsAlertEnabledToggle');
-    if (masterToggle) {
-        masterToggle.classList.toggle('active', normalizedConfig.enabled);
-    }
-
-    const telegramToggle = document.getElementById('opsAlertTelegramEnabledToggle');
-    if (telegramToggle) {
-        telegramToggle.classList.toggle('active', normalizedConfig.channels.telegram.enabled);
-    }
-
-    const feishuToggle = document.getElementById('opsAlertFeishuEnabledToggle');
-    if (feishuToggle) {
-        feishuToggle.classList.toggle('active', normalizedConfig.channels.feishu.enabled);
-    }
-
-    const emailToggle = document.getElementById('opsAlertEmailEnabledToggle');
-    if (emailToggle) {
-        emailToggle.classList.toggle('active', normalizedConfig.channels.email.enabled);
-    }
-
-    const telegramInputIds = [
-        'opsAlertTelegramChatIds',
-        'opsAlertTelegramSeverity',
-        'opsAlertTelegramBotToken'
-    ];
-    telegramInputIds.forEach((id) => {
-        const input = document.getElementById(id);
-        if (input) input.disabled = !normalizedConfig.channels.telegram.enabled;
-    });
-
-    const feishuInputIds = [
-        'opsAlertFeishuSeverity',
-        'opsAlertFeishuWebhookUrl'
-    ];
-    feishuInputIds.forEach((id) => {
-        const input = document.getElementById(id);
-        if (input) input.disabled = !normalizedConfig.channels.feishu.enabled;
-    });
-
-    const emailInputIds = [
-        'opsAlertEmailSeverity',
-        'opsAlertEmailRecipients',
-        'opsAlertEmailFromAddress',
-        'opsAlertEmailReplyTo',
-        'opsAlertEmailSubjectPrefix',
-        'opsAlertEmailApiKey'
-    ];
-    emailInputIds.forEach((id) => {
-        const input = document.getElementById(id);
-        if (input) input.disabled = !normalizedConfig.channels.email.enabled;
-    });
-
-    const telegramStatus = document.getElementById('opsAlertTelegramBotTokenStatus');
-    if (telegramStatus) {
-        telegramStatus.textContent = getOpsAlertSecretStatusMessage('telegram_bot_token');
-    }
-
-    const feishuStatus = document.getElementById('opsAlertFeishuWebhookStatus');
-    if (feishuStatus) {
-        feishuStatus.textContent = getOpsAlertSecretStatusMessage('feishu_webhook_url');
-    }
-
-    const emailStatus = document.getElementById('opsAlertEmailApiKeyStatus');
-    if (emailStatus) {
-        emailStatus.textContent = getOpsAlertSecretStatusMessage('email_api_key');
-    }
-
-    setOpsAlertDeleteButtonState('telegram_bot_token', telegramSecret);
-    setOpsAlertDeleteButtonState('feishu_webhook_url', feishuSecret);
-    setOpsAlertDeleteButtonState('email_api_key', emailSecret);
+    applyOpsAlertChannelOverviewState(
+        buildLocalOpsAlertChannelOverviewState(normalizedConfig, overviewStatus)
+    );
     ensureOpsAlertMonitorCards();
-    applyOpsAlertStrategyControls(normalizedConfig);
-    applyOpsAlertShopRiskControls(normalizedConfig);
-    applyOpsAlertShopInventoryControls(normalizedConfig);
-    applyOpsAlertCustomerChatControls(normalizedConfig);
-    applyOpsAlertShopPurchaseSuccessControls(normalizedConfig);
-    applyOpsAlertWalletRechargeSuccessControls(normalizedConfig);
-    applyOpsAlertTicketsControls(normalizedConfig);
-    applyOpsAlertShopOrderDeliveryControls(normalizedConfig);
-    applyOpsAlertVerifyQuotaControls(normalizedConfig);
-    applyOpsAlertVerifyQueueControls(normalizedConfig);
-    applyOpsAlertVerifyFailureControls(normalizedConfig);
-    applyOpsAlertPaymentGatewayControls(normalizedConfig);
+    applyOpsAlertSectionControlAppliers(normalizedConfig);
     renderOpsAlertSummaryOrchestration(normalizedConfig);
-    renderOpsAlertOverviewCards(normalizedConfig);
+    renderOpsAlertOverview(normalizedConfig);
     updateOpsAlertStrategyDraftIndicators(normalizedConfig);
 }
 
@@ -5971,9 +5785,11 @@ function buildLocalOpsAlertStrategySummaryState(normalizedConfig = normalizeOpsA
     };
 }
 
-function resolveOpsAlertStrategySummaryState(normalizedConfig = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
-    if (typeof window.buildAdminWorkbenchOpsAlertStrategySummaryState === 'function') {
-        return window.buildAdminWorkbenchOpsAlertStrategySummaryState(normalizedConfig, {
+function resolveOpsAlertStrategySummaryStateBuilder() {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertStrategySummaryState',
+        buildLocalOpsAlertStrategySummaryState,
+        (config = {}) => ({
             normalizeConfig: normalizeOpsAlertConfig,
             getDefaultConfig: getDefaultOpsAlertConfig,
             getTemporaryMuteState: getOpsAlertTemporaryMuteState,
@@ -5984,10 +5800,12 @@ function resolveOpsAlertStrategySummaryState(normalizedConfig = normalizeOpsAler
             summaryDefinitions: OPS_ALERT_SUMMARY_ORCHESTRATION_DEFINITIONS,
             formatCount: formatVerifyMonitorInteger,
             formatHourRange: formatOpsAlertHourRange
-        });
-    }
+        })
+    );
+}
 
-    return buildLocalOpsAlertStrategySummaryState(normalizedConfig);
+function resolveOpsAlertStrategySummaryState(normalizedConfig = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    return resolveOpsAlertStrategySummaryStateBuilder()(normalizedConfig);
 }
 
 function renderOpsAlertStrategySummary(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
@@ -6270,18 +6088,94 @@ function getOpsAlertTemporaryMuteState(config = normalizeOpsAlertConfig(systemCo
     };
 }
 
-function resolveOpsAlertStrategyControlState(normalizedConfig = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
-    if (typeof window.buildAdminWorkbenchOpsAlertStrategyControlState === 'function') {
-        return window.buildAdminWorkbenchOpsAlertStrategyControlState(normalizedConfig, {
+function buildLocalOpsAlertStrategyControlState(normalizedConfig = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const resolvedConfig = normalizeOpsAlertConfig(normalizedConfig);
+    const defaults = getDefaultOpsAlertConfig() || {};
+    const temporaryMute = resolvedConfig.temporary_mute || defaults.temporary_mute || {};
+    const quietHours = resolvedConfig.quiet_hours || defaults.quiet_hours || {};
+    const workHours = resolvedConfig.work_hours || defaults.work_hours || {};
+    const temporaryMuteState = getOpsAlertTemporaryMuteState(resolvedConfig);
+    const muteRules = ['types', 'modules'].reduce((result, scope) => {
+        const scopeConfig = resolvedConfig.mute_rules?.[scope] || {};
+        result[scope] = getOpsAlertMuteRuleDefinitions(scope).reduce((scopeResult, definition) => {
+            const rule = scopeConfig?.[definition.key] || {};
+            const state = getOpsAlertMuteRuleState(rule);
+            scopeResult[definition.key] = {
+                untilValue: formatDateTimeLocalInputValue(rule.until || ''),
+                allowCriticalActive: rule.allow_critical !== false,
+                statusText: state.active
+                    ? `${state.untilLabel} 前静默${state.allowCritical ? '，critical 继续通知。' : '，全部级别暂停。'}`
+                    : (state.expired ? `已于 ${state.untilLabel} 到期，可清除旧时间。` : ''),
+                statusHidden: !(state.active || state.expired),
+                clearHidden: !(state.active || state.expired),
+                rowState: state.active ? 'active' : (state.expired ? 'expired' : 'inactive')
+            };
+            return scopeResult;
+        }, {});
+        return result;
+    }, {});
+    const routingMatrix = Object.keys({
+        ...(defaults.routing || {}),
+        ...(resolvedConfig.routing || {})
+    }).reduce((result, routingKey) => {
+        const currentRoute = resolvedConfig.routing?.[routingKey] || defaults.routing?.[routingKey] || {};
+        result[routingKey] = {
+            telegram: currentRoute.telegram !== false,
+            feishu: currentRoute.feishu !== false,
+            email: currentRoute.email !== false
+        };
+        return result;
+    }, {});
+
+    return {
+        temporaryMute: {
+            untilValue: formatDateTimeLocalInputValue(temporaryMute.until || ''),
+            allowCriticalActive: temporaryMute.allow_critical !== false,
+            statusText: temporaryMuteState.active
+                ? `当前已静默至 ${temporaryMuteState.untilLabel}，${temporaryMuteState.allowCritical ? 'critical 仍继续通知。' : '所有级别暂停外发。'}`
+                : (temporaryMuteState.expired
+                    ? `上次静默已于 ${temporaryMuteState.untilLabel} 到期。点击“清除静默”可清掉旧时间。`
+                    : ''),
+            statusHidden: !(temporaryMuteState.active || temporaryMuteState.expired),
+            clearHidden: !(temporaryMuteState.active || temporaryMuteState.expired)
+        },
+        quietHours: {
+            enabledActive: quietHours.enabled === true,
+            allowCriticalActive: quietHours.allow_critical !== false,
+            allowCriticalDisabled: quietHours.enabled !== true,
+            inputsDisabled: quietHours.enabled !== true,
+            rangeHint: formatOpsAlertHourRangePreview(quietHours.start_hour, quietHours.end_hour, {
+                timezone: quietHours.timezone
+            })
+        },
+        workHours: {
+            enabledActive: workHours.enabled === true,
+            inputsDisabled: workHours.enabled !== true,
+            rangeHint: formatOpsAlertHourRangePreview(workHours.start_hour, workHours.end_hour, {
+                timezone: workHours.timezone
+            })
+        },
+        muteRules,
+        routingMatrix
+    };
+}
+
+function resolveOpsAlertStrategyControlStateBuilder() {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertStrategyControlState',
+        buildLocalOpsAlertStrategyControlState,
+        (config = {}) => ({
             normalizeConfig: normalizeOpsAlertConfig,
             getDefaultConfig: getDefaultOpsAlertConfig,
             getTemporaryMuteState: getOpsAlertTemporaryMuteState,
             formatDateTimeLocalInputValue,
             formatHourRangePreview: formatOpsAlertHourRangePreview
-        });
-    }
+        })
+    );
+}
 
-    return null;
+function resolveOpsAlertStrategyControlState(normalizedConfig = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    return resolveOpsAlertStrategyControlStateBuilder()(normalizedConfig);
 }
 
 function applyOpsAlertStrategyControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
@@ -7399,12 +7293,15 @@ function buildLocalOpsAlertShopRiskControlState(shopRiskConfig = {}) {
     };
 }
 
-function resolveOpsAlertShopRiskControlState(shopRiskConfig = {}) {
-    if (typeof window.buildAdminWorkbenchOpsAlertShopRiskControlState === 'function') {
-        return window.buildAdminWorkbenchOpsAlertShopRiskControlState(shopRiskConfig);
-    }
+function resolveOpsAlertShopRiskControlStateBuilder() {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertShopRiskControlState',
+        buildLocalOpsAlertShopRiskControlState
+    );
+}
 
-    return buildLocalOpsAlertShopRiskControlState(shopRiskConfig);
+function resolveOpsAlertShopRiskControlState(shopRiskConfig = {}) {
+    return resolveOpsAlertShopRiskControlStateBuilder()(shopRiskConfig);
 }
 
 function applyOpsAlertShopRiskControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
@@ -7508,12 +7405,15 @@ function buildLocalOpsAlertMonitorControlState(monitorConfig = {}, sharedOptions
     };
 }
 
-function resolveOpsAlertMonitorControlState(monitorConfig = {}, sharedOptions = {}) {
-    if (typeof window.buildAdminWorkbenchOpsAlertMonitorControlState === 'function') {
-        return window.buildAdminWorkbenchOpsAlertMonitorControlState(monitorConfig, sharedOptions);
-    }
+function resolveOpsAlertMonitorControlStateBuilder() {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertMonitorControlState',
+        buildLocalOpsAlertMonitorControlState
+    );
+}
 
-    return buildLocalOpsAlertMonitorControlState(monitorConfig, sharedOptions);
+function resolveOpsAlertMonitorControlState(monitorConfig = {}, sharedOptions = {}) {
+    return resolveOpsAlertMonitorControlStateBuilder()(monitorConfig, sharedOptions);
 }
 
 function applyOpsAlertMonitorToggleState(elementId, toggleState = {}, options = {}) {
@@ -7592,6 +7492,35 @@ function applyOpsAlertMonitorSectionControls(monitorConfig = {}, options = {}) {
     }
 
     return sharedMonitorState;
+}
+
+function applyAdminConfigFieldValue(field = {}) {
+    const normalizedField = field && typeof field === 'object' && !Array.isArray(field) ? field : {};
+    if (!normalizedField.id) return false;
+    const input = document.getElementById(normalizedField.id);
+    if (!input) return false;
+
+    const transform = typeof normalizedField.transform === 'function'
+        ? normalizedField.transform
+        : ((value) => value);
+    const fallback = Object.prototype.hasOwnProperty.call(normalizedField, 'fallback')
+        ? normalizedField.fallback
+        : '';
+    const resolvedValue = transform(
+        Object.prototype.hasOwnProperty.call(normalizedField, 'value') ? normalizedField.value : fallback,
+        normalizedField
+    );
+
+    input.value = resolvedValue == null ? '' : String(resolvedValue);
+    return true;
+}
+
+function applyAdminConfigFieldValues(fields = []) {
+    (Array.isArray(fields) ? fields : []).forEach((field) => applyAdminConfigFieldValue(field));
+}
+
+function getOpsAlertMinutesFieldValue(value) {
+    return Math.max(1, Math.round(Number(value || 0) / 60000));
 }
 
 function applyOpsAlertCustomerChatControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
@@ -7839,587 +7768,181 @@ function applyOpsAlertPaymentGatewayControls(config = normalizeOpsAlertConfig(sy
     });
 }
 
+function buildOpsAlertSettingsFieldGroups(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    return [
+        [
+            { id: 'opsAlertQuietHoursStartHour', value: normalizedConfig.quiet_hours.start_hour },
+            { id: 'opsAlertQuietHoursEndHour', value: normalizedConfig.quiet_hours.end_hour },
+            { id: 'opsAlertQuietHoursTimezone', value: normalizedConfig.quiet_hours.timezone },
+            { id: 'opsAlertWorkHoursStartHour', value: normalizedConfig.work_hours.start_hour },
+            { id: 'opsAlertWorkHoursEndHour', value: normalizedConfig.work_hours.end_hour },
+            { id: 'opsAlertWorkHoursTimezone', value: normalizedConfig.work_hours.timezone },
+            { id: 'opsAlertTelegramChatIds', value: normalizedConfig.channels.telegram.chat_ids, transform: (value) => (Array.isArray(value) ? value.join('\n') : '') },
+            { id: 'opsAlertTelegramSeverity', value: normalizedConfig.channels.telegram.minimum_severity },
+            { id: 'opsAlertFeishuSeverity', value: normalizedConfig.channels.feishu.minimum_severity },
+            { id: 'opsAlertEmailSeverity', value: normalizedConfig.channels.email.minimum_severity },
+            { id: 'opsAlertEmailRecipients', value: normalizedConfig.channels.email.recipients, transform: (value) => (Array.isArray(value) ? value.join('\n') : '') },
+            { id: 'opsAlertEmailFromAddress', value: normalizedConfig.channels.email.from_address },
+            { id: 'opsAlertEmailReplyTo', value: normalizedConfig.channels.email.reply_to },
+            { id: 'opsAlertEmailSubjectPrefix', value: normalizedConfig.channels.email.subject_prefix },
+            { id: 'opsAlertShopRiskAutoDisableCouponMinRiskScore', value: normalizedConfig.shop_order_risk.auto_disable_coupon_min_risk_score },
+            { id: 'opsAlertShopRiskAutoBanUserMinRiskScore', value: normalizedConfig.shop_order_risk.auto_ban_user_min_risk_score },
+            { id: 'opsAlertShopRiskAutoBanUserDurationDays', value: normalizedConfig.shop_order_risk.auto_ban_user_duration_days },
+            { id: 'opsAlertShopRiskAutoSuspendProductMinRiskScore', value: normalizedConfig.shop_order_risk.auto_suspend_product_min_risk_score }
+        ],
+        [
+            { id: 'opsAlertShopInventoryLowStockThreshold', value: normalizedConfig.shop_inventory.low_stock_threshold },
+            { id: 'opsAlertShopInventorySweepIntervalMinutes', value: normalizedConfig.shop_inventory.sweep_interval_ms, transform: getOpsAlertMinutesFieldValue },
+            { id: 'opsAlertShopInventorySalesWindowDays', value: normalizedConfig.shop_inventory.sales_window_days },
+            { id: 'opsAlertShopInventoryDedupeWindowMinutes', value: normalizedConfig.shop_inventory.dedupe_window_minutes },
+            { id: 'opsAlertShopInventorySummaryWindowMinutes', value: normalizedConfig.shop_inventory.summary_window_minutes },
+            { id: 'opsAlertShopInventorySummaryScheduleMode', value: normalizedConfig.shop_inventory.summary_schedule_mode },
+            { id: 'opsAlertShopInventorySummaryHourlyMinute', value: normalizedConfig.shop_inventory.summary_hourly_minute },
+            { id: 'opsAlertShopInventorySummaryDailyHour', value: normalizedConfig.shop_inventory.summary_daily_hour },
+            { id: 'opsAlertShopInventorySummaryDailyMinute', value: normalizedConfig.shop_inventory.summary_daily_minute },
+            { id: 'opsAlertShopInventorySummaryMaxItems', value: normalizedConfig.shop_inventory.summary_max_items }
+        ],
+        [
+            { id: 'opsAlertCustomerChatMessageSweepIntervalMinutes', value: normalizedConfig.customer_chat_message.sweep_interval_ms, transform: getOpsAlertMinutesFieldValue },
+            { id: 'opsAlertCustomerChatMessageLookbackMinutes', value: normalizedConfig.customer_chat_message.lookback_minutes },
+            { id: 'opsAlertCustomerChatMessageDedupeWindowMinutes', value: normalizedConfig.customer_chat_message.dedupe_window_minutes },
+            { id: 'opsAlertCustomerChatMessageSummaryWindowMinutes', value: normalizedConfig.customer_chat_message.summary_window_minutes },
+            { id: 'opsAlertCustomerChatMessageSummaryScheduleMode', value: normalizedConfig.customer_chat_message.summary_schedule_mode },
+            { id: 'opsAlertCustomerChatMessageSummaryHourlyMinute', value: normalizedConfig.customer_chat_message.summary_hourly_minute },
+            { id: 'opsAlertCustomerChatMessageSummaryDailyHour', value: normalizedConfig.customer_chat_message.summary_daily_hour },
+            { id: 'opsAlertCustomerChatMessageSummaryDailyMinute', value: normalizedConfig.customer_chat_message.summary_daily_minute },
+            { id: 'opsAlertCustomerChatMessageSummaryMaxItems', value: normalizedConfig.customer_chat_message.summary_max_items }
+        ],
+        [
+            { id: 'opsAlertShopPurchaseSuccessSweepIntervalMinutes', value: normalizedConfig.shop_purchase_success.sweep_interval_ms, transform: getOpsAlertMinutesFieldValue },
+            { id: 'opsAlertShopPurchaseSuccessLookbackMinutes', value: normalizedConfig.shop_purchase_success.lookback_minutes },
+            { id: 'opsAlertShopPurchaseSuccessDedupeWindowMinutes', value: normalizedConfig.shop_purchase_success.dedupe_window_minutes },
+            { id: 'opsAlertShopPurchaseSuccessSummaryWindowMinutes', value: normalizedConfig.shop_purchase_success.summary_window_minutes },
+            { id: 'opsAlertShopPurchaseSuccessSummaryScheduleMode', value: normalizedConfig.shop_purchase_success.summary_schedule_mode },
+            { id: 'opsAlertShopPurchaseSuccessSummaryHourlyMinute', value: normalizedConfig.shop_purchase_success.summary_hourly_minute },
+            { id: 'opsAlertShopPurchaseSuccessSummaryDailyHour', value: normalizedConfig.shop_purchase_success.summary_daily_hour },
+            { id: 'opsAlertShopPurchaseSuccessSummaryDailyMinute', value: normalizedConfig.shop_purchase_success.summary_daily_minute },
+            { id: 'opsAlertShopPurchaseSuccessSummaryMaxItems', value: normalizedConfig.shop_purchase_success.summary_max_items }
+        ],
+        [
+            { id: 'opsAlertWalletRechargeSuccessSweepIntervalMinutes', value: normalizedConfig.wallet_recharge_success.sweep_interval_ms, transform: getOpsAlertMinutesFieldValue },
+            { id: 'opsAlertWalletRechargeSuccessLookbackMinutes', value: normalizedConfig.wallet_recharge_success.lookback_minutes },
+            { id: 'opsAlertWalletRechargeSuccessDedupeWindowMinutes', value: normalizedConfig.wallet_recharge_success.dedupe_window_minutes },
+            { id: 'opsAlertWalletRechargeSuccessSummaryWindowMinutes', value: normalizedConfig.wallet_recharge_success.summary_window_minutes },
+            { id: 'opsAlertWalletRechargeSuccessSummaryScheduleMode', value: normalizedConfig.wallet_recharge_success.summary_schedule_mode },
+            { id: 'opsAlertWalletRechargeSuccessSummaryHourlyMinute', value: normalizedConfig.wallet_recharge_success.summary_hourly_minute },
+            { id: 'opsAlertWalletRechargeSuccessSummaryDailyHour', value: normalizedConfig.wallet_recharge_success.summary_daily_hour },
+            { id: 'opsAlertWalletRechargeSuccessSummaryDailyMinute', value: normalizedConfig.wallet_recharge_success.summary_daily_minute },
+            { id: 'opsAlertWalletRechargeSuccessSummaryMaxItems', value: normalizedConfig.wallet_recharge_success.summary_max_items }
+        ],
+        [
+            { id: 'opsAlertTicketsSweepIntervalMinutes', value: normalizedConfig.tickets.sweep_interval_ms, transform: getOpsAlertMinutesFieldValue },
+            { id: 'opsAlertTicketsPendingOverdueMinutes', value: normalizedConfig.tickets.pending_overdue_minutes },
+            { id: 'opsAlertTicketsCriticalOverdueMinutes', value: normalizedConfig.tickets.critical_overdue_minutes },
+            { id: 'opsAlertTicketsStateLookbackMinutes', value: normalizedConfig.tickets.state_lookback_minutes },
+            { id: 'opsAlertTicketsDedupeWindowMinutes', value: normalizedConfig.tickets.dedupe_window_minutes },
+            { id: 'opsAlertTicketsSummaryWindowMinutes', value: normalizedConfig.tickets.summary_window_minutes },
+            { id: 'opsAlertTicketsSummaryScheduleMode', value: normalizedConfig.tickets.summary_schedule_mode },
+            { id: 'opsAlertTicketsSummaryHourlyMinute', value: normalizedConfig.tickets.summary_hourly_minute },
+            { id: 'opsAlertTicketsSummaryDailyHour', value: normalizedConfig.tickets.summary_daily_hour },
+            { id: 'opsAlertTicketsSummaryDailyMinute', value: normalizedConfig.tickets.summary_daily_minute },
+            { id: 'opsAlertTicketsSummaryMaxItems', value: normalizedConfig.tickets.summary_max_items }
+        ],
+        [
+            { id: 'opsAlertShopOrderDeliveryLookbackDays', value: normalizedConfig.shop_order_delivery.lookback_days },
+            { id: 'opsAlertShopOrderDeliveryStateLookbackMinutes', value: normalizedConfig.shop_order_delivery.state_lookback_minutes },
+            { id: 'opsAlertShopOrderDeliveryRetryWaitingMinAttempts', value: normalizedConfig.shop_order_delivery.retry_waiting_min_attempts },
+            { id: 'opsAlertShopOrderDeliverySweepIntervalMinutes', value: normalizedConfig.shop_order_delivery.sweep_interval_ms, transform: getOpsAlertMinutesFieldValue },
+            { id: 'opsAlertShopOrderDeliveryDedupeWindowMinutes', value: normalizedConfig.shop_order_delivery.dedupe_window_minutes },
+            { id: 'opsAlertShopOrderDeliveryIncidentMinOrderCount', value: normalizedConfig.shop_order_delivery.incident_min_order_count },
+            { id: 'opsAlertShopOrderDeliveryIncidentMinDeadLetterCount', value: normalizedConfig.shop_order_delivery.incident_min_dead_letter_count },
+            { id: 'opsAlertShopOrderDeliveryIncidentMinDistinctUsers', value: normalizedConfig.shop_order_delivery.incident_min_distinct_users },
+            { id: 'opsAlertShopOrderDeliveryIncidentDedupeWindowMinutes', value: normalizedConfig.shop_order_delivery.incident_dedupe_window_minutes },
+            { id: 'opsAlertShopOrderDeliverySummaryWindowMinutes', value: normalizedConfig.shop_order_delivery.summary_window_minutes },
+            { id: 'opsAlertShopOrderDeliverySummaryScheduleMode', value: normalizedConfig.shop_order_delivery.summary_schedule_mode },
+            { id: 'opsAlertShopOrderDeliverySummaryHourlyMinute', value: normalizedConfig.shop_order_delivery.summary_hourly_minute },
+            { id: 'opsAlertShopOrderDeliverySummaryDailyHour', value: normalizedConfig.shop_order_delivery.summary_daily_hour },
+            { id: 'opsAlertShopOrderDeliverySummaryDailyMinute', value: normalizedConfig.shop_order_delivery.summary_daily_minute },
+            { id: 'opsAlertShopOrderDeliverySummaryMaxItems', value: normalizedConfig.shop_order_delivery.summary_max_items }
+        ],
+        [
+            { id: 'opsAlertVerifyQuotaLowBalanceThreshold', value: normalizedConfig.verify_quota.low_balance_threshold },
+            { id: 'opsAlertVerifyQuotaLowRemainingJobsThreshold', value: normalizedConfig.verify_quota.low_remaining_jobs_threshold },
+            { id: 'opsAlertVerifyQuotaCriticalBalanceThreshold', value: normalizedConfig.verify_quota.critical_balance_threshold },
+            { id: 'opsAlertVerifyQuotaCriticalRemainingJobsThreshold', value: normalizedConfig.verify_quota.critical_remaining_jobs_threshold },
+            { id: 'opsAlertVerifyQuotaMinQueueBufferJobs', value: normalizedConfig.verify_quota.min_queue_buffer_jobs },
+            { id: 'opsAlertVerifyQuotaSweepIntervalMinutes', value: normalizedConfig.verify_quota.sweep_interval_ms, transform: getOpsAlertMinutesFieldValue },
+            { id: 'opsAlertVerifyQuotaDedupeWindowMinutes', value: normalizedConfig.verify_quota.dedupe_window_minutes },
+            { id: 'opsAlertVerifyQuotaSummaryWindowMinutes', value: normalizedConfig.verify_quota.summary_window_minutes },
+            { id: 'opsAlertVerifyQuotaSummaryScheduleMode', value: normalizedConfig.verify_quota.summary_schedule_mode },
+            { id: 'opsAlertVerifyQuotaSummaryHourlyMinute', value: normalizedConfig.verify_quota.summary_hourly_minute },
+            { id: 'opsAlertVerifyQuotaSummaryDailyHour', value: normalizedConfig.verify_quota.summary_daily_hour },
+            { id: 'opsAlertVerifyQuotaSummaryDailyMinute', value: normalizedConfig.verify_quota.summary_daily_minute },
+            { id: 'opsAlertVerifyQuotaSummaryMaxItems', value: normalizedConfig.verify_quota.summary_max_items }
+        ],
+        [
+            { id: 'opsAlertVerifyQueueRecentActivityLookbackHours', value: normalizedConfig.verify_queue.recent_activity_lookback_hours },
+            { id: 'opsAlertVerifyQueueRecentFailureWindowMinutes', value: normalizedConfig.verify_queue.recent_failure_window_minutes },
+            { id: 'opsAlertVerifyQueueSizeThreshold', value: normalizedConfig.verify_queue.queue_size_threshold },
+            { id: 'opsAlertVerifyQueueActiveJobThreshold', value: normalizedConfig.verify_queue.active_job_threshold },
+            { id: 'opsAlertVerifyQueueOldestPendingMinutesThreshold', value: normalizedConfig.verify_queue.oldest_pending_minutes_threshold },
+            { id: 'opsAlertVerifyQueueRecentFailureThreshold', value: normalizedConfig.verify_queue.recent_failure_threshold },
+            { id: 'opsAlertVerifyQueueSweepIntervalMinutes', value: normalizedConfig.verify_queue.sweep_interval_ms, transform: getOpsAlertMinutesFieldValue },
+            { id: 'opsAlertVerifyQueueDedupeWindowMinutes', value: normalizedConfig.verify_queue.dedupe_window_minutes },
+            { id: 'opsAlertVerifyQueueSummaryWindowMinutes', value: normalizedConfig.verify_queue.summary_window_minutes },
+            { id: 'opsAlertVerifyQueueSummaryScheduleMode', value: normalizedConfig.verify_queue.summary_schedule_mode },
+            { id: 'opsAlertVerifyQueueSummaryHourlyMinute', value: normalizedConfig.verify_queue.summary_hourly_minute },
+            { id: 'opsAlertVerifyQueueSummaryDailyHour', value: normalizedConfig.verify_queue.summary_daily_hour },
+            { id: 'opsAlertVerifyQueueSummaryDailyMinute', value: normalizedConfig.verify_queue.summary_daily_minute },
+            { id: 'opsAlertVerifyQueueSummaryMaxItems', value: normalizedConfig.verify_queue.summary_max_items }
+        ],
+        [
+            { id: 'opsAlertVerifyFailureRecentWindowMinutes', value: normalizedConfig.verify_failure.recent_window_minutes },
+            { id: 'opsAlertVerifyFailureMinTotalJobsThreshold', value: normalizedConfig.verify_failure.min_total_jobs_threshold },
+            { id: 'opsAlertVerifyFailureRateThreshold', value: normalizedConfig.verify_failure.failure_rate_threshold },
+            { id: 'opsAlertVerifyFailureAffectedUserThreshold', value: normalizedConfig.verify_failure.affected_user_threshold },
+            { id: 'opsAlertVerifyFailureSweepIntervalMinutes', value: normalizedConfig.verify_failure.sweep_interval_ms, transform: getOpsAlertMinutesFieldValue },
+            { id: 'opsAlertVerifyFailureDedupeWindowMinutes', value: normalizedConfig.verify_failure.dedupe_window_minutes },
+            { id: 'opsAlertVerifyFailureSummaryWindowMinutes', value: normalizedConfig.verify_failure.summary_window_minutes },
+            { id: 'opsAlertVerifyFailureSummaryScheduleMode', value: normalizedConfig.verify_failure.summary_schedule_mode },
+            { id: 'opsAlertVerifyFailureSummaryHourlyMinute', value: normalizedConfig.verify_failure.summary_hourly_minute },
+            { id: 'opsAlertVerifyFailureSummaryDailyHour', value: normalizedConfig.verify_failure.summary_daily_hour },
+            { id: 'opsAlertVerifyFailureSummaryDailyMinute', value: normalizedConfig.verify_failure.summary_daily_minute },
+            { id: 'opsAlertVerifyFailureSummaryMaxItems', value: normalizedConfig.verify_failure.summary_max_items }
+        ],
+        [
+            { id: 'opsAlertPaymentGatewayWindowMinutes', value: normalizedConfig.payment_gateway.window_minutes },
+            { id: 'opsAlertPaymentGatewayFailedOrdersThreshold', value: normalizedConfig.payment_gateway.min_failed_orders },
+            { id: 'opsAlertPaymentGatewayFailedRatioThreshold', value: normalizedConfig.payment_gateway.min_failed_ratio_percent },
+            { id: 'opsAlertPaymentGatewayWebhookSuccessRateThreshold', value: normalizedConfig.payment_gateway.max_webhook_success_rate_percent },
+            { id: 'opsAlertPaymentGatewayQuerySuccessRateThreshold', value: normalizedConfig.payment_gateway.max_query_success_rate_percent },
+            { id: 'opsAlertPaymentGatewayWebhook5xxThreshold', value: normalizedConfig.payment_gateway.min_webhook_5xx_count },
+            { id: 'opsAlertPaymentGatewayQuery5xxThreshold', value: normalizedConfig.payment_gateway.min_query_5xx_count },
+            { id: 'opsAlertPaymentGatewaySweepIntervalMinutes', value: normalizedConfig.payment_gateway.sweep_interval_ms, transform: getOpsAlertMinutesFieldValue },
+            { id: 'opsAlertPaymentGatewayDedupeWindowMinutes', value: normalizedConfig.payment_gateway.dedupe_window_minutes },
+            { id: 'opsAlertPaymentGatewaySummaryWindowMinutes', value: normalizedConfig.payment_gateway.summary_window_minutes },
+            { id: 'opsAlertPaymentGatewaySummaryScheduleMode', value: normalizedConfig.payment_gateway.summary_schedule_mode },
+            { id: 'opsAlertPaymentGatewaySummaryHourlyMinute', value: normalizedConfig.payment_gateway.summary_hourly_minute },
+            { id: 'opsAlertPaymentGatewaySummaryDailyHour', value: normalizedConfig.payment_gateway.summary_daily_hour },
+            { id: 'opsAlertPaymentGatewaySummaryDailyMinute', value: normalizedConfig.payment_gateway.summary_daily_minute },
+            { id: 'opsAlertPaymentGatewaySummaryMaxItems', value: normalizedConfig.payment_gateway.summary_max_items }
+        ]
+    ];
+}
+
+function applyOpsAlertSettingsFieldGroups(fieldGroups = []) {
+    (Array.isArray(fieldGroups) ? fieldGroups : []).forEach((fieldGroup) => {
+        applyAdminConfigFieldValues(fieldGroup);
+    });
+    return fieldGroups;
+}
+
 function renderOpsAlertSettings() {
     ensureOpsAlertStrategyLayout();
     opsAlertUnifiedSummaryDraftDirty = false;
     const config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']);
-
-    const quietHoursStartHour = document.getElementById('opsAlertQuietHoursStartHour');
-    if (quietHoursStartHour) {
-        quietHoursStartHour.value = String(config.quiet_hours.start_hour);
-    }
-
-    const quietHoursEndHour = document.getElementById('opsAlertQuietHoursEndHour');
-    if (quietHoursEndHour) {
-        quietHoursEndHour.value = String(config.quiet_hours.end_hour);
-    }
-
-    const quietHoursTimezone = document.getElementById('opsAlertQuietHoursTimezone');
-    if (quietHoursTimezone) {
-        quietHoursTimezone.value = config.quiet_hours.timezone;
-    }
-
-    const workHoursStartHour = document.getElementById('opsAlertWorkHoursStartHour');
-    if (workHoursStartHour) {
-        workHoursStartHour.value = String(config.work_hours.start_hour);
-    }
-
-    const workHoursEndHour = document.getElementById('opsAlertWorkHoursEndHour');
-    if (workHoursEndHour) {
-        workHoursEndHour.value = String(config.work_hours.end_hour);
-    }
-
-    const workHoursTimezone = document.getElementById('opsAlertWorkHoursTimezone');
-    if (workHoursTimezone) {
-        workHoursTimezone.value = config.work_hours.timezone;
-    }
-
-    const telegramChatIds = document.getElementById('opsAlertTelegramChatIds');
-    if (telegramChatIds) {
-        telegramChatIds.value = config.channels.telegram.chat_ids.join('\n');
-    }
-
-    const telegramSeverity = document.getElementById('opsAlertTelegramSeverity');
-    if (telegramSeverity) {
-        telegramSeverity.value = config.channels.telegram.minimum_severity;
-    }
-
-    const feishuSeverity = document.getElementById('opsAlertFeishuSeverity');
-    if (feishuSeverity) {
-        feishuSeverity.value = config.channels.feishu.minimum_severity;
-    }
-
-    const emailSeverity = document.getElementById('opsAlertEmailSeverity');
-    if (emailSeverity) {
-        emailSeverity.value = config.channels.email.minimum_severity;
-    }
-
-    const emailRecipients = document.getElementById('opsAlertEmailRecipients');
-    if (emailRecipients) {
-        emailRecipients.value = config.channels.email.recipients.join('\n');
-    }
-
-    const emailFromAddress = document.getElementById('opsAlertEmailFromAddress');
-    if (emailFromAddress) {
-        emailFromAddress.value = config.channels.email.from_address;
-    }
-
-    const emailReplyTo = document.getElementById('opsAlertEmailReplyTo');
-    if (emailReplyTo) {
-        emailReplyTo.value = config.channels.email.reply_to;
-    }
-
-    const emailSubjectPrefix = document.getElementById('opsAlertEmailSubjectPrefix');
-    if (emailSubjectPrefix) {
-        emailSubjectPrefix.value = config.channels.email.subject_prefix;
-    }
-
-    const autoDisableCouponMinRiskScore = document.getElementById('opsAlertShopRiskAutoDisableCouponMinRiskScore');
-    if (autoDisableCouponMinRiskScore) {
-        autoDisableCouponMinRiskScore.value = String(config.shop_order_risk.auto_disable_coupon_min_risk_score);
-    }
-
-    const autoBanUserMinRiskScore = document.getElementById('opsAlertShopRiskAutoBanUserMinRiskScore');
-    if (autoBanUserMinRiskScore) {
-        autoBanUserMinRiskScore.value = String(config.shop_order_risk.auto_ban_user_min_risk_score);
-    }
-
-    const autoBanUserDurationDays = document.getElementById('opsAlertShopRiskAutoBanUserDurationDays');
-    if (autoBanUserDurationDays) {
-        autoBanUserDurationDays.value = String(config.shop_order_risk.auto_ban_user_duration_days);
-    }
-
-    const autoSuspendProductMinRiskScore = document.getElementById('opsAlertShopRiskAutoSuspendProductMinRiskScore');
-    if (autoSuspendProductMinRiskScore) {
-        autoSuspendProductMinRiskScore.value = String(config.shop_order_risk.auto_suspend_product_min_risk_score);
-    }
-
-    const inventoryLowStockThreshold = document.getElementById('opsAlertShopInventoryLowStockThreshold');
-    if (inventoryLowStockThreshold) {
-        inventoryLowStockThreshold.value = String(config.shop_inventory.low_stock_threshold);
-    }
-
-    const inventorySweepIntervalMinutes = document.getElementById('opsAlertShopInventorySweepIntervalMinutes');
-    if (inventorySweepIntervalMinutes) {
-        inventorySweepIntervalMinutes.value = String(Math.max(1, Math.round(Number(config.shop_inventory.sweep_interval_ms || 0) / 60000)));
-    }
-
-    const inventorySalesWindowDays = document.getElementById('opsAlertShopInventorySalesWindowDays');
-    if (inventorySalesWindowDays) {
-        inventorySalesWindowDays.value = String(config.shop_inventory.sales_window_days);
-    }
-
-    const inventoryDedupeWindowMinutes = document.getElementById('opsAlertShopInventoryDedupeWindowMinutes');
-    if (inventoryDedupeWindowMinutes) {
-        inventoryDedupeWindowMinutes.value = String(config.shop_inventory.dedupe_window_minutes);
-    }
-    const inventorySummaryWindowMinutes = document.getElementById('opsAlertShopInventorySummaryWindowMinutes');
-    if (inventorySummaryWindowMinutes) {
-        inventorySummaryWindowMinutes.value = String(config.shop_inventory.summary_window_minutes);
-    }
-    const inventorySummaryScheduleMode = document.getElementById('opsAlertShopInventorySummaryScheduleMode');
-    if (inventorySummaryScheduleMode) {
-        inventorySummaryScheduleMode.value = config.shop_inventory.summary_schedule_mode;
-    }
-    const inventorySummaryHourlyMinute = document.getElementById('opsAlertShopInventorySummaryHourlyMinute');
-    if (inventorySummaryHourlyMinute) {
-        inventorySummaryHourlyMinute.value = String(config.shop_inventory.summary_hourly_minute);
-    }
-    const inventorySummaryDailyHour = document.getElementById('opsAlertShopInventorySummaryDailyHour');
-    if (inventorySummaryDailyHour) {
-        inventorySummaryDailyHour.value = String(config.shop_inventory.summary_daily_hour);
-    }
-    const inventorySummaryDailyMinute = document.getElementById('opsAlertShopInventorySummaryDailyMinute');
-    if (inventorySummaryDailyMinute) {
-        inventorySummaryDailyMinute.value = String(config.shop_inventory.summary_daily_minute);
-    }
-    const inventorySummaryMaxItems = document.getElementById('opsAlertShopInventorySummaryMaxItems');
-    if (inventorySummaryMaxItems) {
-        inventorySummaryMaxItems.value = String(config.shop_inventory.summary_max_items);
-    }
-
-    const customerChatMessageSweepIntervalMinutes = document.getElementById('opsAlertCustomerChatMessageSweepIntervalMinutes');
-    if (customerChatMessageSweepIntervalMinutes) {
-        customerChatMessageSweepIntervalMinutes.value = String(Math.max(1, Math.round(Number(config.customer_chat_message.sweep_interval_ms || 0) / 60000)));
-    }
-
-    const customerChatMessageLookbackMinutes = document.getElementById('opsAlertCustomerChatMessageLookbackMinutes');
-    if (customerChatMessageLookbackMinutes) {
-        customerChatMessageLookbackMinutes.value = String(config.customer_chat_message.lookback_minutes);
-    }
-
-    const customerChatMessageDedupeWindowMinutes = document.getElementById('opsAlertCustomerChatMessageDedupeWindowMinutes');
-    if (customerChatMessageDedupeWindowMinutes) {
-        customerChatMessageDedupeWindowMinutes.value = String(config.customer_chat_message.dedupe_window_minutes);
-    }
-    const customerChatMessageSummaryWindowMinutes = document.getElementById('opsAlertCustomerChatMessageSummaryWindowMinutes');
-    if (customerChatMessageSummaryWindowMinutes) {
-        customerChatMessageSummaryWindowMinutes.value = String(config.customer_chat_message.summary_window_minutes);
-    }
-    const customerChatMessageSummaryScheduleMode = document.getElementById('opsAlertCustomerChatMessageSummaryScheduleMode');
-    if (customerChatMessageSummaryScheduleMode) {
-        customerChatMessageSummaryScheduleMode.value = config.customer_chat_message.summary_schedule_mode;
-    }
-    const customerChatMessageSummaryHourlyMinute = document.getElementById('opsAlertCustomerChatMessageSummaryHourlyMinute');
-    if (customerChatMessageSummaryHourlyMinute) {
-        customerChatMessageSummaryHourlyMinute.value = String(config.customer_chat_message.summary_hourly_minute);
-    }
-    const customerChatMessageSummaryDailyHour = document.getElementById('opsAlertCustomerChatMessageSummaryDailyHour');
-    if (customerChatMessageSummaryDailyHour) {
-        customerChatMessageSummaryDailyHour.value = String(config.customer_chat_message.summary_daily_hour);
-    }
-    const customerChatMessageSummaryDailyMinute = document.getElementById('opsAlertCustomerChatMessageSummaryDailyMinute');
-    if (customerChatMessageSummaryDailyMinute) {
-        customerChatMessageSummaryDailyMinute.value = String(config.customer_chat_message.summary_daily_minute);
-    }
-    const customerChatMessageSummaryMaxItems = document.getElementById('opsAlertCustomerChatMessageSummaryMaxItems');
-    if (customerChatMessageSummaryMaxItems) {
-        customerChatMessageSummaryMaxItems.value = String(config.customer_chat_message.summary_max_items);
-    }
-
-    const shopPurchaseSuccessSweepIntervalMinutes = document.getElementById('opsAlertShopPurchaseSuccessSweepIntervalMinutes');
-    if (shopPurchaseSuccessSweepIntervalMinutes) {
-        shopPurchaseSuccessSweepIntervalMinutes.value = String(Math.max(1, Math.round(Number(config.shop_purchase_success.sweep_interval_ms || 0) / 60000)));
-    }
-
-    const shopPurchaseSuccessLookbackMinutes = document.getElementById('opsAlertShopPurchaseSuccessLookbackMinutes');
-    if (shopPurchaseSuccessLookbackMinutes) {
-        shopPurchaseSuccessLookbackMinutes.value = String(config.shop_purchase_success.lookback_minutes);
-    }
-
-    const shopPurchaseSuccessDedupeWindowMinutes = document.getElementById('opsAlertShopPurchaseSuccessDedupeWindowMinutes');
-    if (shopPurchaseSuccessDedupeWindowMinutes) {
-        shopPurchaseSuccessDedupeWindowMinutes.value = String(config.shop_purchase_success.dedupe_window_minutes);
-    }
-    const shopPurchaseSuccessSummaryWindowMinutes = document.getElementById('opsAlertShopPurchaseSuccessSummaryWindowMinutes');
-    if (shopPurchaseSuccessSummaryWindowMinutes) {
-        shopPurchaseSuccessSummaryWindowMinutes.value = String(config.shop_purchase_success.summary_window_minutes);
-    }
-    const shopPurchaseSuccessSummaryScheduleMode = document.getElementById('opsAlertShopPurchaseSuccessSummaryScheduleMode');
-    if (shopPurchaseSuccessSummaryScheduleMode) {
-        shopPurchaseSuccessSummaryScheduleMode.value = config.shop_purchase_success.summary_schedule_mode;
-    }
-    const shopPurchaseSuccessSummaryHourlyMinute = document.getElementById('opsAlertShopPurchaseSuccessSummaryHourlyMinute');
-    if (shopPurchaseSuccessSummaryHourlyMinute) {
-        shopPurchaseSuccessSummaryHourlyMinute.value = String(config.shop_purchase_success.summary_hourly_minute);
-    }
-    const shopPurchaseSuccessSummaryDailyHour = document.getElementById('opsAlertShopPurchaseSuccessSummaryDailyHour');
-    if (shopPurchaseSuccessSummaryDailyHour) {
-        shopPurchaseSuccessSummaryDailyHour.value = String(config.shop_purchase_success.summary_daily_hour);
-    }
-    const shopPurchaseSuccessSummaryDailyMinute = document.getElementById('opsAlertShopPurchaseSuccessSummaryDailyMinute');
-    if (shopPurchaseSuccessSummaryDailyMinute) {
-        shopPurchaseSuccessSummaryDailyMinute.value = String(config.shop_purchase_success.summary_daily_minute);
-    }
-    const shopPurchaseSuccessSummaryMaxItems = document.getElementById('opsAlertShopPurchaseSuccessSummaryMaxItems');
-    if (shopPurchaseSuccessSummaryMaxItems) {
-        shopPurchaseSuccessSummaryMaxItems.value = String(config.shop_purchase_success.summary_max_items);
-    }
-
-    const walletRechargeSuccessSweepIntervalMinutes = document.getElementById('opsAlertWalletRechargeSuccessSweepIntervalMinutes');
-    if (walletRechargeSuccessSweepIntervalMinutes) {
-        walletRechargeSuccessSweepIntervalMinutes.value = String(Math.max(1, Math.round(Number(config.wallet_recharge_success.sweep_interval_ms || 0) / 60000)));
-    }
-
-    const walletRechargeSuccessLookbackMinutes = document.getElementById('opsAlertWalletRechargeSuccessLookbackMinutes');
-    if (walletRechargeSuccessLookbackMinutes) {
-        walletRechargeSuccessLookbackMinutes.value = String(config.wallet_recharge_success.lookback_minutes);
-    }
-
-    const walletRechargeSuccessDedupeWindowMinutes = document.getElementById('opsAlertWalletRechargeSuccessDedupeWindowMinutes');
-    if (walletRechargeSuccessDedupeWindowMinutes) {
-        walletRechargeSuccessDedupeWindowMinutes.value = String(config.wallet_recharge_success.dedupe_window_minutes);
-    }
-    const walletRechargeSuccessSummaryWindowMinutes = document.getElementById('opsAlertWalletRechargeSuccessSummaryWindowMinutes');
-    if (walletRechargeSuccessSummaryWindowMinutes) {
-        walletRechargeSuccessSummaryWindowMinutes.value = String(config.wallet_recharge_success.summary_window_minutes);
-    }
-    const walletRechargeSuccessSummaryScheduleMode = document.getElementById('opsAlertWalletRechargeSuccessSummaryScheduleMode');
-    if (walletRechargeSuccessSummaryScheduleMode) {
-        walletRechargeSuccessSummaryScheduleMode.value = config.wallet_recharge_success.summary_schedule_mode;
-    }
-    const walletRechargeSuccessSummaryHourlyMinute = document.getElementById('opsAlertWalletRechargeSuccessSummaryHourlyMinute');
-    if (walletRechargeSuccessSummaryHourlyMinute) {
-        walletRechargeSuccessSummaryHourlyMinute.value = String(config.wallet_recharge_success.summary_hourly_minute);
-    }
-    const walletRechargeSuccessSummaryDailyHour = document.getElementById('opsAlertWalletRechargeSuccessSummaryDailyHour');
-    if (walletRechargeSuccessSummaryDailyHour) {
-        walletRechargeSuccessSummaryDailyHour.value = String(config.wallet_recharge_success.summary_daily_hour);
-    }
-    const walletRechargeSuccessSummaryDailyMinute = document.getElementById('opsAlertWalletRechargeSuccessSummaryDailyMinute');
-    if (walletRechargeSuccessSummaryDailyMinute) {
-        walletRechargeSuccessSummaryDailyMinute.value = String(config.wallet_recharge_success.summary_daily_minute);
-    }
-    const walletRechargeSuccessSummaryMaxItems = document.getElementById('opsAlertWalletRechargeSuccessSummaryMaxItems');
-    if (walletRechargeSuccessSummaryMaxItems) {
-        walletRechargeSuccessSummaryMaxItems.value = String(config.wallet_recharge_success.summary_max_items);
-    }
-
-    const ticketsSweepIntervalMinutes = document.getElementById('opsAlertTicketsSweepIntervalMinutes');
-    if (ticketsSweepIntervalMinutes) {
-        ticketsSweepIntervalMinutes.value = String(Math.max(1, Math.round(Number(config.tickets.sweep_interval_ms || 0) / 60000)));
-    }
-    const ticketsPendingOverdueMinutes = document.getElementById('opsAlertTicketsPendingOverdueMinutes');
-    if (ticketsPendingOverdueMinutes) {
-        ticketsPendingOverdueMinutes.value = String(config.tickets.pending_overdue_minutes);
-    }
-    const ticketsCriticalOverdueMinutes = document.getElementById('opsAlertTicketsCriticalOverdueMinutes');
-    if (ticketsCriticalOverdueMinutes) {
-        ticketsCriticalOverdueMinutes.value = String(config.tickets.critical_overdue_minutes);
-    }
-    const ticketsStateLookbackMinutes = document.getElementById('opsAlertTicketsStateLookbackMinutes');
-    if (ticketsStateLookbackMinutes) {
-        ticketsStateLookbackMinutes.value = String(config.tickets.state_lookback_minutes);
-    }
-
-    const ticketsDedupeWindowMinutes = document.getElementById('opsAlertTicketsDedupeWindowMinutes');
-    if (ticketsDedupeWindowMinutes) {
-        ticketsDedupeWindowMinutes.value = String(config.tickets.dedupe_window_minutes);
-    }
-    const ticketsSummaryWindowMinutes = document.getElementById('opsAlertTicketsSummaryWindowMinutes');
-    if (ticketsSummaryWindowMinutes) {
-        ticketsSummaryWindowMinutes.value = String(config.tickets.summary_window_minutes);
-    }
-    const ticketsSummaryScheduleMode = document.getElementById('opsAlertTicketsSummaryScheduleMode');
-    if (ticketsSummaryScheduleMode) {
-        ticketsSummaryScheduleMode.value = config.tickets.summary_schedule_mode;
-    }
-    const ticketsSummaryHourlyMinute = document.getElementById('opsAlertTicketsSummaryHourlyMinute');
-    if (ticketsSummaryHourlyMinute) {
-        ticketsSummaryHourlyMinute.value = String(config.tickets.summary_hourly_minute);
-    }
-    const ticketsSummaryDailyHour = document.getElementById('opsAlertTicketsSummaryDailyHour');
-    if (ticketsSummaryDailyHour) {
-        ticketsSummaryDailyHour.value = String(config.tickets.summary_daily_hour);
-    }
-    const ticketsSummaryDailyMinute = document.getElementById('opsAlertTicketsSummaryDailyMinute');
-    if (ticketsSummaryDailyMinute) {
-        ticketsSummaryDailyMinute.value = String(config.tickets.summary_daily_minute);
-    }
-    const ticketsSummaryMaxItems = document.getElementById('opsAlertTicketsSummaryMaxItems');
-    if (ticketsSummaryMaxItems) {
-        ticketsSummaryMaxItems.value = String(config.tickets.summary_max_items);
-    }
-
-    const shopOrderDeliveryLookbackDays = document.getElementById('opsAlertShopOrderDeliveryLookbackDays');
-    if (shopOrderDeliveryLookbackDays) {
-        shopOrderDeliveryLookbackDays.value = String(config.shop_order_delivery.lookback_days);
-    }
-    const shopOrderDeliveryStateLookbackMinutes = document.getElementById('opsAlertShopOrderDeliveryStateLookbackMinutes');
-    if (shopOrderDeliveryStateLookbackMinutes) {
-        shopOrderDeliveryStateLookbackMinutes.value = String(config.shop_order_delivery.state_lookback_minutes);
-    }
-    const shopOrderDeliveryRetryWaitingMinAttempts = document.getElementById('opsAlertShopOrderDeliveryRetryWaitingMinAttempts');
-    if (shopOrderDeliveryRetryWaitingMinAttempts) {
-        shopOrderDeliveryRetryWaitingMinAttempts.value = String(config.shop_order_delivery.retry_waiting_min_attempts);
-    }
-    const shopOrderDeliverySweepIntervalMinutes = document.getElementById('opsAlertShopOrderDeliverySweepIntervalMinutes');
-    if (shopOrderDeliverySweepIntervalMinutes) {
-        shopOrderDeliverySweepIntervalMinutes.value = String(Math.max(1, Math.round(Number(config.shop_order_delivery.sweep_interval_ms || 0) / 60000)));
-    }
-    const shopOrderDeliveryDedupeWindowMinutes = document.getElementById('opsAlertShopOrderDeliveryDedupeWindowMinutes');
-    if (shopOrderDeliveryDedupeWindowMinutes) {
-        shopOrderDeliveryDedupeWindowMinutes.value = String(config.shop_order_delivery.dedupe_window_minutes);
-    }
-    const shopOrderDeliveryIncidentMinOrderCount = document.getElementById('opsAlertShopOrderDeliveryIncidentMinOrderCount');
-    if (shopOrderDeliveryIncidentMinOrderCount) {
-        shopOrderDeliveryIncidentMinOrderCount.value = String(config.shop_order_delivery.incident_min_order_count);
-    }
-    const shopOrderDeliveryIncidentMinDeadLetterCount = document.getElementById('opsAlertShopOrderDeliveryIncidentMinDeadLetterCount');
-    if (shopOrderDeliveryIncidentMinDeadLetterCount) {
-        shopOrderDeliveryIncidentMinDeadLetterCount.value = String(config.shop_order_delivery.incident_min_dead_letter_count);
-    }
-    const shopOrderDeliveryIncidentMinDistinctUsers = document.getElementById('opsAlertShopOrderDeliveryIncidentMinDistinctUsers');
-    if (shopOrderDeliveryIncidentMinDistinctUsers) {
-        shopOrderDeliveryIncidentMinDistinctUsers.value = String(config.shop_order_delivery.incident_min_distinct_users);
-    }
-    const shopOrderDeliveryIncidentDedupeWindowMinutes = document.getElementById('opsAlertShopOrderDeliveryIncidentDedupeWindowMinutes');
-    if (shopOrderDeliveryIncidentDedupeWindowMinutes) {
-        shopOrderDeliveryIncidentDedupeWindowMinutes.value = String(config.shop_order_delivery.incident_dedupe_window_minutes);
-    }
-    const shopOrderDeliverySummaryWindowMinutes = document.getElementById('opsAlertShopOrderDeliverySummaryWindowMinutes');
-    if (shopOrderDeliverySummaryWindowMinutes) {
-        shopOrderDeliverySummaryWindowMinutes.value = String(config.shop_order_delivery.summary_window_minutes);
-    }
-    const shopOrderDeliverySummaryScheduleMode = document.getElementById('opsAlertShopOrderDeliverySummaryScheduleMode');
-    if (shopOrderDeliverySummaryScheduleMode) {
-        shopOrderDeliverySummaryScheduleMode.value = config.shop_order_delivery.summary_schedule_mode;
-    }
-    const shopOrderDeliverySummaryHourlyMinute = document.getElementById('opsAlertShopOrderDeliverySummaryHourlyMinute');
-    if (shopOrderDeliverySummaryHourlyMinute) {
-        shopOrderDeliverySummaryHourlyMinute.value = String(config.shop_order_delivery.summary_hourly_minute);
-    }
-    const shopOrderDeliverySummaryDailyHour = document.getElementById('opsAlertShopOrderDeliverySummaryDailyHour');
-    if (shopOrderDeliverySummaryDailyHour) {
-        shopOrderDeliverySummaryDailyHour.value = String(config.shop_order_delivery.summary_daily_hour);
-    }
-    const shopOrderDeliverySummaryDailyMinute = document.getElementById('opsAlertShopOrderDeliverySummaryDailyMinute');
-    if (shopOrderDeliverySummaryDailyMinute) {
-        shopOrderDeliverySummaryDailyMinute.value = String(config.shop_order_delivery.summary_daily_minute);
-    }
-    const shopOrderDeliverySummaryMaxItems = document.getElementById('opsAlertShopOrderDeliverySummaryMaxItems');
-    if (shopOrderDeliverySummaryMaxItems) {
-        shopOrderDeliverySummaryMaxItems.value = String(config.shop_order_delivery.summary_max_items);
-    }
-
-    const verifyQuotaLowBalanceThreshold = document.getElementById('opsAlertVerifyQuotaLowBalanceThreshold');
-    if (verifyQuotaLowBalanceThreshold) {
-        verifyQuotaLowBalanceThreshold.value = String(config.verify_quota.low_balance_threshold);
-    }
-    const verifyQuotaLowRemainingJobsThreshold = document.getElementById('opsAlertVerifyQuotaLowRemainingJobsThreshold');
-    if (verifyQuotaLowRemainingJobsThreshold) {
-        verifyQuotaLowRemainingJobsThreshold.value = String(config.verify_quota.low_remaining_jobs_threshold);
-    }
-    const verifyQuotaCriticalBalanceThreshold = document.getElementById('opsAlertVerifyQuotaCriticalBalanceThreshold');
-    if (verifyQuotaCriticalBalanceThreshold) {
-        verifyQuotaCriticalBalanceThreshold.value = String(config.verify_quota.critical_balance_threshold);
-    }
-    const verifyQuotaCriticalRemainingJobsThreshold = document.getElementById('opsAlertVerifyQuotaCriticalRemainingJobsThreshold');
-    if (verifyQuotaCriticalRemainingJobsThreshold) {
-        verifyQuotaCriticalRemainingJobsThreshold.value = String(config.verify_quota.critical_remaining_jobs_threshold);
-    }
-    const verifyQuotaMinQueueBufferJobs = document.getElementById('opsAlertVerifyQuotaMinQueueBufferJobs');
-    if (verifyQuotaMinQueueBufferJobs) {
-        verifyQuotaMinQueueBufferJobs.value = String(config.verify_quota.min_queue_buffer_jobs);
-    }
-    const verifyQuotaSweepIntervalMinutes = document.getElementById('opsAlertVerifyQuotaSweepIntervalMinutes');
-    if (verifyQuotaSweepIntervalMinutes) {
-        verifyQuotaSweepIntervalMinutes.value = String(Math.max(1, Math.round(Number(config.verify_quota.sweep_interval_ms || 0) / 60000)));
-    }
-    const verifyQuotaDedupeWindowMinutes = document.getElementById('opsAlertVerifyQuotaDedupeWindowMinutes');
-    if (verifyQuotaDedupeWindowMinutes) {
-        verifyQuotaDedupeWindowMinutes.value = String(config.verify_quota.dedupe_window_minutes);
-    }
-    const verifyQuotaSummaryWindowMinutes = document.getElementById('opsAlertVerifyQuotaSummaryWindowMinutes');
-    if (verifyQuotaSummaryWindowMinutes) {
-        verifyQuotaSummaryWindowMinutes.value = String(config.verify_quota.summary_window_minutes);
-    }
-    const verifyQuotaSummaryScheduleMode = document.getElementById('opsAlertVerifyQuotaSummaryScheduleMode');
-    if (verifyQuotaSummaryScheduleMode) {
-        verifyQuotaSummaryScheduleMode.value = config.verify_quota.summary_schedule_mode;
-    }
-    const verifyQuotaSummaryHourlyMinute = document.getElementById('opsAlertVerifyQuotaSummaryHourlyMinute');
-    if (verifyQuotaSummaryHourlyMinute) {
-        verifyQuotaSummaryHourlyMinute.value = String(config.verify_quota.summary_hourly_minute);
-    }
-    const verifyQuotaSummaryDailyHour = document.getElementById('opsAlertVerifyQuotaSummaryDailyHour');
-    if (verifyQuotaSummaryDailyHour) {
-        verifyQuotaSummaryDailyHour.value = String(config.verify_quota.summary_daily_hour);
-    }
-    const verifyQuotaSummaryDailyMinute = document.getElementById('opsAlertVerifyQuotaSummaryDailyMinute');
-    if (verifyQuotaSummaryDailyMinute) {
-        verifyQuotaSummaryDailyMinute.value = String(config.verify_quota.summary_daily_minute);
-    }
-    const verifyQuotaSummaryMaxItems = document.getElementById('opsAlertVerifyQuotaSummaryMaxItems');
-    if (verifyQuotaSummaryMaxItems) {
-        verifyQuotaSummaryMaxItems.value = String(config.verify_quota.summary_max_items);
-    }
-
-    const verifyQueueRecentActivityLookbackHours = document.getElementById('opsAlertVerifyQueueRecentActivityLookbackHours');
-    if (verifyQueueRecentActivityLookbackHours) {
-        verifyQueueRecentActivityLookbackHours.value = String(config.verify_queue.recent_activity_lookback_hours);
-    }
-    const verifyQueueRecentFailureWindowMinutes = document.getElementById('opsAlertVerifyQueueRecentFailureWindowMinutes');
-    if (verifyQueueRecentFailureWindowMinutes) {
-        verifyQueueRecentFailureWindowMinutes.value = String(config.verify_queue.recent_failure_window_minutes);
-    }
-    const verifyQueueSizeThreshold = document.getElementById('opsAlertVerifyQueueSizeThreshold');
-    if (verifyQueueSizeThreshold) {
-        verifyQueueSizeThreshold.value = String(config.verify_queue.queue_size_threshold);
-    }
-    const verifyQueueActiveJobThreshold = document.getElementById('opsAlertVerifyQueueActiveJobThreshold');
-    if (verifyQueueActiveJobThreshold) {
-        verifyQueueActiveJobThreshold.value = String(config.verify_queue.active_job_threshold);
-    }
-    const verifyQueueOldestPendingMinutesThreshold = document.getElementById('opsAlertVerifyQueueOldestPendingMinutesThreshold');
-    if (verifyQueueOldestPendingMinutesThreshold) {
-        verifyQueueOldestPendingMinutesThreshold.value = String(config.verify_queue.oldest_pending_minutes_threshold);
-    }
-    const verifyQueueRecentFailureThreshold = document.getElementById('opsAlertVerifyQueueRecentFailureThreshold');
-    if (verifyQueueRecentFailureThreshold) {
-        verifyQueueRecentFailureThreshold.value = String(config.verify_queue.recent_failure_threshold);
-    }
-    const verifyQueueSweepIntervalMinutes = document.getElementById('opsAlertVerifyQueueSweepIntervalMinutes');
-    if (verifyQueueSweepIntervalMinutes) {
-        verifyQueueSweepIntervalMinutes.value = String(Math.max(1, Math.round(Number(config.verify_queue.sweep_interval_ms || 0) / 60000)));
-    }
-    const verifyQueueDedupeWindowMinutes = document.getElementById('opsAlertVerifyQueueDedupeWindowMinutes');
-    if (verifyQueueDedupeWindowMinutes) {
-        verifyQueueDedupeWindowMinutes.value = String(config.verify_queue.dedupe_window_minutes);
-    }
-    const verifyQueueSummaryWindowMinutes = document.getElementById('opsAlertVerifyQueueSummaryWindowMinutes');
-    if (verifyQueueSummaryWindowMinutes) {
-        verifyQueueSummaryWindowMinutes.value = String(config.verify_queue.summary_window_minutes);
-    }
-    const verifyQueueSummaryScheduleMode = document.getElementById('opsAlertVerifyQueueSummaryScheduleMode');
-    if (verifyQueueSummaryScheduleMode) {
-        verifyQueueSummaryScheduleMode.value = config.verify_queue.summary_schedule_mode;
-    }
-    const verifyQueueSummaryHourlyMinute = document.getElementById('opsAlertVerifyQueueSummaryHourlyMinute');
-    if (verifyQueueSummaryHourlyMinute) {
-        verifyQueueSummaryHourlyMinute.value = String(config.verify_queue.summary_hourly_minute);
-    }
-    const verifyQueueSummaryDailyHour = document.getElementById('opsAlertVerifyQueueSummaryDailyHour');
-    if (verifyQueueSummaryDailyHour) {
-        verifyQueueSummaryDailyHour.value = String(config.verify_queue.summary_daily_hour);
-    }
-    const verifyQueueSummaryDailyMinute = document.getElementById('opsAlertVerifyQueueSummaryDailyMinute');
-    if (verifyQueueSummaryDailyMinute) {
-        verifyQueueSummaryDailyMinute.value = String(config.verify_queue.summary_daily_minute);
-    }
-    const verifyQueueSummaryMaxItems = document.getElementById('opsAlertVerifyQueueSummaryMaxItems');
-    if (verifyQueueSummaryMaxItems) {
-        verifyQueueSummaryMaxItems.value = String(config.verify_queue.summary_max_items);
-    }
-
-    const verifyFailureRecentWindowMinutes = document.getElementById('opsAlertVerifyFailureRecentWindowMinutes');
-    if (verifyFailureRecentWindowMinutes) {
-        verifyFailureRecentWindowMinutes.value = String(config.verify_failure.recent_window_minutes);
-    }
-    const verifyFailureMinTotalJobsThreshold = document.getElementById('opsAlertVerifyFailureMinTotalJobsThreshold');
-    if (verifyFailureMinTotalJobsThreshold) {
-        verifyFailureMinTotalJobsThreshold.value = String(config.verify_failure.min_total_jobs_threshold);
-    }
-    const verifyFailureRateThreshold = document.getElementById('opsAlertVerifyFailureRateThreshold');
-    if (verifyFailureRateThreshold) {
-        verifyFailureRateThreshold.value = String(config.verify_failure.failure_rate_threshold);
-    }
-    const verifyFailureAffectedUserThreshold = document.getElementById('opsAlertVerifyFailureAffectedUserThreshold');
-    if (verifyFailureAffectedUserThreshold) {
-        verifyFailureAffectedUserThreshold.value = String(config.verify_failure.affected_user_threshold);
-    }
-    const verifyFailureSweepIntervalMinutes = document.getElementById('opsAlertVerifyFailureSweepIntervalMinutes');
-    if (verifyFailureSweepIntervalMinutes) {
-        verifyFailureSweepIntervalMinutes.value = String(Math.max(1, Math.round(Number(config.verify_failure.sweep_interval_ms || 0) / 60000)));
-    }
-    const verifyFailureDedupeWindowMinutes = document.getElementById('opsAlertVerifyFailureDedupeWindowMinutes');
-    if (verifyFailureDedupeWindowMinutes) {
-        verifyFailureDedupeWindowMinutes.value = String(config.verify_failure.dedupe_window_minutes);
-    }
-    const verifyFailureSummaryWindowMinutes = document.getElementById('opsAlertVerifyFailureSummaryWindowMinutes');
-    if (verifyFailureSummaryWindowMinutes) {
-        verifyFailureSummaryWindowMinutes.value = String(config.verify_failure.summary_window_minutes);
-    }
-    const verifyFailureSummaryScheduleMode = document.getElementById('opsAlertVerifyFailureSummaryScheduleMode');
-    if (verifyFailureSummaryScheduleMode) {
-        verifyFailureSummaryScheduleMode.value = config.verify_failure.summary_schedule_mode;
-    }
-    const verifyFailureSummaryHourlyMinute = document.getElementById('opsAlertVerifyFailureSummaryHourlyMinute');
-    if (verifyFailureSummaryHourlyMinute) {
-        verifyFailureSummaryHourlyMinute.value = String(config.verify_failure.summary_hourly_minute);
-    }
-    const verifyFailureSummaryDailyHour = document.getElementById('opsAlertVerifyFailureSummaryDailyHour');
-    if (verifyFailureSummaryDailyHour) {
-        verifyFailureSummaryDailyHour.value = String(config.verify_failure.summary_daily_hour);
-    }
-    const verifyFailureSummaryDailyMinute = document.getElementById('opsAlertVerifyFailureSummaryDailyMinute');
-    if (verifyFailureSummaryDailyMinute) {
-        verifyFailureSummaryDailyMinute.value = String(config.verify_failure.summary_daily_minute);
-    }
-    const verifyFailureSummaryMaxItems = document.getElementById('opsAlertVerifyFailureSummaryMaxItems');
-    if (verifyFailureSummaryMaxItems) {
-        verifyFailureSummaryMaxItems.value = String(config.verify_failure.summary_max_items);
-    }
-    const paymentGatewayWindowMinutes = document.getElementById('opsAlertPaymentGatewayWindowMinutes');
-    if (paymentGatewayWindowMinutes) {
-        paymentGatewayWindowMinutes.value = String(config.payment_gateway.window_minutes);
-    }
-    const paymentGatewayFailedOrdersThreshold = document.getElementById('opsAlertPaymentGatewayFailedOrdersThreshold');
-    if (paymentGatewayFailedOrdersThreshold) {
-        paymentGatewayFailedOrdersThreshold.value = String(config.payment_gateway.min_failed_orders);
-    }
-    const paymentGatewayFailedRatioThreshold = document.getElementById('opsAlertPaymentGatewayFailedRatioThreshold');
-    if (paymentGatewayFailedRatioThreshold) {
-        paymentGatewayFailedRatioThreshold.value = String(config.payment_gateway.min_failed_ratio_percent);
-    }
-    const paymentGatewayWebhookSuccessRateThreshold = document.getElementById('opsAlertPaymentGatewayWebhookSuccessRateThreshold');
-    if (paymentGatewayWebhookSuccessRateThreshold) {
-        paymentGatewayWebhookSuccessRateThreshold.value = String(config.payment_gateway.max_webhook_success_rate_percent);
-    }
-    const paymentGatewayQuerySuccessRateThreshold = document.getElementById('opsAlertPaymentGatewayQuerySuccessRateThreshold');
-    if (paymentGatewayQuerySuccessRateThreshold) {
-        paymentGatewayQuerySuccessRateThreshold.value = String(config.payment_gateway.max_query_success_rate_percent);
-    }
-    const paymentGatewayWebhook5xxThreshold = document.getElementById('opsAlertPaymentGatewayWebhook5xxThreshold');
-    if (paymentGatewayWebhook5xxThreshold) {
-        paymentGatewayWebhook5xxThreshold.value = String(config.payment_gateway.min_webhook_5xx_count);
-    }
-    const paymentGatewayQuery5xxThreshold = document.getElementById('opsAlertPaymentGatewayQuery5xxThreshold');
-    if (paymentGatewayQuery5xxThreshold) {
-        paymentGatewayQuery5xxThreshold.value = String(config.payment_gateway.min_query_5xx_count);
-    }
-    const paymentGatewaySweepIntervalMinutes = document.getElementById('opsAlertPaymentGatewaySweepIntervalMinutes');
-    if (paymentGatewaySweepIntervalMinutes) {
-        paymentGatewaySweepIntervalMinutes.value = String(Math.max(1, Math.round(Number(config.payment_gateway.sweep_interval_ms || 0) / 60000)));
-    }
-    const paymentGatewayDedupeWindowMinutes = document.getElementById('opsAlertPaymentGatewayDedupeWindowMinutes');
-    if (paymentGatewayDedupeWindowMinutes) {
-        paymentGatewayDedupeWindowMinutes.value = String(config.payment_gateway.dedupe_window_minutes);
-    }
-    const paymentGatewaySummaryWindowMinutes = document.getElementById('opsAlertPaymentGatewaySummaryWindowMinutes');
-    if (paymentGatewaySummaryWindowMinutes) {
-        paymentGatewaySummaryWindowMinutes.value = String(config.payment_gateway.summary_window_minutes);
-    }
-    const paymentGatewaySummaryScheduleMode = document.getElementById('opsAlertPaymentGatewaySummaryScheduleMode');
-    if (paymentGatewaySummaryScheduleMode) {
-        paymentGatewaySummaryScheduleMode.value = config.payment_gateway.summary_schedule_mode;
-    }
-    const paymentGatewaySummaryHourlyMinute = document.getElementById('opsAlertPaymentGatewaySummaryHourlyMinute');
-    if (paymentGatewaySummaryHourlyMinute) {
-        paymentGatewaySummaryHourlyMinute.value = String(config.payment_gateway.summary_hourly_minute);
-    }
-    const paymentGatewaySummaryDailyHour = document.getElementById('opsAlertPaymentGatewaySummaryDailyHour');
-    if (paymentGatewaySummaryDailyHour) {
-        paymentGatewaySummaryDailyHour.value = String(config.payment_gateway.summary_daily_hour);
-    }
-    const paymentGatewaySummaryDailyMinute = document.getElementById('opsAlertPaymentGatewaySummaryDailyMinute');
-    if (paymentGatewaySummaryDailyMinute) {
-        paymentGatewaySummaryDailyMinute.value = String(config.payment_gateway.summary_daily_minute);
-    }
-    const paymentGatewaySummaryMaxItems = document.getElementById('opsAlertPaymentGatewaySummaryMaxItems');
-    if (paymentGatewaySummaryMaxItems) {
-        paymentGatewaySummaryMaxItems.value = String(config.payment_gateway.summary_max_items);
-    }
+    applyOpsAlertSettingsFieldGroups(buildOpsAlertSettingsFieldGroups(config));
 
     applyOpsAlertOverview(config);
 }
@@ -8526,13 +8049,7 @@ function buildOpsAlertOverviewKeyValueMarkup(items = [], options = {}) {
     `;
 }
 
-function renderOpsAlertOverviewBanner(overviewStatus, healthState = opsAlertHealthState || getDefaultOpsAlertHealthState(), precomputedBannerState = null) {
-    const summaryEl = document.getElementById('opsAlertSummary');
-    if (!summaryEl) {
-        return;
-    }
-
-    const sharedBannerState = precomputedBannerState || resolveOpsAlertOverviewBannerState(overviewStatus, healthState);
+function buildOpsAlertOverviewBannerMarkupFromState(sharedBannerState = {}, healthState = opsAlertHealthState || getDefaultOpsAlertHealthState()) {
     const tone = sharedBannerState.tone || 'neutral';
     const icon = sharedBannerState.icon || 'fa-bell-slash';
     const headline = sharedBannerState.headline || '站外告警未启用';
@@ -8543,32 +8060,54 @@ function renderOpsAlertOverviewBanner(overviewStatus, healthState = opsAlertHeal
     const badges = badgeItems.map((item) => buildOpsAlertHealthBadge(item?.label || '—', item?.tone || 'neutral'));
     const fetchedAt = sharedBannerState.fetchedAt || healthState?.fetched_at || '';
 
-    setOpsAlertOverviewBannerTone(summaryEl, tone);
-    summaryEl.innerHTML = `
-        <div class="ops-alert-overview-banner__icon">
-            <i class="fas ${escapeConfigHtml(icon)}"></i>
-        </div>
-        <div class="ops-alert-overview-banner__content">
-            <div class="ops-alert-overview-banner__headline">${escapeConfigHtml(headline)}</div>
-            <div class="ops-alert-overview-banner__meta">${badges.join('')}</div>
-            <div class="ops-alert-overview-banner__detail">${escapeConfigHtml(detailText)}</div>
-            ${fetchedAt ? `<div class="ops-alert-overview-banner__stamp">刷新于 ${escapeConfigHtml(formatVerifyMonitorDateTime(fetchedAt))}</div>` : ''}
-        </div>
-        <div class="ops-alert-overview-banner__actions">
-            <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-scroll-ops-alert-health">
-                查看健康页
-            </button>
-            <button
-                type="button"
-                class="btn-add-config btn-add-config--compact"
-                data-admin-action="settings-send-ops-alert-telegram-test"
-                title="${escapeConfigHtml(testButtonTitle)}"
-                ${canSendTest ? '' : 'disabled'}
-            >
-                发送测试告警
-            </button>
-        </div>
-    `;
+    return {
+        tone,
+        markup: `
+            <div class="ops-alert-overview-banner__icon">
+                <i class="fas ${escapeConfigHtml(icon)}"></i>
+            </div>
+            <div class="ops-alert-overview-banner__content">
+                <div class="ops-alert-overview-banner__headline">${escapeConfigHtml(headline)}</div>
+                <div class="ops-alert-overview-banner__meta">${badges.join('')}</div>
+                <div class="ops-alert-overview-banner__detail">${escapeConfigHtml(detailText)}</div>
+                ${fetchedAt ? `<div class="ops-alert-overview-banner__stamp">刷新于 ${escapeConfigHtml(formatVerifyMonitorDateTime(fetchedAt))}</div>` : ''}
+            </div>
+            <div class="ops-alert-overview-banner__actions">
+                <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-scroll-ops-alert-health">
+                    查看健康页
+                </button>
+                <button
+                    type="button"
+                    class="btn-add-config btn-add-config--compact"
+                    data-admin-action="settings-send-ops-alert-telegram-test"
+                    title="${escapeConfigHtml(testButtonTitle)}"
+                    ${canSendTest ? '' : 'disabled'}
+                >
+                    发送测试告警
+                </button>
+            </div>
+        `
+    };
+}
+
+function applyOpsAlertOverviewBannerMarkupState(markupState = {}, summaryEl = null) {
+    if (!summaryEl) return markupState;
+    setOpsAlertOverviewBannerTone(summaryEl, markupState.tone || 'neutral');
+    summaryEl.innerHTML = markupState.markup || '';
+    return markupState;
+}
+
+function renderOpsAlertOverviewBanner(overviewStatus, healthState = opsAlertHealthState || getDefaultOpsAlertHealthState(), precomputedBannerState = null) {
+    const summaryEl = document.getElementById('opsAlertSummary');
+    if (!summaryEl) {
+        return;
+    }
+
+    const sharedBannerState = precomputedBannerState || resolveOpsAlertOverviewBannerState(overviewStatus, healthState);
+    applyOpsAlertOverviewBannerMarkupState(
+        buildOpsAlertOverviewBannerMarkupFromState(sharedBannerState, healthState),
+        summaryEl
+    );
 }
 
 function updateOpsAlertOverviewCard(cardId, titleId, bodyId, tone, titleText, bodyMarkup) {
@@ -8754,9 +8293,11 @@ function buildLocalOpsAlertOverviewRenderState(overviewStatus = {}, healthState 
     };
 }
 
-function resolveOpsAlertOverviewRenderState(overviewStatus = {}, healthState = opsAlertHealthState || getDefaultOpsAlertHealthState()) {
-    if (typeof window.buildAdminWorkbenchOpsAlertOverviewRenderState === 'function') {
-        return window.buildAdminWorkbenchOpsAlertOverviewRenderState(overviewStatus, healthState, {
+function resolveOpsAlertOverviewRenderStateBuilder() {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertOverviewRenderState',
+        buildLocalOpsAlertOverviewRenderState,
+        (overviewStatus = {}, healthState = {}) => ({
             defaultHealthState: getDefaultOpsAlertHealthState(),
             getTemporaryMuteState: getOpsAlertTemporaryMuteState,
             getEnabledSeveritySummary: buildOpsAlertEnabledSeveritySummary,
@@ -8764,9 +8305,12 @@ function resolveOpsAlertOverviewRenderState(overviewStatus = {}, healthState = o
             formatDateTime: formatVerifyMonitorDateTime,
             formatBucketLabel: formatOpsAlertTrendBucketLabel,
             buildGradient: buildOpsAlertTrendGradient
-        });
-    }
-    return buildLocalOpsAlertOverviewRenderState(overviewStatus, healthState);
+        })
+    );
+}
+
+function resolveOpsAlertOverviewRenderState(overviewStatus = {}, healthState = opsAlertHealthState || getDefaultOpsAlertHealthState()) {
+    return resolveOpsAlertOverviewRenderStateBuilder()(overviewStatus, healthState);
 }
 
 function buildLocalOpsAlertOverviewBannerState(overviewStatus = {}, healthState = opsAlertHealthState || getDefaultOpsAlertHealthState()) {
@@ -8843,21 +8387,17 @@ function buildOpsAlertTrendGradient(bucket = {}) {
     return `linear-gradient(to top, ${stops.join(', ')})`;
 }
 
-function renderOpsAlertOverviewRecentVisuals(summary = {}, status = 'idle', precomputedVisualState = null) {
-    const trendEl = document.getElementById('opsAlertOverviewRecentTrend');
-    const segmentsEl = document.getElementById('opsAlertOverviewRecentSegments');
-    if (!trendEl || !segmentsEl) {
-        return;
-    }
+function buildLocalOpsAlertOverviewRecentVisualsMarkupState(sharedVisualState = {}) {
+    const normalizedVisualState = sharedVisualState && typeof sharedVisualState === 'object' && !Array.isArray(sharedVisualState)
+        ? sharedVisualState
+        : {};
+    let trendMarkup = '';
+    let trendHidden = true;
+    let segmentsMarkup = '';
+    let segmentsHidden = true;
 
-    trendEl.hidden = true;
-    trendEl.innerHTML = '';
-    segmentsEl.hidden = true;
-    segmentsEl.innerHTML = '';
-
-    const sharedVisualState = precomputedVisualState || resolveOpsAlertOverviewRecentVisualState(summary, status);
-    if (Array.isArray(sharedVisualState.trendBuckets) && sharedVisualState.trendBuckets.length) {
-        const bars = sharedVisualState.trendBuckets.map((bucket) => `
+    if (Array.isArray(normalizedVisualState.trendBuckets) && normalizedVisualState.trendBuckets.length) {
+        const bars = normalizedVisualState.trendBuckets.map((bucket) => `
             <div class="ops-alert-overview-trend__bucket" title="${escapeConfigHtml(bucket?.tooltip || '')}">
                 <div class="ops-alert-overview-trend__track">
                     <div class="ops-alert-overview-trend__fill${bucket?.fillEmpty ? ' ops-alert-overview-trend__fill--empty' : ''}" style="${escapeConfigHtml(bucket?.backgroundStyle || '')}"></div>
@@ -8865,20 +8405,20 @@ function renderOpsAlertOverviewRecentVisuals(summary = {}, status = 'idle', prec
             </div>
         `).join('');
 
-        trendEl.innerHTML = `
+        trendMarkup = `
             <div class="ops-alert-overview-trend">
-                <div class="ops-alert-overview-trend__meta">${escapeConfigHtml(sharedVisualState.trendMeta || '')}</div>
+                <div class="ops-alert-overview-trend__meta">${escapeConfigHtml(normalizedVisualState.trendMeta || '')}</div>
                 <div class="ops-alert-overview-trend__bars">${bars}</div>
                 <div class="ops-alert-overview-trend__footer">
-                    ${(Array.isArray(sharedVisualState.trendFooterLabels) ? sharedVisualState.trendFooterLabels : []).map((label) => `<span>${escapeConfigHtml(label || '—')}</span>`).join('')}
+                    ${(Array.isArray(normalizedVisualState.trendFooterLabels) ? normalizedVisualState.trendFooterLabels : []).map((label) => `<span>${escapeConfigHtml(label || '—')}</span>`).join('')}
                 </div>
             </div>
         `;
-        trendEl.hidden = false;
+        trendHidden = false;
     }
 
-    if (Array.isArray(sharedVisualState.segments) && sharedVisualState.segments.length) {
-        const segments = sharedVisualState.segments.map((segment) => `
+    if (Array.isArray(normalizedVisualState.segments) && normalizedVisualState.segments.length) {
+        const segments = normalizedVisualState.segments.map((segment) => `
             <div class="ops-alert-overview-segment ops-alert-overview-segment--${escapeConfigHtml(segment?.tone || 'neutral')}">
                 <span>${escapeConfigHtml(segment?.label || '—')}</span>
                 <strong>${escapeConfigHtml(segment?.valueText || '0')}</strong>
@@ -8886,227 +8426,155 @@ function renderOpsAlertOverviewRecentVisuals(summary = {}, status = 'idle', prec
             </div>
         `).join('');
 
-        segmentsEl.innerHTML = `
-            <div class="ops-alert-overview-segments__meta">${escapeConfigHtml(sharedVisualState.segmentMeta || '分段统计')}</div>
+        segmentsMarkup = `
+            <div class="ops-alert-overview-segments__meta">${escapeConfigHtml(normalizedVisualState.segmentMeta || '分段统计')}</div>
             <div class="ops-alert-overview-segments">${segments}</div>
         `;
-        segmentsEl.hidden = false;
-    }
-}
-
-function buildLocalOpsAlertOverviewStatus(config) {
-    const normalizedConfig = normalizeOpsAlertConfig(config);
-    const telegramSecret = opsAlertSecretStatus?.telegram_bot_token || getDefaultOpsAlertSecretStatus().telegram_bot_token;
-    const feishuSecret = opsAlertSecretStatus?.feishu_webhook_url || getDefaultOpsAlertSecretStatus().feishu_webhook_url;
-    const emailSecret = opsAlertSecretStatus?.email_api_key || getDefaultOpsAlertSecretStatus().email_api_key;
-    const telegramChatCount = normalizedConfig.channels.telegram.chat_ids.length;
-    const emailRecipientCount = normalizedConfig.channels.email.recipients.length;
-    const channelStates = [];
-    const deliveryIssues = [];
-    const targetSummaries = [];
-    const channelOverviewItems = [];
-    const targetOverviewItems = [];
-    const targetDetailRows = [];
-    let enabledChannelCount = 0;
-    let readyChannelCount = 0;
-    let configuredTargetChannelCount = 0;
-    const telegramEnabled = normalizedConfig.channels.telegram.enabled;
-    const feishuEnabled = normalizedConfig.channels.feishu.enabled;
-    const emailEnabled = normalizedConfig.channels.email.enabled;
-    const telegramReady = telegramSecret.configured && telegramChatCount > 0;
-    const feishuReady = feishuSecret.configured;
-    const emailHasFromAddress = Boolean(normalizedConfig.channels.email.from_address);
-    const emailReady = emailSecret.configured && emailRecipientCount > 0 && emailHasFromAddress;
-
-    if (telegramEnabled) {
-        enabledChannelCount += 1;
-        const telegramSummary = `Telegram · ${normalizedConfig.channels.telegram.minimum_severity}+ · ${telegramChatCount || 0} 个 chat`;
-        if (telegramReady) {
-            readyChannelCount += 1;
-            channelStates.push(`${telegramSummary} · 已就绪`);
-        } else {
-            channelStates.push(`${telegramSummary} · 待补充配置`);
-            if (!telegramSecret.configured) deliveryIssues.push('Telegram Bot Token 未配置');
-            if (!telegramChatCount) deliveryIssues.push('Telegram Chat ID 未填写');
-        }
-    }
-    if (telegramChatCount > 0) {
-        configuredTargetChannelCount += 1;
-        targetSummaries.push(`Telegram：${telegramChatCount} 个 chat`);
-    }
-    channelOverviewItems.push({
-        key: 'telegram',
-        label: 'Telegram',
-        value: telegramChatCount > 0 ? `${telegramChatCount} 个 chat` : (telegramSecret.configured ? '等待填写 chat' : '未配置目标'),
-        meta: [
-            telegramEnabled
-                ? (telegramReady ? '可直接投递' : '启用中，仍需补齐配置')
-                : ((telegramChatCount > 0 || telegramSecret.configured) ? '当前为预设' : '尚未打开'),
-            telegramSecret.configured ? 'Bot Token 已配置' : 'Bot Token 未配置'
-        ].join(' · '),
-        tone: telegramEnabled ? (telegramReady ? 'success' : 'warning') : 'neutral',
-        severityLabel: `${normalizedConfig.channels.telegram.minimum_severity}+`,
-        statusLabel: telegramEnabled ? (telegramReady ? '已就绪' : '待补充') : '未打开',
-        statusTone: telegramEnabled ? (telegramReady ? 'success' : 'warning') : 'neutral'
-    });
-    targetOverviewItems.push({
-        key: 'telegram',
-        label: 'Telegram',
-        value: telegramChatCount > 0 ? `${telegramChatCount} 个 chat` : '未填写 chat',
-        meta: telegramEnabled ? '打开后会投递到配置的 chat' : '当前为预设目标',
-        tone: telegramChatCount > 0 ? 'success' : (telegramEnabled ? 'warning' : 'neutral'),
-        statusLabel: telegramChatCount > 0 ? '已配置' : (telegramEnabled ? '待配置' : '未配置'),
-        statusTone: telegramChatCount > 0 ? 'success' : (telegramEnabled ? 'warning' : 'neutral')
-    });
-
-    if (feishuEnabled) {
-        enabledChannelCount += 1;
-        const feishuSummary = `飞书 · ${normalizedConfig.channels.feishu.minimum_severity}+`;
-        if (feishuReady) {
-            readyChannelCount += 1;
-            channelStates.push(`${feishuSummary} · 已就绪`);
-        } else {
-            channelStates.push(`${feishuSummary} · 待补充配置`);
-            deliveryIssues.push('飞书 Webhook 未配置');
-        }
-    }
-    if (feishuSecret.configured) {
-        configuredTargetChannelCount += 1;
-        targetSummaries.push('飞书：Webhook 已配置');
-    }
-    channelOverviewItems.push({
-        key: 'feishu',
-        label: '飞书',
-        value: feishuSecret.configured ? 'Webhook 已配置' : '未配置 Webhook',
-        meta: feishuEnabled
-            ? (feishuReady ? '可直接投递' : '启用中，仍需补齐 Webhook')
-            : (feishuSecret.configured ? '当前为预设' : '尚未打开'),
-        tone: feishuEnabled ? (feishuReady ? 'success' : 'warning') : 'neutral',
-        severityLabel: `${normalizedConfig.channels.feishu.minimum_severity}+`,
-        statusLabel: feishuEnabled ? (feishuReady ? '已就绪' : '待补充') : '未打开',
-        statusTone: feishuEnabled ? (feishuReady ? 'success' : 'warning') : 'neutral'
-    });
-    targetOverviewItems.push({
-        key: 'feishu',
-        label: '飞书',
-        value: feishuSecret.configured ? 'Webhook 已配置' : '未配置 Webhook',
-        meta: feishuEnabled ? '打开后会发往群机器人' : '当前为预设目标',
-        tone: feishuSecret.configured ? 'success' : (feishuEnabled ? 'warning' : 'neutral'),
-        statusLabel: feishuSecret.configured ? '已配置' : (feishuEnabled ? '待配置' : '未配置'),
-        statusTone: feishuSecret.configured ? 'success' : (feishuEnabled ? 'warning' : 'neutral')
-    });
-
-    if (emailEnabled) {
-        enabledChannelCount += 1;
-        const emailSummary = `邮件 · ${normalizedConfig.channels.email.minimum_severity}+ · ${emailRecipientCount || 0} 个收件人`;
-        if (emailReady) {
-            readyChannelCount += 1;
-            channelStates.push(`${emailSummary} · 已就绪`);
-        } else {
-            channelStates.push(`${emailSummary} · 待补充配置`);
-            if (!emailSecret.configured) deliveryIssues.push('Email API Key 未配置');
-            if (!emailRecipientCount) deliveryIssues.push('邮件收件人未填写');
-            if (!emailHasFromAddress) deliveryIssues.push('邮件发件地址未填写');
-        }
-    }
-    if (emailRecipientCount > 0) {
-        configuredTargetChannelCount += 1;
-        const recipientPreview = normalizedConfig.channels.email.recipients
-            .slice(0, 2)
-            .join('、');
-        const recipientSuffix = emailRecipientCount > 2 ? ' 等' : '';
-        targetSummaries.push(`邮件：${emailRecipientCount} 个收件人（${recipientPreview}${recipientSuffix}）`);
-    }
-    if (normalizedConfig.channels.email.from_address) {
-        targetSummaries.push(`发件地址：${normalizedConfig.channels.email.from_address}`);
-    }
-    if (normalizedConfig.channels.email.reply_to) {
-        targetSummaries.push(`Reply-To：${normalizedConfig.channels.email.reply_to}`);
-    }
-    channelOverviewItems.push({
-        key: 'email',
-        label: '邮件',
-        value: emailRecipientCount > 0 ? `${emailRecipientCount} 个收件人` : '未填写收件人',
-        meta: [
-            emailEnabled
-                ? (emailReady ? '可直接投递' : '启用中，仍需补齐发件配置')
-                : ((emailRecipientCount > 0 || emailHasFromAddress) ? '当前为预设' : '尚未打开'),
-            emailHasFromAddress ? '发件地址已配置' : '缺少发件地址'
-        ].join(' · '),
-        tone: emailEnabled ? (emailReady ? 'success' : 'warning') : 'neutral',
-        severityLabel: `${normalizedConfig.channels.email.minimum_severity}+`,
-        statusLabel: emailEnabled ? (emailReady ? '已就绪' : '待补充') : '未打开',
-        statusTone: emailEnabled ? (emailReady ? 'success' : 'warning') : 'neutral'
-    });
-    targetOverviewItems.push({
-        key: 'email',
-        label: '邮件',
-        value: emailRecipientCount > 0 ? `${emailRecipientCount} 个收件人` : '未填写收件人',
-        meta: emailEnabled ? '打开后会发往已配置邮箱' : '当前为预设目标',
-        tone: (emailRecipientCount > 0 && emailHasFromAddress) ? 'success' : (emailEnabled ? 'warning' : 'neutral'),
-        statusLabel: (emailRecipientCount > 0 && emailHasFromAddress) ? '已配置' : (emailEnabled ? '待配置' : '未配置'),
-        statusTone: (emailRecipientCount > 0 && emailHasFromAddress) ? 'success' : (emailEnabled ? 'warning' : 'neutral')
-    });
-    if (normalizedConfig.channels.email.from_address) {
-        targetDetailRows.push({
-            label: '发件地址',
-            value: normalizedConfig.channels.email.from_address,
-            tone: 'neutral'
-        });
-    }
-    if (normalizedConfig.channels.email.reply_to) {
-        targetDetailRows.push({
-            label: 'Reply-To',
-            value: normalizedConfig.channels.email.reply_to,
-            tone: 'neutral'
-        });
-    }
-    if (normalizedConfig.channels.email.subject_prefix) {
-        targetDetailRows.push({
-            label: '主题前缀',
-            value: normalizedConfig.channels.email.subject_prefix,
-            tone: 'neutral'
-        });
+        segmentsHidden = false;
     }
 
     return {
-        normalizedConfig,
-        telegramSecret,
-        feishuSecret,
-        emailSecret,
-        telegramChatCount,
-        emailRecipientCount,
-        channelStates,
-        deliveryIssues,
-        targetSummaries,
-        channelOverviewItems,
-        targetOverviewItems,
-        targetDetailRows,
-        enabledChannelCount,
-        readyChannelCount,
-        configuredTargetChannelCount,
-        temporaryMuteState: getOpsAlertTemporaryMuteState(normalizedConfig),
-        enabledSeveritySummary: buildOpsAlertEnabledSeveritySummary(normalizedConfig)
+        trendHidden,
+        trendMarkup,
+        segmentsHidden,
+        segmentsMarkup
     };
+}
+
+function applyOpsAlertOverviewRecentVisualsMarkupState(markupState = {}, elements = {}) {
+    const trendEl = elements.trendEl;
+    const segmentsEl = elements.segmentsEl;
+    if (!trendEl || !segmentsEl) return markupState;
+
+    trendEl.hidden = markupState.trendHidden !== false;
+    trendEl.innerHTML = markupState.trendMarkup || '';
+    segmentsEl.hidden = markupState.segmentsHidden !== false;
+    segmentsEl.innerHTML = markupState.segmentsMarkup || '';
+    return markupState;
+}
+
+function buildLocalOpsAlertOverviewCardsApplyState(markupState = {}) {
+    const normalizedMarkupState = markupState && typeof markupState === 'object' && !Array.isArray(markupState)
+        ? markupState
+        : {};
+    const channelsCardState = normalizedMarkupState.cardStates?.channelsCard || {};
+    const targetsCardState = normalizedMarkupState.cardStates?.targetsCard || {};
+    const recentCardState = normalizedMarkupState.cardStates?.recentCard || {};
+
+    return {
+        bannerMarkupState: buildOpsAlertOverviewBannerMarkupFromState(
+            normalizedMarkupState.bannerState || {},
+            normalizedMarkupState.healthState || getDefaultOpsAlertHealthState()
+        ),
+        cards: [
+            {
+                cardId: 'opsAlertOverviewChannelsCard',
+                titleId: 'opsAlertOverviewChannelsTitle',
+                bodyId: 'opsAlertOverviewChannels',
+                tone: channelsCardState.tone || 'neutral',
+                titleText: channelsCardState.title || '未启用',
+                bodyMarkup: buildOpsAlertOverviewCardBodyMarkup(channelsCardState, {
+                    renderListWhenEmpty: true,
+                    listEmptyMessage: '暂无数据'
+                })
+            },
+            {
+                cardId: 'opsAlertOverviewTargetsCard',
+                titleId: 'opsAlertOverviewTargetsTitle',
+                bodyId: 'opsAlertOverviewTargets',
+                tone: targetsCardState.tone || 'neutral',
+                titleText: targetsCardState.title || '等待配置',
+                bodyMarkup: buildOpsAlertOverviewCardBodyMarkup({
+                    ...targetsCardState,
+                    detailRows: targetsCardState.includeTargetDetails ? (targetsCardState.detailRows || []) : []
+                }, {
+                    renderListWhenEmpty: true,
+                    listEmptyMessage: '暂无数据'
+                })
+            },
+            {
+                cardId: 'opsAlertOverviewRecentCard',
+                titleId: 'opsAlertOverviewRecentTitle',
+                bodyId: 'opsAlertOverviewRecent',
+                tone: recentCardState.tone || 'neutral',
+                titleText: recentCardState.title || '等待刷新',
+                bodyMarkup: buildOpsAlertOverviewCardBodyMarkup(recentCardState, {
+                    emptyMessage: '告警通道健康页加载后，会在这里显示最近投递摘要。'
+                })
+            }
+        ],
+        recentVisualMarkupState: buildLocalOpsAlertOverviewRecentVisualsMarkupState(
+            normalizedMarkupState.recentVisualState || {}
+        )
+    };
+}
+
+function applyOpsAlertOverviewCardsMarkupState(applyState = {}) {
+    return applyOpsAlertOverviewMarkupState(applyState);
+}
+
+function buildLocalOpsAlertOverviewMarkupState(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const markupState = resolveOpsAlertOverviewCardsMarkupState(config);
+    return buildLocalOpsAlertOverviewCardsApplyState(markupState);
+}
+
+function resolveOpsAlertOverviewMarkupState(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    return buildLocalOpsAlertOverviewMarkupState(config);
+}
+
+function applyOpsAlertOverviewMarkupState(applyState = {}) {
+    applyOpsAlertOverviewBannerMarkupState(
+        applyState.bannerMarkupState || {},
+        document.getElementById('opsAlertSummary')
+    );
+    (Array.isArray(applyState.cards) ? applyState.cards : []).forEach((card) => {
+        updateOpsAlertOverviewCard(
+            card.cardId,
+            card.titleId,
+            card.bodyId,
+            card.tone,
+            card.titleText,
+            card.bodyMarkup
+        );
+    });
+    applyOpsAlertOverviewRecentVisualsMarkupState(
+        applyState.recentVisualMarkupState || {},
+        {
+            trendEl: document.getElementById('opsAlertOverviewRecentTrend'),
+            segmentsEl: document.getElementById('opsAlertOverviewRecentSegments')
+        }
+    );
+    return applyState;
+}
+
+function renderOpsAlertOverviewRecentVisuals(summary = {}, status = 'idle', precomputedVisualState = null) {
+    const trendEl = document.getElementById('opsAlertOverviewRecentTrend');
+    const segmentsEl = document.getElementById('opsAlertOverviewRecentSegments');
+    if (!trendEl || !segmentsEl) {
+        return;
+    }
+
+    const sharedVisualState = precomputedVisualState || resolveOpsAlertOverviewRecentVisualState(summary, status);
+    applyOpsAlertOverviewRecentVisualsMarkupState(
+        buildLocalOpsAlertOverviewRecentVisualsMarkupState(sharedVisualState),
+        { trendEl, segmentsEl }
+    );
 }
 
 function resolveOpsAlertOverviewStatus(config) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
-    if (typeof window.buildAdminWorkbenchOpsAlertOverviewStatus === 'function') {
-        return window.buildAdminWorkbenchOpsAlertOverviewStatus(normalizedConfig, opsAlertSecretStatus, {
-            normalizeConfig: normalizeOpsAlertConfig,
-            getDefaultSecretStatus: getDefaultOpsAlertSecretStatus,
-            getTemporaryMuteState: getOpsAlertTemporaryMuteState
-        });
-    }
-    return buildLocalOpsAlertOverviewStatus(normalizedConfig);
+    return requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertOverviewStatus')(normalizedConfig, opsAlertSecretStatus, {
+        normalizeConfig: normalizeOpsAlertConfig,
+        getDefaultSecretStatus: getDefaultOpsAlertSecretStatus,
+        getTemporaryMuteState: getOpsAlertTemporaryMuteState
+    });
 }
 
 function getOpsAlertOverviewStatus(config) {
     return resolveOpsAlertOverviewStatus(config);
 }
 
-function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+function resolveOpsAlertOverviewCardsMarkupState(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
     const {
         normalizedConfig,
         channelStates,
@@ -9133,90 +8601,61 @@ function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConf
     };
     const sharedOverviewRenderState = resolveOpsAlertOverviewRenderState(overviewStatus, healthState);
     const sharedCardStates = sharedOverviewRenderState?.cardStates || resolveOpsAlertOverviewCardStates(overviewStatus, healthState);
-    renderOpsAlertOverviewBanner(
-        overviewStatus,
+
+    return {
+        normalizedConfig,
         healthState,
-        sharedOverviewRenderState?.bannerState || resolveOpsAlertOverviewBannerState(overviewStatus, healthState)
-    );
-
-    const channelsCardState = sharedCardStates?.channelsCard || {
-        tone: normalizedConfig.enabled && enabledChannelCount === 0
-            ? 'warning'
-            : (enabledChannelCount > 0 && deliveryIssues.length > 0
-                ? (normalizedConfig.enabled ? 'warning' : 'neutral')
-                : (enabledChannelCount > 0 && normalizedConfig.enabled ? 'success' : 'neutral')),
-        title: normalizedConfig.enabled && enabledChannelCount === 0
-            ? '0 / 3 已打开'
-            : (enabledChannelCount > 0 ? `${readyChannelCount} / ${enabledChannelCount} 已就绪` : '未启用'),
-        compact: !(enabledChannelCount > 0),
-        items: channelOverviewItems
-    };
-    updateOpsAlertOverviewCard(
-        'opsAlertOverviewChannelsCard',
-        'opsAlertOverviewChannelsTitle',
-        'opsAlertOverviewChannels',
-        channelsCardState.tone || 'neutral',
-        channelsCardState.title || '未启用',
-        buildOpsAlertOverviewCardBodyMarkup(channelsCardState, {
-            renderListWhenEmpty: true,
-            listEmptyMessage: '暂无数据'
-        })
-    );
-
-    const targetsCardState = sharedCardStates?.targetsCard || {
-        tone: targetOverviewItems.length > 0
-            ? (configuredTargetChannelCount > 0
-                ? (deliveryIssues.length > 0 ? 'warning' : 'success')
-                : (normalizedConfig.enabled ? 'warning' : 'neutral'))
-            : 'neutral',
-        title: targetOverviewItems.length > 0 ? `已配置 ${configuredTargetChannelCount || 0} / 3` : '等待配置',
-        compact: true,
-        items: targetOverviewItems,
-        detailRows: targetDetailRows,
-        detailRowsCompact: true,
-        includeTargetDetails: targetOverviewItems.length > 0 && targetDetailRows.length > 0
-    };
-    updateOpsAlertOverviewCard(
-        'opsAlertOverviewTargetsCard',
-        'opsAlertOverviewTargetsTitle',
-        'opsAlertOverviewTargets',
-        targetsCardState.tone || 'neutral',
-        targetsCardState.title || '等待配置',
-        buildOpsAlertOverviewCardBodyMarkup({
-            ...targetsCardState,
-            detailRows: targetsCardState.includeTargetDetails ? (targetsCardState.detailRows || []) : []
-        }, {
-            renderListWhenEmpty: true,
-            listEmptyMessage: '暂无数据'
-        })
-    );
-
-    const recentCardState = sharedCardStates?.recentCard || {
-        tone: 'neutral',
-        title: '等待刷新',
-        metrics: [],
-        detailRows: [],
-        emptyMessage: healthState.status === 'loading'
-            ? (healthState.message || '正在加载站外告警通道健康状态...')
-            : (healthState.status === 'error'
-                ? (healthState.message || '加载站外告警通道健康状态失败。')
-                : '告警通道健康页加载后，会在这里显示最近投递摘要。')
-    };
-    updateOpsAlertOverviewCard(
-        'opsAlertOverviewRecentCard',
-        'opsAlertOverviewRecentTitle',
-        'opsAlertOverviewRecent',
-        recentCardState.tone || 'neutral',
-        recentCardState.title || '等待刷新',
-        buildOpsAlertOverviewCardBodyMarkup(recentCardState, {
-            emptyMessage: '告警通道健康页加载后，会在这里显示最近投递摘要。'
-        })
-    );
-    renderOpsAlertOverviewRecentVisuals(
         summary,
-        healthState.status,
-        sharedOverviewRenderState?.recentVisualState || resolveOpsAlertOverviewRecentVisualState(summary, healthState.status)
-    );
+        overviewStatus,
+        bannerState: sharedOverviewRenderState?.bannerState || resolveOpsAlertOverviewBannerState(overviewStatus, healthState),
+        cardStates: {
+            channelsCard: sharedCardStates?.channelsCard || {
+                tone: normalizedConfig.enabled && enabledChannelCount === 0
+                    ? 'warning'
+                    : (enabledChannelCount > 0 && deliveryIssues.length > 0
+                        ? (normalizedConfig.enabled ? 'warning' : 'neutral')
+                        : (enabledChannelCount > 0 && normalizedConfig.enabled ? 'success' : 'neutral')),
+                title: normalizedConfig.enabled && enabledChannelCount === 0
+                    ? '0 / 3 已打开'
+                    : (enabledChannelCount > 0 ? `${readyChannelCount} / ${enabledChannelCount} 已就绪` : '未启用'),
+                compact: !(enabledChannelCount > 0),
+                items: channelOverviewItems
+            },
+            targetsCard: sharedCardStates?.targetsCard || {
+                tone: targetOverviewItems.length > 0
+                    ? (configuredTargetChannelCount > 0
+                        ? (deliveryIssues.length > 0 ? 'warning' : 'success')
+                        : (normalizedConfig.enabled ? 'warning' : 'neutral'))
+                    : 'neutral',
+                title: targetOverviewItems.length > 0 ? `已配置 ${configuredTargetChannelCount || 0} / 3` : '等待配置',
+                compact: true,
+                items: targetOverviewItems,
+                detailRows: targetDetailRows,
+                detailRowsCompact: true,
+                includeTargetDetails: targetOverviewItems.length > 0 && targetDetailRows.length > 0
+            },
+            recentCard: sharedCardStates?.recentCard || {
+                tone: 'neutral',
+                title: '等待刷新',
+                metrics: [],
+                detailRows: [],
+                emptyMessage: healthState.status === 'loading'
+                    ? (healthState.message || '正在加载站外告警通道健康状态...')
+                    : (healthState.status === 'error'
+                        ? (healthState.message || '加载站外告警通道健康状态失败。')
+                        : '告警通道健康页加载后，会在这里显示最近投递摘要。')
+            }
+        },
+        recentVisualState: sharedOverviewRenderState?.recentVisualState || resolveOpsAlertOverviewRecentVisualState(summary, healthState.status)
+    };
+}
+
+function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    return renderOpsAlertOverview(config);
+}
+
+function renderOpsAlertOverview(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    applyOpsAlertOverviewMarkupState(resolveOpsAlertOverviewMarkupState(config));
 }
 
 function buildOpsAlertEnabledSeveritySummary(config = {}) {
@@ -9246,88 +8685,56 @@ function setOpsAlertHealthCardTone(card, tone = 'neutral') {
     card.classList.add(`ops-alert-health-card--${tone}`);
 }
 
+function buildOpsAlertPanelMetaMarkup(panelState = {}, fallbackText = '') {
+    const normalizedPanelState = panelState && typeof panelState === 'object' && !Array.isArray(panelState)
+        ? panelState
+        : {};
+    return `<i class="${escapeConfigHtml(normalizedPanelState.metaIcon || 'fas fa-circle-info')}"></i><span>${escapeConfigHtml(normalizedPanelState.metaText || fallbackText || '暂无数据')}</span>`;
+}
+
+function buildOpsAlertPanelEmptyMarkup(message = '', className = 'ops-alert-monitor-empty') {
+    return `<div class="${escapeConfigHtml(className || 'ops-alert-monitor-empty')}">${escapeConfigHtml(message || '暂无数据')}</div>`;
+}
+
+function applyOpsAlertBodyMarkupState(markupState = {}, target = null, fallbackBody = '') {
+    if (!target) return markupState;
+    target.innerHTML = markupState.bodyMarkup || fallbackBody || '';
+    return markupState;
+}
+
+function applyOpsAlertPanelMarkupElements(markupState = {}, elements = {}, options = {}) {
+    const panel = elements.panel;
+    const meta = elements.meta;
+    const grid = elements.grid;
+    if (!panel || !meta || !grid) return markupState;
+
+    panel.hidden = false;
+    if (typeof options.beforeApply === 'function') {
+        options.beforeApply(markupState, elements);
+    }
+
+    meta.innerHTML = markupState.metaMarkup || buildOpsAlertPanelMetaMarkup(
+        markupState.panelState,
+        options.fallbackMetaText || ''
+    );
+    grid.innerHTML = markupState.bodyMarkup || buildOpsAlertPanelEmptyMarkup(
+        options.fallbackEmptyText || markupState.panelState?.emptyMessage || '暂无数据'
+    );
+    return markupState;
+}
+
 function renderOpsAlertHealthEmptyState(target, message) {
     if (!target) return;
-    target.innerHTML = `<div class="ops-alert-monitor-empty">${escapeConfigHtml(message)}</div>`;
+    target.innerHTML = buildOpsAlertPanelEmptyMarkup(message);
 }
 
 function buildOpsAlertHealthBadge(label, tone = 'neutral') {
     return `<span class="ops-alert-monitor-badge ops-alert-monitor-badge--${escapeConfigHtml(tone)}">${escapeConfigHtml(label)}</span>`;
 }
 
-function buildLocalOpsAlertHealthCardState(channel = {}) {
-    const tone = String(channel.tone || 'neutral').trim().toLowerCase() || 'neutral';
-    const deliveryRate = Number(channel.delivery_rate);
-    const deliveryRateText = Number.isFinite(deliveryRate) ? `${deliveryRate.toFixed(1)}%` : '—';
-    const configSource = String(channel.source || '').trim().toLowerCase();
-    const configDetails = [];
-    if (channel.key === 'telegram' && channel.recipient_summary) {
-        configDetails.push({ label: '投递目标', value: channel.recipient_summary });
-    }
-    if (channel.key === 'feishu') {
-        configDetails.push({ label: '投递方式', value: channel.recipient_summary || 'Webhook 通道' });
-    }
-    if (channel.key === 'email') {
-        if (channel.recipient_preview) {
-            configDetails.push({ label: '收件人', value: channel.recipient_preview });
-        } else if (channel.recipient_summary) {
-            configDetails.push({ label: '收件人', value: channel.recipient_summary });
-        }
-        if (channel.from_address) {
-            configDetails.push({ label: '发件地址', value: channel.from_address });
-        }
-        if (channel.reply_to) {
-            configDetails.push({ label: 'Reply-To', value: channel.reply_to });
-        }
-    }
-    if (channel.subject_prefix) {
-        configDetails.push({ label: '主题前缀', value: channel.subject_prefix });
-    }
-    if (channel.last_attempt_at) {
-        configDetails.push({ label: '最近投递', value: formatVerifyMonitorDateTime(channel.last_attempt_at) });
-    }
-    return {
-        tone,
-        label: channel.label || '通道',
-        metaLine: [
-            `最小级别：${channel.minimum_severity || 'warning'}`,
-            `配置来源：${configSource === 'stored' ? '后台密钥仓' : (configSource === 'environment' ? '环境变量' : '未配置')}`,
-            channel.recipient_summary || '',
-            channel.updated_at ? `更新于 ${formatVerifyMonitorDateTime(channel.updated_at)}` : ''
-        ].filter(Boolean).join(' · '),
-        statusBadges: [
-            { label: channel.enabled ? '已启用' : '未启用', tone: channel.enabled ? (channel.configured ? 'success' : 'warning') : 'neutral' },
-            { label: channel.health_label || '未启用', tone }
-        ],
-        stats: [
-            { value: formatVerifyMonitorInteger(channel.total_attempts || 0), label: '近窗投递' },
-            { value: deliveryRateText, label: '送达率' },
-            { value: formatVerifyMonitorInteger(channel.dead_letter_count || 0), label: '死信' },
-            { value: formatVerifyMonitorInteger(channel.retry_count || 0), label: '重试' }
-        ],
-        configDetails: configDetails.slice(0, 5),
-        summaryText: channel.last_error
-            ? `最近错误：${channel.last_error}`
-            : (channel.last_attempt_at ? `最近投递：${formatVerifyMonitorDateTime(channel.last_attempt_at)}` : '最近 72 小时内暂无投递记录'),
-        recentErrors: (Array.isArray(channel.recent_errors) ? channel.recent_errors : []).map((item) => ({
-            message: item.message || '未知错误',
-            meta: `${formatVerifyMonitorInteger(item.count || 0)} 次 · ${item.last_seen_at ? formatVerifyMonitorDateTime(item.last_seen_at) : '时间未知'}`
-        })),
-        recentErrorsEmptyText: '最近没有失败明细。'
-    };
-}
-
-function buildLocalOpsAlertHealthCardStates(state = {}) {
-    const normalizedState = state && typeof state === 'object' && !Array.isArray(state) ? state : {};
-    const channels = Array.isArray(normalizedState.channels) ? normalizedState.channels.filter(Boolean) : [];
-    return channels.map((channel) => buildLocalOpsAlertHealthCardState(channel));
-}
-
 function resolveOpsAlertHealthCardStates(state = {}) {
     const renderState = resolveOpsAlertHealthRenderState(state);
-    return Array.isArray(renderState?.channelCardStates)
-        ? renderState.channelCardStates
-        : buildLocalOpsAlertHealthCardStates(state);
+    return Array.isArray(renderState?.channelCardStates) ? renderState.channelCardStates : [];
 }
 
 function buildOpsAlertHealthCardMarkupFromState(resolvedCardState = {}) {
@@ -9383,131 +8790,90 @@ function buildOpsAlertHealthCardMarkupFromState(resolvedCardState = {}) {
     `;
 }
 
-function buildOpsAlertHealthCardMarkup(channel = {}) {
-    return buildOpsAlertHealthCardMarkupFromState(buildLocalOpsAlertHealthCardState(channel));
-}
-
-function buildLocalOpsAlertHealthRenderState(state = {}) {
-    const normalizedState = state && typeof state === 'object' && !Array.isArray(state) ? state : {};
-    const summary = normalizedState.summary && typeof normalizedState.summary === 'object' && !Array.isArray(normalizedState.summary)
-        ? normalizedState.summary
-        : getDefaultOpsAlertHealthState().summary;
-    const channels = Array.isArray(normalizedState.channels) ? normalizedState.channels.filter(Boolean) : [];
-    const normalizedStatus = String(normalizedState.status || 'idle').trim().toLowerCase() || 'idle';
-
-    if (normalizedStatus === 'loading') {
-        return {
-            panelState: {
-                status: 'loading',
-                metaIcon: 'fas fa-rotate fa-spin',
-                metaText: '正在加载站外告警通道健康状态...',
-                emptyMessage: '正在加载站外告警通道健康状态...',
-                shouldRenderCards: false
-            },
-            channelCardStates: []
-        };
-    }
-
-    if (normalizedStatus === 'error') {
-        const message = normalizedState.message || '加载告警通道健康状态失败。';
-        return {
-            panelState: {
-                status: 'error',
-                metaIcon: 'fas fa-triangle-exclamation',
-                metaText: message,
-                emptyMessage: message,
-                shouldRenderCards: false
-            },
-            channelCardStates: []
-        };
-    }
-
-    if (!channels.length) {
-        return {
-            panelState: {
-                status: 'empty',
-                metaIcon: 'fas fa-circle-info',
-                metaText: '最近没有可用于评估的站外告警通道数据。',
-                emptyMessage: '最近没有可用于评估的站外告警通道数据。',
-                shouldRenderCards: false
-            },
-            channelCardStates: []
-        };
-    }
-
-    return {
-        panelState: {
-            status: 'ready',
-            metaIcon: 'fas fa-heart-pulse',
-            metaText: `最近 ${formatVerifyMonitorInteger(summary.lookback_hours || 0)} 小时共记录 ${formatVerifyMonitorInteger(summary.total_attempt_count || 0)} 次投递，送达 ${formatVerifyMonitorInteger(summary.delivered_count || 0)} 次，失败 ${formatVerifyMonitorInteger(summary.failed_count || 0)} 次，死信 ${formatVerifyMonitorInteger(summary.dead_letter_count || 0)} 项。`,
-            emptyMessage: '',
-            shouldRenderCards: true
-        },
-        channelCardStates: channels.map((channel) => buildLocalOpsAlertHealthCardState(channel))
-    };
-}
-
-function buildLocalOpsAlertHealthPanelState(state = {}) {
-    return buildLocalOpsAlertHealthRenderState(state).panelState;
-}
-
 function resolveOpsAlertHealthPanelState(state = {}) {
     const renderState = resolveOpsAlertHealthRenderState(state);
-    return renderState?.panelState || buildLocalOpsAlertHealthPanelState(state);
+    return renderState?.panelState || {};
 }
 
 function resolveOpsAlertHealthRenderState(state = {}) {
-    if (typeof window.buildAdminWorkbenchOpsAlertHealthRenderState === 'function') {
-        return window.buildAdminWorkbenchOpsAlertHealthRenderState(state, {
-            defaultHealthState: getDefaultOpsAlertHealthState(),
-            formatCount: formatVerifyMonitorInteger,
-            formatDateTime: formatVerifyMonitorDateTime
-        });
+    return requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertHealthRenderState')(state, {
+        defaultHealthState: getDefaultOpsAlertHealthState(),
+        formatCount: formatVerifyMonitorInteger,
+        formatDateTime: formatVerifyMonitorDateTime
+    });
+}
+
+function buildLocalOpsAlertHealthPanelMarkupState(state = opsAlertHealthState || getDefaultOpsAlertHealthState()) {
+    const normalizedState = state && typeof state === 'object' && !Array.isArray(state)
+        ? state
+        : getDefaultOpsAlertHealthState();
+    const summary = normalizedState.summary || getDefaultOpsAlertHealthState().summary;
+    const sharedHealthRenderState = resolveOpsAlertHealthRenderState(normalizedState);
+    const panelState = sharedHealthRenderState?.panelState || resolveOpsAlertHealthPanelState(normalizedState);
+    const channelCardStates = Array.isArray(sharedHealthRenderState?.channelCardStates)
+        ? sharedHealthRenderState.channelCardStates
+        : resolveOpsAlertHealthCardStates(normalizedState);
+    const emptyMessage = panelState.status === 'error'
+        ? (panelState.emptyMessage || normalizedState.message || '加载告警通道健康状态失败。')
+        : (panelState.emptyMessage || '最近没有可用于评估的站外告警通道数据。');
+
+    return {
+        state: normalizedState,
+        summary,
+        panelState,
+        channelCardStates,
+        metaMarkup: buildOpsAlertPanelMetaMarkup(panelState, '最近没有可用于评估的站外告警通道数据。'),
+        bodyMarkup: panelState.status === 'ready'
+            ? channelCardStates.map((cardState) => buildOpsAlertHealthCardMarkupFromState(cardState)).join('')
+            : buildOpsAlertPanelEmptyMarkup(
+                panelState.status === 'loading'
+                    ? (panelState.emptyMessage || '正在加载站外告警通道健康状态...')
+                    : emptyMessage
+            )
+    };
+}
+
+function resolveOpsAlertHealthPanelMarkupState(state = opsAlertHealthState || getDefaultOpsAlertHealthState()) {
+    return buildLocalOpsAlertHealthPanelMarkupState(state);
+}
+
+function applyOpsAlertHealthPanelMarkupState(markupState = {}, elements = {}) {
+    return applyOpsAlertPanelMarkupElements(markupState, elements, {
+        beforeApply: () => renderOpsAlertOverviewCards(),
+        fallbackMetaText: '最近没有可用于评估的站外告警通道数据。',
+        fallbackEmptyText: '最近没有可用于评估的站外告警通道数据。'
+    });
+}
+
+function renderOpsAlertBodyMarkupTarget(targetId, resolveMarkupState) {
+    const target = document.getElementById(targetId);
+    if (!target || typeof resolveMarkupState !== 'function') return null;
+    const markupState = resolveMarkupState();
+    applyOpsAlertBodyMarkupState(markupState, target);
+    return markupState;
+}
+
+function renderOpsAlertPanelMarkupTarget(options = {}) {
+    const panel = document.getElementById(options.panelId || '');
+    const meta = document.getElementById(options.metaId || '');
+    const grid = document.getElementById(options.gridId || '');
+    if (!panel || !meta || !grid) return null;
+    if (typeof options.resolveMarkupState !== 'function' || typeof options.applyMarkupState !== 'function') {
+        return null;
     }
-    return buildLocalOpsAlertHealthRenderState(state);
+    const markupState = options.resolveMarkupState();
+    options.applyMarkupState(markupState, { panel, meta, grid });
+    return markupState;
 }
 
 function renderOpsAlertHealthPanel() {
-    const panel = document.getElementById('opsAlertHealthPanel');
-    const meta = document.getElementById('opsAlertHealthMeta');
-    const grid = document.getElementById('opsAlertHealthGrid');
-    if (!panel || !meta || !grid) return;
-
-    const state = opsAlertHealthState || getDefaultOpsAlertHealthState();
-    const summary = state.summary || getDefaultOpsAlertHealthState().summary;
-    const sharedHealthRenderState = resolveOpsAlertHealthRenderState(state);
-    const sharedPanelState = sharedHealthRenderState?.panelState || resolveOpsAlertHealthPanelState(state);
-
-    panel.hidden = false;
-
-    if (sharedPanelState.status === 'loading') {
-        renderOpsAlertOverviewCards();
-        meta.innerHTML = `<i class="${escapeConfigHtml(sharedPanelState.metaIcon || 'fas fa-rotate fa-spin')}"></i><span>${escapeConfigHtml(sharedPanelState.metaText || '正在加载站外告警通道健康状态...')}</span>`;
-        renderOpsAlertHealthEmptyState(grid, sharedPanelState.emptyMessage || '正在加载站外告警通道健康状态...');
-        return;
-    }
-
-    if (sharedPanelState.status === 'error') {
-        renderOpsAlertOverviewCards();
-        meta.innerHTML = `<i class="${escapeConfigHtml(sharedPanelState.metaIcon || 'fas fa-triangle-exclamation')}"></i><span>${escapeConfigHtml(sharedPanelState.metaText || state.message || '加载告警通道健康状态失败。')}</span>`;
-        renderOpsAlertHealthEmptyState(grid, sharedPanelState.emptyMessage || state.message || '加载告警通道健康状态失败。');
-        return;
-    }
-
-    const channels = Array.isArray(state.channels) ? state.channels : [];
-    if (sharedPanelState.status === 'empty') {
-        renderOpsAlertOverviewCards();
-        meta.innerHTML = `<i class="${escapeConfigHtml(sharedPanelState.metaIcon || 'fas fa-circle-info')}"></i><span>${escapeConfigHtml(sharedPanelState.metaText || '最近没有可用于评估的站外告警通道数据。')}</span>`;
-        renderOpsAlertHealthEmptyState(grid, sharedPanelState.emptyMessage || '最近没有可用于评估的站外告警通道数据。');
-        return;
-    }
-
-    renderOpsAlertOverviewCards();
-    meta.innerHTML = `<i class="${escapeConfigHtml(sharedPanelState.metaIcon || 'fas fa-heart-pulse')}"></i><span>${escapeConfigHtml(sharedPanelState.metaText || `最近 ${formatVerifyMonitorInteger(summary.lookback_hours || 0)} 小时共记录 ${formatVerifyMonitorInteger(summary.total_attempt_count || 0)} 次投递，送达 ${formatVerifyMonitorInteger(summary.delivered_count || 0)} 次，失败 ${formatVerifyMonitorInteger(summary.failed_count || 0)} 次，死信 ${formatVerifyMonitorInteger(summary.dead_letter_count || 0)} 项。`)}</span>`;
-    const channelCardStates = Array.isArray(sharedHealthRenderState?.channelCardStates)
-        ? sharedHealthRenderState.channelCardStates
-        : resolveOpsAlertHealthCardStates(state);
-    grid.innerHTML = channelCardStates.map((cardState) => buildOpsAlertHealthCardMarkupFromState(cardState)).join('');
+    renderOpsAlertPanelMarkupTarget({
+        panelId: 'opsAlertHealthPanel',
+        metaId: 'opsAlertHealthMeta',
+        gridId: 'opsAlertHealthGrid',
+        resolveMarkupState: () => resolveOpsAlertHealthPanelMarkupState(opsAlertHealthState || getDefaultOpsAlertHealthState()),
+        applyMarkupState: applyOpsAlertHealthPanelMarkupState
+    });
 }
 
 function buildLocalOpsAlertMonitorCategoryActions(categoryKey) {
@@ -9537,14 +8903,18 @@ function buildLocalOpsAlertMonitorCategoryActions(categoryKey) {
 }
 
 function resolveOpsAlertMonitorCategoryActions(categoryKey) {
-    if (typeof window.getAdminWorkbenchOpsAlertMonitorCategoryActions === 'function') {
-        return window.getAdminWorkbenchOpsAlertMonitorCategoryActions(categoryKey);
-    }
-    return buildLocalOpsAlertMonitorCategoryActions(categoryKey);
+    return resolveOpsAlertMonitorCategoryActionsResolver()(categoryKey);
 }
 
 function getOpsAlertMonitorCategoryActions(categoryKey) {
     return resolveOpsAlertMonitorCategoryActions(categoryKey);
+}
+
+function resolveOpsAlertMonitorCategoryActionsResolver() {
+    return resolveOpsAlertSharedCallable(
+        'getAdminWorkbenchOpsAlertMonitorCategoryActions',
+        buildLocalOpsAlertMonitorCategoryActions
+    );
 }
 
 function normalizeOpsAlertMonitorFilterValue(kind, value) {
@@ -9582,18 +8952,11 @@ function getOpsAlertMonitorPreparedCategories(filters = getOpsAlertMonitorViewFi
         .filter(Boolean);
 }
 
-function syncOpsAlertMonitorFilterToolbar(filters = getOpsAlertMonitorViewFilters()) {
-    const toolbarState = resolveOpsAlertMonitorFilterToolbarState(filters);
-    document.querySelectorAll('[data-ops-alert-monitor-filter-kind]').forEach((button) => {
-        const kind = String(button.dataset.opsAlertMonitorFilterKind || '').trim().toLowerCase();
-        const value = String(button.dataset.opsAlertMonitorFilterValue || '').trim().toLowerCase();
-        const matched = Array.isArray(toolbarState)
-            ? toolbarState.find((item) => item.kind === kind && item.value === value)
-            : null;
-        const isActive = matched ? matched.active === true : filters[kind] === value;
-        button.classList.toggle('active', isActive);
-        button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-    });
+function syncOpsAlertMonitorFilterToolbar(filters = getOpsAlertMonitorViewFilters(), toolbarState = null) {
+    applyOpsAlertMonitorFilterToolbarState(
+        Array.isArray(toolbarState) ? toolbarState : resolveOpsAlertMonitorFilterToolbarState(filters),
+        filters
+    );
 }
 
 function buildLocalOpsAlertMonitorFilterToolbarState(filters = getOpsAlertMonitorViewFilters()) {
@@ -9615,17 +8978,22 @@ function buildLocalOpsAlertMonitorFilterToolbarState(filters = getOpsAlertMonito
     });
 }
 
-function resolveOpsAlertMonitorFilterToolbarState(filters = getOpsAlertMonitorViewFilters()) {
+function resolveOpsAlertMonitorFilterToolbarStateBuilder() {
     const definitions = Array.from(document.querySelectorAll('[data-ops-alert-monitor-filter-kind]')).map((button) => ({
         kind: button.dataset.opsAlertMonitorFilterKind,
         value: button.dataset.opsAlertMonitorFilterValue
     }));
-    if (typeof window.buildAdminWorkbenchOpsAlertMonitorFilterToolbarState === 'function') {
-        return window.buildAdminWorkbenchOpsAlertMonitorFilterToolbarState(filters, {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertMonitorFilterToolbarState',
+        buildLocalOpsAlertMonitorFilterToolbarState,
+        (filters = getOpsAlertMonitorViewFilters()) => ({
             definitions
-        });
-    }
-    return buildLocalOpsAlertMonitorFilterToolbarState(filters);
+        })
+    );
+}
+
+function resolveOpsAlertMonitorFilterToolbarState(filters = getOpsAlertMonitorViewFilters()) {
+    return resolveOpsAlertMonitorFilterToolbarStateBuilder()(filters);
 }
 
 function buildLocalOpsAlertMonitorDisplayActiveCount(category = {}) {
@@ -9633,10 +9001,10 @@ function buildLocalOpsAlertMonitorDisplayActiveCount(category = {}) {
 }
 
 function resolveOpsAlertMonitorDisplayActiveCount(category = {}) {
-    if (typeof window.getAdminWorkbenchOpsAlertMonitorDisplayActiveCount === 'function') {
-        return window.getAdminWorkbenchOpsAlertMonitorDisplayActiveCount(category);
-    }
-    return buildLocalOpsAlertMonitorDisplayActiveCount(category);
+    return resolveOpsAlertSharedCallable(
+        'getAdminWorkbenchOpsAlertMonitorDisplayActiveCount',
+        buildLocalOpsAlertMonitorDisplayActiveCount
+    )(category);
 }
 
 function getOpsAlertMonitorDisplayActiveCount(category = {}) {
@@ -9648,10 +9016,10 @@ function buildLocalOpsAlertMonitorDisplayCriticalCount(category = {}) {
 }
 
 function resolveOpsAlertMonitorDisplayCriticalCount(category = {}) {
-    if (typeof window.getAdminWorkbenchOpsAlertMonitorDisplayCriticalCount === 'function') {
-        return window.getAdminWorkbenchOpsAlertMonitorDisplayCriticalCount(category);
-    }
-    return buildLocalOpsAlertMonitorDisplayCriticalCount(category);
+    return resolveOpsAlertSharedCallable(
+        'getAdminWorkbenchOpsAlertMonitorDisplayCriticalCount',
+        buildLocalOpsAlertMonitorDisplayCriticalCount
+    )(category);
 }
 
 function getOpsAlertMonitorDisplayCriticalCount(category = {}) {
@@ -9666,10 +9034,10 @@ function buildLocalOpsAlertMonitorCardTone(category = {}) {
 }
 
 function resolveOpsAlertMonitorCardTone(category = {}) {
-    if (typeof window.getAdminWorkbenchOpsAlertMonitorCardTone === 'function') {
-        return window.getAdminWorkbenchOpsAlertMonitorCardTone(category);
-    }
-    return buildLocalOpsAlertMonitorCardTone(category);
+    return resolveOpsAlertSharedCallable(
+        'getAdminWorkbenchOpsAlertMonitorCardTone',
+        buildLocalOpsAlertMonitorCardTone
+    )(category);
 }
 
 function getOpsAlertMonitorCardTone(category = {}) {
@@ -9678,7 +9046,7 @@ function getOpsAlertMonitorCardTone(category = {}) {
 
 function renderOpsAlertMonitorEmptyState(target, message) {
     if (!target) return;
-    target.innerHTML = `<div class="ops-alert-monitor-empty">${escapeConfigHtml(message)}</div>`;
+    target.innerHTML = buildOpsAlertPanelEmptyMarkup(message);
 }
 
 function buildOpsAlertMonitorBadge(label, tone = 'neutral') {
@@ -9716,10 +9084,11 @@ function buildLocalOpsAlertCaseStatusTone(status) {
 }
 
 function resolveOpsAlertCaseStatusTone(status) {
-    if (typeof window.getAdminWorkbenchOpsAlertCaseStatusTone === 'function') {
-        return window.getAdminWorkbenchOpsAlertCaseStatusTone(status, { variant: 'monitor' });
-    }
-    return buildLocalOpsAlertCaseStatusTone(status);
+    return resolveOpsAlertSharedCallable(
+        'getAdminWorkbenchOpsAlertCaseStatusTone',
+        buildLocalOpsAlertCaseStatusTone,
+        () => ({ variant: 'monitor' })
+    )(status);
 }
 
 function getOpsAlertCaseStatusTone(status) {
@@ -9737,10 +9106,10 @@ function buildLocalOpsAlertCaseStatusLabel(status) {
 }
 
 function resolveOpsAlertCaseStatusLabel(status) {
-    if (typeof window.getAdminWorkbenchOpsAlertCaseStatusLabel === 'function') {
-        return window.getAdminWorkbenchOpsAlertCaseStatusLabel(status);
-    }
-    return buildLocalOpsAlertCaseStatusLabel(status);
+    return resolveOpsAlertSharedCallable(
+        'getAdminWorkbenchOpsAlertCaseStatusLabel',
+        buildLocalOpsAlertCaseStatusLabel
+    )(status);
 }
 
 function getOpsAlertCaseStatusLabel(status) {
@@ -9778,17 +9147,21 @@ function buildLocalOpsAlertMonitorAssignableAdmins(state = opsAlertMonitorState 
 }
 
 function resolveOpsAlertMonitorAssignableAdmins(state = opsAlertMonitorState || getDefaultOpsAlertMonitorState()) {
-    if (typeof window.normalizeAdminWorkbenchOpsAlertMonitorAssignableAdmins === 'function') {
-        return window.normalizeAdminWorkbenchOpsAlertMonitorAssignableAdmins(state, {
-            fallbackRoleName: 'admin'
-        });
-    }
-
-    return buildLocalOpsAlertMonitorAssignableAdmins(state);
+    return resolveOpsAlertMonitorAssignableAdminsNormalizer()(state);
 }
 
 function getOpsAlertMonitorAssignableAdmins() {
     return resolveOpsAlertMonitorAssignableAdmins(opsAlertMonitorState || getDefaultOpsAlertMonitorState());
+}
+
+function resolveOpsAlertMonitorAssignableAdminsNormalizer() {
+    return resolveOpsAlertSharedCallable(
+        'normalizeAdminWorkbenchOpsAlertMonitorAssignableAdmins',
+        buildLocalOpsAlertMonitorAssignableAdmins,
+        (state) => ({
+            fallbackRoleName: 'admin'
+        })
+    );
 }
 
 function buildLocalOpsAlertCaseRecentEvents(item = {}) {
@@ -9808,14 +9181,19 @@ function buildLocalOpsAlertCaseRecentEvents(item = {}) {
 }
 
 function resolveOpsAlertCaseRecentEvents(item = {}) {
-    if (typeof window.normalizeAdminWorkbenchOpsAlertCaseRecentEvents === 'function') {
-        return window.normalizeAdminWorkbenchOpsAlertCaseRecentEvents(item.case_recent_events);
-    }
-    return buildLocalOpsAlertCaseRecentEvents(item);
+    return resolveOpsAlertCaseRecentEventsNormalizer()(item);
 }
 
 function getOpsAlertCaseRecentEvents(item = {}) {
     return resolveOpsAlertCaseRecentEvents(item);
+}
+
+function resolveOpsAlertCaseRecentEventsNormalizer() {
+    return resolveOpsAlertSharedCallable(
+        'normalizeAdminWorkbenchOpsAlertCaseRecentEvents',
+        buildLocalOpsAlertCaseRecentEvents,
+        (item = {}) => item.case_recent_events
+    );
 }
 
 function buildLocalOpsAlertCaseRecentEventText(event = {}) {
@@ -9847,17 +9225,22 @@ function buildLocalOpsAlertCaseRecentEventText(event = {}) {
 }
 
 function resolveOpsAlertCaseRecentEventText(event = {}) {
-    if (typeof window.getAdminWorkbenchOpsAlertCaseRecentEventText === 'function') {
-        return window.getAdminWorkbenchOpsAlertCaseRecentEventText(event, {
-            formatTime: formatVerifyMonitorDateTime,
-            muteVerb: '已静默至'
-        });
-    }
-    return buildLocalOpsAlertCaseRecentEventText(event);
+    return resolveOpsAlertCaseRecentEventTextFormatter()(event);
 }
 
 function getOpsAlertCaseRecentEventText(event = {}) {
     return resolveOpsAlertCaseRecentEventText(event);
+}
+
+function resolveOpsAlertCaseRecentEventTextFormatter() {
+    return resolveOpsAlertSharedCallable(
+        'getAdminWorkbenchOpsAlertCaseRecentEventText',
+        buildLocalOpsAlertCaseRecentEventText,
+        (event = {}) => ({
+            formatTime: formatVerifyMonitorDateTime,
+            muteVerb: '已静默至'
+        })
+    );
 }
 
 function buildLocalOpsAlertCaseSummaryText(item = {}) {
@@ -9896,17 +9279,22 @@ function buildLocalOpsAlertCaseSummaryText(item = {}) {
 }
 
 function resolveOpsAlertCaseSummaryText(item = {}) {
-    if (typeof window.getAdminWorkbenchOpsAlertCaseSummaryText === 'function') {
-        return window.getAdminWorkbenchOpsAlertCaseSummaryText(item, {
-            formatTime: formatVerifyMonitorDateTime,
-            muteVerb: '已静默至'
-        });
-    }
-    return buildLocalOpsAlertCaseSummaryText(item);
+    return resolveOpsAlertCaseSummaryTextFormatter()(item);
 }
 
 function getOpsAlertCaseSummaryText(item = {}) {
     return resolveOpsAlertCaseSummaryText(item);
+}
+
+function resolveOpsAlertCaseSummaryTextFormatter() {
+    return resolveOpsAlertSharedCallable(
+        'getAdminWorkbenchOpsAlertCaseSummaryText',
+        buildLocalOpsAlertCaseSummaryText,
+        (item = {}) => ({
+            formatTime: formatVerifyMonitorDateTime,
+            muteVerb: '已静默至'
+        })
+    );
 }
 
 function getShopRiskCaseStatusTone(status) {
@@ -9921,31 +9309,98 @@ function getShopRiskCaseSummaryText(item = {}) {
     return getOpsAlertCaseSummaryText(item);
 }
 
-function buildLocalOpsAlertMonitorItemAction(category = {}, item = {}) {
-    if (typeof window.getOpsAlertWorkspaceAction === 'function') {
-        return window.getOpsAlertWorkspaceAction({
-            categoryKey: String(category.key || '').trim().toLowerCase(),
-            alertType: String(item.alert_type || '').trim().toLowerCase(),
-            targetId: String(item.target_id || '').trim().toLowerCase()
-        }, {
-            labelVariant: 'monitor'
-        });
-    }
+function buildLocalOpsAlertMonitorItemDisplayState(item = {}, category = {}) {
+    const normalizedItem = item && typeof item === 'object' && !Array.isArray(item)
+        ? item
+        : {};
+    const normalizedCategory = category && typeof category === 'object' && !Array.isArray(category)
+        ? category
+        : {};
+    const categoryKey = String(normalizedCategory.key || '').trim().toLowerCase();
+    const severity = String(normalizedItem.severity || 'warning').trim().toLowerCase() || 'warning';
+    const severityTone = getOpsAlertMonitorSeverityTone(severity);
+    const riskLevel = String(normalizedItem.risk_level || '').trim().toLowerCase();
+    const riskTone = getOpsAlertMonitorRiskTone(riskLevel);
+    const workspaceAction = getOpsAlertMonitorItemAction(normalizedCategory, normalizedItem);
+    const quickAction = getOpsAlertMonitorItemQuickAction(normalizedCategory, normalizedItem);
+    const caseActions = getOpsAlertMonitorItemCaseActions(normalizedCategory, normalizedItem);
+    const caseStatus = String(normalizedItem.case_status || '').trim().toLowerCase() || 'open';
+    const caseTone = getOpsAlertCaseStatusTone(caseStatus);
+    const recentEvents = getOpsAlertCaseRecentEvents(normalizedItem);
+    const metaParts = [
+        normalizedItem.reference_label && normalizedItem.reference_value
+            ? `${normalizedItem.reference_label}：${normalizedItem.reference_value}`
+            : '',
+        normalizedItem.created_at ? formatVerifyMonitorDateTime(normalizedItem.created_at) : ''
+    ].filter(Boolean);
+    const hasCaseContext = caseActions.length > 0
+        || normalizedItem.case_owner_label
+        || normalizedItem.case_note
+        || normalizedItem.case_resolution
+        || recentEvents.length > 0;
 
-    return null;
+    return {
+        title: normalizedItem.title || '系统告警',
+        message: String(normalizedItem.message || '').trim(),
+        topBadges: [
+            { label: severity === 'critical' ? 'critical' : 'warning', tone: severityTone },
+            riskLevel
+                ? {
+                    label: `风险 ${getOpsAlertMonitorRiskLevelLabel(riskLevel)}${Number.isFinite(Number(normalizedItem.risk_score)) ? ` · ${formatVerifyMonitorInteger(normalizedItem.risk_score)}` : ''}`,
+                    tone: riskTone
+                }
+                : null,
+            hasCaseContext
+                ? { label: `处置 ${getOpsAlertCaseStatusLabel(caseStatus)}`, tone: caseTone }
+                : null
+        ].filter(Boolean),
+        progressPrefix: categoryKey === 'shop_risk' ? '值班处理' : '处理进度',
+        progressText: hasCaseContext ? getOpsAlertCaseSummaryText(normalizedItem) : '',
+        historyItems: recentEvents.map((event) => getOpsAlertCaseRecentEventText(event)).filter(Boolean),
+        autoResponseSummary: String(normalizedItem.auto_response_summary || '').trim(),
+        responseSummary: String(normalizedItem.response_summary || '').trim(),
+        metaText: metaParts.join(' · ') || '等待更多上下文',
+        hasActions: Boolean(workspaceAction || quickAction || caseActions.length),
+        caseActions,
+        quickAction: quickAction || null,
+        workspaceAction: workspaceAction || null
+    };
+}
+
+function resolveOpsAlertMonitorItemDisplayStateBuilder() {
+    return buildLocalOpsAlertMonitorItemDisplayState;
+}
+
+function resolveOpsAlertMonitorItemDisplayState(item = {}, category = {}, sharedOptions = {}) {
+    return resolveOpsAlertMonitorItemDisplayStateBuilder()(item, category, sharedOptions);
+}
+
+function buildLocalOpsAlertMonitorItemAction(category = {}, item = {}) {
+    return resolveOpsAlertWorkspaceActionResolver()({
+        categoryKey: String(category.key || '').trim().toLowerCase(),
+        alertType: String(item.alert_type || '').trim().toLowerCase(),
+        targetId: String(item.target_id || '').trim().toLowerCase()
+    }, {
+        labelVariant: 'monitor'
+    });
 }
 
 function resolveOpsAlertMonitorItemAction(category = {}, item = {}) {
-    if (typeof window.getAdminWorkbenchOpsAlertMonitorWorkspaceAction === 'function') {
-        return window.getAdminWorkbenchOpsAlertMonitorWorkspaceAction(category, item, {
-            labelVariant: 'monitor'
-        });
-    }
-    return buildLocalOpsAlertMonitorItemAction(category, item);
+    return resolveOpsAlertMonitorWorkspaceActionResolver()(category, item);
 }
 
 function getOpsAlertMonitorItemAction(category = {}, item = {}) {
     return resolveOpsAlertMonitorItemAction(category, item);
+}
+
+function resolveOpsAlertMonitorWorkspaceActionResolver() {
+    return resolveOpsAlertSharedCallable(
+        'getAdminWorkbenchOpsAlertMonitorWorkspaceAction',
+        buildLocalOpsAlertMonitorItemAction,
+        (category = {}, item = {}) => ({
+            labelVariant: 'monitor'
+        })
+    );
 }
 
 function buildLocalOpsAlertMonitorItemQuickAction(category = {}, item = {}) {
@@ -9991,14 +9446,18 @@ function buildLocalOpsAlertMonitorItemQuickAction(category = {}, item = {}) {
 }
 
 function resolveOpsAlertMonitorItemQuickAction(category = {}, item = {}) {
-    if (typeof window.getAdminWorkbenchOpsAlertMonitorQuickAction === 'function') {
-        return window.getAdminWorkbenchOpsAlertMonitorQuickAction(category, item);
-    }
-    return buildLocalOpsAlertMonitorItemQuickAction(category, item);
+    return resolveOpsAlertMonitorQuickActionResolver()(category, item);
 }
 
 function getOpsAlertMonitorItemQuickAction(category = {}, item = {}) {
     return resolveOpsAlertMonitorItemQuickAction(category, item);
+}
+
+function resolveOpsAlertMonitorQuickActionResolver() {
+    return resolveOpsAlertSharedCallable(
+        'getAdminWorkbenchOpsAlertMonitorQuickAction',
+        buildLocalOpsAlertMonitorItemQuickAction
+    );
 }
 
 function buildLocalOpsAlertMonitorItemCaseActions(category = {}, item = {}) {
@@ -10044,17 +9503,21 @@ function buildLocalOpsAlertMonitorItemCaseActions(category = {}, item = {}) {
 }
 
 function resolveOpsAlertMonitorItemCaseActions(category = {}, item = {}) {
-    if (typeof window.getAdminWorkbenchOpsAlertMonitorCaseActions === 'function') {
-        return window.getAdminWorkbenchOpsAlertMonitorCaseActions(category, item);
-    }
-    return buildLocalOpsAlertMonitorItemCaseActions(category, item);
+    return resolveOpsAlertMonitorCaseActionsResolver()(category, item);
 }
 
 function getOpsAlertMonitorItemCaseActions(category = {}, item = {}) {
     return resolveOpsAlertMonitorItemCaseActions(category, item);
 }
 
-function buildLocalOpsAlertMonitorContextAttrs(category = {}, item = {}) {
+function resolveOpsAlertMonitorCaseActionsResolver() {
+    return resolveOpsAlertSharedCallable(
+        'getAdminWorkbenchOpsAlertMonitorCaseActions',
+        buildLocalOpsAlertMonitorItemCaseActions
+    );
+}
+
+function buildLocalOpsAlertMonitorActionContext(category = {}, item = {}) {
     return {
         title: item.title || '',
         alertType: item.alert_type || '',
@@ -10073,15 +9536,54 @@ function buildLocalOpsAlertMonitorContextAttrs(category = {}, item = {}) {
     };
 }
 
-function resolveOpsAlertMonitorContextAttrs(category = {}, item = {}) {
-    const sharedContext = typeof window.buildAdminWorkbenchOpsAlertMonitorActionContext === 'function'
-        ? window.buildAdminWorkbenchOpsAlertMonitorActionContext(category, item)
-        : null;
-    if (typeof window.buildAdminWorkbenchOpsAlertWorkspaceContextAttrs === 'function') {
-        return window.buildAdminWorkbenchOpsAlertWorkspaceContextAttrs(sharedContext || buildLocalOpsAlertMonitorContextAttrs(category, item));
-    }
+function resolveOpsAlertMonitorActionContext(category = {}, item = {}) {
+    return resolveOpsAlertMonitorActionContextBuilder()(category, item);
+}
 
-    return buildLocalOpsAlertMonitorContextAttrs(category, item);
+function resolveOpsAlertMonitorActionContextBuilder() {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertMonitorActionContext',
+        buildLocalOpsAlertMonitorActionContext
+    );
+}
+
+function buildLocalOpsAlertWorkspaceContextAttrs(context = {}) {
+    const normalizedContext = context && typeof context === 'object' && !Array.isArray(context) ? context : {};
+    return {
+        title: normalizedContext.title || '',
+        alertType: normalizedContext.alertType || normalizedContext.alert_type || '',
+        category: normalizedContext.category || '',
+        referenceLabel: normalizedContext.referenceLabel || normalizedContext.reference_label || '',
+        referenceValue: normalizedContext.referenceValue || normalizedContext.reference_value || '',
+        targetId: normalizedContext.targetId || normalizedContext.target_id || '',
+        userId: normalizedContext.userId || normalizedContext.user_id || '',
+        clientIp: normalizedContext.clientIp || normalizedContext.client_ip || '',
+        discountCode: normalizedContext.discountCode || normalizedContext.discount_code || '',
+        signalType: normalizedContext.signalType || normalizedContext.signal_type || '',
+        sessionId: normalizedContext.sessionId || normalizedContext.session_id || '',
+        caseStatus: normalizedContext.caseStatus || normalizedContext.case_status || '',
+        caseOwnerAdminId: normalizedContext.caseOwnerAdminId || normalizedContext.case_owner_admin_id || '',
+        caseOwnerLabel: normalizedContext.caseOwnerLabel || normalizedContext.case_owner_label || ''
+    };
+}
+
+function resolveOpsAlertWorkspaceContextAttrs(context = {}) {
+    return resolveOpsAlertWorkspaceContextAttrsBuilder()(context);
+}
+
+function resolveOpsAlertWorkspaceContextAttrsBuilder() {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertWorkspaceContextAttrs',
+        buildLocalOpsAlertWorkspaceContextAttrs
+    );
+}
+
+function buildLocalOpsAlertMonitorContextAttrs(category = {}, item = {}) {
+    return buildLocalOpsAlertWorkspaceContextAttrs(buildLocalOpsAlertMonitorActionContext(category, item));
+}
+
+function resolveOpsAlertMonitorContextAttrs(category = {}, item = {}) {
+    return resolveOpsAlertWorkspaceContextAttrs(resolveOpsAlertMonitorActionContext(category, item));
 }
 
 function buildOpsAlertMonitorContextAttrs(category = {}, item = {}) {
@@ -10127,79 +9629,102 @@ function buildOpsAlertMonitorCaseActionAttrs(action = {}, category = {}, item = 
         .join(' ');
 }
 
+function buildLocalOpsAlertMonitorItemMarkupState(item = {}, category = {}, precomputedState = null) {
+    const displayState = precomputedState && typeof precomputedState === 'object' && !Array.isArray(precomputedState)
+        ? precomputedState
+        : resolveOpsAlertMonitorItemDisplayState(item, category);
+    const caseActionStates = (Array.isArray(displayState?.caseActions) ? displayState.caseActions : []).map((action) => ({
+        ...action,
+        attrs: buildOpsAlertMonitorCaseActionAttrs(action, category, item)
+    }));
+    const quickActionState = displayState?.quickAction
+        ? {
+            ...displayState.quickAction,
+            attrs: buildOpsAlertMonitorQuickActionAttrs(displayState.quickAction, category, item)
+        }
+        : null;
+    const workspaceActionState = displayState?.workspaceAction
+        ? {
+            ...displayState.workspaceAction,
+            attrs: buildOpsAlertMonitorWorkspaceAttrs(displayState.workspaceAction, category, item)
+        }
+        : null;
+    const messageText = String(displayState?.message || item.message || '').trim();
+    const autoResponseText = String(displayState?.autoResponseSummary || item.auto_response_summary || '').trim();
+    const responseText = String(displayState?.responseSummary || item.response_summary || '').trim();
+    const historyItems = Array.isArray(displayState?.historyItems) ? displayState.historyItems : [];
+
+    return {
+        ...displayState,
+        titleText: String(displayState?.title || item.title || '系统告警').trim() || '系统告警',
+        messageText,
+        autoResponseText,
+        responseText,
+        historyItems,
+        hasHistoryItems: historyItems.length > 0,
+        caseActionStates,
+        quickActionState,
+        workspaceActionState,
+        hasActions: caseActionStates.length > 0 || Boolean(quickActionState) || Boolean(workspaceActionState),
+        metaText: String(displayState?.metaText || '等待更多上下文').trim() || '等待更多上下文'
+    };
+}
+
+function resolveOpsAlertMonitorItemMarkupState(item = {}, category = {}, precomputedState = null) {
+    return buildLocalOpsAlertMonitorItemMarkupState(item, category, precomputedState);
+}
+
 function buildOpsAlertMonitorItemMarkup(item = {}, category = {}, precomputedState = null) {
-    const categoryKey = String(category.key || '').trim().toLowerCase();
-    const itemState = precomputedState || null;
-    const fallbackCaseActions = getOpsAlertMonitorItemCaseActions(category, item);
-    const fallbackQuickAction = getOpsAlertMonitorItemQuickAction(category, item);
-    const fallbackItemAction = getOpsAlertMonitorItemAction(category, item);
-    const fallbackCaseStatus = String(item.case_status || '').trim().toLowerCase() || 'open';
-    const fallbackCaseTone = getOpsAlertCaseStatusTone(fallbackCaseStatus);
-    const fallbackRecentEvents = getOpsAlertCaseRecentEvents(item);
-    const fallbackMetaParts = [
-        item.reference_label && item.reference_value
-            ? `${escapeConfigHtml(item.reference_label)}：${escapeConfigHtml(item.reference_value)}`
-            : '',
-        item.created_at ? formatVerifyMonitorDateTime(item.created_at) : ''
-    ].filter(Boolean);
+    const itemState = resolveOpsAlertMonitorItemMarkupState(item, category, precomputedState);
 
     return `
         <article class="ops-alert-monitor-item">
             <div class="ops-alert-monitor-item__top">
-                ${(Array.isArray(itemState?.topBadges)
-        ? itemState.topBadges.map((badge) => buildOpsAlertMonitorBadge(badge.label, badge.tone)).join('')
-        : [
-            buildOpsAlertMonitorBadge(String(item.severity || 'warning').trim().toLowerCase() === 'critical' ? 'critical' : 'warning', getOpsAlertMonitorSeverityTone(item.severity)),
-            String(item.risk_level || '').trim().toLowerCase()
-                ? buildOpsAlertMonitorBadge(`风险 ${getOpsAlertMonitorRiskLevelLabel(item.risk_level)}${Number.isFinite(Number(item.risk_score)) ? ` · ${formatVerifyMonitorInteger(item.risk_score)}` : ''}`, getOpsAlertMonitorRiskTone(item.risk_level))
-                : '',
-            (fallbackCaseActions.length || item.case_owner_label || item.case_note || item.case_resolution || fallbackRecentEvents.length)
-                ? buildOpsAlertMonitorBadge(`处置 ${getOpsAlertCaseStatusLabel(fallbackCaseStatus)}`, fallbackCaseTone)
-                : ''
-        ].filter(Boolean).join(''))}
-                <strong class="ops-alert-monitor-item__title">${escapeConfigHtml(itemState?.title || item.title || '系统告警')}</strong>
+                ${(Array.isArray(itemState?.topBadges) ? itemState.topBadges : [])
+        .map((badge) => buildOpsAlertMonitorBadge(badge.label, badge.tone)).join('')}
+                <strong class="ops-alert-monitor-item__title">${escapeConfigHtml(itemState?.titleText || '系统告警')}</strong>
             </div>
-            ${(itemState?.message || item.message) ? `<div class="ops-alert-monitor-item__summary">${escapeConfigHtml(itemState?.message || item.message)}</div>` : ''}
-            ${itemState?.progressText || fallbackCaseActions.length || item.case_owner_label || item.case_note || item.case_resolution || fallbackRecentEvents.length
-        ? `<div class="ops-alert-monitor-item__summary"><strong>${escapeConfigHtml(itemState?.progressPrefix || (categoryKey === 'shop_risk' ? '值班处理' : '处理进度'))}：</strong> ${escapeConfigHtml(itemState?.progressText || getOpsAlertCaseSummaryText(item))}</div>`
+            ${itemState?.messageText ? `<div class="ops-alert-monitor-item__summary">${escapeConfigHtml(itemState.messageText)}</div>` : ''}
+            ${itemState?.progressText
+        ? `<div class="ops-alert-monitor-item__summary"><strong>${escapeConfigHtml(itemState?.progressPrefix || '处理进度')}：</strong> ${escapeConfigHtml(itemState.progressText)}</div>`
         : ''}
-            ${(Array.isArray(itemState?.historyItems) ? itemState.historyItems : fallbackRecentEvents.map((event) => getOpsAlertCaseRecentEventText(event))).length ? `
+            ${itemState?.hasHistoryItems ? `
                 <div class="ops-alert-monitor-item__history">
-                    ${(Array.isArray(itemState?.historyItems) ? itemState.historyItems : fallbackRecentEvents.map((event) => getOpsAlertCaseRecentEventText(event))).map((eventText) => `
+                    ${itemState.historyItems.map((eventText) => `
                         <div class="ops-alert-monitor-item__history-item">${escapeConfigHtml(eventText)}</div>
                     `).join('')}
                 </div>
             ` : ''}
-            ${(itemState?.autoResponseSummary || item.auto_response_summary) ? `<div class="ops-alert-monitor-item__summary"><strong>自动处置：</strong> ${escapeConfigHtml(itemState?.autoResponseSummary || item.auto_response_summary)}</div>` : ''}
-            ${(itemState?.responseSummary || item.response_summary) ? `<div class="ops-alert-monitor-item__summary">${escapeConfigHtml(itemState?.responseSummary || item.response_summary)}</div>` : ''}
-            <div class="ops-alert-monitor-item__meta">${escapeConfigHtml(itemState?.metaText || (fallbackMetaParts.length ? fallbackMetaParts.join(' · ') : '等待更多上下文'))}</div>
-            ${(itemState?.hasActions || fallbackItemAction || fallbackQuickAction || fallbackCaseActions.length) ? `
+            ${itemState?.autoResponseText ? `<div class="ops-alert-monitor-item__summary"><strong>自动处置：</strong> ${escapeConfigHtml(itemState.autoResponseText)}</div>` : ''}
+            ${itemState?.responseText ? `<div class="ops-alert-monitor-item__summary">${escapeConfigHtml(itemState.responseText)}</div>` : ''}
+            <div class="ops-alert-monitor-item__meta">${escapeConfigHtml(itemState?.metaText || '等待更多上下文')}</div>
+            ${itemState?.hasActions ? `
                 <div class="ops-alert-monitor-item__actions">
-                    ${(Array.isArray(itemState?.caseActions) ? itemState.caseActions : fallbackCaseActions).map((action) => `
+                    ${(Array.isArray(itemState?.caseActionStates) ? itemState.caseActionStates : []).map((action) => `
                         <button
                             type="button"
                             class="btn-add-config btn-add-config--compact"
-                            ${buildOpsAlertMonitorCaseActionAttrs(action, category, item)}
+                            ${action.attrs}
                         >
                             <i class="${escapeConfigHtml(action.icon)}"></i> ${escapeConfigHtml(action.label)}
                         </button>
                     `).join('')}
-                    ${(itemState?.quickAction || fallbackQuickAction) ? `
+                    ${itemState?.quickActionState ? `
                         <button
                             type="button"
                             class="btn-add-config btn-add-config--compact"
-                            ${buildOpsAlertMonitorQuickActionAttrs(itemState?.quickAction || fallbackQuickAction, category, item)}
+                            ${itemState.quickActionState.attrs}
                         >
-                            <i class="${escapeConfigHtml((itemState?.quickAction || fallbackQuickAction).icon)}"></i> ${escapeConfigHtml((itemState?.quickAction || fallbackQuickAction).label)}
+                            <i class="${escapeConfigHtml(itemState.quickActionState.icon)}"></i> ${escapeConfigHtml(itemState.quickActionState.label)}
                         </button>
                     ` : ''}
-                    ${(itemState?.workspaceAction || fallbackItemAction) ? `
+                    ${itemState?.workspaceActionState ? `
                         <button
                             type="button"
                             class="btn-add-config btn-add-config--compact"
-                            ${buildOpsAlertMonitorWorkspaceAttrs(itemState?.workspaceAction || fallbackItemAction, category, item)}
+                            ${itemState.workspaceActionState.attrs}
                         >
-                            <i class="${escapeConfigHtml((itemState?.workspaceAction || fallbackItemAction).icon)}"></i> ${escapeConfigHtml((itemState?.workspaceAction || fallbackItemAction).label)}
+                            <i class="${escapeConfigHtml(itemState.workspaceActionState.icon)}"></i> ${escapeConfigHtml(itemState.workspaceActionState.label)}
                         </button>
                     ` : ''}
                 </div>
@@ -10276,16 +9801,21 @@ function buildLocalOpsAlertMonitorCategoryView(category = {}, filters = getOpsAl
 }
 
 function resolveOpsAlertMonitorCategoryView(category = {}, filters = getOpsAlertMonitorViewFilters()) {
-    if (typeof window.buildAdminWorkbenchOpsAlertMonitorCategoryView === 'function') {
-        return window.buildAdminWorkbenchOpsAlertMonitorCategoryView(category, filters, {
-            formatCount: formatVerifyMonitorInteger
-        });
-    }
-    return buildLocalOpsAlertMonitorCategoryView(category, filters);
+    return resolveOpsAlertMonitorCategoryViewBuilder()(category, filters);
 }
 
 function buildOpsAlertMonitorCategoryView(category = {}, filters = getOpsAlertMonitorViewFilters()) {
     return resolveOpsAlertMonitorCategoryView(category, filters);
+}
+
+function resolveOpsAlertMonitorCategoryViewBuilder() {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertMonitorCategoryView',
+        buildLocalOpsAlertMonitorCategoryView,
+        (category = {}, filters = getOpsAlertMonitorViewFilters()) => ({
+            formatCount: formatVerifyMonitorInteger
+        })
+    );
 }
 
 function buildLocalOpsAlertMonitorFilterSummaryLabel(filters = getOpsAlertMonitorViewFilters()) {
@@ -10306,14 +9836,18 @@ function buildLocalOpsAlertMonitorFilterSummaryLabel(filters = getOpsAlertMonito
 }
 
 function resolveOpsAlertMonitorFilterSummaryLabel(filters = getOpsAlertMonitorViewFilters()) {
-    if (typeof window.getAdminWorkbenchOpsAlertMonitorFilterSummaryLabel === 'function') {
-        return window.getAdminWorkbenchOpsAlertMonitorFilterSummaryLabel(filters);
-    }
-    return buildLocalOpsAlertMonitorFilterSummaryLabel(filters);
+    return resolveOpsAlertMonitorFilterSummaryLabelBuilder()(filters);
 }
 
 function getOpsAlertMonitorFilterSummaryLabel(filters = getOpsAlertMonitorViewFilters()) {
     return resolveOpsAlertMonitorFilterSummaryLabel(filters);
+}
+
+function resolveOpsAlertMonitorFilterSummaryLabelBuilder() {
+    return resolveOpsAlertSharedCallable(
+        'getAdminWorkbenchOpsAlertMonitorFilterSummaryLabel',
+        buildLocalOpsAlertMonitorFilterSummaryLabel
+    );
 }
 
 function buildLocalOpsAlertMonitorRecoveryRow(category = {}) {
@@ -10337,17 +9871,22 @@ function buildLocalOpsAlertMonitorRecoveryRow(category = {}) {
 }
 
 function resolveOpsAlertMonitorRecoveryRow(category = {}) {
-    if (typeof window.buildAdminWorkbenchOpsAlertMonitorRecoveryRow === 'function') {
-        return window.buildAdminWorkbenchOpsAlertMonitorRecoveryRow(category, {
-            resolveCategoryFallbackAction: (currentCategory) => getOpsAlertMonitorCategoryActions(currentCategory?.key)[0] || {},
-            getWorkspaceLabel: (workspaceTarget) => getOpsAlertWorkspaceSuccessLabel(workspaceTarget)
-        });
-    }
-    return buildLocalOpsAlertMonitorRecoveryRow(category);
+    return resolveOpsAlertMonitorRecoveryRowBuilder()(category);
 }
 
 function buildOpsAlertMonitorRecoveryRow(category = {}) {
     return resolveOpsAlertMonitorRecoveryRow(category);
+}
+
+function resolveOpsAlertMonitorRecoveryRowBuilder() {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertMonitorRecoveryRow',
+        buildLocalOpsAlertMonitorRecoveryRow,
+        (category = {}) => ({
+            resolveCategoryFallbackAction: (currentCategory) => getOpsAlertMonitorCategoryActions(currentCategory?.key)[0] || {},
+            getWorkspaceLabel: (workspaceTarget) => getOpsAlertWorkspaceSuccessLabel(workspaceTarget)
+        })
+    );
 }
 
 function buildLocalOpsAlertMonitorBatchRows(categories = [], filters = getOpsAlertMonitorViewFilters(), categoryKey = '') {
@@ -10389,18 +9928,23 @@ function buildLocalOpsAlertMonitorBatchRows(categories = [], filters = getOpsAle
 }
 
 function resolveOpsAlertMonitorBatchRows(categories = [], filters = getOpsAlertMonitorViewFilters(), categoryKey = '') {
-    if (typeof window.buildAdminWorkbenchOpsAlertMonitorBatchRows === 'function') {
-        return window.buildAdminWorkbenchOpsAlertMonitorBatchRows(categories, filters, categoryKey, {
-            resolveCategoryFallbackAction: (category) => getOpsAlertMonitorCategoryActions(category?.key)[0] || {},
-            resolveItemAction: (category, item) => getOpsAlertMonitorItemAction(category, item) || {},
-            getWorkspaceLabel: (workspaceTarget) => getOpsAlertWorkspaceSuccessLabel(workspaceTarget)
-        });
-    }
-    return buildLocalOpsAlertMonitorBatchRows(categories, filters, categoryKey);
+    return resolveOpsAlertMonitorBatchRowsBuilder()(categories, filters, categoryKey);
 }
 
 function buildOpsAlertMonitorBatchRows(categories = [], filters = getOpsAlertMonitorViewFilters(), categoryKey = '') {
     return resolveOpsAlertMonitorBatchRows(categories, filters, categoryKey);
+}
+
+function resolveOpsAlertMonitorBatchRowsBuilder() {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertMonitorBatchRows',
+        buildLocalOpsAlertMonitorBatchRows,
+        (categories = [], filters = getOpsAlertMonitorViewFilters(), categoryKey = '') => ({
+            resolveCategoryFallbackAction: (category) => getOpsAlertMonitorCategoryActions(category?.key)[0] || {},
+            resolveItemAction: (category, item) => getOpsAlertMonitorItemAction(category, item) || {},
+            getWorkspaceLabel: (workspaceTarget) => getOpsAlertWorkspaceSuccessLabel(workspaceTarget)
+        })
+    );
 }
 
 async function writeAdminConfigClipboard(text) {
@@ -10478,15 +10022,16 @@ function buildLocalOpsAlertMonitorChecklistText(rows = [], filters = getOpsAlert
 }
 
 function resolveOpsAlertMonitorChecklistText(rows = [], filters = getOpsAlertMonitorViewFilters(), categoryKey = '') {
-    if (typeof window.buildAdminWorkbenchOpsAlertMonitorChecklistText === 'function') {
-        return window.buildAdminWorkbenchOpsAlertMonitorChecklistText(rows, filters, categoryKey, {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertMonitorChecklistText',
+        buildLocalOpsAlertMonitorChecklistText,
+        () => ({
             now: new Date().toISOString(),
             formatDateTime: formatVerifyMonitorDateTime,
             formatCount: formatVerifyMonitorInteger,
             getFilterSummaryLabel: getOpsAlertMonitorFilterSummaryLabel
-        });
-    }
-    return buildLocalOpsAlertMonitorChecklistText(rows, filters, categoryKey);
+        })
+    )(rows, filters, categoryKey);
 }
 
 function buildOpsAlertMonitorChecklistText(rows = [], filters = getOpsAlertMonitorViewFilters(), categoryKey = '') {
@@ -10669,9 +10214,11 @@ function buildLocalOpsAlertRiskSpotlightRenderState(category = null, filters = g
     };
 }
 
-function resolveOpsAlertRiskSpotlightRenderState(category = null, filters = getOpsAlertMonitorViewFilters()) {
-    if (typeof window.buildAdminWorkbenchOpsAlertRiskSpotlightRenderState === 'function') {
-        return window.buildAdminWorkbenchOpsAlertRiskSpotlightRenderState(category, filters, {
+function resolveOpsAlertRiskSpotlightRenderStateBuilder() {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertRiskSpotlightRenderState',
+        buildLocalOpsAlertRiskSpotlightRenderState,
+        () => ({
             getCardTone: getOpsAlertMonitorCardTone,
             getDisplayActiveCount: getOpsAlertMonitorDisplayActiveCount,
             getDisplayCriticalCount: getOpsAlertMonitorDisplayCriticalCount,
@@ -10680,9 +10227,12 @@ function resolveOpsAlertRiskSpotlightRenderState(category = null, filters = getO
             getQuickAction: getOpsAlertMonitorItemQuickAction,
             formatCount: formatVerifyMonitorInteger,
             formatDateTime: formatVerifyMonitorDateTime
-        });
-    }
-    return buildLocalOpsAlertRiskSpotlightRenderState(category, filters);
+        })
+    );
+}
+
+function resolveOpsAlertRiskSpotlightRenderState(category = null, filters = getOpsAlertMonitorViewFilters()) {
+    return resolveOpsAlertRiskSpotlightRenderStateBuilder()(category, filters);
 }
 
 function buildLocalOpsAlertRiskSpotlightShellState(status = 'loading', options = {}) {
@@ -10718,13 +10268,18 @@ function buildLocalOpsAlertRiskSpotlightShellState(status = 'loading', options =
     };
 }
 
-function resolveOpsAlertRiskSpotlightShellState(status = 'loading', options = {}) {
-    if (typeof window.buildAdminWorkbenchOpsAlertRiskSpotlightShellState === 'function') {
-        return window.buildAdminWorkbenchOpsAlertRiskSpotlightShellState(status, {
+function resolveOpsAlertRiskSpotlightShellStateBuilder() {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertRiskSpotlightShellState',
+        buildLocalOpsAlertRiskSpotlightShellState,
+        (status = 'loading', options = {}) => ({
             message: options.message
-        });
-    }
-    return buildLocalOpsAlertRiskSpotlightShellState(status, options);
+        })
+    );
+}
+
+function resolveOpsAlertRiskSpotlightShellState(status = 'loading', options = {}) {
+    return resolveOpsAlertRiskSpotlightShellStateBuilder()(status, options);
 }
 
 function buildOpsAlertRiskSpotlightMarkupFromState(resolvedState = {}, options = {}) {
@@ -10807,26 +10362,51 @@ function buildOpsAlertRiskSpotlightMarkup(category = null, filters = getOpsAlert
     );
 }
 
+function buildLocalOpsAlertRiskSpotlightMarkupState(state = opsAlertMonitorState || getDefaultOpsAlertMonitorState(), filters = getOpsAlertMonitorViewFilters()) {
+    const normalizedState = state && typeof state === 'object' && !Array.isArray(state)
+        ? state
+        : getDefaultOpsAlertMonitorState();
+    const normalizedFilters = filters && typeof filters === 'object' && !Array.isArray(filters)
+        ? filters
+        : getDefaultOpsAlertMonitorViewState();
+
+    if (normalizedState.status === 'loading') {
+        return {
+            bodyMarkup: buildOpsAlertRiskSpotlightMarkup(null, normalizedFilters)
+        };
+    }
+
+    if (normalizedState.status === 'error') {
+        return {
+            bodyMarkup: buildOpsAlertRiskSpotlightShellMarkup(
+                resolveOpsAlertRiskSpotlightShellState(normalizedState.status, {
+                    message: normalizedState.message
+                })
+            )
+        };
+    }
+
+    return {
+        bodyMarkup: buildOpsAlertRiskSpotlightMarkup(getOpsAlertRiskSpotlightCategory(normalizedFilters), normalizedFilters)
+    };
+}
+
+function resolveOpsAlertRiskSpotlightMarkupState(state = opsAlertMonitorState || getDefaultOpsAlertMonitorState(), filters = getOpsAlertMonitorViewFilters()) {
+    return buildLocalOpsAlertRiskSpotlightMarkupState(state, filters);
+}
+
+function applyOpsAlertRiskSpotlightMarkupState(markupState = {}, target = null) {
+    return applyOpsAlertBodyMarkupState(markupState, target);
+}
+
 function renderOpsAlertRiskSpotlight(filters = getOpsAlertMonitorViewFilters()) {
-    const target = document.getElementById('opsAlertRiskSpotlight');
-    if (!target) return;
-
-    const state = opsAlertMonitorState || getDefaultOpsAlertMonitorState();
-    if (state.status === 'loading') {
-        target.innerHTML = buildOpsAlertRiskSpotlightMarkup(null, filters);
-        return;
-    }
-
-    if (state.status === 'error') {
-        target.innerHTML = buildOpsAlertRiskSpotlightShellMarkup(
-            resolveOpsAlertRiskSpotlightShellState(state.status, {
-                message: state.message
-            })
-        );
-        return;
-    }
-
-    target.innerHTML = buildOpsAlertRiskSpotlightMarkup(getOpsAlertRiskSpotlightCategory(filters), filters);
+    renderOpsAlertBodyMarkupTarget(
+        'opsAlertRiskSpotlight',
+        () => resolveOpsAlertRiskSpotlightMarkupState(
+            opsAlertMonitorState || getDefaultOpsAlertMonitorState(),
+            filters
+        )
+    );
 }
 
 function buildLocalOpsAlertMonitorSignedCount(value) {
@@ -10836,12 +10416,13 @@ function buildLocalOpsAlertMonitorSignedCount(value) {
 }
 
 function resolveOpsAlertMonitorSignedCount(value) {
-    if (typeof window.formatAdminWorkbenchOpsAlertSignedCount === 'function') {
-        return window.formatAdminWorkbenchOpsAlertSignedCount(value, {
+    return resolveOpsAlertSharedCallable(
+        'formatAdminWorkbenchOpsAlertSignedCount',
+        buildLocalOpsAlertMonitorSignedCount,
+        () => ({
             formatCount: formatVerifyMonitorInteger
-        });
-    }
-    return buildLocalOpsAlertMonitorSignedCount(value);
+        })
+    )(value);
 }
 
 function formatOpsAlertMonitorSignedCount(value) {
@@ -10860,12 +10441,13 @@ function buildLocalOpsAlertMonitorTimeShort(value) {
 }
 
 function resolveOpsAlertMonitorTimeShort(value) {
-    if (typeof window.formatAdminWorkbenchOpsAlertTimeShort === 'function') {
-        return window.formatAdminWorkbenchOpsAlertTimeShort(value, {
+    return resolveOpsAlertSharedCallable(
+        'formatAdminWorkbenchOpsAlertTimeShort',
+        buildLocalOpsAlertMonitorTimeShort,
+        () => ({
             locale: 'zh-CN'
-        });
-    }
-    return buildLocalOpsAlertMonitorTimeShort(value);
+        })
+    )(value);
 }
 
 function formatOpsAlertMonitorTimeShort(value) {
@@ -10880,10 +10462,10 @@ function buildLocalOpsAlertMonitorBacklogDeltaTone(delta) {
 }
 
 function resolveOpsAlertMonitorBacklogDeltaTone(delta) {
-    if (typeof window.getAdminWorkbenchOpsAlertBacklogDeltaTone === 'function') {
-        return window.getAdminWorkbenchOpsAlertBacklogDeltaTone(delta);
-    }
-    return buildLocalOpsAlertMonitorBacklogDeltaTone(delta);
+    return resolveOpsAlertSharedCallable(
+        'getAdminWorkbenchOpsAlertBacklogDeltaTone',
+        buildLocalOpsAlertMonitorBacklogDeltaTone
+    )(delta);
 }
 
 function getOpsAlertMonitorBacklogDeltaTone(delta) {
@@ -10897,14 +10479,19 @@ function buildLocalOpsAlertMonitorShiftReportView(value = 'all') {
         : getDefaultOpsAlertMonitorShiftReportViewState();
 }
 
-function resolveOpsAlertMonitorShiftReportView(value = 'all') {
-    if (typeof window.normalizeAdminWorkbenchOpsAlertMonitorShiftReportView === 'function') {
-        return window.normalizeAdminWorkbenchOpsAlertMonitorShiftReportView(value, {
+function resolveOpsAlertMonitorShiftReportViewNormalizer() {
+    return resolveOpsAlertSharedCallable(
+        'normalizeAdminWorkbenchOpsAlertMonitorShiftReportView',
+        buildLocalOpsAlertMonitorShiftReportView,
+        () => ({
             viewDefinitions: OPS_ALERT_MONITOR_SHIFT_REPORT_VIEW_DEFINITIONS,
             defaultView: getDefaultOpsAlertMonitorShiftReportViewState()
-        });
-    }
-    return buildLocalOpsAlertMonitorShiftReportView(value);
+        })
+    );
+}
+
+function resolveOpsAlertMonitorShiftReportView(value = 'all') {
+    return resolveOpsAlertMonitorShiftReportViewNormalizer()(value);
 }
 
 function normalizeOpsAlertMonitorShiftReportView(value = 'all') {
@@ -10918,13 +10505,14 @@ function buildLocalOpsAlertMonitorShiftReportViewMeta(value = opsAlertMonitorShi
 }
 
 function resolveOpsAlertMonitorShiftReportViewMeta(value = opsAlertMonitorShiftReportViewState) {
-    if (typeof window.getAdminWorkbenchOpsAlertMonitorShiftReportViewMeta === 'function') {
-        return window.getAdminWorkbenchOpsAlertMonitorShiftReportViewMeta(value, {
+    return resolveOpsAlertSharedCallable(
+        'getAdminWorkbenchOpsAlertMonitorShiftReportViewMeta',
+        buildLocalOpsAlertMonitorShiftReportViewMeta,
+        () => ({
             viewDefinitions: OPS_ALERT_MONITOR_SHIFT_REPORT_VIEW_DEFINITIONS,
             defaultView: getDefaultOpsAlertMonitorShiftReportViewState()
-        });
-    }
-    return buildLocalOpsAlertMonitorShiftReportViewMeta(value);
+        })
+    )(value);
 }
 
 function getOpsAlertMonitorShiftReportViewMeta(value = opsAlertMonitorShiftReportViewState) {
@@ -10936,10 +10524,10 @@ function buildLocalOpsAlertMonitorShiftReportCurrentAdminId() {
 }
 
 function resolveOpsAlertMonitorShiftReportCurrentAdminId() {
-    if (typeof window.getAdminWorkbenchOpsAlertMonitorCurrentAdminId === 'function') {
-        return window.getAdminWorkbenchOpsAlertMonitorCurrentAdminId(opsAlertMonitorState);
-    }
-    return buildLocalOpsAlertMonitorShiftReportCurrentAdminId();
+    return resolveOpsAlertSharedCallable(
+        'getAdminWorkbenchOpsAlertMonitorCurrentAdminId',
+        buildLocalOpsAlertMonitorShiftReportCurrentAdminId
+    )(opsAlertMonitorState);
 }
 
 function getOpsAlertMonitorShiftReportCurrentAdminId() {
@@ -10989,13 +10577,18 @@ function buildLocalOpsAlertMonitorShiftOwnedCategoryItems(categories = [], curre
         });
 }
 
-function resolveOpsAlertMonitorShiftOwnedCategoryItems(categories = [], currentAdminId = resolveOpsAlertMonitorShiftReportCurrentAdminId()) {
-    if (typeof window.buildAdminWorkbenchOpsAlertMonitorShiftOwnedCategoryItems === 'function') {
-        return window.buildAdminWorkbenchOpsAlertMonitorShiftOwnedCategoryItems(categories, currentAdminId, {
+function resolveOpsAlertMonitorShiftOwnedCategoryItemsBuilder() {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertMonitorShiftOwnedCategoryItems',
+        buildLocalOpsAlertMonitorShiftOwnedCategoryItems,
+        () => ({
             locale: 'zh-CN'
-        });
-    }
-    return buildLocalOpsAlertMonitorShiftOwnedCategoryItems(categories, currentAdminId);
+        })
+    );
+}
+
+function resolveOpsAlertMonitorShiftOwnedCategoryItems(categories = [], currentAdminId = resolveOpsAlertMonitorShiftReportCurrentAdminId()) {
+    return resolveOpsAlertMonitorShiftOwnedCategoryItemsBuilder()(categories, currentAdminId);
 }
 
 function buildOpsAlertMonitorShiftReportOwnedCategoryItems(categories = [], currentAdminId = resolveOpsAlertMonitorShiftReportCurrentAdminId()) {
@@ -11007,13 +10600,20 @@ function getOpsAlertMonitorShiftResolvedViewLabel(value = opsAlertMonitorShiftRe
 }
 
 function buildOpsAlertMonitorShiftSharedRuntimeState(currentAdminLabel = '') {
+    const options = arguments[1] && typeof arguments[1] === 'object' && !Array.isArray(arguments[1])
+        ? arguments[1]
+        : {};
     const currentAdminId = getOpsAlertMonitorShiftReportCurrentAdminId();
-    return {
+    const runtimeState = {
         currentView: opsAlertMonitorShiftReportViewState,
         currentAdminId,
         currentAdminLabel,
         ownedCategoryItems: buildOpsAlertMonitorShiftReportOwnedCategoryItems(opsAlertMonitorState?.categories, currentAdminId)
     };
+    if (options.includeGeneratedAt === true) {
+        runtimeState.generatedAt = String(options.generatedAt || new Date().toISOString()).trim();
+    }
+    return runtimeState;
 }
 
 function buildOpsAlertMonitorShiftSharedOptions(overrides = {}) {
@@ -11023,6 +10623,22 @@ function buildOpsAlertMonitorShiftSharedOptions(overrides = {}) {
         defaultReport: getDefaultOpsAlertMonitorShiftReport(),
         ...overrides
     };
+}
+
+function resolveOpsAlertMonitorShiftRuntimeSharedBuilder(methodName = '', localCallable = null, optionsBuilder = null, runtimeStateBuilder = null) {
+    const sharedMethod = resolveOpsAlertSharedRuntimeMethod(methodName);
+    if (typeof sharedMethod === 'function') {
+        return (...args) => {
+            const shiftRuntimeState = typeof runtimeStateBuilder === 'function'
+                ? runtimeStateBuilder(...args)
+                : buildOpsAlertMonitorShiftSharedRuntimeState(args[1] || '');
+            const options = typeof optionsBuilder === 'function'
+                ? (optionsBuilder(...args, shiftRuntimeState) || {})
+                : {};
+            return sharedMethod(args[0], shiftRuntimeState, options);
+        };
+    }
+    return typeof localCallable === 'function' ? localCallable : (() => undefined);
 }
 
 function buildLocalOpsAlertMonitorShiftShellState(status = 'loading', options = {}) {
@@ -11054,13 +10670,18 @@ function buildLocalOpsAlertMonitorShiftShellState(status = 'loading', options = 
     };
 }
 
-function resolveOpsAlertMonitorShiftShellState(status = 'loading', options = {}) {
-    if (typeof window.buildAdminWorkbenchOpsAlertMonitorShiftShellState === 'function') {
-        return window.buildAdminWorkbenchOpsAlertMonitorShiftShellState(status, {
+function resolveOpsAlertMonitorShiftShellStateBuilder() {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertMonitorShiftShellState',
+        buildLocalOpsAlertMonitorShiftShellState,
+        (status = 'loading', options = {}) => ({
             message: options.message
-        });
-    }
-    return buildLocalOpsAlertMonitorShiftShellState(status, options);
+        })
+    );
+}
+
+function resolveOpsAlertMonitorShiftShellState(status = 'loading', options = {}) {
+    return resolveOpsAlertMonitorShiftShellStateBuilder()(status, options);
 }
 
 function buildOpsAlertMonitorShiftShellMarkup(shellState = {}) {
@@ -11127,10 +10748,11 @@ function buildLocalOpsAlertMonitorShiftRenderState(report = normalizeOpsAlertMon
     };
 }
 
-function resolveOpsAlertMonitorShiftRenderState(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
-    const shiftRuntimeState = buildOpsAlertMonitorShiftSharedRuntimeState(currentAdminLabel);
-    if (typeof window.buildAdminWorkbenchOpsAlertMonitorShiftRenderState === 'function') {
-        return window.buildAdminWorkbenchOpsAlertMonitorShiftRenderState(report, shiftRuntimeState, buildOpsAlertMonitorShiftSharedOptions({
+function resolveOpsAlertMonitorShiftRenderStateBuilder() {
+    return resolveOpsAlertMonitorShiftRuntimeSharedBuilder(
+        'buildAdminWorkbenchOpsAlertMonitorShiftRenderState',
+        buildLocalOpsAlertMonitorShiftRenderState,
+        (report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '', shiftRuntimeState = buildOpsAlertMonitorShiftSharedRuntimeState(currentAdminLabel)) => buildOpsAlertMonitorShiftSharedOptions({
             viewDefinitions: OPS_ALERT_MONITOR_SHIFT_REPORT_VIEW_DEFINITIONS,
             defaultView: getDefaultOpsAlertMonitorShiftReportViewState(),
             defaultReport: getDefaultOpsAlertMonitorShiftReport(),
@@ -11139,9 +10761,13 @@ function resolveOpsAlertMonitorShiftRenderState(report = normalizeOpsAlertMonito
             formatSignedCount: formatOpsAlertMonitorSignedCount,
             formatTimeShort: formatOpsAlertMonitorTimeShort,
             getBacklogDeltaTone: getOpsAlertMonitorBacklogDeltaTone
-        }));
-    }
-    return buildLocalOpsAlertMonitorShiftRenderState(report, currentAdminLabel);
+        }),
+        (report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') => buildOpsAlertMonitorShiftSharedRuntimeState(currentAdminLabel)
+    );
+}
+
+function resolveOpsAlertMonitorShiftRenderState(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
+    return resolveOpsAlertMonitorShiftRenderStateBuilder()(report, currentAdminLabel);
 }
 
 function buildLocalOpsAlertMonitorShiftViewSwitchState(currentView = opsAlertMonitorShiftReportViewState) {
@@ -11159,14 +10785,19 @@ function buildLocalOpsAlertMonitorShiftViewSwitchState(currentView = opsAlertMon
     };
 }
 
-function resolveOpsAlertMonitorShiftViewSwitchState(currentView = opsAlertMonitorShiftReportViewState) {
-    if (typeof window.buildAdminWorkbenchOpsAlertMonitorShiftViewSwitchState === 'function') {
-        return window.buildAdminWorkbenchOpsAlertMonitorShiftViewSwitchState(currentView, {
+function resolveOpsAlertMonitorShiftViewSwitchStateBuilder() {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertMonitorShiftViewSwitchState',
+        buildLocalOpsAlertMonitorShiftViewSwitchState,
+        () => ({
             viewDefinitions: OPS_ALERT_MONITOR_SHIFT_REPORT_VIEW_DEFINITIONS,
             defaultView: getDefaultOpsAlertMonitorShiftReportViewState()
-        });
-    }
-    return buildLocalOpsAlertMonitorShiftViewSwitchState(currentView);
+        })
+    );
+}
+
+function resolveOpsAlertMonitorShiftViewSwitchState(currentView = opsAlertMonitorShiftReportViewState) {
+    return resolveOpsAlertMonitorShiftViewSwitchStateBuilder()(currentView);
 }
 
 function buildOpsAlertMonitorShiftReportViewSwitchMarkup(currentView = opsAlertMonitorShiftReportViewState, precomputedState = null) {
@@ -11242,15 +10873,20 @@ function buildLocalOpsAlertMonitorShiftTrendState(report = normalizeOpsAlertMoni
     };
 }
 
-function resolveOpsAlertMonitorShiftTrendState(report = normalizeOpsAlertMonitorShiftReport()) {
-    if (typeof window.buildAdminWorkbenchOpsAlertMonitorShiftTrendState === 'function') {
-        return window.buildAdminWorkbenchOpsAlertMonitorShiftTrendState(report, {
+function resolveOpsAlertMonitorShiftTrendStateBuilder() {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertMonitorShiftTrendState',
+        buildLocalOpsAlertMonitorShiftTrendState,
+        () => ({
             normalizeShiftReport: normalizeOpsAlertMonitorShiftReport,
             formatCount: formatVerifyMonitorInteger,
             formatTimeShort: formatOpsAlertMonitorTimeShort
-        });
-    }
-    return buildLocalOpsAlertMonitorShiftTrendState(report);
+        })
+    );
+}
+
+function resolveOpsAlertMonitorShiftTrendState(report = normalizeOpsAlertMonitorShiftReport()) {
+    return resolveOpsAlertMonitorShiftTrendStateBuilder()(report);
 }
 
 function buildOpsAlertMonitorShiftTrendMarkup(report = normalizeOpsAlertMonitorShiftReport(), precomputedState = null) {
@@ -11354,10 +10990,9 @@ function buildOpsAlertMonitorShiftReportMarkup(report = normalizeOpsAlertMonitor
 
 function buildLocalOpsAlertMonitorShiftReportSummaryText(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
     const normalizedReport = normalizeOpsAlertMonitorShiftReport(report);
-    const shiftRuntimeState = {
-        ...buildOpsAlertMonitorShiftSharedRuntimeState(currentAdminLabel),
-        generatedAt: new Date().toISOString()
-    };
+    const shiftRuntimeState = buildOpsAlertMonitorShiftSharedRuntimeState(currentAdminLabel, {
+        includeGeneratedAt: true
+    });
     const lines = [
         '第一阶段集中告警交班摘要',
         `生成时间：${formatVerifyMonitorDateTime(shiftRuntimeState.generatedAt)}`,
@@ -11373,21 +11008,25 @@ function buildLocalOpsAlertMonitorShiftReportSummaryText(report = normalizeOpsAl
     return lines.join('\n');
 }
 
-function resolveOpsAlertMonitorShiftReportSummaryText(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
-    const shiftRuntimeState = {
-        ...buildOpsAlertMonitorShiftSharedRuntimeState(currentAdminLabel),
-        generatedAt: new Date().toISOString()
-    };
-    if (typeof window.buildAdminWorkbenchOpsAlertMonitorShiftReportSummaryText === 'function') {
-        return window.buildAdminWorkbenchOpsAlertMonitorShiftReportSummaryText(report, shiftRuntimeState, buildOpsAlertMonitorShiftSharedOptions({
+function resolveOpsAlertMonitorShiftReportSummaryTextBuilder() {
+    return resolveOpsAlertMonitorShiftRuntimeSharedBuilder(
+        'buildAdminWorkbenchOpsAlertMonitorShiftReportSummaryText',
+        buildLocalOpsAlertMonitorShiftReportSummaryText,
+        () => buildOpsAlertMonitorShiftSharedOptions({
             formatDateTime: formatVerifyMonitorDateTime,
             formatCount: formatVerifyMonitorInteger,
             formatMinutes: formatVerifyMonitorMinutes,
             formatSignedCount: formatOpsAlertMonitorSignedCount,
             formatTimeShort: formatOpsAlertMonitorTimeShort
-        }));
-    }
-    return buildLocalOpsAlertMonitorShiftReportSummaryText(report, currentAdminLabel);
+        }),
+        (report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') => buildOpsAlertMonitorShiftSharedRuntimeState(currentAdminLabel, {
+            includeGeneratedAt: true
+        })
+    );
+}
+
+function resolveOpsAlertMonitorShiftReportSummaryText(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
+    return resolveOpsAlertMonitorShiftReportSummaryTextBuilder()(report, currentAdminLabel);
 }
 
 function buildOpsAlertMonitorShiftReportSummaryText(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
@@ -11410,18 +11049,39 @@ function buildLocalOpsAlertMonitorShiftReportCsvRows(report = normalizeOpsAlertM
     }];
 }
 
-function resolveOpsAlertMonitorShiftReportCsvRows(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
-    const shiftRuntimeState = buildOpsAlertMonitorShiftSharedRuntimeState(currentAdminLabel);
-    if (typeof window.buildAdminWorkbenchOpsAlertMonitorShiftReportCsvRows === 'function') {
-        return window.buildAdminWorkbenchOpsAlertMonitorShiftReportCsvRows(report, shiftRuntimeState, buildOpsAlertMonitorShiftSharedOptions({
+function resolveOpsAlertMonitorShiftReportCsvRowsBuilder() {
+    return resolveOpsAlertMonitorShiftRuntimeSharedBuilder(
+        'buildAdminWorkbenchOpsAlertMonitorShiftReportCsvRows',
+        buildLocalOpsAlertMonitorShiftReportCsvRows,
+        () => buildOpsAlertMonitorShiftSharedOptions({
             formatTimeShort: formatOpsAlertMonitorTimeShort
-        }));
-    }
-    return buildLocalOpsAlertMonitorShiftReportCsvRows(report, currentAdminLabel);
+        }),
+        (report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') => buildOpsAlertMonitorShiftSharedRuntimeState(currentAdminLabel)
+    );
+}
+
+function resolveOpsAlertMonitorShiftReportCsvRows(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
+    return resolveOpsAlertMonitorShiftReportCsvRowsBuilder()(report, currentAdminLabel);
 }
 
 function buildOpsAlertMonitorShiftReportCsvRows(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
     return resolveOpsAlertMonitorShiftReportCsvRows(report, currentAdminLabel);
+}
+
+function buildLocalOpsAlertMonitorShiftExportState(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
+    const normalizedReport = normalizeOpsAlertMonitorShiftReport(report);
+    const currentView = normalizeOpsAlertMonitorShiftReportView(opsAlertMonitorShiftReportViewState);
+    const currentViewLabel = getOpsAlertMonitorShiftResolvedViewLabel(currentView);
+    return {
+        currentView,
+        currentViewLabel,
+        summaryText: buildOpsAlertMonitorShiftReportSummaryText(normalizedReport, currentAdminLabel),
+        csvRows: buildOpsAlertMonitorShiftReportCsvRows(normalizedReport, currentAdminLabel)
+    };
+}
+
+function resolveOpsAlertMonitorShiftExportState(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
+    return buildLocalOpsAlertMonitorShiftExportState(report, currentAdminLabel);
 }
 
 function setOpsAlertMonitorShiftReportView(value = 'all') {
@@ -11430,21 +11090,40 @@ function setOpsAlertMonitorShiftReportView(value = 'all') {
     return opsAlertMonitorShiftReportViewState;
 }
 
-function renderOpsAlertMonitorShiftReport() {
-    const target = document.getElementById('opsAlertMonitorShiftReport');
-    if (!target) return;
-
-    const state = opsAlertMonitorState || getDefaultOpsAlertMonitorState();
-    if (state.status === 'loading' || state.status === 'error') {
-        target.innerHTML = buildOpsAlertMonitorShiftShellMarkup(resolveOpsAlertMonitorShiftShellState(state.status, {
-            message: state.message
-        }));
-        return;
+function buildLocalOpsAlertMonitorShiftReportMarkupState(state = opsAlertMonitorState || getDefaultOpsAlertMonitorState()) {
+    const normalizedState = state && typeof state === 'object' && !Array.isArray(state)
+        ? state
+        : getDefaultOpsAlertMonitorState();
+    if (normalizedState.status === 'loading' || normalizedState.status === 'error') {
+        return {
+            status: normalizedState.status,
+            bodyMarkup: buildOpsAlertMonitorShiftShellMarkup(resolveOpsAlertMonitorShiftShellState(normalizedState.status, {
+                message: normalizedState.message
+            }))
+        };
     }
 
-    target.innerHTML = buildOpsAlertMonitorShiftReportMarkup(
-        state.summary?.shift_report,
-        state.current_admin_label || ''
+    return {
+        status: 'ready',
+        bodyMarkup: buildOpsAlertMonitorShiftReportMarkup(
+            normalizedState.summary?.shift_report,
+            normalizedState.current_admin_label || ''
+        )
+    };
+}
+
+function resolveOpsAlertMonitorShiftReportMarkupState(state = opsAlertMonitorState || getDefaultOpsAlertMonitorState()) {
+    return buildLocalOpsAlertMonitorShiftReportMarkupState(state);
+}
+
+function applyOpsAlertMonitorShiftReportMarkupState(markupState = {}, target = null) {
+    return applyOpsAlertBodyMarkupState(markupState, target);
+}
+
+function renderOpsAlertMonitorShiftReport() {
+    renderOpsAlertBodyMarkupTarget(
+        'opsAlertMonitorShiftReport',
+        () => resolveOpsAlertMonitorShiftReportMarkupState(opsAlertMonitorState || getDefaultOpsAlertMonitorState())
     );
 }
 
@@ -11497,14 +11176,19 @@ function buildLocalOpsAlertMonitorPanelState(state = {}, filters = getOpsAlertMo
     };
 }
 
-function resolveOpsAlertMonitorPanelState(state = {}, filters = getOpsAlertMonitorViewFilters(), categories = []) {
-    if (typeof window.buildAdminWorkbenchOpsAlertMonitorPanelState === 'function') {
-        return window.buildAdminWorkbenchOpsAlertMonitorPanelState(state, filters, categories, {
+function resolveOpsAlertMonitorPanelStateBuilder() {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertMonitorPanelState',
+        buildLocalOpsAlertMonitorPanelState,
+        () => ({
             formatCount: formatVerifyMonitorInteger,
             getFilterSummaryLabel: getOpsAlertMonitorFilterSummaryLabel
-        });
-    }
-    return buildLocalOpsAlertMonitorPanelState(state, filters, categories);
+        })
+    );
+}
+
+function resolveOpsAlertMonitorPanelState(state = {}, filters = getOpsAlertMonitorViewFilters(), categories = []) {
+    return resolveOpsAlertMonitorPanelStateBuilder()(state, filters, categories);
 }
 
 function buildLocalOpsAlertMonitorCategoryRenderState(category = {}, filters = getOpsAlertMonitorViewFilters()) {
@@ -11539,7 +11223,10 @@ function buildLocalOpsAlertMonitorCategoryRenderState(category = {}, filters = g
                 ? { label: '已恢复', tone: 'success' }
                 : null
         ].filter(Boolean),
-        items: items.map((item) => ({ item, state: null })),
+        items: items.map((item) => ({
+            item,
+            state: buildLocalOpsAlertMonitorItemDisplayState(item, normalizedCategory)
+        })),
         actions: [
             {
                 actionName: 'settings-copy-ops-alert-monitor-category',
@@ -11557,40 +11244,66 @@ function buildLocalOpsAlertMonitorCategoryRenderState(category = {}, filters = g
     };
 }
 
-function resolveOpsAlertMonitorCategoryRenderState(category = {}, filters = getOpsAlertMonitorViewFilters()) {
-    if (typeof window.buildAdminWorkbenchOpsAlertMonitorCategoryRenderState === 'function') {
-        return window.buildAdminWorkbenchOpsAlertMonitorCategoryRenderState(category, filters, {
+function resolveOpsAlertMonitorCategoryRenderStateBuilder() {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertMonitorCategoryRenderState',
+        buildLocalOpsAlertMonitorCategoryRenderState,
+        () => ({
             formatCount: formatVerifyMonitorInteger,
             formatDateTime: formatVerifyMonitorDateTime,
             getCategoryActions: (categoryKey) => getOpsAlertMonitorCategoryActions(categoryKey),
             getDisplayActiveCount: getOpsAlertMonitorDisplayActiveCount,
             getDisplayCriticalCount: getOpsAlertMonitorDisplayCriticalCount,
             getCardTone: getOpsAlertMonitorCardTone,
-            getSeverityTone: getOpsAlertMonitorSeverityTone,
-            getRiskTone: getOpsAlertMonitorRiskTone,
-            getRiskLevelLabel: getOpsAlertMonitorRiskLevelLabel,
-            getItemAction: getOpsAlertMonitorItemAction,
-            getQuickAction: getOpsAlertMonitorItemQuickAction,
-            getCaseActions: getOpsAlertMonitorItemCaseActions,
-            getCaseStatusLabel: getOpsAlertCaseStatusLabel,
-            getCaseStatusTone: getOpsAlertCaseStatusTone,
-            getCaseSummaryText: getOpsAlertCaseSummaryText,
-            getRecentEvents: getOpsAlertCaseRecentEvents,
-            getRecentEventText: getOpsAlertCaseRecentEventText
-        });
-    }
-    return buildLocalOpsAlertMonitorCategoryRenderState(category, filters);
+            getItemDisplayState: resolveOpsAlertMonitorItemDisplayState
+        })
+    );
+}
+
+function resolveOpsAlertMonitorCategoryRenderState(category = {}, filters = getOpsAlertMonitorViewFilters()) {
+    return resolveOpsAlertMonitorCategoryRenderStateBuilder()(category, filters);
+}
+
+function resolveOpsAlertMonitorCategoryMarkupState(category = {}, filters = getOpsAlertMonitorViewFilters()) {
+    const fallbackState = buildLocalOpsAlertMonitorCategoryRenderState(category, filters);
+    const resolvedState = resolveOpsAlertMonitorCategoryRenderState(category, filters);
+    const mergedItems = Array.isArray(resolvedState?.items) && resolvedState.items.length
+        ? resolvedState.items
+        : fallbackState.items;
+    return {
+        ...fallbackState,
+        ...resolvedState,
+        tone: resolvedState?.tone || fallbackState.tone || 'neutral',
+        title: resolvedState?.title || fallbackState.title || '告警分类',
+        description: resolvedState?.description || fallbackState.description || '',
+        latestSummary: resolvedState?.latestSummary || fallbackState.latestSummary || '',
+        latestMessage: resolvedState?.latestMessage || fallbackState.latestMessage || '',
+        emptyMessage: resolvedState?.emptyMessage || fallbackState.emptyMessage || '',
+        hiddenHint: resolvedState?.hiddenHint || fallbackState.hiddenHint || '',
+        statBadges: Array.isArray(resolvedState?.statBadges) && resolvedState.statBadges.length
+            ? resolvedState.statBadges
+            : fallbackState.statBadges,
+        actions: Array.isArray(resolvedState?.actions) && resolvedState.actions.length
+            ? resolvedState.actions
+            : fallbackState.actions,
+        items: Array.isArray(mergedItems)
+            ? mergedItems.map((entry) => {
+                const currentItem = entry?.item || {};
+                return {
+                    ...entry,
+                    state: resolveOpsAlertMonitorItemMarkupState(
+                        currentItem,
+                        category,
+                        entry?.state || null
+                    )
+                };
+            })
+            : []
+    };
 }
 
 function buildOpsAlertMonitorCategoryMarkup(category = {}, filters = getOpsAlertMonitorViewFilters()) {
-    const fallbackState = buildLocalOpsAlertMonitorCategoryRenderState(category, filters);
-    const resolvedState = resolveOpsAlertMonitorCategoryRenderState(category, filters);
-    const resolvedActionButtons = Array.isArray(resolvedState.actions) && resolvedState.actions.length
-        ? resolvedState.actions
-        : fallbackState.actions;
-    const resolvedItems = Array.isArray(resolvedState.items) && resolvedState.items.length
-        ? resolvedState.items
-        : fallbackState.items;
+    const resolvedState = resolveOpsAlertMonitorCategoryMarkupState(category, filters);
 
     return `
         <article class="ops-alert-monitor-card ops-alert-monitor-card--${escapeConfigHtml(resolvedState.tone || 'neutral')}">
@@ -11609,15 +11322,15 @@ function buildOpsAlertMonitorCategoryMarkup(category = {}, filters = getOpsAlert
                 <span>${escapeConfigHtml(resolvedState.latestMessage || '')}</span>
             </div>
             <div class="ops-alert-monitor-card__items">
-                ${resolvedItems.length
-        ? resolvedItems.map((entry) => buildOpsAlertMonitorItemMarkup(entry.item, category, entry.state)).join('')
+                ${resolvedState.items.length
+        ? resolvedState.items.map((entry) => buildOpsAlertMonitorItemMarkup(entry.item, category, entry.state)).join('')
         : `<div class="ops-alert-monitor-empty">${escapeConfigHtml(resolvedState.emptyMessage || '')}</div>`}
             </div>
             ${resolvedState.hiddenHint ? `
                 <div class="ops-alert-monitor-card__hint">${escapeConfigHtml(resolvedState.hiddenHint)}</div>
             ` : ''}
             <div class="ops-alert-monitor-card__actions">
-                ${resolvedActionButtons.map((action) => `
+                ${resolvedState.actions.map((action) => `
                     <button
                         type="button"
                         class="btn-add-config btn-add-config--compact"
@@ -11662,11 +11375,15 @@ function buildLocalOpsAlertCaseMutationItems(items = [], categoryKey = '') {
         .filter((item) => item.category_key && item.target_id);
 }
 
+function resolveOpsAlertCaseMutationItemsBuilder() {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertCaseMutationItems',
+        buildLocalOpsAlertCaseMutationItems
+    );
+}
+
 function resolveOpsAlertCaseMutationItems(items = [], categoryKey = '') {
-    if (typeof window.buildAdminWorkbenchOpsAlertCaseMutationItems === 'function') {
-        return window.buildAdminWorkbenchOpsAlertCaseMutationItems(items, categoryKey);
-    }
-    return buildLocalOpsAlertCaseMutationItems(items, categoryKey);
+    return resolveOpsAlertCaseMutationItemsBuilder()(items, categoryKey);
 }
 
 function buildOpsAlertCaseMutationItems(items = [], categoryKey = '') {
@@ -11698,10 +11415,10 @@ function buildLocalOpsAlertMonitorBatchMuteModuleKeysFromCategories(categories =
 }
 
 function resolveOpsAlertMonitorBatchMuteModuleKeysFromCategories(categories = [], categoryKey = '') {
-    if (typeof window.getAdminWorkbenchOpsAlertMonitorBatchMuteModuleKeys === 'function') {
-        return window.getAdminWorkbenchOpsAlertMonitorBatchMuteModuleKeys(categories, categoryKey);
-    }
-    return buildLocalOpsAlertMonitorBatchMuteModuleKeysFromCategories(categories, categoryKey);
+    return resolveOpsAlertSharedCallable(
+        'getAdminWorkbenchOpsAlertMonitorBatchMuteModuleKeys',
+        buildLocalOpsAlertMonitorBatchMuteModuleKeysFromCategories
+    )(categories, categoryKey);
 }
 
 function getOpsAlertMonitorBatchMuteModuleKeysFromCategories(categories = [], categoryKey = '') {
@@ -11749,11 +11466,15 @@ function buildLocalOpsAlertMonitorBatchItemsFromCategories(categories = [], acti
     });
 }
 
+function resolveOpsAlertMonitorBatchItemsBuilder() {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertMonitorBatchItems',
+        buildLocalOpsAlertMonitorBatchItemsFromCategories
+    );
+}
+
 function resolveOpsAlertMonitorBatchItemsFromCategories(categories = [], action = '', categoryKey = '') {
-    if (typeof window.buildAdminWorkbenchOpsAlertMonitorBatchItems === 'function') {
-        return window.buildAdminWorkbenchOpsAlertMonitorBatchItems(categories, action, categoryKey);
-    }
-    return buildLocalOpsAlertMonitorBatchItemsFromCategories(categories, action, categoryKey);
+    return resolveOpsAlertMonitorBatchItemsBuilder()(categories, action, categoryKey);
 }
 
 function getOpsAlertMonitorBatchItemsFromCategories(categories = [], action = '', categoryKey = '') {
@@ -11765,104 +11486,145 @@ function getOpsAlertMonitorBatchItems(filters = getOpsAlertMonitorViewFilters(),
     return getOpsAlertMonitorBatchItemsFromCategories(categories, action, categoryKey);
 }
 
-function renderOpsAlertMonitorBatchActions(filters = getOpsAlertMonitorViewFilters()) {
+function resolveOpsAlertMonitorBatchActionStatesFromCategories(categories = [], filters = getOpsAlertMonitorViewFilters()) {
+    const normalizedCategories = Array.isArray(categories) ? categories : [];
+    return requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertMonitorBatchActionStates')(normalizedCategories, filters, {
+        buildBatchItems: (preparedCategories, action) => getOpsAlertMonitorBatchItemsFromCategories(preparedCategories, action),
+        getBatchMuteModuleKeys: (preparedCategories) => getOpsAlertMonitorBatchMuteModuleKeysFromCategories(preparedCategories),
+        formatCount: formatVerifyMonitorInteger
+    });
+}
+
+function resolveOpsAlertMonitorBatchActionStates(filters = getOpsAlertMonitorViewFilters()) {
+    const categories = getOpsAlertMonitorPreparedCategories(filters);
+    return resolveOpsAlertMonitorBatchActionStatesFromCategories(categories, filters);
+}
+
+function resolveOpsAlertMonitorViewState(state = {}, filters = getOpsAlertMonitorViewFilters(), categories = getOpsAlertMonitorPreparedCategories(filters)) {
+    const filterDefinitions = Array.from(document.querySelectorAll('[data-ops-alert-monitor-filter-kind]')).map((button) => ({
+        kind: button.dataset.opsAlertMonitorFilterKind,
+        value: button.dataset.opsAlertMonitorFilterValue
+    }));
+    return requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertMonitorViewState')(state, filters, categories, {
+        filterDefinitions,
+        formatCount: formatVerifyMonitorInteger,
+        getFilterSummaryLabel: getOpsAlertMonitorFilterSummaryLabel,
+        buildBatchItems: (preparedCategories, action) => getOpsAlertMonitorBatchItemsFromCategories(preparedCategories, action),
+        getBatchMuteModuleKeys: (preparedCategories) => getOpsAlertMonitorBatchMuteModuleKeysFromCategories(preparedCategories)
+    });
+}
+
+function buildLocalOpsAlertMonitorPanelMarkupState(state = {}, filters = getOpsAlertMonitorViewFilters(), categories = [], viewState = null) {
+    const normalizedState = state && typeof state === 'object' && !Array.isArray(state)
+        ? state
+        : getDefaultOpsAlertMonitorState();
+    const normalizedFilters = filters && typeof filters === 'object' && !Array.isArray(filters)
+        ? filters
+        : getDefaultOpsAlertMonitorViewState();
+    const normalizedCategories = Array.isArray(categories) ? categories : [];
+    const resolvedViewState = viewState && typeof viewState === 'object' && !Array.isArray(viewState)
+        ? viewState
+        : resolveOpsAlertMonitorViewState(normalizedState, normalizedFilters, normalizedCategories);
+    const panelState = resolvedViewState?.panelState || resolveOpsAlertMonitorPanelState(normalizedState, normalizedFilters, normalizedCategories);
+    const toolbarState = Array.isArray(resolvedViewState?.toolbarState)
+        ? resolvedViewState.toolbarState
+        : resolveOpsAlertMonitorFilterToolbarState(normalizedFilters);
+    const batchActionStates = Array.isArray(resolvedViewState?.batchActionStates)
+        ? resolvedViewState.batchActionStates
+        : resolveOpsAlertMonitorBatchActionStatesFromCategories(normalizedCategories, normalizedFilters);
+
+    return {
+        state: normalizedState,
+        filters: normalizedFilters,
+        categories: normalizedCategories,
+        toolbarState,
+        batchActionStates,
+        panelState,
+        metaMarkup: buildOpsAlertPanelMetaMarkup(panelState),
+        bodyMarkup: panelState.status === 'ready' && normalizedCategories.length
+            ? normalizedCategories.map((category) => buildOpsAlertMonitorCategoryMarkup(category, normalizedFilters)).join('')
+            : buildOpsAlertPanelEmptyMarkup(panelState.emptyMessage)
+    };
+}
+
+function resolveOpsAlertMonitorPanelMarkupState(state = {}, filters = getOpsAlertMonitorViewFilters(), categories = [], viewState = null) {
+    return buildLocalOpsAlertMonitorPanelMarkupState(state, filters, categories, viewState);
+}
+
+function applyOpsAlertMonitorFilterToolbarState(toolbarState = [], filters = getOpsAlertMonitorViewFilters()) {
+    document.querySelectorAll('[data-ops-alert-monitor-filter-kind]').forEach((button) => {
+        const kind = String(button.dataset.opsAlertMonitorFilterKind || '').trim().toLowerCase();
+        const value = String(button.dataset.opsAlertMonitorFilterValue || '').trim().toLowerCase();
+        const matched = Array.isArray(toolbarState)
+            ? toolbarState.find((item) => item.kind === kind && item.value === value)
+            : null;
+        const isActive = matched ? matched.active === true : filters[kind] === value;
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+}
+
+function applyOpsAlertMonitorBatchActionStates(buttonStates = [], filters = getOpsAlertMonitorViewFilters()) {
+    const panel = document.getElementById('opsAlertMonitorPanel');
+    if (!panel) return;
     const setButtonState = (actionName, disabled, title) => {
         const button = document.querySelector(`[data-admin-action="${actionName}"]`);
         if (!button) return;
         button.disabled = disabled;
         button.title = title;
     };
-    const buttonStates = resolveOpsAlertMonitorBatchActionStates(filters);
 
     if (Array.isArray(buttonStates)) {
         buttonStates.forEach((item) => setButtonState(item.actionName, item.disabled, item.title));
         return;
     }
 
-    setButtonState('settings-batch-claim-ops-alert-monitor', getOpsAlertMonitorBatchItems(filters, 'assign').length <= 0, getOpsAlertMonitorBatchItems(filters, 'assign').length > 0 ? `当前筛选将指派 ${formatVerifyMonitorInteger(getOpsAlertMonitorBatchItems(filters, 'assign').length)} 条告警` : '当前筛选条件下没有可指派的告警');
-    setButtonState('settings-batch-note-ops-alert-monitor', getOpsAlertMonitorBatchItems(filters, 'add_note').length <= 0, getOpsAlertMonitorBatchItems(filters, 'add_note').length > 0 ? `当前筛选将备注 ${formatVerifyMonitorInteger(getOpsAlertMonitorBatchItems(filters, 'add_note').length)} 条告警` : '当前筛选条件下没有可备注的告警');
-    setButtonState('settings-batch-resolve-ops-alert-monitor', getOpsAlertMonitorBatchItems(filters, 'resolve').length <= 0, getOpsAlertMonitorBatchItems(filters, 'resolve').length > 0 ? `当前筛选将关闭 ${formatVerifyMonitorInteger(getOpsAlertMonitorBatchItems(filters, 'resolve').length)} 条告警` : '当前筛选条件下没有可关闭的告警');
-    setButtonState('settings-batch-mute-ops-alert-monitor', getOpsAlertMonitorBatchMuteModuleKeys(filters).length <= 0, getOpsAlertMonitorBatchMuteModuleKeys(filters).length > 0 ? `当前筛选将静默 ${formatVerifyMonitorInteger(getOpsAlertMonitorBatchMuteModuleKeys(filters).length)} 个告警模块` : '当前筛选条件下没有可静默的告警模块');
-}
-
-function buildLocalOpsAlertMonitorBatchActionStates(filters = getOpsAlertMonitorViewFilters()) {
-    const categories = getOpsAlertMonitorPreparedCategories(filters);
-    const assignItems = getOpsAlertMonitorBatchItemsFromCategories(categories, 'assign');
-    const noteItems = getOpsAlertMonitorBatchItemsFromCategories(categories, 'add_note');
-    const resolveItems = getOpsAlertMonitorBatchItemsFromCategories(categories, 'resolve');
-    const muteModuleKeys = getOpsAlertMonitorBatchMuteModuleKeysFromCategories(categories);
-    return [
-        {
-            actionName: 'settings-batch-claim-ops-alert-monitor',
-            disabled: assignItems.length <= 0,
-            title: assignItems.length > 0 ? `当前筛选将指派 ${formatVerifyMonitorInteger(assignItems.length)} 条告警` : '当前筛选条件下没有可指派的告警'
-        },
-        {
-            actionName: 'settings-batch-note-ops-alert-monitor',
-            disabled: noteItems.length <= 0,
-            title: noteItems.length > 0 ? `当前筛选将备注 ${formatVerifyMonitorInteger(noteItems.length)} 条告警` : '当前筛选条件下没有可备注的告警'
-        },
-        {
-            actionName: 'settings-batch-resolve-ops-alert-monitor',
-            disabled: resolveItems.length <= 0,
-            title: resolveItems.length > 0 ? `当前筛选将关闭 ${formatVerifyMonitorInteger(resolveItems.length)} 条告警` : '当前筛选条件下没有可关闭的告警'
-        },
-        {
-            actionName: 'settings-batch-mute-ops-alert-monitor',
-            disabled: muteModuleKeys.length <= 0,
-            title: muteModuleKeys.length > 0 ? `当前筛选将静默 ${formatVerifyMonitorInteger(muteModuleKeys.length)} 个告警模块` : '当前筛选条件下没有可静默的告警模块'
-        }
-    ];
-}
-
-function resolveOpsAlertMonitorBatchActionStates(filters = getOpsAlertMonitorViewFilters()) {
-    const categories = getOpsAlertMonitorPreparedCategories(filters);
-    if (typeof window.buildAdminWorkbenchOpsAlertMonitorBatchActionStates === 'function') {
-        return window.buildAdminWorkbenchOpsAlertMonitorBatchActionStates(categories, filters, {
-            buildBatchItems: (preparedCategories, action) => getOpsAlertMonitorBatchItemsFromCategories(preparedCategories, action),
-            getBatchMuteModuleKeys: (preparedCategories) => getOpsAlertMonitorBatchMuteModuleKeysFromCategories(preparedCategories),
-            formatCount: formatVerifyMonitorInteger
-        });
+    const fallbackStates = resolveOpsAlertMonitorBatchActionStates(filters);
+    if (Array.isArray(fallbackStates)) {
+        fallbackStates.forEach((item) => setButtonState(item.actionName, item.disabled, item.title));
     }
-    return buildLocalOpsAlertMonitorBatchActionStates(filters);
+}
+
+function renderOpsAlertMonitorBatchActions(filters = getOpsAlertMonitorViewFilters(), buttonStates = null) {
+    applyOpsAlertMonitorBatchActionStates(buttonStates, filters);
+}
+
+function applyOpsAlertMonitorPanelMarkupState(markupState = {}, elements = {}) {
+    return applyOpsAlertPanelMarkupElements(markupState, elements, {
+        beforeApply: (resolvedMarkupState) => {
+            const filters = resolvedMarkupState.filters || getOpsAlertMonitorViewFilters();
+            syncOpsAlertMonitorFilterToolbar(filters, resolvedMarkupState.toolbarState || null);
+            renderOpsAlertRiskSpotlight(filters);
+            renderOpsAlertMonitorShiftReport();
+            renderOpsAlertMonitorBatchActions(filters, resolvedMarkupState.batchActionStates || null);
+        },
+        fallbackEmptyText: '暂无数据'
+    });
 }
 
 function renderOpsAlertMonitorPanel() {
-    const panel = document.getElementById('opsAlertMonitorPanel');
-    const meta = document.getElementById('opsAlertMonitorMeta');
-    const grid = document.getElementById('opsAlertMonitorGrid');
     const shiftReport = document.getElementById('opsAlertMonitorShiftReport');
-    if (!panel || !meta || !grid || !shiftReport) return;
+    if (!shiftReport) return;
 
-    const state = opsAlertMonitorState || getDefaultOpsAlertMonitorState();
-    const summary = state.summary || getDefaultOpsAlertMonitorState().summary;
-    const filters = getOpsAlertMonitorViewFilters();
-
-    panel.hidden = false;
-    syncOpsAlertMonitorFilterToolbar(filters);
-    renderOpsAlertRiskSpotlight(filters);
-    renderOpsAlertMonitorShiftReport();
-    renderOpsAlertMonitorBatchActions(filters);
-    const categories = state.status === 'ready' ? getOpsAlertMonitorPreparedCategories(filters) : [];
-    const panelState = resolveOpsAlertMonitorPanelState(state, filters, categories);
-    meta.innerHTML = `<i class="${escapeConfigHtml(panelState.metaIcon)}"></i><span>${escapeConfigHtml(panelState.metaText)}</span>`;
-    if (panelState.status !== 'ready' || !categories.length) {
-        renderOpsAlertMonitorEmptyState(grid, panelState.emptyMessage);
-        return;
-    }
-
-    if (!categories.length) {
-        return;
-    }
-
-    grid.innerHTML = categories.map((category) => buildOpsAlertMonitorCategoryMarkup(category, filters)).join('');
+    renderOpsAlertPanelMarkupTarget({
+        panelId: 'opsAlertMonitorPanel',
+        metaId: 'opsAlertMonitorMeta',
+        gridId: 'opsAlertMonitorGrid',
+        resolveMarkupState: () => {
+            const state = opsAlertMonitorState || getDefaultOpsAlertMonitorState();
+            const filters = getOpsAlertMonitorViewFilters();
+            const categories = state.status === 'ready' ? getOpsAlertMonitorPreparedCategories(filters) : [];
+            const viewState = resolveOpsAlertMonitorViewState(state, filters, categories);
+            return resolveOpsAlertMonitorPanelMarkupState(state, filters, categories, viewState);
+        },
+        applyMarkupState: applyOpsAlertMonitorPanelMarkupState
+    });
 }
 
 async function copyOpsAlertMonitorChecklist(categoryKey = '') {
     const filters = getOpsAlertMonitorViewFilters();
     const categories = getOpsAlertMonitorPreparedCategories(filters);
     const rows = buildOpsAlertMonitorBatchRows(categories, filters, categoryKey);
-
     if (!rows.length) {
         showToast('当前筛选条件下没有可复制的告警清单', 'info');
         return false;
@@ -11875,7 +11637,7 @@ async function copyOpsAlertMonitorChecklist(categoryKey = '') {
         return true;
     } catch (error) {
         console.error('[Config] Copy ops alert checklist failed:', error);
-        showToast(`复制失败: ${error.message || '未知错误'}`, 'error');
+        showToast('复制失败，请稍后重试', 'error');
         return false;
     }
 }
@@ -11888,16 +11650,13 @@ async function copyOpsAlertMonitorShiftReportSummary() {
     }
 
     try {
-        const text = buildOpsAlertMonitorShiftReportSummaryText(
-            state.summary?.shift_report,
-            state.current_admin_label || ''
-        );
-        await writeAdminConfigClipboard(text);
-        showToast(`已复制${getOpsAlertMonitorShiftReportViewMeta().label}交班摘要`, 'success');
+        const exportState = resolveOpsAlertMonitorShiftExportState(state.summary?.shift_report, state.current_admin_label || '');
+        await writeAdminConfigClipboard(exportState.summaryText);
+        showToast(`已复制${exportState.currentViewLabel}交班摘要`, 'success');
         return true;
     } catch (error) {
         console.error('[Config] Copy ops alert shift report failed:', error);
-        showToast(`复制失败: ${error.message || '未知错误'}`, 'error');
+        showToast('复制交班摘要失败，请稍后重试', 'error');
         return false;
     }
 }
@@ -11906,9 +11665,8 @@ function exportOpsAlertMonitorCsv(categoryKey = '') {
     const filters = getOpsAlertMonitorViewFilters();
     const categories = getOpsAlertMonitorPreparedCategories(filters);
     const rows = buildOpsAlertMonitorBatchRows(categories, filters, categoryKey);
-
     if (!rows.length) {
-        showToast('当前筛选条件下没有可导出的告警清单', 'info');
+        showToast('当前筛选条件下没有可导出的集中告警', 'info');
         return false;
     }
 
@@ -11930,24 +11688,21 @@ function exportOpsAlertMonitorShiftReportCsv() {
         return false;
     }
 
-    const rows = buildOpsAlertMonitorShiftReportCsvRows(
-        state.summary?.shift_report,
-        state.current_admin_label || ''
-    );
-
+    const exportState = resolveOpsAlertMonitorShiftExportState(state.summary?.shift_report, state.current_admin_label || '');
+    const rows = exportState.csvRows;
     if (!rows.length) {
         showToast('当前没有可导出的交班报表', 'info');
         return false;
     }
 
     const timestamp = new Date().toISOString().slice(0, 10);
-    const viewKey = normalizeOpsAlertMonitorShiftReportView(opsAlertMonitorShiftReportViewState);
+    const viewKey = exportState.currentView;
     const csv = convertRowsToCsv(rows);
     downloadExportBlob(
         new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' }),
         `ops_alert_shift_report_${viewKey}_${timestamp}.csv`
     );
-    showToast(`已导出${getOpsAlertMonitorShiftReportViewMeta().label}交班报表`, 'success');
+    showToast(`已导出${exportState.currentViewLabel}交班报表`, 'success');
     return true;
 }
 
@@ -12099,14 +11854,62 @@ async function saveConfig(key, value) {
     }
 }
 
+async function resolveAdminConfigAccessToken() {
+    if (window.AdminApi?.getAccessToken) {
+        try {
+            const accessToken = await window.AdminApi.getAccessToken();
+            if (accessToken) {
+                return String(accessToken).trim();
+            }
+        } catch (_) {
+            // Fall through to runtime auth client.
+        }
+    }
+
+    if (window.supabaseClient?.accessToken) {
+        try {
+            const accessToken = await Promise.race([
+                Promise.resolve().then(() => window.supabaseClient.accessToken()),
+                new Promise((resolve) => {
+                    window.setTimeout(() => resolve(''), 1800);
+                })
+            ]);
+            if (accessToken) {
+                return String(accessToken).trim();
+            }
+        } catch (_) {
+            // Fall through to direct auth lookup.
+        }
+    }
+
+    if (window.supabaseClient?.auth?.getSession) {
+        try {
+            const sessionResult = await Promise.race([
+                Promise.resolve().then(() => window.supabaseClient.auth.getSession()),
+                new Promise((resolve) => {
+                    window.setTimeout(() => resolve(null), 1800);
+                })
+            ]);
+            const accessToken = String(sessionResult?.data?.session?.access_token || '').trim();
+            if (accessToken) {
+                return accessToken;
+            }
+        } catch (_) {
+            return '';
+        }
+    }
+
+    return '';
+}
+
 async function getAdminConfigApiHeaders() {
     const headers = {
         'Content-Type': 'application/json'
     };
 
-    const { data: { session } = {} } = await window.supabaseClient.auth.getSession();
-    if (session?.access_token) {
-        headers.Authorization = `Bearer ${session.access_token}`;
+    const accessToken = await resolveAdminConfigAccessToken();
+    if (accessToken) {
+        headers.Authorization = `Bearer ${accessToken}`;
     }
 
     return headers;
@@ -12403,270 +12206,265 @@ async function loadPaymentChannelSettings(force = false) {
 }
 
 async function fetchOpsAlertSettingsPayload(headers = {}) {
-    if (typeof window.fetchAdminWorkbenchOpsAlertSettings === 'function') {
-        return window.fetchAdminWorkbenchOpsAlertSettings(headers, {
-            errorMessage: '加载站外告警配置失败'
-        });
-    }
-
-    const response = await fetch('/api/admin/settings/ops-alerts', {
-        method: 'GET',
-        headers
+    return requireOpsAlertWorkbenchMethod('fetchAdminWorkbenchOpsAlertSettings')(headers, {
+        errorMessage: '加载站外告警配置失败'
     });
-
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || !payload.success) {
-        throw new Error(payload.message || '加载站外告警配置失败');
-    }
-    return payload;
-}
-
-function buildLocalOpsAlertSettingsPayload(payload = {}) {
-    return {
-        config: normalizeOpsAlertConfig(payload.config),
-        secrets: payload.secrets || getDefaultOpsAlertSecretStatus()
-    };
 }
 
 function resolveOpsAlertSettingsPayload(payload = {}) {
-    if (typeof window.normalizeAdminWorkbenchOpsAlertSettingsPayload === 'function') {
-        return window.normalizeAdminWorkbenchOpsAlertSettingsPayload(payload, {
-            normalizeConfig: normalizeOpsAlertConfig,
-            defaultSecrets: getDefaultOpsAlertSecretStatus()
-        });
+    return requireOpsAlertWorkbenchMethod('normalizeAdminWorkbenchOpsAlertSettingsPayload')(payload, {
+        normalizeConfig: normalizeOpsAlertConfig,
+        defaultSecrets: getDefaultOpsAlertSecretStatus()
+    });
+}
+
+function resolveLocalOpsAlertRuntimeState(mode = 'ready', value = null, builders = {}, currentState = null) {
+    const normalizedMode = String(mode || 'ready').trim().toLowerCase();
+    if (normalizedMode === 'loading' && typeof builders.loading === 'function') {
+        return builders.loading(currentState);
     }
-    return buildLocalOpsAlertSettingsPayload(payload);
+    if (normalizedMode === 'error' && typeof builders.error === 'function') {
+        return builders.error(value);
+    }
+    if (typeof builders.ready === 'function') {
+        return builders.ready(value || {});
+    }
+    return value || currentState || {};
+}
+
+function applyLocalOpsAlertRuntimeState(nextState = {}, options = {}) {
+    const warningMessage = typeof options.getWarningMessage === 'function'
+        ? String(options.getWarningMessage(nextState) || '').trim()
+        : '';
+
+    if (warningMessage) {
+        console.warn(warningMessage);
+    }
+
+    if (typeof options.applyState === 'function') {
+        options.applyState(nextState);
+    }
+    if (typeof options.render === 'function') {
+        options.render(nextState);
+    }
+
+    return typeof options.shouldReturnNull === 'function' && options.shouldReturnNull(nextState)
+        ? null
+        : nextState;
+}
+
+async function runOpsAlertSingletonLoad(target = null, force = false, executor = null) {
+    if (!target || typeof executor !== 'function') {
+        return null;
+    }
+    if (target._loadingPromise && !force) {
+        return target._loadingPromise;
+    }
+
+    target._loadingPromise = (async () => executor())();
+
+    try {
+        return await target._loadingPromise;
+    } finally {
+        target._loadingPromise = null;
+    }
+}
+
+function buildLocalOpsAlertSettingsReadyState(payload = {}) {
+    const normalizedPayload = resolveOpsAlertSettingsPayload(payload);
+    return {
+        config: normalizedPayload.config,
+        secrets: normalizedPayload.secrets,
+        errorMessage: ''
+    };
+}
+
+function buildLocalOpsAlertSettingsErrorState(error = null) {
+    return {
+        config: normalizeOpsAlertConfig(systemConfigCache['ops_alerts']),
+        secrets: getDefaultOpsAlertSecretStatus(),
+        errorMessage: error?.message || '未知错误'
+    };
+}
+
+function resolveOpsAlertSettingsRuntimeState(mode = 'ready', value = null) {
+    return resolveLocalOpsAlertRuntimeState(mode, value, {
+        ready: buildLocalOpsAlertSettingsReadyState,
+        error: buildLocalOpsAlertSettingsErrorState
+    });
+}
+
+function applyOpsAlertSettingsRuntimeState(runtimeState = {}) {
+    return applyLocalOpsAlertRuntimeState(runtimeState, {
+        getWarningMessage: (state = {}) => state.errorMessage
+            ? `[Config] Ops alert settings load failed: ${state.errorMessage}`
+            : '',
+        applyState: (state = {}) => {
+            systemConfigCache['ops_alerts'] = normalizeOpsAlertConfig(state.config);
+            opsAlertSecretStatus = state.secrets || getDefaultOpsAlertSecretStatus();
+        },
+        render: () => renderOpsAlertSettings(),
+        shouldReturnNull: (state = {}) => Boolean(state.errorMessage)
+    });
 }
 
 async function loadOpsAlertSettings(force = false) {
-    if (loadOpsAlertSettings._loadingPromise && !force) {
-        return loadOpsAlertSettings._loadingPromise;
-    }
-
-    loadOpsAlertSettings._loadingPromise = (async () => {
+    return runOpsAlertSingletonLoad(loadOpsAlertSettings, force, async () => {
         try {
             const headers = await getAdminConfigApiHeaders();
             const payload = await fetchOpsAlertSettingsPayload(headers);
-            const normalizedPayload = resolveOpsAlertSettingsPayload(payload);
-
-            systemConfigCache['ops_alerts'] = normalizedPayload.config;
-            opsAlertSecretStatus = normalizedPayload.secrets;
-            renderOpsAlertSettings();
+            applyOpsAlertSettingsRuntimeState(resolveOpsAlertSettingsRuntimeState('ready', payload));
             return payload;
         } catch (error) {
-            console.warn('[Config] Ops alert settings load failed:', error.message);
-            systemConfigCache['ops_alerts'] = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']);
-            opsAlertSecretStatus = getDefaultOpsAlertSecretStatus();
-            renderOpsAlertSettings();
-            return null;
+            return applyOpsAlertSettingsRuntimeState(resolveOpsAlertSettingsRuntimeState('error', error));
         }
-    })();
-
-    try {
-        return await loadOpsAlertSettings._loadingPromise;
-    } finally {
-        loadOpsAlertSettings._loadingPromise = null;
-    }
+    });
 }
 
 async function fetchOpsAlertHealthPayload(headers = {}) {
-    if (typeof window.fetchAdminWorkbenchOpsAlertHealth === 'function') {
-        return window.fetchAdminWorkbenchOpsAlertHealth(headers, {
-            timeoutMs: OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS,
-            errorMessage: '加载站外告警通道健康状态失败'
-        });
-    }
-
-    const controller = typeof AbortController === 'function' ? new AbortController() : null;
-    const timeoutId = controller
-        ? window.setTimeout(() => controller.abort(), OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS)
-        : 0;
-    try {
-        const response = await fetch('/api/admin/settings/ops-alert-health', {
-            method: 'GET',
-            headers,
-            signal: controller?.signal
-        });
-
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || !payload.success) {
-            throw new Error(payload.message || '加载站外告警通道健康状态失败');
-        }
-        return payload;
-    } finally {
-        if (timeoutId) {
-            window.clearTimeout(timeoutId);
-        }
-    }
-}
-
-function buildLocalOpsAlertHealthPayload(payload = {}) {
-    return {
-        fetched_at: payload.fetched_at || '',
-        summary: payload.summary || getDefaultOpsAlertHealthState().summary,
-        channels: Array.isArray(payload.channels) ? payload.channels : [],
-        message: ''
-    };
+    return requireOpsAlertWorkbenchMethod('fetchAdminWorkbenchOpsAlertHealth')(headers, {
+        timeoutMs: OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS,
+        errorMessage: '加载站外告警通道健康状态失败'
+    });
 }
 
 function resolveOpsAlertHealthPayload(payload = {}) {
-    if (typeof window.normalizeAdminWorkbenchOpsAlertHealthPayload === 'function') {
-        return window.normalizeAdminWorkbenchOpsAlertHealthPayload(payload, {
-            defaultSummary: getDefaultOpsAlertHealthState().summary
-        });
-    }
-    return buildLocalOpsAlertHealthPayload(payload);
+    return requireOpsAlertWorkbenchMethod('normalizeAdminWorkbenchOpsAlertHealthPayload')(payload, {
+        defaultSummary: getDefaultOpsAlertHealthState().summary
+    });
 }
 
-async function loadOpsAlertHealth(force = false) {
-    if (loadOpsAlertHealth._loadingPromise && !force) {
-        return loadOpsAlertHealth._loadingPromise;
-    }
-
-    opsAlertHealthState = {
-        ...(opsAlertHealthState || getDefaultOpsAlertHealthState()),
+function buildLocalOpsAlertHealthLoadingState(state = opsAlertHealthState || getDefaultOpsAlertHealthState()) {
+    return {
+        ...(state || getDefaultOpsAlertHealthState()),
         status: 'loading',
         message: '正在加载站外告警通道健康状态...'
     };
-    renderOpsAlertHealthPanel();
+}
 
-    loadOpsAlertHealth._loadingPromise = (async () => {
+function resolveOpsAlertHealthReadyState(payload = {}) {
+    return {
+        status: 'ready',
+        ...resolveOpsAlertHealthPayload(payload)
+    };
+}
+
+function buildLocalOpsAlertHealthErrorState(error = null) {
+    return {
+        ...getDefaultOpsAlertHealthState(),
+        status: 'error',
+        message: error?.name === 'AbortError'
+            ? '加载站外告警通道健康状态超时，请稍后重试'
+            : (error?.message || '加载站外告警通道健康状态失败')
+    };
+}
+
+function resolveOpsAlertHealthRuntimeState(mode = 'ready', value = null, currentState = opsAlertHealthState || getDefaultOpsAlertHealthState()) {
+    return resolveLocalOpsAlertRuntimeState(mode, value, {
+        loading: buildLocalOpsAlertHealthLoadingState,
+        error: buildLocalOpsAlertHealthErrorState,
+        ready: resolveOpsAlertHealthReadyState
+    }, currentState);
+}
+
+function applyOpsAlertHealthRuntimeState(nextState = getDefaultOpsAlertHealthState()) {
+    return applyLocalOpsAlertRuntimeState(nextState, {
+        applyState: (state = {}) => {
+            opsAlertHealthState = state;
+        },
+        render: () => renderOpsAlertHealthPanel()
+    });
+}
+
+async function loadOpsAlertHealth(force = false) {
+    applyOpsAlertHealthRuntimeState(resolveOpsAlertHealthRuntimeState('loading'));
+    return runOpsAlertSingletonLoad(loadOpsAlertHealth, force, async () => {
         try {
             const headers = await getAdminConfigApiHeaders();
             const payload = await fetchOpsAlertHealthPayload(headers);
-            const normalizedPayload = resolveOpsAlertHealthPayload(payload);
-
-            opsAlertHealthState = {
-                status: 'ready',
-                ...normalizedPayload
-            };
-            renderOpsAlertHealthPanel();
+            applyOpsAlertHealthRuntimeState(resolveOpsAlertHealthRuntimeState('ready', payload));
             return payload;
         } catch (error) {
-            const message = error?.name === 'AbortError'
-                ? '加载站外告警通道健康状态超时，请稍后重试'
-                : (error.message || '加载站外告警通道健康状态失败');
-            console.warn('[Config] Ops alert health load failed:', message);
-            opsAlertHealthState = {
-                ...getDefaultOpsAlertHealthState(),
-                status: 'error',
-                message
-            };
-            renderOpsAlertHealthPanel();
+            const errorState = resolveOpsAlertHealthRuntimeState('error', error);
+            console.warn('[Config] Ops alert health load failed:', errorState.message);
+            applyOpsAlertHealthRuntimeState(errorState);
             return null;
         }
-    })();
-
-    try {
-        return await loadOpsAlertHealth._loadingPromise;
-    } finally {
-        loadOpsAlertHealth._loadingPromise = null;
-    }
+    });
 }
 
 async function fetchOpsAlertMonitorPayload(headers = {}) {
-    if (typeof window.fetchAdminWorkbenchOpsAlertMonitor === 'function') {
-        return window.fetchAdminWorkbenchOpsAlertMonitor(headers, {
-            timeoutMs: OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS,
-            errorMessage: '加载集中告警处理面板失败'
-        });
-    }
-
-    const controller = typeof AbortController === 'function' ? new AbortController() : null;
-    const timeoutId = controller
-        ? window.setTimeout(() => controller.abort(), OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS)
-        : 0;
-    try {
-        const response = await fetch('/api/admin/settings/ops-alert-monitor', {
-            method: 'GET',
-            headers,
-            signal: controller?.signal
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || !payload.success) {
-            throw new Error(payload.message || '加载集中告警处理面板失败');
-        }
-        return payload;
-    } finally {
-        if (timeoutId) {
-            window.clearTimeout(timeoutId);
-        }
-    }
-}
-
-function buildLocalOpsAlertMonitorPayload(payload = {}) {
-    const defaultSummary = getDefaultOpsAlertMonitorState().summary;
-    return {
-        fetched_at: payload.fetched_at || '',
-        summary: {
-            ...defaultSummary,
-            ...(payload.summary && typeof payload.summary === 'object' && !Array.isArray(payload.summary)
-                ? payload.summary
-                : {}),
-            shift_report: normalizeOpsAlertMonitorShiftReport(payload.summary?.shift_report)
-        },
-        assignable_admins: Array.isArray(payload.assignable_admins) ? payload.assignable_admins : [],
-        current_admin_id: payload.current_admin_id || '',
-        current_admin_label: payload.current_admin_label || '',
-        categories: Array.isArray(payload.categories) ? payload.categories : [],
-        message: ''
-    };
+    return requireOpsAlertWorkbenchMethod('fetchAdminWorkbenchOpsAlertMonitor')(headers, {
+        timeoutMs: OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS,
+        errorMessage: '加载集中告警处理面板失败'
+    });
 }
 
 function resolveOpsAlertMonitorPayload(payload = {}) {
     const defaultSummary = getDefaultOpsAlertMonitorState().summary;
-    if (typeof window.normalizeAdminWorkbenchOpsAlertMonitorPayload === 'function') {
-        return window.normalizeAdminWorkbenchOpsAlertMonitorPayload(payload, {
-            defaultSummary,
-            normalizeShiftReport: normalizeOpsAlertMonitorShiftReport
-        });
-    }
-    return buildLocalOpsAlertMonitorPayload(payload);
+    return requireOpsAlertWorkbenchMethod('normalizeAdminWorkbenchOpsAlertMonitorPayload')(payload, {
+        defaultSummary,
+        normalizeShiftReport: normalizeOpsAlertMonitorShiftReport
+    });
 }
 
-async function loadOpsAlertMonitor(force = false) {
-    if (loadOpsAlertMonitor._loadingPromise && !force) {
-        return loadOpsAlertMonitor._loadingPromise;
-    }
-
-    opsAlertMonitorState = {
-        ...(opsAlertMonitorState || getDefaultOpsAlertMonitorState()),
+function buildLocalOpsAlertMonitorLoadingState(state = opsAlertMonitorState || getDefaultOpsAlertMonitorState()) {
+    return {
+        ...(state || getDefaultOpsAlertMonitorState()),
         status: 'loading',
         message: '正在加载集中告警处理面板...'
     };
-    renderOpsAlertMonitorPanel();
+}
 
-    loadOpsAlertMonitor._loadingPromise = (async () => {
+function resolveOpsAlertMonitorReadyState(payload = {}) {
+    return {
+        status: 'ready',
+        ...resolveOpsAlertMonitorPayload(payload)
+    };
+}
+
+function buildLocalOpsAlertMonitorErrorState(error = null) {
+    return {
+        ...getDefaultOpsAlertMonitorState(),
+        status: 'error',
+        message: error?.name === 'AbortError'
+            ? '加载集中告警处理面板超时，请稍后重试'
+            : (error?.message || '加载集中告警处理面板失败')
+    };
+}
+
+function resolveOpsAlertMonitorRuntimeState(mode = 'ready', value = null, currentState = opsAlertMonitorState || getDefaultOpsAlertMonitorState()) {
+    return resolveLocalOpsAlertRuntimeState(mode, value, {
+        loading: buildLocalOpsAlertMonitorLoadingState,
+        error: buildLocalOpsAlertMonitorErrorState,
+        ready: resolveOpsAlertMonitorReadyState
+    }, currentState);
+}
+
+function applyOpsAlertMonitorRuntimeState(nextState = getDefaultOpsAlertMonitorState()) {
+    return applyLocalOpsAlertRuntimeState(nextState, {
+        applyState: (state = {}) => {
+            opsAlertMonitorState = state;
+        },
+        render: () => renderOpsAlertMonitorPanel()
+    });
+}
+
+async function loadOpsAlertMonitor(force = false) {
+    applyOpsAlertMonitorRuntimeState(resolveOpsAlertMonitorRuntimeState('loading'));
+    return runOpsAlertSingletonLoad(loadOpsAlertMonitor, force, async () => {
         try {
             const headers = await getAdminConfigApiHeaders();
             const payload = await fetchOpsAlertMonitorPayload(headers);
-            const normalizedPayload = resolveOpsAlertMonitorPayload(payload);
-            opsAlertMonitorState = {
-                status: 'ready',
-                ...normalizedPayload
-            };
-            renderOpsAlertMonitorPanel();
+            applyOpsAlertMonitorRuntimeState(resolveOpsAlertMonitorRuntimeState('ready', payload));
             return payload;
         } catch (error) {
-            const message = error?.name === 'AbortError'
-                ? '加载集中告警处理面板超时，请稍后重试'
-                : (error.message || '加载集中告警处理面板失败');
-            console.warn('[Config] Ops alert monitor load failed:', message);
-            opsAlertMonitorState = {
-                ...getDefaultOpsAlertMonitorState(),
-                status: 'error',
-                message
-            };
-            renderOpsAlertMonitorPanel();
+            const errorState = resolveOpsAlertMonitorRuntimeState('error', error);
+            console.warn('[Config] Ops alert monitor load failed:', errorState.message);
+            applyOpsAlertMonitorRuntimeState(errorState);
             return null;
         }
-    })();
-
-    try {
-        return await loadOpsAlertMonitor._loadingPromise;
-    } finally {
-        loadOpsAlertMonitor._loadingPromise = null;
-    }
+    });
 }
 
 function showConfigSavedToast(message) {
@@ -12783,8 +12581,11 @@ function compressConfigImage(file, options = {}) {
 }
 
 async function uploadAffiliatePosterBackgroundToR2(templateId, file) {
-    const { data: { session } } = await window.supabaseClient.auth.getSession();
-    if (!session) {
+    const accessToken = await resolveAdminConfigAccessToken();
+    const userId = String(window.supabaseClient?.auth?.user?.()?.id || '').trim()
+        || String(window.__adminStudioAccess?.user?.id || '').trim();
+
+    if (!accessToken || !userId) {
         throw new Error('请先登录');
     }
 
@@ -12799,11 +12600,11 @@ async function uploadAffiliatePosterBackgroundToR2(templateId, file) {
         {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${session.access_token}`,
+                'Authorization': `Bearer ${accessToken}`,
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                userId: session.user.id,
+                userId,
                 type: 'poster',
                 posterId: `affiliate_${templateId}`,
                 imageData
@@ -13318,18 +13119,170 @@ function buildLocalOpsAlertConfigDraft(currentConfig = normalizeOpsAlertConfig(s
 }
 
 function resolveOpsAlertConfigDraft(currentConfig = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
-    if (typeof window.buildAdminWorkbenchOpsAlertConfigDraft === 'function') {
-        return window.buildAdminWorkbenchOpsAlertConfigDraft(currentConfig, {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertConfigDraft',
+        buildLocalOpsAlertConfigDraft,
+        () => ({
             normalizeQuickReplyTemplates: normalizeOpsAlertCustomerChatQuickReplyTemplates
-        });
-    }
+        })
+    )(currentConfig);
+}
 
-    return buildLocalOpsAlertConfigDraft(currentConfig);
+function buildLocalOpsAlertStrategyDraft(currentConfig = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const nextRouting = { ...(currentConfig.routing || {}) };
+
+    Object.keys(nextRouting).forEach((routingKey) => {
+        nextRouting[routingKey] = {
+            telegram: nextRouting[routingKey]?.telegram !== false,
+            feishu: nextRouting[routingKey]?.feishu !== false,
+            email: nextRouting[routingKey]?.email !== false
+        };
+    });
+
+    const nextMuteRules = {
+        types: { ...(currentConfig.mute_rules?.types || {}) },
+        modules: { ...(currentConfig.mute_rules?.modules || {}) }
+    };
+
+    ['types', 'modules'].forEach((scope) => {
+        getOpsAlertMuteRuleDefinitions(scope).forEach((definition) => {
+            const currentRule = currentConfig.mute_rules?.[scope]?.[definition.key] || {
+                until: '',
+                allow_critical: true
+            };
+            nextMuteRules[scope][definition.key] = {
+                ...currentRule,
+                until: normalizeDateTimeLocalInputValue(
+                    document.getElementById(getOpsAlertMuteRuleElementId(scope, definition.key, 'Until'))?.value ?? currentRule.until
+                ),
+                allow_critical: document.getElementById(getOpsAlertMuteRuleElementId(scope, definition.key, 'AllowCriticalToggle'))?.classList.contains('active')
+                    ?? currentRule.allow_critical
+            };
+        });
+    });
+
+    Object.keys(nextRouting).forEach((routingKey) => {
+        ['telegram', 'feishu', 'email'].forEach((channelKey) => {
+            const checkbox = document.getElementById(getOpsAlertRoutingCheckboxId(routingKey, channelKey));
+            if (!checkbox) return;
+            nextRouting[routingKey][channelKey] = checkbox.checked;
+        });
+    });
+
+    return {
+        enabled: document.getElementById('opsAlertEnabledToggle')?.classList.contains('active') ?? currentConfig.enabled,
+        temporary_mute: {
+            ...(currentConfig.temporary_mute || {}),
+            until: normalizeDateTimeLocalInputValue(
+                document.getElementById('opsAlertTemporaryMuteUntil')?.value ?? currentConfig.temporary_mute.until
+            ),
+            allow_critical: document.getElementById('opsAlertTemporaryMuteAllowCriticalToggle')?.classList.contains('active')
+                ?? currentConfig.temporary_mute.allow_critical
+        },
+        quiet_hours: {
+            ...(currentConfig.quiet_hours || {}),
+            enabled: document.getElementById('opsAlertQuietHoursEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.quiet_hours.enabled,
+            start_hour: clamp(
+                toWholeNumber(
+                    document.getElementById('opsAlertQuietHoursStartHour')?.value,
+                    currentConfig.quiet_hours.start_hour
+                ),
+                0,
+                23
+            ),
+            end_hour: clamp(
+                toWholeNumber(
+                    document.getElementById('opsAlertQuietHoursEndHour')?.value,
+                    currentConfig.quiet_hours.end_hour
+                ),
+                0,
+                23
+            ),
+            timezone: String(
+                document.getElementById('opsAlertQuietHoursTimezone')?.value ?? currentConfig.quiet_hours.timezone
+            ).trim() || currentConfig.quiet_hours.timezone,
+            allow_critical: document.getElementById('opsAlertQuietHoursAllowCriticalToggle')?.classList.contains('active')
+                ?? currentConfig.quiet_hours.allow_critical
+        },
+        work_hours: {
+            ...(currentConfig.work_hours || {}),
+            enabled: document.getElementById('opsAlertWorkHoursEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.work_hours.enabled,
+            start_hour: clamp(
+                toWholeNumber(
+                    document.getElementById('opsAlertWorkHoursStartHour')?.value,
+                    currentConfig.work_hours.start_hour
+                ),
+                0,
+                23
+            ),
+            end_hour: clamp(
+                toWholeNumber(
+                    document.getElementById('opsAlertWorkHoursEndHour')?.value,
+                    currentConfig.work_hours.end_hour
+                ),
+                0,
+                23
+            ),
+            timezone: String(
+                document.getElementById('opsAlertWorkHoursTimezone')?.value ?? currentConfig.work_hours.timezone
+            ).trim() || currentConfig.work_hours.timezone
+        },
+        mute_rules: nextMuteRules,
+        channels: {
+            telegram: {
+                ...(currentConfig.channels?.telegram || {}),
+                enabled: document.getElementById('opsAlertTelegramEnabledToggle')?.classList.contains('active')
+                    ?? currentConfig.channels.telegram.enabled,
+                chat_ids: normalizeConfigStringArray(
+                    document.getElementById('opsAlertTelegramChatIds')?.value ?? currentConfig.channels.telegram.chat_ids
+                ),
+                minimum_severity: normalizeOpsAlertSeverity(
+                    document.getElementById('opsAlertTelegramSeverity')?.value,
+                    currentConfig.channels.telegram.minimum_severity
+                )
+            },
+            feishu: {
+                ...(currentConfig.channels?.feishu || {}),
+                enabled: document.getElementById('opsAlertFeishuEnabledToggle')?.classList.contains('active')
+                    ?? currentConfig.channels.feishu.enabled,
+                minimum_severity: normalizeOpsAlertSeverity(
+                    document.getElementById('opsAlertFeishuSeverity')?.value,
+                    currentConfig.channels.feishu.minimum_severity
+                )
+            },
+            email: {
+                ...(currentConfig.channels?.email || {}),
+                enabled: document.getElementById('opsAlertEmailEnabledToggle')?.classList.contains('active')
+                    ?? currentConfig.channels.email.enabled,
+                minimum_severity: normalizeOpsAlertSeverity(
+                    document.getElementById('opsAlertEmailSeverity')?.value,
+                    currentConfig.channels.email.minimum_severity
+                ),
+                recipients: normalizeConfigStringArray(
+                    document.getElementById('opsAlertEmailRecipients')?.value ?? currentConfig.channels.email.recipients
+                ),
+                from_address: String(
+                    document.getElementById('opsAlertEmailFromAddress')?.value ?? currentConfig.channels.email.from_address
+                ).trim(),
+                reply_to: String(
+                    document.getElementById('opsAlertEmailReplyTo')?.value ?? currentConfig.channels.email.reply_to
+                ).trim(),
+                subject_prefix: String(
+                    document.getElementById('opsAlertEmailSubjectPrefix')?.value ?? currentConfig.channels.email.subject_prefix
+                ).trim() || currentConfig.channels.email.subject_prefix
+            }
+        },
+        routing: nextRouting
+    };
 }
 
 function resolveOpsAlertStrategyDraft(currentConfig = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
-    if (typeof window.collectAdminWorkbenchOpsAlertStrategyDraft === 'function') {
-        return window.collectAdminWorkbenchOpsAlertStrategyDraft(currentConfig, {
+    return resolveOpsAlertSharedCallable(
+        'collectAdminWorkbenchOpsAlertStrategyDraft',
+        buildLocalOpsAlertStrategyDraft,
+        () => ({
             document,
             normalizeDateTimeLocalInputValue,
             clamp,
@@ -13339,772 +13292,665 @@ function resolveOpsAlertStrategyDraft(currentConfig = normalizeOpsAlertConfig(sy
             getMuteRuleDefinitions: getOpsAlertMuteRuleDefinitions,
             getMuteRuleElementId: getOpsAlertMuteRuleElementId,
             getRoutingCheckboxId: getOpsAlertRoutingCheckboxId
-        });
-    }
+        })
+    )(currentConfig);
+}
 
-    return null;
+function buildLocalOpsAlertOperationalThresholdDrafts(currentConfig = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    return {
+        shop_order_risk: {
+            ...currentConfig.shop_order_risk,
+            auto_response_enabled: document.getElementById('opsAlertShopRiskAutoResponseEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.shop_order_risk.auto_response_enabled,
+            auto_disable_coupon_min_risk_score: toWholeNumber(
+                document.getElementById('opsAlertShopRiskAutoDisableCouponMinRiskScore')?.value,
+                currentConfig.shop_order_risk.auto_disable_coupon_min_risk_score
+            ),
+            auto_ban_user_min_risk_score: toWholeNumber(
+                document.getElementById('opsAlertShopRiskAutoBanUserMinRiskScore')?.value,
+                currentConfig.shop_order_risk.auto_ban_user_min_risk_score
+            ),
+            auto_ban_user_duration_days: toWholeNumber(
+                document.getElementById('opsAlertShopRiskAutoBanUserDurationDays')?.value,
+                currentConfig.shop_order_risk.auto_ban_user_duration_days
+            ),
+            auto_suspend_product_min_risk_score: toWholeNumber(
+                document.getElementById('opsAlertShopRiskAutoSuspendProductMinRiskScore')?.value,
+                currentConfig.shop_order_risk.auto_suspend_product_min_risk_score
+            )
+        },
+        shop_inventory: {
+            ...currentConfig.shop_inventory,
+            enabled: document.getElementById('opsAlertShopInventoryEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.shop_inventory.enabled,
+            low_stock_threshold: toWholeNumber(
+                document.getElementById('opsAlertShopInventoryLowStockThreshold')?.value,
+                currentConfig.shop_inventory.low_stock_threshold
+            ),
+            sweep_interval_ms: Math.max(
+                10000,
+                toWholeNumber(
+                    document.getElementById('opsAlertShopInventorySweepIntervalMinutes')?.value,
+                    Math.max(1, Math.round(Number(currentConfig.shop_inventory.sweep_interval_ms || 0) / 60000))
+                ) * 60 * 1000
+            ),
+            sales_window_days: toWholeNumber(
+                document.getElementById('opsAlertShopInventorySalesWindowDays')?.value,
+                currentConfig.shop_inventory.sales_window_days
+            ),
+            dedupe_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertShopInventoryDedupeWindowMinutes')?.value,
+                currentConfig.shop_inventory.dedupe_window_minutes
+            ),
+            recovery_notification_enabled: document.getElementById('opsAlertShopInventoryRecoveryNotificationEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.shop_inventory.recovery_notification_enabled,
+            summary_enabled: document.getElementById('opsAlertShopInventorySummaryEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.shop_inventory.summary_enabled,
+            summary_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertShopInventorySummaryWindowMinutes')?.value,
+                currentConfig.shop_inventory.summary_window_minutes
+            ),
+            summary_schedule_mode: normalizeOpsAlertSummaryScheduleMode(
+                document.getElementById('opsAlertShopInventorySummaryScheduleMode')?.value,
+                currentConfig.shop_inventory.summary_schedule_mode
+            ),
+            summary_hourly_minute: toWholeNumber(
+                document.getElementById('opsAlertShopInventorySummaryHourlyMinute')?.value,
+                currentConfig.shop_inventory.summary_hourly_minute
+            ),
+            summary_daily_hour: toWholeNumber(
+                document.getElementById('opsAlertShopInventorySummaryDailyHour')?.value,
+                currentConfig.shop_inventory.summary_daily_hour
+            ),
+            summary_daily_minute: toWholeNumber(
+                document.getElementById('opsAlertShopInventorySummaryDailyMinute')?.value,
+                currentConfig.shop_inventory.summary_daily_minute
+            ),
+            summary_max_items: toWholeNumber(
+                document.getElementById('opsAlertShopInventorySummaryMaxItems')?.value,
+                currentConfig.shop_inventory.summary_max_items
+            )
+        },
+        customer_chat_message: {
+            ...currentConfig.customer_chat_message,
+            enabled: document.getElementById('opsAlertCustomerChatMessageEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.customer_chat_message.enabled,
+            sweep_interval_ms: Math.max(
+                10000,
+                toWholeNumber(
+                    document.getElementById('opsAlertCustomerChatMessageSweepIntervalMinutes')?.value,
+                    Math.max(1, Math.round(Number(currentConfig.customer_chat_message.sweep_interval_ms || 0) / 60000))
+                ) * 60 * 1000
+            ),
+            lookback_minutes: toWholeNumber(
+                document.getElementById('opsAlertCustomerChatMessageLookbackMinutes')?.value,
+                currentConfig.customer_chat_message.lookback_minutes
+            ),
+            dedupe_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertCustomerChatMessageDedupeWindowMinutes')?.value,
+                currentConfig.customer_chat_message.dedupe_window_minutes
+            ),
+            work_hours_only_enabled: document.getElementById('opsAlertCustomerChatMessageWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.customer_chat_message.work_hours_only_enabled,
+            summary_enabled: document.getElementById('opsAlertCustomerChatMessageSummaryEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.customer_chat_message.summary_enabled,
+            summary_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertCustomerChatMessageSummaryWindowMinutes')?.value,
+                currentConfig.customer_chat_message.summary_window_minutes
+            ),
+            summary_schedule_mode: normalizeOpsAlertSummaryScheduleMode(
+                document.getElementById('opsAlertCustomerChatMessageSummaryScheduleMode')?.value,
+                currentConfig.customer_chat_message.summary_schedule_mode
+            ),
+            summary_hourly_minute: toWholeNumber(
+                document.getElementById('opsAlertCustomerChatMessageSummaryHourlyMinute')?.value,
+                currentConfig.customer_chat_message.summary_hourly_minute
+            ),
+            summary_daily_hour: toWholeNumber(
+                document.getElementById('opsAlertCustomerChatMessageSummaryDailyHour')?.value,
+                currentConfig.customer_chat_message.summary_daily_hour
+            ),
+            summary_daily_minute: toWholeNumber(
+                document.getElementById('opsAlertCustomerChatMessageSummaryDailyMinute')?.value,
+                currentConfig.customer_chat_message.summary_daily_minute
+            ),
+            summary_max_items: toWholeNumber(
+                document.getElementById('opsAlertCustomerChatMessageSummaryMaxItems')?.value,
+                currentConfig.customer_chat_message.summary_max_items
+            )
+        },
+        shop_purchase_success: {
+            ...currentConfig.shop_purchase_success,
+            enabled: document.getElementById('opsAlertShopPurchaseSuccessEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.shop_purchase_success.enabled,
+            sweep_interval_ms: Math.max(
+                10000,
+                toWholeNumber(
+                    document.getElementById('opsAlertShopPurchaseSuccessSweepIntervalMinutes')?.value,
+                    Math.max(1, Math.round(Number(currentConfig.shop_purchase_success.sweep_interval_ms || 0) / 60000))
+                ) * 60 * 1000
+            ),
+            lookback_minutes: toWholeNumber(
+                document.getElementById('opsAlertShopPurchaseSuccessLookbackMinutes')?.value,
+                currentConfig.shop_purchase_success.lookback_minutes
+            ),
+            dedupe_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertShopPurchaseSuccessDedupeWindowMinutes')?.value,
+                currentConfig.shop_purchase_success.dedupe_window_minutes
+            ),
+            work_hours_only_enabled: document.getElementById('opsAlertShopPurchaseSuccessWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.shop_purchase_success.work_hours_only_enabled,
+            summary_enabled: document.getElementById('opsAlertShopPurchaseSuccessSummaryEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.shop_purchase_success.summary_enabled,
+            summary_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertShopPurchaseSuccessSummaryWindowMinutes')?.value,
+                currentConfig.shop_purchase_success.summary_window_minutes
+            ),
+            summary_schedule_mode: normalizeOpsAlertSummaryScheduleMode(
+                document.getElementById('opsAlertShopPurchaseSuccessSummaryScheduleMode')?.value,
+                currentConfig.shop_purchase_success.summary_schedule_mode
+            ),
+            summary_hourly_minute: toWholeNumber(
+                document.getElementById('opsAlertShopPurchaseSuccessSummaryHourlyMinute')?.value,
+                currentConfig.shop_purchase_success.summary_hourly_minute
+            ),
+            summary_daily_hour: toWholeNumber(
+                document.getElementById('opsAlertShopPurchaseSuccessSummaryDailyHour')?.value,
+                currentConfig.shop_purchase_success.summary_daily_hour
+            ),
+            summary_daily_minute: toWholeNumber(
+                document.getElementById('opsAlertShopPurchaseSuccessSummaryDailyMinute')?.value,
+                currentConfig.shop_purchase_success.summary_daily_minute
+            ),
+            summary_max_items: toWholeNumber(
+                document.getElementById('opsAlertShopPurchaseSuccessSummaryMaxItems')?.value,
+                currentConfig.shop_purchase_success.summary_max_items
+            )
+        },
+        wallet_recharge_success: {
+            ...currentConfig.wallet_recharge_success,
+            enabled: document.getElementById('opsAlertWalletRechargeSuccessEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.wallet_recharge_success.enabled,
+            sweep_interval_ms: Math.max(
+                10000,
+                toWholeNumber(
+                    document.getElementById('opsAlertWalletRechargeSuccessSweepIntervalMinutes')?.value,
+                    Math.max(1, Math.round(Number(currentConfig.wallet_recharge_success.sweep_interval_ms || 0) / 60000))
+                ) * 60 * 1000
+            ),
+            lookback_minutes: toWholeNumber(
+                document.getElementById('opsAlertWalletRechargeSuccessLookbackMinutes')?.value,
+                currentConfig.wallet_recharge_success.lookback_minutes
+            ),
+            dedupe_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertWalletRechargeSuccessDedupeWindowMinutes')?.value,
+                currentConfig.wallet_recharge_success.dedupe_window_minutes
+            ),
+            work_hours_only_enabled: document.getElementById('opsAlertWalletRechargeSuccessWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.wallet_recharge_success.work_hours_only_enabled,
+            summary_enabled: document.getElementById('opsAlertWalletRechargeSuccessSummaryEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.wallet_recharge_success.summary_enabled,
+            summary_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertWalletRechargeSuccessSummaryWindowMinutes')?.value,
+                currentConfig.wallet_recharge_success.summary_window_minutes
+            ),
+            summary_schedule_mode: normalizeOpsAlertSummaryScheduleMode(
+                document.getElementById('opsAlertWalletRechargeSuccessSummaryScheduleMode')?.value,
+                currentConfig.wallet_recharge_success.summary_schedule_mode
+            ),
+            summary_hourly_minute: toWholeNumber(
+                document.getElementById('opsAlertWalletRechargeSuccessSummaryHourlyMinute')?.value,
+                currentConfig.wallet_recharge_success.summary_hourly_minute
+            ),
+            summary_daily_hour: toWholeNumber(
+                document.getElementById('opsAlertWalletRechargeSuccessSummaryDailyHour')?.value,
+                currentConfig.wallet_recharge_success.summary_daily_hour
+            ),
+            summary_daily_minute: toWholeNumber(
+                document.getElementById('opsAlertWalletRechargeSuccessSummaryDailyMinute')?.value,
+                currentConfig.wallet_recharge_success.summary_daily_minute
+            ),
+            summary_max_items: toWholeNumber(
+                document.getElementById('opsAlertWalletRechargeSuccessSummaryMaxItems')?.value,
+                currentConfig.wallet_recharge_success.summary_max_items
+            )
+        },
+        tickets: {
+            ...currentConfig.tickets,
+            enabled: document.getElementById('opsAlertTicketsEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.tickets.enabled,
+            sweep_interval_ms: Math.max(
+                10000,
+                toWholeNumber(
+                    document.getElementById('opsAlertTicketsSweepIntervalMinutes')?.value,
+                    Math.max(1, Math.round(Number(currentConfig.tickets.sweep_interval_ms || 0) / 60000))
+                ) * 60 * 1000
+            ),
+            pending_overdue_minutes: toWholeNumber(
+                document.getElementById('opsAlertTicketsPendingOverdueMinutes')?.value,
+                currentConfig.tickets.pending_overdue_minutes
+            ),
+            critical_overdue_minutes: toWholeNumber(
+                document.getElementById('opsAlertTicketsCriticalOverdueMinutes')?.value,
+                currentConfig.tickets.critical_overdue_minutes
+            ),
+            state_lookback_minutes: toWholeNumber(
+                document.getElementById('opsAlertTicketsStateLookbackMinutes')?.value,
+                currentConfig.tickets.state_lookback_minutes
+            ),
+            dedupe_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertTicketsDedupeWindowMinutes')?.value,
+                currentConfig.tickets.dedupe_window_minutes
+            ),
+            work_hours_only_enabled: document.getElementById('opsAlertTicketsWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.tickets.work_hours_only_enabled,
+            summary_enabled: document.getElementById('opsAlertTicketsSummaryEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.tickets.summary_enabled,
+            summary_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertTicketsSummaryWindowMinutes')?.value,
+                currentConfig.tickets.summary_window_minutes
+            ),
+            summary_schedule_mode: normalizeOpsAlertSummaryScheduleMode(
+                document.getElementById('opsAlertTicketsSummaryScheduleMode')?.value,
+                currentConfig.tickets.summary_schedule_mode
+            ),
+            summary_hourly_minute: toWholeNumber(
+                document.getElementById('opsAlertTicketsSummaryHourlyMinute')?.value,
+                currentConfig.tickets.summary_hourly_minute
+            ),
+            summary_daily_hour: toWholeNumber(
+                document.getElementById('opsAlertTicketsSummaryDailyHour')?.value,
+                currentConfig.tickets.summary_daily_hour
+            ),
+            summary_daily_minute: toWholeNumber(
+                document.getElementById('opsAlertTicketsSummaryDailyMinute')?.value,
+                currentConfig.tickets.summary_daily_minute
+            ),
+            summary_max_items: toWholeNumber(
+                document.getElementById('opsAlertTicketsSummaryMaxItems')?.value,
+                currentConfig.tickets.summary_max_items
+            )
+        },
+        shop_order_delivery: {
+            ...currentConfig.shop_order_delivery,
+            enabled: document.getElementById('opsAlertShopOrderDeliveryEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.shop_order_delivery.enabled,
+            lookback_days: toWholeNumber(
+                document.getElementById('opsAlertShopOrderDeliveryLookbackDays')?.value,
+                currentConfig.shop_order_delivery.lookback_days
+            ),
+            state_lookback_minutes: toWholeNumber(
+                document.getElementById('opsAlertShopOrderDeliveryStateLookbackMinutes')?.value,
+                currentConfig.shop_order_delivery.state_lookback_minutes
+            ),
+            retry_waiting_min_attempts: toWholeNumber(
+                document.getElementById('opsAlertShopOrderDeliveryRetryWaitingMinAttempts')?.value,
+                currentConfig.shop_order_delivery.retry_waiting_min_attempts
+            ),
+            sweep_interval_ms: Math.max(
+                10000,
+                toWholeNumber(
+                    document.getElementById('opsAlertShopOrderDeliverySweepIntervalMinutes')?.value,
+                    Math.max(1, Math.round(Number(currentConfig.shop_order_delivery.sweep_interval_ms || 0) / 60000))
+                ) * 60 * 1000
+            ),
+            dedupe_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertShopOrderDeliveryDedupeWindowMinutes')?.value,
+                currentConfig.shop_order_delivery.dedupe_window_minutes
+            ),
+            incident_enabled: document.getElementById('opsAlertShopOrderDeliveryIncidentEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.shop_order_delivery.incident_enabled,
+            incident_min_order_count: toWholeNumber(
+                document.getElementById('opsAlertShopOrderDeliveryIncidentMinOrderCount')?.value,
+                currentConfig.shop_order_delivery.incident_min_order_count
+            ),
+            incident_min_dead_letter_count: toWholeNumber(
+                document.getElementById('opsAlertShopOrderDeliveryIncidentMinDeadLetterCount')?.value,
+                currentConfig.shop_order_delivery.incident_min_dead_letter_count
+            ),
+            incident_min_distinct_users: toWholeNumber(
+                document.getElementById('opsAlertShopOrderDeliveryIncidentMinDistinctUsers')?.value,
+                currentConfig.shop_order_delivery.incident_min_distinct_users
+            ),
+            incident_dedupe_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertShopOrderDeliveryIncidentDedupeWindowMinutes')?.value,
+                currentConfig.shop_order_delivery.incident_dedupe_window_minutes
+            ),
+            work_hours_only_enabled: document.getElementById('opsAlertShopOrderDeliveryWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.shop_order_delivery.work_hours_only_enabled,
+            summary_enabled: document.getElementById('opsAlertShopOrderDeliverySummaryEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.shop_order_delivery.summary_enabled,
+            summary_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertShopOrderDeliverySummaryWindowMinutes')?.value,
+                currentConfig.shop_order_delivery.summary_window_minutes
+            ),
+            summary_schedule_mode: normalizeOpsAlertSummaryScheduleMode(
+                document.getElementById('opsAlertShopOrderDeliverySummaryScheduleMode')?.value,
+                currentConfig.shop_order_delivery.summary_schedule_mode
+            ),
+            summary_hourly_minute: toWholeNumber(
+                document.getElementById('opsAlertShopOrderDeliverySummaryHourlyMinute')?.value,
+                currentConfig.shop_order_delivery.summary_hourly_minute
+            ),
+            summary_daily_hour: toWholeNumber(
+                document.getElementById('opsAlertShopOrderDeliverySummaryDailyHour')?.value,
+                currentConfig.shop_order_delivery.summary_daily_hour
+            ),
+            summary_daily_minute: toWholeNumber(
+                document.getElementById('opsAlertShopOrderDeliverySummaryDailyMinute')?.value,
+                currentConfig.shop_order_delivery.summary_daily_minute
+            ),
+            summary_max_items: toWholeNumber(
+                document.getElementById('opsAlertShopOrderDeliverySummaryMaxItems')?.value,
+                currentConfig.shop_order_delivery.summary_max_items
+            )
+        },
+        verify_quota: {
+            ...currentConfig.verify_quota,
+            enabled: document.getElementById('opsAlertVerifyQuotaEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.verify_quota.enabled,
+            low_balance_threshold: toWholeNumber(
+                document.getElementById('opsAlertVerifyQuotaLowBalanceThreshold')?.value,
+                currentConfig.verify_quota.low_balance_threshold
+            ),
+            low_remaining_jobs_threshold: toWholeNumber(
+                document.getElementById('opsAlertVerifyQuotaLowRemainingJobsThreshold')?.value,
+                currentConfig.verify_quota.low_remaining_jobs_threshold
+            ),
+            critical_balance_threshold: toWholeNumber(
+                document.getElementById('opsAlertVerifyQuotaCriticalBalanceThreshold')?.value,
+                currentConfig.verify_quota.critical_balance_threshold
+            ),
+            critical_remaining_jobs_threshold: toWholeNumber(
+                document.getElementById('opsAlertVerifyQuotaCriticalRemainingJobsThreshold')?.value,
+                currentConfig.verify_quota.critical_remaining_jobs_threshold
+            ),
+            min_queue_buffer_jobs: toWholeNumber(
+                document.getElementById('opsAlertVerifyQuotaMinQueueBufferJobs')?.value,
+                currentConfig.verify_quota.min_queue_buffer_jobs
+            ),
+            sweep_interval_ms: Math.max(
+                10000,
+                toWholeNumber(
+                    document.getElementById('opsAlertVerifyQuotaSweepIntervalMinutes')?.value,
+                    Math.max(1, Math.round(Number(currentConfig.verify_quota.sweep_interval_ms || 0) / 60000))
+                ) * 60 * 1000
+            ),
+            dedupe_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertVerifyQuotaDedupeWindowMinutes')?.value,
+                currentConfig.verify_quota.dedupe_window_minutes
+            ),
+            work_hours_only_enabled: document.getElementById('opsAlertVerifyQuotaWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.verify_quota.work_hours_only_enabled,
+            summary_enabled: document.getElementById('opsAlertVerifyQuotaSummaryEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.verify_quota.summary_enabled,
+            summary_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertVerifyQuotaSummaryWindowMinutes')?.value,
+                currentConfig.verify_quota.summary_window_minutes
+            ),
+            summary_schedule_mode: normalizeOpsAlertSummaryScheduleMode(
+                document.getElementById('opsAlertVerifyQuotaSummaryScheduleMode')?.value,
+                currentConfig.verify_quota.summary_schedule_mode
+            ),
+            summary_hourly_minute: toWholeNumber(
+                document.getElementById('opsAlertVerifyQuotaSummaryHourlyMinute')?.value,
+                currentConfig.verify_quota.summary_hourly_minute
+            ),
+            summary_daily_hour: toWholeNumber(
+                document.getElementById('opsAlertVerifyQuotaSummaryDailyHour')?.value,
+                currentConfig.verify_quota.summary_daily_hour
+            ),
+            summary_daily_minute: toWholeNumber(
+                document.getElementById('opsAlertVerifyQuotaSummaryDailyMinute')?.value,
+                currentConfig.verify_quota.summary_daily_minute
+            ),
+            summary_max_items: toWholeNumber(
+                document.getElementById('opsAlertVerifyQuotaSummaryMaxItems')?.value,
+                currentConfig.verify_quota.summary_max_items
+            )
+        },
+        verify_queue: {
+            ...currentConfig.verify_queue,
+            enabled: document.getElementById('opsAlertVerifyQueueEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.verify_queue.enabled,
+            recent_activity_lookback_hours: toWholeNumber(
+                document.getElementById('opsAlertVerifyQueueRecentActivityLookbackHours')?.value,
+                currentConfig.verify_queue.recent_activity_lookback_hours
+            ),
+            recent_failure_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertVerifyQueueRecentFailureWindowMinutes')?.value,
+                currentConfig.verify_queue.recent_failure_window_minutes
+            ),
+            queue_size_threshold: toWholeNumber(
+                document.getElementById('opsAlertVerifyQueueSizeThreshold')?.value,
+                currentConfig.verify_queue.queue_size_threshold
+            ),
+            active_job_threshold: toWholeNumber(
+                document.getElementById('opsAlertVerifyQueueActiveJobThreshold')?.value,
+                currentConfig.verify_queue.active_job_threshold
+            ),
+            oldest_pending_minutes_threshold: toWholeNumber(
+                document.getElementById('opsAlertVerifyQueueOldestPendingMinutesThreshold')?.value,
+                currentConfig.verify_queue.oldest_pending_minutes_threshold
+            ),
+            recent_failure_threshold: toWholeNumber(
+                document.getElementById('opsAlertVerifyQueueRecentFailureThreshold')?.value,
+                currentConfig.verify_queue.recent_failure_threshold
+            ),
+            sweep_interval_ms: Math.max(
+                10000,
+                toWholeNumber(
+                    document.getElementById('opsAlertVerifyQueueSweepIntervalMinutes')?.value,
+                    Math.max(1, Math.round(Number(currentConfig.verify_queue.sweep_interval_ms || 0) / 60000))
+                ) * 60 * 1000
+            ),
+            dedupe_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertVerifyQueueDedupeWindowMinutes')?.value,
+                currentConfig.verify_queue.dedupe_window_minutes
+            ),
+            work_hours_only_enabled: document.getElementById('opsAlertVerifyQueueWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.verify_queue.work_hours_only_enabled,
+            summary_enabled: document.getElementById('opsAlertVerifyQueueSummaryEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.verify_queue.summary_enabled,
+            summary_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertVerifyQueueSummaryWindowMinutes')?.value,
+                currentConfig.verify_queue.summary_window_minutes
+            ),
+            summary_schedule_mode: normalizeOpsAlertSummaryScheduleMode(
+                document.getElementById('opsAlertVerifyQueueSummaryScheduleMode')?.value,
+                currentConfig.verify_queue.summary_schedule_mode
+            ),
+            summary_hourly_minute: toWholeNumber(
+                document.getElementById('opsAlertVerifyQueueSummaryHourlyMinute')?.value,
+                currentConfig.verify_queue.summary_hourly_minute
+            ),
+            summary_daily_hour: toWholeNumber(
+                document.getElementById('opsAlertVerifyQueueSummaryDailyHour')?.value,
+                currentConfig.verify_queue.summary_daily_hour
+            ),
+            summary_daily_minute: toWholeNumber(
+                document.getElementById('opsAlertVerifyQueueSummaryDailyMinute')?.value,
+                currentConfig.verify_queue.summary_daily_minute
+            ),
+            summary_max_items: toWholeNumber(
+                document.getElementById('opsAlertVerifyQueueSummaryMaxItems')?.value,
+                currentConfig.verify_queue.summary_max_items
+            )
+        },
+        verify_failure: {
+            ...currentConfig.verify_failure,
+            enabled: document.getElementById('opsAlertVerifyFailureEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.verify_failure.enabled,
+            recent_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertVerifyFailureRecentWindowMinutes')?.value,
+                currentConfig.verify_failure.recent_window_minutes
+            ),
+            min_total_jobs_threshold: toWholeNumber(
+                document.getElementById('opsAlertVerifyFailureMinTotalJobsThreshold')?.value,
+                currentConfig.verify_failure.min_total_jobs_threshold
+            ),
+            failure_rate_threshold: toWholeNumber(
+                document.getElementById('opsAlertVerifyFailureRateThreshold')?.value,
+                currentConfig.verify_failure.failure_rate_threshold
+            ),
+            affected_user_threshold: toWholeNumber(
+                document.getElementById('opsAlertVerifyFailureAffectedUserThreshold')?.value,
+                currentConfig.verify_failure.affected_user_threshold
+            ),
+            sweep_interval_ms: Math.max(
+                10000,
+                toWholeNumber(
+                    document.getElementById('opsAlertVerifyFailureSweepIntervalMinutes')?.value,
+                    Math.max(1, Math.round(Number(currentConfig.verify_failure.sweep_interval_ms || 0) / 60000))
+                ) * 60 * 1000
+            ),
+            dedupe_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertVerifyFailureDedupeWindowMinutes')?.value,
+                currentConfig.verify_failure.dedupe_window_minutes
+            ),
+            work_hours_only_enabled: document.getElementById('opsAlertVerifyFailureWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.verify_failure.work_hours_only_enabled,
+            summary_enabled: document.getElementById('opsAlertVerifyFailureSummaryEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.verify_failure.summary_enabled,
+            summary_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertVerifyFailureSummaryWindowMinutes')?.value,
+                currentConfig.verify_failure.summary_window_minutes
+            ),
+            summary_schedule_mode: normalizeOpsAlertSummaryScheduleMode(
+                document.getElementById('opsAlertVerifyFailureSummaryScheduleMode')?.value,
+                currentConfig.verify_failure.summary_schedule_mode
+            ),
+            summary_hourly_minute: toWholeNumber(
+                document.getElementById('opsAlertVerifyFailureSummaryHourlyMinute')?.value,
+                currentConfig.verify_failure.summary_hourly_minute
+            ),
+            summary_daily_hour: toWholeNumber(
+                document.getElementById('opsAlertVerifyFailureSummaryDailyHour')?.value,
+                currentConfig.verify_failure.summary_daily_hour
+            ),
+            summary_daily_minute: toWholeNumber(
+                document.getElementById('opsAlertVerifyFailureSummaryDailyMinute')?.value,
+                currentConfig.verify_failure.summary_daily_minute
+            ),
+            summary_max_items: toWholeNumber(
+                document.getElementById('opsAlertVerifyFailureSummaryMaxItems')?.value,
+                currentConfig.verify_failure.summary_max_items
+            )
+        },
+        payment_gateway: {
+            ...currentConfig.payment_gateway,
+            enabled: document.getElementById('opsAlertPaymentGatewayEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.payment_gateway.enabled,
+            window_minutes: toWholeNumber(
+                document.getElementById('opsAlertPaymentGatewayWindowMinutes')?.value,
+                currentConfig.payment_gateway.window_minutes
+            ),
+            min_failed_orders: toWholeNumber(
+                document.getElementById('opsAlertPaymentGatewayFailedOrdersThreshold')?.value,
+                currentConfig.payment_gateway.min_failed_orders
+            ),
+            min_failed_ratio_percent: toWholeNumber(
+                document.getElementById('opsAlertPaymentGatewayFailedRatioThreshold')?.value,
+                currentConfig.payment_gateway.min_failed_ratio_percent
+            ),
+            max_webhook_success_rate_percent: toWholeNumber(
+                document.getElementById('opsAlertPaymentGatewayWebhookSuccessRateThreshold')?.value,
+                currentConfig.payment_gateway.max_webhook_success_rate_percent
+            ),
+            max_query_success_rate_percent: toWholeNumber(
+                document.getElementById('opsAlertPaymentGatewayQuerySuccessRateThreshold')?.value,
+                currentConfig.payment_gateway.max_query_success_rate_percent
+            ),
+            min_webhook_5xx_count: toWholeNumber(
+                document.getElementById('opsAlertPaymentGatewayWebhook5xxThreshold')?.value,
+                currentConfig.payment_gateway.min_webhook_5xx_count
+            ),
+            min_query_5xx_count: toWholeNumber(
+                document.getElementById('opsAlertPaymentGatewayQuery5xxThreshold')?.value,
+                currentConfig.payment_gateway.min_query_5xx_count
+            ),
+            sweep_interval_ms: Math.max(
+                10000,
+                toWholeNumber(
+                    document.getElementById('opsAlertPaymentGatewaySweepIntervalMinutes')?.value,
+                    Math.max(1, Math.round(Number(currentConfig.payment_gateway.sweep_interval_ms || 0) / 60000))
+                ) * 60 * 1000
+            ),
+            dedupe_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertPaymentGatewayDedupeWindowMinutes')?.value,
+                currentConfig.payment_gateway.dedupe_window_minutes
+            ),
+            work_hours_only_enabled: document.getElementById('opsAlertPaymentGatewayWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.payment_gateway.work_hours_only_enabled,
+            summary_enabled: document.getElementById('opsAlertPaymentGatewaySummaryEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.payment_gateway.summary_enabled,
+            summary_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertPaymentGatewaySummaryWindowMinutes')?.value,
+                currentConfig.payment_gateway.summary_window_minutes
+            ),
+            summary_schedule_mode: normalizeOpsAlertSummaryScheduleMode(
+                document.getElementById('opsAlertPaymentGatewaySummaryScheduleMode')?.value,
+                currentConfig.payment_gateway.summary_schedule_mode
+            ),
+            summary_hourly_minute: toWholeNumber(
+                document.getElementById('opsAlertPaymentGatewaySummaryHourlyMinute')?.value,
+                currentConfig.payment_gateway.summary_hourly_minute
+            ),
+            summary_daily_hour: toWholeNumber(
+                document.getElementById('opsAlertPaymentGatewaySummaryDailyHour')?.value,
+                currentConfig.payment_gateway.summary_daily_hour
+            ),
+            summary_daily_minute: toWholeNumber(
+                document.getElementById('opsAlertPaymentGatewaySummaryDailyMinute')?.value,
+                currentConfig.payment_gateway.summary_daily_minute
+            ),
+            summary_max_items: toWholeNumber(
+                document.getElementById('opsAlertPaymentGatewaySummaryMaxItems')?.value,
+                currentConfig.payment_gateway.summary_max_items
+            )
+        }
+    };
 }
 
 function resolveOpsAlertOperationalThresholdDrafts(currentConfig = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
-    if (typeof window.collectAdminWorkbenchOpsAlertOperationalThresholdDrafts === 'function') {
-        return window.collectAdminWorkbenchOpsAlertOperationalThresholdDrafts(currentConfig, {
+    return resolveOpsAlertSharedCallable(
+        'collectAdminWorkbenchOpsAlertOperationalThresholdDrafts',
+        buildLocalOpsAlertOperationalThresholdDrafts,
+        () => ({
             document,
             toWholeNumber,
             normalizeOpsAlertSummaryScheduleMode
-        });
-    }
-
-    return null;
+        })
+    )(currentConfig);
 }
 
 function collectOpsAlertConfigFromForm() {
     const currentConfig = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']);
     const nextConfig = resolveOpsAlertConfigDraft(currentConfig);
     const strategyDraft = resolveOpsAlertStrategyDraft(currentConfig);
-
-    if (strategyDraft) {
-        nextConfig.enabled = strategyDraft.enabled;
-        nextConfig.temporary_mute = strategyDraft.temporary_mute;
-        nextConfig.quiet_hours = strategyDraft.quiet_hours;
-        nextConfig.work_hours = strategyDraft.work_hours;
-        nextConfig.mute_rules = strategyDraft.mute_rules;
-        nextConfig.channels = strategyDraft.channels;
-        nextConfig.routing = strategyDraft.routing;
-    } else {
-        nextConfig.enabled = document.getElementById('opsAlertEnabledToggle')?.classList.contains('active') ?? currentConfig.enabled;
-        nextConfig.temporary_mute.until = normalizeDateTimeLocalInputValue(
-            document.getElementById('opsAlertTemporaryMuteUntil')?.value ?? currentConfig.temporary_mute.until
-        );
-        nextConfig.temporary_mute.allow_critical = document.getElementById('opsAlertTemporaryMuteAllowCriticalToggle')?.classList.contains('active')
-            ?? currentConfig.temporary_mute.allow_critical;
-        nextConfig.quiet_hours.enabled = document.getElementById('opsAlertQuietHoursEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.quiet_hours.enabled;
-        nextConfig.quiet_hours.start_hour = clamp(
-            toWholeNumber(
-                document.getElementById('opsAlertQuietHoursStartHour')?.value,
-                currentConfig.quiet_hours.start_hour
-            ),
-            0,
-            23
-        );
-        nextConfig.quiet_hours.end_hour = clamp(
-            toWholeNumber(
-                document.getElementById('opsAlertQuietHoursEndHour')?.value,
-                currentConfig.quiet_hours.end_hour
-            ),
-            0,
-            23
-        );
-        nextConfig.quiet_hours.timezone = String(
-            document.getElementById('opsAlertQuietHoursTimezone')?.value ?? currentConfig.quiet_hours.timezone
-        ).trim() || currentConfig.quiet_hours.timezone;
-        nextConfig.quiet_hours.allow_critical = document.getElementById('opsAlertQuietHoursAllowCriticalToggle')?.classList.contains('active')
-            ?? currentConfig.quiet_hours.allow_critical;
-        nextConfig.work_hours.enabled = document.getElementById('opsAlertWorkHoursEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.work_hours.enabled;
-        nextConfig.work_hours.start_hour = clamp(
-            toWholeNumber(
-                document.getElementById('opsAlertWorkHoursStartHour')?.value,
-                currentConfig.work_hours.start_hour
-            ),
-            0,
-            23
-        );
-        nextConfig.work_hours.end_hour = clamp(
-            toWholeNumber(
-                document.getElementById('opsAlertWorkHoursEndHour')?.value,
-                currentConfig.work_hours.end_hour
-            ),
-            0,
-            23
-        );
-        nextConfig.work_hours.timezone = String(
-            document.getElementById('opsAlertWorkHoursTimezone')?.value ?? currentConfig.work_hours.timezone
-        ).trim() || currentConfig.work_hours.timezone;
-        ['types', 'modules'].forEach((scope) => {
-            getOpsAlertMuteRuleDefinitions(scope).forEach((definition) => {
-                const currentRule = currentConfig.mute_rules?.[scope]?.[definition.key] || {
-                    until: '',
-                    allow_critical: true
-                };
-                nextConfig.mute_rules[scope][definition.key] = {
-                    ...currentRule,
-                    until: normalizeDateTimeLocalInputValue(
-                        document.getElementById(getOpsAlertMuteRuleElementId(scope, definition.key, 'Until'))?.value ?? currentRule.until
-                    ),
-                    allow_critical: document.getElementById(getOpsAlertMuteRuleElementId(scope, definition.key, 'AllowCriticalToggle'))?.classList.contains('active')
-                        ?? currentRule.allow_critical
-                };
-            });
-        });
-        nextConfig.channels.telegram.enabled = document.getElementById('opsAlertTelegramEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.channels.telegram.enabled;
-        nextConfig.channels.telegram.chat_ids = normalizeConfigStringArray(
-            document.getElementById('opsAlertTelegramChatIds')?.value ?? currentConfig.channels.telegram.chat_ids
-        );
-        nextConfig.channels.telegram.minimum_severity = normalizeOpsAlertSeverity(
-            document.getElementById('opsAlertTelegramSeverity')?.value,
-            currentConfig.channels.telegram.minimum_severity
-        );
-        nextConfig.channels.feishu.enabled = document.getElementById('opsAlertFeishuEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.channels.feishu.enabled;
-        nextConfig.channels.feishu.minimum_severity = normalizeOpsAlertSeverity(
-            document.getElementById('opsAlertFeishuSeverity')?.value,
-            currentConfig.channels.feishu.minimum_severity
-        );
-        nextConfig.channels.email.enabled = document.getElementById('opsAlertEmailEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.channels.email.enabled;
-        nextConfig.channels.email.minimum_severity = normalizeOpsAlertSeverity(
-            document.getElementById('opsAlertEmailSeverity')?.value,
-            currentConfig.channels.email.minimum_severity
-        );
-        nextConfig.channels.email.recipients = normalizeConfigStringArray(
-            document.getElementById('opsAlertEmailRecipients')?.value ?? currentConfig.channels.email.recipients
-        );
-        nextConfig.channels.email.from_address = String(
-            document.getElementById('opsAlertEmailFromAddress')?.value ?? currentConfig.channels.email.from_address
-        ).trim();
-        nextConfig.channels.email.reply_to = String(
-            document.getElementById('opsAlertEmailReplyTo')?.value ?? currentConfig.channels.email.reply_to
-        ).trim();
-        nextConfig.channels.email.subject_prefix = String(
-            document.getElementById('opsAlertEmailSubjectPrefix')?.value ?? currentConfig.channels.email.subject_prefix
-        ).trim() || currentConfig.channels.email.subject_prefix;
-        Object.keys(nextConfig.routing || {}).forEach((routingKey) => {
-            ['telegram', 'feishu', 'email'].forEach((channelKey) => {
-                const checkbox = document.getElementById(getOpsAlertRoutingCheckboxId(routingKey, channelKey));
-                if (!checkbox) return;
-                nextConfig.routing[routingKey][channelKey] = checkbox.checked;
-            });
-        });
-    }
+    nextConfig.enabled = strategyDraft.enabled;
+    nextConfig.temporary_mute = strategyDraft.temporary_mute;
+    nextConfig.quiet_hours = strategyDraft.quiet_hours;
+    nextConfig.work_hours = strategyDraft.work_hours;
+    nextConfig.mute_rules = strategyDraft.mute_rules;
+    nextConfig.channels = strategyDraft.channels;
+    nextConfig.routing = strategyDraft.routing;
     const operationalThresholdDrafts = resolveOpsAlertOperationalThresholdDrafts(currentConfig);
-    if (operationalThresholdDrafts?.shop_order_risk) {
-        nextConfig.shop_order_risk = operationalThresholdDrafts.shop_order_risk;
-    } else {
-        nextConfig.shop_order_risk.auto_response_enabled = document.getElementById('opsAlertShopRiskAutoResponseEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.shop_order_risk.auto_response_enabled;
-        nextConfig.shop_order_risk.auto_disable_coupon_min_risk_score = toWholeNumber(
-            document.getElementById('opsAlertShopRiskAutoDisableCouponMinRiskScore')?.value,
-            currentConfig.shop_order_risk.auto_disable_coupon_min_risk_score
-        );
-        nextConfig.shop_order_risk.auto_ban_user_min_risk_score = toWholeNumber(
-            document.getElementById('opsAlertShopRiskAutoBanUserMinRiskScore')?.value,
-            currentConfig.shop_order_risk.auto_ban_user_min_risk_score
-        );
-        nextConfig.shop_order_risk.auto_ban_user_duration_days = toWholeNumber(
-            document.getElementById('opsAlertShopRiskAutoBanUserDurationDays')?.value,
-            currentConfig.shop_order_risk.auto_ban_user_duration_days
-        );
-        nextConfig.shop_order_risk.auto_suspend_product_min_risk_score = toWholeNumber(
-            document.getElementById('opsAlertShopRiskAutoSuspendProductMinRiskScore')?.value,
-            currentConfig.shop_order_risk.auto_suspend_product_min_risk_score
-        );
-    }
-    if (operationalThresholdDrafts?.shop_inventory) {
-        nextConfig.shop_inventory = operationalThresholdDrafts.shop_inventory;
-    } else {
-        nextConfig.shop_inventory.enabled = document.getElementById('opsAlertShopInventoryEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.shop_inventory.enabled;
-        nextConfig.shop_inventory.low_stock_threshold = toWholeNumber(
-            document.getElementById('opsAlertShopInventoryLowStockThreshold')?.value,
-            currentConfig.shop_inventory.low_stock_threshold
-        );
-        nextConfig.shop_inventory.sweep_interval_ms = Math.max(
-            10000,
-            toWholeNumber(
-                document.getElementById('opsAlertShopInventorySweepIntervalMinutes')?.value,
-                Math.max(1, Math.round(Number(currentConfig.shop_inventory.sweep_interval_ms || 0) / 60000))
-            ) * 60 * 1000
-        );
-        nextConfig.shop_inventory.sales_window_days = toWholeNumber(
-            document.getElementById('opsAlertShopInventorySalesWindowDays')?.value,
-            currentConfig.shop_inventory.sales_window_days
-        );
-        nextConfig.shop_inventory.dedupe_window_minutes = toWholeNumber(
-            document.getElementById('opsAlertShopInventoryDedupeWindowMinutes')?.value,
-            currentConfig.shop_inventory.dedupe_window_minutes
-        );
-        nextConfig.shop_inventory.recovery_notification_enabled = document.getElementById('opsAlertShopInventoryRecoveryNotificationEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.shop_inventory.recovery_notification_enabled;
-        nextConfig.shop_inventory.summary_enabled = document.getElementById('opsAlertShopInventorySummaryEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.shop_inventory.summary_enabled;
-        nextConfig.shop_inventory.summary_window_minutes = toWholeNumber(
-            document.getElementById('opsAlertShopInventorySummaryWindowMinutes')?.value,
-            currentConfig.shop_inventory.summary_window_minutes
-        );
-        nextConfig.shop_inventory.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
-            document.getElementById('opsAlertShopInventorySummaryScheduleMode')?.value,
-            currentConfig.shop_inventory.summary_schedule_mode
-        );
-        nextConfig.shop_inventory.summary_hourly_minute = toWholeNumber(
-            document.getElementById('opsAlertShopInventorySummaryHourlyMinute')?.value,
-            currentConfig.shop_inventory.summary_hourly_minute
-        );
-        nextConfig.shop_inventory.summary_daily_hour = toWholeNumber(
-            document.getElementById('opsAlertShopInventorySummaryDailyHour')?.value,
-            currentConfig.shop_inventory.summary_daily_hour
-        );
-        nextConfig.shop_inventory.summary_daily_minute = toWholeNumber(
-            document.getElementById('opsAlertShopInventorySummaryDailyMinute')?.value,
-            currentConfig.shop_inventory.summary_daily_minute
-        );
-        nextConfig.shop_inventory.summary_max_items = toWholeNumber(
-            document.getElementById('opsAlertShopInventorySummaryMaxItems')?.value,
-            currentConfig.shop_inventory.summary_max_items
-        );
-    }
-    if (operationalThresholdDrafts?.customer_chat_message) {
-        nextConfig.customer_chat_message = {
-            ...operationalThresholdDrafts.customer_chat_message,
-            quick_reply_templates: nextConfig.customer_chat_message.quick_reply_templates
-        };
-    } else {
-        nextConfig.customer_chat_message.enabled = document.getElementById('opsAlertCustomerChatMessageEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.customer_chat_message.enabled;
-        nextConfig.customer_chat_message.sweep_interval_ms = Math.max(
-            10000,
-            toWholeNumber(
-                document.getElementById('opsAlertCustomerChatMessageSweepIntervalMinutes')?.value,
-                Math.max(1, Math.round(Number(currentConfig.customer_chat_message.sweep_interval_ms || 0) / 60000))
-            ) * 60 * 1000
-        );
-        nextConfig.customer_chat_message.lookback_minutes = toWholeNumber(
-            document.getElementById('opsAlertCustomerChatMessageLookbackMinutes')?.value,
-            currentConfig.customer_chat_message.lookback_minutes
-        );
-        nextConfig.customer_chat_message.dedupe_window_minutes = toWholeNumber(
-            document.getElementById('opsAlertCustomerChatMessageDedupeWindowMinutes')?.value,
-            currentConfig.customer_chat_message.dedupe_window_minutes
-        );
-        nextConfig.customer_chat_message.work_hours_only_enabled = document.getElementById('opsAlertCustomerChatMessageWorkHoursOnlyEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.customer_chat_message.work_hours_only_enabled;
-        nextConfig.customer_chat_message.summary_enabled = document.getElementById('opsAlertCustomerChatMessageSummaryEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.customer_chat_message.summary_enabled;
-        nextConfig.customer_chat_message.summary_window_minutes = toWholeNumber(
-            document.getElementById('opsAlertCustomerChatMessageSummaryWindowMinutes')?.value,
-            currentConfig.customer_chat_message.summary_window_minutes
-        );
-        nextConfig.customer_chat_message.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
-            document.getElementById('opsAlertCustomerChatMessageSummaryScheduleMode')?.value,
-            currentConfig.customer_chat_message.summary_schedule_mode
-        );
-        nextConfig.customer_chat_message.summary_hourly_minute = toWholeNumber(
-            document.getElementById('opsAlertCustomerChatMessageSummaryHourlyMinute')?.value,
-            currentConfig.customer_chat_message.summary_hourly_minute
-        );
-        nextConfig.customer_chat_message.summary_daily_hour = toWholeNumber(
-            document.getElementById('opsAlertCustomerChatMessageSummaryDailyHour')?.value,
-            currentConfig.customer_chat_message.summary_daily_hour
-        );
-        nextConfig.customer_chat_message.summary_daily_minute = toWholeNumber(
-            document.getElementById('opsAlertCustomerChatMessageSummaryDailyMinute')?.value,
-            currentConfig.customer_chat_message.summary_daily_minute
-        );
-        nextConfig.customer_chat_message.summary_max_items = toWholeNumber(
-            document.getElementById('opsAlertCustomerChatMessageSummaryMaxItems')?.value,
-            currentConfig.customer_chat_message.summary_max_items
-        );
-    }
+    nextConfig.shop_order_risk = operationalThresholdDrafts.shop_order_risk;
+    nextConfig.shop_inventory = operationalThresholdDrafts.shop_inventory;
+    nextConfig.customer_chat_message = {
+        ...operationalThresholdDrafts.customer_chat_message,
+        quick_reply_templates: nextConfig.customer_chat_message.quick_reply_templates
+    };
     nextConfig.customer_chat_message.quick_reply_templates = collectOpsAlertCustomerChatQuickReplyTemplatesFromForm();
-    if (operationalThresholdDrafts?.shop_purchase_success) {
-        nextConfig.shop_purchase_success = operationalThresholdDrafts.shop_purchase_success;
-    } else {
-        nextConfig.shop_purchase_success.enabled = document.getElementById('opsAlertShopPurchaseSuccessEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.shop_purchase_success.enabled;
-        nextConfig.shop_purchase_success.sweep_interval_ms = Math.max(
-            10000,
-            toWholeNumber(
-                document.getElementById('opsAlertShopPurchaseSuccessSweepIntervalMinutes')?.value,
-                Math.max(1, Math.round(Number(currentConfig.shop_purchase_success.sweep_interval_ms || 0) / 60000))
-            ) * 60 * 1000
-        );
-        nextConfig.shop_purchase_success.lookback_minutes = toWholeNumber(
-            document.getElementById('opsAlertShopPurchaseSuccessLookbackMinutes')?.value,
-            currentConfig.shop_purchase_success.lookback_minutes
-        );
-        nextConfig.shop_purchase_success.dedupe_window_minutes = toWholeNumber(
-            document.getElementById('opsAlertShopPurchaseSuccessDedupeWindowMinutes')?.value,
-            currentConfig.shop_purchase_success.dedupe_window_minutes
-        );
-        nextConfig.shop_purchase_success.work_hours_only_enabled = document.getElementById('opsAlertShopPurchaseSuccessWorkHoursOnlyEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.shop_purchase_success.work_hours_only_enabled;
-        nextConfig.shop_purchase_success.summary_enabled = document.getElementById('opsAlertShopPurchaseSuccessSummaryEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.shop_purchase_success.summary_enabled;
-        nextConfig.shop_purchase_success.summary_window_minutes = toWholeNumber(
-            document.getElementById('opsAlertShopPurchaseSuccessSummaryWindowMinutes')?.value,
-            currentConfig.shop_purchase_success.summary_window_minutes
-        );
-        nextConfig.shop_purchase_success.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
-            document.getElementById('opsAlertShopPurchaseSuccessSummaryScheduleMode')?.value,
-            currentConfig.shop_purchase_success.summary_schedule_mode
-        );
-        nextConfig.shop_purchase_success.summary_hourly_minute = toWholeNumber(
-            document.getElementById('opsAlertShopPurchaseSuccessSummaryHourlyMinute')?.value,
-            currentConfig.shop_purchase_success.summary_hourly_minute
-        );
-        nextConfig.shop_purchase_success.summary_daily_hour = toWholeNumber(
-            document.getElementById('opsAlertShopPurchaseSuccessSummaryDailyHour')?.value,
-            currentConfig.shop_purchase_success.summary_daily_hour
-        );
-        nextConfig.shop_purchase_success.summary_daily_minute = toWholeNumber(
-            document.getElementById('opsAlertShopPurchaseSuccessSummaryDailyMinute')?.value,
-            currentConfig.shop_purchase_success.summary_daily_minute
-        );
-        nextConfig.shop_purchase_success.summary_max_items = toWholeNumber(
-            document.getElementById('opsAlertShopPurchaseSuccessSummaryMaxItems')?.value,
-            currentConfig.shop_purchase_success.summary_max_items
-        );
-    }
-    if (operationalThresholdDrafts?.wallet_recharge_success) {
-        nextConfig.wallet_recharge_success = operationalThresholdDrafts.wallet_recharge_success;
-    } else {
-        nextConfig.wallet_recharge_success.enabled = document.getElementById('opsAlertWalletRechargeSuccessEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.wallet_recharge_success.enabled;
-        nextConfig.wallet_recharge_success.sweep_interval_ms = Math.max(
-            10000,
-            toWholeNumber(
-                document.getElementById('opsAlertWalletRechargeSuccessSweepIntervalMinutes')?.value,
-                Math.max(1, Math.round(Number(currentConfig.wallet_recharge_success.sweep_interval_ms || 0) / 60000))
-            ) * 60 * 1000
-        );
-        nextConfig.wallet_recharge_success.lookback_minutes = toWholeNumber(
-            document.getElementById('opsAlertWalletRechargeSuccessLookbackMinutes')?.value,
-            currentConfig.wallet_recharge_success.lookback_minutes
-        );
-        nextConfig.wallet_recharge_success.dedupe_window_minutes = toWholeNumber(
-            document.getElementById('opsAlertWalletRechargeSuccessDedupeWindowMinutes')?.value,
-            currentConfig.wallet_recharge_success.dedupe_window_minutes
-        );
-        nextConfig.wallet_recharge_success.work_hours_only_enabled = document.getElementById('opsAlertWalletRechargeSuccessWorkHoursOnlyEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.wallet_recharge_success.work_hours_only_enabled;
-        nextConfig.wallet_recharge_success.summary_enabled = document.getElementById('opsAlertWalletRechargeSuccessSummaryEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.wallet_recharge_success.summary_enabled;
-        nextConfig.wallet_recharge_success.summary_window_minutes = toWholeNumber(
-            document.getElementById('opsAlertWalletRechargeSuccessSummaryWindowMinutes')?.value,
-            currentConfig.wallet_recharge_success.summary_window_minutes
-        );
-        nextConfig.wallet_recharge_success.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
-            document.getElementById('opsAlertWalletRechargeSuccessSummaryScheduleMode')?.value,
-            currentConfig.wallet_recharge_success.summary_schedule_mode
-        );
-        nextConfig.wallet_recharge_success.summary_hourly_minute = toWholeNumber(
-            document.getElementById('opsAlertWalletRechargeSuccessSummaryHourlyMinute')?.value,
-            currentConfig.wallet_recharge_success.summary_hourly_minute
-        );
-        nextConfig.wallet_recharge_success.summary_daily_hour = toWholeNumber(
-            document.getElementById('opsAlertWalletRechargeSuccessSummaryDailyHour')?.value,
-            currentConfig.wallet_recharge_success.summary_daily_hour
-        );
-        nextConfig.wallet_recharge_success.summary_daily_minute = toWholeNumber(
-            document.getElementById('opsAlertWalletRechargeSuccessSummaryDailyMinute')?.value,
-            currentConfig.wallet_recharge_success.summary_daily_minute
-        );
-        nextConfig.wallet_recharge_success.summary_max_items = toWholeNumber(
-            document.getElementById('opsAlertWalletRechargeSuccessSummaryMaxItems')?.value,
-            currentConfig.wallet_recharge_success.summary_max_items
-        );
-    }
-    if (operationalThresholdDrafts?.tickets) {
-        nextConfig.tickets = operationalThresholdDrafts.tickets;
-    } else {
-        nextConfig.tickets.enabled = document.getElementById('opsAlertTicketsEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.tickets.enabled;
-        nextConfig.tickets.sweep_interval_ms = Math.max(
-            10000,
-            toWholeNumber(
-                document.getElementById('opsAlertTicketsSweepIntervalMinutes')?.value,
-                Math.max(1, Math.round(Number(currentConfig.tickets.sweep_interval_ms || 0) / 60000))
-            ) * 60 * 1000
-        );
-        nextConfig.tickets.pending_overdue_minutes = toWholeNumber(
-            document.getElementById('opsAlertTicketsPendingOverdueMinutes')?.value,
-            currentConfig.tickets.pending_overdue_minutes
-        );
-        nextConfig.tickets.critical_overdue_minutes = toWholeNumber(
-            document.getElementById('opsAlertTicketsCriticalOverdueMinutes')?.value,
-            currentConfig.tickets.critical_overdue_minutes
-        );
-        nextConfig.tickets.state_lookback_minutes = toWholeNumber(
-            document.getElementById('opsAlertTicketsStateLookbackMinutes')?.value,
-            currentConfig.tickets.state_lookback_minutes
-        );
-        nextConfig.tickets.dedupe_window_minutes = toWholeNumber(
-            document.getElementById('opsAlertTicketsDedupeWindowMinutes')?.value,
-            currentConfig.tickets.dedupe_window_minutes
-        );
-        nextConfig.tickets.work_hours_only_enabled = document.getElementById('opsAlertTicketsWorkHoursOnlyEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.tickets.work_hours_only_enabled;
-        nextConfig.tickets.summary_enabled = document.getElementById('opsAlertTicketsSummaryEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.tickets.summary_enabled;
-        nextConfig.tickets.summary_window_minutes = toWholeNumber(
-            document.getElementById('opsAlertTicketsSummaryWindowMinutes')?.value,
-            currentConfig.tickets.summary_window_minutes
-        );
-        nextConfig.tickets.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
-            document.getElementById('opsAlertTicketsSummaryScheduleMode')?.value,
-            currentConfig.tickets.summary_schedule_mode
-        );
-        nextConfig.tickets.summary_hourly_minute = toWholeNumber(
-            document.getElementById('opsAlertTicketsSummaryHourlyMinute')?.value,
-            currentConfig.tickets.summary_hourly_minute
-        );
-        nextConfig.tickets.summary_daily_hour = toWholeNumber(
-            document.getElementById('opsAlertTicketsSummaryDailyHour')?.value,
-            currentConfig.tickets.summary_daily_hour
-        );
-        nextConfig.tickets.summary_daily_minute = toWholeNumber(
-            document.getElementById('opsAlertTicketsSummaryDailyMinute')?.value,
-            currentConfig.tickets.summary_daily_minute
-        );
-        nextConfig.tickets.summary_max_items = toWholeNumber(
-            document.getElementById('opsAlertTicketsSummaryMaxItems')?.value,
-            currentConfig.tickets.summary_max_items
-        );
-    }
-    if (operationalThresholdDrafts?.shop_order_delivery) {
-        nextConfig.shop_order_delivery = operationalThresholdDrafts.shop_order_delivery;
-    } else {
-        nextConfig.shop_order_delivery.enabled = document.getElementById('opsAlertShopOrderDeliveryEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.shop_order_delivery.enabled;
-        nextConfig.shop_order_delivery.lookback_days = toWholeNumber(
-            document.getElementById('opsAlertShopOrderDeliveryLookbackDays')?.value,
-            currentConfig.shop_order_delivery.lookback_days
-        );
-        nextConfig.shop_order_delivery.state_lookback_minutes = toWholeNumber(
-            document.getElementById('opsAlertShopOrderDeliveryStateLookbackMinutes')?.value,
-            currentConfig.shop_order_delivery.state_lookback_minutes
-        );
-        nextConfig.shop_order_delivery.retry_waiting_min_attempts = toWholeNumber(
-            document.getElementById('opsAlertShopOrderDeliveryRetryWaitingMinAttempts')?.value,
-            currentConfig.shop_order_delivery.retry_waiting_min_attempts
-        );
-        nextConfig.shop_order_delivery.sweep_interval_ms = Math.max(
-            10000,
-            toWholeNumber(
-                document.getElementById('opsAlertShopOrderDeliverySweepIntervalMinutes')?.value,
-                Math.max(1, Math.round(Number(currentConfig.shop_order_delivery.sweep_interval_ms || 0) / 60000))
-            ) * 60 * 1000
-        );
-        nextConfig.shop_order_delivery.dedupe_window_minutes = toWholeNumber(
-            document.getElementById('opsAlertShopOrderDeliveryDedupeWindowMinutes')?.value,
-            currentConfig.shop_order_delivery.dedupe_window_minutes
-        );
-        nextConfig.shop_order_delivery.incident_enabled = document.getElementById('opsAlertShopOrderDeliveryIncidentEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.shop_order_delivery.incident_enabled;
-        nextConfig.shop_order_delivery.incident_min_order_count = toWholeNumber(
-            document.getElementById('opsAlertShopOrderDeliveryIncidentMinOrderCount')?.value,
-            currentConfig.shop_order_delivery.incident_min_order_count
-        );
-        nextConfig.shop_order_delivery.incident_min_dead_letter_count = toWholeNumber(
-            document.getElementById('opsAlertShopOrderDeliveryIncidentMinDeadLetterCount')?.value,
-            currentConfig.shop_order_delivery.incident_min_dead_letter_count
-        );
-        nextConfig.shop_order_delivery.incident_min_distinct_users = toWholeNumber(
-            document.getElementById('opsAlertShopOrderDeliveryIncidentMinDistinctUsers')?.value,
-            currentConfig.shop_order_delivery.incident_min_distinct_users
-        );
-        nextConfig.shop_order_delivery.incident_dedupe_window_minutes = toWholeNumber(
-            document.getElementById('opsAlertShopOrderDeliveryIncidentDedupeWindowMinutes')?.value,
-            currentConfig.shop_order_delivery.incident_dedupe_window_minutes
-        );
-        nextConfig.shop_order_delivery.work_hours_only_enabled = document.getElementById('opsAlertShopOrderDeliveryWorkHoursOnlyEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.shop_order_delivery.work_hours_only_enabled;
-        nextConfig.shop_order_delivery.summary_enabled = document.getElementById('opsAlertShopOrderDeliverySummaryEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.shop_order_delivery.summary_enabled;
-        nextConfig.shop_order_delivery.summary_window_minutes = toWholeNumber(
-            document.getElementById('opsAlertShopOrderDeliverySummaryWindowMinutes')?.value,
-            currentConfig.shop_order_delivery.summary_window_minutes
-        );
-        nextConfig.shop_order_delivery.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
-            document.getElementById('opsAlertShopOrderDeliverySummaryScheduleMode')?.value,
-            currentConfig.shop_order_delivery.summary_schedule_mode
-        );
-        nextConfig.shop_order_delivery.summary_hourly_minute = toWholeNumber(
-            document.getElementById('opsAlertShopOrderDeliverySummaryHourlyMinute')?.value,
-            currentConfig.shop_order_delivery.summary_hourly_minute
-        );
-        nextConfig.shop_order_delivery.summary_daily_hour = toWholeNumber(
-            document.getElementById('opsAlertShopOrderDeliverySummaryDailyHour')?.value,
-            currentConfig.shop_order_delivery.summary_daily_hour
-        );
-        nextConfig.shop_order_delivery.summary_daily_minute = toWholeNumber(
-            document.getElementById('opsAlertShopOrderDeliverySummaryDailyMinute')?.value,
-            currentConfig.shop_order_delivery.summary_daily_minute
-        );
-        nextConfig.shop_order_delivery.summary_max_items = toWholeNumber(
-            document.getElementById('opsAlertShopOrderDeliverySummaryMaxItems')?.value,
-            currentConfig.shop_order_delivery.summary_max_items
-        );
-    }
-    if (operationalThresholdDrafts?.verify_quota) {
-        nextConfig.verify_quota = operationalThresholdDrafts.verify_quota;
-    } else {
-        nextConfig.verify_quota.enabled = document.getElementById('opsAlertVerifyQuotaEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.verify_quota.enabled;
-        nextConfig.verify_quota.low_balance_threshold = toWholeNumber(
-            document.getElementById('opsAlertVerifyQuotaLowBalanceThreshold')?.value,
-            currentConfig.verify_quota.low_balance_threshold
-        );
-        nextConfig.verify_quota.low_remaining_jobs_threshold = toWholeNumber(
-            document.getElementById('opsAlertVerifyQuotaLowRemainingJobsThreshold')?.value,
-            currentConfig.verify_quota.low_remaining_jobs_threshold
-        );
-        nextConfig.verify_quota.critical_balance_threshold = toWholeNumber(
-            document.getElementById('opsAlertVerifyQuotaCriticalBalanceThreshold')?.value,
-            currentConfig.verify_quota.critical_balance_threshold
-        );
-        nextConfig.verify_quota.critical_remaining_jobs_threshold = toWholeNumber(
-            document.getElementById('opsAlertVerifyQuotaCriticalRemainingJobsThreshold')?.value,
-            currentConfig.verify_quota.critical_remaining_jobs_threshold
-        );
-        nextConfig.verify_quota.min_queue_buffer_jobs = toWholeNumber(
-            document.getElementById('opsAlertVerifyQuotaMinQueueBufferJobs')?.value,
-            currentConfig.verify_quota.min_queue_buffer_jobs
-        );
-        nextConfig.verify_quota.sweep_interval_ms = Math.max(
-            10000,
-            toWholeNumber(
-                document.getElementById('opsAlertVerifyQuotaSweepIntervalMinutes')?.value,
-                Math.max(1, Math.round(Number(currentConfig.verify_quota.sweep_interval_ms || 0) / 60000))
-            ) * 60 * 1000
-        );
-        nextConfig.verify_quota.dedupe_window_minutes = toWholeNumber(
-            document.getElementById('opsAlertVerifyQuotaDedupeWindowMinutes')?.value,
-            currentConfig.verify_quota.dedupe_window_minutes
-        );
-        nextConfig.verify_quota.work_hours_only_enabled = document.getElementById('opsAlertVerifyQuotaWorkHoursOnlyEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.verify_quota.work_hours_only_enabled;
-        nextConfig.verify_quota.summary_enabled = document.getElementById('opsAlertVerifyQuotaSummaryEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.verify_quota.summary_enabled;
-        nextConfig.verify_quota.summary_window_minutes = toWholeNumber(
-            document.getElementById('opsAlertVerifyQuotaSummaryWindowMinutes')?.value,
-            currentConfig.verify_quota.summary_window_minutes
-        );
-        nextConfig.verify_quota.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
-            document.getElementById('opsAlertVerifyQuotaSummaryScheduleMode')?.value,
-            currentConfig.verify_quota.summary_schedule_mode
-        );
-        nextConfig.verify_quota.summary_hourly_minute = toWholeNumber(
-            document.getElementById('opsAlertVerifyQuotaSummaryHourlyMinute')?.value,
-            currentConfig.verify_quota.summary_hourly_minute
-        );
-        nextConfig.verify_quota.summary_daily_hour = toWholeNumber(
-            document.getElementById('opsAlertVerifyQuotaSummaryDailyHour')?.value,
-            currentConfig.verify_quota.summary_daily_hour
-        );
-        nextConfig.verify_quota.summary_daily_minute = toWholeNumber(
-            document.getElementById('opsAlertVerifyQuotaSummaryDailyMinute')?.value,
-            currentConfig.verify_quota.summary_daily_minute
-        );
-        nextConfig.verify_quota.summary_max_items = toWholeNumber(
-            document.getElementById('opsAlertVerifyQuotaSummaryMaxItems')?.value,
-            currentConfig.verify_quota.summary_max_items
-        );
-    }
-    if (operationalThresholdDrafts?.verify_queue) {
-        nextConfig.verify_queue = operationalThresholdDrafts.verify_queue;
-    } else {
-        nextConfig.verify_queue.enabled = document.getElementById('opsAlertVerifyQueueEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.verify_queue.enabled;
-        nextConfig.verify_queue.recent_activity_lookback_hours = toWholeNumber(
-            document.getElementById('opsAlertVerifyQueueRecentActivityLookbackHours')?.value,
-            currentConfig.verify_queue.recent_activity_lookback_hours
-        );
-        nextConfig.verify_queue.recent_failure_window_minutes = toWholeNumber(
-            document.getElementById('opsAlertVerifyQueueRecentFailureWindowMinutes')?.value,
-            currentConfig.verify_queue.recent_failure_window_minutes
-        );
-        nextConfig.verify_queue.queue_size_threshold = toWholeNumber(
-            document.getElementById('opsAlertVerifyQueueSizeThreshold')?.value,
-            currentConfig.verify_queue.queue_size_threshold
-        );
-        nextConfig.verify_queue.active_job_threshold = toWholeNumber(
-            document.getElementById('opsAlertVerifyQueueActiveJobThreshold')?.value,
-            currentConfig.verify_queue.active_job_threshold
-        );
-        nextConfig.verify_queue.oldest_pending_minutes_threshold = toWholeNumber(
-            document.getElementById('opsAlertVerifyQueueOldestPendingMinutesThreshold')?.value,
-            currentConfig.verify_queue.oldest_pending_minutes_threshold
-        );
-        nextConfig.verify_queue.recent_failure_threshold = toWholeNumber(
-            document.getElementById('opsAlertVerifyQueueRecentFailureThreshold')?.value,
-            currentConfig.verify_queue.recent_failure_threshold
-        );
-        nextConfig.verify_queue.sweep_interval_ms = Math.max(
-            10000,
-            toWholeNumber(
-                document.getElementById('opsAlertVerifyQueueSweepIntervalMinutes')?.value,
-                Math.max(1, Math.round(Number(currentConfig.verify_queue.sweep_interval_ms || 0) / 60000))
-            ) * 60 * 1000
-        );
-        nextConfig.verify_queue.dedupe_window_minutes = toWholeNumber(
-            document.getElementById('opsAlertVerifyQueueDedupeWindowMinutes')?.value,
-            currentConfig.verify_queue.dedupe_window_minutes
-        );
-        nextConfig.verify_queue.work_hours_only_enabled = document.getElementById('opsAlertVerifyQueueWorkHoursOnlyEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.verify_queue.work_hours_only_enabled;
-        nextConfig.verify_queue.summary_enabled = document.getElementById('opsAlertVerifyQueueSummaryEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.verify_queue.summary_enabled;
-        nextConfig.verify_queue.summary_window_minutes = toWholeNumber(
-            document.getElementById('opsAlertVerifyQueueSummaryWindowMinutes')?.value,
-            currentConfig.verify_queue.summary_window_minutes
-        );
-        nextConfig.verify_queue.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
-            document.getElementById('opsAlertVerifyQueueSummaryScheduleMode')?.value,
-            currentConfig.verify_queue.summary_schedule_mode
-        );
-        nextConfig.verify_queue.summary_hourly_minute = toWholeNumber(
-            document.getElementById('opsAlertVerifyQueueSummaryHourlyMinute')?.value,
-            currentConfig.verify_queue.summary_hourly_minute
-        );
-        nextConfig.verify_queue.summary_daily_hour = toWholeNumber(
-            document.getElementById('opsAlertVerifyQueueSummaryDailyHour')?.value,
-            currentConfig.verify_queue.summary_daily_hour
-        );
-        nextConfig.verify_queue.summary_daily_minute = toWholeNumber(
-            document.getElementById('opsAlertVerifyQueueSummaryDailyMinute')?.value,
-            currentConfig.verify_queue.summary_daily_minute
-        );
-        nextConfig.verify_queue.summary_max_items = toWholeNumber(
-            document.getElementById('opsAlertVerifyQueueSummaryMaxItems')?.value,
-            currentConfig.verify_queue.summary_max_items
-        );
-    }
-    if (operationalThresholdDrafts?.verify_failure) {
-        nextConfig.verify_failure = operationalThresholdDrafts.verify_failure;
-    } else {
-        nextConfig.verify_failure.enabled = document.getElementById('opsAlertVerifyFailureEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.verify_failure.enabled;
-        nextConfig.verify_failure.recent_window_minutes = toWholeNumber(
-            document.getElementById('opsAlertVerifyFailureRecentWindowMinutes')?.value,
-            currentConfig.verify_failure.recent_window_minutes
-        );
-        nextConfig.verify_failure.min_total_jobs_threshold = toWholeNumber(
-            document.getElementById('opsAlertVerifyFailureMinTotalJobsThreshold')?.value,
-            currentConfig.verify_failure.min_total_jobs_threshold
-        );
-        nextConfig.verify_failure.failure_rate_threshold = toWholeNumber(
-            document.getElementById('opsAlertVerifyFailureRateThreshold')?.value,
-            currentConfig.verify_failure.failure_rate_threshold
-        );
-        nextConfig.verify_failure.affected_user_threshold = toWholeNumber(
-            document.getElementById('opsAlertVerifyFailureAffectedUserThreshold')?.value,
-            currentConfig.verify_failure.affected_user_threshold
-        );
-        nextConfig.verify_failure.sweep_interval_ms = Math.max(
-            10000,
-            toWholeNumber(
-                document.getElementById('opsAlertVerifyFailureSweepIntervalMinutes')?.value,
-                Math.max(1, Math.round(Number(currentConfig.verify_failure.sweep_interval_ms || 0) / 60000))
-            ) * 60 * 1000
-        );
-        nextConfig.verify_failure.dedupe_window_minutes = toWholeNumber(
-            document.getElementById('opsAlertVerifyFailureDedupeWindowMinutes')?.value,
-            currentConfig.verify_failure.dedupe_window_minutes
-        );
-        nextConfig.verify_failure.work_hours_only_enabled = document.getElementById('opsAlertVerifyFailureWorkHoursOnlyEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.verify_failure.work_hours_only_enabled;
-        nextConfig.verify_failure.summary_enabled = document.getElementById('opsAlertVerifyFailureSummaryEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.verify_failure.summary_enabled;
-        nextConfig.verify_failure.summary_window_minutes = toWholeNumber(
-            document.getElementById('opsAlertVerifyFailureSummaryWindowMinutes')?.value,
-            currentConfig.verify_failure.summary_window_minutes
-        );
-        nextConfig.verify_failure.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
-            document.getElementById('opsAlertVerifyFailureSummaryScheduleMode')?.value,
-            currentConfig.verify_failure.summary_schedule_mode
-        );
-        nextConfig.verify_failure.summary_hourly_minute = toWholeNumber(
-            document.getElementById('opsAlertVerifyFailureSummaryHourlyMinute')?.value,
-            currentConfig.verify_failure.summary_hourly_minute
-        );
-        nextConfig.verify_failure.summary_daily_hour = toWholeNumber(
-            document.getElementById('opsAlertVerifyFailureSummaryDailyHour')?.value,
-            currentConfig.verify_failure.summary_daily_hour
-        );
-        nextConfig.verify_failure.summary_daily_minute = toWholeNumber(
-            document.getElementById('opsAlertVerifyFailureSummaryDailyMinute')?.value,
-            currentConfig.verify_failure.summary_daily_minute
-        );
-        nextConfig.verify_failure.summary_max_items = toWholeNumber(
-            document.getElementById('opsAlertVerifyFailureSummaryMaxItems')?.value,
-            currentConfig.verify_failure.summary_max_items
-        );
-    }
-    if (operationalThresholdDrafts?.payment_gateway) {
-        nextConfig.payment_gateway = operationalThresholdDrafts.payment_gateway;
-    } else {
-        nextConfig.payment_gateway.enabled = document.getElementById('opsAlertPaymentGatewayEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.payment_gateway.enabled;
-        nextConfig.payment_gateway.window_minutes = toWholeNumber(
-            document.getElementById('opsAlertPaymentGatewayWindowMinutes')?.value,
-            currentConfig.payment_gateway.window_minutes
-        );
-        nextConfig.payment_gateway.min_failed_orders = toWholeNumber(
-            document.getElementById('opsAlertPaymentGatewayFailedOrdersThreshold')?.value,
-            currentConfig.payment_gateway.min_failed_orders
-        );
-        nextConfig.payment_gateway.min_failed_ratio_percent = toWholeNumber(
-            document.getElementById('opsAlertPaymentGatewayFailedRatioThreshold')?.value,
-            currentConfig.payment_gateway.min_failed_ratio_percent
-        );
-        nextConfig.payment_gateway.max_webhook_success_rate_percent = toWholeNumber(
-            document.getElementById('opsAlertPaymentGatewayWebhookSuccessRateThreshold')?.value,
-            currentConfig.payment_gateway.max_webhook_success_rate_percent
-        );
-        nextConfig.payment_gateway.max_query_success_rate_percent = toWholeNumber(
-            document.getElementById('opsAlertPaymentGatewayQuerySuccessRateThreshold')?.value,
-            currentConfig.payment_gateway.max_query_success_rate_percent
-        );
-        nextConfig.payment_gateway.min_webhook_5xx_count = toWholeNumber(
-            document.getElementById('opsAlertPaymentGatewayWebhook5xxThreshold')?.value,
-            currentConfig.payment_gateway.min_webhook_5xx_count
-        );
-        nextConfig.payment_gateway.min_query_5xx_count = toWholeNumber(
-            document.getElementById('opsAlertPaymentGatewayQuery5xxThreshold')?.value,
-            currentConfig.payment_gateway.min_query_5xx_count
-        );
-        nextConfig.payment_gateway.sweep_interval_ms = Math.max(
-            10000,
-            toWholeNumber(
-                document.getElementById('opsAlertPaymentGatewaySweepIntervalMinutes')?.value,
-                Math.max(1, Math.round(Number(currentConfig.payment_gateway.sweep_interval_ms || 0) / 60000))
-            ) * 60 * 1000
-        );
-        nextConfig.payment_gateway.dedupe_window_minutes = toWholeNumber(
-            document.getElementById('opsAlertPaymentGatewayDedupeWindowMinutes')?.value,
-            currentConfig.payment_gateway.dedupe_window_minutes
-        );
-        nextConfig.payment_gateway.work_hours_only_enabled = document.getElementById('opsAlertPaymentGatewayWorkHoursOnlyEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.payment_gateway.work_hours_only_enabled;
-        nextConfig.payment_gateway.summary_enabled = document.getElementById('opsAlertPaymentGatewaySummaryEnabledToggle')?.classList.contains('active')
-            ?? currentConfig.payment_gateway.summary_enabled;
-        nextConfig.payment_gateway.summary_window_minutes = toWholeNumber(
-            document.getElementById('opsAlertPaymentGatewaySummaryWindowMinutes')?.value,
-            currentConfig.payment_gateway.summary_window_minutes
-        );
-        nextConfig.payment_gateway.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
-            document.getElementById('opsAlertPaymentGatewaySummaryScheduleMode')?.value,
-            currentConfig.payment_gateway.summary_schedule_mode
-        );
-        nextConfig.payment_gateway.summary_hourly_minute = toWholeNumber(
-            document.getElementById('opsAlertPaymentGatewaySummaryHourlyMinute')?.value,
-            currentConfig.payment_gateway.summary_hourly_minute
-        );
-        nextConfig.payment_gateway.summary_daily_hour = toWholeNumber(
-            document.getElementById('opsAlertPaymentGatewaySummaryDailyHour')?.value,
-            currentConfig.payment_gateway.summary_daily_hour
-        );
-        nextConfig.payment_gateway.summary_daily_minute = toWholeNumber(
-            document.getElementById('opsAlertPaymentGatewaySummaryDailyMinute')?.value,
-            currentConfig.payment_gateway.summary_daily_minute
-        );
-        nextConfig.payment_gateway.summary_max_items = toWholeNumber(
-            document.getElementById('opsAlertPaymentGatewaySummaryMaxItems')?.value,
-            currentConfig.payment_gateway.summary_max_items
-        );
-    }
+    nextConfig.shop_purchase_success = operationalThresholdDrafts.shop_purchase_success;
+    nextConfig.wallet_recharge_success = operationalThresholdDrafts.wallet_recharge_success;
+    nextConfig.tickets = operationalThresholdDrafts.tickets;
+    nextConfig.shop_order_delivery = operationalThresholdDrafts.shop_order_delivery;
+    nextConfig.verify_quota = operationalThresholdDrafts.verify_quota;
+    nextConfig.verify_queue = operationalThresholdDrafts.verify_queue;
+    nextConfig.verify_failure = operationalThresholdDrafts.verify_failure;
+    nextConfig.payment_gateway = operationalThresholdDrafts.payment_gateway;
 
     return normalizeOpsAlertConfig(nextConfig);
 }
@@ -14118,10 +13964,10 @@ function buildLocalOpsAlertSecretInputs() {
 }
 
 function resolveOpsAlertSecretInputs() {
-    if (typeof window.readAdminWorkbenchOpsAlertSecretInputs === 'function') {
-        return window.readAdminWorkbenchOpsAlertSecretInputs();
-    }
-    return buildLocalOpsAlertSecretInputs();
+    return resolveOpsAlertSharedCallable(
+        'readAdminWorkbenchOpsAlertSecretInputs',
+        buildLocalOpsAlertSecretInputs
+    )();
 }
 
 function buildLocalOpsAlertSecretInputsClearer() {
@@ -14138,10 +13984,10 @@ function buildLocalOpsAlertSecretInputsClearer() {
 }
 
 function resolveOpsAlertSecretInputsClearer() {
-    if (typeof window.clearAdminWorkbenchOpsAlertSecretInputs === 'function') {
-        return () => window.clearAdminWorkbenchOpsAlertSecretInputs();
-    }
-    return buildLocalOpsAlertSecretInputsClearer();
+    return resolveOpsAlertSharedCallable(
+        'clearAdminWorkbenchOpsAlertSecretInputs',
+        buildLocalOpsAlertSecretInputsClearer()
+    );
 }
 
 function clearOpsAlertSecretInputs() {
@@ -14169,21 +14015,78 @@ function buildLocalOpsAlertSettingsRequestBody(config, options = {}) {
 }
 
 function resolveOpsAlertSettingsRequestBody(config, options = {}) {
-    if (typeof window.buildAdminWorkbenchOpsAlertSettingsRequestBody === 'function') {
-        return window.buildAdminWorkbenchOpsAlertSettingsRequestBody(config, options);
-    }
-    return buildLocalOpsAlertSettingsRequestBody(config, options);
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertSettingsRequestBody',
+        buildLocalOpsAlertSettingsRequestBody
+    )(config, options);
 }
 
 function buildOpsAlertSettingsRequestBody(config, options = {}) {
     return resolveOpsAlertSettingsRequestBody(config, options);
 }
 
-function resolveOpsAlertDispatchConfigValidation(config = {}, secretStatus = {}, secrets = {}) {
-    if (typeof window.validateAdminWorkbenchOpsAlertDispatchConfig === 'function') {
-        return window.validateAdminWorkbenchOpsAlertDispatchConfig(config, secretStatus, secrets);
+function buildLocalOpsAlertDispatchConfigValidation(config = {}, secretStatus = {}, secrets = {}) {
+    const normalizedConfig = config && typeof config === 'object' && !Array.isArray(config) ? config : {};
+    const normalizedSecrets = secrets && typeof secrets === 'object' && !Array.isArray(secrets)
+        ? secrets
+        : {};
+    const normalizedSecretStatus = secretStatus && typeof secretStatus === 'object' && !Array.isArray(secretStatus)
+        ? secretStatus
+        : {};
+    const telegramEnabled = normalizedConfig.channels?.telegram?.enabled === true;
+    const feishuEnabled = normalizedConfig.channels?.feishu?.enabled === true;
+    const emailEnabled = normalizedConfig.channels?.email?.enabled === true;
+    const chatIds = Array.isArray(normalizedConfig.channels?.telegram?.chat_ids)
+        ? normalizedConfig.channels.telegram.chat_ids
+        : [];
+    const recipients = Array.isArray(normalizedConfig.channels?.email?.recipients)
+        ? normalizedConfig.channels.email.recipients
+        : [];
+    const providedTelegramToken = String(normalizedSecrets.telegram_bot_token || '').trim();
+    const providedFeishuWebhook = String(normalizedSecrets.feishu_webhook_url || '').trim();
+    const providedEmailApiKey = String(normalizedSecrets.email_api_key || '').trim();
+    const hasStoredTelegramToken = Boolean(normalizedSecretStatus.telegram_bot_token?.configured);
+    const hasStoredFeishuWebhook = Boolean(normalizedSecretStatus.feishu_webhook_url?.configured);
+    const hasStoredEmailApiKey = Boolean(normalizedSecretStatus.email_api_key?.configured);
+
+    if (!telegramEnabled && !feishuEnabled && !emailEnabled) {
+        throw new Error('请先启用至少一个站外告警通道');
     }
-    return true;
+
+    if (telegramEnabled) {
+        if (!chatIds.length) {
+            throw new Error('已启用 Telegram 告警，请先填写至少一个 Telegram Chat ID');
+        }
+
+        if (!providedTelegramToken && !hasStoredTelegramToken) {
+            throw new Error('已启用 Telegram 告警，请先填写 Telegram Bot Token，或先保存已配置的后台密钥');
+        }
+    }
+
+    if (feishuEnabled && !providedFeishuWebhook && !hasStoredFeishuWebhook) {
+        throw new Error('已启用飞书告警，请先填写飞书 Webhook，或先保存已配置的后台密钥');
+    }
+
+    if (emailEnabled) {
+        if (!recipients.length) {
+            throw new Error('已启用邮件告警，请先填写至少一个收件人');
+        }
+        if (!normalizedConfig.channels?.email?.from_address) {
+            throw new Error('已启用邮件告警，请先填写发件地址');
+        }
+        if (!providedEmailApiKey && !hasStoredEmailApiKey) {
+            throw new Error('已启用邮件告警，请先填写 Email API Key，或先保存已配置的后台密钥');
+        }
+    }
+
+    return normalizedSecrets;
+}
+
+function resolveOpsAlertDispatchConfigValidation(config = {}, secretStatus = {}, secrets = {}) {
+    return resolveOpsAlertSharedCallable(
+        'validateAdminWorkbenchOpsAlertDispatchConfig',
+        buildLocalOpsAlertDispatchConfigValidation
+    )(config, secretStatus, secrets);
 }
 
 async function submitLocalOpsAlertSettingsPayload(headers = {}, body = {}, options = {}) {
@@ -14200,13 +14103,18 @@ async function submitLocalOpsAlertSettingsPayload(headers = {}, body = {}, optio
     return payload;
 }
 
-async function submitOpsAlertSettingsPayload(headers = {}, body = {}, options = {}) {
-    if (typeof window.submitAdminWorkbenchOpsAlertSettings === 'function') {
-        return window.submitAdminWorkbenchOpsAlertSettings(headers, body, {
+function resolveOpsAlertSettingsSubmitter(options = {}) {
+    return resolveOpsAlertSharedCallable(
+        'submitAdminWorkbenchOpsAlertSettings',
+        (headers = {}, body = {}) => submitLocalOpsAlertSettingsPayload(headers, body, options),
+        (headers = {}, body = {}) => ({
             errorMessage: options.errorMessage || '保存站外告警配置失败'
-        });
-    }
-    return submitLocalOpsAlertSettingsPayload(headers, body, options);
+        })
+    );
+}
+
+async function submitOpsAlertSettingsPayload(headers = {}, body = {}, options = {}) {
+    return resolveOpsAlertSettingsSubmitter(options)(headers, body);
 }
 
 async function submitLocalOpsAlertSecretDeletion(headers = {}, secretName = '', options = {}) {
@@ -14223,45 +14131,101 @@ async function submitLocalOpsAlertSecretDeletion(headers = {}, secretName = '', 
     return payload;
 }
 
-async function submitOpsAlertSecretDeletion(headers = {}, secretName = '', options = {}) {
-    if (typeof window.deleteAdminWorkbenchOpsAlertSecret === 'function') {
-        return window.deleteAdminWorkbenchOpsAlertSecret(headers, secretName, {
+function resolveOpsAlertSecretDeletionSubmitter(options = {}) {
+    return resolveOpsAlertSharedCallable(
+        'deleteAdminWorkbenchOpsAlertSecret',
+        (headers = {}, secretName = '') => submitLocalOpsAlertSecretDeletion(headers, secretName, options),
+        (headers = {}, secretName = '') => ({
             errorMessage: options.errorMessage || '删除站外告警密钥失败'
-        });
-    }
-    return submitLocalOpsAlertSecretDeletion(headers, secretName, options);
+        })
+    );
+}
+
+async function submitOpsAlertSecretDeletion(headers = {}, secretName = '', options = {}) {
+    return resolveOpsAlertSecretDeletionSubmitter(options)(headers, secretName);
+}
+
+function buildLocalOpsAlertSecretDeletionSubmissionContext(secretName = '', secretStatus = opsAlertSecretStatus || getDefaultOpsAlertSecretStatus()) {
+    const deletionState = buildLocalOpsAlertSecretDeletionState(secretName, secretStatus);
+    return {
+        ...deletionState,
+        canDelete: deletionState.isValid && !deletionState.isEnvironmentManaged
+    };
+}
+
+function resolveOpsAlertSettingsSubmissionState(config, options = {}) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    return {
+        config: normalizedConfig,
+        body: buildOpsAlertSettingsRequestBody(normalizedConfig, options),
+        successMessage: options.successMessage || '',
+        errorMessage: options.errorMessage || '保存站外告警配置失败'
+    };
+}
+
+function buildLocalOpsAlertSettingsSavedState(payload = {}, submissionState = {}) {
+    const normalizedPayload = resolveOpsAlertSettingsPayload(payload);
+    return {
+        config: normalizedPayload.config,
+        secrets: normalizedPayload.secrets,
+        toastMessage: submissionState.successMessage
+            || payload.message
+            || '站外退款告警配置已保存'
+    };
+}
+
+function applyOpsAlertSettingsSavedState(savedState = {}) {
+    const normalizedConfig = normalizeOpsAlertConfig(savedState.config);
+    systemConfigCache['ops_alerts'] = normalizedConfig;
+    opsAlertSecretStatus = savedState.secrets || getDefaultOpsAlertSecretStatus();
+    window.dispatchEvent(new CustomEvent('ops-alerts-config-updated', {
+        detail: {
+            config: normalizedConfig
+        }
+    }));
+    renderOpsAlertSettings();
+    clearOpsAlertSecretInputs();
+    showConfigSavedToast(savedState.toastMessage || '站外退款告警配置已保存');
+    return savedState;
+}
+
+function applyOpsAlertSettingsSavedPayload(payload = {}, submissionState = {}) {
+    return applyOpsAlertSettingsSavedState(buildLocalOpsAlertSettingsSavedState(payload, submissionState));
+}
+
+function handleOpsAlertSettingsSaveError(error) {
+    console.error('[Config] Save ops alert settings failed:', error);
+    showToast('保存失败: ' + (error.message || '未知错误'), 'error');
+    renderOpsAlertSettings();
+    return false;
+}
+
+function buildLocalOpsAlertActionFeedbackState(payload = {}, options = {}) {
+    return {
+        message: options.successMessage || payload.message || ''
+    };
+}
+
+function applyOpsAlertActionFeedback(payload = {}, options = {}) {
+    const feedbackState = buildLocalOpsAlertActionFeedbackState(payload, options);
+    showConfigSavedToast(feedbackState.message);
 }
 
 async function saveOpsAlertConfigOverride(config, options = {}) {
     setOpsAlertStrategySaveBusy(true);
     try {
         const headers = await getAdminConfigApiHeaders();
-        const body = buildOpsAlertSettingsRequestBody(normalizeOpsAlertConfig(config), options);
-        const payload = await submitOpsAlertSettingsPayload(headers, body, {
+        const submissionState = resolveOpsAlertSettingsSubmissionState(config, {
+            ...options,
             errorMessage: '保存站外告警配置失败'
         });
-        const normalizedPayload = resolveOpsAlertSettingsPayload(payload);
-
-        systemConfigCache['ops_alerts'] = normalizedPayload.config;
-        opsAlertSecretStatus = normalizedPayload.secrets;
-        window.dispatchEvent(new CustomEvent('ops-alerts-config-updated', {
-            detail: {
-                config: systemConfigCache['ops_alerts']
-            }
-        }));
-        renderOpsAlertSettings();
-        clearOpsAlertSecretInputs();
-        if (options.successMessage) {
-            showConfigSavedToast(options.successMessage);
-        } else {
-            showConfigSavedToast(payload.message || '站外退款告警配置已保存');
-        }
+        const payload = await submitOpsAlertSettingsPayload(headers, submissionState.body, {
+            errorMessage: submissionState.errorMessage
+        });
+        applyOpsAlertSettingsSavedPayload(payload, submissionState);
         return true;
     } catch (error) {
-        console.error('[Config] Save ops alert settings failed:', error);
-        showToast('保存失败: ' + (error.message || '未知错误'), 'error');
-        renderOpsAlertSettings();
-        return false;
+        return handleOpsAlertSettingsSaveError(error);
     } finally {
         setOpsAlertStrategySaveBusy(false);
     }
@@ -14280,296 +14244,233 @@ async function sendOpsAlertTelegramRequest(action, fallbackMessage) {
     resolveOpsAlertDispatchConfigValidation(config, opsAlertSecretStatus, secrets);
 
     const headers = await getAdminConfigApiHeaders();
-    const body = buildOpsAlertSettingsRequestBody(config, {
+    const submissionState = resolveOpsAlertSettingsSubmissionState(config, {
         action,
-        secrets
-    });
-    const payload = await submitOpsAlertSettingsPayload(headers, body, {
+        secrets,
+        successMessage: fallbackMessage,
         errorMessage: fallbackMessage
     });
+    const payload = await submitOpsAlertSettingsPayload(headers, submissionState.body, {
+        errorMessage: submissionState.errorMessage
+    });
 
-    showConfigSavedToast(payload.message || fallbackMessage);
+    applyOpsAlertActionFeedback(payload, submissionState);
     return true;
 }
 
-async function sendOpsAlertTelegramTest() {
+function buildLocalOpsAlertRefreshFeedbackState(result = null, options = {}) {
+    const success = result?.success === true;
+    return {
+        success,
+        successMessage: options.successMessage || '已刷新',
+        errorMessage: options.errorMessage || '刷新失败: 请稍后重试'
+    };
+}
+
+function applyOpsAlertRefreshFeedback(feedbackState = {}) {
+    if (feedbackState.success) {
+        showConfigSavedToast(feedbackState.successMessage || '已刷新');
+        return true;
+    }
+    showToast(feedbackState.errorMessage || '刷新失败: 请稍后重试', 'error');
+    return false;
+}
+
+const OPS_ALERT_SAMPLE_REQUESTS = Object.freeze({
+    telegramTest: {
+        action: 'send_test_telegram',
+        successMessage: '测试站外告警已发送',
+        errorContext: 'Send ops alert test failed'
+    },
+    refundSample: {
+        action: 'send_sample_refund_telegram',
+        successMessage: '退款详情示例消息已发送',
+        errorContext: 'Send Telegram refund sample failed'
+    },
+    customerChatMessageSample: {
+        action: 'send_sample_customer_chat_message',
+        successMessage: '客服消息示例已发送',
+        errorContext: 'Send customer chat message sample failed'
+    },
+    shopPurchaseSucceededSample: {
+        action: 'send_sample_shop_purchase_succeeded',
+        successMessage: '购买成功示例消息已发送',
+        errorContext: 'Send shop purchase succeeded sample failed'
+    },
+    walletRechargeSucceededSample: {
+        action: 'send_sample_wallet_recharge_succeeded',
+        successMessage: '充值成功示例消息已发送',
+        errorContext: 'Send wallet recharge succeeded sample failed'
+    },
+    gatewaySample: {
+        action: 'send_sample_gateway_degraded',
+        successMessage: '支付通道异常示例消息已发送',
+        errorContext: 'Send payment gateway degraded sample failed'
+    },
+    gatewayRecoveredSample: {
+        action: 'send_sample_gateway_recovered',
+        successMessage: '支付通道恢复示例消息已发送',
+        errorContext: 'Send payment gateway recovery sample failed'
+    },
+    verifyServiceDisabledSample: {
+        action: 'send_sample_verify_service_disabled',
+        successMessage: '验证服务停摆示例消息已发送',
+        errorContext: 'Send verify service disabled sample failed'
+    },
+    verifyQueueBacklogSample: {
+        action: 'send_sample_verify_queue_backlog',
+        successMessage: '验证任务堆积示例消息已发送',
+        errorContext: 'Send verify queue backlog sample failed'
+    },
+    verifyFailureRateSpikeSample: {
+        action: 'send_sample_verify_failure_rate_spike',
+        successMessage: '验证失败率异常示例消息已发送',
+        errorContext: 'Send verify failure rate spike sample failed'
+    },
+    verifyIncidentEscalatedSample: {
+        action: 'send_sample_verify_incident_escalated',
+        successMessage: '验证综合异常示例消息已发送',
+        errorContext: 'Send verify incident escalation sample failed'
+    },
+    verifyIncidentRecoveredSample: {
+        action: 'send_sample_verify_incident_recovered',
+        successMessage: '验证恢复示例消息已发送',
+        errorContext: 'Send verify incident recovered sample failed'
+    },
+    verifyQuotaSample: {
+        action: 'send_sample_verify_quota_low',
+        successMessage: '验证额度告警示例消息已发送',
+        errorContext: 'Send verify quota sample failed'
+    },
+    ticketSlaSample: {
+        action: 'send_sample_ticket_sla_overdue',
+        successMessage: '工单超时示例消息已发送',
+        errorContext: 'Send ticket SLA sample failed'
+    },
+    ticketSlaRecoveredSample: {
+        action: 'send_sample_ticket_sla_recovered',
+        successMessage: '工单恢复示例消息已发送',
+        errorContext: 'Send ticket SLA recovery sample failed'
+    },
+    shopInventorySample: {
+        action: 'send_sample_shop_inventory_low',
+        successMessage: '库存预警示例消息已发送',
+        errorContext: 'Send shop inventory sample failed'
+    },
+    shopInventoryRecoveredSample: {
+        action: 'send_sample_shop_inventory_recovered',
+        successMessage: '库存恢复示例消息已发送',
+        errorContext: 'Send shop inventory recovery sample failed'
+    },
+    adminLoginAnomalySample: {
+        action: 'send_sample_admin_login_anomaly',
+        successMessage: '管理员异常登录示例消息已发送',
+        errorContext: 'Send admin login anomaly sample failed'
+    },
+    shopOrderDeliveryFailedSample: {
+        action: 'send_sample_shop_order_delivery_failed',
+        successMessage: '履约失败示例消息已发送',
+        errorContext: 'Send shop order delivery failed sample failed'
+    },
+    shopOrderDeliveryIncidentSample: {
+        action: 'send_sample_shop_order_delivery_incident',
+        successMessage: '履约异常升级示例消息已发送',
+        errorContext: 'Send shop order delivery incident sample failed'
+    },
+    shopOrderDeliveryIncidentRecoveredSample: {
+        action: 'send_sample_shop_order_delivery_incident_recovered',
+        successMessage: '履约事故恢复示例消息已发送',
+        errorContext: 'Send shop order delivery incident recovery sample failed'
+    },
+    shopOrderDeliveryRecoveredSample: {
+        action: 'send_sample_shop_order_delivery_recovered',
+        successMessage: '履约恢复示例消息已发送',
+        errorContext: 'Send shop order delivery recovered sample failed'
+    },
+    paymentConfigChangedSample: {
+        action: 'send_sample_payment_config_changed',
+        successMessage: '支付配置变更示例消息已发送',
+        errorContext: 'Send payment config changed sample failed'
+    },
+    paymentConfigIncidentSample: {
+        action: 'send_sample_payment_config_incident',
+        successMessage: '支付配置异常升级示例消息已发送',
+        errorContext: 'Send payment config incident sample failed'
+    },
+    paymentConfigIncidentRecoveredSample: {
+        action: 'send_sample_payment_config_incident_recovered',
+        successMessage: '支付配置事故恢复示例消息已发送',
+        errorContext: 'Send payment config incident recovered sample failed'
+    },
+    paymentConfigRecoveredSample: {
+        action: 'send_sample_payment_config_recovered',
+        successMessage: '支付配置恢复示例消息已发送',
+        errorContext: 'Send payment config recovered sample failed'
+    }
+});
+
+async function executeOpsAlertDispatchSample(sampleKey = '') {
+    const definition = OPS_ALERT_SAMPLE_REQUESTS[String(sampleKey || '').trim()] || null;
+    if (!definition) {
+        showToast('未识别的站外告警示例动作', 'warning');
+        return false;
+    }
+
     try {
-        return await sendOpsAlertTelegramRequest('send_test_telegram', '测试站外告警已发送');
+        return await sendOpsAlertTelegramRequest(definition.action, definition.successMessage);
     } catch (error) {
-        console.error('[Config] Send ops alert test failed:', error);
+        console.error(`[Config] ${definition.errorContext}:`, error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
         return false;
     }
 }
 
-async function sendOpsAlertRefundSample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_refund_telegram', '退款详情示例消息已发送');
-    } catch (error) {
-        console.error('[Config] Send Telegram refund sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
+function createOpsAlertDispatchSampleHandler(sampleKey) {
+    return async function opsAlertDispatchSampleHandler() {
+        return executeOpsAlertDispatchSample(sampleKey);
+    };
 }
 
-async function sendOpsAlertCustomerChatMessageSample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_customer_chat_message', '客服消息示例已发送');
-    } catch (error) {
-        console.error('[Config] Send customer chat message sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
-}
+const sendOpsAlertTelegramTest = createOpsAlertDispatchSampleHandler('telegramTest');
+const sendOpsAlertRefundSample = createOpsAlertDispatchSampleHandler('refundSample');
+const sendOpsAlertCustomerChatMessageSample = createOpsAlertDispatchSampleHandler('customerChatMessageSample');
+const sendOpsAlertShopPurchaseSucceededSample = createOpsAlertDispatchSampleHandler('shopPurchaseSucceededSample');
+const sendOpsAlertWalletRechargeSucceededSample = createOpsAlertDispatchSampleHandler('walletRechargeSucceededSample');
+const sendOpsAlertGatewaySample = createOpsAlertDispatchSampleHandler('gatewaySample');
+const sendOpsAlertGatewayRecoveredSample = createOpsAlertDispatchSampleHandler('gatewayRecoveredSample');
+const sendOpsAlertVerifyServiceDisabledSample = createOpsAlertDispatchSampleHandler('verifyServiceDisabledSample');
+const sendOpsAlertVerifyQueueBacklogSample = createOpsAlertDispatchSampleHandler('verifyQueueBacklogSample');
+const sendOpsAlertVerifyFailureRateSpikeSample = createOpsAlertDispatchSampleHandler('verifyFailureRateSpikeSample');
+const sendOpsAlertVerifyIncidentEscalatedSample = createOpsAlertDispatchSampleHandler('verifyIncidentEscalatedSample');
+const sendOpsAlertVerifyIncidentRecoveredSample = createOpsAlertDispatchSampleHandler('verifyIncidentRecoveredSample');
+const sendOpsAlertVerifyQuotaSample = createOpsAlertDispatchSampleHandler('verifyQuotaSample');
+const sendOpsAlertTicketSlaSample = createOpsAlertDispatchSampleHandler('ticketSlaSample');
+const sendOpsAlertTicketSlaRecoveredSample = createOpsAlertDispatchSampleHandler('ticketSlaRecoveredSample');
+const sendOpsAlertShopInventorySample = createOpsAlertDispatchSampleHandler('shopInventorySample');
+const sendOpsAlertShopInventoryRecoveredSample = createOpsAlertDispatchSampleHandler('shopInventoryRecoveredSample');
+const sendOpsAlertAdminLoginAnomalySample = createOpsAlertDispatchSampleHandler('adminLoginAnomalySample');
+const sendOpsAlertShopOrderDeliveryFailedSample = createOpsAlertDispatchSampleHandler('shopOrderDeliveryFailedSample');
+const sendOpsAlertShopOrderDeliveryIncidentSample = createOpsAlertDispatchSampleHandler('shopOrderDeliveryIncidentSample');
+const sendOpsAlertShopOrderDeliveryIncidentRecoveredSample = createOpsAlertDispatchSampleHandler('shopOrderDeliveryIncidentRecoveredSample');
+const sendOpsAlertShopOrderDeliveryRecoveredSample = createOpsAlertDispatchSampleHandler('shopOrderDeliveryRecoveredSample');
+const sendOpsAlertPaymentConfigChangedSample = createOpsAlertDispatchSampleHandler('paymentConfigChangedSample');
+const sendOpsAlertPaymentConfigIncidentSample = createOpsAlertDispatchSampleHandler('paymentConfigIncidentSample');
+const sendOpsAlertPaymentConfigIncidentRecoveredSample = createOpsAlertDispatchSampleHandler('paymentConfigIncidentRecoveredSample');
+const sendOpsAlertPaymentConfigRecoveredSample = createOpsAlertDispatchSampleHandler('paymentConfigRecoveredSample');
 
-async function sendOpsAlertShopPurchaseSucceededSample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_shop_purchase_succeeded', '购买成功示例消息已发送');
-    } catch (error) {
-        console.error('[Config] Send shop purchase succeeded sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
-}
-
-async function sendOpsAlertWalletRechargeSucceededSample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_wallet_recharge_succeeded', '充值成功示例消息已发送');
-    } catch (error) {
-        console.error('[Config] Send wallet recharge succeeded sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
-}
-
-async function sendOpsAlertGatewaySample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_gateway_degraded', '支付通道异常示例消息已发送');
-    } catch (error) {
-        console.error('[Config] Send payment gateway degraded sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
-}
-
-async function sendOpsAlertGatewayRecoveredSample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_gateway_recovered', '支付通道恢复示例消息已发送');
-    } catch (error) {
-        console.error('[Config] Send payment gateway recovery sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
-}
-
-async function sendOpsAlertVerifyServiceDisabledSample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_verify_service_disabled', '验证服务停摆示例消息已发送');
-    } catch (error) {
-        console.error('[Config] Send verify service disabled sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
-}
-
-async function sendOpsAlertVerifyQueueBacklogSample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_verify_queue_backlog', '验证任务堆积示例消息已发送');
-    } catch (error) {
-        console.error('[Config] Send verify queue backlog sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
-}
-
-async function sendOpsAlertVerifyFailureRateSpikeSample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_verify_failure_rate_spike', '验证失败率异常示例消息已发送');
-    } catch (error) {
-        console.error('[Config] Send verify failure rate spike sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
-}
-
-async function sendOpsAlertVerifyIncidentEscalatedSample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_verify_incident_escalated', '验证综合异常示例消息已发送');
-    } catch (error) {
-        console.error('[Config] Send verify incident escalation sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
-}
-
-async function sendOpsAlertVerifyIncidentRecoveredSample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_verify_incident_recovered', '验证恢复示例消息已发送');
-    } catch (error) {
-        console.error('[Config] Send verify incident recovered sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
-}
-
-async function sendOpsAlertVerifyQuotaSample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_verify_quota_low', '验证额度告警示例消息已发送');
-    } catch (error) {
-        console.error('[Config] Send verify quota sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
-}
-
-async function sendOpsAlertTicketSlaSample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_ticket_sla_overdue', '工单超时示例消息已发送');
-    } catch (error) {
-        console.error('[Config] Send ticket SLA sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
-}
-
-async function sendOpsAlertTicketSlaRecoveredSample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_ticket_sla_recovered', '工单恢复示例消息已发送');
-    } catch (error) {
-        console.error('[Config] Send ticket SLA recovery sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
-}
-
-async function sendOpsAlertShopInventorySample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_shop_inventory_low', '库存预警示例消息已发送');
-    } catch (error) {
-        console.error('[Config] Send shop inventory sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
-}
-
-async function sendOpsAlertShopInventoryRecoveredSample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_shop_inventory_recovered', '库存恢复示例消息已发送');
-    } catch (error) {
-        console.error('[Config] Send shop inventory recovery sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
-}
-
-async function sendOpsAlertAdminLoginAnomalySample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_admin_login_anomaly', '管理员异常登录示例消息已发送');
-    } catch (error) {
-        console.error('[Config] Send admin login anomaly sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
-}
-
-async function sendOpsAlertShopOrderDeliveryFailedSample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_shop_order_delivery_failed', '履约失败示例消息已发送');
-    } catch (error) {
-        console.error('[Config] Send shop order delivery failed sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
-}
-
-async function sendOpsAlertShopOrderDeliveryIncidentSample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_shop_order_delivery_incident', '履约异常升级示例消息已发送');
-    } catch (error) {
-        console.error('[Config] Send shop order delivery incident sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
-}
-
-async function sendOpsAlertShopOrderDeliveryIncidentRecoveredSample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_shop_order_delivery_incident_recovered', '履约事故恢复示例消息已发送');
-    } catch (error) {
-        console.error('[Config] Send shop order delivery incident recovery sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
-}
-
-async function sendOpsAlertShopOrderDeliveryRecoveredSample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_shop_order_delivery_recovered', '履约恢复示例消息已发送');
-    } catch (error) {
-        console.error('[Config] Send shop order delivery recovered sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
-}
-
-async function sendOpsAlertPaymentConfigChangedSample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_payment_config_changed', '支付配置变更示例消息已发送');
-    } catch (error) {
-        console.error('[Config] Send payment config changed sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
-}
-
-async function sendOpsAlertPaymentConfigIncidentSample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_payment_config_incident', '支付配置异常升级示例消息已发送');
-    } catch (error) {
-        console.error('[Config] Send payment config incident sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
-}
-
-async function sendOpsAlertPaymentConfigIncidentRecoveredSample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_payment_config_incident_recovered', '支付配置事故恢复示例消息已发送');
-    } catch (error) {
-        console.error('[Config] Send payment config incident recovered sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
-}
-
-async function sendOpsAlertPaymentConfigRecoveredSample() {
-    try {
-        return await sendOpsAlertTelegramRequest('send_sample_payment_config_recovered', '支付配置恢复示例消息已发送');
-    } catch (error) {
-        console.error('[Config] Send payment config recovered sample failed:', error);
-        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
+async function refreshOpsAlertWorkspacePanel(loader, successMessage) {
+    const result = await loader(true);
+    return applyOpsAlertRefreshFeedback(buildLocalOpsAlertRefreshFeedbackState(result, {
+        successMessage
+    }));
 }
 
 async function refreshOpsAlertHealthPanel() {
-    const result = await loadOpsAlertHealth(true);
-    if (result?.success) {
-        showConfigSavedToast('告警通道健康页已刷新');
-        return true;
-    }
-    showToast('刷新失败: 请稍后重试', 'error');
-    return false;
+    return refreshOpsAlertWorkspacePanel(loadOpsAlertHealth, '告警通道健康页已刷新');
 }
 
 async function refreshOpsAlertMonitorPanel() {
-    const result = await loadOpsAlertMonitor(true);
-    if (result?.success) {
-        showConfigSavedToast('集中告警处理面板已刷新');
-        return true;
-    }
-    showToast('刷新失败: 请稍后重试', 'error');
-    return false;
+    return refreshOpsAlertWorkspacePanel(loadOpsAlertMonitor, '集中告警处理面板已刷新');
 }
 
 function waitForOpsAlertWorkspacePaint() {
@@ -14587,10 +14488,37 @@ async function settleOpsAlertWorkspace(delayMs = 60) {
     }
 }
 
-async function scrollToOpsAlertHealthPanel() {
-    if (typeof window.switchOpsAlertsView === 'function') {
-        window.switchOpsAlertsView('health');
+function buildLocalOpsAlertsViewSwitcher(viewName = '') {
+    const normalizedViewName = String(viewName || '').trim();
+    if (!normalizedViewName) {
+        return false;
     }
+
+    const opsAlertsModule = document.getElementById('module-ops-alerts');
+    if (!opsAlertsModule) {
+        return false;
+    }
+
+    opsAlertsModule.querySelectorAll('.admin-tab[data-ops-alerts-view]').forEach((tab) => {
+        tab.classList.toggle('active', tab.dataset.opsAlertsView === normalizedViewName);
+    });
+
+    opsAlertsModule.querySelectorAll('.view-section').forEach((section) => {
+        section.classList.toggle('active', section.id === `ops-alerts-view-${normalizedViewName}`);
+    });
+
+    return true;
+}
+
+function resolveOpsAlertsViewSwitcher() {
+    return resolveOpsAlertSharedCallable(
+        'switchOpsAlertsView',
+        buildLocalOpsAlertsViewSwitcher
+    );
+}
+
+async function scrollToOpsAlertHealthPanel() {
+    resolveOpsAlertsViewSwitcher()('health');
     await settleOpsAlertWorkspace(80);
     scrollToOpsAlertWorkspaceTarget('opsAlertHealthPanel');
 }
@@ -14605,35 +14533,58 @@ function scrollToOpsAlertWorkspaceTarget(targetId) {
 }
 
 function getOpsAlertCaseComposerTargetLabel(context = {}) {
-    if (typeof window.getOpsAlertWorkspaceContextLabel === 'function') {
-        return window.getOpsAlertWorkspaceContextLabel(context, { fallback: '集中告警' });
-    }
+    return resolveOpsAlertWorkspaceContextLabelResolver()(context, { fallback: '集中告警' });
+}
+
+function getOpsAlertCaseComposerBatchPreview(items = []) {
+    return resolveOpsAlertWorkspaceBatchPreviewResolver()(items, {
+        fallback: '告警',
+        formatCount: formatVerifyMonitorInteger
+    });
+}
+
+function buildLocalOpsAlertWorkspaceContextLabel(context = {}, options = {}) {
     const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
     if (normalizedContext.referenceLabel && normalizedContext.referenceValue) {
         return `${normalizedContext.referenceLabel}：${normalizedContext.referenceValue}`;
     }
-    return normalizedContext.title || normalizedContext.targetId || '集中告警';
+    return normalizedContext.title || normalizedContext.targetId || options.fallback || '集中告警';
 }
 
-function getOpsAlertCaseComposerBatchPreview(items = []) {
-    if (typeof window.getOpsAlertWorkspaceBatchPreview === 'function') {
-        return window.getOpsAlertWorkspaceBatchPreview(items, {
-            fallback: '告警',
-            formatCount: formatVerifyMonitorInteger
-        });
-    }
+function resolveOpsAlertWorkspaceContextLabelResolver() {
+    return resolveOpsAlertSharedCallable(
+        'getOpsAlertWorkspaceContextLabel',
+        buildLocalOpsAlertWorkspaceContextLabel
+    );
+}
+
+function buildLocalOpsAlertWorkspaceBatchPreview(items = [], options = {}) {
     const previewLabels = (Array.isArray(items) ? items : [])
         .slice(0, 3)
         .map((item) => {
             if (item.reference_label && item.reference_value) {
                 return `${item.reference_label}：${item.reference_value}`;
             }
-            return item.title || item.target_id || '告警';
+            return item.title || item.target_id || options.fallback || '告警';
         })
         .filter(Boolean);
 
     const overflowCount = Math.max(0, (Array.isArray(items) ? items.length : 0) - previewLabels.length);
     return `${previewLabels.join(' / ')}${overflowCount > 0 ? ` 等 ${formatVerifyMonitorInteger(overflowCount)} 条` : ''}`;
+}
+
+function resolveOpsAlertWorkspaceBatchPreviewResolver() {
+    return resolveOpsAlertSharedCallable(
+        'getOpsAlertWorkspaceBatchPreview',
+        buildLocalOpsAlertWorkspaceBatchPreview
+    );
+}
+
+function resolveOpsAlertWorkspaceActionResolver() {
+    return resolveOpsAlertSharedCallable(
+        'getOpsAlertWorkspaceAction',
+        () => null
+    );
 }
 
 function getDefaultOpsAlertCaseComposerOwner(state = {}) {
@@ -14664,20 +14615,21 @@ function getDefaultOpsAlertCaseComposerOwner(state = {}) {
 }
 
 function getOpsAlertCaseComposerMeta(state = {}) {
-    if (typeof window.getOpsAlertCaseComposerMeta === 'function') {
-        return window.getOpsAlertCaseComposerMeta(state, {
-            formatCount: formatVerifyMonitorInteger,
-            singleFallback: '集中告警',
-            batchPreviewFallback: '告警'
-        });
-    }
+    return resolveOpsAlertCaseComposerMetaResolver()(state, {
+        formatCount: formatVerifyMonitorInteger,
+        singleFallback: '集中告警',
+        batchPreviewFallback: '告警'
+    });
+}
+
+function buildLocalOpsAlertCaseComposerMeta(state = {}, options = {}) {
     const normalizedAction = String(state.action || '').trim().toLowerCase();
     const normalizedContext = normalizeOpsAlertWorkspaceContext(state.context || {});
     const items = Array.isArray(state.items) ? state.items : [];
     const isBatch = String(state.mode || 'single').trim().toLowerCase() === 'batch';
     const targetLabel = isBatch
-        ? `当前筛选命中 ${formatVerifyMonitorInteger(items.length)} 条告警${items.length ? ` · ${getOpsAlertCaseComposerBatchPreview(items)}` : ''}`
-        : getOpsAlertCaseComposerTargetLabel(normalizedContext);
+        ? `当前筛选命中 ${formatVerifyMonitorInteger(items.length)} 条告警${items.length ? ` · ${resolveOpsAlertWorkspaceBatchPreviewResolver()(items, { fallback: options.batchPreviewFallback || '告警', formatCount: formatVerifyMonitorInteger })}` : ''}`
+        : resolveOpsAlertWorkspaceContextLabelResolver()(normalizedContext, { fallback: options.singleFallback || '集中告警' });
     const ownerLabel = normalizedContext.caseOwnerLabel || '';
 
     if (normalizedAction === 'assign') {
@@ -14718,11 +14670,93 @@ function getOpsAlertCaseComposerMeta(state = {}) {
     };
 }
 
+function resolveOpsAlertCaseComposerMetaResolver() {
+    return resolveOpsAlertSharedCallable(
+        'getOpsAlertCaseComposerMeta',
+        buildLocalOpsAlertCaseComposerMeta
+    );
+}
+
 function setOpsAlertCaseComposerVisible(visible) {
     const modal = document.getElementById('shopRiskCaseComposerModal');
     if (!modal) return;
     modal.classList.toggle('is-visible', visible);
     modal.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
+function buildLocalOpsAlertCaseComposerViewState(state = shopRiskCaseComposerState || getDefaultShopRiskCaseComposerState()) {
+    const normalizedState = state && typeof state === 'object' && !Array.isArray(state)
+        ? state
+        : getDefaultShopRiskCaseComposerState();
+    const meta = getOpsAlertCaseComposerMeta(normalizedState);
+    const isAssignAction = String(normalizedState.action || '').trim().toLowerCase() === 'assign';
+    const ownerOptions = getOpsAlertMonitorAssignableAdmins();
+    const selectedOwner = getDefaultOpsAlertCaseComposerOwner(normalizedState);
+
+    return {
+        open: normalizedState.open === true,
+        submitting: normalizedState.submitting === true,
+        title: meta.title,
+        summary: meta.summary,
+        description: meta.description,
+        fieldLabel: meta.fieldLabel,
+        placeholder: meta.placeholder,
+        submitLabel: normalizedState.submitting ? '提交中...' : meta.submitLabel,
+        isAssignAction,
+        ownerOptionsMarkup: ownerOptions.length
+            ? ownerOptions.map((admin) => `
+                <option value="${escapeConfigHtml(admin.id)}">${escapeConfigHtml(admin.label)}${admin.email ? ` · ${escapeConfigHtml(admin.email)}` : ''}${admin.isCurrent ? '（我）' : ''}</option>
+            `).join('')
+            : '<option value="">暂无可选管理员</option>',
+        selectedOwnerId: selectedOwner.id || '',
+        ownerSelectDisabled: normalizedState.submitting === true || ownerOptions.length === 0,
+        ownerHintText: isAssignAction
+            ? (
+                ownerOptions.length
+                    ? '指派会写入统一处置事件，monitor 卡片会同步回显新的负责人。'
+                    : '当前未加载到管理员列表，请先刷新集中告警处理面板。'
+            )
+            : '',
+        submitDisabled: normalizedState.submitting === true || (isAssignAction && ownerOptions.length === 0),
+        focusTarget: normalizedState.open === true && normalizedState.submitting !== true
+            ? (isAssignAction ? 'owner' : 'textarea')
+            : ''
+    };
+}
+
+function applyOpsAlertCaseComposerViewState(viewState = {}, elements = {}) {
+    const {
+        titleEl,
+        summaryEl,
+        descEl,
+        ownerFieldEl,
+        ownerSelectEl,
+        ownerHintEl,
+        labelEl,
+        textareaEl,
+        submitBtn
+    } = elements;
+
+    titleEl.textContent = viewState.title || '';
+    summaryEl.textContent = viewState.summary || '';
+    descEl.textContent = viewState.description || '';
+    ownerFieldEl.hidden = viewState.isAssignAction !== true;
+
+    if (viewState.isAssignAction === true) {
+        ownerSelectEl.innerHTML = viewState.ownerOptionsMarkup || '<option value="">暂无可选管理员</option>';
+        ownerSelectEl.value = viewState.selectedOwnerId || ownerSelectEl.value || '';
+        ownerSelectEl.disabled = viewState.ownerSelectDisabled === true;
+        ownerHintEl.textContent = viewState.ownerHintText || '';
+    } else {
+        ownerSelectEl.innerHTML = '';
+        ownerSelectEl.disabled = false;
+        ownerHintEl.textContent = '';
+    }
+
+    labelEl.textContent = viewState.fieldLabel || '';
+    textareaEl.placeholder = viewState.placeholder || '';
+    submitBtn.textContent = viewState.submitLabel || '提交';
+    submitBtn.disabled = viewState.submitDisabled === true;
 }
 
 function renderOpsAlertCaseComposer() {
@@ -14741,41 +14775,24 @@ function renderOpsAlertCaseComposer() {
         return;
     }
 
-    const state = shopRiskCaseComposerState || getDefaultShopRiskCaseComposerState();
-    const meta = getOpsAlertCaseComposerMeta(state);
-    const isAssignAction = String(state.action || '').trim().toLowerCase() === 'assign';
-    const ownerOptions = getOpsAlertMonitorAssignableAdmins();
-    const selectedOwner = getDefaultOpsAlertCaseComposerOwner(state);
+    const viewState = buildLocalOpsAlertCaseComposerViewState(shopRiskCaseComposerState || getDefaultShopRiskCaseComposerState());
 
-    titleEl.textContent = meta.title;
-    summaryEl.textContent = meta.summary;
-    descEl.textContent = meta.description;
-    ownerFieldEl.hidden = !isAssignAction;
-    if (isAssignAction) {
-        ownerSelectEl.innerHTML = ownerOptions.length
-            ? ownerOptions.map((admin) => `
-                <option value="${escapeConfigHtml(admin.id)}">${escapeConfigHtml(admin.label)}${admin.email ? ` · ${escapeConfigHtml(admin.email)}` : ''}${admin.isCurrent ? '（我）' : ''}</option>
-            `).join('')
-            : '<option value="">暂无可选管理员</option>';
-        ownerSelectEl.value = selectedOwner.id || ownerSelectEl.value || '';
-        ownerSelectEl.disabled = state.submitting || ownerOptions.length === 0;
-        ownerHintEl.textContent = ownerOptions.length
-            ? '指派会写入统一处置事件，monitor 卡片会同步回显新的负责人。'
-            : '当前未加载到管理员列表，请先刷新集中告警处理面板。';
-    } else {
-        ownerSelectEl.innerHTML = '';
-        ownerSelectEl.disabled = false;
-        ownerHintEl.textContent = '';
-    }
-    labelEl.textContent = meta.fieldLabel;
-    textareaEl.placeholder = meta.placeholder;
-    submitBtn.textContent = state.submitting ? '提交中...' : meta.submitLabel;
-    submitBtn.disabled = state.submitting || (isAssignAction && ownerOptions.length === 0);
+    applyOpsAlertCaseComposerViewState(viewState, {
+        titleEl,
+        summaryEl,
+        descEl,
+        ownerFieldEl,
+        ownerSelectEl,
+        ownerHintEl,
+        labelEl,
+        textareaEl,
+        submitBtn
+    });
 
-    setOpsAlertCaseComposerVisible(Boolean(state.open));
-    if (state.open && !state.submitting) {
+    setOpsAlertCaseComposerVisible(viewState.open === true);
+    if (viewState.focusTarget) {
         window.setTimeout(() => {
-            if (isAssignAction) {
+            if (viewState.focusTarget === 'owner') {
                 ownerSelectEl.focus();
                 return;
             }
@@ -14820,55 +14837,145 @@ function openOpsAlertCaseComposer(action, context = {}, options = {}) {
     renderOpsAlertCaseComposer();
 }
 
+function buildLocalOpsAlertCaseComposerSubmissionState(state = shopRiskCaseComposerState || getDefaultShopRiskCaseComposerState(), options = {}) {
+    return {
+        ...state,
+        selectedOwnerAdminId: String(options.selectedOwnerAdminId || state.selectedOwnerAdminId || '').trim(),
+        selectedOwnerLabel: String(options.selectedOwnerLabel || state.selectedOwnerLabel || '').trim(),
+        submitting: options.submitting === true
+    };
+}
+
+function applyOpsAlertCaseComposerSubmissionState(nextState = getDefaultShopRiskCaseComposerState()) {
+    shopRiskCaseComposerState = nextState;
+    renderOpsAlertCaseComposer();
+}
+
+function buildLocalOpsAlertCaseComposerSubmissionContext(state = shopRiskCaseComposerState || getDefaultShopRiskCaseComposerState(), elements = {}) {
+    const textareaEl = elements.textareaEl || document.getElementById('shopRiskCaseComposerTextarea');
+    const ownerSelectEl = elements.ownerSelectEl || document.getElementById('shopRiskCaseComposerOwnerSelect');
+    const normalizedState = state && typeof state === 'object' && !Array.isArray(state)
+        ? state
+        : getDefaultShopRiskCaseComposerState();
+    const textValue = String(textareaEl?.value || '').trim();
+    const selectedOwnerAdminId = String(ownerSelectEl?.value || normalizedState.selectedOwnerAdminId || '').trim();
+    const selectedOwner = getOpsAlertMonitorAssignableAdmins().find((admin) => admin.id === selectedOwnerAdminId) || null;
+    const selectedOwnerLabel = selectedOwner?.label || String(normalizedState.selectedOwnerLabel || '').trim();
+    const normalizedAction = String(normalizedState.action || '').trim().toLowerCase();
+
+    if (!normalizedState.open || !normalizedAction) {
+        return {
+            state: normalizedState,
+            textValue,
+            selectedOwnerAdminId,
+            selectedOwnerLabel,
+            canSubmit: false,
+            validationError: '',
+            validationFocus: null
+        };
+    }
+
+    if (normalizedAction === 'assign' && !selectedOwnerAdminId) {
+        return {
+            state: normalizedState,
+            textValue,
+            selectedOwnerAdminId,
+            selectedOwnerLabel,
+            canSubmit: false,
+            validationError: '请先选择负责人',
+            validationFocus: ownerSelectEl || null
+        };
+    }
+
+    if ((normalizedAction === 'add_note' || normalizedAction === 'resolve') && !textValue) {
+        return {
+            state: normalizedState,
+            textValue,
+            selectedOwnerAdminId,
+            selectedOwnerLabel,
+            canSubmit: false,
+            validationError: normalizedAction === 'resolve' ? '请先填写关闭结论' : '请先填写备注内容',
+            validationFocus: textareaEl || null
+        };
+    }
+
+    return {
+        state: normalizedState,
+        textValue,
+        selectedOwnerAdminId,
+        selectedOwnerLabel,
+        canSubmit: true,
+        validationError: '',
+        validationFocus: null,
+        nextSubmissionState: buildLocalOpsAlertCaseComposerSubmissionState(normalizedState, {
+            selectedOwnerAdminId,
+            selectedOwnerLabel,
+            submitting: true
+        })
+    };
+}
+
 async function submitOpsAlertCaseMutation(action, context = {}, options = {}) {
     const headers = await getAdminConfigApiHeaders();
-    if (typeof window.submitOpsAlertCaseMutationRequest === 'function') {
-        return window.submitOpsAlertCaseMutationRequest(headers, action, context, {
+    return resolveOpsAlertCaseMutationRequestSubmitter()(
+        headers,
+        action,
+        context,
+        {
             ...options,
             errorMessage: '集中告警处理失败'
-        });
+        }
+    );
+}
+
+function buildLocalOpsAlertCaseMutationRequest(action, context = {}, options = {}) {
+    const normalizedAction = String(action || '').trim().toLowerCase();
+    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
+    const items = buildOpsAlertCaseMutationItems(options.items || [], String(options.categoryKey || normalizedContext.category || '').trim().toLowerCase());
+    const body = {
+        action: normalizedAction,
+        note: String(options.note || '').trim(),
+        resolution: String(options.resolution || '').trim(),
+        metadata: {
+            alert_type: normalizedContext.alertType || '',
+            category: normalizedContext.category || '',
+            reference_label: normalizedContext.referenceLabel || '',
+            reference_value: normalizedContext.referenceValue || '',
+            signal_type: normalizedContext.signalType || '',
+            title: normalizedContext.title || ''
+        }
+    };
+    const ownerAdminId = String(options.ownerAdminId || options.owner_admin_id || '').trim();
+    const ownerLabel = String(options.ownerLabel || options.owner_label || '').trim();
+
+    if (items.length) {
+        body.items = items;
+    } else {
+        body.category_key = normalizedContext.category || '';
+        body.target_id = normalizedContext.targetId;
+        body.alert_type = normalizedContext.alertType || '';
+        body.title = normalizedContext.title || '';
     }
-    const requestBody = typeof window.buildOpsAlertCaseMutationRequest === 'function'
-        ? window.buildOpsAlertCaseMutationRequest(action, context, options)
-        : (() => {
-            const normalizedAction = String(action || '').trim().toLowerCase();
-            const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
-            const items = buildOpsAlertCaseMutationItems(options.items || [], String(options.categoryKey || normalizedContext.category || '').trim().toLowerCase());
-            const body = {
-                action: normalizedAction,
-                note: String(options.note || '').trim(),
-                resolution: String(options.resolution || '').trim(),
-                metadata: {
-                    alert_type: normalizedContext.alertType || '',
-                    category: normalizedContext.category || '',
-                    reference_label: normalizedContext.referenceLabel || '',
-                    reference_value: normalizedContext.referenceValue || '',
-                    signal_type: normalizedContext.signalType || '',
-                    title: normalizedContext.title || ''
-                }
-            };
-            const ownerAdminId = String(options.ownerAdminId || options.owner_admin_id || '').trim();
-            const ownerLabel = String(options.ownerLabel || options.owner_label || '').trim();
 
-            if (items.length) {
-                body.items = items;
-            } else {
-                body.category_key = normalizedContext.category || '';
-                body.target_id = normalizedContext.targetId;
-                body.alert_type = normalizedContext.alertType || '';
-                body.title = normalizedContext.title || '';
-            }
+    if (ownerAdminId) {
+        body.owner_admin_id = ownerAdminId;
+    }
+    if (ownerLabel) {
+        body.owner_label = ownerLabel;
+    }
 
-            if (ownerAdminId) {
-                body.owner_admin_id = ownerAdminId;
-            }
-            if (ownerLabel) {
-                body.owner_label = ownerLabel;
-            }
+    return body;
+}
 
-            return body;
-        })();
+function resolveOpsAlertCaseMutationRequestBuilder() {
+    return resolveOpsAlertSharedCallable(
+        'buildOpsAlertCaseMutationRequest',
+        buildLocalOpsAlertCaseMutationRequest
+    );
+}
 
+async function submitLocalOpsAlertCaseMutationRequest(headers = {}, action, context = {}, options = {}) {
+    const requestBody = resolveOpsAlertCaseMutationRequestBuilder()(action, context, options);
     const response = await fetch('/api/admin/settings/ops-alert-monitor-cases', {
         method: 'POST',
         headers,
@@ -14877,10 +14984,17 @@ async function submitOpsAlertCaseMutation(action, context = {}, options = {}) {
 
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.success) {
-        throw new Error(payload.message || '集中告警处理失败');
+        throw new Error(payload.message || options.errorMessage || '集中告警处理失败');
     }
 
     return payload;
+}
+
+function resolveOpsAlertCaseMutationRequestSubmitter() {
+    return resolveOpsAlertSharedCallable(
+        'submitOpsAlertCaseMutationRequest',
+        submitLocalOpsAlertCaseMutationRequest
+    );
 }
 
 async function handleOpsAlertCaseAction(action, context = {}) {
@@ -14993,16 +15107,59 @@ function buildLocalOpsAlertBatchMuteModalState(state = opsAlertBatchMuteState ||
     };
 }
 
-function resolveOpsAlertBatchMuteModalState(state = opsAlertBatchMuteState || getDefaultOpsAlertBatchMuteState()) {
-    if (typeof window.buildAdminWorkbenchOpsAlertBatchMuteModalState === 'function') {
-        return window.buildAdminWorkbenchOpsAlertBatchMuteModalState(state, {
+function resolveOpsAlertBatchMuteModalStateBuilder() {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsAlertBatchMuteModalState',
+        buildLocalOpsAlertBatchMuteModalState,
+        () => ({
             getModuleLabel: getOpsAlertMuteModuleLabel,
             getFilterSummaryLabel: getOpsAlertMonitorFilterSummaryLabel,
             formatCount: formatVerifyMonitorInteger,
             getDefaultUntilValue: getDefaultOpsAlertBatchMuteUntilInputValue
-        });
+        })
+    );
+}
+
+function resolveOpsAlertBatchMuteModalState(state = opsAlertBatchMuteState || getDefaultOpsAlertBatchMuteState()) {
+    return resolveOpsAlertBatchMuteModalStateBuilder()(state);
+}
+
+function resolveOpsAlertBatchMuteModalViewState(state = opsAlertBatchMuteState || getDefaultOpsAlertBatchMuteState()) {
+    const normalizedState = state && typeof state === 'object' && !Array.isArray(state)
+        ? state
+        : getDefaultOpsAlertBatchMuteState();
+    const modalState = resolveOpsAlertBatchMuteModalState(normalizedState);
+    return {
+        open: normalizedState.open === true,
+        allowCritical: normalizedState.allowCritical !== false,
+        submitting: normalizedState.submitting === true,
+        summaryText: modalState?.summaryText || '集中告警模块静默',
+        noteText: modalState?.noteText || '',
+        defaultUntilValue: modalState?.defaultUntilValue || getDefaultOpsAlertBatchMuteUntilInputValue(),
+        allowCriticalActive: modalState ? modalState.allowCriticalActive : normalizedState.allowCritical !== false,
+        submitDisabled: modalState ? modalState.submitDisabled : normalizedState.submitting === true,
+        submitLabel: modalState?.submitLabel || (normalizedState.submitting ? '静默中...' : '保存静默'),
+        shouldFocusAfterOpen: modalState ? modalState.shouldFocusAfterOpen === true : (normalizedState.open && !normalizedState.submitting)
+    };
+}
+
+function applyOpsAlertBatchMuteModalViewState(viewState = {}, elements = {}) {
+    const {
+        summaryEl,
+        noteEl,
+        untilInput,
+        allowCriticalToggle,
+        submitBtn
+    } = elements;
+
+    summaryEl.textContent = viewState.summaryText || '集中告警模块静默';
+    noteEl.textContent = viewState.noteText || '';
+    if (!untilInput.value) {
+        untilInput.value = viewState.defaultUntilValue || '';
     }
-    return buildLocalOpsAlertBatchMuteModalState(state);
+    allowCriticalToggle.classList.toggle('active', viewState.allowCriticalActive === true);
+    submitBtn.disabled = viewState.submitDisabled === true;
+    submitBtn.textContent = viewState.submitLabel || '保存静默';
 }
 
 function renderOpsAlertBatchMuteModal() {
@@ -15017,20 +15174,18 @@ function renderOpsAlertBatchMuteModal() {
         return;
     }
 
-    const state = opsAlertBatchMuteState || getDefaultOpsAlertBatchMuteState();
-    const modalState = resolveOpsAlertBatchMuteModalState(state);
+    const viewState = resolveOpsAlertBatchMuteModalViewState(opsAlertBatchMuteState || getDefaultOpsAlertBatchMuteState());
 
-    summaryEl.textContent = modalState?.summaryText || '集中告警模块静默';
-    noteEl.textContent = modalState?.noteText || '';
-    if (!untilInput.value) {
-        untilInput.value = modalState?.defaultUntilValue || getDefaultOpsAlertBatchMuteUntilInputValue();
-    }
-    allowCriticalToggle.classList.toggle('active', modalState ? modalState.allowCriticalActive : state.allowCritical !== false);
-    submitBtn.disabled = modalState ? modalState.submitDisabled : state.submitting;
-    submitBtn.textContent = modalState?.submitLabel || (state.submitting ? '静默中...' : '保存静默');
+    applyOpsAlertBatchMuteModalViewState(viewState, {
+        summaryEl,
+        noteEl,
+        untilInput,
+        allowCriticalToggle,
+        submitBtn
+    });
 
-    setOpsAlertBatchMuteModalVisible(Boolean(state.open));
-    if (modalState ? modalState.shouldFocusAfterOpen : (state.open && !state.submitting)) {
+    setOpsAlertBatchMuteModalVisible(viewState.open);
+    if (viewState.shouldFocusAfterOpen) {
         window.setTimeout(() => untilInput.focus(), 40);
     }
 }
@@ -15079,40 +15234,90 @@ function openOpsAlertBatchMuteModal(categoryKey = '') {
     return true;
 }
 
-async function submitOpsAlertBatchMuteModal() {
-    const state = opsAlertBatchMuteState || getDefaultOpsAlertBatchMuteState();
-    const untilInput = document.getElementById('opsAlertBatchMuteUntil');
-    const allowCriticalToggle = document.getElementById('opsAlertBatchMuteAllowCriticalToggle');
-    const untilValue = String(untilInput?.value || '').trim();
-    const normalizedUntil = normalizeDateTimeLocalInputValue(untilValue);
-    const moduleLabels = state.moduleKeys.map((key) => getOpsAlertMuteModuleLabel(key));
+function buildLocalOpsAlertBatchMuteSubmissionState(state = opsAlertBatchMuteState || getDefaultOpsAlertBatchMuteState(), options = {}) {
+    return {
+        ...state,
+        allowCritical: options.allowCritical !== false,
+        submitting: options.submitting === true
+    };
+}
 
-    if (!state.open || !state.moduleKeys.length) {
-        return false;
+function applyOpsAlertBatchMuteSubmissionState(nextState = getDefaultOpsAlertBatchMuteState()) {
+    opsAlertBatchMuteState = nextState;
+    renderOpsAlertBatchMuteModal();
+}
+
+function buildLocalOpsAlertBatchMuteSubmissionContext(state = opsAlertBatchMuteState || getDefaultOpsAlertBatchMuteState(), elements = {}) {
+    const untilInput = elements.untilInput || document.getElementById('opsAlertBatchMuteUntil');
+    const allowCriticalToggle = elements.allowCriticalToggle || document.getElementById('opsAlertBatchMuteAllowCriticalToggle');
+    const normalizedState = state && typeof state === 'object' && !Array.isArray(state)
+        ? state
+        : getDefaultOpsAlertBatchMuteState();
+    const normalizedUntil = normalizeDateTimeLocalInputValue(String(untilInput?.value || '').trim());
+    const allowCritical = allowCriticalToggle?.classList.contains('active') !== false;
+    const moduleLabels = normalizedState.moduleKeys.map((key) => getOpsAlertMuteModuleLabel(key));
+
+    if (!normalizedState.open || !normalizedState.moduleKeys.length) {
+        return {
+            state: normalizedState,
+            normalizedUntil,
+            allowCritical,
+            moduleLabels,
+            canSubmit: false,
+            validationError: '',
+            validationFocus: null
+        };
     }
 
     if (!normalizedUntil) {
-        showToast('请先选择静默截止时间', 'warning');
-        untilInput?.focus?.();
+        return {
+            state: normalizedState,
+            normalizedUntil,
+            allowCritical,
+            moduleLabels,
+            canSubmit: false,
+            validationError: '请先选择静默截止时间',
+            validationFocus: untilInput || null
+        };
+    }
+
+    return {
+        state: normalizedState,
+        normalizedUntil,
+        allowCritical,
+        moduleLabels,
+        canSubmit: true,
+        validationError: '',
+        validationFocus: null,
+        nextSubmissionState: buildLocalOpsAlertBatchMuteSubmissionState(normalizedState, {
+            allowCritical,
+            submitting: true
+        })
+    };
+}
+
+async function submitOpsAlertBatchMuteModal() {
+    const state = opsAlertBatchMuteState || getDefaultOpsAlertBatchMuteState();
+    const submissionContext = buildLocalOpsAlertBatchMuteSubmissionContext(state);
+
+    if (!submissionContext.canSubmit) {
+        if (submissionContext.validationError) {
+            showToast(submissionContext.validationError, 'warning');
+            submissionContext.validationFocus?.focus?.();
+        }
         return false;
     }
 
     try {
-        opsAlertBatchMuteState = {
-            ...state,
-            allowCritical: allowCriticalToggle?.classList.contains('active') !== false,
-            submitting: true
-        };
-        renderOpsAlertBatchMuteModal();
+        applyOpsAlertBatchMuteSubmissionState(submissionContext.nextSubmissionState);
 
         const nextConfig = collectOpsAlertConfigFromForm();
-        const allowCritical = allowCriticalToggle?.classList.contains('active') !== false;
         const caseEvents = state.items.length ? [{
             action: 'batch_mute',
             items: state.items,
             metadata: {
-                mute_until: normalizedUntil,
-                allow_critical: allowCritical,
+                mute_until: submissionContext.normalizedUntil,
+                allow_critical: submissionContext.allowCritical,
                 module_keys: state.moduleKeys,
                 filter_scope: String(state.filters?.scope || 'all').trim().toLowerCase(),
                 filter_severity: String(state.filters?.severity || 'all').trim().toLowerCase(),
@@ -15127,22 +15332,20 @@ async function submitOpsAlertBatchMuteModal() {
             };
             nextConfig.mute_rules.modules[moduleKey] = {
                 ...currentRule,
-                until: normalizedUntil,
-                allow_critical: allowCritical
+                until: submissionContext.normalizedUntil,
+                allow_critical: submissionContext.allowCritical
             };
         });
 
         const success = await saveOpsAlertConfigOverride(nextConfig, {
-            successMessage: `已将 ${moduleLabels.join('、')} 静默至 ${formatVerifyMonitorDateTime(normalizedUntil)}`,
+            successMessage: `已将 ${submissionContext.moduleLabels.join('、')} 静默至 ${formatVerifyMonitorDateTime(submissionContext.normalizedUntil)}`,
             caseEvents
         });
         if (!success) {
-            opsAlertBatchMuteState = {
-                ...state,
-                allowCritical,
+            applyOpsAlertBatchMuteSubmissionState(buildLocalOpsAlertBatchMuteSubmissionState(state, {
+                allowCritical: submissionContext.allowCritical,
                 submitting: false
-            };
-            renderOpsAlertBatchMuteModal();
+            }));
             return false;
         }
 
@@ -15151,12 +15354,10 @@ async function submitOpsAlertBatchMuteModal() {
         return true;
     } catch (error) {
         console.error('[Config] Submit ops alert batch mute failed:', error);
-        opsAlertBatchMuteState = {
-            ...state,
-            allowCritical: allowCriticalToggle?.classList.contains('active') !== false,
+        applyOpsAlertBatchMuteSubmissionState(buildLocalOpsAlertBatchMuteSubmissionState(state, {
+            allowCritical: submissionContext.allowCritical,
             submitting: false
-        };
-        renderOpsAlertBatchMuteModal();
+        }));
         showToast('静默失败: ' + (error.message || '未知错误'), 'error');
         return false;
     }
@@ -15164,44 +15365,25 @@ async function submitOpsAlertBatchMuteModal() {
 
 async function submitOpsAlertCaseComposer() {
     const state = shopRiskCaseComposerState || getDefaultShopRiskCaseComposerState();
-    const textareaEl = document.getElementById('shopRiskCaseComposerTextarea');
-    const ownerSelectEl = document.getElementById('shopRiskCaseComposerOwnerSelect');
-    const textValue = String(textareaEl?.value || '').trim();
-    const selectedOwnerAdminId = String(ownerSelectEl?.value || state.selectedOwnerAdminId || '').trim();
-    const selectedOwner = getOpsAlertMonitorAssignableAdmins().find((admin) => admin.id === selectedOwnerAdminId) || null;
-    const selectedOwnerLabel = selectedOwner?.label || String(state.selectedOwnerLabel || '').trim();
+    const submissionContext = buildLocalOpsAlertCaseComposerSubmissionContext(state);
 
-    if (!state.open || !state.action) {
-        return false;
-    }
-
-    if (state.action === 'assign' && !selectedOwnerAdminId) {
-        showToast('请先选择负责人', 'warning');
-        ownerSelectEl?.focus?.();
-        return false;
-    }
-
-    if (['add_note', 'resolve'].includes(String(state.action || '').trim().toLowerCase()) && !textValue) {
-        showToast(state.action === 'resolve' ? '请先填写关闭结论' : '请先填写备注内容', 'warning');
-        textareaEl?.focus?.();
+    if (!submissionContext.canSubmit) {
+        if (submissionContext.validationError) {
+            showToast(submissionContext.validationError, 'warning');
+            submissionContext.validationFocus?.focus?.();
+        }
         return false;
     }
 
     try {
-        shopRiskCaseComposerState = {
-            ...state,
-            selectedOwnerAdminId,
-            selectedOwnerLabel,
-            submitting: true
-        };
-        renderOpsAlertCaseComposer();
+        applyOpsAlertCaseComposerSubmissionState(submissionContext.nextSubmissionState);
 
         const payload = await submitOpsAlertCaseMutation(state.action, state.context, {
             items: state.mode === 'batch' ? state.items : [],
-            note: textValue,
-            resolution: state.action === 'resolve' ? textValue : '',
-            ownerAdminId: state.action === 'assign' ? selectedOwnerAdminId : '',
-            ownerLabel: state.action === 'assign' ? selectedOwnerLabel : ''
+            note: submissionContext.textValue,
+            resolution: state.action === 'resolve' ? submissionContext.textValue : '',
+            ownerAdminId: state.action === 'assign' ? submissionContext.selectedOwnerAdminId : '',
+            ownerLabel: state.action === 'assign' ? submissionContext.selectedOwnerLabel : ''
         });
 
         closeOpsAlertCaseComposer();
@@ -15210,13 +15392,11 @@ async function submitOpsAlertCaseComposer() {
         return true;
     } catch (error) {
         console.error('[Config] Submit ops alert case composer failed:', error);
-        shopRiskCaseComposerState = {
-            ...state,
-            selectedOwnerAdminId,
-            selectedOwnerLabel,
+        applyOpsAlertCaseComposerSubmissionState(buildLocalOpsAlertCaseComposerSubmissionState(state, {
+            selectedOwnerAdminId: submissionContext.selectedOwnerAdminId,
+            selectedOwnerLabel: submissionContext.selectedOwnerLabel,
             submitting: false
-        };
-        renderOpsAlertCaseComposer();
+        }));
         showToast('处理失败: ' + (error.message || '未知错误'), 'error');
         return false;
     }
@@ -15261,6 +15441,31 @@ async function handleShopRiskCaseAction(action, context = {}) {
 
 async function submitShopRiskCaseComposer() {
     return submitOpsAlertCaseComposer();
+}
+
+function buildLocalOpsAlertSecretDeletionState(secretName = '', secretStatus = opsAlertSecretStatus || getDefaultOpsAlertSecretStatus()) {
+    const secretLabels = {
+        telegram_bot_token: 'Telegram Bot Token',
+        feishu_webhook_url: '飞书 Webhook',
+        email_api_key: 'Email API Key'
+    };
+    const normalizedSecretName = String(secretName || '').trim();
+    const label = secretLabels[normalizedSecretName] || '';
+    const currentStatus = secretStatus?.[normalizedSecretName];
+    return {
+        secretName: normalizedSecretName,
+        label,
+        isValid: Boolean(label),
+        isEnvironmentManaged: currentStatus?.source === 'environment',
+        confirmMessage: label
+            ? `确定删除 ${label} 吗？删除后将无法继续通过该通道发送站外退款告警。`
+            : '',
+        successMessage: '站外告警密钥已删除',
+        invalidMessage: '无效的站外告警密钥标识',
+        envMessage: label
+            ? `${label} 当前来自环境变量，请在部署平台里删除。`
+            : '当前密钥来自环境变量，请在部署平台里删除。'
+    };
 }
 
 async function handleShopRiskAction(action, context = {}) {
@@ -15327,39 +15532,29 @@ async function handleShopRiskAction(action, context = {}) {
 }
 
 async function deleteOpsAlertSecret(secretName) {
-    const secretLabels = {
-        telegram_bot_token: 'Telegram Bot Token',
-        feishu_webhook_url: '飞书 Webhook',
-        email_api_key: 'Email API Key'
-    };
-    const normalizedSecretName = String(secretName || '').trim();
-    if (!secretLabels[normalizedSecretName]) {
-        showToast('无效的站外告警密钥标识', 'warning');
+    const deletionContext = buildLocalOpsAlertSecretDeletionSubmissionContext(secretName, opsAlertSecretStatus || getDefaultOpsAlertSecretStatus());
+    if (!deletionContext.isValid) {
+        showToast(deletionContext.invalidMessage, 'warning');
         return false;
     }
 
-    const currentStatus = opsAlertSecretStatus?.[normalizedSecretName];
-    if (currentStatus?.source === 'environment') {
-        showToast(`${secretLabels[normalizedSecretName]} 当前来自环境变量，请在部署平台里删除。`, 'warning');
+    if (deletionContext.isEnvironmentManaged) {
+        showToast(deletionContext.envMessage, 'warning');
         return false;
     }
 
-    if (!confirm(`确定删除 ${secretLabels[normalizedSecretName]} 吗？删除后将无法继续通过该通道发送站外退款告警。`)) {
+    if (!confirm(deletionContext.confirmMessage)) {
         return false;
     }
 
     try {
         const headers = await getAdminConfigApiHeaders();
-        const payload = await submitOpsAlertSecretDeletion(headers, normalizedSecretName, {
+        const payload = await submitOpsAlertSecretDeletion(headers, deletionContext.secretName, {
             errorMessage: '删除站外告警密钥失败'
         });
-        const normalizedPayload = resolveOpsAlertSettingsPayload(payload);
-
-        systemConfigCache['ops_alerts'] = normalizedPayload.config;
-        opsAlertSecretStatus = normalizedPayload.secrets;
-        renderOpsAlertSettings();
-        clearOpsAlertSecretInputs();
-        showConfigSavedToast(payload.message || '站外告警密钥已删除');
+        applyOpsAlertSettingsSavedPayload(payload, {
+            successMessage: deletionContext.successMessage
+        });
         return true;
     } catch (error) {
         console.error('[Config] Delete ops alert secret failed:', error);
@@ -15497,257 +15692,197 @@ function handleOpsAlertSectionSummaryScheduleModeChange(applyControls) {
     applyOpsAlertSectionControlUpdates(applyControls);
 }
 
-function toggleOpsAlertShopRiskAutoResponseEnabled() {
-    toggleOpsAlertSectionControl('opsAlertShopRiskAutoResponseEnabledToggle', applyOpsAlertShopRiskControls);
+function createOpsAlertSectionToggleHandler(toggleId, applyControls, options = {}) {
+    return function opsAlertSectionToggleHandler() {
+        toggleOpsAlertSectionControl(toggleId, applyControls, options);
+    };
 }
 
-function handleOpsAlertShopInventorySummaryScheduleModeChange() {
-    handleOpsAlertSectionSummaryScheduleModeChange(applyOpsAlertShopInventoryControls);
+function createOpsAlertSectionSummaryScheduleModeHandler(applyControls) {
+    return function opsAlertSectionSummaryScheduleModeHandler() {
+        handleOpsAlertSectionSummaryScheduleModeChange(applyControls);
+    };
 }
 
-function toggleOpsAlertShopInventoryEnabled() {
-    toggleOpsAlertSectionControl('opsAlertShopInventoryEnabledToggle', applyOpsAlertShopInventoryControls);
-}
-
-function toggleOpsAlertShopInventoryRecoveryNotificationEnabled() {
-    toggleOpsAlertSectionControl(
-        'opsAlertShopInventoryRecoveryNotificationEnabledToggle',
-        applyOpsAlertShopInventoryControls,
-        { monitorToggleId: 'opsAlertShopInventoryEnabledToggle' }
-    );
-}
-
-function toggleOpsAlertShopInventorySummaryEnabled() {
-    toggleOpsAlertSectionControl(
-        'opsAlertShopInventorySummaryEnabledToggle',
-        applyOpsAlertShopInventoryControls,
-        { monitorToggleId: 'opsAlertShopInventoryEnabledToggle' }
-    );
-}
-
-function toggleOpsAlertCustomerChatMessageEnabled() {
-    toggleOpsAlertSectionControl('opsAlertCustomerChatMessageEnabledToggle', applyOpsAlertCustomerChatControls);
-}
-
-function toggleOpsAlertCustomerChatMessageSummaryEnabled() {
-    toggleOpsAlertSectionControl(
-        'opsAlertCustomerChatMessageSummaryEnabledToggle',
-        applyOpsAlertCustomerChatControls,
-        { monitorToggleId: 'opsAlertCustomerChatMessageEnabledToggle' }
-    );
-}
-
-function toggleOpsAlertCustomerChatMessageWorkHoursOnlyEnabled() {
-    toggleOpsAlertSectionControl(
-        'opsAlertCustomerChatMessageWorkHoursOnlyEnabledToggle',
-        applyOpsAlertCustomerChatControls,
-        { monitorToggleId: 'opsAlertCustomerChatMessageEnabledToggle' }
-    );
-}
-
-function handleOpsAlertCustomerChatMessageSummaryScheduleModeChange() {
-    handleOpsAlertSectionSummaryScheduleModeChange(applyOpsAlertCustomerChatControls);
-}
-
-function toggleOpsAlertShopPurchaseSuccessEnabled() {
-    toggleOpsAlertSectionControl('opsAlertShopPurchaseSuccessEnabledToggle', applyOpsAlertShopPurchaseSuccessControls);
-}
-
-function toggleOpsAlertShopPurchaseSuccessSummaryEnabled() {
-    toggleOpsAlertSectionControl(
-        'opsAlertShopPurchaseSuccessSummaryEnabledToggle',
-        applyOpsAlertShopPurchaseSuccessControls,
-        { monitorToggleId: 'opsAlertShopPurchaseSuccessEnabledToggle' }
-    );
-}
-
-function toggleOpsAlertShopPurchaseSuccessWorkHoursOnlyEnabled() {
-    toggleOpsAlertSectionControl(
-        'opsAlertShopPurchaseSuccessWorkHoursOnlyEnabledToggle',
-        applyOpsAlertShopPurchaseSuccessControls,
-        { monitorToggleId: 'opsAlertShopPurchaseSuccessEnabledToggle' }
-    );
-}
-
-function handleOpsAlertShopPurchaseSuccessSummaryScheduleModeChange() {
-    handleOpsAlertSectionSummaryScheduleModeChange(applyOpsAlertShopPurchaseSuccessControls);
-}
-
-function toggleOpsAlertWalletRechargeSuccessEnabled() {
-    toggleOpsAlertSectionControl('opsAlertWalletRechargeSuccessEnabledToggle', applyOpsAlertWalletRechargeSuccessControls);
-}
-
-function toggleOpsAlertWalletRechargeSuccessSummaryEnabled() {
-    toggleOpsAlertSectionControl(
-        'opsAlertWalletRechargeSuccessSummaryEnabledToggle',
-        applyOpsAlertWalletRechargeSuccessControls,
-        { monitorToggleId: 'opsAlertWalletRechargeSuccessEnabledToggle' }
-    );
-}
-
-function toggleOpsAlertWalletRechargeSuccessWorkHoursOnlyEnabled() {
-    toggleOpsAlertSectionControl(
-        'opsAlertWalletRechargeSuccessWorkHoursOnlyEnabledToggle',
-        applyOpsAlertWalletRechargeSuccessControls,
-        { monitorToggleId: 'opsAlertWalletRechargeSuccessEnabledToggle' }
-    );
-}
-
-function handleOpsAlertWalletRechargeSuccessSummaryScheduleModeChange() {
-    handleOpsAlertSectionSummaryScheduleModeChange(applyOpsAlertWalletRechargeSuccessControls);
-}
-
-function toggleOpsAlertTicketsEnabled() {
-    toggleOpsAlertSectionControl('opsAlertTicketsEnabledToggle', applyOpsAlertTicketsControls);
-}
-
-function toggleOpsAlertTicketsSummaryEnabled() {
-    toggleOpsAlertSectionControl(
-        'opsAlertTicketsSummaryEnabledToggle',
-        applyOpsAlertTicketsControls,
-        { monitorToggleId: 'opsAlertTicketsEnabledToggle' }
-    );
-}
-
-function toggleOpsAlertTicketsWorkHoursOnlyEnabled() {
-    toggleOpsAlertSectionControl(
-        'opsAlertTicketsWorkHoursOnlyEnabledToggle',
-        applyOpsAlertTicketsControls,
-        { monitorToggleId: 'opsAlertTicketsEnabledToggle' }
-    );
-}
-
-function handleOpsAlertTicketsSummaryScheduleModeChange() {
-    handleOpsAlertSectionSummaryScheduleModeChange(applyOpsAlertTicketsControls);
-}
-
-function toggleOpsAlertShopOrderDeliveryEnabled() {
-    toggleOpsAlertSectionControl('opsAlertShopOrderDeliveryEnabledToggle', applyOpsAlertShopOrderDeliveryControls);
-}
-
-function toggleOpsAlertShopOrderDeliveryIncidentEnabled() {
-    toggleOpsAlertSectionControl(
-        'opsAlertShopOrderDeliveryIncidentEnabledToggle',
-        applyOpsAlertShopOrderDeliveryControls,
-        { monitorToggleId: 'opsAlertShopOrderDeliveryEnabledToggle' }
-    );
-}
-
-function toggleOpsAlertShopOrderDeliverySummaryEnabled() {
-    toggleOpsAlertSectionControl(
-        'opsAlertShopOrderDeliverySummaryEnabledToggle',
-        applyOpsAlertShopOrderDeliveryControls,
-        { monitorToggleId: 'opsAlertShopOrderDeliveryEnabledToggle' }
-    );
-}
-
-function toggleOpsAlertShopOrderDeliveryWorkHoursOnlyEnabled() {
-    toggleOpsAlertSectionControl(
-        'opsAlertShopOrderDeliveryWorkHoursOnlyEnabledToggle',
-        applyOpsAlertShopOrderDeliveryControls,
-        { monitorToggleId: 'opsAlertShopOrderDeliveryEnabledToggle' }
-    );
-}
-
-function handleOpsAlertShopOrderDeliverySummaryScheduleModeChange() {
-    handleOpsAlertSectionSummaryScheduleModeChange(applyOpsAlertShopOrderDeliveryControls);
-}
-
-function toggleOpsAlertVerifyQuotaEnabled() {
-    toggleOpsAlertSectionControl('opsAlertVerifyQuotaEnabledToggle', applyOpsAlertVerifyQuotaControls);
-}
-
-function toggleOpsAlertVerifyQuotaSummaryEnabled() {
-    toggleOpsAlertSectionControl(
-        'opsAlertVerifyQuotaSummaryEnabledToggle',
-        applyOpsAlertVerifyQuotaControls,
-        { monitorToggleId: 'opsAlertVerifyQuotaEnabledToggle' }
-    );
-}
-
-function toggleOpsAlertVerifyQuotaWorkHoursOnlyEnabled() {
-    toggleOpsAlertSectionControl(
-        'opsAlertVerifyQuotaWorkHoursOnlyEnabledToggle',
-        applyOpsAlertVerifyQuotaControls,
-        { monitorToggleId: 'opsAlertVerifyQuotaEnabledToggle' }
-    );
-}
-
-function handleOpsAlertVerifyQuotaSummaryScheduleModeChange() {
-    handleOpsAlertSectionSummaryScheduleModeChange(applyOpsAlertVerifyQuotaControls);
-}
-
-function toggleOpsAlertVerifyQueueEnabled() {
-    toggleOpsAlertSectionControl('opsAlertVerifyQueueEnabledToggle', applyOpsAlertVerifyQueueControls);
-}
-
-function toggleOpsAlertVerifyQueueSummaryEnabled() {
-    toggleOpsAlertSectionControl(
-        'opsAlertVerifyQueueSummaryEnabledToggle',
-        applyOpsAlertVerifyQueueControls,
-        { monitorToggleId: 'opsAlertVerifyQueueEnabledToggle' }
-    );
-}
-
-function toggleOpsAlertVerifyQueueWorkHoursOnlyEnabled() {
-    toggleOpsAlertSectionControl(
-        'opsAlertVerifyQueueWorkHoursOnlyEnabledToggle',
-        applyOpsAlertVerifyQueueControls,
-        { monitorToggleId: 'opsAlertVerifyQueueEnabledToggle' }
-    );
-}
-
-function handleOpsAlertVerifyQueueSummaryScheduleModeChange() {
-    handleOpsAlertSectionSummaryScheduleModeChange(applyOpsAlertVerifyQueueControls);
-}
-
-function toggleOpsAlertVerifyFailureEnabled() {
-    toggleOpsAlertSectionControl('opsAlertVerifyFailureEnabledToggle', applyOpsAlertVerifyFailureControls);
-}
-
-function toggleOpsAlertVerifyFailureSummaryEnabled() {
-    toggleOpsAlertSectionControl(
-        'opsAlertVerifyFailureSummaryEnabledToggle',
-        applyOpsAlertVerifyFailureControls,
-        { monitorToggleId: 'opsAlertVerifyFailureEnabledToggle' }
-    );
-}
-
-function toggleOpsAlertVerifyFailureWorkHoursOnlyEnabled() {
-    toggleOpsAlertSectionControl(
-        'opsAlertVerifyFailureWorkHoursOnlyEnabledToggle',
-        applyOpsAlertVerifyFailureControls,
-        { monitorToggleId: 'opsAlertVerifyFailureEnabledToggle' }
-    );
-}
-
-function handleOpsAlertVerifyFailureSummaryScheduleModeChange() {
-    handleOpsAlertSectionSummaryScheduleModeChange(applyOpsAlertVerifyFailureControls);
-}
-
-function toggleOpsAlertPaymentGatewayEnabled() {
-    toggleOpsAlertSectionControl('opsAlertPaymentGatewayEnabledToggle', applyOpsAlertPaymentGatewayControls);
-}
-
-function toggleOpsAlertPaymentGatewaySummaryEnabled() {
-    toggleOpsAlertSectionControl(
-        'opsAlertPaymentGatewaySummaryEnabledToggle',
-        applyOpsAlertPaymentGatewayControls,
-        { monitorToggleId: 'opsAlertPaymentGatewayEnabledToggle' }
-    );
-}
-
-function toggleOpsAlertPaymentGatewayWorkHoursOnlyEnabled() {
-    toggleOpsAlertSectionControl(
-        'opsAlertPaymentGatewayWorkHoursOnlyEnabledToggle',
-        applyOpsAlertPaymentGatewayControls,
-        { monitorToggleId: 'opsAlertPaymentGatewayEnabledToggle' }
-    );
-}
-
-function handleOpsAlertPaymentGatewaySummaryScheduleModeChange() {
-    handleOpsAlertSectionSummaryScheduleModeChange(applyOpsAlertPaymentGatewayControls);
-}
+const toggleOpsAlertShopRiskAutoResponseEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertShopRiskAutoResponseEnabledToggle',
+    applyOpsAlertShopRiskControls
+);
+const handleOpsAlertShopInventorySummaryScheduleModeChange = createOpsAlertSectionSummaryScheduleModeHandler(
+    applyOpsAlertShopInventoryControls
+);
+const toggleOpsAlertShopInventoryEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertShopInventoryEnabledToggle',
+    applyOpsAlertShopInventoryControls
+);
+const toggleOpsAlertShopInventoryRecoveryNotificationEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertShopInventoryRecoveryNotificationEnabledToggle',
+    applyOpsAlertShopInventoryControls,
+    { monitorToggleId: 'opsAlertShopInventoryEnabledToggle' }
+);
+const toggleOpsAlertShopInventorySummaryEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertShopInventorySummaryEnabledToggle',
+    applyOpsAlertShopInventoryControls,
+    { monitorToggleId: 'opsAlertShopInventoryEnabledToggle' }
+);
+const toggleOpsAlertCustomerChatMessageEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertCustomerChatMessageEnabledToggle',
+    applyOpsAlertCustomerChatControls
+);
+const toggleOpsAlertCustomerChatMessageSummaryEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertCustomerChatMessageSummaryEnabledToggle',
+    applyOpsAlertCustomerChatControls,
+    { monitorToggleId: 'opsAlertCustomerChatMessageEnabledToggle' }
+);
+const toggleOpsAlertCustomerChatMessageWorkHoursOnlyEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertCustomerChatMessageWorkHoursOnlyEnabledToggle',
+    applyOpsAlertCustomerChatControls,
+    { monitorToggleId: 'opsAlertCustomerChatMessageEnabledToggle' }
+);
+const handleOpsAlertCustomerChatMessageSummaryScheduleModeChange = createOpsAlertSectionSummaryScheduleModeHandler(
+    applyOpsAlertCustomerChatControls
+);
+const toggleOpsAlertShopPurchaseSuccessEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertShopPurchaseSuccessEnabledToggle',
+    applyOpsAlertShopPurchaseSuccessControls
+);
+const toggleOpsAlertShopPurchaseSuccessSummaryEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertShopPurchaseSuccessSummaryEnabledToggle',
+    applyOpsAlertShopPurchaseSuccessControls,
+    { monitorToggleId: 'opsAlertShopPurchaseSuccessEnabledToggle' }
+);
+const toggleOpsAlertShopPurchaseSuccessWorkHoursOnlyEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertShopPurchaseSuccessWorkHoursOnlyEnabledToggle',
+    applyOpsAlertShopPurchaseSuccessControls,
+    { monitorToggleId: 'opsAlertShopPurchaseSuccessEnabledToggle' }
+);
+const handleOpsAlertShopPurchaseSuccessSummaryScheduleModeChange = createOpsAlertSectionSummaryScheduleModeHandler(
+    applyOpsAlertShopPurchaseSuccessControls
+);
+const toggleOpsAlertWalletRechargeSuccessEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertWalletRechargeSuccessEnabledToggle',
+    applyOpsAlertWalletRechargeSuccessControls
+);
+const toggleOpsAlertWalletRechargeSuccessSummaryEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertWalletRechargeSuccessSummaryEnabledToggle',
+    applyOpsAlertWalletRechargeSuccessControls,
+    { monitorToggleId: 'opsAlertWalletRechargeSuccessEnabledToggle' }
+);
+const toggleOpsAlertWalletRechargeSuccessWorkHoursOnlyEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertWalletRechargeSuccessWorkHoursOnlyEnabledToggle',
+    applyOpsAlertWalletRechargeSuccessControls,
+    { monitorToggleId: 'opsAlertWalletRechargeSuccessEnabledToggle' }
+);
+const handleOpsAlertWalletRechargeSuccessSummaryScheduleModeChange = createOpsAlertSectionSummaryScheduleModeHandler(
+    applyOpsAlertWalletRechargeSuccessControls
+);
+const toggleOpsAlertTicketsEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertTicketsEnabledToggle',
+    applyOpsAlertTicketsControls
+);
+const toggleOpsAlertTicketsSummaryEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertTicketsSummaryEnabledToggle',
+    applyOpsAlertTicketsControls,
+    { monitorToggleId: 'opsAlertTicketsEnabledToggle' }
+);
+const toggleOpsAlertTicketsWorkHoursOnlyEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertTicketsWorkHoursOnlyEnabledToggle',
+    applyOpsAlertTicketsControls,
+    { monitorToggleId: 'opsAlertTicketsEnabledToggle' }
+);
+const handleOpsAlertTicketsSummaryScheduleModeChange = createOpsAlertSectionSummaryScheduleModeHandler(
+    applyOpsAlertTicketsControls
+);
+const toggleOpsAlertShopOrderDeliveryEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertShopOrderDeliveryEnabledToggle',
+    applyOpsAlertShopOrderDeliveryControls
+);
+const toggleOpsAlertShopOrderDeliveryIncidentEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertShopOrderDeliveryIncidentEnabledToggle',
+    applyOpsAlertShopOrderDeliveryControls,
+    { monitorToggleId: 'opsAlertShopOrderDeliveryEnabledToggle' }
+);
+const toggleOpsAlertShopOrderDeliverySummaryEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertShopOrderDeliverySummaryEnabledToggle',
+    applyOpsAlertShopOrderDeliveryControls,
+    { monitorToggleId: 'opsAlertShopOrderDeliveryEnabledToggle' }
+);
+const toggleOpsAlertShopOrderDeliveryWorkHoursOnlyEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertShopOrderDeliveryWorkHoursOnlyEnabledToggle',
+    applyOpsAlertShopOrderDeliveryControls,
+    { monitorToggleId: 'opsAlertShopOrderDeliveryEnabledToggle' }
+);
+const handleOpsAlertShopOrderDeliverySummaryScheduleModeChange = createOpsAlertSectionSummaryScheduleModeHandler(
+    applyOpsAlertShopOrderDeliveryControls
+);
+const toggleOpsAlertVerifyQuotaEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertVerifyQuotaEnabledToggle',
+    applyOpsAlertVerifyQuotaControls
+);
+const toggleOpsAlertVerifyQuotaSummaryEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertVerifyQuotaSummaryEnabledToggle',
+    applyOpsAlertVerifyQuotaControls,
+    { monitorToggleId: 'opsAlertVerifyQuotaEnabledToggle' }
+);
+const toggleOpsAlertVerifyQuotaWorkHoursOnlyEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertVerifyQuotaWorkHoursOnlyEnabledToggle',
+    applyOpsAlertVerifyQuotaControls,
+    { monitorToggleId: 'opsAlertVerifyQuotaEnabledToggle' }
+);
+const handleOpsAlertVerifyQuotaSummaryScheduleModeChange = createOpsAlertSectionSummaryScheduleModeHandler(
+    applyOpsAlertVerifyQuotaControls
+);
+const toggleOpsAlertVerifyQueueEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertVerifyQueueEnabledToggle',
+    applyOpsAlertVerifyQueueControls
+);
+const toggleOpsAlertVerifyQueueSummaryEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertVerifyQueueSummaryEnabledToggle',
+    applyOpsAlertVerifyQueueControls,
+    { monitorToggleId: 'opsAlertVerifyQueueEnabledToggle' }
+);
+const toggleOpsAlertVerifyQueueWorkHoursOnlyEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertVerifyQueueWorkHoursOnlyEnabledToggle',
+    applyOpsAlertVerifyQueueControls,
+    { monitorToggleId: 'opsAlertVerifyQueueEnabledToggle' }
+);
+const handleOpsAlertVerifyQueueSummaryScheduleModeChange = createOpsAlertSectionSummaryScheduleModeHandler(
+    applyOpsAlertVerifyQueueControls
+);
+const toggleOpsAlertVerifyFailureEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertVerifyFailureEnabledToggle',
+    applyOpsAlertVerifyFailureControls
+);
+const toggleOpsAlertVerifyFailureSummaryEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertVerifyFailureSummaryEnabledToggle',
+    applyOpsAlertVerifyFailureControls,
+    { monitorToggleId: 'opsAlertVerifyFailureEnabledToggle' }
+);
+const toggleOpsAlertVerifyFailureWorkHoursOnlyEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertVerifyFailureWorkHoursOnlyEnabledToggle',
+    applyOpsAlertVerifyFailureControls,
+    { monitorToggleId: 'opsAlertVerifyFailureEnabledToggle' }
+);
+const handleOpsAlertVerifyFailureSummaryScheduleModeChange = createOpsAlertSectionSummaryScheduleModeHandler(
+    applyOpsAlertVerifyFailureControls
+);
+const toggleOpsAlertPaymentGatewayEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertPaymentGatewayEnabledToggle',
+    applyOpsAlertPaymentGatewayControls
+);
+const toggleOpsAlertPaymentGatewaySummaryEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertPaymentGatewaySummaryEnabledToggle',
+    applyOpsAlertPaymentGatewayControls,
+    { monitorToggleId: 'opsAlertPaymentGatewayEnabledToggle' }
+);
+const toggleOpsAlertPaymentGatewayWorkHoursOnlyEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertPaymentGatewayWorkHoursOnlyEnabledToggle',
+    applyOpsAlertPaymentGatewayControls,
+    { monitorToggleId: 'opsAlertPaymentGatewayEnabledToggle' }
+);
+const handleOpsAlertPaymentGatewaySummaryScheduleModeChange = createOpsAlertSectionSummaryScheduleModeHandler(
+    applyOpsAlertPaymentGatewayControls
+);
 
 // ============================================
 // CHANNELS CRUD
@@ -17178,6 +17313,42 @@ async function fetchAllSupabaseRows(buildQuery, pageSize = 1000) {
     return rows;
 }
 
+function toUniqueExportIds(values = []) {
+    return Array.from(new Set(
+        (values || [])
+            .map((value) => String(value || '').trim())
+            .filter(Boolean)
+    ));
+}
+
+async function fetchSupabaseRowsByIds(table, idField, ids, selectFields, { siteScoped = false } = {}) {
+    const normalizedIds = toUniqueExportIds(ids);
+    if (!normalizedIds.length) {
+        return [];
+    }
+
+    const results = [];
+    const chunkSize = 200;
+
+    for (let index = 0; index < normalizedIds.length; index += chunkSize) {
+        const chunk = normalizedIds.slice(index, index + chunkSize);
+        let query = window.supabaseClient
+            .from(table)
+            .select(selectFields)
+            .in(idField, chunk);
+
+        if (siteScoped) {
+            query = window.AdminSiteFilter?.applySiteFilter?.(query) || query;
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+        results.push(...(data || []));
+    }
+
+    return results;
+}
+
 async function fetchUsersExportRows() {
     let profiles = [];
     const { data: rpcData, error: rpcError } = await window.supabaseClient.rpc('get_admin_users');
@@ -17263,8 +17434,7 @@ async function fetchCommentsExportRows() {
                     created_at,
                     image_url,
                     like_count,
-                    site,
-                    profiles:user_id (username, avatar_url, email)
+                    site
                 `)
                 .order('created_at', { ascending: false });
             query = window.AdminSiteFilter?.applySiteFilter?.(query) || query;
@@ -17283,10 +17453,7 @@ async function fetchCommentsExportRows() {
                     prompt_id,
                     is_pinned,
                     is_featured,
-                    site,
-                    profiles:user_id (username, avatar_url, email),
-                    prompts:prompt_id (title),
-                    comment_likes (count)
+                    site
                 `)
                 .order('created_at', { ascending: false });
             query = window.AdminSiteFilter?.applySiteFilter?.(query) || query;
@@ -17294,13 +17461,35 @@ async function fetchCommentsExportRows() {
         })
     ]);
 
+    const guestbookUserIds = toUniqueExportIds((guestbookRows || []).map((row) => row.user_id));
+    const galleryUserIds = toUniqueExportIds((galleryRows || []).map((row) => row.user_id));
+    const promptIds = toUniqueExportIds((galleryRows || []).map((row) => row.prompt_id));
+    const galleryCommentIds = toUniqueExportIds((galleryRows || []).map((row) => row.id));
+
+    const [guestbookProfiles, galleryProfiles, prompts, commentLikes] = await Promise.all([
+        fetchSupabaseRowsByIds('profiles', 'id', guestbookUserIds, 'id, username, avatar_url, email'),
+        fetchSupabaseRowsByIds('profiles', 'id', galleryUserIds, 'id, username, avatar_url, email'),
+        fetchSupabaseRowsByIds('prompts', 'id', promptIds, 'id, title'),
+        fetchSupabaseRowsByIds('comment_likes', 'comment_id', galleryCommentIds, 'comment_id', { siteScoped: true })
+    ]);
+
+    const guestbookProfilesMap = new Map(guestbookProfiles.map((row) => [row.id, row]));
+    const galleryProfilesMap = new Map(galleryProfiles.map((row) => [row.id, row]));
+    const promptMap = new Map(prompts.map((row) => [row.id, row]));
+    const commentLikesMap = (commentLikes || []).reduce((acc, row) => {
+        const key = String(row?.comment_id || '').trim();
+        if (!key) return acc;
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+    }, {});
+
     return [
         ...(guestbookRows || []).map((row) => ({
             id: row.id,
             type: 'guestbook',
             site: row.site || '',
-            author: row.profiles?.username || '未知用户',
-            email: row.profiles?.email || '',
+            author: guestbookProfilesMap.get(row.user_id)?.username || '未知用户',
+            email: guestbookProfilesMap.get(row.user_id)?.email || '',
             content: row.content || '',
             likes: row.like_count || 0,
             user_id: row.user_id || '',
@@ -17313,12 +17502,12 @@ async function fetchCommentsExportRows() {
             id: row.id,
             type: 'gallery',
             site: row.site || '',
-            author: row.profiles?.username || '未知用户',
-            email: row.profiles?.email || '',
+            author: galleryProfilesMap.get(row.user_id)?.username || '未知用户',
+            email: galleryProfilesMap.get(row.user_id)?.email || '',
             content: row.content || '',
-            likes: row.comment_likes?.[0]?.count || 0,
+            likes: commentLikesMap[row.id] || 0,
             user_id: row.user_id || '',
-            prompt_title: row.prompts?.title || '',
+            prompt_title: promptMap.get(row.prompt_id)?.title || '',
             parent_id: row.parent_id || '',
             image_url: row.image_url || '',
             is_pinned: row.is_pinned === true,
@@ -18010,129 +18199,133 @@ window.togglePaymentProviderEnabled = togglePaymentProviderEnabled;
 window.togglePaymentProviderPanel = togglePaymentProviderPanel;
 window.handlePaymentChannelActiveChange = handlePaymentChannelActiveChange;
 window.savePaymentChannelSettings = savePaymentChannelSettings;
-window.loadOpsAlertSettings = loadOpsAlertSettings;
-window.loadOpsAlertHealth = loadOpsAlertHealth;
-window.loadOpsAlertMonitor = loadOpsAlertMonitor;
-window.toggleOpsAlertsEnabled = toggleOpsAlertsEnabled;
-window.toggleOpsAlertChannelEnabled = toggleOpsAlertChannelEnabled;
-window.toggleOpsAlertTemporaryMuteAllowCritical = toggleOpsAlertTemporaryMuteAllowCritical;
-window.setOpsAlertTemporaryMutePreset = setOpsAlertTemporaryMutePreset;
-window.clearOpsAlertTemporaryMute = clearOpsAlertTemporaryMute;
-window.toggleOpsAlertMuteRuleAllowCritical = toggleOpsAlertMuteRuleAllowCritical;
-window.clearOpsAlertMuteRule = clearOpsAlertMuteRule;
-window.toggleOpsAlertQuietHoursEnabled = toggleOpsAlertQuietHoursEnabled;
-window.toggleOpsAlertQuietHoursAllowCritical = toggleOpsAlertQuietHoursAllowCritical;
-window.toggleOpsAlertWorkHoursEnabled = toggleOpsAlertWorkHoursEnabled;
-window.toggleOpsAlertStrategyPanel = toggleOpsAlertStrategyPanel;
-window.toggleOpsAlertSummaryPanel = toggleOpsAlertSummaryPanel;
-window.openOpsAlertStrategyPanel = openOpsAlertStrategyPanel;
-window.switchOpsAlertStrategyMuteTab = switchOpsAlertStrategyMuteTab;
-window.toggleOpsAlertDatePicker = toggleOpsAlertDatePicker;
-window.changeOpsAlertDatePickerMonth = changeOpsAlertDatePickerMonth;
-window.selectOpsAlertDatePickerDay = selectOpsAlertDatePickerDay;
-window.setOpsAlertDatePickerPreset = setOpsAlertDatePickerPreset;
-window.applyOpsAlertDatePicker = applyOpsAlertDatePicker;
-window.clearOpsAlertDatePicker = clearOpsAlertDatePicker;
-window.toggleOpsAlertShopRiskAutoResponseEnabled = toggleOpsAlertShopRiskAutoResponseEnabled;
-window.toggleOpsAlertShopInventoryEnabled = toggleOpsAlertShopInventoryEnabled;
-window.toggleOpsAlertShopInventoryRecoveryNotificationEnabled = toggleOpsAlertShopInventoryRecoveryNotificationEnabled;
-window.toggleOpsAlertShopInventorySummaryEnabled = toggleOpsAlertShopInventorySummaryEnabled;
-window.handleOpsAlertShopInventorySummaryScheduleModeChange = handleOpsAlertShopInventorySummaryScheduleModeChange;
-window.toggleOpsAlertCustomerChatMessageEnabled = toggleOpsAlertCustomerChatMessageEnabled;
-window.toggleOpsAlertCustomerChatMessageSummaryEnabled = toggleOpsAlertCustomerChatMessageSummaryEnabled;
-window.toggleOpsAlertCustomerChatMessageWorkHoursOnlyEnabled = toggleOpsAlertCustomerChatMessageWorkHoursOnlyEnabled;
-window.handleOpsAlertCustomerChatMessageSummaryScheduleModeChange = handleOpsAlertCustomerChatMessageSummaryScheduleModeChange;
-window.addOpsAlertCustomerChatQuickReplyTemplate = addOpsAlertCustomerChatQuickReplyTemplate;
-window.toggleOpsAlertShopPurchaseSuccessEnabled = toggleOpsAlertShopPurchaseSuccessEnabled;
-window.toggleOpsAlertShopPurchaseSuccessSummaryEnabled = toggleOpsAlertShopPurchaseSuccessSummaryEnabled;
-window.toggleOpsAlertShopPurchaseSuccessWorkHoursOnlyEnabled = toggleOpsAlertShopPurchaseSuccessWorkHoursOnlyEnabled;
-window.handleOpsAlertShopPurchaseSuccessSummaryScheduleModeChange = handleOpsAlertShopPurchaseSuccessSummaryScheduleModeChange;
-window.toggleOpsAlertWalletRechargeSuccessEnabled = toggleOpsAlertWalletRechargeSuccessEnabled;
-window.toggleOpsAlertWalletRechargeSuccessSummaryEnabled = toggleOpsAlertWalletRechargeSuccessSummaryEnabled;
-window.toggleOpsAlertWalletRechargeSuccessWorkHoursOnlyEnabled = toggleOpsAlertWalletRechargeSuccessWorkHoursOnlyEnabled;
-window.handleOpsAlertWalletRechargeSuccessSummaryScheduleModeChange = handleOpsAlertWalletRechargeSuccessSummaryScheduleModeChange;
-window.toggleOpsAlertTicketsEnabled = toggleOpsAlertTicketsEnabled;
-window.toggleOpsAlertTicketsSummaryEnabled = toggleOpsAlertTicketsSummaryEnabled;
-window.toggleOpsAlertTicketsWorkHoursOnlyEnabled = toggleOpsAlertTicketsWorkHoursOnlyEnabled;
-window.handleOpsAlertTicketsSummaryScheduleModeChange = handleOpsAlertTicketsSummaryScheduleModeChange;
-window.toggleOpsAlertShopOrderDeliveryEnabled = toggleOpsAlertShopOrderDeliveryEnabled;
-window.toggleOpsAlertShopOrderDeliveryIncidentEnabled = toggleOpsAlertShopOrderDeliveryIncidentEnabled;
-window.toggleOpsAlertShopOrderDeliverySummaryEnabled = toggleOpsAlertShopOrderDeliverySummaryEnabled;
-window.toggleOpsAlertShopOrderDeliveryWorkHoursOnlyEnabled = toggleOpsAlertShopOrderDeliveryWorkHoursOnlyEnabled;
-window.handleOpsAlertShopOrderDeliverySummaryScheduleModeChange = handleOpsAlertShopOrderDeliverySummaryScheduleModeChange;
-window.toggleOpsAlertVerifyQuotaEnabled = toggleOpsAlertVerifyQuotaEnabled;
-window.toggleOpsAlertVerifyQuotaSummaryEnabled = toggleOpsAlertVerifyQuotaSummaryEnabled;
-window.toggleOpsAlertVerifyQuotaWorkHoursOnlyEnabled = toggleOpsAlertVerifyQuotaWorkHoursOnlyEnabled;
-window.handleOpsAlertVerifyQuotaSummaryScheduleModeChange = handleOpsAlertVerifyQuotaSummaryScheduleModeChange;
-window.toggleOpsAlertVerifyQueueEnabled = toggleOpsAlertVerifyQueueEnabled;
-window.toggleOpsAlertVerifyQueueSummaryEnabled = toggleOpsAlertVerifyQueueSummaryEnabled;
-window.toggleOpsAlertVerifyQueueWorkHoursOnlyEnabled = toggleOpsAlertVerifyQueueWorkHoursOnlyEnabled;
-window.handleOpsAlertVerifyQueueSummaryScheduleModeChange = handleOpsAlertVerifyQueueSummaryScheduleModeChange;
-window.toggleOpsAlertVerifyFailureEnabled = toggleOpsAlertVerifyFailureEnabled;
-window.toggleOpsAlertVerifyFailureSummaryEnabled = toggleOpsAlertVerifyFailureSummaryEnabled;
-window.toggleOpsAlertVerifyFailureWorkHoursOnlyEnabled = toggleOpsAlertVerifyFailureWorkHoursOnlyEnabled;
-window.handleOpsAlertVerifyFailureSummaryScheduleModeChange = handleOpsAlertVerifyFailureSummaryScheduleModeChange;
-window.toggleOpsAlertPaymentGatewayEnabled = toggleOpsAlertPaymentGatewayEnabled;
-window.toggleOpsAlertPaymentGatewaySummaryEnabled = toggleOpsAlertPaymentGatewaySummaryEnabled;
-window.toggleOpsAlertPaymentGatewayWorkHoursOnlyEnabled = toggleOpsAlertPaymentGatewayWorkHoursOnlyEnabled;
-window.handleOpsAlertPaymentGatewaySummaryScheduleModeChange = handleOpsAlertPaymentGatewaySummaryScheduleModeChange;
-window.selectOpsAlertUnifiedSummaryTargets = selectOpsAlertUnifiedSummaryTargets;
-window.handleOpsAlertUnifiedSummaryTargetChange = handleOpsAlertUnifiedSummaryTargetChange;
-window.handleOpsAlertUnifiedSummaryDraftChange = handleOpsAlertUnifiedSummaryDraftChange;
-window.applyOpsAlertUnifiedSummaryDraft = applyOpsAlertUnifiedSummaryDraft;
-window.confirmOpsAlertStrategyNavigation = confirmOpsAlertStrategyNavigation;
-window.saveOpsAlertSettings = saveOpsAlertSettings;
-window.sendOpsAlertTelegramTest = sendOpsAlertTelegramTest;
-window.sendOpsAlertRefundSample = sendOpsAlertRefundSample;
-window.sendOpsAlertCustomerChatMessageSample = sendOpsAlertCustomerChatMessageSample;
-window.sendOpsAlertShopPurchaseSucceededSample = sendOpsAlertShopPurchaseSucceededSample;
-window.sendOpsAlertWalletRechargeSucceededSample = sendOpsAlertWalletRechargeSucceededSample;
-window.sendOpsAlertGatewaySample = sendOpsAlertGatewaySample;
-window.sendOpsAlertGatewayRecoveredSample = sendOpsAlertGatewayRecoveredSample;
-window.sendOpsAlertVerifyServiceDisabledSample = sendOpsAlertVerifyServiceDisabledSample;
-window.sendOpsAlertVerifyQueueBacklogSample = sendOpsAlertVerifyQueueBacklogSample;
-window.sendOpsAlertVerifyFailureRateSpikeSample = sendOpsAlertVerifyFailureRateSpikeSample;
-window.sendOpsAlertVerifyIncidentEscalatedSample = sendOpsAlertVerifyIncidentEscalatedSample;
-window.sendOpsAlertVerifyIncidentRecoveredSample = sendOpsAlertVerifyIncidentRecoveredSample;
-window.sendOpsAlertVerifyQuotaSample = sendOpsAlertVerifyQuotaSample;
-window.sendOpsAlertTicketSlaSample = sendOpsAlertTicketSlaSample;
-window.sendOpsAlertTicketSlaRecoveredSample = sendOpsAlertTicketSlaRecoveredSample;
-window.sendOpsAlertShopInventorySample = sendOpsAlertShopInventorySample;
-window.sendOpsAlertShopInventoryRecoveredSample = sendOpsAlertShopInventoryRecoveredSample;
-window.sendOpsAlertAdminLoginAnomalySample = sendOpsAlertAdminLoginAnomalySample;
-window.sendOpsAlertShopOrderDeliveryFailedSample = sendOpsAlertShopOrderDeliveryFailedSample;
-window.sendOpsAlertShopOrderDeliveryIncidentSample = sendOpsAlertShopOrderDeliveryIncidentSample;
-window.sendOpsAlertShopOrderDeliveryIncidentRecoveredSample = sendOpsAlertShopOrderDeliveryIncidentRecoveredSample;
-window.sendOpsAlertShopOrderDeliveryRecoveredSample = sendOpsAlertShopOrderDeliveryRecoveredSample;
-window.sendOpsAlertPaymentConfigChangedSample = sendOpsAlertPaymentConfigChangedSample;
-window.sendOpsAlertPaymentConfigIncidentSample = sendOpsAlertPaymentConfigIncidentSample;
-window.sendOpsAlertPaymentConfigIncidentRecoveredSample = sendOpsAlertPaymentConfigIncidentRecoveredSample;
-window.sendOpsAlertPaymentConfigRecoveredSample = sendOpsAlertPaymentConfigRecoveredSample;
-window.refreshOpsAlertHealthPanel = refreshOpsAlertHealthPanel;
-window.scrollToOpsAlertHealthPanel = scrollToOpsAlertHealthPanel;
-window.refreshOpsAlertMonitorPanel = refreshOpsAlertMonitorPanel;
-window.setOpsAlertMonitorFilter = setOpsAlertMonitorFilter;
-window.setOpsAlertMonitorShiftReportView = setOpsAlertMonitorShiftReportView;
-window.copyOpsAlertMonitorChecklist = copyOpsAlertMonitorChecklist;
-window.exportOpsAlertMonitorCsv = exportOpsAlertMonitorCsv;
-window.copyOpsAlertMonitorShiftReportSummary = copyOpsAlertMonitorShiftReportSummary;
-window.exportOpsAlertMonitorShiftReportCsv = exportOpsAlertMonitorShiftReportCsv;
+Object.assign(window, {
+    loadOpsAlertSettings,
+    loadOpsAlertHealth,
+    loadOpsAlertMonitor,
+    toggleOpsAlertsEnabled,
+    toggleOpsAlertChannelEnabled,
+    toggleOpsAlertTemporaryMuteAllowCritical,
+    setOpsAlertTemporaryMutePreset,
+    clearOpsAlertTemporaryMute,
+    toggleOpsAlertMuteRuleAllowCritical,
+    clearOpsAlertMuteRule,
+    toggleOpsAlertQuietHoursEnabled,
+    toggleOpsAlertQuietHoursAllowCritical,
+    toggleOpsAlertWorkHoursEnabled,
+    toggleOpsAlertStrategyPanel,
+    toggleOpsAlertSummaryPanel,
+    openOpsAlertStrategyPanel,
+    switchOpsAlertStrategyMuteTab,
+    toggleOpsAlertDatePicker,
+    changeOpsAlertDatePickerMonth,
+    selectOpsAlertDatePickerDay,
+    setOpsAlertDatePickerPreset,
+    applyOpsAlertDatePicker,
+    clearOpsAlertDatePicker,
+    toggleOpsAlertShopRiskAutoResponseEnabled,
+    toggleOpsAlertShopInventoryEnabled,
+    toggleOpsAlertShopInventoryRecoveryNotificationEnabled,
+    toggleOpsAlertShopInventorySummaryEnabled,
+    handleOpsAlertShopInventorySummaryScheduleModeChange,
+    toggleOpsAlertCustomerChatMessageEnabled,
+    toggleOpsAlertCustomerChatMessageSummaryEnabled,
+    toggleOpsAlertCustomerChatMessageWorkHoursOnlyEnabled,
+    handleOpsAlertCustomerChatMessageSummaryScheduleModeChange,
+    addOpsAlertCustomerChatQuickReplyTemplate,
+    toggleOpsAlertShopPurchaseSuccessEnabled,
+    toggleOpsAlertShopPurchaseSuccessSummaryEnabled,
+    toggleOpsAlertShopPurchaseSuccessWorkHoursOnlyEnabled,
+    handleOpsAlertShopPurchaseSuccessSummaryScheduleModeChange,
+    toggleOpsAlertWalletRechargeSuccessEnabled,
+    toggleOpsAlertWalletRechargeSuccessSummaryEnabled,
+    toggleOpsAlertWalletRechargeSuccessWorkHoursOnlyEnabled,
+    handleOpsAlertWalletRechargeSuccessSummaryScheduleModeChange,
+    toggleOpsAlertTicketsEnabled,
+    toggleOpsAlertTicketsSummaryEnabled,
+    toggleOpsAlertTicketsWorkHoursOnlyEnabled,
+    handleOpsAlertTicketsSummaryScheduleModeChange,
+    toggleOpsAlertShopOrderDeliveryEnabled,
+    toggleOpsAlertShopOrderDeliveryIncidentEnabled,
+    toggleOpsAlertShopOrderDeliverySummaryEnabled,
+    toggleOpsAlertShopOrderDeliveryWorkHoursOnlyEnabled,
+    handleOpsAlertShopOrderDeliverySummaryScheduleModeChange,
+    toggleOpsAlertVerifyQuotaEnabled,
+    toggleOpsAlertVerifyQuotaSummaryEnabled,
+    toggleOpsAlertVerifyQuotaWorkHoursOnlyEnabled,
+    handleOpsAlertVerifyQuotaSummaryScheduleModeChange,
+    toggleOpsAlertVerifyQueueEnabled,
+    toggleOpsAlertVerifyQueueSummaryEnabled,
+    toggleOpsAlertVerifyQueueWorkHoursOnlyEnabled,
+    handleOpsAlertVerifyQueueSummaryScheduleModeChange,
+    toggleOpsAlertVerifyFailureEnabled,
+    toggleOpsAlertVerifyFailureSummaryEnabled,
+    toggleOpsAlertVerifyFailureWorkHoursOnlyEnabled,
+    handleOpsAlertVerifyFailureSummaryScheduleModeChange,
+    toggleOpsAlertPaymentGatewayEnabled,
+    toggleOpsAlertPaymentGatewaySummaryEnabled,
+    toggleOpsAlertPaymentGatewayWorkHoursOnlyEnabled,
+    handleOpsAlertPaymentGatewaySummaryScheduleModeChange,
+    selectOpsAlertUnifiedSummaryTargets,
+    handleOpsAlertUnifiedSummaryTargetChange,
+    handleOpsAlertUnifiedSummaryDraftChange,
+    applyOpsAlertUnifiedSummaryDraft,
+    confirmOpsAlertStrategyNavigation,
+    saveOpsAlertSettings,
+    sendOpsAlertTelegramTest,
+    sendOpsAlertRefundSample,
+    sendOpsAlertCustomerChatMessageSample,
+    sendOpsAlertShopPurchaseSucceededSample,
+    sendOpsAlertWalletRechargeSucceededSample,
+    sendOpsAlertGatewaySample,
+    sendOpsAlertGatewayRecoveredSample,
+    sendOpsAlertVerifyServiceDisabledSample,
+    sendOpsAlertVerifyQueueBacklogSample,
+    sendOpsAlertVerifyFailureRateSpikeSample,
+    sendOpsAlertVerifyIncidentEscalatedSample,
+    sendOpsAlertVerifyIncidentRecoveredSample,
+    sendOpsAlertVerifyQuotaSample,
+    sendOpsAlertTicketSlaSample,
+    sendOpsAlertTicketSlaRecoveredSample,
+    sendOpsAlertShopInventorySample,
+    sendOpsAlertShopInventoryRecoveredSample,
+    sendOpsAlertAdminLoginAnomalySample,
+    sendOpsAlertShopOrderDeliveryFailedSample,
+    sendOpsAlertShopOrderDeliveryIncidentSample,
+    sendOpsAlertShopOrderDeliveryIncidentRecoveredSample,
+    sendOpsAlertShopOrderDeliveryRecoveredSample,
+    sendOpsAlertPaymentConfigChangedSample,
+    sendOpsAlertPaymentConfigIncidentSample,
+    sendOpsAlertPaymentConfigIncidentRecoveredSample,
+    sendOpsAlertPaymentConfigRecoveredSample,
+    refreshOpsAlertHealthPanel,
+    scrollToOpsAlertHealthPanel,
+    refreshOpsAlertMonitorPanel,
+    setOpsAlertMonitorFilter,
+    setOpsAlertMonitorShiftReportView,
+    copyOpsAlertMonitorChecklist,
+    exportOpsAlertMonitorCsv,
+    copyOpsAlertMonitorShiftReportSummary,
+    exportOpsAlertMonitorShiftReportCsv
+});
 
 window.schedulePendingOpsAlertWorkspaceRestore?.();
 
-window.handleOpsAlertCaseAction = handleOpsAlertCaseAction;
-window.handleOpsAlertMonitorBatchCaseAction = handleOpsAlertMonitorBatchCaseAction;
-window.openOpsAlertBatchMuteModal = openOpsAlertBatchMuteModal;
-window.toggleOpsAlertBatchMuteAllowCritical = toggleOpsAlertBatchMuteAllowCritical;
-window.closeOpsAlertBatchMuteModal = closeOpsAlertBatchMuteModal;
-window.submitOpsAlertBatchMuteModal = submitOpsAlertBatchMuteModal;
-window.closeOpsAlertCaseComposer = closeOpsAlertCaseComposer;
-window.submitOpsAlertCaseComposer = submitOpsAlertCaseComposer;
-window.handleShopRiskAction = handleShopRiskAction;
-window.handleShopRiskCaseAction = handleShopRiskCaseAction;
-window.closeShopRiskCaseComposer = closeShopRiskCaseComposer;
-window.submitShopRiskCaseComposer = submitShopRiskCaseComposer;
-window.deleteOpsAlertSecret = deleteOpsAlertSecret;
+Object.assign(window, {
+    handleOpsAlertCaseAction,
+    handleOpsAlertMonitorBatchCaseAction,
+    openOpsAlertBatchMuteModal,
+    toggleOpsAlertBatchMuteAllowCritical,
+    closeOpsAlertBatchMuteModal,
+    submitOpsAlertBatchMuteModal,
+    closeOpsAlertCaseComposer,
+    submitOpsAlertCaseComposer,
+    handleShopRiskAction,
+    handleShopRiskCaseAction,
+    closeShopRiskCaseComposer,
+    submitShopRiskCaseComposer,
+    deleteOpsAlertSecret
+});
 window.loadVerifyMonitor = loadVerifyMonitor;
 window.refreshVerifyMonitor = refreshVerifyMonitor;
 window.loadAdminAuditMonitor = loadAdminAuditMonitor;

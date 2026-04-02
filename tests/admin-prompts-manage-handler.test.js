@@ -44,8 +44,20 @@ async function withPromptsManageHandler(options, callback) {
         insertPayload: null,
         rows: options.rows || [],
         row: options.row || null,
+        listResponses: Array.isArray(options.listResponses) ? [...options.listResponses] : null,
+        singleResponses: Array.isArray(options.singleResponses) ? [...options.singleResponses] : null,
         unlockRows: options.unlockRows || [],
         commentRows: options.commentRows || [],
+        metricResponses: options.metricResponses
+            ? {
+                prompt_unlocks: Array.isArray(options.metricResponses.prompt_unlocks)
+                    ? [...options.metricResponses.prompt_unlocks]
+                    : null,
+                prompt_comments: Array.isArray(options.metricResponses.prompt_comments)
+                    ? [...options.metricResponses.prompt_comments]
+                    : null
+            }
+            : null,
         deletedRows: options.deletedRows || [],
         auditEntries: []
     };
@@ -66,6 +78,9 @@ async function withPromptsManageHandler(options, callback) {
                                             return {
                                                 in(field, values) {
                                                     state.metricFilters.push({ table, field, values });
+                                                    if (state.metricResponses?.[table]?.length) {
+                                                        return Promise.resolve(state.metricResponses[table].shift());
+                                                    }
                                                     return Promise.resolve({
                                                         data: table === 'prompt_unlocks' ? state.unlockRows : state.commentRows,
                                                         error: null
@@ -85,6 +100,9 @@ async function withPromptsManageHandler(options, callback) {
                                         return this;
                                     },
                                     order() {
+                                        if (state.listResponses?.length) {
+                                            return Promise.resolve(state.listResponses.shift());
+                                        }
                                         return Promise.resolve({
                                             data: state.rows,
                                             error: null
@@ -97,6 +115,9 @@ async function withPromptsManageHandler(options, callback) {
                                                 return this;
                                             },
                                             async single() {
+                                                if (state.singleResponses?.length) {
+                                                    return state.singleResponses.shift();
+                                                }
                                                 if (!state.row) {
                                                     return {
                                                         data: null,
@@ -223,6 +244,15 @@ test('prompts manage handler lists prompt rows for reads', async () => {
             id: 'prompt-1',
             title: 'Prompt One',
             tags: ['Photography'],
+            dominant_colors: [],
+            ai_tags: {},
+            quality_score: null,
+            title_en: '',
+            title_zh: '',
+            description_en: '',
+            description_zh: '',
+            prompt_text_en: '',
+            prompt_text_zh: '',
             site_metrics: {
                 cn: { unlock_count: 2, comment_count: 1 },
                 intl: { unlock_count: 1, comment_count: 0 },
@@ -236,6 +266,223 @@ test('prompts manage handler lists prompt rows for reads', async () => {
         assert.deepEqual(state.requireAdminCalls[0]?.config, {
             anyOf: ['prompts.manage', 'content.moderate']
         });
+    });
+});
+
+test('prompts manage handler falls back to legacy select fields when bilingual columns are unavailable', async () => {
+    await withPromptsManageHandler({
+        listResponses: [
+            {
+                data: null,
+                error: {
+                    code: '42703',
+                    message: 'column prompts.title_en does not exist'
+                }
+            },
+            {
+                data: [
+                    { id: 'prompt-legacy', title: 'Legacy Prompt', tags: ['Photography'] }
+                ],
+                error: null
+            }
+        ]
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/prompts/manage?site=all',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.deepEqual(res.json().rows, [{
+            id: 'prompt-legacy',
+            title: 'Legacy Prompt',
+            tags: ['Photography'],
+            dominant_colors: [],
+            ai_tags: {},
+            quality_score: null,
+            title_en: '',
+            title_zh: '',
+            description_en: '',
+            description_zh: '',
+            prompt_text_en: '',
+            prompt_text_zh: '',
+            site_metrics: {
+                cn: { unlock_count: 0, comment_count: 0 },
+                intl: { unlock_count: 0, comment_count: 0 },
+                total: { unlock_count: 0, comment_count: 0 }
+            }
+        }]);
+    });
+});
+
+test('prompts manage handler keeps listing rows when prompt metric site columns are unavailable', async () => {
+    await withPromptsManageHandler({
+        rows: [
+            { id: 'prompt-legacy-metrics', title: 'Legacy Metrics Prompt', tags: ['Photography'] }
+        ],
+        metricResponses: {
+            prompt_unlocks: [
+                {
+                    data: null,
+                    error: {
+                        code: '42703',
+                        message: 'column prompt_unlocks.site does not exist'
+                    }
+                },
+                {
+                    data: [
+                        { prompt_id: 'prompt-legacy-metrics' },
+                        { prompt_id: 'prompt-legacy-metrics' }
+                    ],
+                    error: null
+                }
+            ],
+            prompt_comments: [
+                {
+                    data: null,
+                    error: {
+                        code: '42703',
+                        message: 'column prompt_comments.site does not exist'
+                    }
+                },
+                {
+                    data: [
+                        { prompt_id: 'prompt-legacy-metrics' }
+                    ],
+                    error: null
+                }
+            ]
+        }
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/prompts/manage?site=all',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.deepEqual(res.json().rows, [{
+            id: 'prompt-legacy-metrics',
+            title: 'Legacy Metrics Prompt',
+            tags: ['Photography'],
+            dominant_colors: [],
+            ai_tags: {},
+            quality_score: null,
+            title_en: '',
+            title_zh: '',
+            description_en: '',
+            description_zh: '',
+            prompt_text_en: '',
+            prompt_text_zh: '',
+            site_metrics: {
+                cn: { unlock_count: 2, comment_count: 1 },
+                intl: { unlock_count: 0, comment_count: 0 },
+                total: { unlock_count: 2, comment_count: 1 }
+            }
+        }]);
+    });
+});
+
+test('prompts manage handler falls back when quality_score column is unavailable', async () => {
+    await withPromptsManageHandler({
+        listResponses: [
+            {
+                data: null,
+                error: {
+                    code: '42703',
+                    message: 'column prompts.quality_score does not exist'
+                }
+            },
+            {
+                data: [
+                    { id: 'prompt-no-quality', title: 'Prompt Without Quality', tags: ['Photography'] }
+                ],
+                error: null
+            }
+        ]
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/prompts/manage?site=all',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.deepEqual(res.json().rows, [{
+            id: 'prompt-no-quality',
+            title: 'Prompt Without Quality',
+            tags: ['Photography'],
+            dominant_colors: [],
+            ai_tags: {},
+            quality_score: null,
+            title_en: '',
+            title_zh: '',
+            description_en: '',
+            description_zh: '',
+            prompt_text_en: '',
+            prompt_text_zh: '',
+            site_metrics: {
+                cn: { unlock_count: 0, comment_count: 0 },
+                intl: { unlock_count: 0, comment_count: 0 },
+                total: { unlock_count: 0, comment_count: 0 }
+            }
+        }]);
+    });
+});
+
+test('prompts manage handler falls back when updated_at column is unavailable', async () => {
+    await withPromptsManageHandler({
+        listResponses: [
+            {
+                data: null,
+                error: {
+                    code: '42703',
+                    message: 'column prompts.updated_at does not exist'
+                }
+            },
+            {
+                data: [
+                    { id: 'prompt-no-updated-at', title: 'Prompt Without UpdatedAt', tags: ['Photography'] }
+                ],
+                error: null
+            }
+        ]
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/prompts/manage?site=all',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.deepEqual(res.json().rows, [{
+            id: 'prompt-no-updated-at',
+            title: 'Prompt Without UpdatedAt',
+            tags: ['Photography'],
+            dominant_colors: [],
+            ai_tags: {},
+            quality_score: null,
+            title_en: '',
+            title_zh: '',
+            description_en: '',
+            description_zh: '',
+            prompt_text_en: '',
+            prompt_text_zh: '',
+            site_metrics: {
+                cn: { unlock_count: 0, comment_count: 0 },
+                intl: { unlock_count: 0, comment_count: 0 },
+                total: { unlock_count: 0, comment_count: 0 }
+            }
+        }]);
     });
 });
 

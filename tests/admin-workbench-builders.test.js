@@ -2197,6 +2197,82 @@ test('shared admin workbench builds ops alert summary mode hint text and unified
     });
 });
 
+test('shared admin workbench builds ops alert unified summary consensus and control state', () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const definitions = [
+        { key: 'customer_chat_message', supports_work_hours_only: true },
+        { key: 'shop_inventory', supports_work_hours_only: false }
+    ];
+
+    const consensus = runtime.buildAdminWorkbenchOpsAlertUnifiedSummaryConsensus({
+        customer_chat_message: {
+            summary_enabled: true,
+            work_hours_only_enabled: true,
+            summary_schedule_mode: 'hourly',
+            summary_window_minutes: 90,
+            summary_hourly_minute: 12,
+            summary_daily_hour: 9,
+            summary_daily_minute: 30,
+            summary_max_items: 10
+        },
+        shop_inventory: {
+            summary_enabled: true,
+            summary_schedule_mode: 'hourly',
+            summary_window_minutes: 90,
+            summary_hourly_minute: 12,
+            summary_daily_hour: 9,
+            summary_daily_minute: 30,
+            summary_max_items: 10
+        }
+    }, {
+        definitions,
+        selectedDefinitions: definitions,
+        defaults: {
+            customer_chat_message: {},
+            shop_inventory: {}
+        },
+        normalizeScheduleMode: (value, fallbackValue = 'rolling_window') => String(value || fallbackValue).trim().toLowerCase() || fallbackValue,
+        clamp: (value, min, max) => Math.min(max, Math.max(min, Number(value || 0))),
+        toWholeNumber: (value, fallbackValue = 0) => {
+            const parsed = Number.parseInt(value, 10);
+            return Number.isFinite(parsed) ? parsed : fallbackValue;
+        }
+    });
+
+    assert.deepEqual(JSON.parse(JSON.stringify(consensus)), {
+        summary_enabled: true,
+        work_hours_only_enabled: true,
+        summary_schedule_mode: 'hourly',
+        summary_window_minutes: 90,
+        summary_hourly_minute: 12,
+        summary_daily_hour: 9,
+        summary_daily_minute: 30,
+        summary_max_items: 10
+    });
+
+    const controlState = runtime.buildAdminWorkbenchOpsAlertUnifiedSummaryDraftControlState({
+        summary_enabled: true,
+        summary_schedule_mode: 'daily',
+        summary_daily_hour: 10,
+        summary_daily_minute: 5,
+        summary_max_items: 12
+    }, {
+        selectedCount: 3,
+        formatCount: (value) => `COUNT:${value}`,
+        buildSummaryModeControlState: () => ({ hintText: 'hint', rows: {} })
+    });
+
+    assert.deepEqual(JSON.parse(JSON.stringify(controlState)), {
+        selectedCount: 3,
+        applyDisabled: false,
+        applyLabel: '应用到所选告警（COUNT:3 类）',
+        summaryModeControlState: {
+            hintText: 'hint',
+            rows: {}
+        }
+    });
+});
+
 test('shared admin workbench builds ops alert summary mode control state', () => {
     const runtime = loadAdminWorkbenchRuntime();
     const state = runtime.buildAdminWorkbenchOpsAlertSummaryModeControlState({
@@ -2230,6 +2306,127 @@ test('shared admin workbench builds ops alert summary mode control state', () =>
         hintText: 'HINT:DAILY',
         hintDisabled: false
     });
+});
+
+test('shared admin workbench builds ops alert summary orchestration render state', () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const definitions = [
+        {
+            key: 'shop_inventory',
+            label: '库存与补货',
+            supports_work_hours_only: false,
+            monitor_status_id: 'monitor-shop_inventory',
+            work_hours_status_id: 'workhours-shop_inventory',
+            summary_status_id: 'summary-shop_inventory'
+        },
+        {
+            key: 'tickets',
+            label: '工单 SLA',
+            supports_work_hours_only: true,
+            monitor_status_id: 'monitor-tickets',
+            work_hours_status_id: 'workhours-tickets',
+            summary_status_id: 'summary-tickets'
+        }
+    ];
+
+    const renderState = runtime.buildAdminWorkbenchOpsAlertSummaryOrchestrationRenderState({
+        work_hours: {
+            enabled: true,
+            start_hour: 9,
+            end_hour: 18,
+            timezone: 'Asia/Shanghai'
+        },
+        shop_inventory: {
+            enabled: true,
+            low_stock_threshold: 6,
+            sweep_interval_ms: 15 * 60 * 1000,
+            summary_enabled: false
+        },
+        tickets: {
+            enabled: true,
+            pending_overdue_minutes: 45,
+            sweep_interval_ms: 10 * 60 * 1000,
+            summary_enabled: true,
+            work_hours_only_enabled: true,
+            summary_schedule_mode: 'hourly',
+            summary_hourly_minute: 15,
+            summary_max_items: 12
+        }
+    }, {
+        definitions,
+        defaults: {
+            work_hours: {
+                enabled: false,
+                start_hour: 9,
+                end_hour: 18,
+                timezone: 'Asia/Shanghai'
+            },
+            shop_inventory: {},
+            tickets: {}
+        },
+        selectedDefinitions: [definitions[1]],
+        formatCount: (value) => `COUNT:${value}`,
+        formatHourMinute: (hour, minute) => `${String(Number(hour || 0)).padStart(2, '0')}:${String(Number(minute || 0)).padStart(2, '0')}`,
+        formatSummaryScheduleDescription: (section) => `MODE:${section.summary_schedule_mode || 'rolling_window'}`
+    });
+
+    assert.deepEqual(JSON.parse(JSON.stringify(renderState.counts)), {
+        total: 2,
+        enabledMonitorCount: 2,
+        summaryEnabledCount: 1,
+        workHoursOnlyCount: 1,
+        selectedCount: 1
+    });
+    assert.equal(renderState.metaText, '共 COUNT:2 类告警：COUNT:2 类已启用主监控，COUNT:1 类已启用定时汇总，COUNT:1 类启用工作时段顺延。当前已勾选 COUNT:1 类用于批量应用。');
+    assert.equal(renderState.overviewSelectionText, '已勾选 COUNT:1 类');
+    assert.deepEqual(JSON.parse(JSON.stringify(renderState.definitionStates)), [
+        {
+            key: 'shop_inventory',
+            label: '库存与补货',
+            selected: false,
+            monitorState: {
+                cellId: 'monitor-shop_inventory',
+                tone: 'success',
+                label: '已启用',
+                text: '巡检 COUNT:15 分钟，低库存阈值 COUNT:6。'
+            },
+            workHoursState: {
+                cellId: 'workhours-shop_inventory',
+                tone: 'neutral',
+                label: '不适用',
+                text: '当前库存类只支持定时汇总，不支持按工作时段顺延。'
+            },
+            summaryState: {
+                cellId: 'summary-shop_inventory',
+                tone: 'neutral',
+                label: '即时通知',
+                text: '当前不走固定汇总，命中后按原节奏直接外发。'
+            }
+        },
+        {
+            key: 'tickets',
+            label: '工单 SLA',
+            selected: true,
+            monitorState: {
+                cellId: 'monitor-tickets',
+                tone: 'success',
+                label: '已启用',
+                text: '巡检 COUNT:10 分钟，超时阈值 COUNT:45 分钟。'
+            },
+            workHoursState: {
+                cellId: 'workhours-tickets',
+                tone: 'success',
+                label: '已顺延',
+                text: '非工作时段会顺延到 09:00 开始，工作时段 09:00-18:00（Asia/Shanghai）。'
+            },
+            summaryState: {
+                cellId: 'summary-tickets',
+                tone: 'success',
+                label: '已启用汇总',
+                text: 'MODE:hourly，最多 COUNT:12 条。 非工作时段仍会顺延到上班时间。'
+            }
+        }
+    ]);
 });
 
 test('shared admin workbench builds ops alert monitor control state', () => {
@@ -2521,6 +2718,84 @@ test('shared admin workbench builds ops alert monitor filter toolbar state', () 
         { kind: 'category', value: 'payments', active: false },
         { kind: 'category', value: 'shop_risk', active: true }
     ]);
+});
+
+test('shared admin workbench builds ops alert monitor aggregated view state', () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const viewState = runtime.buildAdminWorkbenchOpsAlertMonitorViewState({
+        status: 'ready',
+        summary: {
+            lookback_hours: 72
+        }
+    }, {
+        scope: 'active',
+        severity: 'critical',
+        category: 'payments'
+    }, [{
+        key: 'payments',
+        display_active_count: 2,
+        display_critical_count: 1,
+        visible_items: [{ id: 'a' }, { id: 'b' }]
+    }], {
+        filterDefinitions: [
+            { kind: 'scope', value: 'all' },
+            { kind: 'scope', value: 'active' },
+            { kind: 'severity', value: 'critical' },
+            { kind: 'category', value: 'payments' }
+        ],
+        formatCount: (value) => `#${value}`,
+        getFilterSummaryLabel: () => '仅待处理 · 仅 critical · 支付与退款',
+        buildBatchItems: (_categories, action) => {
+            if (action === 'assign') return [{ id: 1 }];
+            if (action === 'resolve') return [{ id: 2 }, { id: 3 }];
+            return [];
+        },
+        getBatchMuteModuleKeys: () => ['payments']
+    });
+
+    assert.deepEqual(JSON.parse(JSON.stringify(viewState)), {
+        toolbarState: [
+            { kind: 'scope', value: 'all', active: false },
+            { kind: 'scope', value: 'active', active: true },
+            { kind: 'severity', value: 'critical', active: true },
+            { kind: 'category', value: 'payments', active: true }
+        ],
+        panelState: {
+            status: 'ready',
+            filteredActiveCount: 2,
+            filteredCriticalCount: 1,
+            filteredSummaryLabel: '仅待处理 · 仅 critical · 支付与退款',
+            metaIcon: 'fas fa-siren-on',
+            metaText: '当前筛选：仅待处理 · 仅 critical · 支付与退款。命中 #2 项待关注告警，覆盖 #1 个模块，其中 #1 项为 critical。',
+            emptyMessage: ''
+        },
+        batchActionStates: [
+            {
+                actionName: 'settings-batch-claim-ops-alert-monitor',
+                count: 1,
+                disabled: false,
+                title: '当前筛选将指派 #1 条告警'
+            },
+            {
+                actionName: 'settings-batch-note-ops-alert-monitor',
+                count: 0,
+                disabled: true,
+                title: '当前筛选条件下没有可备注的告警'
+            },
+            {
+                actionName: 'settings-batch-resolve-ops-alert-monitor',
+                count: 2,
+                disabled: false,
+                title: '当前筛选将关闭 #2 条告警'
+            },
+            {
+                actionName: 'settings-batch-mute-ops-alert-monitor',
+                count: 1,
+                disabled: false,
+                title: '当前筛选将静默 #1 个告警模块'
+            }
+        ]
+    });
 });
 
 test('shared admin workbench collects ops alert operational threshold drafts from settings controls', () => {
@@ -3786,4 +4061,83 @@ test('shared admin workbench normalizes ops alert settings payloads', () => {
             telegram_bot_token: { configured: true }
         }
     });
+});
+
+test('shared admin workbench stops when module access is denied', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const toasts = [];
+    let shopInitCalled = false;
+
+    runtime.showToast = (message, tone) => {
+        toasts.push({ message, tone });
+    };
+    runtime.switchModule = () => false;
+    runtime.ShopAdmin = {
+        async init() {
+            shopInitCalled = true;
+        },
+        switchTab() {},
+        focusOrder() {}
+    };
+
+    const opened = await runtime.openAdminWorkbenchEntry('shop-risk-orders', {
+        orderId: 'ORDER-1'
+    });
+
+    assert.equal(opened, false);
+    assert.equal(shopInitCalled, false);
+    assert.equal(toasts.some((entry) => String(entry.message || '').includes('已打开')), false);
+    assert.equal(toasts.some((entry) => String(entry.message || '').includes('模块权限')), true);
+});
+
+test('shared admin workbench opens user modal after switching users module', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const toasts = [];
+    let switchCalls = 0;
+    const modalCalls = [];
+
+    runtime.showToast = (message, tone) => {
+        toasts.push({ message, tone });
+    };
+    runtime.switchModule = () => {
+        switchCalls += 1;
+        return true;
+    };
+    runtime.openUserModal = async (userId, options = {}) => {
+        modalCalls.push({ userId, options });
+        return true;
+    };
+
+    const opened = await runtime.openAdminWorkbenchEntry('shop-risk-users', {
+        userId: 'user-123',
+        email: 'ops@example.com',
+        paymentOrderId: 'pay-456',
+        tab: 'payments'
+    });
+
+    assert.equal(opened, true);
+    assert.equal(switchCalls, 1);
+    assert.deepEqual(JSON.parse(JSON.stringify(modalCalls)), [{
+        userId: 'user-123',
+        options: {
+            defaultTab: 'payments',
+            paymentOrderId: 'pay-456',
+            fallbackEmail: 'ops@example.com',
+            silentOnNotFound: true
+        }
+    }]);
+    assert.equal(toasts.some((entry) => String(entry.message || '').includes('已打开用户详情')), true);
+});
+
+test('shared admin workbench exposes workspace access checks for modal-first user actions', () => {
+    const runtime = loadAdminWorkbenchRuntime();
+
+    assert.equal(runtime.canOpenAdminWorkbenchWorkspace('shop-risk-orders', {}), true);
+    assert.equal(runtime.canOpenAdminWorkbenchWorkspace('shop-risk-users', {}), true);
+
+    runtime.hasModulePermission = () => false;
+    assert.equal(runtime.canOpenAdminWorkbenchWorkspace('shop-risk-orders', {}), false);
+    assert.equal(runtime.canOpenAdminWorkbenchWorkspace('shop-risk-users', {
+        userId: 'user-123'
+    }), false);
 });

@@ -748,11 +748,51 @@
     }
 
     async function getAccessToken() {
+        if (window.AdminApi?.getAccessToken) {
+            try {
+                const accessToken = await window.AdminApi.getAccessToken();
+                if (accessToken) {
+                    return String(accessToken).trim();
+                }
+            } catch (_) {
+                // Fall through to runtime auth lookup.
+            }
+        }
+
         const client = window.supabaseClient;
         if (!client) return '';
 
-        const { data } = await client.auth.getSession();
-        return data?.session?.access_token || '';
+        if (typeof client.accessToken === 'function') {
+            try {
+                const accessToken = await Promise.race([
+                    Promise.resolve().then(() => client.accessToken()),
+                    new Promise((resolve) => {
+                        window.setTimeout(() => resolve(''), 1800);
+                    })
+                ]);
+                if (accessToken) {
+                    return String(accessToken).trim();
+                }
+            } catch (_) {
+                // Fall through to direct auth session lookup.
+            }
+        }
+
+        if (client.auth?.getSession) {
+            try {
+                const sessionResult = await Promise.race([
+                    Promise.resolve().then(() => client.auth.getSession()),
+                    new Promise((resolve) => {
+                        window.setTimeout(() => resolve(null), 1800);
+                    })
+                ]);
+                return String(sessionResult?.data?.session?.access_token || '').trim();
+            } catch (_) {
+                return '';
+            }
+        }
+
+        return '';
     }
 
     async function fetchAdminJson(url, options = {}) {

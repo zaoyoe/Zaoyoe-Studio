@@ -67,7 +67,7 @@ async function parseAdminCommentsResponse(response) {
 }
 
 async function fetchAdminCommentSummary(site = getCommentsReadSite()) {
-    const response = await fetch(buildAdminCommentsUrl('comments/summary', { site }), {
+    const response = await (window.AdminApi?.fetch || fetch)(buildAdminCommentsUrl('comments/summary', { site }), {
         credentials: 'include'
     });
 
@@ -75,7 +75,7 @@ async function fetchAdminCommentSummary(site = getCommentsReadSite()) {
 }
 
 async function fetchAdminCommentsList({ view, site = getCommentsReadSite(), dateFrom = '', dateTo = '' } = {}) {
-    const response = await fetch(buildAdminCommentsUrl('comments/list', {
+    const response = await (window.AdminApi?.fetch || fetch)(buildAdminCommentsUrl('comments/list', {
         view,
         site,
         dateFrom,
@@ -88,7 +88,7 @@ async function fetchAdminCommentsList({ view, site = getCommentsReadSite(), date
 }
 
 async function moderateCommentsViaAdminApi({ items = [], site, action = 'delete_many' } = {}) {
-    const response = await fetch('/api/admin/comments/moderate', {
+    const response = await (window.AdminApi?.fetch || fetch)('/api/admin/comments/moderate', {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -105,7 +105,7 @@ async function moderateCommentsViaAdminApi({ items = [], site, action = 'delete_
 }
 
 async function fetchAdminCommentBlockState(userId, site = getCommentsReadSite()) {
-    const response = await fetch(buildAdminCommentsUrl('comments/blocks', {
+    const response = await (window.AdminApi?.fetch || fetch)(buildAdminCommentsUrl('comments/blocks', {
         userId,
         site
     }), {
@@ -116,7 +116,7 @@ async function fetchAdminCommentBlockState(userId, site = getCommentsReadSite())
 }
 
 async function mutateAdminCommentBlockState({ action, userId, scope, days = null, site } = {}) {
-    const response = await fetch('/api/admin/comments/blocks', {
+    const response = await (window.AdminApi?.fetch || fetch)('/api/admin/comments/blocks', {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -135,7 +135,7 @@ async function mutateAdminCommentBlockState({ action, userId, scope, days = null
 }
 
 async function toggleCommentPinViaAdminApi({ id, promptId, currentStatus, site } = {}) {
-    const response = await fetch('/api/admin/comments/moderate', {
+    const response = await (window.AdminApi?.fetch || fetch)('/api/admin/comments/moderate', {
         method: 'POST',
         credentials: 'include',
         headers: {

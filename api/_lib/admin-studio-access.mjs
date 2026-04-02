@@ -144,25 +144,34 @@ export async function verifyAdminStudioToken(token) {
 
 export function buildAdminStudioSetCookie(token, options = {}) {
     const maxAge = Number.parseInt(options.maxAge || `${getAdminStudioTtlSeconds()}`, 10);
-    return [
+    const directives = [
         `${COOKIE_NAME}=${encodeURIComponent(String(token || ''))}`,
         'Path=/',
         'HttpOnly',
-        'Secure',
         'SameSite=Lax',
         `Max-Age=${Number.isFinite(maxAge) ? maxAge : getAdminStudioTtlSeconds()}`
-    ].join('; ');
+    ];
+
+    if (options.secure !== false) {
+        directives.splice(3, 0, 'Secure');
+    }
+
+    return directives.join('; ');
 }
 
-export function buildClearAdminStudioCookie() {
-    return [
+export function buildClearAdminStudioCookie(options = {}) {
+    const directives = [
         `${COOKIE_NAME}=`,
         'Path=/',
         'HttpOnly',
-        'Secure',
         'SameSite=Lax',
         'Max-Age=0',
         'Expires=Thu, 01 Jan 1970 00:00:00 GMT'
-    ].join('; ');
-}
+    ];
 
+    if (options.secure !== false) {
+        directives.splice(3, 0, 'Secure');
+    }
+
+    return directives.join('; ');
+}

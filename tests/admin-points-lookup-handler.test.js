@@ -105,6 +105,7 @@ async function withPointsLookupHandler(options, callback) {
         rpcCalls: [],
         tables: {
             points_ledger: clone(options?.tables?.points_ledger || []),
+            profiles: clone(options?.tables?.profiles || []),
             prompts: clone(options?.tables?.prompts || [])
         }
     };
@@ -174,9 +175,11 @@ test('points lookup handler falls back to ledger lookup for UUID ids and attache
                     reference_id: 'prompt-1',
                     amount: -20,
                     user_id: 'user-1',
-                    created_at: '2026-04-01T10:00:00.000Z',
-                    profiles: { username: 'Alice', email: 'alice@example.com' }
+                    created_at: '2026-04-01T10:00:00.000Z'
                 }
+            ],
+            profiles: [
+                { id: 'user-1', username: 'Alice', email: 'alice@example.com' }
             ],
             prompts: [
                 { id: 'prompt-1', title: 'Smoke Prompt' }
