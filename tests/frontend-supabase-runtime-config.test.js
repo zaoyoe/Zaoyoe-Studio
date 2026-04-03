@@ -1693,6 +1693,7 @@ test('shop client runtime renderers externalize product cards, purchase feedback
         'renderModalProductName: function (displayName, { wholesale = false } = {})',
         'buildSuccessToastMarkup: function ()',
         'buildExpandContentToggleMarkup: function (hiddenCount, expanded = false)',
+        'getExistingProductSkeletonCount: function (container = document.getElementById(\'userShopGrid\')) {',
         'shop-success-content-shell--plain',
         'shop-order-history-item',
         'shop-rich-link',
@@ -1747,6 +1748,22 @@ test('shop client runtime renderers externalize product cards, purchase feedback
     }
 
     assert.equal(shopHtmlSource.includes('<body class="shop-page guestbook-page">'), true, 'shop.html should scope the page with shop-page before guestbook-page compatibility styles');
+});
+
+test('shop storefront preserves the initial skeleton layout while first-load data is pending', () => {
+    const shopClientSource = readRepoFile('js/shop-client.js');
+    const shopHtmlSource = readRepoFile('shop.html');
+
+    assert.match(
+        shopClientSource,
+        /const existingSkeletonCount = this\.getExistingProductSkeletonCount\(container\);[\s\S]*const safeCount = Math\.min\(Math\.max\(requestedCount, 3\), 8\);[\s\S]*if \(hasOnlySkeletonCards && currentSkeletonCount === safeCount\) \{\s*return;\s*\}/,
+        'js/shop-client.js should keep the server-rendered shop skeleton layout stable when the first request is still pending'
+    );
+    assert.equal(
+        shopHtmlSource.includes('js/shop-client.js?v=20260403_SHOP_SKELETON_LAYOUT_STABLE_1'),
+        true,
+        'shop.html should reference the latest shop client runtime for the stable skeleton layout fix'
+    );
 });
 
 test('homepage entry points expose delegated guestbook triggers instead of inline handlers', () => {
