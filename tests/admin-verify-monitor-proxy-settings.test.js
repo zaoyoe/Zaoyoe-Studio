@@ -2,6 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const Module = require('node:module');
+const {
+    VERIFY_MONITOR_INTERNAL_HEADER_NAME
+} = require('../api/_lib/verify-monitor-internal-access');
 
 function createMockResponse() {
     const state = {
@@ -67,11 +70,37 @@ async function withHandler(relativePath, callback) {
     }
 }
 
-test('verify monitor quota proxy forwards upstream quota data', async () => {
+async function withEnv(patch, callback) {
+    const previous = {};
+
+    for (const [key, value] of Object.entries(patch || {})) {
+        previous[key] = process.env[key];
+        if (value === undefined || value === null) {
+            delete process.env[key];
+        } else {
+            process.env[key] = String(value);
+        }
+    }
+
+    try {
+        return await callback();
+    } finally {
+        for (const key of Object.keys(patch || {})) {
+            if (previous[key] === undefined) {
+                delete process.env[key];
+            } else {
+                process.env[key] = previous[key];
+            }
+        }
+    }
+}
+
+test('verify monitor quota proxy forwards upstream quota data with internal auth header', async () => {
     const originalFetch = global.fetch;
     global.fetch = async (input, init = {}) => {
         assert.equal(String(input), 'https://zaoyoe-verify-server-production.up.railway.app/api/quota');
-        assert.equal(init.headers.Authorization, 'Bearer admin-token');
+        assert.equal(init.headers.Authorization, undefined);
+        assert.equal(init.headers[VERIFY_MONITOR_INTERNAL_HEADER_NAME], 'verify-internal-secret');
 
         return new Response(JSON.stringify({
             success: true,
@@ -88,35 +117,38 @@ test('verify monitor quota proxy forwards upstream quota data', async () => {
     };
 
     try {
-        await withHandler('../server/api-handlers/admin/settings/verify-monitor-quota.js', async (handler) => {
-            const req = {
-                method: 'GET',
-                headers: {
-                    authorization: 'Bearer admin-token'
-                }
-            };
-            const res = createMockResponse();
+        await withEnv({ VERIFY_MONITOR_INTERNAL_KEY: 'verify-internal-secret' }, async () => {
+            await withHandler('../server/api-handlers/admin/settings/verify-monitor-quota.js', async (handler) => {
+                const req = {
+                    method: 'GET',
+                    headers: {
+                        authorization: 'Bearer admin-token'
+                    }
+                };
+                const res = createMockResponse();
 
-            await handler(req, res);
-            const payload = res.json();
+                await handler(req, res);
+                const payload = res.json();
 
-            assert.equal(res.statusCode, 200);
-            assert.equal(payload.success, true);
-            assert.equal(payload.balance, 12);
-            assert.equal(payload.total_used, 4);
-            assert.equal(payload.cost_per_job, 1);
-            assert.equal(payload.key_name, 'primary-key');
+                assert.equal(res.statusCode, 200);
+                assert.equal(payload.success, true);
+                assert.equal(payload.balance, 12);
+                assert.equal(payload.total_used, 4);
+                assert.equal(payload.cost_per_job, 1);
+                assert.equal(payload.key_name, 'primary-key');
+            });
         });
     } finally {
         global.fetch = originalFetch;
     }
 });
 
-test('verify monitor queue proxy forwards upstream queue data', async () => {
+test('verify monitor queue proxy forwards upstream queue data with internal auth header', async () => {
     const originalFetch = global.fetch;
     global.fetch = async (input, init = {}) => {
         assert.equal(String(input), 'https://zaoyoe-verify-server-production.up.railway.app/api/queue');
-        assert.equal(init.headers.Authorization, 'Bearer admin-token');
+        assert.equal(init.headers.Authorization, undefined);
+        assert.equal(init.headers[VERIFY_MONITOR_INTERNAL_HEADER_NAME], 'verify-internal-secret');
 
         return new Response(JSON.stringify({
             success: true,
@@ -133,7 +165,34 @@ test('verify monitor queue proxy forwards upstream queue data', async () => {
     };
 
     try {
-        await withHandler('../server/api-handlers/admin/settings/verify-monitor-queue.js', async (handler) => {
+        await withEnv({ VERIFY_MONITOR_INTERNAL_KEY: 'verify-internal-secret' }, async () => {
+            await withHandler('../server/api-handlers/admin/settings/verify-monitor-queue.js', async (handler) => {
+                const req = {
+                    method: 'GET',
+                    headers: {
+                        authorization: 'Bearer admin-token'
+                    }
+                };
+                const res = createMockResponse();
+
+                await handler(req, res);
+                const payload = res.json();
+
+                assert.equal(res.statusCode, 200);
+                assert.equal(payload.success, true);
+                assert.equal(payload.queue_size, 7);
+                assert.equal(payload.running_jobs, 2);
+                assert.equal(payload.api_base_url, 'https://verify.test');
+            });
+        });
+    } finally {
+        global.fetch = originalFetch;
+    }
+});
+
+test('verify monitor quota proxy fails closed when internal auth key is missing', async () => {
+    await withEnv({ VERIFY_MONITOR_INTERNAL_KEY: null, VERIFY_INTERNAL_ACCESS_KEY: null }, async () => {
+        await withHandler('../server/api-handlers/admin/settings/verify-monitor-quota.js', async (handler) => {
             const req = {
                 method: 'GET',
                 headers: {
@@ -145,15 +204,11 @@ test('verify monitor queue proxy forwards upstream queue data', async () => {
             await handler(req, res);
             const payload = res.json();
 
-            assert.equal(res.statusCode, 200);
-            assert.equal(payload.success, true);
-            assert.equal(payload.queue_size, 7);
-            assert.equal(payload.running_jobs, 2);
-            assert.equal(payload.api_base_url, 'https://verify.test');
+            assert.equal(res.statusCode, 500);
+            assert.equal(payload.success, false);
+            assert.equal(payload.message, '验证运维内部凭证未配置');
         });
-    } finally {
-        global.fetch = originalFetch;
-    }
+    });
 });
 
 test('verify monitor quota proxy rejects non-GET methods', async () => {

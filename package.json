@@ -16,6 +16,8 @@
     "preflight:payment-rollout": "node scripts/payment-rollout-preflight.js",
     "rollout:payment": "node scripts/payment-rollout-apply.js",
     "scan:payment-sites": "node scripts/scan-payment-site-values.js",
+    "smoke:admin-local": "node scripts/admin-local-smoke.js",
+    "smoke:admin-shop": "node scripts/admin-local-smoke.js --module shop",
     "smoke:payment": "node scripts/payment-smoke-test.js",
     "sync:payment-channel": "node scripts/payment-channel-config-sync.js",
     "verify:payment-rollout": "node scripts/payment-rollout-verify.js",

@@ -10,6 +10,7 @@ const AdminDiscounts = {
 
     discounts: [],
     filteredDiscounts: [],
+    scopeSummary: null,
     currentPage: 1,
     itemsPerPage: 10,
     controlsBound: false,
@@ -52,6 +53,23 @@ const AdminDiscounts = {
         return payload;
     },
 
+    mutateDiscountsViaAdminApi: async function ({ action = '', site = '', payload = {} } = {}) {
+        const response = await (window.AdminApi?.fetch || fetch)(this.buildAdminDiscountsUrl('discounts/mutate'), {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                action,
+                site,
+                ...(payload && typeof payload === 'object' ? payload : {})
+            })
+        });
+
+        return this.parseAdminDiscountsResponse(response);
+    },
+
     escapeHtml: function (value) {
         return String(value ?? '')
             .replace(/&/g, '&amp;')
@@ -59,6 +77,56 @@ const AdminDiscounts = {
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
+    },
+
+    normalizeDiscountSite: function (value, fallback = 'all') {
+        const normalized = String(value ?? '').trim().toLowerCase();
+        if (!normalized) return fallback;
+        if (normalized === 'global') return 'all';
+        if (['all', 'cn', 'intl'].includes(normalized)) return normalized;
+        return fallback;
+    },
+
+    formatSiteLabel: function (value, { includeScopeSuffix = false } = {}) {
+        const normalized = this.normalizeDiscountSite(value, 'all');
+        if (normalized === 'cn') {
+            return includeScopeSuffix ? 'CN 专属' : 'CN';
+        }
+        if (normalized === 'intl') {
+            return includeScopeSuffix ? 'INTL 专属' : 'INTL';
+        }
+        return includeScopeSuffix ? '全站通用' : '全站';
+    },
+
+    renderScopeHint: function ({ status = 'idle', message = '', scopeSummary = null } = {}) {
+        const target = document.getElementById('discountsScopeHint');
+        if (!target) return;
+
+        target.className = 'admin-discount-scope-hint';
+
+        if (status === 'loading') {
+            target.classList.add('admin-discount-scope-hint--loading');
+            target.textContent = message || '正在按当前站点口径加载优惠券...';
+            return;
+        }
+
+        if (status === 'error') {
+            target.classList.add('admin-discount-scope-hint--error');
+            target.textContent = message || '优惠券列表加载失败，请稍后重试。';
+            return;
+        }
+
+        const summary = scopeSummary && typeof scopeSummary === 'object' ? scopeSummary : {};
+        const currentSite = this.normalizeDiscountSite(this.getReadSite(), 'all');
+
+        if (summary.mode === 'site_plus_global' && currentSite !== 'all') {
+            const currentSiteLabel = this.formatSiteLabel(currentSite);
+            const otherSite = summary.other_site || (currentSite === 'cn' ? 'intl' : 'cn');
+            target.innerHTML = `当前为 ${this.escapeHtml(currentSiteLabel)} 视图，会显示该站点可用的优惠券：<strong class="admin-discount-scope-hint__count">${this.escapeHtml(String(summary.site_specific_count || 0))}</strong> 张 ${this.escapeHtml(this.formatSiteLabel(currentSite, { includeScopeSuffix: true }))} + <strong class="admin-discount-scope-hint__count">${this.escapeHtml(String(summary.global_count || 0))}</strong> 张全站券；<strong class="admin-discount-scope-hint__count">${this.escapeHtml(String(summary.other_site_count || 0))}</strong> 张 ${this.escapeHtml(this.formatSiteLabel(otherSite, { includeScopeSuffix: true }))} 已隐藏。`;
+            return;
+        }
+
+        target.innerHTML = `当前为全站视图，共加载 <strong class="admin-discount-scope-hint__count">${this.escapeHtml(String(summary.visible_count || 0))}</strong> 张优惠券，其中全站券 <strong class="admin-discount-scope-hint__count">${this.escapeHtml(String(summary.global_count || 0))}</strong> 张，CN 专属 <strong class="admin-discount-scope-hint__count">${this.escapeHtml(String(summary.cn_count || 0))}</strong> 张，INTL 专属 <strong class="admin-discount-scope-hint__count">${this.escapeHtml(String(summary.intl_count || 0))}</strong> 张。`;
     },
 
     createTableStateRow: function ({ message, icon = 'fa-inbox', variant = 'empty', spinning = false }) {
@@ -198,11 +266,11 @@ const AdminDiscounts = {
 
     getDiscountPolicyMarkup: function (discount) {
         const policyLines = [];
-        const applicableSite = String(discount.applicable_site ?? '').trim().toLowerCase();
+        const applicableSite = this.normalizeDiscountSite(discount.applicable_site, 'all');
         const scopeType = this.normalizeScopeType(discount.scope_type);
 
         policyLines.push(
-            `<div class="admin-discount-expiry-meta"><i class="fas fa-earth-asia"></i> 站点: ${this.escapeHtml(applicableSite ? applicableSite.toUpperCase() : '全部')}</div>`
+            `<div class="admin-discount-expiry-meta"><i class="fas fa-earth-asia"></i> 站点: ${this.escapeHtml(this.formatSiteLabel(applicableSite, { includeScopeSuffix: false }))}</div>`
         );
 
         if (scopeType === 'category') {
@@ -474,6 +542,7 @@ const AdminDiscounts = {
         if (!tableBody) return;
 
         tableBody.innerHTML = this.buildTableLoadingSkeleton();
+        this.renderScopeHint({ status: 'loading' });
 
         try {
             const response = await (window.AdminApi?.fetch || fetch)(
@@ -484,10 +553,19 @@ const AdminDiscounts = {
             );
             const payload = await this.parseAdminDiscountsResponse(response);
             this.discounts = Array.isArray(payload.rows) ? payload.rows : [];
+            this.scopeSummary = payload.scope_summary && typeof payload.scope_summary === 'object'
+                ? payload.scope_summary
+                : null;
+            this.renderScopeHint({ status: 'ready', scopeSummary: this.scopeSummary });
             this.render();
 
         } catch (err) {
             console.error('Failed to load discounts:', err);
+            this.scopeSummary = null;
+            this.renderScopeHint({
+                status: 'error',
+                message: `优惠券列表加载失败：${err.message}`
+            });
             tableBody.replaceChildren(this.createTableStateRow({
                 message: `加载失败: ${err.message}`,
                 icon: 'fa-circle-exclamation',
@@ -696,19 +774,22 @@ const AdminDiscounts = {
     // ACTIONS (TOGGLE, DELETE)
     // ----------------------------------------
     toggleStatus: async function (id, newState) {
-        if (!this.requireWritableSite({ label: newState ? '启用折扣码' : '停用折扣码' })) {
+        const writableSite = this.requireWritableSite({ label: newState ? '启用折扣码' : '停用折扣码' });
+        if (!writableSite) {
             return;
         }
 
         if (!confirm(`确定要${newState ? '启用' : '停用'}该优惠码吗？`)) return;
 
         try {
-            const { error } = await supabaseClient
-                .from('discount_codes')
-                .update({ is_active: newState })
-                .eq('id', id);
-
-            if (error) throw error;
+            await this.mutateDiscountsViaAdminApi({
+                action: 'toggle_status',
+                site: writableSite,
+                payload: {
+                    id,
+                    isActive: newState
+                }
+            });
             await this.loadDiscounts();
         } catch (err) {
             alert('操作失败: ' + err.message);
@@ -716,19 +797,21 @@ const AdminDiscounts = {
     },
 
     deleteCode: async function (id, code) {
-        if (!this.requireWritableSite({ action: 'discounts-delete-code' })) {
+        const writableSite = this.requireWritableSite({ action: 'discounts-delete-code' });
+        if (!writableSite) {
             return;
         }
 
         if (!confirm(`警告：确定要永久删除优惠码 "${code}" 吗？这可能影响历史订单的关联显示。建议使用"停用"功能。`)) return;
 
         try {
-            const { error } = await supabaseClient
-                .from('discount_codes')
-                .delete()
-                .eq('id', id);
-
-            if (error) throw error;
+            await this.mutateDiscountsViaAdminApi({
+                action: 'delete',
+                site: writableSite,
+                payload: {
+                    id
+                }
+            });
             await this.loadDiscounts();
         } catch (err) {
             alert('删除失败: ' + err.message);
@@ -818,7 +901,8 @@ const AdminDiscounts = {
     },
 
     submitGenerate: async function () {
-        if (!this.requireWritableSite({ action: 'discounts-submit-generate' })) {
+        const writableSite = this.requireWritableSite({ action: 'discounts-submit-generate' });
+        if (!writableSite) {
             return;
         }
 
@@ -895,14 +979,11 @@ const AdminDiscounts = {
         };
 
         try {
-            const { data, error } = await supabaseClient
-                .from('discount_codes')
-                .insert([payload]);
-
-            if (error) {
-                if (error.code === '23505') throw new Error('该优惠码已存在，请换一个名称');
-                throw error;
-            }
+            await this.mutateDiscountsViaAdminApi({
+                action: 'create',
+                site: writableSite,
+                payload
+            });
 
             this.closeGenerateModal();
             alert(`成功生成优惠码: ${code}`);

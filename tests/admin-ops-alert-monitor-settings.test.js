@@ -294,7 +294,7 @@ function buildJob(alertType, overrides = {}) {
     };
 }
 
-test('ops alert monitor handler summarizes payment, ticket, inventory, fulfillment, and shop risk categories', async () => {
+test('ops alert monitor handler summarizes payment, ticket, inventory, fulfillment, shop risk, verify, and security categories', async () => {
     await withHandler({
         jobs: [
             buildJob('payment_refund_ops', {
@@ -399,6 +399,32 @@ test('ops alert monitor handler summarizes payment, ticket, inventory, fulfillme
                     auto_response_applied_at: hoursAgo(1.4)
                 },
                 created_at: hoursAgo(1.5)
+            }),
+            buildJob('verify_quota_low', {
+                id: 'verify-quota-low-1',
+                severity: 'warning',
+                title: '验证额度不足预警（primary-key）',
+                content: '验证额度告警\nAPI Key：primary-key',
+                payload: {
+                    target_id: 'verify_quota:primary-key',
+                    key_name: 'primary-key',
+                    api_base_url: 'https://verify.test',
+                    balance: 11,
+                    remaining_jobs: 11
+                },
+                created_at: hoursAgo(1.3)
+            }),
+            buildJob('security_admin_login_anomaly', {
+                id: 'admin-login-anomaly-1',
+                severity: 'critical',
+                title: '管理员异常登录（admin@example.com）',
+                content: '管理员安全告警\n登录 IP：203.0.113.88',
+                payload: {
+                    target_id: 'admin-user-1',
+                    admin_email: 'admin@example.com',
+                    client_ip: '203.0.113.88'
+                },
+                created_at: hoursAgo(1.1)
             })
         ]
     }, async (handler) => {
@@ -413,11 +439,11 @@ test('ops alert monitor handler summarizes payment, ticket, inventory, fulfillme
         assert.equal(payload.current_admin_id, 'admin-user-1');
         assert.equal(payload.current_admin_label, '当前值班');
         assert.equal(payload.assignable_admins.length, 2);
-        assert.equal(payload.summary.total_active_count, 5);
-        assert.equal(payload.summary.total_critical_count, 4);
-        assert.equal(payload.summary.active_category_count, 4);
+        assert.equal(payload.summary.total_active_count, 7);
+        assert.equal(payload.summary.total_critical_count, 5);
+        assert.equal(payload.summary.active_category_count, 6);
         assert.equal(Array.isArray(payload.categories), true);
-        assert.equal(payload.categories.length, 5);
+        assert.equal(payload.categories.length, 7);
 
         const payments = payload.categories.find((item) => item.key === 'payments');
         assert.equal(payments.active_count, 1);
@@ -450,9 +476,93 @@ test('ops alert monitor handler summarizes payment, ticket, inventory, fulfillme
         assert.equal(shopRisk.recent_threshold_hits[0].status, 'applied');
         assert.equal(shopRisk.recent_auto_responses[0].action, 'disable-coupon');
         assert.equal(shopRisk.recent_auto_responses[0].status, 'applied');
-        assert.equal(payload.summary.shift_report.totals.active_backlog_count, 5);
-        assert.equal(payload.summary.shift_report.totals.active_pending_count, 5);
+
+        const verify = payload.categories.find((item) => item.key === 'verify');
+        assert.equal(verify.active_count, 1);
+        assert.equal(verify.critical_count, 0);
+        assert.equal(verify.latest_state, 'problem');
+        assert.equal(verify.items[0].reference_label, 'API Key');
+        assert.equal(verify.items[0].reference_value, 'primary-key');
+        assert.equal(verify.items[0].api_base_url, 'https://verify.test');
+
+        const security = payload.categories.find((item) => item.key === 'security');
+        assert.equal(security.active_count, 1);
+        assert.equal(security.critical_count, 1);
+        assert.equal(security.latest_state, 'problem');
+        assert.equal(security.items[0].reference_label, '管理员');
+        assert.equal(security.items[0].reference_value, 'admin@example.com');
+        assert.equal(security.items[0].client_ip, '203.0.113.88');
+
+        assert.equal(payload.summary.shift_report.totals.active_backlog_count, 7);
+        assert.equal(payload.summary.shift_report.totals.active_pending_count, 7);
         assert.equal(payload.summary.shift_report.totals.active_claimed_count, 0);
+    });
+});
+
+test('ops alert monitor handler includes verify and security categories in recovered and claimed case states', async () => {
+    await withHandler({
+        jobs: [
+            buildJob('verify_incident_recovered', {
+                id: 'verify-incident-recovered-1',
+                severity: 'warning',
+                title: '验证综合异常已恢复（primary-key）',
+                content: '验证综合异常恢复\n恢复结论：验证服务已恢复正常',
+                payload: {
+                    target_id: 'verify_incident:primary-key',
+                    key_name: 'primary-key',
+                    api_base_url: 'https://verify.test'
+                },
+                created_at: hoursAgo(0.8)
+            }),
+            buildJob('security_admin_login_anomaly', {
+                id: 'security-claimed-1',
+                severity: 'critical',
+                title: '管理员异常登录（ops@example.com）',
+                content: '管理员安全告警\n登录 IP：198.51.100.22',
+                payload: {
+                    target_id: 'admin-user-2',
+                    admin_email: 'ops@example.com',
+                    client_ip: '198.51.100.22'
+                },
+                created_at: hoursAgo(1)
+            })
+        ],
+        cases: [
+            {
+                category_key: 'security',
+                target_id: 'admin-user-2',
+                alert_type: 'security_admin_login_anomaly',
+                status: 'claimed',
+                owner_admin_id: 'admin-user-1',
+                owner_label: '当前值班',
+                note: '正在核对来源 IP 和登录设备。',
+                resolution: null,
+                last_action: 'claimed',
+                last_action_at: hoursAgo(0.6),
+                updated_at: hoursAgo(0.6)
+            }
+        ]
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {} };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+
+        const verify = payload.categories.find((item) => item.key === 'verify');
+        assert.equal(verify.active_count, 0);
+        assert.equal(verify.latest_state, 'recovered');
+        assert.equal(verify.latest_title, '验证综合异常已恢复（primary-key）');
+
+        const security = payload.categories.find((item) => item.key === 'security');
+        assert.equal(security.active_count, 1);
+        assert.equal(security.items[0].case_status, 'claimed');
+        assert.equal(security.items[0].case_owner_label, '当前值班');
+        assert.equal(security.items[0].case_note, '正在核对来源 IP 和登录设备。');
+        assert.equal(security.case_summary.claimed, 1);
     });
 });
 

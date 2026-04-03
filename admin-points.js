@@ -266,9 +266,104 @@ function enableHorizontalScroll(container) {
 // Make it globally available for other modules
 window.enableHorizontalScroll = enableHorizontalScroll;
 
+const POINTS_PREFETCH_VIEWS = ['batches', 'catalog', 'generate'];
+let pointsViewPrefetchHandle = 0;
+let pointsViewPrefetchMode = '';
+
 // ========================================
 // VIEW SWITCHING
 // ========================================
+function isPointsModuleActive() {
+    const module = document.getElementById('module-points');
+    return Boolean(module && module.classList.contains('active') && window.getComputedStyle(module).display !== 'none');
+}
+
+function getActivePointsViewName() {
+    const activeView = document.querySelector('#module-points .view-section.active')?.id || '';
+    return activeView.replace(/^points-view-/, '') || 'batches';
+}
+
+function clearPointsViewPrefetch() {
+    if (!pointsViewPrefetchHandle) {
+        return;
+    }
+
+    if (pointsViewPrefetchMode === 'idle' && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(pointsViewPrefetchHandle);
+    } else {
+        window.clearTimeout(pointsViewPrefetchHandle);
+    }
+
+    pointsViewPrefetchHandle = 0;
+    pointsViewPrefetchMode = '';
+}
+
+function prefetchPointsView(viewName) {
+    const normalizedView = String(viewName || '').trim().toLowerCase();
+
+    if (normalizedView === 'batches') {
+        return loadBatches();
+    }
+
+    if (normalizedView === 'catalog') {
+        return loadPointsPackageCatalog();
+    }
+
+    if (normalizedView === 'generate') {
+        return Promise.all([
+            loadPackagesForSelect(),
+            Promise.resolve().then(() => initBatchExpiresPicker())
+        ]);
+    }
+
+    return Promise.resolve(false);
+}
+
+function schedulePointsViewPrefetch(activeView = getActivePointsViewName()) {
+    const normalizedView = String(activeView || 'batches').trim().toLowerCase();
+    const siblingViews = POINTS_PREFETCH_VIEWS.filter((view) => view !== normalizedView);
+    clearPointsViewPrefetch();
+
+    if (!isPointsModuleActive() || siblingViews.length === 0) {
+        return false;
+    }
+
+    const runPrefetch = async () => {
+        pointsViewPrefetchHandle = 0;
+        pointsViewPrefetchMode = '';
+
+        if (!isPointsModuleActive()) {
+            return;
+        }
+
+        for (const viewName of siblingViews) {
+            if (!isPointsModuleActive()) {
+                break;
+            }
+
+            try {
+                await prefetchPointsView(viewName);
+            } catch (error) {
+                console.warn(`[AdminPoints] Failed to prefetch ${viewName} view:`, error);
+            }
+        }
+    };
+
+    if (typeof window.requestIdleCallback === 'function') {
+        pointsViewPrefetchMode = 'idle';
+        pointsViewPrefetchHandle = window.requestIdleCallback(runPrefetch, { timeout: 1200 });
+        return true;
+    }
+
+    pointsViewPrefetchMode = 'timeout';
+    pointsViewPrefetchHandle = window.setTimeout(runPrefetch, 280);
+    return true;
+}
+
+function prefetchPointsModule() {
+    return schedulePointsViewPrefetch(getActivePointsViewName());
+}
+
 function switchPointsView(viewName) {
     // Hide all views
     document.querySelectorAll('#module-points .view-section').forEach(v => {
@@ -296,7 +391,12 @@ function switchPointsView(viewName) {
         loadPackagesForSelect();
         initBatchExpiresPicker(); // Initialize Flatpickr when switching to generate view
     }
+
+    schedulePointsViewPrefetch(viewName);
 }
+
+window.switchPointsView = switchPointsView;
+window.prefetchPointsModule = prefetchPointsModule;
 
 // ========================================
 // FLATPICKR INITIALIZATION
@@ -2862,6 +2962,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 window.addEventListener('admin-site-changed', async () => {
     invalidatePointsCatalogSnapshot();
+    clearPointsViewPrefetch();
 
     const pointsModule = document.getElementById('module-points');
     if (!pointsModule?.classList.contains('active')) {
@@ -2871,10 +2972,22 @@ window.addEventListener('admin-site-changed', async () => {
     const activeView = document.querySelector('#module-points .view-section.active')?.id || '';
     if (activeView === 'points-view-catalog') {
         await loadPointsPackageCatalog({ force: true });
+        schedulePointsViewPrefetch('catalog');
         return;
     }
 
     if (activeView === 'points-view-batches') {
         await loadBatches();
+        schedulePointsViewPrefetch('batches');
+        return;
     }
+
+    if (activeView === 'points-view-generate') {
+        await loadPackagesForSelect();
+        initBatchExpiresPicker();
+        schedulePointsViewPrefetch('generate');
+        return;
+    }
+
+    schedulePointsViewPrefetch(activeView.replace(/^points-view-/, '') || 'batches');
 });

@@ -14,9 +14,12 @@ test('homepage admin runtime prefers site rows and invalidates site-specific cac
 
     assert.match(source, /return \`\$\{HOMEPAGE_PREFETCH_CACHE_KEY\}_\$\{normalizeHomepageSite\(site\)\}\`;/);
     assert.match(source, /return \`\$\{HOMEPAGE_CONFIG_LAST_UPDATED_KEY\}_\$\{normalizeHomepageSite\(site\)\}\`;/);
-    assert.match(source, /const result = await fetchHomepageConfigRows\(getHomepageReadSite\(\)\);/);
+    assert.match(source, /currentReadSite = getHomepageReadSite\(\);/);
+    assert.match(source, /const result = await fetchHomepageConfigRows\(currentReadSite\);/);
     assert.match(source, /const rows = Array\.isArray\(result\.rows\) \? result\.rows : \[\];/);
     assert.match(source, /\/api\/admin\/homepage\/config/);
+    assert.match(source, /return normalizeHomepageSite\(filter\);/);
+    assert.doesNotMatch(source, /filter === 'all' \? 'cn' : filter/);
     assert.doesNotMatch(source, /supabaseClient\s*\.from\('homepage_config'\)/);
     assert.doesNotMatch(source, /zaoyoe_\$\{cacheSite\}_cache_v1_homepage_config/);
 });

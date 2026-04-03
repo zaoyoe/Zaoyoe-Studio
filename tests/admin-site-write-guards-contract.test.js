@@ -72,12 +72,19 @@ test('discounts module routes mutation entry points through writable site guard'
     const requiredMarkers = [
         "this.requireWritableSite({ label: newState ? '启用折扣码' : '停用折扣码' })",
         "this.requireWritableSite({ action: 'discounts-delete-code' })",
-        "this.requireWritableSite({ action: 'discounts-submit-generate' })"
+        "this.requireWritableSite({ action: 'discounts-submit-generate' })",
+        "buildAdminDiscountsUrl('discounts/mutate')"
     ];
 
     for (const marker of requiredMarkers) {
         assert.equal(discountsSource.includes(marker), true, `admin-discounts.js should contain ${marker}`);
     }
+
+    assert.equal(
+        discountsSource.includes(".from('discount_codes')"),
+        false,
+        'admin-discounts.js should no longer mutate discount_codes directly from the browser'
+    );
 });
 
 test('gallery module routes prompt mutations through writable site guard', () => {
@@ -116,11 +123,21 @@ test('shop module routes core write actions through writable site guard', () => 
         "this.requireWritableSite({ label: newStatus ? '上架商品' : '下架商品' })",
         "this.requireWritableSite({ label: '执行订单退款' })",
         "this.requireWritableSite({ label: '导入库存' })",
+        "this.requireWritableSite({ label: '导入库存（弹窗）' })",
+        "this.requireWritableSite({ label: '导入库存（工作台）' })",
         "this.requireWritableSite({ label: '批量删除库存' })",
         "this.requireWritableSite({ label: '删除库存项' })",
         "this.requireWritableSite({ label: freeze ? '冻结库存项' : '解冻库存项' })",
         "this.requireWritableSite({ label: '重新上架库存项' })",
-        "this.requireWritableSite({ label: '标记库存故障' })"
+        "this.requireWritableSite({ label: '标记库存故障' })",
+        "this.requireWritableSite({ label: '批量释放储备库存' })",
+        "this.requireWritableSite({ label: '批量删除商品' })",
+        "this.requireWritableSite({ label: '创建商品分类' })",
+        "this.requireWritableSite({ label: '重命名商品分类' })",
+        "this.requireWritableSite({ label: '设置商品分类颜色' })",
+        "this.requireWritableSite({ label: '删除商品分类' })",
+        "this.requireWritableSite({ label: '移动商品分类' })",
+        "this.requireWritableSite({ label: '调整商品排序' })"
     ];
 
     for (const marker of requiredMarkers) {
@@ -136,6 +153,71 @@ test('shop module routes core write actions through writable site guard', () => 
         shopSource.includes("supabaseClient.rpc('fn_admin_refund_order'"),
         false,
         'js/admin-shop.js should no longer call the refund rpc directly from the browser'
+    );
+    assert.equal(
+        shopSource.includes("supabaseClient.rpc('fn_import_inventory'"),
+        false,
+        'js/admin-shop.js should no longer call the inventory import rpc directly from the browser'
+    );
+    assert.equal(
+        shopSource.includes("supabaseClient.rpc('fn_admin_release_reserve'"),
+        false,
+        'js/admin-shop.js should no longer call the reserve release rpc directly from the browser'
+    );
+    assert.equal(
+        shopSource.includes("supabaseClient.rpc('fn_admin_list_inventory'"),
+        false,
+        'js/admin-shop.js should no longer call the inventory list rpc directly from the browser'
+    );
+    assert.equal(
+        shopSource.includes("buildAdminShopUrl('shop/inventory'"),
+        true,
+        'js/admin-shop.js should route inventory reads through the admin inventory handler'
+    );
+    assert.equal(
+        shopSource.includes("buildAdminShopUrl('shop/inventory-detail'"),
+        true,
+        'js/admin-shop.js should route inventory detail through the admin inventory detail handler'
+    );
+    assert.equal(
+        shopSource.includes("buildAdminShopUrl('shop/products'"),
+        true,
+        'js/admin-shop.js should route product reads through the admin products handler'
+    );
+    assert.equal(
+        shopSource.includes("buildAdminShopUrl('shop/categories'"),
+        true,
+        'js/admin-shop.js should route category reads through the admin categories handler'
+    );
+    assert.equal(
+        shopSource.includes("buildAdminShopUrl('shop/orders'"),
+        true,
+        'js/admin-shop.js should route order reads through the admin orders handler'
+    );
+    assert.equal(
+        shopSource.includes(".from('shop_orders')"),
+        false,
+        'js/admin-shop.js should no longer read shop_orders directly from the browser'
+    );
+    assert.equal(
+        shopSource.includes(".from('profiles')"),
+        false,
+        'js/admin-shop.js should no longer read profiles directly from the browser for shop workflows'
+    );
+    assert.equal(
+        shopSource.includes(".from('shop_inventory')"),
+        false,
+        'js/admin-shop.js should no longer read shop_inventory directly from the browser for inventory detail flows'
+    );
+    assert.equal(
+        shopSource.includes(".from('shop_products')"),
+        false,
+        'js/admin-shop.js should no longer touch shop_products directly from the browser'
+    );
+    assert.equal(
+        shopSource.includes(".from('shop_categories')"),
+        false,
+        'js/admin-shop.js should no longer touch shop_categories directly from the browser'
     );
 });
 

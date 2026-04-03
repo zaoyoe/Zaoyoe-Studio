@@ -716,6 +716,16 @@
     background: rgba(128, 128, 128, 0.1);
 }
 
+.action-btn.action-btn--blocked {
+    color: #d97706;
+    background: rgba(217, 119, 6, 0.12);
+}
+
+.action-btn.action-btn--blocked:hover {
+    color: #b45309;
+    background: rgba(217, 119, 6, 0.2);
+}
+
 /* Filter Options */
 .filter-option {
     padding: 10px 12px;
@@ -1035,6 +1045,21 @@
     gap: 0;
 }
 
+.comments-pagination-shell {
+    width: min(1600px, calc(100% - 64px));
+    margin: 8px auto 0;
+    padding: 0 32px 8px;
+    box-sizing: border-box;
+}
+
+.comments-pagination-shell:empty {
+    display: none;
+}
+
+.comments-pagination-shell__inner {
+    justify-content: space-between;
+}
+
 /* ============================================
    CUSTOM CHECKBOX (Modern & Clean)
    ============================================ */
@@ -1192,6 +1217,13 @@
     min-width: 0;
 }
 
+.item-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
 /* Name always visible */
 .comment-list-admin:not(.list-view) .item-name {
     font-weight: 600;
@@ -1200,6 +1232,7 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    min-width: 0;
 }
 
 /* Time always visible */
@@ -1399,6 +1432,7 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    min-width: 0;
 }
 
 .comment-list-admin.list-view .item-time {
@@ -1520,6 +1554,30 @@
     /* Purple tint */
     color: var(--admin-accent);
     white-space: nowrap;
+}
+
+.comment-block-badge {
+    display: inline-flex;
+    align-items: center;
+    max-width: 112px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.comment-block-badge--global {
+    color: #b91c1c;
+    background: rgba(185, 28, 28, 0.12);
+}
+
+.comment-block-badge--guestbook,
+.comment-block-badge--gallery {
+    color: #b45309;
+    background: rgba(217, 119, 6, 0.14);
 }
 
 
@@ -1690,6 +1748,11 @@
     opacity: 0;
     transform: translateY(-20px);
     pointer-events: none;
+}
+
+.comment-admin-item.comment-admin-item--focused {
+    box-shadow: 0 0 0 1px rgba(107, 158, 206, 0.7), 0 18px 36px rgba(107, 158, 206, 0.18);
+    border-color: rgba(107, 158, 206, 0.7);
 }
 
 /* Toast Notifications */
@@ -1958,6 +2021,13 @@
     background: var(--spotlight-color);
     text-transform: uppercase;
     letter-spacing: 0.5px;
+}
+
+.block-menu-note {
+    padding: 8px 12px 4px;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--text-dim);
 }
 
 .block-menu-btn {
@@ -2240,6 +2310,11 @@
         justify-content: center;
     }
 
+    .comments-pagination-shell {
+        width: calc(100% - 32px);
+        padding: 0 16px 8px;
+    }
+
     .comment-list-admin:not(.list-view) {
         justify-content: center;
     }
@@ -2259,6 +2334,11 @@
     .comment-list-admin {
         padding-left: 12px;
         padding-right: 12px;
+    }
+
+    .comments-pagination-shell {
+        width: calc(100% - 24px);
+        padding: 0 12px 8px;
     }
 
     .comment-list-admin:not(.list-view) {

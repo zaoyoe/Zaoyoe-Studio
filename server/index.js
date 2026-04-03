@@ -41,6 +41,9 @@ const {
     normalizeShopDeliveryStrategyConfig
 } = require('../api/_lib/payments/shop-delivery-strategy');
 const {
+    hasVerifyMonitorInternalAccess
+} = require('../api/_lib/verify-monitor-internal-access');
+const {
     applyRateLimitHeaders,
     explainClientIpResolution,
     isIpAllowed,
@@ -651,6 +654,17 @@ async function requireAdminUser(req, res) {
 }
 
 async function requireAdminOrInternalAccess(req, res) {
+    return requireAdminUser(req, res);
+}
+
+async function requireAdminOrVerifyMonitorInternalAccess(req, res) {
+    if (hasVerifyMonitorInternalAccess(req, process.env)) {
+        return {
+            id: 'verify-monitor-internal',
+            role: 'internal_verify_monitor'
+        };
+    }
+
     return requireAdminUser(req, res);
 }
 
@@ -4046,7 +4060,7 @@ app.get('/api/verify/status/:taskId', async (req, res) => {
 // GET /api/quota — Check current API key balance
 // =============================================
 app.get('/api/quota', async (req, res) => {
-    const quotaAccess = await requireAdminOrInternalAccess(req, res);
+    const quotaAccess = await requireAdminOrVerifyMonitorInternalAccess(req, res);
     if (!quotaAccess) return;
 
     try {
@@ -4093,7 +4107,7 @@ app.get('/api/quota', async (req, res) => {
 // GET /api/queue — Inspect upstream queue status
 // =============================================
 app.get('/api/queue', async (req, res) => {
-    const queueAccess = await requireAdminOrInternalAccess(req, res);
+    const queueAccess = await requireAdminOrVerifyMonitorInternalAccess(req, res);
     if (!queueAccess) return;
 
     try {

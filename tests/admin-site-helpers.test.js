@@ -236,3 +236,36 @@ test('admin router prefers explicit query route when both query and path routes 
         assert.equal(state.handlerCalls[0].adminSite, 'all');
     });
 });
+
+test('admin router normalizes rewritten query routes that include admin prefixes or embedded query strings', async () => {
+    await withAdminApiRouter(async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin?route=%2Fapi%2Fadmin%2Fshop%2Fproducts%3Fstatus%3Dall%26fields%3Dfull&site=cn',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.handlerCalls.length, 1);
+        assert.equal(state.handlerCalls[0].adminRoute, 'shop/products');
+        assert.equal(state.handlerCalls[0].adminSite, 'cn');
+    });
+});
+
+test('admin router normalizes absolute query routes from upstream proxies', async () => {
+    await withAdminApiRouter(async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin?route=https%3A%2F%2Fwww.zaoyoe.com%2Fapi%2Fadmin%2Fshop%2Finventory%3Fpage%3D1',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.handlerCalls.length, 1);
+        assert.equal(state.handlerCalls[0].adminRoute, 'shop/inventory');
+    });
+});

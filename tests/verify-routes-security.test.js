@@ -4,6 +4,9 @@ const crypto = require('node:crypto');
 const path = require('node:path');
 const Module = require('node:module');
 const {
+    VERIFY_MONITOR_INTERNAL_HEADER_NAME
+} = require('../api/_lib/verify-monitor-internal-access');
+const {
     buildHupijiaoHash
 } = require('../api/_lib/payments/hupijiao');
 const {
@@ -858,6 +861,49 @@ test('quota endpoint allows admins and proxies upstream data', async () => {
     });
 });
 
+test('quota endpoint allows requests signed with verify monitor internal key', async () => {
+    await withEnv({ VERIFY_MONITOR_INTERNAL_KEY: 'verify-internal-secret' }, async () => {
+        await withTestServer({}, async ({ app }) => {
+            const originalFetch = global.fetch;
+            global.fetch = async (input) => {
+                const url = String(input || '');
+                if (url === 'https://verify.test/api/balance') {
+                    return new Response(JSON.stringify({
+                        balance: 9,
+                        total_used: 2,
+                        cost_per_job: 1,
+                        name: 'internal-key'
+                    }), {
+                        status: 200,
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                }
+
+                throw new Error(`Unexpected fetch URL in test: ${url}`);
+            };
+
+            try {
+                const response = await dispatchRoute(app, {
+                    url: '/api/quota',
+                    headers: {
+                        [VERIFY_MONITOR_INTERNAL_HEADER_NAME]: 'verify-internal-secret'
+                    }
+                });
+                const payload = response.json();
+
+                assert.equal(response.status, 200);
+                assert.equal(payload.success, true);
+                assert.equal(payload.balance, 9);
+                assert.equal(payload.key_name, 'internal-key');
+            } finally {
+                global.fetch = originalFetch;
+            }
+        });
+    });
+});
+
 test('quota endpoint rejects localhost access without admin auth', async () => {
     await withTestServer({}, async ({ app }) => {
         const response = await dispatchRoute(app, {
@@ -950,6 +996,65 @@ test('queue endpoint allows admins and proxies upstream data', async () => {
         } finally {
             global.fetch = originalFetch;
         }
+    });
+});
+
+test('queue endpoint allows requests signed with verify monitor internal key', async () => {
+    await withEnv({ VERIFY_MONITOR_INTERNAL_KEY: 'verify-internal-secret' }, async () => {
+        await withTestServer({}, async ({ app }) => {
+            const originalFetch = global.fetch;
+            global.fetch = async (input) => {
+                const url = String(input || '');
+                if (url === 'https://verify.test/api/queue') {
+                    return new Response(JSON.stringify({
+                        queue_size: 3,
+                        running_jobs: 1
+                    }), {
+                        status: 200,
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                }
+
+                throw new Error(`Unexpected fetch URL in test: ${url}`);
+            };
+
+            try {
+                const response = await dispatchRoute(app, {
+                    url: '/api/queue',
+                    headers: {
+                        [VERIFY_MONITOR_INTERNAL_HEADER_NAME]: 'verify-internal-secret'
+                    }
+                });
+                const payload = response.json();
+
+                assert.equal(response.status, 200);
+                assert.equal(payload.success, true);
+                assert.equal(payload.queue_size, 3);
+                assert.equal(payload.running_jobs, 1);
+            } finally {
+                global.fetch = originalFetch;
+            }
+        });
+    });
+});
+
+test('network request-context endpoint does not accept verify monitor internal key', async () => {
+    await withEnv({ VERIFY_MONITOR_INTERNAL_KEY: 'verify-internal-secret' }, async () => {
+        await withTestServer({}, async ({ app }) => {
+            const response = await dispatchRoute(app, {
+                url: '/api/admin/network/request-context',
+                headers: {
+                    [VERIFY_MONITOR_INTERNAL_HEADER_NAME]: 'verify-internal-secret'
+                },
+                remoteAddress: '10.0.0.2'
+            });
+            const payload = response.json();
+
+            assert.equal(response.status, 401);
+            assert.equal(payload.code, 'unauthorized');
+        });
     });
 });
 

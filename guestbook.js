@@ -30,6 +30,59 @@ function setElementHidden(target, hidden, visibleDisplay = '') {
     }
 }
 
+let guestbookDeepLinkHandled = false;
+let guestbookDeepLinkRetryTimer = null;
+
+function getGuestbookDeepLinkTarget() {
+    const params = new URLSearchParams(window.location.search || '');
+    const messageId = String(params.get('messageId') || '').trim();
+    const commentId = String(params.get('commentId') || '').trim();
+
+    if (!messageId) {
+        return null;
+    }
+
+    return {
+        messageId,
+        commentId
+    };
+}
+
+function clearGuestbookDeepLinkRetryTimer() {
+    if (guestbookDeepLinkRetryTimer) {
+        clearTimeout(guestbookDeepLinkRetryTimer);
+        guestbookDeepLinkRetryTimer = null;
+    }
+}
+
+function maybeHandleGuestbookDeepLink() {
+    const deepLink = getGuestbookDeepLinkTarget();
+    if (!deepLink || guestbookDeepLinkHandled) {
+        return;
+    }
+
+    if (typeof window.handleSmartScroll !== 'function') {
+        clearGuestbookDeepLinkRetryTimer();
+        guestbookDeepLinkRetryTimer = setTimeout(() => {
+            guestbookDeepLinkRetryTimer = null;
+            maybeHandleGuestbookDeepLink();
+        }, 120);
+        return;
+    }
+
+    guestbookDeepLinkHandled = true;
+    clearGuestbookDeepLinkRetryTimer();
+
+    setTimeout(() => {
+        if (deepLink.commentId) {
+            window.handleSmartScroll(deepLink.commentId, 'comment', deepLink.messageId);
+            return;
+        }
+
+        window.handleSmartScroll(deepLink.messageId, 'message');
+    }, 320);
+}
+
 function initGuestbookPage() {
     const messageContainer = document.getElementById('messageContainer');
     const floatingBackBtn = document.querySelector('.floating-back-btn');
@@ -162,6 +215,7 @@ function initGuestbookPage() {
         if (typeof window.supabaseClient !== 'undefined' && typeof loadGuestbookMessages === 'function') {
             console.log('✅ Supabase 已就绪，加载留言');
             loadGuestbookMessages();
+            maybeHandleGuestbookDeepLink();
 
             console.log('🔌 首屏渲染后再启用 Supabase Realtime...');
             scheduleRealtimeSetup();

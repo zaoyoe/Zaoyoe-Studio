@@ -23,6 +23,10 @@
         anomalyActionLoading: {},
         exceptionTopicFilter: 'all',
         focusOrderId: '',
+        tabPrefetchHandle: 0,
+        tabPrefetchMode: '',
+        tabPrefetchTaskKey: '',
+        tabPrefetchPromise: null,
         pagination: {
             anomalies: 1,
             orders: 1,
@@ -32,6 +36,7 @@
     };
 
     const PAYMENTS_PAGE_SIZE = 5;
+    const PAYMENTS_PREFETCH_TABS = ['overview', 'finance', 'ops'];
     const NOTE_REQUIRED_ACTIONS = new Set([
         'approve_review',
         'reject_review',
@@ -674,8 +679,124 @@
         return `preset:${state.days}:${site}`;
     }
 
+    function clearTabPrefetch() {
+        if (!state.tabPrefetchHandle) {
+            return;
+        }
+
+        if (state.tabPrefetchMode === 'idle' && typeof window.cancelIdleCallback === 'function') {
+            window.cancelIdleCallback(state.tabPrefetchHandle);
+        } else {
+            window.clearTimeout(state.tabPrefetchHandle);
+        }
+
+        state.tabPrefetchHandle = 0;
+        state.tabPrefetchMode = '';
+    }
+
+    function prefetchTabData(tabId, options = {}) {
+        const normalizedTab = String(tabId || 'overview').trim().toLowerCase() || 'overview';
+        const force = options.force === true;
+        const cacheKey = getCurrentCacheKey();
+        const taskKey = `${normalizedTab}:${cacheKey}:${force ? 'force' : 'warm'}`;
+
+        if (!force && hasCachedDataForTab(normalizedTab)) {
+            return Promise.resolve(false);
+        }
+
+        if (!force && state.tabPrefetchPromise && state.tabPrefetchTaskKey === taskKey) {
+            return state.tabPrefetchPromise;
+        }
+
+        const run = async () => {
+            const query = buildSummaryQuery(normalizedTab);
+            const payload = await fetchAdminJson(`/api/admin/payments/summary?${query.toString()}`);
+
+            if (cacheKey !== getCurrentCacheKey()) {
+                return false;
+            }
+
+            state.summary = {
+                ...(state.summary || {}),
+                ...payload
+            };
+            state.viewCache[normalizedTab] = cacheKey;
+
+            if (normalizedTab === 'ops' && !state.cleanupPreview) {
+                try {
+                    await loadCleanupPreview({ silent: true });
+                } catch (cleanupError) {
+                    console.warn('[AdminPayments] Failed to prefetch cleanup preview:', cleanupError);
+                    if (state.activeTab === 'ops') {
+                        renderCleanupPreviewFallback(getFriendlyErrorMessage(cleanupError, '测试数据扫描失败，但不影响支付对账查看。'));
+                    }
+                }
+            }
+
+            return true;
+        };
+
+        if (force) {
+            return run();
+        }
+
+        state.tabPrefetchTaskKey = taskKey;
+        state.tabPrefetchPromise = run().finally(() => {
+            if (state.tabPrefetchTaskKey === taskKey) {
+                state.tabPrefetchTaskKey = '';
+                state.tabPrefetchPromise = null;
+            }
+        });
+        return state.tabPrefetchPromise;
+    }
+
+    function scheduleTabPrefetch(activeTab = state.activeTab) {
+        const normalizedTab = String(activeTab || state.activeTab || 'overview').trim().toLowerCase() || 'overview';
+        const siblingTabs = PAYMENTS_PREFETCH_TABS.filter((tabId) => tabId !== normalizedTab);
+        const scheduledCacheKey = getCurrentCacheKey();
+
+        clearTabPrefetch();
+
+        if (!isPaymentsModuleActive() || siblingTabs.length === 0) {
+            return false;
+        }
+
+        const runPrefetch = async () => {
+            state.tabPrefetchHandle = 0;
+            state.tabPrefetchMode = '';
+
+            if (!isPaymentsModuleActive() || scheduledCacheKey !== getCurrentCacheKey()) {
+                return;
+            }
+
+            for (const tabId of siblingTabs) {
+                if (!isPaymentsModuleActive() || scheduledCacheKey !== getCurrentCacheKey()) {
+                    break;
+                }
+
+                try {
+                    await prefetchTabData(tabId);
+                } catch (error) {
+                    console.warn(`[AdminPayments] Failed to prefetch ${tabId} tab:`, error);
+                }
+            }
+        };
+
+        if (typeof window.requestIdleCallback === 'function') {
+            state.tabPrefetchMode = 'idle';
+            state.tabPrefetchHandle = window.requestIdleCallback(runPrefetch, { timeout: 1200 });
+            return true;
+        }
+
+        state.tabPrefetchMode = 'timeout';
+        state.tabPrefetchHandle = window.setTimeout(runPrefetch, 280);
+        return true;
+    }
+
     function resetViewState() {
+        clearTabPrefetch();
         state.viewCache = {};
+        state.cleanupPreview = null;
         state.pagination = {
             anomalies: 1,
             orders: 1,
@@ -1063,6 +1184,7 @@
     function switchTab(tabId, options = {}) {
         const shouldReload = options.reload !== false;
         state.activeTab = String(tabId || 'overview');
+        const hasCachedTabData = hasCachedDataForTab(state.activeTab);
         const nav = document.getElementById('paymentsTabsNav');
         if (nav) {
             nav.querySelectorAll('.admin-tab').forEach((button) => {
@@ -1077,8 +1199,19 @@
         syncTabIndicator();
         window.dispatchEvent(new Event('resize'));
 
-        if (shouldReload && state.initialized && !state.loading && !hasCachedDataForTab(state.activeTab)) {
+        if (state.initialized && state.summary && hasCachedTabData) {
+            updateToolbarHighlights(state.summary);
+            rerenderCurrentView();
+            updateOverviewBanner(state.summary);
+        }
+
+        if (shouldReload && state.initialized && !state.loading && !hasCachedTabData) {
             reload();
+            return;
+        }
+
+        if (state.initialized) {
+            scheduleTabPrefetch(state.activeTab);
         }
     }
 
@@ -1143,6 +1276,384 @@
         }
         if (previewBtn) {
             previewBtn.disabled = loading;
+        }
+    }
+
+    function buildPaymentsSkeletonBlock(variant = 'line', widthClass = 'admin-skeleton-w-full', extraClass = '') {
+        const classes = ['admin-skeleton-block'];
+        if (variant) {
+            classes.push(`admin-skeleton-block--${variant}`);
+        }
+        if (widthClass) {
+            classes.push(widthClass);
+        }
+        if (extraClass) {
+            classes.push(extraClass);
+        }
+        return `<span class="${classes.join(' ')}"></span>`;
+    }
+
+    function buildPaymentsSkeletonPills(count = 3) {
+        const widths = ['admin-skeleton-w-chip-xs', 'admin-skeleton-w-chip-sm', 'admin-skeleton-w-chip-md'];
+        return Array.from({ length: count }, (_, index) => buildPaymentsSkeletonBlock('pill', widths[index % widths.length])).join('');
+    }
+
+    function buildPaymentsKpiSkeletonCards(count = 6) {
+        const valueWidths = ['admin-skeleton-w-50', 'admin-skeleton-w-40', 'admin-skeleton-w-60', 'admin-skeleton-w-30'];
+        const labelWidths = ['admin-skeleton-w-30', 'admin-skeleton-w-40', 'admin-skeleton-w-20', 'admin-skeleton-w-30'];
+
+        return Array.from({ length: count }, (_, index) => `
+            <div class="kpi-card payments-kpi-card-visual payments-kpi-card-skeleton" aria-hidden="true">
+                <div class="payments-kpi-main">
+                    <span class="admin-skeleton-block payments-skeleton-icon"></span>
+                    <div class="kpi-content payments-skeleton-stack">
+                        ${buildPaymentsSkeletonBlock('title', valueWidths[index % valueWidths.length])}
+                        ${buildPaymentsSkeletonBlock('line', labelWidths[index % labelWidths.length])}
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function buildPaymentsProviderRowSkeleton() {
+        return `
+            <div class="payments-provider-row payments-skeleton-card" aria-hidden="true">
+                <div class="payments-provider-copy payments-skeleton-stack">
+                    <div class="payments-provider-name payments-skeleton-inline">
+                        <span class="admin-skeleton-block payments-skeleton-inline-icon"></span>
+                        ${buildPaymentsSkeletonBlock('title', 'admin-skeleton-w-30')}
+                    </div>
+                    ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-80')}
+                    <div class="payments-provider-extra payments-skeleton-inline">
+                        ${buildPaymentsSkeletonPills(3)}
+                    </div>
+                </div>
+                <div class="payments-provider-badges payments-skeleton-inline">
+                    ${buildPaymentsSkeletonPills(2)}
+                </div>
+            </div>
+        `;
+    }
+
+    function buildPaymentsBreakdownSkeleton() {
+        return `
+            <div class="payments-breakdown-card payments-skeleton-card" aria-hidden="true">
+                <div class="payments-row-head">
+                    <div class="payments-row-title-wrap payments-skeleton-stack">
+                        ${buildPaymentsSkeletonBlock('title', 'admin-skeleton-w-40')}
+                        ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-80')}
+                    </div>
+                    <div class="payments-row-metric-wrap payments-skeleton-stack payments-skeleton-stack--align-end">
+                        ${buildPaymentsSkeletonBlock('title', 'admin-skeleton-w-30')}
+                    </div>
+                </div>
+                <div class="payments-breakdown-meta payments-skeleton-inline">
+                    ${buildPaymentsSkeletonPills(3)}
+                </div>
+            </div>
+        `;
+    }
+
+    function buildPaymentsPointsRowSkeleton() {
+        return `
+            <div class="payments-points-row payments-skeleton-card" aria-hidden="true">
+                <div class="payments-row-head">
+                    <div class="payments-row-title-wrap payments-skeleton-stack">
+                        ${buildPaymentsSkeletonBlock('title', 'admin-skeleton-w-30')}
+                        ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-70')}
+                    </div>
+                    <div class="payments-row-metric-wrap payments-skeleton-stack payments-skeleton-stack--align-end">
+                        ${buildPaymentsSkeletonBlock('title', 'admin-skeleton-w-20')}
+                    </div>
+                </div>
+                <div class="payments-points-values payments-skeleton-inline">
+                    ${buildPaymentsSkeletonPills(3)}
+                </div>
+            </div>
+        `;
+    }
+
+    function buildPaymentsAnomalySkeleton() {
+        return `
+            <div class="payments-anomaly-item payments-anomaly-item--skeleton" aria-hidden="true">
+                <div class="payments-anomaly-top">
+                    <div class="payments-anomaly-copy payments-skeleton-stack">
+                        ${buildPaymentsSkeletonBlock('title', 'admin-skeleton-w-50')}
+                        ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-full')}
+                        ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-70')}
+                    </div>
+                    ${buildPaymentsSkeletonBlock('pill', 'admin-skeleton-w-chip-sm')}
+                </div>
+                <div class="payments-anomaly-suggestion payments-anomaly-suggestion--skeleton">
+                    <span class="admin-skeleton-block payments-skeleton-inline-icon payments-skeleton-inline-icon--tiny"></span>
+                    <div class="payments-skeleton-stack">
+                        ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-full')}
+                        ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-80')}
+                    </div>
+                </div>
+                <div class="payments-anomaly-meta payments-anomaly-meta--skeleton">
+                    <span>${buildPaymentsSkeletonBlock('tiny', 'admin-skeleton-w-20')}${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-50')}</span>
+                    <span>${buildPaymentsSkeletonBlock('tiny', 'admin-skeleton-w-20')}${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-40')}</span>
+                    <span>${buildPaymentsSkeletonBlock('tiny', 'admin-skeleton-w-20')}${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-30')}</span>
+                    <span>${buildPaymentsSkeletonBlock('tiny', 'admin-skeleton-w-20')}${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-60')}</span>
+                </div>
+            </div>
+        `;
+    }
+
+    function buildPaymentsRefundSkeletonTopic() {
+        return `
+            <article class="payments-refund-topic-card payments-skeleton-card" aria-hidden="true">
+                <div class="payments-refund-topic-head">
+                    <div class="payments-refund-topic-copy payments-skeleton-stack">
+                        ${buildPaymentsSkeletonBlock('title', 'admin-skeleton-w-40')}
+                        ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-70')}
+                    </div>
+                    <div class="payments-provider-badges payments-skeleton-inline">
+                        ${buildPaymentsSkeletonPills(2)}
+                    </div>
+                </div>
+                <div class="payments-refund-alert-stream">
+                    ${Array.from({ length: 2 }, () => `
+                        <div class="payments-refund-alert-item payments-skeleton-card">
+                            <div class="payments-skeleton-stack">
+                                ${buildPaymentsSkeletonBlock('title', 'admin-skeleton-w-50')}
+                                ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-full')}
+                            </div>
+                            <div class="payments-refund-alert-item-meta payments-skeleton-inline">
+                                ${buildPaymentsSkeletonPills(3)}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </article>
+        `;
+    }
+
+    function buildPaymentsTrendSkeleton() {
+        const barClasses = [
+            'payments-trend-skeleton-bar--sm',
+            'payments-trend-skeleton-bar--md',
+            'payments-trend-skeleton-bar--lg',
+            'payments-trend-skeleton-bar--xl',
+            'payments-trend-skeleton-bar--md',
+            'payments-trend-skeleton-bar--lg'
+        ];
+
+        return `
+            <div class="payments-trend-skeleton" aria-hidden="true">
+                ${Array.from({ length: 12 }, (_, index) => `
+                    <span class="admin-skeleton-block payments-trend-skeleton-bar ${barClasses[index % barClasses.length]}"></span>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function buildPaymentsOrdersSkeleton(rowCount = 4) {
+        return `
+            <div class="payments-table-wrap">
+                <table class="payments-table payments-table-skeleton" aria-hidden="true">
+                    <thead>
+                        <tr>
+                            <th>订单号</th>
+                            <th>套餐</th>
+                            <th>金额</th>
+                            <th>积分</th>
+                            <th>状态</th>
+                            <th>意图匹配</th>
+                            <th>站点</th>
+                            <th>创建时间</th>
+                            <th>认领时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${Array.from({ length: rowCount }, (_, index) => `
+                            <tr class="payments-table-skeleton-row">
+                                <td>
+                                    <div class="payments-skeleton-stack">
+                                        ${buildPaymentsSkeletonBlock('title', index % 2 === 0 ? 'admin-skeleton-w-40' : 'admin-skeleton-w-50')}
+                                        ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-30')}
+                                    </div>
+                                </td>
+                                <td>${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-40')}</td>
+                                <td>${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-20')}</td>
+                                <td>${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-20')}</td>
+                                <td>${buildPaymentsSkeletonBlock('pill', 'admin-skeleton-w-chip-sm')}</td>
+                                <td>${buildPaymentsSkeletonBlock('pill', 'admin-skeleton-w-chip-md')}</td>
+                                <td>${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-20')}</td>
+                                <td>${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-30')}</td>
+                                <td>${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-30')}</td>
+                                <td>
+                                    <div class="payments-skeleton-inline">
+                                        ${buildPaymentsSkeletonPills(2)}
+                                    </div>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    function buildPaymentsCleanupSkeleton() {
+        return `
+            <div class="payments-cleanup-grid" aria-hidden="true">
+                ${Array.from({ length: 4 }, () => `
+                    <div class="payments-cleanup-stat payments-cleanup-stat--skeleton">
+                        ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-30')}
+                        ${buildPaymentsSkeletonBlock('title', 'admin-skeleton-w-20')}
+                    </div>
+                `).join('')}
+            </div>
+            <div class="payments-cleanup-note payments-cleanup-note--skeleton">
+                ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-full')}
+                ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-80')}
+            </div>
+            <div class="payments-cleanup-samples" aria-hidden="true">
+                ${Array.from({ length: 2 }, () => `
+                    <div class="payments-skeleton-card payments-skeleton-stack">
+                        ${buildPaymentsSkeletonBlock('title', 'admin-skeleton-w-30')}
+                        ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-full')}
+                        ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-70')}
+                        ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-60')}
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function renderPaymentsToolbarHighlightsSkeleton() {
+        const target = document.getElementById('paymentsToolbarHighlights');
+        if (!target) return;
+
+        target.innerHTML = Array.from({ length: 4 }, () => `
+            <div class="payments-highlight-pill payments-highlight-pill--skeleton" aria-hidden="true">
+                ${buildPaymentsSkeletonBlock('pill', 'admin-skeleton-w-chip-lg')}
+            </div>
+        `).join('');
+    }
+
+    function hasRenderedContentForTab(tabId = state.activeTab) {
+        const normalizedTab = String(tabId || state.activeTab || 'overview').trim().toLowerCase() || 'overview';
+
+        if (normalizedTab === 'finance') {
+            return Boolean(
+                document.getElementById('paymentsSitewideGrid')?.childElementCount
+                || document.getElementById('paymentsBusinessBreakdown')?.childElementCount
+                || document.getElementById('paymentsPointsBreakdown')?.childElementCount
+            );
+        }
+
+        if (normalizedTab === 'ops') {
+            return Boolean(
+                document.getElementById('paymentsOpsAlertQueue')?.childElementCount
+                || document.getElementById('paymentsExceptionTopics')?.childElementCount
+                || document.getElementById('paymentsAnomalyList')?.childElementCount
+                || document.getElementById('paymentsOrdersTable')?.childElementCount
+                || document.getElementById('paymentsCleanupPreview')?.childElementCount
+            );
+        }
+
+        return Boolean(
+            document.getElementById('paymentsOverviewGrid')?.childElementCount
+            || document.getElementById('paymentsProviderStats')?.childElementCount
+            || document.getElementById('paymentsTrendChart')?.childElementCount
+            || document.getElementById('paymentsOpsAlertHealth')?.childElementCount
+            || document.getElementById('paymentsRefundAlerts')?.childElementCount
+        );
+    }
+
+    function renderLoadingSkeletonForTab(tabId = state.activeTab) {
+        const normalizedTab = String(tabId || state.activeTab || 'overview').trim().toLowerCase() || 'overview';
+        renderPaymentsToolbarHighlightsSkeleton();
+
+        if (normalizedTab === 'finance') {
+            const sitewideGrid = document.getElementById('paymentsSitewideGrid');
+            const businessBreakdown = document.getElementById('paymentsBusinessBreakdown');
+            const pointsBreakdown = document.getElementById('paymentsPointsBreakdown');
+
+            if (sitewideGrid) {
+                sitewideGrid.innerHTML = buildPaymentsKpiSkeletonCards(6);
+            }
+            if (businessBreakdown) {
+                businessBreakdown.innerHTML = Array.from({ length: 3 }, () => buildPaymentsBreakdownSkeleton()).join('');
+            }
+            if (pointsBreakdown) {
+                pointsBreakdown.innerHTML = Array.from({ length: 4 }, () => buildPaymentsPointsRowSkeleton()).join('');
+            }
+            return;
+        }
+
+        if (normalizedTab === 'ops') {
+            const queueTarget = document.getElementById('paymentsOpsAlertQueue');
+            const queueMeta = document.getElementById('paymentsOpsAlertQueueMeta');
+            const topicsTarget = document.getElementById('paymentsExceptionTopics');
+            const topicListTarget = document.getElementById('paymentsExceptionTopicList');
+            const anomalyTarget = document.getElementById('paymentsAnomalyList');
+            const ordersTarget = document.getElementById('paymentsOrdersTable');
+            const cleanupTarget = document.getElementById('paymentsCleanupPreview');
+
+            if (queueMeta) {
+                queueMeta.textContent = '正在加载站外告警队列...';
+            }
+            if (queueTarget) {
+                queueTarget.innerHTML = `<div class="payments-anomaly-items">${Array.from({ length: 3 }, () => buildPaymentsAnomalySkeleton()).join('')}</div>`;
+            }
+            if (topicsTarget) {
+                topicsTarget.innerHTML = Array.from({ length: 3 }, () => buildPaymentsProviderRowSkeleton()).join('');
+            }
+            if (topicListTarget) {
+                topicListTarget.innerHTML = `<div class="payments-anomaly-items">${Array.from({ length: 2 }, () => buildPaymentsAnomalySkeleton()).join('')}</div>`;
+            }
+            if (anomalyTarget) {
+                anomalyTarget.innerHTML = `<div class="payments-anomaly-items">${Array.from({ length: 3 }, () => buildPaymentsAnomalySkeleton()).join('')}</div>`;
+            }
+            if (ordersTarget) {
+                ordersTarget.innerHTML = buildPaymentsOrdersSkeleton();
+            }
+            if (cleanupTarget) {
+                cleanupTarget.innerHTML = buildPaymentsCleanupSkeleton();
+            }
+            return;
+        }
+
+        const overviewGrid = document.getElementById('paymentsOverviewGrid');
+        const refundPanel = document.getElementById('paymentsRefundAlertsPanel');
+        const refundMeta = document.getElementById('paymentsRefundAlertsMeta');
+        const refundTarget = document.getElementById('paymentsRefundAlerts');
+        const providerStats = document.getElementById('paymentsProviderStats');
+        const trendChart = document.getElementById('paymentsTrendChart');
+        const trendLegend = document.getElementById('paymentsTrendLegend');
+        const opsAlertHealthPanel = document.getElementById('paymentsOpsAlertHealthPanel');
+        const opsAlertHealthMeta = document.getElementById('paymentsOpsAlertHealthMeta');
+        const opsAlertHealth = document.getElementById('paymentsOpsAlertHealth');
+
+        if (overviewGrid) {
+            overviewGrid.innerHTML = buildPaymentsKpiSkeletonCards(10);
+        }
+        if (refundPanel && refundMeta && refundTarget) {
+            refundPanel.hidden = false;
+            refundMeta.textContent = '正在加载退款售后告警...';
+            refundTarget.innerHTML = `<div class="payments-refund-alerts">${Array.from({ length: 2 }, () => buildPaymentsRefundSkeletonTopic()).join('')}</div>`;
+        }
+        if (providerStats) {
+            providerStats.innerHTML = Array.from({ length: 3 }, () => buildPaymentsProviderRowSkeleton()).join('');
+        }
+        if (trendChart) {
+            trendChart.innerHTML = buildPaymentsTrendSkeleton();
+        }
+        if (trendLegend) {
+            trendLegend.innerHTML = buildPaymentsSkeletonPills(3);
+        }
+        if (opsAlertHealthPanel && opsAlertHealthMeta && opsAlertHealth) {
+            opsAlertHealthPanel.hidden = false;
+            opsAlertHealthMeta.textContent = '正在加载站外告警投递...';
+            opsAlertHealth.innerHTML = `
+                ${buildPaymentsProviderRowSkeleton()}
+                <div class="payments-anomaly-items">${Array.from({ length: 2 }, () => buildPaymentsAnomalySkeleton()).join('')}</div>
+            `;
         }
     }
 
@@ -2067,6 +2578,7 @@
         updateOverviewBanner(data);
 
         updateLastSynced(new Date());
+        scheduleTabPrefetch(state.activeTab);
         return true;
     }
 
@@ -2111,6 +2623,7 @@
             });
 
             window.showToast?.(`${getAnomalyActionLabel(normalizedAction)}成功`, 'success');
+            clearTabPrefetch();
             state.viewCache = {};
             await reload();
             return payload;
@@ -2234,6 +2747,9 @@
         try {
             clearAccessState();
             syncTabIndicator();
+            if (!hasRenderedContentForTab(state.activeTab)) {
+                renderLoadingSkeletonForTab(state.activeTab);
+            }
             setLoading(true);
             const applied = await loadSummary(requestToken);
             if (!applied || requestToken !== state.requestToken) {
@@ -2315,6 +2831,7 @@
             if (typeof window.showToast === 'function') {
                 window.showToast(payload.message || '测试数据已清理', payload.warnings?.length ? 'warning' : 'success');
             }
+            clearTabPrefetch();
             state.viewCache = {};
             await reload();
             try {
@@ -2601,10 +3118,22 @@
         return { opened: true, matched };
     }
 
+    window.addEventListener('admin-site-changed', () => {
+        resetViewState();
+
+        if (!state.initialized || !isPaymentsModuleActive()) {
+            return;
+        }
+
+        void reload();
+    });
+
     window.AdminPayments = {
         init,
         reload,
         switchTab,
+        scheduleTabPrefetch,
+        getActiveTab: () => state.activeTab,
         setDays,
         applyCustomRange,
         toggleRangeMenu,

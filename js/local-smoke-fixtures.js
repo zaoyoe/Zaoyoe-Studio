@@ -8,6 +8,7 @@
     })();
     const smokeEnabled = searchParams.get('smoke') === '1';
     const minimalDomOutput = searchParams.get('smokeDom') === 'minimal';
+    const smokeRunId = String(searchParams.get('smokeRunId') || '').trim();
 
     if (!smokeEnabled) {
         return;
@@ -22,6 +23,7 @@
         'settings.manage',
         'ops_alerts.manage',
         'homepage.manage',
+        'shop.manage',
         'chat.manage',
         'analytics.view'
     ];
@@ -632,6 +634,138 @@
                 status: 'pending',
                 description: '验证失败需要人工协助',
                 created_at: '2026-03-31T07:18:00+08:00'
+            }
+        ],
+        shopCategories: [
+            {
+                id: 'cat-account',
+                name: 'account',
+                color: '#6b9ece',
+                sort_order: 10
+            },
+            {
+                id: 'cat-cards',
+                name: 'cards',
+                color: '#f4b400',
+                sort_order: 20
+            },
+            {
+                id: 'cat-other',
+                name: 'other',
+                color: '#9aa0a6',
+                sort_order: 90
+            }
+        ],
+        shopProducts: [
+            {
+                id: 'shop-prod-cn-1',
+                name: 'CN 高级账号',
+                name_en: 'CN Premium Account',
+                description: '中文站高价值账号库存，用来验证商品工作台渲染和库存回算。',
+                description_en: 'CN premium stock used by the local smoke workflow.',
+                price_points: 188,
+                price_points_intl: 28,
+                icon_url: 'fas fa-crown',
+                category: 'account',
+                display_order: 30,
+                sort_order: 0,
+                is_active: true,
+                stock_count: 1
+            },
+            {
+                id: 'shop-prod-cn-2',
+                name: 'CN 月付会员',
+                name_en: 'CN Monthly Membership',
+                description: '中文站月付会员商品，用来验证同分类排序持久化。',
+                description_en: 'CN membership item for smoke sort persistence.',
+                price_points: 88,
+                price_points_intl: 16,
+                icon_url: 'fas fa-id-badge',
+                category: 'account',
+                display_order: 20,
+                sort_order: 1,
+                is_active: true,
+                stock_count: 0
+            },
+            {
+                id: 'shop-prod-cn-3',
+                name: '兑换卡套餐',
+                name_en: 'Gift Card Bundle',
+                description: '卡券类商品，用来验证跨分类移动和删分类回退。',
+                description_en: 'Card bundle used to verify cross-category moves.',
+                price_points: 56,
+                price_points_intl: 12,
+                icon_url: 'fas fa-ticket-alt',
+                category: 'cards',
+                display_order: 10,
+                sort_order: 0,
+                is_active: true,
+                stock_count: 1
+            },
+            {
+                id: 'shop-prod-cn-4',
+                name: '历史下架商品',
+                name_en: 'Archived Product',
+                description: '用于验证导入树回收站渲染。',
+                description_en: 'Archived product for recycle-bin smoke coverage.',
+                price_points: 10,
+                price_points_intl: 2,
+                icon_url: 'fas fa-box-archive',
+                category: 'other',
+                display_order: 0,
+                sort_order: 0,
+                is_active: false,
+                stock_count: 0
+            }
+        ],
+        shopInventory: [
+            {
+                id: 'inv-smoke-1',
+                product_id: 'shop-prod-cn-1',
+                content: 'alpha@example.com----pass-alpha',
+                status: 'available',
+                batch_id: 'BATCH-ALPHA',
+                created_at: '2026-03-31T05:40:00+08:00',
+                buyer_id: null,
+                sold_at: null,
+                order_id: null,
+                remark: null
+            },
+            {
+                id: 'inv-smoke-2',
+                product_id: 'shop-prod-cn-1',
+                content: 'reserve@example.com----pass-reserve',
+                status: 'reserve',
+                batch_id: 'BATCH-RESERVE',
+                created_at: '2026-03-30T12:00:00+08:00',
+                buyer_id: '00000000-0000-4000-8000-000000000001',
+                sold_at: '2026-03-31T06:00:00+08:00',
+                order_id: null,
+                remark: '预留待复核'
+            },
+            {
+                id: 'inv-smoke-3',
+                product_id: 'shop-prod-cn-3',
+                content: 'gift@example.com----card-001',
+                status: 'available',
+                batch_id: 'BATCH-CARD',
+                created_at: '2026-03-31T06:20:00+08:00',
+                buyer_id: null,
+                sold_at: null,
+                order_id: null,
+                remark: null
+            },
+            {
+                id: 'inv-smoke-4',
+                product_id: 'shop-prod-cn-2',
+                content: 'sold@example.com----membership-001',
+                status: 'sold',
+                batch_id: 'BATCH-SOLD',
+                created_at: '2026-03-31T06:45:00+08:00',
+                buyer_id: '00000000-0000-4000-8000-000000000002',
+                sold_at: '2026-03-31T06:50:00+08:00',
+                order_id: 'SHOP-20260331-002',
+                remark: null
             }
         ],
         homepageConfigRows: buildHomepageConfigRows(),
@@ -1540,17 +1674,7 @@
         const panel = createResultPanel();
         panel.setAttribute('data-local-smoke-status', status);
         document.documentElement.setAttribute('data-local-smoke-status', status);
-
-        const summary = smokeState.results.length
-            ? smokeState.results.map((item) => `${item.pass ? 'PASS' : 'FAIL'} ${item.label}${item.detail ? `\n  ${item.detail}` : ''}`).join('\n')
-            : 'No smoke checks recorded yet.';
-
-        panel.textContent = [
-            `Local Smoke: ${status.toUpperCase()}`,
-            `Page: ${globalScope.location?.pathname || '/'}`,
-            '',
-            summary
-        ].join('\n');
+        panel.textContent = buildSmokeResultText(status);
     }
 
     function recordResult(label, pass, detail = '') {
@@ -1561,11 +1685,60 @@
         });
         const finalStatus = smokeState.results.some((item) => !item.pass) ? 'failed' : 'running';
         renderResults(finalStatus);
+        void postSmokeResult(finalStatus);
+    }
+
+    function buildSmokeResultText(status = 'running') {
+        const summary = smokeState.results.length
+            ? smokeState.results.map((item) => `${item.pass ? 'PASS' : 'FAIL'} ${item.label}${item.detail ? `\n  ${item.detail}` : ''}`).join('\n')
+            : 'No smoke checks recorded yet.';
+
+        return [
+            `Local Smoke: ${status.toUpperCase()}`,
+            `Page: ${globalScope.location?.pathname || '/'}`,
+            '',
+            summary
+        ].join('\n');
+    }
+
+    function buildSmokeResultPayload(status = 'running') {
+        return {
+            runId: smokeRunId,
+            status,
+            page: globalScope.location?.pathname || '/',
+            text: buildSmokeResultText(status),
+            results: smokeState.results.map((item) => ({
+                label: item.label,
+                pass: item.pass === true,
+                detail: item.detail ? String(item.detail) : ''
+            }))
+        };
+    }
+
+    async function postSmokeResult(status = 'running') {
+        if (!smokeRunId || typeof globalScope.fetch !== 'function') {
+            return;
+        }
+
+        try {
+            await globalScope.fetch('/__local-smoke-result', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'same-origin',
+                keepalive: true,
+                body: JSON.stringify(buildSmokeResultPayload(status))
+            });
+        } catch (_) {
+            // ignore best-effort result reporting failures in local smoke mode
+        }
     }
 
     function finalizeResults() {
         const finalStatus = smokeState.results.some((item) => !item.pass) ? 'failed' : 'passed';
         renderResults(finalStatus);
+        void postSmokeResult(finalStatus);
 
         if (minimalDomOutput) {
             const panel = createResultPanel();
@@ -1655,8 +1828,20 @@
             console.info(`[local-smoke:${type}] ${String(message || '')}`);
         };
 
+        globalScope.alert = function alertStub(message = '') {
+            const detail = String(message || '').trim();
+            console.info(`[local-smoke:alert] ${detail}`);
+            if (!detail || !/^成功/.test(detail)) {
+                recordResult('本地 smoke 触发了 alert', false, detail || '触发了空 alert');
+            }
+        };
+
         globalScope.confirm = function confirmStub() {
             return true;
+        };
+
+        globalScope.prompt = function promptStub(_message = '', defaultValue = '') {
+            return String(defaultValue || '');
         };
 
         if (!globalScope.navigator) {
@@ -1736,11 +1921,24 @@
         return String(site || '').trim().toLowerCase() === 'intl' ? 'intl' : 'cn';
     }
 
+    function normalizeSmokeAdminRoute(value) {
+        return String(value || '')
+            .trim()
+            .replace(/[?#][\s\S]*$/, '')
+            .replace(/^https?:\/\/[^/]+/i, '')
+            .replace(/^\/+|\/+$/g, '')
+            .replace(/^api\/admin\/?/i, '')
+            .toLowerCase();
+    }
+
     function getSmokeTableStateKey(table = '') {
         const tableMap = {
             system_notifications: 'notificationRecords',
             chat_messages: 'chatMessages',
             profiles: 'profiles',
+            shop_products: 'shopProducts',
+            shop_categories: 'shopCategories',
+            shop_inventory: 'shopInventory',
             shop_orders: 'shopOrders',
             payment_orders: 'paymentOrders',
             verification_logs: 'verificationLogs',
@@ -2412,6 +2610,581 @@
         return base;
     }
 
+    function normalizeSmokeShopStatus(value) {
+        const normalized = String(value || '').trim().toLowerCase();
+        return ['available', 'reserve', 'sold', 'frozen', 'fault'].includes(normalized) ? normalized : 'available';
+    }
+
+    function normalizeText(value, maxLength = 200) {
+        return String(value || '').trim().slice(0, Math.max(0, maxLength));
+    }
+
+    function normalizeCategoryColor(value, fallback = null) {
+        const normalized = normalizeText(value, 32);
+        if (!normalized) {
+            return fallback;
+        }
+
+        return /^#[0-9a-f]{6}$/i.test(normalized) ? normalized : fallback;
+    }
+
+    function normalizeIsoDate(value) {
+        if (value === null || value === undefined || value === '') {
+            return null;
+        }
+
+        const timestamp = Date.parse(String(value));
+        if (!Number.isFinite(timestamp)) {
+            return null;
+        }
+
+        return new Date(timestamp).toISOString();
+    }
+
+    function normalizePositiveInteger(value) {
+        if (value === null || value === undefined || value === '') {
+            return null;
+        }
+
+        const normalized = Number.parseInt(String(value), 10);
+        if (!Number.isFinite(normalized) || normalized <= 0) {
+            return null;
+        }
+
+        return normalized;
+    }
+
+    function normalizeNonNegativeInteger(value) {
+        if (value === null || value === undefined || value === '') {
+            return null;
+        }
+
+        const normalized = Number.parseInt(String(value), 10);
+        if (!Number.isFinite(normalized) || normalized < 0) {
+            return null;
+        }
+
+        return normalized;
+    }
+
+    function normalizeSmokeShopProductOrder(value, fallback = 'display_order_desc') {
+        const normalized = String(value || '').trim().toLowerCase();
+        return ['display_order_desc', 'name_asc', 'sort_order_asc'].includes(normalized) ? normalized : fallback;
+    }
+
+    function normalizeSmokeShopProductFields(value, fallback = 'full') {
+        const normalized = String(value || '').trim().toLowerCase();
+        return ['full', 'names', 'import'].includes(normalized) ? normalized : fallback;
+    }
+
+    function getSmokeShopProductMap() {
+        return new Map(
+            getTableRows('shop_products').map((row) => [String(row?.id || '').trim(), row])
+        );
+    }
+
+    function getSmokeShopCategoryRows() {
+        return getTableRows('shop_categories')
+            .map((row) => ({ ...row }))
+            .sort((left, right) => {
+                const orderDelta = Number(left?.sort_order || 0) - Number(right?.sort_order || 0);
+                if (orderDelta !== 0) return orderDelta;
+                return normalizeComparableValue(left?.name).localeCompare(normalizeComparableValue(right?.name));
+            });
+    }
+
+    function getSmokeShopNextCategorySortOrder() {
+        return getSmokeShopCategoryRows().reduce(
+            (maxValue, row) => Math.max(maxValue, Number(row?.sort_order || 0) || 0),
+            0
+        ) + 10;
+    }
+
+    function ensureSmokeShopFallbackCategory(name = 'other') {
+        const normalizedName = normalizeText(name, 120) || 'other';
+        const rows = getTableRows('shop_categories').map((row) => ({ ...row }));
+        const existing = rows.find((row) => String(row?.name || '').trim() === normalizedName);
+        if (existing) {
+            return existing;
+        }
+
+        const inserted = buildInsertedRow('shop_categories', {
+            id: `cat-smoke-${normalizedName}-${Date.now()}`,
+            name: normalizedName,
+            color: '#9aa0a6',
+            sort_order: getSmokeShopNextCategorySortOrder()
+        });
+        rows.push(inserted);
+        setTableRows('shop_categories', rows);
+        return inserted;
+    }
+
+    function recalculateSmokeShopStockCounts(productIds = null) {
+        const targetIds = Array.isArray(productIds) && productIds.length
+            ? new Set(productIds.map((item) => String(item || '').trim()).filter(Boolean))
+            : null;
+        const inventoryRows = getTableRows('shop_inventory');
+        const nextRows = getTableRows('shop_products').map((row) => {
+            const productId = String(row?.id || '').trim();
+            if (targetIds && !targetIds.has(productId)) {
+                return { ...row };
+            }
+
+            const stockCount = inventoryRows.filter((entry) => (
+                String(entry?.product_id || '').trim() === productId
+                && normalizeSmokeShopStatus(entry?.status) === 'available'
+            )).length;
+
+            return {
+                ...row,
+                stock_count: stockCount
+            };
+        });
+
+        setTableRows('shop_products', nextRows);
+    }
+
+    function projectSmokeShopProductRow(row = {}, fields = 'full') {
+        if (fields === 'names') {
+            return {
+                id: row.id,
+                name: row.name
+            };
+        }
+
+        if (fields === 'import') {
+            return {
+                id: row.id,
+                name: row.name,
+                category: row.category,
+                sort_order: row.sort_order,
+                is_active: row.is_active !== false
+            };
+        }
+
+        return { ...row };
+    }
+
+    function buildSmokeShopProductsPayload(searchParams) {
+        const productId = normalizeText(searchParams.get('id') || searchParams.get('productId'), 160);
+        const status = normalizeText(searchParams.get('status'), 40).toLowerCase() || 'all';
+        const fields = normalizeSmokeShopProductFields(searchParams.get('fields'), 'full');
+        const order = normalizeSmokeShopProductOrder(
+            searchParams.get('order'),
+            fields === 'names' ? 'name_asc' : 'display_order_desc'
+        );
+        const category = normalizeText(searchParams.get('category'), 120);
+        const ids = String(searchParams.get('ids') || '')
+            .split(',')
+            .map((item) => normalizeText(item, 160))
+            .filter(Boolean);
+
+        if (productId) {
+            const product = getTableRows('shop_products').find((row) => String(row?.id || '').trim() === productId) || null;
+            return {
+                success: true,
+                product: product ? deepClone(product) : null
+            };
+        }
+
+        let rows = getTableRows('shop_products').map((row) => ({ ...row }));
+
+        if (ids.length) {
+            const idSet = new Set(ids);
+            rows = rows.filter((row) => idSet.has(String(row?.id || '').trim()));
+        }
+
+        if (status === 'active') {
+            rows = rows.filter((row) => row?.is_active !== false);
+        } else if (status === 'deleted') {
+            rows = rows.filter((row) => row?.is_active === false);
+        }
+
+        if (category && category !== 'all') {
+            rows = rows.filter((row) => String(row?.category || '').trim() === category);
+        }
+
+        rows.sort((left, right) => {
+            if (order === 'name_asc') {
+                return normalizeComparableValue(left?.name).localeCompare(normalizeComparableValue(right?.name), 'zh-CN');
+            }
+            if (order === 'sort_order_asc') {
+                const sortDelta = Number(left?.sort_order || 0) - Number(right?.sort_order || 0);
+                if (sortDelta !== 0) return sortDelta;
+                return normalizeComparableValue(left?.name).localeCompare(normalizeComparableValue(right?.name), 'zh-CN');
+            }
+            const displayDelta = Number(right?.display_order || 0) - Number(left?.display_order || 0);
+            if (displayDelta !== 0) return displayDelta;
+            return normalizeComparableValue(left?.name).localeCompare(normalizeComparableValue(right?.name), 'zh-CN');
+        });
+
+        return {
+            success: true,
+            rows: deepClone(rows.map((row) => projectSmokeShopProductRow(row, fields)))
+        };
+    }
+
+    function buildSmokeShopInventoryRows() {
+        const productMap = getSmokeShopProductMap();
+        const profileMap = new Map(
+            getTableRows('profiles').map((row) => [String(row?.id || '').trim(), row])
+        );
+
+        return getTableRows('shop_inventory').map((row) => {
+            const product = productMap.get(String(row?.product_id || '').trim()) || null;
+            const buyerProfile = profileMap.get(String(row?.buyer_id || '').trim()) || null;
+            return {
+                ...row,
+                status: normalizeSmokeShopStatus(row?.status),
+                product_name: product?.name || '',
+                buyer_email: row?.buyer_email || buyerProfile?.email || '',
+                order_id: row?.order_id || null
+            };
+        });
+    }
+
+    function buildSmokeShopInventoryPayload(searchParams) {
+        const page = Math.max(1, Number.parseInt(String(searchParams.get('page') || '1'), 10) || 1);
+        const pageSize = Math.max(1, Number.parseInt(String(searchParams.get('pageSize') || '10'), 10) || 10);
+        const productId = normalizeText(searchParams.get('productId') || searchParams.get('product_id'), 160) || null;
+        const status = normalizeText(searchParams.get('status'), 40).toLowerCase() || null;
+        const search = normalizeText(searchParams.get('search'), 200).toLowerCase() || null;
+        const dateFrom = normalizeIsoDate(searchParams.get('dateFrom') || searchParams.get('date_from'));
+        const dateTo = normalizeIsoDate(searchParams.get('dateTo') || searchParams.get('date_to'));
+
+        let rows = buildSmokeShopInventoryRows();
+        if (productId) {
+            rows = rows.filter((row) => String(row?.product_id || '').trim() === productId);
+        }
+        if (status && status !== 'all') {
+            rows = rows.filter((row) => normalizeSmokeShopStatus(row?.status) === status);
+        }
+        if (search) {
+            rows = rows.filter((row) => {
+                const haystack = [
+                    row?.product_name,
+                    row?.content,
+                    row?.batch_id,
+                    row?.buyer_email,
+                    row?.order_id
+                ].map((item) => String(item || '').toLowerCase()).join(' ');
+                return haystack.includes(search);
+            });
+        }
+        if (dateFrom) {
+            const fromTs = Date.parse(dateFrom);
+            rows = rows.filter((row) => Date.parse(row?.created_at || 0) >= fromTs);
+        }
+        if (dateTo) {
+            const toTs = Date.parse(dateTo);
+            rows = rows.filter((row) => Date.parse(row?.created_at || 0) <= toTs);
+        }
+
+        rows.sort((left, right) => Date.parse(right?.created_at || 0) - Date.parse(left?.created_at || 0));
+
+        const stats = rows.reduce((acc, row) => {
+            const key = normalizeSmokeShopStatus(row?.status);
+            acc[key] = (acc[key] || 0) + 1;
+            return acc;
+        }, {
+            reserve: 0,
+            available: 0,
+            sold: 0,
+            frozen: 0,
+            fault: 0
+        });
+
+        const total = rows.length;
+        const offset = (page - 1) * pageSize;
+        const items = rows.slice(offset, offset + pageSize);
+
+        return {
+            success: true,
+            page,
+            pageSize,
+            total,
+            stats,
+            items: deepClone(items)
+        };
+    }
+
+    function handleSmokeShopMutation(body = {}) {
+        const site = String(body.site || '').trim().toLowerCase();
+        if (!['cn', 'intl'].includes(site)) {
+            return createResponse({
+                success: false,
+                message: 'Writable admin site must be cn or intl'
+            }, 400);
+        }
+
+        const action = String(body.action || '').trim();
+        if (!action) {
+            return createResponse({
+                success: false,
+                message: 'action is required'
+            }, 400);
+        }
+
+        if (action === 'create_category') {
+            const name = normalizeText(body.name, 120);
+            const color = normalizeCategoryColor(body.color, '#6b9ece');
+            if (!name) {
+                return createResponse({ success: false, message: 'name is required' }, 400);
+            }
+
+            const rows = getTableRows('shop_categories').map((row) => ({ ...row }));
+            const inserted = buildInsertedRow('shop_categories', {
+                id: `cat-smoke-${Date.now()}`,
+                name,
+                color,
+                sort_order: getSmokeShopNextCategorySortOrder()
+            });
+            rows.push(inserted);
+            setTableRows('shop_categories', rows);
+
+            return createResponse({
+                success: true,
+                category: deepClone(inserted)
+            });
+        }
+
+        if (action === 'rename_category') {
+            const categoryId = normalizeText(body.categoryId, 160);
+            const nextName = normalizeText(body.name, 120);
+            if (!categoryId || !nextName) {
+                return createResponse({
+                    success: false,
+                    message: 'categoryId and name are required'
+                }, 400);
+            }
+
+            const categoryRows = getTableRows('shop_categories').map((row) => ({ ...row }));
+            const target = categoryRows.find((row) => String(row?.id || '').trim() === categoryId);
+            if (!target) {
+                return createResponse({ success: false, message: '分类不存在' }, 404);
+            }
+
+            const previousName = target.name;
+            target.name = nextName;
+            setTableRows('shop_categories', categoryRows);
+
+            const productRows = getTableRows('shop_products').map((row) => (
+                String(row?.category || '').trim() === previousName
+                    ? { ...row, category: nextName }
+                    : { ...row }
+            ));
+            setTableRows('shop_products', productRows);
+
+            return createResponse({
+                success: true,
+                category: deepClone(target)
+            });
+        }
+
+        if (action === 'set_category_color') {
+            const categoryId = normalizeText(body.categoryId, 160);
+            const color = normalizeCategoryColor(body.color);
+            if (!categoryId || !color) {
+                return createResponse({
+                    success: false,
+                    message: 'categoryId and valid color are required'
+                }, 400);
+            }
+
+            const categoryRows = getTableRows('shop_categories').map((row) => ({ ...row }));
+            const target = categoryRows.find((row) => String(row?.id || '').trim() === categoryId);
+            if (!target) {
+                return createResponse({ success: false, message: '分类不存在' }, 404);
+            }
+
+            target.color = color;
+            setTableRows('shop_categories', categoryRows);
+            return createResponse({
+                success: true,
+                category: deepClone(target)
+            });
+        }
+
+        if (action === 'delete_category') {
+            const categoryId = normalizeText(body.categoryId, 160);
+            if (!categoryId) {
+                return createResponse({ success: false, message: 'categoryId is required' }, 400);
+            }
+
+            const categoryRows = getTableRows('shop_categories').map((row) => ({ ...row }));
+            const target = categoryRows.find((row) => String(row?.id || '').trim() === categoryId);
+            if (!target) {
+                return createResponse({ success: false, message: '分类不存在' }, 404);
+            }
+            if (String(target?.name || '').trim().toLowerCase() === 'other') {
+                return createResponse({ success: false, message: '默认分类 other 不允许删除' }, 400);
+            }
+
+            const fallbackCategory = ensureSmokeShopFallbackCategory('other');
+            setTableRows(
+                'shop_categories',
+                categoryRows.filter((row) => String(row?.id || '').trim() !== categoryId)
+            );
+            setTableRows(
+                'shop_products',
+                getTableRows('shop_products').map((row) => (
+                    String(row?.category || '').trim() === String(target?.name || '').trim()
+                        ? { ...row, category: fallbackCategory.name }
+                        : { ...row }
+                ))
+            );
+
+            return createResponse({
+                success: true,
+                deleted: true,
+                fallbackCategory: fallbackCategory.name
+            });
+        }
+
+        if (action === 'reorder_products') {
+            const assignments = (Array.isArray(body.assignments) ? body.assignments : [])
+                .map((entry) => ({
+                    id: normalizeText(entry?.id || entry?.productId, 160),
+                    category: normalizeText(entry?.category || entry?.targetCategory, 120),
+                    sort_order: normalizeNonNegativeInteger(entry?.sortOrder ?? entry?.sort_order)
+                }))
+                .filter((entry) => entry.id && entry.category && entry.sort_order !== null);
+
+            if (!assignments.length) {
+                return createResponse({
+                    success: false,
+                    message: 'assignments is required'
+                }, 400);
+            }
+
+            const productRows = getTableRows('shop_products').map((row) => ({ ...row }));
+            const productMap = new Map(productRows.map((row) => [String(row?.id || '').trim(), row]));
+            const updatedProducts = [];
+
+            for (const assignment of assignments) {
+                const target = productMap.get(assignment.id);
+                if (!target) {
+                    return createResponse({
+                        success: false,
+                        message: `商品不存在: ${assignment.id}`
+                    }, 404);
+                }
+                target.category = assignment.category;
+                target.sort_order = assignment.sort_order;
+                updatedProducts.push({
+                    ...target
+                });
+            }
+
+            setTableRows('shop_products', productRows);
+            return createResponse({
+                success: true,
+                updated: updatedProducts.length,
+                products: deepClone(updatedProducts)
+            });
+        }
+
+        if (action === 'import_inventory') {
+            const productId = normalizeText(body.productId, 160);
+            const lines = (Array.isArray(body.lines) ? body.lines : [])
+                .map((line) => String(line || '').trim())
+                .filter(Boolean);
+            const importStatus = normalizeSmokeShopStatus(body.importStatus);
+            const batchId = normalizeText(body.batchId, 120) || `batch-smoke-${Date.now()}`;
+
+            if (!productId || !lines.length) {
+                return createResponse({
+                    success: false,
+                    message: 'productId and lines are required'
+                }, 400);
+            }
+
+            const inventoryRows = getTableRows('shop_inventory').map((row) => ({ ...row }));
+            lines.forEach((content, index) => {
+                inventoryRows.push(buildInsertedRow('shop_inventory', {
+                    id: `inv-smoke-${Date.now()}-${index + 1}`,
+                    product_id: productId,
+                    content,
+                    status: importStatus,
+                    batch_id: batchId,
+                    created_at: new Date(now.getTime() + index * 1000).toISOString(),
+                    buyer_id: null,
+                    sold_at: null,
+                    order_id: null,
+                    remark: null
+                }, index));
+            });
+            setTableRows('shop_inventory', inventoryRows);
+            recalculateSmokeShopStockCounts([productId]);
+
+            const product = getTableRows('shop_products').find((row) => String(row?.id || '').trim() === productId) || {};
+            return createResponse({
+                success: true,
+                imported: lines.length,
+                stockCount: Number(product?.stock_count || 0),
+                batchId
+            });
+        }
+
+        if (action === 'inventory_release_reserve') {
+            const productId = normalizeText(body.productId, 160);
+            const count = normalizePositiveInteger(body.count);
+            const beforeDate = normalizeIsoDate(body.beforeDate ?? body.before_date);
+
+            if (!productId) {
+                return createResponse({ success: false, message: 'productId is required' }, 400);
+            }
+            if ((body.count !== null && body.count !== undefined && body.count !== '') && !count) {
+                return createResponse({ success: false, message: 'count must be a positive integer' }, 400);
+            }
+            if ((body.beforeDate || body.before_date) && !beforeDate) {
+                return createResponse({ success: false, message: 'beforeDate is invalid' }, 400);
+            }
+            if (!count && !beforeDate) {
+                return createResponse({ success: false, message: 'count or beforeDate is required' }, 400);
+            }
+
+            const inventoryRows = getTableRows('shop_inventory').map((row) => ({ ...row }));
+            const reserveRows = inventoryRows
+                .filter((row) => (
+                    String(row?.product_id || '').trim() === productId
+                    && normalizeSmokeShopStatus(row?.status) === 'reserve'
+                    && (!beforeDate || Date.parse(row?.created_at || 0) < Date.parse(beforeDate))
+                ))
+                .sort((left, right) => Date.parse(left?.created_at || 0) - Date.parse(right?.created_at || 0));
+
+            const releaseRows = count ? reserveRows.slice(0, count) : reserveRows;
+            const releaseIdSet = new Set(releaseRows.map((row) => String(row?.id || '').trim()).filter(Boolean));
+            inventoryRows.forEach((row) => {
+                if (!releaseIdSet.has(String(row?.id || '').trim())) {
+                    return;
+                }
+                row.status = 'available';
+                row.buyer_id = null;
+                row.sold_at = null;
+                row.order_id = null;
+                row.remark = null;
+            });
+            setTableRows('shop_inventory', inventoryRows);
+            recalculateSmokeShopStockCounts([productId]);
+
+            const product = getTableRows('shop_products').find((row) => String(row?.id || '').trim() === productId) || {};
+            return createResponse({
+                success: true,
+                released: releaseRows.length,
+                stockCount: Number(product?.stock_count || 0),
+                message: releaseRows.length
+                    ? `成功释放 ${releaseRows.length} 条储备库存`
+                    : '未找到符合条件的储备库存'
+            });
+        }
+
+        return createResponse({
+            success: false,
+            message: `Unsupported action: ${action}`
+        }, 400);
+    }
+
     function createQueryBuilder(table) {
         const state = {
             table,
@@ -2684,6 +3457,9 @@
                 : (input?.url || '');
             const url = new URL(requestUrl || '/', globalScope.location?.origin || 'http://127.0.0.1:8000');
             const method = String(init?.method || input?.method || 'GET').trim().toUpperCase();
+            const adminRoute = url.pathname === '/api/admin'
+                ? normalizeSmokeAdminRoute(url.searchParams.get('route'))
+                : '';
 
             if (url.pathname === '/api/admin/settings/ops-alerts') {
                 if (method === 'GET') {
@@ -2847,6 +3623,32 @@
                         ids: deletedRows.map((row) => row.id)
                     });
                 }
+            }
+
+            if ((url.pathname === '/api/admin/shop/products' || adminRoute === 'shop/products') && method === 'GET') {
+                return createResponse(buildSmokeShopProductsPayload(url.searchParams));
+            }
+
+            if ((url.pathname === '/api/admin/shop/categories' || adminRoute === 'shop/categories') && method === 'GET') {
+                return createResponse({
+                    success: true,
+                    rows: deepClone(getSmokeShopCategoryRows())
+                });
+            }
+
+            if ((url.pathname === '/api/admin/shop/inventory' || adminRoute === 'shop/inventory') && method === 'GET') {
+                return createResponse(buildSmokeShopInventoryPayload(url.searchParams));
+            }
+
+            if ((url.pathname === '/api/admin/shop/mutate' || adminRoute === 'shop/mutate') && method === 'POST') {
+                let body = {};
+                try {
+                    body = JSON.parse(String(init?.body || '{}'));
+                } catch (_) {
+                    body = {};
+                }
+
+                return handleSmokeShopMutation(body);
             }
 
             if (url.pathname === '/api/admin/points/catalog' && method === 'GET') {
@@ -3638,6 +4440,229 @@
         }
     }
 
+    async function runAdminShopSmoke() {
+        await waitFor(
+            () => globalScope.switchModule
+                && globalScope.AdminSiteFilter?.select
+                && globalScope.ShopAdmin
+                && typeof globalScope.hasModulePermission === 'function'
+                && globalScope.hasModulePermission('shop') === true,
+            { message: '商城模块入口未加载完成' }
+        );
+
+        globalScope.AdminSiteFilter.select('cn');
+        await nextFrame();
+        await sleep(80);
+        const switched = globalScope.switchModule?.('shop');
+        if (switched === false) {
+            await sleep(180);
+            globalScope.switchModule?.('shop');
+        }
+
+        let shopModule = null;
+        try {
+            shopModule = await waitFor(
+                () => document.getElementById('module-shop')?.classList.contains('active')
+                    ? document.getElementById('module-shop')
+                    : null,
+                { message: '商城模块未切换成功' }
+            );
+        } catch (_) {
+            const sidebarEntry = document.querySelector('.sidebar-item[data-module-id="shop"]');
+            throw new Error([
+                '商城模块未切换成功',
+                `shopPermission=${globalScope.hasModulePermission?.('shop') === true ? 'yes' : 'no'}`,
+                `switchResult=${String(switched)}`,
+                `sidebarDisabled=${sidebarEntry?.getAttribute('aria-disabled') || '<missing>'}`,
+                `activeModule=${document.querySelector('.sidebar-item.active')?.getAttribute('data-module-id') || '<none>'}`
+            ].join(' | '));
+        }
+
+        await globalScope.ShopAdmin.init?.();
+        await sleep(180);
+
+        let productsGrid = null;
+        try {
+            productsGrid = await waitFor(
+                () => document.querySelectorAll('#productsGrid .shop-admin-product-card').length >= 4
+                    ? document.getElementById('productsGrid')
+                    : null,
+                { message: '商城商品工作台未通过 products handler 渲染' }
+            );
+        } catch (_) {
+            const grid = document.getElementById('productsGrid');
+            throw new Error([
+                '商城商品工作台未通过 products handler 渲染',
+                `moduleActive=${shopModule?.classList?.contains('active') ? 'yes' : 'no'}`,
+                `shopPermission=${globalScope.hasModulePermission?.('shop') === true ? 'yes' : 'no'}`,
+                `currentTab=${globalScope.ShopAdmin?.currentTab || '<empty>'}`,
+                `initialized=${globalScope.ShopAdmin?._initialized ? 'yes' : 'no'}`,
+                `cardCount=${document.querySelectorAll('#productsGrid .shop-admin-product-card').length}`,
+                `gridText=${String(grid?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120) || '<empty>'}`
+            ].join(' | '));
+        }
+
+        recordResult(
+            '商城模块会通过 shop products handler 渲染商品工作台',
+            /CN 高级账号/.test(productsGrid.textContent || '')
+                && /兑换卡套餐/.test(productsGrid.textContent || ''),
+            `cards=${document.querySelectorAll('#productsGrid .shop-admin-product-card').length}`
+        );
+
+        globalScope.ShopAdmin.switchTab('import');
+        const importTree = await waitFor(
+            () => document.querySelectorAll('#importProductTree .tree-category').length >= 3
+                ? document.getElementById('importProductTree')
+                : null,
+            { message: '商城导入树未通过 categories/products handler 渲染' }
+        );
+
+        const initialAccountProductIds = Array.from(
+            document.querySelectorAll('.tree-category[data-category="account"] .tree-product-item')
+        ).map((element) => element.getAttribute('data-id'));
+        recordResult(
+            '商城导入树会通过 shop categories 和 products handler 渲染分类与商品',
+            initialAccountProductIds.includes('shop-prod-cn-1') && initialAccountProductIds.includes('shop-prod-cn-2'),
+            `account=${initialAccountProductIds.join(',')}`
+        );
+
+        await globalScope.ShopAdmin.reorderProduct('shop-prod-cn-2', 'account', 'shop-prod-cn-1');
+        await waitFor(
+            () => {
+                const productRows = getTableRows('shop_products');
+                return productRows.find((row) => row.id === 'shop-prod-cn-2')?.sort_order === 0
+                    && productRows.find((row) => row.id === 'shop-prod-cn-1')?.sort_order === 1;
+            },
+            { message: '商城排序未通过 reorder_products 写回本地 smoke 状态' }
+        );
+
+        const reorderedAccountProductIds = Array.from(
+            document.querySelectorAll('.tree-category[data-category="account"] .tree-product-item')
+        ).map((element) => element.getAttribute('data-id'));
+        recordResult(
+            '商城拖拽排序会通过 shop mutate handler 持久化 sort_order',
+            reorderedAccountProductIds[0] === 'shop-prod-cn-2' && reorderedAccountProductIds[1] === 'shop-prod-cn-1',
+            `account=${reorderedAccountProductIds.join(',')}`
+        );
+
+        await globalScope.ShopAdmin.createCategory('Smoke 分类');
+        await waitFor(
+            () => getTableRows('shop_categories').some((row) => row.name === 'Smoke 分类'),
+            { message: '商城分类创建未通过 create_category 生效' }
+        );
+        await globalScope.ShopAdmin.renameCategory('Smoke 分类', 'Smoke 分类已改名');
+        await waitFor(
+            () => getTableRows('shop_categories').some((row) => row.name === 'Smoke 分类已改名'),
+            { message: '商城分类重命名未通过 rename_category 生效' }
+        );
+
+        recordResult(
+            '商城分类创建与重命名会通过 shop mutate handler 写回分类树',
+            getTableRows('shop_categories').some((row) => row.name === 'Smoke 分类已改名')
+                && document.getElementById('productCategoryFilters')?.textContent?.includes('Smoke 分类已改名'),
+            getTableRows('shop_categories').map((row) => row.name).join(',')
+        );
+
+        await globalScope.ShopAdmin.moveProductToCategory('shop-prod-cn-3', 'Smoke 分类已改名');
+        await waitFor(
+            () => getTableRows('shop_products').find((row) => row.id === 'shop-prod-cn-3')?.category === 'Smoke 分类已改名',
+            { message: '商城跨分类移动未通过 reorder_products 生效' }
+        );
+
+        const stagedCategory = globalScope.ShopAdmin.categoryData.find((row) => row.name === 'Smoke 分类已改名') || null;
+        if (stagedCategory) {
+            await globalScope.ShopAdmin.deleteCategory(stagedCategory);
+            await waitFor(
+                () => !getTableRows('shop_categories').some((row) => row.name === 'Smoke 分类已改名')
+                    && getTableRows('shop_products').find((row) => row.id === 'shop-prod-cn-3')?.category === 'other',
+                { message: '商城删分类回退未把商品移回 fallback category' }
+            );
+        }
+
+        recordResult(
+            '商城跨分类移动与删分类回退会保持工作台闭环',
+            getTableRows('shop_products').find((row) => row.id === 'shop-prod-cn-3')?.category === 'other',
+            `prod_3=${getTableRows('shop_products').find((row) => row.id === 'shop-prod-cn-3')?.category || '<missing>'}`
+        );
+
+        globalScope.ShopAdmin.switchTab('inventory');
+        const inventoryTableBody = await waitFor(
+            () => document.querySelectorAll('#inventoryTableBody tr').length >= 1
+                && String(document.getElementById('statAvailable')?.textContent || '').trim() !== '--'
+                && String(document.getElementById('statReserve')?.textContent || '').trim() !== '--'
+                ? document.getElementById('inventoryTableBody')
+                : null,
+            { message: '商城库存表未通过 inventory handler 渲染' }
+        );
+
+        const initialAvailableCount = Number(String(document.getElementById('statAvailable')?.textContent || '').trim() || 0);
+        const initialReserveCount = Number(String(document.getElementById('statReserve')?.textContent || '').trim() || 0);
+
+        recordResult(
+            '库存列表会通过 shop inventory handler 渲染统计和表格',
+            /CN 高级账号|兑换卡套餐/.test(inventoryTableBody.textContent || '')
+                && initialAvailableCount === 2
+                && initialReserveCount === 1,
+            `available=${String(document.getElementById('statAvailable')?.textContent || '<empty>').trim()} / reserve=${String(document.getElementById('statReserve')?.textContent || '<empty>').trim()}`
+        );
+
+        await globalScope.ShopAdmin.performInventoryImport({
+            productId: 'shop-prod-cn-1',
+            contentLines: [
+                'smoke-reserve-1@example.com----batch-pass-1',
+                'smoke-reserve-2@example.com----batch-pass-2'
+            ],
+            status: 'reserve',
+            batchId: 'SMOKE-SHOP-BATCH'
+        });
+        await globalScope.ShopAdmin.loadInventoryList(1);
+        await globalScope.ShopAdmin.loadProducts();
+        await globalScope.ShopAdmin.loadInventoryProductList();
+
+        await waitFor(
+            () => getTableRows('shop_inventory').filter((row) => row.batch_id === 'SMOKE-SHOP-BATCH').length === 2,
+            { message: '库存导入未通过 import_inventory 写入 smoke 库存批次' }
+        );
+
+        recordResult(
+            '库存导入会通过 shop mutate handler 写入批次',
+            getTableRows('shop_inventory').filter((row) => row.batch_id === 'SMOKE-SHOP-BATCH' && row.status === 'reserve').length === 2,
+            `batch=${getTableRows('shop_inventory').filter((row) => row.batch_id === 'SMOKE-SHOP-BATCH').map((row) => row.id).join(',')}`
+        );
+
+        await globalScope.ShopAdmin.openReleaseModal();
+        const releaseSelect = await waitFor(
+            () => {
+                const node = document.getElementById('releaseProductSelect');
+                return node instanceof HTMLSelectElement && node.options.length >= 2 ? node : null;
+            },
+            { message: '释放储备库存弹窗未加载商品列表' }
+        );
+        releaseSelect.value = 'shop-prod-cn-1';
+        document.getElementById('releaseCount').value = '3';
+        document.getElementById('releaseBeforeDate').value = '';
+        await globalScope.ShopAdmin.releaseReserve();
+
+        await waitFor(
+            () => {
+                const batchRows = getTableRows('shop_inventory').filter((row) => row.batch_id === 'SMOKE-SHOP-BATCH');
+                const productRow = getTableRows('shop_products').find((row) => row.id === 'shop-prod-cn-1');
+                return batchRows.length === 2
+                    && batchRows.every((row) => row.status === 'available')
+                    && Number(productRow?.stock_count || 0) === 4;
+            },
+            { message: '释放储备库存未通过 inventory_release_reserve 回收为在售库存' }
+        );
+
+        recordResult(
+            '批量释放储备库存会通过 shop mutate handler 回收为在售库存',
+            Number(getTableRows('shop_products').find((row) => row.id === 'shop-prod-cn-1')?.stock_count || 0) === 4
+                && Number(String(document.getElementById('statAvailable')?.textContent || '').trim() || 0) === 5
+                && Number(String(document.getElementById('statReserve')?.textContent || '').trim() || 0) === 0,
+            `available=${String(document.getElementById('statAvailable')?.textContent || '<empty>').trim()} / reserve=${String(document.getElementById('statReserve')?.textContent || '<empty>').trim()}`
+        );
+    }
+
     async function runAdminCommentsSmoke() {
         await waitFor(() => globalScope.switchModule && globalScope.AdminSiteFilter?.select, { message: '评论模块入口未加载完成' });
         globalScope.AdminSiteFilter.select('cn');
@@ -4023,12 +5048,15 @@
     async function runSmoke() {
         try {
             renderResults('running');
+            void postSmokeResult('running');
             await nextFrame();
 
             const pathname = String(globalScope.location?.pathname || '').trim();
             if (/\/admin-studio(?:\.html)?$/i.test(pathname)) {
                 if (searchParams.get('module') === 'chat') {
                     await runAdminChatSmoke();
+                } else if (searchParams.get('module') === 'shop') {
+                    await runAdminShopSmoke();
                 } else if (searchParams.get('module') === 'points') {
                     await runAdminPointsSmoke();
                 } else if (searchParams.get('module') === 'gallery') {

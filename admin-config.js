@@ -19,6 +19,8 @@ let opsAlertUnifiedSummaryDraftDirty = false;
 let opsAlertStrategyBeforeUnloadReady = false;
 let verifyMonitorState = getDefaultVerifyMonitorState();
 let adminAuditMonitorState = getDefaultAdminAuditMonitorState();
+let verifyMonitorFocusTimeoutId = 0;
+let adminAuditMonitorFocusTimeoutId = 0;
 let paymentChannelAccordionState = {
     mock: false,
     afdian: false,
@@ -724,7 +726,7 @@ function buildVerifyMonitorRowMarkup(row) {
     }
 
     return `
-        <article class="verify-monitor-item">
+        <article class="verify-monitor-item" data-verify-monitor-log-id="${escapeConfigHtml(String(row.verification_id || row.id || '').trim())}">
             <div class="verify-monitor-item__top">
                 <span class="verify-monitor-status-badge verify-monitor-status-badge--${escapeConfigHtml(statusMeta.tone)}">${escapeConfigHtml(statusMeta.label)}</span>
                 <strong class="verify-monitor-item__job" title="${escapeConfigHtml(rawJobLabel)}">${jobLabel}</strong>
@@ -737,28 +739,298 @@ function buildVerifyMonitorRowMarkup(row) {
     `;
 }
 
+function buildOpsAlertWorkspaceCaseActions(item = {}) {
+    const status = String(item.case_status || '').trim().toLowerCase() || 'open';
+
+    if (status === 'resolved') {
+        return [
+            {
+                action: 'reopen',
+                label: '重新打开',
+                icon: 'fas fa-arrow-rotate-left'
+            },
+            {
+                action: 'add_note',
+                label: '补充备注',
+                icon: 'fas fa-note-sticky'
+            }
+        ];
+    }
+
+    const actions = [];
+
+    if (status === 'open') {
+        actions.push({
+            action: 'claim',
+            label: '认领处理',
+            icon: 'fas fa-hand'
+        });
+    }
+
+    actions.push({
+        action: 'add_note',
+        label: status === 'claimed' ? '记录观察' : '标记观察中',
+        icon: 'fas fa-eye'
+    });
+    actions.push({
+        action: 'resolve',
+        label: '关闭 / 忽略',
+        icon: 'fas fa-circle-check'
+    });
+
+    return actions;
+}
+
+function buildOpsAlertWorkspaceCaseItemMarkup(item = {}, options = {}) {
+    const categoryKey = String(options.categoryKey || item.category_key || '').trim().toLowerCase();
+    if (!categoryKey) {
+        return '';
+    }
+
+    const category = { key: categoryKey };
+    const displayState = {
+        ...resolveOpsAlertMonitorItemDisplayState(item, category),
+        caseActions: buildOpsAlertWorkspaceCaseActions(item),
+        quickAction: null,
+        workspaceAction: null,
+        progressPrefix: String(options.progressPrefix || '处理状态').trim() || '处理状态'
+    };
+    const itemState = buildLocalOpsAlertMonitorItemMarkupState(item, category, displayState);
+    const extraAttrs = {
+        [String(options.focusAttrName || '').trim()]: String(options.focusAttrValue || item.target_id || '').trim(),
+        'data-ops-alert-workspace-category': categoryKey,
+        'data-ops-alert-workspace-target-id': String(item.target_id || '').trim()
+    };
+    const articleAttrText = Object.entries(extraAttrs)
+        .filter(([name, value]) => String(name || '').trim() && String(value || '').trim())
+        .map(([name, value]) => `${name}="${escapeConfigHtml(value)}"`)
+        .join(' ');
+    const rowClassName = String(options.rowClassName || '').trim();
+
+    return `
+        <article class="ops-alert-monitor-item${rowClassName ? ` ${escapeConfigHtml(rowClassName)}` : ''}" ${articleAttrText}>
+            <div class="ops-alert-monitor-item__top">
+                ${(Array.isArray(itemState?.topBadges) ? itemState.topBadges : [])
+        .map((badge) => buildOpsAlertMonitorBadge(badge.label, badge.tone)).join('')}
+                <strong class="ops-alert-monitor-item__title">${escapeConfigHtml(itemState?.titleText || '系统告警')}</strong>
+            </div>
+            ${itemState?.messageText ? `<div class="ops-alert-monitor-item__summary">${escapeConfigHtml(itemState.messageText)}</div>` : ''}
+            ${itemState?.progressText
+        ? `<div class="ops-alert-monitor-item__summary"><strong>${escapeConfigHtml(itemState?.progressPrefix || '处理状态')}：</strong> ${escapeConfigHtml(itemState.progressText)}</div>`
+        : ''}
+            ${itemState?.hasHistoryItems ? `
+                <div class="ops-alert-monitor-item__history">
+                    ${itemState.historyItems.map((eventText) => `
+                        <div class="ops-alert-monitor-item__history-item">${escapeConfigHtml(eventText)}</div>
+                    `).join('')}
+                </div>
+            ` : ''}
+            ${itemState?.responseText ? `<div class="ops-alert-monitor-item__summary">${escapeConfigHtml(itemState.responseText)}</div>` : ''}
+            <div class="ops-alert-monitor-item__meta">${escapeConfigHtml(itemState?.metaText || '等待更多上下文')}</div>
+            ${itemState?.hasActions ? `
+                <div class="ops-alert-monitor-item__actions">
+                    ${(Array.isArray(itemState?.caseActionStates) ? itemState.caseActionStates : []).map((action) => `
+                        <button
+                            type="button"
+                            class="btn-add-config btn-add-config--compact"
+                            ${action.attrs}
+                        >
+                            <i class="${escapeConfigHtml(action.icon)}"></i> ${escapeConfigHtml(action.label)}
+                        </button>
+                    `).join('')}
+                </div>
+            ` : ''}
+        </article>
+    `;
+}
+
+function renderVerifyMonitorWorkspace() {
+    const alertState = verifyMonitorState.alerts || getDefaultVerifyMonitorState().alerts;
+    const target = document.getElementById('verifyMonitorCaseList');
+    const meta = document.getElementById('verifyMonitorCaseMeta');
+
+    if (meta) {
+        if (alertState.status === 'ready') {
+            const parts = [];
+            if (Number(alertState.summary?.active_problem_count || 0) > 0) {
+                parts.push(`${formatVerifyMonitorInteger(alertState.summary.active_problem_count)} 条待跟进`);
+            }
+            if (Number(alertState.summary?.claimed_count || 0) > 0) {
+                parts.push(`${formatVerifyMonitorInteger(alertState.summary.claimed_count)} 条处理中`);
+            }
+            if (Number(alertState.summary?.pending_recovery_count || 0) > 0) {
+                parts.push(`${formatVerifyMonitorInteger(alertState.summary.pending_recovery_count)} 条待收口`);
+            }
+            meta.textContent = parts.join(' · ') || '最近没有需要收口的验证告警';
+        } else {
+            meta.textContent = alertState.status === 'loading' ? '正在同步...' : '等待加载';
+        }
+    }
+
+    if (alertState.status === 'loading') {
+        renderVerifyMonitorEmptyState(target, '正在加载验证告警工作区...');
+        return;
+    }
+
+    if (alertState.status === 'error') {
+        renderVerifyMonitorEmptyState(target, alertState.message || '验证告警工作区加载失败。');
+        return;
+    }
+
+    const items = Array.isArray(alertState.items) ? alertState.items : [];
+    if (!items.length) {
+        renderVerifyMonitorEmptyState(target, '最近没有需要收口的验证告警。');
+        return;
+    }
+
+    if (target) {
+        target.innerHTML = items.map((item) => buildOpsAlertWorkspaceCaseItemMarkup(item, {
+            categoryKey: 'verify',
+            rowClassName: 'verify-monitor-workspace-item',
+            focusAttrName: 'data-verify-monitor-target-id'
+        })).join('');
+    }
+}
+
+function buildVerifyMonitorFactItemsMarkup(items = [], emptyText = '暂无可用数据') {
+    const rows = Array.isArray(items) ? items : [];
+    if (!rows.length) {
+        return `<div class="verify-monitor-fact-list__empty">${escapeConfigHtml(emptyText)}</div>`;
+    }
+
+    return rows.map((item) => `
+        <div class="verify-monitor-fact-list__row">
+            <span class="verify-monitor-fact-list__label">${escapeConfigHtml(String(item.label || item.key || '未知').trim())}</span>
+            <strong class="verify-monitor-fact-list__value">${escapeConfigHtml(formatVerifyMonitorInteger(item.count || 0))}</strong>
+        </div>
+    `).join('');
+}
+
+function renderVerifyMonitorFacts() {
+    const recentState = verifyMonitorState.recent || getDefaultVerifyMonitorState().recent;
+    const target = document.getElementById('verifyMonitorFactsGrid');
+    const meta = document.getElementById('verifyMonitorFactsMeta');
+
+    if (meta) {
+        if (recentState.status === 'ready') {
+            const sampleSize = Number(recentState.summary?.sample_size || 0);
+            const dedupedCount = Number(recentState.summary?.deduped_task_count || 0);
+            meta.textContent = `扫描 ${formatVerifyMonitorInteger(sampleSize)} 条日志，归并为 ${formatVerifyMonitorInteger(dedupedCount)} 个任务`;
+        } else {
+            meta.textContent = recentState.status === 'loading' ? '正在同步...' : '等待加载';
+        }
+    }
+
+    if (recentState.status === 'loading') {
+        renderVerifyMonitorEmptyState(target, '正在生成运行画像...');
+        return;
+    }
+
+    if (recentState.status === 'error') {
+        renderVerifyMonitorEmptyState(target, recentState.message || '验证运行画像加载失败。');
+        return;
+    }
+
+    const summary = recentState.summary || getDefaultVerifyMonitorState().recent.summary;
+    const facts = recentState.facts || getDefaultVerifyMonitorState().recent.facts;
+    const oldestActiveLabel = summary.oldest_active_minutes != null
+        ? formatVerifyMonitorMinutes(summary.oldest_active_minutes)
+        : '—';
+    const stalledLabel = Number(facts.stalled_task_count || 0) > 0
+        ? `${formatVerifyMonitorInteger(facts.stalled_task_count)} 条超过 ${formatVerifyMonitorInteger(facts.stalled_threshold_minutes || 0)} 分钟`
+        : `最近没有超过 ${formatVerifyMonitorInteger(facts.stalled_threshold_minutes || 0)} 分钟的卡住任务`;
+
+    if (target) {
+        target.innerHTML = `
+            <article class="verify-monitor-fact-card">
+                <div class="verify-monitor-fact-card__eyebrow">任务样本</div>
+                <div class="verify-monitor-fact-card__value">${escapeConfigHtml(formatVerifyMonitorInteger(summary.deduped_task_count || 0))}</div>
+                <div class="verify-monitor-fact-card__meta">去重任务 ${escapeConfigHtml(formatVerifyMonitorInteger(summary.deduped_task_count || 0))} 条 · 成功 ${escapeConfigHtml(formatVerifyMonitorInteger(facts.success_task_count || 0))} 条</div>
+                <div class="verify-monitor-fact-list">
+                    ${buildVerifyMonitorFactItemsMarkup(facts.site_breakdown, '暂无站点分布')}
+                </div>
+            </article>
+            <article class="verify-monitor-fact-card">
+                <div class="verify-monitor-fact-card__eyebrow">活跃负载</div>
+                <div class="verify-monitor-fact-card__value">${escapeConfigHtml(formatVerifyMonitorInteger(summary.active_task_count || 0))}</div>
+                <div class="verify-monitor-fact-card__meta">${escapeConfigHtml(stalledLabel)}</div>
+                <div class="verify-monitor-fact-card__foot">最老活跃任务：${escapeConfigHtml(oldestActiveLabel)}</div>
+            </article>
+            <article class="verify-monitor-fact-card">
+                <div class="verify-monitor-fact-card__eyebrow">状态分布</div>
+                <div class="verify-monitor-fact-card__value">${escapeConfigHtml(formatVerifyMonitorInteger(summary.failure_task_count || 0))}</div>
+                <div class="verify-monitor-fact-card__meta">失败 / 异常任务 ${escapeConfigHtml(formatVerifyMonitorInteger(summary.failure_task_count || 0))} 条</div>
+                <div class="verify-monitor-fact-list">
+                    ${buildVerifyMonitorFactItemsMarkup(facts.status_breakdown, '暂无状态分布')}
+                </div>
+            </article>
+            <article class="verify-monitor-fact-card">
+                <div class="verify-monitor-fact-card__eyebrow">高频失败</div>
+                <div class="verify-monitor-fact-card__value">${escapeConfigHtml(formatVerifyMonitorInteger((facts.top_failure_reasons || [])[0]?.count || 0))}</div>
+                <div class="verify-monitor-fact-card__meta">最近失败原因按频次聚合，方便先排高频问题。</div>
+                <div class="verify-monitor-fact-list">
+                    ${buildVerifyMonitorFactItemsMarkup(facts.top_failure_reasons, '最近没有失败记录')}
+                </div>
+            </article>
+        `;
+    }
+}
+
+function renderVerifyMonitorListPagination(target, pagination = {}, actionName = '', emptyText = '') {
+    if (!target) return;
+
+    const totalItems = Math.max(0, Number(pagination.total_items || 0));
+    if (totalItems <= 0) {
+        target.innerHTML = emptyText
+            ? `<div class="verify-monitor-pagination__status">${escapeConfigHtml(emptyText)}</div>`
+            : '';
+        return;
+    }
+
+    const page = Math.max(1, Number(pagination.page || 1));
+    const totalPages = Math.max(1, Number(pagination.total_pages || 1));
+    const hasPrev = pagination.has_prev_page === true;
+    const hasNext = pagination.has_next_page === true;
+
+    target.innerHTML = `
+        <div class="verify-monitor-pagination">
+            <span class="verify-monitor-pagination__status">第 ${escapeConfigHtml(formatVerifyMonitorInteger(page))} / ${escapeConfigHtml(formatVerifyMonitorInteger(totalPages))} 页 · 共 ${escapeConfigHtml(formatVerifyMonitorInteger(totalItems))} 条</span>
+            <div class="verify-monitor-pagination__actions">
+                <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="${escapeConfigHtml(actionName)}" data-verify-monitor-page="${escapeConfigHtml(String(page - 1))}" ${hasPrev ? '' : 'disabled'}>上一页</button>
+                <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="${escapeConfigHtml(actionName)}" data-verify-monitor-page="${escapeConfigHtml(String(page + 1))}" ${hasNext ? '' : 'disabled'}>下一页</button>
+            </div>
+        </div>
+    `;
+}
+
 function renderVerifyMonitorLists() {
     const recentState = verifyMonitorState.recent || getDefaultVerifyMonitorState().recent;
     const tasksTarget = document.getElementById('verifyMonitorRecentTasks');
     const failuresTarget = document.getElementById('verifyMonitorRecentFailures');
     const tasksMeta = document.getElementById('verifyMonitorTasksMeta');
     const failuresMeta = document.getElementById('verifyMonitorFailuresMeta');
+    const tasksPaginationTarget = document.getElementById('verifyMonitorTasksPagination');
+    const failuresPaginationTarget = document.getElementById('verifyMonitorFailuresPagination');
+    const taskPagination = recentState.recent_task_pagination || getDefaultVerifyMonitorState().recent.recent_task_pagination;
+    const failurePagination = recentState.recent_failure_pagination || getDefaultVerifyMonitorState().recent.recent_failure_pagination;
 
     if (tasksMeta) {
         tasksMeta.textContent = recentState.status === 'ready'
-            ? `最近去重 ${formatVerifyMonitorInteger(recentState.summary?.deduped_task_count)} 条任务样本`
+            ? `最近去重 ${formatVerifyMonitorInteger(recentState.summary?.deduped_task_count)} 条任务样本 · 第 ${formatVerifyMonitorInteger(taskPagination.page || 1)} / ${formatVerifyMonitorInteger(taskPagination.total_pages || 1)} 页`
             : (recentState.status === 'loading' ? '正在同步...' : '等待加载');
     }
 
     if (failuresMeta) {
         failuresMeta.textContent = recentState.status === 'ready'
-            ? `最近失败 ${formatVerifyMonitorInteger(recentState.summary?.failure_task_count)} 条`
+            ? `最近失败 ${formatVerifyMonitorInteger(recentState.summary?.failure_task_count)} 条 · 第 ${formatVerifyMonitorInteger(failurePagination.page || 1)} / ${formatVerifyMonitorInteger(failurePagination.total_pages || 1)} 页`
             : (recentState.status === 'loading' ? '正在同步...' : '等待加载');
     }
 
     if (recentState.status === 'loading') {
         renderVerifyMonitorEmptyState(tasksTarget, '正在加载最近任务...');
         renderVerifyMonitorEmptyState(failuresTarget, '正在加载最近失败...');
+        renderVerifyMonitorListPagination(tasksPaginationTarget, {}, '', '');
+        renderVerifyMonitorListPagination(failuresPaginationTarget, {}, '', '');
         return;
     }
 
@@ -766,6 +1038,8 @@ function renderVerifyMonitorLists() {
         const message = recentState.message || '验证运维数据加载失败。';
         renderVerifyMonitorEmptyState(tasksTarget, message);
         renderVerifyMonitorEmptyState(failuresTarget, message);
+        renderVerifyMonitorListPagination(tasksPaginationTarget, {}, '', '');
+        renderVerifyMonitorListPagination(failuresPaginationTarget, {}, '', '');
         return;
     }
 
@@ -774,20 +1048,26 @@ function renderVerifyMonitorLists() {
 
     if (!tasks.length) {
         renderVerifyMonitorEmptyState(tasksTarget, '最近还没有可展示的验证任务。');
+        renderVerifyMonitorListPagination(tasksPaginationTarget, taskPagination, 'settings-change-verify-monitor-task-page', '没有更多任务页');
     } else if (tasksTarget) {
         tasksTarget.innerHTML = tasks.map(buildVerifyMonitorRowMarkup).join('');
+        renderVerifyMonitorListPagination(tasksPaginationTarget, taskPagination, 'settings-change-verify-monitor-task-page');
     }
 
     if (!failures.length) {
         renderVerifyMonitorEmptyState(failuresTarget, '最近没有新的失败结果，可以继续保持观察。');
+        renderVerifyMonitorListPagination(failuresPaginationTarget, failurePagination, 'settings-change-verify-monitor-failure-page', '没有更多失败页');
     } else if (failuresTarget) {
         failuresTarget.innerHTML = failures.map(buildVerifyMonitorRowMarkup).join('');
+        renderVerifyMonitorListPagination(failuresPaginationTarget, failurePagination, 'settings-change-verify-monitor-failure-page');
     }
 }
 
 function renderVerifyMonitorPanel() {
     renderVerifyMonitorHeaderTimestamp();
     renderVerifyMonitorOverview();
+    renderVerifyMonitorFacts();
+    renderVerifyMonitorWorkspace();
     renderVerifyMonitorLists();
 }
 
@@ -867,6 +1147,121 @@ function summarizeAdminAuditMonitorList(values = [], maxItems = 2) {
     const visibleItems = normalized.slice(0, maxItems);
     const suffix = normalized.length > maxItems ? ` +${normalized.length - maxItems}` : '';
     return summarizeAdminAuditMonitorText(`${visibleItems.join('、')}${suffix}`, 48);
+}
+
+function buildAdminAuditMonitorFactItemsMarkup(items = [], emptyText = '暂无可用数据') {
+    const rows = Array.isArray(items) ? items : [];
+    if (!rows.length) {
+        return `<div class="admin-audit-monitor-fact-list__empty">${escapeConfigHtml(emptyText)}</div>`;
+    }
+
+    return rows.map((item) => `
+        <div class="admin-audit-monitor-fact-list__row">
+            <span class="admin-audit-monitor-fact-list__label">${escapeConfigHtml(String(item.label || item.key || '未知').trim())}</span>
+            <strong class="admin-audit-monitor-fact-list__value">${escapeConfigHtml(formatVerifyMonitorInteger(item.count || 0))}</strong>
+        </div>
+    `).join('');
+}
+
+function renderAdminAuditMonitorFacts() {
+    const state = adminAuditMonitorState || getDefaultAdminAuditMonitorState();
+    const accessSummary = state.access_summary || getDefaultAdminAuditMonitorState().access_summary;
+    const configSummary = state.config_summary || getDefaultAdminAuditMonitorState().config_summary;
+    const facts = state.facts || getDefaultAdminAuditMonitorState().facts;
+    const target = document.getElementById('adminAuditMonitorFactsGrid');
+    const meta = document.getElementById('adminAuditMonitorFactsMeta');
+    const accessFootprint = Array.isArray(facts.top_access_admins) ? facts.top_access_admins : [];
+    const originBreakdown = Array.isArray(facts.top_access_origins) && facts.top_access_origins.length
+        ? facts.top_access_origins
+        : (Array.isArray(facts.top_access_ips) ? facts.top_access_ips : []);
+    const anomalyReasons = Array.isArray(facts.anomaly_reason_breakdown) ? facts.anomaly_reason_breakdown : [];
+    const configRiskBreakdown = Array.isArray(facts.config_risk_breakdown) && facts.config_risk_breakdown.length
+        ? facts.config_risk_breakdown
+        : (Array.isArray(facts.config_action_breakdown) ? facts.config_action_breakdown : []);
+    const topConfigOperator = Array.isArray(facts.config_operator_breakdown) ? facts.config_operator_breakdown[0] || null : null;
+
+    if (meta) {
+        if (state.status === 'ready') {
+            meta.textContent = `扫描 ${formatVerifyMonitorInteger(facts.access_sample_count || 0)} 条访问、${formatVerifyMonitorInteger(facts.config_sample_count || 0)} 条配置记录，命中 ${formatVerifyMonitorInteger(facts.anomaly_sample_count || 0)} 条异常信号`;
+        } else {
+            meta.textContent = state.status === 'loading' ? '正在同步...' : '等待加载';
+        }
+    }
+
+    if (state.status === 'loading') {
+        renderAdminAuditMonitorEmptyState(target, '正在生成审计画像...');
+        return;
+    }
+
+    if (state.status === 'error') {
+        renderAdminAuditMonitorEmptyState(target, state.message || '管理员访问审计画像加载失败。');
+        return;
+    }
+
+    if (target) {
+        target.innerHTML = `
+            <article class="admin-audit-monitor-fact-card">
+                <div class="admin-audit-monitor-fact-card__eyebrow">后台足迹</div>
+                <div class="admin-audit-monitor-fact-card__value">${escapeConfigHtml(formatVerifyMonitorInteger(accessSummary.access_count || 0))}</div>
+                <div class="admin-audit-monitor-fact-card__meta">签发 ${escapeConfigHtml(formatVerifyMonitorInteger(facts.issued_access_count || 0))} 次 · 仅记录 ${escapeConfigHtml(formatVerifyMonitorInteger(facts.recorded_only_access_count || 0))} 次</div>
+                <div class="admin-audit-monitor-fact-list">
+                    ${buildAdminAuditMonitorFactItemsMarkup(accessFootprint, '最近没有后台访问样本')}
+                </div>
+            </article>
+            <article class="admin-audit-monitor-fact-card">
+                <div class="admin-audit-monitor-fact-card__eyebrow">来源画像</div>
+                <div class="admin-audit-monitor-fact-card__value">${escapeConfigHtml(formatVerifyMonitorInteger(accessSummary.distinct_ip_count || 0))}</div>
+                <div class="admin-audit-monitor-fact-card__meta">${accessSummary.distinct_admin_count > 0 ? `${escapeConfigHtml(formatVerifyMonitorInteger(accessSummary.distinct_admin_count))} 位管理员最近访问过后台` : '最近没有新的访问来源'}</div>
+                <div class="admin-audit-monitor-fact-list">
+                    ${buildAdminAuditMonitorFactItemsMarkup(originBreakdown, '最近没有可聚合的入口来源')}
+                </div>
+            </article>
+            <article class="admin-audit-monitor-fact-card">
+                <div class="admin-audit-monitor-fact-card__eyebrow">异常信号</div>
+                <div class="admin-audit-monitor-fact-card__value">${escapeConfigHtml(formatVerifyMonitorInteger(accessSummary.anomaly_count || 0))}</div>
+                <div class="admin-audit-monitor-fact-card__meta">${facts.anomaly_admin_count > 0 ? `${escapeConfigHtml(formatVerifyMonitorInteger(facts.anomaly_admin_count))} 位管理员命中过异常规则` : '最近没有新的异常登录命中'}</div>
+                <div class="admin-audit-monitor-fact-list">
+                    ${buildAdminAuditMonitorFactItemsMarkup(anomalyReasons, '最近没有异常原因聚合结果')}
+                </div>
+            </article>
+            <article class="admin-audit-monitor-fact-card">
+                <div class="admin-audit-monitor-fact-card__eyebrow">配置风险</div>
+                <div class="admin-audit-monitor-fact-card__value">${escapeConfigHtml(formatVerifyMonitorInteger(configSummary.config_change_count || 0))}</div>
+                <div class="admin-audit-monitor-fact-card__meta">删密钥 ${escapeConfigHtml(formatVerifyMonitorInteger(configSummary.secret_delete_count || 0))} 次 · mock 切换 ${escapeConfigHtml(formatVerifyMonitorInteger(configSummary.mock_switch_count || 0))} 次</div>
+                <div class="admin-audit-monitor-fact-list">
+                    ${buildAdminAuditMonitorFactItemsMarkup(configRiskBreakdown, '最近没有需要聚合的配置风险')}
+                </div>
+                <div class="admin-audit-monitor-fact-card__foot">${topConfigOperator ? `高频操作人：${escapeConfigHtml(String(topConfigOperator.label || '未知管理员').trim())}` : '最近没有配置操作人画像'}</div>
+            </article>
+        `;
+    }
+}
+
+function renderAdminAuditMonitorListPagination(target, pagination = {}, actionName = '', emptyText = '') {
+    if (!target) return;
+
+    const totalItems = Math.max(0, Number(pagination.total_items || 0));
+    if (totalItems <= 0) {
+        target.innerHTML = emptyText
+            ? `<div class="admin-audit-monitor-pagination__status">${escapeConfigHtml(emptyText)}</div>`
+            : '';
+        return;
+    }
+
+    const page = Math.max(1, Number(pagination.page || 1));
+    const totalPages = Math.max(1, Number(pagination.total_pages || 1));
+    const hasPrev = pagination.has_prev_page === true;
+    const hasNext = pagination.has_next_page === true;
+
+    target.innerHTML = `
+        <div class="admin-audit-monitor-pagination">
+            <span class="admin-audit-monitor-pagination__status">第 ${escapeConfigHtml(formatVerifyMonitorInteger(page))} / ${escapeConfigHtml(formatVerifyMonitorInteger(totalPages))} 页 · 共 ${escapeConfigHtml(formatVerifyMonitorInteger(totalItems))} 条</span>
+            <div class="admin-audit-monitor-pagination__actions">
+                <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="${escapeConfigHtml(actionName)}" data-admin-audit-page="${escapeConfigHtml(String(page - 1))}" ${hasPrev ? '' : 'disabled'}>上一页</button>
+                <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="${escapeConfigHtml(actionName)}" data-admin-audit-page="${escapeConfigHtml(String(page + 1))}" ${hasNext ? '' : 'disabled'}>下一页</button>
+            </div>
+        </div>
+    `;
 }
 
 function renderAdminAuditMonitorTimestamp() {
@@ -1090,16 +1485,94 @@ function buildAdminAuditConfigRowMarkup(row) {
     `;
 }
 
+function renderAdminAuditMonitorWorkspace() {
+    const state = adminAuditMonitorState || getDefaultAdminAuditMonitorState();
+    const target = document.getElementById('adminAuditMonitorWorkspaceList');
+    const meta = document.getElementById('adminAuditMonitorWorkspaceMeta');
+
+    if (meta) {
+        if (state.status === 'ready') {
+            const parts = [];
+            if (Number(state.alert_summary?.active_problem_count || 0) > 0) {
+                parts.push(`${formatVerifyMonitorInteger(state.alert_summary.active_problem_count)} 条待跟进`);
+            }
+            if (Number(state.alert_summary?.claimed_count || 0) > 0) {
+                parts.push(`${formatVerifyMonitorInteger(state.alert_summary.claimed_count)} 条处理中`);
+            }
+            if (Number(state.alert_summary?.pending_recovery_count || 0) > 0) {
+                parts.push(`${formatVerifyMonitorInteger(state.alert_summary.pending_recovery_count)} 条待收口`);
+            }
+            meta.textContent = parts.join(' · ') || '最近没有需要收口的审计告警';
+        } else {
+            meta.textContent = state.status === 'loading' ? '正在同步...' : '等待加载';
+        }
+    }
+
+    if (state.status === 'loading') {
+        renderAdminAuditMonitorEmptyState(target, '正在加载审计告警工作区...');
+        return;
+    }
+
+    if (state.status === 'error') {
+        renderAdminAuditMonitorEmptyState(target, state.message || '审计告警工作区加载失败。');
+        return;
+    }
+
+    const items = Array.isArray(state.alert_items) ? state.alert_items : [];
+    if (!items.length) {
+        renderAdminAuditMonitorEmptyState(target, '最近没有需要收口的审计告警。');
+        return;
+    }
+
+    if (target) {
+        target.innerHTML = items.map((item) => buildOpsAlertWorkspaceCaseItemMarkup(item, {
+            categoryKey: item.category_key || '',
+            rowClassName: 'admin-audit-workspace-item',
+            focusAttrName: 'data-admin-audit-target-id'
+        })).join('');
+    }
+}
+
 function renderAdminAuditMonitorLists() {
     const state = adminAuditMonitorState || getDefaultAdminAuditMonitorState();
     const accessTarget = document.getElementById('adminAuditMonitorRecentAccess');
     const anomalyTarget = document.getElementById('adminAuditMonitorAnomalyList');
     const configTarget = document.getElementById('adminAuditMonitorConfigList');
+    const accessMeta = document.getElementById('adminAuditMonitorAccessListMeta');
+    const anomalyMeta = document.getElementById('adminAuditMonitorAnomalyListMeta');
+    const configMeta = document.getElementById('adminAuditMonitorConfigListMeta');
+    const accessPaginationTarget = document.getElementById('adminAuditMonitorAccessPagination');
+    const anomalyPaginationTarget = document.getElementById('adminAuditMonitorAnomalyPagination');
+    const configPaginationTarget = document.getElementById('adminAuditMonitorConfigPagination');
+    const accessPagination = state.recent_access_pagination || getDefaultAdminAuditMonitorState().recent_access_pagination;
+    const anomalyPagination = state.anomaly_pagination || getDefaultAdminAuditMonitorState().anomaly_pagination;
+    const configPagination = state.config_event_pagination || getDefaultAdminAuditMonitorState().config_event_pagination;
+
+    if (accessMeta) {
+        accessMeta.textContent = state.status === 'ready'
+            ? `最近 ${formatVerifyMonitorInteger(state.access_summary?.access_count || 0)} 条访问样本 · 第 ${formatVerifyMonitorInteger(accessPagination.page || 1)} / ${formatVerifyMonitorInteger(accessPagination.total_pages || 1)} 页`
+            : (state.status === 'loading' ? '正在同步...' : '等待加载');
+    }
+
+    if (anomalyMeta) {
+        anomalyMeta.textContent = state.status === 'ready'
+            ? `最近 ${formatVerifyMonitorInteger(state.access_summary?.anomaly_count || 0)} 条异常信号 · 第 ${formatVerifyMonitorInteger(anomalyPagination.page || 1)} / ${formatVerifyMonitorInteger(anomalyPagination.total_pages || 1)} 页`
+            : (state.status === 'loading' ? '正在同步...' : '等待加载');
+    }
+
+    if (configMeta) {
+        configMeta.textContent = state.status === 'ready'
+            ? `最近 ${formatVerifyMonitorInteger(state.config_summary?.config_change_count || 0)} 条配置审计 · 第 ${formatVerifyMonitorInteger(configPagination.page || 1)} / ${formatVerifyMonitorInteger(configPagination.total_pages || 1)} 页`
+            : (state.status === 'loading' ? '正在同步...' : '等待加载');
+    }
 
     if (state.status === 'loading') {
         renderAdminAuditMonitorEmptyState(accessTarget, '正在加载最近后台访问...');
         renderAdminAuditMonitorEmptyState(anomalyTarget, '正在加载异常登录信号...');
         renderAdminAuditMonitorEmptyState(configTarget, '正在加载支付配置审计...');
+        renderAdminAuditMonitorListPagination(accessPaginationTarget, {}, '', '');
+        renderAdminAuditMonitorListPagination(anomalyPaginationTarget, {}, '', '');
+        renderAdminAuditMonitorListPagination(configPaginationTarget, {}, '', '');
         return;
     }
 
@@ -1108,6 +1581,9 @@ function renderAdminAuditMonitorLists() {
         renderAdminAuditMonitorEmptyState(accessTarget, message);
         renderAdminAuditMonitorEmptyState(anomalyTarget, message);
         renderAdminAuditMonitorEmptyState(configTarget, message);
+        renderAdminAuditMonitorListPagination(accessPaginationTarget, {}, '', '');
+        renderAdminAuditMonitorListPagination(anomalyPaginationTarget, {}, '', '');
+        renderAdminAuditMonitorListPagination(configPaginationTarget, {}, '', '');
         return;
     }
 
@@ -1117,27 +1593,110 @@ function renderAdminAuditMonitorLists() {
 
     if (!accessRows.length) {
         renderAdminAuditMonitorEmptyState(accessTarget, '最近没有新的后台访问记录。');
+        renderAdminAuditMonitorListPagination(accessPaginationTarget, accessPagination, 'settings-change-admin-audit-access-page', '没有更多访问页');
     } else if (accessTarget) {
         accessTarget.innerHTML = accessRows.map(buildAdminAuditAccessRowMarkup).join('');
+        renderAdminAuditMonitorListPagination(accessPaginationTarget, accessPagination, 'settings-change-admin-audit-access-page');
     }
 
     if (!anomalies.length) {
         renderAdminAuditMonitorEmptyState(anomalyTarget, '最近窗口内没有新的异常登录信号。');
+        renderAdminAuditMonitorListPagination(anomalyPaginationTarget, anomalyPagination, 'settings-change-admin-audit-anomaly-page', '没有更多异常页');
     } else if (anomalyTarget) {
         anomalyTarget.innerHTML = anomalies.map(buildAdminAuditAnomalyRowMarkup).join('');
+        renderAdminAuditMonitorListPagination(anomalyPaginationTarget, anomalyPagination, 'settings-change-admin-audit-anomaly-page');
     }
 
     if (!configEvents.length) {
         renderAdminAuditMonitorEmptyState(configTarget, '最近没有新的支付配置审计记录。');
+        renderAdminAuditMonitorListPagination(configPaginationTarget, configPagination, 'settings-change-admin-audit-config-page', '没有更多配置页');
     } else if (configTarget) {
         configTarget.innerHTML = configEvents.map(buildAdminAuditConfigRowMarkup).join('');
+        renderAdminAuditMonitorListPagination(configPaginationTarget, configPagination, 'settings-change-admin-audit-config-page');
     }
 }
 
 function renderAdminAuditMonitorPanel() {
     renderAdminAuditMonitorTimestamp();
     renderAdminAuditMonitorOverview();
+    renderAdminAuditMonitorFacts();
+    renderAdminAuditMonitorWorkspace();
     renderAdminAuditMonitorLists();
+}
+
+function clearWorkspaceFocusState(selector = '') {
+    if (!selector) return;
+    document.querySelectorAll(selector).forEach((element) => {
+        element.classList.remove('is-focused');
+    });
+}
+
+function applyWorkspaceFocusState(target, selector, timeoutId, fallbackTargetId = '') {
+    clearWorkspaceFocusState(selector);
+
+    if (!(target instanceof HTMLElement)) {
+        if (fallbackTargetId) {
+            const fallbackTarget = document.getElementById(String(fallbackTargetId || '').trim());
+            fallbackTarget?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+        }
+        return false;
+    }
+
+    target.classList.add('is-focused');
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (timeoutId) {
+        window.clearTimeout(timeoutId);
+    }
+    return true;
+}
+
+function focusVerifyMonitorWorkspace(context = {}) {
+    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
+    const targetId = String(normalizedContext.targetId || normalizedContext.referenceValue || '').trim();
+    const candidates = Array.from(document.querySelectorAll('[data-verify-monitor-target-id], [data-verify-monitor-log-id]'));
+    const matched = candidates.find((element) => (
+        String(element.dataset.verifyMonitorTargetId || '').trim() === targetId
+        || String(element.dataset.verifyMonitorLogId || '').trim() === targetId
+    )) || null;
+    const focused = applyWorkspaceFocusState(
+        matched,
+        '[data-verify-monitor-target-id], [data-verify-monitor-log-id]',
+        verifyMonitorFocusTimeoutId,
+        targetId ? 'verifyMonitorCasePanel' : 'verifyMonitorPanel'
+    );
+
+    if (focused) {
+        verifyMonitorFocusTimeoutId = window.setTimeout(() => {
+            matched.classList.remove('is-focused');
+        }, 2600);
+    }
+
+    return focused;
+}
+
+function focusAdminAuditMonitorWorkspace(context = {}) {
+    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
+    const targetId = String(normalizedContext.targetId || '').trim();
+    const categoryKey = String(normalizedContext.category || '').trim().toLowerCase();
+    const candidates = Array.from(document.querySelectorAll('[data-admin-audit-target-id]'));
+    const matched = candidates.find((element) => (
+        String(element.dataset.adminAuditTargetId || '').trim() === targetId
+        && (!categoryKey || String(element.dataset.opsAlertWorkspaceCategory || '').trim().toLowerCase() === categoryKey)
+    )) || candidates.find((element) => String(element.dataset.adminAuditTargetId || '').trim() === targetId) || null;
+    const focused = applyWorkspaceFocusState(
+        matched,
+        '[data-admin-audit-target-id]',
+        adminAuditMonitorFocusTimeoutId,
+        targetId ? 'adminAuditMonitorWorkspacePanel' : 'adminAuditMonitorSection'
+    );
+
+    if (focused) {
+        adminAuditMonitorFocusTimeoutId = window.setTimeout(() => {
+            matched.classList.remove('is-focused');
+        }, 2600);
+    }
+
+    return focused;
 }
 
 function getDefaultCheckinConfig() {
@@ -1316,6 +1875,16 @@ function getDefaultOpsAlertBatchMuteState() {
 }
 
 function getDefaultVerifyMonitorState() {
+    const emptyPagination = (pageSize) => ({
+        page: 1,
+        page_size: pageSize,
+        total_items: 0,
+        total_pages: 1,
+        has_prev_page: false,
+        has_next_page: false,
+        returned_items: 0
+    });
+
     return {
         quota: {
             status: 'idle',
@@ -1343,14 +1912,45 @@ function getDefaultVerifyMonitorState() {
                 oldest_active_at: null,
                 oldest_active_minutes: null
             },
+            facts: {
+                success_task_count: 0,
+                stalled_task_count: 0,
+                stalled_threshold_minutes: 15,
+                status_breakdown: [],
+                site_breakdown: [],
+                top_failure_reasons: []
+            },
             recent_tasks: [],
+            recent_task_pagination: emptyPagination(8),
             recent_failures: [],
+            recent_failure_pagination: emptyPagination(6),
+            message: '等待加载'
+        },
+        alerts: {
+            status: 'idle',
+            summary: {
+                visible_count: 0,
+                active_problem_count: 0,
+                claimed_count: 0,
+                pending_recovery_count: 0
+            },
+            items: [],
             message: '等待加载'
         }
     };
 }
 
 function getDefaultAdminAuditMonitorState() {
+    const emptyPagination = (pageSize) => ({
+        page: 1,
+        page_size: pageSize,
+        total_items: 0,
+        total_pages: 1,
+        has_prev_page: false,
+        has_next_page: false,
+        returned_items: 0
+    });
+
     return {
         status: 'idle',
         fetched_at: '',
@@ -1367,9 +1967,34 @@ function getDefaultAdminAuditMonitorState() {
             mock_switch_count: 0,
             latest_config_change_at: null
         },
+        alert_summary: {
+            visible_count: 0,
+            active_problem_count: 0,
+            claimed_count: 0,
+            pending_recovery_count: 0
+        },
+        facts: {
+            access_sample_count: 0,
+            anomaly_sample_count: 0,
+            config_sample_count: 0,
+            issued_access_count: 0,
+            recorded_only_access_count: 0,
+            anomaly_admin_count: 0,
+            top_access_admins: [],
+            top_access_origins: [],
+            top_access_ips: [],
+            anomaly_reason_breakdown: [],
+            config_action_breakdown: [],
+            config_risk_breakdown: [],
+            config_operator_breakdown: []
+        },
+        alert_items: [],
         recent_accesses: [],
+        recent_access_pagination: emptyPagination(8),
         access_anomalies: [],
+        anomaly_pagination: emptyPagination(6),
         payment_config_events: [],
+        config_event_pagination: emptyPagination(8),
         message: '等待加载'
     };
 }
@@ -8928,7 +9553,7 @@ function normalizeOpsAlertMonitorFilterValue(kind, value) {
         return ['all', 'critical', 'warning'].includes(normalizedValue) ? normalizedValue : 'all';
     }
     if (normalizedKind === 'category') {
-        return ['all', 'payments', 'tickets', 'inventory', 'fulfillment', 'shop_risk'].includes(normalizedValue)
+        return ['all', 'payments', 'tickets', 'inventory', 'fulfillment', 'shop_risk', 'verify', 'security'].includes(normalizedValue)
             ? normalizedValue
             : 'all';
     }
@@ -14997,6 +15622,38 @@ function resolveOpsAlertCaseMutationRequestSubmitter() {
     );
 }
 
+async function refreshRelatedOpsAlertWorkspaces(context = {}) {
+    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
+    const normalizedAlertType = String(normalizedContext.alertType || '').trim().toLowerCase();
+    const normalizedCategory = String(normalizedContext.category || '').trim().toLowerCase();
+    const jobs = [];
+
+    if (normalizedCategory === 'verify' || normalizedAlertType.startsWith('verify_')) {
+        jobs.push(async () => {
+            await refreshVerifyMonitor?.(true);
+            focusVerifyMonitorWorkspace(normalizedContext);
+        });
+    }
+
+    if (
+        normalizedCategory === 'security'
+        || normalizedAlertType === 'security_admin_login_anomaly'
+        || normalizedAlertType.startsWith('payment_config_')
+    ) {
+        jobs.push(async () => {
+            await refreshAdminAuditMonitor?.(true);
+            focusAdminAuditMonitorWorkspace(normalizedContext);
+        });
+    }
+
+    if (!jobs.length) {
+        return false;
+    }
+
+    await Promise.allSettled(jobs.map((job) => job()));
+    return true;
+}
+
 async function handleOpsAlertCaseAction(action, context = {}) {
     const normalizedAction = String(action || '').trim().toLowerCase();
     const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
@@ -15009,7 +15666,10 @@ async function handleOpsAlertCaseAction(action, context = {}) {
     try {
         if (normalizedAction === 'claim' || normalizedAction === 'reopen') {
             const payload = await submitOpsAlertCaseMutation(normalizedAction, normalizedContext);
-            await refreshOpsAlertMonitorPanel?.();
+            await Promise.allSettled([
+                refreshOpsAlertMonitorPanel?.(),
+                refreshRelatedOpsAlertWorkspaces(normalizedContext)
+            ]);
             showToast(payload.message || '集中告警已更新', 'success');
             return true;
         }
@@ -15387,7 +16047,10 @@ async function submitOpsAlertCaseComposer() {
         });
 
         closeOpsAlertCaseComposer();
-        await refreshOpsAlertMonitorPanel?.();
+        await Promise.allSettled([
+            refreshOpsAlertMonitorPanel?.(),
+            refreshRelatedOpsAlertWorkspaces(state.context)
+        ]);
         showToast(payload.message || '集中告警已更新', 'success');
         return true;
     } catch (error) {
@@ -17698,12 +18361,28 @@ async function loadVerifyQueueState() {
 }
 
 async function loadVerifyMonitor(force = false) {
-    if (loadVerifyMonitor._loadingPromise && !force) {
+    const options = typeof force === 'object' && force !== null
+        ? force
+        : { force: force === true };
+    const forceReload = options.force === true;
+
+    if (loadVerifyMonitor._loadingPromise && !forceReload) {
         return loadVerifyMonitor._loadingPromise;
     }
 
+    const currentRecentState = verifyMonitorState.recent || getDefaultVerifyMonitorState().recent;
+    const taskPage = Number(options.taskPage || currentRecentState.recent_task_pagination?.page || 1);
+    const taskPageSize = Number(options.taskPageSize || currentRecentState.recent_task_pagination?.page_size || 8);
+    const failurePage = Number(options.failurePage || currentRecentState.recent_failure_pagination?.page || 1);
+    const failurePageSize = Number(options.failurePageSize || currentRecentState.recent_failure_pagination?.page_size || 6);
+
     verifyMonitorState.recent = {
-        ...(verifyMonitorState.recent || getDefaultVerifyMonitorState().recent),
+        ...currentRecentState,
+        status: 'loading',
+        message: '正在加载...'
+    };
+    verifyMonitorState.alerts = {
+        ...(verifyMonitorState.alerts || getDefaultVerifyMonitorState().alerts),
         status: 'loading',
         message: '正在加载...'
     };
@@ -17716,7 +18395,12 @@ async function loadVerifyMonitor(force = false) {
             : 0;
         try {
             const headers = await getAdminConfigApiHeaders();
-            const response = await fetch('/api/admin/settings/verify-monitor', {
+            const requestUrl = new URL('/api/admin/settings/verify-monitor', window.location.origin);
+            requestUrl.searchParams.set('taskPage', String(taskPage));
+            requestUrl.searchParams.set('taskPageSize', String(taskPageSize));
+            requestUrl.searchParams.set('failurePage', String(failurePage));
+            requestUrl.searchParams.set('failurePageSize', String(failurePageSize));
+            const response = await fetch(`${requestUrl.pathname}${requestUrl.search}`, {
                 method: 'GET',
                 headers,
                 signal: controller?.signal
@@ -17731,8 +18415,17 @@ async function loadVerifyMonitor(force = false) {
                 status: 'ready',
                 fetched_at: String(payload.fetched_at || '').trim(),
                 summary: payload.summary || getDefaultVerifyMonitorState().recent.summary,
+                facts: payload.facts || getDefaultVerifyMonitorState().recent.facts,
                 recent_tasks: Array.isArray(payload.recent_tasks) ? payload.recent_tasks : [],
+                recent_task_pagination: payload.recent_task_pagination || getDefaultVerifyMonitorState().recent.recent_task_pagination,
                 recent_failures: Array.isArray(payload.recent_failures) ? payload.recent_failures : [],
+                recent_failure_pagination: payload.recent_failure_pagination || getDefaultVerifyMonitorState().recent.recent_failure_pagination,
+                message: ''
+            };
+            verifyMonitorState.alerts = {
+                status: 'ready',
+                summary: payload.alert_summary || getDefaultVerifyMonitorState().alerts.summary,
+                items: Array.isArray(payload.alert_items) ? payload.alert_items : [],
                 message: ''
             };
             renderVerifyMonitorPanel();
@@ -17744,6 +18437,11 @@ async function loadVerifyMonitor(force = false) {
             console.warn('[Config] Verify monitor load failed:', message);
             verifyMonitorState.recent = {
                 ...getDefaultVerifyMonitorState().recent,
+                status: 'error',
+                message
+            };
+            verifyMonitorState.alerts = {
+                ...getDefaultVerifyMonitorState().alerts,
                 status: 'error',
                 message
             };
@@ -17761,6 +18459,52 @@ async function loadVerifyMonitor(force = false) {
     } finally {
         loadVerifyMonitor._loadingPromise = null;
     }
+}
+
+async function changeVerifyMonitorPage(kind = 'tasks', page = 1) {
+    const recentState = verifyMonitorState.recent || getDefaultVerifyMonitorState().recent;
+    const normalizedKind = String(kind || '').trim().toLowerCase() === 'failures' ? 'failures' : 'tasks';
+    const taskPagination = recentState.recent_task_pagination || getDefaultVerifyMonitorState().recent.recent_task_pagination;
+    const failurePagination = recentState.recent_failure_pagination || getDefaultVerifyMonitorState().recent.recent_failure_pagination;
+    const nextPage = Math.max(1, Number.parseInt(page, 10) || 1);
+
+    if (normalizedKind === 'failures') {
+        const totalPages = Math.max(1, Number(failurePagination.total_pages || 1));
+        const targetPage = Math.min(nextPage, totalPages);
+        if (targetPage === Number(failurePagination.page || 1) && recentState.status === 'ready') {
+            return recentState;
+        }
+
+        return loadVerifyMonitor({
+            force: true,
+            taskPage: Number(taskPagination.page || 1),
+            taskPageSize: Number(taskPagination.page_size || 8),
+            failurePage: targetPage,
+            failurePageSize: Number(failurePagination.page_size || 6)
+        });
+    }
+
+    const totalPages = Math.max(1, Number(taskPagination.total_pages || 1));
+    const targetPage = Math.min(nextPage, totalPages);
+    if (targetPage === Number(taskPagination.page || 1) && recentState.status === 'ready') {
+        return recentState;
+    }
+
+    return loadVerifyMonitor({
+        force: true,
+        taskPage: targetPage,
+        taskPageSize: Number(taskPagination.page_size || 8),
+        failurePage: Number(failurePagination.page || 1),
+        failurePageSize: Number(failurePagination.page_size || 6)
+    });
+}
+
+async function changeVerifyMonitorTaskPage(page = 1) {
+    return changeVerifyMonitorPage('tasks', page);
+}
+
+async function changeVerifyMonitorFailurePage(page = 1) {
+    return changeVerifyMonitorPage('failures', page);
 }
 
 async function refreshVerifyMonitor(force = false) {
@@ -17786,12 +18530,25 @@ async function refreshVerifyMonitor(force = false) {
 }
 
 async function loadAdminAuditMonitor(force = false) {
-    if (loadAdminAuditMonitor._loadingPromise && !force) {
+    const options = typeof force === 'object' && force !== null
+        ? force
+        : { force: force === true };
+    const forceReload = options.force === true;
+
+    if (loadAdminAuditMonitor._loadingPromise && !forceReload) {
         return loadAdminAuditMonitor._loadingPromise;
     }
 
+    const currentState = adminAuditMonitorState || getDefaultAdminAuditMonitorState();
+    const accessPage = Number(options.accessPage || currentState.recent_access_pagination?.page || 1);
+    const accessPageSize = Number(options.accessPageSize || currentState.recent_access_pagination?.page_size || 8);
+    const anomalyPage = Number(options.anomalyPage || currentState.anomaly_pagination?.page || 1);
+    const anomalyPageSize = Number(options.anomalyPageSize || currentState.anomaly_pagination?.page_size || 6);
+    const configPage = Number(options.configPage || currentState.config_event_pagination?.page || 1);
+    const configPageSize = Number(options.configPageSize || currentState.config_event_pagination?.page_size || 8);
+
     adminAuditMonitorState = {
-        ...(adminAuditMonitorState || getDefaultAdminAuditMonitorState()),
+        ...currentState,
         status: 'loading',
         message: '正在加载...'
     };
@@ -17800,7 +18557,14 @@ async function loadAdminAuditMonitor(force = false) {
     loadAdminAuditMonitor._loadingPromise = (async () => {
         try {
             const headers = await getAdminConfigApiHeaders();
-            const response = await fetch('/api/admin/settings/admin-audit-monitor', {
+            const requestUrl = new URL('/api/admin/settings/admin-audit-monitor', window.location.origin);
+            requestUrl.searchParams.set('accessPage', String(accessPage));
+            requestUrl.searchParams.set('accessPageSize', String(accessPageSize));
+            requestUrl.searchParams.set('anomalyPage', String(anomalyPage));
+            requestUrl.searchParams.set('anomalyPageSize', String(anomalyPageSize));
+            requestUrl.searchParams.set('configPage', String(configPage));
+            requestUrl.searchParams.set('configPageSize', String(configPageSize));
+            const response = await fetch(`${requestUrl.pathname}${requestUrl.search}`, {
                 method: 'GET',
                 headers
             });
@@ -17815,9 +18579,15 @@ async function loadAdminAuditMonitor(force = false) {
                 fetched_at: String(payload.fetched_at || '').trim(),
                 access_summary: payload.access_summary || getDefaultAdminAuditMonitorState().access_summary,
                 config_summary: payload.config_summary || getDefaultAdminAuditMonitorState().config_summary,
+                alert_summary: payload.alert_summary || getDefaultAdminAuditMonitorState().alert_summary,
+                facts: payload.facts || getDefaultAdminAuditMonitorState().facts,
+                alert_items: Array.isArray(payload.alert_items) ? payload.alert_items : [],
                 recent_accesses: Array.isArray(payload.recent_accesses) ? payload.recent_accesses : [],
+                recent_access_pagination: payload.recent_access_pagination || getDefaultAdminAuditMonitorState().recent_access_pagination,
                 access_anomalies: Array.isArray(payload.access_anomalies) ? payload.access_anomalies : [],
+                anomaly_pagination: payload.anomaly_pagination || getDefaultAdminAuditMonitorState().anomaly_pagination,
                 payment_config_events: Array.isArray(payload.payment_config_events) ? payload.payment_config_events : [],
+                config_event_pagination: payload.config_event_pagination || getDefaultAdminAuditMonitorState().config_event_pagination,
                 message: ''
             };
             renderAdminAuditMonitorPanel();
@@ -17841,6 +18611,79 @@ async function loadAdminAuditMonitor(force = false) {
     }
 }
 
+async function changeAdminAuditMonitorPage(kind = 'access', page = 1) {
+    const state = adminAuditMonitorState || getDefaultAdminAuditMonitorState();
+    const normalizedKind = String(kind || '').trim().toLowerCase();
+    const accessPagination = state.recent_access_pagination || getDefaultAdminAuditMonitorState().recent_access_pagination;
+    const anomalyPagination = state.anomaly_pagination || getDefaultAdminAuditMonitorState().anomaly_pagination;
+    const configPagination = state.config_event_pagination || getDefaultAdminAuditMonitorState().config_event_pagination;
+    const nextPage = Math.max(1, Number.parseInt(page, 10) || 1);
+
+    if (normalizedKind === 'anomaly') {
+        const totalPages = Math.max(1, Number(anomalyPagination.total_pages || 1));
+        const targetPage = Math.min(nextPage, totalPages);
+        if (targetPage === Number(anomalyPagination.page || 1) && state.status === 'ready') {
+            return state;
+        }
+
+        return loadAdminAuditMonitor({
+            force: true,
+            accessPage: Number(accessPagination.page || 1),
+            accessPageSize: Number(accessPagination.page_size || 8),
+            anomalyPage: targetPage,
+            anomalyPageSize: Number(anomalyPagination.page_size || 6),
+            configPage: Number(configPagination.page || 1),
+            configPageSize: Number(configPagination.page_size || 8)
+        });
+    }
+
+    if (normalizedKind === 'config') {
+        const totalPages = Math.max(1, Number(configPagination.total_pages || 1));
+        const targetPage = Math.min(nextPage, totalPages);
+        if (targetPage === Number(configPagination.page || 1) && state.status === 'ready') {
+            return state;
+        }
+
+        return loadAdminAuditMonitor({
+            force: true,
+            accessPage: Number(accessPagination.page || 1),
+            accessPageSize: Number(accessPagination.page_size || 8),
+            anomalyPage: Number(anomalyPagination.page || 1),
+            anomalyPageSize: Number(anomalyPagination.page_size || 6),
+            configPage: targetPage,
+            configPageSize: Number(configPagination.page_size || 8)
+        });
+    }
+
+    const totalPages = Math.max(1, Number(accessPagination.total_pages || 1));
+    const targetPage = Math.min(nextPage, totalPages);
+    if (targetPage === Number(accessPagination.page || 1) && state.status === 'ready') {
+        return state;
+    }
+
+    return loadAdminAuditMonitor({
+        force: true,
+        accessPage: targetPage,
+        accessPageSize: Number(accessPagination.page_size || 8),
+        anomalyPage: Number(anomalyPagination.page || 1),
+        anomalyPageSize: Number(anomalyPagination.page_size || 6),
+        configPage: Number(configPagination.page || 1),
+        configPageSize: Number(configPagination.page_size || 8)
+    });
+}
+
+async function changeAdminAuditMonitorAccessPage(page = 1) {
+    return changeAdminAuditMonitorPage('access', page);
+}
+
+async function changeAdminAuditMonitorAnomalyPage(page = 1) {
+    return changeAdminAuditMonitorPage('anomaly', page);
+}
+
+async function changeAdminAuditMonitorConfigPage(page = 1) {
+    return changeAdminAuditMonitorPage('config', page);
+}
+
 async function refreshAdminAuditMonitor(force = false) {
     if (refreshAdminAuditMonitor._loadingPromise && !force) {
         return refreshAdminAuditMonitor._loadingPromise;
@@ -17862,8 +18705,13 @@ async function refreshAdminAuditMonitor(force = false) {
 window.checkVerifyQuota = checkVerifyQuota;
 window.loadVerifyMonitor = loadVerifyMonitor;
 window.refreshVerifyMonitor = refreshVerifyMonitor;
+window.changeVerifyMonitorTaskPage = changeVerifyMonitorTaskPage;
+window.changeVerifyMonitorFailurePage = changeVerifyMonitorFailurePage;
 window.loadAdminAuditMonitor = loadAdminAuditMonitor;
 window.refreshAdminAuditMonitor = refreshAdminAuditMonitor;
+window.changeAdminAuditMonitorAccessPage = changeAdminAuditMonitorAccessPage;
+window.changeAdminAuditMonitorAnomalyPage = changeAdminAuditMonitorAnomalyPage;
+window.changeAdminAuditMonitorConfigPage = changeAdminAuditMonitorConfigPage;
 
 async function saveSensitiveWords() {
     const textarea = document.getElementById('cfgSensitiveWords');
@@ -18320,6 +19168,8 @@ Object.assign(window, {
     submitOpsAlertBatchMuteModal,
     closeOpsAlertCaseComposer,
     submitOpsAlertCaseComposer,
+    focusVerifyMonitorWorkspace,
+    focusAdminAuditMonitorWorkspace,
     handleShopRiskAction,
     handleShopRiskCaseAction,
     closeShopRiskCaseComposer,
@@ -18328,8 +19178,13 @@ Object.assign(window, {
 });
 window.loadVerifyMonitor = loadVerifyMonitor;
 window.refreshVerifyMonitor = refreshVerifyMonitor;
+window.changeVerifyMonitorTaskPage = changeVerifyMonitorTaskPage;
+window.changeVerifyMonitorFailurePage = changeVerifyMonitorFailurePage;
 window.loadAdminAuditMonitor = loadAdminAuditMonitor;
 window.refreshAdminAuditMonitor = refreshAdminAuditMonitor;
+window.changeAdminAuditMonitorAccessPage = changeAdminAuditMonitorAccessPage;
+window.changeAdminAuditMonitorAnomalyPage = changeAdminAuditMonitorAnomalyPage;
+window.changeAdminAuditMonitorConfigPage = changeAdminAuditMonitorConfigPage;
 window.deleteChannel = deleteChannel;
 window.addChannel = addChannel;
 window.saveIpBlacklist = saveIpBlacklist;

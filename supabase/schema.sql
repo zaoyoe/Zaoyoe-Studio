@@ -93,7 +93,8 @@ create policy "Prompts are viewable by everyone."
 
 create policy "Service role can manage prompts."
   on prompts for all
-  using ( auth.role() = 'service_role' );
+  using ( auth.role() = 'service_role' )
+  with check ( auth.role() = 'service_role' );
 
 -- Function to calculate FTS
 create function public.handle_prompts_fts()

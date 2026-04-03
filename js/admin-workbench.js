@@ -59,6 +59,60 @@ const ADMIN_WORKBENCH_OPS_ALERT_ACTIONS = Object.freeze({
         monitorLabel: '排查配置风险',
         ticketLabel: '配置审计'
     },
+    payment_config_recovered: {
+        target: 'admin-audit-monitor',
+        icon: 'fas fa-user-shield',
+        monitorLabel: '收口配置恢复',
+        ticketLabel: '配置审计'
+    },
+    payment_config_incident_recovered: {
+        target: 'admin-audit-monitor',
+        icon: 'fas fa-user-shield',
+        monitorLabel: '收口配置事故',
+        ticketLabel: '配置审计'
+    },
+    security_admin_login_anomaly: {
+        target: 'admin-audit-monitor',
+        icon: 'fas fa-user-shield',
+        monitorLabel: '排查异常登录',
+        ticketLabel: '访问审计'
+    },
+    verify_quota_low: {
+        target: 'verify-monitor',
+        icon: 'fas fa-wave-square',
+        monitorLabel: '处理验证额度',
+        ticketLabel: '验证运维'
+    },
+    verify_service_disabled: {
+        target: 'verify-monitor',
+        icon: 'fas fa-wave-square',
+        monitorLabel: '排查服务停摆',
+        ticketLabel: '验证运维'
+    },
+    verify_queue_backlog: {
+        target: 'verify-monitor',
+        icon: 'fas fa-wave-square',
+        monitorLabel: '处理队列堆积',
+        ticketLabel: '验证运维'
+    },
+    verify_failure_rate_spike: {
+        target: 'verify-monitor',
+        icon: 'fas fa-wave-square',
+        monitorLabel: '排查失败率',
+        ticketLabel: '验证运维'
+    },
+    verify_incident_escalated: {
+        target: 'verify-monitor',
+        icon: 'fas fa-wave-square',
+        monitorLabel: '处理验证事故',
+        ticketLabel: '验证运维'
+    },
+    verify_incident_recovered: {
+        target: 'verify-monitor',
+        icon: 'fas fa-wave-square',
+        monitorLabel: '收口验证恢复',
+        ticketLabel: '验证运维'
+    },
     ticket_sla_overdue: {
         target: 'tickets-pending',
         icon: 'fas fa-ticket-alt',
@@ -133,6 +187,18 @@ const ADMIN_WORKBENCH_OPS_ALERT_CATEGORY_FALLBACKS = Object.freeze({
         icon: 'fas fa-bag-shopping',
         monitorLabel: '进入处理页',
         ticketLabel: '风险订单'
+    },
+    verify: {
+        target: 'verify-monitor',
+        icon: 'fas fa-wave-square',
+        monitorLabel: '进入处理页',
+        ticketLabel: '验证运维'
+    },
+    security: {
+        target: 'admin-audit-monitor',
+        icon: 'fas fa-user-shield',
+        monitorLabel: '进入处理页',
+        ticketLabel: '访问审计'
     }
 });
 
@@ -149,7 +215,9 @@ const ADMIN_WORKBENCH_OPS_ALERT_MONITOR_CATEGORY_LABELS = Object.freeze({
     tickets: '工单与售后',
     inventory: '库存与补货',
     fulfillment: '履约与死信',
-    shop_risk: '商城风控'
+    shop_risk: '商城风控',
+    verify: '验证服务',
+    security: '安全与审计'
 });
 
 const ADMIN_WORKBENCH_PENDING_WORKSPACE_STORAGE_KEY = 'zaoyoe_pending_ops_alert_workspace';
@@ -1467,6 +1535,12 @@ function getAdminWorkbenchOpsAlertMonitorCategoryActions(categoryKey = '') {
             { target: 'shop-risk-orders', label: '风险订单', icon: 'fas fa-bag-shopping' },
             { target: 'shop-risk-discounts', label: '优惠券码', icon: 'fas fa-ticket' },
             { target: 'shop-risk-users', label: '用户详情', icon: 'fas fa-user-shield' }
+        ],
+        verify: [
+            { target: 'verify-monitor', label: '验证运维', icon: 'fas fa-wave-square' }
+        ],
+        security: [
+            { target: 'admin-audit-monitor', label: '访问审计', icon: 'fas fa-user-shield' }
         ]
     };
 
@@ -6383,6 +6457,7 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
                 })
             ]);
             scrollAdminWorkbenchTarget('verifyMonitorPanel');
+            window.focusVerifyMonitorWorkspace?.(normalizedContext);
         } else if (normalizedKey === 'admin-audit-monitor') {
             const settingsOpened = await ensureAdminWorkbenchModule('settings');
             if (!settingsOpened) {
@@ -6403,6 +6478,7 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
                 })
             ]);
             scrollAdminWorkbenchTarget('adminAuditMonitorSection');
+            window.focusAdminAuditMonitorWorkspace?.(normalizedContext);
         } else if (normalizedKey === 'payments-overview') {
             if (normalizedContext.paymentOrderId) {
                 const paymentFocusResult = await focusOpsAlertWorkspacePaymentOrder(normalizedContext.paymentOrderId);

@@ -20,7 +20,21 @@ test('comments admin frontend routes stats, list, and moderation through admin c
         "requireWritableCommentsSite({ label: currentStatus ? '取消评论置顶' : '置顶评论' })",
         "action: 'toggle_pin'",
         "requireWritableCommentsSite({ label: `${scopeStr}用户封禁` })",
-        "requireWritableCommentsSite({ label: `${scopeLabel}用户解封` })"
+        "requireWritableCommentsSite({ label: `${scopeLabel}用户解封` })",
+        "function buildCommentContextUrl(comment = {})",
+        "function prepareCommentReloadState({ preserveSelection = false, removeSelectionIds = [], focusCommentId = '' } = {})",
+        "function restoreCommentSelectionState()",
+        "function focusCommentCard(commentId)",
+        "function getCommentCurrentScopeBlockState(comment)",
+        "function buildCommentUserBlockBadge(comment)",
+        "function findVisibleCommentIdByUser(userId)",
+        "function refreshCommentsForUserStatus(userId)",
+        "new URL('guestbook.html', window.location.origin)",
+        "url.searchParams.set('messageId', contextId)",
+        "new URL('prompts.html', window.location.origin)",
+        'data-user-id="${escapeHtml(comment.user_id || \'\')}"',
+        'action-btn action-block${blockState.blocked ? \' action-btn--blocked\' : \'\'}',
+        'refreshCommentsForUserStatus(userId);'
     ];
 
     for (const marker of requiredMarkers) {
@@ -43,6 +57,19 @@ test('comments admin frontend routes stats, list, and moderation through admin c
     }
 });
 
+test('guestbook page consumes admin deep links and routes them through smart scroll', () => {
+    const source = readRepoFile('guestbook.js');
+
+    assert.match(source, /function getGuestbookDeepLinkTarget\(\)/);
+    assert.match(source, /const params = new URLSearchParams\(window\.location\.search \|\| ''\);/);
+    assert.match(source, /const messageId = String\(params\.get\('messageId'\) \|\| ''\)\.trim\(\);/);
+    assert.match(source, /const commentId = String\(params\.get\('commentId'\) \|\| ''\)\.trim\(\);/);
+    assert.match(source, /function maybeHandleGuestbookDeepLink\(\)/);
+    assert.match(source, /window\.handleSmartScroll\(deepLink\.commentId, 'comment', deepLink\.messageId\);/);
+    assert.match(source, /window\.handleSmartScroll\(deepLink\.messageId, 'message'\);/);
+    assert.match(source, /maybeHandleGuestbookDeepLink\(\);/);
+});
+
 test('comments summary handler includes guestbook replies alongside messages and gallery comments', () => {
     const source = readRepoFile('server/api-handlers/admin/comments/summary.js');
 
@@ -60,6 +87,14 @@ test('comments list handler loads guestbook replies and guestbook comment like c
     assert.equal(/from\('guestbook_likes'\)\s*\.select\('target_id, target_type'\)/.test(source), true);
     assert.equal(/record_type: comment\.parent_id \? 'reply' : 'comment'/.test(source), true);
     assert.equal(/reply_count: commentReplyCounts\[comment\.id\] \|\| 0/.test(source), true);
+    assert.equal(/pagination:\s*\{/.test(source), true);
+    assert.equal(/totalItems: pagination\.totalItems/.test(source), true);
+    assert.equal(/totalPages: pagination\.totalPages/.test(source), true);
+    assert.equal(/fetchCommentBlockStateRows/.test(source), true);
+    assert.equal(/buildCommentUserBlockStateMap/.test(source), true);
+    assert.equal(/user_block_state: userBlockStateMap\[userId\]/.test(source), true);
+    assert.equal(/\.limit\(50\)/.test(source), false);
+    assert.equal(/\.limit\(100\)/.test(source), false);
 });
 
 test('comments moderation handler clears orphan guestbook likes and enforces writable site', () => {

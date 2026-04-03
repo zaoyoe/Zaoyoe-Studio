@@ -11,10 +11,192 @@ const {
     sortByCreatedAtDesc,
     uniqueIds
 } = require('./shared');
+const {
+    buildCommentUserBlockStateMap,
+    fetchCommentBlockStateRows
+} = require('./_comment-block-state');
+
+const EMPTY_COMMENT_USER_BLOCK_STATE = Object.freeze({
+    blocks: [],
+    scopes: [],
+    hasGlobalBlock: false,
+    isGuestbookBlocked: false,
+    isGalleryBlocked: false
+});
 
 function getQueryParams(req) {
     const url = new URL(req.url || '', 'http://localhost');
     return url.searchParams;
+}
+
+function normalizeCommentsPage(value, fallback = 1) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function normalizeCommentsPageSize(value, fallback = 40) {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return fallback;
+    }
+    return Math.min(parsed, 200);
+}
+
+function normalizeCommentsStatusFilter(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    return normalized === 'replied' || normalized === 'unreplied' ? normalized : 'all';
+}
+
+function normalizeCommentsTypeFilter(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    return normalized === 'top' || normalized === 'reply' ? normalized : 'all';
+}
+
+function normalizeCommentsSourceFilter(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    return normalized === 'guestbook' || normalized === 'gallery' ? normalized : 'all';
+}
+
+function normalizeCommentsBooleanFilter(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    return ['1', 'true', 'yes', 'on'].includes(normalized);
+}
+
+function normalizeCommentsSearchTerms(searchParams) {
+    const search = String(searchParams.get('search') || '').trim();
+    const searchTags = searchParams
+        .getAll('searchTag')
+        .map((value) => String(value || '').trim())
+        .filter(Boolean);
+
+    return {
+        search,
+        searchTags
+    };
+}
+
+function parseCommentsListFilters(searchParams) {
+    const { search, searchTags } = normalizeCommentsSearchTerms(searchParams);
+
+    return {
+        search,
+        searchTags,
+        status: normalizeCommentsStatusFilter(searchParams.get('status')),
+        type: normalizeCommentsTypeFilter(searchParams.get('type')),
+        source: normalizeCommentsSourceFilter(searchParams.get('source')),
+        hasImage: normalizeCommentsBooleanFilter(searchParams.get('hasImage'))
+    };
+}
+
+function getCommentReplyCount(comment) {
+    return Math.max(0, Number(comment?.reply_count || 0));
+}
+
+function isReplyLevelComment(comment) {
+    return String(comment?.level || '').trim() === 'reply';
+}
+
+function matchesCommentSearchTerm(comment, rawSearchTerm, { pinnedOnly = false } = {}) {
+    const searchTerm = String(rawSearchTerm || '').trim().toLowerCase();
+    if (!searchTerm) {
+        return true;
+    }
+
+    if (pinnedOnly && (searchTerm === '置顶' || searchTerm === 'pinned')) {
+        return comment?.is_pinned === true;
+    }
+
+    const content = String(comment?.content || '').toLowerCase();
+    const author = String(comment?.author || '').toLowerCase();
+    const promptTitle = String(comment?.prompt_title || '').toLowerCase();
+    const commentId = String(comment?.id || '').toLowerCase();
+    const parentId = String(comment?.parent_id || '').toLowerCase();
+
+    return content.includes(searchTerm)
+        || author.includes(searchTerm)
+        || promptTitle.includes(searchTerm)
+        || commentId.includes(searchTerm)
+        || parentId.includes(searchTerm);
+}
+
+function applyCommentFilters(comments, filters = {}) {
+    return (Array.isArray(comments) ? comments : []).filter((comment) => {
+        if (filters.source !== 'all' && comment.type !== filters.source) {
+            return false;
+        }
+
+        if (filters.hasImage && !comment.image_url) {
+            return false;
+        }
+
+        const replyCount = getCommentReplyCount(comment);
+        if (filters.status === 'replied' && replyCount <= 0) {
+            return false;
+        }
+        if (filters.status === 'unreplied' && replyCount > 0) {
+            return false;
+        }
+
+        if (filters.type === 'top' && isReplyLevelComment(comment)) {
+            return false;
+        }
+        if (filters.type === 'reply' && !isReplyLevelComment(comment)) {
+            return false;
+        }
+
+        if (Array.isArray(filters.searchTags) && filters.searchTags.length > 0) {
+            const matchesTags = filters.searchTags.every((tag) => (
+                matchesCommentSearchTerm(comment, tag)
+            ));
+            if (!matchesTags) {
+                return false;
+            }
+        }
+
+        if (!matchesCommentSearchTerm(comment, filters.search, { pinnedOnly: true })) {
+            return false;
+        }
+
+        return true;
+    });
+}
+
+function paginateComments(comments, { page, pageSize }) {
+    const totalItems = Array.isArray(comments) ? comments.length : 0;
+    const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+    const currentPage = Math.min(Math.max(page, 1), totalPages);
+    const start = (currentPage - 1) * pageSize;
+    const end = start + pageSize;
+
+    return {
+        page: currentPage,
+        pageSize,
+        totalItems,
+        totalPages,
+        hasPrevPage: currentPage > 1,
+        hasNextPage: currentPage < totalPages,
+        returnedItems: Math.max(0, Math.min(totalItems, end) - start),
+        comments: (Array.isArray(comments) ? comments : []).slice(start, end)
+    };
+}
+
+async function attachCommentUserBlockState(supabase, comments = []) {
+    const normalizedComments = Array.isArray(comments) ? comments : [];
+    if (!normalizedComments.length) {
+        return [];
+    }
+
+    const userIds = uniqueIds(normalizedComments.map((comment) => comment.user_id));
+    const blockRows = await fetchCommentBlockStateRows(supabase, userIds);
+    const userBlockStateMap = buildCommentUserBlockStateMap(blockRows, userIds);
+
+    return normalizedComments.map((comment) => {
+        const userId = String(comment?.user_id || '').trim();
+        return {
+            ...comment,
+            user_block_state: userBlockStateMap[userId] || EMPTY_COMMENT_USER_BLOCK_STATE
+        };
+    });
 }
 
 const PROMPT_TITLE_SELECT_FIELDS = 'id, title, title_zh, title_en';
@@ -37,8 +219,7 @@ async function loadGuestbookAdminComments(supabase, { site, dateFrom, dateTo }) 
             supabase
                 .from('guestbook_messages')
                 .select('id, site, content, user_id, created_at, image_url, like_count')
-                .order('created_at', { ascending: false })
-                .limit(50),
+                .order('created_at', { ascending: false }),
             site
         ),
         { dateFrom, dateTo }
@@ -49,8 +230,7 @@ async function loadGuestbookAdminComments(supabase, { site, dateFrom, dateTo }) 
             supabase
                 .from('guestbook_comments')
                 .select('id, site, message_id, parent_id, content, user_id, created_at')
-                .order('created_at', { ascending: false })
-                .limit(100),
+                .order('created_at', { ascending: false }),
             site
         ),
         { dateFrom, dateTo }
@@ -229,8 +409,7 @@ async function loadGalleryAdminComments(supabase, { site, dateFrom, dateTo }) {
             supabase
                 .from('prompt_comments')
                 .select('id, site, prompt_id, parent_id, content, user_id, created_at, image_url, is_pinned, is_featured')
-                .order('created_at', { ascending: false })
-                .limit(50),
+                .order('created_at', { ascending: false }),
             site
         ),
         { dateFrom, dateTo }
@@ -291,16 +470,31 @@ module.exports = async (req, res) => {
         const site = normalizeCommentsSite(searchParams.get('site') || req.adminSite, 'all');
         const dateFrom = String(searchParams.get('dateFrom') || '').trim();
         const dateTo = String(searchParams.get('dateTo') || '').trim();
+        const filters = parseCommentsListFilters(searchParams);
+        const page = normalizeCommentsPage(searchParams.get('page'));
+        const pageSize = normalizeCommentsPageSize(searchParams.get('pageSize'));
 
         const comments = view === 'gallery'
             ? await loadGalleryAdminComments(supabase, { site, dateFrom, dateTo })
             : await loadGuestbookAdminComments(supabase, { site, dateFrom, dateTo });
+        const filteredComments = applyCommentFilters(comments, filters);
+        const pagination = paginateComments(filteredComments, { page, pageSize });
+        const paginatedComments = await attachCommentUserBlockState(supabase, pagination.comments);
 
         return sendJson(res, 200, {
             success: true,
             view,
             site,
-            comments
+            comments: paginatedComments,
+            pagination: {
+                page: pagination.page,
+                pageSize: pagination.pageSize,
+                totalItems: pagination.totalItems,
+                totalPages: pagination.totalPages,
+                hasPrevPage: pagination.hasPrevPage,
+                hasNextPage: pagination.hasNextPage,
+                returnedItems: pagination.returnedItems
+            }
         });
     } catch (error) {
         return sendJson(res, error.statusCode || 500, {

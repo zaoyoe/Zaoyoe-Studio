@@ -7,6 +7,7 @@ const path = require('node:path');
 const {
     applyPreviewEnvToProcess,
     buildLocalPreviewAdminHandlerUrl,
+    createSmokeResultStore,
     resolveLocalPreviewRuntimeScript
 } = require('../scripts/local-preview-server');
 
@@ -49,6 +50,12 @@ test('local preview server rewrites nested admin routes into the shared admin ha
     assert.equal(rewrittenUrl, '/api/admin?route=access%2Fsession&foo=bar');
 });
 
+test('local preview server preserves explicit admin query routes for shared handler urls', () => {
+    const rewrittenUrl = buildLocalPreviewAdminHandlerUrl('/api/admin?route=shop/products&status=active&fields=full');
+
+    assert.equal(rewrittenUrl, '/api/admin?route=shop%2Fproducts&status=active&fields=full');
+});
+
 test('local preview server seeds process env from loaded preview values without clobbering existing vars', () => {
     const originalUrl = process.env.SUPABASE_URL;
     const originalKey = process.env.SUPABASE_PUBLISHABLE_KEY;
@@ -86,5 +93,30 @@ test('local preview server seeds process env from loaded preview values without 
         } else {
             process.env.LOCAL_PREVIEW_TEST_MARKER = originalMarker;
         }
+    }
+});
+
+test('local preview server smoke result store caches and expires run results', () => {
+    const store = createSmokeResultStore({ ttlMs: 50 });
+
+    assert.equal(store.get('missing-run'), null);
+
+    const inserted = store.set('run-1', {
+        status: 'passed',
+        page: '/admin-studio.html',
+        text: 'Local Smoke: PASSED',
+        results: [{ label: 'shop smoke', pass: true, detail: '' }]
+    });
+
+    assert.equal(inserted.runId, 'run-1');
+    assert.equal(inserted.status, 'passed');
+    assert.deepEqual(store.get('run-1')?.results, [{ label: 'shop smoke', pass: true, detail: '' }]);
+
+    const originalNow = Date.now;
+    Date.now = () => Number(inserted.updatedAt || inserted.createdAt || 0) + 1000;
+    try {
+        assert.equal(store.get('run-1'), null);
+    } finally {
+        Date.now = originalNow;
     }
 });

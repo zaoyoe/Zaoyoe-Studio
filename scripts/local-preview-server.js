@@ -8,6 +8,8 @@ const dotenv = require('dotenv');
 const { buildSupabaseRuntimeScript } = require('../api/_lib/public-runtime-config');
 const adminApiHandler = require('../api/admin');
 
+const DEFAULT_SMOKE_RESULT_TTL_MS = 10 * 60 * 1000;
+
 function getDefaultEnvFiles(repoRoot) {
     return [
         path.join(repoRoot, 'server/.env.staging'),
@@ -51,17 +53,20 @@ function resolveLocalPreviewRuntimeScript(envFiles, baseEnv = process.env) {
 
 function buildLocalPreviewAdminHandlerUrl(rawUrl = '/api/admin') {
     const incomingUrl = new URL(String(rawUrl || '/api/admin'), 'http://127.0.0.1:8000');
+    const queryRoute = String(incomingUrl.searchParams.get('route') || '').trim();
     const routePath = incomingUrl.pathname
         .replace(/^\/api\/admin\/?/, '')
         .replace(/^\/+|\/+$/g, '');
     const handlerUrl = new URL('/api/admin', incomingUrl.origin);
 
-    if (routePath) {
+    if (queryRoute) {
+        handlerUrl.searchParams.set('route', queryRoute);
+    } else if (routePath) {
         handlerUrl.searchParams.set('route', routePath);
     }
 
     incomingUrl.searchParams.forEach((value, key) => {
-        if (key === 'route') {
+        if (key === 'route' && (queryRoute || routePath)) {
             return;
         }
         handlerUrl.searchParams.append(key, value);
@@ -82,6 +87,53 @@ function applyPreviewEnvToProcess(envValues = {}) {
     });
 }
 
+function createSmokeResultStore(options = {}) {
+    const ttlMs = Math.max(1000, Number(options.ttlMs || DEFAULT_SMOKE_RESULT_TTL_MS));
+    const records = new Map();
+
+    function cleanup(now = Date.now()) {
+        for (const [runId, record] of records.entries()) {
+            const ageMs = now - Number(record?.updatedAt || record?.createdAt || 0);
+            if (!Number.isFinite(ageMs) || ageMs < ttlMs) {
+                continue;
+            }
+            records.delete(runId);
+        }
+    }
+
+    return {
+        get(runId = '') {
+            cleanup();
+            const normalizedRunId = String(runId || '').trim();
+            if (!normalizedRunId) {
+                return null;
+            }
+            return records.get(normalizedRunId) || null;
+        },
+        set(runId = '', payload = {}) {
+            cleanup();
+            const normalizedRunId = String(runId || '').trim();
+            if (!normalizedRunId) {
+                return null;
+            }
+
+            const now = Date.now();
+            const nextRecord = {
+                runId: normalizedRunId,
+                status: String(payload.status || '').trim() || 'unknown',
+                page: String(payload.page || '').trim() || '/',
+                text: String(payload.text || ''),
+                results: Array.isArray(payload.results) ? payload.results : [],
+                createdAt: Number(records.get(normalizedRunId)?.createdAt || now),
+                updatedAt: now
+            };
+
+            records.set(normalizedRunId, nextRecord);
+            return nextRecord;
+        }
+    };
+}
+
 function createLocalPreviewApp(options = {}) {
     const app = express();
     const repoRoot = path.resolve(options.repoRoot || path.resolve(__dirname, '..'));
@@ -89,6 +141,7 @@ function createLocalPreviewApp(options = {}) {
     const envFiles = options.envFiles || getDefaultEnvFiles(repoRoot);
     const baseEnv = options.baseEnv || process.env;
     const previewEnv = loadPreviewEnv(envFiles, baseEnv);
+    const smokeResultStore = options.smokeResultStore || createSmokeResultStore();
 
     applyPreviewEnvToProcess(previewEnv);
 
@@ -108,6 +161,43 @@ function createLocalPreviewApp(options = {}) {
         res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
         res.setHeader('Cache-Control', 'no-store');
         res.status(200).send(script);
+    });
+
+    app.get('/__local-smoke-result', (req, res) => {
+        const runId = String(req.query.runId || '').trim();
+        if (!runId) {
+            res.status(400).json({
+                ok: false,
+                error: 'runId is required'
+            });
+            return;
+        }
+
+        const record = smokeResultStore.get(runId);
+        res.setHeader('Cache-Control', 'no-store');
+        res.status(200).json({
+            ok: true,
+            found: Boolean(record),
+            result: record
+        });
+    });
+
+    app.post('/__local-smoke-result', (req, res) => {
+        const runId = String(req.body?.runId || req.query.runId || '').trim();
+        if (!runId) {
+            res.status(400).json({
+                ok: false,
+                error: 'runId is required'
+            });
+            return;
+        }
+
+        const record = smokeResultStore.set(runId, req.body || {});
+        res.setHeader('Cache-Control', 'no-store');
+        res.status(200).json({
+            ok: true,
+            result: record
+        });
     });
 
     app.all('/api/admin', async (req, res) => {
@@ -144,6 +234,7 @@ if (require.main === module) {
 module.exports = {
     applyPreviewEnvToProcess,
     buildLocalPreviewAdminHandlerUrl,
+    createSmokeResultStore,
     createLocalPreviewApp,
     getDefaultEnvFiles,
     loadPreviewEnv,
