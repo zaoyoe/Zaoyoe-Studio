@@ -145,7 +145,7 @@ test('shop module routes core write actions through writable site guard', () => 
     }
 
     assert.equal(
-        shopSource.includes("/api/admin/payments/shop-refund"),
+        shopSource.includes("buildAdminRouteUrl('payments/shop-refund')"),
         true,
         'js/admin-shop.js should route refunds through the admin refund handler'
     );
