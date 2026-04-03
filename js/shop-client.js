@@ -741,13 +741,29 @@ const ShopClient = {
         }
     },
 
-    renderProductSkeletons: function (count = this.lastSkeletonCount || 6) {
+    getExistingProductSkeletonCount: function (container = document.getElementById('userShopGrid')) {
+        if (!container) return 0;
+        return container.querySelectorAll('.skeleton-card').length;
+    },
+
+    renderProductSkeletons: function (count) {
         const container = document.getElementById('userShopGrid');
         if (!container) return;
 
-        const safeCount = Math.min(Math.max(count, 3), 8);
+        const existingSkeletonCount = this.getExistingProductSkeletonCount(container);
+        const requestedCount = Number.parseInt(count, 10) || existingSkeletonCount || this.lastSkeletonCount || 6;
+        const safeCount = Math.min(Math.max(requestedCount, 3), 8);
+        const currentSkeletonCount = existingSkeletonCount;
+        const hasOnlySkeletonCards = existingSkeletonCount > 0
+            && container.querySelectorAll('.shop-card').length === 0
+            && !container.querySelector('.shop-empty-state, .shop-status-message');
+
         this.lastSkeletonCount = safeCount;
         container.classList.remove('is-empty');
+
+        if (hasOnlySkeletonCards && currentSkeletonCount === safeCount) {
+            return;
+        }
 
         container.innerHTML = Array.from({ length: safeCount }, () => `
             <div class="skeleton-card">
