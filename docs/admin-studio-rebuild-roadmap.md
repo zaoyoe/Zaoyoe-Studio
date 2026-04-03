@@ -9,6 +9,7 @@
 - [admin-studio-phase3-taskboard.md](/Volumes/chao/AI/xianyu_profit_calculator/docs/admin-studio-phase3-taskboard.md)
 - [admin-studio-issue-backlog.md](/Volumes/chao/AI/xianyu_profit_calculator/docs/admin-studio-issue-backlog.md)
 - [admin-studio-safe-rebuild-plan.md](/Volumes/chao/AI/xianyu_profit_calculator/docs/admin-studio-safe-rebuild-plan.md)
+- [admin-studio-workbench-remediation-plan.md](/Volumes/chao/AI/xianyu_profit_calculator/docs/admin-studio-workbench-remediation-plan.md)
 
 ## 1. 背景
 

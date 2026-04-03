@@ -728,6 +728,13 @@ function bindAdminStudioDelegatedControls() {
             case 'comments-batch-delete':
                 window.batchDeleteComments?.();
                 break;
+            case 'comments-pagination-go': {
+                const page = parseInt(actionEl.dataset.commentsPage || '', 10);
+                if (!Number.isNaN(page)) {
+                    window.changeCommentsPage?.(page);
+                }
+                break;
+            }
             case 'switch-settings-view':
                 window.switchSettingsView?.(actionEl.dataset.settingsView);
                 break;
@@ -1652,9 +1659,44 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-refresh-verify-monitor':
                 window.refreshVerifyMonitor?.();
                 break;
+            case 'settings-change-verify-monitor-task-page': {
+                const page = parseInt(actionEl.dataset.verifyMonitorPage || '', 10);
+                if (!Number.isNaN(page)) {
+                    window.changeVerifyMonitorTaskPage?.(page);
+                }
+                break;
+            }
+            case 'settings-change-verify-monitor-failure-page': {
+                const page = parseInt(actionEl.dataset.verifyMonitorPage || '', 10);
+                if (!Number.isNaN(page)) {
+                    window.changeVerifyMonitorFailurePage?.(page);
+                }
+                break;
+            }
             case 'settings-refresh-admin-audit-monitor':
                 window.refreshAdminAuditMonitor?.();
                 break;
+            case 'settings-change-admin-audit-access-page': {
+                const page = parseInt(actionEl.dataset.adminAuditPage || '', 10);
+                if (!Number.isNaN(page)) {
+                    window.changeAdminAuditMonitorAccessPage?.(page);
+                }
+                break;
+            }
+            case 'settings-change-admin-audit-anomaly-page': {
+                const page = parseInt(actionEl.dataset.adminAuditPage || '', 10);
+                if (!Number.isNaN(page)) {
+                    window.changeAdminAuditMonitorAnomalyPage?.(page);
+                }
+                break;
+            }
+            case 'settings-change-admin-audit-config-page': {
+                const page = parseInt(actionEl.dataset.adminAuditPage || '', 10);
+                if (!Number.isNaN(page)) {
+                    window.changeAdminAuditMonitorConfigPage?.(page);
+                }
+                break;
+            }
             case 'settings-add-api-key':
                 window.addNewApiKey?.();
                 break;
@@ -1773,6 +1815,13 @@ function bindAdminStudioDelegatedControls() {
             case 'comments-toggle-select-all':
                 window.toggleSelectAll?.();
                 break;
+            case 'comments-pagination-go': {
+                const max = Math.max(1, parseInt(actionEl.dataset.commentsPageMax || '1', 10) || 1);
+                const nextPage = Math.min(Math.max(parseInt(actionEl.value || '', 10) || 1, 1), max);
+                actionEl.value = String(nextPage);
+                window.changeCommentsPage?.(nextPage);
+                break;
+            }
             case 'payments-change-active-provider':
                 window.handlePaymentChannelActiveChange?.(actionEl.value);
                 break;
@@ -2284,6 +2333,89 @@ function updateAdminTabIndicator(activeTab) {
 // LOAD ADMIN PROMPTS
 // ========================================
 let allPrompts = []; // Cache all prompts for local search
+const adminGalleryPrefetchState = {
+    site: '',
+    loaded: false,
+    promise: null
+};
+
+function invalidateAdminGalleryPrefetch() {
+    adminGalleryPrefetchState.site = '';
+    adminGalleryPrefetchState.loaded = false;
+    adminGalleryPrefetchState.promise = null;
+}
+
+function prefetchGalleryModule() {
+    const galleryModule = document.getElementById('module-gallery');
+    if (!galleryModule) {
+        return Promise.resolve(false);
+    }
+
+    const site = getAdminPromptsReadSite();
+    if (adminGalleryPrefetchState.loaded && adminGalleryPrefetchState.site === site) {
+        return Promise.resolve(true);
+    }
+
+    if (adminGalleryPrefetchState.promise && adminGalleryPrefetchState.site === site) {
+        return adminGalleryPrefetchState.promise;
+    }
+
+    adminGalleryPrefetchState.site = site;
+    adminGalleryPrefetchState.loaded = false;
+    adminGalleryPrefetchState.promise = Promise.resolve()
+        .then(() => loadAdminPrompts())
+        .then(() => {
+            adminGalleryPrefetchState.loaded = true;
+            return true;
+        })
+        .catch((error) => {
+            adminGalleryPrefetchState.loaded = false;
+            throw error;
+        })
+        .finally(() => {
+            adminGalleryPrefetchState.promise = null;
+        });
+
+    return adminGalleryPrefetchState.promise;
+}
+
+function prefetchSettingsModule() {
+    renderApiKeySelector();
+    return Promise.resolve(true);
+}
+
+let opsAlertsPrefetchPromise = null;
+
+function prefetchOpsAlertsModule() {
+    if (opsAlertsPrefetchPromise) {
+        return opsAlertsPrefetchPromise;
+    }
+
+    const tasks = [
+        window.loadOpsAlertSettings,
+        window.loadOpsAlertHealth,
+        window.loadOpsAlertMonitor
+    ].filter((loader) => typeof loader === 'function');
+
+    if (!tasks.length) {
+        return Promise.resolve(false);
+    }
+
+    opsAlertsPrefetchPromise = Promise.allSettled(tasks.map((loader) => loader()))
+        .finally(() => {
+            opsAlertsPrefetchPromise = null;
+        });
+
+    return opsAlertsPrefetchPromise;
+}
+
+window.prefetchGalleryModule = prefetchGalleryModule;
+window.prefetchSettingsModule = prefetchSettingsModule;
+window.prefetchOpsAlertsModule = prefetchOpsAlertsModule;
+
+window.addEventListener('admin-site-changed', () => {
+    invalidateAdminGalleryPrefetch();
+});
 
 function promptHasVisibleCopy(value) {
     return typeof value === 'string' && value.trim().length > 0;
@@ -2347,6 +2479,8 @@ async function loadAdminPrompts() {
     try {
         const payload = await fetchAdminPromptList();
         const data = payload.rows || [];
+        adminGalleryPrefetchState.site = getAdminPromptsReadSite();
+        adminGalleryPrefetchState.loaded = true;
 
         // Cache prompts for local search
         allPrompts = data || [];
@@ -2364,6 +2498,7 @@ async function loadAdminPrompts() {
         // Setup search after data is loaded
         setupAdminSearch();
     } catch (err) {
+        adminGalleryPrefetchState.loaded = false;
         console.error('Error loading prompts:', err);
         showToast(`Failed to load prompts: ${err.message || 'Unknown error'}`, 'error');
     }
@@ -4384,7 +4519,7 @@ function switchCommentView(viewName) {
         if (typeof currentCommentView !== 'undefined') {
             currentCommentView = viewName;
         }
-        loadComments(viewName);
+        loadComments(viewName, { resetPage: true });
     } else {
         console.warn('loadComments function not found - make sure admin-comments.js is loaded');
     }

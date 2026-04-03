@@ -8,8 +8,12 @@ const HomepageAdmin = (() => {
     // STATE
     // ============================================
     let configCache = {};  // { section: { id, content, is_visible, display_order, updated_at } }
+    let configCacheBySite = { cn: {}, intl: {} };
     let currentSection = 'hero';
+    let currentReadSite = 'all';
     let initialized = false;
+    let loadingPromise = null;
+    let loadingSite = '';
 
     const SV_LABELS = {
         hero: { icon: 'fas fa-image', label: 'Hero 横幅' },
@@ -24,14 +28,28 @@ const HomepageAdmin = (() => {
     const HOMEPAGE_ADMIN_PREVIEW_HIDDEN_CLASS = 'admin-studio-inline-style-attr-149';
     const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
     const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
+    const HOMEPAGE_MANAGED_SECTIONS = ['hero', 'prompts', 'shop', 'verify', 'guestbook', 'ticker', 'footer'];
 
     function normalizeHomepageSite(site) {
-        return site === 'intl' ? 'intl' : 'cn';
+        if (site === 'intl') return 'intl';
+        if (site === 'all') return 'all';
+        return 'cn';
     }
 
     function getHomepageReadSite() {
         const filter = window.AdminSiteFilter?.getSiteFilter?.() || 'all';
-        return normalizeHomepageSite(filter === 'all' ? 'cn' : filter);
+        return normalizeHomepageSite(filter);
+    }
+
+    function isHomepageAggregateMode(site = currentReadSite || getHomepageReadSite()) {
+        return normalizeHomepageSite(site) === 'all';
+    }
+
+    function getHomepageSiteLabel(site) {
+        const normalized = normalizeHomepageSite(site);
+        if (normalized === 'intl') return 'INTL 站';
+        if (normalized === 'all') return '全部站点';
+        return 'CN 站';
     }
 
     function getHomepagePrefetchCacheKey(site = getHomepageReadSite()) {
@@ -57,6 +75,15 @@ const HomepageAdmin = (() => {
         return payload;
     }
 
+    function escapeHomepageHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     async function fetchHomepageConfigRows(site = getHomepageReadSite()) {
         const response = await (window.AdminApi?.fetch || fetch)(
             `/api/admin/homepage/config?site=${encodeURIComponent(normalizeHomepageSite(site))}`,
@@ -66,6 +93,151 @@ const HomepageAdmin = (() => {
         );
 
         return parseHomepageAdminResponse(response);
+    }
+
+    function buildHomepageConfigRecord(row = {}) {
+        return {
+            id: row.id || null,
+            site: normalizeHomepageSite(row.site),
+            content: row.content && typeof row.content === 'object' && !Array.isArray(row.content)
+                ? row.content
+                : {},
+            is_visible: row.is_visible !== false,
+            display_order: Number(row.display_order ?? 0) || 0,
+            updated_at: row.updated_at || null
+        };
+    }
+
+    function buildEmptyHomepageSectionContent(section) {
+        switch (section) {
+            case 'hero':
+                return { title: '', subtitle: '', enable_auto: false };
+            case 'prompts':
+                return { section_title: '', section_subtitle: '', max_items: '', sort: '', enable_auto: false };
+            case 'shop':
+                return { section_title: '', section_subtitle: '', max_items: '', category: '', sort: '', enable_auto: false };
+            case 'verify':
+                return { section_title: '', section_subtitle: '', screenshot_path: '', features: [], enable_auto: false };
+            case 'guestbook':
+                return { section_title: '', section_subtitle: '', max_items: '', enable_auto: false };
+            case 'ticker':
+                return { speed: 30, shop_scroll_speed: 30, enable_prompts: false, enable_products: false, enable_auto: false };
+            default:
+                return { enable_auto: false };
+        }
+    }
+
+    function getLatestHomepageUpdatedAt(values = []) {
+        return (Array.isArray(values) ? values : [])
+            .map((value) => ({ value, timestamp: Date.parse(value) }))
+            .filter((item) => item.value && Number.isFinite(item.timestamp))
+            .sort((left, right) => right.timestamp - left.timestamp)[0]?.value || null;
+    }
+
+    function buildAggregateHomepageConfigCache(groupedCache = {}) {
+        const aggregateCache = {};
+
+        HOMEPAGE_MANAGED_SECTIONS.forEach((section) => {
+            const cnConfig = groupedCache.cn?.[section] || null;
+            const intlConfig = groupedCache.intl?.[section] || null;
+            aggregateCache[section] = {
+                id: null,
+                site: 'all',
+                content: buildEmptyHomepageSectionContent(section),
+                is_visible: cnConfig?.is_visible !== false || intlConfig?.is_visible !== false,
+                display_order: Number(cnConfig?.display_order ?? intlConfig?.display_order ?? 0) || 0,
+                updated_at: getLatestHomepageUpdatedAt([cnConfig?.updated_at, intlConfig?.updated_at])
+            };
+        });
+
+        return aggregateCache;
+    }
+
+    function getHomepageSectionConfigBySite(section, site) {
+        const normalizedSite = normalizeHomepageSite(site);
+        if (normalizedSite === 'all') {
+            return configCache[section] || null;
+        }
+        return configCacheBySite[normalizedSite]?.[section] || null;
+    }
+
+    function formatHomepageSummaryValue(value, fallback = '未配置') {
+        if (Array.isArray(value)) {
+            return value.length ? escapeHomepageHtml(value.join('、')) : fallback;
+        }
+        const normalized = String(value ?? '').trim();
+        return normalized ? escapeHomepageHtml(normalized) : fallback;
+    }
+
+    function buildHomepageSectionSummaryLines(section, cfg = null) {
+        const content = cfg?.content || {};
+
+        if (!cfg) {
+            return [{ label: '状态', value: '未配置' }];
+        }
+
+        switch (section) {
+            case 'hero':
+                return [
+                    { label: '标题', value: formatHomepageSummaryValue(content.title) },
+                    { label: '副标题', value: formatHomepageSummaryValue(content.subtitle) }
+                ];
+            case 'prompts':
+                return [
+                    { label: '标题', value: formatHomepageSummaryValue(content.section_title) },
+                    { label: '副标题', value: formatHomepageSummaryValue(content.section_subtitle) },
+                    { label: '数量', value: formatHomepageSummaryValue(content.max_items, '默认') }
+                ];
+            case 'shop':
+                return [
+                    { label: '标题', value: formatHomepageSummaryValue(content.section_title) },
+                    { label: '副标题', value: formatHomepageSummaryValue(content.section_subtitle) },
+                    { label: '分类', value: formatHomepageSummaryValue(content.category, '全部分类') }
+                ];
+            case 'verify':
+                return [
+                    { label: '标题', value: formatHomepageSummaryValue(content.section_title) },
+                    { label: '副标题', value: formatHomepageSummaryValue(content.section_subtitle) },
+                    { label: '截图', value: content.screenshot_path ? '已配置' : '未配置' }
+                ];
+            case 'guestbook':
+                return [
+                    { label: '标题', value: formatHomepageSummaryValue(content.section_title) },
+                    { label: '副标题', value: formatHomepageSummaryValue(content.section_subtitle) },
+                    { label: '数量', value: formatHomepageSummaryValue(content.max_items, '默认') }
+                ];
+            case 'ticker':
+                return [
+                    { label: '提示词速度', value: formatHomepageSummaryValue(content.speed, '30') },
+                    { label: '商城速度', value: formatHomepageSummaryValue(content.shop_scroll_speed, '30') },
+                    { label: '内容源', value: `${content.enable_prompts ? '提示词' : '提示词关闭'} / ${content.enable_products ? '商城' : '商城关闭'}` }
+                ];
+            default:
+                return [{ label: '状态', value: '已加载' }];
+        }
+    }
+
+    function renderHomepageReadModeBanner() {
+        const content = document.getElementById('hp-section-content');
+        if (!content) return;
+
+        let banner = document.getElementById('hp-read-mode-banner');
+        if (!isHomepageAggregateMode()) {
+            banner?.remove();
+            return;
+        }
+
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'hp-read-mode-banner';
+            banner.className = 'hp-readonly-banner';
+            content.insertBefore(banner, content.firstChild);
+        }
+
+        banner.innerHTML = `
+            <div class="hp-readonly-banner__title"><i class="fas fa-layer-group"></i> 全部站点聚合视图</div>
+            <div class="hp-readonly-banner__body">当前只展示 <strong>CN</strong> / <strong>INTL</strong> 的配置概览与显隐状态，不允许直接编辑。切换到具体站点后再保存修改。</div>
+        `;
     }
 
     async function updateHomepageConfigRow({
@@ -172,6 +344,82 @@ const HomepageAdmin = (() => {
         });
     }
 
+    function renderHomepageLoadingSkeleton(loading) {
+        if (!loading) return;
+        loading.innerHTML = `
+            <div class="hp-loading-shell" aria-hidden="true">
+                <div class="hp-loading-shell__intro">
+                    <div class="hp-loading-shell__copy">
+                        <span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-30"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-80"></span>
+                    </div>
+                    <div class="hp-loading-shell__tabs">
+                        <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span>
+                    </div>
+                </div>
+                <div class="hp-loading-shell__grid">
+                    ${Array.from({ length: 2 }, (_, index) => `
+                        <div class="hp-loading-card">
+                            <div class="hp-loading-card__bar">
+                                <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span>
+                                <span class="admin-skeleton-block admin-skeleton-block--pill ${index % 2 === 0 ? 'admin-skeleton-w-chip-sm' : 'admin-skeleton-w-chip-xs'}"></span>
+                            </div>
+                            <div class="hp-loading-card__body">
+                                <span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-40"></span>
+                                <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-full"></span>
+                                <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-70"></span>
+                                <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-50"></span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    function hasHomepageConfigForSite(site = getHomepageReadSite()) {
+        const normalizedSite = normalizeHomepageSite(site);
+        if (normalizedSite === 'all') {
+            return Object.keys(configCacheBySite.cn || {}).length > 0
+                && Object.keys(configCacheBySite.intl || {}).length > 0;
+        }
+
+        return Object.keys(configCacheBySite[normalizedSite] || {}).length > 0;
+    }
+
+    function applyHomepageConfigForSite(site = getHomepageReadSite()) {
+        currentReadSite = normalizeHomepageSite(site);
+        configCache = isHomepageAggregateMode(currentReadSite)
+            ? buildAggregateHomepageConfigCache(configCacheBySite)
+            : { ...(configCacheBySite[currentReadSite] || {}) };
+    }
+
+    async function ensureHomepageConfigLoaded({ force = false } = {}) {
+        const targetSite = getHomepageReadSite();
+        const normalizedTargetSite = normalizeHomepageSite(targetSite);
+
+        if (!force && hasHomepageConfigForSite(normalizedTargetSite)) {
+            applyHomepageConfigForSite(normalizedTargetSite);
+            return true;
+        }
+
+        if (!force && loadingPromise && loadingSite === normalizedTargetSite) {
+            return loadingPromise;
+        }
+
+        loadingSite = normalizedTargetSite;
+        loadingPromise = Promise.resolve()
+            .then(() => loadAllConfig())
+            .finally(() => {
+                loadingPromise = null;
+                loadingSite = '';
+            });
+
+        return loadingPromise;
+    }
+
     function requireWritableHomepageSite(options = {}) {
         return window.AdminSiteFilter?.requireWritableSite?.(options) || null;
     }
@@ -181,8 +429,12 @@ const HomepageAdmin = (() => {
     // ============================================
 
     async function init() {
+        const loading = document.getElementById('hp-loading');
+        const content = document.getElementById('hp-section-content');
+
         if (initialized) {
-            // Just re-render from cache
+            await ensureHomepageConfigLoaded();
+            renderAllSections();
             renderCurrentSection();
             return;
         }
@@ -190,21 +442,32 @@ const HomepageAdmin = (() => {
         console.log('[Homepage] Initializing homepage config module...');
 
         try {
-            await loadAllConfig();
+            renderHomepageLoadingSkeleton(loading);
+            setHomepageAdminHiddenState(loading, false);
+            setHomepageAdminHiddenState(content, true);
+
+            await ensureHomepageConfigLoaded();
             setupEventListeners();
             initialized = true;
 
             // Hide loading, show content
-            const loading = document.getElementById('hp-loading');
-            const content = document.getElementById('hp-section-content');
             setHomepageAdminHiddenState(loading, true);
             setHomepageAdminHiddenState(content, false);
 
             console.log('[Homepage] Initialized successfully');
         } catch (err) {
             console.error('[Homepage] Init error:', err);
-            const loading = document.getElementById('hp-loading');
             renderHomepageLoadingError(loading, err.message);
+        }
+    }
+
+    async function prefetch() {
+        try {
+            await ensureHomepageConfigLoaded();
+            return true;
+        } catch (error) {
+            console.warn('[Homepage] Prefetch failed:', error);
+            return false;
         }
     }
 
@@ -213,21 +476,25 @@ const HomepageAdmin = (() => {
     // ============================================
 
     async function loadAllConfig() {
-        const result = await fetchHomepageConfigRows(getHomepageReadSite());
+        currentReadSite = getHomepageReadSite();
+        const result = await fetchHomepageConfigRows(currentReadSite);
         const rows = Array.isArray(result.rows) ? result.rows : [];
-        configCache = {};
-        rows.forEach(row => {
-            configCache[row.section] = {
-                id: row.id,
-                site: normalizeHomepageSite(row.site),
-                content: row.content || {},
-                is_visible: row.is_visible,
-                display_order: row.display_order,
-                updated_at: row.updated_at
-            };
+        configCacheBySite = { cn: {}, intl: {} };
+
+        rows.forEach((row) => {
+            const section = String(row.section || '').trim().toLowerCase();
+            const entry = buildHomepageConfigRecord(row);
+            if (!section || entry.site === 'all') {
+                return;
+            }
+            configCacheBySite[entry.site][section] = entry;
         });
 
-        console.log('[Homepage] Loaded config for site:', getHomepageReadSite(), Object.keys(configCache));
+        configCache = isHomepageAggregateMode(currentReadSite)
+            ? buildAggregateHomepageConfigCache(configCacheBySite)
+            : { ...(configCacheBySite[normalizeHomepageSite(currentReadSite)] || {}) };
+
+        console.log('[Homepage] Loaded config for site:', currentReadSite, Object.keys(configCache));
 
         // Render all sections
         renderAllSections();
@@ -241,8 +508,11 @@ const HomepageAdmin = (() => {
         ['hero', 'prompts', 'shop', 'verify', 'guestbook', 'ticker'].forEach(section => {
             renderSection(section);
         });
+        renderHomepageReadModeBanner();
+        setHomepageEditorReadOnlyState();
         // Render visibility toggles for all sections
         renderAllVisibilityToggles();
+        renderHomepageAggregateSummaries();
     }
 
     function renderCurrentSection() {
@@ -538,6 +808,7 @@ const HomepageAdmin = (() => {
     // ============================================
 
     function toggleVisible(section) {
+        if (isHomepageAggregateMode()) return;
         const toggleEl = document.getElementById(`hp-${section}-visible`);
         if (!toggleEl) return;
         const isActive = toggleEl.classList.toggle('active');
@@ -545,6 +816,7 @@ const HomepageAdmin = (() => {
     }
 
     function toggleField(section, field) {
+        if (isHomepageAggregateMode()) return;
         const mapping = {
             'enable_auto': `hp-${section}-auto`,
             'enable_prompts': `hp-${section}-prompts`,
@@ -571,8 +843,8 @@ const HomepageAdmin = (() => {
 
     function setInputValue(id, value) {
         const el = document.getElementById(id);
-        if (el && value !== undefined && value !== null) {
-            el.value = value;
+        if (el) {
+            el.value = value ?? '';
         }
     }
 
@@ -583,7 +855,7 @@ const HomepageAdmin = (() => {
 
     function setSelectValue(id, value) {
         const el = document.getElementById(id);
-        if (el && value) el.value = value;
+        if (el) el.value = value ?? '';
     }
 
     function getSelectValue(id) {
@@ -599,9 +871,106 @@ const HomepageAdmin = (() => {
         return getHomepageReadSite();
     }
 
+    function setHomepageEditorReadOnlyState() {
+        const readOnly = isHomepageAggregateMode();
+
+        document.querySelectorAll('#module-homepage .hp-section-view').forEach((view) => {
+            view.classList.toggle('hp-section-view--readonly', readOnly);
+
+            view.querySelectorAll('.config-input, textarea, select').forEach((field) => {
+                if ('disabled' in field) {
+                    field.disabled = readOnly;
+                }
+                if ('readOnly' in field && field.tagName !== 'SELECT') {
+                    field.readOnly = readOnly;
+                }
+            });
+
+            view.querySelectorAll('[data-admin-action="homepage-save-section"], [data-admin-action="homepage-upload-screenshot"]').forEach((button) => {
+                if ('disabled' in button) {
+                    button.disabled = readOnly;
+                }
+                if (readOnly) {
+                    button.setAttribute('title', '全部站点视图仅支持查看，请切换到 CN 或 INTL 后编辑');
+                } else {
+                    button.removeAttribute('title');
+                }
+            });
+
+            view.querySelectorAll('.status-toggle').forEach((toggle) => {
+                toggle.classList.toggle('is-disabled', readOnly);
+                toggle.setAttribute('aria-disabled', readOnly ? 'true' : 'false');
+            });
+        });
+    }
+
+    function buildHomepageAggregateVisibilityRows(section) {
+        return ['cn', 'intl'].map((site) => {
+            const cfg = getHomepageSectionConfigBySite(section, site);
+            const isVisible = cfg?.is_visible !== false;
+            return `
+                <div class="hp-aggregate-visibility-row">
+                    <span class="hp-aggregate-visibility-site">${escapeHomepageHtml(getHomepageSiteLabel(site))}</span>
+                    <span class="status-badge ${isVisible ? 'active' : 'banned'}">${isVisible ? '已显示' : '已隐藏'}</span>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function renderHomepageAggregateVisibilityToggles() {
+        const sectionMap = {
+            hero: 'hero',
+            prompts: 'gallery',
+            shop: 'shop',
+            verify: 'verify',
+            guestbook: 'guestbook'
+        };
+
+        Object.entries(sectionMap).forEach(([hpSection, visSection]) => {
+            const view = document.querySelector(`.hp-section-view[data-hp-view="${hpSection}"]`);
+            if (!view) return;
+
+            const moduleContent = view.querySelector('.module-content');
+            if (!moduleContent) return;
+
+            moduleContent.querySelector('.sv-toggle-container')?.remove();
+
+            const info = SV_LABELS[visSection];
+            const container = document.createElement('div');
+            container.className = 'sv-toggle-container';
+            container.innerHTML = `
+                <div class="sv-toggle-bar sv-toggle-bar--readonly">
+                    <div class="sv-toggle-left">
+                        <i class="${info.icon}"></i>
+                        <span class="sv-toggle-label">${escapeHomepageHtml(info.label)} 显示状态</span>
+                        <span class="sv-toggle-site">${escapeHomepageHtml(getHomepageSiteLabel('all'))}</span>
+                    </div>
+                    <div class="sv-toggle-right">
+                        <span class="hp-readonly-chip">只读对比</span>
+                    </div>
+                </div>
+                <div class="hp-aggregate-visibility-grid">
+                    ${buildHomepageAggregateVisibilityRows(hpSection)}
+                </div>
+                <div class="sv-warning hp-aggregate-warning hp-aggregate-warning--visible">
+                    当前为全部站点视图，只展示各站分栏状态。切换到具体站点后才能调整显隐。
+                </div>
+            `;
+
+            moduleContent.insertBefore(container, moduleContent.firstChild);
+        });
+
+        renderFooterVisibilityToggle(getHomepageSiteLabel('all'));
+    }
+
     function renderAllVisibilityToggles() {
         const site = getAdminSite();
-        const siteLabel = site === 'cn' ? 'CN 站' : 'INTL 站';
+        const siteLabel = getHomepageSiteLabel(site);
+
+        if (isHomepageAggregateMode(site)) {
+            renderHomepageAggregateVisibilityToggles();
+            return;
+        }
 
         // Map: homepage section → visibility section
         const sectionMap = {
@@ -670,6 +1039,31 @@ const HomepageAdmin = (() => {
         const existing = moduleContent.querySelector('.sv-footer-card');
         if (existing) existing.remove();
 
+        if (isHomepageAggregateMode()) {
+            const card = document.createElement('div');
+            card.className = 'sv-footer-card';
+            card.innerHTML = `
+                <div class="sv-toggle-bar sv-toggle-bar--readonly">
+                    <div class="sv-toggle-left">
+                        <i class="${SV_LABELS.footer.icon}"></i>
+                        <span class="sv-toggle-label">${escapeHomepageHtml(SV_LABELS.footer.label)}</span>
+                        <span class="sv-toggle-site">${escapeHomepageHtml(siteLabel)}</span>
+                    </div>
+                    <div class="sv-toggle-right">
+                        <span class="hp-readonly-chip">只读对比</span>
+                    </div>
+                </div>
+                <div class="hp-aggregate-visibility-grid">
+                    ${buildHomepageAggregateVisibilityRows('footer')}
+                </div>
+                <div class="sv-warning hp-aggregate-warning hp-aggregate-warning--visible">
+                    当前为全部站点视图，只展示页脚状态。切换到具体站点后才能修改。
+                </div>
+            `;
+            moduleContent.appendChild(card);
+            return;
+        }
+
         const isVisible = configCache.footer?.is_visible !== false;
         const info = SV_LABELS.footer;
 
@@ -697,6 +1091,66 @@ const HomepageAdmin = (() => {
 
         bindSectionVisibilityToggle(card.querySelector('[data-homepage-visibility="footer"]'), 'footer');
         moduleContent.appendChild(card);
+    }
+
+    function renderHomepageAggregateSummaries() {
+        document.querySelectorAll('.hp-aggregate-readonly-card').forEach((node) => node.remove());
+
+        if (!isHomepageAggregateMode()) {
+            return;
+        }
+
+        ['hero', 'prompts', 'shop', 'verify', 'guestbook', 'ticker'].forEach((section) => {
+            const view = document.querySelector(`.hp-section-view[data-hp-view="${section}"]`);
+            const moduleContent = view?.querySelector('.module-content');
+            if (!moduleContent) return;
+
+            const card = document.createElement('div');
+            card.className = 'hp-aggregate-readonly-card';
+            card.innerHTML = `
+                <div class="hp-aggregate-readonly-card__header">
+                    <div class="hp-aggregate-readonly-card__title"><i class="fas fa-columns"></i> CN / INTL 配置概览</div>
+                    <div class="hp-aggregate-readonly-card__hint">聚合视图只做对比展示，不承载编辑。</div>
+                </div>
+                <div class="hp-aggregate-readonly-grid">
+                    ${['cn', 'intl'].map((site) => {
+                        const cfg = getHomepageSectionConfigBySite(section, site);
+                        const summaryLines = buildHomepageSectionSummaryLines(section, cfg);
+                        const updatedAt = cfg?.updated_at
+                            ? new Date(cfg.updated_at).toLocaleString('zh-CN')
+                            : '未更新';
+                        const isVisible = cfg?.is_visible !== false;
+
+                        return `
+                            <div class="hp-aggregate-site-card">
+                                <div class="hp-aggregate-site-card__header">
+                                    <span class="hp-aggregate-site-card__site">${escapeHomepageHtml(getHomepageSiteLabel(site))}</span>
+                                    <span class="status-badge ${isVisible ? 'active' : 'banned'}">${isVisible ? '已显示' : '已隐藏'}</span>
+                                </div>
+                                <div class="hp-aggregate-site-card__updated">最后更新: ${escapeHomepageHtml(updatedAt)}</div>
+                                <div class="hp-aggregate-site-card__lines">
+                                    ${summaryLines.map((line) => `
+                                        <div class="hp-aggregate-site-card__line">
+                                            <span class="hp-aggregate-site-card__label">${escapeHomepageHtml(line.label)}</span>
+                                            <span class="hp-aggregate-site-card__value">${line.value}</span>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+
+            const anchor = moduleContent.querySelector('.sv-toggle-container');
+            if (anchor?.nextSibling) {
+                moduleContent.insertBefore(card, anchor.nextSibling);
+            } else if (anchor) {
+                moduleContent.appendChild(card);
+            } else {
+                moduleContent.insertBefore(card, moduleContent.firstChild);
+            }
+        });
     }
 
     function bindSectionVisibilityToggle(input, section) {
@@ -886,6 +1340,7 @@ const HomepageAdmin = (() => {
 
     return {
         init,
+        prefetch,
         switchSection,
         saveSection,
         toggleVisible,

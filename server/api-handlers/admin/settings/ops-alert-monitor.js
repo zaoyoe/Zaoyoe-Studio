@@ -60,6 +60,20 @@ const ALERT_MONITOR_CATEGORIES = Object.freeze([
         description: '聚合优惠码滥用、0 价订单和短时扫货风险告警。',
         problem_types: ['shop_order_risk_anomaly'],
         recovery_types: ['shop_order_risk_recovered']
+    },
+    {
+        key: 'verify',
+        label: '验证服务',
+        description: '聚合验证额度不足、服务停摆、队列堆积、失败率飙升和综合事故相关告警。',
+        problem_types: ['verify_quota_low', 'verify_service_disabled', 'verify_queue_backlog', 'verify_failure_rate_spike', 'verify_incident_escalated'],
+        recovery_types: ['verify_incident_recovered']
+    },
+    {
+        key: 'security',
+        label: '安全与审计',
+        description: '聚合管理员异常登录等后台安全告警。',
+        problem_types: ['security_admin_login_anomaly'],
+        recovery_types: []
     }
 ]);
 
@@ -406,6 +420,9 @@ function getAlertTargetId(job = {}) {
         || normalizeText(payload.ticket_id, 160)
         || normalizeText(payload.product_id, 160)
         || normalizeText(payload.order_id, 160)
+        || normalizeText(payload.key_name, 160)
+        || normalizeText(payload.admin_email, 160)
+        || normalizeText(payload.client_ip, 160)
         || normalizeText(payload.provider_order_no, 160)
         || normalizeText(job.id, 160)
         || 'unknown';
@@ -490,6 +507,18 @@ function getAlertReference(job = {}) {
             value: normalizeText(payload.product_name, 160)
         };
     }
+    if (normalizeText(payload.key_name, 160)) {
+        return {
+            label: 'API Key',
+            value: normalizeText(payload.key_name, 160)
+        };
+    }
+    if (normalizeText(payload.admin_email, 160)) {
+        return {
+            label: '管理员',
+            value: normalizeText(payload.admin_email, 160)
+        };
+    }
     if (normalizeText(payload.discount_code, 160)) {
         return {
             label: '优惠码',
@@ -506,6 +535,12 @@ function getAlertReference(job = {}) {
         return {
             label: '共享登录 IP',
             value: normalizeText(payload.client_ip, 160)
+        };
+    }
+    if (normalizeText(payload.api_base_url, 160)) {
+        return {
+            label: 'API Base',
+            value: normalizeText(payload.api_base_url, 160)
         };
     }
     if (normalizeText(payload.login_signature_label, 160)) {
@@ -572,7 +607,10 @@ function buildAlertItem(job = {}, categoryKey = '', options = {}) {
         discount_code: normalizeText(payload.discount_code, 160) || null,
         buyer_label: normalizeText(payload.buyer_label, 160) || null,
         user_id: normalizeText(payload.user_id, 160) || null,
+        admin_email: normalizeText(payload.admin_email, 160) || null,
         client_ip: normalizeText(payload.client_ip, 160) || null,
+        key_name: normalizeText(payload.key_name, 160) || null,
+        api_base_url: normalizeText(payload.api_base_url, 240) || null,
         risk_level: normalizeText(payload.risk_level, 40) || null,
         risk_score: Number.isFinite(Number(payload.risk_score)) ? Math.max(0, Math.round(Number(payload.risk_score || 0))) : null,
         primary_action: normalizeText(payload.primary_action, 80) || null,
@@ -1083,6 +1121,24 @@ function getOpsAlertResolutionBucket(event = {}) {
         || resolutionText.includes('下架')
     ) {
         return { key: 'risk_control', label: '风控处置完成' };
+    }
+    if (
+        categoryKey === 'verify'
+        || resolutionText.includes('验证')
+        || resolutionText.includes('额度')
+        || resolutionText.includes('队列')
+        || resolutionText.includes('失败率')
+    ) {
+        return { key: 'verify', label: '验证服务已处理' };
+    }
+    if (
+        categoryKey === 'security'
+        || resolutionText.includes('安全')
+        || resolutionText.includes('异常登录')
+        || resolutionText.includes('管理员')
+        || resolutionText.includes('ip')
+    ) {
+        return { key: 'security', label: '安全告警已处理' };
     }
     if (
         categoryKey === 'payments'

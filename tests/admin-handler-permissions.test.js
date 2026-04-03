@@ -91,6 +91,66 @@ test('shop mutate handler requires shop.manage permission', async () => {
     });
 });
 
+test('shop inventory handler requires shop.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/shop/inventory.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'shop.manage' });
+    });
+});
+
+test('shop inventory detail handler requires shop.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/shop/inventory-detail.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'shop.manage' });
+    });
+});
+
+test('shop products handler requires shop.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/shop/products.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'shop.manage' });
+    });
+});
+
+test('shop categories handler requires shop.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/shop/categories.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'shop.manage' });
+    });
+});
+
+test('discounts mutate handler requires discounts.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/discounts/mutate.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'POST', body: { action: 'create', site: 'cn' }, headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'discounts.manage' });
+    });
+});
+
+test('discounts list handler requires discounts.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/discounts/list.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'discounts.manage' });
+    });
+});
+
 test('homepage config handler requires homepage.manage permission', async () => {
     await withAdminHandler('../server/api-handlers/admin/homepage/config.js', async ({ handler, state }) => {
         const res = createMockResponse();

@@ -56,7 +56,7 @@ async function withHomepageConfigHandler(options, callback) {
                                     throw new Error(`Unexpected table: ${table}`);
                                 }
 
-                                return {
+                                const selectQuery = {
                                     select() {
                                         return this;
                                     },
@@ -65,10 +65,19 @@ async function withHomepageConfigHandler(options, callback) {
                                         return this;
                                     },
                                     order() {
+                                        return this;
+                                    },
+                                    then(onFulfilled, onRejected) {
                                         return Promise.resolve({
                                             data: state.rows,
                                             error: null
-                                        });
+                                        }).then(onFulfilled, onRejected);
+                                    }
+                                };
+
+                                return {
+                                    select() {
+                                        return selectQuery;
                                     },
                                     update(payload) {
                                         state.updatePayload = payload;
@@ -96,6 +105,7 @@ async function withHomepageConfigHandler(options, callback) {
                 async parseJsonBody(req) {
                     return req.body || {};
                 },
+                normalizeAdminSite: adminLib.normalizeAdminSite,
                 requireWritableAdminSite: adminLib.requireWritableAdminSite,
                 sendJson(res, status, payload) {
                     res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -140,6 +150,32 @@ test('homepage config handler loads current site rows via admin api', async () =
         assert.equal(res.json().site, 'cn');
         assert.deepEqual(state.selectFilters, [{ field: 'site', value: 'cn' }]);
         assert.deepEqual(state.requireAdminCalls[0]?.config, { permission: 'homepage.manage' });
+    });
+});
+
+test('homepage config handler supports all-site aggregate reads without forcing cn fallback', async () => {
+    await withHomepageConfigHandler({
+        rows: [
+            { id: 'hero_cn', site: 'cn', section: 'hero', is_visible: true, display_order: 1, content: {} },
+            { id: 'hero_intl', site: 'intl', section: 'hero', is_visible: false, display_order: 1, content: {} }
+        ]
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            headers: {},
+            adminSite: 'all'
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().success, true);
+        assert.equal(res.json().site, 'all');
+        assert.equal(res.json().read_only, true);
+        assert.equal(res.json().mode, 'aggregate');
+        assert.deepEqual(state.selectFilters, []);
+        assert.equal(Array.isArray(res.json().rows), true);
+        assert.equal(res.json().rows.length, 2);
     });
 });
 

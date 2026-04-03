@@ -620,6 +620,7 @@
         }
 
         closeMobileSidebar();
+        scheduleAdminModulePrefetch(moduleId);
         return true;
     }
 
@@ -669,6 +670,10 @@
 
         if (normalizedModuleName === 'tickets' && typeof window.AdminTickets?.init === 'function') {
             window.AdminTickets.init();
+        }
+
+        if (normalizedModuleName === 'shop' && typeof window.ShopAdmin?.init === 'function') {
+            window.ShopAdmin.init();
         }
 
         syncAdminStudioModuleUrl(normalizedModuleName);
@@ -922,6 +927,141 @@
         window.setTimeout(runPrewarm, 280);
     }
 
+    function prewarmHomepageModule() {
+        if (typeof window.HomepageAdmin?.prefetch !== 'function') {
+            return false;
+        }
+
+        if (!hasModulePermission('homepage')) {
+            return false;
+        }
+
+        void Promise.resolve(window.HomepageAdmin.prefetch()).catch((error) => {
+            console.warn('[AdminStudio] Homepage prewarm failed:', error);
+        });
+        return true;
+    }
+
+    function scheduleHomepageModulePrewarm() {
+        if (window.__homepageModulePrewarmScheduled) {
+            return;
+        }
+
+        if (!(window.adminStudioAccessGranted === true || window.isAdmin === true || window.isSuperAdmin === true)) {
+            return;
+        }
+
+        if (!hasModulePermission('homepage')) {
+            return;
+        }
+
+        const runPrewarm = () => {
+            window.__homepageModulePrewarmScheduled = false;
+            if (!prewarmHomepageModule()) {
+                window.setTimeout(() => {
+                    scheduleHomepageModulePrewarm();
+                }, 240);
+            }
+        };
+
+        window.__homepageModulePrewarmScheduled = true;
+
+        if (typeof window.requestIdleCallback === 'function') {
+            window.requestIdleCallback(runPrewarm, { timeout: 1500 });
+            return;
+        }
+
+        window.setTimeout(runPrewarm, 320);
+    }
+
+    function clearAdminModulePrefetch() {
+        if (!window.__adminModulePrefetchHandle) {
+            return;
+        }
+
+        if (window.__adminModulePrefetchMode === 'idle' && typeof window.cancelIdleCallback === 'function') {
+            window.cancelIdleCallback(window.__adminModulePrefetchHandle);
+        } else {
+            window.clearTimeout(window.__adminModulePrefetchHandle);
+        }
+
+        window.__adminModulePrefetchHandle = 0;
+        window.__adminModulePrefetchMode = '';
+        window.__adminModulePrefetchTarget = '';
+    }
+
+    function getAdminModulePrefetcher(moduleId) {
+        const normalizedModuleId = normalizeAdminModuleId(moduleId);
+        switch (normalizedModuleId) {
+            case 'gallery':
+                return () => window.prefetchGalleryModule?.();
+            case 'comments':
+                return () => window.prefetchCommentsModule?.();
+            case 'shop':
+                return () => window.ShopAdmin?.scheduleShopTabPrefetch?.(window.ShopAdmin?.currentTab || 'products');
+            case 'points':
+                return () => window.prefetchPointsModule?.();
+            case 'payments':
+                return () => window.AdminPayments?.scheduleTabPrefetch?.(window.AdminPayments?.getActiveTab?.() || 'overview');
+            case 'settings':
+                return () => window.prefetchSettingsModule?.();
+            case 'ops-alerts':
+                return () => window.prefetchOpsAlertsModule?.();
+            default:
+                return null;
+        }
+    }
+
+    function scheduleAdminModulePrefetch(moduleId) {
+        const normalizedModuleId = normalizeAdminModuleId(moduleId);
+        const prefetcher = getAdminModulePrefetcher(normalizedModuleId);
+
+        clearAdminModulePrefetch();
+
+        if (!normalizedModuleId || typeof prefetcher !== 'function') {
+            return;
+        }
+
+        if (!(window.adminStudioAccessGranted === true || window.isAdmin === true || window.isSuperAdmin === true)) {
+            return;
+        }
+
+        if (!hasModulePermission(normalizedModuleId)) {
+            return;
+        }
+
+        const runPrefetch = () => {
+            window.__adminModulePrefetchHandle = 0;
+            window.__adminModulePrefetchMode = '';
+
+            const activeModule = normalizeAdminModuleId(
+                document.querySelector('.module-container.active')?.id?.replace(/^module-/, '')
+            );
+            if (activeModule !== normalizedModuleId) {
+                return;
+            }
+
+            try {
+                void Promise.resolve(prefetcher()).catch((error) => {
+                    console.warn(`[AdminStudio] Module prefetch failed for ${normalizedModuleId}:`, error);
+                });
+            } catch (error) {
+                console.warn(`[AdminStudio] Module prefetch failed for ${normalizedModuleId}:`, error);
+            }
+        };
+
+        window.__adminModulePrefetchTarget = normalizedModuleId;
+
+        if (typeof window.requestIdleCallback === 'function') {
+            window.__adminModulePrefetchMode = 'idle';
+            window.__adminModulePrefetchHandle = window.requestIdleCallback(runPrefetch, { timeout: 1200 });
+            return;
+        }
+
+        window.__adminModulePrefetchMode = 'timeout';
+        window.__adminModulePrefetchHandle = window.setTimeout(runPrefetch, 280);
+    }
+
     function switchModule(moduleName, options = {}) {
         const normalizedModuleName = normalizeAdminModuleId(moduleName) || 'gallery';
         if (!hasModulePermission(normalizedModuleName)) {
@@ -961,6 +1101,7 @@
     window.getFirstAccessibleAdminModule = getFirstAccessibleAdminModule;
     window.syncAdminStudioModuleAccess = syncAdminStudioModuleAccess;
     window.switchModule = switchModule;
+    window.scheduleAdminModulePrefetch = scheduleAdminModulePrefetch;
     bindAdminStudioStaticFallbackControls();
 
     window.addEventListener('permissionsLoaded', () => {
@@ -970,6 +1111,7 @@
         });
         scheduleAdminStudioPendingWorkspaceRestore();
         scheduleAdminChatPrewarm();
+        scheduleHomepageModulePrewarm();
     });
 
     document.addEventListener('click', (event) => {
@@ -994,9 +1136,11 @@
 
         console.log('Window loaded, checking shop module...');
         if (typeof window.ShopAdmin?.init === 'function') {
-            if (hasModulePermission('shop')) {
+            if (hasModulePermission('shop') && initialModule === 'shop') {
                 console.log('Auto-initializing ShopAdmin on page load...');
                 window.ShopAdmin.init();
+            } else if (hasModulePermission('shop')) {
+                console.log('Skipping ShopAdmin auto-init because shop is not the active startup module.');
             } else {
                 console.info('Skipping ShopAdmin auto-init because current admin lacks shop module access.');
             }
@@ -1007,6 +1151,8 @@
         if (window.adminStudioAccessGranted === true || window.isAdmin === true || window.isSuperAdmin === true) {
             scheduleAdminStudioPendingWorkspaceRestore();
             scheduleAdminChatPrewarm();
+            scheduleHomepageModulePrewarm();
+            scheduleAdminModulePrefetch(initialModule);
         }
     });
 }());

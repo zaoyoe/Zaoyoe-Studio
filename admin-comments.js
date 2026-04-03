@@ -16,6 +16,26 @@ let commentsData = [];
 let commentsLoading = false;
 let commentsInitialized = false;
 let filteredComments = []; // Global filtered data for export
+const COMMENTS_DEFAULT_PAGE_SIZE = 40;
+const COMMENTS_EXPORT_PAGE_SIZE = 200;
+const COMMENTS_PREFETCH_VIEWS = ['guestbook', 'gallery'];
+let retainedSelectedCommentIds = new Set();
+let pendingFocusedCommentId = '';
+let commentsPaginationState = {
+    page: 1,
+    pageSize: COMMENTS_DEFAULT_PAGE_SIZE,
+    totalItems: 0,
+    totalPages: 1
+};
+let pendingCommentsLoadRequest = null;
+const commentsViewCache = {
+    guestbook: { key: '', payload: null },
+    gallery: { key: '', payload: null }
+};
+let commentsViewPrefetchHandle = 0;
+let commentsViewPrefetchMode = '';
+let commentsViewPrefetchTaskKey = '';
+let commentsViewPrefetchPromise = null;
 
 // Filter state
 const filterState = {
@@ -44,6 +64,17 @@ function buildAdminCommentsUrl(route, params = {}) {
 
     Object.entries(params || {}).forEach(([key, value]) => {
         if (value === undefined || value === null || value === '') return;
+
+        if (Array.isArray(value)) {
+            value
+                .map((entry) => String(entry || '').trim())
+                .filter(Boolean)
+                .forEach((entry) => {
+                    url.searchParams.append(key, entry);
+                });
+            return;
+        }
+
         url.searchParams.set(key, String(value));
     });
 
@@ -74,12 +105,33 @@ async function fetchAdminCommentSummary(site = getCommentsReadSite()) {
     return parseAdminCommentsResponse(response);
 }
 
-async function fetchAdminCommentsList({ view, site = getCommentsReadSite(), dateFrom = '', dateTo = '' } = {}) {
+async function fetchAdminCommentsList({
+    view,
+    site = getCommentsReadSite(),
+    dateFrom = '',
+    dateTo = '',
+    page = 1,
+    pageSize = COMMENTS_DEFAULT_PAGE_SIZE,
+    status = 'all',
+    type = 'all',
+    source = 'all',
+    hasImage = false,
+    search = '',
+    searchTag = []
+} = {}) {
     const response = await (window.AdminApi?.fetch || fetch)(buildAdminCommentsUrl('comments/list', {
         view,
         site,
         dateFrom,
-        dateTo
+        dateTo,
+        page,
+        pageSize,
+        status: status !== 'all' ? status : '',
+        type: type !== 'all' ? type : '',
+        source: source !== 'all' ? source : '',
+        hasImage: hasImage ? '1' : '',
+        search,
+        searchTag
     }), {
         credentials: 'include'
     });
@@ -101,7 +153,9 @@ async function moderateCommentsViaAdminApi({ items = [], site, action = 'delete_
         })
     });
 
-    return parseAdminCommentsResponse(response);
+    const payload = await parseAdminCommentsResponse(response);
+    invalidateCommentsViewCache();
+    return payload;
 }
 
 async function fetchAdminCommentBlockState(userId, site = getCommentsReadSite()) {
@@ -131,7 +185,9 @@ async function mutateAdminCommentBlockState({ action, userId, scope, days = null
         })
     });
 
-    return parseAdminCommentsResponse(response);
+    const payload = await parseAdminCommentsResponse(response);
+    invalidateCommentsViewCache();
+    return payload;
 }
 
 async function toggleCommentPinViaAdminApi({ id, promptId, currentStatus, site } = {}) {
@@ -150,7 +206,9 @@ async function toggleCommentPinViaAdminApi({ id, promptId, currentStatus, site }
         })
     });
 
-    return parseAdminCommentsResponse(response);
+    const payload = await parseAdminCommentsResponse(response);
+    invalidateCommentsViewCache();
+    return payload;
 }
 
 function buildCommentLoadingSkeleton(count = 6) {
@@ -181,6 +239,78 @@ function buildCommentLoadingSkeleton(count = 6) {
     `).join('');
 }
 
+function buildCommentContextUrl(comment = {}) {
+    const contextId = String(comment?.context || '').trim();
+    const commentId = String(comment?.id || '').trim();
+
+    if (!contextId) {
+        return '';
+    }
+
+    if (comment?.type === 'guestbook') {
+        const url = new URL('guestbook.html', window.location.origin);
+        url.searchParams.set('messageId', contextId);
+        if (comment?.record_type !== 'message' && commentId) {
+            url.searchParams.set('commentId', commentId);
+        }
+        return `${url.pathname}${url.search}`;
+    }
+
+    const url = new URL('prompts.html', window.location.origin);
+    url.searchParams.set('id', contextId);
+    url.searchParams.set('comments', '1');
+    if (commentId) {
+        url.searchParams.set('commentId', commentId);
+    }
+    return `${url.pathname}${url.search}`;
+}
+
+function getCommentCurrentScopeBlockState(comment) {
+    const state = comment?.user_block_state && typeof comment.user_block_state === 'object'
+        ? comment.user_block_state
+        : {};
+    const commentType = comment?.type === 'gallery' ? 'gallery' : 'guestbook';
+
+    if (state.hasGlobalBlock === true) {
+        return {
+            blocked: true,
+            label: '全站封禁',
+            kind: 'global'
+        };
+    }
+
+    if (commentType === 'guestbook' && state.isGuestbookBlocked === true) {
+        return {
+            blocked: true,
+            label: '留言板封禁',
+            kind: 'guestbook'
+        };
+    }
+
+    if (commentType === 'gallery' && state.isGalleryBlocked === true) {
+        return {
+            blocked: true,
+            label: '画廊封禁',
+            kind: 'gallery'
+        };
+    }
+
+    return {
+        blocked: false,
+        label: '',
+        kind: ''
+    };
+}
+
+function buildCommentUserBlockBadge(comment) {
+    const blockState = getCommentCurrentScopeBlockState(comment);
+    if (!blockState.blocked) {
+        return '';
+    }
+
+    return `<span class="comment-block-badge comment-block-badge--${blockState.kind}">${escapeHtml(blockState.label)}</span>`;
+}
+
 /**
  * Initialize Comments Module
  */
@@ -204,7 +334,7 @@ function initCommentsModule() {
     window.currentCommentView = currentCommentView;
 
     loadCommentStats();
-    loadComments(currentCommentView);
+    loadComments(currentCommentView, { resetPage: true });
     setupCommentEventHandlers();
 }
 
@@ -212,20 +342,6 @@ function initCommentsModule() {
  * Setup event handlers
  */
 function setupCommentEventHandlers() {
-    // Search input (searches both content AND usernames)
-    const searchInput = document.getElementById('commentSearch');
-    if (searchInput) {
-        let searchTimeout;
-        searchInput.addEventListener('input', (e) => {
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => {
-                // Set user filter to search term so it also filters by author
-                filterState.user = e.target.value.trim();
-                loadComments(currentCommentView);
-            }, 300);
-        });
-    }
-
     // Setup filter dropdowns
     setupFilterDropdowns();
 }
@@ -288,7 +404,7 @@ function setupFilterDropdowns() {
 
             // Close dropdown and reload
             dropdown.classList.remove('open');
-            loadComments(currentCommentView);
+            loadComments(currentCommentView, { resetPage: true });
         });
     });
 
@@ -300,7 +416,7 @@ function setupFilterDropdowns() {
     if (hasImageCheckbox) {
         hasImageCheckbox.addEventListener('change', () => {
             filterState.hasImage = hasImageCheckbox.checked;
-            loadComments(currentCommentView);
+            loadComments(currentCommentView, { resetPage: true });
         });
     }
 
@@ -316,7 +432,7 @@ function setupFilterDropdowns() {
                     filterState.searchTags.push(val);
                     filterState.currentSearchInput = ''; // Clear live input state
                     e.target.value = ''; // Clear input UI
-                    loadComments(currentCommentView);
+                    loadComments(currentCommentView, { resetPage: true });
                 }
             }
         });
@@ -327,7 +443,7 @@ function setupFilterDropdowns() {
             clearTimeout(timeout);
             timeout = setTimeout(() => {
                 filterState.currentSearchInput = e.target.value.trim();
-                loadComments(currentCommentView);
+                loadComments(currentCommentView, { resetPage: true });
             }, 300);
         });
     }
@@ -353,7 +469,7 @@ function setupFilterDropdowns() {
             // Clear preset selections
             dateDropdown?.querySelectorAll('.filter-option').forEach(o => o.classList.remove('selected'));
 
-            loadComments(currentCommentView);
+            loadComments(currentCommentView, { resetPage: true });
         }
     };
 
@@ -546,7 +662,7 @@ function switchCommentView(view) {
     document.querySelector(`[data-comment-view="${view}"]`)?.classList.add('active');
 
     // Load comments for the selected view
-    loadComments(view);
+    loadComments(view, { resetPage: true });
 }
 
 /**
@@ -646,7 +762,7 @@ window.removeFilter = function (type, id) {
         filterState.searchTags = filterState.searchTags.filter(t => t !== id);
     }
 
-    loadComments(currentCommentView);
+    loadComments(currentCommentView, { resetPage: true });
 };
 
 function updateDropdownUI(filterType, value) {
@@ -665,19 +781,492 @@ function updateDropdownUI(filterType, value) {
     if (label) label.textContent = getDefaultLabel(filterType);
 }
 
+function normalizeCommentsPage(value, fallback = 1) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function resolveCommentsDateRange() {
+    const now = new Date();
+
+    if (filterState.date === 'today') {
+        return {
+            dateFrom: new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString(),
+            dateTo: ''
+        };
+    }
+
+    if (filterState.date === 'week') {
+        return {
+            dateFrom: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+            dateTo: ''
+        };
+    }
+
+    if (filterState.date === 'month') {
+        return {
+            dateFrom: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+            dateTo: ''
+        };
+    }
+
+    if (filterState.date === 'custom') {
+        return {
+            dateFrom: document.getElementById('filterDateFrom')?.value || filterState.dateFrom || '',
+            dateTo: document.getElementById('filterDateTo')?.value || filterState.dateTo || ''
+        };
+    }
+
+    return {
+        dateFrom: '',
+        dateTo: ''
+    };
+}
+
+function buildCommentsListRequestParams(view, overrides = {}) {
+    const { dateFrom, dateTo } = resolveCommentsDateRange();
+
+    return {
+        view,
+        site: overrides.site || getCommentsReadSite(),
+        dateFrom,
+        dateTo,
+        page: overrides.page ?? commentsPaginationState.page,
+        pageSize: overrides.pageSize ?? commentsPaginationState.pageSize,
+        status: filterState.status,
+        type: filterState.type,
+        source: filterState.source,
+        hasImage: filterState.hasImage,
+        search: filterState.currentSearchInput,
+        searchTag: filterState.searchTags
+    };
+}
+
+function buildCommentsViewCacheKey(requestParams = {}) {
+    const tags = Array.isArray(requestParams.searchTag)
+        ? requestParams.searchTag.map((tag) => String(tag || '').trim()).filter(Boolean).sort()
+        : [];
+
+    return JSON.stringify({
+        view: requestParams.view === 'gallery' ? 'gallery' : 'guestbook',
+        site: requestParams.site || 'all',
+        dateFrom: requestParams.dateFrom || '',
+        dateTo: requestParams.dateTo || '',
+        page: normalizeCommentsPage(requestParams.page, 1),
+        pageSize: normalizeCommentsPage(requestParams.pageSize, COMMENTS_DEFAULT_PAGE_SIZE),
+        status: requestParams.status || 'all',
+        type: requestParams.type || 'all',
+        source: requestParams.source || 'all',
+        hasImage: requestParams.hasImage === true,
+        search: String(requestParams.search || '').trim(),
+        searchTag: tags
+    });
+}
+
+function getCommentsCachedPayload(view, requestParams = {}) {
+    const normalizedView = view === 'gallery' ? 'gallery' : 'guestbook';
+    const cached = commentsViewCache[normalizedView];
+    if (!cached?.payload) {
+        return null;
+    }
+
+    return cached.key === buildCommentsViewCacheKey(requestParams)
+        ? cached.payload
+        : null;
+}
+
+function storeCommentsCachedPayload(view, requestParams = {}, payload = null) {
+    const normalizedView = view === 'gallery' ? 'gallery' : 'guestbook';
+    commentsViewCache[normalizedView] = {
+        key: buildCommentsViewCacheKey(requestParams),
+        payload
+    };
+}
+
+function clearCommentsViewPrefetch() {
+    if (!commentsViewPrefetchHandle) {
+        return;
+    }
+
+    if (commentsViewPrefetchMode === 'idle' && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(commentsViewPrefetchHandle);
+    } else {
+        window.clearTimeout(commentsViewPrefetchHandle);
+    }
+
+    commentsViewPrefetchHandle = 0;
+    commentsViewPrefetchMode = '';
+}
+
+function invalidateCommentsViewCache(view = '') {
+    clearCommentsViewPrefetch();
+
+    if (view) {
+        const normalizedView = view === 'gallery' ? 'gallery' : 'guestbook';
+        commentsViewCache[normalizedView] = {
+            key: '',
+            payload: null
+        };
+        return;
+    }
+
+    COMMENTS_PREFETCH_VIEWS.forEach((cacheView) => {
+        commentsViewCache[cacheView] = {
+            key: '',
+            payload: null
+        };
+    });
+}
+
+function isCommentsModuleActive() {
+    const module = document.getElementById('module-comments');
+    return Boolean(module && module.classList.contains('active') && window.getComputedStyle(module).display !== 'none');
+}
+
+function prefetchCommentsView(view) {
+    const normalizedView = view === 'gallery' ? 'gallery' : 'guestbook';
+    const requestParams = buildCommentsListRequestParams(normalizedView, { page: 1 });
+    const taskKey = buildCommentsViewCacheKey(requestParams);
+    const cachedPayload = getCommentsCachedPayload(normalizedView, requestParams);
+
+    if (cachedPayload) {
+        return Promise.resolve(cachedPayload);
+    }
+
+    if (commentsViewPrefetchPromise && commentsViewPrefetchTaskKey === taskKey) {
+        return commentsViewPrefetchPromise;
+    }
+
+    commentsViewPrefetchTaskKey = taskKey;
+    commentsViewPrefetchPromise = fetchAdminCommentsList(requestParams)
+        .then((payload) => {
+            storeCommentsCachedPayload(normalizedView, requestParams, payload);
+            return payload;
+        })
+        .finally(() => {
+            if (commentsViewPrefetchTaskKey === taskKey) {
+                commentsViewPrefetchTaskKey = '';
+                commentsViewPrefetchPromise = null;
+            }
+        });
+
+    return commentsViewPrefetchPromise;
+}
+
+function scheduleCommentsViewPrefetch(activeView = currentCommentView) {
+    const normalizedView = activeView === 'gallery' ? 'gallery' : 'guestbook';
+    const siblingViews = COMMENTS_PREFETCH_VIEWS.filter((view) => view !== normalizedView);
+    clearCommentsViewPrefetch();
+
+    if (!isCommentsModuleActive() || siblingViews.length === 0) {
+        return false;
+    }
+
+    const runPrefetch = async () => {
+        commentsViewPrefetchHandle = 0;
+        commentsViewPrefetchMode = '';
+
+        if (!isCommentsModuleActive()) {
+            return;
+        }
+
+        for (const view of siblingViews) {
+            if (!isCommentsModuleActive()) {
+                break;
+            }
+
+            try {
+                await prefetchCommentsView(view);
+            } catch (error) {
+                console.warn(`[AdminComments] Failed to prefetch ${view} comments view:`, error);
+            }
+        }
+    };
+
+    if (typeof window.requestIdleCallback === 'function') {
+        commentsViewPrefetchMode = 'idle';
+        commentsViewPrefetchHandle = window.requestIdleCallback(runPrefetch, { timeout: 1200 });
+        return true;
+    }
+
+    commentsViewPrefetchMode = 'timeout';
+    commentsViewPrefetchHandle = window.setTimeout(runPrefetch, 280);
+    return true;
+}
+
+function prefetchCommentsModule() {
+    return scheduleCommentsViewPrefetch(currentCommentView);
+}
+
+function updateCommentsPaginationState(pagination = {}, fallbackCount = 0) {
+    commentsPaginationState.page = normalizeCommentsPage(pagination.page, commentsPaginationState.page);
+    commentsPaginationState.pageSize = normalizeCommentsPage(pagination.pageSize, commentsPaginationState.pageSize || COMMENTS_DEFAULT_PAGE_SIZE);
+    commentsPaginationState.totalItems = Math.max(0, Number.parseInt(pagination.totalItems, 10) || fallbackCount || 0);
+    commentsPaginationState.totalPages = Math.max(1, Number.parseInt(pagination.totalPages, 10) || (commentsPaginationState.totalItems > 0
+        ? Math.ceil(commentsPaginationState.totalItems / commentsPaginationState.pageSize)
+        : 1));
+}
+
+function renderCommentsPagination() {
+    const container = document.getElementById('adminCommentsPagination');
+    if (!container) return;
+
+    const totalItems = Math.max(0, Number(commentsPaginationState.totalItems || 0));
+    const totalPages = Math.max(1, Number(commentsPaginationState.totalPages || 1));
+    const currentPage = Math.min(Math.max(1, Number(commentsPaginationState.page || 1)), totalPages);
+
+    if (totalItems <= 0) {
+        container.innerHTML = '';
+        return;
+    }
+
+    container.innerHTML = `
+        <div class="pagination-shell comments-pagination-shell__inner">
+            <div class="pagination-control">
+                <button class="pagination-btn pagination-btn--step"
+                    type="button"
+                    data-admin-action="comments-pagination-go"
+                    data-comments-page="${currentPage - 1}"
+                    ${currentPage <= 1 ? 'disabled' : ''}>
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <input type="number"
+                    class="pagination-input"
+                    value="${currentPage}"
+                    min="1"
+                    max="${totalPages}"
+                    data-admin-change-action="comments-pagination-go"
+                    data-comments-page-max="${totalPages}">
+                <button class="pagination-btn pagination-btn--step"
+                    type="button"
+                    data-admin-action="comments-pagination-go"
+                    data-comments-page="${currentPage + 1}"
+                    ${currentPage >= totalPages ? 'disabled' : ''}>
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+            <div class="pagination-total pagination-total--compact">第 ${currentPage} / ${totalPages} 页 · 共 ${totalItems} 条</div>
+        </div>
+    `;
+}
+
+function changeCommentsPage(page) {
+    const nextPage = Math.min(
+        Math.max(normalizeCommentsPage(page, commentsPaginationState.page), 1),
+        Math.max(1, Number(commentsPaginationState.totalPages || 1))
+    );
+
+    if (nextPage === commentsPaginationState.page && commentsData.length > 0) {
+        return;
+    }
+
+    loadComments(currentCommentView, { page: nextPage });
+}
+
+function collectVisibleSelectedCommentIds() {
+    return new Set(
+        Array.from(document.querySelectorAll('.comment-checkbox:checked'))
+            .map((checkbox) => String(checkbox.dataset.id || '').trim())
+            .filter(Boolean)
+    );
+}
+
+function clearRetainedCommentSelection() {
+    retainedSelectedCommentIds = new Set();
+}
+
+function prepareCommentReloadState({ preserveSelection = false, removeSelectionIds = [], focusCommentId = '' } = {}) {
+    retainedSelectedCommentIds = preserveSelection
+        ? collectVisibleSelectedCommentIds()
+        : new Set();
+
+    (Array.isArray(removeSelectionIds) ? removeSelectionIds : []).forEach((id) => {
+        const normalizedId = String(id || '').trim();
+        if (normalizedId) {
+            retainedSelectedCommentIds.delete(normalizedId);
+        }
+    });
+
+    pendingFocusedCommentId = String(focusCommentId || '').trim();
+}
+
+function restoreCommentSelectionState() {
+    const checkboxes = document.querySelectorAll('.comment-checkbox');
+    const visibleSelectedIds = new Set();
+
+    checkboxes.forEach((checkbox) => {
+        const commentId = String(checkbox.dataset.id || '').trim();
+        const checked = commentId && retainedSelectedCommentIds.has(commentId);
+        checkbox.checked = checked;
+        if (checked) {
+            visibleSelectedIds.add(commentId);
+        }
+
+        const item = checkbox.closest('.comment-admin-item');
+        if (item) {
+            item.classList.toggle('selected', checked);
+        }
+    });
+
+    retainedSelectedCommentIds = visibleSelectedIds;
+    updateSelectionUI(visibleSelectedIds.size);
+
+    const selectAll = document.getElementById('selectAllComments');
+    if (selectAll) {
+        selectAll.checked = visibleSelectedIds.size > 0 && visibleSelectedIds.size === checkboxes.length;
+        selectAll.indeterminate = visibleSelectedIds.size > 0 && visibleSelectedIds.size < checkboxes.length;
+    }
+}
+
+function focusCommentCard(commentId) {
+    const normalizedId = String(commentId || '').trim();
+    if (!normalizedId) {
+        return;
+    }
+
+    const escapedId = typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+        ? CSS.escape(normalizedId)
+        : normalizedId.replace(/["\\]/g, '\\$&');
+    const target = document.querySelector(`.comment-admin-item[data-id="${escapedId}"]`);
+    if (!target) {
+        return;
+    }
+
+    target.classList.remove('comment-admin-item--focused');
+    void target.offsetWidth;
+    target.classList.add('comment-admin-item--focused');
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    setTimeout(() => {
+        target.classList.remove('comment-admin-item--focused');
+    }, 2200);
+}
+
+function findAdjacentCommentId(commentId, excludedIds = []) {
+    const normalizedId = String(commentId || '').trim();
+    if (!normalizedId) {
+        return '';
+    }
+
+    const excluded = new Set(
+        (Array.isArray(excludedIds) ? excludedIds : [])
+            .map((id) => String(id || '').trim())
+            .filter(Boolean)
+    );
+    const items = Array.from(document.querySelectorAll('.comment-admin-item'));
+    const currentIndex = items.findIndex((item) => item.dataset.id === normalizedId);
+
+    if (currentIndex === -1) {
+        return '';
+    }
+
+    for (let offset = 1; offset < items.length; offset += 1) {
+        const nextItem = items[currentIndex + offset];
+        if (nextItem?.dataset?.id && !excluded.has(nextItem.dataset.id)) {
+            return nextItem.dataset.id;
+        }
+
+        const prevItem = items[currentIndex - offset];
+        if (prevItem?.dataset?.id && !excluded.has(prevItem.dataset.id)) {
+            return prevItem.dataset.id;
+        }
+    }
+
+    return '';
+}
+
+function findVisibleCommentIdByUser(userId) {
+    const normalizedUserId = String(userId || '').trim();
+    if (!normalizedUserId) {
+        return '';
+    }
+
+    const escapedUserId = typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+        ? CSS.escape(normalizedUserId)
+        : normalizedUserId.replace(/["\\]/g, '\\$&');
+    const match = document.querySelector(`.comment-admin-item[data-user-id="${escapedUserId}"]`);
+    return String(match?.dataset?.id || '').trim();
+}
+
+function refreshCommentsForUserStatus(userId) {
+    const focusCommentId = findVisibleCommentIdByUser(userId);
+    prepareCommentReloadState({
+        preserveSelection: true,
+        focusCommentId
+    });
+    loadComments(currentCommentView, {
+        preserveSelection: true,
+        focusCommentId
+    });
+}
+
+async function fetchAllFilteredCommentsForExport(view) {
+    const baseParams = buildCommentsListRequestParams(view, {
+        page: 1,
+        pageSize: COMMENTS_EXPORT_PAGE_SIZE
+    });
+    const firstPayload = await fetchAdminCommentsList(baseParams);
+    const pages = Math.max(1, Number(firstPayload?.pagination?.totalPages || 1));
+    const allRows = Array.isArray(firstPayload?.comments) ? [...firstPayload.comments] : [];
+
+    for (let page = 2; page <= pages; page += 1) {
+        const payload = await fetchAdminCommentsList({
+            ...baseParams,
+            page
+        });
+        if (Array.isArray(payload?.comments) && payload.comments.length > 0) {
+            allRows.push(...payload.comments);
+        }
+    }
+
+    return allRows;
+}
+
 
 /**
  * Load comments from database
  */
-async function loadComments(view) {
+async function loadComments(view, options = {}) {
     console.log('loadComments called for view:', view);
     // Render active filters
     renderFilterTags();
 
+    const normalizedView = view === 'gallery' ? 'gallery' : 'guestbook';
+    const normalizedOptions = {
+        resetPage: options?.resetPage === true,
+        preserveSelection: options?.preserveSelection === true,
+        focusCommentId: String(options?.focusCommentId || '').trim(),
+        page: options?.page == null ? null : normalizeCommentsPage(options.page, commentsPaginationState.page)
+    };
+
     if (commentsLoading) {
-        console.warn('Comments already loading, skipping...');
+        pendingCommentsLoadRequest = {
+            view: normalizedView,
+            options: normalizedOptions
+        };
+        console.warn('Comments already loading, queueing latest request...');
         return;
     }
+
+    if (normalizedOptions.resetPage) {
+        commentsPaginationState.page = 1;
+    }
+    if (normalizedOptions.page != null) {
+        commentsPaginationState.page = normalizedOptions.page;
+    }
+    if (!normalizedOptions.preserveSelection) {
+        clearRetainedCommentSelection();
+        updateSelectionUI(0);
+        const selectAll = document.getElementById('selectAllComments');
+        if (selectAll) {
+            selectAll.checked = false;
+            selectAll.indeterminate = false;
+        }
+    }
+    if (normalizedOptions.focusCommentId) {
+        pendingFocusedCommentId = normalizedOptions.focusCommentId;
+    }
+
     commentsLoading = true;
 
     const listContainer = document.getElementById('adminCommentList');
@@ -690,29 +1279,52 @@ async function loadComments(view) {
     listContainer.innerHTML = buildCommentLoadingSkeleton();
 
     try {
-        const dateFrom = document.getElementById('filterDateFrom')?.value || ''; // Fixed ID
-        const dateTo = document.getElementById('filterDateTo')?.value || ''; // Fixed ID
-
-        console.log('Fetching comments...', { view, dateFrom, dateTo, site: getCommentsReadSite() });
-        const payload = await fetchAdminCommentsList({
-            view,
-            site: getCommentsReadSite(),
-            dateFrom,
-            dateTo
+        const requestParams = buildCommentsListRequestParams(normalizedView, {
+            page: commentsPaginationState.page
         });
+        const requestCacheKey = buildCommentsViewCacheKey(requestParams);
+        const cachedPayload = getCommentsCachedPayload(normalizedView, requestParams);
+        const inFlightPrefetch = !cachedPayload
+            && commentsViewPrefetchPromise
+            && commentsViewPrefetchTaskKey === requestCacheKey
+            ? commentsViewPrefetchPromise
+            : null;
+
+        console.log('Fetching comments...', requestParams);
+        const payload = cachedPayload || await (inFlightPrefetch || fetchAdminCommentsList(requestParams));
+        if (!cachedPayload) {
+            storeCommentsCachedPayload(normalizedView, requestParams, payload);
+        }
         const data = Array.isArray(payload?.comments) ? payload.comments : [];
 
         commentsData = data;
-        // Apply filters before rendering
-        filteredComments = applyFilters(data);
+        filteredComments = data;
+        updateCommentsPaginationState(payload?.pagination, data.length);
         renderCommentList(filteredComments);
+        renderCommentsPagination();
+        restoreCommentSelectionState();
+        if (pendingFocusedCommentId) {
+            focusCommentCard(pendingFocusedCommentId);
+            pendingFocusedCommentId = '';
+        }
+        scheduleCommentsViewPrefetch(normalizedView);
 
     } catch (error) {
         console.error('Error loading comments:', error);
+        commentsPaginationState.totalItems = 0;
+        commentsPaginationState.totalPages = 1;
+        clearRetainedCommentSelection();
+        pendingFocusedCommentId = '';
         listContainer.innerHTML = `<p class="error-text">加载失败: ${error.message || '未知错误'}</p>`;
+        renderCommentsPagination();
     } finally {
         commentsLoading = false;
         console.log('Comments loading finished.');
+        if (pendingCommentsLoadRequest) {
+            const nextRequest = pendingCommentsLoadRequest;
+            pendingCommentsLoadRequest = null;
+            void loadComments(nextRequest.view, nextRequest.options);
+        }
     }
 }
 
@@ -722,9 +1334,6 @@ async function loadComments(view) {
 function renderCommentList(comments) {
     const container = document.getElementById('adminCommentList');
     if (!container) return;
-
-    // Reset selection state
-    resetSelection();
 
     if (comments.length === 0) {
         container.innerHTML = '<p class="empty-text">暂无评论</p>';
@@ -738,6 +1347,9 @@ function renderCommentList(comments) {
             ? `<img class="item-avatar-image" src="${escapeHtml(comment.avatar)}" alt="" loading="lazy" decoding="async">`
             : avatarInitial;
         const timeStr = formatTimeAgo(comment.created_at);
+        const contextUrl = buildCommentContextUrl(comment);
+        const blockState = getCommentCurrentScopeBlockState(comment);
+        const blockBadge = buildCommentUserBlockBadge(comment);
         // Reply badge - shown for guestbook replies and nested gallery replies
         const isReply = isReplyLevelComment(comment);
         const replyBadge = isReply ? `<span class="reply-badge">Reply</span>` : '';
@@ -746,7 +1358,7 @@ function renderCommentList(comments) {
         // We put it in content for Grid, and List view will handle flow via CSS
 
         return `
-            <div class="comment-admin-item" data-id="${comment.id}" data-type="${comment.type}" data-record-type="${comment.record_type || ''}" data-comments-action="toggle-selection" data-checkbox-id="cb-${comment.id}">
+            <div class="comment-admin-item" data-id="${comment.id}" data-type="${comment.type}" data-user-id="${escapeHtml(comment.user_id || '')}" data-record-type="${comment.record_type || ''}" data-comments-action="toggle-selection" data-checkbox-id="cb-${comment.id}">
                 
                 <!-- 1. Checkbox Wrapper -->
                 <div class="item-checkbox-wrapper">
@@ -761,7 +1373,10 @@ function renderCommentList(comments) {
                         ${avatarMarkup}
                     </div>
                     <div class="item-meta">
-                        <span class="item-name" title="${escapeHtml(comment.author)}">${escapeHtml(comment.author)}</span>
+                        <div class="item-meta-row">
+                            <span class="item-name" title="${escapeHtml(comment.author)}">${escapeHtml(comment.author)}</span>
+                            ${blockBadge}
+                        </div>
                         <span class="item-time">${timeStr}</span>
                     </div>
                 </div>
@@ -793,14 +1408,14 @@ function renderCommentList(comments) {
 
                     ${window.hasPermission && window.hasPermission('users.manage') ? `
                     <div class="action-block-wrapper">
-                        <button class="action-btn action-block" type="button" data-comments-action="toggle-block-dropdown" data-user-id="${encodeURIComponent(comment.user_id || '')}" title="用户管理">
+                        <button class="action-btn action-block${blockState.blocked ? ' action-btn--blocked' : ''}" type="button" data-comments-action="toggle-block-dropdown" data-user-id="${encodeURIComponent(comment.user_id || '')}" title="${blockState.blocked ? `${blockState.label}，点击管理` : '用户管理'}">
                             <i class="fas fa-ban"></i>
                         </button>
                     </div>
                     ` : ''}
 
                     ${comment.context ?
-                `<button class="action-view" type="button" data-comments-action="view-comment-context" data-prompt-id="${encodeURIComponent(comment.context)}" data-comment-id="${encodeURIComponent(comment.id)}" title="查看上下文">
+                `<button class="action-view" type="button" data-comments-action="view-comment-context" data-context-url="${encodeURIComponent(contextUrl)}" title="查看上下文">
                         <i class="fas fa-external-link-alt"></i>
                     </button>` : ''}
                     
@@ -839,6 +1454,7 @@ function toggleCommentSelection(event, checkboxId) {
  * Reset selection state
  */
 function resetSelection() {
+    clearRetainedCommentSelection();
     const selectAll = document.getElementById('selectAllComments');
     if (selectAll) selectAll.checked = false;
     updateSelectionUI(0);
@@ -850,6 +1466,7 @@ function resetSelection() {
 function toggleSelectAll() {
     const selectAll = document.getElementById('selectAllComments');
     const checkboxes = document.querySelectorAll('.comment-checkbox');
+    const nextSelectedIds = new Set();
 
     checkboxes.forEach(cb => {
         cb.checked = selectAll.checked;
@@ -857,8 +1474,15 @@ function toggleSelectAll() {
         if (item) {
             item.classList.toggle('selected', selectAll.checked);
         }
+        if (selectAll.checked) {
+            const commentId = String(cb.dataset.id || '').trim();
+            if (commentId) {
+                nextSelectedIds.add(commentId);
+            }
+        }
     });
 
+    retainedSelectedCommentIds = nextSelectedIds;
     updateSelectionUI(selectAll.checked ? checkboxes.length : 0);
 }
 
@@ -869,6 +1493,11 @@ function updateSelection() {
     const checkboxes = document.querySelectorAll('.comment-checkbox');
     const checked = document.querySelectorAll('.comment-checkbox:checked');
     const selectAll = document.getElementById('selectAllComments');
+    retainedSelectedCommentIds = new Set(
+        Array.from(checked)
+            .map((checkbox) => String(checkbox.dataset.id || '').trim())
+            .filter(Boolean)
+    );
 
     // Update select all checkbox
     if (selectAll) {
@@ -911,52 +1540,57 @@ function updateSelectionUI(count) {
  * Export data function
  * format: 'csv' | 'json'
  */
-function exportData(format) {
-    const checked = document.querySelectorAll('.comment-checkbox:checked');
-    let sourceData = [];
+async function exportData(format) {
+    try {
+        const checked = document.querySelectorAll('.comment-checkbox:checked');
+        let sourceData = [];
 
-    // 1. Determine Data Source
-    if (checked.length > 0) {
-        // Export selected items from current filtered list
-        const selectedIds = Array.from(checked).map(cb => cb.dataset.id);
-        sourceData = filteredComments.filter(c => selectedIds.includes(c.id));
-    } else {
-        // Export all filtered items
-        sourceData = filteredComments;
+        // 1. Determine Data Source
+        if (checked.length > 0) {
+            // Export selected items from current filtered list
+            const selectedIds = Array.from(checked).map(cb => cb.dataset.id);
+            sourceData = filteredComments.filter(c => selectedIds.includes(c.id));
+        } else {
+            // Export all filtered items across every page
+            sourceData = await fetchAllFilteredCommentsForExport(currentCommentView);
+        }
+
+        if (sourceData.length === 0) {
+            alert('无数据可导出');
+            return;
+        }
+
+        // 2. Generate Content
+        let content = '';
+        let mimeType = '';
+        let extension = '';
+        const timestamp = new Date().toISOString().slice(0, 10);
+
+        if (format === 'csv') {
+            // CSV Generation with BOM for Excel
+            content = generateCSV(sourceData);
+            mimeType = 'text/csv;charset=utf-8;';
+            extension = 'csv';
+        } else {
+            // JSON Generation
+            content = JSON.stringify(sourceData, null, 2);
+            mimeType = 'application/json';
+            extension = 'json';
+        }
+
+        // 3. Trigger Download
+        const blob = new Blob([format === 'csv' ? '\ufeff' + content : content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', `comments_export_${timestamp}.${extension}`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    } catch (error) {
+        console.error('Export comments error:', error);
+        showToast('导出评论失败: ' + (error.message || '未知错误'), 'error');
     }
-
-    if (sourceData.length === 0) {
-        alert('无数据可导出');
-        return;
-    }
-
-    // 2. Generate Content
-    let content = '';
-    let mimeType = '';
-    let extension = '';
-    const timestamp = new Date().toISOString().slice(0, 10);
-
-    if (format === 'csv') {
-        // CSV Generation with BOM for Excel
-        content = generateCSV(sourceData);
-        mimeType = 'text/csv;charset=utf-8;';
-        extension = 'csv';
-    } else {
-        // JSON Generation
-        content = JSON.stringify(sourceData, null, 2);
-        mimeType = 'application/json';
-        extension = 'json';
-    }
-
-    // 3. Trigger Download
-    const blob = new Blob([format === 'csv' ? '\ufeff' + content : content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `comments_export_${timestamp}.${extension}`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
 }
 
 /**
@@ -1021,6 +1655,7 @@ async function batchDeleteComments() {
         type: cb.dataset.type,
         recordType: cb.dataset.recordType || ''
     }));
+    const deletedIds = items.map((item) => item.id).filter(Boolean);
 
     try {
         const payload = await moderateCommentsViaAdminApi({
@@ -1029,9 +1664,13 @@ async function batchDeleteComments() {
             action: 'delete_many'
         });
         const deleted = Number(payload?.deletedCount || 0);
+        prepareCommentReloadState({
+            preserveSelection: true,
+            removeSelectionIds: deletedIds
+        });
         showToast(`成功删除 ${deleted} 条评论`, 'success');
         loadCommentStats();
-        loadComments(currentCommentView);
+        loadComments(currentCommentView, { preserveSelection: true });
     } catch (error) {
         console.error('Batch delete error:', error);
         showToast('批量删除失败: ' + error.message, 'error');
@@ -1052,6 +1691,7 @@ async function deleteComment(id, type, recordType = '') {
     if (!confirm('确定要删除这条评论吗？此操作无法撤销。')) return;
 
     try {
+        const fallbackFocusId = findAdjacentCommentId(id, [id]);
         await moderateCommentsViaAdminApi({
             site: writableSite,
             action: 'delete',
@@ -1071,7 +1711,15 @@ async function deleteComment(id, type, recordType = '') {
 
         // Refresh stats
         loadCommentStats();
-        loadComments(currentCommentView);
+        prepareCommentReloadState({
+            preserveSelection: true,
+            removeSelectionIds: [id],
+            focusCommentId: fallbackFocusId
+        });
+        loadComments(currentCommentView, {
+            preserveSelection: true,
+            focusCommentId: fallbackFocusId
+        });
         showToast('评论已删除', 'success');
 
     } catch (error) {
@@ -1081,10 +1729,15 @@ async function deleteComment(id, type, recordType = '') {
 }
 
 /**
- * View comment context (open prompt in new tab with comments visible and scroll to specific comment)
+ * View comment context in a dedicated tab
  */
-function viewCommentContext(promptId, commentId) {
-    window.open(`prompts.html?id=${promptId}&comments=1&commentId=${commentId}`, '_blank');
+function viewCommentContext(contextUrl) {
+    const targetUrl = String(contextUrl || '').trim();
+    if (!targetUrl) {
+        return;
+    }
+
+    window.open(targetUrl, '_blank');
 }
 
 /**
@@ -1157,9 +1810,16 @@ function switchLayoutView(layout) {
         }
     }
 
-    // Refresh render to ensure correct structure/layout logic if needed
-    // (CSS handles most, but 'View' button icon might change)
-    if (document.querySelectorAll('.comment-admin-item').length > 0) {
+    // Re-render current page without refetching data
+    if (filteredComments.length > 0) {
+        renderCommentList(filteredComments);
+        renderCommentsPagination();
+        restoreCommentSelectionState();
+        if (pendingFocusedCommentId) {
+            focusCommentCard(pendingFocusedCommentId);
+            pendingFocusedCommentId = '';
+        }
+    } else if (!commentsLoading) {
         loadComments(currentCommentView);
     }
 
@@ -1209,8 +1869,23 @@ window.toggleSelectAll = toggleSelectAll;
 window.updateSelection = updateSelection;
 window.batchDeleteComments = batchDeleteComments;
 window.switchLayoutView = switchLayoutView;
+window.changeCommentsPage = changeCommentsPage;
 window.toggleCommentSelection = toggleCommentSelection;
+window.prefetchCommentsModule = prefetchCommentsModule;
 window.copyCommentId = window.copyCommentId;
+
+window.addEventListener('admin-site-changed', () => {
+    invalidateCommentsViewCache();
+
+    if (!isCommentsModuleActive()) {
+        return;
+    }
+
+    clearRetainedCommentSelection();
+    pendingFocusedCommentId = '';
+    commentsPaginationState.page = 1;
+    void loadComments(currentCommentView, { resetPage: true });
+});
 
 function bindAdminCommentsRuntimeDelegates() {
     if (document.documentElement.dataset.adminCommentsRuntimeDelegatesBound === '1') {
@@ -1265,8 +1940,7 @@ function bindAdminCommentsRuntimeDelegates() {
             case 'view-comment-context':
                 event.stopPropagation();
                 window.viewCommentContext?.(
-                    decodeURIComponent(actionEl.dataset.promptId || ''),
-                    decodeURIComponent(actionEl.dataset.commentId || '')
+                    decodeURIComponent(actionEl.dataset.contextUrl || '')
                 );
                 break;
             case 'delete-comment':
@@ -1349,8 +2023,12 @@ window.togglePin = async function (id, currentStatus, promptId) {
 
         console.log('togglePin result:', payload);
 
+        prepareCommentReloadState({
+            preserveSelection: true,
+            focusCommentId: id
+        });
         showToast(currentStatus ? '已取消置顶' : '评论已置顶', 'success');
-        loadComments(currentCommentView); // Refresh list
+        loadComments(currentCommentView, { preserveSelection: true, focusCommentId: id }); // Refresh list
     } catch (err) {
         console.error('Error toggling pin:', err);
         showToast('操作失败', 'error');
@@ -1519,6 +2197,7 @@ window.blockUser = async function (userId, scope, days) {
             });
         }
 
+        refreshCommentsForUserStatus(userId);
         showToast(`已${durationStr}封禁用户 ${scopeStr} 权限（全站生效）`, 'success');
     } catch (err) {
         console.error('Block user error:', err);
@@ -1579,6 +2258,7 @@ window.unblockUser = async function (userId, scope) {
             });
         }
 
+        refreshCommentsForUserStatus(userId);
         showToast(`已解封用户 ${scopeLabel} 权限`, 'success');
     } catch (err) {
         console.error('Unblock user error:', err);

@@ -197,8 +197,12 @@
                 break;
             case 'shop':
                 if (window.ShopAdmin) {
-                    if (typeof ShopAdmin.searchOrders === 'function') ShopAdmin.searchOrders();
-                    if (typeof ShopAdmin.loadProducts === 'function') ShopAdmin.loadProducts();
+                    if (typeof window.ShopAdmin.handleSiteChange === 'function') {
+                        window.ShopAdmin.handleSiteChange();
+                    } else {
+                        if (typeof ShopAdmin.searchOrders === 'function') ShopAdmin.searchOrders();
+                        if (typeof ShopAdmin.loadProducts === 'function') ShopAdmin.loadProducts();
+                    }
                 }
                 break;
             case 'points':

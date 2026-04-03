@@ -924,6 +924,12 @@ test('shared admin workbench derives ops alert monitor action protocol helpers',
         { target: 'shop-risk-discounts', label: '优惠券码', icon: 'fas fa-ticket' },
         { target: 'shop-risk-users', label: '用户详情', icon: 'fas fa-user-shield' }
     ]);
+    assert.deepEqual(JSON.parse(JSON.stringify(runtime.getAdminWorkbenchOpsAlertMonitorCategoryActions('verify'))), [
+        { target: 'verify-monitor', label: '验证运维', icon: 'fas fa-wave-square' }
+    ]);
+    assert.deepEqual(JSON.parse(JSON.stringify(runtime.getAdminWorkbenchOpsAlertMonitorCategoryActions('security'))), [
+        { target: 'admin-audit-monitor', label: '访问审计', icon: 'fas fa-user-shield' }
+    ]);
 
     assert.deepEqual(JSON.parse(JSON.stringify(runtime.normalizeAdminWorkbenchOpsAlertMonitorAssignableAdmins({
         assignable_admins: [{

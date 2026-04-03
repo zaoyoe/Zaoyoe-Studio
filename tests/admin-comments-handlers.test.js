@@ -284,6 +284,7 @@ async function withCommentsHandler(relativePath, options, callback) {
             guestbook_messages: deepClone(options?.tables?.guestbook_messages || []),
             guestbook_comments: deepClone(options?.tables?.guestbook_comments || []),
             guestbook_likes: deepClone(options?.tables?.guestbook_likes || []),
+            blocked_users: deepClone(options?.tables?.blocked_users || []),
             prompt_comments: deepClone(options?.tables?.prompt_comments || []),
             profiles: deepClone(options?.tables?.profiles || []),
             prompts: deepClone(options?.tables?.prompts || []),
@@ -433,9 +434,13 @@ test('comments list handler returns guestbook messages, replies, and like counts
                 { id: 'l1', site: 'cn', target_type: 'comment', target_id: 'c1' },
                 { id: 'l2', site: 'cn', target_type: 'comment', target_id: 'c1' },
                 { id: 'l3', site: 'cn', target_type: 'comment', target_id: 'c2' }
+            ],
+            blocked_users: [
+                { user_id: 'u2', scope: 'guestbook', reason: 'spam', expires_at: null },
+                { user_id: 'u3', scope: 'all', reason: 'abuse', expires_at: null }
             ]
         }
-    }, async ({ handler }) => {
+    }, async ({ handler, state }) => {
         const res = createMockResponse();
 
         await handler({
@@ -446,6 +451,10 @@ test('comments list handler returns guestbook messages, replies, and like counts
 
         assert.equal(res.statusCode, 200);
         assert.equal(res.json().comments.length, 3);
+        assert.equal(res.json().pagination.page, 1);
+        assert.equal(res.json().pagination.pageSize, 40);
+        assert.equal(res.json().pagination.totalItems, 3);
+        assert.equal(res.json().pagination.totalPages, 1);
 
         const [replyRow, commentRow, messageRow] = res.json().comments;
         assert.equal(replyRow.id, 'c2');
@@ -456,11 +465,18 @@ test('comments list handler returns guestbook messages, replies, and like counts
         assert.equal(commentRow.record_type, 'comment');
         assert.equal(commentRow.reply_count, 1);
         assert.equal(commentRow.likes, 2);
+        assert.equal(commentRow.user_block_state?.isGuestbookBlocked, true);
+        assert.equal(commentRow.user_block_state?.hasGlobalBlock, false);
 
         assert.equal(messageRow.id, 'm1');
         assert.equal(messageRow.record_type, 'message');
         assert.equal(messageRow.reply_count, 2);
         assert.equal(messageRow.site, 'cn');
+        assert.equal(messageRow.user_block_state?.isGuestbookBlocked, false);
+
+        assert.equal(replyRow.user_block_state?.hasGlobalBlock, true);
+        assert.equal(replyRow.user_block_state?.isGuestbookBlocked, true);
+        assert.equal(state.fromCalls.includes('blocked_users'), true);
     });
 });
 
@@ -504,6 +520,9 @@ test('comments list handler returns gallery rows without relying on schema relat
                 { id: 'like_1', site: 'cn', comment_id: 'g1', user_id: 'u9' },
                 { id: 'like_2', site: 'cn', comment_id: 'g1', user_id: 'u8' },
                 { id: 'like_3', site: 'cn', comment_id: 'g2', user_id: 'u7' }
+            ],
+            blocked_users: [
+                { user_id: 'u2', scope: 'gallery', reason: 'spam', expires_at: null }
             ]
         }
     }, async ({ handler }) => {
@@ -517,18 +536,133 @@ test('comments list handler returns gallery rows without relying on schema relat
 
         assert.equal(res.statusCode, 200);
         assert.equal(res.json().comments.length, 2);
+        assert.equal(res.json().pagination.totalItems, 2);
+        assert.equal(res.json().pagination.totalPages, 1);
 
         const [replyRow, topRow] = res.json().comments;
         assert.equal(replyRow.id, 'g2');
         assert.equal(replyRow.author, 'bob');
         assert.equal(replyRow.likes, 1);
         assert.equal(replyRow.prompt_title, 'Prompt One');
+        assert.equal(replyRow.user_block_state?.isGalleryBlocked, true);
+        assert.equal(replyRow.user_block_state?.hasGlobalBlock, false);
 
         assert.equal(topRow.id, 'g1');
         assert.equal(topRow.author, 'alice');
         assert.equal(topRow.reply_count, 1);
         assert.equal(topRow.likes, 2);
         assert.equal(topRow.is_pinned, true);
+        assert.equal(topRow.user_block_state?.isGalleryBlocked, false);
+    });
+});
+
+test('comments list handler paginates guestbook moderation results without legacy truncation', async () => {
+    const guestbookMessages = Array.from({ length: 55 }, (_, index) => ({
+        id: `m${index + 1}`,
+        site: 'cn',
+        content: `message ${index + 1}`,
+        user_id: `u${index + 1}`,
+        created_at: new Date(Date.UTC(2026, 2, 31, 12, 0, 0) - index * 60 * 1000).toISOString(),
+        image_url: null,
+        like_count: index
+    }));
+    const profiles = guestbookMessages.map((message, index) => ({
+        id: `u${index + 1}`,
+        username: `user-${index + 1}`,
+        avatar_url: null,
+        email: `user-${index + 1}@example.com`
+    }));
+
+    await withCommentsHandler('../server/api-handlers/admin/comments/list.js', {
+        tables: {
+            guestbook_messages: guestbookMessages,
+            profiles
+        }
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/comments/list?view=guestbook&site=cn&page=2&pageSize=20',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().comments.length, 20);
+        assert.equal(res.json().pagination.page, 2);
+        assert.equal(res.json().pagination.pageSize, 20);
+        assert.equal(res.json().pagination.totalItems, 55);
+        assert.equal(res.json().pagination.totalPages, 3);
+        assert.equal(res.json().comments[0]?.id, 'm21');
+        assert.equal(res.json().comments.at(-1)?.id, 'm40');
+    });
+});
+
+test('comments list handler applies search, type, and image filters server-side before pagination', async () => {
+    await withCommentsHandler('../server/api-handlers/admin/comments/list.js', {
+        tables: {
+            prompt_comments: [
+                {
+                    id: 'g1',
+                    site: 'cn',
+                    prompt_id: 'p1',
+                    parent_id: null,
+                    content: 'gallery top comment',
+                    user_id: 'u1',
+                    created_at: '2026-03-31T11:00:00.000Z',
+                    image_url: 'https://example.com/a.png',
+                    is_pinned: true,
+                    is_featured: false
+                },
+                {
+                    id: 'g2',
+                    site: 'cn',
+                    prompt_id: 'p1',
+                    parent_id: null,
+                    content: 'plain top comment',
+                    user_id: 'u2',
+                    created_at: '2026-03-31T10:00:00.000Z',
+                    image_url: null,
+                    is_pinned: false,
+                    is_featured: false
+                },
+                {
+                    id: 'g3',
+                    site: 'cn',
+                    prompt_id: 'p1',
+                    parent_id: 'g1',
+                    content: 'reply comment',
+                    user_id: 'u3',
+                    created_at: '2026-03-31T09:00:00.000Z',
+                    image_url: 'https://example.com/reply.png',
+                    is_pinned: false,
+                    is_featured: false
+                }
+            ],
+            profiles: [
+                { id: 'u1', username: 'alice', avatar_url: null, email: 'alice@example.com' },
+                { id: 'u2', username: 'bob', avatar_url: null, email: 'bob@example.com' },
+                { id: 'u3', username: 'carol', avatar_url: null, email: 'carol@example.com' }
+            ],
+            prompts: [
+                { id: 'p1', title: 'Prompt One', title_zh: '提示词一', title_en: 'Prompt One' }
+            ]
+        }
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/comments/list?view=gallery&site=cn&search=%E7%BD%AE%E9%A1%B6&type=top&hasImage=1',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().comments.length, 1);
+        assert.equal(res.json().pagination.totalItems, 1);
+        assert.equal(res.json().comments[0]?.id, 'g1');
+        assert.equal(res.json().comments[0]?.is_pinned, true);
+        assert.equal(res.json().comments[0]?.image_url, 'https://example.com/a.png');
     });
 });
 

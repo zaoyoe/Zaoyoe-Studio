@@ -2,6 +2,9 @@ const {
     requireAdmin,
     sendJson
 } = require('../../../../api/_lib/admin');
+const {
+    buildVerifyMonitorProxyHeaders
+} = require('../../../../api/_lib/verify-monitor-internal-access');
 
 const DEFAULT_VERIFY_SERVER_URL = 'https://zaoyoe-verify-server-production.up.railway.app';
 const VERIFY_MONITOR_PROXY_TIMEOUT_MS = 5000;
@@ -10,14 +13,14 @@ function getVerifyServerUrl() {
     return String(process.env.VERIFY_SERVER_URL || DEFAULT_VERIFY_SERVER_URL).trim().replace(/\/+$/, '');
 }
 
-function getForwardHeaders(req) {
-    const headers = {
-        Accept: 'application/json'
-    };
-    const authHeader = String(req.headers.authorization || req.headers.Authorization || '').trim();
-    if (authHeader) {
-        headers.Authorization = authHeader;
+function getForwardHeaders() {
+    const headers = buildVerifyMonitorProxyHeaders(process.env);
+    if (!headers) {
+        const error = new Error('验证运维内部凭证未配置');
+        error.statusCode = 500;
+        throw error;
     }
+
     return headers;
 }
 
@@ -41,7 +44,7 @@ module.exports = async (req, res) => {
         try {
             const upstreamResponse = await fetch(`${getVerifyServerUrl()}/api/quota`, {
                 method: 'GET',
-                headers: getForwardHeaders(req),
+                headers: getForwardHeaders(),
                 signal: controller?.signal
             });
             const payload = await upstreamResponse.json().catch(() => ({}));
@@ -64,7 +67,7 @@ module.exports = async (req, res) => {
                 });
             }
 
-            return sendJson(res, 502, {
+            return sendJson(res, error?.statusCode || 502, {
                 success: false,
                 checked_at: new Date().toISOString(),
                 message: error.message || '查询 API 余额失败'

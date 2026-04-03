@@ -1,4 +1,5 @@
 const {
+    normalizeAdminSite,
     parseJsonBody,
     requireAdmin,
     requireWritableAdminSite,
@@ -6,7 +7,9 @@ const {
 } = require('../../../../api/_lib/admin');
 
 function normalizeHomepageSite(site) {
-    return site === 'intl' ? 'intl' : 'cn';
+    if (site === 'intl') return 'intl';
+    if (site === 'all') return 'all';
+    return 'cn';
 }
 
 function normalizeSection(section) {
@@ -14,11 +17,16 @@ function normalizeSection(section) {
 }
 
 function buildHomepageSelectQuery(supabase, site) {
-    return supabase
+    let query = supabase
         .from('homepage_config')
         .select('id, site, section, content, is_visible, display_order, updated_at')
-        .eq('site', site)
         .order('display_order', { ascending: true });
+
+    if (site !== 'all') {
+        query = query.eq('site', site);
+    }
+
+    return query;
 }
 
 module.exports = async (req, res) => {
@@ -31,7 +39,7 @@ module.exports = async (req, res) => {
         const { supabase } = await requireAdmin(req, { permission: 'homepage.manage' });
 
         if (req.method === 'GET') {
-            const site = normalizeHomepageSite(req.adminSite);
+            const site = normalizeHomepageSite(normalizeAdminSite(req.adminSite, { defaultValue: 'all' }) || 'all');
             const { data, error } = await buildHomepageSelectQuery(supabase, site);
 
             if (error) {
@@ -44,6 +52,8 @@ module.exports = async (req, res) => {
             return sendJson(res, 200, {
                 success: true,
                 site,
+                read_only: site === 'all',
+                mode: site === 'all' ? 'aggregate' : 'site',
                 rows: data || []
             });
         }

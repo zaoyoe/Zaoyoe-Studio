@@ -8,6 +8,7 @@
 - [admin-studio-phase1-taskboard.md](/Volumes/chao/AI/xianyu_profit_calculator/docs/admin-studio-phase1-taskboard.md)
 - [admin-studio-phase2-taskboard.md](/Volumes/chao/AI/xianyu_profit_calculator/docs/admin-studio-phase2-taskboard.md)
 - [admin-studio-phase3-taskboard.md](/Volumes/chao/AI/xianyu_profit_calculator/docs/admin-studio-phase3-taskboard.md)
+- [admin-studio-workbench-remediation-plan.md](/Volumes/chao/AI/xianyu_profit_calculator/docs/admin-studio-workbench-remediation-plan.md)
 
 ## 1. 使用方式
 

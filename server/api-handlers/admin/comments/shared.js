@@ -18,15 +18,24 @@ function applyCommentsSiteFilter(query, site, column = 'site') {
 
 function applyCommentsDateRange(query, { dateFrom = '', dateTo = '' } = {}) {
     let nextQuery = query;
+    const normalizedDateFrom = String(dateFrom || '').trim();
+    const normalizedDateTo = String(dateTo || '').trim();
 
-    if (dateFrom) {
-        nextQuery = nextQuery.gte('created_at', dateFrom);
+    if (normalizedDateFrom) {
+        const parsedStart = new Date(normalizedDateFrom);
+        if (!Number.isNaN(parsedStart.getTime())) {
+            nextQuery = nextQuery.gte('created_at', parsedStart.toISOString());
+        }
     }
 
-    if (dateTo) {
-        const endDate = new Date(dateTo);
+    if (normalizedDateTo) {
+        const endDate = new Date(normalizedDateTo);
         if (!Number.isNaN(endDate.getTime())) {
-            endDate.setDate(endDate.getDate() + 1);
+            if (/^\d{4}-\d{2}-\d{2}$/.test(normalizedDateTo)) {
+                endDate.setDate(endDate.getDate() + 1);
+            } else {
+                endDate.setMilliseconds(endDate.getMilliseconds() + 1);
+            }
             nextQuery = nextQuery.lt('created_at', endDate.toISOString());
         }
     }

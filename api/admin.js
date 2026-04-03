@@ -8,6 +8,7 @@ const commentsBlocksHandler = require('../server/api-handlers/admin/comments/blo
 const commentsModerateHandler = require('../server/api-handlers/admin/comments/moderate');
 const commentsSummaryHandler = require('../server/api-handlers/admin/comments/summary');
 const discountsListHandler = require('../server/api-handlers/admin/discounts/list');
+const discountsMutateHandler = require('../server/api-handlers/admin/discounts/mutate');
 const homepageConfigHandler = require('../server/api-handlers/admin/homepage/config');
 const pointsBatchesHandler = require('../server/api-handlers/admin/points/batches');
 const pointsCatalogHandler = require('../server/api-handlers/admin/points/catalog');
@@ -16,8 +17,12 @@ const pointsManageHandler = require('../server/api-handlers/admin/points/manage'
 const pointsPackagesHandler = require('../server/api-handlers/admin/points/packages');
 const promptsManageHandler = require('../server/api-handlers/admin/prompts/manage');
 const accessSessionHandler = require('../server/api-handlers/admin/access/session');
+const shopCategoriesHandler = require('../server/api-handlers/admin/shop/categories');
+const shopInventoryDetailHandler = require('../server/api-handlers/admin/shop/inventory-detail');
+const shopInventoryHandler = require('../server/api-handlers/admin/shop/inventory');
 const shopMutateHandler = require('../server/api-handlers/admin/shop/mutate');
 const shopOrdersHandler = require('../server/api-handlers/admin/shop/orders');
+const shopProductsHandler = require('../server/api-handlers/admin/shop/products');
 const shopDeliveryActionsHandler = require('../server/api-handlers/admin/shop/delivery-actions');
 const shopDeliveryTasksHandler = require('../server/api-handlers/admin/shop/delivery-tasks');
 const paymentsActionsHandler = require('../server/api-handlers/admin/payments/actions');
@@ -44,6 +49,7 @@ const ROUTE_HANDLERS = {
     'comments/moderate': commentsModerateHandler,
     'comments/summary': commentsSummaryHandler,
     'discounts/list': discountsListHandler,
+    'discounts/mutate': discountsMutateHandler,
     'homepage/config': homepageConfigHandler,
     'points/batches': pointsBatchesHandler,
     'points/catalog': pointsCatalogHandler,
@@ -64,8 +70,12 @@ const ROUTE_HANDLERS = {
     'settings/verify-monitor/queue': settingsVerifyMonitorQueueHandler,
     'tickets/create': ticketCreateHandler,
     'tickets/process': ticketProcessHandler,
+    'shop/categories': shopCategoriesHandler,
+    'shop/inventory-detail': shopInventoryDetailHandler,
+    'shop/inventory': shopInventoryHandler,
     'shop/mutate': shopMutateHandler,
     'shop/orders': shopOrdersHandler,
+    'shop/products': shopProductsHandler,
     'shop/delivery-actions': shopDeliveryActionsHandler,
     'shop/delivery-tasks': shopDeliveryTasksHandler,
     'shop/delivery-strategy': shopDeliveryTasksHandler,
@@ -75,17 +85,42 @@ const ROUTE_HANDLERS = {
     'payments/summary': paymentsSummaryHandler
 };
 
+function normalizeAdminRouteValue(value = '') {
+    const raw = String(value || '').trim();
+    if (!raw) {
+        return '';
+    }
+
+    let normalized = raw;
+
+    try {
+        if (/^https?:\/\//i.test(normalized)) {
+            const absoluteUrl = new URL(normalized);
+            normalized = absoluteUrl.pathname || '';
+        }
+    } catch (_) {
+        // keep the original value when it is not a valid absolute URL
+    }
+
+    normalized = normalized
+        .replace(/[?#][\s\S]*$/, '')
+        .replace(/^https?:\/\/[^/]+/i, '')
+        .replace(/^\/+|\/+$/g, '')
+        .replace(/^api\/admin\/?/i, '')
+        .replace(/^admin\/?/i, '')
+        .trim()
+        .toLowerCase();
+
+    return normalized;
+}
+
 function resolveAdminRoute(url) {
-    const queryRoute = String(url.searchParams.get('route') || '').trim().toLowerCase();
+    const queryRoute = normalizeAdminRouteValue(url.searchParams.get('route'));
     if (queryRoute) {
         return queryRoute;
     }
 
-    const pathname = String(url.pathname || '').trim();
-    const pathRoute = pathname
-        .replace(/^\/api\/admin\/?/i, '')
-        .replace(/^\/+|\/+$/g, '')
-        .toLowerCase();
+    const pathRoute = normalizeAdminRouteValue(url.pathname || '');
 
     return pathRoute;
 }

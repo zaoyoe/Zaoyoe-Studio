@@ -63,6 +63,15 @@ const supabaseClient = (() => {
 
 const ShopAdmin = {
     currentTab: 'products',
+    SHOP_TAB_IDS: ['products', 'import', 'inventory', 'orders', 'fulfillment'],
+    shopTabLoadState: Object.create(null),
+    shopTabLoadPromiseMap: Object.create(null),
+    shopTabLoadGeneration: Object.create(null),
+    shopTabPrefetchHandle: 0,
+    shopTabPrefetchMode: '',
+    shopTabPrefetchGeneration: 0,
+    shopContextListenersBound: false,
+    shopSiteChangeRequestId: 0,
     selectedProductId: null,
     inventoryPage: 1,
     ordersPage: 1,
@@ -292,9 +301,28 @@ Example output format:
         };
     },
 
+    buildAdminRouteUrl: function (route, params = {}) {
+        const normalizedRoute = String(route || '').trim().replace(/^\/+|\/+$/g, '');
+        const url = new URL('/api/admin', window.location.origin);
+        if (normalizedRoute) {
+            url.searchParams.set('route', normalizedRoute);
+        }
+        Object.entries(params || {}).forEach(([key, value]) => {
+            if (value === undefined || value === null || value === '') {
+                return;
+            }
+            url.searchParams.set(key, String(value));
+        });
+        return `${url.pathname}${url.search}`;
+    },
+
+    buildAdminShopUrl: function (route, params = {}) {
+        return this.buildAdminRouteUrl(route, params);
+    },
+
     callAdminMutation: async function (action, payload = {}) {
         const headers = await this.getAdminAuthHeaders();
-        const response = await fetch('/api/admin/shop/mutate', {
+        const response = await fetch(this.buildAdminShopUrl('shop/mutate'), {
             method: 'POST',
             headers,
             body: JSON.stringify({
@@ -309,7 +337,177 @@ Example output format:
             throw new Error(result.message || '管理员接口调用失败');
         }
 
+        this.invalidateShopTabCache();
         return result;
+    },
+
+    getInventoryQueryFilters: function ({ page = 1, pageSize = this.pageSize, includeSearch = true } = {}) {
+        const productId = document.getElementById('invFilterProduct')?.value || null;
+        const status = document.getElementById('invFilterStatus')?.value || null;
+        const search = includeSearch ? (document.getElementById('invSearchInput')?.value || null) : null;
+        const dateType = document.getElementById('invFilterDateType')?.value || 'all';
+
+        let dateFrom = null;
+        let dateTo = null;
+
+        if (dateType === 'custom') {
+            const fromValue = document.getElementById('invDateFrom')?.value;
+            const toValue = document.getElementById('invDateTo')?.value;
+            if (fromValue) dateFrom = `${fromValue} 00:00:00`;
+            if (toValue) dateTo = `${toValue} 23:59:59`;
+        } else if (dateType !== 'all') {
+            const now = new Date();
+            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+            if (dateType === 'today') {
+                dateFrom = todayStart.toISOString();
+                const todayEnd = new Date(todayStart);
+                todayEnd.setHours(23, 59, 59, 999);
+                dateTo = todayEnd.toISOString();
+            } else if (dateType === 'week') {
+                const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                dateFrom = weekAgo.toISOString();
+                dateTo = now.toISOString();
+            } else if (dateType === 'month') {
+                const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                dateFrom = monthAgo.toISOString();
+                dateTo = now.toISOString();
+            }
+        }
+
+        return {
+            page,
+            pageSize,
+            productId,
+            status,
+            search,
+            dateFrom,
+            dateTo
+        };
+    },
+
+    loadInventoryViaAdminApi: async function (params = {}) {
+        const response = await (window.AdminApi?.fetch || fetch)(
+            this.buildAdminShopUrl('shop/inventory', params),
+            { credentials: 'include' }
+        );
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || '库存列表加载失败');
+        }
+
+        return payload;
+    },
+
+    loadShopProductsViaAdminApi: async function (params = {}) {
+        const response = await (window.AdminApi?.fetch || fetch)(
+            this.buildAdminShopUrl('shop/products', params),
+            { credentials: 'include' }
+        );
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || '商品列表加载失败');
+        }
+
+        return payload;
+    },
+
+    loadShopProductByIdViaAdminApi: async function (productId) {
+        const normalizedId = String(productId || '').trim();
+        if (!normalizedId) {
+            throw new Error('缺少商品 ID');
+        }
+
+        const response = await (window.AdminApi?.fetch || fetch)(
+            this.buildAdminShopUrl('shop/products', { id: normalizedId }),
+            { credentials: 'include' }
+        );
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || '商品详情加载失败');
+        }
+
+        return payload;
+    },
+
+    loadShopCategoriesViaAdminApi: async function () {
+        const response = await (window.AdminApi?.fetch || fetch)(
+            this.buildAdminShopUrl('shop/categories'),
+            { credentials: 'include' }
+        );
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || '分类列表加载失败');
+        }
+
+        return payload;
+    },
+
+    loadInventoryDetailViaAdminApi: async function (inventoryId) {
+        const normalizedId = String(inventoryId || '').trim();
+        if (!normalizedId) {
+            throw new Error('缺少库存 ID');
+        }
+
+        const response = await (window.AdminApi?.fetch || fetch)(
+            this.buildAdminShopUrl('shop/inventory-detail', { id: normalizedId }),
+            { credentials: 'include' }
+        );
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || '库存详情加载失败');
+        }
+
+        return payload;
+    },
+
+    loadOrdersViaAdminApi: async function (params = {}) {
+        const response = await (window.AdminApi?.fetch || fetch)(
+            this.buildAdminShopUrl('shop/orders', params),
+            { credentials: 'include' }
+        );
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || '订单列表加载失败');
+        }
+
+        return payload;
+    },
+
+    loadAllOrdersForExport: async function ({ site = 'all', pageSize = 100 } = {}) {
+        const collectedRows = [];
+        let page = 1;
+        let total = null;
+
+        while (page <= 100) {
+            const payload = await this.loadOrdersViaAdminApi({
+                site,
+                page,
+                pageSize
+            });
+            const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+            const count = Number(payload?.count);
+
+            if (Number.isFinite(count) && count >= 0) {
+                total = count;
+            }
+
+            collectedRows.push(...rows);
+
+            if (!rows.length || (Number.isFinite(total) && collectedRows.length >= total)) {
+                break;
+            }
+
+            page += 1;
+        }
+
+        return collectedRows;
     },
 
     // Category Filter Logic
@@ -422,6 +620,207 @@ Example output format:
         });
         this.bindOverlayDismiss('importInventoryModal', () => {
             this.closeImportModal();
+        });
+    },
+
+    normalizeShopTabName: function (tabName) {
+        const normalized = String(tabName || '').trim().toLowerCase();
+        return this.SHOP_TAB_IDS.includes(normalized) ? normalized : 'products';
+    },
+
+    getShopTabLoadState: function (tabName) {
+        return this.shopTabLoadState[this.normalizeShopTabName(tabName)] || 'idle';
+    },
+
+    isShopModuleVisible: function () {
+        return document.getElementById('module-shop')?.classList.contains('active') === true;
+    },
+
+    clearShopTabPrefetch: function () {
+        if (!this.shopTabPrefetchHandle) {
+            return;
+        }
+
+        if (this.shopTabPrefetchMode === 'idle' && typeof window.cancelIdleCallback === 'function') {
+            window.cancelIdleCallback(this.shopTabPrefetchHandle);
+        } else {
+            window.clearTimeout(this.shopTabPrefetchHandle);
+        }
+
+        this.shopTabPrefetchHandle = 0;
+        this.shopTabPrefetchMode = '';
+    },
+
+    invalidateShopTabCache: function (tabNames = this.SHOP_TAB_IDS) {
+        const queue = Array.isArray(tabNames) ? tabNames : [tabNames];
+        queue.forEach((tabName) => {
+            const normalizedTab = this.normalizeShopTabName(tabName);
+            this.shopTabLoadGeneration[normalizedTab] = Number(this.shopTabLoadGeneration[normalizedTab] || 0) + 1;
+            this.shopTabLoadState[normalizedTab] = 'idle';
+            delete this.shopTabLoadPromiseMap[normalizedTab];
+        });
+        this.clearShopTabPrefetch();
+    },
+
+    getShopTabPrefetchQueue: function (activeTab = this.currentTab) {
+        const normalizedActiveTab = this.normalizeShopTabName(activeTab);
+        return this.SHOP_TAB_IDS.filter((tabName) => {
+            if (tabName === normalizedActiveTab) {
+                return false;
+            }
+
+            const state = this.getShopTabLoadState(tabName);
+            return state !== 'loaded' && state !== 'loading';
+        });
+    },
+
+    runShopTabLoader: function (tabName, loader) {
+        const normalizedTab = this.normalizeShopTabName(tabName);
+        const existingPromise = this.shopTabLoadPromiseMap[normalizedTab];
+        if (existingPromise) {
+            return existingPromise;
+        }
+
+        const generation = Number(this.shopTabLoadGeneration[normalizedTab] || 0);
+        this.shopTabLoadState[normalizedTab] = 'loading';
+
+        const loadPromise = Promise.resolve()
+            .then(() => loader())
+            .then((result) => {
+                if (Number(this.shopTabLoadGeneration[normalizedTab] || 0) === generation) {
+                    this.shopTabLoadState[normalizedTab] = 'loaded';
+                }
+                return result;
+            })
+            .catch((error) => {
+                if (Number(this.shopTabLoadGeneration[normalizedTab] || 0) === generation) {
+                    this.shopTabLoadState[normalizedTab] = 'error';
+                }
+                throw error;
+            })
+            .finally(() => {
+                if (this.shopTabLoadPromiseMap[normalizedTab] === loadPromise) {
+                    delete this.shopTabLoadPromiseMap[normalizedTab];
+                }
+            });
+
+        this.shopTabLoadPromiseMap[normalizedTab] = loadPromise;
+        return loadPromise;
+    },
+
+    ensureShopTabReady: function (tabName, options = {}) {
+        const normalizedTab = this.normalizeShopTabName(tabName);
+        const force = options.force === true;
+
+        if (force) {
+            this.invalidateShopTabCache(normalizedTab);
+        } else {
+            if (this.getShopTabLoadState(normalizedTab) === 'loaded') {
+                return Promise.resolve();
+            }
+
+            const existingPromise = this.shopTabLoadPromiseMap[normalizedTab];
+            if (existingPromise) {
+                return existingPromise;
+            }
+        }
+
+        switch (normalizedTab) {
+            case 'products':
+                return this.runShopTabLoader(normalizedTab, () => Promise.all([
+                    this.renderProductCategoryFilters(),
+                    this.loadProducts()
+                ]));
+            case 'import':
+                return this.runShopTabLoader(normalizedTab, () => this.initImportView());
+            case 'inventory':
+                return this.runShopTabLoader(normalizedTab, () => this.initInventoryBrowser());
+            case 'orders':
+                return this.runShopTabLoader(normalizedTab, () => this.searchOrders(this.ordersPage || 1));
+            case 'fulfillment':
+                return this.runShopTabLoader(normalizedTab, () => this.loadDeliveryTasks(this.deliveryTaskPage || 1));
+            default:
+                return Promise.resolve();
+        }
+    },
+
+    scheduleShopTabPrefetch: function (activeTab = this.currentTab) {
+        const queue = this.getShopTabPrefetchQueue(activeTab);
+        this.clearShopTabPrefetch();
+
+        if (!this.isShopModuleVisible() || queue.length === 0) {
+            return;
+        }
+
+        const generation = ++this.shopTabPrefetchGeneration;
+        const activeModuleTab = this.normalizeShopTabName(activeTab);
+        const runPrefetch = async () => {
+            this.shopTabPrefetchHandle = 0;
+            this.shopTabPrefetchMode = '';
+
+            for (const tabName of queue) {
+                if (
+                    generation !== this.shopTabPrefetchGeneration
+                    || !this.isShopModuleVisible()
+                    || this.normalizeShopTabName(this.currentTab) !== activeModuleTab
+                ) {
+                    return;
+                }
+
+                try {
+                    await this.ensureShopTabReady(tabName, { background: true });
+                } catch (error) {
+                    console.warn(`[ShopAdmin] Failed to prefetch ${tabName} tab:`, error);
+                }
+            }
+        };
+
+        if (typeof window.requestIdleCallback === 'function') {
+            this.shopTabPrefetchMode = 'idle';
+            this.shopTabPrefetchHandle = window.requestIdleCallback(() => {
+                void runPrefetch();
+            }, { timeout: 1200 });
+            return;
+        }
+
+        this.shopTabPrefetchMode = 'timeout';
+        this.shopTabPrefetchHandle = window.setTimeout(() => {
+            void runPrefetch();
+        }, 240);
+    },
+
+    bindShopContextListeners: function () {
+        if (this.shopContextListenersBound) {
+            return;
+        }
+
+        this.shopContextListenersBound = true;
+        window.addEventListener('admin-site-changed', () => {
+            this.handleSiteChange();
+        });
+    },
+
+    handleSiteChange: function () {
+        const requestId = ++this.shopSiteChangeRequestId;
+        this.invalidateShopTabCache();
+        if (!this.isShopModuleVisible()) {
+            return;
+        }
+
+        Promise.resolve().then(() => {
+            if (requestId !== this.shopSiteChangeRequestId) {
+                return;
+            }
+
+            return this.ensureShopTabReady(this.currentTab, { force: true });
+        }).then(() => {
+            if (requestId !== this.shopSiteChangeRequestId) {
+                return;
+            }
+
+            this.scheduleShopTabPrefetch(this.currentTab);
+        }).catch((error) => {
+            console.error('[ShopAdmin] Failed to reload current tab after site change:', error);
         });
     },
 
@@ -1055,8 +1454,7 @@ Example output format:
         console.log('Admin Shop Init...');
         this.bindDelegatedHandlers();
         this.bindStaticOverlayDismisses();
-        await this.renderProductCategoryFilters();
-        await this.loadProducts();
+        this.bindShopContextListeners();
         this.ensureRichTextEditors();
         this.ensureDeliveryWorkspaceMounted();
 
@@ -2719,22 +3117,23 @@ Example output format:
     },
 
     switchTab: function (tabName, options = {}) {
-        this.currentTab = tabName;
+        const normalizedTab = this.normalizeShopTabName(tabName);
+        this.currentTab = normalizedTab;
         this.ensureDeliveryWorkspaceMounted();
         this.syncShopUrlState();
 
-        this.applyShopTabState(tabName);
-        const shouldLoadOrders = options?.load !== false;
+        this.applyShopTabState(normalizedTab);
+        const shouldLoadTab = options?.load !== false;
 
-        // Load Data
-        if (tabName === 'products') {
-            this.renderProductCategoryFilters();
-            this.loadProducts();
+        if (shouldLoadTab) {
+            void this.ensureShopTabReady(normalizedTab, { force: options.force === true }).catch((error) => {
+                console.error(`[ShopAdmin] Failed to load ${normalizedTab} tab:`, error);
+            });
         }
-        if (tabName === 'import') this.initImportView();
-        if (tabName === 'inventory') this.initInventoryBrowser(); // Renamed from loadInventoryProductList, consistent with previous edit
-        if (tabName === 'orders' && shouldLoadOrders) this.searchOrders();
-        if (tabName === 'fulfillment') this.loadDeliveryTasks(this.deliveryTaskPage || 1);
+
+        if (options.prefetch !== false) {
+            this.scheduleShopTabPrefetch(normalizedTab);
+        }
     },
 
     scrollFocusedOrderIntoView: function () {
@@ -3035,31 +3434,20 @@ Example output format:
         const container = document.getElementById('productsGrid');
         if (!container) return; // Grid container might be missing if HTML update failed
 
+        const loadGeneration = Number(this.shopTabLoadGeneration.products || 0);
+        this.shopTabLoadState.products = 'loading';
         container.classList.add('shop-grid', 'shop-admin-products-grid');
         this.renderProductGridSkeleton(container);
         this.productGridCache = new Map();
 
         try {
-            let query = supabaseClient
-                .from('shop_products')
-                .select('*')
-                .order('display_order', { ascending: false });
-
-            // Apply Status Filter (active vs deleted/recycle bin)
-            if (this.currentStatusFilter === 'active') {
-                query = query.eq('is_active', true);
-            } else {
-                query = query.eq('is_active', false);
-            }
-
-            // Apply Category Filter
-            if (this.currentCategory !== 'all') {
-                query = query.eq('category', this.currentCategory);
-            }
-
-            const { data, error } = await query;
-
-            if (error) throw error;
+            const payload = await this.loadShopProductsViaAdminApi({
+                status: this.currentStatusFilter === 'active' ? 'active' : 'deleted',
+                category: this.currentCategory !== 'all' ? this.currentCategory : null,
+                fields: 'full',
+                order: 'display_order_desc'
+            });
+            const data = Array.isArray(payload?.rows) ? payload.rows : [];
             this.productGridCache = new Map((data || []).map((product) => [String(product.id || ''), { ...product }]));
 
             container.innerHTML = '';
@@ -3076,6 +3464,9 @@ Example output format:
 
             if (!data || data.length === 0) {
                 this.syncProductSelectionModeUi();
+                if (Number(this.shopTabLoadGeneration.products || 0) === loadGeneration) {
+                    this.shopTabLoadState.products = 'loaded';
+                }
                 return;
             }
 
@@ -3205,9 +3596,15 @@ Example output format:
 
             // Refresh sidebar list
             this.loadInventoryProductList(data);
+            if (Number(this.shopTabLoadGeneration.products || 0) === loadGeneration) {
+                this.shopTabLoadState.products = 'loaded';
+            }
 
         } catch (err) {
             console.error(err);
+            if (Number(this.shopTabLoadGeneration.products || 0) === loadGeneration) {
+                this.shopTabLoadState.products = 'error';
+            }
             container.innerHTML = `<div class="shop-admin-grid-error">Error: ${this.escapeHtml(err.message || 'Unknown error')}</div>`;
         }
     },
@@ -3285,6 +3682,10 @@ Example output format:
     },
 
     batchDeleteProducts: async function () {
+        if (!this.requireWritableSite({ label: '批量删除商品' })) {
+            return;
+        }
+
         const selectedIds = Array.from(document.querySelectorAll('.product-select-checkbox:checked'))
             .map(cb => cb.dataset.productId);
 
@@ -3296,21 +3697,16 @@ Example output format:
         if (!confirm(`确定删除这 ${selectedIds.length} 个商品吗？商品将被下架但保留历史订单记录。`)) return;
 
         try {
-            // Soft delete: set is_active=false instead of hard delete
-            // This preserves order history (foreign key references)
-            const { error } = await supabaseClient
-                .from('shop_products')
-                .update({ is_active: false })
-                .in('id', selectedIds);
-
-            if (error) throw error;
+            const result = await this.callAdminMutation('batch_soft_delete_products', {
+                productIds: selectedIds
+            });
 
             // Exit selection mode and refresh
             this.isProductSelectionMode = true; // Will be toggled off by next line
             this.toggleProductSelectionMode(); // Exit mode
             await this.loadProducts();
 
-            alert(`成功删除 ${selectedIds.length} 个商品`);
+            alert(`成功删除 ${result.deleted || selectedIds.length} 个商品`);
         } catch (err) {
             console.error('Batch delete failed:', err);
             alert('删除失败: ' + err.message);
@@ -3329,21 +3725,19 @@ Example output format:
                     return;
                 }
 
-                const { data, error } = await supabaseClient
-                    .from('shop_products')
-                    .select('*')
-                    .in('id', selectedIds);
-
-                if (error) throw error;
-                products = data;
+                const payload = await this.loadShopProductsViaAdminApi({
+                    ids: selectedIds.join(','),
+                    fields: 'full',
+                    order: 'display_order_desc'
+                });
+                products = Array.isArray(payload?.rows) ? payload.rows : [];
             } else {
-                const { data, error } = await supabaseClient
-                    .from('shop_products')
-                    .select('*')
-                    .order('display_order', { ascending: false });
-
-                if (error) throw error;
-                products = data;
+                const payload = await this.loadShopProductsViaAdminApi({
+                    status: 'all',
+                    fields: 'full',
+                    order: 'display_order_desc'
+                });
+                products = Array.isArray(payload?.rows) ? payload.rows : [];
             }
 
             // Convert to CSV
@@ -4014,7 +4408,8 @@ Example output format:
         }
 
         try {
-            const { data } = await supabaseClient.from('shop_products').select('*').eq('id', id).single();
+            const payload = await this.loadShopProductByIdViaAdminApi(id);
+            const data = payload?.product || null;
             if (!data || this.activeProductEditRequestId !== requestId) {
                 return;
             }
@@ -4327,8 +4722,12 @@ Example output format:
 
         let data = preloadedData;
         if (!data) {
-            const res = await supabaseClient.from('shop_products').select('*').order('display_order', { ascending: false });
-            data = res.data || [];
+            const payload = await this.loadShopProductsViaAdminApi({
+                status: 'all',
+                fields: 'full',
+                order: 'display_order_desc'
+            });
+            data = Array.isArray(payload?.rows) ? payload.rows : [];
         }
 
         container.innerHTML = '';
@@ -4434,6 +4833,43 @@ Example output format:
                 btnElement.disabled = false;
             }
         }
+    },
+
+    buildInventoryImportBatchId: function () {
+        const date = new Date();
+        return date.getFullYear().toString().slice(-2) +
+            (date.getMonth() + 1).toString().padStart(2, '0') +
+            date.getDate().toString().padStart(2, '0') +
+            date.getHours().toString().padStart(2, '0') +
+            date.getMinutes().toString().padStart(2, '0');
+    },
+
+    performInventoryImport: async function ({ productId, contentLines, status = 'available', batchId = '' } = {}) {
+        const lines = Array.isArray(contentLines)
+            ? contentLines.map((line) => String(line || '').trim()).filter(Boolean)
+            : [];
+        const resolvedProductId = String(productId || '').trim();
+        const resolvedBatchId = String(batchId || '').trim() || this.buildInventoryImportBatchId();
+
+        if (!resolvedProductId) {
+            throw new Error('请选择商品');
+        }
+
+        if (!lines.length) {
+            throw new Error('请输入有效的账号内容');
+        }
+
+        await this.callAdminMutation('import_inventory', {
+            productId: resolvedProductId,
+            lines,
+            importStatus: String(status || 'available').trim() || 'available',
+            batchId: resolvedBatchId
+        });
+
+        return {
+            batchId: resolvedBatchId,
+            imported: lines.length
+        };
     },
 
     // ==================== Marketing Visual Builders ====================
@@ -6495,7 +6931,7 @@ Example output format:
         }
 
         const requestHeaders = headers || await this.getAdminAuthHeaders();
-        const response = await fetch('/api/admin/shop/delivery-strategy', {
+        const response = await fetch(this.buildAdminShopUrl('shop/delivery-strategy'), {
             method: 'GET',
             headers: requestHeaders
         });
@@ -6533,7 +6969,7 @@ Example output format:
             }
 
             const headers = await this.getAdminAuthHeaders();
-            const response = await fetch('/api/admin/shop/delivery-strategy', {
+            const response = await fetch(this.buildAdminShopUrl('shop/delivery-strategy'), {
                 method: 'POST',
                 headers,
                 body: JSON.stringify({
@@ -6564,6 +7000,8 @@ Example output format:
 
     loadDeliveryTasks: async function (page = 1) {
         this.deliveryTaskPage = page;
+        const loadGeneration = Number(this.shopTabLoadGeneration.fulfillment || 0);
+        this.shopTabLoadState.fulfillment = 'loading';
         const tbody = document.getElementById('deliveryTasksTableBody');
         const summary = document.getElementById('deliveryTaskSummary');
         const filterHint = document.getElementById('deliveryTaskFilterHint');
@@ -6753,7 +7191,7 @@ Example output format:
                     replayPage: String(requestPayload.replayPage),
                     replayPageSize: String(requestPayload.replayPageSize)
                 });
-                const response = await fetch(`/api/admin/shop/delivery-tasks?${params.toString()}`, {
+                const response = await fetch(this.buildAdminShopUrl('shop/delivery-tasks', Object.fromEntries(params.entries())), {
                     method: 'GET',
                     headers
                 });
@@ -6821,8 +7259,14 @@ Example output format:
             }
 
             await strategyPromise;
+            if (Number(this.shopTabLoadGeneration.fulfillment || 0) === loadGeneration) {
+                this.shopTabLoadState.fulfillment = 'loaded';
+            }
         } catch (err) {
             console.error('[ShopAdmin] loadDeliveryTasks failed:', err);
+            if (Number(this.shopTabLoadGeneration.fulfillment || 0) === loadGeneration) {
+                this.shopTabLoadState.fulfillment = 'error';
+            }
             this.deliveryConflictAuditRecords = [];
             if (summary) {
                 summary.innerHTML = '<span class="shop-delivery-pill shop-delivery-pill--danger">履约任务加载失败</span>';
@@ -7435,12 +7879,13 @@ Example output format:
             if (this.isDeliveryMockModeEnabled()) {
                 const result = await this.performDeliveryMockTaskAction(taskId, action, note);
                 alert(result.message || `模拟验收：已完成 ${message}`);
+                this.invalidateShopTabCache();
                 await this.loadDeliveryTasks(this.deliveryTaskPage || 1);
                 return;
             }
 
             const headers = await this.getAdminAuthHeaders();
-            const response = await fetch('/api/admin/shop/delivery-actions', {
+            const response = await fetch(this.buildAdminShopUrl('shop/delivery-actions'), {
                 method: 'POST',
                 headers,
                 body: JSON.stringify({ taskId, action, note })
@@ -7451,6 +7896,7 @@ Example output format:
             }
 
             alert(result.message || `已完成：${message}`);
+            this.invalidateShopTabCache();
             if (this.currentTab === 'orders') {
                 await this.searchOrders(this.ordersPage || 1);
             } else {
@@ -7464,6 +7910,8 @@ Example output format:
 
     searchOrders: async function (page = 1, options = {}) {
         this.ordersPage = page;
+        const loadGeneration = Number(this.shopTabLoadGeneration.orders || 0);
+        this.shopTabLoadState.orders = 'loading';
         const normalizedOptions = options && typeof options === 'object' ? options : {};
         const orderSearchInput = document.getElementById('orderSearchInput');
         const query = String(
@@ -7495,22 +7943,12 @@ Example output format:
 
         try {
             const site = window.AdminSiteFilter?.getSiteFilter?.() || 'all';
-            const searchParams = new URLSearchParams({
+            const payload = await this.loadOrdersViaAdminApi({
                 site,
-                page: String(page),
-                pageSize: String(limit)
+                page,
+                pageSize: limit,
+                query: query || null
             });
-            if (query) {
-                searchParams.set('query', query);
-            }
-
-            const response = await (window.AdminApi?.fetch || fetch)(`/api/admin/shop/orders?${searchParams.toString()}`, {
-                credentials: 'include'
-            });
-            const payload = await response.json().catch(() => ({}));
-            if (!response.ok || payload?.success === false) {
-                throw new Error(payload?.message || `Shop orders request failed (${response.status})`);
-            }
 
             const data = Array.isArray(payload?.rows) ? payload.rows : [];
             const count = Number(payload?.count) || 0;
@@ -7526,6 +7964,9 @@ Example output format:
                 }
                 tbody.innerHTML = '<tr><td colspan="6" class="text-center">无数据 - 请检查订单号是否正确</td></tr>';
                 this.renderPagination('ordersPagination', page, count || 0, this.pageSize, 'searchOrders');
+                if (Number(this.shopTabLoadGeneration.orders || 0) === loadGeneration) {
+                    this.shopTabLoadState.orders = 'loaded';
+                }
                 return { opened: true, matched: false };
             }
 
@@ -7621,6 +8062,9 @@ Example output format:
                 this.pendingOpenOrderDetails = false;
             }
 
+            if (Number(this.shopTabLoadGeneration.orders || 0) === loadGeneration) {
+                this.shopTabLoadState.orders = 'loaded';
+            }
             return { opened: true, matched };
 
         } catch (err) {
@@ -7628,6 +8072,9 @@ Example output format:
                 return { opened: true, matched: false, stale: true };
             }
             console.error(err);
+            if (Number(this.shopTabLoadGeneration.orders || 0) === loadGeneration) {
+                this.shopTabLoadState.orders = 'error';
+            }
             tbody.innerHTML = `<tr><td colspan="6" class="text-danger">Error: ${this.escapeHtml(err.message)}</td></tr>`;
             return { opened: false, matched: false, error: err };
         }
@@ -7791,7 +8238,7 @@ Example output format:
 
         try {
             const headers = await this.getAdminAuthHeaders();
-            const response = await fetch('/api/admin/payments/shop-refund', {
+            const response = await fetch(this.buildAdminRouteUrl('payments/shop-refund'), {
                 method: 'POST',
                 headers,
                 body: JSON.stringify({
@@ -7808,6 +8255,7 @@ Example output format:
             }
 
             alert(result.message || '退款成功');
+            this.invalidateShopTabCache();
             this.closeDynamicModal('refundModal');
             this.searchOrders(); // Refresh Order List
             // Also try refresh inventory list if possible, or user will switch tab
@@ -8032,7 +8480,12 @@ Example output format:
         // Load products for custom dropdown
         const menu = document.getElementById('productDropdownMenu');
         if (menu && menu.children.length <= 1) {
-            const { data } = await supabaseClient.from('shop_products').select('id, name').order('name');
+            const payload = await this.loadShopProductsViaAdminApi({
+                status: 'all',
+                fields: 'names',
+                order: 'name_asc'
+            });
+            const data = Array.isArray(payload?.rows) ? payload.rows : [];
             if (data) {
                 data.forEach(p => {
                     const item = document.createElement('div');
@@ -8164,65 +8617,19 @@ Example output format:
         const tbody = document.getElementById('inventoryTableBody');
         if (!tbody) return;
 
+        const loadGeneration = Number(this.shopTabLoadGeneration.inventory || 0);
+        this.shopTabLoadState.inventory = 'loading';
         tbody.innerHTML = this.buildShopTableLoadingSkeleton(7, { rowCount: 5, includeCheckbox: true, actionCount: 3 });
 
-        const productId = document.getElementById('invFilterProduct')?.value || null;
-        const status = document.getElementById('invFilterStatus')?.value || null;
-        const search = document.getElementById('invSearchInput')?.value || null;
-        const dateType = document.getElementById('invFilterDateType')?.value || 'all';
-
-        // Calculate Date Range
-        let dateFrom = null;
-        let dateTo = null;
-
-        if (dateType === 'all') {
-            // No filter
-        } else if (dateType === 'custom') {
-            const f = document.getElementById('invDateFrom')?.value;
-            const t = document.getElementById('invDateTo')?.value;
-            // Flatpickr gives YYYY-MM-DD. 
-            if (f) dateFrom = f + ' 00:00:00';
-            if (t) dateTo = t + ' 23:59:59';
-        } else {
-            const now = new Date();
-            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-            if (dateType === 'today') {
-                dateFrom = todayStart.toISOString();
-                const todayEnd = new Date(todayStart); todayEnd.setHours(23, 59, 59, 999);
-                dateTo = todayEnd.toISOString();
-            } else if (dateType === 'week') {
-                // Last 7 days? Or "This Week" (Monday start)?
-                // Comments logic: "weekAgo = now - 7 days". Relative.
-                const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-                dateFrom = weekAgo.toISOString();
-                dateTo = new Date().toISOString();
-            } else if (dateType === 'month') {
-                const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-                dateFrom = monthAgo.toISOString();
-                dateTo = new Date().toISOString();
-            }
-        }
-
-
         try {
-            const { data, error } = await supabaseClient.rpc('fn_admin_list_inventory', {
-                p_product_id: productId || null,
-                p_status: status || null,
-                p_search: search || null,
-                p_page: page,
-                p_page_size: this.pageSize,
-                p_date_from: dateFrom,
-                p_date_to: dateTo
-            });
+            const result = await this.loadInventoryViaAdminApi(
+                this.getInventoryQueryFilters({ page, pageSize: this.pageSize, includeSearch: true })
+            );
 
-            if (error) throw error;
-            if (!data.success) throw new Error(data.message);
-
-            this.inventoryData = data.items || [];
+            this.inventoryData = Array.isArray(result.items) ? result.items : [];
 
             // Update stats
-            const stats = data.stats || {};
+            const stats = result.stats || {};
             document.getElementById('statReserve').textContent = stats.reserve || 0;
             document.getElementById('statAvailable').textContent = stats.available || 0;
             document.getElementById('statSold').textContent = stats.sold || 0;
@@ -8233,6 +8640,9 @@ Example output format:
             // Render table
             if (this.inventoryData.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="7" class="shop-inventory-empty-cell">暂无数据</td></tr>';
+                if (Number(this.shopTabLoadGeneration.inventory || 0) === loadGeneration) {
+                    this.shopTabLoadState.inventory = 'loaded';
+                }
                 return;
             }
 
@@ -8285,8 +8695,7 @@ Example output format:
             }).join('');
 
             // Calculate total for pagination
-            // Calculate total for pagination
-            const total = (stats.reserve || 0) + (stats.available || 0) + (stats.sold || 0) + (stats.frozen || 0) + (stats.fault || 0);
+            const total = Number(result.total || 0);
             this.renderPagination('inventoryPagination', page, total, this.pageSize, 'loadInventoryList');
 
             // Enable horizontal scroll with mouse wheel for mobile
@@ -8295,8 +8704,15 @@ Example output format:
                 window.enableHorizontalScroll(invTableContainer);
             }
 
+            if (Number(this.shopTabLoadGeneration.inventory || 0) === loadGeneration) {
+                this.shopTabLoadState.inventory = 'loaded';
+            }
+
         } catch (err) {
             console.error('[ShopAdmin] Load inventory error:', err);
+            if (Number(this.shopTabLoadGeneration.inventory || 0) === loadGeneration) {
+                this.shopTabLoadState.inventory = 'error';
+            }
             tbody.innerHTML = `<tr><td colspan="7" class="shop-inventory-empty-cell shop-inventory-empty-cell--error">加载失败: ${this.escapeHtml(err.message || '未知错误')}</td></tr>`;
         }
     },
@@ -8528,95 +8944,14 @@ Example output format:
         });
 
         try {
-            // Fetch detailed info - only join shop_products (profiles doesn't have FK from inventory)
-            const { data: invData, error: invError } = await supabaseClient
-                .from('shop_inventory')
-                .select('*, shop_products(name)')
-                .eq('id', inventoryId)
-                .single();
+            const detailPayload = await this.loadInventoryDetailViaAdminApi(inventoryId);
+            const invData = detailPayload?.inventory || null;
+            const orderData = detailPayload?.order || null;
+            const historyItems = Array.isArray(detailPayload?.historyItems) ? detailPayload.historyItems : [];
+            const sameOrderItems = Array.isArray(detailPayload?.sameOrderItems) ? detailPayload.sameOrderItems : [];
 
-            if (invError) throw invError;
-
-            // Get order info if sold
-            let orderData = null;
-            let historyItems = [];
-            let sameOrderItems = [];
-            // Fetch order if sold, frozen or fault (any status implying it was sold)
-            if (['sold', 'frozen', 'fault'].includes(invData.status) || invData.buyer_id) {
-                let fetchedOrder = null;
-
-                // 1. Try direct link
-                const { data: direct } = await supabaseClient
-                    .from('shop_orders')
-                    .select('*')
-                    .eq('inventory_id', inventoryId)
-                    .single();
-                fetchedOrder = direct;
-
-                // 2. Fallback: Lookup orphaned orders (same user, same product, null inventory_id)
-                if (!fetchedOrder && invData.buyer_id) {
-                    const { data: orphan } = await supabaseClient
-                        .from('shop_orders')
-                        .select('*')
-                        .eq('user_id', invData.buyer_id)
-                        .eq('product_id', invData.product_id)
-                        .is('inventory_id', null)
-                        .order('created_at', { ascending: false })
-                        .limit(1)
-                        .single();
-                    fetchedOrder = orphan;
-                }
-
-                if (fetchedOrder && fetchedOrder.user_id) {
-                    const { data: user } = await supabaseClient
-                        .from('profiles')
-                        .select('email, username')
-                        .eq('id', fetchedOrder.user_id)
-                        .single();
-                    if (user) fetchedOrder.profiles = user;
-                }
-                orderData = fetchedOrder;
-
-                // Get related items (History & Same Order)
-                const anchorTime = orderData?.created_at || invData.sold_at;
-                const buyerId = orderData?.user_id || invData.buyer_id;
-
-                if (buyerId) {
-                    // 1. History (Same User, Same Product)
-                    // 1. History (Same User, Same Product) - Query Inventory directly
-                    const { data: historyInv } = await supabaseClient
-                        .from('shop_inventory')
-                        .select('id, content, sold_at')
-                        .eq('buyer_id', buyerId)
-                        .eq('product_id', invData.product_id)
-                        .eq('status', 'sold')
-                        .neq('id', inventoryId)
-                        .order('sold_at', { ascending: false })
-                        .limit(10);
-
-                    if (historyInv) {
-                        historyItems = historyInv.map(i => ({ shop_inventory: i }));
-                    }
-
-                    // 2. Same Order (Same User, Time +/- 60s) - Query Inventory directly
-                    if (anchorTime) {
-                        const t = new Date(anchorTime);
-                        const tMin = new Date(t.getTime() - 60000).toISOString();
-                        const tMax = new Date(t.getTime() + 60000).toISOString();
-
-                        const { data: sameTimeInv } = await supabaseClient
-                            .from('shop_inventory')
-                            .select('id, content, sold_at')
-                            .eq('buyer_id', buyerId)
-                            .gte('sold_at', tMin)
-                            .lte('sold_at', tMax)
-                            .neq('id', inventoryId);
-
-                        if (sameTimeInv) {
-                            sameOrderItems = sameTimeInv.map(i => ({ shop_inventory: i }));
-                        }
-                    }
-                }
+            if (!invData) {
+                throw new Error('库存记录不存在');
             }
 
             // Build detail content
@@ -8773,7 +9108,12 @@ Example output format:
 
         // Load products
         select.innerHTML = '<option value="">请选择商品</option>';
-        const { data } = await supabaseClient.from('shop_products').select('id, name').order('name');
+        const payload = await this.loadShopProductsViaAdminApi({
+            status: 'all',
+            fields: 'names',
+            order: 'name_asc'
+        });
+        const data = Array.isArray(payload?.rows) ? payload.rows : [];
         if (data) {
             data.forEach(p => {
                 const opt = document.createElement('option');
@@ -8797,6 +9137,10 @@ Example output format:
     },
 
     doImport: async function () {
+        if (!this.requireWritableSite({ label: '导入库存（弹窗）' })) {
+            return;
+        }
+
         const productId = document.getElementById('importProductSelect')?.value || '';
         const contentInput = document.getElementById('importContentInput');
         const content = contentInput?.value || '';
@@ -8808,34 +9152,29 @@ Example output format:
         const contentLines = content.split('\n').map((line) => line.trim()).filter(Boolean);
         if (contentLines.length === 0) { alert('请输入有效的账号内容'); return; }
 
-        const date = new Date();
-        const batchId = date.getFullYear().toString().slice(-2) +
-            (date.getMonth() + 1).toString().padStart(2, '0') +
-            date.getDate().toString().padStart(2, '0') +
-            date.getHours().toString().padStart(2, '0') +
-            date.getMinutes().toString().padStart(2, '0');
-
         try {
-            const { error } = await supabaseClient.rpc('fn_import_inventory', {
-                p_product_id: productId,
-                p_content_list: contentLines,
-                p_batch_id: batchId,
-                p_status: status
+            const { batchId, imported } = await this.performInventoryImport({
+                productId,
+                contentLines,
+                status
             });
-
-            if (error) throw error;
-
-            alert(`成功导入 ${contentLines.length} 个账号\n批次号: ${batchId}`);
+            alert(`成功导入 ${imported} 个账号\n批次号: ${batchId}`);
             contentInput.value = '';
             this.updateLegacyImportLineCount();
             this.closeImportModal();
-            this.loadInventoryList(this.inventoryPage);
+            await this.loadInventoryList(this.inventoryPage);
+            await this.loadProducts();
+            await this.loadInventoryProductList();
         } catch (err) {
             alert('导入失败: ' + err.message);
         }
     },
 
     releaseReserve: async function () {
+        if (!this.requireWritableSite({ label: '批量释放储备库存' })) {
+            return;
+        }
+
         const productId = document.getElementById('releaseProductSelect').value;
         const count = parseInt(document.getElementById('releaseCount').value) || null;
         const beforeDate = document.getElementById('releaseBeforeDate').value || null;
@@ -8844,18 +9183,16 @@ Example output format:
         if (!count && !beforeDate) { alert('请指定数量或日期'); return; }
 
         try {
-            const { data, error } = await supabaseClient.rpc('fn_admin_release_reserve', {
-                p_product_id: productId,
-                p_count: count,
-                p_before_date: beforeDate ? new Date(beforeDate).toISOString() : null
+            const result = await this.callAdminMutation('inventory_release_reserve', {
+                productId,
+                count,
+                beforeDate: beforeDate ? new Date(beforeDate).toISOString() : null
             });
-
-            if (error) throw error;
-            if (!data.success) throw new Error(data.message);
-
-            alert(data.message);
+            alert(result.message || '释放完成');
             this.closeReleaseModal();
-            this.loadInventoryList(this.inventoryPage);
+            await this.loadInventoryList(this.inventoryPage);
+            await this.loadProducts();
+            await this.loadInventoryProductList();
         } catch (err) {
             alert('释放失败: ' + err.message);
         }
@@ -8885,18 +9222,10 @@ Example output format:
         this.categoryFetchPromise = (async () => {
             try {
                 console.log('loadCategories: fetching from shop_categories...');
-                const { data, error } = await supabaseClient
-                    .from('shop_categories')
-                    .select('*')
-                    .order('sort_order');
+                const payload = await this.loadShopCategoriesViaAdminApi();
+                const data = Array.isArray(payload?.rows) ? payload.rows : [];
 
-                console.log('loadCategories result:', { data, error });
-
-                if (error) {
-                    console.warn('shop_categories table error, using defaults:', error.message);
-                    this.categoryData = fallbackCategories;
-                    return this.categoryData;
-                }
+                console.log('loadCategories result:', { data });
 
                 if (!data || data.length === 0) {
                     console.warn('shop_categories table is empty, using defaults');
@@ -8925,6 +9254,8 @@ Example output format:
         // Target the tree container (new structure)
         const treeContainer = document.getElementById('importProductTree');
         // Clear and add loading state
+        const loadGeneration = Number(this.shopTabLoadGeneration.import || 0);
+        this.shopTabLoadState.import = 'loading';
         treeContainer.innerHTML = this.buildImportTreeLoadingSkeleton();
 
         // Reset selection
@@ -8936,28 +9267,28 @@ Example output format:
             // Load categories first
             await this.loadCategories();
 
-            // Fetch active products
-            const { data: activeData, error: activeError } = await supabaseClient.from('shop_products')
-                .select('id, name, category, sort_order')
-                .eq('is_active', true)
-                .order('sort_order');
-
-            if (activeError) throw activeError;
-
-            // Fetch deleted products for recycle bin
-            const { data: deletedData, error: deletedError } = await supabaseClient.from('shop_products')
-                .select('id, name, category')
-                .eq('is_active', false)
-                .order('name');
-
-            if (deletedError) throw deletedError;
-
-            this.allProductsForImport = activeData || [];
-            this.deletedProductsForImport = deletedData || [];
+            const payload = await this.loadShopProductsViaAdminApi({
+                status: 'all',
+                fields: 'import',
+                order: 'sort_order_asc'
+            });
+            const allProducts = Array.isArray(payload?.rows) ? payload.rows : [];
+            this.allProductsForImport = allProducts
+                .filter((item) => item?.is_active !== false)
+                .sort((a, b) => Number(a?.sort_order || 0) - Number(b?.sort_order || 0));
+            this.deletedProductsForImport = allProducts
+                .filter((item) => item?.is_active === false)
+                .sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''), 'zh-CN'));
             this.renderImportList();
+            if (Number(this.shopTabLoadGeneration.import || 0) === loadGeneration) {
+                this.shopTabLoadState.import = 'loaded';
+            }
 
         } catch (e) {
             console.error('Failed to load products for import view', e);
+            if (Number(this.shopTabLoadGeneration.import || 0) === loadGeneration) {
+                this.shopTabLoadState.import = 'error';
+            }
             treeContainer.innerHTML = '<div class="shop-import-tree-state shop-import-tree-state--error">加载失败</div>';
         }
     },
@@ -9354,47 +9685,92 @@ Example output format:
     },
 
     // Reorder product within or across categories
-    reorderProduct: async function (productId, targetCategory, beforeId) {
+    reorderProduct: async function (productId, targetCategory, beforeId, options = {}) {
         if (!productId) return;
 
         const product = this.allProductsForImport.find(p => p.id === productId);
         if (!product) return;
 
-        // Skip if same category and no reorder needed
-        const isMovingCategory = product.category !== targetCategory;
+        const sourceCategory = product.category;
+        const isMovingCategory = sourceCategory !== targetCategory;
+        if (options.skipWritableSiteCheck !== true) {
+            if (isMovingCategory) {
+                if (!this.requireWritableSite({ label: '移动商品分类' })) {
+                    return;
+                }
+            } else if (!this.requireWritableSite({ label: '调整商品排序' })) {
+                return;
+            }
+        }
 
-        // Get products in target category (excluding the dragged one)
-        const categoryProducts = this.allProductsForImport
+        const targetProducts = this.allProductsForImport
             .filter(p => p.category === targetCategory && p.id !== productId)
             .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
 
-        // Find insertion index
-        let insertIndex = categoryProducts.length;
+        let insertIndex = targetProducts.length;
         if (beforeId) {
-            const beforeIndex = categoryProducts.findIndex(p => p.id === beforeId);
+            const beforeIndex = targetProducts.findIndex(p => p.id === beforeId);
             if (beforeIndex !== -1) insertIndex = beforeIndex;
         }
 
-        // Insert product at new position
-        categoryProducts.splice(insertIndex, 0, product);
+        const reorderedTargetProducts = [...targetProducts];
+        reorderedTargetProducts.splice(insertIndex, 0, product);
 
-        // Update local sort orders
-        categoryProducts.forEach((p, idx) => {
-            p.sort_order = idx;
+        const sourceProducts = isMovingCategory
+            ? this.allProductsForImport
+                .filter((entry) => entry.category === sourceCategory && entry.id !== productId)
+                .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+            : [];
+
+        const assignments = [];
+        const seenProductIds = new Set();
+
+        reorderedTargetProducts.forEach((entry, idx) => {
+            if (seenProductIds.has(entry.id)) return;
+            assignments.push({
+                id: entry.id,
+                category: targetCategory,
+                sortOrder: idx
+            });
+            seenProductIds.add(entry.id);
         });
 
+        sourceProducts.forEach((entry, idx) => {
+            if (seenProductIds.has(entry.id)) return;
+            assignments.push({
+                id: entry.id,
+                category: sourceCategory,
+                sortOrder: idx
+            });
+            seenProductIds.add(entry.id);
+        });
+
+        const changedAssignments = assignments.filter((entry) => {
+            const currentProduct = this.allProductsForImport.find((candidate) => candidate.id === entry.id);
+            if (!currentProduct) return false;
+            return String(currentProduct.category || '') !== entry.category
+                || Number(currentProduct.sort_order || 0) !== entry.sortOrder;
+        });
+
+        if (!changedAssignments.length) {
+            return;
+        }
+
         try {
-            // Only update database if category changed
-            if (isMovingCategory) {
-                await supabaseClient
-                    .from('shop_products')
-                    .update({ category: targetCategory })
-                    .eq('id', productId);
-            }
+            const result = await this.callAdminMutation('reorder_products', {
+                assignments: changedAssignments
+            });
+            const updatedProducts = Array.isArray(result?.products) ? result.products : [];
+            const updatedMap = new Map(updatedProducts.map((entry) => [String(entry.id), entry]));
 
-            // Update local cache
+            this.allProductsForImport.forEach((entry) => {
+                const updatedEntry = updatedMap.get(String(entry.id));
+                if (!updatedEntry) return;
+                entry.category = updatedEntry.category;
+                entry.sort_order = updatedEntry.sort_order;
+            });
+
             product.category = targetCategory;
-
             // Re-render (uses local sort_order)
             this.renderImportList();
 
@@ -9543,16 +9919,23 @@ Example output format:
     },
 
     createCategory: async function (name) {
+        if (!this.requireWritableSite({ label: '创建商品分类' })) {
+            return;
+        }
+
         try {
-            const { data, error } = await supabaseClient
-                .from('shop_categories')
-                .insert({ name: name, color: '#6b9ece', sort_order: this.categoryData.length })
-                .select()
-                .single();
+            const result = await this.callAdminMutation('create_category', {
+                name,
+                color: '#6b9ece'
+            });
+            const createdCategory = result?.category || null;
+            if (!createdCategory) {
+                throw new Error('创建分类失败');
+            }
 
-            if (error) throw error;
-
-            this.categoryData.push(data);
+            this.categoryData.push(createdCategory);
+            this.categoryData.sort((a, b) => Number(a?.sort_order || 0) - Number(b?.sort_order || 0));
+            await this.renderProductCategoryFilters();
             this.renderImportList();
         } catch (e) {
             console.error('Failed to create category:', e);
@@ -9582,29 +9965,33 @@ Example output format:
         const cat = this.categoryData.find(c => c.name === oldKey || c.id === oldKey);
         if (!cat) return;
 
+        if (!this.requireWritableSite({ label: '重命名商品分类' })) {
+            return;
+        }
+
         try {
-            // Update category name
-            const { error: catError } = await supabaseClient
-                .from('shop_categories')
-                .update({ name: newName })
-                .eq('id', cat.id);
-
-            if (catError) throw catError;
-
-            // Update all products with this category
-            const { error: prodError } = await supabaseClient
-                .from('shop_products')
-                .update({ category: newName })
-                .eq('category', cat.name);
-
-            if (prodError) console.warn('Failed to update products:', prodError);
+            const result = await this.callAdminMutation('rename_category', {
+                categoryId: cat.id,
+                name: newName
+            });
+            const updatedCategory = result?.category || null;
+            if (!updatedCategory) {
+                throw new Error('重命名分类失败');
+            }
 
             // Update local data
-            cat.name = newName;
+            cat.name = updatedCategory.name;
             this.allProductsForImport.forEach(p => {
                 if (p.category === oldKey) p.category = newName;
             });
+            if (this.currentImportCategory === oldKey) {
+                this.currentImportCategory = newName;
+            }
+            if (this.currentCategory === oldKey) {
+                this.currentCategory = newName;
+            }
 
+            await this.renderProductCategoryFilters();
             this.renderImportList();
         } catch (e) {
             console.error('Failed to rename category:', e);
@@ -9619,20 +10006,28 @@ Example output format:
 
         const cat = this.categoryData.find(c => c.name === key || c.id === key);
         if (!cat) return;
+
+        if (!this.requireWritableSite({ label: '设置商品分类颜色' })) {
+            return;
+        }
+
         this.closeCategoryContextMenu();
 
         try {
-            const { error } = await supabaseClient
-                .from('shop_categories')
-                .update({ color: color })
-                .eq('id', cat.id);
+            const result = await this.callAdminMutation('set_category_color', {
+                categoryId: cat.id,
+                color
+            });
+            const updatedCategory = result?.category || null;
+            if (!updatedCategory) {
+                throw new Error('设置分类颜色失败');
+            }
 
-            if (error) throw error;
-
-            cat.color = color;
+            cat.color = updatedCategory.color;
             this.renderImportList();
         } catch (e) {
             console.error('Failed to set color:', e);
+            alert('设置颜色失败: ' + e.message);
         }
     },
 
@@ -9659,29 +10054,29 @@ Example output format:
     },
 
     deleteCategory: async function (cat) {
+        if (!this.requireWritableSite({ label: '删除商品分类' })) {
+            return;
+        }
+
         try {
-            // Move products to 'other'
-            const { error: prodError } = await supabaseClient
-                .from('shop_products')
-                .update({ category: 'other' })
-                .eq('category', cat.name);
-
-            if (prodError) console.warn('Failed to move products:', prodError);
-
-            // Delete the category
-            const { error } = await supabaseClient
-                .from('shop_categories')
-                .delete()
-                .eq('id', cat.id);
-
-            if (error) throw error;
+            const result = await this.callAdminMutation('delete_category', {
+                categoryId: cat.id
+            });
+            const fallbackCategory = result?.fallbackCategory || 'other';
 
             // Update local data
-            this.categoryData = this.categoryData.filter(c => c.id !== cat.id);
+            await this.loadCategories({ force: true });
             this.allProductsForImport.forEach(p => {
-                if (p.category === cat.name) p.category = 'other';
+                if (p.category === cat.name) p.category = fallbackCategory;
             });
+            if (this.currentImportCategory === cat.name) {
+                this.currentImportCategory = 'all';
+            }
+            if (this.currentCategory === cat.name) {
+                this.currentCategory = 'all';
+            }
 
+            await this.renderProductCategoryFilters();
             this.renderImportList();
         } catch (e) {
             console.error('Failed to delete category:', e);
@@ -9692,35 +10087,13 @@ Example output format:
     // Move product to different category (Drag & Drop)
     moveProductToCategory: async function (productId, targetCategory) {
         if (!productId || !targetCategory) return;
-
-        // Find current product info
-        const product = this.allProductsForImport.find(p => p.id === productId);
-        if (!product) return;
-
-        // Skip if same category
-        if (product.category === targetCategory) return;
-
-        try {
-            // Update in database
-            const { error } = await supabaseClient
-                .from('shop_products')
-                .update({ category: targetCategory })
-                .eq('id', productId);
-
-            if (error) throw error;
-
-            // Update local cache
-            product.category = targetCategory;
-
-            // Re-render tree
-            this.renderImportList();
-
-            // Show toast/feedback
-            console.log(`Moved "${product.name}" to ${this.getCategoryLabel(targetCategory)}`);
-        } catch (e) {
-            console.error('Failed to move product:', e);
-            alert('移动失败: ' + e.message);
+        if (!this.requireWritableSite({ label: '移动商品分类' })) {
+            return;
         }
+
+        return this.reorderProduct(productId, targetCategory, null, {
+            skipWritableSiteCheck: true
+        });
     },
 
     selectImportProduct: function (id, name) {
@@ -9746,6 +10119,10 @@ Example output format:
     },
 
     doImportFromView: async function () {
+        if (!this.requireWritableSite({ label: '导入库存（工作台）' })) {
+            return;
+        }
+
         const productId = document.getElementById('importViewProductId').value;
         const content = document.getElementById('importViewContentInput').value;
         const status = document.querySelector('input[name="importViewStatus"]:checked').value;
@@ -9756,31 +10133,24 @@ Example output format:
         const contentLines = content.split('\n').map(l => l.trim()).filter(l => l);
         if (contentLines.length === 0) return;
 
-        // Generate batch ID
-        const date = new Date();
-        const batchId = date.getFullYear().toString().slice(-2) +
-            (date.getMonth() + 1).toString().padStart(2, '0') +
-            date.getDate().toString().padStart(2, '0') +
-            date.getHours().toString().padStart(2, '0') +
-            date.getMinutes().toString().padStart(2, '0');
-
         try {
-            const { data, error } = await supabaseClient.rpc('fn_import_inventory', {
-                p_product_id: productId,
-                p_content_list: contentLines,
-                p_batch_id: batchId,
-                p_status: status
+            const { batchId, imported } = await this.performInventoryImport({
+                productId,
+                contentLines,
+                status
             });
-
-            if (error) throw error;
-
-            alert(`成功导入 ${contentLines.length} 个账号\n批次号: ${batchId}`);
+            alert(`成功导入 ${imported} 个账号\n批次号: ${batchId}`);
 
             // Clear input
             document.getElementById('importViewContentInput').value = '';
             document.getElementById('importViewLineCount').textContent = '(0个)';
 
             // Note: We don't clear selection so user can continue importing if needed.
+            await this.loadProducts();
+            await this.loadInventoryProductList();
+            if (this.currentTab === 'inventory') {
+                await this.loadInventoryList(this.inventoryPage);
+            }
 
         } catch (err) {
             console.error('Import error:', err);
@@ -9815,62 +10185,27 @@ Example output format:
                 if (menu) menu.classList.remove('is-open');
 
             } else {
-                const productId = document.getElementById('invFilterProduct')?.value || null;
+                const result = await this.loadInventoryViaAdminApi(
+                    {
+                        ...this.getInventoryQueryFilters({ page: 1, pageSize: 10000, includeSearch: true }),
+                        includeOrderHints: true
+                    }
+                );
+                items = Array.isArray(result.items) ? result.items : [];
                 const status = document.getElementById('invFilterStatus')?.value || null;
-
-                // Get all data (no pagination for export)
-                const { data, error } = await supabaseClient.rpc('fn_admin_list_inventory', {
-                    p_product_id: productId || null,
-                    p_status: status || null,
-                    p_search: null,
-                    p_page: 1,
-                    p_page_size: 10000
-                });
-
-                if (error) throw error;
-                items = data.items || [];
-                const statusName = status ? { reserve: '储备', available: '在售', sold: '已售', frozen: '冻结' }[status] : '全部';
+                const statusName = status ? {
+                    reserve: '储备',
+                    available: '在售',
+                    sold: '已售',
+                    frozen: '冻结',
+                    fault: '故障'
+                }[status] || status : '全部';
                 filenamePrefix = `库存导出_${statusName}`;
             }
 
             if (items.length === 0) {
                 alert('没有可导出的数据');
                 return;
-            }
-
-            // Patch missing Order IDs (Orphaned Orders Check)
-            // Some old orders lost the inventory_id link. We attempt to find them by User+Product.
-            const missingOrdItems = items.filter(i => i.status === 'sold' && !i.order_id && i.buyer_id);
-            if (missingOrdItems.length > 0 && missingOrdItems.length < 200) { // Limit to batch size to avoid URL overflow
-                try {
-                    const buyerIds = [...new Set(missingOrdItems.map(i => i.buyer_id))];
-                    const productIds = [...new Set(missingOrdItems.map(i => i.product_id))];
-
-                    const { data: orphans } = await supabaseClient
-                        .from('shop_orders')
-                        .select('id, user_id, product_id, created_at')
-                        .in('user_id', buyerIds)
-                        .in('product_id', productIds) // Optimization
-                        .is('inventory_id', null)
-                        .order('created_at', { ascending: false });
-
-                    if (orphans) {
-                        // Greedy match
-                        const orphanPool = [...orphans];
-                        missingOrdItems.forEach(item => {
-                            const matchIdx = orphanPool.findIndex(o =>
-                                o.user_id === item.buyer_id &&
-                                o.product_id === item.product_id
-                            );
-                            if (matchIdx !== -1) {
-                                item.order_id = orphanPool[matchIdx].id;
-                                orphanPool.splice(matchIdx, 1); // Consume one
-                            }
-                        });
-                    }
-                } catch (e) {
-                    console.warn('[Export] Failed to patch orphans:', e);
-                }
             }
 
             // Format for Excel
@@ -9902,31 +10237,20 @@ Example output format:
         if (!window.XLSX) { alert('Excel导出库未加载'); return; }
 
         try {
-            const { data, error } = await supabaseClient.from('shop_orders').select(`
-                id, created_at, price_paid, snapshot_product_name, refund_status, user_id
-            `).order('created_at', { ascending: false }).limit(1000);
+            const site = window.AdminSiteFilter?.getSiteFilter?.() || 'all';
+            const data = await this.loadAllOrdersForExport({ site, pageSize: 100 });
 
-            if (error) throw error;
-
-            // Fetch Profiles Manually
-            const userIds = [...new Set(data.map(o => o.user_id))];
-            let userMap = {};
-            if (userIds.length > 0) {
-                const { data: users } = await supabaseClient
-                    .from('profiles')
-                    .select('id, email, display_name')
-                    .in('id', userIds);
-                if (users) {
-                    users.forEach(u => userMap[u.id] = u);
-                }
+            if (!data.length) {
+                alert('没有可导出的订单');
+                return;
             }
 
             const rows = data.map((o, idx) => {
-                const profile = userMap[o.user_id] || {};
+                const profile = o.profiles || {};
                 return {
                     '序号': idx + 1,
                     '订单号': o.id,
-                    '商品': o.snapshot_product_name || '',
+                    '商品': o.snapshot_product_name || o.resolved_items?.[0]?.product_name || '',
                     '支付积分': o.price_paid,
                     '买家邮箱': profile.email || '',
                     '退款状态': o.refund_status === 'refunded' ? '已退款' : '正常',
@@ -9937,7 +10261,8 @@ Example output format:
             const ws = XLSX.utils.json_to_sheet(rows);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, '订单列表');
-            XLSX.writeFile(wb, `订单导出_${new Date().toISOString().slice(0, 10)}.xlsx`);
+            const filenameSuffix = site === 'all' ? '全部' : site.toUpperCase();
+            XLSX.writeFile(wb, `订单导出_${filenameSuffix}_${new Date().toISOString().slice(0, 10)}.xlsx`);
         } catch (err) {
             alert('导出失败: ' + err.message);
         }

@@ -20,13 +20,11 @@ ALTER TABLE prompts ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public read access" ON prompts
     FOR SELECT USING (true);
 
--- Policy: Only authenticated users can insert
-CREATE POLICY "Authenticated insert" ON prompts
-    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
-
--- Policy: Only authenticated users can update
-CREATE POLICY "Authenticated update" ON prompts
-    FOR UPDATE USING (auth.role() = 'authenticated');
+-- Policy: Only the service role can manage prompts
+CREATE POLICY "Service role can manage prompts." ON prompts
+    FOR ALL
+    USING (auth.role() = 'service_role')
+    WITH CHECK (auth.role() = 'service_role');
 
 -- Create storage bucket for prompt images
 INSERT INTO storage.buckets (id, name, public)

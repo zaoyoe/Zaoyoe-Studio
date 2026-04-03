@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=20260401_POINTS_PACKAGE_EDITOR_1">
+    <link rel="stylesheet" href="admin-studio.css?v=20260403_GALLERY_SHARED_NOTE_ALIGNMENT_1">
     <link rel="stylesheet" href="admin-sidebar.css?v=20260331_ADMIN_MODULE_GUARDS_1">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260402_ADMIN_CHAT_INPUT_UI_13">
 
@@ -30,7 +30,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
     <!-- Prevent flash of wrong theme -->
-    <link rel="stylesheet" href="css/admin-studio-page.css?v=20260331_ADMIN_LOADING_SKELETONS_1">
+    <link rel="stylesheet" href="css/admin-studio-page.css?v=20260403_HOMEPAGE_LOADING_SHELL_1">
     <script src="./js/theme-preload.js"></script>
 
 </head>
@@ -185,7 +185,7 @@
                     <button class="admin-tab" data-view="manage" data-admin-action="switch-gallery-view">Manage</button>
                     <div class="admin-tab-indicator"></div>
                 </nav>
-                <div class="config-inline-note">
+                <div class="config-inline-note gallery-shared-note">
                     <i class="fas fa-globe"></i>
                     <span>Gallery 里的 Prompt 内容资产仍是全局共享；顶部站点筛选不会切换这份内容列表，但卡片现在会同步展示 CN / INTL 的互动摘要，并继续用于写保护。</span>
                 </div>
@@ -686,6 +686,7 @@
                     <div class="comment-list-admin" id="adminCommentList">
                         <p class="loading-text">加载中...</p>
                     </div>
+                    <div class="comments-pagination-shell" id="adminCommentsPagination"></div>
                 </div>
             </div>
             <!-- END COMMENTS MODULE -->
@@ -2365,6 +2366,8 @@
                                                     <button type="button" class="ops-alert-monitor-filter-btn" data-admin-action="settings-filter-ops-alert-monitor" data-ops-alert-monitor-filter-kind="category" data-ops-alert-monitor-filter-value="inventory" aria-pressed="false">库存与补货</button>
                                                     <button type="button" class="ops-alert-monitor-filter-btn" data-admin-action="settings-filter-ops-alert-monitor" data-ops-alert-monitor-filter-kind="category" data-ops-alert-monitor-filter-value="fulfillment" aria-pressed="false">履约与死信</button>
                                                     <button type="button" class="ops-alert-monitor-filter-btn" data-admin-action="settings-filter-ops-alert-monitor" data-ops-alert-monitor-filter-kind="category" data-ops-alert-monitor-filter-value="shop_risk" aria-pressed="false">商城风控</button>
+                                                    <button type="button" class="ops-alert-monitor-filter-btn" data-admin-action="settings-filter-ops-alert-monitor" data-ops-alert-monitor-filter-kind="category" data-ops-alert-monitor-filter-value="verify" aria-pressed="false">验证服务</button>
+                                                    <button type="button" class="ops-alert-monitor-filter-btn" data-admin-action="settings-filter-ops-alert-monitor" data-ops-alert-monitor-filter-kind="category" data-ops-alert-monitor-filter-value="security" aria-pressed="false">安全与审计</button>
                                                 </div>
                                             </div>
                                         </div>
@@ -4365,34 +4368,72 @@
                             </div>
 
                             <div class="admin-audit-monitor-panels">
+                                <section class="admin-audit-monitor-panel admin-audit-monitor-panel--wide" id="adminAuditMonitorFactsPanel">
+                                    <div class="admin-audit-monitor-panel__head">
+                                        <div>
+                                            <h4><i class="fas fa-fingerprint"></i> 审计画像</h4>
+                                            <p>把最近访问、异常登录和配置审计归并成事实面，优先判断是谁、从哪里来、哪些风险在重复发生。</p>
+                                        </div>
+                                        <span id="adminAuditMonitorFactsMeta" class="verify-monitor-list-card__meta">等待加载</span>
+                                    </div>
+                                    <div class="admin-audit-monitor-facts" id="adminAuditMonitorFactsGrid">
+                                        <div class="admin-audit-monitor-empty">正在生成审计画像...</div>
+                                    </div>
+                                </section>
+
+                                <section class="admin-audit-monitor-panel admin-audit-monitor-panel--wide" id="adminAuditMonitorWorkspacePanel">
+                                    <div class="admin-audit-monitor-panel__head">
+                                        <div>
+                                            <h4><i class="fas fa-clipboard-check"></i> 审计告警工作区</h4>
+                                            <p>从集中告警进入后会优先落在这里，可直接认领、标记观察中、关闭或重新打开安全 / 配置类告警。</p>
+                                        </div>
+                                        <span id="adminAuditMonitorWorkspaceMeta" class="verify-monitor-list-card__meta">等待加载</span>
+                                    </div>
+                                    <div class="admin-audit-monitor-panel__body admin-audit-monitor-panel__body--compact admin-audit-monitor-panel__body--wide-compact" id="adminAuditMonitorWorkspaceList">
+                                        <div class="admin-audit-monitor-empty">正在加载审计告警工作区...</div>
+                                    </div>
+                                </section>
+
                                 <section class="admin-audit-monitor-panel">
                                     <div class="admin-audit-monitor-panel__head">
-                                        <h4><i class="fas fa-door-open"></i> 最近后台访问</h4>
-                                        <p>最近签发的后台短时凭证，方便核对管理员、来源 IP 和设备指纹。</p>
+                                        <div>
+                                            <h4><i class="fas fa-door-open"></i> 最近后台访问</h4>
+                                            <p>最近签发的后台短时凭证，方便核对管理员、来源 IP 和设备指纹。</p>
+                                        </div>
+                                        <span id="adminAuditMonitorAccessListMeta" class="verify-monitor-list-card__meta">等待加载</span>
                                     </div>
                                     <div class="admin-audit-monitor-panel__body admin-audit-monitor-panel__body--compact" id="adminAuditMonitorRecentAccess">
                                         <div class="admin-audit-monitor-empty">正在加载最近后台访问...</div>
                                     </div>
+                                    <div class="admin-audit-monitor-panel__footer" id="adminAuditMonitorAccessPagination"></div>
                                 </section>
 
                                 <section class="admin-audit-monitor-panel">
                                     <div class="admin-audit-monitor-panel__head">
-                                        <h4><i class="fas fa-triangle-exclamation"></i> 异常登录信号</h4>
-                                        <p>优先展示近期触发新 IP、多设备或短时多 IP 漂移的管理员访问事件。</p>
+                                        <div>
+                                            <h4><i class="fas fa-triangle-exclamation"></i> 异常登录信号</h4>
+                                            <p>优先展示近期触发新 IP、多设备或短时多 IP 漂移的管理员访问事件。</p>
+                                        </div>
+                                        <span id="adminAuditMonitorAnomalyListMeta" class="verify-monitor-list-card__meta">等待加载</span>
                                     </div>
                                     <div class="admin-audit-monitor-panel__body" id="adminAuditMonitorAnomalyList">
                                         <div class="admin-audit-monitor-empty">正在加载异常登录信号...</div>
                                     </div>
+                                    <div class="admin-audit-monitor-panel__footer" id="adminAuditMonitorAnomalyPagination"></div>
                                 </section>
 
                                 <section class="admin-audit-monitor-panel admin-audit-monitor-panel--wide">
                                     <div class="admin-audit-monitor-panel__head">
-                                        <h4><i class="fas fa-sliders"></i> 支付配置审计</h4>
-                                        <p>集中查看最近支付通道配置更新、mock 切换、密钥更新与删除，承接支付配置告警的处理入口。</p>
+                                        <div>
+                                            <h4><i class="fas fa-sliders"></i> 支付配置审计</h4>
+                                            <p>集中查看最近支付通道配置更新、mock 切换、密钥更新与删除，承接支付配置告警的处理入口。</p>
+                                        </div>
+                                        <span id="adminAuditMonitorConfigListMeta" class="verify-monitor-list-card__meta">等待加载</span>
                                     </div>
                                     <div class="admin-audit-monitor-panel__body admin-audit-monitor-panel__body--compact admin-audit-monitor-panel__body--wide-compact" id="adminAuditMonitorConfigList">
                                         <div class="admin-audit-monitor-empty">正在加载支付配置审计...</div>
                                     </div>
+                                    <div class="admin-audit-monitor-panel__footer" id="adminAuditMonitorConfigPagination"></div>
                                 </section>
                             </div>
                         </div>
@@ -4894,6 +4935,30 @@
                                         <div class="verify-monitor-card__meta" id="verifyMonitorQueueMeta">会显示上游排队、运行中任务和本地活跃任务情况。</div>
                                     </section>
                                 </div>
+                                <section class="verify-monitor-list-card" id="verifyMonitorFactsPanel">
+                                    <div class="verify-monitor-list-card__header">
+                                        <div>
+                                            <h5>运行画像</h5>
+                                            <p>把最近多页日志归并成任务事实面，优先看活跃负载、状态分布和高频失败原因。</p>
+                                        </div>
+                                        <span id="verifyMonitorFactsMeta" class="verify-monitor-list-card__meta">等待加载</span>
+                                    </div>
+                                    <div id="verifyMonitorFactsGrid" class="verify-monitor-facts">
+                                        <div class="verify-monitor-empty">正在生成运行画像...</div>
+                                    </div>
+                                </section>
+                                <section class="verify-monitor-list-card" id="verifyMonitorCasePanel">
+                                    <div class="verify-monitor-list-card__header">
+                                        <div>
+                                            <h5>验证告警工作区</h5>
+                                            <p>承接 verify quota / queue / failure / incident 告警，进入后可直接认领、观察和关闭。</p>
+                                        </div>
+                                        <span id="verifyMonitorCaseMeta" class="verify-monitor-list-card__meta">等待加载</span>
+                                    </div>
+                                    <div id="verifyMonitorCaseList" class="verify-monitor-list verify-monitor-list--compact">
+                                        <div class="verify-monitor-empty">正在加载验证告警工作区...</div>
+                                    </div>
+                                </section>
                                 <div class="verify-monitor-columns">
                                     <section class="verify-monitor-list-card" id="verifyMonitorTasksPanel">
                                         <div class="verify-monitor-list-card__header">
@@ -4906,6 +4971,7 @@
                                         <div id="verifyMonitorRecentTasks" class="verify-monitor-list verify-monitor-list--compact">
                                             <div class="verify-monitor-empty">正在加载最近任务...</div>
                                         </div>
+                                        <div id="verifyMonitorTasksPagination" class="verify-monitor-list-card__footer"></div>
                                     </section>
                                     <section class="verify-monitor-list-card" id="verifyMonitorFailuresPanel">
                                         <div class="verify-monitor-list-card__header">
@@ -4918,6 +4984,7 @@
                                         <div id="verifyMonitorRecentFailures" class="verify-monitor-list verify-monitor-list--compact">
                                             <div class="verify-monitor-empty">正在加载最近失败...</div>
                                         </div>
+                                        <div id="verifyMonitorFailuresPagination" class="verify-monitor-list-card__footer"></div>
                                     </section>
                                 </div>
                             </div>
@@ -8648,6 +8715,7 @@
                         <i class="fas fa-plus"></i> 生成优惠券
                     </button>
                 </div>
+                <div class="admin-discount-scope-hint" id="discountsScopeHint">正在按当前站点口径加载优惠券...</div>
 
                 <!-- Table Container -->
                 <div class="glass-panel table-view users-table-panel">
@@ -9300,31 +9368,31 @@
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <!-- Chart.js for Analytics -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="js/admin-studio-bootstrap.js?v=20260402_ADMIN_SESSION_RESTORE_5"></script>
+<script src="js/admin-studio-bootstrap.js?v=20260403_ADMIN_HOMEPAGE_PREWARM_1"></script>
     <script src="js/ios-scroll-lock.js"></script>
     <script src="admin-users.js?v=20260402_ADMIN_USERS_ASSET_ACTIVITY_FIX_1"></script>
-    <script src="admin-points.js?v=20260402_ADMIN_API_AUTH_1"></script>
-    <script src="admin-discounts.js?v=20260402_ADMIN_DISCOUNT_LIST_HANDLER_1"></script>
+    <script src="admin-points.js?v=20260403_ADMIN_POINTS_VIEW_PREFETCH_1"></script>
+    <script src="admin-discounts.js?v=20260402_ADMIN_DISCOUNT_MUTATE_HANDLER_2"></script>
     <script src="starry-sky.js"></script>
     <!-- Flatpickr JS -->
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh.js"></script>
     <script src="js/admin-api-auth.js?v=20260402_ADMIN_API_AUTH_5"></script>
     <script src="js/admin-ai.js"></script>
-    <script src="admin-comments.js?v=20260402_ADMIN_API_AUTH_1"></script>
+    <script src="admin-comments.js?v=20260403_COMMENTS_VIEW_PREFETCH_1"></script>
     <script src="admin-analytics.js?v=20260331_ANALYTICS_EXPERIMENT_OVERLAY_CLOSE_1"></script>
-    <script src="js/admin-payments.js?v=20260402_ADMIN_PAYMENTS_AUTH_4"></script>
-    <script src="js/local-smoke-fixtures.js?v=20260401_LOCAL_SMOKE_FIXTURES_21"></script>
+    <script src="js/admin-payments.js?v=20260403_ADMIN_PAYMENTS_LOADING_SKELETON_1"></script>
+    <script src="js/local-smoke-fixtures.js?v=20260403_LOCAL_SMOKE_FIXTURES_30"></script>
     <script src="js/admin-workbench.js?v=20260402_ADMIN_WORKBENCH_ACCESS_7"></script>
     <script src="js/admin-ticket-links.js?v=20260401_ADMIN_TICKET_LINK_PROTOCOL_1"></script>
     <script src="admin-config.js?v=20260402_ADMIN_CONFIG_ACCESS_101"></script>
-    <script src="admin-homepage.js?v=20260402_ADMIN_API_AUTH_1"></script>
+    <script src="admin-homepage.js?v=20260403_HOMEPAGE_LOADING_PREWARM_1"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js?v=20260323_SITE_FILTER_DELEGATION_1"></script>
     <script src="js/admin-tickets.js?v=20260401_ADMIN_TICKETS_WORKBENCH_PAYLOADS_4"></script>
     <script src="js/admin-access.js?v=20260402_ADMIN_ACCESS_PERSISTED_1"></script>
-<script src="admin-studio.js?v=20260402_PROMPT_UPLOAD_PIPELINE_3"></script>
-    <script src="js/admin-shop.js?v=20260402_ADMIN_SHOP_WORKBENCH_3"></script>
+<script src="admin-studio.js?v=20260403_ADMIN_MODULE_PREFETCH_1"></script>
+    <script src="js/admin-shop.js?v=20260403_ADMIN_SHOP_TAB_PREFETCH_1"></script>
 </body>
 
 <!-- Admin Chat Script -->
