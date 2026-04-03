@@ -2365,6 +2365,7 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
         '.color-swatch--dark-blue',
         '.color-swatch--unknown',
         '.gallery-bilingual-panel',
+        '.gallery-shared-note',
         '.gallery-bilingual-toggle.is-active',
         '.gallery-bilingual-grid',
         '.admin-card-site-metrics',
@@ -2381,6 +2382,11 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
         adminStudioHtml,
         /admin-studio\.css\?v=[A-Za-z0-9_]+/,
         'admin-studio.html should load the latest admin studio stylesheet version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('class="config-inline-note gallery-shared-note"'),
+        true,
+        'admin-studio.html should give the gallery shared-content note a dedicated alignment class'
     );
     assert.match(
         adminStudioHtml,
