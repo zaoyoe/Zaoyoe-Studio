@@ -59,7 +59,7 @@
                 return;
             }
 
-            const access = await globalScope.AdminAccess.getCurrentAdminAccess({ forceRefresh: true });
+            const access = await globalScope.AdminAccess.getCurrentAdminAccess();
             if (!access?.user) {
                 setEntryState('denied', {
                     title: '请先登录管理员账号',
@@ -76,7 +76,9 @@
                 return;
             }
 
-            const session = await globalScope.AdminAccess.createAdminStudioSession();
+            const session = await globalScope.AdminAccess.createAdminStudioSession({
+                userId: access.user.id
+            });
             if (!session?.ok) {
                 setEntryState('error', {
                     title: '后台凭证签发失败',

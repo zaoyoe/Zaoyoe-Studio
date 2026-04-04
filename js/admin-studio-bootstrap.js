@@ -792,6 +792,62 @@
             await window.AdminTickets?.submitReply?.();
         });
 
+        bindClick('[data-admin-action="tickets-toggle-overdue"]', async () => {
+            await window.AdminTickets?.toggleQuickFilter?.('overdue');
+        });
+
+        bindClick('[data-admin-action="tickets-toggle-priority"]', async () => {
+            await window.AdminTickets?.toggleQuickFilter?.('priority');
+        });
+
+        bindClick('[data-admin-action="tickets-toggle-mine"]', async () => {
+            await window.AdminTickets?.toggleQuickFilter?.('mine');
+        });
+
+        bindClick('[data-admin-action="tickets-toggle-unassigned"]', async () => {
+            await window.AdminTickets?.toggleQuickFilter?.('unassigned');
+        });
+
+        bindClick('[data-admin-action="tickets-open-overdue-queue"]', async () => {
+            await window.AdminTickets?.openOverdueQueue?.();
+        });
+
+        bindClick('[data-admin-action="tickets-open-sla-settings"]', () => {
+            window.AdminTickets?.openSlaSettings?.();
+        });
+
+        bindClick('[data-admin-action="tickets-refresh-overview"]', async () => {
+            await window.AdminTickets?.refreshOverview?.();
+        });
+
+        bindClick('[data-admin-action="tickets-bulk-assign-self"]', async () => {
+            await window.AdminTickets?.submitBulkAssignment?.('assign_self');
+        });
+
+        bindClick('[data-admin-action="tickets-bulk-clear-assignee"]', async () => {
+            await window.AdminTickets?.submitBulkAssignment?.('clear');
+        });
+
+        bindClick('[data-admin-action="tickets-open-bulk-resolve"]', () => {
+            window.AdminTickets?.openBulkProcessModal?.('RESOLVED');
+        });
+
+        bindClick('[data-admin-action="tickets-open-bulk-reject"]', () => {
+            window.AdminTickets?.openBulkProcessModal?.('REJECTED');
+        });
+
+        bindClick('[data-admin-action="tickets-close-bulk-process-modal"]', () => {
+            window.AdminTickets?.closeBulkProcessModal?.();
+        });
+
+        bindClick('[data-admin-action="tickets-submit-bulk-process"]', async () => {
+            await window.AdminTickets?.submitBulkProcess?.();
+        });
+
+        bindClick('[data-admin-action="tickets-clear-selection"]', () => {
+            window.AdminTickets?.clearSelectedTickets?.();
+        });
+
         bindClick('[data-admin-action="analytics-open-experiment-modal"]', () => {
             window.openExperimentModal?.();
         });
@@ -839,6 +895,13 @@
         bindSubmit('ticketReplyForm', async () => {
             await window.AdminTickets?.submitReply?.();
         });
+
+        const ticketSelectAllCheckbox = document.getElementById('ticketsSelectAllCheckbox');
+        if (ticketSelectAllCheckbox) {
+            ticketSelectAllCheckbox.addEventListener('change', () => {
+                window.AdminTickets?.toggleSelectAllPage?.(Boolean(ticketSelectAllCheckbox.checked));
+            });
+        }
 
         bindSubmit('experimentForm', async (event) => {
             await window.handleCreateExperiment?.(event);

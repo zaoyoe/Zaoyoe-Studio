@@ -73,6 +73,23 @@ function createSupabase(state) {
                 };
             }
 
+            if (String(args?.p_code || '').toUpperCase() === 'ZY-CN-USED') {
+                return {
+                    data: {
+                        valid: false,
+                        query_type: 'code',
+                        code: 'ZY-CN-USED',
+                        status: 'used',
+                        batch_id: 'batch-cn-2',
+                        batch_name: 'Used Batch',
+                        package_name: 'Starter',
+                        points: 100,
+                        used_by: 'Alice'
+                    },
+                    error: null
+                };
+            }
+
             return {
                 data: { valid: false },
                 error: null
@@ -104,6 +121,7 @@ async function withPointsLookupHandler(options, callback) {
         requireAdminCalls: [],
         rpcCalls: [],
         tables: {
+            redemption_codes: clone(options?.tables?.redemption_codes || []),
             points_ledger: clone(options?.tables?.points_ledger || []),
             profiles: clone(options?.tables?.profiles || []),
             prompts: clone(options?.tables?.prompts || [])
@@ -193,5 +211,38 @@ test('points lookup handler falls back to ledger lookup for UUID ids and attache
         assert.equal(res.json().kind, 'ledger');
         assert.equal(res.json().result?.prompt_title, 'Smoke Prompt');
         assert.equal(res.json().result?.profiles?.username, 'Alice');
+    });
+});
+
+test('points lookup handler returns existing non-pending code payload with raw context fields', async () => {
+    await withPointsLookupHandler({
+        tables: {
+            redemption_codes: [
+                {
+                    id: 'code-used-1',
+                    code: 'ZY-CN-USED',
+                    site: 'cn',
+                    batch_id: 'batch-cn-2',
+                    package_id: 'pkg-1',
+                    status: 'used',
+                    created_at: '2026-04-01T09:00:00.000Z',
+                    used_at: '2026-04-01T10:00:00.000Z',
+                    used_by: 'user-1',
+                    external_order_id: 'ORDER-USED-1',
+                    revoke_reason: '',
+                    revoked_at: null,
+                    revoked_by: null
+                }
+            ]
+        }
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', url: '/api/admin/points/lookup?site=cn&q=ZY-CN-USED', headers: {} }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().kind, 'code');
+        assert.equal(res.json().result?.status, 'used');
+        assert.equal(res.json().result?.used_by_id, 'user-1');
+        assert.equal(res.json().result?.created_at, '2026-04-01T09:00:00.000Z');
     });
 });

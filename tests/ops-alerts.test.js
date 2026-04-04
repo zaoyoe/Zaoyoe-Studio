@@ -337,6 +337,73 @@ test('normalizeOpsAlertsConfig supports configurable customer chat quick reply t
     ]);
 });
 
+test('normalizeOpsAlertsConfig supports configurable ticket reply templates', () => {
+    const defaults = normalizeOpsAlertsConfig({});
+    assert.equal(defaults.tickets.reply_templates.length, 9);
+
+    const disabledAll = normalizeOpsAlertsConfig({
+        tickets: {
+            reply_templates: []
+        }
+    });
+    assert.deepEqual(disabledAll.tickets.reply_templates, []);
+
+    const config = normalizeOpsAlertsConfig({
+        tickets: {
+            reply_templates: [
+                {
+                    id: 'resolve_refund_custom',
+                    action: 'resolved',
+                    issue_type: 'refund',
+                    enabled: false,
+                    title: '退款处理 {{ticket_id}}',
+                    tag: '退款',
+                    body: '订单 {{order_id}} 已完成处理，{{refund_summary}}。'
+                },
+                {
+                    id: 'reject_other_custom',
+                    action: 'REJECTED',
+                    issue_type: 'other',
+                    enabled: true,
+                    title: '补充资料',
+                    tag: '待补充',
+                    body: '请补充工单 {{ticket_id}} 的截图和发生时间。'
+                },
+                {
+                    id: 'skip_empty',
+                    action: 'resolved',
+                    issue_type: 'delivery',
+                    enabled: true,
+                    title: '空正文',
+                    tag: '跳过',
+                    body: '   '
+                }
+            ]
+        }
+    });
+
+    assert.deepEqual(config.tickets.reply_templates, [
+        {
+            id: 'resolve_refund_custom',
+            action: 'resolved',
+            issue_type: 'refund',
+            enabled: false,
+            title: '退款处理 {{ticket_id}}',
+            tag: '退款',
+            body: '订单 {{order_id}} 已完成处理，{{refund_summary}}。'
+        },
+        {
+            id: 'reject_other_custom',
+            action: 'rejected',
+            issue_type: 'other',
+            enabled: true,
+            title: '补充资料',
+            tag: '待补充',
+            body: '请补充工单 {{ticket_id}} 的截图和发生时间。'
+        }
+    ]);
+});
+
 async function withOpsAlertsModuleWithoutSecretKeyMap(callback) {
     const modulePath = path.resolve(__dirname, '../api/_lib/ops-alerts.js');
     const originalLoad = Module._load;
