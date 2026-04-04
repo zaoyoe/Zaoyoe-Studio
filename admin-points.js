@@ -53,6 +53,23 @@ function requireWritablePointsSite(options = {}) {
     return window.AdminSiteFilter?.requireWritableSite?.(options) || null;
 }
 
+function requireWritablePointsCodeActionSite(mode = '') {
+    const normalizedMode = String(mode || '').trim().toLowerCase();
+    if (normalizedMode === 'expiry') {
+        return requireWritablePointsSite({ label: '设置兑换码有效期' });
+    }
+    if (normalizedMode === 'disable') {
+        return requireWritablePointsSite({ label: '禁用兑换码' });
+    }
+    if (normalizedMode === 'enable') {
+        return requireWritablePointsSite({ label: '启用兑换码' });
+    }
+    if (normalizedMode === 'revoke') {
+        return requireWritablePointsSite({ label: '撤销兑换码' });
+    }
+    return requireWritablePointsSite({ label: '处理兑换码' });
+}
+
 function getPointsReadSite() {
     return window.AdminSiteFilter?.getSiteFilter?.() || 'all';
 }
@@ -4514,7 +4531,7 @@ async function submitPointsBatchInvalidate(event) {
         return;
     }
 
-    const writableSite = requireWritablePointsSite({ action: 'points-batch-invalidate', label: '作废未使用兑换码' });
+    const writableSite = requireWritablePointsSite({ action: 'points-batch-invalidate' });
     if (!writableSite) {
         syncPointsBatchInvalidateModalState();
         return;
@@ -4792,7 +4809,7 @@ async function submitPointsCodeAction(event) {
         return;
     }
 
-    const writableSite = requireWritablePointsSite({ label: '处理兑换码' });
+    const writableSite = requireWritablePointsCodeActionSite(mode);
     if (!writableSite) {
         syncPointsCodeActionModalState();
         return;
