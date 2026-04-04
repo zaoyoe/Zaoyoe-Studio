@@ -32,6 +32,26 @@ function isMissingNotificationColumnError(error) {
         || (message.includes('schema cache') && message.includes('category'));
 }
 
+function normalizeTicketStatus(status) {
+    const normalized = String(status || '').trim().toUpperCase();
+    return !normalized || normalized === 'OPEN' ? 'PENDING' : normalized;
+}
+
+function getTicketStatusLabel(status) {
+    const normalized = normalizeTicketStatus(status);
+    if (normalized === 'PENDING') return '待处理';
+    if (normalized === 'RESOLVED') return '已解决';
+    if (normalized === 'REJECTED') return '已拒绝';
+    return normalized;
+}
+
+function buildTicketProcessError(statusCode, message, extra = {}) {
+    const error = new Error(message || 'Ticket processing failed');
+    error.statusCode = Number(statusCode) || 500;
+    Object.assign(error, extra || {});
+    return error;
+}
+
 function buildLinkedOpsAlertResolution({ ticketId = '', newStatus = '', adminReply = '', doRefund = false, refundAmount = 0 }) {
     const shortTicketId = sanitizeText(ticketId, 120) || 'unknown';
     const statusLabel = String(newStatus || '').trim().toUpperCase() === 'REJECTED' ? '已拒绝' : '已解决';
@@ -203,7 +223,215 @@ async function syncLinkedOpsAlertCase({
     };
 }
 
-module.exports = async (req, res) => {
+async function processTicketWithContext({
+    supabase,
+    user,
+    ticketId = '',
+    newStatus = '',
+    adminReply = '',
+    internalNote = '',
+    doRefund = false,
+    source = 'ticket.process'
+} = {}) {
+    const normalizedTicketId = String(ticketId || '').trim();
+    const normalizedNewStatus = String(newStatus || '').trim().toUpperCase();
+    const normalizedAdminReply = String(adminReply || '').trim();
+    const normalizedInternalNote = String(internalNote || '').trim();
+    const normalizedDoRefund = Boolean(doRefund);
+
+    if (!supabase || !user?.id) {
+        throw buildTicketProcessError(500, '缺少工单处理上下文');
+    }
+
+    if (!normalizedTicketId || !normalizedNewStatus) {
+        throw buildTicketProcessError(400, 'ticketId and newStatus are required');
+    }
+
+    if (!['RESOLVED', 'REJECTED'].includes(normalizedNewStatus)) {
+        throw buildTicketProcessError(400, 'Unsupported ticket status');
+    }
+
+    if (!normalizedAdminReply && normalizedNewStatus === 'REJECTED') {
+        throw buildTicketProcessError(400, '拒绝工单时请填写回复理由');
+    }
+
+    if (normalizedDoRefund && normalizedNewStatus !== 'RESOLVED') {
+        throw buildTicketProcessError(400, '只有解决工单时才能执行退款');
+    }
+
+    const { data: ticket, error: ticketError } = await supabase
+        .from('shop_tickets')
+        .select('*')
+        .eq('id', normalizedTicketId)
+        .single();
+
+    if (ticketError || !ticket) {
+        throw buildTicketProcessError(404, '找不到该工单数据');
+    }
+
+    const currentStatus = normalizeTicketStatus(ticket.status);
+    if (currentStatus !== 'PENDING') {
+        throw buildTicketProcessError(409, `工单当前状态为${getTicketStatusLabel(currentStatus)}，不能重复处理`, {
+            ticket
+        });
+    }
+
+    let refundAmount = 0;
+    let refundDuplicate = false;
+
+    if (normalizedDoRefund) {
+        if (!ticket.order_id) {
+            throw buildTicketProcessError(400, '当前工单没有关联订单，无法执行退款');
+        }
+
+        const refundResult = await applyShopOrderRefund({
+            supabase,
+            adminId: user.id,
+            orderId: ticket.order_id,
+            targetStatus: 'frozen',
+            remark: normalizedAdminReply || `工单处理退款 (${String(normalizedTicketId).substring(0, 8)})`
+        });
+
+        refundAmount = refundResult.refundedAmount;
+        refundDuplicate = refundResult.duplicate === true;
+    }
+
+    const { data: updatedRows, error: updateError } = await supabase
+        .from('shop_tickets')
+        .update({
+            status: normalizedNewStatus,
+            admin_notes: normalizedAdminReply || null,
+            updated_at: new Date().toISOString()
+        })
+        .eq('id', normalizedTicketId)
+        .select('*');
+
+    if (updateError || !updatedRows?.length) {
+        throw buildTicketProcessError(400, updateError?.message || '更新失败：工单不存在或您没有管理员权限修改它');
+    }
+
+    const updatedTicket = updatedRows[0];
+    const notifTitle = normalizedNewStatus === 'RESOLVED' ? '工单已解决' : '工单已被拒绝';
+    const notifType = normalizedNewStatus === 'RESOLVED' ? 'success' : 'warning';
+    const ticketSubject = ticket.order_id
+        ? `您的提问 (订单ID: ${String(ticket.order_id || '').substring(0, 8)})`
+        : `您的售后工单 (${String(normalizedTicketId || '').substring(0, 8)})`;
+    let notifContent = `${ticketSubject} 已经处理完毕。\n`;
+    if (normalizedAdminReply) {
+        notifContent += `管理员回复: ${normalizedAdminReply}`;
+    }
+    if (normalizedDoRefund && !refundDuplicate && refundAmount > 0) {
+        notifContent += `${normalizedAdminReply ? '\n' : ''}已退回 ${Math.max(0, Math.round(refundAmount))} 积分。`;
+    }
+
+    try {
+        await insertTicketResultNotification(supabase, {
+            user_id: ticket.user_id,
+            title: notifTitle,
+            content: notifContent,
+            type: notifType,
+            is_read: false,
+            scope: 'user_personal',
+            category: 'ticket_result'
+        });
+    } catch (notificationError) {
+        console.warn('[AdminAPI] Failed to insert notification:', notificationError.message);
+    }
+
+    let linkedOpsAlertCase = null;
+    try {
+        linkedOpsAlertCase = await syncLinkedOpsAlertCase({
+            supabase,
+            user,
+            ticket: updatedTicket,
+            ticketId: normalizedTicketId,
+            newStatus: normalizedNewStatus,
+            adminReply: normalizedAdminReply,
+            doRefund: normalizedDoRefund && !refundDuplicate,
+            refundAmount
+        });
+    } catch (opsAlertSyncError) {
+        if (isMissingOpsAlertCasesTableError(opsAlertSyncError)) {
+            console.warn('[AdminAPI] Ops alert case table is unavailable, skip ticket backfill');
+        } else {
+            console.warn('[AdminAPI] Failed to sync linked ops alert case:', opsAlertSyncError.message || opsAlertSyncError);
+        }
+    }
+
+    let linkedChatSession = null;
+    try {
+        linkedChatSession = await syncLinkedChatSessionConversation({
+            supabase,
+            ticket: updatedTicket,
+            ticketId: normalizedTicketId,
+            newStatus: normalizedNewStatus,
+            adminReply: normalizedAdminReply,
+            doRefund: normalizedDoRefund && !refundDuplicate,
+            refundAmount
+        });
+    } catch (chatSyncError) {
+        console.warn('[AdminAPI] Failed to sync linked chat session:', chatSyncError.message || chatSyncError);
+    }
+
+    if (normalizedInternalNote) {
+        await writeAdminAuditLog({
+            supabase,
+            adminId: user.id,
+            targetUserId: ticket.user_id,
+            actionType: 'ticket.internal_note',
+            details: {
+                ticket_id: normalizedTicketId,
+                order_id: ticket.order_id,
+                ticket_status: normalizedNewStatus,
+                ticket_status_label: getTicketStatusLabel(normalizedNewStatus),
+                note: normalizedInternalNote,
+                public_reply: normalizedAdminReply || null,
+                source
+            }
+        });
+    }
+
+    await writeAdminAuditLog({
+        supabase,
+        adminId: user.id,
+        targetUserId: ticket.user_id,
+        actionType: 'ticket.process',
+        details: {
+            ticket_id: normalizedTicketId,
+            order_id: ticket.order_id,
+            previous_status: currentStatus,
+            previous_status_label: getTicketStatusLabel(currentStatus),
+            new_status: normalizedNewStatus,
+            new_status_label: getTicketStatusLabel(normalizedNewStatus),
+            admin_reply: normalizedAdminReply || null,
+            public_reply: normalizedAdminReply || null,
+            has_public_reply: Boolean(normalizedAdminReply),
+            has_internal_note: Boolean(normalizedInternalNote),
+            refunded: normalizedDoRefund && !refundDuplicate,
+            refund_amount: refundAmount,
+            refund_duplicate: refundDuplicate,
+            refund_outcome: refundDuplicate
+                ? 'duplicate'
+                : (normalizedDoRefund && refundAmount > 0 ? 'refunded' : 'not_requested'),
+            linked_ops_alert_case: linkedOpsAlertCase,
+            linked_chat_session: linkedChatSession,
+            synced_linked_ops_alert_case: Boolean(linkedOpsAlertCase),
+            synced_linked_chat_session: Boolean(linkedChatSession),
+            source
+        }
+    });
+
+    return {
+        success: true,
+        ticket: updatedTicket,
+        refundAmount,
+        refundDuplicate,
+        linkedOpsAlertCase,
+        linkedChatSession
+    };
+}
+
+async function adminTicketsProcessHandler(req, res) {
     if (req.method !== 'POST') {
         res.setHeader('Allow', 'POST');
         return sendJson(res, 405, { success: false, message: 'Method not allowed' });
@@ -212,165 +440,26 @@ module.exports = async (req, res) => {
     try {
         const { supabase, user } = await requireAdmin(req, { permission: 'tickets.manage' });
         const body = await parseJsonBody(req);
-        const ticketId = String(body.ticketId || '').trim();
-        const newStatus = String(body.newStatus || '').trim().toUpperCase();
-        const adminReply = String(body.adminReply || '').trim();
-        const doRefund = Boolean(body.doRefund);
-
-        if (!ticketId || !newStatus) {
-            return sendJson(res, 400, { success: false, message: 'ticketId and newStatus are required' });
-        }
-
-        if (!['RESOLVED', 'REJECTED'].includes(newStatus)) {
-            return sendJson(res, 400, { success: false, message: 'Unsupported ticket status' });
-        }
-
-        if (!adminReply && newStatus === 'REJECTED') {
-            return sendJson(res, 400, { success: false, message: '拒绝工单时请填写回复理由' });
-        }
-
-        const { data: ticket, error: ticketError } = await supabase
-            .from('shop_tickets')
-            .select('*')
-            .eq('id', ticketId)
-            .single();
-
-        if (ticketError || !ticket) {
-            return sendJson(res, 404, { success: false, message: '找不到该工单数据' });
-        }
-
-        let refundAmount = 0;
-        let refundDuplicate = false;
-
-        if (doRefund) {
-            if (!ticket.order_id) {
-                return sendJson(res, 400, {
-                    success: false,
-                    message: '当前工单没有关联订单，无法执行退款'
-                });
-            }
-
-            const refundResult = await applyShopOrderRefund({
-                supabase,
-                adminId: user.id,
-                orderId: ticket.order_id,
-                targetStatus: 'frozen',
-                remark: adminReply || `工单处理退款 (${String(ticketId).substring(0, 8)})`
-            });
-
-            refundAmount = refundResult.refundedAmount;
-            refundDuplicate = refundResult.duplicate === true;
-        }
-
-        const { data: updatedRows, error: updateError } = await supabase
-            .from('shop_tickets')
-            .update({
-                status: newStatus,
-                admin_notes: adminReply || null,
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', ticketId)
-            .select('*');
-
-        if (updateError || !updatedRows?.length) {
-            return sendJson(res, 400, {
-                success: false,
-                message: updateError?.message || '更新失败：工单不存在或您没有管理员权限修改它'
-            });
-        }
-
-        const notifTitle = newStatus === 'RESOLVED' ? '工单已解决' : '工单已被拒绝';
-        const notifType = newStatus === 'RESOLVED' ? 'success' : 'warning';
-        const ticketSubject = ticket.order_id
-            ? `您的提问 (订单ID: ${String(ticket.order_id || '').substring(0, 8)})`
-            : `您的售后工单 (${String(ticketId || '').substring(0, 8)})`;
-        let notifContent = `${ticketSubject} 已经处理完毕。\n`;
-        if (adminReply) {
-            notifContent += `管理员回复: ${adminReply}`;
-        }
-        if (doRefund && !refundDuplicate && refundAmount > 0) {
-            notifContent += `${adminReply ? '\n' : ''}已退回 ${Math.max(0, Math.round(refundAmount))} 积分。`;
-        }
-
-        try {
-            await insertTicketResultNotification(supabase, {
-                user_id: ticket.user_id,
-                title: notifTitle,
-                content: notifContent,
-                type: notifType,
-                is_read: false,
-                scope: 'user_personal',
-                category: 'ticket_result'
-            });
-        } catch (notificationError) {
-            console.warn('[AdminAPI] Failed to insert notification:', notificationError.message);
-        }
-
-        let linkedOpsAlertCase = null;
-        try {
-            linkedOpsAlertCase = await syncLinkedOpsAlertCase({
-                supabase,
-                user,
-                ticket: updatedRows[0],
-                ticketId,
-                newStatus,
-                adminReply,
-                doRefund: doRefund && !refundDuplicate,
-                refundAmount
-            });
-        } catch (opsAlertSyncError) {
-            if (isMissingOpsAlertCasesTableError(opsAlertSyncError)) {
-                console.warn('[AdminAPI] Ops alert case table is unavailable, skip ticket backfill');
-            } else {
-                console.warn('[AdminAPI] Failed to sync linked ops alert case:', opsAlertSyncError.message || opsAlertSyncError);
-            }
-        }
-
-        let linkedChatSession = null;
-        try {
-            linkedChatSession = await syncLinkedChatSessionConversation({
-                supabase,
-                ticket: updatedRows[0],
-                ticketId,
-                newStatus,
-                adminReply,
-                doRefund: doRefund && !refundDuplicate,
-                refundAmount
-            });
-        } catch (chatSyncError) {
-            console.warn('[AdminAPI] Failed to sync linked chat session:', chatSyncError.message || chatSyncError);
-        }
-
-        await writeAdminAuditLog({
+        const result = await processTicketWithContext({
             supabase,
-            adminId: user.id,
-            targetUserId: ticket.user_id,
-            actionType: 'ticket.process',
-            details: {
-                ticket_id: ticketId,
-                order_id: ticket.order_id,
-                new_status: newStatus,
-                admin_reply: adminReply || null,
-                refunded: doRefund && !refundDuplicate,
-                refund_amount: refundAmount,
-                refund_duplicate: refundDuplicate,
-                linked_ops_alert_case: linkedOpsAlertCase,
-                linked_chat_session: linkedChatSession
-            }
+            user,
+            ticketId: body.ticketId,
+            newStatus: body.newStatus,
+            adminReply: body.adminReply,
+            internalNote: body.internalNote,
+            doRefund: body.doRefund,
+            source: 'ticket.process'
         });
 
-        return sendJson(res, 200, {
-            success: true,
-            ticket: updatedRows[0],
-            refundAmount,
-            refundDuplicate,
-            linkedOpsAlertCase,
-            linkedChatSession
-        });
+        return sendJson(res, 200, result);
     } catch (error) {
         return sendJson(res, error.statusCode || 500, {
             success: false,
-            message: error.message || 'Ticket processing failed'
+            message: error.message || 'Ticket processing failed',
+            ...(error?.ticket ? { ticket: error.ticket } : {})
         });
     }
-};
+}
+
+module.exports = adminTicketsProcessHandler;
+module.exports.processTicketWithContext = processTicketWithContext;

@@ -305,6 +305,76 @@ test('tickets create handler requires tickets.manage permission', async () => {
     });
 });
 
+test('tickets list handler requires tickets.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/tickets/list.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'tickets.manage' });
+    });
+});
+
+test('tickets metrics handler requires tickets.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/tickets/metrics.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'tickets.manage' });
+    });
+});
+
+test('tickets history handler requires tickets.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/tickets/history.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', url: '/api/admin/tickets/history?ticketId=ticket-1', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'tickets.manage' });
+    });
+});
+
+test('tickets assign handler requires tickets.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/tickets/assign.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'POST', body: { ticketIds: ['ticket-1'], operation: 'assign_self' }, headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'tickets.manage' });
+    });
+});
+
+test('tickets batch process handler requires tickets.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/tickets/batch-process.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'POST', body: { ticketIds: ['ticket-1'], newStatus: 'RESOLVED' }, headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'tickets.manage' });
+    });
+});
+
+test('tickets summary actions handler requires tickets.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/tickets/summary-actions.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'POST', body: { jobId: 'job-1', action: 'request_retry' }, headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'tickets.manage' });
+    });
+});
+
+test('tickets summary history handler requires tickets.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/tickets/summary-history.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', url: '/api/admin?route=tickets/summary-history&jobId=job-1', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'tickets.manage' });
+    });
+});
+
 test('settings gemini-key handler requires settings.manage permission', async () => {
     await withAdminHandler('../server/api-handlers/admin/settings/gemini-key.js', async ({ handler, state }) => {
         const res = createMockResponse();

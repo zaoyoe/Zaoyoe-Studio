@@ -1251,7 +1251,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
         ['shop.html', 'css/shop-page.css?v=20260324_SHOP_RUNTIME_STYLE_1'],
-        ['admin-studio.html', 'css/admin-studio-page.css?v=20260403_HOMEPAGE_LOADING_SHELL_1'],
+        ['admin-studio.html', 'css/admin-studio-page.css?v=20260403_POINTS_LOOKUP_PANEL_WIDTH_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
         ['debug-realtime.html', 'css/debug-realtime-page.css?v=20260324_DEBUG_REALTIME_STYLE_ATTRS_1'],
@@ -2190,6 +2190,7 @@ test('homepage guestbook modal runtime renderers externalize keyboard dock, view
 test('admin studio shell tabs and dashboards route core controls through delegated actions', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioScript = readRepoFile('admin-studio.js');
+    const adminStudioCss = readRepoFile('admin-studio.css');
 
     const removedInlineMarkers = [
         `onclick="switchModule('gallery')"`,
@@ -2242,6 +2243,14 @@ test('admin studio shell tabs and dashboards route core controls through delegat
 
     assert.equal(adminStudioScript.includes("closest('[data-admin-action]')"), true, 'admin-studio.js should delegate click-based admin controls');
     assert.equal(adminStudioScript.includes("closest('[data-admin-change-action]')"), true, 'admin-studio.js should delegate change-based admin controls');
+    assert.equal(adminStudioScript.includes("window.AdminTickets?.setWorkspaceView?.(actionEl.dataset.ticketWorkspace, {"), true, 'admin-studio.js should switch ticket workspaces through the shared workspace helper');
+    assert.equal(adminStudioScript.includes("scroll: false"), true, 'admin-studio.js should avoid auto-scrolling when switching ticket workspaces from the top tab bar');
+    assert.equal(adminStudioCss.includes('#module-tickets[data-ticket-workspace="summary"] #ticketsOverviewPanel'), true, 'admin-studio.css should flatten the outer overview shell in summary tracking mode');
+    assert.equal(adminStudioCss.includes('#module-tickets[data-ticket-workspace="summary"] #ticketsOverviewPanel .admin-ticket-overview-panels'), true, 'admin-studio.css should flatten the summary tracking panel stack into a single column');
+    assert.equal(adminStudioCss.includes('.admin-ticket-overview-reminder-grid--summary .admin-ticket-overview-reminder-section--summary'), true, 'admin-studio.css should let the daily SLA summary section span the full summary tracking row');
+    assert.equal(adminStudioCss.includes('#module-tickets[data-ticket-workspace="summary"] #ticketsOverviewReminderPanel .admin-ticket-overview-reminder-section--activity'), true, 'admin-studio.css should add extra breathing room above the summary reminder activity card');
+    assert.equal(adminStudioCss.includes('.admin-ticket-overview-reminder-activity__footer'), true, 'admin-studio.css should render the summary reminder actions inside a dedicated activity footer');
+    assert.equal(adminStudioCss.includes('.admin-ticket-overview-reminder-actions--embedded'), true, 'admin-studio.css should style the summary reminder actions as embedded footer actions');
 });
 
 test('admin general settings and export controls route through delegated bindings with real handler glue', () => {
@@ -2382,7 +2391,6 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
         '.color-swatch--dark-blue',
         '.color-swatch--unknown',
         '.gallery-bilingual-panel',
-        '.gallery-shared-note',
         '.gallery-bilingual-toggle.is-active',
         '.gallery-bilingual-grid',
         '.admin-card-site-metrics',
@@ -2399,11 +2407,6 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
         adminStudioHtml,
         /admin-studio\.css\?v=[A-Za-z0-9_]+/,
         'admin-studio.html should load the latest admin studio stylesheet version'
-    );
-    assert.equal(
-        adminStudioHtml.includes('class="config-inline-note gallery-shared-note"'),
-        true,
-        'admin-studio.html should give the gallery shared-content note a dedicated alignment class'
     );
     assert.match(
         adminStudioHtml,
@@ -2723,7 +2726,7 @@ test('settings pricing runtime now keeps only the package migration shortcut and
 
     const requiredMarkers = [
         '套餐编辑已经迁到 Points 模块的“套餐目录”里；这里不再承担日常套餐运营，只保留支付相关开关和迁移说明。',
-        '套餐主数据已经统一走 Points 域 handler，Settings 里只保留支付相关开关和迁移提示。',
+        '前往 `兑换码/套餐 -> 套餐目录` 统一维护名称、价格、赠送和启停状态；站点筛选只影响写操作语境，不会拆分两份套餐主数据。',
         'data-admin-action="settings-open-points-catalog"',
         'function renderPackagesConfig() {',
         "document.getElementById('customRechargeStatusToggle')",
@@ -5368,19 +5371,34 @@ test('admin points runtime renderers route batch tables and modals through deleg
         'data-points-action="execute-delete-option"',
         'data-points-overlay-close="codes"',
         'data-points-action="close-codes-modal"',
+        "action: 'open-batch-edit-from-codes'",
+        "action: 'reissue-batch-from-codes'",
+        "action: 'export-batch-codes-from-modal'",
+        "action: 'invalidate-batch-from-codes'",
         'data-points-action="navigate-user"',
-        'data-points-action="set-code-expiry"',
-        'data-points-action="disable-code"',
-        'data-points-action="revoke-code"',
-        'data-points-action="enable-code"',
+        "action: 'lookup-code-item'",
+        "action: 'set-code-expiry'",
+        "action: 'disable-code'",
+        "action: 'revoke-code'",
+        "action: 'enable-code'",
         'data-points-overlay-close="batch-edit"',
+        'data-points-overlay-close="package-delete"',
+        'data-points-overlay-close="batch-invalidate"',
+        'data-points-overlay-close="code-action"',
         'data-points-action="close-batch-edit"',
+        'data-points-action="close-package-delete-modal"',
+        'data-points-action="close-batch-invalidate-modal"',
+        'data-points-action="close-code-action-modal"',
         'data-points-submit="save-batch-edit"',
+        'data-points-submit="submit-package-delete"',
+        'data-points-submit="submit-batch-invalidate"',
+        'data-points-submit="submit-code-action"',
         'data-points-action="navigate-batch"',
         'function bindAdminPointsRuntimeDelegates()',
         "document.documentElement.dataset.adminPointsRuntimeDelegatesBound === '1'",
         "case 'execute-delete-option':",
         "case 'navigate-user':",
+        "case 'invalidate-batch-from-codes':",
         "case 'save-batch-edit':",
         "overlay.classList.add('is-visible')",
         "overlay.classList.remove('is-visible')"
@@ -5670,6 +5688,11 @@ test('admin points runtime renderers externalize tab state, panel visibility, an
         'async function fetchPointsCatalogSnapshot({ site = getPointsReadSite(), force = false } = {})',
         'function renderPointsPackageCatalog(payload = {})',
         'function renderPointsPackageEditor()',
+        'function getPointsWriteContextState()',
+        'function buildPointsSiteContextMarkup(mode = \'catalog\')',
+        'function renderPointsSiteContexts()',
+        'function getPointsBatchQuickCounts(rows = allBatches)',
+        'function getPointsBatchInsights(batch = {}, referenceDate = new Date())',
         'async function savePointsPackageForm(event) {',
         'async function deleteCurrentPointsPackage() {',
         'async function fetchPointsBatchesPayload(params = {}) {',
@@ -5698,6 +5721,67 @@ test('admin points runtime renderers externalize tab state, panel visibility, an
         'class="points-catalog-summary-card points-catalog-summary-card--',
         'class="points-package-status ${statusClass}"',
         'class="points-package-row ${isSelected ? \'is-selected\' : \'\'}"',
+        "async function copyPointsTextToClipboard(text = '', {",
+        'data-points-action="open-batch-codes-from-edit"',
+        'data-points-action="reissue-batch-from-edit"',
+        "action: 'open-batch-edit-from-codes'",
+        "action: 'reissue-batch-from-codes'",
+        "action: 'export-batch-codes-from-modal'",
+        "action: 'invalidate-batch-from-codes'",
+        "data-points-action=\"copy-visible-batch-codes\"",
+        "data-points-action=\"clear-batch-code-filters\"",
+        "action: 'lookup-code-item'",
+        "data-points-action=\"navigate-batch\" data-batch-id=\"${encodeURIComponent(data.batch_id)}\" data-code=\"${encodeURIComponent(data.code || '')}\"",
+        "function buildPointsInlineFeedbackMarkup(message = '', tone = 'info')",
+        'function renderPointsLookupFeedback()',
+        "function setPointsLookupFeedback(message = '', tone = 'info')",
+        'function renderPointsBatchCodesFeedback()',
+        "function setPointsBatchCodesFeedback(message = '', tone = 'info', batchId = '')",
+        'function renderPointsBatchListFeedback()',
+        "function setPointsBatchListFeedback(message = '', tone = 'info', kind = 'action')",
+        "function buildPointsBatchActionFeedback(action = '', payload = {}, options = {})",
+        'function hasActiveBatchListFilters()',
+        "function announcePointsScopedAction(message = '', tone = 'success', {",
+        'function getPointsBatchInvalidateModalPayload(batchIds = [])',
+        'function getPointsPackageDeleteModalPayload(packageId = \'\')',
+        'function syncPointsPackageDeleteModalState()',
+        'function syncPointsBatchInvalidateModalState()',
+        'function buildPointsBatchLoadingSkeleton(rowCount = batchPageSize)',
+        'function formatPointsPackageMetricCell(metric = {})',
+        'function renderPointsGeneratePreview()',
+        'function syncPointsGenerateSubmitState()',
+        'function filterBatchByQuick(value = \'all\')',
+        'function buildPointsBatchRiskBadges(batch = {})',
+        'function buildPointsBatchEditOverviewCard({',
+        'function getPointsBatchCodeStatusCounts(codes = [])',
+        'function buildPointsBatchCodesSummaryCard({',
+        'function buildPointsBatchCodesActionButton({',
+        'function getFilteredPointsBatchCodes(codes = pointsBatchCodesUiState.codes)',
+        'function buildPointsBatchCodesTableSection(codes = pointsBatchCodesUiState.codes)',
+        'function copyVisibleBatchCodes()',
+        'function openPointsLookupFromCode(code = \'\')',
+        'function queuePointsBatchCodeFocus(batchId = \'\', code = \'\')',
+        'function focusPointsBatchCodeInModal(code = \'\', { applySearch = false } = {})',
+        'function buildPointsLookupBatchAction(action = \'\', batchId = \'\', code = \'\', label = \'前往批次\', icon = \'fas fa-box-archive\')',
+        'function buildPointsLookupCodeOpsPanel(data = {})',
+        'function buildPointsCodeActionModalConfig(mode = \'\', code = \'\', currentExpiry = \'\')',
+        'function openPointsPackageDeleteModal(packageId = \'\')',
+        'function openPointsBatchInvalidateModal(batchIds = [])',
+        'function openPointsCodeActionModal({ mode = \'\', code = \'\', currentExpiry = \'\', source = \'\' } = {})',
+        'function syncPointsCodeActionModalState()',
+        'async function submitPointsPackageDelete(event) {',
+        'async function submitPointsBatchInvalidate(event) {',
+        'async function submitPointsCodeAction(event) {',
+        'function syncPointsBatchEditModalState()',
+        'function renderPointsBatchOverview()',
+        'function seedGenerateFromBatch(batchId = \'\')',
+        'function jumpToGeneratedBatch(batchName = generatedBatchContext.batchName)',
+        'function renderLookupEmptyState()',
+        'function getPointsLookupStatusMeta(status = \'\')',
+        'payments-kpi-card payments-kpi-card-visual',
+        "document.getElementById('pointsCatalogPackageCount')",
+        "document.getElementById('pointsGeneratePreview')",
+        "document.getElementById('pointsGeneratePreviewStatus')",
         "label: isCreate ? '创建套餐' : '保存套餐'"
     ];
 
@@ -5728,18 +5812,75 @@ test('admin points runtime renderers externalize tab state, panel visibility, an
         '#points-view-catalog',
         '.points-batch-row',
         '.settings-package-shortcut',
-        '.points-module-note',
         '.points-catalog-workspace',
+        '.points-catalog-list-shell',
         '.points-package-editor-shell',
+        '.points-catalog-summary-card:hover',
         '.points-package-editor-badge',
+        '.points-catalog-toolbar',
+        '.points-catalog-search',
+        '.points-catalog-select',
+        '.points-generate-preview',
+        '.points-generate-preview__status',
+        '.points-generate-preview__grid',
         '.points-package-form__actions',
+        '.points-package-action-btn',
+        '.points-package-action-btn--primary',
         '.points-catalog-summary',
         '.points-catalog-summary-card',
+        '.points-catalog-list-shell__badge',
         '.points-package-row.is-selected',
         '.points-package-status.is-active',
         '.points-package-status.is-inactive',
+        '.points-package-metric-pill',
+        '.points-package-empty-state',
+        '.points-batch-edit-layout',
+        '.points-batch-edit-overview-card',
+        '.points-batch-edit-actions',
+        '.points-site-context--batch-edit',
+        '.codes-modal--batch',
+        '.points-batch-codes-workbench',
+        '.points-batch-codes-summary-card',
+        '.points-batch-codes-actions',
+        '.points-batch-codes-toolbar',
+        '.points-batch-codes-search',
+        '.points-batch-codes-toolbar-btn',
+        '.points-batch-codes-table-empty',
+        '.points-batch-codes-row-tools',
+        '.points-batch-codes-row-btn',
+        '.points-batch-code-row--focused',
+        '.lookup-inline-hint',
+        '.lookup-section--ops',
+        '.lookup-ops-panel',
+        '.lookup-action-btn--danger',
+        '.lookup-action-btn--success',
+        '.points-inline-feedback-shell',
+        '.points-batch-list-feedback',
+        '.points-inline-feedback',
+        '.points-inline-feedback--success',
+        '.points-inline-feedback--error',
+        '.points-site-context--lookup-ops',
+        '.edit-modal--code-action',
+        '.edit-modal--package-delete',
+        '.edit-modal--batch-invalidate',
+        '.points-code-action-summary',
+        '.points-code-action-summary--danger',
+        '.points-code-action-error',
+        '.points-code-action-submit--danger',
+        '.points-code-action-submit--success',
+        '.points-site-context--code-action',
+        '.points-package-delete-summary',
+        '.points-package-delete-summary__meta-item',
+        '.points-package-delete-warning',
+        '.points-batch-invalidate-list',
+        '.points-batch-invalidate-item',
+        '.points-batch-codes-status-pill',
         '#generatedCodesResult.admin-studio-inline-style-attr-35.admin-points-panel-visible',
         '#lookupResult.admin-studio-inline-style-attr-41.admin-points-panel-visible',
+        '.lookup-status-badge',
+        '.lookup-summary-grid',
+        '.lookup-timeline',
+        '.lookup-action-btn',
         '.admin-points-reference-id',
         '.admin-points-ledger-amount',
         '.admin-points-lookup-value-sans',
@@ -5748,7 +5889,10 @@ test('admin points runtime renderers externalize tab state, panel visibility, an
         '.points-delete-options-modal-body',
         '.points-codes-error',
         '.codes-modal-overlay.is-visible',
-        '.edit-modal-overlay.is-visible'
+        '.edit-modal-overlay.is-visible',
+        '.edit-modal--batch',
+        '.points-batch-edit-hero',
+        '.points-batch-edit-overview-card__icon'
     ];
 
     for (const marker of expectedCssMarkers) {
@@ -5880,6 +6024,12 @@ test('admin comments runtime renderers route list items, filters, and block menu
     for (const marker of cssMarkers) {
         assert.equal(adminCommentsCss.includes(marker), true, `admin-sidebar.css should contain ${marker}`);
     }
+
+    assert.match(
+        adminCommentsCss,
+        /\.comment-admin-item:hover\s*\{[^}]*border-color:\s*rgba\(107,\s*158,\s*206,\s*0\.38\)/s,
+        'admin-sidebar.css should render comment card hover borders with the shared admin blue accent'
+    );
 
     assert.match(
         adminStudioSource,
@@ -6316,9 +6466,26 @@ test('admin studio settings, discounts, and tickets controls route through deleg
         'data-admin-action="discounts-submit-generate"',
         'data-admin-input-action="tickets-search"',
         'data-admin-action="tickets-filter"',
+        'data-admin-action="tickets-switch-workspace"',
+        'data-admin-action="tickets-toggle-overdue"',
+        'data-admin-action="tickets-toggle-priority"',
+        'data-admin-action="tickets-toggle-mine"',
+        'data-admin-action="tickets-toggle-unassigned"',
+        'data-admin-action="tickets-bulk-assign-self"',
+        'data-admin-action="tickets-bulk-clear-assignee"',
+        'data-admin-action="tickets-open-bulk-resolve"',
+        'data-admin-action="tickets-open-bulk-reject"',
+        'data-admin-action="tickets-close-bulk-process-modal"',
+        'data-admin-action="tickets-submit-bulk-process"',
+        'data-admin-action="tickets-clear-selection"',
+        'data-admin-change-action="tickets-toggle-select-all-page"',
         'data-admin-overlay-close="ticket-reply-modal"',
+        'data-admin-overlay-close="ticket-bulk-process-modal"',
+        'data-admin-overlay-close="ticket-summary-job-detail-modal"',
         'data-admin-action="tickets-close-reply-modal"',
-        'data-admin-action="tickets-submit-reply"'
+        'data-admin-action="tickets-submit-reply"',
+        'data-admin-action="tickets-close-summary-job-detail"',
+        'data-admin-action="tickets-retry-summary-job"'
     ];
 
     for (const marker of delegatedMarkers) {
@@ -6328,6 +6495,15 @@ test('admin studio settings, discounts, and tickets controls route through deleg
     assert.equal(adminStudioScript.includes('settings-select-decoration'), true, 'admin-studio.js should delegate settings decoration controls');
     assert.equal(adminStudioScript.includes('discounts-open-generate-modal'), true, 'admin-studio.js should delegate discount modal controls');
     assert.equal(adminStudioScript.includes('tickets-submit-reply'), true, 'admin-studio.js should delegate ticket reply submission');
+    assert.equal(adminStudioScript.includes('tickets-switch-workspace'), true, 'admin-studio.js should delegate ticket workspace switching');
+    assert.equal(adminStudioScript.includes('tickets-toggle-overdue'), true, 'admin-studio.js should delegate ticket overdue quick filters');
+    assert.equal(adminStudioScript.includes('tickets-bulk-assign-self'), true, 'admin-studio.js should delegate ticket bulk assignment');
+    assert.equal(adminStudioScript.includes('tickets-open-bulk-resolve'), true, 'admin-studio.js should delegate ticket bulk resolve actions');
+    assert.equal(adminStudioScript.includes('tickets-submit-bulk-process'), true, 'admin-studio.js should delegate ticket batch processing');
+    assert.equal(adminStudioScript.includes('tickets-toggle-select-all-page'), true, 'admin-studio.js should delegate ticket page selection');
+    assert.equal(adminStudioScript.includes('tickets-open-summary-job-detail'), true, 'admin-studio.js should delegate ticket summary detail actions');
+    assert.equal(adminStudioScript.includes('tickets-save-summary-job-note'), true, 'admin-studio.js should delegate ticket summary note actions');
+    assert.equal(adminStudioScript.includes('tickets-retry-summary-job'), true, 'admin-studio.js should delegate ticket summary retry actions');
     assert.equal(adminStudioScript.includes('[data-admin-input-action]'), true, 'admin-studio.js should delegate input-based admin controls');
     assert.equal(adminStudioScript.includes('[data-admin-overlay-close]'), true, 'admin-studio.js should delegate overlay dismissal');
     assert.equal(adminStudioScript.includes("form.id === 'discountGenerateForm'"), true, 'admin-studio.js should delegate discount generate form submission');
@@ -6395,7 +6571,12 @@ test('discount and ticket admin renderers no longer emit inline row or paginatio
 
     const delegatedTicketMarkers = [
         'data-admin-action="tickets-pagination-go"',
-        'data-admin-change-action="tickets-pagination-go"'
+        'data-admin-change-action="tickets-pagination-go"',
+        'data-admin-action="tickets-open-overdue-queue"',
+        'data-admin-action="tickets-open-sla-settings"',
+        'data-admin-action="tickets-refresh-overview"',
+        'data-admin-action="tickets-open-summary-job-detail"',
+        'data-admin-action="tickets-retry-summary-job"'
     ];
 
     for (const marker of delegatedTicketMarkers) {
@@ -6407,7 +6588,15 @@ test('discount and ticket admin renderers no longer emit inline row or paginatio
         'discounts-toggle-status',
         'discounts-delete-code',
         'discounts-pagination-go',
-        'tickets-pagination-go'
+        'tickets-pagination-go',
+        'tickets-switch-workspace',
+        'settings-add-ticket-reply-template',
+        'tickets-open-overdue-queue',
+        'tickets-open-sla-settings',
+        'tickets-refresh-overview',
+        'tickets-open-summary-job-detail',
+        'tickets-save-summary-job-note',
+        'tickets-retry-summary-job'
     ];
 
     for (const marker of adminDelegationMarkers) {
@@ -6417,21 +6606,53 @@ test('discount and ticket admin renderers no longer emit inline row or paginatio
 
 test('ticket admin surfaces user email in search and list rendering', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
+    const adminConfigSource = readRepoFile('admin-config.js');
     const ticketsSource = readRepoFile('js/admin-tickets.js');
     const adminWorkbenchSource = readRepoFile('js/admin-workbench.js');
     const ticketLinksSource = readRepoFile('js/admin-ticket-links.js');
 
-    assert.equal(adminStudioSource.includes('placeholder="搜索订单号、邮箱或描述..."'), true, 'admin-studio.html should mention email in the ticket search placeholder');
+    assert.equal(adminStudioSource.includes('placeholder="搜索工单号、订单号、用户、邮箱或描述..."'), true, 'admin-studio.html should mention ticket id, user, and email in the ticket search placeholder');
     assert.equal(adminStudioSource.includes('<th>用户 / 邮箱</th>'), true, 'admin-studio.html should label the ticket user column with email support');
     assert.equal(adminStudioSource.includes('js/admin-ticket-links.js?v=20260401_ADMIN_TICKET_LINK_PROTOCOL_1'), true, 'admin-studio.html should load the shared ticket link protocol before the ticket runtime');
-    assert.equal(adminStudioSource.includes('js/admin-tickets.js?v=20260401_ADMIN_TICKETS_WORKBENCH_PAYLOADS_4'), true, 'admin-studio.html should load the cache-busted ticket admin script');
-    assert.equal(adminStudioSource.includes('工单现在支持直接回到客服会话、订单、用户详情和原始站内代办'), true, 'admin-studio.html should expose the ticket workbench note');
+    assert.equal(adminStudioSource.includes('admin-studio.css?v=20260404_ADMIN_TICKET_REMINDER_ACTIVITY_LAYOUT_6'), true, 'admin-studio.html should load the cache-busted admin studio stylesheet for the reminder activity layout fix');
+    assert.equal(adminStudioSource.includes('admin-config.js?v=20260403_ADMIN_TICKET_TEMPLATE_SETTINGS_1'), true, 'admin-studio.html should load the cache-busted admin config script for configurable ticket reply templates');
+    assert.equal(adminStudioSource.includes('js/admin-tickets.js?v=20260404_ADMIN_TICKET_OVERVIEW_COPY_1'), true, 'admin-studio.html should load the cache-busted ticket admin script');
+    assert.equal(ticketsSource.includes('pageSize: 12,'), true, 'js/admin-tickets.js should paginate tickets 12 at a time');
     assert.equal(ticketLinksSource.includes('root.AdminTicketLinks = api;'), true, 'js/admin-ticket-links.js should expose a shared ticket link protocol namespace');
     assert.equal(ticketLinksSource.includes('function buildLinkedTicketDescription(body = {}, actorLabel = \'\')'), true, 'js/admin-ticket-links.js should build linked ticket descriptions through the shared protocol');
     assert.equal(ticketLinksSource.includes('function parseLinkedOpsAlertContext(description = \'\')'), true, 'js/admin-ticket-links.js should parse linked ops alert ticket descriptions');
     assert.equal(ticketLinksSource.includes('function parseLinkedChatSessionContext(description = \'\')'), true, 'js/admin-ticket-links.js should parse linked chat ticket descriptions');
     assert.equal(ticketsSource.includes("fetchProfilesByIds: async function"), true, 'js/admin-tickets.js should fetch profile emails for ticket users');
-    assert.equal(ticketsSource.includes("t.user_email && t.user_email.toLowerCase().includes(q)"), true, 'js/admin-tickets.js should allow searching tickets by user email');
+    assert.equal(ticketsSource.includes("buildAdminTicketsUrl: function"), true, 'js/admin-tickets.js should build shared admin ticket URLs through the central admin route');
+    assert.equal(ticketsSource.includes("getTicketsListUrl: function"), true, 'js/admin-tickets.js should build a shared server-side tickets list request URL');
+    assert.equal(ticketsSource.includes("getTicketsAssignUrl: function"), true, 'js/admin-tickets.js should build a shared ticket assignment route URL');
+    assert.equal(ticketsSource.includes("getTicketsBatchProcessUrl: function"), true, 'js/admin-tickets.js should build a shared ticket batch processing route URL');
+    assert.equal(ticketsSource.includes("getTicketHistoryUrl: function"), true, 'js/admin-tickets.js should build the ticket history admin route URL');
+    assert.equal(ticketsSource.includes("getTicketsMetricsUrl: function"), true, 'js/admin-tickets.js should build the ticket metrics admin route URL');
+    assert.equal(ticketsSource.includes("getTicketsSummaryActionsUrl: function"), true, 'js/admin-tickets.js should build the ticket summary actions route URL');
+    assert.equal(ticketsSource.includes("getTicketsSummaryHistoryUrl: function"), true, 'js/admin-tickets.js should build the ticket summary history route URL');
+    assert.equal(ticketsSource.includes("normalizeTicketWorkspaceView: function"), true, 'js/admin-tickets.js should normalize grouped ticket workspace views');
+    assert.equal(ticketsSource.includes("getTicketWorkspaceMeta: function"), true, 'js/admin-tickets.js should describe ticket workspace titles and subtitles');
+    assert.equal(ticketsSource.includes("getTicketWorkspaceTargetId: function"), true, 'js/admin-tickets.js should map grouped ticket workspaces to their primary sections');
+    assert.equal(ticketsSource.includes("setWorkspaceView: function"), true, 'js/admin-tickets.js should switch the ticket module between grouped workspaces');
+    assert.equal(ticketsSource.includes("syncTicketWorkspaceView: function"), true, 'js/admin-tickets.js should keep grouped ticket workspace tabs in sync with the active view');
+    assert.equal(ticketsSource.includes("getReminderWorkspaceMode: function"), true, 'js/admin-tickets.js should distinguish overview reminder status from summary tracking workspace mode');
+    assert.equal(ticketsSource.includes("syncReminderWorkspacePresentation: function"), true, 'js/admin-tickets.js should update reminder headings and content when ticket workspaces change');
+    assert.equal(ticketsSource.includes("renderReminderSummaryStatusStrip: function"), true, 'js/admin-tickets.js should render a compact reminder status strip for the summary tracking workspace');
+    assert.equal(ticketsSource.includes("renderReminderPanelActions: function"), true, 'js/admin-tickets.js should centralize the reminder action buttons markup');
+    assert.equal(ticketsSource.includes("admin-ticket-overview-reminder-summary-entry__cards"), true, 'js/admin-tickets.js should render the daily SLA summary details as a horizontal subcard grid');
+    assert.equal(ticketsSource.includes("includeFooterActions: isSummaryMode"), true, 'js/admin-tickets.js should embed the reminder actions inside the activity card in summary tracking mode');
+    assert.equal(ticketsSource.includes("getReminderSummaryHistoryFallbackMessage: function"), true, 'js/admin-tickets.js should normalize summary history fallback copy before rendering it in the UI');
+    assert.equal(ticketsSource.includes("if (normalized === 'batch')"), true, 'js/admin-tickets.js should merge the legacy batch workspace into the main processing workspace');
+    assert.equal(ticketsSource.includes("renderReminderSummaryManualEvent: function"), true, 'js/admin-tickets.js should render recent manual handoff notes for summary jobs');
+    assert.equal(ticketsSource.includes("renderReminderSummaryPreviewComparison: function"), true, 'js/admin-tickets.js should render preview deltas between recent summary jobs');
+    assert.equal(ticketsSource.includes("renderReminderSummaryHandoffSummary: function"), true, 'js/admin-tickets.js should render a compact handoff summary for summary jobs');
+    assert.equal(ticketsSource.includes("url.searchParams.set('route', normalizedRoute);"), true, 'js/admin-tickets.js should encode the ticket route as an admin route query parameter');
+    assert.equal(ticketsSource.includes("this.buildAdminTicketsUrl('tickets/list', params)"), true, 'js/admin-tickets.js should load ticket pages through the central admin route helper');
+    assert.equal(ticketsSource.includes("this.buildAdminTicketsUrl('tickets/metrics')"), true, 'js/admin-tickets.js should load ticket overview metrics through the central admin route helper');
+    assert.equal(ticketsSource.includes("this.buildAdminTicketsUrl('tickets/summary-actions')"), true, 'js/admin-tickets.js should submit ticket summary actions through the central admin route helper');
+    assert.equal(ticketsSource.includes("this.buildAdminTicketsUrl('tickets/summary-history'"), true, 'js/admin-tickets.js should load ticket summary history through the central admin route helper');
+    assert.equal(ticketsSource.includes(".select('id, user_id, order_id, issue_type, status, description, admin_notes, created_at, updated_at')"), true, 'js/admin-tickets.js fallback loader should avoid selecting the legacy reason column directly');
     assert.equal(ticketsSource.includes("ticket.user_email"), true, 'js/admin-tickets.js should render ticket user email');
     assert.equal(ticketsSource.includes("focusTicket: async function"), true, 'js/admin-tickets.js should expose a direct ticket focus helper');
     assert.equal(ticketsSource.includes("getTicketLinkProtocol: function"), true, 'js/admin-tickets.js should centralize the shared ticket link protocol');
@@ -6441,6 +6662,61 @@ test('ticket admin surfaces user email in search and list rendering', () => {
     assert.equal(ticketsSource.includes("getWorkbenchLauncher: function"), true, 'js/admin-tickets.js should centralize the shared workbench launcher');
     assert.equal(ticketsSource.includes("openWorkbenchEntry: async function"), true, 'js/admin-tickets.js should expose a shared workbench entry helper');
     assert.equal(ticketsSource.includes("buildTicketWorkbenchEntry: function"), true, 'js/admin-tickets.js should centralize ticket workbench payload building');
+    assert.equal(ticketsSource.includes("buildReplyModalDetailState: function"), true, 'js/admin-tickets.js should build a richer ticket reply panel detail model');
+    assert.equal(ticketsSource.includes("buildReplyTemplates: function"), true, 'js/admin-tickets.js should build suggested ticket reply templates');
+    assert.equal(ticketsSource.includes("ticketReplyTemplateConfigTemplates: null"), true, 'js/admin-tickets.js should cache configurable ticket reply templates');
+    assert.equal(ticketsSource.includes("applyTicketReplyTemplateConfig: function"), true, 'js/admin-tickets.js should apply ticket reply template config from settings or server responses');
+    assert.equal(ticketsSource.includes("handleOpsAlertsConfigUpdated: function"), true, 'js/admin-tickets.js should refresh ticket reply templates when ops alert settings change');
+    assert.equal(ticketsSource.includes("buildConfiguredReplyTemplates: function"), true, 'js/admin-tickets.js should build reply suggestions from configured templates');
+    assert.equal(ticketsSource.includes("window.addEventListener?.('ops-alerts-config-updated'"), true, 'js/admin-tickets.js should listen for ops alert config updates');
+    assert.equal(ticketsSource.includes("normalizeOverviewPayload: function"), true, 'js/admin-tickets.js should normalize the ticket overview payload');
+    assert.equal(ticketsSource.includes("loadOverview: async function"), true, 'js/admin-tickets.js should load the ticket SLA and efficiency overview');
+    assert.equal(ticketsSource.includes("openOverdueQueue: function"), true, 'js/admin-tickets.js should expose a shortcut into the overdue queue');
+    assert.equal(ticketsSource.includes("openSlaSettings: function"), true, 'js/admin-tickets.js should deep-link from the overview into ticket reminder settings');
+    assert.equal(ticketsSource.includes("renderReminderPanel: function"), true, 'js/admin-tickets.js should render the ticket reminder status panel');
+    assert.equal(ticketsSource.includes("buildReplyTimelineItems: function"), true, 'js/admin-tickets.js should build a ticket processing timeline model');
+    assert.equal(ticketsSource.includes("buildTicketPriorityMeta: function"), true, 'js/admin-tickets.js should derive ticket priority metadata for triage');
+    assert.equal(ticketsSource.includes("buildBulkProcessTemplates: function"), true, 'js/admin-tickets.js should build batch-processing reply templates');
+    assert.equal(ticketsSource.includes("normalizeReplyTimelineItems: function"), true, 'js/admin-tickets.js should normalize remote ticket timeline items');
+    assert.equal(ticketsSource.includes("mergeReplyTimelineItems: function"), true, 'js/admin-tickets.js should merge remote audit history with local timeline items');
+    assert.equal(ticketsSource.includes("mergeReplyTemplateText: function"), true, 'js/admin-tickets.js should merge reply templates into the current admin draft');
+    assert.equal(ticketsSource.includes("renderReplyModalQuickActions: function"), true, 'js/admin-tickets.js should render ticket reply panel quick actions');
+    assert.equal(ticketsSource.includes("renderReplyModalTemplates: function"), true, 'js/admin-tickets.js should render ticket reply templates');
+    assert.equal(ticketsSource.includes("renderReplyModalTimeline: function"), true, 'js/admin-tickets.js should render a ticket reply timeline');
+    assert.equal(ticketsSource.includes("loadReplyTimelineHistory: async function"), true, 'js/admin-tickets.js should hydrate ticket timelines from admin audit history');
+    assert.equal(ticketsSource.includes("const internalNote = document.getElementById('ticketInternalNote')?.value.trim() || '';"), true, 'js/admin-tickets.js should collect admin-only internal notes separately from the public reply');
+    assert.equal(ticketsSource.includes("submitBulkAssignment: async function"), true, 'js/admin-tickets.js should expose ticket bulk assignment');
+    assert.equal(ticketsSource.includes("submitBulkProcess: async function"), true, 'js/admin-tickets.js should expose ticket batch processing');
+    assert.equal(ticketsSource.includes("toggleSelectAllPage: function"), true, 'js/admin-tickets.js should support page-level ticket selection');
+    assert.equal(ticketsSource.includes("shouldUseClientSideListFallback: function"), true, 'js/admin-tickets.js should detect when the backend tickets list route is unavailable');
+    assert.equal(ticketsSource.includes("loadTicketsViaSupabaseFallback: async function"), true, 'js/admin-tickets.js should fall back to client-side ticket loading when needed');
+    assert.equal(adminStudioSource.includes('ticketReplySummaryGrid'), true, 'admin-studio.html should include the ticket summary grid container');
+    assert.equal(adminStudioSource.includes('ticketReplyQuickActions'), true, 'admin-studio.html should include the ticket quick action container');
+    assert.equal(adminStudioSource.includes('ticketReplyTemplates'), true, 'admin-studio.html should include the ticket reply template container');
+    assert.equal(adminStudioSource.includes('ticketReplyTimeline'), true, 'admin-studio.html should include the ticket reply timeline container');
+    assert.equal(adminStudioSource.includes('ticketInternalNote'), true, 'admin-studio.html should include the admin-only internal note input');
+    assert.equal(adminStudioSource.includes('ticketsBulkToolbar'), true, 'admin-studio.html should include the ticket bulk action toolbar');
+    assert.equal(adminStudioSource.includes('ticketsSelectAllCheckbox'), true, 'admin-studio.html should include the ticket page selection checkbox');
+    assert.equal(adminStudioSource.includes('ticketBulkProcessModal'), true, 'admin-studio.html should include the ticket bulk process modal');
+    assert.equal(adminStudioSource.includes('ticketMineFilterBtn'), true, 'admin-studio.html should include the ticket ownership quick filter');
+    assert.equal(adminStudioSource.includes('ticketsOverviewPanel'), true, 'admin-studio.html should include the ticket overview dashboard shell');
+    assert.equal(adminStudioSource.includes('ticketsOverviewGrid'), true, 'admin-studio.html should include the ticket overview KPI grid');
+    assert.equal(adminStudioSource.includes('ticketsOverviewSourceBreakdown'), true, 'admin-studio.html should include the ticket overview source breakdown');
+    assert.equal(adminStudioSource.includes('ticketsOverviewIssueBreakdown'), true, 'admin-studio.html should include the ticket overview issue type breakdown');
+    assert.equal(adminStudioSource.includes('ticketsOverviewReminderPanel'), true, 'admin-studio.html should include the ticket overview reminder panel');
+    assert.equal(adminStudioSource.includes('ticketsOverviewReminderHeading'), true, 'admin-studio.html should include a reminder section heading that can switch by workspace');
+    assert.equal(adminStudioSource.includes('ticketsOverviewReminderMeta'), true, 'admin-studio.html should include reminder meta copy that can switch by workspace');
+    assert.equal(adminStudioSource.includes('ticketsFunctionNav'), true, 'admin-studio.html should include the grouped ticket workspace navigation');
+    assert.equal(adminStudioSource.includes('按功能分类'), false, 'admin-studio.html should remove the redundant ticket workspace eyebrow copy');
+    assert.equal(adminStudioSource.includes('ticketWorkspaceBatchTab'), false, 'admin-studio.html should no longer expose a separate batch workspace tab');
+    assert.equal(adminStudioSource.includes('工单处理'), true, 'admin-studio.html should expose a unified processing workspace tab');
+    assert.equal(adminStudioSource.includes('data-admin-action="tickets-switch-workspace"'), true, 'admin-studio.html should delegate grouped ticket workspace switches through the shared action bus');
+    assert.equal(adminStudioSource.includes('opsAlertTicketReplyTemplateAddButton'), true, 'admin-studio.html should include the add button for configurable ticket reply templates');
+    assert.equal(adminStudioSource.includes('opsAlertTicketReplyTemplates'), true, 'admin-studio.html should include the configurable ticket reply template container');
+    assert.equal(adminConfigSource.includes('function renderOpsAlertTicketReplyTemplates'), true, 'admin-config.js should render configurable ticket reply templates');
+    assert.equal(adminConfigSource.includes('function collectOpsAlertTicketReplyTemplatesFromForm'), true, 'admin-config.js should collect configurable ticket reply templates from the settings form');
+    assert.equal(adminConfigSource.includes('function addOpsAlertTicketReplyTemplate'), true, 'admin-config.js should expose a helper to add new ticket reply templates');
+    assert.equal(adminWorkbenchSource.includes('reply_templates: normalizeTicketReplyTemplates'), true, 'js/admin-workbench.js should deep-clone configurable ticket reply templates');
     assert.equal(ticketsSource.includes("openWorkbench: async function"), true, 'js/admin-tickets.js should expose a workbench bridge helper');
     assert.equal(ticketsSource.includes("window.getOpsAlertWorkspaceAction"), true, 'js/admin-tickets.js should resolve linked ops alert workspaces through the shared resolver');
     assert.equal(ticketsSource.includes("labelVariant: 'ticket'"), true, 'js/admin-tickets.js should request ticket-specific workspace action labels from the shared resolver');
@@ -6600,7 +6876,9 @@ test('ticket admin runtime renderers externalize row states, modal visibility, a
         'admin-ticket-pagination-shell',
         "modal.classList.add('is-visible')",
         "modal.classList.remove('is-visible')",
-        'admin-ticket-copy-toast'
+        'admin-ticket-copy-toast',
+        'renderReplyModalTemplates: function',
+        'renderReplyModalTimeline: function'
     ];
 
     for (const marker of delegatedRuntimeMarkers) {
@@ -6615,8 +6893,9 @@ test('ticket admin runtime renderers externalize row states, modal visibility, a
         '.admin-ticket-action-btn--order',
         '.admin-ticket-action-btn--user',
         '.admin-ticket-action-btn--source',
-        '.admin-ticket-workbench-note',
         '.admin-ticket-reply-modal.is-visible',
+        '.admin-ticket-reply-modal__templates',
+        '.admin-ticket-reply-modal__timeline',
         '.admin-ticket-copy-toast'
     ];
 
@@ -6997,7 +7276,7 @@ test('shop admin order workflows externalize runtime table-row and modal styling
     }
 
     assert.equal(adminStudioSource.includes('js/admin-shop.js?v=20260403_ADMIN_SHOP_TAB_PREFETCH_1'), true, 'admin-studio.html should load the cache-busted shop admin script');
-    assert.equal(adminStudioSource.includes('admin-config.js?v=20260402_ADMIN_CONFIG_ACCESS_101'), true, 'admin-studio.html should load the cache-busted admin config script');
+    assert.equal(adminStudioSource.includes('admin-config.js?v=20260403_ADMIN_TICKET_TEMPLATE_SETTINGS_1'), true, 'admin-studio.html should load the cache-busted admin config script');
     assert.equal(adminWorkbenchSource.includes('window.ShopAdmin?.focusOrder'), true, 'js/admin-workbench.js should directly focus shop order workspaces when an order id is available');
 });
 
@@ -7974,7 +8253,7 @@ test('prompt image delivery optimizes admin previews and cacheable fallback uplo
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-studio.js?v=20260403_ADMIN_MODULE_PREFETCH_1'),
+        adminStudioHtml.includes('admin-studio.js?v=20260404_ADMIN_TICKET_WORKSPACE_NAV_1'),
         true,
         'admin-studio.html should reference the latest prompt upload runtime version'
     );
@@ -8451,6 +8730,7 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         'async function runAdminShopSmoke() {',
         'async function runAdminGallerySmoke() {',
         'async function runHomepageAdminSmoke() {',
+        'async function runAdminTicketsSmoke() {',
         'async function runUserModalSmoke() {',
         'async function runExperimentModalSmoke() {',
         'async function runAdminCommentsSmoke() {',
@@ -8481,6 +8761,14 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         '兑换码生成会通过 points manage handler 写回批次和兑换码',
         '批次列表会通过 points batches handler 加载当前站点批次',
         '批次详情会通过 points batches handler 加载兑换码',
+        'tickets.manage',
+        "ops_alert_job_attempts: 'opsAlertJobAttempts'",
+        '售后工单概览已产出汇总追踪样本',
+        '售后工单横栏切换不跳页',
+        '售后工单提醒活动闭环没有横向溢出',
+        '售后工单提醒活动闭环区块不会相互覆盖',
+        '汇总历史 fallback 文案不暴露底层路由错误',
+        '连续两次都在的工单超过 2 条后会在列内滚动',
         'shop.manage',
         "const adminRoute = url.pathname === '/api/admin'",
         "if ((url.pathname === '/api/admin/shop/products' || adminRoute === 'shop/products') && method === 'GET') {",
@@ -8510,7 +8798,7 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
     }
 
     assert.equal(
-        adminStudioHtml.includes('js/local-smoke-fixtures.js?v=20260403_LOCAL_SMOKE_FIXTURES_30'),
+        adminStudioHtml.includes('js/local-smoke-fixtures.js?v=20260404_LOCAL_SMOKE_FIXTURES_31'),
         true,
         'admin-studio.html should load the local smoke fixtures entry'
     );
@@ -8520,7 +8808,7 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         'smoke-notifications.html should load the dedicated smoke harness stylesheet'
     );
     assert.equal(
-        smokeNotificationHtml.includes('js/local-smoke-fixtures.js?v=20260403_LOCAL_SMOKE_FIXTURES_30'),
+        smokeNotificationHtml.includes('js/local-smoke-fixtures.js?v=20260404_LOCAL_SMOKE_FIXTURES_31'),
         true,
         'smoke-notifications.html should load the local smoke fixtures entry'
     );
@@ -8604,7 +8892,9 @@ test('admin studio modal scrollers auto-hide after scroll activity settles', () 
         '.config-textarea',
         '.select-options',
         '#discountGenerateModal > div',
-        '#ticketReplyModal > div'
+        '#ticketReplyModal > div',
+        '.admin-ticket-reply-modal__context-column',
+        '.admin-ticket-reply-modal__description'
     ];
 
     for (const marker of scriptMarkers) {
@@ -8615,7 +8905,9 @@ test('admin studio modal scrollers auto-hide after scroll activity settles', () 
         '.admin-scrollbar-auto-hide {',
         'scrollbar-color: transparent transparent !important;',
         '.admin-scrollbar-auto-hide.admin-scrollbar-auto-hide--visible::-webkit-scrollbar-thumb',
-        '.admin-scrollbar-auto-hide:focus-within::-webkit-scrollbar-thumb:hover'
+        '.admin-scrollbar-auto-hide:focus-within::-webkit-scrollbar-thumb:hover',
+        '.admin-ticket-reply-modal__layout {',
+        '.admin-ticket-reply-modal__quick-actions {'
     ];
 
     for (const marker of styleMarkers) {

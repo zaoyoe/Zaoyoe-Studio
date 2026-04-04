@@ -559,3 +559,116 @@ test('ticket process suppresses duplicate refund messaging when the order was al
         assert.equal(state.auditLogs[0].details.refund_duplicate, true);
     });
 });
+
+test('ticket process stores internal notes as dedicated audit history entries', async () => {
+    await withHandler({
+        tickets: [{
+            id: 'ticket-note-1',
+            user_id: 'user-note-1',
+            order_id: 'order-note-1',
+            status: 'PENDING',
+            description: '需要人工复核的售后工单',
+            created_at: '2026-03-30T10:00:00.000Z',
+            updated_at: '2026-03-30T10:00:00.000Z'
+        }]
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            headers: {},
+            body: {
+                ticketId: 'ticket-note-1',
+                newStatus: 'RESOLVED',
+                adminReply: '已完成补发',
+                internalNote: '命中高风险用户，已人工复核支付截图'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.ticket.status, 'RESOLVED');
+        assert.equal(payload.ticket.admin_notes, '已完成补发');
+        assert.equal(state.auditLogs.length, 2);
+        assert.equal(state.auditLogs[0].actionType, 'ticket.internal_note');
+        assert.equal(state.auditLogs[0].details.note, '命中高风险用户，已人工复核支付截图');
+        assert.equal(state.auditLogs[0].details.public_reply, '已完成补发');
+        assert.equal(state.auditLogs[1].actionType, 'ticket.process');
+        assert.equal(state.auditLogs[1].details.previous_status, 'PENDING');
+        assert.equal(state.auditLogs[1].details.public_reply, '已完成补发');
+        assert.equal(state.auditLogs[1].details.has_internal_note, true);
+    });
+});
+
+test('ticket process rejects refund attempts when the target status is rejected', async () => {
+    await withHandler({
+        tickets: [{
+            id: 'ticket-reject-refund-1',
+            user_id: 'user-reject-refund-1',
+            order_id: 'order-reject-refund-1',
+            status: 'PENDING',
+            description: '拒绝态退款校验',
+            created_at: '2026-03-30T10:00:00.000Z',
+            updated_at: '2026-03-30T10:00:00.000Z'
+        }]
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            headers: {},
+            body: {
+                ticketId: 'ticket-reject-refund-1',
+                newStatus: 'REJECTED',
+                adminReply: '不满足退款条件',
+                doRefund: true
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 400);
+        assert.equal(payload.success, false);
+        assert.match(payload.message, /只有解决工单时才能执行退款/);
+        assert.equal(state.refundCalls.length, 0);
+        assert.equal(state.auditLogs.length, 0);
+    });
+});
+
+test('ticket process blocks already handled tickets from being processed again', async () => {
+    await withHandler({
+        tickets: [{
+            id: 'ticket-processed-1',
+            user_id: 'user-processed-1',
+            order_id: 'order-processed-1',
+            status: 'RESOLVED',
+            admin_notes: '之前已经处理完成',
+            description: '重复处理保护',
+            created_at: '2026-03-30T10:00:00.000Z',
+            updated_at: '2026-03-30T12:00:00.000Z'
+        }]
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            headers: {},
+            body: {
+                ticketId: 'ticket-processed-1',
+                newStatus: 'RESOLVED',
+                adminReply: '再次尝试处理'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 409);
+        assert.equal(payload.success, false);
+        assert.match(payload.message, /当前状态为已解决/);
+        assert.equal(state.notifications.length, 0);
+        assert.equal(state.auditLogs.length, 0);
+        assert.equal(state.tickets[0].admin_notes, '之前已经处理完成');
+    });
+});

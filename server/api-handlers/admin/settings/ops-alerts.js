@@ -1387,6 +1387,26 @@ module.exports = async (req, res) => {
                     tickets_summary_hourly_minute: Number(nextConfig.tickets?.summary_hourly_minute || 0),
                     tickets_summary_daily_hour: Number(nextConfig.tickets?.summary_daily_hour || 0),
                     tickets_summary_daily_minute: Number(nextConfig.tickets?.summary_daily_minute || 0),
+                    tickets_reply_template_count: Array.isArray(nextConfig.tickets?.reply_templates)
+                        ? nextConfig.tickets.reply_templates.length
+                        : 0,
+                    tickets_reply_template_enabled_count: Array.isArray(nextConfig.tickets?.reply_templates)
+                        ? nextConfig.tickets.reply_templates.filter((template) => template?.enabled !== false).length
+                        : 0,
+                    tickets_reply_template_actions: Array.from(new Set(
+                        (Array.isArray(nextConfig.tickets?.reply_templates)
+                            ? nextConfig.tickets.reply_templates
+                            : [])
+                            .map((template) => sanitizeText(template?.action, 40))
+                            .filter(Boolean)
+                    )),
+                    tickets_reply_template_issue_types: Array.from(new Set(
+                        (Array.isArray(nextConfig.tickets?.reply_templates)
+                            ? nextConfig.tickets.reply_templates
+                            : [])
+                            .map((template) => sanitizeText(template?.issue_type, 40))
+                            .filter(Boolean)
+                    )),
                     shop_order_delivery_enabled: nextConfig.shop_order_delivery?.enabled !== false,
                     shop_order_delivery_sweep_interval_ms: Number(nextConfig.shop_order_delivery?.sweep_interval_ms || 0) || null,
                     shop_order_delivery_lookback_days: Number(nextConfig.shop_order_delivery?.lookback_days || 0) || null,

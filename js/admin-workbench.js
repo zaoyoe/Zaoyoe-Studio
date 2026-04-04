@@ -1821,6 +1821,9 @@ function buildAdminWorkbenchOpsAlertConfigDraft(currentConfig = {}, options = {}
     const normalizeQuickReplyTemplates = typeof options.normalizeQuickReplyTemplates === 'function'
         ? options.normalizeQuickReplyTemplates
         : ((value) => Array.isArray(value) ? value.map((item) => ({ ...(item || {}) })) : []);
+    const normalizeTicketReplyTemplates = typeof options.normalizeTicketReplyTemplates === 'function'
+        ? options.normalizeTicketReplyTemplates
+        : ((value) => Array.isArray(value) ? value.map((item) => ({ ...(item || {}) })) : []);
 
     return {
         ...normalizedCurrentConfig,
@@ -1875,7 +1878,8 @@ function buildAdminWorkbenchOpsAlertConfigDraft(currentConfig = {}, options = {}
             ...(normalizedCurrentConfig.wallet_recharge_success || {})
         },
         tickets: {
-            ...(normalizedCurrentConfig.tickets || {})
+            ...(normalizedCurrentConfig.tickets || {}),
+            reply_templates: normalizeTicketReplyTemplates(normalizedCurrentConfig.tickets?.reply_templates)
         },
         shop_order_delivery: {
             ...(normalizedCurrentConfig.shop_order_delivery || {})

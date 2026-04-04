@@ -19,6 +19,7 @@
         'prompts.manage',
         'content.moderate',
         'users.manage',
+        'tickets.manage',
         'points.manage',
         'settings.manage',
         'ops_alerts.manage',
@@ -624,7 +625,8 @@
                 issue_type: 'delivery',
                 status: 'pending',
                 description: '用户反馈发货状态迟迟未更新',
-                created_at: '2026-03-31T06:10:00+08:00'
+                created_at: '2026-03-31T06:10:00+08:00',
+                updated_at: '2026-03-31T08:48:00+08:00'
             },
             {
                 id: 'TK-20260331-002',
@@ -633,7 +635,8 @@
                 issue_type: 'verification',
                 status: 'pending',
                 description: '验证失败需要人工协助',
-                created_at: '2026-03-31T07:18:00+08:00'
+                created_at: '2026-03-31T07:18:00+08:00',
+                updated_at: '2026-03-31T08:26:00+08:00'
             }
         ],
         shopCategories: [
@@ -1089,7 +1092,314 @@
         ],
         blockedUsers: [],
         blockHistory: [],
-        opsAlertJobs: [],
+        opsAlertJobs: [
+            {
+                id: 'ticket-summary-job-latest',
+                alert_type: 'ticket_sla_summary',
+                severity: 'warning',
+                title: '每日 SLA 汇总',
+                payload: {
+                    summary_schedule_mode: 'daily',
+                    summary_window_minutes: 60,
+                    summary_daily_hour: 8,
+                    summary_daily_minute: 0,
+                    summary_max_items: 8,
+                    window_start_at: '2026-03-31T08:00:00+08:00',
+                    window_end_at: '2026-03-31T09:00:00+08:00',
+                    item_count: 5,
+                    entry_path: '售后工单 -> 待处理 -> 工单详情',
+                    items: [
+                        {
+                            payload: {
+                                ticket_id: 'TK-SMOKE-CARRY-001',
+                                order_id: 'SHOP-20260331-001',
+                                user_id: '00000000-0000-4000-8000-000000000001',
+                                user_email: 'delay-alpha@zaoyoe.invalid',
+                                wait_label: '13 小时 57 分钟',
+                                responsible_label: '未分配',
+                                ticket_status: 'PENDING',
+                                reason: '用户反馈发货状态迟迟未更新',
+                                updated_at: '2026-03-31T08:48:00+08:00'
+                            }
+                        },
+                        {
+                            payload: {
+                                ticket_id: 'TK-SMOKE-CARRY-002',
+                                order_id: 'SHOP-20260331-002',
+                                user_id: '00000000-0000-4000-8000-000000000002',
+                                user_email: 'delay-beta@zaoyoe.invalid',
+                                wait_label: '13 小时 45 分钟',
+                                responsible_label: '未分配',
+                                ticket_status: 'PENDING',
+                                reason: '支付状态一直没变，用户追问到账进度',
+                                updated_at: '2026-03-31T08:22:00+08:00'
+                            }
+                        },
+                        {
+                            payload: {
+                                ticket_id: 'TK-SMOKE-CARRY-003',
+                                order_id: '',
+                                user_id: '00000000-0000-4000-8000-000000000003',
+                                user_email: 'verify-gamma@zaoyoe.invalid',
+                                wait_label: '12 小时 27 分钟',
+                                responsible_label: '未分配',
+                                ticket_status: 'PENDING',
+                                reason: '验证失败需要人工协助',
+                                updated_at: '2026-03-31T08:26:00+08:00'
+                            }
+                        },
+                        {
+                            payload: {
+                                ticket_id: 'TK-SMOKE-CARRY-004',
+                                order_id: '',
+                                user_id: '00000000-0000-4000-8000-000000000004',
+                                user_email: 'stable-delta@zaoyoe.invalid',
+                                wait_label: '11 小时 03 分钟',
+                                responsible_label: '林支援',
+                                ticket_status: 'PENDING',
+                                reason: '到账后页面未刷新，需要人工核对',
+                                updated_at: '2026-03-31T08:31:00+08:00'
+                            }
+                        },
+                        {
+                            payload: {
+                                ticket_id: 'TK-SMOKE-NEW-005',
+                                order_id: 'SHOP-20260331-001',
+                                user_id: '00000000-0000-4000-8000-000000000001',
+                                user_email: 'delay-alpha@zaoyoe.invalid',
+                                wait_label: '3 小时 20 分钟',
+                                responsible_label: '陈值班',
+                                ticket_status: 'PENDING',
+                                reason: '用户追问补发补偿进度',
+                                updated_at: '2026-03-31T09:03:00+08:00'
+                            }
+                        }
+                    ]
+                },
+                channels: ['telegram', 'feishu', 'email'],
+                remaining_channels: [],
+                status: 'delivered',
+                attempt_count: 1,
+                max_attempts: 6,
+                next_retry_at: '',
+                last_error: '',
+                created_at: '2026-03-31T09:06:24+08:00',
+                updated_at: '2026-03-31T09:06:34+08:00',
+                delivered_at: '2026-03-31T09:06:34+08:00'
+            },
+            {
+                id: 'ticket-summary-job-previous',
+                alert_type: 'ticket_sla_summary',
+                severity: 'warning',
+                title: '每日 SLA 汇总',
+                payload: {
+                    summary_schedule_mode: 'daily',
+                    summary_window_minutes: 60,
+                    summary_daily_hour: 7,
+                    summary_daily_minute: 0,
+                    summary_max_items: 8,
+                    window_start_at: '2026-03-31T07:00:00+08:00',
+                    window_end_at: '2026-03-31T08:00:00+08:00',
+                    item_count: 5,
+                    entry_path: '售后工单 -> 待处理 -> 工单详情',
+                    items: [
+                        {
+                            payload: {
+                                ticket_id: 'TK-SMOKE-CARRY-001',
+                                order_id: 'SHOP-20260331-001',
+                                user_id: '00000000-0000-4000-8000-000000000001',
+                                user_email: 'delay-alpha@zaoyoe.invalid',
+                                wait_label: '12 小时 57 分钟',
+                                responsible_label: '未分配',
+                                ticket_status: 'PENDING',
+                                reason: '用户反馈发货状态迟迟未更新',
+                                updated_at: '2026-03-31T07:48:00+08:00'
+                            }
+                        },
+                        {
+                            payload: {
+                                ticket_id: 'TK-SMOKE-CARRY-002',
+                                order_id: 'SHOP-20260331-002',
+                                user_id: '00000000-0000-4000-8000-000000000002',
+                                user_email: 'delay-beta@zaoyoe.invalid',
+                                wait_label: '12 小时 45 分钟',
+                                responsible_label: '未分配',
+                                ticket_status: 'PENDING',
+                                reason: '支付状态一直没变，用户追问到账进度',
+                                updated_at: '2026-03-31T07:22:00+08:00'
+                            }
+                        },
+                        {
+                            payload: {
+                                ticket_id: 'TK-SMOKE-CARRY-003',
+                                order_id: '',
+                                user_id: '00000000-0000-4000-8000-000000000003',
+                                user_email: 'verify-gamma@zaoyoe.invalid',
+                                wait_label: '11 小时 27 分钟',
+                                responsible_label: '未分配',
+                                ticket_status: 'PENDING',
+                                reason: '验证失败需要人工协助',
+                                updated_at: '2026-03-31T07:26:00+08:00'
+                            }
+                        },
+                        {
+                            payload: {
+                                ticket_id: 'TK-SMOKE-CARRY-004',
+                                order_id: '',
+                                user_id: '00000000-0000-4000-8000-000000000004',
+                                user_email: 'stable-delta@zaoyoe.invalid',
+                                wait_label: '10 小时 03 分钟',
+                                responsible_label: '林支援',
+                                ticket_status: 'PENDING',
+                                reason: '到账后页面未刷新，需要人工核对',
+                                updated_at: '2026-03-31T07:31:00+08:00'
+                            }
+                        },
+                        {
+                            payload: {
+                                ticket_id: 'TK-SMOKE-REMOVED-006',
+                                order_id: '',
+                                user_id: '00000000-0000-4000-8000-000000000003',
+                                user_email: 'verify-gamma@zaoyoe.invalid',
+                                wait_label: '6 小时 05 分钟',
+                                responsible_label: '陈值班',
+                                ticket_status: 'PENDING',
+                                reason: '上一轮预览里曾经在队列里，当前已移出',
+                                updated_at: '2026-03-31T07:10:00+08:00'
+                            }
+                        }
+                    ]
+                },
+                channels: ['telegram', 'email'],
+                remaining_channels: [],
+                status: 'delivered',
+                attempt_count: 1,
+                max_attempts: 6,
+                next_retry_at: '',
+                last_error: '',
+                created_at: '2026-03-31T08:06:24+08:00',
+                updated_at: '2026-03-31T08:06:31+08:00',
+                delivered_at: '2026-03-31T08:06:31+08:00'
+            },
+            {
+                id: 'ticket-summary-job-retry',
+                alert_type: 'ticket_sla_summary',
+                severity: 'warning',
+                title: '每日 SLA 汇总',
+                payload: {
+                    summary_schedule_mode: 'daily',
+                    summary_window_minutes: 60,
+                    summary_daily_hour: 6,
+                    summary_daily_minute: 0,
+                    summary_max_items: 6,
+                    window_start_at: '2026-03-31T06:00:00+08:00',
+                    window_end_at: '2026-03-31T07:00:00+08:00',
+                    item_count: 2,
+                    entry_path: '售后工单 -> 待处理 -> 工单详情',
+                    items: [
+                        {
+                            payload: {
+                                ticket_id: 'TK-SMOKE-CARRY-001',
+                                user_email: 'delay-alpha@zaoyoe.invalid',
+                                wait_label: '11 小时 57 分钟',
+                                responsible_label: '未分配',
+                                ticket_status: 'PENDING',
+                                reason: '汇总重试样本'
+                            }
+                        },
+                        {
+                            payload: {
+                                ticket_id: 'TK-SMOKE-CARRY-003',
+                                user_email: 'verify-gamma@zaoyoe.invalid',
+                                wait_label: '10 小时 27 分钟',
+                                responsible_label: '未分配',
+                                ticket_status: 'PENDING',
+                                reason: '汇总重试样本'
+                            }
+                        }
+                    ]
+                },
+                channels: ['telegram', 'feishu', 'email'],
+                remaining_channels: ['feishu'],
+                status: 'retry',
+                attempt_count: 2,
+                max_attempts: 6,
+                next_retry_at: '2026-03-31T09:20:00+08:00',
+                last_error: 'Webhook timeout',
+                created_at: '2026-03-31T09:12:27+08:00',
+                updated_at: '2026-03-31T09:14:40+08:00',
+                delivered_at: ''
+            },
+            {
+                id: 'ticket-overdue-job-latest',
+                alert_type: 'ticket_sla_overdue',
+                severity: 'warning',
+                title: '工单超时提醒',
+                payload: {
+                    ticket_id: 'TK-20260331-001',
+                    target_id: 'TK-20260331-001',
+                    wait_label: '2 小时 38 分钟'
+                },
+                channels: ['telegram', 'email'],
+                remaining_channels: ['email'],
+                status: 'retry',
+                attempt_count: 1,
+                max_attempts: 4,
+                next_retry_at: '2026-03-31T09:18:00+08:00',
+                last_error: 'Telegram webhook timeout',
+                created_at: '2026-03-31T09:08:00+08:00',
+                updated_at: '2026-03-31T09:09:20+08:00',
+                delivered_at: ''
+            },
+            {
+                id: 'ticket-recovered-job-latest',
+                alert_type: 'ticket_sla_recovered',
+                severity: 'success',
+                title: '工单恢复提醒',
+                payload: {
+                    ticket_id: 'TK-20260331-002',
+                    target_id: 'TK-20260331-002',
+                    wait_label: '1 小时 08 分钟',
+                    previous_wait_label: '2 小时 10 分钟'
+                },
+                channels: ['telegram'],
+                remaining_channels: [],
+                status: 'delivered',
+                attempt_count: 1,
+                max_attempts: 4,
+                next_retry_at: '',
+                last_error: '',
+                created_at: '2026-03-31T08:42:00+08:00',
+                updated_at: '2026-03-31T08:42:40+08:00',
+                delivered_at: '2026-03-31T08:42:40+08:00'
+            }
+        ],
+        opsAlertJobAttempts: [
+            {
+                job_id: 'ticket-summary-job-retry',
+                channel: 'feishu',
+                status: 'failed',
+                response_status: 504,
+                error_message: 'Webhook timeout',
+                created_at: '2026-03-31T09:14:40+08:00'
+            },
+            {
+                job_id: 'ticket-overdue-job-latest',
+                channel: 'telegram',
+                status: 'failed',
+                response_status: 504,
+                error_message: 'Telegram webhook timeout',
+                created_at: '2026-03-31T09:09:20+08:00'
+            },
+            {
+                job_id: 'ticket-summary-job-latest',
+                channel: 'telegram',
+                status: 'delivered',
+                response_status: 200,
+                error_message: '',
+                created_at: '2026-03-31T09:06:34+08:00'
+            }
+        ],
         opsAlertCases: [],
         opsAlertCaseEvents: [],
         results: []
@@ -1957,6 +2267,7 @@
             blocked_users: 'blockedUsers',
             block_history: 'blockHistory',
             ops_alert_jobs: 'opsAlertJobs',
+            ops_alert_job_attempts: 'opsAlertJobAttempts',
             ops_alert_cases: 'opsAlertCases',
             ops_alert_case_events: 'opsAlertCaseEvents'
         };
@@ -3437,11 +3748,29 @@
                 };
             },
             clearAccessCache() {},
+            clearCachedAdminStudioSession() {},
             async clearAdminStudioSession() {
                 return true;
             },
             sanitizeAdminStudioTarget(target = 'admin-studio.html') {
                 return String(target || 'admin-studio.html');
+            },
+            async warmAdminStudioEntry() {
+                return {
+                    access: {
+                        user: deepClone(smokeState.user),
+                        isAdmin: true,
+                        isSuperAdmin: true,
+                        permissions: deepClone(smokeAdminPermissions)
+                    },
+                    session: {
+                        ok: true,
+                        status: 200,
+                        payload: {
+                            success: true
+                        }
+                    }
+                };
             }
         };
     }
@@ -5045,6 +5374,169 @@
         recordResult('全部已读会同步清空未读态', unreadCards === 0 && unreadBadgeVisible === false, `未读卡片 ${unreadCards} 条`);
     }
 
+    async function runAdminTicketsSmoke() {
+        await waitFor(
+            () => globalScope.switchModule && typeof globalScope.AdminTickets?.openReminderSummaryJobDetail === 'function',
+            { message: '售后工单模块入口未加载完成' }
+        );
+
+        await waitFor(
+            () => typeof globalScope.hasModulePermission === 'function' && globalScope.hasModulePermission('tickets') === true,
+            { message: '售后工单模块权限未完成同步', timeoutMs: 16000 }
+        );
+
+        globalScope.syncAdminStudioModuleAccess?.({
+            preferredModule: 'tickets',
+            enforceActiveModule: true
+        });
+        await sleep(120);
+        globalScope.switchModule?.('tickets', {
+            fallback: false,
+            silentDenied: true
+        });
+        const ticketModule = await waitFor(
+            () => document.getElementById('module-tickets')?.classList.contains('active')
+                ? document.getElementById('module-tickets')
+                : null,
+            { message: '售后工单模块未切换成功', timeoutMs: 16000 }
+        );
+
+        await waitFor(
+            () => {
+                const rows = document.querySelectorAll('#ticketsTableBody tr');
+                return rows.length > 0 ? rows : null;
+            },
+            { message: '售后工单列表未渲染' }
+        );
+
+        const overview = await waitFor(
+            () => {
+                const data = globalScope.AdminTickets?.overview;
+                const recentJobs = Array.isArray(data?.reminder?.summary_digest?.recent_jobs)
+                    ? data.reminder.summary_digest.recent_jobs
+                    : [];
+                return recentJobs.length >= 2 ? data : null;
+            },
+            { message: '售后工单概览未按本地夹具产出汇总追踪数据', timeoutMs: 16000 }
+        );
+
+        recordResult(
+            '售后工单概览已产出汇总追踪样本',
+            Array.isArray(overview?.reminder?.summary_digest?.recent_jobs) && overview.reminder.summary_digest.recent_jobs.length >= 2,
+            `recent=${Array.isArray(overview?.reminder?.summary_digest?.recent_jobs) ? overview.reminder.summary_digest.recent_jobs.length : 0}`
+        );
+
+        const queueTab = document.getElementById('ticketWorkspaceQueueTab');
+        const overviewTab = document.getElementById('ticketWorkspaceOverviewTab');
+        const summaryTab = document.getElementById('ticketWorkspaceSummaryTab');
+        if (queueTab instanceof HTMLElement && overviewTab instanceof HTMLElement && summaryTab instanceof HTMLElement) {
+            globalScope.scrollTo?.(0, Math.max(0, Math.min(420, document.body.scrollHeight - globalScope.innerHeight)));
+            await sleep(120);
+
+            queueTab.click();
+            await waitFor(() => ticketModule.dataset.ticketWorkspace === 'queue', { message: '售后工单未切回工单处理工作区' });
+            await sleep(120);
+            const beforeScrollY = Number(globalScope.scrollY || 0);
+
+            overviewTab.click();
+            await waitFor(() => ticketModule.dataset.ticketWorkspace === 'overview', { message: '售后工单未切到 SLA 看板' });
+            await sleep(180);
+            const afterOverviewScrollY = Number(globalScope.scrollY || 0);
+
+            summaryTab.click();
+            await waitFor(() => ticketModule.dataset.ticketWorkspace === 'summary', { message: '售后工单未切到汇总追踪' });
+            await sleep(180);
+            const afterSummaryScrollY = Number(globalScope.scrollY || 0);
+
+            recordResult(
+                '售后工单横栏切换不跳页',
+                Math.abs(afterOverviewScrollY - beforeScrollY) <= 2 && Math.abs(afterSummaryScrollY - afterOverviewScrollY) <= 2,
+                `queue→overview Δ=${Math.abs(afterOverviewScrollY - beforeScrollY)} / overview→summary Δ=${Math.abs(afterSummaryScrollY - afterOverviewScrollY)}`
+            );
+        } else {
+            recordResult('售后工单横栏切换不跳页', false, '未找到完整的工作区横栏按钮');
+        }
+
+        recordSelectorsNoHorizontalOverflow(
+            '售后工单提醒活动闭环没有横向溢出',
+            [
+                '#ticketsOverviewReminderPanel',
+                '.admin-ticket-overview-reminder-activity',
+                '.admin-ticket-overview-reminder-activity-stats',
+                '.admin-ticket-overview-reminder-activity-stat',
+                '.admin-ticket-overview-reminder-activity-list',
+                '.admin-ticket-overview-reminder-activity-item',
+                '.admin-ticket-overview-reminder-activity-item__head'
+            ]
+        );
+
+        const activitySection = document.querySelector('.admin-ticket-overview-reminder-activity');
+        const activityStats = activitySection?.querySelector('.admin-ticket-overview-reminder-activity-stats');
+        const activityList = activitySection?.querySelector('.admin-ticket-overview-reminder-activity-list');
+        const reminderActions = document.querySelector('#ticketsOverviewReminderPanel .admin-ticket-overview-reminder-actions');
+        if (
+            activitySection instanceof HTMLElement
+            && activityStats instanceof HTMLElement
+            && activityList instanceof HTMLElement
+            && reminderActions instanceof HTMLElement
+        ) {
+            const statsRect = activityStats.getBoundingClientRect();
+            const listRect = activityList.getBoundingClientRect();
+            const actionsRect = reminderActions.getBoundingClientRect();
+            const noOverlap = statsRect.bottom <= (listRect.top + 2) && listRect.bottom <= (actionsRect.top + 2);
+            recordResult(
+                '售后工单提醒活动闭环区块不会相互覆盖',
+                noOverlap,
+                `statsBottom=${Math.round(statsRect.bottom)} / listTop=${Math.round(listRect.top)} / listBottom=${Math.round(listRect.bottom)} / actionsTop=${Math.round(actionsRect.top)}`
+            );
+        } else {
+            recordResult('售后工单提醒活动闭环区块不会相互覆盖', false, '未找到提醒活动闭环布局节点');
+        }
+
+        const opened = globalScope.AdminTickets?.openReminderSummaryJobDetail?.('ticket-summary-job-latest');
+        recordResult('售后工单汇总详情可打开', opened === true, `opened=${String(opened)}`);
+
+        const detailBody = await waitFor(
+            () => {
+                const modal = document.getElementById('ticketSummaryJobDetailModal');
+                const body = document.getElementById('ticketSummaryJobDetailBody');
+                return modal?.classList.contains('is-visible') && body?.textContent?.trim()
+                    ? body
+                    : null;
+            },
+            { message: '售后工单汇总详情未成功渲染' }
+        );
+
+        const historyMeta = await waitFor(
+            () => {
+                const node = detailBody.querySelector('.admin-ticket-summary-job-modal__history-meta--warning');
+                return node?.textContent?.trim() ? node : null;
+            },
+            { message: '售后工单汇总详情未显示历史 fallback 提示', timeoutMs: 12000 }
+        );
+        const historyMetaText = String(historyMeta?.textContent || '').replace(/\s+/g, ' ').trim();
+        recordResult(
+            '汇总历史 fallback 文案不暴露底层路由错误',
+            !/Admin route not found/i.test(historyMetaText) && /本地推导的轨迹|暂未接入汇总历史接口|汇总历史接口暂不可用/.test(historyMetaText),
+            historyMetaText || '<empty>'
+        );
+
+        const ongoingList = detailBody.querySelector('.admin-ticket-summary-job-modal__comparison-column--warning .admin-ticket-summary-job-modal__comparison-list--limit-2');
+        if (ongoingList instanceof HTMLElement) {
+            const ongoingCount = ongoingList.querySelectorAll('.admin-ticket-summary-job-modal__comparison-item').length;
+            const hasScroll = ongoingList.scrollHeight > (ongoingList.clientHeight + 8);
+            recordResult(
+                '连续两次都在的工单超过 2 条后会在列内滚动',
+                ongoingCount > 2 && hasScroll,
+                `count=${ongoingCount} / client=${ongoingList.clientHeight} / scroll=${ongoingList.scrollHeight}`
+            );
+        } else {
+            recordResult('连续两次都在的工单超过 2 条后会在列内滚动', false, '未找到持续超时工单对比列表');
+        }
+
+        globalScope.AdminTickets?.closeReminderSummaryJobDetail?.();
+    }
+
     async function runSmoke() {
         try {
             renderResults('running');
@@ -5065,6 +5557,8 @@
                     await runAdminCommentsSmoke();
                 } else if (searchParams.get('module') === 'homepage') {
                     await runHomepageAdminSmoke();
+                } else if (searchParams.get('module') === 'tickets') {
+                    await runAdminTicketsSmoke();
                 } else {
                     await runAdminStudioSmoke();
                 }
