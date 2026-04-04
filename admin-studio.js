@@ -30,6 +30,8 @@ const ADMIN_MODAL_SCROLL_LOCK_SELECTORS = [
     '.batch-action-modal-overlay.active',
     '.codes-modal-overlay.is-visible',
     '.edit-modal-overlay.is-visible',
+    '#ticketReplyModal.is-visible',
+    '#ticketBulkProcessModal.is-visible',
     '.shop-refund-modal-overlay.is-visible',
     '.shop-order-content-overlay.is-visible',
     '.shop-inventory-detail-overlay.is-visible'
@@ -58,6 +60,9 @@ const ADMIN_SCROLLBAR_AUTO_HIDE_SELECTOR = [
     '.custom-scrollbar',
     '#discountGenerateModal > div',
     '#ticketReplyModal > div',
+    '#ticketBulkProcessModal > div',
+    '.admin-ticket-reply-modal__context-column',
+    '.admin-ticket-reply-modal__description',
     '#shopRiskCaseComposerModal > div'
 ].join(', ');
 
@@ -568,7 +573,7 @@ async function requireAdminStudioAccess() {
         return null;
     }
 
-    const access = await accessClient.getCurrentAdminAccess({ forceRefresh: true });
+    const access = await accessClient.getCurrentAdminAccess();
 
     if (!access?.user) {
         renderAdminStudioAccessGate('denied', {
@@ -595,7 +600,8 @@ async function requireAdminStudioAccess() {
 
     Promise.resolve()
         .then(() => accessClient.createAdminStudioSession?.({
-            supabaseClient: window.supabaseClient
+            supabaseClient: window.supabaseClient,
+            userId: access.user.id
         }))
         .then((sessionResult) => {
             window.adminStudioSessionGranted = Boolean(sessionResult?.ok);
@@ -709,6 +715,13 @@ function bindAdminStudioDelegatedControls() {
             case 'gallery-reset-form':
                 window.resetForm?.();
                 break;
+            case 'gallery-pagination-go': {
+                const page = parseInt(actionEl.dataset.galleryPage || '', 10);
+                if (!Number.isNaN(page)) {
+                    window.changeAdminGalleryPage?.(page);
+                }
+                break;
+            }
             case 'ai-remove-preview': {
                 const index = parseInt(actionEl.dataset.previewIndex || '', 10);
                 if (!Number.isNaN(index)) {
@@ -801,6 +814,9 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'settings-add-ops-alert-quick-reply-template':
                 window.addOpsAlertCustomerChatQuickReplyTemplate?.();
+                break;
+            case 'settings-add-ticket-reply-template':
+                window.addOpsAlertTicketReplyTemplate?.();
                 break;
             case 'settings-delete-channel': {
                 const index = parseInt(actionEl.dataset.channelIndex || '', 10);
@@ -1782,6 +1798,72 @@ function bindAdminStudioDelegatedControls() {
             case 'tickets-filter':
                 window.AdminTickets?.filter?.(actionEl.dataset.ticketStatus, actionEl);
                 break;
+            case 'tickets-switch-workspace':
+                window.AdminTickets?.setWorkspaceView?.(actionEl.dataset.ticketWorkspace, {
+                    scroll: false,
+                    highlight: false
+                });
+                break;
+            case 'tickets-toggle-overdue':
+                window.AdminTickets?.toggleQuickFilter?.('overdue');
+                break;
+            case 'tickets-toggle-priority':
+                window.AdminTickets?.toggleQuickFilter?.('priority');
+                break;
+            case 'tickets-toggle-mine':
+                window.AdminTickets?.toggleQuickFilter?.('mine');
+                break;
+            case 'tickets-toggle-unassigned':
+                window.AdminTickets?.toggleQuickFilter?.('unassigned');
+                break;
+            case 'tickets-open-overdue-queue':
+                window.AdminTickets?.openOverdueQueue?.();
+                break;
+            case 'tickets-open-sla-settings':
+                window.AdminTickets?.openSlaSettings?.();
+                break;
+            case 'tickets-open-sla-summary-settings':
+                window.AdminTickets?.openSlaSummarySettings?.();
+                break;
+            case 'tickets-open-summary-job-detail':
+                window.AdminTickets?.openReminderSummaryJobDetail?.(actionEl.dataset.summaryJobId);
+                break;
+            case 'tickets-close-summary-job-detail':
+                window.AdminTickets?.closeReminderSummaryJobDetail?.();
+                break;
+            case 'tickets-save-summary-job-note':
+                window.AdminTickets?.submitReminderSummaryNote?.(actionEl.dataset.summaryJobId);
+                break;
+            case 'tickets-retry-summary-job':
+                window.AdminTickets?.submitReminderSummaryRetry?.(actionEl.dataset.summaryJobId);
+                break;
+            case 'tickets-refresh-overview':
+                window.AdminTickets?.refreshOverview?.();
+                break;
+            case 'tickets-open-reminder-ticket':
+                window.AdminTickets?.openReminderTicket?.(actionEl.dataset.ticketId);
+                break;
+            case 'tickets-bulk-assign-self':
+                window.AdminTickets?.submitBulkAssignment?.('assign_self');
+                break;
+            case 'tickets-bulk-clear-assignee':
+                window.AdminTickets?.submitBulkAssignment?.('clear');
+                break;
+            case 'tickets-open-bulk-resolve':
+                window.AdminTickets?.openBulkProcessModal?.('RESOLVED');
+                break;
+            case 'tickets-open-bulk-reject':
+                window.AdminTickets?.openBulkProcessModal?.('REJECTED');
+                break;
+            case 'tickets-close-bulk-process-modal':
+                window.AdminTickets?.closeBulkProcessModal?.();
+                break;
+            case 'tickets-submit-bulk-process':
+                window.AdminTickets?.submitBulkProcess?.();
+                break;
+            case 'tickets-clear-selection':
+                window.AdminTickets?.clearSelectedTickets?.();
+                break;
             case 'tickets-close-reply-modal':
                 window.AdminTickets?.closeReplyModal?.();
                 break;
@@ -1820,6 +1902,13 @@ function bindAdminStudioDelegatedControls() {
                 const nextPage = Math.min(Math.max(parseInt(actionEl.value || '', 10) || 1, 1), max);
                 actionEl.value = String(nextPage);
                 window.changeCommentsPage?.(nextPage);
+                break;
+            }
+            case 'gallery-pagination-go': {
+                const max = Math.max(1, parseInt(actionEl.dataset.galleryPageMax || '1', 10) || 1);
+                const nextPage = Math.min(Math.max(parseInt(actionEl.value || '', 10) || 1, 1), max);
+                actionEl.value = String(nextPage);
+                window.changeAdminGalleryPage?.(nextPage);
                 break;
             }
             case 'payments-change-active-provider':
@@ -1916,6 +2005,9 @@ function bindAdminStudioDelegatedControls() {
                 }
                 break;
             }
+            case 'tickets-toggle-select-all-page':
+                window.AdminTickets?.toggleSelectAllPage?.(Boolean(actionEl.checked));
+                break;
             default:
                 break;
         }
@@ -2062,6 +2154,12 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'ticket-reply-modal':
                 window.AdminTickets?.closeReplyModal?.();
+                break;
+            case 'ticket-bulk-process-modal':
+                window.AdminTickets?.closeBulkProcessModal?.();
+                break;
+            case 'ticket-summary-job-detail-modal':
+                window.AdminTickets?.closeReminderSummaryJobDetail?.();
                 break;
             case 'shop-risk-case-modal':
                 window.closeShopRiskCaseComposer?.();
@@ -2333,10 +2431,17 @@ function updateAdminTabIndicator(activeTab) {
 // LOAD ADMIN PROMPTS
 // ========================================
 let allPrompts = []; // Cache all prompts for local search
+const ADMIN_GALLERY_PAGE_SIZE = 10;
 const adminGalleryPrefetchState = {
     site: '',
     loaded: false,
     promise: null
+};
+const adminGalleryViewState = {
+    page: 1,
+    pageSize: ADMIN_GALLERY_PAGE_SIZE,
+    searchQuery: '',
+    searchMatchedIds: null
 };
 
 function invalidateAdminGalleryPrefetch() {
@@ -2377,6 +2482,214 @@ function prefetchGalleryModule() {
         });
 
     return adminGalleryPrefetchState.promise;
+}
+
+function normalizeAdminGalleryPage(page, fallback = 1) {
+    const parsed = Number.parseInt(page, 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed;
+    }
+    return Math.max(1, Number.parseInt(fallback, 10) || 1);
+}
+
+function getAdminGalleryCards() {
+    return Array.from(document.querySelectorAll('#adminGrid .admin-card'));
+}
+
+function syncAdminGalleryPaginationCardVisibility(card, visible) {
+    if (!card) return;
+    card.classList.toggle('admin-card--hidden-by-pagination', !visible);
+}
+
+function getAdminGalleryPromptById(id) {
+    return allPrompts.find((prompt) => String(prompt?.id || '') === String(id || '')) || null;
+}
+
+function matchesAdminGalleryDateFilter(prompt, dateValue = '') {
+    if (!prompt || !dateValue) {
+        return true;
+    }
+
+    const createdAt = new Date(prompt.created_at || prompt.createdAt || 0);
+    if (Number.isNaN(createdAt.getTime())) {
+        return false;
+    }
+
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekStart = new Date(todayStart);
+    weekStart.setDate(weekStart.getDate() - 7);
+    const monthStart = new Date(todayStart);
+    monthStart.setMonth(monthStart.getMonth() - 1);
+
+    switch (String(dateValue || '').trim()) {
+        case 'today':
+            return createdAt >= todayStart;
+        case 'week':
+            return createdAt >= weekStart;
+        case 'month':
+            return createdAt >= monthStart;
+        default:
+            return true;
+    }
+}
+
+function renderAdminGalleryPagination() {
+    const container = document.getElementById('adminGalleryPagination');
+    const grid = document.getElementById('adminGrid');
+    if (!container || !grid) {
+        return;
+    }
+
+    const filteredCards = getAdminGalleryCards().filter((card) => !card.classList.contains('admin-card--hidden-by-search'));
+    const totalItems = filteredCards.length;
+
+    if (totalItems <= 0) {
+        container.innerHTML = '';
+        return;
+    }
+
+    const totalPages = Math.max(1, Math.ceil(totalItems / adminGalleryViewState.pageSize));
+    const currentPage = Math.min(
+        Math.max(1, normalizeAdminGalleryPage(adminGalleryViewState.page, 1)),
+        totalPages
+    );
+    adminGalleryViewState.page = currentPage;
+
+    const pageStartIndex = (currentPage - 1) * adminGalleryViewState.pageSize;
+    const pageEndIndex = pageStartIndex + adminGalleryViewState.pageSize;
+
+    getAdminGalleryCards().forEach((card) => {
+        syncAdminGalleryPaginationCardVisibility(card, false);
+    });
+
+    filteredCards.forEach((card, index) => {
+        const isVisibleOnPage = index >= pageStartIndex && index < pageEndIndex;
+        syncAdminGalleryPaginationCardVisibility(card, isVisibleOnPage);
+    });
+
+    container.innerHTML = `
+        <div class="pagination-shell comments-pagination-shell__inner">
+            <div class="pagination-control">
+                <button class="pagination-btn pagination-btn--step"
+                    type="button"
+                    data-admin-action="gallery-pagination-go"
+                    data-gallery-page="${currentPage - 1}"
+                    ${currentPage <= 1 ? 'disabled' : ''}>
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <input type="number"
+                    class="pagination-input"
+                    value="${currentPage}"
+                    min="1"
+                    max="${totalPages}"
+                    data-admin-change-action="gallery-pagination-go"
+                    data-gallery-page-max="${totalPages}">
+                <button class="pagination-btn pagination-btn--step"
+                    type="button"
+                    data-admin-action="gallery-pagination-go"
+                    data-gallery-page="${currentPage + 1}"
+                    ${currentPage >= totalPages ? 'disabled' : ''}>
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+            <div class="pagination-total pagination-total--compact">第 ${currentPage} / ${totalPages} 页 · 共 ${totalItems} 条</div>
+        </div>
+    `;
+}
+
+function applyAdminGalleryFilters(options = {}) {
+    const grid = document.getElementById('adminGrid');
+    const pagination = document.getElementById('adminGalleryPagination');
+    if (!grid) {
+        return;
+    }
+
+    if (options.resetPage) {
+        adminGalleryViewState.page = 1;
+    }
+
+    if (!Array.isArray(allPrompts) || allPrompts.length === 0) {
+        renderAdminStudioEmptyMessage(grid, 'No prompts yet. Create your first one!');
+        if (pagination) {
+            pagination.innerHTML = '';
+        }
+        return;
+    }
+
+    const searchQuery = String(adminGalleryViewState.searchQuery || '').trim().toLowerCase();
+    const searchMatchedIds = adminGalleryViewState.searchMatchedIds instanceof Set
+        ? adminGalleryViewState.searchMatchedIds
+        : null;
+    const categoryValue = document.getElementById('categoryFilter')?.value || '';
+    const dateValue = document.getElementById('dateFilter')?.value || '';
+
+    let visibleCount = 0;
+
+    getAdminGalleryCards().forEach((card) => {
+        const cardId = String(card.dataset.id || '');
+        const prompt = getAdminGalleryPromptById(cardId);
+        if (!prompt) {
+            syncAdminSearchCardVisibility(card, false);
+            syncAdminGalleryPaginationCardVisibility(card, false);
+            return;
+        }
+
+        let visible = true;
+
+        if (categoryValue) {
+            const tags = Array.isArray(prompt.tags) ? prompt.tags : [];
+            visible = tags.some((tag) => String(tag || '').toLowerCase() === String(categoryValue).toLowerCase());
+        }
+
+        if (visible && !matchesAdminGalleryDateFilter(prompt, dateValue)) {
+            visible = false;
+        }
+
+        if (visible && searchQuery && searchMatchedIds) {
+            visible = searchMatchedIds.has(cardId);
+        }
+
+        syncAdminSearchCardVisibility(card, visible);
+        if (!visible) {
+            syncAdminGalleryPaginationCardVisibility(card, false);
+            return;
+        }
+
+        visibleCount += 1;
+    });
+
+    const existingMsg = grid.querySelector('.no-results-message');
+    if (visibleCount === 0) {
+        getAdminGalleryCards().forEach((card) => {
+            syncAdminGalleryPaginationCardVisibility(card, false);
+        });
+
+        if (!existingMsg) {
+            const emptyText = searchQuery || categoryValue || dateValue
+                ? '没有找到匹配的提示词'
+                : 'No prompts yet. Create your first one!';
+            grid.appendChild(createAdminStudioEmptyElement(emptyText, 'no-results-message'));
+        } else if (!searchQuery && !categoryValue && !dateValue) {
+            existingMsg.textContent = 'No prompts yet. Create your first one!';
+        }
+
+        if (pagination) {
+            pagination.innerHTML = '';
+        }
+        return;
+    }
+
+    if (existingMsg) {
+        existingMsg.remove();
+    }
+
+    renderAdminGalleryPagination();
+}
+
+function changeAdminGalleryPage(page) {
+    adminGalleryViewState.page = normalizeAdminGalleryPage(page, adminGalleryViewState.page);
+    renderAdminGalleryPagination();
 }
 
 function prefetchSettingsModule() {
@@ -2475,6 +2788,7 @@ function buildPromptSiteMetricElement(siteLabel, siteMetrics, currentSite = 'all
 
 async function loadAdminPrompts() {
     const grid = document.getElementById('adminGrid');
+    const pagination = document.getElementById('adminGalleryPagination');
 
     try {
         const payload = await fetchAdminPromptList();
@@ -2484,6 +2798,8 @@ async function loadAdminPrompts() {
 
         // Cache prompts for local search
         allPrompts = data || [];
+        SEARCH_INDEX = null;
+        HOT_TAGS_CACHE = null;
 
         if (data && data.length > 0) {
             const fragment = document.createDocumentFragment();
@@ -2491,12 +2807,24 @@ async function loadAdminPrompts() {
                 fragment.appendChild(renderAdminCard(prompt));
             });
             grid.replaceChildren(fragment);
+
+            const searchInput = document.getElementById('adminSearchInput');
+            const activeQuery = String(searchInput?.value || '').trim().toLowerCase();
+            adminGalleryViewState.searchQuery = activeQuery;
+            setupAdminSearch();
+
+            if (activeQuery) {
+                await filterBySearch(activeQuery);
+            } else {
+                adminGalleryViewState.searchMatchedIds = null;
+                applyAdminGalleryFilters({ resetPage: true });
+            }
         } else {
             renderAdminStudioEmptyMessage(grid, 'No prompts yet. Create your first one!');
+            if (pagination) {
+                pagination.innerHTML = '';
+            }
         }
-
-        // Setup search after data is loaded
-        setupAdminSearch();
     } catch (err) {
         adminGalleryPrefetchState.loaded = false;
         console.error('Error loading prompts:', err);
@@ -2520,6 +2848,9 @@ function renderAdminCard(prompt) {
     checkbox.innerHTML = '<i class="fas fa-check"></i>';
     card.appendChild(checkbox);
 
+    const media = document.createElement('div');
+    media.className = 'admin-card-media';
+
     const image = document.createElement('img');
     image.className = 'admin-card-image';
     image.alt = prompt.title || 'Prompt cover';
@@ -2533,13 +2864,10 @@ function renderAdminCard(prompt) {
     } else {
         image.removeAttribute('src');
     }
-    card.appendChild(image);
-
-    const content = document.createElement('div');
-    content.className = 'admin-card-content';
+    media.appendChild(image);
 
     const badges = document.createElement('div');
-    badges.className = 'admin-card-badges';
+    badges.className = 'admin-card-badges admin-card-badges--overlay';
 
     const globalBadge = document.createElement('span');
     globalBadge.className = 'admin-card-badge admin-card-badge--global';
@@ -2563,7 +2891,11 @@ function renderAdminCard(prompt) {
         badges.appendChild(categoryBadge);
     }
 
-    content.appendChild(badges);
+    media.appendChild(badges);
+    card.appendChild(media);
+
+    const content = document.createElement('div');
+    content.className = 'admin-card-content';
 
     const title = document.createElement('div');
     title.className = 'admin-card-title';
@@ -2834,17 +3166,12 @@ async function deletePrompt(id) {
             card.classList.add('is-removing');
             setTimeout(() => {
                 card.remove();
-                // Update count after removal
-                const countEl = document.getElementById('promptCount');
-                const currentCount = parseInt(countEl.textContent);
-                const newCount = Math.max(0, currentCount - 1);
-                countEl.textContent = newCount;
-
-                // If no prompts left, show empty message
-                if (newCount === 0) {
-                    const grid = document.getElementById('adminGrid');
-                    renderAdminStudioEmptyMessage(grid, 'No prompts yet. Create your first one!');
-                }
+                allPrompts = allPrompts.filter((prompt) => String(prompt?.id || '') !== String(id));
+                SEARCH_INDEX = null;
+                HOT_TAGS_CACHE = null;
+                selectedPrompts.delete(String(id));
+                applyAdminGalleryFilters();
+                updateBatchButtonStates();
             }, 300);
         }
 
@@ -4388,7 +4715,7 @@ function closeBatchMenu() {
 // Select all prompts (only visible cards)
 function selectAllPrompts() {
     // Only select cards that are NOT hidden by search filter
-    const cards = document.querySelectorAll('.admin-card:not(.admin-card--hidden-by-search)');
+    const cards = document.querySelectorAll('.admin-card:not(.admin-card--hidden-by-search):not(.admin-card--hidden-by-pagination)');
     cards.forEach(card => {
         const id = card.dataset.id; // UUID string, not parseInt
         if (!selectedPrompts.has(id)) {
@@ -5636,33 +5963,10 @@ Return ONLY a JSON array of lowercase tags, no explanation:
  * Uses display:none approach for performance
  */
 function applySearchResults(matchedIds) {
-    const grid = document.getElementById('adminGrid');
-    const cards = grid.querySelectorAll('.admin-card');
-    let visibleCount = 0;
-
-    cards.forEach(card => {
-        const cardId = card.dataset.id;
-        const isVisible = matchedIds.has(cardId);
-
-        syncAdminSearchCardVisibility(card, isVisible);
-        if (isVisible) visibleCount++;
-    });
-
-    // Update count
-    const countEl = document.getElementById('promptCount');
-    if (countEl) countEl.textContent = visibleCount;
-
-    // Show empty message if no results
-    if (visibleCount === 0) {
-        const existingMsg = grid.querySelector('.no-results-message');
-        if (!existingMsg) {
-            const msg = createAdminStudioEmptyElement('No prompts found matching your search.', 'no-results-message');
-            grid.appendChild(msg);
-        }
-    } else {
-        const existingMsg = grid.querySelector('.no-results-message');
-        if (existingMsg) existingMsg.remove();
-    }
+    adminGalleryViewState.searchMatchedIds = matchedIds instanceof Set
+        ? new Set(Array.from(matchedIds, (id) => String(id)))
+        : null;
+    applyAdminGalleryFilters({ resetPage: true });
 }
 
 /**
@@ -5671,29 +5975,26 @@ function applySearchResults(matchedIds) {
  * Layer 3: AI semantic search (if local fails)
  */
 async function filterBySearch(query) {
-    const cards = document.querySelectorAll('.admin-card');
+    const queryLower = String(query || '').trim().toLowerCase();
+    adminGalleryViewState.searchQuery = queryLower;
 
     // If no query, show all cards
-    if (!query) {
-        cards.forEach(card => syncAdminSearchCardVisibility(card, true));
-        const countEl = document.getElementById('promptCount');
-        if (countEl) countEl.textContent = allPrompts.length;
-        const existingMsg = document.querySelector('.no-results-message');
-        if (existingMsg) existingMsg.remove();
+    if (!queryLower) {
+        adminGalleryViewState.searchMatchedIds = null;
+        applyAdminGalleryFilters({ resetPage: true });
         return;
     }
 
     // Check if query is a color search
     let searchingForColor = null;
-    const queryLower = query.toLowerCase();
     if (COLOR_MAP[queryLower]) {
         searchingForColor = COLOR_MAP[queryLower];
     }
 
     // === 3-LAYER SEARCH STRATEGY ===
     // Layer 1 & 2: Local search (instant, no network)
-    const localResults = performLocalSearch(query, searchingForColor);
-    console.log(`🔍 Local search: found ${localResults.size} results for "${query}"`);
+    const localResults = performLocalSearch(queryLower, searchingForColor);
+    console.log(`🔍 Local search: found ${localResults.size} results for "${queryLower}"`);
 
     // If local search found results, use them directly
     if (localResults.size > 0) {
@@ -5703,7 +6004,10 @@ async function filterBySearch(query) {
 
     // Layer 3: AI Semantic Search (only if local search failed)
     console.log('🔍 Local search: 0 results, triggering AI semantic search...');
-    const aiResults = await performAISemanticSearch(query);
+    const aiResults = await performAISemanticSearch(queryLower);
+    if (adminGalleryViewState.searchQuery !== queryLower) {
+        return;
+    }
 
     if (aiResults.size > 0) {
         console.log(`✨ AI search: found ${aiResults.size} results`);
@@ -5731,6 +6035,12 @@ function setupAdminSearch() {
     // Normalize data and build index
     normalizePromptData();
     buildSearchIndex();
+
+    if (searchInput.dataset.gallerySearchBound === '1') {
+        return;
+    }
+
+    searchInput.dataset.gallerySearchBound = '1';
 
     let debounceTimer;
     let isDropdownActive = false;
@@ -5826,7 +6136,7 @@ function setupAdminSearch() {
                 e.preventDefault();
                 e.stopPropagation();
                 searchInput.value = item.textContent;
-                filterBySearch(item.textContent.toLowerCase());
+                void filterBySearch(item.textContent.toLowerCase());
                 hideDropdown();
             });
         });
@@ -5839,14 +6149,14 @@ function setupAdminSearch() {
 
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
-            filterBySearch(query.toLowerCase());
+            void filterBySearch(query.toLowerCase());
         }, 200);
     });
 
     searchInput.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             searchInput.value = '';
-            filterBySearch('');
+            void filterBySearch('');
             hideDropdown();
             searchInput.blur();
         }
@@ -5871,95 +6181,8 @@ function setupAdminSearch() {
     const categoryFilterInput = document.getElementById('categoryFilter');
     const dateFilterInput = document.getElementById('dateFilter');
 
-    // 综合过滤函数 - 结合搜索、分类和日期
-    // 【重写】搜索部分使用 performLocalSearch 统一入口
     function applyAllFilters() {
-        const searchQuery = searchInput.value.trim().toLowerCase();
-        const categoryValue = categoryFilterInput?.value || '';
-        const dateValue = dateFilterInput?.value || '';
-
-        const cards = document.querySelectorAll('.admin-card');
-        let visibleCount = 0;
-
-        // 日期计算
-        const now = new Date();
-        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const weekStart = new Date(todayStart);
-        weekStart.setDate(weekStart.getDate() - 7);
-        const monthStart = new Date(todayStart);
-        monthStart.setMonth(monthStart.getMonth() - 1);
-
-        // 【统一入口】如果有搜索词，使用 performLocalSearch 获取匹配ID集合
-        let searchMatchedIds = null;
-        if (searchQuery) {
-            // 检查是否是颜色搜索
-            let searchingForColor = null;
-            if (COLOR_MAP[searchQuery]) {
-                searchingForColor = COLOR_MAP[searchQuery];
-            }
-            searchMatchedIds = performLocalSearch(searchQuery, searchingForColor);
-            console.log(`📊 Search matched ${searchMatchedIds.size} IDs`);
-        }
-
-        cards.forEach(card => {
-            const cardId = card.dataset.id;
-            const prompt = allPrompts.find(p => String(p.id) === cardId);
-            if (!prompt) {
-                syncAdminSearchCardVisibility(card, false);
-                return;
-            }
-
-            let visible = true;
-
-            // 1. 分类筛选
-            if (categoryValue) {
-                const tags = prompt.tags || [];
-                const hasCategory = tags.some(t => t.toLowerCase() === categoryValue.toLowerCase());
-                if (!hasCategory) visible = false;
-            }
-
-            // 2. 日期筛选
-            if (visible && dateValue) {
-                const createdAt = new Date(prompt.created_at);
-                switch (dateValue) {
-                    case 'today':
-                        if (createdAt < todayStart) visible = false;
-                        break;
-                    case 'week':
-                        if (createdAt < weekStart) visible = false;
-                        break;
-                    case 'month':
-                        if (createdAt < monthStart) visible = false;
-                        break;
-                }
-            }
-
-            // 3. 搜索筛选 - 使用统一的 performLocalSearch 结果
-            if (visible && searchMatchedIds !== null) {
-                if (!searchMatchedIds.has(cardId)) {
-                    visible = false;
-                }
-            }
-
-            syncAdminSearchCardVisibility(card, visible);
-            if (visible) visibleCount++;
-        });
-
-        // 更新计数
-        const countEl = document.getElementById('promptCount');
-        if (countEl) countEl.textContent = visibleCount;
-
-        // 显示/移除无结果消息
-        const grid = document.getElementById('adminGrid');
-        const existingMsg = grid.querySelector('.no-results-message');
-        if (visibleCount === 0) {
-            if (!existingMsg) {
-                const msg = createAdminStudioEmptyElement('没有找到匹配的提示词', 'no-results-message');
-                grid.appendChild(msg);
-            }
-        } else if (existingMsg) {
-            existingMsg.remove();
-        }
+        applyAdminGalleryFilters({ resetPage: true });
     }
 
     // 监听分类筛选器变化

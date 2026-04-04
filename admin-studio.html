@@ -19,8 +19,8 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=20260403_GALLERY_SHARED_NOTE_ALIGNMENT_1">
-    <link rel="stylesheet" href="admin-sidebar.css?v=20260331_ADMIN_MODULE_GUARDS_1">
+    <link rel="stylesheet" href="admin-studio.css?v=20260404_ADMIN_TICKET_REMINDER_ACTIVITY_LAYOUT_6">
+    <link rel="stylesheet" href="admin-sidebar.css?v=20260403_COMMENTS_HOVER_BLUE_4">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260402_ADMIN_CHAT_INPUT_UI_13">
 
 
@@ -30,7 +30,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
     <!-- Prevent flash of wrong theme -->
-    <link rel="stylesheet" href="css/admin-studio-page.css?v=20260403_HOMEPAGE_LOADING_SHELL_1">
+    <link rel="stylesheet" href="css/admin-studio-page.css?v=20260403_POINTS_LOOKUP_PANEL_WIDTH_1">
     <script src="./js/theme-preload.js"></script>
 
 </head>
@@ -185,11 +185,6 @@
                     <button class="admin-tab" data-view="manage" data-admin-action="switch-gallery-view">Manage</button>
                     <div class="admin-tab-indicator"></div>
                 </nav>
-                <div class="config-inline-note gallery-shared-note">
-                    <i class="fas fa-globe"></i>
-                    <span>Gallery 里的 Prompt 内容资产仍是全局共享；顶部站点筛选不会切换这份内容列表，但卡片现在会同步展示 CN / INTL 的互动摘要，并继续用于写保护。</span>
-                </div>
-
                 <!-- Main Content -->
 
                 <div class="studio-main">
@@ -527,6 +522,7 @@
                         <div class="admin-grid" id="adminGrid">
                             <!-- Dynamically loaded -->
                         </div>
+                        <div class="comments-pagination-shell gallery-pagination-shell" id="adminGalleryPagination"></div>
                     </div>
                     <!-- END MANAGE VIEW -->
                 </div>
@@ -3360,6 +3356,22 @@
                                         <i class="fas fa-circle-info"></i>
                                         <span>这张卡片现在同时收口工单 SLA 阈值和外发节奏。恢复通知继续即时发送，只有超时未处理会参与工作时段顺延和定时汇总。</span>
                                     </div>
+                                    <div class="ops-alert-quick-reply-config">
+                                        <div class="ops-alert-quick-reply-config__header">
+                                            <div>
+                                                <div class="config-label">工单回复模板</div>
+                                                <div class="config-desc">把售后处理面板里的推荐模板改成后台可配置，可按“解决/拒绝”和问题类型维护统一口径。</div>
+                                            </div>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" id="opsAlertTicketReplyTemplateAddButton" data-admin-action="settings-add-ticket-reply-template">
+                                                <i class="fas fa-plus"></i> 新增模板
+                                            </button>
+                                        </div>
+                                        <div class="ops-alert-quick-reply-config__body" id="opsAlertTicketReplyTemplates"></div>
+                                        <div class="config-inline-note ops-alert-quick-reply-config__note">
+                                            <i class="fas fa-circle-info"></i>
+                                            <span>可用变量：{{ticket_id}} / {{issue_type_label}} / {{source_label}} / {{status_label}}；退款、履约、支付相关模板还可用 {{order_id}}，解决类通用或退款模板还支持 {{refund_summary}}。</span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
@@ -5675,17 +5687,10 @@
                     <div class="admin-tab-indicator"></div>
                 </nav>
 
-                <div class="config-inline-note points-module-note">
-                    <i class="fas fa-ticket-alt"></i>
-                    <span>这里当前主要管理兑换码批次、套餐目录和兑换追踪；真实积分余额与资产流水仍在用户详情、支付链路里收口。套餐主数据已经统一走 Points 域 handler，Settings 里只保留支付相关开关和迁移提示。</span>
-                </div>
-
                 <!-- BATCHES VIEW -->
                 <div id="points-view-batches" class="view-section active">
-                    <!-- Table Panel with Toolbar Inside -->
-                    <div class="glass-panel users-table-panel">
-                        <!-- Toolbar (inside panel for perfect alignment) -->
-                        <div class="admin-toolbar batch-toolbar-inside">
+                    <div class="points-batches-shell">
+                        <div class="admin-toolbar batch-toolbar-inside points-batches-toolbar">
                             <div class="toolbar-left">
                                 <div class="search-bar">
                                     <i class="fas fa-search"></i>
@@ -5805,55 +5810,63 @@
                                 </div>
                             </div>
                         </div>
+                        <div class="points-batch-overview" id="pointsBatchOverview"></div>
+                        <div class="points-batch-quick-filters" id="pointsBatchQuickFilters" aria-label="批次快筛">
+                            <button class="points-batch-quick-filter is-active" type="button" data-points-action="filter-batch-quick" data-batch-quick="all"><span class="points-batch-quick-filter__label">全部</span><span class="points-batch-quick-filter__count">0</span></button>
+                            <button class="points-batch-quick-filter" type="button" data-points-action="filter-batch-quick" data-batch-quick="today"><span class="points-batch-quick-filter__label">今日新建</span><span class="points-batch-quick-filter__count">0</span></button>
+                            <button class="points-batch-quick-filter" type="button" data-points-action="filter-batch-quick" data-batch-quick="expiring"><span class="points-batch-quick-filter__label">即将过期</span><span class="points-batch-quick-filter__count">0</span></button>
+                            <button class="points-batch-quick-filter" type="button" data-points-action="filter-batch-quick" data-batch-quick="low_usage"><span class="points-batch-quick-filter__label">低使用率</span><span class="points-batch-quick-filter__count">0</span></button>
+                            <button class="points-batch-quick-filter" type="button" data-points-action="filter-batch-quick" data-batch-quick="manual"><span class="points-batch-quick-filter__label">手动批次</span><span class="points-batch-quick-filter__count">0</span></button>
+                            <button class="points-batch-quick-filter" type="button" data-points-action="filter-batch-quick" data-batch-quick="custom"><span class="points-batch-quick-filter__label">自定义积分</span><span class="points-batch-quick-filter__count">0</span></button>
+                        </div>
+                        <div class="points-inline-feedback-shell points-batch-list-feedback" id="pointsBatchListInlineFeedback"></div>
 
-                        <table class="admin-table" id="batchesTable">
-                            <thead>
-                                <tr>
-                                    <!-- Checkbox column - dynamically shown -->
-                                    <th class="checkbox-col admin-studio-inline-style-attr-3" id="batchCheckboxHeader">
-                                        <label class="custom-checkbox">
-                                            <input type="checkbox" id="selectAllBatches"
-                                                data-admin-change-action="points-toggle-select-all-batches" title="全选当前页">
-                                            <span class="checkmark"></span>
-                                        </label>
-                                    </th>
-                                    <th class="sortable" data-sort="name" data-admin-action="points-sort-batches" data-sort-field="name">
-                                        批次名称 <i class="fas fa-sort sort-icon"></i>
-                                    </th>
-                                    <th>套餐</th>
-                                    <th>渠道</th>
-                                    <th class="sortable" data-sort="total_count" data-admin-action="points-sort-batches" data-sort-field="total_count">
-                                        总数 <i class="fas fa-sort sort-icon"></i>
-                                    </th>
-                                    <th class="sortable" data-sort="used_count" data-admin-action="points-sort-batches" data-sort-field="used_count">
-                                        已用 <i class="fas fa-sort sort-icon"></i>
-                                    </th>
-                                    <th class="sortable" data-sort="created_at" data-admin-action="points-sort-batches" data-sort-field="created_at">
-                                        创建时间 <i class="fas fa-sort-down sort-icon active"></i>
-                                    </th>
-                                    <th>操作</th>
-                                </tr>
-                            </thead>
-                            <tbody id="batchesTableBody">
-                                <!-- Populated by JS -->
-                            </tbody>
-                        </table>
+                        <div class="glass-panel users-table-panel">
+                            <table class="admin-table" id="batchesTable">
+                                <thead>
+                                    <tr>
+                                        <!-- Checkbox column - dynamically shown -->
+                                        <th class="checkbox-col admin-studio-inline-style-attr-3" id="batchCheckboxHeader">
+                                            <label class="custom-checkbox">
+                                                <input type="checkbox" id="selectAllBatches"
+                                                    data-admin-change-action="points-toggle-select-all-batches" title="全选当前页">
+                                                <span class="checkmark"></span>
+                                            </label>
+                                        </th>
+                                        <th class="sortable" data-sort="name" data-admin-action="points-sort-batches" data-sort-field="name">
+                                            批次名称 <i class="fas fa-sort sort-icon"></i>
+                                        </th>
+                                        <th>套餐</th>
+                                        <th>渠道</th>
+                                        <th class="sortable" data-sort="total_count" data-admin-action="points-sort-batches" data-sort-field="total_count">
+                                            总数 <i class="fas fa-sort sort-icon"></i>
+                                        </th>
+                                        <th class="sortable" data-sort="used_count" data-admin-action="points-sort-batches" data-sort-field="used_count">
+                                            已用 <i class="fas fa-sort sort-icon"></i>
+                                        </th>
+                                        <th class="sortable" data-sort="created_at" data-admin-action="points-sort-batches" data-sort-field="created_at">
+                                            创建时间 <i class="fas fa-sort-down sort-icon active"></i>
+                                        </th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="batchesTableBody">
+                                    <!-- Populated by JS -->
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
 
                 <!-- PACKAGE CATALOG VIEW -->
                 <div id="points-view-catalog" class="view-section">
-                    <div class="glass-panel points-catalog-panel">
+                    <div class="points-catalog-panel">
                         <div class="section-title">
                             <i class="fas fa-box-open"></i> 套餐目录
                         </div>
-                        <div class="config-inline-note points-catalog-note">
-                            <i class="fas fa-circle-info"></i>
-                            <span>套餐内容本身是全站共享资产；下方的 CN / INTL 指标代表各站点下兑换码批次的发放与使用表现，不会拆成两份套餐主数据。</span>
-                        </div>
                         <div class="points-catalog-summary" id="pointsCatalogSummary"></div>
                         <div class="points-catalog-workspace">
-                            <aside class="points-package-editor-shell">
+                            <aside class="points-package-editor-shell payments-panel">
                                 <div class="section-title points-package-editor-shell__title">
                                     <i class="fas fa-pen-ruler"></i> 套餐编辑
                                 </div>
@@ -5861,6 +5874,7 @@
                                     <i class="fas fa-circle-info"></i>
                                     <span>套餐是全站共享资产。请先在顶部站点筛选里明确当前写入语境，再保存名称、价格、赠送和启停状态。</span>
                                 </div>
+                                <div class="points-site-context points-site-context--catalog" id="pointsCatalogWriteContext"></div>
                                 <div class="points-package-editor-toolbar">
                                     <button class="btn-secondary" type="button" data-points-action="new-package">
                                         <i class="fas fa-plus"></i> 新建套餐
@@ -5871,7 +5885,7 @@
                                 </div>
                                 <div class="points-package-editor-meta">
                                     <span class="points-package-editor-badge" id="pointsPackageEditorModeBadge">新建</span>
-                                    <span class="points-package-editor-hint" id="pointsPackageEditorHint">选择右侧套餐开始编辑，或直接新建一条全局套餐。</span>
+                                    <span class="points-package-editor-hint" id="pointsPackageEditorHint">选择下方套餐开始编辑，或直接新建一条全局套餐。</span>
                                 </div>
                                 <form class="prompt-form points-package-form" id="pointsPackageForm" data-points-submit="save-package">
                                     <input type="hidden" id="pointsPackageId" value="">
@@ -5926,33 +5940,83 @@
                                         </div>
                                     </div>
                                     <div class="points-package-form__actions">
-                                        <button class="btn-primary" type="submit" id="pointsPackageSaveBtn">
-                                            <i class="fas fa-save"></i> 保存套餐
+                                        <button class="points-package-action-btn points-package-action-btn--primary" type="submit" id="pointsPackageSaveBtn">
+                                            <span class="points-package-action-btn__label">保存套餐</span>
                                         </button>
-                                        <button class="btn-danger" type="button" id="pointsPackageDeleteBtn" data-points-action="delete-current-package" disabled>
-                                            <i class="fas fa-trash"></i> 删除套餐
+                                        <button class="points-package-action-btn points-package-action-btn--danger" type="button" id="pointsPackageDeleteBtn" data-points-action="delete-current-package" disabled>
+                                            <span class="points-package-action-btn__label">删除套餐</span>
                                         </button>
                                     </div>
                                 </form>
                             </aside>
-                            <div class="points-catalog-table-shell">
-                                <table class="admin-table points-catalog-table">
+                            <section class="points-catalog-list-shell payments-panel">
+                                <div class="points-catalog-list-shell__header">
+                                    <div class="points-catalog-list-shell__eyebrow">共享套餐库</div>
+                                    <div class="points-catalog-list-shell__title-row">
+                                        <div class="points-catalog-list-shell__title-block">
+                                            <h3 class="points-catalog-list-shell__title">套餐列表</h3>
+                                            <p class="points-catalog-list-shell__hint">下方用于浏览套餐与切换当前编辑对象，实际修改和保存统一在上方完成。</p>
+                                        </div>
+                                        <span class="points-catalog-list-shell__badge" id="pointsCatalogPackageCount">0 个套餐</span>
+                                    </div>
+                                </div>
+                                <div class="points-catalog-toolbar">
+                                    <label class="points-catalog-search" for="pointsCatalogSearchInput">
+                                        <i class="fas fa-search"></i>
+                                        <input type="search" id="pointsCatalogSearchInput" placeholder="搜索套餐名称 / 英文名 / ID" autocomplete="off">
+                                    </label>
+                                    <div class="points-catalog-toolbar__filters">
+                                        <label class="points-catalog-select" for="pointsCatalogStatusFilter">
+                                            <span>状态</span>
+                                            <select id="pointsCatalogStatusFilter">
+                                                <option value="all">全部</option>
+                                                <option value="active">仅启用</option>
+                                                <option value="inactive">仅停用</option>
+                                            </select>
+                                        </label>
+                                        <label class="points-catalog-select" for="pointsCatalogSortFilter">
+                                            <span>排序</span>
+                                            <select id="pointsCatalogSortFilter">
+                                                <option value="sort_order_asc">默认排序</option>
+                                                <option value="name_asc">名称 A-Z</option>
+                                                <option value="points_desc">积分从高到低</option>
+                                                <option value="price_desc">价格从高到低</option>
+                                                <option value="activity_desc">发码最多优先</option>
+                                            </select>
+                                        </label>
+                                        <button class="btn-secondary points-catalog-toolbar__reset" type="button" data-points-action="clear-package-filters">
+                                            清空筛选
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="points-catalog-table-shell">
+                                    <table class="admin-table points-catalog-table">
+                                        <colgroup>
+                                            <col class="points-catalog-table__col points-catalog-table__col--package">
+                                            <col class="points-catalog-table__col points-catalog-table__col--balance">
+                                            <col class="points-catalog-table__col points-catalog-table__col--price">
+                                            <col class="points-catalog-table__col points-catalog-table__col--status">
+                                            <col class="points-catalog-table__col points-catalog-table__col--metric">
+                                            <col class="points-catalog-table__col points-catalog-table__col--metric">
+                                            <col class="points-catalog-table__col points-catalog-table__col--action">
+                                        </colgroup>
                                     <thead>
                                         <tr>
                                             <th>套餐</th>
                                             <th>积分结构</th>
                                             <th>价格</th>
                                             <th>状态</th>
-                                            <th>CN 运营表现</th>
-                                            <th>INTL 运营表现</th>
+                                            <th>CN 数据</th>
+                                            <th>INTL 数据</th>
                                             <th>操作</th>
                                         </tr>
                                     </thead>
                                     <tbody id="pointsPackagesTableBody">
                                         <tr><td colspan="7" class="loading-cell">正在加载套餐目录...</td></tr>
                                     </tbody>
-                                </table>
-                            </div>
+                                    </table>
+                                </div>
+                            </section>
                         </div>
                     </div>
                 </div>
@@ -5965,6 +6029,7 @@
                             <div class="section-title">
                                 <i class="fas fa-cog"></i> 配置参数
                             </div>
+                            <div class="points-site-context points-site-context--generate" id="pointsGenerateWriteContext"></div>
                             <form id="generateCodesForm" class="prompt-form">
                                 <div class="form-group">
                                     <label>批次名称</label>
@@ -6032,14 +6097,27 @@
                         <!-- Right Column: Result/Preview -->
                         <div class="glass-panel">
                             <div class="section-title">
-                                <i class="fas fa-list-alt"></i> 生成结果
+                                <i class="fas fa-list-alt"></i> 预览与结果
+                            </div>
+
+                            <div id="pointsGeneratePreview" class="points-generate-preview">
+                                <div class="points-generate-preview__header">
+                                    <div class="points-generate-preview__intro">
+                                        <span class="points-generate-preview__eyebrow">生成预检</span>
+                                        <h4>当前写入配置</h4>
+                                    </div>
+                                    <span id="pointsGeneratePreviewStatus" class="points-generate-preview__status">待完善</span>
+                                </div>
+                                <div id="pointsGeneratePreviewSummary" class="points-generate-preview__grid"></div>
+                                <div id="pointsGeneratePreviewMeta" class="points-generate-preview__meta"></div>
+                                <div id="pointsGeneratePreviewWarnings" class="points-generate-preview__warnings"></div>
                             </div>
 
                             <!-- Initial State -->
                             <div id="generatePlaceholder" class="empty-state-content">
                                 <i class="fas fa-ticket-alt admin-studio-inline-style-attr-33"
                                    ></i>
-                                <p class="admin-studio-inline-style-attr-34">填写左侧配置并点击生成<br>结果将在此处显示</p>
+                                <p class="admin-studio-inline-style-attr-34">右侧会先实时预览生成配置<br>真正生成后结果会继续显示在这里</p>
                             </div>
 
                             <!-- Result State -->
@@ -6048,12 +6126,16 @@
                                 <div class="result-header admin-studio-inline-style-attr-36"
                                    >
                                     <h4 class="admin-studio-inline-style-attr-37"><i class="fas fa-check-circle"></i> 生成成功</h4>
+                                    <div id="generatedCodesMeta" class="points-generated-result__meta"></div>
                                     <div class="codes-actions">
                                         <button class="btn-sm btn-secondary" data-admin-action="points-copy-all-codes">
                                             <i class="fas fa-copy"></i> 复制
                                         </button>
                                         <button class="btn-sm btn-secondary" data-admin-action="points-download-codes-csv">
                                             <i class="fas fa-download"></i> CSV
+                                        </button>
+                                        <button class="btn-sm btn-secondary" data-points-action="jump-generated-batch">
+                                            <i class="fas fa-arrow-right"></i> 前往批次
                                         </button>
                                     </div>
                                 </div>
@@ -6072,7 +6154,7 @@
                                 <div class="lookup-search-box admin-studio-inline-style-attr-40"
                                    >
                                     <i class="fas fa-search admin-studio-inline-style-attr-34"></i>
-                                    <input type="text" id="lookupCodeInput" placeholder="输入兑换码或订单号" maxlength="50">
+                                    <input type="text" id="lookupCodeInput" placeholder="输入兑换码、订单号或积分流水 ID" maxlength="50">
                                 </div>
                                 <button class="btn-primary lookup-btn" data-admin-action="points-lookup-code">查询</button>
                             </div>
@@ -8926,37 +9008,105 @@
             </div>
 
             <!-- ========== TICKETS MODULE ========== -->
-            <div id="module-tickets" class="module-container admin-studio-inline-style-attr-3">
-                <!-- Filters -->
-                <div class="admin-toolbar">
-                    <div class="toolbar-left">
-                        <div class="search-bar">
-                            <i class="fas fa-search"></i>
-                            <input type="text" id="ticketSearchInput" placeholder="搜索订单号、邮箱或描述..."
-                                data-admin-input-action="tickets-search">
+            <div id="module-tickets" class="module-container admin-studio-inline-style-attr-3" data-ticket-workspace="queue">
+                <div class="admin-ticket-workspace-shell">
+                    <div id="ticketsFunctionNav" class="admin-ticket-function-nav" role="tablist" aria-label="售后工单功能分组">
+                        <button type="button" id="ticketWorkspaceQueueTab" class="admin-ticket-function-tab active" data-admin-action="tickets-switch-workspace" data-ticket-workspace="queue" role="tab" aria-selected="true">工单处理</button>
+                        <button type="button" id="ticketWorkspaceOverviewTab" class="admin-ticket-function-tab" data-admin-action="tickets-switch-workspace" data-ticket-workspace="overview" role="tab" aria-selected="false">SLA 看板</button>
+                        <button type="button" id="ticketWorkspaceSummaryTab" class="admin-ticket-function-tab" data-admin-action="tickets-switch-workspace" data-ticket-workspace="summary" role="tab" aria-selected="false">汇总追踪</button>
+                    </div>
+                </div>
+
+                <div id="ticketsQueueControls" class="admin-ticket-workspace-block admin-ticket-workspace-block--queue">
+                    <!-- Filters -->
+                    <div class="admin-toolbar">
+                        <div class="toolbar-left">
+                            <div class="search-bar">
+                                <i class="fas fa-search"></i>
+                                <input type="text" id="ticketSearchInput" placeholder="搜索工单号、订单号、用户、邮箱或描述..."
+                                    data-admin-input-action="tickets-search">
+                            </div>
+                            <div class="filter-dropdowns admin-studio-inline-style-attr-159">
+                                <button class="filter-btn active" data-status="all"
+                                    data-admin-action="tickets-filter" data-ticket-status="all">全部</button>
+                                <button class="filter-btn" data-status="pending"
+                                    data-admin-action="tickets-filter" data-ticket-status="pending">待处理</button>
+                                <button class="filter-btn" data-status="resolved"
+                                    data-admin-action="tickets-filter" data-ticket-status="resolved">已解决</button>
+                                <button class="filter-btn" data-status="rejected"
+                                    data-admin-action="tickets-filter" data-ticket-status="rejected">已拒绝</button>
+                            </div>
                         </div>
-                        <div class="filter-dropdowns admin-studio-inline-style-attr-159">
-                            <button class="filter-btn active" data-status="all"
-                                data-admin-action="tickets-filter" data-ticket-status="all">全部</button>
-                            <button class="filter-btn" data-status="pending"
-                                data-admin-action="tickets-filter" data-ticket-status="pending">待处理</button>
-                            <button class="filter-btn" data-status="resolved"
-                                data-admin-action="tickets-filter" data-ticket-status="resolved">已解决</button>
-                            <button class="filter-btn" data-status="rejected"
-                                data-admin-action="tickets-filter" data-ticket-status="rejected">已拒绝</button>
+                    </div>
+                    <div class="admin-ticket-toolbar-row">
+                    <div class="admin-ticket-quick-filters">
+                        <button type="button" id="ticketOverdueFilterBtn" class="filter-btn admin-ticket-quick-filter-btn" data-admin-action="tickets-toggle-overdue">只看超时</button>
+                        <button type="button" id="ticketPriorityFilterBtn" class="filter-btn admin-ticket-quick-filter-btn" data-admin-action="tickets-toggle-priority">高优先</button>
+                        <button type="button" id="ticketMineFilterBtn" class="filter-btn admin-ticket-quick-filter-btn" data-admin-action="tickets-toggle-mine">我名下</button>
+                        <button type="button" id="ticketUnassignedFilterBtn" class="filter-btn admin-ticket-quick-filter-btn" data-admin-action="tickets-toggle-unassigned">未指派</button>
+                    </div>
+                    <div id="ticketsBulkToolbar" class="admin-ticket-bulk-toolbar">
+                        <span id="ticketsBulkCount" class="admin-ticket-bulk-toolbar__count">可批量指派或批量处理当前页待处理工单</span>
+                        <div class="admin-ticket-bulk-toolbar__actions">
+                            <button type="button" id="ticketsBulkAssignSelfBtn" class="btn-secondary admin-ticket-bulk-toolbar__btn" data-admin-action="tickets-bulk-assign-self" disabled>指派给我</button>
+                            <button type="button" id="ticketsBulkClearAssigneeBtn" class="btn-secondary admin-ticket-bulk-toolbar__btn" data-admin-action="tickets-bulk-clear-assignee" disabled>取消指派</button>
+                            <button type="button" id="ticketsBulkResolveBtn" class="btn-secondary admin-ticket-bulk-toolbar__btn" data-admin-action="tickets-open-bulk-resolve" disabled>批量解决</button>
+                            <button type="button" id="ticketsBulkRejectBtn" class="btn-secondary admin-ticket-bulk-toolbar__btn" data-admin-action="tickets-open-bulk-reject" disabled>批量拒绝</button>
+                            <button type="button" id="ticketsClearSelectionBtn" class="btn-secondary admin-ticket-bulk-toolbar__btn" data-admin-action="tickets-clear-selection" disabled>清空选择</button>
                         </div>
                     </div>
                 </div>
-                <div class="config-inline-note points-module-note admin-ticket-workbench-note">
-                    <i class="fas fa-circle-info"></i>
-                    <span>工单现在支持直接回到客服会话、订单、用户详情和原始站内代办，适合把客服接手、售后处理和风险排查串成同一条工作链。</span>
                 </div>
 
+                <div id="ticketsOverviewSection" class="admin-ticket-workspace-block admin-ticket-workspace-block--overview">
+                <div id="ticketsOverviewPanel" class="glass-panel admin-ticket-overview-panel-shell">
+                    <div class="admin-ticket-overview-header">
+                        <div>
+                            <div class="admin-ticket-overview-eyebrow">SLA / 队列概览</div>
+                            <h3 class="admin-ticket-overview-title">售后工单处理看板</h3>
+                            <p id="ticketsOverviewSubtitle" class="admin-ticket-overview-subtitle">按当前 SLA 配置汇总待处理队列与最近 30 天处理效率。</p>
+                        </div>
+                        <div class="admin-ticket-overview-header__actions">
+                            <button type="button" class="btn-secondary admin-ticket-overview-header__btn" data-admin-action="tickets-open-overdue-queue">查看超时队列</button>
+                            <button type="button" class="btn-secondary admin-ticket-overview-header__btn" data-admin-action="tickets-open-sla-settings">提醒设置</button>
+                            <button type="button" class="btn-secondary admin-ticket-overview-header__btn" data-admin-action="tickets-refresh-overview">刷新概览</button>
+                        </div>
+                    </div>
+                    <div id="ticketsOverviewGrid" class="admin-ticket-overview-grid"></div>
+                    <div class="admin-ticket-overview-panels">
+                        <section id="ticketsOverviewSourcePanel" class="admin-ticket-overview-breakdown-panel">
+                            <div class="admin-ticket-overview-breakdown-head">
+                                <h4>待处理来源</h4>
+                                <span id="ticketsOverviewUpdatedAt" class="admin-ticket-overview-breakdown-meta">等待加载</span>
+                            </div>
+                            <div id="ticketsOverviewSourceBreakdown" class="admin-ticket-overview-breakdown-list"></div>
+                        </section>
+                        <section id="ticketsOverviewIssuePanel" class="admin-ticket-overview-breakdown-panel">
+                            <div class="admin-ticket-overview-breakdown-head">
+                                <h4>问题类型</h4>
+                                <span class="admin-ticket-overview-breakdown-meta">当前待处理队列</span>
+                            </div>
+                            <div id="ticketsOverviewIssueBreakdown" class="admin-ticket-overview-breakdown-list"></div>
+                        </section>
+                        <section id="ticketsOverviewReminderSection" class="admin-ticket-overview-breakdown-panel">
+                            <div class="admin-ticket-overview-breakdown-head">
+                                <h4 id="ticketsOverviewReminderHeading">超时提醒状态</h4>
+                                <span id="ticketsOverviewReminderMeta" class="admin-ticket-overview-breakdown-meta">沿用工单告警编排</span>
+                            </div>
+                            <div id="ticketsOverviewReminderPanel" class="admin-ticket-overview-reminder-panel"></div>
+                        </section>
+                    </div>
+                </div>
+                </div>
                 <!-- Table Container -->
+                <div id="ticketsListSection" class="admin-ticket-workspace-block admin-ticket-workspace-block--list">
                 <div class="glass-panel table-view users-table-panel">
                     <table class="admin-table users-table">
                         <thead>
                             <tr>
+                                <th class="admin-ticket-selection-head">
+                                    <input type="checkbox" id="ticketsSelectAllCheckbox" class="admin-ticket-selection-checkbox" data-admin-change-action="tickets-toggle-select-all-page" aria-label="选择当前页全部待处理工单">
+                                </th>
                                 <th>工单号/时间</th>
                                 <th>关联订单号</th>
                                 <th>用户 / 邮箱</th>
@@ -8973,59 +9123,204 @@
 
                 <!-- Pagination -->
                 <div class="pagination" id="ticketsPagination"></div>
+                </div>
+
+                <div id="ticketSummaryJobDetailModal" data-admin-overlay-close="ticket-summary-job-detail-modal"
+                    class="modal-overlay admin-ticket-summary-job-modal" aria-hidden="true">
+                    <div class="admin-ticket-summary-job-modal__dialog">
+                        <div class="admin-ticket-summary-job-modal__header">
+                            <div class="admin-ticket-summary-job-modal__icon">
+                                <i class="fas fa-file-waveform"></i>
+                            </div>
+                            <div class="admin-ticket-summary-job-modal__copy">
+                                <h2 id="ticketSummaryJobDetailTitle" class="admin-ticket-summary-job-modal__title">工单汇总详情</h2>
+                                <p id="ticketSummaryJobDetailSubtitle" class="admin-ticket-summary-job-modal__subtitle">回看外发窗口、人工备注和重试时间线</p>
+                            </div>
+                            <button type="button" class="admin-ticket-summary-job-modal__close" data-admin-action="tickets-close-summary-job-detail" aria-label="关闭汇总详情">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div id="ticketSummaryJobDetailBody" class="admin-ticket-summary-job-modal__body"></div>
+                        <div class="admin-ticket-summary-job-modal__footer">
+                            <button type="button" class="ticket-reply-cancel-btn admin-studio-inline-style-attr-199" data-admin-action="tickets-close-summary-job-detail">关闭</button>
+                            <button type="button" id="ticketSummaryJobRetryBtn" class="btn-primary admin-ticket-summary-job-modal__retry-btn" data-admin-action="tickets-retry-summary-job" disabled>重新加入重试队列</button>
+                        </div>
+                    </div>
+                </div>
 
                 <!-- Ticket Reply Modal -->
                 <div id="ticketReplyModal" data-admin-overlay-close="ticket-reply-modal"
                     class="admin-studio-inline-style-attr-202 admin-ticket-reply-modal" aria-hidden="true">
                     <div
-                        class="admin-studio-inline-style-attr-203">
+                        class="admin-studio-inline-style-attr-203 admin-ticket-reply-modal__panel">
                         <!-- Header -->
                         <div
-                            class="admin-studio-inline-style-attr-204">
+                            class="admin-studio-inline-style-attr-204 admin-ticket-reply-modal__header">
                             <div
                                 class="admin-studio-inline-style-attr-205">
                                 <i class="fas fa-headset admin-studio-inline-style-attr-206"></i>
                             </div>
-                            <div>
+                            <div class="admin-ticket-reply-modal__header-copy">
                                 <h2 class="modal-title admin-studio-inline-style-attr-207"
                                    >处理售后工单</h2>
-                                <p class="admin-studio-inline-style-attr-208">回复处理结果并通知用户
+                                <p id="ticketReplyModalSubtitle" class="admin-studio-inline-style-attr-208">回复处理结果并通知用户
                                 </p>
                             </div>
+                            <div id="ticketReplyModalHeaderBadges" class="admin-ticket-reply-modal__header-badges"></div>
+                            <button type="button" class="admin-ticket-reply-modal__close" data-admin-action="tickets-close-reply-modal" aria-label="关闭工单处理面板">
+                                <i class="fas fa-times"></i>
+                            </button>
                         </div>
                         <!-- Body -->
-                        <form id="ticketReplyForm" class="admin-studio-inline-style-attr-209">
-                            <div class="admin-studio-inline-style-attr-171">
-                                <label
-                                    class="admin-studio-inline-style-attr-172">管理员回复</label>
-                                <textarea id="ticketAdminReply" class="ticket-reply-textarea admin-studio-inline-style-attr-210" placeholder="请输入处理结果或回复..."
-                                   ></textarea>
-                            </div>
-                            <div
-                                class="admin-studio-inline-style-attr-211">
-                                <label
-                                    class="admin-studio-inline-style-attr-212">
-                                    <input type="checkbox" id="ticketRefundCheckbox"
-                                        class="admin-studio-inline-style-attr-213">
-                                    <i class="fas fa-undo-alt admin-studio-inline-style-attr-214"></i>
-                                    退还订单积分
-                                </label>
-                                <p
-                                    class="admin-studio-inline-style-attr-215">
-                                    勾选后将自动退还该订单对应的积分给用户</p>
-                            </div>
-                            <input type="hidden" id="replyTicketId">
-                            <input type="hidden" id="replyNewStatus">
+                        <form id="ticketReplyForm" class="admin-studio-inline-style-attr-209 admin-ticket-reply-modal__form">
+                            <div class="admin-ticket-reply-modal__layout">
+                                <section class="admin-ticket-reply-modal__context-column">
+                                    <div class="admin-ticket-reply-modal__section">
+                                        <div class="admin-ticket-reply-modal__section-head">
+                                            <h3>工单摘要</h3>
+                                            <span class="admin-ticket-reply-modal__section-hint">处理前先核对核心信息</span>
+                                        </div>
+                                        <div id="ticketReplySummaryGrid" class="admin-ticket-reply-modal__summary-grid"></div>
+                                    </div>
 
-                            <div class="admin-studio-inline-style-attr-198">
-                                <button type="button" class="ticket-reply-cancel-btn admin-studio-inline-style-attr-199" data-admin-action="tickets-close-reply-modal"
-                                   >取消</button>
-                                <button type="button" class="btn-primary ticket-reply-submit-btn admin-studio-inline-style-attr-200" data-admin-action="tickets-submit-reply"
-                                   >
-                                    <i class="fas fa-check-circle"></i> 确认处理
-                                </button>
+                                    <div class="admin-ticket-reply-modal__section">
+                                        <div class="admin-ticket-reply-modal__section-head">
+                                            <h3>原始描述</h3>
+                                            <span class="admin-ticket-reply-modal__section-hint">保留用户/系统原始上下文</span>
+                                        </div>
+                                        <div id="ticketReplyDescription" class="admin-ticket-reply-modal__description">暂无描述</div>
+                                    </div>
+
+                                    <div class="admin-ticket-reply-modal__section">
+                                        <div class="admin-ticket-reply-modal__section-head">
+                                            <h3>关联上下文</h3>
+                                            <span class="admin-ticket-reply-modal__section-hint">客服会话、代办来源与最近备注</span>
+                                        </div>
+                                        <div id="ticketReplyContextList" class="admin-ticket-reply-modal__context-list"></div>
+                                    </div>
+
+                                    <div class="admin-ticket-reply-modal__section">
+                                        <div class="admin-ticket-reply-modal__section-head">
+                                            <h3>快捷跳转</h3>
+                                            <span class="admin-ticket-reply-modal__section-hint">处理前可直接回看原始工作区</span>
+                                        </div>
+                                        <div id="ticketReplyQuickActions" class="admin-ticket-reply-modal__quick-actions"></div>
+                                    </div>
+
+                                    <div class="admin-ticket-reply-modal__section">
+                                        <div class="admin-ticket-reply-modal__section-head">
+                                            <h3>处理时间线</h3>
+                                            <span class="admin-ticket-reply-modal__section-hint">快速回顾当前工单的上下文与状态变化</span>
+                                        </div>
+                                        <div id="ticketReplyTimeline" class="admin-ticket-reply-modal__timeline"></div>
+                                    </div>
+                                </section>
+
+                                <section class="admin-ticket-reply-modal__decision-column">
+                                    <div class="admin-ticket-reply-modal__decision-card">
+                                        <div class="admin-ticket-reply-modal__section-head admin-ticket-reply-modal__section-head--tight">
+                                            <h3>处理结果</h3>
+                                            <span class="admin-ticket-reply-modal__section-hint">填写会同步给用户</span>
+                                        </div>
+                                        <div class="admin-ticket-reply-modal__templates-shell">
+                                            <div class="admin-ticket-reply-modal__templates-head">
+                                                <span class="admin-ticket-reply-modal__templates-title">常用回复模板</span>
+                                                <span class="admin-ticket-reply-modal__templates-hint">点击即可填入，可继续补充细节</span>
+                                            </div>
+                                            <div id="ticketReplyTemplates" class="admin-ticket-reply-modal__templates"></div>
+                                        </div>
+                                        <div class="admin-studio-inline-style-attr-171">
+                                            <label
+                                                class="admin-studio-inline-style-attr-172">管理员回复</label>
+                                            <textarea id="ticketAdminReply" class="ticket-reply-textarea admin-studio-inline-style-attr-210" placeholder="请输入处理结果或回复..."
+                                               ></textarea>
+                                        </div>
+                                        <div class="admin-studio-inline-style-attr-171">
+                                            <div class="admin-ticket-reply-modal__section-head admin-ticket-reply-modal__section-head--tight">
+                                                <h3>内部备注</h3>
+                                                <span class="admin-ticket-reply-modal__section-hint">仅管理员可见，会写入处理历史</span>
+                                            </div>
+                                            <textarea id="ticketInternalNote" class="ticket-reply-textarea admin-studio-inline-style-attr-210 admin-ticket-reply-modal__internal-note" placeholder="可记录风控判断、补充证据或交接信息（不会通知用户）"
+                                               ></textarea>
+                                        </div>
+                                        <div
+                                            id="ticketRefundField"
+                                            class="admin-studio-inline-style-attr-211 admin-ticket-reply-modal__refund">
+                                            <label
+                                                class="admin-studio-inline-style-attr-212">
+                                                <input type="checkbox" id="ticketRefundCheckbox"
+                                                    class="admin-studio-inline-style-attr-213">
+                                                <i class="fas fa-undo-alt admin-studio-inline-style-attr-214"></i>
+                                                退还订单积分
+                                            </label>
+                                            <p
+                                                id="ticketRefundHint"
+                                                aria-live="polite"
+                                                class="admin-studio-inline-style-attr-215">
+                                                勾选后将自动退还该订单对应的积分给用户</p>
+                                        </div>
+                                        <input type="hidden" id="replyTicketId">
+                                        <input type="hidden" id="replyNewStatus">
+
+                                        <div class="admin-studio-inline-style-attr-198 admin-ticket-reply-modal__footer-actions">
+                                            <button type="button" class="ticket-reply-cancel-btn admin-studio-inline-style-attr-199" data-admin-action="tickets-close-reply-modal"
+                                               >取消</button>
+                                            <button type="button" class="btn-primary ticket-reply-submit-btn admin-studio-inline-style-attr-200" data-admin-action="tickets-submit-reply"
+                                               >
+                                                <i class="fas fa-check-circle"></i> <span id="ticketReplySubmitLabel">确认处理</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </section>
                             </div>
                         </form>
+                    </div>
+                </div>
+
+                <div id="ticketBulkProcessModal" data-admin-overlay-close="ticket-bulk-process-modal"
+                    class="admin-ticket-bulk-modal" aria-hidden="true">
+                    <div class="admin-ticket-bulk-modal__panel">
+                        <div class="admin-ticket-bulk-modal__header">
+                            <div class="admin-ticket-bulk-modal__icon">
+                                <i class="fas fa-layer-group"></i>
+                            </div>
+                            <div class="admin-ticket-bulk-modal__copy">
+                                <h2 id="ticketBulkProcessTitle" class="admin-ticket-bulk-modal__title">批量处理工单</h2>
+                                <p id="ticketBulkProcessCount" class="admin-ticket-bulk-modal__subtitle">本次将处理 0 个待处理工单</p>
+                            </div>
+                            <button type="button" class="admin-ticket-bulk-modal__close" data-admin-action="tickets-close-bulk-process-modal" aria-label="关闭批量处理面板">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="admin-ticket-bulk-modal__body">
+                            <div class="admin-ticket-reply-modal__templates-shell">
+                                <div class="admin-ticket-reply-modal__templates-head">
+                                    <span class="admin-ticket-reply-modal__templates-title">批量回复模板</span>
+                                    <span class="admin-ticket-reply-modal__templates-hint">统一口径可直接填入，再按需微调</span>
+                                </div>
+                                <div id="ticketBulkProcessTemplates" class="admin-ticket-reply-modal__templates"></div>
+                            </div>
+                            <div class="admin-studio-inline-style-attr-171">
+                                <label class="admin-studio-inline-style-attr-172">统一回复</label>
+                                <textarea id="ticketBulkAdminReply" class="ticket-reply-textarea admin-studio-inline-style-attr-210" placeholder="请输入将发送给用户的统一处理结果..."
+                                   ></textarea>
+                            </div>
+                            <div class="admin-studio-inline-style-attr-171">
+                                <div class="admin-ticket-reply-modal__section-head admin-ticket-reply-modal__section-head--tight">
+                                    <h3>内部备注</h3>
+                                    <span class="admin-ticket-reply-modal__section-hint">仅管理员可见，会写入每张工单的处理历史</span>
+                                </div>
+                                <textarea id="ticketBulkInternalNote" class="ticket-reply-textarea admin-studio-inline-style-attr-210 admin-ticket-reply-modal__internal-note" placeholder="可记录这批工单的统一判断、交接说明或风险备注"
+                                   ></textarea>
+                            </div>
+                            <input type="hidden" id="ticketBulkNewStatus">
+                        </div>
+                        <div class="admin-ticket-bulk-modal__footer">
+                            <button type="button" class="ticket-reply-cancel-btn admin-studio-inline-style-attr-199" data-admin-action="tickets-close-bulk-process-modal">取消</button>
+                            <button type="button" id="ticketBulkProcessSubmitBtn" class="btn-primary ticket-reply-submit-btn admin-studio-inline-style-attr-200" data-admin-action="tickets-submit-bulk-process">
+                                <i class="fas fa-check-circle"></i> <span id="ticketBulkProcessSubmitLabel">确认批量处理</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -9371,7 +9666,7 @@
 <script src="js/admin-studio-bootstrap.js?v=20260403_ADMIN_HOMEPAGE_PREWARM_1"></script>
     <script src="js/ios-scroll-lock.js"></script>
     <script src="admin-users.js?v=20260402_ADMIN_USERS_ASSET_ACTIVITY_FIX_1"></script>
-    <script src="admin-points.js?v=20260403_ADMIN_POINTS_VIEW_PREFETCH_1"></script>
+    <script src="admin-points.js?v=20260403_ADMIN_POINTS_FEEDBACK_CONTEXT_ROUTING_1"></script>
     <script src="admin-discounts.js?v=20260402_ADMIN_DISCOUNT_MUTATE_HANDLER_2"></script>
     <script src="starry-sky.js"></script>
     <!-- Flatpickr JS -->
@@ -9379,19 +9674,19 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh.js"></script>
     <script src="js/admin-api-auth.js?v=20260402_ADMIN_API_AUTH_5"></script>
     <script src="js/admin-ai.js"></script>
-    <script src="admin-comments.js?v=20260403_COMMENTS_VIEW_PREFETCH_1"></script>
+    <script src="admin-comments.js?v=20260403_COMMENTS_PAGE_SIZE_2"></script>
     <script src="admin-analytics.js?v=20260331_ANALYTICS_EXPERIMENT_OVERLAY_CLOSE_1"></script>
     <script src="js/admin-payments.js?v=20260403_ADMIN_PAYMENTS_LOADING_SKELETON_1"></script>
-    <script src="js/local-smoke-fixtures.js?v=20260403_LOCAL_SMOKE_FIXTURES_30"></script>
+    <script src="js/local-smoke-fixtures.js?v=20260404_LOCAL_SMOKE_FIXTURES_31"></script>
     <script src="js/admin-workbench.js?v=20260402_ADMIN_WORKBENCH_ACCESS_7"></script>
     <script src="js/admin-ticket-links.js?v=20260401_ADMIN_TICKET_LINK_PROTOCOL_1"></script>
-    <script src="admin-config.js?v=20260402_ADMIN_CONFIG_ACCESS_101"></script>
+    <script src="admin-config.js?v=20260403_ADMIN_TICKET_TEMPLATE_SETTINGS_1"></script>
     <script src="admin-homepage.js?v=20260403_HOMEPAGE_LOADING_PREWARM_1"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js?v=20260323_SITE_FILTER_DELEGATION_1"></script>
-    <script src="js/admin-tickets.js?v=20260401_ADMIN_TICKETS_WORKBENCH_PAYLOADS_4"></script>
-    <script src="js/admin-access.js?v=20260402_ADMIN_ACCESS_PERSISTED_1"></script>
-<script src="admin-studio.js?v=20260403_ADMIN_MODULE_PREFETCH_1"></script>
+    <script src="js/admin-tickets.js?v=20260404_ADMIN_TICKET_OVERVIEW_COPY_1"></script>
+    <script src="js/admin-access.js?v=20260403_ADMIN_ENTRY_WARMUP_1"></script>
+<script src="admin-studio.js?v=20260404_ADMIN_TICKET_WORKSPACE_NAV_1"></script>
     <script src="js/admin-shop.js?v=20260403_ADMIN_SHOP_TAB_PREFETCH_1"></script>
 </body>
 

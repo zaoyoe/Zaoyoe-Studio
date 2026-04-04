@@ -54,7 +54,9 @@ function applyFilters(rows, filters = []) {
     }));
 }
 
-function createSupabaseDouble(state) {
+function createSupabaseDouble(state, options = {}) {
+    const clientLabel = String(options?.label || 'default');
+
     function getTable(table) {
         if (!state.tables[table]) {
             state.tables[table] = [];
@@ -181,7 +183,7 @@ function createSupabaseDouble(state) {
             };
         },
         async rpc(fn, args) {
-            state.rpcCalls.push({ fn, args: clone(args) });
+            state.rpcCalls.push({ client: clientLabel, fn, args: clone(args) });
 
             if (fn === 'fn_generate_codes') {
                 return {
@@ -198,10 +200,26 @@ function createSupabaseDouble(state) {
             }
 
             if (fn === 'fn_revoke_code') {
+                if (clientLabel === 'admin' && options?.failRevokeOnAdminClient) {
+                    return {
+                        data: null,
+                        error: { message: 'Unauthorized: Admin only' }
+                    };
+                }
                 return {
                     data: {
                         success: true,
                         points_deducted: 120
+                    },
+                    error: null
+                };
+            }
+
+            if (fn === 'fn_deduct_points_admin_site' || fn === 'fn_deduct_points') {
+                return {
+                    data: {
+                        success: true,
+                        deducted: Number(args?.p_amount || 0)
                     },
                     error: null
                 };
@@ -232,9 +250,18 @@ async function withPointsManageHandler(options, callback) {
             return {
                 async requireAdmin(req, config = {}) {
                     state.requireAdminCalls.push({ req, config });
+                    const adminSupabase = createSupabaseDouble(state, {
+                        label: 'admin',
+                        failRevokeOnAdminClient: Boolean(options?.failRevokeOnAdminClient)
+                    });
+                    const requestSupabase = createSupabaseDouble(state, {
+                        label: 'request'
+                    });
                     return {
                         user: { id: 'admin-1' },
-                        supabase: createSupabaseDouble(state)
+                        supabase: adminSupabase,
+                        requestSupabase: options?.withRequestSupabase ? requestSupabase : undefined,
+                        token: options?.withRequestSupabase ? 'request-token' : ''
                     };
                 },
                 async parseJsonBody(req) {
@@ -351,7 +378,7 @@ test('points manage handler deletes scoped batches and revokes used codes before
                 { id: 'batch-intl-1', site: 'intl', name: 'INTL Batch' }
             ],
             redemption_codes: [
-                { id: 'code-cn-used', code: 'ZY-CN-USED', site: 'cn', batch_id: 'batch-cn-1', status: 'used' },
+                { id: 'code-cn-used', code: 'ZY-CN-USED', site: 'cn', batch_id: 'batch-cn-1', status: 'used', used_by: 'user-cn-1', points_granted: 120 },
                 { id: 'code-cn-pending', code: 'ZY-CN-PENDING', site: 'cn', batch_id: 'batch-cn-1', status: 'pending' },
                 { id: 'code-intl-used', code: 'ZY-INTL-USED', site: 'intl', batch_id: 'batch-intl-1', status: 'used' }
             ]
@@ -372,7 +399,7 @@ test('points manage handler deletes scoped batches and revokes used codes before
 
         assert.equal(res.statusCode, 200);
         assert.equal(res.json().success, true);
-        assert.equal(state.rpcCalls.some((call) => call.fn === 'fn_revoke_code' && call.args?.p_code === 'ZY-CN-USED'), true);
+        assert.equal(state.rpcCalls.some((call) => call.fn === 'fn_deduct_points_admin_site' && call.args?.p_target_user_id === 'user-cn-1'), true);
         assert.equal(state.tables.redemption_batches.some((row) => row.id === 'batch-cn-1'), false);
         assert.equal(state.tables.redemption_batches.some((row) => row.id === 'batch-intl-1'), true);
         assert.equal(state.tables.redemption_codes.some((row) => row.batch_id === 'batch-cn-1'), false);
@@ -423,6 +450,74 @@ test('points manage handler invalidates pending codes and can update code expiry
         assert.equal(expiryRes.statusCode, 200);
         assert.equal(state.tables.redemption_codes.find((row) => row.id === 'code-cn-2')?.expires_at, '2026-04-15T23:59:59.999Z');
         assert.equal(state.auditEntries.some((entry) => entry.actionType === 'code.expiry.update'), true);
+    });
+});
+
+test('points manage handler uses request-scoped client for revoke RPC when admin service client would be rejected', async () => {
+    await withPointsManageHandler({
+        withRequestSupabase: true,
+        failRevokeOnAdminClient: true,
+        tables: {
+            redemption_batches: [
+                { id: 'batch-cn-1', site: 'cn', name: 'CN Batch' }
+            ],
+            redemption_codes: [
+                { id: 'code-cn-used', code: 'ZY-CN-USED', site: 'cn', batch_id: 'batch-cn-1', status: 'used', used_by: 'user-cn-1', points_granted: 120 }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'revoke_code',
+                site: 'cn',
+                code: 'ZY-CN-USED',
+                reason: '管理员撤销'
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().success, true);
+        assert.equal(state.rpcCalls.some((call) => call.client === 'request' && call.fn === 'fn_revoke_code' && call.args?.p_code === 'ZY-CN-USED'), true);
+        assert.equal(state.rpcCalls.some((call) => call.client === 'admin' && call.fn === 'fn_revoke_code'), false);
+        assert.equal(state.auditEntries.some((entry) => entry.actionType === 'code.revoke'), true);
+    });
+});
+
+test('points manage handler falls back to service revoke flow when no request token is available', async () => {
+    await withPointsManageHandler({
+        tables: {
+            redemption_batches: [
+                { id: 'batch-cn-1', site: 'cn', name: 'CN Batch' }
+            ],
+            redemption_codes: [
+                { id: 'code-cn-used', code: 'ZY-CN-USED', site: 'cn', batch_id: 'batch-cn-1', status: 'used', used_by: 'user-cn-1', points_granted: 120 }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'revoke_code',
+                site: 'cn',
+                code: 'ZY-CN-USED',
+                reason: '管理员撤销'
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().success, true);
+        assert.equal(state.rpcCalls.some((call) => call.fn === 'fn_revoke_code'), false);
+        assert.equal(state.rpcCalls.some((call) => call.fn === 'fn_deduct_points_admin_site' && call.args?.p_target_user_id === 'user-cn-1' && call.args?.p_amount === 120), true);
+        assert.equal(state.tables.redemption_codes.find((row) => row.id === 'code-cn-used')?.status, 'revoked');
+        assert.equal(state.tables.redemption_codes.find((row) => row.id === 'code-cn-used')?.revoke_reason, '管理员撤销');
+        assert.equal(state.auditEntries.some((entry) => entry.actionType === 'code.revoke'), true);
     });
 });
 

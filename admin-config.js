@@ -2296,7 +2296,8 @@ function getDefaultOpsAlertConfig() {
             summary_schedule_mode: 'rolling_window',
             summary_hourly_minute: 0,
             summary_daily_hour: 9,
-            summary_daily_minute: 0
+            summary_daily_minute: 0,
+            reply_templates: getDefaultOpsAlertTicketReplyTemplates()
         },
         shop_order_delivery: {
             enabled: true,
@@ -3345,6 +3346,241 @@ function normalizeOpsAlertCustomerChatQuickReplyTemplates(value, options = {}) {
     return normalized.slice(0, 12);
 }
 
+const OPS_ALERT_TICKET_REPLY_TEMPLATE_ACTIONS = Object.freeze([
+    {
+        value: 'resolved',
+        label: '解决工单',
+        description: '展示在单条处理和批量解决时的推荐模板。'
+    },
+    {
+        value: 'rejected',
+        label: '拒绝工单',
+        description: '展示在单条处理和批量拒绝时的推荐模板。'
+    }
+]);
+
+const OPS_ALERT_TICKET_REPLY_TEMPLATE_ISSUE_TYPES = Object.freeze([
+    {
+        value: 'all',
+        label: '通用',
+        description: '适用于所有售后工单的兜底模板。'
+    },
+    {
+        value: 'refund',
+        label: '退款',
+        description: '优先给退款、补偿或有关联订单的工单推荐。'
+    },
+    {
+        value: 'delivery',
+        label: '履约',
+        description: '适用于发货、履约、补发和交付异常。'
+    },
+    {
+        value: 'account',
+        label: '账号',
+        description: '适用于账号异常、封禁、登录和账号核查。'
+    },
+    {
+        value: 'verification',
+        label: '验证',
+        description: '适用于验证、审核、实名等相关工单。'
+    },
+    {
+        value: 'payment',
+        label: '支付',
+        description: '适用于支付异常、扣费和到账问题。'
+    },
+    {
+        value: 'other',
+        label: '其他',
+        description: '适用于无法归入标准类型的售后问题。'
+    }
+]);
+
+function getDefaultOpsAlertTicketReplyTemplates() {
+    return [
+        {
+            id: 'resolved_refund',
+            action: 'resolved',
+            issue_type: 'refund',
+            enabled: true,
+            title: '退款处理通知',
+            tag: '退款',
+            body: '已核实本次情况，工单已处理完成。如涉及订单退款或补偿结果，请以系统到账记录为准；若仍有异常，请继续回复本工单。'
+        },
+        {
+            id: 'resolved_generic',
+            action: 'resolved',
+            issue_type: 'all',
+            enabled: true,
+            title: '通用处理完成',
+            tag: '推荐',
+            body: '已收到你的反馈，当前问题已处理完成。如后续仍有异常，请直接回复本工单并补充具体情况，我们会继续协助你处理。'
+        },
+        {
+            id: 'resolved_delivery',
+            action: 'resolved',
+            issue_type: 'delivery',
+            enabled: true,
+            title: '履约跟进完成',
+            tag: '履约',
+            body: '已收到你的履约反馈，我们已经完成本次问题登记与处理。如后续仍未收到货物或状态没有更新，请继续回复本工单。'
+        },
+        {
+            id: 'resolved_account',
+            action: 'resolved',
+            issue_type: 'account',
+            enabled: true,
+            title: '账号核查完成',
+            tag: '账号',
+            body: '已核实你的账号情况，当前问题已完成处理。如后续仍遇到同类异常，请补充截图或具体时间点，我们会继续排查。'
+        },
+        {
+            id: 'resolved_verification',
+            action: 'resolved',
+            issue_type: 'verification',
+            enabled: true,
+            title: '验证核查完成',
+            tag: '验证',
+            body: '已核实你的验证情况，当前问题已完成处理。如后续仍遇到同类异常，请补充截图或具体时间点，我们会继续排查。'
+        },
+        {
+            id: 'resolved_payment',
+            action: 'resolved',
+            issue_type: 'payment',
+            enabled: true,
+            title: '支付问题处理',
+            tag: '支付',
+            body: '已收到你的支付反馈，当前问题已完成核查与处理。如后续仍有重复扣费、未到账或状态异常，请继续回复本工单。'
+        },
+        {
+            id: 'rejected_need_more_context',
+            action: 'rejected',
+            issue_type: 'all',
+            enabled: true,
+            title: '补充资料后再提交',
+            tag: '推荐',
+            body: '已收到你的反馈。当前信息还不足以完成处理，请补充订单号、异常截图、发生时间或操作步骤后重新提交，我们会继续跟进。'
+        },
+        {
+            id: 'rejected_duplicate_ticket',
+            action: 'rejected',
+            issue_type: 'all',
+            enabled: true,
+            title: '重复工单说明',
+            tag: '去重',
+            body: '已核查到相同问题已有工单在处理中，本工单先为你关闭。后续请以原工单为准，避免重复提交影响跟进效率。'
+        },
+        {
+            id: 'rejected_out_of_scope',
+            action: 'rejected',
+            issue_type: 'all',
+            enabled: true,
+            title: '不在售后范围',
+            tag: '说明',
+            body: '经核查，当前情况暂不属于售后直接处理范围，因此本工单先为你关闭。如你有新的订单信息或补充证据，可重新提交。'
+        }
+    ];
+}
+
+function getOpsAlertTicketReplyTemplateActionMeta(value = 'resolved') {
+    const normalized = String(value || '').trim().toLowerCase();
+    return OPS_ALERT_TICKET_REPLY_TEMPLATE_ACTIONS.find((item) => item.value === normalized)
+        || OPS_ALERT_TICKET_REPLY_TEMPLATE_ACTIONS[0];
+}
+
+function getOpsAlertTicketReplyTemplateIssueTypeMeta(value = 'all') {
+    const normalized = String(value || '').trim().toLowerCase();
+    return OPS_ALERT_TICKET_REPLY_TEMPLATE_ISSUE_TYPES.find((item) => item.value === normalized)
+        || OPS_ALERT_TICKET_REPLY_TEMPLATE_ISSUE_TYPES[0];
+}
+
+function normalizeOpsAlertTicketReplyTemplateId(value, fallbackIndex = 0, fallbackId = '') {
+    const normalized = String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 48);
+
+    if (normalized) {
+        return normalized;
+    }
+
+    const fallback = String(fallbackId || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 48);
+
+    if (fallback) {
+        return fallback;
+    }
+
+    return `template_${Math.max(1, fallbackIndex + 1)}`;
+}
+
+function createOpsAlertTicketReplyTemplateDraft(action = 'resolved', issueType = 'all') {
+    const actionMeta = getOpsAlertTicketReplyTemplateActionMeta(action);
+    const issueTypeMeta = getOpsAlertTicketReplyTemplateIssueTypeMeta(issueType);
+    const seed = Date.now().toString(36);
+    return {
+        id: `ticket_template_${seed}_${Math.random().toString(36).slice(2, 6)}`,
+        action: actionMeta.value,
+        issue_type: issueTypeMeta.value,
+        enabled: true,
+        title: `${actionMeta.label} · ${issueTypeMeta.label}`,
+        tag: issueTypeMeta.label,
+        body: ''
+    };
+}
+
+function normalizeOpsAlertTicketReplyTemplates(value, options = {}) {
+    const preserveDrafts = options && options.preserveDrafts === true;
+    if (!Array.isArray(value)) {
+        return getDefaultOpsAlertTicketReplyTemplates();
+    }
+    if (!value.length) {
+        return [];
+    }
+
+    const defaults = getDefaultOpsAlertTicketReplyTemplates();
+    const normalized = [];
+
+    value.forEach((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {
+            return;
+        }
+
+        const action = getOpsAlertTicketReplyTemplateActionMeta(item.action).value;
+        const issueType = getOpsAlertTicketReplyTemplateIssueTypeMeta(
+            item.issue_type || item.issueType
+        ).value;
+        const fallback = defaults.find((candidate) => candidate.id === String(item.id || '').trim())
+            || defaults.find((candidate) => candidate.action === action && candidate.issue_type === issueType)
+            || null;
+        const body = String(item.body || item.text || '').trim();
+        if (!body && !preserveDrafts) {
+            return;
+        }
+
+        normalized.push({
+            id: normalizeOpsAlertTicketReplyTemplateId(item.id || item.key, normalized.length, fallback?.id),
+            action,
+            issue_type: issueType,
+            enabled: normalizeConfigBoolean(item.enabled, fallback ? fallback.enabled !== false : true),
+            title: String(item.title || '').trim()
+                || fallback?.title
+                || `${getOpsAlertTicketReplyTemplateActionMeta(action).label} · ${getOpsAlertTicketReplyTemplateIssueTypeMeta(issueType).label}`,
+            tag: String(item.tag || '').trim() || fallback?.tag || getOpsAlertTicketReplyTemplateIssueTypeMeta(issueType).label,
+            body
+        });
+    });
+
+    return normalized.slice(0, 20);
+}
+
 function normalizeCheckinConfig(raw) {
     const defaults = getDefaultCheckinConfig();
     const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
@@ -4064,7 +4300,8 @@ function normalizeOpsAlertConfig(raw) {
                 toWholeNumber(ticketsSource.summary_daily_minute, defaults.tickets.summary_daily_minute),
                 0,
                 59
-            )
+            ),
+            reply_templates: normalizeOpsAlertTicketReplyTemplates(ticketsSource.reply_templates)
         },
         shop_order_delivery: {
             enabled: normalizeConfigBoolean(shopOrderDeliverySource.enabled, defaults.shop_order_delivery.enabled),
@@ -7909,6 +8146,958 @@ function ensureOpsAlertCustomerChatQuickReplyTemplateEvents() {
     });
 }
 
+function getOpsAlertTicketReplyTemplateVariableTokens(action = 'resolved', issueType = 'all') {
+    const normalizedAction = getOpsAlertTicketReplyTemplateActionMeta(action).value;
+    const normalizedIssueType = getOpsAlertTicketReplyTemplateIssueTypeMeta(issueType).value;
+    const tokens = ['{{ticket_id}}', '{{issue_type_label}}', '{{source_label}}', '{{status_label}}'];
+
+    if (normalizedIssueType === 'refund' || normalizedIssueType === 'all') {
+        tokens.push('{{order_id}}', '{{refund_summary}}');
+    } else if (normalizedIssueType === 'delivery' || normalizedIssueType === 'payment') {
+        tokens.push('{{order_id}}');
+    }
+
+    if (normalizedAction === 'resolved' && !tokens.includes('{{refund_summary}}') && normalizedIssueType === 'all') {
+        tokens.push('{{refund_summary}}');
+    }
+
+    return tokens;
+}
+
+function getOpsAlertTicketReplyTemplatePreviewPlaceholders(action = 'resolved', issueType = 'all') {
+    const normalizedAction = getOpsAlertTicketReplyTemplateActionMeta(action).value;
+    const issueTypeMeta = getOpsAlertTicketReplyTemplateIssueTypeMeta(issueType);
+    return {
+        ticket_id: 'TKT-2026-0423',
+        order_id: 'ORDER-2026-0099',
+        issue_type_label: issueTypeMeta.label,
+        source_label: '客服会话',
+        status_label: normalizedAction === 'rejected' ? '已拒绝' : '已解决',
+        refund_summary: normalizedAction === 'rejected' ? '当前动作不涉及退款' : '订单退款结果以系统到账为准'
+    };
+}
+
+function interpolateOpsAlertTicketReplyTemplatePreviewText(templateText = '', action = 'resolved', issueType = 'all') {
+    const placeholders = getOpsAlertTicketReplyTemplatePreviewPlaceholders(action, issueType);
+    return String(templateText || '').replace(/{{\s*([a-z0-9_]+)\s*}}/gi, (_match, rawKey) => {
+        const normalizedKey = String(rawKey || '').trim().toLowerCase();
+        return Object.prototype.hasOwnProperty.call(placeholders, normalizedKey)
+            ? String(placeholders[normalizedKey] || '')
+            : `{{${normalizedKey}}}`;
+    });
+}
+
+function getOpsAlertTicketReplyTemplateTone(issueType = 'all') {
+    switch (getOpsAlertTicketReplyTemplateIssueTypeMeta(issueType).value) {
+        case 'refund':
+            return 'order';
+        case 'payment':
+            return 'payment';
+        case 'verification':
+            return 'verification';
+        case 'delivery':
+            return 'ticket';
+        default:
+            return 'general';
+    }
+}
+
+function summarizeOpsAlertTicketReplyTemplateText(value = '', fallback = '', maxLength = 72) {
+    const normalizedValue = String(value || '').replace(/\s+/g, ' ').trim();
+    const resolvedValue = normalizedValue || String(fallback || '').trim();
+    if (resolvedValue.length <= maxLength) {
+        return resolvedValue;
+    }
+    return `${resolvedValue.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function buildOpsAlertTicketReplyTemplatePreviewMarkup(template = {}) {
+    const action = getOpsAlertTicketReplyTemplateActionMeta(template.action).value;
+    const issueType = getOpsAlertTicketReplyTemplateIssueTypeMeta(template.issue_type).value;
+    const previewLabel = interpolateOpsAlertTicketReplyTemplatePreviewText(template.title || '', action, issueType) || '未填写模板标题';
+    const previewHint = interpolateOpsAlertTicketReplyTemplatePreviewText(template.tag || '', action, issueType) || '可在这里预览模板标签';
+    const previewText = interpolateOpsAlertTicketReplyTemplatePreviewText(template.body || '', action, issueType) || '可在这里预览填入回复框的正文';
+
+    return `
+        <div class="ops-alert-quick-reply-template__preview">
+            <div class="ops-alert-quick-reply-template__preview-pill" data-ticket-reply-template-role="preview-label">${escapeConfigHtml(previewLabel)}</div>
+            <div class="ops-alert-quick-reply-template__preview-hint" data-ticket-reply-template-role="preview-hint">${escapeConfigHtml(previewHint)}</div>
+            <div class="ops-alert-quick-reply-template__preview-body" data-ticket-reply-template-role="preview-text">${escapeConfigHtml(previewText)}</div>
+        </div>
+    `;
+}
+
+function buildOpsAlertTicketReplyTemplateVariableChipsHtml(action = 'resolved', issueType = 'all') {
+    const tokens = getOpsAlertTicketReplyTemplateVariableTokens(action, issueType);
+    if (!tokens.length) {
+        return '<span class="ops-alert-quick-reply-template__chip ops-alert-quick-reply-template__chip--muted">无需额外变量</span>';
+    }
+
+    return tokens.map((token) => (
+        `
+            <button
+                type="button"
+                class="ops-alert-quick-reply-template__chip ops-alert-quick-reply-template__chip--action"
+                data-ticket-reply-template-token="${escapeConfigHtml(token)}"
+                title="插入 ${escapeConfigHtml(token)}"
+            >
+                ${escapeConfigHtml(token)}
+            </button>
+        `
+    )).join('');
+}
+
+function buildOpsAlertTicketReplyTemplateCollapsedSummaryMarkup(template = {}) {
+    const action = getOpsAlertTicketReplyTemplateActionMeta(template.action).value;
+    const issueType = getOpsAlertTicketReplyTemplateIssueTypeMeta(template.issue_type).value;
+    const labelText = summarizeOpsAlertTicketReplyTemplateText(
+        interpolateOpsAlertTicketReplyTemplatePreviewText(template.title || '', action, issueType),
+        '未填写模板标题',
+        28
+    );
+    const hintText = summarizeOpsAlertTicketReplyTemplateText(
+        interpolateOpsAlertTicketReplyTemplatePreviewText(template.tag || '', action, issueType),
+        '未填写模板标签',
+        36
+    );
+    const bodyText = summarizeOpsAlertTicketReplyTemplateText(
+        interpolateOpsAlertTicketReplyTemplatePreviewText(template.body || '', action, issueType),
+        '未填写回复正文',
+        120
+    );
+
+    return `
+        <div class="ops-alert-quick-reply-template__collapsed-summary" data-ticket-reply-template-role="collapsed-summary">
+            <div class="ops-alert-quick-reply-template__collapsed-top">
+                <span class="ops-alert-quick-reply-template__collapsed-pill" data-ticket-reply-template-role="collapsed-label">${escapeConfigHtml(labelText)}</span>
+                <span class="ops-alert-quick-reply-template__collapsed-hint" data-ticket-reply-template-role="collapsed-hint">${escapeConfigHtml(hintText)}</span>
+            </div>
+            <div class="ops-alert-quick-reply-template__collapsed-text" data-ticket-reply-template-role="collapsed-text">${escapeConfigHtml(bodyText)}</div>
+        </div>
+    `;
+}
+
+function buildOpsAlertTicketReplyTemplateRowHtml(template = {}, index = 0, total = 0, options = {}) {
+    const actionMeta = getOpsAlertTicketReplyTemplateActionMeta(template.action);
+    const issueTypeMeta = getOpsAlertTicketReplyTemplateIssueTypeMeta(template.issue_type);
+    const isEnabled = template.enabled !== false;
+    const isExpanded = options && options.expanded === true;
+    const templateId = escapeConfigHtml(template.id || `ticket_template_${index + 1}`);
+    const isFirst = index === 0;
+    const isLast = index >= Math.max(0, Number(total || 0) - 1);
+    const actionOptions = OPS_ALERT_TICKET_REPLY_TEMPLATE_ACTIONS.map((item) => (
+        `<option value="${escapeConfigHtml(item.value)}"${item.value === actionMeta.value ? ' selected' : ''}>${escapeConfigHtml(item.label)}</option>`
+    )).join('');
+    const issueTypeOptions = OPS_ALERT_TICKET_REPLY_TEMPLATE_ISSUE_TYPES.map((item) => (
+        `<option value="${escapeConfigHtml(item.value)}"${item.value === issueTypeMeta.value ? ' selected' : ''}>${escapeConfigHtml(item.label)}</option>`
+    )).join('');
+
+    return `
+        <article
+            class="ops-alert-quick-reply-template${isEnabled ? ' is-enabled' : ' is-disabled'}${isExpanded ? ' is-expanded' : ' is-collapsed'}"
+            data-ticket-reply-template-index="${index}"
+            data-ticket-reply-template-id="${templateId}"
+            data-ticket-reply-template-expanded="${isExpanded ? 'true' : 'false'}"
+        >
+            <div class="ops-alert-quick-reply-template__header">
+                <div class="ops-alert-quick-reply-template__header-copy">
+                    <div class="ops-alert-quick-reply-template__eyebrow">工单模板 ${index + 1}</div>
+                    <div class="ops-alert-quick-reply-template__title-row">
+                        <div class="ops-alert-quick-reply-template__title">模板 ID: ${templateId}</div>
+                        <div class="ops-alert-quick-reply-template__badges">
+                            <span
+                                class="ops-alert-quick-reply-template__badge"
+                                data-ticket-reply-template-role="action-badge"
+                                data-tone="${escapeConfigHtml(actionMeta.value === 'rejected' ? 'muted' : 'success')}"
+                            >
+                                ${escapeConfigHtml(actionMeta.label)}
+                            </span>
+                            <span
+                                class="ops-alert-quick-reply-template__badge"
+                                data-ticket-reply-template-role="issue-badge"
+                                data-tone="${escapeConfigHtml(getOpsAlertTicketReplyTemplateTone(issueTypeMeta.value))}"
+                            >
+                                ${escapeConfigHtml(issueTypeMeta.label)}
+                            </span>
+                            <span
+                                class="ops-alert-quick-reply-template__badge"
+                                data-ticket-reply-template-role="status-badge"
+                                data-tone="${isEnabled ? 'success' : 'muted'}"
+                            >
+                                ${isEnabled ? '启用中' : '已停用'}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="ops-alert-quick-reply-template__meta" data-ticket-reply-template-role="meta-copy">把这条模板推荐给 ${escapeConfigHtml(actionMeta.label)} · ${escapeConfigHtml(issueTypeMeta.label)} 场景，供售后快速统一口径。</div>
+                </div>
+                <div class="ops-alert-quick-reply-template__actions">
+                    <button
+                        type="button"
+                        class="btn-add-config btn-add-config--compact btn-add-config--ghost ops-alert-quick-reply-template__toggle"
+                        data-ticket-reply-template-toggle="${index}"
+                        data-ticket-reply-template-role="toggle-button"
+                        aria-expanded="${isExpanded ? 'true' : 'false'}"
+                        title="${isExpanded ? '收起模板' : '展开模板'}"
+                    >
+                        <i class="fas fa-chevron-${isExpanded ? 'up' : 'down'}" data-ticket-reply-template-role="toggle-icon"></i>
+                        <span data-ticket-reply-template-role="toggle-label">${isExpanded ? '收起' : '展开'}</span>
+                    </button>
+                    <button
+                        type="button"
+                        class="btn-add-config btn-add-config--compact btn-add-config--ghost ops-alert-quick-reply-template__move"
+                        data-ticket-reply-template-move="up"
+                        data-ticket-reply-template-move-index="${index}"
+                        ${isFirst ? 'disabled' : ''}
+                        aria-label="上移模板"
+                        title="上移模板"
+                    >
+                        <i class="fas fa-arrow-up"></i>
+                    </button>
+                    <button
+                        type="button"
+                        class="btn-add-config btn-add-config--compact btn-add-config--ghost ops-alert-quick-reply-template__move"
+                        data-ticket-reply-template-move="down"
+                        data-ticket-reply-template-move-index="${index}"
+                        ${isLast ? 'disabled' : ''}
+                        aria-label="下移模板"
+                        title="下移模板"
+                    >
+                        <i class="fas fa-arrow-down"></i>
+                    </button>
+                    <button
+                        type="button"
+                        class="btn-add-config btn-add-config--compact btn-add-config--ghost ops-alert-quick-reply-template__remove"
+                        data-ticket-reply-template-remove="${index}"
+                    >
+                        删除
+                    </button>
+                </div>
+            </div>
+            ${buildOpsAlertTicketReplyTemplateCollapsedSummaryMarkup(template).replace(
+                'data-ticket-reply-template-role="collapsed-summary"',
+                `data-ticket-reply-template-role="collapsed-summary"${isExpanded ? ' hidden' : ''}`
+            )}
+            <div class="ops-alert-quick-reply-template__layout" data-ticket-reply-template-role="body"${isExpanded ? '' : ' hidden'}>
+                <div class="ops-alert-quick-reply-template__summary">
+                    <div class="ops-alert-quick-reply-template__panel">
+                        <span class="ops-alert-quick-reply-template__panel-label">使用场景</span>
+                        <p data-ticket-reply-template-role="panel-copy">${escapeConfigHtml(`${actionMeta.label} · ${issueTypeMeta.label}：${issueTypeMeta.description}`)}</p>
+                    </div>
+                    <div class="ops-alert-quick-reply-template__panel">
+                        <span class="ops-alert-quick-reply-template__panel-label">可用变量</span>
+                        <div class="ops-alert-quick-reply-template__chips" data-ticket-reply-template-role="variable-chips">
+                            ${buildOpsAlertTicketReplyTemplateVariableChipsHtml(actionMeta.value, issueTypeMeta.value)}
+                        </div>
+                    </div>
+                    <div class="ops-alert-quick-reply-template__panel">
+                        <span class="ops-alert-quick-reply-template__panel-label">发送预览</span>
+                        ${buildOpsAlertTicketReplyTemplatePreviewMarkup(template)}
+                    </div>
+                    <label class="ops-alert-quick-reply-template__toggle-card">
+                        <div class="ops-alert-quick-reply-template__toggle-copy">
+                            <span>启用模板</span>
+                            <small>关闭后不会出现在售后工单的推荐模板里。</small>
+                        </div>
+                        <span class="ops-alert-quick-reply-template__toggle-control">
+                            <input type="checkbox" data-ticket-reply-template-field="enabled"${isEnabled ? ' checked' : ''}>
+                            <span class="ops-alert-quick-reply-template__switch" aria-hidden="true"></span>
+                        </span>
+                    </label>
+                </div>
+                <div class="ops-alert-quick-reply-template__editor">
+                    <div class="ops-alert-quick-reply-template__grid">
+                        <label class="ops-alert-quick-reply-template__field" data-ticket-reply-template-field-wrap="action">
+                            <span>处理动作</span>
+                            <select class="config-input" data-ticket-reply-template-field="action">
+                                ${actionOptions}
+                            </select>
+                            <small data-ticket-reply-template-role="action-description">${escapeConfigHtml(actionMeta.description)}</small>
+                        </label>
+                        <label class="ops-alert-quick-reply-template__field" data-ticket-reply-template-field-wrap="issue_type">
+                            <span>问题类型</span>
+                            <select class="config-input" data-ticket-reply-template-field="issue_type">
+                                ${issueTypeOptions}
+                            </select>
+                            <small data-ticket-reply-template-role="issue-description">${escapeConfigHtml(issueTypeMeta.description)}</small>
+                        </label>
+                        <label class="ops-alert-quick-reply-template__field" data-ticket-reply-template-field-wrap="title">
+                            <span>模板标题</span>
+                            <input type="text" class="config-input" maxlength="32" data-ticket-reply-template-field="title" value="${escapeConfigHtml(template.title || '')}" placeholder="例如：退款处理通知">
+                            <small>显示在售后处理面板里的模板标题。</small>
+                        </label>
+                        <label class="ops-alert-quick-reply-template__field" data-ticket-reply-template-field-wrap="tag">
+                            <span>标签文案</span>
+                            <input type="text" class="config-input" maxlength="16" data-ticket-reply-template-field="tag" value="${escapeConfigHtml(template.tag || '')}" placeholder="例如：退款">
+                            <small>显示在模板标题右侧的小标签。</small>
+                        </label>
+                    </div>
+                    <label class="ops-alert-quick-reply-template__field ops-alert-quick-reply-template__field--full" data-ticket-reply-template-field-wrap="body">
+                        <span>回复正文</span>
+                        <textarea class="config-input ops-alert-quick-reply-template__textarea" rows="4" maxlength="400" data-ticket-reply-template-field="body" placeholder="支持插入 {{ticket_id}}、{{order_id}}、{{issue_type_label}} 等上下文字段。">${escapeConfigHtml(template.body || '')}</textarea>
+                        <small>点击上面的变量标签可直接插入；内容会填入售后处理回复框。</small>
+                    </label>
+                    <div class="ops-alert-quick-reply-template__validation" data-ticket-reply-template-role="validation" hidden></div>
+                </div>
+            </div>
+        </article>
+    `;
+}
+
+function collectOpsAlertTicketReplyTemplateExpansionState(container = document.getElementById('opsAlertTicketReplyTemplates')) {
+    if (!(container instanceof HTMLElement)) {
+        return {};
+    }
+
+    const previousState = container.__ticketReplyTemplateExpansionState
+        && typeof container.__ticketReplyTemplateExpansionState === 'object'
+        ? { ...container.__ticketReplyTemplateExpansionState }
+        : {};
+
+    container.querySelectorAll('[data-ticket-reply-template-index]').forEach((row, index) => {
+        if (!(row instanceof HTMLElement)) {
+            return;
+        }
+
+        const templateId = normalizeOpsAlertTicketReplyTemplateId(
+            row.getAttribute('data-ticket-reply-template-id') || '',
+            index
+        );
+        previousState[templateId] = row.dataset.ticketReplyTemplateExpanded === 'true';
+    });
+
+    return previousState;
+}
+
+function setOpsAlertTicketReplyTemplateRowExpanded(row, expanded) {
+    if (!(row instanceof HTMLElement)) {
+        return false;
+    }
+
+    const isExpanded = expanded === true;
+    row.dataset.ticketReplyTemplateExpanded = isExpanded ? 'true' : 'false';
+    row.classList.toggle('is-expanded', isExpanded);
+    row.classList.toggle('is-collapsed', !isExpanded);
+
+    const body = row.querySelector('[data-ticket-reply-template-role="body"]');
+    if (body instanceof HTMLElement) {
+        body.hidden = !isExpanded;
+    }
+
+    const collapsedSummary = row.querySelector('[data-ticket-reply-template-role="collapsed-summary"]');
+    if (collapsedSummary instanceof HTMLElement) {
+        collapsedSummary.hidden = isExpanded;
+    }
+
+    const toggleButton = row.querySelector('[data-ticket-reply-template-role="toggle-button"]');
+    if (toggleButton instanceof HTMLElement) {
+        toggleButton.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+        toggleButton.setAttribute('title', isExpanded ? '收起模板' : '展开模板');
+    }
+
+    const toggleLabel = row.querySelector('[data-ticket-reply-template-role="toggle-label"]');
+    if (toggleLabel instanceof HTMLElement) {
+        toggleLabel.textContent = isExpanded ? '收起' : '展开';
+    }
+
+    const toggleIcon = row.querySelector('[data-ticket-reply-template-role="toggle-icon"]');
+    if (toggleIcon instanceof HTMLElement) {
+        toggleIcon.classList.toggle('fa-chevron-up', isExpanded);
+        toggleIcon.classList.toggle('fa-chevron-down', !isExpanded);
+    }
+
+    return isExpanded;
+}
+
+function renderOpsAlertTicketReplyTemplates(templates = [], options = {}) {
+    const container = document.getElementById('opsAlertTicketReplyTemplates');
+    if (!container) {
+        return;
+    }
+
+    const normalizedTemplates = normalizeOpsAlertTicketReplyTemplates(templates, { preserveDrafts: true });
+    const expansionState = {
+        ...collectOpsAlertTicketReplyTemplateExpansionState(container),
+        ...((options && options.expansionState && typeof options.expansionState === 'object') ? options.expansionState : {})
+    };
+    if (!normalizedTemplates.length) {
+        container.dataset.ticketReplyTemplateValidationVisible = 'false';
+        container.__ticketReplyTemplateExpansionState = {};
+        container.innerHTML = `
+            <div class="ops-alert-quick-reply-empty">
+                <i class="fas fa-comment-slash"></i>
+                <span>当前没有工单回复模板。可以按处理动作和问题类型新增一条。</span>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = normalizedTemplates
+        .map((template, index) => buildOpsAlertTicketReplyTemplateRowHtml(
+            template,
+            index,
+            normalizedTemplates.length,
+            {
+                expanded: expansionState[normalizeOpsAlertTicketReplyTemplateId(template.id, index)] === true
+            }
+        ))
+        .join('');
+
+    container.__ticketReplyTemplateExpansionState = normalizedTemplates.reduce((state, template, index) => {
+        const templateId = normalizeOpsAlertTicketReplyTemplateId(template.id, index);
+        state[templateId] = expansionState[templateId] === true;
+        return state;
+    }, {});
+
+    container.querySelectorAll('[data-ticket-reply-template-index]').forEach((row, index) => {
+        if (!(row instanceof HTMLElement)) {
+            return;
+        }
+        const templateId = normalizeOpsAlertTicketReplyTemplateId(
+            row.getAttribute('data-ticket-reply-template-id') || '',
+            index
+        );
+        setOpsAlertTicketReplyTemplateRowExpanded(row, container.__ticketReplyTemplateExpansionState[templateId] === true);
+        syncOpsAlertTicketReplyTemplateState(row);
+    });
+
+    if (container.dataset.ticketReplyTemplateValidationVisible === 'true') {
+        syncOpsAlertTicketReplyTemplateValidationState();
+    }
+}
+
+function collectOpsAlertTicketReplyTemplatesFromForm(options = {}) {
+    const preserveDrafts = options && options.preserveDrafts === true;
+    const container = document.getElementById('opsAlertTicketReplyTemplates');
+    if (!container) {
+        return normalizeOpsAlertTicketReplyTemplates(undefined);
+    }
+
+    const templates = Array.from(container.querySelectorAll('[data-ticket-reply-template-index]')).map((row, index) => ({
+        id: normalizeOpsAlertTicketReplyTemplateId(
+            row.getAttribute('data-ticket-reply-template-id') || '',
+            index
+        ),
+        action: row.querySelector('[data-ticket-reply-template-field="action"]')?.value || 'resolved',
+        issue_type: row.querySelector('[data-ticket-reply-template-field="issue_type"]')?.value || 'all',
+        enabled: row.querySelector('[data-ticket-reply-template-field="enabled"]')?.checked !== false,
+        title: row.querySelector('[data-ticket-reply-template-field="title"]')?.value || '',
+        tag: row.querySelector('[data-ticket-reply-template-field="tag"]')?.value || '',
+        body: row.querySelector('[data-ticket-reply-template-field="body"]')?.value || ''
+    }));
+
+    return normalizeOpsAlertTicketReplyTemplates(templates, { preserveDrafts });
+}
+
+function getOpsAlertTicketReplyEditableFieldNames() {
+    return new Set(['title', 'tag', 'body']);
+}
+
+function getOpsAlertTicketReplyRowDraft(row, index = 0) {
+    if (!(row instanceof HTMLElement)) {
+        return null;
+    }
+
+    return {
+        index,
+        id: normalizeOpsAlertTicketReplyTemplateId(
+            row.getAttribute('data-ticket-reply-template-id') || '',
+            index
+        ),
+        action: row.querySelector('[data-ticket-reply-template-field="action"]')?.value || 'resolved',
+        issue_type: row.querySelector('[data-ticket-reply-template-field="issue_type"]')?.value || 'all',
+        enabled: row.querySelector('[data-ticket-reply-template-field="enabled"]')?.checked !== false,
+        title: row.querySelector('[data-ticket-reply-template-field="title"]')?.value || '',
+        tag: row.querySelector('[data-ticket-reply-template-field="tag"]')?.value || '',
+        body: row.querySelector('[data-ticket-reply-template-field="body"]')?.value || ''
+    };
+}
+
+function focusOpsAlertTicketReplyField(row, fieldName = 'body') {
+    if (!(row instanceof HTMLElement)) {
+        return;
+    }
+
+    setOpsAlertTicketReplyTemplateRowExpanded(row, true);
+    const normalizedFieldName = row.querySelector(`[data-ticket-reply-template-field="${fieldName}"]`)
+        ? fieldName
+        : 'body';
+    const target = row.querySelector(`[data-ticket-reply-template-field="${normalizedFieldName}"]`);
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (target instanceof HTMLElement) {
+        window.setTimeout(() => target.focus(), 60);
+    }
+}
+
+function getOpsAlertTicketReplyFieldLabel(fieldName = '') {
+    switch (String(fieldName || '').trim().toLowerCase()) {
+        case 'action':
+            return '处理动作';
+        case 'issue_type':
+            return '问题类型';
+        case 'title':
+            return '模板标题';
+        case 'tag':
+            return '标签文案';
+        case 'body':
+            return '回复正文';
+        default:
+            return '当前模板';
+    }
+}
+
+function getOpsAlertTicketReplyTemplateTokenViolations(template = {}) {
+    const allowedKeys = new Set(
+        getOpsAlertTicketReplyTemplateVariableTokens(template.action, template.issue_type)
+            .map((token) => String(token || '').replace(/[{}]/g, '').trim().toLowerCase())
+            .filter(Boolean)
+    );
+    const violations = [];
+
+    ['title', 'tag', 'body'].forEach((fieldName) => {
+        const fieldValue = String(template[fieldName] || '');
+        const matchedTokens = fieldValue.match(/{{\s*([a-z0-9_]+)\s*}}/gi) || [];
+        const unknownTokens = [];
+        matchedTokens.forEach((token) => {
+            const normalizedKey = token.replace(/[{}]/g, '').trim().toLowerCase();
+            if (!allowedKeys.has(normalizedKey) && !unknownTokens.includes(token)) {
+                unknownTokens.push(token);
+            }
+        });
+
+        if (unknownTokens.length) {
+            violations.push({
+                field: fieldName,
+                tokens: unknownTokens
+            });
+        }
+    });
+
+    return violations;
+}
+
+function getOpsAlertTicketReplyTemplateValidationErrors(template = {}) {
+    const errors = [];
+    const supportedTokens = getOpsAlertTicketReplyTemplateVariableTokens(template.action, template.issue_type);
+
+    if (!String(template.body || '').trim()) {
+        errors.push({
+            field: 'body',
+            message: '请补全回复正文，或者删除这张草稿卡片。'
+        });
+    }
+
+    getOpsAlertTicketReplyTemplateTokenViolations(template).forEach((violation) => {
+        const fieldLabel = getOpsAlertTicketReplyFieldLabel(violation.field);
+        errors.push({
+            field: violation.field,
+            message: supportedTokens.length
+                ? `${fieldLabel}里使用了当前动作/问题类型不支持的变量：${violation.tokens.join('、')}。当前可用：${supportedTokens.join('、')}`
+                : `${fieldLabel}当前不支持变量 ${violation.tokens.join('、')}。`
+        });
+    });
+
+    return errors;
+}
+
+function renderOpsAlertTicketReplyTemplateValidation(row, errors = [], options = {}) {
+    if (!(row instanceof HTMLElement)) {
+        return false;
+    }
+
+    const validationEl = row.querySelector('[data-ticket-reply-template-role="validation"]');
+    const shouldReveal = options.reveal === true;
+    const invalidFields = new Set(
+        (Array.isArray(errors) ? errors : [])
+            .map((error) => String(error?.field || '').trim())
+            .filter(Boolean)
+    );
+
+    row.classList.toggle('has-validation-error', shouldReveal && invalidFields.size > 0);
+
+    row.querySelectorAll('[data-ticket-reply-template-field-wrap]').forEach((fieldWrap) => {
+        if (!(fieldWrap instanceof HTMLElement)) {
+            return;
+        }
+
+        const fieldName = String(fieldWrap.getAttribute('data-ticket-reply-template-field-wrap') || '').trim();
+        const isInvalid = shouldReveal && invalidFields.has(fieldName);
+        fieldWrap.classList.toggle('is-invalid', isInvalid);
+
+        const input = fieldWrap.querySelector('[data-ticket-reply-template-field]');
+        if (input instanceof HTMLElement) {
+            if (isInvalid) {
+                input.setAttribute('aria-invalid', 'true');
+            } else {
+                input.removeAttribute('aria-invalid');
+            }
+        }
+    });
+
+    if (validationEl instanceof HTMLElement) {
+        if (shouldReveal && errors.length) {
+            validationEl.hidden = false;
+            validationEl.innerHTML = errors.map((error) => `
+                <div class="ops-alert-quick-reply-template__validation-item">
+                    <i class="fas fa-circle-exclamation"></i>
+                    <span>${escapeConfigHtml(error.message || '')}</span>
+                </div>
+            `).join('');
+        } else {
+            validationEl.hidden = true;
+            validationEl.innerHTML = '';
+        }
+    }
+
+    return errors.length > 0;
+}
+
+function syncOpsAlertTicketReplyTemplateValidationState(options = {}) {
+    const container = document.getElementById('opsAlertTicketReplyTemplates');
+    if (!container) {
+        return { invalidCount: 0, firstInvalid: null };
+    }
+
+    const rows = Array.from(container.querySelectorAll('[data-ticket-reply-template-index]'));
+    const drafts = rows.map((row, index) => getOpsAlertTicketReplyRowDraft(row, index));
+    let firstInvalid = null;
+    let invalidCount = 0;
+    const shouldReveal = options.revealAll === true || container.dataset.ticketReplyTemplateValidationVisible === 'true';
+
+    rows.forEach((row, index) => {
+        const draft = drafts[index];
+        const errors = draft
+            ? getOpsAlertTicketReplyTemplateValidationErrors(draft)
+            : [];
+        const hasErrors = renderOpsAlertTicketReplyTemplateValidation(row, errors, { reveal: shouldReveal });
+        if (!hasErrors) {
+            return;
+        }
+
+        invalidCount += errors.length;
+        if (!firstInvalid) {
+            firstInvalid = {
+                row,
+                errors
+            };
+        }
+    });
+
+    container.dataset.ticketReplyTemplateValidationVisible = invalidCount > 0 && shouldReveal
+        ? 'true'
+        : 'false';
+
+    return {
+        invalidCount,
+        firstInvalid
+    };
+}
+
+function validateOpsAlertTicketReplyTemplatesBeforeSave() {
+    const container = document.getElementById('opsAlertTicketReplyTemplates');
+    if (!container) {
+        return true;
+    }
+
+    container.dataset.ticketReplyTemplateValidationVisible = 'true';
+    const validationResult = syncOpsAlertTicketReplyTemplateValidationState({ revealAll: true });
+    if (validationResult.invalidCount > 0) {
+        if (typeof showToast === 'function') {
+            showToast(`工单回复模板里还有 ${validationResult.invalidCount} 处待修正项，已在卡片内标出`, 'warning');
+        }
+        const preferredField = validationResult.firstInvalid?.errors?.[0]?.field || 'body';
+        focusOpsAlertTicketReplyField(validationResult.firstInvalid?.row, preferredField);
+        return false;
+    }
+
+    return true;
+}
+
+function getOpsAlertTicketReplyInsertionTarget(row) {
+    if (!(row instanceof HTMLElement)) {
+        return null;
+    }
+
+    const editableFieldNames = getOpsAlertTicketReplyEditableFieldNames();
+    const preferredField = String(row.dataset.ticketReplyTemplateActiveField || '').trim();
+    if (editableFieldNames.has(preferredField)) {
+        const preferredInput = row.querySelector(`[data-ticket-reply-template-field="${preferredField}"]`);
+        if (preferredInput instanceof HTMLInputElement || preferredInput instanceof HTMLTextAreaElement) {
+            return preferredInput;
+        }
+    }
+
+    const fallbackInput = row.querySelector('[data-ticket-reply-template-field="body"]');
+    return (fallbackInput instanceof HTMLInputElement || fallbackInput instanceof HTMLTextAreaElement)
+        ? fallbackInput
+        : null;
+}
+
+function insertOpsAlertTicketReplyTemplateToken(row, token) {
+    const normalizedToken = String(token || '').trim();
+    if (!(row instanceof HTMLElement) || !normalizedToken) {
+        return false;
+    }
+
+    const input = getOpsAlertTicketReplyInsertionTarget(row);
+    if (!(input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement)) {
+        return false;
+    }
+
+    const currentValue = String(input.value || '');
+    const start = Number.isInteger(input.selectionStart) ? input.selectionStart : currentValue.length;
+    const end = Number.isInteger(input.selectionEnd) ? input.selectionEnd : currentValue.length;
+    input.value = `${currentValue.slice(0, start)}${normalizedToken}${currentValue.slice(end)}`;
+    const nextCaret = start + normalizedToken.length;
+    input.setSelectionRange(nextCaret, nextCaret);
+    input.focus();
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+}
+
+function syncOpsAlertTicketReplyTemplateState(row) {
+    if (!(row instanceof HTMLElement)) {
+        return;
+    }
+
+    const action = row.querySelector('[data-ticket-reply-template-field="action"]')?.value || 'resolved';
+    const issueType = row.querySelector('[data-ticket-reply-template-field="issue_type"]')?.value || 'all';
+    const enabled = row.querySelector('[data-ticket-reply-template-field="enabled"]')?.checked !== false;
+    const actionMeta = getOpsAlertTicketReplyTemplateActionMeta(action);
+    const issueTypeMeta = getOpsAlertTicketReplyTemplateIssueTypeMeta(issueType);
+
+    row.classList.toggle('is-enabled', enabled);
+    row.classList.toggle('is-disabled', !enabled);
+
+    const actionBadge = row.querySelector('[data-ticket-reply-template-role="action-badge"]');
+    if (actionBadge instanceof HTMLElement) {
+        actionBadge.dataset.tone = actionMeta.value === 'rejected' ? 'muted' : 'success';
+        actionBadge.textContent = actionMeta.label;
+    }
+
+    const issueBadge = row.querySelector('[data-ticket-reply-template-role="issue-badge"]');
+    if (issueBadge instanceof HTMLElement) {
+        issueBadge.dataset.tone = getOpsAlertTicketReplyTemplateTone(issueTypeMeta.value);
+        issueBadge.textContent = issueTypeMeta.label;
+    }
+
+    const statusBadge = row.querySelector('[data-ticket-reply-template-role="status-badge"]');
+    if (statusBadge instanceof HTMLElement) {
+        statusBadge.dataset.tone = enabled ? 'success' : 'muted';
+        statusBadge.textContent = enabled ? '启用中' : '已停用';
+    }
+
+    const metaCopy = row.querySelector('[data-ticket-reply-template-role="meta-copy"]');
+    if (metaCopy instanceof HTMLElement) {
+        metaCopy.textContent = `把这条模板推荐给 ${actionMeta.label} · ${issueTypeMeta.label} 场景，供售后快速统一口径。`;
+    }
+
+    const panelCopy = row.querySelector('[data-ticket-reply-template-role="panel-copy"]');
+    if (panelCopy instanceof HTMLElement) {
+        panelCopy.textContent = `${actionMeta.label} · ${issueTypeMeta.label}：${issueTypeMeta.description}`;
+    }
+
+    const actionDescription = row.querySelector('[data-ticket-reply-template-role="action-description"]');
+    if (actionDescription instanceof HTMLElement) {
+        actionDescription.textContent = actionMeta.description;
+    }
+
+    const issueDescription = row.querySelector('[data-ticket-reply-template-role="issue-description"]');
+    if (issueDescription instanceof HTMLElement) {
+        issueDescription.textContent = issueTypeMeta.description;
+    }
+
+    const variableChips = row.querySelector('[data-ticket-reply-template-role="variable-chips"]');
+    if (variableChips instanceof HTMLElement) {
+        variableChips.innerHTML = buildOpsAlertTicketReplyTemplateVariableChipsHtml(actionMeta.value, issueTypeMeta.value);
+    }
+
+    const titleValue = row.querySelector('[data-ticket-reply-template-field="title"]')?.value || '';
+    const tagValue = row.querySelector('[data-ticket-reply-template-field="tag"]')?.value || '';
+    const bodyValue = row.querySelector('[data-ticket-reply-template-field="body"]')?.value || '';
+    const previewLabel = row.querySelector('[data-ticket-reply-template-role="preview-label"]');
+    if (previewLabel instanceof HTMLElement) {
+        previewLabel.textContent = interpolateOpsAlertTicketReplyTemplatePreviewText(titleValue, actionMeta.value, issueTypeMeta.value) || '未填写模板标题';
+    }
+
+    const previewHint = row.querySelector('[data-ticket-reply-template-role="preview-hint"]');
+    if (previewHint instanceof HTMLElement) {
+        previewHint.textContent = interpolateOpsAlertTicketReplyTemplatePreviewText(tagValue, actionMeta.value, issueTypeMeta.value) || '可在这里预览模板标签';
+    }
+
+    const previewText = row.querySelector('[data-ticket-reply-template-role="preview-text"]');
+    if (previewText instanceof HTMLElement) {
+        previewText.textContent = interpolateOpsAlertTicketReplyTemplatePreviewText(bodyValue, actionMeta.value, issueTypeMeta.value) || '可在这里预览填入回复框的正文';
+    }
+
+    const collapsedLabel = row.querySelector('[data-ticket-reply-template-role="collapsed-label"]');
+    if (collapsedLabel instanceof HTMLElement) {
+        collapsedLabel.textContent = summarizeOpsAlertTicketReplyTemplateText(
+            interpolateOpsAlertTicketReplyTemplatePreviewText(titleValue, actionMeta.value, issueTypeMeta.value),
+            '未填写模板标题',
+            28
+        );
+    }
+
+    const collapsedHint = row.querySelector('[data-ticket-reply-template-role="collapsed-hint"]');
+    if (collapsedHint instanceof HTMLElement) {
+        collapsedHint.textContent = summarizeOpsAlertTicketReplyTemplateText(
+            interpolateOpsAlertTicketReplyTemplatePreviewText(tagValue, actionMeta.value, issueTypeMeta.value),
+            '未填写模板标签',
+            36
+        );
+    }
+
+    const collapsedText = row.querySelector('[data-ticket-reply-template-role="collapsed-text"]');
+    if (collapsedText instanceof HTMLElement) {
+        collapsedText.textContent = summarizeOpsAlertTicketReplyTemplateText(
+            interpolateOpsAlertTicketReplyTemplatePreviewText(bodyValue, actionMeta.value, issueTypeMeta.value),
+            '未填写回复正文',
+            120
+        );
+    }
+}
+
+function refreshOpsAlertTicketReplyDraftIndicators() {
+    updateOpsAlertStrategyDraftIndicators();
+}
+
+function addOpsAlertTicketReplyTemplate(options = {}) {
+    const container = document.getElementById('opsAlertTicketReplyTemplates');
+    const currentTemplates = collectOpsAlertTicketReplyTemplatesFromForm({ preserveDrafts: true });
+    if (currentTemplates.length >= 20) {
+        if (typeof showToast === 'function') {
+            showToast('工单回复模板最多保留 20 条', 'warning');
+        }
+        return false;
+    }
+
+    const draft = createOpsAlertTicketReplyTemplateDraft(options?.action || 'resolved', options?.issueType || 'all');
+    const expansionState = collectOpsAlertTicketReplyTemplateExpansionState(container);
+    currentTemplates.forEach((template, index) => {
+        const templateId = normalizeOpsAlertTicketReplyTemplateId(template.id, index);
+        expansionState[templateId] = expansionState[templateId] === true;
+    });
+    expansionState[draft.id] = true;
+    currentTemplates.push(draft);
+    renderOpsAlertTicketReplyTemplates(currentTemplates, { expansionState });
+    refreshOpsAlertTicketReplyDraftIndicators();
+
+    const nextRow = container?.querySelector(`[data-ticket-reply-template-id="${draft.id}"]`);
+    if (nextRow instanceof HTMLElement) {
+        focusOpsAlertTicketReplyField(nextRow, 'title');
+    }
+
+    if (typeof showToast === 'function') {
+        showToast('已新增工单回复模板草稿', 'info');
+    }
+
+    return true;
+}
+
+function ensureOpsAlertTicketReplyTemplateEvents() {
+    const container = document.getElementById('opsAlertTicketReplyTemplates');
+    if (!container || container.dataset.ticketReplyReady === 'true') {
+        return;
+    }
+
+    container.dataset.ticketReplyReady = 'true';
+    container.addEventListener('click', (event) => {
+        const toggleTrigger = event.target instanceof HTMLElement
+            ? event.target.closest('[data-ticket-reply-template-toggle]')
+            : null;
+        if (toggleTrigger instanceof HTMLElement) {
+            const row = toggleTrigger.closest('[data-ticket-reply-template-index]');
+            if (row instanceof HTMLElement) {
+                const nextExpanded = row.dataset.ticketReplyTemplateExpanded !== 'true';
+                setOpsAlertTicketReplyTemplateRowExpanded(row, nextExpanded);
+                container.__ticketReplyTemplateExpansionState = collectOpsAlertTicketReplyTemplateExpansionState(container);
+            }
+            return;
+        }
+
+        const tokenTrigger = event.target instanceof HTMLElement
+            ? event.target.closest('[data-ticket-reply-template-token]')
+            : null;
+        if (tokenTrigger instanceof HTMLElement) {
+            const row = tokenTrigger.closest('[data-ticket-reply-template-index]');
+            insertOpsAlertTicketReplyTemplateToken(row, tokenTrigger.getAttribute('data-ticket-reply-template-token'));
+            refreshOpsAlertTicketReplyDraftIndicators();
+            return;
+        }
+
+        const moveTrigger = event.target instanceof HTMLElement
+            ? event.target.closest('[data-ticket-reply-template-move]')
+            : null;
+        if (moveTrigger instanceof HTMLElement) {
+            const index = toWholeNumber(moveTrigger.getAttribute('data-ticket-reply-template-move-index'), -1);
+            const direction = String(moveTrigger.getAttribute('data-ticket-reply-template-move') || '').trim().toLowerCase();
+            const currentTemplates = collectOpsAlertTicketReplyTemplatesFromForm({ preserveDrafts: true });
+            const targetIndex = direction === 'up'
+                ? index - 1
+                : direction === 'down'
+                    ? index + 1
+                    : -1;
+            const expansionState = collectOpsAlertTicketReplyTemplateExpansionState(container);
+
+            if (index < 0 || targetIndex < 0 || targetIndex >= currentTemplates.length) {
+                return;
+            }
+
+            [currentTemplates[index], currentTemplates[targetIndex]] = [currentTemplates[targetIndex], currentTemplates[index]];
+            renderOpsAlertTicketReplyTemplates(currentTemplates, { expansionState });
+            refreshOpsAlertTicketReplyDraftIndicators();
+            return;
+        }
+
+        const trigger = event.target instanceof HTMLElement
+            ? event.target.closest('[data-ticket-reply-template-remove]')
+            : null;
+        if (!(trigger instanceof HTMLElement)) {
+            return;
+        }
+
+        const index = toWholeNumber(trigger.getAttribute('data-ticket-reply-template-remove'), -1);
+        if (index < 0) {
+            return;
+        }
+
+        const currentTemplates = collectOpsAlertTicketReplyTemplatesFromForm({ preserveDrafts: true });
+        const expansionState = collectOpsAlertTicketReplyTemplateExpansionState(container);
+        currentTemplates.splice(index, 1);
+        renderOpsAlertTicketReplyTemplates(currentTemplates, { expansionState });
+        refreshOpsAlertTicketReplyDraftIndicators();
+    });
+    container.addEventListener('focusin', (event) => {
+        const target = event.target instanceof HTMLElement ? event.target : null;
+        const row = target?.closest('[data-ticket-reply-template-index]');
+        const field = target?.getAttribute('data-ticket-reply-template-field') || '';
+        if (!(row instanceof HTMLElement) || !getOpsAlertTicketReplyEditableFieldNames().has(field)) {
+            return;
+        }
+        row.dataset.ticketReplyTemplateActiveField = field;
+    });
+    container.addEventListener('input', (event) => {
+        event.stopPropagation();
+        const target = event.target instanceof HTMLElement
+            ? event.target
+            : null;
+        const row = target?.closest('[data-ticket-reply-template-index]');
+        syncOpsAlertTicketReplyTemplateState(row);
+        syncOpsAlertTicketReplyTemplateValidationState();
+        refreshOpsAlertTicketReplyDraftIndicators();
+    });
+    container.addEventListener('change', (event) => {
+        event.stopPropagation();
+        const target = event.target instanceof HTMLElement
+            ? event.target
+            : null;
+        const row = target?.closest('[data-ticket-reply-template-index]');
+        syncOpsAlertTicketReplyTemplateState(row);
+        syncOpsAlertTicketReplyTemplateValidationState();
+        refreshOpsAlertTicketReplyDraftIndicators();
+    });
+}
+
 function buildLocalOpsAlertShopRiskControlState(shopRiskConfig = {}) {
     return {
         autoResponseToggle: {
@@ -8222,6 +9411,8 @@ function applyOpsAlertWalletRechargeSuccessControls(config = normalizeOpsAlertCo
 function applyOpsAlertTicketsControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
     const monitorConfig = normalizedConfig.tickets || getDefaultOpsAlertConfig().tickets;
+    ensureOpsAlertTicketReplyTemplateEvents();
+    renderOpsAlertTicketReplyTemplates(monitorConfig.reply_templates);
     applyOpsAlertMonitorSectionControls(monitorConfig, {
         enabledToggleId: 'opsAlertTicketsEnabledToggle',
         summaryToggleId: 'opsAlertTicketsSummaryEnabledToggle',
@@ -13723,7 +14914,8 @@ function buildLocalOpsAlertConfigDraft(currentConfig = normalizeOpsAlertConfig(s
             ...currentConfig.wallet_recharge_success
         },
         tickets: {
-            ...currentConfig.tickets
+            ...currentConfig.tickets,
+            reply_templates: normalizeOpsAlertTicketReplyTemplates(currentConfig.tickets?.reply_templates)
         },
         shop_order_delivery: {
             ...currentConfig.shop_order_delivery
@@ -13748,7 +14940,8 @@ function resolveOpsAlertConfigDraft(currentConfig = normalizeOpsAlertConfig(syst
         'buildAdminWorkbenchOpsAlertConfigDraft',
         buildLocalOpsAlertConfigDraft,
         () => ({
-            normalizeQuickReplyTemplates: normalizeOpsAlertCustomerChatQuickReplyTemplates
+            normalizeQuickReplyTemplates: normalizeOpsAlertCustomerChatQuickReplyTemplates,
+            normalizeTicketReplyTemplates: normalizeOpsAlertTicketReplyTemplates
         })
     )(currentConfig);
 }
@@ -14570,7 +15763,11 @@ function collectOpsAlertConfigFromForm() {
     nextConfig.customer_chat_message.quick_reply_templates = collectOpsAlertCustomerChatQuickReplyTemplatesFromForm();
     nextConfig.shop_purchase_success = operationalThresholdDrafts.shop_purchase_success;
     nextConfig.wallet_recharge_success = operationalThresholdDrafts.wallet_recharge_success;
-    nextConfig.tickets = operationalThresholdDrafts.tickets;
+    nextConfig.tickets = {
+        ...operationalThresholdDrafts.tickets,
+        reply_templates: nextConfig.tickets.reply_templates
+    };
+    nextConfig.tickets.reply_templates = collectOpsAlertTicketReplyTemplatesFromForm();
     nextConfig.shop_order_delivery = operationalThresholdDrafts.shop_order_delivery;
     nextConfig.verify_quota = operationalThresholdDrafts.verify_quota;
     nextConfig.verify_queue = operationalThresholdDrafts.verify_queue;
@@ -14858,6 +16055,9 @@ async function saveOpsAlertConfigOverride(config, options = {}) {
 
 async function saveOpsAlertSettings() {
     if (!validateOpsAlertCustomerChatQuickReplyTemplatesBeforeSave()) {
+        return false;
+    }
+    if (!validateOpsAlertTicketReplyTemplatesBeforeSave()) {
         return false;
     }
     return saveOpsAlertConfigOverride(collectOpsAlertConfigFromForm());
@@ -19081,6 +20281,7 @@ Object.assign(window, {
     toggleOpsAlertCustomerChatMessageWorkHoursOnlyEnabled,
     handleOpsAlertCustomerChatMessageSummaryScheduleModeChange,
     addOpsAlertCustomerChatQuickReplyTemplate,
+    addOpsAlertTicketReplyTemplate,
     toggleOpsAlertShopPurchaseSuccessEnabled,
     toggleOpsAlertShopPurchaseSuccessSummaryEnabled,
     toggleOpsAlertShopPurchaseSuccessWorkHoursOnlyEnabled,

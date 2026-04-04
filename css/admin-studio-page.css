@@ -6129,9 +6129,9 @@ body.admin-access-pending,
 .admin-studio-inline-style-attr-36 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .admin-studio-inline-style-attr-37 { margin: 0; color: #22c55e; }
 .admin-studio-inline-style-attr-38 { max-height: 400px; }
-.admin-studio-inline-style-attr-39 { display: flex; gap: 16px; max-width: 600px; margin: 0 auto; align-items: center; }
+.admin-studio-inline-style-attr-39 { display: flex; gap: 16px; width: 100%; max-width: none; margin: 0; align-items: center; }
 .admin-studio-inline-style-attr-40 { display: flex; gap: 12px; padding: 12px 20px; border-radius: 12px; align-items: center; flex: 1; }
-.admin-studio-inline-style-attr-41 { display: none; max-width: 500px; margin: 40px auto 0; }
+.admin-studio-inline-style-attr-41 { display: none; width: 100%; max-width: none; min-width: 0; margin: 36px 0 0; }
 .admin-studio-inline-style-attr-42 { padding: 0 30px; }
 .admin-studio-inline-style-attr-43 { display: flex; justify-content: center; gap: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px; }
 .admin-studio-inline-style-attr-44 { padding: 10px 20px; cursor: pointer; color: #fff; border-bottom: 2px solid #6b9ece; }

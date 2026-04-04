@@ -2112,13 +2112,17 @@ test('shared admin workbench builds ops alert config draft with cloned nested se
         customer_chat_message: {
             quick_reply_templates: [{ id: 'hello' }]
         },
+        tickets: {
+            reply_templates: [{ id: 'resolved_generic', action: 'resolved', issue_type: 'all', body: '已处理完成。' }]
+        },
         payment_gateway: {
             enabled: true
         }
     };
 
     const draft = runtime.buildAdminWorkbenchOpsAlertConfigDraft(sourceConfig, {
-        normalizeQuickReplyTemplates: (templates = []) => templates.map((item) => ({ ...item, normalized: true }))
+        normalizeQuickReplyTemplates: (templates = []) => templates.map((item) => ({ ...item, normalized: true })),
+        normalizeTicketReplyTemplates: (templates = []) => templates.map((item) => ({ ...item, normalized: true }))
     });
 
     assert.notEqual(draft, sourceConfig);
@@ -2127,15 +2131,20 @@ test('shared admin workbench builds ops alert config draft with cloned nested se
     assert.notEqual(draft.routing.customer_chat_message, sourceConfig.routing.customer_chat_message);
     assert.notEqual(draft.customer_chat_message, sourceConfig.customer_chat_message);
     assert.notEqual(draft.customer_chat_message.quick_reply_templates, sourceConfig.customer_chat_message.quick_reply_templates);
+    assert.notEqual(draft.tickets, sourceConfig.tickets);
+    assert.notEqual(draft.tickets.reply_templates, sourceConfig.tickets.reply_templates);
     assert.equal(draft.customer_chat_message.quick_reply_templates[0].normalized, true);
+    assert.equal(draft.tickets.reply_templates[0].normalized, true);
 
     draft.work_hours.enabled = true;
     draft.routing.customer_chat_message.feishu = true;
     draft.customer_chat_message.quick_reply_templates[0].id = 'changed';
+    draft.tickets.reply_templates[0].id = 'changed_ticket_template';
 
     assert.equal(sourceConfig.work_hours.enabled, false);
     assert.equal(sourceConfig.routing.customer_chat_message.feishu, false);
     assert.equal(sourceConfig.customer_chat_message.quick_reply_templates[0].id, 'hello');
+    assert.equal(sourceConfig.tickets.reply_templates[0].id, 'resolved_generic');
 });
 
 test('shared admin workbench builds ops alert summary mode hint text and unified summary drafts', () => {

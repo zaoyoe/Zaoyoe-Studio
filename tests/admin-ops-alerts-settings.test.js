@@ -115,6 +115,132 @@ function normalizeQuickReplyTemplates(value) {
         .slice(0, 12);
 }
 
+function createDefaultTicketReplyTemplates() {
+    return [
+        {
+            id: 'resolved_refund',
+            action: 'resolved',
+            issue_type: 'refund',
+            enabled: true,
+            title: '退款处理通知',
+            tag: '退款',
+            body: '已核实本次情况，工单已处理完成。如涉及订单退款或补偿结果，请以系统到账记录为准；若仍有异常，请继续回复本工单。'
+        },
+        {
+            id: 'resolved_generic',
+            action: 'resolved',
+            issue_type: 'all',
+            enabled: true,
+            title: '通用处理完成',
+            tag: '推荐',
+            body: '已收到你的反馈，当前问题已处理完成。如后续仍有异常，请直接回复本工单并补充具体情况，我们会继续协助你处理。'
+        },
+        {
+            id: 'resolved_delivery',
+            action: 'resolved',
+            issue_type: 'delivery',
+            enabled: true,
+            title: '履约跟进完成',
+            tag: '履约',
+            body: '已收到你的履约反馈，我们已经完成本次问题登记与处理。如后续仍未收到货物或状态没有更新，请继续回复本工单。'
+        },
+        {
+            id: 'resolved_account',
+            action: 'resolved',
+            issue_type: 'account',
+            enabled: true,
+            title: '账号核查完成',
+            tag: '账号',
+            body: '已核实你的账号情况，当前问题已完成处理。如后续仍遇到同类异常，请补充截图或具体时间点，我们会继续排查。'
+        },
+        {
+            id: 'resolved_verification',
+            action: 'resolved',
+            issue_type: 'verification',
+            enabled: true,
+            title: '验证核查完成',
+            tag: '验证',
+            body: '已核实你的验证情况，当前问题已完成处理。如后续仍遇到同类异常，请补充截图或具体时间点，我们会继续排查。'
+        },
+        {
+            id: 'resolved_payment',
+            action: 'resolved',
+            issue_type: 'payment',
+            enabled: true,
+            title: '支付问题处理',
+            tag: '支付',
+            body: '已收到你的支付反馈，当前问题已完成核查与处理。如后续仍有重复扣费、未到账或状态异常，请继续回复本工单。'
+        },
+        {
+            id: 'rejected_need_more_context',
+            action: 'rejected',
+            issue_type: 'all',
+            enabled: true,
+            title: '补充资料后再提交',
+            tag: '推荐',
+            body: '已收到你的反馈。当前信息还不足以完成处理，请补充订单号、异常截图、发生时间或操作步骤后重新提交，我们会继续跟进。'
+        },
+        {
+            id: 'rejected_duplicate_ticket',
+            action: 'rejected',
+            issue_type: 'all',
+            enabled: true,
+            title: '重复工单说明',
+            tag: '去重',
+            body: '已核查到相同问题已有工单在处理中，本工单先为你关闭。后续请以原工单为准，避免重复提交影响跟进效率。'
+        },
+        {
+            id: 'rejected_out_of_scope',
+            action: 'rejected',
+            issue_type: 'all',
+            enabled: true,
+            title: '不在售后范围',
+            tag: '说明',
+            body: '经核查，当前情况暂不属于售后直接处理范围，因此本工单先为你关闭。如你有新的订单信息或补充证据，可重新提交。'
+        }
+    ];
+}
+
+function normalizeTicketReplyTemplates(value) {
+    if (!Array.isArray(value)) {
+        return createDefaultTicketReplyTemplates();
+    }
+    if (!value.length) {
+        return [];
+    }
+
+    const allowedActions = new Set(['resolved', 'rejected']);
+    const allowedIssueTypes = new Set(['all', 'refund', 'delivery', 'account', 'verification', 'payment', 'other']);
+
+    return value
+        .map((item, index) => {
+            if (!item || typeof item !== 'object' || Array.isArray(item)) {
+                return null;
+            }
+
+            const action = String(item.action || '').trim().toLowerCase();
+            const issueType = String(item.issue_type || item.issueType || '').trim().toLowerCase();
+            const body = typeof item.body === 'string'
+                ? item.body.trim()
+                : (typeof item.text === 'string' ? item.text.trim() : '');
+            if (!body) {
+                return null;
+            }
+
+            return {
+                id: String(item.id || item.key || `ticket_template_${index + 1}`).trim() || `ticket_template_${index + 1}`,
+                action: allowedActions.has(action) ? action : 'resolved',
+                issue_type: allowedIssueTypes.has(issueType) ? issueType : 'all',
+                enabled: normalizeBoolean(item.enabled, true),
+                title: String(item.title || '').trim() || '快捷模板',
+                tag: String(item.tag || '').trim() || '模板',
+                body
+            };
+        })
+        .filter(Boolean)
+        .slice(0, 20);
+}
+
 function createDefaultState() {
     return {
         user: { id: 'admin-user-1', email: 'admin@example.com' },
@@ -338,7 +464,8 @@ function createDefaultState() {
                 summary_schedule_mode: 'rolling_window',
                 summary_hourly_minute: 0,
                 summary_daily_hour: 9,
-                summary_daily_minute: 0
+                summary_daily_minute: 0,
+                reply_templates: createDefaultTicketReplyTemplates()
             },
             shop_order_delivery: {
                 enabled: true,
@@ -842,7 +969,8 @@ function createNormalizedConfig(raw) {
             summary_schedule_mode: normalizeSummaryScheduleMode(tickets.summary_schedule_mode, 'rolling_window'),
             summary_hourly_minute: Math.min(59, Math.max(0, Number(tickets.summary_hourly_minute || 0) || 0)),
             summary_daily_hour: Math.min(23, Math.max(0, Number(tickets.summary_daily_hour ?? 9) || 9)),
-            summary_daily_minute: Math.min(59, Math.max(0, Number(tickets.summary_daily_minute || 0) || 0))
+            summary_daily_minute: Math.min(59, Math.max(0, Number(tickets.summary_daily_minute || 0) || 0)),
+            reply_templates: normalizeTicketReplyTemplates(tickets.reply_templates)
         },
         shop_order_delivery: {
             enabled: normalizeBoolean(shopOrderDelivery.enabled, true),
@@ -1346,6 +1474,21 @@ test('ops alert settings GET returns the current config and secret status', asyn
         assert.equal(payload.config.tickets.summary_hourly_minute, 0);
         assert.equal(payload.config.tickets.summary_daily_hour, 9);
         assert.equal(payload.config.tickets.summary_daily_minute, 0);
+        assert.equal(payload.config.tickets.reply_templates.length, 9);
+        assert.deepEqual(
+            payload.config.tickets.reply_templates.map((template) => template.id),
+            [
+                'resolved_refund',
+                'resolved_generic',
+                'resolved_delivery',
+                'resolved_account',
+                'resolved_verification',
+                'resolved_payment',
+                'rejected_need_more_context',
+                'rejected_duplicate_ticket',
+                'rejected_out_of_scope'
+            ]
+        );
         assert.equal(payload.config.shop_order_delivery.enabled, true);
         assert.equal(payload.config.shop_order_delivery.sweep_interval_ms, 10 * 60 * 1000);
         assert.equal(payload.config.shop_order_delivery.lookback_days, 14);
@@ -1681,7 +1824,36 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
                         summary_schedule_mode: 'hourly',
                         summary_hourly_minute: 20,
                         summary_daily_hour: 8,
-                        summary_daily_minute: 15
+                        summary_daily_minute: 15,
+                        reply_templates: [
+                            {
+                                id: 'resolved_refund_custom',
+                                action: 'resolved',
+                                issue_type: 'refund',
+                                enabled: true,
+                                title: '退款工单 {{ticket_id}}',
+                                tag: '退款',
+                                body: '订单 {{order_id}} 已处理完成，{{refund_summary}}。'
+                            },
+                            {
+                                id: 'resolved_delivery_custom',
+                                action: 'resolved',
+                                issue_type: 'delivery',
+                                enabled: false,
+                                title: '履约跟进',
+                                tag: '履约',
+                                body: '我们已完成履约问题登记与处理。'
+                            },
+                            {
+                                id: 'rejected_other_custom',
+                                action: 'rejected',
+                                issue_type: 'other',
+                                enabled: true,
+                                title: '补充资料后再提交',
+                                tag: '待补充',
+                                body: '请补充工单 {{ticket_id}} 的截图和发生时间。'
+                            }
+                        ]
                     },
                     shop_order_delivery: {
                         enabled: true,
@@ -1993,6 +2165,31 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(payload.config.tickets.summary_hourly_minute, 20);
         assert.equal(payload.config.tickets.summary_daily_hour, 8);
         assert.equal(payload.config.tickets.summary_daily_minute, 15);
+        assert.deepEqual(payload.config.tickets.reply_templates, [{
+            id: 'resolved_refund_custom',
+            action: 'resolved',
+            issue_type: 'refund',
+            enabled: true,
+            title: '退款工单 {{ticket_id}}',
+            tag: '退款',
+            body: '订单 {{order_id}} 已处理完成，{{refund_summary}}。'
+        }, {
+            id: 'resolved_delivery_custom',
+            action: 'resolved',
+            issue_type: 'delivery',
+            enabled: false,
+            title: '履约跟进',
+            tag: '履约',
+            body: '我们已完成履约问题登记与处理。'
+        }, {
+            id: 'rejected_other_custom',
+            action: 'rejected',
+            issue_type: 'other',
+            enabled: true,
+            title: '补充资料后再提交',
+            tag: '待补充',
+            body: '请补充工单 {{ticket_id}} 的截图和发生时间。'
+        }]);
         assert.equal(payload.config.shop_order_delivery.enabled, true);
         assert.equal(payload.config.shop_order_delivery.sweep_interval_ms, 11 * 60 * 1000);
         assert.equal(payload.config.shop_order_delivery.lookback_days, 21);
@@ -2221,6 +2418,10 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(state.auditLogs[0].details.tickets_summary_hourly_minute, 20);
         assert.equal(state.auditLogs[0].details.tickets_summary_daily_hour, 8);
         assert.equal(state.auditLogs[0].details.tickets_summary_daily_minute, 15);
+        assert.equal(state.auditLogs[0].details.tickets_reply_template_count, 3);
+        assert.equal(state.auditLogs[0].details.tickets_reply_template_enabled_count, 2);
+        assert.deepEqual(state.auditLogs[0].details.tickets_reply_template_actions, ['resolved', 'rejected']);
+        assert.deepEqual(state.auditLogs[0].details.tickets_reply_template_issue_types, ['refund', 'delivery', 'other']);
         assert.equal(state.auditLogs[0].details.shop_order_delivery_enabled, true);
         assert.equal(state.auditLogs[0].details.shop_order_delivery_sweep_interval_ms, 11 * 60 * 1000);
         assert.equal(state.auditLogs[0].details.shop_order_delivery_lookback_days, 21);

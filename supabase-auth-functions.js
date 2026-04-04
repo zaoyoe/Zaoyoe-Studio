@@ -1550,11 +1550,20 @@ function updateUserUI(user, options = {}) {
 
         void (async () => {
             try {
-                const access = await resolveAdminEntryAccess(user, { forceRefresh: true });
+                const access = await resolveAdminEntryAccess(user);
                 if (enterStudioBtn && enterStudioBtn.dataset.adminAccessRequest !== accessRequestId) {
                     return;
                 }
                 applyAdminEntryUiState(displayName, Boolean(access?.isAdmin));
+
+                if (access?.isAdmin) {
+                    void window.AdminAccess?.warmAdminStudioEntry?.({
+                        user: normalizeUserForAdminAccess(user),
+                        access,
+                        defer: true,
+                        timeoutMs: 1800
+                    });
+                }
             } catch (error) {
                 console.warn('Failed to resolve admin entry access:', error);
                 if (enterStudioBtn && enterStudioBtn.dataset.adminAccessRequest !== accessRequestId) {
@@ -1580,6 +1589,7 @@ function updateUserUI(user, options = {}) {
         }
         applyAdminEntryUiState('User', false);
         window.AdminAccess?.clearAccessCache?.();
+        window.AdminAccess?.clearCachedAdminStudioSession?.();
 
         if (clearCacheOnLogout) {
             localStorage.removeItem('cached_user_profile');

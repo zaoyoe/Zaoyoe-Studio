@@ -17,11 +17,38 @@ function normalizeText(value) {
     return String(value || '').trim();
 }
 
+function normalizeCode(value) {
+    return String(value || '').trim().toUpperCase();
+}
+
 function isUuid(value) {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || '').trim());
 }
 
-async function loadLedgerRow(supabase, id) {
+function matchesSite(site, expectedSite) {
+    return expectedSite === 'all' || normalizeSite(site) === expectedSite;
+}
+
+async function loadCodeLookupContext(supabase, query) {
+    const normalizedQuery = normalizeText(query);
+    if (!normalizedQuery) {
+        return null;
+    }
+
+    const field = normalizedQuery.toUpperCase().startsWith('ZY-') ? 'code' : 'external_order_id';
+    const value = normalizeCode(normalizedQuery);
+
+    const { data, error } = await supabase
+        .from('redemption_codes')
+        .select('id, code, site, batch_id, package_id, status, created_at, used_at, used_by, external_order_id, revoke_reason, revoked_at, revoked_by')
+        .eq(field, value)
+        .maybeSingle();
+
+    if (error) throw error;
+    return data || null;
+}
+
+async function loadLedgerRow(supabase, id, site = 'all') {
     const { data, error } = await supabase
         .from('points_ledger')
         .select('id, site, reason, reference_id, amount, user_id, created_at')
@@ -29,6 +56,9 @@ async function loadLedgerRow(supabase, id) {
         .maybeSingle();
 
     if (error) throw error;
+    if (data && !matchesSite(data.site, site)) {
+        return null;
+    }
     if (!data?.user_id) {
         return data || null;
     }
@@ -96,17 +126,31 @@ module.exports = async (req, res) => {
             throw codeError;
         }
 
-        if (codeData?.valid) {
+        const codeContext = await loadCodeLookupContext(supabase, query);
+        const codeFound = Boolean(
+            normalizeText(codeData?.code)
+            || normalizeText(codeData?.external_order_id)
+            || normalizeText(codeData?.batch_id)
+            || normalizeText(codeData?.status)
+        );
+
+        if (codeFound && (!codeContext || matchesSite(codeContext.site, site))) {
             return sendJson(res, 200, {
                 success: true,
                 site,
                 kind: 'code',
-                result: codeData
+                result: {
+                    ...(codeData && typeof codeData === 'object' ? codeData : {}),
+                    created_at: codeContext?.created_at || null,
+                    site: codeContext?.site || site,
+                    used_by_id: codeContext?.used_by || '',
+                    revoked_by_id: codeContext?.revoked_by || ''
+                }
             });
         }
 
         if (isUuid(query)) {
-            const ledgerRow = await loadLedgerRow(supabase, query);
+            const ledgerRow = await loadLedgerRow(supabase, query, site);
             if (ledgerRow) {
                 const payload = await maybeAttachPromptTitle(supabase, ledgerRow);
                 return sendJson(res, 200, {
@@ -120,7 +164,7 @@ module.exports = async (req, res) => {
 
         return sendJson(res, 404, {
             success: false,
-            message: '未找到该兑换码/订单号'
+            message: codeData?.message || '未找到该兑换码/订单号'
         });
     } catch (error) {
         return sendJson(res, error.statusCode || 500, {

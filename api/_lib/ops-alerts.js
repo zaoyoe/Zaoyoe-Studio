@@ -58,6 +58,19 @@ const SUPPORTED_CUSTOMER_CHAT_QUICK_REPLY_BUSINESS_TYPES = Object.freeze([
     'verification',
     'ticket'
 ]);
+const SUPPORTED_TICKET_REPLY_TEMPLATE_ACTIONS = Object.freeze([
+    'resolved',
+    'rejected'
+]);
+const SUPPORTED_TICKET_REPLY_TEMPLATE_ISSUE_TYPES = Object.freeze([
+    'all',
+    'refund',
+    'delivery',
+    'account',
+    'verification',
+    'payment',
+    'other'
+]);
 const DEFAULT_CUSTOMER_CHAT_QUICK_REPLY_TEMPLATES = Object.freeze([
     Object.freeze({
         id: 'ack',
@@ -98,6 +111,89 @@ const DEFAULT_CUSTOMER_CHAT_QUICK_REPLY_TEMPLATES = Object.freeze([
         label: '工单跟进',
         hint: '售后工单 {{ticket_status}}',
         text: '我这边看到最近售后工单目前是{{ticket_status}}，已经接手继续跟进，有结果会第一时间回复你。'
+    })
+]);
+const DEFAULT_TICKET_REPLY_TEMPLATES = Object.freeze([
+    Object.freeze({
+        id: 'resolved_refund',
+        action: 'resolved',
+        issue_type: 'refund',
+        enabled: true,
+        title: '退款处理通知',
+        tag: '退款',
+        body: '已核实本次情况，工单已处理完成。如涉及订单退款或补偿结果，请以系统到账记录为准；若仍有异常，请继续回复本工单。'
+    }),
+    Object.freeze({
+        id: 'resolved_generic',
+        action: 'resolved',
+        issue_type: 'all',
+        enabled: true,
+        title: '通用处理完成',
+        tag: '推荐',
+        body: '已收到你的反馈，当前问题已处理完成。如后续仍有异常，请直接回复本工单并补充具体情况，我们会继续协助你处理。'
+    }),
+    Object.freeze({
+        id: 'resolved_delivery',
+        action: 'resolved',
+        issue_type: 'delivery',
+        enabled: true,
+        title: '履约跟进完成',
+        tag: '履约',
+        body: '已收到你的履约反馈，我们已经完成本次问题登记与处理。如后续仍未收到货物或状态没有更新，请继续回复本工单。'
+    }),
+    Object.freeze({
+        id: 'resolved_account',
+        action: 'resolved',
+        issue_type: 'account',
+        enabled: true,
+        title: '账号核查完成',
+        tag: '账号',
+        body: '已核实你的账号情况，当前问题已完成处理。如后续仍遇到同类异常，请补充截图或具体时间点，我们会继续排查。'
+    }),
+    Object.freeze({
+        id: 'resolved_verification',
+        action: 'resolved',
+        issue_type: 'verification',
+        enabled: true,
+        title: '验证核查完成',
+        tag: '验证',
+        body: '已核实你的验证情况，当前问题已完成处理。如后续仍遇到同类异常，请补充截图或具体时间点，我们会继续排查。'
+    }),
+    Object.freeze({
+        id: 'resolved_payment',
+        action: 'resolved',
+        issue_type: 'payment',
+        enabled: true,
+        title: '支付问题处理',
+        tag: '支付',
+        body: '已收到你的支付反馈，当前问题已完成核查与处理。如后续仍有重复扣费、未到账或状态异常，请继续回复本工单。'
+    }),
+    Object.freeze({
+        id: 'rejected_need_more_context',
+        action: 'rejected',
+        issue_type: 'all',
+        enabled: true,
+        title: '补充资料后再提交',
+        tag: '推荐',
+        body: '已收到你的反馈。当前信息还不足以完成处理，请补充订单号、异常截图、发生时间或操作步骤后重新提交，我们会继续跟进。'
+    }),
+    Object.freeze({
+        id: 'rejected_duplicate_ticket',
+        action: 'rejected',
+        issue_type: 'all',
+        enabled: true,
+        title: '重复工单说明',
+        tag: '去重',
+        body: '已核查到相同问题已有工单在处理中，本工单先为你关闭。后续请以原工单为准，避免重复提交影响跟进效率。'
+    }),
+    Object.freeze({
+        id: 'rejected_out_of_scope',
+        action: 'rejected',
+        issue_type: 'all',
+        enabled: true,
+        title: '不在售后范围',
+        tag: '说明',
+        body: '经核查，当前情况暂不属于售后直接处理范围，因此本工单先为你关闭。如你有新的订单信息或补充证据，可重新提交。'
     })
 ]);
 const ALERT_TYPE_ROUTING_MAP = Object.freeze({
@@ -553,7 +649,8 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         summary_schedule_mode: DEFAULT_SUMMARY_SCHEDULE_MODE,
         summary_hourly_minute: 0,
         summary_daily_hour: 9,
-        summary_daily_minute: 0
+        summary_daily_minute: 0,
+        reply_templates: getDefaultTicketReplyTemplates()
     }),
     shop_order_delivery: Object.freeze({
         enabled: true,
@@ -792,6 +889,126 @@ function getCustomerChatQuickReplyTypeLabel(businessType = 'general') {
         ticket: '工单回复'
     };
     return labels[normalizeCustomerChatQuickReplyBusinessType(businessType)] || labels.general;
+}
+
+function cloneTicketReplyTemplates(templates = DEFAULT_TICKET_REPLY_TEMPLATES) {
+    return (Array.isArray(templates) ? templates : DEFAULT_TICKET_REPLY_TEMPLATES).map((template, index) => ({
+        id: normalizeText(template?.id || template?.key) || `template_${index + 1}`,
+        action: SUPPORTED_TICKET_REPLY_TEMPLATE_ACTIONS.includes(normalizeText(template?.action).toLowerCase())
+            ? normalizeText(template?.action).toLowerCase()
+            : 'resolved',
+        issue_type: SUPPORTED_TICKET_REPLY_TEMPLATE_ISSUE_TYPES.includes(normalizeText(template?.issue_type || template?.issueType).toLowerCase())
+            ? normalizeText(template?.issue_type || template?.issueType).toLowerCase()
+            : 'all',
+        enabled: template?.enabled !== false,
+        title: normalizeText(template?.title, 80),
+        tag: normalizeText(template?.tag, 40),
+        body: normalizeText(template?.body || template?.text, 2000)
+    }));
+}
+
+function getDefaultTicketReplyTemplates() {
+    return cloneTicketReplyTemplates(DEFAULT_TICKET_REPLY_TEMPLATES);
+}
+
+function normalizeTicketReplyTemplateAction(value, fallback = 'resolved') {
+    const normalized = normalizeText(value).toLowerCase();
+    return SUPPORTED_TICKET_REPLY_TEMPLATE_ACTIONS.includes(normalized)
+        ? normalized
+        : fallback;
+}
+
+function normalizeTicketReplyTemplateIssueType(value, fallback = 'all') {
+    const normalized = normalizeText(value).toLowerCase();
+    return SUPPORTED_TICKET_REPLY_TEMPLATE_ISSUE_TYPES.includes(normalized)
+        ? normalized
+        : fallback;
+}
+
+function normalizeTicketReplyTemplateId(value, fallbackIndex = 0, fallbackId = '') {
+    const normalized = normalizeText(value)
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 48);
+
+    if (normalized) {
+        return normalized;
+    }
+
+    const fallback = normalizeText(fallbackId)
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 48);
+    if (fallback) {
+        return fallback;
+    }
+
+    return `template_${Math.max(1, fallbackIndex + 1)}`;
+}
+
+function getTicketReplyTemplateActionLabel(action = 'resolved') {
+    const labels = {
+        resolved: '解决工单',
+        rejected: '拒绝工单'
+    };
+    return labels[normalizeTicketReplyTemplateAction(action)] || labels.resolved;
+}
+
+function getTicketReplyTemplateIssueTypeLabel(issueType = 'all') {
+    const labels = {
+        all: '通用',
+        refund: '退款',
+        delivery: '履约',
+        account: '账号',
+        verification: '验证',
+        payment: '支付',
+        other: '其他'
+    };
+    return labels[normalizeTicketReplyTemplateIssueType(issueType)] || labels.all;
+}
+
+function normalizeTicketReplyTemplates(value) {
+    if (!Array.isArray(value)) {
+        return getDefaultTicketReplyTemplates();
+    }
+    if (!value.length) {
+        return [];
+    }
+
+    const defaults = getDefaultTicketReplyTemplates();
+    const normalized = [];
+
+    (Array.isArray(value) ? value : []).forEach((item, index) => {
+        const template = normalizeJsonObject(item);
+        const action = normalizeTicketReplyTemplateAction(template.action, 'resolved');
+        const issueType = normalizeTicketReplyTemplateIssueType(
+            template.issue_type || template.issueType,
+            'all'
+        );
+        const fallback = defaults.find((candidate) => candidate.id === normalizeText(template.id))
+            || defaults.find((candidate) => candidate.action === action && candidate.issue_type === issueType)
+            || null;
+        const body = normalizeText(template.body || template.text, 2000);
+        if (!body) {
+            return;
+        }
+
+        normalized.push({
+            id: normalizeTicketReplyTemplateId(template.id || template.key, normalized.length, fallback?.id),
+            action,
+            issue_type: issueType,
+            enabled: template.enabled !== false,
+            title: normalizeText(template.title, 80)
+                || fallback?.title
+                || `${getTicketReplyTemplateActionLabel(action)} · ${getTicketReplyTemplateIssueTypeLabel(issueType)}`,
+            tag: normalizeText(template.tag, 40) || fallback?.tag || getTicketReplyTemplateIssueTypeLabel(issueType),
+            body
+        });
+    });
+
+    return normalized.slice(0, 20);
 }
 
 function normalizeCustomerChatQuickReplyTemplates(value) {
@@ -1411,7 +1628,8 @@ function cloneDefaultConfig() {
             summary_schedule_mode: DEFAULT_OPS_ALERTS_CONFIG.tickets.summary_schedule_mode,
             summary_hourly_minute: DEFAULT_OPS_ALERTS_CONFIG.tickets.summary_hourly_minute,
             summary_daily_hour: DEFAULT_OPS_ALERTS_CONFIG.tickets.summary_daily_hour,
-            summary_daily_minute: DEFAULT_OPS_ALERTS_CONFIG.tickets.summary_daily_minute
+            summary_daily_minute: DEFAULT_OPS_ALERTS_CONFIG.tickets.summary_daily_minute,
+            reply_templates: getDefaultTicketReplyTemplates()
         },
         shop_order_delivery: {
             enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_order_delivery.enabled,
@@ -2184,6 +2402,9 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         config.tickets.summary_daily_minute,
         0,
         59
+    );
+    config.tickets.reply_templates = normalizeTicketReplyTemplates(
+        ticketsConfig.reply_templates
     );
 
     config.shop_order_delivery.enabled = normalizeBoolean(
@@ -5812,6 +6033,7 @@ module.exports = {
         hasRecentOpsAlertJob,
         normalizeChannelName,
         normalizeCustomerChatQuickReplyTemplates,
+        normalizeTicketReplyTemplates,
         resolveEnabledChannels,
         normalizeSeverity,
         normalizeStringArray,

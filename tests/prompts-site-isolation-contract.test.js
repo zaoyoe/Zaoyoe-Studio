@@ -80,12 +80,20 @@ test('prompt reply trigger and like sync migration keep interaction rows site-aw
     );
 });
 
-test('admin gallery UI explains that prompt content stays global while site filtering targets interaction semantics', () => {
-    const adminHtml = readRepoFile('admin-studio.html');
+test('admin gallery UI surfaces CN and INTL interaction metrics on each card', () => {
+    const adminStudioSource = readRepoFile('admin-studio.js');
 
-    assert.equal(
-        adminHtml.includes('Gallery 里的 Prompt 内容资产仍是全局共享；顶部站点筛选不会切换这份内容列表，但卡片现在会同步展示 CN / INTL 的互动摘要，并继续用于写保护。'),
-        true,
-        'admin-studio.html should clarify gallery site filter semantics for operators'
-    );
+    const requiredMarkers = [
+        "metrics.className = 'admin-card-site-metrics';",
+        "metrics.appendChild(buildPromptSiteMetricElement('CN', siteMetrics.cn, currentSite));",
+        "metrics.appendChild(buildPromptSiteMetricElement('INTL', siteMetrics.intl, currentSite));"
+    ];
+
+    for (const marker of requiredMarkers) {
+        assert.equal(
+            adminStudioSource.includes(marker),
+            true,
+            `admin-studio.js should contain ${marker}`
+        );
+    }
 });

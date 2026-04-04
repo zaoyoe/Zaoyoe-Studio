@@ -1,7 +1,13 @@
 (function initAdminAccessModule(globalScope) {
     const CACHE_KEY = 'zaoyoe_admin_access_cache_v1';
-    const CACHE_TTL_MS = 30 * 1000;
+    const CACHE_TTL_MS = 5 * 60 * 1000;
+    const ADMIN_STUDIO_SESSION_CACHE_KEY = 'zaoyoe_admin_studio_session_cache_v1';
+    const ADMIN_STUDIO_SESSION_SKEW_MS = 20 * 1000;
     const ADMIN_STUDIO_SESSION_ENDPOINT = '/api/admin/access/session';
+    let pendingAdminStudioSessionPromise = null;
+    let pendingAdminStudioSessionUserId = '';
+    let pendingWarmAdminStudioPromise = null;
+    let pendingWarmAdminStudioUserId = '';
 
     function normalizeAccessPayload(payload = {}) {
         return {
@@ -165,6 +171,115 @@
         }
     }
 
+    function readAdminStudioSessionCache() {
+        try {
+            const raw = globalScope?.sessionStorage?.getItem(ADMIN_STUDIO_SESSION_CACHE_KEY);
+            if (!raw) return null;
+
+            const parsed = JSON.parse(raw);
+            const expiresAt = Number(parsed?.expiresAt || 0);
+            if (!parsed?.userId || !expiresAt) return null;
+
+            if ((expiresAt - Date.now()) <= ADMIN_STUDIO_SESSION_SKEW_MS) {
+                clearCachedAdminStudioSession();
+                return null;
+            }
+
+            return parsed;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function writeAdminStudioSessionCache(userId, payload = {}) {
+        const normalizedUserId = String(userId || '').trim();
+        const expiresInSeconds = Number(payload?.expiresInSeconds || 0);
+        if (!normalizedUserId || !Number.isFinite(expiresInSeconds) || expiresInSeconds <= 0) {
+            clearCachedAdminStudioSession();
+            return;
+        }
+
+        try {
+            const issuedAt = Date.now();
+            globalScope?.sessionStorage?.setItem(ADMIN_STUDIO_SESSION_CACHE_KEY, JSON.stringify({
+                userId: normalizedUserId,
+                issuedAt,
+                expiresAt: issuedAt + (expiresInSeconds * 1000)
+            }));
+        } catch (_) {
+            // ignore cache write failures
+        }
+    }
+
+    function clearCachedAdminStudioSession() {
+        try {
+            globalScope?.sessionStorage?.removeItem(ADMIN_STUDIO_SESSION_CACHE_KEY);
+        } catch (_) {
+            // ignore cache clear failures
+        }
+    }
+
+    function getCachedAdminStudioSessionResult(userId = '') {
+        const cached = readAdminStudioSessionCache();
+        const normalizedUserId = String(userId || '').trim();
+        if (!cached) {
+            return null;
+        }
+
+        if (normalizedUserId && cached.userId !== normalizedUserId) {
+            return null;
+        }
+
+        return {
+            ok: true,
+            status: 200,
+            cached: true,
+            payload: {
+                success: true,
+                granted: true,
+                expiresInSeconds: Math.max(1, Math.floor((Number(cached.expiresAt || 0) - Date.now()) / 1000))
+            }
+        };
+    }
+
+    function hasWarmAdminStudioRoute() {
+        const cachedAccess = readAccessCache();
+        const cachedSession = readAdminStudioSessionCache();
+        const persistedUser = buildPersistedSessionUser(readPersistedSupabaseSession()?.session || null);
+        const currentUserId = String(persistedUser?.id || '').trim();
+        if (!currentUserId || !cachedAccess || !cachedSession) {
+            return false;
+        }
+
+        return cachedAccess.userId === currentUserId &&
+            cachedSession.userId === currentUserId &&
+            Boolean(cachedAccess.access?.isAdmin);
+    }
+
+    function scheduleDeferredTask(task, timeoutMs = 1500) {
+        return new Promise((resolve) => {
+            const runTask = () => {
+                Promise.resolve()
+                    .then(task)
+                    .then(resolve)
+                    .catch((error) => resolve({
+                        access: null,
+                        session: null,
+                        error
+                    }));
+            };
+
+            if (typeof globalScope.requestIdleCallback === 'function') {
+                globalScope.requestIdleCallback(runTask, {
+                    timeout: Math.max(200, Number(timeoutMs) || 1500)
+                });
+                return;
+            }
+
+            globalScope.setTimeout(runTask, 180);
+        });
+    }
+
     async function resolveWithTimeout(factory, timeoutMs = 4000, fallback = null) {
         try {
             return await Promise.race([
@@ -179,8 +294,26 @@
     }
 
     async function createAdminStudioSession(options = {}) {
-        const supabaseClient = options.supabaseClient || globalScope?.supabaseClient || null;
         const persistedSession = readPersistedSupabaseSession()?.session || null;
+        const explicitUserId = String(
+            options?.userId ||
+            options?.user?.id ||
+            buildPersistedSessionUser(persistedSession)?.id ||
+            ''
+        ).trim();
+        const forceRefresh = options.forceRefresh === true;
+        if (!forceRefresh) {
+            const cachedSession = getCachedAdminStudioSessionResult(explicitUserId);
+            if (cachedSession) {
+                return cachedSession;
+            }
+
+            if (explicitUserId && pendingAdminStudioSessionPromise && pendingAdminStudioSessionUserId === explicitUserId) {
+                return pendingAdminStudioSessionPromise;
+            }
+        }
+
+        const supabaseClient = options.supabaseClient || globalScope?.supabaseClient || null;
         if (!supabaseClient?.auth?.getSession && !persistedSession?.access_token) {
             return {
                 ok: false,
@@ -196,6 +329,7 @@
         const error = sessionResult?.error || null;
         const accessToken = String(session?.access_token || persistedSession?.access_token || '').trim();
         if (error || !accessToken) {
+            clearCachedAdminStudioSession();
             return {
                 ok: false,
                 status: 401,
@@ -204,33 +338,59 @@
             };
         }
 
-        try {
-            const response = await fetch(ADMIN_STUDIO_SESSION_ENDPOINT, {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: {
-                    Authorization: `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json'
+        const resolvedUserId = explicitUserId || String(session?.user?.id || buildPersistedSessionUser(persistedSession)?.id || '').trim();
+        const sessionRequest = (async () => {
+            try {
+                const response = await fetch(ADMIN_STUDIO_SESSION_ENDPOINT, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        Authorization: `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const payload = await response.json().catch(() => ({}));
+                const result = {
+                    ok: response.ok && payload?.success !== false,
+                    status: response.status,
+                    payload
+                };
+
+                if (result.ok) {
+                    writeAdminStudioSessionCache(resolvedUserId, payload);
+                } else {
+                    clearCachedAdminStudioSession();
+                }
+
+                return result;
+            } catch (requestError) {
+                clearCachedAdminStudioSession();
+                return {
+                    ok: false,
+                    status: 0,
+                    reason: 'network_error',
+                    error: requestError
+                };
+            }
+        })();
+
+        if (resolvedUserId && !forceRefresh) {
+            pendingAdminStudioSessionPromise = sessionRequest;
+            pendingAdminStudioSessionUserId = resolvedUserId;
+            sessionRequest.finally(() => {
+                if (pendingAdminStudioSessionPromise === sessionRequest) {
+                    pendingAdminStudioSessionPromise = null;
+                    pendingAdminStudioSessionUserId = '';
                 }
             });
-
-            const payload = await response.json().catch(() => ({}));
-            return {
-                ok: response.ok && payload?.success !== false,
-                status: response.status,
-                payload
-            };
-        } catch (requestError) {
-            return {
-                ok: false,
-                status: 0,
-                reason: 'network_error',
-                error: requestError
-            };
         }
+
+        return sessionRequest;
     }
 
     async function clearAdminStudioSession() {
+        clearCachedAdminStudioSession();
         try {
             const response = await fetch(ADMIN_STUDIO_SESSION_ENDPOINT, {
                 method: 'DELETE',
@@ -244,10 +404,74 @@
 
     async function openAdminStudio(target = 'admin-studio.html') {
         const safeTarget = sanitizeAdminStudioTarget(target);
+        if (hasWarmAdminStudioRoute()) {
+            globalScope.location.href = safeTarget;
+            return true;
+        }
+
         const entryUrl = new URL('admin-entry.html', globalScope.location?.href || 'https://www.zaoyoe.com/');
         entryUrl.searchParams.set('next', safeTarget);
         globalScope.location.href = `${entryUrl.pathname}${entryUrl.search}${entryUrl.hash}`;
         return true;
+    }
+
+    async function warmAdminStudioEntry(options = {}) {
+        const normalizedUser = options?.user?.id
+            ? {
+                id: String(options.user.id || '').trim(),
+                email: String(options.user.email || '').trim()
+            }
+            : null;
+        const warmUserId = String(options?.access?.user?.id || normalizedUser?.id || '').trim();
+
+        const runWarmup = async () => {
+            const access = options?.access?.user
+                ? options.access
+                : await getCurrentAdminAccess({
+                    user: normalizedUser,
+                    supabaseClient: options.supabaseClient,
+                    forceRefresh: options.forceRefresh === true
+                });
+
+            if (!access?.user || !access.isAdmin) {
+                return {
+                    access,
+                    session: null
+                };
+            }
+
+            const session = await createAdminStudioSession({
+                supabaseClient: options.supabaseClient,
+                userId: access.user.id,
+                forceRefresh: options.forceRefresh === true
+            });
+
+            return {
+                access,
+                session
+            };
+        };
+
+        if (!options.forceRefresh && warmUserId && pendingWarmAdminStudioPromise && pendingWarmAdminStudioUserId === warmUserId) {
+            return pendingWarmAdminStudioPromise;
+        }
+
+        const warmPromise = options.defer === true
+            ? scheduleDeferredTask(runWarmup, options.timeoutMs)
+            : Promise.resolve().then(runWarmup);
+
+        if (!options.forceRefresh && warmUserId) {
+            pendingWarmAdminStudioPromise = warmPromise;
+            pendingWarmAdminStudioUserId = warmUserId;
+            warmPromise.finally(() => {
+                if (pendingWarmAdminStudioPromise === warmPromise) {
+                    pendingWarmAdminStudioPromise = null;
+                    pendingWarmAdminStudioUserId = '';
+                }
+            });
+        }
+
+        return warmPromise;
     }
 
     async function getCurrentAdminAccess(options = {}) {
@@ -348,12 +572,14 @@
 
     const api = {
         clearAccessCache,
+        clearCachedAdminStudioSession,
         clearAdminStudioSession,
         createAdminStudioSession,
         getCurrentAdminAccess,
         normalizeAccessPayload,
         openAdminStudio,
-        sanitizeAdminStudioTarget
+        sanitizeAdminStudioTarget,
+        warmAdminStudioEntry
     };
 
     globalScope.AdminAccess = api;

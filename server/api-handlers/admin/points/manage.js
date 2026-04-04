@@ -5,6 +5,9 @@ const {
     sendJson,
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
+const {
+    deductPointsForService
+} = require('../../../../api/_lib/payments/rpc');
 
 const BATCH_SELECT_FIELDS = [
     'id',
@@ -27,6 +30,7 @@ const CODE_SELECT_FIELDS = [
     'batch_id',
     'package_id',
     'points_amount',
+    'points_granted',
     'status',
     'expires_at',
     'used_by',
@@ -92,6 +96,155 @@ function normalizeDeleteMode(value) {
     const error = new Error('delete_mode must be keep, block, or revoke');
     error.statusCode = 400;
     throw error;
+}
+
+function getPointsRequestRpcClient({ requestSupabase, supabase, token = '' } = {}) {
+    if (String(token || '').trim() && requestSupabase?.rpc) {
+        return requestSupabase;
+    }
+
+    return supabase;
+}
+
+async function revokePointsCodeViaRpc({
+    requestSupabase,
+    supabase,
+    token = '',
+    code = '',
+    reason = ''
+} = {}) {
+    const rpcClient = getPointsRequestRpcClient({ requestSupabase, supabase, token });
+    const { data, error } = await rpcClient.rpc('fn_revoke_code', {
+        p_code: code,
+        p_reason: reason
+    });
+
+    if (error) throw error;
+    if (data?.success === false) {
+        const revokeError = new Error(data?.message || `Failed to revoke code ${code}`);
+        revokeError.statusCode = 400;
+        throw revokeError;
+    }
+
+    return data || { success: true };
+}
+
+function shouldFallbackToServiceRevoke(error) {
+    const message = String(error?.message || '').trim().toLowerCase();
+    return message.includes('unauthorized')
+        || message.includes('admin only')
+        || message.includes('access denied');
+}
+
+async function revokePointsCodeViaService({
+    supabase,
+    adminId,
+    site,
+    code = '',
+    reason = '',
+    existing = null
+} = {}) {
+    const codeRow = existing || await loadCodeByValue(supabase, site, code);
+    const currentStatus = normalizeString(codeRow?.status).toLowerCase();
+
+    if (currentStatus === 'revoked') {
+        const error = new Error('这条兑换码已经撤销，无需重复处理');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    if (currentStatus !== 'used') {
+        const error = new Error('只有已使用的兑换码才能撤销');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const targetUserId = normalizeString(codeRow?.used_by);
+    if (!targetUserId) {
+        const error = new Error('这条兑换码缺少使用人信息，暂时无法撤销');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const pointsToDeduct = Math.max(0, Number(codeRow?.points_granted) || Number(codeRow?.points_amount) || 0);
+    let pointsDeducted = 0;
+
+    if (pointsToDeduct > 0) {
+        const { data, error } = await deductPointsForService({
+            supabase,
+            userId: targetUserId,
+            amount: pointsToDeduct,
+            reason: `兑换码撤销: ${code}`,
+            referenceId: `redeem_${code}`,
+            site
+        });
+
+        if (error) throw error;
+        pointsDeducted = Math.max(0, Number(data?.deducted) || Number(data?.points_deducted) || 0);
+    }
+
+    const revokedAt = new Date().toISOString();
+    const { error: updateError } = await supabase
+        .from('redemption_codes')
+        .update({
+            status: 'revoked',
+            revoked_at: revokedAt,
+            revoked_by: adminId || null,
+            revoke_reason: reason || '管理员撤销'
+        })
+        .eq('id', codeRow.id)
+        .eq('site', site);
+
+    if (updateError) throw updateError;
+
+    return {
+        success: true,
+        points_deducted: pointsDeducted,
+        revoked_at: revokedAt,
+        row: {
+            ...codeRow,
+            status: 'revoked',
+            revoked_at: revokedAt,
+            revoked_by: adminId || null,
+            revoke_reason: reason || '管理员撤销'
+        }
+    };
+}
+
+async function revokePointsCode({
+    requestSupabase,
+    supabase,
+    token = '',
+    adminId = '',
+    site,
+    code = '',
+    reason = '',
+    existing = null
+} = {}) {
+    if (String(token || '').trim() && requestSupabase?.rpc) {
+        try {
+            return await revokePointsCodeViaRpc({
+                requestSupabase,
+                supabase,
+                token,
+                code,
+                reason
+            });
+        } catch (error) {
+            if (!shouldFallbackToServiceRevoke(error)) {
+                throw error;
+            }
+        }
+    }
+
+    return revokePointsCodeViaService({
+        supabase,
+        adminId,
+        site,
+        code,
+        reason,
+        existing
+    });
 }
 
 async function loadBatchRowsByIds(supabase, site, batchIds) {
@@ -314,7 +467,7 @@ async function runUpdateBatchAction({ supabase, user, site, body }) {
     };
 }
 
-async function runDeleteBatchesAction({ supabase, user, site, body }) {
+async function runDeleteBatchesAction({ supabase, requestSupabase, token, user, site, body }) {
     const batchIds = normalizeStringArray(body.batch_ids ?? body.batchIds);
     if (!batchIds.length) {
         const error = new Error('batch_ids is required');
@@ -339,17 +492,16 @@ async function runDeleteBatchesAction({ supabase, user, site, body }) {
 
     if (deleteMode === 'revoke') {
         for (const row of usedCodes) {
-            const { data, error } = await supabase.rpc('fn_revoke_code', {
-                p_code: row.code,
-                p_reason: '批次删除-自动撤销'
+            await revokePointsCode({
+                requestSupabase,
+                supabase,
+                token,
+                adminId: user.id,
+                site,
+                code: row.code,
+                reason: '批次删除-自动撤销',
+                existing: row
             });
-
-            if (error) throw error;
-            if (data?.success === false) {
-                const revokeError = new Error(data?.message || `Failed to revoke code ${row.code}`);
-                revokeError.statusCode = 400;
-                throw revokeError;
-            }
             revokedCount += 1;
         }
 
@@ -589,22 +741,21 @@ async function runSetCodeStatusAction({ supabase, user, site, body }) {
     };
 }
 
-async function runRevokeCodeAction({ supabase, user, site, body }) {
+async function runRevokeCodeAction({ supabase, requestSupabase, token, user, site, body }) {
     const code = normalizeString(body.code);
     const existing = await loadCodeByValue(supabase, site, code);
     const reason = normalizeString(body.reason, '管理员撤销') || '管理员撤销';
 
-    const { data, error } = await supabase.rpc('fn_revoke_code', {
-        p_code: code,
-        p_reason: reason
+    const data = await revokePointsCode({
+        requestSupabase,
+        supabase,
+        token,
+        adminId: user.id,
+        site,
+        code,
+        reason,
+        existing
     });
-
-    if (error) throw error;
-    if (data?.success === false) {
-        const revokeError = new Error(data?.message || 'Code revoke failed');
-        revokeError.statusCode = 400;
-        throw revokeError;
-    }
 
     await writeAdminAuditLog({
         supabase,
@@ -639,7 +790,7 @@ module.exports = async (req, res) => {
     }
 
     try {
-        const { supabase, user } = await requireAdmin(req, { permission: 'points.manage' });
+        const { supabase, requestSupabase, token, user } = await requireAdmin(req, { permission: 'points.manage' });
         const body = await parseJsonBody(req);
         const action = normalizeString(body.action).toLowerCase();
         const site = requireWritableAdminSite(body.site || req.adminSite, {
@@ -655,7 +806,7 @@ module.exports = async (req, res) => {
                 payload = await runUpdateBatchAction({ supabase, user, site, body });
                 break;
             case 'delete_batches':
-                payload = await runDeleteBatchesAction({ supabase, user, site, body });
+                payload = await runDeleteBatchesAction({ supabase, requestSupabase, token, user, site, body });
                 break;
             case 'invalidate_batches':
                 payload = await runInvalidateBatchesAction({ supabase, user, site, body });
@@ -667,7 +818,7 @@ module.exports = async (req, res) => {
                 payload = await runSetCodeStatusAction({ supabase, user, site, body });
                 break;
             case 'revoke_code':
-                payload = await runRevokeCodeAction({ supabase, user, site, body });
+                payload = await runRevokeCodeAction({ supabase, requestSupabase, token, user, site, body });
                 break;
             default:
                 return sendJson(res, 400, {

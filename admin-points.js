@@ -53,8 +53,34 @@ function requireWritablePointsSite(options = {}) {
     return window.AdminSiteFilter?.requireWritableSite?.(options) || null;
 }
 
+function requireWritablePointsCodeActionSite(mode = '') {
+    const normalizedMode = String(mode || '').trim().toLowerCase();
+    if (normalizedMode === 'expiry') {
+        return requireWritablePointsSite({ label: '设置兑换码有效期' });
+    }
+    if (normalizedMode === 'disable') {
+        return requireWritablePointsSite({ label: '禁用兑换码' });
+    }
+    if (normalizedMode === 'enable') {
+        return requireWritablePointsSite({ label: '启用兑换码' });
+    }
+    if (normalizedMode === 'revoke') {
+        return requireWritablePointsSite({ label: '撤销兑换码' });
+    }
+    return requireWritablePointsSite({ label: '处理兑换码' });
+}
+
 function getPointsReadSite() {
     return window.AdminSiteFilter?.getSiteFilter?.() || 'all';
+}
+
+function escapePointsHtml(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 function buildAdminPointsUrl(route, params = {}) {
@@ -84,6 +110,49 @@ async function parseAdminPointsResponse(response) {
     return payload;
 }
 
+function announcePointsAction(message = '', tone = 'success') {
+    const normalizedMessage = String(message || '').trim();
+    if (!normalizedMessage) {
+        return;
+    }
+
+    if (typeof showToast === 'function') {
+        showToast(normalizedMessage, tone);
+        return;
+    }
+
+    alert(normalizedMessage);
+}
+
+async function copyPointsTextToClipboard(text = '', {
+    successMessage = '已复制',
+    emptyMessage = '没有可复制的内容',
+    errorPrefix = '复制失败',
+    announcer = announcePointsAction
+} = {}) {
+    const normalizedText = String(text || '').trim();
+    const notify = typeof announcer === 'function' ? announcer : announcePointsAction;
+    if (!normalizedText) {
+        notify(emptyMessage, 'error');
+        return false;
+    }
+
+    const clipboard = window?.navigator?.clipboard;
+    if (!clipboard?.writeText) {
+        notify('当前环境暂不支持自动复制，请手动复制。', 'error');
+        return false;
+    }
+
+    try {
+        await clipboard.writeText(normalizedText);
+        notify(successMessage, 'success');
+        return true;
+    } catch (error) {
+        notify(`${errorPrefix}: ${error.message}`, 'error');
+        return false;
+    }
+}
+
 let pointsCatalogSnapshot = null;
 let pointsCatalogSite = '';
 let pointsCatalogRows = [];
@@ -92,6 +161,371 @@ let pointsPackageEditorState = {
     packageId: ''
 };
 let pointsPackageEditorInitialized = false;
+let pointsCatalogFilterState = {
+    search: '',
+    status: 'all',
+    sort: 'sort_order_asc'
+};
+let generatedBatchContext = {
+    batchName: '',
+    count: 0,
+    site: '',
+    channel: '',
+    packageLabel: ''
+};
+let pendingBatchSearchTerm = '';
+let pendingGenerateSeed = null;
+let pointsBatchCodesUiState = {
+    batchId: '',
+    search: '',
+    status: 'all',
+    codes: [],
+    visibleCodes: [],
+    focusCode: ''
+};
+let pendingPointsBatchCodeFocus = {
+    batchId: '',
+    code: ''
+};
+let pointsCodeActionModalState = {
+    mode: '',
+    code: '',
+    currentExpiry: '',
+    source: '',
+    submitting: false
+};
+let pointsBatchInvalidateModalState = {
+    batchIds: [],
+    submitting: false
+};
+let pointsPackageDeleteModalState = {
+    packageId: '',
+    submitting: false
+};
+let pointsLookupFeedbackState = {
+    message: '',
+    tone: 'info'
+};
+let pointsBatchCodesFeedbackState = {
+    batchId: '',
+    message: '',
+    tone: 'info'
+};
+let pointsBatchListFeedbackState = {
+    message: '',
+    tone: 'info',
+    kind: '',
+    detail: '',
+    stats: []
+};
+
+function buildPointsInlineFeedbackMarkup(message = '', tone = 'info') {
+    const normalizedMessage = String(message || '').trim();
+    if (!normalizedMessage) {
+        return '';
+    }
+
+    const options = arguments[2] && typeof arguments[2] === 'object' ? arguments[2] : {};
+    const detail = String(options.detail || '').trim();
+    const stats = Array.isArray(options.stats)
+        ? options.stats
+            .map((item) => {
+                const label = String(item?.label || '').trim();
+                const value = String(item?.value ?? '').trim();
+                if (!label || !value) {
+                    return null;
+                }
+                return { label, value };
+            })
+            .filter(Boolean)
+        : [];
+
+    const iconMap = {
+        success: 'fas fa-circle-check',
+        error: 'fas fa-circle-exclamation',
+        warning: 'fas fa-triangle-exclamation',
+        info: 'fas fa-circle-info'
+    };
+    const normalizedTone = ['success', 'error', 'warning', 'info'].includes(String(tone || '').trim().toLowerCase())
+        ? String(tone || '').trim().toLowerCase()
+        : 'info';
+
+    return `
+        <div class="points-inline-feedback points-inline-feedback--${escapePointsHtml(normalizedTone)}">
+            <span class="points-inline-feedback__icon"><i class="${escapePointsHtml(iconMap[normalizedTone])}"></i></span>
+            <span class="points-inline-feedback__body">
+                <span class="points-inline-feedback__copy">${escapePointsHtml(normalizedMessage)}</span>
+                ${detail ? `<span class="points-inline-feedback__detail">${escapePointsHtml(detail)}</span>` : ''}
+                ${stats.length ? `
+                    <span class="points-inline-feedback__stats">
+                        ${stats.map((item) => `
+                            <span class="points-inline-feedback__stat">
+                                <span class="points-inline-feedback__stat-label">${escapePointsHtml(item.label)}</span>
+                                <strong class="points-inline-feedback__stat-value">${escapePointsHtml(item.value)}</strong>
+                            </span>
+                        `).join('')}
+                    </span>
+                ` : ''}
+            </span>
+        </div>
+    `;
+}
+
+function renderPointsLookupFeedback() {
+    const root = document.getElementById('pointsLookupInlineFeedback');
+    if (!root) {
+        return;
+    }
+    root.innerHTML = buildPointsInlineFeedbackMarkup(pointsLookupFeedbackState.message, pointsLookupFeedbackState.tone);
+}
+
+function clearPointsLookupFeedback() {
+    pointsLookupFeedbackState = {
+        message: '',
+        tone: 'info'
+    };
+    renderPointsLookupFeedback();
+}
+
+function setPointsLookupFeedback(message = '', tone = 'info') {
+    pointsLookupFeedbackState = {
+        message: String(message || '').trim(),
+        tone: String(tone || 'info').trim().toLowerCase() || 'info'
+    };
+    renderPointsLookupFeedback();
+}
+
+function renderPointsBatchCodesFeedback() {
+    const root = document.getElementById('pointsBatchCodesInlineFeedback');
+    if (!root) {
+        return;
+    }
+    root.innerHTML = buildPointsInlineFeedbackMarkup(pointsBatchCodesFeedbackState.message, pointsBatchCodesFeedbackState.tone);
+}
+
+function clearPointsBatchCodesFeedback(batchId = '') {
+    const normalizedBatchId = String(batchId || '').trim();
+    if (normalizedBatchId && normalizedBatchId !== String(pointsBatchCodesFeedbackState.batchId || '').trim()) {
+        return;
+    }
+    pointsBatchCodesFeedbackState = {
+        batchId: '',
+        message: '',
+        tone: 'info'
+    };
+    renderPointsBatchCodesFeedback();
+}
+
+function setPointsBatchCodesFeedback(message = '', tone = 'info', batchId = '') {
+    pointsBatchCodesFeedbackState = {
+        batchId: String(batchId || window.currentViewBatchId || pointsBatchCodesUiState.batchId || '').trim(),
+        message: String(message || '').trim(),
+        tone: String(tone || 'info').trim().toLowerCase() || 'info'
+    };
+    renderPointsBatchCodesFeedback();
+}
+
+function renderPointsBatchListFeedback() {
+    const root = document.getElementById('pointsBatchListInlineFeedback');
+    if (!root) {
+        return;
+    }
+    root.innerHTML = buildPointsInlineFeedbackMarkup(pointsBatchListFeedbackState.message, pointsBatchListFeedbackState.tone, {
+        detail: pointsBatchListFeedbackState.detail,
+        stats: pointsBatchListFeedbackState.stats
+    });
+}
+
+function clearPointsBatchListFeedback(kind = '') {
+    const normalizedKind = String(kind || '').trim();
+    if (normalizedKind && normalizedKind !== String(pointsBatchListFeedbackState.kind || '').trim()) {
+        return;
+    }
+    pointsBatchListFeedbackState = {
+        message: '',
+        tone: 'info',
+        kind: '',
+        detail: '',
+        stats: []
+    };
+    renderPointsBatchListFeedback();
+}
+
+function setPointsBatchListFeedback(message = '', tone = 'info', kind = 'action') {
+    const options = arguments[3] && typeof arguments[3] === 'object' ? arguments[3] : {};
+    const stats = Array.isArray(options.stats)
+        ? options.stats
+            .map((item) => {
+                const label = String(item?.label || '').trim();
+                const value = String(item?.value ?? '').trim();
+                if (!label || !value) {
+                    return null;
+                }
+                return { label, value };
+            })
+            .filter(Boolean)
+        : [];
+    pointsBatchListFeedbackState = {
+        message: String(message || '').trim(),
+        tone: String(tone || 'info').trim().toLowerCase() || 'info',
+        kind: String(kind || 'action').trim().toLowerCase() || 'action',
+        detail: String(options.detail || '').trim(),
+        stats
+    };
+    renderPointsBatchListFeedback();
+}
+
+function buildPointsBatchActionFeedback(action = '', payload = {}, options = {}) {
+    const normalizedAction = String(action || '').trim().toLowerCase();
+    const requestedBatchCount = Math.max(0, Number.parseInt(options.requestedBatchCount, 10) || 0);
+    const filteredCount = Math.max(0, Number.parseInt(options.filteredCount, 10) || 0);
+    const totalCount = Math.max(0, Number.parseInt(options.totalCount, 10) || 0);
+    const exportedCount = Math.max(0, Number.parseInt(options.exportedCount, 10) || 0);
+    const missingCount = Math.max(0, Number.parseInt(options.missingCount, 10) || 0);
+    const deleteMode = String(payload?.delete_mode || options.deleteMode || '').trim().toLowerCase();
+    const deletedBatchCount = Math.max(0, Number.parseInt(payload?.deleted_batch_count, 10) || 0);
+    const deletedCodeCount = Math.max(0, Number.parseInt(payload?.deleted_code_count, 10) || 0);
+    const revokedCount = Math.max(0, Number.parseInt(payload?.revoked_count, 10) || 0);
+    const retainedCount = Math.max(0, Number.parseInt(payload?.retained_code_count, 10) || 0);
+    const disabledCodeCount = Math.max(0, Number.parseInt(payload?.disabled_code_count, 10) || 0);
+    const skippedBatchCount = Math.max(0, requestedBatchCount - deletedBatchCount);
+
+    if (normalizedAction === 'delete') {
+        const stats = [
+            { label: '批次', value: requestedBatchCount > 0 ? `${deletedBatchCount}/${requestedBatchCount}` : String(deletedBatchCount) },
+            { label: '删码', value: String(deletedCodeCount) }
+        ];
+        if (revokedCount > 0) {
+            stats.push({ label: '撤销', value: String(revokedCount) });
+        }
+        if (retainedCount > 0) {
+            stats.push({ label: '保留', value: String(retainedCount) });
+        }
+        if (skippedBatchCount > 0) {
+            stats.push({ label: '跳过', value: String(skippedBatchCount) });
+        }
+
+        let detail = '批次与兑换码记录已同步刷新。';
+        if (deleteMode === 'revoke') {
+            detail = '已先撤销可回收的已使用兑换码，再执行批次删除。';
+        } else if (deleteMode === 'block') {
+            detail = retainedCount > 0
+                ? '已使用兑换码记录继续保留，用于后续审计追踪。'
+                : '选中批次里没有已使用兑换码，所有记录都已直接清理。';
+        } else if (deleteMode === 'keep') {
+            detail = '用户已获得的积分保持不变，仅清理后台批次和兑换码记录。';
+        }
+
+        return {
+            message: String(payload?.message || '批次已处理').trim(),
+            tone: 'success',
+            detail,
+            stats
+        };
+    }
+
+    if (normalizedAction === 'invalidate') {
+        return {
+            message: disabledCodeCount > 0
+                ? String(payload?.message || `已作废 ${disabledCodeCount} 个未使用兑换码`).trim()
+                : '选中批次里没有可作废的未使用兑换码',
+            tone: disabledCodeCount > 0 ? 'success' : 'info',
+            detail: requestedBatchCount > 0
+                ? `已检查 ${requestedBatchCount} 个批次，仅处理状态仍为“未使用”的兑换码。`
+                : '当前没有可处理的批次。',
+            stats: [
+                { label: '批次', value: String(requestedBatchCount || 0) },
+                { label: '作废', value: String(disabledCodeCount) }
+            ]
+        };
+    }
+
+    if (normalizedAction === 'export-all') {
+        const stats = [
+            { label: '导出', value: String(totalCount) }
+        ];
+        if (filteredCount > 0 && filteredCount !== totalCount) {
+            stats.push({ label: '筛中', value: String(filteredCount) });
+        }
+        return {
+            message: `已导出 ${totalCount} 个批次`,
+            tone: 'success',
+            detail: filteredCount > 0 && filteredCount !== totalCount
+                ? `当前列表命中 ${filteredCount} 个批次，本次导出仍包含全部 ${totalCount} 个批次。`
+                : '导出文件已保存到本地下载目录。',
+            stats
+        };
+    }
+
+    if (normalizedAction === 'export-selected') {
+        const stats = [
+            { label: '选中', value: String(requestedBatchCount || 0) },
+            { label: '导出', value: String(exportedCount) }
+        ];
+        if (missingCount > 0) {
+            stats.push({ label: '跳过', value: String(missingCount) });
+        }
+        return {
+            message: `已导出 ${exportedCount} 个选中批次`,
+            tone: missingCount > 0 ? 'warning' : 'success',
+            detail: missingCount > 0
+                ? `有 ${missingCount} 个选中批次在当前列表中已不存在，导出时已自动跳过。`
+                : '每个批次会在导出文件里生成一张独立工作表。',
+            stats
+        };
+    }
+
+    return {
+        message: String(payload?.message || '').trim(),
+        tone: 'info',
+        detail: '',
+        stats: []
+    };
+}
+
+function announcePointsScopedAction(message = '', tone = 'success', {
+    sourceEl = null,
+    lookup = false,
+    batch = false,
+    batchList = false,
+    batchId = ''
+} = {}) {
+    const normalizedMessage = String(message || '').trim();
+    if (!normalizedMessage) {
+        return;
+    }
+
+    let delivered = false;
+    const normalizedBatchId = String(batchId || window.currentViewBatchId || pointsBatchCodesUiState.batchId || '').trim();
+    const sourceInLookup = Boolean(sourceEl?.closest?.('#lookupResult'));
+    const sourceInBatch = Boolean(sourceEl?.closest?.('.codes-modal'));
+    const sourceInBatchList = Boolean(sourceEl?.closest?.('#points-view-batches'));
+    const hasSourceContext = Boolean(sourceEl);
+    const inLookup = lookup
+        || sourceInLookup
+        || (!hasSourceContext && getActivePointsViewName() === 'lookup' && Boolean(document.getElementById('pointsLookupInlineFeedback')));
+    const inBatch = batch
+        || sourceInBatch
+        || (!hasSourceContext && normalizedBatchId && Boolean(document.getElementById('pointsBatchCodesInlineFeedback')));
+    const inBatchList = batchList
+        || sourceInBatchList
+        || (!hasSourceContext && getActivePointsViewName() === 'batches' && Boolean(document.getElementById('pointsBatchListInlineFeedback')));
+
+    if (inLookup) {
+        setPointsLookupFeedback(normalizedMessage, tone);
+        delivered = true;
+    } else if (inBatch && normalizedBatchId) {
+        setPointsBatchCodesFeedback(normalizedMessage, tone, normalizedBatchId);
+        delivered = true;
+    } else if (inBatchList) {
+        setPointsBatchListFeedback(normalizedMessage, tone, 'action');
+        delivered = true;
+    }
+
+    if (!delivered) {
+        announcePointsAction(normalizedMessage, tone);
+    }
+}
 
 function invalidatePointsCatalogSnapshot() {
     pointsCatalogSnapshot = null;
@@ -157,6 +591,439 @@ function getPointsCatalogRows() {
     return Array.isArray(pointsCatalogRows) ? pointsCatalogRows : [];
 }
 
+function getPointsCatalogToolbarElements() {
+    return {
+        searchInput: document.getElementById('pointsCatalogSearchInput'),
+        statusInput: document.getElementById('pointsCatalogStatusFilter'),
+        sortInput: document.getElementById('pointsCatalogSortFilter'),
+        countEl: document.getElementById('pointsCatalogPackageCount'),
+        tbody: document.getElementById('pointsPackagesTableBody')
+    };
+}
+
+function getPointsGenerateFormElements() {
+    const form = document.getElementById('generateCodesForm');
+    return {
+        form,
+        batchNameInput: document.getElementById('batchName'),
+        packageInput: document.getElementById('batchPackageId'),
+        countInput: document.getElementById('batchCount'),
+        channelInput: document.getElementById('batchChannel'),
+        expiresInput: document.getElementById('batchExpires'),
+        customPointsInput: document.getElementById('customPointsAmount'),
+        previewRoot: document.getElementById('pointsGeneratePreview'),
+        previewStatus: document.getElementById('pointsGeneratePreviewStatus'),
+        previewSummary: document.getElementById('pointsGeneratePreviewSummary'),
+        previewMeta: document.getElementById('pointsGeneratePreviewMeta'),
+        previewWarnings: document.getElementById('pointsGeneratePreviewWarnings'),
+        resultMeta: document.getElementById('generatedCodesMeta'),
+        writeContextRoot: document.getElementById('pointsGenerateWriteContext'),
+        submitBtn: form?.querySelector('button[type="submit"]') || null
+    };
+}
+
+function formatPointsGenerateSiteLabel(site = '') {
+    const normalizedSite = String(site || '').trim().toLowerCase();
+    if (normalizedSite === 'cn') return 'CN 站点';
+    if (normalizedSite === 'intl') return 'INTL 站点';
+    return '全部站点';
+}
+
+function formatPointsGenerateChannelLabel(channel = '') {
+    const labels = {
+        xianyu: '闲鱼',
+        taobao: '淘宝',
+        manual: '手动发放',
+        promotion: '促销活动',
+        test: '内部测试'
+    };
+    return labels[String(channel || '').trim().toLowerCase()] || '未设置';
+}
+
+function getPointsWriteContextState() {
+    const readSite = getPointsReadSite();
+    const canWrite = readSite === 'cn' || readSite === 'intl';
+    const readLabel = formatPointsGenerateSiteLabel(readSite);
+
+    return {
+        readSite,
+        canWrite,
+        readLabel,
+        writeLabel: canWrite ? readLabel : '请选择 CN / INTL',
+        tone: canWrite ? 'ready' : 'blocked'
+    };
+}
+
+function buildPointsSiteContextMarkup(mode = 'catalog') {
+    const context = getPointsWriteContextState();
+    const helperText = mode === 'generate'
+        ? (context.canWrite
+            ? '本次生成的兑换码、批次和后续查询都会归属到当前站点。'
+            : '生成兑换码属于写入操作，请先把顶部站点筛选切到 CN 或 INTL。')
+        : (mode === 'batch'
+            ? (context.canWrite
+                ? '批次元信息、未使用兑换码作废和单码状态调整都会落到当前站点；这不会改动已发出的积分流水。'
+                : '批次与兑换码写操作需要明确站点，请先把顶部站点筛选切到 CN 或 INTL。')
+            : (context.canWrite
+                ? '套餐资产仍是全局共享的，但保存和删除动作会落到当前站点语境。'
+                : '套餐可跨站点复用，但保存和删除前仍需先把顶部站点筛选切到 CN 或 INTL。'));
+
+    return `
+        <div class="points-site-context__main">
+            <div class="points-site-context__item">
+                <span>当前读取</span>
+                <strong>${escapePointsHtml(context.readLabel)}</strong>
+            </div>
+            <div class="points-site-context__item ${context.canWrite ? 'is-ready' : 'is-blocked'}">
+                <span>实际写入</span>
+                <strong>${escapePointsHtml(context.writeLabel)}</strong>
+            </div>
+        </div>
+        <div class="points-site-context__note">${escapePointsHtml(helperText)}</div>
+    `;
+}
+
+function formatPointsGenerateDateTime(value = '') {
+    const normalizedValue = String(value || '').trim();
+    if (!normalizedValue) {
+        return '未设置';
+    }
+
+    const date = new Date(normalizedValue.replace(' ', 'T'));
+    if (Number.isNaN(date.getTime())) {
+        return normalizedValue;
+    }
+
+    return date.toLocaleString('zh-CN', {
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+function getPointsBatchInsights(batch = {}, referenceDate = new Date()) {
+    const now = referenceDate instanceof Date ? referenceDate : new Date(referenceDate);
+    const createdAt = new Date(batch.created_at);
+    const expiresAt = batch.expires_at ? new Date(batch.expires_at) : null;
+    const hasValidCreatedAt = !Number.isNaN(createdAt.getTime());
+    const hasValidExpiry = expiresAt instanceof Date && !Number.isNaN(expiresAt.getTime());
+    const totalCount = Math.max(0, Number(batch.total_count) || 0);
+    const usedCount = Math.max(0, Number(batch.used_count) || 0);
+    const usageRate = totalCount > 0 ? (usedCount / totalCount) : 0;
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const expiringThreshold = new Date(now.getTime() + (7 * 24 * 60 * 60 * 1000));
+
+    return {
+        createdAt,
+        expiresAt,
+        totalCount,
+        usedCount,
+        usageRate,
+        hasValidCreatedAt,
+        hasValidExpiry,
+        isToday: hasValidCreatedAt && createdAt >= startOfDay,
+        isExpiringSoon: hasValidExpiry && expiresAt >= now && expiresAt <= expiringThreshold,
+        isLowUsage: totalCount >= 5 && usageRate <= 0.2,
+        isManual: String(batch.channel || '') === 'manual',
+        isCustom: Math.max(0, Number(batch.custom_points_amount) || 0) > 0
+    };
+}
+
+function formatPointsBatchExpiryLabel(batch = {}, insights = getPointsBatchInsights(batch)) {
+    if (!insights.hasValidExpiry) {
+        return '长期有效';
+    }
+
+    const deltaMs = insights.expiresAt.getTime() - Date.now();
+    if (deltaMs <= 0) {
+        return `已过期 · ${formatPointsGenerateDateTime(batch.expires_at)}`;
+    }
+
+    const hours = Math.ceil(deltaMs / (60 * 60 * 1000));
+    if (hours <= 48) {
+        return `${hours} 小时后到期`;
+    }
+
+    const days = Math.ceil(deltaMs / (24 * 60 * 60 * 1000));
+    return `${days} 天后到期`;
+}
+
+function buildPointsBatchRiskBadges(batch = {}) {
+    const insights = getPointsBatchInsights(batch);
+    const siteLabel = formatPointsGenerateSiteLabel(batch.site || getPointsReadSite()).replace(' 站点', '');
+    const badges = [
+        `<span class="points-batch-risk points-batch-risk--site">${escapePointsHtml(siteLabel)}</span>`
+    ];
+
+    if (insights.isManual) {
+        badges.push('<span class="points-batch-risk points-batch-risk--manual">手动</span>');
+    }
+    if (insights.isCustom) {
+        badges.push('<span class="points-batch-risk points-batch-risk--custom">自定义</span>');
+    }
+    if (insights.isLowUsage) {
+        badges.push('<span class="points-batch-risk points-batch-risk--low">低使用率</span>');
+    }
+    if (insights.isExpiringSoon) {
+        badges.push(`<span class="points-batch-risk points-batch-risk--expiring">${escapePointsHtml(formatPointsBatchExpiryLabel(batch, insights))}</span>`);
+    }
+
+    return badges.join('');
+}
+
+function buildPointsBatchEditOverviewCard({
+    iconClass = 'fas fa-layer-group',
+    label = '',
+    value = '',
+    meta = '',
+    tone = 'default'
+} = {}) {
+    return `
+        <article class="points-batch-edit-overview-card points-batch-edit-overview-card--${escapePointsHtml(tone)}">
+            <span class="points-batch-edit-overview-card__icon"><i class="${escapePointsHtml(iconClass)}"></i></span>
+            <div class="points-batch-edit-overview-card__body">
+                <span class="points-batch-edit-overview-card__label">${escapePointsHtml(label)}</span>
+                <strong class="points-batch-edit-overview-card__value">${escapePointsHtml(value)}</strong>
+                ${meta ? `<span class="points-batch-edit-overview-card__meta">${escapePointsHtml(meta)}</span>` : ''}
+            </div>
+        </article>
+    `;
+}
+
+function getPointsSelectedPackageData(packageId = '') {
+    const normalizedPackageId = String(packageId || '').trim();
+    if (!normalizedPackageId || normalizedPackageId === 'custom') {
+        return null;
+    }
+
+    return getPointsCatalogRows().find((row) => String(row?.id || '') === normalizedPackageId) || null;
+}
+
+function buildPointsGeneratePreviewModel() {
+    const {
+        batchNameInput,
+        packageInput,
+        countInput,
+        channelInput,
+        expiresInput,
+        customPointsInput
+    } = getPointsGenerateFormElements();
+
+    const batchName = String(batchNameInput?.value || '').trim();
+    const packageId = String(packageInput?.value || '').trim();
+    const isCustomPoints = packageId === 'custom';
+    const selectedPackage = getPointsSelectedPackageData(packageId);
+    const customPointsAmount = Math.max(0, Math.round(Number(customPointsInput?.value) || 0));
+    const pointsPerCode = isCustomPoints
+        ? customPointsAmount
+        : Math.max(0, Number(selectedPackage?.total_points) || 0);
+    const count = Math.max(0, Math.round(Number(countInput?.value) || 0));
+    const site = getPointsReadSite();
+    const channel = String(channelInput?.value || '').trim();
+    const expiresAt = String(expiresInput?.value || '').trim();
+    const packageLabel = isCustomPoints
+        ? (customPointsAmount > 0 ? `自定义积分 (${customPointsAmount}分)` : '自定义积分')
+        : (selectedPackage
+            ? `${selectedPackage.name}${selectedPackage.total_points ? ` (${selectedPackage.total_points}分)` : ''}`
+            : '未选择套餐');
+    const batchLabel = batchName || '未命名批次';
+    const totalPoints = pointsPerCode > 0 && count > 0 ? pointsPerCode * count : 0;
+
+    const blockers = [];
+    const warnings = [];
+
+    if (site === 'all') {
+        blockers.push('顶部站点筛选仍是“全部”，先切到 CN 或 INTL 后才能真正写入生成。');
+    }
+    if (!batchName) {
+        blockers.push('请先填写批次名称，便于后续在批次管理里快速定位。');
+    }
+    if (!packageId) {
+        blockers.push('请选择一个套餐，或者切换到“自定义积分”。');
+    }
+    if (isCustomPoints && customPointsAmount <= 0) {
+        blockers.push('自定义积分模式下，需要填写大于 0 的积分数量。');
+    }
+    if (!isCustomPoints && packageId && !selectedPackage) {
+        blockers.push('当前套餐不存在或尚未加载完成，请重新选择。');
+    }
+    if (count <= 0) {
+        blockers.push('生成数量至少为 1。');
+    } else if (count > 200) {
+        warnings.push('本次生成数量较大，建议确认是否需要拆分成多个批次，方便后续运营追踪。');
+    }
+    if (expiresAt) {
+        const expiresDate = new Date(expiresAt.replace(' ', 'T'));
+        if (Number.isNaN(expiresDate.getTime())) {
+            warnings.push('过期时间暂时无法识别，将按原始输入提交。');
+        }
+    } else {
+        warnings.push('当前未设置过期时间，生成的兑换码会长期有效。');
+    }
+
+    const statusTone = blockers.length > 0 ? 'blocked' : (warnings.length > 0 ? 'review' : 'ready');
+    const statusLabel = blockers.length > 0 ? '待完善' : (warnings.length > 0 ? '可复核' : '可生成');
+
+    return {
+        batchLabel,
+        batchName,
+        packageId,
+        packageLabel,
+        channel,
+        count,
+        pointsPerCode,
+        totalPoints,
+        site,
+        expiresAt,
+        blockers,
+        warnings,
+        statusTone,
+        statusLabel
+    };
+}
+
+function renderPointsGeneratePreview() {
+    const {
+        previewRoot,
+        previewStatus,
+        previewSummary,
+        previewMeta,
+        previewWarnings
+    } = getPointsGenerateFormElements();
+
+    if (!previewRoot || !previewStatus || !previewSummary || !previewMeta || !previewWarnings) {
+        return;
+    }
+
+    const model = buildPointsGeneratePreviewModel();
+    renderPointsSiteContexts();
+    previewRoot.dataset.status = model.statusTone;
+    previewStatus.className = `points-generate-preview__status is-${model.statusTone}`;
+    previewStatus.textContent = model.statusLabel;
+
+    previewSummary.innerHTML = [
+        { label: '写入站点', value: formatPointsGenerateSiteLabel(model.site) },
+        { label: '套餐 / 面额', value: model.packageLabel },
+        { label: '生成数量', value: model.count > 0 ? `${model.count} 个` : '未填写' },
+        { label: '总积分面额', value: model.totalPoints > 0 ? `${model.totalPoints} 分` : '待计算' }
+    ].map((item) => `
+        <div class="points-generate-preview__item">
+            <span>${escapePointsHtml(item.label)}</span>
+            <strong>${escapePointsHtml(item.value)}</strong>
+        </div>
+    `).join('');
+
+    previewMeta.innerHTML = `
+        <div class="points-generate-preview__meta-item">
+            <span>批次名</span>
+            <strong>${escapePointsHtml(model.batchLabel)}</strong>
+        </div>
+        <div class="points-generate-preview__meta-item">
+            <span>销售渠道</span>
+            <strong>${escapePointsHtml(formatPointsGenerateChannelLabel(model.channel))}</strong>
+        </div>
+        <div class="points-generate-preview__meta-item">
+            <span>过期时间</span>
+            <strong>${escapePointsHtml(formatPointsGenerateDateTime(model.expiresAt))}</strong>
+        </div>
+        <div class="points-generate-preview__meta-item">
+            <span>单码面额</span>
+            <strong>${model.pointsPerCode > 0 ? `${escapePointsHtml(model.pointsPerCode)} 分 / 码` : '待确认'}</strong>
+        </div>
+    `;
+
+    const messages = model.blockers.length ? model.blockers : model.warnings;
+    previewWarnings.innerHTML = messages.length
+        ? `
+            <ul class="points-generate-preview__warning-list">
+                ${messages.map((message) => `<li>${escapePointsHtml(message)}</li>`).join('')}
+            </ul>
+        `
+        : '<div class="points-generate-preview__success">配置已经完整，可以直接生成并在结果区导出或回跳到批次管理。</div>';
+}
+
+function syncPointsCatalogFilterInputs() {
+    const { searchInput, statusInput, sortInput } = getPointsCatalogToolbarElements();
+    if (searchInput) searchInput.value = pointsCatalogFilterState.search;
+    if (statusInput) statusInput.value = pointsCatalogFilterState.status;
+    if (sortInput) sortInput.value = pointsCatalogFilterState.sort;
+}
+
+function clearPointsCatalogFilters({ focusSearch = false } = {}) {
+    pointsCatalogFilterState = {
+        search: '',
+        status: 'all',
+        sort: 'sort_order_asc'
+    };
+    syncPointsCatalogFilterInputs();
+    if (focusSearch) {
+        document.getElementById('pointsCatalogSearchInput')?.focus();
+    }
+}
+
+function getPointsPackageAggregateMetrics(pkg = {}) {
+    const metrics = getPointsPackageMetrics(pkg);
+    const fallback = {
+        batch_count: (metrics.cn?.batch_count || 0) + (metrics.intl?.batch_count || 0),
+        generated_count: (metrics.cn?.generated_count || 0) + (metrics.intl?.generated_count || 0),
+        used_count: (metrics.cn?.used_count || 0) + (metrics.intl?.used_count || 0)
+    };
+
+    return {
+        batch_count: Math.max(0, Number(metrics.total?.batch_count) || fallback.batch_count),
+        generated_count: Math.max(0, Number(metrics.total?.generated_count) || fallback.generated_count),
+        used_count: Math.max(0, Number(metrics.total?.used_count) || fallback.used_count)
+    };
+}
+
+function getFilteredPointsCatalogRows(rows = getPointsCatalogRows()) {
+    const source = Array.isArray(rows) ? rows.slice() : [];
+    const search = String(pointsCatalogFilterState.search || '').trim().toLowerCase();
+    const status = String(pointsCatalogFilterState.status || 'all');
+    const sort = String(pointsCatalogFilterState.sort || 'sort_order_asc');
+
+    const filtered = source.filter((row) => {
+        if (status === 'active' && row.is_active === false) return false;
+        if (status === 'inactive' && row.is_active !== false) return false;
+        if (!search) return true;
+
+        const haystack = [
+            row.name,
+            row.name_en,
+            row.id
+        ].join(' ').toLowerCase();
+
+        return haystack.includes(search);
+    });
+
+    const collator = new Intl.Collator('zh-CN', { sensitivity: 'base', numeric: true });
+
+    filtered.sort((a, b) => {
+        switch (sort) {
+            case 'name_asc':
+                return collator.compare(a.name || a.name_en || '', b.name || b.name_en || '');
+            case 'points_desc':
+                return (Number(b.total_points) || 0) - (Number(a.total_points) || 0);
+            case 'price_desc':
+                return (Number(b.price_cny) || 0) - (Number(a.price_cny) || 0);
+            case 'activity_desc': {
+                const aActivity = getPointsPackageAggregateMetrics(a).generated_count;
+                const bActivity = getPointsPackageAggregateMetrics(b).generated_count;
+                return bActivity - aActivity;
+            }
+            case 'sort_order_asc':
+            default: {
+                const sortDelta = (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0);
+                if (sortDelta !== 0) return sortDelta;
+                return collator.compare(a.name || '', b.name || '');
+            }
+        }
+    });
+
+    return filtered;
+}
+
 function getPointsPackageById(packageId = '') {
     const normalizedId = String(packageId || '').trim();
     return getPointsCatalogRows().find((row) => row.id === normalizedId) || null;
@@ -191,18 +1058,71 @@ function getPointsPackageEditorElements() {
         modeBadge: document.getElementById('pointsPackageEditorModeBadge'),
         hint: document.getElementById('pointsPackageEditorHint'),
         metrics: document.getElementById('pointsPackageEditorMetrics'),
+        writeContextRoot: document.getElementById('pointsCatalogWriteContext'),
         saveBtn: document.getElementById('pointsPackageSaveBtn'),
         deleteBtn: document.getElementById('pointsPackageDeleteBtn')
     };
 }
 
+function syncPointsPackageActionState() {
+    const { saveBtn, deleteBtn } = getPointsPackageEditorElements();
+    const context = getPointsWriteContextState();
+    const isEditMode = pointsPackageEditorState.mode === 'edit' && !!getActivePointsPackageRow();
+    const blockedTitle = '先把顶部站点筛选切到 CN 或 INTL，再执行写入操作';
+
+    if (saveBtn && saveBtn.dataset.loading !== '1') {
+        saveBtn.disabled = !context.canWrite;
+        saveBtn.classList.toggle('is-blocked', !context.canWrite);
+        saveBtn.title = context.canWrite ? '' : blockedTitle;
+    }
+
+    if (deleteBtn) {
+        deleteBtn.disabled = !isEditMode || !context.canWrite;
+        deleteBtn.classList.toggle('is-blocked', !context.canWrite);
+        deleteBtn.title = !context.canWrite
+            ? blockedTitle
+            : (isEditMode ? '' : '请选择一个已有套餐');
+    }
+}
+
 function setPointsPackageSaveButtonState(loading, text = '保存套餐') {
     const { saveBtn } = getPointsPackageEditorElements();
     if (!saveBtn) return;
-    saveBtn.disabled = !!loading;
+    saveBtn.dataset.loading = loading ? '1' : '0';
     saveBtn.innerHTML = loading
-        ? '<i class="fas fa-spinner fa-spin"></i> 保存中...'
-        : `<i class="fas fa-save"></i> ${text}`;
+        ? '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span class="points-package-action-btn__label">保存中...</span>'
+        : `<span class="points-package-action-btn__label">${text}</span>`;
+    syncPointsPackageActionState();
+}
+
+function syncPointsGenerateSubmitState() {
+    const { submitBtn } = getPointsGenerateFormElements();
+    if (!submitBtn || submitBtn.dataset.loading === '1') {
+        return;
+    }
+
+    const context = getPointsWriteContextState();
+    submitBtn.disabled = !context.canWrite;
+    submitBtn.classList.toggle('is-blocked', !context.canWrite);
+    submitBtn.title = context.canWrite
+        ? ''
+        : '先把顶部站点筛选切到 CN 或 INTL，再生成兑换码';
+}
+
+function renderPointsSiteContexts() {
+    const { writeContextRoot: catalogContextRoot } = getPointsPackageEditorElements();
+    const { writeContextRoot: generateContextRoot } = getPointsGenerateFormElements();
+
+    if (catalogContextRoot) {
+        catalogContextRoot.innerHTML = buildPointsSiteContextMarkup('catalog');
+    }
+
+    if (generateContextRoot) {
+        generateContextRoot.innerHTML = buildPointsSiteContextMarkup('generate');
+    }
+
+    syncPointsPackageActionState();
+    syncPointsGenerateSubmitState();
 }
 
 function renderBatchPackageFilterOptions(packages = []) {
@@ -391,6 +1311,12 @@ function switchPointsView(viewName) {
         loadPackagesForSelect();
         initBatchExpiresPicker(); // Initialize Flatpickr when switching to generate view
     }
+    if (viewName === 'lookup') {
+        const resultDiv = document.getElementById('lookupResult');
+        if (resultDiv && !String(resultDiv.innerHTML || '').trim()) {
+            renderLookupEmptyState();
+        }
+    }
 
     schedulePointsViewPrefetch(viewName);
 }
@@ -420,6 +1346,9 @@ function initBatchExpiresPicker() {
         locale: "zh",
         allowInput: false,
         minDate: "today",
+        onChange: function () {
+            renderPointsGeneratePreview();
+        },
         // Theme based on current theme
         onOpen: function () {
             // Apply dark theme if needed
@@ -449,6 +1378,7 @@ let batchSortOrder = 'desc'; // 'asc' or 'desc'
 // Filtering State
 let batchChannelFilterValue = 'all';
 let batchPackageFilterValue = 'all';
+let batchQuickFilterValue = 'all';
 
 // Flag to prevent filter during code search
 let isCodeSearchInProgress = false;
@@ -460,8 +1390,8 @@ const batchPageSize = 10;
 // All available packages (for filter dropdown)
 let allPackages = [];
 
-function buildPointsBatchLoadingSkeleton(rowCount = 6) {
-    const rows = Math.max(4, Number.parseInt(rowCount, 10) || 6);
+function buildPointsBatchLoadingSkeleton(rowCount = batchPageSize) {
+    const rows = Math.max(4, Number.parseInt(rowCount, 10) || batchPageSize);
     return Array.from({ length: rows }, (_, index) => `
         <tr class="admin-table-skeleton-row" aria-hidden="true" data-skeleton-index="${index}">
             <td>
@@ -490,9 +1420,208 @@ function buildPointsBatchLoadingSkeleton(rowCount = 6) {
     `).join('');
 }
 
+function getPointsBatchQuickCounts(rows = allBatches) {
+    const sourceRows = Array.isArray(rows) ? rows : [];
+    const counts = {
+        all: sourceRows.length,
+        today: 0,
+        expiring: 0,
+        low_usage: 0,
+        manual: 0,
+        custom: 0
+    };
+
+    sourceRows.forEach((batch) => {
+        const insights = getPointsBatchInsights(batch);
+
+        if (insights.isToday) {
+            counts.today += 1;
+        }
+        if (insights.isExpiringSoon) {
+            counts.expiring += 1;
+        }
+        if (insights.isLowUsage) {
+            counts.low_usage += 1;
+        }
+        if (insights.isManual) {
+            counts.manual += 1;
+        }
+        if (insights.isCustom) {
+            counts.custom += 1;
+        }
+    });
+
+    return counts;
+}
+
+function updateBatchQuickFilterUI(counts = getPointsBatchQuickCounts()) {
+    document.querySelectorAll('#pointsBatchQuickFilters .points-batch-quick-filter').forEach((button) => {
+        button.classList.toggle('is-active', button.dataset.batchQuick === batchQuickFilterValue);
+        const countEl = button.querySelector('.points-batch-quick-filter__count');
+        if (countEl) {
+            const key = String(button.dataset.batchQuick || 'all');
+            countEl.textContent = String(counts[key] ?? 0);
+        }
+    });
+}
+
+function filterBatchByQuick(value = 'all') {
+    batchQuickFilterValue = String(value || 'all').trim() || 'all';
+    updateBatchQuickFilterUI();
+    applyBatchFilters();
+}
+
+function buildPointsBatchOverviewCard(iconClass, label, value, meta, tone = 'blue') {
+    return `
+        <article class="points-batch-overview-card points-batch-overview-card--${tone}">
+            <div class="points-batch-overview-card__icon"><i class="${iconClass}"></i></div>
+            <div class="points-batch-overview-card__body">
+                <span class="points-batch-overview-card__label">${escapePointsHtml(label)}</span>
+                <strong class="points-batch-overview-card__value">${escapePointsHtml(value)}</strong>
+                <span class="points-batch-overview-card__meta">${escapePointsHtml(meta)}</span>
+            </div>
+        </article>
+    `;
+}
+
+function renderPointsBatchOverview() {
+    const root = document.getElementById('pointsBatchOverview');
+    if (!root) {
+        return;
+    }
+
+    const quickCounts = getPointsBatchQuickCounts(allBatches);
+    const siteLabel = formatPointsGenerateSiteLabel(getPointsReadSite());
+    const totalPages = Math.max(1, Math.ceil(Math.max(0, filteredBatches.length) / batchPageSize));
+
+    root.innerHTML = [
+        buildPointsBatchOverviewCard('fas fa-layer-group', '当前站点批次', `${quickCounts.all}`, siteLabel, 'blue'),
+        buildPointsBatchOverviewCard('fas fa-filter', '当前筛选命中', `${filteredBatches.length}`, `第 ${Math.min(batchCurrentPage, totalPages)} / ${totalPages} 页`, 'green'),
+        buildPointsBatchOverviewCard('fas fa-hourglass-half', '即将过期', `${quickCounts.expiring}`, '未来 7 天内', 'amber'),
+        buildPointsBatchOverviewCard('fas fa-signal', '低使用率', `${quickCounts.low_usage}`, '使用率 <= 20%', 'violet'),
+        buildPointsBatchOverviewCard('fas fa-sparkles', '自定义积分', `${quickCounts.custom}`, '按自定义面额发放', 'slate')
+    ].join('');
+
+    updateBatchQuickFilterUI(quickCounts);
+}
+
+function hasActiveBatchListFilters() {
+    const searchTerm = String(document.getElementById('batchSearchInput')?.value || '').trim();
+    return Boolean(
+        searchTerm ||
+        batchDateFilterValue !== 'all' ||
+        batchChannelFilterValue !== 'all' ||
+        batchPackageFilterValue !== 'all' ||
+        batchQuickFilterValue !== 'all'
+    );
+}
+
+function setPointsSelectDropdownValue(dropdownId = '', value = '', fallbackText = '') {
+    const dropdown = document.getElementById(dropdownId);
+    if (!dropdown) {
+        return false;
+    }
+
+    const hiddenInput = dropdown.querySelector('input[type="hidden"]');
+    const displayText = dropdown.querySelector('.select-text');
+    const options = dropdown.querySelectorAll('.select-option');
+    const normalizedValue = String(value || '').trim();
+    const matchedOption = [...options].find((option) => option.dataset.value === normalizedValue) || null;
+
+    if (hiddenInput) {
+        hiddenInput.value = normalizedValue;
+    }
+    if (displayText) {
+        displayText.textContent = matchedOption?.textContent || fallbackText || normalizedValue || '请选择';
+    }
+    options.forEach((option) => {
+        option.classList.toggle('selected', option === matchedOption);
+    });
+
+    const customWrapper = document.getElementById('customPointsWrapper');
+    if (dropdownId === 'packageSelectDropdown' && customWrapper) {
+        setAdminPointsVisibility(customWrapper, normalizedValue === 'custom');
+    }
+
+    return Boolean(matchedOption || normalizedValue);
+}
+
+function resetPointsGenerateResultPanel() {
+    const placeholder = document.getElementById('generatePlaceholder');
+    const resultDiv = document.getElementById('generatedCodesResult');
+    const codesList = document.getElementById('codesListDisplay');
+    const { resultMeta } = getPointsGenerateFormElements();
+
+    generatedCodes = [];
+    generatedBatchContext = {
+        batchName: '',
+        count: 0,
+        site: '',
+        channel: '',
+        packageLabel: ''
+    };
+
+    if (codesList) {
+        codesList.innerHTML = '';
+    }
+    if (resultMeta) {
+        resultMeta.innerHTML = '';
+    }
+    setAdminPointsVisibility(placeholder, true);
+    setAdminPointsPanelVisible(resultDiv, false);
+}
+
+function applyPendingGenerateSeed() {
+    if (!pendingGenerateSeed) {
+        return false;
+    }
+
+    const seed = pendingGenerateSeed;
+    pendingGenerateSeed = null;
+
+    const batchNameInput = document.getElementById('batchName');
+    const countInput = document.getElementById('batchCount');
+    const expiresInput = document.getElementById('batchExpires');
+    const customPointsInput = document.getElementById('customPointsAmount');
+
+    if (batchNameInput) {
+        batchNameInput.value = seed.batchName;
+    }
+    if (countInput) {
+        countInput.value = String(seed.count);
+    }
+    if (expiresInput) {
+        expiresInput.value = '';
+    }
+    if (customPointsInput) {
+        customPointsInput.value = seed.customPointsAmount > 0 ? String(seed.customPointsAmount) : '';
+    }
+
+    setPointsSelectDropdownValue('channelSelectDropdown', seed.channel, formatPointsGenerateChannelLabel(seed.channel));
+
+    if (seed.isCustom) {
+        setPointsSelectDropdownValue('packageSelectDropdown', 'custom', '✏️ 自定义积分');
+    } else {
+        const packageText = seed.packageLabel
+            ? `${seed.packageLabel}${seed.pointsPerCode > 0 ? ` (${seed.pointsPerCode}分)` : ''}`
+            : '请选择套餐';
+        setPointsSelectDropdownValue('packageSelectDropdown', seed.packageId, packageText);
+    }
+
+    resetPointsGenerateResultPanel();
+    renderPointsGeneratePreview();
+    batchNameInput?.focus();
+    batchNameInput?.select();
+
+    announcePointsAction('已带入当前批次配置，可直接续发', 'success');
+
+    return true;
+}
+
 async function loadBatches() {
     const tbody = document.getElementById('batchesTableBody');
     tbody.innerHTML = buildPointsBatchLoadingSkeleton();
+    renderPointsBatchListFeedback();
 
     try {
         const currentSite = getPointsReadSite();
@@ -504,13 +1633,25 @@ async function loadBatches() {
             await loadPackagesForFilter();
         }
 
+        const pendingSearch = String(pendingBatchSearchTerm || '').trim();
+        const searchInput = document.getElementById('batchSearchInput');
+        if (searchInput && pendingSearch) {
+            searchInput.value = pendingSearch;
+        }
+
         applyBatchFilters();
+        pendingBatchSearchTerm = '';
+
+        if (searchInput && pendingSearch) {
+            searchInput.focus();
+        }
 
         // Enable horizontal scroll with mouse wheel (like users module)
         initBatchTableHorizontalScroll();
 
     } catch (err) {
         console.error('Failed to load batches:', err);
+        setPointsBatchListFeedback(`加载失败: ${err.message}`, 'error', 'action');
         tbody.innerHTML = `<tr><td colspan="8" class="error-cell">加载失败: ${err.message}</td></tr>`;
     }
 }
@@ -537,9 +1678,28 @@ function renderBatches() {
     const colCount = batchSelectMode ? 8 : 7;
 
     if (filteredBatches.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="${colCount}" class="empty-cell">暂无批次</td></tr>`;
+        if (allBatches.length === 0) {
+            setPointsBatchListFeedback('当前站点还没有批次数据，可以前往“生成兑换码”创建第一批。', 'info', 'empty');
+        } else if (hasActiveBatchListFilters()) {
+            setPointsBatchListFeedback('当前筛选下没有匹配批次，可调整搜索、筛选或快筛条件。', 'info', 'empty');
+        }
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="${colCount}" class="empty-cell">
+                    <div class="points-batch-empty-state">
+                        <strong>当前筛选下没有匹配批次</strong>
+                        <span>试试清空上方搜索 / 筛选，或者切换到其他快筛再看一眼。</span>
+                    </div>
+                </td>
+            </tr>
+        `;
+        renderPointsBatchOverview();
         updatePaginationUI();
         return;
+    }
+
+    if (pointsBatchListFeedbackState.kind === 'empty') {
+        clearPointsBatchListFeedback('empty');
     }
 
     const channelLabels = {
@@ -557,10 +1717,15 @@ function renderBatches() {
 
     tbody.innerHTML = pageBatches.map(batch => {
         const pkg = batch.points_packages;
-        const usedPercent = batch.total_count > 0 ? Math.round((batch.used_count / batch.total_count) * 100) : 0;
+        const insights = getPointsBatchInsights(batch);
+        const usedPercent = insights.totalCount > 0 ? Math.round((insights.usedCount / insights.totalCount) * 100) : 0;
         const createdAt = new Date(batch.created_at).toLocaleString('zh-CN', {
             month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'
         });
+        const expiryMeta = formatPointsBatchExpiryLabel(batch, insights);
+        const riskBadges = buildPointsBatchRiskBadges(batch);
+        const packageLabel = pkg?.name || (insights.isCustom ? '自定义积分' : '-');
+        const pointsPerCode = Math.max(0, Number(batch.custom_points_amount) || Number(pkg?.points_amount) || 0);
         const isSelected = selectedBatchIds.has(batch.id);
         const checkboxCell = batchSelectMode ? `
             <td class="checkbox-col" data-points-action="batch-row-stop">
@@ -574,8 +1739,19 @@ function renderBatches() {
         return `
             <tr data-batch-id="${batch.id}" class="points-batch-row ${isSelected ? 'selected' : ''}" data-points-action="view-batch-codes">
                 ${checkboxCell}
-                <td><strong>${batch.name}</strong></td>
-                <td>${pkg?.name || '-'}</td>
+                <td>
+                    <div class="points-batch-name-cell">
+                        <strong>${escapePointsHtml(batch.name || '-')}</strong>
+                        <div class="points-batch-risk-row">${riskBadges}</div>
+                        <span class="points-batch-meta-text">创建于 ${escapePointsHtml(createdAt)}${expiryMeta ? ` · ${escapePointsHtml(expiryMeta)}` : ''}</span>
+                    </div>
+                </td>
+                <td>
+                    <div class="points-batch-package-cell">
+                        <strong>${escapePointsHtml(packageLabel)}</strong>
+                        <span>${pointsPerCode > 0 ? `${escapePointsHtml(pointsPerCode)} 分 / 码` : '面额未设置'}</span>
+                    </div>
+                </td>
                 <td><span class="channel-badge ${batch.channel}">${channelLabels[batch.channel] || batch.channel}</span></td>
                 <td>${batch.total_count}</td>
                 <td>
@@ -592,25 +1768,55 @@ function renderBatches() {
                     <button class="btn-icon" type="button" data-points-action="export-batch-codes" data-batch-id="${encodeURIComponent(batch.id)}" title="导出Excel">
                         <i class="fas fa-download"></i>
                     </button>
+                    <button class="btn-icon" type="button" data-points-action="reissue-batch" data-batch-id="${encodeURIComponent(batch.id)}" title="续发同类批次">
+                        <i class="fas fa-wand-magic-sparkles"></i>
+                    </button>
                 </td>
             </tr>
         `;
     }).join('');
 
     hydratePointsUsageFills(tbody);
+    renderPointsBatchOverview();
     updatePaginationUI();
     updateSelectAllCheckbox();
 }
 
 function buildPointsCatalogSummaryCard(iconClass, label, value, tone = 'default') {
     return `
-        <article class="points-catalog-summary-card points-catalog-summary-card--${tone}">
-            <div class="points-catalog-summary-card__icon"><i class="${iconClass}"></i></div>
-            <div class="points-catalog-summary-card__body">
-                <div class="points-catalog-summary-card__label">${label}</div>
-                <div class="points-catalog-summary-card__value">${value}</div>
+        <article class="points-catalog-summary-card points-catalog-summary-card--${tone} payments-kpi-card payments-kpi-card-visual">
+            <div class="payments-kpi-main">
+                <div class="kpi-icon points-catalog-summary-card__icon"><i class="${iconClass}"></i></div>
+                <div class="kpi-content points-catalog-summary-card__body">
+                    <div class="payments-kpi-value points-catalog-summary-card__value">${value}</div>
+                    <div class="payments-kpi-label points-catalog-summary-card__label">${label}</div>
+                </div>
             </div>
         </article>
+    `;
+}
+
+function formatPointsPackageMetricCell(metric = {}) {
+    const safeMetric = metric && typeof metric === 'object' ? metric : {};
+    const batchCount = Math.max(0, Number(safeMetric.batch_count) || 0);
+    const generatedCount = Math.max(0, Number(safeMetric.generated_count) || 0);
+    const usedCount = Math.max(0, Number(safeMetric.used_count) || 0);
+
+    return `
+        <div class="points-package-metric-cell">
+            <span class="points-package-metric-pill">
+                <strong>${batchCount}</strong>
+                <span>批次</span>
+            </span>
+            <span class="points-package-metric-pill">
+                <strong>${generatedCount}</strong>
+                <span>发码</span>
+            </span>
+            <span class="points-package-metric-pill">
+                <strong>${usedCount}</strong>
+                <span>已用</span>
+            </span>
+        </div>
     `;
 }
 
@@ -673,7 +1879,7 @@ function renderPointsPackageEditor() {
     if (hint) {
         hint.textContent = isEditMode
             ? `当前编辑：${source.name || '未命名套餐'}${source.id ? ` · ID ${source.id}` : ''}`
-            : '创建一条新的全局套餐。保存时仍要求你先在顶部站点筛选中选择 cn 或 intl。';
+            : '创建一条新的全局套餐。也可以先从下方套餐列表切换编辑对象，保存时仍要求你先在顶部站点筛选中选择 cn 或 intl。';
     }
 
     if (metrics) {
@@ -694,6 +1900,7 @@ function renderPointsPackageEditor() {
     }
 
     setPointsPackageSaveButtonState(false, isEditMode ? '保存套餐' : '创建套餐');
+    renderPointsSiteContexts();
     updatePointsPackageTableSelection();
 }
 
@@ -716,6 +1923,62 @@ function resetPointsPackageEditor() {
         return;
     }
     startNewPointsPackage();
+}
+
+function duplicatePointsPackageToEditor(packageId = '') {
+    const row = getPointsPackageById(packageId);
+    if (!row) return;
+
+    setPointsPackageEditorState('create', '');
+    renderPointsPackageEditor();
+
+    const {
+        idInput,
+        nameInput,
+        nameEnInput,
+        basePointsInput,
+        bonusPointsInput,
+        priceInput,
+        sortInput,
+        enabledInput,
+        modeBadge,
+        hint,
+        metrics,
+        deleteBtn
+    } = getPointsPackageEditorElements();
+
+    const sourceMetrics = getPointsPackageMetrics(row);
+
+    if (idInput) idInput.value = '';
+    if (nameInput) nameInput.value = row.name ? `${row.name} 副本` : '未命名套餐 副本';
+    if (nameEnInput) nameEnInput.value = row.name_en ? `${row.name_en} Copy` : '';
+    if (basePointsInput) basePointsInput.value = String(Math.max(0, Number(row.points_amount) || 0));
+    if (bonusPointsInput) bonusPointsInput.value = String(Math.max(0, Number(row.bonus_points) || 0));
+    if (priceInput) priceInput.value = row.price_cny == null ? '' : String(row.price_cny);
+    if (sortInput) sortInput.value = String(getNextPointsPackageSortOrder());
+    if (enabledInput) enabledInput.checked = row.is_active !== false;
+    if (modeBadge) modeBadge.textContent = '复制新建';
+    if (hint) {
+        hint.textContent = `已复制「${row.name || '未命名套餐'}」的配置，请确认名称与写入站点后再保存。`;
+    }
+    if (metrics) {
+        metrics.innerHTML = `
+            <div class="points-package-editor-metric">
+                <span class="label">参考 CN 表现</span>
+                <span class="value">${formatPointsPackageMetricText(sourceMetrics.cn)}</span>
+            </div>
+            <div class="points-package-editor-metric">
+                <span class="label">参考 INTL 表现</span>
+                <span class="value">${formatPointsPackageMetricText(sourceMetrics.intl)}</span>
+            </div>
+        `;
+    }
+    if (deleteBtn) deleteBtn.disabled = true;
+
+    setPointsPackageSaveButtonState(false, '创建套餐');
+    renderPointsSiteContexts();
+    nameInput?.focus();
+    nameInput?.select();
 }
 
 function collectPointsPackageFormPayload() {
@@ -755,15 +2018,6 @@ function collectPointsPackageFormPayload() {
         sort: sortOrder,
         enabled: enabledInput?.checked !== false
     };
-}
-
-function setPointsPackageSaveButtonState(loading, text = '保存套餐') {
-    const { saveBtn } = getPointsPackageEditorElements();
-    if (!saveBtn) return;
-    saveBtn.disabled = !!loading;
-    saveBtn.innerHTML = loading
-        ? '<i class="fas fa-spinner fa-spin"></i> 保存中...'
-        : `<i class="fas fa-save"></i> ${text}`;
 }
 
 async function mutatePointsPackage({ action = 'update', id = '', payload = {}, label = '保存套餐', method = 'POST' } = {}) {
@@ -866,16 +2120,15 @@ async function savePointsPackageForm(event) {
             nextPackageId: result.row?.id || pointsPackageEditorState.packageId
         });
 
-        if (typeof showToast === 'function') {
-            showToast(isCreate ? '套餐已创建' : '套餐已保存', 'success');
-        }
+        announcePointsAction(isCreate ? '套餐已创建' : '套餐已保存', 'success');
     } catch (error) {
         console.error('Failed to save points package:', error);
-        if (typeof showToast === 'function') {
-            showToast(`保存套餐失败: ${error.message}`, 'error');
-        }
+        announcePointsAction(`保存套餐失败: ${error.message}`, 'error');
     } finally {
-        setPointsPackageSaveButtonState(false, '保存套餐');
+        setPointsPackageSaveButtonState(
+            false,
+            pointsPackageEditorState.mode === 'edit' && pointsPackageEditorState.packageId ? '保存套餐' : '创建套餐'
+        );
     }
 }
 
@@ -883,69 +2136,200 @@ async function deleteCurrentPointsPackage() {
     const row = getActivePointsPackageRow();
     if (!row) return;
 
-    if (!confirm(`确定删除套餐「${row.name || '未命名套餐'}」吗？`)) {
+    openPointsPackageDeleteModal(row.id);
+}
+
+function getPointsPackageDeleteModalPayload(packageId = '') {
+    const row = getPointsPackageById(packageId) || getActivePointsPackageRow();
+    if (!row) {
+        return null;
+    }
+
+    const metrics = getPointsPackageMetrics(row);
+    return {
+        row,
+        metrics,
+        packageId: row.id,
+        packageLabel: row.name || '未命名套餐',
+        packageMeta: `${Math.max(0, Number(row.total_points) || 0)} 积分 · ${row.price_cny == null ? '未设置价格' : `¥${Number(row.price_cny).toFixed(2)}`}`
+    };
+}
+
+function syncPointsPackageDeleteModalState() {
+    const contextRoot = document.getElementById('pointsPackageDeleteWriteContext');
+    const submitBtn = document.getElementById('pointsPackageDeleteSubmitBtn');
+    const context = getPointsWriteContextState();
+
+    if (contextRoot) {
+        contextRoot.innerHTML = buildPointsSiteContextMarkup('catalog');
+    }
+
+    if (submitBtn) {
+        submitBtn.disabled = !context.canWrite || pointsPackageDeleteModalState.submitting;
+    }
+}
+
+function closePointsPackageDeleteModal(event) {
+    if (!event || event.target.classList.contains('edit-modal-overlay')) {
+        const overlay = document.querySelector('.points-package-delete-modal-overlay');
+        if (!overlay) {
+            return;
+        }
+
+        overlay.classList.remove('is-visible');
+        window.setTimeout(() => {
+            overlay.remove();
+        }, 260);
+        pointsPackageDeleteModalState = {
+            packageId: '',
+            submitting: false
+        };
+    }
+}
+
+function openPointsPackageDeleteModal(packageId = '') {
+    const payload = getPointsPackageDeleteModalPayload(packageId);
+    if (!payload) {
+        announcePointsAction('未找到要删除的套餐', 'error');
+        return;
+    }
+
+    document.querySelector('.points-package-delete-modal-overlay')?.remove();
+    pointsPackageDeleteModalState = {
+        packageId: payload.packageId,
+        submitting: false
+    };
+
+    const modalHtml = `
+        <div class="edit-modal-overlay points-package-delete-modal-overlay" data-points-overlay-close="package-delete">
+            <div class="edit-modal edit-modal--code-action edit-modal--package-delete">
+                <div class="edit-modal-header">
+                    <div class="edit-modal-header__copy">
+                        <span class="edit-modal-header__eyebrow">套餐目录</span>
+                        <h3>删除套餐</h3>
+                        <p>删除后，该套餐将无法继续用于新批次生成或前台购买入口；历史兑换码与流水不会被追溯删除。</p>
+                    </div>
+                    <button class="edit-modal-close" type="button" data-points-action="close-package-delete-modal">✕</button>
+                </div>
+                <form class="edit-modal-form points-code-action-form" data-points-submit="submit-package-delete">
+                    <section class="points-code-action-summary points-code-action-summary--danger">
+                        <div class="points-code-action-summary__icon"><i class="fas fa-trash"></i></div>
+                        <div class="points-code-action-summary__copy">
+                            <span class="points-code-action-summary__eyebrow">即将删除</span>
+                            <strong class="points-code-action-summary__code">${escapePointsHtml(payload.packageLabel)}</strong>
+                            <p>${escapePointsHtml(payload.packageMeta)}</p>
+                        </div>
+                    </section>
+                    <div class="points-site-context points-site-context--code-action" id="pointsPackageDeleteWriteContext">
+                        ${buildPointsSiteContextMarkup('catalog')}
+                    </div>
+                    <section class="points-package-delete-summary">
+                        <div class="points-package-delete-summary__meta">
+                            <article class="points-package-delete-summary__meta-item">
+                                <span>CN 运营表现</span>
+                                <strong>${escapePointsHtml(formatPointsPackageMetricText(payload.metrics.cn))}</strong>
+                            </article>
+                            <article class="points-package-delete-summary__meta-item">
+                                <span>INTL 运营表现</span>
+                                <strong>${escapePointsHtml(formatPointsPackageMetricText(payload.metrics.intl))}</strong>
+                            </article>
+                            <article class="points-package-delete-summary__meta-item">
+                                <span>启用状态</span>
+                                <strong>${escapePointsHtml(payload.row.is_active !== false ? '启用中' : '已停用')}</strong>
+                            </article>
+                        </div>
+                        <div class="points-package-delete-warning">
+                            如果只是想暂时停止售卖，优先考虑保留套餐并关闭“启用状态”，这样历史结构和后续审计会更完整。
+                        </div>
+                    </section>
+                    <div class="points-code-action-actions">
+                        <button class="points-code-action-cancel" type="button" data-points-action="close-package-delete-modal">取消</button>
+                        <button class="points-code-action-submit points-code-action-submit--danger" type="submit" id="pointsPackageDeleteSubmitBtn">
+                            <i class="fas fa-trash"></i>
+                            <span>确认删除套餐</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    const overlay = document.querySelector('.points-package-delete-modal-overlay');
+    if (overlay) {
+        requestAnimationFrame(() => {
+            overlay.classList.add('is-visible');
+        });
+    }
+
+    syncPointsPackageDeleteModalState();
+}
+
+async function submitPointsPackageDelete(event) {
+    event.preventDefault();
+
+    const packageId = String(pointsPackageDeleteModalState.packageId || '').trim();
+    if (!packageId) {
         return;
     }
 
     try {
+        pointsPackageDeleteModalState.submitting = true;
+        syncPointsPackageDeleteModalState();
         const result = await mutatePointsPackage({
             method: 'DELETE',
-            id: row.id,
+            id: packageId,
             label: '删除套餐'
         });
 
         if (!result) {
+            pointsPackageDeleteModalState.submitting = false;
+            syncPointsPackageDeleteModalState();
             return;
         }
 
+        closePointsPackageDeleteModal();
         await reloadPointsCatalogAfterMutation({ nextMode: 'create' });
-        if (typeof showToast === 'function') {
-            showToast('套餐已删除', 'success');
-        }
+        announcePointsAction('套餐已删除', 'success');
     } catch (error) {
         console.error('Failed to delete points package:', error);
-        if (typeof showToast === 'function') {
-            showToast(`删除套餐失败: ${error.message}`, 'error');
-        }
+        pointsPackageDeleteModalState.submitting = false;
+        syncPointsPackageDeleteModalState();
+        announcePointsAction(`删除套餐失败: ${error.message}`, 'error');
     }
 }
 
-function renderPointsPackageCatalog(payload = {}) {
-    const summary = payload?.summary && typeof payload.summary === 'object' ? payload.summary : {};
-    const packages = setPointsCatalogRows(Array.isArray(payload?.packages) ? payload.packages : []);
-    const summaryEl = document.getElementById('pointsCatalogSummary');
-    const tbody = document.getElementById('pointsPackagesTableBody');
-    const currentSite = getPointsReadSite();
-    renderBatchPackageFilterOptions(allPackages);
-
-    if (summaryEl) {
-        summaryEl.innerHTML = [
-            buildPointsCatalogSummaryCard('fas fa-box-open', '套餐总数', summary.package_count || 0, 'blue'),
-            buildPointsCatalogSummaryCard('fas fa-check-circle', '启用套餐', summary.active_package_count || 0, 'green'),
-            buildPointsCatalogSummaryCard('fas fa-layer-group', currentSite === 'all' ? '全部批次' : `${currentSite.toUpperCase()} 批次`, summary.batch_count || 0, 'amber'),
-            buildPointsCatalogSummaryCard('fas fa-ticket-alt', currentSite === 'all' ? '已发兑换码' : `${currentSite.toUpperCase()} 发码`, summary.generated_code_count || 0, 'violet'),
-            buildPointsCatalogSummaryCard('fas fa-bolt', currentSite === 'all' ? '已使用兑换码' : `${currentSite.toUpperCase()} 已用`, summary.used_code_count || 0, 'rose'),
-            buildPointsCatalogSummaryCard('fas fa-pen-ruler', '自定义批次', summary.custom_batch_count || 0, 'slate')
-        ].join('');
-    }
-
+function renderPointsPackageCatalogTable(rows = getPointsCatalogRows()) {
+    const { countEl, tbody } = getPointsCatalogToolbarElements();
     if (!tbody) return;
 
-    if (!packages.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="empty-cell">暂无套餐目录</td></tr>';
-        setPointsPackageEditorState('create', '');
-        renderPointsPackageEditor();
+    const sourceRows = Array.isArray(rows) ? rows : [];
+    const visibleRows = getFilteredPointsCatalogRows(sourceRows);
+
+    if (countEl) {
+        countEl.textContent = visibleRows.length === sourceRows.length
+            ? `${sourceRows.length} 个套餐`
+            : `${visibleRows.length} / ${sourceRows.length} 个套餐`;
+    }
+
+    if (!visibleRows.length) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="7" class="empty-cell">
+                    <div class="points-package-empty-state">
+                        <strong>当前筛选下没有匹配套餐</strong>
+                        <span>试试清空筛选、切换状态，或者换个关键词。</span>
+                        <button class="btn-secondary points-package-empty-state__reset" type="button" data-points-action="clear-package-filters">
+                            清空筛选
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
         return;
     }
 
-    if (!pointsPackageEditorInitialized) {
-        setPointsPackageEditorState('edit', packages[0].id);
-        pointsPackageEditorInitialized = true;
-    } else if (pointsPackageEditorState.mode === 'edit' && !getActivePointsPackageRow()) {
-        setPointsPackageEditorState('edit', packages[0].id);
-    }
-
-    tbody.innerHTML = packages.map((pkg) => {
+    tbody.innerHTML = visibleRows.map((pkg) => {
         const metrics = getPointsPackageMetrics(pkg);
         const statusClass = pkg.is_active === false ? 'is-inactive' : 'is-active';
         const secondaryName = String(pkg.name_en || '').trim();
@@ -962,15 +2346,18 @@ function renderPointsPackageCatalog(payload = {}) {
                 </td>
                 <td>
                     <div class="points-package-balance">
-                        <strong>${totalPoints}</strong>
+                        <strong>${totalPoints} 积分</strong>
                         <span>基础 ${pkg.points_amount || 0} / 赠送 ${pkg.bonus_points || 0}</span>
                     </div>
                 </td>
                 <td>${formatPointsPackagePrice(pkg.price_cny)}</td>
                 <td><span class="points-package-status ${statusClass}">${pkg.is_active === false ? '停用' : '启用'}</span></td>
-                <td class="points-package-metric-cell">${formatPointsPackageMetricText(metrics.cn)}</td>
-                <td class="points-package-metric-cell">${formatPointsPackageMetricText(metrics.intl)}</td>
+                <td>${formatPointsPackageMetricCell(metrics.cn)}</td>
+                <td>${formatPointsPackageMetricCell(metrics.intl)}</td>
                 <td class="points-package-actions">
+                    <button class="btn-icon" type="button" data-points-action="duplicate-package" data-package-id="${encodeURIComponent(pkg.id)}" title="复制为新套餐">
+                        <i class="fas fa-clone"></i>
+                    </button>
                     <button class="btn-icon" type="button" data-points-action="edit-package" data-package-id="${encodeURIComponent(pkg.id)}" title="编辑套餐">
                         <i class="fas fa-pen"></i>
                     </button>
@@ -978,20 +2365,67 @@ function renderPointsPackageCatalog(payload = {}) {
             </tr>
         `;
     }).join('');
+}
 
+function renderPointsPackageCatalog(payload = {}) {
+    const summary = payload?.summary && typeof payload.summary === 'object' ? payload.summary : {};
+    const packages = setPointsCatalogRows(Array.isArray(payload?.packages) ? payload.packages : []);
+    const summaryEl = document.getElementById('pointsCatalogSummary');
+    const currentSite = getPointsReadSite();
+    renderBatchPackageFilterOptions(allPackages);
+
+    if (summaryEl) {
+        summaryEl.innerHTML = [
+            buildPointsCatalogSummaryCard('fas fa-box-open', '套餐总数', summary.package_count || 0, 'blue'),
+            buildPointsCatalogSummaryCard('fas fa-check-circle', '启用套餐', summary.active_package_count || 0, 'green'),
+            buildPointsCatalogSummaryCard('fas fa-layer-group', currentSite === 'all' ? '全部批次' : `${currentSite.toUpperCase()} 批次`, summary.batch_count || 0, 'amber'),
+            buildPointsCatalogSummaryCard('fas fa-ticket-alt', currentSite === 'all' ? '已发兑换码' : `${currentSite.toUpperCase()} 发码`, summary.generated_code_count || 0, 'violet'),
+            buildPointsCatalogSummaryCard('fas fa-bolt', currentSite === 'all' ? '已使用兑换码' : `${currentSite.toUpperCase()} 已用`, summary.used_code_count || 0, 'rose'),
+            buildPointsCatalogSummaryCard('fas fa-pen-ruler', '自定义批次', summary.custom_batch_count || 0, 'slate')
+        ].join('');
+    }
+
+    if (!packages.length) {
+        const { countEl, tbody } = getPointsCatalogToolbarElements();
+        if (countEl) {
+            countEl.textContent = '0 个套餐';
+        }
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="7" class="empty-cell">暂无套餐目录</td></tr>';
+        }
+        setPointsPackageEditorState('create', '');
+        renderPointsPackageEditor();
+        return;
+    }
+
+    if (!pointsPackageEditorInitialized) {
+        setPointsPackageEditorState('edit', packages[0].id);
+        pointsPackageEditorInitialized = true;
+    } else if (pointsPackageEditorState.mode === 'edit' && !getActivePointsPackageRow()) {
+        setPointsPackageEditorState('edit', packages[0].id);
+    }
+    renderPointsPackageCatalogTable(packages);
     renderPointsPackageEditor();
 }
 
 async function loadPointsPackageCatalog({ force = false } = {}) {
     const summaryEl = document.getElementById('pointsCatalogSummary');
+    const countEl = document.getElementById('pointsCatalogPackageCount');
     const tbody = document.getElementById('pointsPackagesTableBody');
+    const currentSite = getPointsReadSite();
 
     if (summaryEl) {
         summaryEl.innerHTML = [
             buildPointsCatalogSummaryCard('fas fa-box-open', '套餐总数', '...', 'blue'),
             buildPointsCatalogSummaryCard('fas fa-check-circle', '启用套餐', '...', 'green'),
-            buildPointsCatalogSummaryCard('fas fa-layer-group', '批次', '...', 'amber')
+            buildPointsCatalogSummaryCard('fas fa-layer-group', currentSite === 'all' ? '全部批次' : `${currentSite.toUpperCase()} 批次`, '...', 'amber'),
+            buildPointsCatalogSummaryCard('fas fa-ticket-alt', currentSite === 'all' ? '已发兑换码' : `${currentSite.toUpperCase()} 发码`, '...', 'violet'),
+            buildPointsCatalogSummaryCard('fas fa-bolt', currentSite === 'all' ? '已使用兑换码' : `${currentSite.toUpperCase()} 已用`, '...', 'rose'),
+            buildPointsCatalogSummaryCard('fas fa-pen-ruler', '自定义批次', '...', 'slate')
         ].join('');
+    }
+    if (countEl) {
+        countEl.textContent = '加载中';
     }
     if (tbody) {
         tbody.innerHTML = '<tr><td colspan="7" class="loading-cell">正在加载套餐目录...</td></tr>';
@@ -1022,6 +2456,7 @@ async function loadPackagesForSelect() {
 
     try {
         const payload = await fetchPointsCatalogSnapshot();
+        setPointsCatalogRows(Array.isArray(payload?.packages) ? payload.packages : []);
         const packages = (Array.isArray(payload?.packages) ? payload.packages : [])
             .filter((pkg) => pkg.is_active !== false);
 
@@ -1053,10 +2488,15 @@ async function loadPackagesForSelect() {
 
         // Initialize dropdown handlers
         initPointsDropdowns();
+        const seeded = applyPendingGenerateSeed();
+        if (!seeded) {
+            renderPointsGeneratePreview();
+        }
 
     } catch (err) {
         console.error('Failed to load packages:', err);
         displayText.textContent = '加载失败';
+        renderPointsGeneratePreview();
     }
 }
 
@@ -1113,6 +2553,7 @@ function initPointsDropdowns() {
 
                 // Close dropdown
                 dropdown.classList.remove('open');
+                renderPointsGeneratePreview();
             });
         });
     });
@@ -1142,26 +2583,23 @@ async function generateCodes(event) {
     const channel = document.getElementById('batchChannel').value;
     const expiresInput = document.getElementById('batchExpires').value;
     const expiresAt = expiresInput ? new Date(expiresInput).toISOString() : null;
+    const selectedPackage = getPointsSelectedPackageData(packageIdValue);
+    const previewModel = buildPointsGeneratePreviewModel();
 
-    // Check if using custom points
     const isCustomPoints = packageIdValue === 'custom';
-    let customPointsAmount = null;
+    const customPointsAmount = isCustomPoints
+        ? parseInt(document.getElementById('customPointsAmount')?.value)
+        : null;
 
-    if (isCustomPoints) {
-        customPointsAmount = parseInt(document.getElementById('customPointsAmount')?.value);
-        if (!customPointsAmount || customPointsAmount <= 0) {
-            alert('请输入有效的自定义积分数量');
-            return;
-        }
-    }
-
-    if (!batchName || (!isCustomPoints && !packageIdValue) || !count) {
-        alert('请填写所有必填项');
+    if (previewModel.blockers.length > 0) {
+        announcePointsAction(previewModel.blockers[0], 'error');
+        renderPointsGeneratePreview();
         return;
     }
 
     const btn = event.target.querySelector('button[type="submit"]');
     const originalText = btn.innerHTML;
+    btn.dataset.loading = '1';
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 生成中...';
     btn.disabled = true;
 
@@ -1180,25 +2618,47 @@ async function generateCodes(event) {
         });
 
         generatedCodes = Array.isArray(payload?.codes) ? payload.codes : [];
+        generatedBatchContext = {
+            batchName: payload?.batch_name || batchName,
+            count: Number(payload?.count) || count,
+            site: currentSite,
+            channel,
+            packageLabel: isCustomPoints
+                ? (customPointsAmount ? `自定义积分 (${customPointsAmount}分)` : '自定义积分')
+                : (selectedPackage?.name || previewModel.packageLabel || '未命名套餐')
+        };
         displayGeneratedCodes();
         invalidatePointsCatalogSnapshot();
 
     } catch (err) {
         console.error('Failed to generate codes:', err);
-        alert('生成失败: ' + err.message);
+        announcePointsAction(`生成失败: ${err.message}`, 'error');
     } finally {
+        btn.dataset.loading = '0';
         btn.innerHTML = originalText;
-        btn.disabled = false;
+        syncPointsGenerateSubmitState();
     }
 }
 
 function displayGeneratedCodes() {
     const resultDiv = document.getElementById('generatedCodesResult');
     const codesList = document.getElementById('codesListDisplay');
+    const { resultMeta } = getPointsGenerateFormElements();
 
     codesList.innerHTML = generatedCodes.map(code =>
         `<div class="code-item" data-points-action="copy-code-item" data-code="${encodeURIComponent(code)}" title="点击复制"><code>${code}</code></div>`
     ).join('');
+
+    if (resultMeta) {
+        const channelLabel = formatPointsGenerateChannelLabel(generatedBatchContext.channel);
+        const siteLabel = formatPointsGenerateSiteLabel(generatedBatchContext.site);
+        resultMeta.innerHTML = `
+            <span>${escapePointsHtml(generatedBatchContext.batchName || '未命名批次')}</span>
+            <span>${escapePointsHtml(siteLabel)}</span>
+            <span>${escapePointsHtml(channelLabel)}</span>
+            <span>${escapePointsHtml(`${generatedBatchContext.count || generatedCodes.length || 0} 个兑换码`)}</span>
+        `;
+    }
 
     // Update display logic for 2-column layout
     const placeholder = document.getElementById('generatePlaceholder');
@@ -1207,11 +2667,460 @@ function displayGeneratedCodes() {
     setAdminPointsPanelVisible(resultDiv, true);
 }
 
+function jumpToGeneratedBatch(batchName = generatedBatchContext.batchName) {
+    const normalizedBatchName = String(batchName || '').trim();
+    if (!normalizedBatchName) {
+        return;
+    }
+
+    pendingBatchSearchTerm = normalizedBatchName;
+    switchPointsView('batches');
+}
+
+function seedGenerateFromBatch(batchId = '') {
+    const normalizedBatchId = String(batchId || '').trim();
+    const batch = allBatches.find((item) => String(item?.id || '') === normalizedBatchId);
+    if (!batch) {
+        return;
+    }
+
+    const pkg = batch.points_packages;
+    const packageLabel = pkg?.name || (Math.max(0, Number(batch.custom_points_amount) || 0) > 0 ? '自定义积分' : '未命名套餐');
+
+    pendingGenerateSeed = {
+        batchName: `${batch.name || '未命名批次'} 续发`,
+        packageId: String(batch.package_id || '').trim(),
+        packageLabel,
+        channel: String(batch.channel || 'manual').trim() || 'manual',
+        count: Math.min(1000, Math.max(1, Number(batch.total_count) || 10)),
+        customPointsAmount: Math.max(0, Number(batch.custom_points_amount) || 0),
+        pointsPerCode: Math.max(0, Number(batch.custom_points_amount) || Number(pkg?.points_amount) || 0),
+        isCustom: Math.max(0, Number(batch.custom_points_amount) || 0) > 0 || !String(batch.package_id || '').trim()
+    };
+
+    switchPointsView('generate');
+}
+
 // Copy single code to clipboard
 function copySingleCode(element, code) {
-    navigator.clipboard.writeText(code).then(() => {
+    copyPointsTextToClipboard(code, {
+        successMessage: '兑换码已复制',
+        emptyMessage: '没有可复制的兑换码',
+        announcer: (message, tone) => announcePointsScopedAction(message, tone, { sourceEl: element })
+    }).then((copied) => {
+        if (!copied || !element) {
+            return;
+        }
         element.classList.add('copied');
         setTimeout(() => element.classList.remove('copied'), 1500);
+    });
+}
+
+function resetPointsBatchCodesUiState(batchId = '') {
+    pointsBatchCodesUiState = {
+        batchId: String(batchId || ''),
+        search: '',
+        status: 'all',
+        codes: [],
+        visibleCodes: [],
+        focusCode: ''
+    };
+}
+
+function queuePointsBatchCodeFocus(batchId = '', code = '') {
+    pendingPointsBatchCodeFocus = {
+        batchId: String(batchId || '').trim(),
+        code: String(code || '').trim()
+    };
+}
+
+function clearPendingPointsBatchCodeFocus() {
+    pendingPointsBatchCodeFocus = {
+        batchId: '',
+        code: ''
+    };
+}
+
+function focusPointsBatchCodeInModal(code = '', { applySearch = false } = {}) {
+    const normalizedCode = String(code || '').trim();
+    if (!normalizedCode) {
+        return;
+    }
+
+    pointsBatchCodesUiState.focusCode = normalizedCode;
+    if (applySearch) {
+        pointsBatchCodesUiState.search = normalizedCode;
+        pointsBatchCodesUiState.status = 'all';
+        refreshPointsBatchCodesTableSection();
+    }
+
+    const scrollToFocusedRow = () => {
+        const row = document.querySelector(`#pointsBatchCodesTableRegion tr[data-code-key="${encodeURIComponent(normalizedCode)}"]`);
+        if (!row) {
+            return;
+        }
+
+        row.classList.add('points-batch-code-row--pulse');
+        row.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+        window.setTimeout(() => {
+            row.classList.remove('points-batch-code-row--pulse');
+        }, 1800);
+    };
+
+    if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(scrollToFocusedRow);
+        });
+        return;
+    }
+
+    window.setTimeout(scrollToFocusedRow, 80);
+}
+
+function getFilteredPointsBatchCodes(codes = pointsBatchCodesUiState.codes) {
+    const search = String(pointsBatchCodesUiState.search || '').trim().toLowerCase();
+    const status = String(pointsBatchCodesUiState.status || 'all').trim().toLowerCase() || 'all';
+
+    return (Array.isArray(codes) ? codes : []).filter((row) => {
+        const rowStatus = String(row?.status || '').trim().toLowerCase();
+        if (status !== 'all' && rowStatus !== status) {
+            return false;
+        }
+
+        if (!search) {
+            return true;
+        }
+
+        const haystack = [
+            row?.code,
+            row?.status,
+            row?.used_profile?.username,
+            row?.used_profile?.email,
+            row?.used_by,
+            row?.revoker_name,
+            row?.revoke_reason,
+            row?.batch_name
+        ].filter(Boolean).join(' ').toLowerCase();
+
+        return haystack.includes(search);
+    });
+}
+
+function buildPointsBatchCodesRowActionButton({
+    action = '',
+    code = '',
+    codeExpiry = '',
+    iconClass = 'fas fa-arrow-right',
+    title = '',
+    tone = 'default'
+} = {}) {
+    const attrs = [
+        `data-points-action="${escapePointsHtml(action)}"`,
+        `data-code="${encodeURIComponent(code)}"`,
+        title ? `title="${escapePointsHtml(title)}"` : ''
+    ];
+
+    if (codeExpiry) {
+        attrs.push(`data-code-expiry="${encodeURIComponent(codeExpiry)}"`);
+    }
+
+    return `
+        <button class="points-batch-codes-row-btn points-batch-codes-row-btn--${escapePointsHtml(tone)}" type="button" ${attrs.filter(Boolean).join(' ')}>
+            <i class="${escapePointsHtml(iconClass)}"></i>
+        </button>
+    `;
+}
+
+function buildPointsBatchCodesTableSection(codes = pointsBatchCodesUiState.codes) {
+    const sourceRows = Array.isArray(codes) ? codes : [];
+    const visibleRows = getFilteredPointsBatchCodes(sourceRows);
+    const allCounts = getPointsBatchCodeStatusCounts(sourceRows);
+    pointsBatchCodesUiState.visibleCodes = visibleRows;
+
+    const statusOptions = [
+        ['all', '全部状态'],
+        ['pending', '待使用'],
+        ['used', '已使用'],
+        ['revoked', '已撤销'],
+        ['disabled', '已禁用'],
+        ['locked', '已锁定'],
+        ['expired', '已过期']
+    ].map(([value, label]) => `
+        <option value="${escapePointsHtml(value)}" ${pointsBatchCodesUiState.status === value ? 'selected' : ''}>${escapePointsHtml(label)}</option>
+    `).join('');
+
+    const toolbarHtml = `
+        <div class="points-batch-codes-toolbar">
+            <label class="points-batch-codes-search" for="pointsBatchCodesSearchInput">
+                <i class="fas fa-search"></i>
+                <input
+                    id="pointsBatchCodesSearchInput"
+                    type="search"
+                    placeholder="搜索兑换码、用户、撤销原因..."
+                    value="${escapePointsHtml(pointsBatchCodesUiState.search || '')}"
+                >
+            </label>
+            <label class="points-batch-codes-filter" for="pointsBatchCodesStatusFilter">
+                <span>状态</span>
+                <select id="pointsBatchCodesStatusFilter">${statusOptions}</select>
+            </label>
+            <div class="points-batch-codes-toolbar__meta">${escapePointsHtml(visibleRows.length)} / ${escapePointsHtml(sourceRows.length)} 个结果</div>
+            <div class="points-batch-codes-toolbar__actions">
+                <button
+                    class="points-batch-codes-toolbar-btn"
+                    type="button"
+                    data-points-action="copy-visible-batch-codes"
+                    ${visibleRows.length ? '' : 'disabled'}
+                >
+                    <i class="fas fa-copy"></i>
+                    <span>复制当前结果</span>
+                </button>
+                <button
+                    class="points-batch-codes-toolbar-btn"
+                    type="button"
+                    data-points-action="clear-batch-code-filters"
+                    ${pointsBatchCodesUiState.search || pointsBatchCodesUiState.status !== 'all' ? '' : 'disabled'}
+                >
+                    <i class="fas fa-rotate-left"></i>
+                    <span>清空筛选</span>
+                </button>
+            </div>
+        </div>
+    `;
+
+    if (!visibleRows.length) {
+        return `
+            <section class="points-batch-codes-panel" id="pointsBatchCodesTableRegion">
+                <div class="points-batch-codes-panel__header points-batch-codes-panel__header--table">
+                    <div class="points-batch-codes-panel__copy">
+                        <span class="points-batch-codes-panel__eyebrow">兑换码明细</span>
+                        <h4>状态与操作</h4>
+                        <p>按兑换码、用户或状态快速筛出你当前要处理的那一批记录。</p>
+                    </div>
+                </div>
+                ${toolbarHtml}
+                <div class="points-batch-codes-table-empty">
+                    <i class="fas fa-filter-circle-xmark"></i>
+                    <strong>当前筛选下没有命中兑换码</strong>
+                    <p>可以试试清空关键词，或把状态切回“全部状态”。</p>
+                </div>
+            </section>
+        `;
+    }
+
+    const tableHtml = visibleRows.map((c) => {
+        const statusMap = {
+            pending: '<span class="status-badge pending">⏳ 待使用</span>',
+            used: '<span class="status-badge used">✅ 已使用</span>',
+            revoked: '<span class="status-badge revoked">❌ 已撤销</span>',
+            locked: '<span class="status-badge locked">🔒 已锁定</span>',
+            disabled: '<span class="status-badge disabled">🚫 已禁用</span>',
+            expired: '<span class="status-badge expired">⌛ 已过期</span>'
+        };
+
+        let detailHtml = '-';
+        if (c.status === 'used' && c.used_profile) {
+            const userName = c.used_profile.username || c.used_profile.email || '未知用户';
+            const usedAt = c.used_at ? new Date(c.used_at).toLocaleString('zh-CN') : '';
+            detailHtml = `<div class="code-detail">
+                <span class="detail-user user-link" data-points-action="navigate-user" data-user-id="${encodeURIComponent(c.used_by)}" title="查看用户详情">👤 ${userName}</span>
+                <span class="detail-time">${usedAt}</span>
+            </div>`;
+        } else if (c.status === 'revoked') {
+            const reason = c.revoke_reason || '无原因';
+            const revokedAt = c.revoked_at ? new Date(c.revoked_at).toLocaleString('zh-CN') : '';
+            const userName = c.used_profile ? (c.used_profile.username || c.used_profile.email) : null;
+            const usedAt = c.used_at ? new Date(c.used_at).toLocaleString('zh-CN') : '';
+            const revokerName = c.revoked_by ? (c.revoker_name || '管理员') : '系统';
+            detailHtml = `<div class="code-detail revoked-detail">
+                ${userName ? `<span class="detail-user strikethrough user-link" data-points-action="navigate-user" data-user-id="${encodeURIComponent(c.used_by)}" title="查看用户详情">👤 ${userName} (${usedAt})</span>` : ''}
+                <span class="detail-reason">📝 撤销: ${escapePointsHtml(reason)}</span>
+                <span class="detail-revoker">🛡️ 操作者: ${escapePointsHtml(revokerName)}</span>
+                <span class="detail-time">🕐 ${escapePointsHtml(revokedAt)}</span>
+            </div>`;
+        } else if (c.status === 'disabled') {
+            detailHtml = '<span class="detail-disabled">管理员禁用</span>';
+        }
+
+        const rowActions = [
+            buildPointsBatchCodesRowActionButton({
+                action: 'copy-code-item',
+                code: c.code,
+                iconClass: 'fas fa-copy',
+                title: '复制兑换码',
+                tone: 'default'
+            }),
+            buildPointsBatchCodesRowActionButton({
+                action: 'lookup-code-item',
+                code: c.code,
+                iconClass: 'fas fa-magnifying-glass',
+                title: '跳到查询页',
+                tone: 'accent'
+            }),
+            c.status === 'pending' ? buildPointsBatchCodesRowActionButton({
+                action: 'set-code-expiry',
+                code: c.code,
+                codeExpiry: c.expires_at || '',
+                iconClass: 'fas fa-calendar-alt',
+                title: '设置有效期',
+                tone: 'default'
+            }) : '',
+            c.status === 'pending' ? buildPointsBatchCodesRowActionButton({
+                action: 'disable-code',
+                code: c.code,
+                iconClass: 'fas fa-ban',
+                title: '禁用兑换码',
+                tone: 'danger'
+            }) : '',
+            c.status === 'used' ? buildPointsBatchCodesRowActionButton({
+                action: 'revoke-code',
+                code: c.code,
+                iconClass: 'fas fa-undo',
+                title: '撤销兑换',
+                tone: 'danger'
+            }) : '',
+            c.status === 'disabled' ? buildPointsBatchCodesRowActionButton({
+                action: 'enable-code',
+                code: c.code,
+                iconClass: 'fas fa-check',
+                title: '重新启用',
+                tone: 'success'
+            }) : ''
+        ].filter(Boolean).join('');
+
+        const expiryText = c.expires_at
+            ? `<span class="code-expiry ${new Date(c.expires_at) < new Date() ? 'expired' : ''}">${new Date(c.expires_at).toLocaleDateString('zh-CN')}</span>`
+            : '<span class="code-expiry-none">继承批次</span>';
+        const isFocused = String(pointsBatchCodesUiState.focusCode || '') === String(c.code || '');
+
+        return `<tr class="code-row ${escapePointsHtml(c.status || '')} ${isFocused ? 'points-batch-code-row--focused' : ''}" data-code-key="${encodeURIComponent(c.code || '')}">
+            <td class="code-cell">${escapePointsHtml(c.code || '-')}</td>
+            <td>${statusMap[c.status] || escapePointsHtml(c.status || '-')}</td>
+            <td>${expiryText}</td>
+            <td>${detailHtml}</td>
+            <td class="actions-cell">
+                <div class="points-batch-codes-row-tools">${rowActions}</div>
+            </td>
+        </tr>`;
+    }).join('');
+
+    return `
+        <section class="points-batch-codes-panel" id="pointsBatchCodesTableRegion">
+            <div class="points-batch-codes-panel__header points-batch-codes-panel__header--table">
+                <div class="points-batch-codes-panel__copy">
+                    <span class="points-batch-codes-panel__eyebrow">兑换码明细</span>
+                    <h4>状态与操作</h4>
+                    <p>在当前批次内就地筛选、复制单码、跳到查询页，或继续执行单码状态操作。</p>
+                </div>
+                <div class="points-batch-codes-status-row">
+                    ${[
+                        ['待使用', allCounts.pending, 'pending'],
+                        ['已使用', allCounts.used, 'used'],
+                        ['已撤销', allCounts.revoked, 'revoked'],
+                        ['已禁用', allCounts.disabled, 'disabled'],
+                        ['已锁定', allCounts.locked, 'locked'],
+                        ['已过期', allCounts.expired, 'expired']
+                    ].map(([label, count, tone]) => `
+                        <span class="points-batch-codes-status-pill points-batch-codes-status-pill--${escapePointsHtml(tone)}">${escapePointsHtml(label)} ${escapePointsHtml(count)}</span>
+                    `).join('')}
+                </div>
+            </div>
+            ${toolbarHtml}
+            <div class="points-batch-codes-table-shell">
+                <table class="codes-table">
+                    <thead><tr><th>兑换码</th><th>状态</th><th>有效期</th><th>详情</th><th>操作</th></tr></thead>
+                    <tbody>${tableHtml}</tbody>
+                </table>
+            </div>
+        </section>
+    `;
+}
+
+function bindPointsBatchCodesTableControls() {
+    const searchInput = document.getElementById('pointsBatchCodesSearchInput');
+    const statusInput = document.getElementById('pointsBatchCodesStatusFilter');
+
+    if (searchInput) {
+        searchInput.addEventListener('input', (event) => {
+            pointsBatchCodesUiState.search = String(event.target?.value || '');
+            refreshPointsBatchCodesTableSection();
+        });
+    }
+
+    if (statusInput) {
+        statusInput.addEventListener('change', (event) => {
+            pointsBatchCodesUiState.status = String(event.target?.value || 'all');
+            refreshPointsBatchCodesTableSection();
+        });
+    }
+}
+
+function refreshPointsBatchCodesTableSection() {
+    const section = document.getElementById('pointsBatchCodesTableRegion');
+    if (!section) {
+        return;
+    }
+
+    section.outerHTML = buildPointsBatchCodesTableSection(pointsBatchCodesUiState.codes);
+    bindPointsBatchCodesTableControls();
+    const tableShell = document.querySelector('#pointsBatchCodesTableRegion .points-batch-codes-table-shell');
+    if (tableShell) {
+        enableHorizontalScroll(tableShell);
+    }
+}
+
+function clearPointsBatchCodeFilters() {
+    pointsBatchCodesUiState.search = '';
+    pointsBatchCodesUiState.status = 'all';
+    pointsBatchCodesUiState.focusCode = '';
+    refreshPointsBatchCodesTableSection();
+}
+
+function copyVisibleBatchCodes() {
+    const codes = pointsBatchCodesUiState.visibleCodes.map((row) => row.code).filter(Boolean);
+    copyPointsTextToClipboard(codes.join('\n'), {
+        successMessage: `已复制 ${codes.length} 个兑换码`,
+        emptyMessage: '当前筛选下没有可复制的兑换码',
+        announcer: (message, tone) => announcePointsScopedAction(message, tone, { batch: true })
+    });
+}
+
+function openPointsLookupFromCode(code = '') {
+    if (!String(code || '').trim()) {
+        return;
+    }
+
+    closeCodesModal();
+    switchPointsView('lookup');
+
+    const syncLookup = () => {
+        const input = document.getElementById('lookupCodeInput');
+        if (input) {
+            input.value = code;
+            input.focus();
+            input.select();
+        }
+        lookupCode();
+    };
+
+    if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(syncLookup);
+        return;
+    }
+
+    syncLookup();
+}
+
+function buildPointsLookupBatchAction(action = '', batchId = '', code = '', label = '前往批次', icon = 'fas fa-box-archive') {
+    return buildPointsLookupActionButton({
+        action,
+        label,
+        icon,
+        tone: 'default',
+        dataAttrs: {
+            'data-batch-id': encodeURIComponent(batchId),
+            'data-code': code ? encodeURIComponent(code) : ''
+        }
     });
 }
 
@@ -1243,6 +3152,21 @@ function bindAdminPointsRuntimeDelegates() {
             return;
         }
 
+        if (target.matches('[data-points-overlay-close="package-delete"]')) {
+            closePointsPackageDeleteModal();
+            return;
+        }
+
+        if (target.matches('[data-points-overlay-close="code-action"]')) {
+            closePointsCodeActionModal();
+            return;
+        }
+
+        if (target.matches('[data-points-overlay-close="batch-invalidate"]')) {
+            closePointsBatchInvalidateModal();
+            return;
+        }
+
         const actionEl = target.closest('[data-points-action]');
         if (!actionEl) {
             return;
@@ -1258,11 +3182,24 @@ function bindAdminPointsRuntimeDelegates() {
             case 'reset-package-editor':
                 resetPointsPackageEditor();
                 break;
+            case 'close-package-delete-modal':
+                closePointsPackageDeleteModal();
+                break;
+            case 'duplicate-package':
+                duplicatePointsPackageToEditor(decodeURIComponent(actionEl.dataset.packageId || ''));
+                break;
             case 'edit-package':
                 openPointsPackageEditor(decodeURIComponent(actionEl.dataset.packageId || ''));
                 break;
             case 'delete-current-package':
                 deleteCurrentPointsPackage();
+                break;
+            case 'clear-package-filters':
+                clearPointsCatalogFilters({ focusSearch: true });
+                renderPointsPackageCatalogTable();
+                break;
+            case 'filter-batch-quick':
+                filterBatchByQuick(actionEl.dataset.batchQuick || 'all');
                 break;
             case 'view-batch-codes':
                 viewBatchCodes(actionEl.dataset.batchId || actionEl.getAttribute('data-batch-id') || '');
@@ -1271,12 +3208,59 @@ function bindAdminPointsRuntimeDelegates() {
                 event.stopPropagation();
                 openBatchEditModal(decodeURIComponent(actionEl.dataset.batchId || ''));
                 break;
+            case 'open-batch-codes-from-edit':
+                event.stopPropagation();
+                closeBatchEditModal();
+                viewBatchCodes(decodeURIComponent(actionEl.dataset.batchId || ''));
+                break;
+            case 'open-batch-edit-from-codes':
+                event.stopPropagation();
+                closeCodesModal();
+                openBatchEditModal(decodeURIComponent(actionEl.dataset.batchId || ''));
+                break;
             case 'export-batch-codes':
                 event.stopPropagation();
                 exportBatchCodes(decodeURIComponent(actionEl.dataset.batchId || ''));
                 break;
+            case 'export-batch-codes-from-modal':
+                event.stopPropagation();
+                exportBatchCodes(decodeURIComponent(actionEl.dataset.batchId || ''));
+                break;
+            case 'reissue-batch':
+                event.stopPropagation();
+                seedGenerateFromBatch(decodeURIComponent(actionEl.dataset.batchId || ''));
+                break;
+            case 'reissue-batch-from-edit':
+                event.stopPropagation();
+                closeBatchEditModal();
+                seedGenerateFromBatch(decodeURIComponent(actionEl.dataset.batchId || ''));
+                break;
+            case 'reissue-batch-from-codes':
+                event.stopPropagation();
+                closeCodesModal();
+                seedGenerateFromBatch(decodeURIComponent(actionEl.dataset.batchId || ''));
+                break;
+            case 'invalidate-batch-from-codes':
+                event.stopPropagation();
+                invalidateSingleBatch(decodeURIComponent(actionEl.dataset.batchId || ''));
+                break;
+            case 'copy-visible-batch-codes':
+                event.stopPropagation();
+                copyVisibleBatchCodes();
+                break;
+            case 'clear-batch-code-filters':
+                event.stopPropagation();
+                clearPointsBatchCodeFilters();
+                break;
             case 'copy-code-item':
                 copySingleCode(actionEl, decodeURIComponent(actionEl.dataset.code || ''));
+                break;
+            case 'lookup-code-item':
+                event.stopPropagation();
+                openPointsLookupFromCode(decodeURIComponent(actionEl.dataset.code || ''));
+                break;
+            case 'jump-generated-batch':
+                jumpToGeneratedBatch();
                 break;
             case 'go-batch-page':
                 goToBatchPage(Number(actionEl.dataset.page || 0));
@@ -1296,24 +3280,42 @@ function bindAdminPointsRuntimeDelegates() {
             case 'set-code-expiry':
                 setCodeExpiry(
                     decodeURIComponent(actionEl.dataset.code || ''),
-                    decodeURIComponent(actionEl.dataset.codeExpiry || '')
+                    decodeURIComponent(actionEl.dataset.codeExpiry || ''),
+                    actionEl.closest('.codes-modal') ? 'batch-codes' : (actionEl.closest('#lookupResult') ? 'lookup' : '')
                 );
                 break;
             case 'disable-code':
-                disableCode(decodeURIComponent(actionEl.dataset.code || ''));
+                disableCode(
+                    decodeURIComponent(actionEl.dataset.code || ''),
+                    actionEl.closest('.codes-modal') ? 'batch-codes' : (actionEl.closest('#lookupResult') ? 'lookup' : '')
+                );
                 break;
             case 'revoke-code':
-                revokeCode(decodeURIComponent(actionEl.dataset.code || ''));
+                revokeCode(
+                    decodeURIComponent(actionEl.dataset.code || ''),
+                    actionEl.closest('.codes-modal') ? 'batch-codes' : (actionEl.closest('#lookupResult') ? 'lookup' : '')
+                );
                 break;
             case 'enable-code':
-                enableCode(decodeURIComponent(actionEl.dataset.code || ''));
+                enableCode(
+                    decodeURIComponent(actionEl.dataset.code || ''),
+                    actionEl.closest('.codes-modal') ? 'batch-codes' : (actionEl.closest('#lookupResult') ? 'lookup' : '')
+                );
                 break;
             case 'close-batch-edit':
                 closeBatchEditModal();
                 break;
+            case 'close-code-action-modal':
+                closePointsCodeActionModal();
+                break;
+            case 'close-batch-invalidate-modal':
+                closePointsBatchInvalidateModal();
+                break;
             case 'navigate-batch':
                 event.preventDefault();
-                navigateToBatch(decodeURIComponent(actionEl.dataset.batchId || ''));
+                navigateToBatch(decodeURIComponent(actionEl.dataset.batchId || ''), {
+                    code: decodeURIComponent(actionEl.dataset.code || '')
+                });
                 break;
         }
     });
@@ -1347,8 +3349,17 @@ function bindAdminPointsRuntimeDelegates() {
             case 'save-package':
                 savePointsPackageForm(event);
                 break;
+            case 'submit-package-delete':
+                submitPointsPackageDelete(event);
+                break;
             case 'save-batch-edit':
                 saveBatchEdit(event, decodeURIComponent(form.dataset.batchId || ''));
+                break;
+            case 'submit-code-action':
+                submitPointsCodeAction(event);
+                break;
+            case 'submit-batch-invalidate':
+                submitPointsBatchInvalidate(event);
                 break;
         }
     });
@@ -1362,6 +3373,19 @@ let codeSearchDebounceTimer = null;
 document.addEventListener('DOMContentLoaded', () => {
     const initPointsPageBindings = () => {
         const searchInput = document.getElementById('batchSearchInput');
+        const lookupInput = document.getElementById('lookupCodeInput');
+        const catalogSearchInput = document.getElementById('pointsCatalogSearchInput');
+        const catalogStatusInput = document.getElementById('pointsCatalogStatusFilter');
+        const catalogSortInput = document.getElementById('pointsCatalogSortFilter');
+        const {
+            batchNameInput,
+            packageInput,
+            countInput,
+            channelInput,
+            expiresInput,
+            customPointsInput
+        } = getPointsGenerateFormElements();
+
         if (searchInput) {
             searchInput.addEventListener('input', (e) => {
                 // Skip filtering if we're clearing input after code search
@@ -1388,6 +3412,56 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
         }
+
+        if (lookupInput) {
+            lookupInput.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    lookupCode();
+                }
+            });
+        }
+
+        if (catalogSearchInput) {
+            catalogSearchInput.addEventListener('input', (e) => {
+                pointsCatalogFilterState.search = String(e.target.value || '').trim();
+                renderPointsPackageCatalogTable();
+            });
+        }
+
+        if (catalogStatusInput) {
+            catalogStatusInput.addEventListener('change', (e) => {
+                pointsCatalogFilterState.status = String(e.target.value || 'all');
+                renderPointsPackageCatalogTable();
+            });
+        }
+
+        if (catalogSortInput) {
+            catalogSortInput.addEventListener('change', (e) => {
+                pointsCatalogFilterState.sort = String(e.target.value || 'sort_order_asc');
+                renderPointsPackageCatalogTable();
+            });
+        }
+
+        [batchNameInput, packageInput, countInput, channelInput, expiresInput, customPointsInput]
+            .filter(Boolean)
+            .forEach((input) => {
+                const eventName = input.tagName === 'INPUT' ? 'input' : 'change';
+                input.addEventListener(eventName, () => {
+                    renderPointsGeneratePreview();
+                });
+                if (eventName !== 'change') {
+                    input.addEventListener('change', () => {
+                        renderPointsGeneratePreview();
+                    });
+                }
+            });
+
+        syncPointsCatalogFilterInputs();
+        renderPointsSiteContexts();
+        renderPointsGeneratePreview();
+        renderLookupEmptyState();
+        updateBatchQuickFilterUI();
 
         // Initialize batch date pickers for custom range
         initBatchDatePickers();
@@ -1486,6 +3560,9 @@ function applyBatchFilters() {
     const startOfWeek = new Date(startOfDay);
     startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const expiringThreshold = new Date(now.getTime() + (7 * 24 * 60 * 60 * 1000));
+
+    updateBatchQuickFilterUI();
 
     // Filter batches
     filteredBatches = allBatches.filter(batch => {
@@ -1519,7 +3596,37 @@ function applyBatchFilters() {
         const matchesPackage = batchPackageFilterValue === 'all' ||
             (batch.points_packages?.id === batchPackageFilterValue);
 
-        return matchesSearch && matchesDate && matchesChannel && matchesPackage;
+        // Quick filter
+        const totalCount = Math.max(0, Number(batch.total_count) || 0);
+        const usedCount = Math.max(0, Number(batch.used_count) || 0);
+        const usageRate = totalCount > 0 ? (usedCount / totalCount) : 0;
+        const expiresAt = batch.expires_at ? new Date(batch.expires_at) : null;
+        const hasValidExpiry = expiresAt instanceof Date && !Number.isNaN(expiresAt.getTime());
+        let matchesQuick = true;
+
+        switch (batchQuickFilterValue) {
+            case 'today':
+                matchesQuick = createdAt >= startOfDay;
+                break;
+            case 'expiring':
+                matchesQuick = hasValidExpiry && expiresAt >= now && expiresAt <= expiringThreshold;
+                break;
+            case 'low_usage':
+                matchesQuick = totalCount >= 5 && usageRate <= 0.2;
+                break;
+            case 'manual':
+                matchesQuick = String(batch.channel || '') === 'manual';
+                break;
+            case 'custom':
+                matchesQuick = Math.max(0, Number(batch.custom_points_amount) || 0) > 0;
+                break;
+            case 'all':
+            default:
+                matchesQuick = true;
+                break;
+        }
+
+        return matchesSearch && matchesDate && matchesChannel && matchesPackage && matchesQuick;
     });
 
     // Sort batches
@@ -1577,6 +3684,7 @@ async function searchCodeInBatches() {
         const payload = await fetchPointsBatchesPayload({ site: currentSite, code: searchTerm });
 
         if (payload?.batch) {
+            clearPointsBatchListFeedback();
             // Found the code - display only this batch in the table
             isCodeSearchInProgress = true;
 
@@ -1590,11 +3698,11 @@ async function searchCodeInBatches() {
             // Then open its batch details modal
             viewBatchCodes(payload.batch.id);
         } else {
-            alert('❌ 未找到该兑换码，请检查输入是否正确');
+            announcePointsScopedAction('未找到该兑换码，请检查输入是否正确', 'error', { batchList: true });
         }
     } catch (err) {
         console.error('Code search failed:', err);
-        alert('搜索失败: ' + err.message);
+        announcePointsScopedAction(`搜索失败: ${err.message}`, 'error', { batchList: true });
     }
 }
 
@@ -1604,6 +3712,7 @@ async function searchCodeInBatchesNoModal(code) {
         const payload = await fetchPointsBatchesPayload({ site: getPointsReadSite(), code });
 
         if (payload?.batch) {
+            clearPointsBatchListFeedback();
             // Found the code - display only this batch in the table
             isCodeSearchInProgress = true;
 
@@ -1615,6 +3724,7 @@ async function searchCodeInBatchesNoModal(code) {
         } else {
             // Code not found - show empty state
             filteredBatches = [];
+            setPointsBatchListFeedback('未找到对应兑换码，可检查输入是否完整，或切换站点后再试。', 'info', 'empty');
             renderBatches();
         }
     } catch (err) {
@@ -1861,7 +3971,7 @@ function clearBatchSelection() {
 // ========================================
 async function batchDeleteBatches() {
     if (selectedBatchIds.size === 0) {
-        alert('请先选择要删除的批次');
+        announcePointsScopedAction('请先选择要删除的批次', 'error', { batchList: true });
         return;
     }
 
@@ -1968,7 +4078,7 @@ async function executeDeleteWithOption(batchIdsStr) {
     const selectedOption = document.querySelector('input[name="deleteOption"]:checked')?.value;
 
     if (!selectedOption) {
-        alert('请选择一个删除选项');
+        announcePointsScopedAction('请选择一个删除选项', 'error', { batchList: true });
         return;
     }
 
@@ -1986,7 +4096,14 @@ async function executeDeleteWithOption(batchIdsStr) {
             }
         });
 
-        alert(`✅ ${payload?.message || '批次已处理'}`);
+        const feedback = buildPointsBatchActionFeedback('delete', payload, {
+            requestedBatchCount: batchIds.length,
+            deleteMode: selectedOption
+        });
+        setPointsBatchListFeedback(feedback.message, feedback.tone, 'action', {
+            detail: feedback.detail,
+            stats: feedback.stats
+        });
 
         closeDeleteOptionsModal();
         selectedBatchIds.clear();
@@ -1997,7 +4114,7 @@ async function executeDeleteWithOption(batchIdsStr) {
 
     } catch (err) {
         console.error('Delete failed:', err);
-        alert('删除失败: ' + err.message);
+        announcePointsScopedAction(`删除失败: ${err.message}`, 'error', { batchList: true });
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-trash"></i> 确认删除';
     }
@@ -2041,9 +4158,9 @@ function initBatchDatePickers() {
 }
 
 function copyAllCodes() {
-    const text = generatedCodes.join('\n');
-    navigator.clipboard.writeText(text).then(() => {
-        alert(`已复制 ${generatedCodes.length} 个兑换码`);
+    copyPointsTextToClipboard(generatedCodes.join('\n'), {
+        successMessage: `已复制 ${generatedCodes.length} 个兑换码`,
+        emptyMessage: '当前没有可复制的兑换码'
     });
 }
 
@@ -2062,17 +4179,45 @@ function downloadCodesCSV() {
 // VIEW BATCH CODES MODAL
 // ========================================
 async function viewBatchCodes(batchId) {
-    const batch = allBatches.find(b => b.id === batchId);
+    const batch = allBatches.find((b) => b.id === batchId);
     if (!batch) return;
+    if (String(pointsBatchCodesFeedbackState.batchId || '').trim() && String(pointsBatchCodesFeedbackState.batchId || '').trim() !== String(batchId || '').trim()) {
+        clearPointsBatchCodesFeedback();
+    }
 
-    // Show loading modal immediately
+    if (String(pointsBatchCodesUiState.batchId || '') !== String(batchId || '')) {
+        resetPointsBatchCodesUiState(batchId);
+    } else {
+        pointsBatchCodesUiState.batchId = String(batchId || '');
+    }
+
+    if (pendingPointsBatchCodeFocus.batchId && pendingPointsBatchCodeFocus.batchId === String(batchId || '')) {
+        pointsBatchCodesUiState.focusCode = pendingPointsBatchCodeFocus.code;
+        if (pendingPointsBatchCodeFocus.code) {
+            pointsBatchCodesUiState.search = pendingPointsBatchCodeFocus.code;
+            pointsBatchCodesUiState.status = 'all';
+        }
+        clearPendingPointsBatchCodeFocus();
+    }
+
+    const insights = getPointsBatchInsights(batch);
+    const packageLabel = batch.points_packages?.name || (insights.isCustom ? '自定义积分' : '未命名套餐');
+    const headerSubtitle = [
+        formatPointsGenerateSiteLabel(batch.site || getPointsReadSite()),
+        formatPointsGenerateChannelLabel(batch.channel),
+        `创建于 ${formatPointsGenerateDateTime(batch.created_at)}`
+    ].join(' · ');
+
     document.querySelector('.codes-modal-overlay')?.remove();
     const loadingHtml = `
         <div class="codes-modal-overlay" data-points-overlay-close="codes">
-            <div class="codes-modal">
-                <div class="codes-modal-header">
-                    <h3>📦 ${batch.name}</h3>
-                    <span class="codes-count">加载中...</span>
+            <div class="codes-modal codes-modal--batch">
+                <div class="codes-modal-header codes-modal-header--batch">
+                    <div class="codes-modal-header__copy">
+                        <span class="codes-modal-header__eyebrow">批次详情</span>
+                        <h3>${escapePointsHtml(batch.name || '未命名批次')}</h3>
+                        <p>${escapePointsHtml(headerSubtitle)}</p>
+                    </div>
                     <button class="modal-close-btn" type="button" data-points-action="close-codes-modal">✕</button>
                 </div>
                 <div class="codes-modal-body loading-state">
@@ -2096,116 +4241,138 @@ async function viewBatchCodes(batchId) {
             batchId
         });
         const data = Array.isArray(payload?.codes) ? payload.codes : [];
-
-        // Update modal content (replace loading with actual data)
         const modalBody = document.querySelector('.codes-modal-body');
-        const modalCount = document.querySelector('.codes-count');
-        if (!modalBody) return; // Modal was closed
+        if (!modalBody) return;
 
-        modalCount.textContent = `${data.length} 个兑换码`;
+        const pointsPerCode = Math.max(0, Number(batch.custom_points_amount) || Number(batch.points_packages?.points_amount) || 0);
+        const riskBadges = buildPointsBatchRiskBadges(batch);
+        const codeCounts = getPointsBatchCodeStatusCounts(data);
+        const usagePercent = codeCounts.total > 0 ? Math.round((codeCounts.used / codeCounts.total) * 100) : 0;
+        pointsBatchCodesUiState.codes = data;
+        pointsBatchCodesUiState.visibleCodes = data;
 
-        const tableHtml = data.map(c => {
-            const statusMap = {
-                pending: '<span class="status-badge pending">⏳ 待使用</span>',
-                used: '<span class="status-badge used">✅ 已使用</span>',
-                revoked: '<span class="status-badge revoked">❌ 已撤销</span>',
-                locked: '<span class="status-badge locked">🔒 已锁定</span>',
-                disabled: '<span class="status-badge disabled">🚫 已禁用</span>',
-                expired: '<span class="status-badge expired">⌛ 已过期</span>'
-            };
+        const actionsHtml = [
+            buildPointsBatchCodesActionButton({
+                action: 'open-batch-edit-from-codes',
+                batchId,
+                iconClass: 'fas fa-pen-ruler',
+                label: '编辑批次',
+                tone: 'default'
+            }),
+            buildPointsBatchCodesActionButton({
+                action: 'reissue-batch-from-codes',
+                batchId,
+                iconClass: 'fas fa-wand-magic-sparkles',
+                label: '续发同类批次',
+                tone: 'accent'
+            }),
+            buildPointsBatchCodesActionButton({
+                action: 'export-batch-codes-from-modal',
+                batchId,
+                iconClass: 'fas fa-file-export',
+                label: '导出 Excel',
+                tone: 'default'
+            }),
+            buildPointsBatchCodesActionButton({
+                action: 'invalidate-batch-from-codes',
+                batchId,
+                iconClass: 'fas fa-ban',
+                label: '作废未使用',
+                tone: 'danger',
+                disabled: codeCounts.pending <= 0
+            })
+        ].join('');
 
-            // Build detail info
-            let detailHtml = '-';
-            if (c.status === 'used' && c.used_profile) {
-                const userName = c.used_profile.username || c.used_profile.email || '未知用户';
-                const usedAt = c.used_at ? new Date(c.used_at).toLocaleString('zh-CN') : '';
-                // Make user clickable to navigate to user management
-                detailHtml = `<div class="code-detail">
-                    <span class="detail-user user-link" data-points-action="navigate-user" data-user-id="${encodeURIComponent(c.used_by)}" title="查看用户详情">👤 ${userName}</span>
-                    <span class="detail-time">${usedAt}</span>
-                </div>`;
-            } else if (c.status === 'revoked') {
-                const reason = c.revoke_reason || '无原因';
-                const revokedAt = c.revoked_at ? new Date(c.revoked_at).toLocaleString('zh-CN') : '';
-                const userName = c.used_profile ? (c.used_profile.username || c.used_profile.email) : null;
-                const usedAt = c.used_at ? new Date(c.used_at).toLocaleString('zh-CN') : '';
-                const revokerName = c.revoked_by ? (c.revoker_name || '管理员') : '系统';
-                detailHtml = `<div class="code-detail revoked-detail">
-                    ${userName ? `<span class="detail-user strikethrough user-link" data-points-action="navigate-user" data-user-id="${encodeURIComponent(c.used_by)}" title="查看用户详情">👤 ${userName} (${usedAt})</span>` : ''}
-                    <span class="detail-reason">📝 撤销: ${reason}</span>
-                    <span class="detail-revoker">🛡️ 操作者: ${revokerName}</span>
-                    <span class="detail-time">🕐 ${revokedAt}</span>
-                </div>`;
-            } else if (c.status === 'disabled') {
-                detailHtml = '<span class="detail-disabled">管理员禁用</span>';
-            }
+        const summaryCards = [
+            buildPointsBatchCodesSummaryCard({
+                iconClass: 'fas fa-ticket-alt',
+                label: '兑换码总量',
+                value: `${codeCounts.total} 个`,
+                meta: pointsPerCode > 0 ? `${pointsPerCode} 分 / 码` : '面额未设置',
+                tone: 'blue'
+            }),
+            buildPointsBatchCodesSummaryCard({
+                iconClass: 'fas fa-hourglass-half',
+                label: '待使用',
+                value: `${codeCounts.pending} 个`,
+                meta: '可继续被兑换',
+                tone: 'amber'
+            }),
+            buildPointsBatchCodesSummaryCard({
+                iconClass: 'fas fa-circle-check',
+                label: '已使用',
+                value: `${codeCounts.used} 个`,
+                meta: `使用率 ${usagePercent}%`,
+                tone: 'green'
+            }),
+            buildPointsBatchCodesSummaryCard({
+                iconClass: 'fas fa-shield-exclamation',
+                label: '风险 / 失效',
+                value: `${codeCounts.risk} 个`,
+                meta: `撤销 ${codeCounts.revoked} · 禁用 ${codeCounts.disabled}`,
+                tone: 'rose'
+            }),
+            buildPointsBatchCodesSummaryCard({
+                iconClass: 'fas fa-calendar-days',
+                label: '批次有效期',
+                value: formatPointsBatchExpiryLabel(batch, insights),
+                meta: batch.expires_at ? formatPointsGenerateDateTime(batch.expires_at) : '未设置单独过期时间',
+                tone: insights.isExpiringSoon ? 'amber' : 'slate'
+            })
+        ].join('');
 
-            // Build action buttons
-            let actionHtml = '';
-
-            // Add expiry button for pending codes
-            if (c.status === 'pending') {
-                const expiryDisplay = c.expires_at
-                    ? new Date(c.expires_at).toLocaleDateString('zh-CN')
-                    : '无';
-                actionHtml += `
-                    <button class="btn-icon btn-expiry" type="button" data-points-action="set-code-expiry" data-code="${encodeURIComponent(c.code)}" data-code-expiry="${encodeURIComponent(c.expires_at || '')}" title="设置有效期">
-                        <i class="fas fa-calendar-alt"></i>
-                    </button>`;
-                actionHtml += `
-                    <button class="btn-revoke" type="button" data-points-action="disable-code" data-code="${encodeURIComponent(c.code)}" title="禁用">
-                        <i class="fas fa-ban"></i>
-                    </button>`;
-            } else if (c.status === 'used') {
-                actionHtml = `
-                    <button class="btn-revoke" type="button" data-points-action="revoke-code" data-code="${encodeURIComponent(c.code)}" title="撤销">
-                        <i class="fas fa-undo"></i> 撤销
-                    </button>`;
-            } else if (c.status === 'disabled') {
-                actionHtml = `
-                    <button class="btn-enable" type="button" data-points-action="enable-code" data-code="${encodeURIComponent(c.code)}" title="启用">
-                        <i class="fas fa-check"></i> 启用
-                    </button>`;
-            }
-
-            if (!actionHtml) actionHtml = '-';
-
-            // Format expiry display
-            const expiryText = c.expires_at
-                ? `<span class="code-expiry ${new Date(c.expires_at) < new Date() ? 'expired' : ''}">${new Date(c.expires_at).toLocaleDateString('zh-CN')}</span>`
-                : '<span class="code-expiry-none">继承批次</span>';
-
-            return `<tr class="code-row ${c.status}">
-                <td class="code-cell">${c.code}</td>
-                <td>${statusMap[c.status] || c.status}</td>
-                <td>${expiryText}</td>
-                <td>${detailHtml}</td>
-                <td class="actions-cell">${actionHtml}</td>
-            </tr>`;
-        }).join('');
-
-        // Remove loading state class
         modalBody.classList.remove('loading-state');
-
         modalBody.innerHTML = `
-            <table class="codes-table">
-                <thead><tr><th>兑换码</th><th>状态</th><th>有效期</th><th>详情</th><th>操作</th></tr></thead>
-                <tbody>${tableHtml}</tbody>
-            </table>
+            <div class="points-batch-codes-workbench">
+                <section class="points-batch-codes-hero">
+                    <div class="points-batch-codes-hero__copy">
+                        <span class="points-batch-codes-hero__eyebrow">当前批次</span>
+                        <strong class="points-batch-codes-hero__title">${escapePointsHtml(batch.name || '未命名批次')}</strong>
+                        <div class="points-batch-codes-hero__meta">
+                            <span>${escapePointsHtml(packageLabel)}</span>
+                            <span>${escapePointsHtml(formatPointsGenerateChannelLabel(batch.channel))}</span>
+                            <span>${escapePointsHtml(formatPointsGenerateSiteLabel(batch.site || getPointsReadSite()))}</span>
+                        </div>
+                    </div>
+                    <div class="points-batch-codes-hero__side">
+                        <div class="points-batch-codes-risk-row">${riskBadges}</div>
+                        <div class="points-site-context points-site-context--batch-edit">
+                            ${buildPointsSiteContextMarkup('batch')}
+                        </div>
+                    </div>
+                </section>
+                <div class="points-batch-codes-summary-grid">${summaryCards}</div>
+                <section class="points-batch-codes-panel">
+                    <div class="points-batch-codes-panel__header">
+                        <div class="points-batch-codes-panel__copy">
+                            <span class="points-batch-codes-panel__eyebrow">批次操作</span>
+                            <h4>就地处理这个批次</h4>
+                            <p>继续补发、编辑元信息、导出明细，或直接作废当前还没使用的兑换码。</p>
+                        </div>
+                        <div class="points-batch-codes-actions">${actionsHtml}</div>
+                    </div>
+                </section>
+                <div class="points-inline-feedback-shell" id="pointsBatchCodesInlineFeedback">${buildPointsInlineFeedbackMarkup(pointsBatchCodesFeedbackState.message, pointsBatchCodesFeedbackState.tone)}</div>
+                ${buildPointsBatchCodesTableSection(data)}
+            </div>
         `;
 
-        // Reset scroll to top AFTER content is set
         modalBody.scrollTop = 0;
-
-        // Enable horizontal scroll with mouse wheel on modal table
-        enableHorizontalScroll(modalBody);
-
+        bindPointsBatchCodesTableControls();
+        enableHorizontalScroll(modalBody.querySelector('.points-batch-codes-table-shell') || modalBody);
+        if (pointsBatchCodesUiState.focusCode) {
+            focusPointsBatchCodeInModal(pointsBatchCodesUiState.focusCode);
+        }
     } catch (err) {
         const modalBody = document.querySelector('.codes-modal-body');
         if (modalBody) {
             modalBody.innerHTML = `<div class="error-text points-codes-error">❌ 加载失败: ${err.message}</div>`;
         }
     }
+}
+
+async function invalidateSingleBatch(batchId) {
+    openPointsBatchInvalidateModal([batchId]);
 }
 
 // Close codes modal
@@ -2218,106 +4385,535 @@ function closeCodesModal(event) {
             overlay.remove();
         }, 260);
         window.currentViewBatchId = null;
+        resetPointsBatchCodesUiState();
+        clearPendingPointsBatchCodeFocus();
+        clearPointsBatchCodesFeedback();
+    }
+}
+
+function getPointsBatchInvalidateModalPayload(batchIds = []) {
+    const normalizedIds = Array.from(new Set((Array.isArray(batchIds) ? batchIds : [])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)));
+
+    const rows = normalizedIds
+        .map((id) => allBatches.find((row) => String(row?.id || '') === id))
+        .filter(Boolean);
+
+    const pendingCount = rows.reduce((sum, row) => {
+        return sum + Math.max(0, Number(row?.total_count) || 0) - Math.max(0, Number(row?.used_count) || 0);
+    }, 0);
+
+    return {
+        batchIds: normalizedIds,
+        rows,
+        pendingCount,
+        batchLabel: rows.map((row) => row.name || '未命名批次').join('、')
+    };
+}
+
+function syncPointsBatchInvalidateModalState() {
+    const contextRoot = document.getElementById('pointsBatchInvalidateWriteContext');
+    const submitBtn = document.getElementById('pointsBatchInvalidateSubmitBtn');
+    const context = getPointsWriteContextState();
+
+    if (contextRoot) {
+        contextRoot.innerHTML = buildPointsSiteContextMarkup('batch');
+    }
+
+    if (submitBtn) {
+        submitBtn.disabled = !context.canWrite || pointsBatchInvalidateModalState.submitting;
+    }
+}
+
+function closePointsBatchInvalidateModal(event) {
+    if (!event || event.target.classList.contains('edit-modal-overlay')) {
+        const overlay = document.querySelector('.points-batch-invalidate-modal-overlay');
+        if (!overlay) {
+            return;
+        }
+
+        overlay.classList.remove('is-visible');
+        window.setTimeout(() => {
+            overlay.remove();
+        }, 260);
+        pointsBatchInvalidateModalState = {
+            batchIds: [],
+            submitting: false
+        };
+    }
+}
+
+function openPointsBatchInvalidateModal(batchIds = []) {
+    const payload = getPointsBatchInvalidateModalPayload(batchIds);
+    if (!payload.rows.length) {
+        announcePointsAction('未找到可操作的批次', 'error');
+        return;
+    }
+
+    if (payload.pendingCount <= 0) {
+        announcePointsAction('这些批次当前没有可作废的未使用兑换码', 'error');
+        return;
+    }
+
+    document.querySelector('.points-batch-invalidate-modal-overlay')?.remove();
+    pointsBatchInvalidateModalState = {
+        batchIds: payload.batchIds,
+        submitting: false
+    };
+
+    const modalHtml = `
+        <div class="edit-modal-overlay points-batch-invalidate-modal-overlay" data-points-overlay-close="batch-invalidate">
+            <div class="edit-modal edit-modal--code-action edit-modal--batch-invalidate">
+                <div class="edit-modal-header">
+                    <div class="edit-modal-header__copy">
+                        <span class="edit-modal-header__eyebrow">批次工具</span>
+                        <h3>作废未使用兑换码</h3>
+                        <p>系统只会处理当前仍处于待使用状态的兑换码，已经使用或已撤销的记录不会被改动。</p>
+                    </div>
+                    <button class="edit-modal-close" type="button" data-points-action="close-batch-invalidate-modal">✕</button>
+                </div>
+                <form class="edit-modal-form points-code-action-form" data-points-submit="submit-batch-invalidate">
+                    <section class="points-code-action-summary points-code-action-summary--danger">
+                        <div class="points-code-action-summary__icon"><i class="fas fa-ban"></i></div>
+                        <div class="points-code-action-summary__copy">
+                            <span class="points-code-action-summary__eyebrow">即将处理</span>
+                            <strong class="points-code-action-summary__code">${escapePointsHtml(payload.rows.length === 1 ? (payload.rows[0].name || '未命名批次') : `${payload.rows.length} 个批次`)}</strong>
+                            <p>共会作废 <strong>${escapePointsHtml(payload.pendingCount)} 个</strong> 待使用兑换码。</p>
+                        </div>
+                    </section>
+                    <div class="points-site-context points-site-context--code-action" id="pointsBatchInvalidateWriteContext">
+                        ${buildPointsSiteContextMarkup('batch')}
+                    </div>
+                    <section class="points-batch-invalidate-list">
+                        <div class="points-batch-invalidate-list__title">本次涉及批次</div>
+                        <div class="points-batch-invalidate-list__items">
+                            ${payload.rows.map((row) => {
+                                const pending = Math.max(0, Number(row.total_count) || 0) - Math.max(0, Number(row.used_count) || 0);
+                                return `
+                                    <article class="points-batch-invalidate-item">
+                                        <strong>${escapePointsHtml(row.name || '未命名批次')}</strong>
+                                        <span>${escapePointsHtml(formatPointsGenerateChannelLabel(row.channel))} · ${escapePointsHtml(formatPointsGenerateSiteLabel(row.site || getPointsReadSite()))}</span>
+                                        <em>待作废 ${escapePointsHtml(pending)} 个</em>
+                                    </article>
+                                `;
+                            }).join('')}
+                        </div>
+                    </section>
+                    <div class="points-code-action-actions">
+                        <button class="points-code-action-cancel" type="button" data-points-action="close-batch-invalidate-modal">取消</button>
+                        <button class="points-code-action-submit points-code-action-submit--danger" type="submit" id="pointsBatchInvalidateSubmitBtn">
+                            <i class="fas fa-ban"></i>
+                            <span>确认作废未使用</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    const overlay = document.querySelector('.points-batch-invalidate-modal-overlay');
+    if (overlay) {
+        requestAnimationFrame(() => {
+            overlay.classList.add('is-visible');
+        });
+    }
+
+    syncPointsBatchInvalidateModalState();
+}
+
+async function submitPointsBatchInvalidate(event) {
+    event.preventDefault();
+
+    const batchIds = Array.from(pointsBatchInvalidateModalState.batchIds || []);
+    if (!batchIds.length) {
+        return;
+    }
+
+    const writableSite = requireWritablePointsSite({ action: 'points-batch-invalidate' });
+    if (!writableSite) {
+        syncPointsBatchInvalidateModalState();
+        return;
+    }
+
+    pointsBatchInvalidateModalState.submitting = true;
+    syncPointsBatchInvalidateModalState();
+
+    try {
+        const payload = await mutatePointsManage({
+            action: 'invalidate_batches',
+            site: writableSite,
+            payload: {
+                batch_ids: batchIds
+            }
+        });
+
+        closePointsBatchInvalidateModal();
+        const menu = document.getElementById('pointsBatchActionsMenu');
+        if (menu) {
+            menu.classList.remove('show');
+        }
+
+        invalidatePointsCatalogSnapshot();
+        await loadBatches();
+        updateSelectedCount();
+
+        if (window.currentViewBatchId && batchIds.includes(String(window.currentViewBatchId))) {
+            await viewBatchCodes(window.currentViewBatchId);
+        }
+
+        const inBatchListView = !window.currentViewBatchId && getActivePointsViewName() === 'batches';
+        if (inBatchListView) {
+            const feedback = buildPointsBatchActionFeedback('invalidate', payload, {
+                requestedBatchCount: batchIds.length
+            });
+            setPointsBatchListFeedback(feedback.message, feedback.tone, 'action', {
+                detail: feedback.detail,
+                stats: feedback.stats
+            });
+        }
+
+        if (window.currentViewBatchId) {
+            announcePointsScopedAction(payload?.message || '已作废未使用兑换码', payload?.disabled_code_count > 0 ? 'success' : 'info', {
+                batch: true,
+                batchId: window.currentViewBatchId
+            });
+        }
+    } catch (error) {
+        pointsBatchInvalidateModalState.submitting = false;
+        syncPointsBatchInvalidateModalState();
+        announcePointsAction(error.message || '作废失败，请稍后再试。', 'error');
+    }
+}
+
+function buildPointsCodeActionModalConfig(mode = '', code = '', currentExpiry = '') {
+    const normalizedMode = String(mode || '').trim().toLowerCase();
+    const expiryLabel = currentExpiry
+        ? new Date(currentExpiry).toLocaleDateString('zh-CN')
+        : '继承批次有效期';
+
+    const configs = {
+        expiry: {
+            eyebrow: '兑换码工具',
+            title: '设置有效期',
+            description: '为这条兑换码单独设置过期时间；留空后会恢复继承批次有效期。',
+            icon: 'fas fa-calendar-alt',
+            confirmLabel: '保存有效期',
+            confirmTone: 'default',
+            submitMode: 'expiry',
+            helper: `当前有效期：${expiryLabel}`,
+            fieldMarkup: `
+                <div class="edit-field">
+                    <label for="pointsCodeActionExpiry">新的有效期</label>
+                    <input
+                        id="pointsCodeActionExpiry"
+                        class="flatpickr-input"
+                        type="text"
+                        value="${escapePointsHtml(currentExpiry ? new Date(currentExpiry).toISOString().split('T')[0] : '')}"
+                        placeholder="留空则恢复继承批次"
+                    >
+                </div>
+            `
+        },
+        disable: {
+            eyebrow: '兑换码工具',
+            title: '禁用兑换码',
+            description: '禁用后这条码将无法继续使用，但不会影响已经存在的兑换记录。',
+            icon: 'fas fa-ban',
+            confirmLabel: '确认禁用',
+            confirmTone: 'danger',
+            submitMode: 'disable',
+            helper: '适用于待使用兑换码的临时封禁或异常止损。',
+            fieldMarkup: ''
+        },
+        revoke: {
+            eyebrow: '兑换码工具',
+            title: '撤销兑换',
+            description: '撤销会回滚这条兑换码对应的使用结果，并按规则扣回已发积分。',
+            icon: 'fas fa-rotate-left',
+            confirmLabel: '确认撤销',
+            confirmTone: 'danger',
+            submitMode: 'revoke',
+            helper: '建议补充撤销原因，方便后续审计排查。',
+            fieldMarkup: `
+                <div class="edit-field">
+                    <label for="pointsCodeActionReason">撤销原因</label>
+                    <textarea id="pointsCodeActionReason" rows="4" placeholder="例如：异常兑换、人工核销错误、售后回滚...">管理员撤销</textarea>
+                </div>
+            `
+        },
+        enable: {
+            eyebrow: '兑换码工具',
+            title: '重新启用兑换码',
+            description: '重新启用后，这条码会恢复到待使用状态，可以再次被兑换。',
+            icon: 'fas fa-check',
+            confirmLabel: '确认启用',
+            confirmTone: 'success',
+            submitMode: 'enable',
+            helper: '仅适用于当前处于禁用状态的兑换码。',
+            fieldMarkup: ''
+        }
+    };
+
+    return configs[normalizedMode] || null;
+}
+
+function renderPointsCodeActionModalError(message = '') {
+    const errorEl = document.getElementById('pointsCodeActionError');
+    if (!errorEl) {
+        return;
+    }
+
+    const normalizedMessage = String(message || '').trim();
+    errorEl.textContent = normalizedMessage;
+    setAdminPointsVisibility(errorEl, Boolean(normalizedMessage));
+}
+
+function syncPointsCodeActionModalState() {
+    const contextRoot = document.getElementById('pointsCodeActionWriteContext');
+    const submitBtn = document.getElementById('pointsCodeActionSubmitBtn');
+    const context = getPointsWriteContextState();
+
+    if (contextRoot) {
+        contextRoot.innerHTML = buildPointsSiteContextMarkup('batch');
+    }
+
+    if (submitBtn) {
+        submitBtn.disabled = !context.canWrite || pointsCodeActionModalState.submitting;
+    }
+}
+
+function closePointsCodeActionModal(event) {
+    if (!event || event.target.classList.contains('edit-modal-overlay')) {
+        const overlay = document.querySelector('.points-code-action-modal-overlay');
+        if (!overlay) {
+            return;
+        }
+
+        overlay.classList.remove('is-visible');
+        window.setTimeout(() => {
+            overlay.remove();
+        }, 260);
+        pointsCodeActionModalState = {
+            mode: '',
+            code: '',
+            currentExpiry: '',
+            source: '',
+            submitting: false
+        };
+    }
+}
+
+function openPointsCodeActionModal({ mode = '', code = '', currentExpiry = '', source = '' } = {}) {
+    const normalizedCode = String(code || '').trim();
+    if (!normalizedCode) {
+        return;
+    }
+
+    const config = buildPointsCodeActionModalConfig(mode, normalizedCode, currentExpiry);
+    if (!config) {
+        return;
+    }
+
+    document.querySelector('.points-code-action-modal-overlay')?.remove();
+    pointsCodeActionModalState = {
+        mode: config.submitMode,
+        code: normalizedCode,
+        currentExpiry: String(currentExpiry || ''),
+        source: String(source || '').trim(),
+        submitting: false
+    };
+
+    const modalHtml = `
+        <div class="edit-modal-overlay points-code-action-modal-overlay" data-points-overlay-close="code-action">
+            <div class="edit-modal edit-modal--code-action">
+                <div class="edit-modal-header">
+                    <div class="edit-modal-header__copy">
+                        <span class="edit-modal-header__eyebrow">${escapePointsHtml(config.eyebrow)}</span>
+                        <h3>${escapePointsHtml(config.title)}</h3>
+                        <p>${escapePointsHtml(config.description)}</p>
+                    </div>
+                    <button class="edit-modal-close" type="button" data-points-action="close-code-action-modal">✕</button>
+                </div>
+                <form class="edit-modal-form points-code-action-form" data-points-submit="submit-code-action">
+                    <section class="points-code-action-summary">
+                        <div class="points-code-action-summary__icon"><i class="${escapePointsHtml(config.icon)}"></i></div>
+                        <div class="points-code-action-summary__copy">
+                            <span class="points-code-action-summary__eyebrow">当前兑换码</span>
+                            <strong class="points-code-action-summary__code">${escapePointsHtml(normalizedCode)}</strong>
+                            <p>${escapePointsHtml(config.helper)}</p>
+                        </div>
+                    </section>
+                    <div class="points-site-context points-site-context--code-action" id="pointsCodeActionWriteContext">
+                        ${buildPointsSiteContextMarkup('batch')}
+                    </div>
+                    ${config.fieldMarkup}
+                    <div class="points-code-action-error ${ADMIN_POINTS_HIDDEN_CLASS}" id="pointsCodeActionError"></div>
+                    <div class="points-code-action-actions">
+                        <button class="points-code-action-cancel" type="button" data-points-action="close-code-action-modal">取消</button>
+                        <button class="points-code-action-submit points-code-action-submit--${escapePointsHtml(config.confirmTone)}" type="submit" id="pointsCodeActionSubmitBtn">
+                            <i class="${escapePointsHtml(config.icon)}"></i>
+                            <span>${escapePointsHtml(config.confirmLabel)}</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    const overlay = document.querySelector('.points-code-action-modal-overlay');
+    if (overlay) {
+        requestAnimationFrame(() => {
+            overlay.classList.add('is-visible');
+        });
+    }
+
+    if (config.submitMode === 'expiry' && typeof flatpickr !== 'undefined') {
+        flatpickr('#pointsCodeActionExpiry', {
+            locale: 'zh',
+            dateFormat: 'Y-m-d',
+            allowInput: true,
+            minDate: 'today'
+        });
+    }
+
+    syncPointsCodeActionModalState();
+}
+
+async function refreshPointsAfterCodeMutation(code = '') {
+    invalidatePointsCatalogSnapshot();
+    await loadBatches();
+
+    if (window.currentViewBatchId) {
+        pointsBatchCodesUiState.focusCode = String(code || '').trim();
+        await viewBatchCodes(window.currentViewBatchId);
+    }
+
+    if (getActivePointsViewName() === 'lookup') {
+        const lookupInput = document.getElementById('lookupCodeInput');
+        if (lookupInput && String(lookupInput.value || '').trim()) {
+            await lookupCode();
+        }
+    }
+}
+
+async function submitPointsCodeAction(event) {
+    event.preventDefault();
+
+    const form = event.target instanceof HTMLFormElement ? event.target : event.target?.closest('form');
+    const mode = String(pointsCodeActionModalState.mode || '').trim().toLowerCase();
+    const code = String(pointsCodeActionModalState.code || '').trim();
+    if (!form || !mode || !code) {
+        return;
+    }
+
+    const writableSite = requireWritablePointsCodeActionSite(mode);
+    if (!writableSite) {
+        syncPointsCodeActionModalState();
+        return;
+    }
+
+    let action = '';
+    let payload = {};
+    let successMessage = '';
+
+    if (mode === 'expiry') {
+        const expiryInput = document.getElementById('pointsCodeActionExpiry');
+        const rawValue = String(expiryInput?.value || '').trim();
+        let expiresAt = null;
+
+        if (rawValue) {
+            const parsed = new Date(rawValue);
+            if (Number.isNaN(parsed.getTime())) {
+                renderPointsCodeActionModalError('请输入有效的日期，格式为 YYYY-MM-DD。');
+                return;
+            }
+
+            parsed.setHours(23, 59, 59, 999);
+            expiresAt = parsed.toISOString();
+        }
+
+        action = 'set_code_expiry';
+        payload = {
+            code,
+            expires_at: expiresAt
+        };
+        successMessage = '有效期已更新';
+    } else if (mode === 'disable') {
+        action = 'set_code_status';
+        payload = {
+            code,
+            status: 'disabled'
+        };
+        successMessage = '已禁用该兑换码';
+    } else if (mode === 'enable') {
+        action = 'set_code_status';
+        payload = {
+            code,
+            status: 'pending'
+        };
+        successMessage = '已重新启用兑换码';
+    } else if (mode === 'revoke') {
+        const reasonInput = document.getElementById('pointsCodeActionReason');
+        action = 'revoke_code';
+        payload = {
+            code,
+            reason: String(reasonInput?.value || '').trim() || '管理员撤销'
+        };
+        successMessage = '撤销成功';
+    } else {
+        return;
+    }
+
+    renderPointsCodeActionModalError('');
+    pointsCodeActionModalState.submitting = true;
+    syncPointsCodeActionModalState();
+
+    try {
+        const responsePayload = await mutatePointsManage({
+            action,
+            site: writableSite,
+            payload
+        });
+
+        const feedbackSource = String(pointsCodeActionModalState.source || '').trim();
+        closePointsCodeActionModal();
+        await refreshPointsAfterCodeMutation(code);
+
+        const deducted = mode === 'revoke' ? Math.max(0, Number(responsePayload?.points_deducted) || 0) : 0;
+        const feedbackMessage = responsePayload?.message || `${successMessage}${deducted > 0 ? `，已扣回 ${deducted} 积分` : ''}`;
+        announcePointsScopedAction(feedbackMessage, 'success', {
+            lookup: feedbackSource === 'lookup',
+            batch: feedbackSource === 'batch-codes',
+            batchId: window.currentViewBatchId
+        });
+    } catch (error) {
+        pointsCodeActionModalState.submitting = false;
+        syncPointsCodeActionModalState();
+        renderPointsCodeActionModalError(error.message || '操作失败，请稍后再试。');
     }
 }
 
 // ========================================
 // SET CODE EXPIRY
 // ========================================
-async function setCodeExpiry(code, currentExpiry) {
-    const writableSite = requireWritablePointsSite({ label: '设置兑换码有效期' });
-    if (!writableSite) {
+async function setCodeExpiry(code, currentExpiry, source = '') {
+    if (!String(code || '').trim()) {
         return;
     }
-
-    // Format current expiry for input
-    let defaultValue = '';
-    if (currentExpiry) {
-        const date = new Date(currentExpiry);
-        defaultValue = date.toISOString().split('T')[0]; // YYYY-MM-DD format
-    }
-
-    const newExpiry = prompt(
-        `设置兑换码 ${code} 的有效期\n\n` +
-        `当前有效期: ${currentExpiry ? new Date(currentExpiry).toLocaleDateString('zh-CN') : '继承批次'}\n\n` +
-        `请输入新的有效期 (格式: YYYY-MM-DD)\n` +
-        `留空则清除独立有效期，恢复继承批次有效期:`,
-        defaultValue
-    );
-
-    if (newExpiry === null) return; // User cancelled
-
-    // Validate date format
-    let expiresAt = null;
-    if (newExpiry.trim()) {
-        const parsed = new Date(newExpiry.trim());
-        if (isNaN(parsed.getTime())) {
-            alert('❌ 无效的日期格式，请使用 YYYY-MM-DD 格式');
-            return;
-        }
-        // Set to end of day
-        parsed.setHours(23, 59, 59, 999);
-        expiresAt = parsed.toISOString();
-    }
-
-    try {
-        const payload = await mutatePointsManage({
-            action: 'set_code_expiry',
-            site: writableSite,
-            payload: {
-                code,
-                expires_at: expiresAt
-            }
-        });
-
-        alert(`✅ ${payload?.message || '有效期已更新'}`);
-
-        // Refresh modal
-        if (window.currentViewBatchId) {
-            viewBatchCodes(window.currentViewBatchId);
-        }
-    } catch (err) {
-        alert('❌ 设置失败: ' + err.message);
-    }
+    openPointsCodeActionModal({ mode: 'expiry', code, currentExpiry, source });
 }
 
 // ========================================
 // REVOKE CODE
 // ========================================
-async function revokeCode(code) {
-    const writableSite = requireWritablePointsSite({ label: '撤销兑换码' });
-    if (!writableSite) {
+async function revokeCode(code, source = '') {
+    if (!String(code || '').trim()) {
         return;
     }
-
-    const reason = prompt(`确定要撤销兑换码 ${code} 吗？\n\n请输入撤销原因（可选）：`);
-
-    if (reason === null) return; // User cancelled
-
-    try {
-        const payload = await mutatePointsManage({
-            action: 'revoke_code',
-            site: writableSite,
-            payload: {
-                code,
-                reason: reason || '管理员撤销'
-            }
-        });
-
-        const deducted = payload?.points_deducted || 0;
-        alert(`✅ ${payload?.message || '撤销成功'}${deducted > 0 ? `\n已扣除用户 ${deducted} 积分` : ''}`);
-
-        // Refresh modal
-        if (window.currentViewBatchId) {
-            viewBatchCodes(window.currentViewBatchId);
-        }
-
-        // Refresh batch list
-        invalidatePointsCatalogSnapshot();
-        loadBatches();
-    } catch (err) {
-        alert('❌ 撤销失败: ' + err.message);
-    }
+    openPointsCodeActionModal({ mode: 'revoke', code, source });
 }
 
 // ========================================
@@ -2359,54 +4955,62 @@ async function exportBatchList() {
     closeAllBatchDropdowns();
 
     if (allBatches.length === 0) {
-        alert('暂无批次可导出');
+        announcePointsScopedAction('暂无批次可导出', 'error', { batchList: true });
         return;
     }
 
-    const channelLabels = {
-        xianyu: '闲鱼',
-        taobao: '淘宝',
-        manual: '手动',
-        promotion: '促销',
-        test: '测试'
-    };
+    try {
+        const channelLabels = {
+            xianyu: '闲鱼',
+            taobao: '淘宝',
+            manual: '手动',
+            promotion: '促销',
+            test: '测试'
+        };
 
-    // Prepare data
-    const data = allBatches.map(batch => ({
-        '批次名称': batch.name,
-        '套餐': batch.points_packages?.name || '-',
-        '渠道': channelLabels[batch.channel] || batch.channel,
-        '总数': batch.total_count,
-        '已用': batch.used_count,
-        '剩余': batch.total_count - batch.used_count,
-        '使用率': `${batch.total_count > 0 ? Math.round((batch.used_count / batch.total_count) * 100) : 0}%`,
-        '创建时间': new Date(batch.created_at).toLocaleString('zh-CN'),
-        '过期时间': batch.expires_at ? new Date(batch.expires_at).toLocaleString('zh-CN') : '永不过期',
-        '备注': batch.notes || ''
-    }));
+        const data = allBatches.map(batch => ({
+            '批次名称': batch.name,
+            '套餐': batch.points_packages?.name || '-',
+            '渠道': channelLabels[batch.channel] || batch.channel,
+            '总数': batch.total_count,
+            '已用': batch.used_count,
+            '剩余': batch.total_count - batch.used_count,
+            '使用率': `${batch.total_count > 0 ? Math.round((batch.used_count / batch.total_count) * 100) : 0}%`,
+            '创建时间': new Date(batch.created_at).toLocaleString('zh-CN'),
+            '过期时间': batch.expires_at ? new Date(batch.expires_at).toLocaleString('zh-CN') : '永不过期',
+            '备注': batch.notes || ''
+        }));
 
-    // Create workbook
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, '批次列表');
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, '批次列表');
 
-    // Set column widths
-    ws['!cols'] = [
-        { wch: 20 }, // 批次名称
-        { wch: 15 }, // 套餐
-        { wch: 8 },  // 渠道
-        { wch: 8 },  // 总数
-        { wch: 8 },  // 已用
-        { wch: 8 },  // 剩余
-        { wch: 8 },  // 使用率
-        { wch: 18 }, // 创建时间
-        { wch: 18 }, // 过期时间
-        { wch: 20 }  // 备注
-    ];
+        ws['!cols'] = [
+            { wch: 20 },
+            { wch: 15 },
+            { wch: 8 },
+            { wch: 8 },
+            { wch: 8 },
+            { wch: 8 },
+            { wch: 8 },
+            { wch: 18 },
+            { wch: 18 },
+            { wch: 20 }
+        ];
 
-    // Export
-    const now = new Date().toISOString().slice(0, 10);
-    XLSX.writeFile(wb, `批次列表_${now}.xlsx`);
+        const now = new Date().toISOString().slice(0, 10);
+        XLSX.writeFile(wb, `批次列表_${now}.xlsx`);
+        const feedback = buildPointsBatchActionFeedback('export-all', {}, {
+            totalCount: allBatches.length,
+            filteredCount: filteredBatches.length
+        });
+        setPointsBatchListFeedback(feedback.message, feedback.tone, 'action', {
+            detail: feedback.detail,
+            stats: feedback.stats
+        });
+    } catch (err) {
+        announcePointsScopedAction(`导出失败: ${err.message}`, 'error', { batchList: true });
+    }
 }
 
 // Export selected batches (with all codes)
@@ -2414,7 +5018,7 @@ async function exportSelectedBatches() {
     closeAllBatchDropdowns();
 
     if (selectedBatchIds.size === 0) {
-        alert('请先选择要导出的批次');
+        announcePointsScopedAction('请先选择要导出的批次', 'error', { batchList: true });
         return;
     }
 
@@ -2422,6 +5026,7 @@ async function exportSelectedBatches() {
         const wb = XLSX.utils.book_new();
         const usedNames = new Set();
         let index = 1;
+        let exportedCount = 0;
 
         for (const batchId of selectedBatchIds) {
             const batch = allBatches.find(b => b.id === batchId);
@@ -2442,13 +5047,23 @@ async function exportSelectedBatches() {
             usedNames.add(sheetName);
 
             XLSX.utils.book_append_sheet(wb, ws, sheetName);
+            exportedCount += 1;
         }
 
         const now = new Date().toISOString().slice(0, 10);
         XLSX.writeFile(wb, `选中批次_${selectedBatchIds.size}个_${now}.xlsx`);
+        const feedback = buildPointsBatchActionFeedback('export-selected', {}, {
+            requestedBatchCount: selectedBatchIds.size,
+            exportedCount,
+            missingCount: Math.max(0, selectedBatchIds.size - exportedCount)
+        });
+        setPointsBatchListFeedback(feedback.message, feedback.tone, 'action', {
+            detail: feedback.detail,
+            stats: feedback.stats
+        });
 
     } catch (err) {
-        alert('导出失败: ' + err.message);
+        announcePointsScopedAction(`导出失败: ${err.message}`, 'error', { batchList: true });
     }
 }
 
@@ -2481,9 +5096,16 @@ async function exportBatchCodes(batchId) {
         const now = new Date().toISOString().slice(0, 10);
         const fileName = `${batch.name.replace(/\s+/g, '_')}_兑换码_${now}.xlsx`;
         XLSX.writeFile(wb, fileName);
+        announcePointsScopedAction(`已导出批次「${batch.name || '未命名批次'}」`, 'success', {
+            batch: Boolean(window.currentViewBatchId && String(window.currentViewBatchId) === String(batchId || '')),
+            batchId
+        });
 
     } catch (err) {
-        alert('导出失败: ' + err.message);
+        announcePointsScopedAction(`导出失败: ${err.message}`, 'error', {
+            batch: Boolean(window.currentViewBatchId && String(window.currentViewBatchId) === String(batchId || '')),
+            batchId
+        });
     }
 }
 
@@ -2514,43 +5136,200 @@ async function exportBatchCSV(batchId) {
     return exportBatchCodes(batchId);
 }
 
+function getPointsBatchCodeStatusCounts(codes = []) {
+    const counts = {
+        total: 0,
+        pending: 0,
+        used: 0,
+        revoked: 0,
+        disabled: 0,
+        locked: 0,
+        expired: 0
+    };
+
+    (Array.isArray(codes) ? codes : []).forEach((row) => {
+        const status = String(row?.status || '').trim().toLowerCase();
+        counts.total += 1;
+        if (Object.prototype.hasOwnProperty.call(counts, status)) {
+            counts[status] += 1;
+        }
+    });
+
+    counts.risk = counts.revoked + counts.disabled + counts.locked + counts.expired;
+    return counts;
+}
+
+function buildPointsBatchCodesSummaryCard({
+    iconClass = 'fas fa-ticket-alt',
+    label = '',
+    value = '',
+    meta = '',
+    tone = 'blue'
+} = {}) {
+    return `
+        <article class="points-batch-codes-summary-card points-batch-codes-summary-card--${escapePointsHtml(tone)}">
+            <span class="points-batch-codes-summary-card__icon"><i class="${escapePointsHtml(iconClass)}"></i></span>
+            <div class="points-batch-codes-summary-card__body">
+                <span class="points-batch-codes-summary-card__label">${escapePointsHtml(label)}</span>
+                <strong class="points-batch-codes-summary-card__value">${escapePointsHtml(value)}</strong>
+                ${meta ? `<span class="points-batch-codes-summary-card__meta">${escapePointsHtml(meta)}</span>` : ''}
+            </div>
+        </article>
+    `;
+}
+
+function buildPointsBatchCodesActionButton({
+    action = '',
+    batchId = '',
+    iconClass = 'fas fa-arrow-right',
+    label = '',
+    tone = 'default',
+    disabled = false
+} = {}) {
+    return `
+        <button class="points-batch-codes-action-btn points-batch-codes-action-btn--${escapePointsHtml(tone)}" type="button" data-points-action="${escapePointsHtml(action)}" data-batch-id="${encodeURIComponent(batchId)}" ${disabled ? 'disabled' : ''}>
+            <i class="${escapePointsHtml(iconClass)}"></i>
+            <span>${escapePointsHtml(label)}</span>
+        </button>
+    `;
+}
+
 // ========================================
 // BATCH EDITING
 // ========================================
+
+function syncPointsBatchEditModalState() {
+    const writeContextRoot = document.getElementById('pointsBatchEditWriteContext');
+    const saveBtn = document.getElementById('batchEditSaveBtn');
+    const saveLabel = saveBtn?.querySelector('.edit-modal-save__label');
+    const context = getPointsWriteContextState();
+    const isLoading = saveBtn?.dataset.loading === '1';
+
+    if (writeContextRoot) {
+        writeContextRoot.innerHTML = buildPointsSiteContextMarkup('batch');
+    }
+
+    if (saveBtn) {
+        saveBtn.disabled = !context.canWrite || isLoading;
+    }
+
+    if (saveLabel && !isLoading) {
+        saveLabel.textContent = context.canWrite ? '保存批次修改' : '先选择写入站点';
+    }
+}
 
 // Open batch edit modal
 function openBatchEditModal(batchId) {
     const batch = allBatches.find(b => b.id === batchId);
     if (!batch) return;
 
+    const context = getPointsWriteContextState();
+    const insights = getPointsBatchInsights(batch);
+    const packageLabel = batch.points_packages?.name || (insights.isCustom ? '自定义积分' : '未命名套餐');
+    const pointsPerCode = Math.max(0, Number(batch.custom_points_amount) || Number(batch.points_packages?.points_amount) || 0);
+    const usagePercent = insights.totalCount > 0 ? Math.round(insights.usageRate * 100) : 0;
+    const expiryLabel = formatPointsBatchExpiryLabel(batch, insights);
+    const riskBadges = buildPointsBatchRiskBadges(batch);
+    const headerSubtitle = [
+        formatPointsGenerateSiteLabel(batch.site || getPointsReadSite()),
+        formatPointsGenerateChannelLabel(batch.channel),
+        `创建于 ${formatPointsGenerateDateTime(batch.created_at)}`
+    ].join(' · ');
+
     // Remove existing modal if any
     document.querySelector('.edit-modal-overlay')?.remove();
 
     const modalHtml = `
         <div class="edit-modal-overlay" data-points-overlay-close="batch-edit">
-            <div class="edit-modal">
+            <div class="edit-modal edit-modal--batch">
                 <div class="edit-modal-header">
-                    <h3>✏️ 编辑批次</h3>
+                    <div class="edit-modal-header__copy">
+                        <span class="edit-modal-header__eyebrow">批次工作台</span>
+                        <h3>编辑批次</h3>
+                        <p>修改名称、备注和有效期，不会影响已经发放给用户的积分流水。</p>
+                    </div>
                     <button class="edit-modal-close" type="button" data-points-action="close-batch-edit">✕</button>
                 </div>
-                <form id="batchEditForm" class="edit-modal-form" data-points-submit="save-batch-edit" data-batch-id="${encodeURIComponent(batchId)}">
-                    <div class="edit-field">
-                        <label>批次名称</label>
-                        <input type="text" id="editBatchName" value="${batch.name}" required maxlength="100">
+                <form id="batchEditForm" class="edit-modal-form edit-modal-form--batch" data-points-submit="save-batch-edit" data-batch-id="${encodeURIComponent(batchId)}">
+                    <div class="points-batch-edit-layout">
+                        <aside class="points-batch-edit-aside">
+                            <section class="points-batch-edit-hero">
+                                <div class="points-batch-edit-hero__copy">
+                                    <span class="points-batch-edit-hero__eyebrow">当前批次</span>
+                                    <strong class="points-batch-edit-hero__title">${escapePointsHtml(batch.name || '未命名批次')}</strong>
+                                    <span class="points-batch-edit-hero__subtitle">${escapePointsHtml(headerSubtitle)}</span>
+                                </div>
+                                <span class="points-batch-edit-hero__id">ID ${escapePointsHtml(String(batch.id || '').slice(0, 8) || '-')}</span>
+                            </section>
+                            <div class="points-batch-edit-risk-row">${riskBadges}</div>
+                            <div class="points-batch-edit-overview">
+                                ${buildPointsBatchEditOverviewCard({
+                                    iconClass: 'fas fa-ticket-alt',
+                                    label: '发码规模',
+                                    value: `${insights.totalCount} 个`,
+                                    meta: `已用 ${insights.usedCount} · ${usagePercent}%`,
+                                    tone: 'blue'
+                                })}
+                                ${buildPointsBatchEditOverviewCard({
+                                    iconClass: 'fas fa-gift',
+                                    label: '套餐 / 面额',
+                                    value: packageLabel,
+                                    meta: pointsPerCode > 0 ? `${pointsPerCode} 分 / 码` : '面额未设置',
+                                    tone: 'violet'
+                                })}
+                                ${buildPointsBatchEditOverviewCard({
+                                    iconClass: 'fas fa-store',
+                                    label: '渠道 / 站点',
+                                    value: formatPointsGenerateChannelLabel(batch.channel),
+                                    meta: formatPointsGenerateSiteLabel(batch.site || getPointsReadSite()),
+                                    tone: 'slate'
+                                })}
+                                ${buildPointsBatchEditOverviewCard({
+                                    iconClass: 'fas fa-hourglass-half',
+                                    label: '有效期状态',
+                                    value: expiryLabel,
+                                    meta: batch.expires_at ? formatPointsGenerateDateTime(batch.expires_at) : '未设置单独过期时间',
+                                    tone: insights.isExpiringSoon ? 'amber' : 'green'
+                                })}
+                            </div>
+                            <div class="points-batch-edit-actions">
+                                <button class="points-batch-edit-action-btn" type="button" data-points-action="open-batch-codes-from-edit" data-batch-id="${encodeURIComponent(batchId)}">
+                                    <i class="fas fa-list-ul"></i>
+                                    <span>查看兑换码</span>
+                                </button>
+                                <button class="points-batch-edit-action-btn points-batch-edit-action-btn--accent" type="button" data-points-action="reissue-batch-from-edit" data-batch-id="${encodeURIComponent(batchId)}">
+                                    <i class="fas fa-wand-magic-sparkles"></i>
+                                    <span>续发同类批次</span>
+                                </button>
+                            </div>
+                            <div class="points-site-context points-site-context--batch-edit" id="pointsBatchEditWriteContext">
+                                ${buildPointsSiteContextMarkup('batch')}
+                            </div>
+                        </aside>
+                        <section class="points-batch-edit-editor">
+                            <div class="edit-field">
+                                <label>批次名称</label>
+                                <input type="text" id="editBatchName" value="${escapePointsHtml(batch.name || '')}" required maxlength="100">
+                            </div>
+                            <div class="edit-field">
+                                <label>备注</label>
+                                <textarea id="editBatchNotes" rows="4" placeholder="补充渠道来源、活动说明或交接备注...">${escapePointsHtml(batch.notes || '')}</textarea>
+                            </div>
+                            <div class="edit-field">
+                                <label>过期时间</label>
+                                <input type="text" id="editBatchExpires" class="flatpickr-input" 
+                                    value="${batch.expires_at ? new Date(batch.expires_at).toISOString().slice(0, 16).replace('T', ' ') : ''}" 
+                                    placeholder="留空表示继承长期有效">
+                            </div>
+                            <div class="points-batch-edit-form-note">
+                                这里只会更新批次元信息；站点、渠道、套餐与实际发码数量保持原样，若要继续补发可直接使用左侧的“续发同类批次”。
+                            </div>
+                            <button type="submit" class="edit-modal-save" id="batchEditSaveBtn" ${context.canWrite ? '' : 'disabled'}>
+                                <i class="fas fa-save"></i>
+                                <span class="edit-modal-save__label">${context.canWrite ? '保存批次修改' : '先选择写入站点'}</span>
+                            </button>
+                        </section>
                     </div>
-                    <div class="edit-field">
-                        <label>备注</label>
-                        <textarea id="editBatchNotes" rows="3" placeholder="添加备注信息...">${batch.notes || ''}</textarea>
-                    </div>
-                    <div class="edit-field">
-                        <label>过期时间</label>
-                        <input type="text" id="editBatchExpires" class="flatpickr-input" 
-                            value="${batch.expires_at ? new Date(batch.expires_at).toISOString().slice(0, 16).replace('T', ' ') : ''}" 
-                            placeholder="留空表示永不过期">
-                    </div>
-                    <button type="submit" class="edit-modal-save">
-                        <i class="fas fa-save"></i> 保存修改
-                    </button>
                 </form>
             </div>
         </div>
@@ -2574,6 +5353,8 @@ function openBatchEditModal(batchId) {
             minDate: "today"
         });
     }
+
+    syncPointsBatchEditModalState();
 }
 
 function closeBatchEditModal(event) {
@@ -2601,13 +5382,14 @@ async function saveBatchEdit(event, batchId) {
     const expiresAt = expiresInput ? new Date(expiresInput).toISOString() : null;
 
     if (!name) {
-        alert('批次名称不能为空');
+        announcePointsAction('批次名称不能为空', 'error');
         return;
     }
 
     const btn = event.target.querySelector('button[type="submit"]');
+    btn.dataset.loading = '1';
     btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 保存中...';
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span class="edit-modal-save__label">保存中...</span>';
 
     try {
         const payload = await mutatePointsManage({
@@ -2621,15 +5403,19 @@ async function saveBatchEdit(event, batchId) {
             }
         });
 
-        alert(`✅ ${payload?.message || '保存成功'}`);
+        announcePointsAction(payload?.message || '保存成功', 'success');
+        if (window.currentViewBatchId && String(window.currentViewBatchId) === String(batchId || '')) {
+            setPointsBatchCodesFeedback(payload?.message || '保存成功', 'success', window.currentViewBatchId);
+        }
         closeBatchEditModal();
         invalidatePointsCatalogSnapshot();
         loadBatches();
 
     } catch (err) {
-        alert('保存失败: ' + err.message);
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-save"></i> 保存';
+        announcePointsAction(`保存失败: ${err.message}`, 'error');
+        btn.dataset.loading = '0';
+        btn.innerHTML = '<i class="fas fa-save"></i><span class="edit-modal-save__label">保存批次修改</span>';
+        syncPointsBatchEditModalState();
     }
 }
 
@@ -2638,109 +5424,29 @@ async function saveBatchEdit(event, batchId) {
 // ========================================
 
 // Disable a single code (mark as disabled/invalid)
-async function disableCode(code) {
-    const writableSite = requireWritablePointsSite({ label: '禁用兑换码' });
-    if (!writableSite) {
+async function disableCode(code, source = '') {
+    if (!String(code || '').trim()) {
         return;
     }
-
-    const confirmed = confirm(`确定要禁用兑换码 ${code} 吗？\n\n禁用后该码将无法被使用。`);
-    if (!confirmed) return;
-
-    try {
-        const payload = await mutatePointsManage({
-            action: 'set_code_status',
-            site: writableSite,
-            payload: {
-                code,
-                status: 'disabled'
-            }
-        });
-
-        alert(`✅ ${payload?.message || '已禁用该兑换码'}`);
-
-        // Refresh modal if open
-        if (window.currentViewBatchId) {
-            viewBatchCodes(window.currentViewBatchId);
-        }
-        loadBatches();
-
-    } catch (err) {
-        alert('禁用失败: ' + err.message);
-    }
+    openPointsCodeActionModal({ mode: 'disable', code, source });
 }
 
 // Enable a previously disabled code
-async function enableCode(code) {
-    const writableSite = requireWritablePointsSite({ label: '启用兑换码' });
-    if (!writableSite) {
+async function enableCode(code, source = '') {
+    if (!String(code || '').trim()) {
         return;
     }
-
-    try {
-        const payload = await mutatePointsManage({
-            action: 'set_code_status',
-            site: writableSite,
-            payload: {
-                code,
-                status: 'pending'
-            }
-        });
-
-        alert(`✅ ${payload?.message || '已启用该兑换码'}`);
-
-        if (window.currentViewBatchId) {
-            viewBatchCodes(window.currentViewBatchId);
-        }
-        loadBatches();
-
-    } catch (err) {
-        alert('启用失败: ' + err.message);
-    }
+    openPointsCodeActionModal({ mode: 'enable', code, source });
 }
 
 // Batch invalidate all unused codes in selected batches
 async function batchInvalidateCodes() {
-    const writableSite = requireWritablePointsSite({ action: 'points-batch-invalidate' });
-    if (!writableSite) {
-        return;
-    }
-
     if (selectedBatchIds.size === 0) {
-        alert('请先选择要操作的批次');
+        announcePointsScopedAction('请先选择要操作的批次', 'error', { batchList: true });
         return;
     }
 
-    const batchNames = Array.from(selectedBatchIds)
-        .map(id => allBatches.find(b => b.id === id)?.name)
-        .filter(Boolean)
-        .join('、');
-
-    const confirmed = confirm(`确定要作废以下批次中所有未使用的兑换码吗？\n\n批次: ${batchNames}\n\n此操作不可恢复！`);
-    if (!confirmed) return;
-
-    try {
-        const idsArray = Array.from(selectedBatchIds);
-        const payload = await mutatePointsManage({
-            action: 'invalidate_batches',
-            site: writableSite,
-            payload: {
-                batch_ids: idsArray
-            }
-        });
-
-        alert(`✅ ${payload?.message || '操作完成'}`);
-
-        // Close menu and refresh
-        const menu = document.getElementById('pointsBatchActionsMenu');
-        if (menu) menu.classList.remove('show');
-
-        invalidatePointsCatalogSnapshot();
-        loadBatches();
-
-    } catch (err) {
-        alert('操作失败: ' + err.message);
-    }
+    openPointsBatchInvalidateModal(Array.from(selectedBatchIds));
 }
 
 // Navigate to user from redemption record
@@ -2765,18 +5471,239 @@ function navigateToUser(userId) {
 // ========================================
 // LOOKUP CODE
 // ========================================
+function formatPointsLookupDateTime(value = '') {
+    const normalizedValue = String(value || '').trim();
+    if (!normalizedValue) {
+        return '未发生';
+    }
+
+    const date = new Date(normalizedValue);
+    if (Number.isNaN(date.getTime())) {
+        return normalizedValue;
+    }
+
+    return date.toLocaleString('zh-CN');
+}
+
+function getPointsLookupStatusMeta(status = '') {
+    const normalizedStatus = String(status || '').trim().toLowerCase();
+    const statusMap = {
+        pending: { label: '待使用', tone: 'pending', icon: 'fas fa-hourglass-half' },
+        locked: { label: '已锁定', tone: 'locked', icon: 'fas fa-lock' },
+        used: { label: '已使用', tone: 'used', icon: 'fas fa-circle-check' },
+        revoked: { label: '已撤销', tone: 'revoked', icon: 'fas fa-ban' },
+        disabled: { label: '已禁用', tone: 'disabled', icon: 'fas fa-octagon-xmark' },
+        expired: { label: '已过期', tone: 'expired', icon: 'fas fa-clock-rotate-left' }
+    };
+
+    return statusMap[normalizedStatus] || {
+        label: normalizedStatus || '未知状态',
+        tone: 'neutral',
+        icon: 'fas fa-circle-info'
+    };
+}
+
+function buildPointsLookupDetailRow(label, valueHtml) {
+    return `
+        <div class="lookup-detail">
+            <span class="label">${escapePointsHtml(label)}</span>
+            <span class="value">${valueHtml}</span>
+        </div>
+    `;
+}
+
+function buildPointsLookupSummaryCard(label, value, tone = 'default') {
+    return `
+        <article class="lookup-summary-card lookup-summary-card--${escapePointsHtml(tone)}">
+            <span class="lookup-summary-card__label">${escapePointsHtml(label)}</span>
+            <strong class="lookup-summary-card__value">${escapePointsHtml(value)}</strong>
+        </article>
+    `;
+}
+
+function buildPointsLookupFieldCard(label, valueHtml, tone = 'default', options = {}) {
+    const classNames = [
+        'lookup-field-card',
+        `lookup-field-card--${escapePointsHtml(tone)}`
+    ];
+
+    if (options?.wide) {
+        classNames.push('lookup-field-card--wide');
+    }
+
+    return `
+        <article class="${classNames.join(' ')}">
+            <span class="lookup-field-card__label">${escapePointsHtml(label)}</span>
+            <div class="lookup-field-card__value">${valueHtml}</div>
+        </article>
+    `;
+}
+
+function buildPointsLookupTimelineItem({ title = '', meta = '', detail = '', tone = 'neutral', icon = 'fas fa-circle-info' } = {}) {
+    return `
+        <li class="lookup-timeline-item lookup-timeline-item--${escapePointsHtml(tone)}">
+            <span class="lookup-timeline-item__icon"><i class="${escapePointsHtml(icon)}"></i></span>
+            <div class="lookup-timeline-item__content">
+                <div class="lookup-timeline-item__title">${escapePointsHtml(title)}</div>
+                ${meta ? `<div class="lookup-timeline-item__meta">${escapePointsHtml(meta)}</div>` : ''}
+                ${detail ? `<div class="lookup-timeline-item__detail">${escapePointsHtml(detail)}</div>` : ''}
+            </div>
+        </li>
+    `;
+}
+
+function buildPointsLookupActionButton({
+    action = '',
+    label = '',
+    icon = 'fas fa-arrow-right',
+    dataAttrs = {},
+    tone = 'default',
+    disabled = false,
+    title = ''
+} = {}) {
+    const attributes = Object.entries(dataAttrs || {})
+        .filter(([, value]) => value !== undefined && value !== null && value !== '')
+        .map(([key, value]) => `${key}="${escapePointsHtml(value)}"`)
+        .join(' ');
+
+    return `
+        <button type="button" class="lookup-action-btn lookup-action-btn--${escapePointsHtml(tone)}" data-points-action="${escapePointsHtml(action)}" ${title ? `title="${escapePointsHtml(title)}"` : ''} ${attributes} ${disabled ? 'disabled' : ''}>
+            <i class="${escapePointsHtml(icon)}"></i>
+            <span>${escapePointsHtml(label)}</span>
+        </button>
+    `;
+}
+
+function buildPointsLookupCodeOpsPanel(data = {}) {
+    const normalizedCode = String(data.code || '').trim();
+    if (!normalizedCode) {
+        return '';
+    }
+
+    const context = getPointsWriteContextState();
+    const status = String(data.status || '').trim().toLowerCase();
+    const writeDisabledTitle = context.canWrite ? '' : '请先将顶部站点切到 CN 或 INTL';
+
+    const actionButtons = [
+        buildPointsLookupActionButton({
+            action: 'copy-code-item',
+            label: '复制兑换码',
+            icon: 'fas fa-copy',
+            tone: 'subtle',
+            dataAttrs: {
+                'data-code': encodeURIComponent(normalizedCode)
+            }
+        }),
+        status === 'pending'
+            ? buildPointsLookupActionButton({
+                action: 'set-code-expiry',
+                label: '设置有效期',
+                icon: 'fas fa-calendar-alt',
+                tone: 'default',
+                disabled: !context.canWrite,
+                title: writeDisabledTitle,
+                dataAttrs: {
+                    'data-code': encodeURIComponent(normalizedCode),
+                    'data-code-expiry': encodeURIComponent(data.expires_at || '')
+                }
+            })
+            : '',
+        status === 'pending'
+            ? buildPointsLookupActionButton({
+                action: 'disable-code',
+                label: '禁用兑换码',
+                icon: 'fas fa-ban',
+                tone: 'danger',
+                disabled: !context.canWrite,
+                title: writeDisabledTitle,
+                dataAttrs: {
+                    'data-code': encodeURIComponent(normalizedCode)
+                }
+            })
+            : '',
+        status === 'used'
+            ? buildPointsLookupActionButton({
+                action: 'revoke-code',
+                label: '撤销兑换',
+                icon: 'fas fa-rotate-left',
+                tone: 'danger',
+                disabled: !context.canWrite,
+                title: writeDisabledTitle,
+                dataAttrs: {
+                    'data-code': encodeURIComponent(normalizedCode)
+                }
+            })
+            : '',
+        status === 'disabled'
+            ? buildPointsLookupActionButton({
+                action: 'enable-code',
+                label: '重新启用',
+                icon: 'fas fa-check',
+                tone: 'success',
+                disabled: !context.canWrite,
+                title: writeDisabledTitle,
+                dataAttrs: {
+                    'data-code': encodeURIComponent(normalizedCode)
+                }
+            })
+            : ''
+    ].filter(Boolean).join('');
+
+    return `
+        <section class="lookup-section lookup-section--ops">
+            <div class="lookup-section__title">直接操作</div>
+            <div class="lookup-ops-panel">
+                <div class="lookup-ops-panel__copy">
+                    <strong>在查询结果里直接处理这条兑换码</strong>
+                    <p>复制兑换码、调整有效期或修改状态时，会沿用顶部站点筛选作为实际写入语境。</p>
+                </div>
+                <div class="points-site-context points-site-context--lookup-ops">
+                    ${buildPointsSiteContextMarkup('batch')}
+                </div>
+                <div class="lookup-action-row lookup-action-row--ops">${actionButtons}</div>
+            </div>
+        </section>
+    `;
+}
+
+function renderLookupEmptyState() {
+    const resultDiv = document.getElementById('lookupResult');
+    if (!resultDiv) {
+        return;
+    }
+
+    clearPointsLookupFeedback();
+
+    resultDiv.innerHTML = `
+        <div class="lookup-card lookup-card--rich lookup-card--empty">
+            <div class="lookup-empty-state__icon"><i class="fas fa-search"></i></div>
+            <div class="lookup-empty-state__title">准备开始查询</div>
+            <div class="lookup-empty-state__copy">输入兑换码、订单号或积分流水 ID 后查看完整状态与履历。</div>
+        </div>
+    `;
+    setAdminPointsPanelVisible(resultDiv, true);
+}
+
 async function lookupCode() {
     const input = document.getElementById('lookupCodeInput');
     const code = input.value.trim(); // Do not uppercase immediately, UUIDs might be lowercase
     const resultDiv = document.getElementById('lookupResult');
 
     if (!code) {
-        alert('请输入兑换码或订单号');
+        announcePointsAction('请输入兑换码或订单号', 'error');
+        input?.focus();
         return;
     }
 
+    clearPointsLookupFeedback();
+
     // Show loading state
-    resultDiv.innerHTML = '<div class="lookup-card"><div class="lookup-status">🔍 查询中...</div></div>';
+    resultDiv.innerHTML = `
+        <div class="lookup-card lookup-card--rich">
+            <div class="lookup-query-type">查询中</div>
+            <div class="lookup-status">🔍 正在检索兑换码、订单号与积分流水上下文...</div>
+        </div>
+    `;
     setAdminPointsPanelVisible(resultDiv, true);
 
     try {
@@ -2787,7 +5714,20 @@ async function lookupCode() {
         renderLookupResult(payload?.result || {}, payload?.kind === 'ledger' ? 'ledger' : 'code');
 
     } catch (err) {
-        resultDiv.innerHTML = `<div class="lookup-card invalid"><div class="lookup-status">❌ 查询失败</div><p>${err.message}</p></div>`;
+        resultDiv.innerHTML = `
+            <div class="lookup-card lookup-card--rich invalid">
+                <div class="lookup-query-type">查询失败</div>
+                <div class="lookup-status">❌ 未找到可用结果</div>
+                <div class="lookup-section">
+                    <div class="lookup-section__title">排查建议</div>
+                    <div class="lookup-section__body">确认兑换码是否完整、订单号是否属于当前站点，或直接粘贴积分流水 UUID 再试一次。</div>
+                </div>
+                <div class="lookup-section">
+                    <div class="lookup-section__title">错误详情</div>
+                    <div class="lookup-section__body">${escapePointsHtml(err.message)}</div>
+                </div>
+            </div>
+        `;
         setAdminPointsPanelVisible(resultDiv, true);
     }
 }
@@ -2797,42 +5737,86 @@ function renderLookupResult(data, type) {
 
     if (type === 'ledger') {
         const reason = formatLedgerReason ? formatLedgerReason(data.reason, data.created_at, data.reference_id) : data.reason;
-        // Extract text from HTML if formatLedgerReason returns HTML
         const reasonText = reason.includes('<') ? reason.replace(/<[^>]+>/g, '') : reason;
+        const userLabel = data.profiles?.username || data.profiles?.email || '未知用户';
+        const actionButtons = [
+            data.user_id
+                ? buildPointsLookupActionButton({
+                    action: 'navigate-user',
+                    label: '前往用户',
+                    icon: 'fas fa-user',
+                    dataAttrs: {
+                        'data-user-id': encodeURIComponent(data.user_id)
+                    }
+                })
+                : '',
+            data.batch_id && data.reference_id
+                ? buildPointsLookupBatchAction('navigate-batch', data.batch_id, data.reference_id, '定位相关兑换码', 'fas fa-crosshairs')
+                : ''
+        ].filter(Boolean).join('');
+        const fieldCards = [
+            buildPointsLookupFieldCard('流水 ID', `<span class="code-value" title="${escapePointsHtml(data.id || '')}">${escapePointsHtml(data.id || '-')}</span>`, 'mono', { wide: true }),
+            buildPointsLookupFieldCard('类型 / 原因', `<span class="text-warning">${escapePointsHtml(data.reason || '-')}</span>`, 'warm'),
+            buildPointsLookupFieldCard('关联对象', `
+                <span class="code-value admin-points-reference-id">${escapePointsHtml(data.reference_id || '-')}</span>
+                ${data.prompt_title ? `<div class="lookup-prompt-title">Prompt: ${escapePointsHtml(data.prompt_title)}</div>` : ''}
+            `, 'info', { wide: true }),
+            buildPointsLookupFieldCard('变动金额', `<span class="value admin-points-ledger-amount ${data.amount >= 0 ? 'text-success' : 'text-danger'}">${data.amount >= 0 ? '+' : ''}${escapePointsHtml(data.amount || 0)} 积分</span>`, data.amount >= 0 ? 'success' : 'danger'),
+            buildPointsLookupFieldCard('当前用户', `<span>${escapePointsHtml(userLabel)}</span>`, 'default'),
+            buildPointsLookupFieldCard('创建时间', `<span class="value admin-points-lookup-value-sans">${escapePointsHtml(formatPointsLookupDateTime(data.created_at))}</span>`, 'default')
+        ].join('');
+        const timelineItems = [
+            buildPointsLookupTimelineItem({
+                title: '流水写入系统',
+                meta: formatPointsLookupDateTime(data.created_at),
+                detail: `${reasonText || '积分变动'} · ${data.amount >= 0 ? '+' : ''}${data.amount || 0} 积分`,
+                tone: data.amount >= 0 ? 'used' : 'revoked',
+                icon: data.amount >= 0 ? 'fas fa-arrow-trend-up' : 'fas fa-arrow-trend-down'
+            }),
+            buildPointsLookupTimelineItem({
+                title: '关联对象已解析',
+                meta: data.prompt_title ? 'Prompt 资产' : '引用记录',
+                detail: data.prompt_title || data.reference_id || '当前流水没有额外引用对象',
+                tone: 'info',
+                icon: 'fas fa-link'
+            })
+        ].join('');
 
         resultDiv.innerHTML = `
-            <div class="lookup-card valid">
-                <div class="lookup-query-type">🧾 积分流水查询</div>
-                <div class="lookup-status">✅ 记录存在</div>
-                
-                <div class="lookup-detail">
-                    <span class="label">流水ID:</span>
-                    <span class="value code-value" title="${data.id}">${data.id}</span>
+            <div class="lookup-card lookup-card--rich valid">
+                <div class="lookup-card__header lookup-card__header--hero">
+                    <div class="lookup-card__headline lookup-card__headline--hero">
+                        <div class="lookup-query-type">🧾 积分流水查询</div>
+                        <div class="lookup-card__eyebrow">记录存在</div>
+                        <div class="lookup-card__title">${escapePointsHtml(reasonText || '积分流水')}</div>
+                        <div class="lookup-card__subtitle">流水 ${escapePointsHtml(String(data.id || '').slice(0, 8) || '-')} · ${escapePointsHtml(userLabel)} · ${escapePointsHtml(formatPointsGenerateSiteLabel(data.site || getPointsReadSite()))}</div>
+                    </div>
+                    <div class="lookup-card__status lookup-card__status--hero">
+                        <span class="lookup-status-badge lookup-status-badge--${escapePointsHtml(data.amount >= 0 ? 'used' : 'revoked')}">
+                            <i class="fas ${data.amount >= 0 ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down'}"></i>
+                            ${escapePointsHtml(data.amount >= 0 ? '积分增加' : '积分扣减')}
+                        </span>
+                        ${actionButtons ? `<div class="lookup-action-row">${actionButtons}</div>` : ''}
+                    </div>
                 </div>
-                <div class="lookup-detail">
-                    <span class="label">类型/原因:</span>
-                    <span class="value text-warning">${data.reason}</span>
+
+                <div class="points-inline-feedback-shell" id="pointsLookupInlineFeedback">${buildPointsInlineFeedbackMarkup(pointsLookupFeedbackState.message, pointsLookupFeedbackState.tone)}</div>
+                <div class="lookup-summary-grid">
+                    ${buildPointsLookupSummaryCard('变动金额', `${data.amount >= 0 ? '+' : ''}${data.amount || 0} 积分`, data.amount >= 0 ? 'success' : 'danger')}
+                    ${buildPointsLookupSummaryCard('写入站点', formatPointsGenerateSiteLabel(data.site || getPointsReadSite()), 'info')}
+                    ${buildPointsLookupSummaryCard('关联对象', data.prompt_title || data.reference_id || '无', 'default')}
+                    ${buildPointsLookupSummaryCard('当前用户', userLabel, 'default')}
                 </div>
-                <div class="lookup-detail">
-                    <span class="label">关联ID:</span>
-                    <span class="value">
-                        <span class="code-value admin-points-reference-id">${data.reference_id || '-'}</span>
-                        ${data.prompt_title ? `<div class="lookup-prompt-title">Prompt: ${data.prompt_title}</div>` : ''}
-                    </span>
-                </div>
-                <div class="lookup-detail">
-                    <span class="label">变动金额:</span>
-                    <span class="value admin-points-ledger-amount ${data.amount >= 0 ? 'text-success' : 'text-danger'}">
-                        ${data.amount >= 0 ? '+' : ''}${data.amount}
-                    </span>
-                </div>
-                <div class="lookup-detail">
-                    <span class="label">用户:</span>
-                    <span class="value">👤 ${data.profiles?.username || data.profiles?.email || '未知用户'}</span>
-                </div>
-                <div class="lookup-detail">
-                    <span class="label">创建时间:</span>
-                    <span class="value admin-points-lookup-value-sans">${new Date(data.created_at).toLocaleString('zh-CN')}</span>
+
+                <div class="lookup-content-grid">
+                    <section class="lookup-section lookup-section--fields">
+                        <div class="lookup-section__title">关键字段</div>
+                        <div class="lookup-field-grid">${fieldCards}</div>
+                    </section>
+                    <section class="lookup-section lookup-section--timeline">
+                        <div class="lookup-section__title">履历时间线</div>
+                        <ul class="lookup-timeline">${timelineItems}</ul>
+                    </section>
                 </div>
             </div>
         `;
@@ -2840,103 +5824,155 @@ function renderLookupResult(data, type) {
         return;
     }
 
-    // Default: Redeem Code Result
-    const statusLabels = {
-        pending: '⏳ 待使用',
-        locked: '🔒 已锁定',
-        used: '✅ 已使用',
-        revoked: '❌ 已撤销',
-        disabled: '🚫 已禁用'
-    };
     const queryTypeLabel = data.query_type === 'order' ? '📦 订单号查询' : '🎫 兑换码查询';
+    const statusMeta = getPointsLookupStatusMeta(data.status);
+    const lookupOpsPanel = buildPointsLookupCodeOpsPanel(data);
+    const actionButtons = [
+        data.batch_id ? buildPointsLookupBatchAction(
+            'navigate-batch',
+            data.batch_id,
+            data.code || '',
+            data.code ? '定位到批次' : '前往批次',
+            data.code ? 'fas fa-crosshairs' : 'fas fa-box-archive'
+        ) : '',
+        data.used_by_id ? buildPointsLookupActionButton({
+            action: 'navigate-user',
+            label: '前往用户',
+            icon: 'fas fa-user',
+            dataAttrs: {
+                'data-user-id': encodeURIComponent(data.used_by_id)
+            }
+        }) : ''
+    ].filter(Boolean).join('');
+
+    const fieldCards = [
+        data.code ? buildPointsLookupFieldCard('兑换码', `<span class="code-value">${escapePointsHtml(data.code)}</span>`, 'mono', { wide: true }) : '',
+        data.external_order_id ? buildPointsLookupFieldCard('订单号', `<span class="code-value">${escapePointsHtml(data.external_order_id)}</span>`, 'mono') : '',
+        data.batch_id ? buildPointsLookupFieldCard('所属批次', `
+            <a href="#" class="batch-link" data-points-action="navigate-batch" data-batch-id="${encodeURIComponent(data.batch_id)}" data-code="${encodeURIComponent(data.code || '')}">
+                📦 ${escapePointsHtml(data.batch_name || '未命名批次')}
+            </a>
+            ${data.code ? `<span class="lookup-inline-hint">打开后会自动定位这条兑换码</span>` : ''}
+        `, 'info', { wide: true }) : '',
+        buildPointsLookupFieldCard('套餐 / 面额', `<span>${escapePointsHtml(data.package_name || '-')} · ${escapePointsHtml(data.points || 0)} 分</span>`, 'default'),
+        buildPointsLookupFieldCard('写入站点', `<span>${escapePointsHtml(formatPointsGenerateSiteLabel(data.site || getPointsReadSite()))}</span>`, 'default'),
+        data.used_by ? buildPointsLookupFieldCard('使用者', `
+            ${data.used_by_id
+                ? `<a href="#" class="batch-link" data-points-action="navigate-user" data-user-id="${encodeURIComponent(data.used_by_id)}">👤 ${escapePointsHtml(data.used_by)}</a>`
+                : `<span>👤 ${escapePointsHtml(data.used_by)}</span>`}
+        `, 'default') : '',
+        data.created_at ? buildPointsLookupFieldCard('生成时间', `<span class="value admin-points-lookup-value-sans">${escapePointsHtml(formatPointsLookupDateTime(data.created_at))}</span>`, 'default') : '',
+        data.used_at ? buildPointsLookupFieldCard('使用时间', `<span class="value admin-points-lookup-value-sans">${escapePointsHtml(formatPointsLookupDateTime(data.used_at))}</span>`, 'success') : '',
+        data.revoked_by ? buildPointsLookupFieldCard('撤销者', `<span>${escapePointsHtml(data.revoked_by)}</span>`, 'danger') : '',
+        data.revoke_reason ? buildPointsLookupFieldCard('撤销原因', `<span class="value admin-points-lookup-value-danger">📝 ${escapePointsHtml(data.revoke_reason)}</span>`, 'danger') : '',
+        data.revoked_at ? buildPointsLookupFieldCard('撤销时间', `<span class="value admin-points-lookup-value-sans">${escapePointsHtml(formatPointsLookupDateTime(data.revoked_at))}</span>`, 'danger') : '',
+        data.expires_at ? buildPointsLookupFieldCard('过期时间', `<span class="value admin-points-lookup-value-sans">${escapePointsHtml(formatPointsLookupDateTime(data.expires_at))}</span>`, 'info') : ''
+    ].filter(Boolean).join('');
+
+    const timelineItems = [
+        buildPointsLookupTimelineItem({
+            title: '当前状态',
+            meta: statusMeta.label,
+            detail: data.valid ? '兑换码当前可继续使用。' : '兑换码已进入受限或终态，下面是完整履历。',
+            tone: statusMeta.tone,
+            icon: statusMeta.icon
+        }),
+        data.created_at ? buildPointsLookupTimelineItem({
+            title: '兑换码已写入批次',
+            meta: formatPointsLookupDateTime(data.created_at),
+            detail: `${data.batch_name || '未命名批次'} · ${data.package_name || '未命名套餐'}`,
+            tone: 'pending',
+            icon: 'fas fa-ticket-alt'
+        }) : '',
+        data.used_at ? buildPointsLookupTimelineItem({
+            title: '兑换码已完成使用',
+            meta: formatPointsLookupDateTime(data.used_at),
+            detail: data.used_by || '已有使用记录',
+            tone: 'used',
+            icon: 'fas fa-circle-check'
+        }) : '',
+        data.revoked_at ? buildPointsLookupTimelineItem({
+            title: '兑换码已被撤销',
+            meta: formatPointsLookupDateTime(data.revoked_at),
+            detail: data.revoke_reason || data.revoked_by || '管理员执行撤销',
+            tone: 'revoked',
+            icon: 'fas fa-ban'
+        }) : '',
+        data.expires_at ? buildPointsLookupTimelineItem({
+            title: '兑换码过期时间',
+            meta: formatPointsLookupDateTime(data.expires_at),
+            detail: data.status === 'expired' ? '该兑换码已过期' : '到期后将不可继续兑换',
+            tone: 'expired',
+            icon: 'fas fa-clock'
+        }) : ''
+    ].filter(Boolean).join('');
 
     resultDiv.innerHTML = `
-            <div class="lookup-card ${data.valid ? 'valid' : 'invalid'}">
-                <div class="lookup-query-type">${queryTypeLabel}</div>
-                <div class="lookup-status">${statusLabels[data.status] || data.status}</div>
-                ${data.code ? `
-                <div class="lookup-detail">
-                    <span class="label">兑换码:</span>
-                    <span class="value code-value">${data.code}</span>
+        <div class="lookup-card lookup-card--rich ${data.valid ? 'valid' : 'invalid'}">
+            <div class="lookup-card__header lookup-card__header--hero">
+                <div class="lookup-card__headline lookup-card__headline--hero">
+                    <div class="lookup-query-type">${queryTypeLabel}</div>
+                    <div class="lookup-card__eyebrow">${data.valid ? '记录已命中' : '记录已归档'}</div>
+                    <div class="lookup-card__title">${escapePointsHtml(data.code || data.external_order_id || data.batch_name || '兑换码记录')}</div>
+                    <div class="lookup-card__subtitle">${escapePointsHtml(data.batch_name || data.package_name || '兑换码 / 订单排查结果')} · ${escapePointsHtml(formatPointsGenerateSiteLabel(data.site || getPointsReadSite()))}</div>
                 </div>
-                ` : ''}
-                ${data.external_order_id ? `
-                <div class="lookup-detail">
-                    <span class="label">订单号:</span>
-                    <span class="value">${data.external_order_id}</span>
-                </div>
-                ` : ''}
-                ${data.batch_id ? `
-                <div class="lookup-detail">
-                    <span class="label">所属批次:</span>
-                    <span class="value">
-                        <a href="#" class="batch-link" data-points-action="navigate-batch" data-batch-id="${encodeURIComponent(data.batch_id)}">
-                            📦 ${data.batch_name || '未命名批次'}
-                        </a>
+                <div class="lookup-card__status lookup-card__status--hero">
+                    <span class="lookup-status-badge lookup-status-badge--${escapePointsHtml(statusMeta.tone)}">
+                        <i class="${escapePointsHtml(statusMeta.icon)}"></i>
+                        ${escapePointsHtml(statusMeta.label)}
                     </span>
+                    ${actionButtons ? `<div class="lookup-action-row">${actionButtons}</div>` : ''}
                 </div>
-                ` : ''}
-                <div class="lookup-detail">
-                    <span class="label">套餐:</span>
-                    <span class="value">${data.package_name || '-'}</span>
-                </div>
-                <div class="lookup-detail">
-                    <span class="label">积分:</span>
-                    <span class="value">${data.points || 0}</span>
-                </div>
-                ${data.used_by ? `
-                <div class="lookup-detail">
-                    <span class="label">使用者:</span>
-                    <span class="value">👤 ${data.used_by}</span>
-                </div>
-                ` : ''}
-                ${data.used_at ? `
-                <div class="lookup-detail">
-                    <span class="label">使用时间:</span>
-                    <span class="value">${new Date(data.used_at).toLocaleString('zh-CN')}</span>
-                </div>
-                ` : ''}
-                ${data.revoke_reason ? `
-                <div class="lookup-detail">
-                    <span class="label">撤销原因:</span>
-                    <span class="value admin-points-lookup-value-danger">📝 ${data.revoke_reason}</span>
-                </div>
-                ` : ''}
-                ${data.revoked_by ? `
-                <div class="lookup-detail">
-                    <span class="label">撤销者:</span>
-                    <span class="value">🛡️ ${data.revoked_by}</span>
-                </div>
-                ` : ''}
-                ${data.revoked_at ? `
-                <div class="lookup-detail">
-                    <span class="label">撤销时间:</span>
-                    <span class="value">${new Date(data.revoked_at).toLocaleString('zh-CN')}</span>
-                </div>
-                ` : ''}
-                ${data.expires_at ? `
-                <div class="lookup-detail">
-                    <span class="label">过期时间:</span>
-                    <span class="value">${new Date(data.expires_at).toLocaleString('zh-CN')}</span>
-                </div>
-                ` : ''}
             </div>
-            `;
+
+            <div class="points-inline-feedback-shell" id="pointsLookupInlineFeedback">${buildPointsInlineFeedbackMarkup(pointsLookupFeedbackState.message, pointsLookupFeedbackState.tone)}</div>
+            <div class="lookup-summary-grid">
+                ${buildPointsLookupSummaryCard('查询方式', data.query_type === 'order' ? '订单号' : '兑换码', 'info')}
+                ${buildPointsLookupSummaryCard('当前状态', statusMeta.label, statusMeta.tone)}
+                ${buildPointsLookupSummaryCard('套餐 / 面额', `${data.package_name || '未命名套餐'} · ${data.points || 0} 分`, 'default')}
+                ${buildPointsLookupSummaryCard('写入站点', formatPointsGenerateSiteLabel(data.site || getPointsReadSite()), 'default')}
+            </div>
+
+            ${lookupOpsPanel}
+
+            <div class="lookup-content-grid">
+                <section class="lookup-section lookup-section--fields">
+                    <div class="lookup-section__title">关键字段</div>
+                    <div class="lookup-field-grid">${fieldCards}</div>
+                </section>
+                <section class="lookup-section lookup-section--timeline">
+                    <div class="lookup-section__title">履历时间线</div>
+                    <ul class="lookup-timeline">${timelineItems}</ul>
+                </section>
+            </div>
+        </div>
+    `;
     setAdminPointsPanelVisible(resultDiv, true);
 }
 
 // Navigate to batch management and open specific batch
-function navigateToBatch(batchId) {
+function navigateToBatch(batchId, options = {}) {
+    const normalizedBatchId = String(batchId || '').trim();
+    const normalizedCode = String(options?.code || '').trim();
+
+    if (normalizedBatchId && normalizedCode) {
+        queuePointsBatchCodeFocus(normalizedBatchId, normalizedCode);
+    }
+
     // Switch to batches tab
-    const batchTab = document.querySelector('#module-points .admin-tab[data-tab="points-view-batches"]');
+    const batchTab = document.querySelector('#module-points .admin-tab[data-points-view-target="batches"]');
     if (batchTab) {
         batchTab.click();
+    } else {
+        switchPointsView('batches');
     }
 
     // Wait for tab switch, then open batch details
-    setTimeout(() => {
-        viewBatchCodes(batchId);
-    }, 200);
+    if (normalizedBatchId) {
+        setTimeout(() => {
+            viewBatchCodes(normalizedBatchId);
+        }, 200);
+    }
 }
 
 // ========================================
@@ -2963,11 +5999,18 @@ document.addEventListener('DOMContentLoaded', () => {
 window.addEventListener('admin-site-changed', async () => {
     invalidatePointsCatalogSnapshot();
     clearPointsViewPrefetch();
+    clearPointsBatchListFeedback();
 
     const pointsModule = document.getElementById('module-points');
     if (!pointsModule?.classList.contains('active')) {
         return;
     }
+
+    renderPointsSiteContexts();
+    syncPointsPackageDeleteModalState();
+    syncPointsBatchEditModalState();
+    syncPointsCodeActionModalState();
+    syncPointsBatchInvalidateModalState();
 
     const activeView = document.querySelector('#module-points .view-section.active')?.id || '';
     if (activeView === 'points-view-catalog') {
@@ -2985,7 +6028,14 @@ window.addEventListener('admin-site-changed', async () => {
     if (activeView === 'points-view-generate') {
         await loadPackagesForSelect();
         initBatchExpiresPicker();
+        renderPointsGeneratePreview();
         schedulePointsViewPrefetch('generate');
+        return;
+    }
+
+    if (activeView === 'points-view-lookup') {
+        renderLookupEmptyState();
+        schedulePointsViewPrefetch('lookup');
         return;
     }
 

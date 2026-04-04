@@ -398,7 +398,7 @@ function buildAdminPermissionError(options = {}, availablePermissions = []) {
 }
 
 async function requireAdmin(req, options = {}) {
-    const { user, error } = await getAuthenticatedUser(req);
+    const { user, token, error } = await getAuthenticatedUser(req);
     if (!user) {
         const authError = new Error(error?.message || 'Unauthorized');
         authError.statusCode = 401;
@@ -469,6 +469,7 @@ async function requireAdmin(req, options = {}) {
         supabase,
         requestSupabase: requestClient,
         adminSupabase,
+        token,
         user,
         roles: activeRoles,
         permissions: resolvedPermissions,

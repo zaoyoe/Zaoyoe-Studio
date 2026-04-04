@@ -39,8 +39,15 @@ const settingsPaymentChannelsHandler = require('../server/api-handlers/admin/set
 const settingsVerifyMonitorHandler = require('../server/api-handlers/admin/settings/verify-monitor');
 const settingsVerifyMonitorQuotaHandler = require('../server/api-handlers/admin/settings/verify-monitor-quota');
 const settingsVerifyMonitorQueueHandler = require('../server/api-handlers/admin/settings/verify-monitor-queue');
+const ticketAssignHandler = require('../server/api-handlers/admin/tickets/assign');
+const ticketBatchProcessHandler = require('../server/api-handlers/admin/tickets/batch-process');
 const ticketCreateHandler = require('../server/api-handlers/admin/tickets/create');
+const ticketHistoryHandler = require('../server/api-handlers/admin/tickets/history');
+const ticketListHandler = require('../server/api-handlers/admin/tickets/list');
+const ticketMetricsHandler = require('../server/api-handlers/admin/tickets/metrics');
 const ticketProcessHandler = require('../server/api-handlers/admin/tickets/process');
+const ticketSummaryActionsHandler = require('../server/api-handlers/admin/tickets/summary-actions');
+const ticketSummaryHistoryHandler = require('../server/api-handlers/admin/tickets/summary-history');
 
 const ROUTE_HANDLERS = {
     gemini: geminiHandler,
@@ -68,8 +75,15 @@ const ROUTE_HANDLERS = {
     'settings/verify-monitor': settingsVerifyMonitorHandler,
     'settings/verify-monitor/quota': settingsVerifyMonitorQuotaHandler,
     'settings/verify-monitor/queue': settingsVerifyMonitorQueueHandler,
+    'tickets/assign': ticketAssignHandler,
+    'tickets/batch-process': ticketBatchProcessHandler,
     'tickets/create': ticketCreateHandler,
+    'tickets/history': ticketHistoryHandler,
+    'tickets/list': ticketListHandler,
+    'tickets/metrics': ticketMetricsHandler,
     'tickets/process': ticketProcessHandler,
+    'tickets/summary-actions': ticketSummaryActionsHandler,
+    'tickets/summary-history': ticketSummaryHistoryHandler,
     'shop/categories': shopCategoriesHandler,
     'shop/inventory-detail': shopInventoryDetailHandler,
     'shop/inventory': shopInventoryHandler,
