@@ -299,7 +299,13 @@ function normalizeOpsAlertWorkspaceContext(context = {}) {
         signalType: String(context.signalType || context.signal_type || context.workspaceSignalType || '').trim().toLowerCase(),
         caseStatus: String(context.caseStatus || context.case_status || context.workspaceCaseStatus || '').trim().toLowerCase(),
         caseOwnerAdminId: String(context.caseOwnerAdminId || context.case_owner_admin_id || context.workspaceCaseOwnerAdminId || '').trim(),
-        caseOwnerLabel: String(context.caseOwnerLabel || context.case_owner_label || context.workspaceCaseOwnerLabel || '').trim()
+        caseOwnerLabel: String(context.caseOwnerLabel || context.case_owner_label || context.workspaceCaseOwnerLabel || '').trim(),
+        experimentId: String(context.experimentId || context.experiment_id || '').trim(),
+        experimentName: String(context.experimentName || context.experiment_name || '').trim(),
+        variantName: String(context.variantName || context.variant_name || '').trim(),
+        placement: String(context.placement || context.placementKey || '').trim().toLowerCase(),
+        targetMetric: String(context.targetMetric || context.target_metric || '').trim().toLowerCase(),
+        site: String(context.site || context.siteKey || '').trim().toLowerCase()
     };
 }
 
@@ -319,7 +325,13 @@ function buildOpsAlertWorkspaceContextAttrs(context = {}) {
         'data-workspace-session-id': normalizedContext.sessionId || '',
         'data-workspace-case-status': normalizedContext.caseStatus || '',
         'data-workspace-case-owner-admin-id': normalizedContext.caseOwnerAdminId || '',
-        'data-workspace-case-owner-label': normalizedContext.caseOwnerLabel || ''
+        'data-workspace-case-owner-label': normalizedContext.caseOwnerLabel || '',
+        'data-workspace-experiment-id': normalizedContext.experimentId || '',
+        'data-workspace-experiment-name': normalizedContext.experimentName || '',
+        'data-workspace-variant-name': normalizedContext.variantName || '',
+        'data-workspace-placement': normalizedContext.placement || '',
+        'data-workspace-target-metric': normalizedContext.targetMetric || '',
+        'data-workspace-site': normalizedContext.site || ''
     };
 }
 
@@ -338,8 +350,122 @@ function readOpsAlertWorkspaceContextDataset(dataset = {}) {
         sessionId: dataset.workspaceSessionId,
         caseStatus: dataset.workspaceCaseStatus,
         caseOwnerAdminId: dataset.workspaceCaseOwnerAdminId,
-        caseOwnerLabel: dataset.workspaceCaseOwnerLabel
+        caseOwnerLabel: dataset.workspaceCaseOwnerLabel,
+        experimentId: dataset.workspaceExperimentId,
+        experimentName: dataset.workspaceExperimentName,
+        variantName: dataset.workspaceVariantName,
+        placement: dataset.workspacePlacement,
+        targetMetric: dataset.workspaceTargetMetric,
+        site: dataset.workspaceSite
     });
+}
+
+const ADMIN_WORKBENCH_EXPERIMENT_PLACEMENT_LABELS = {
+    prompt_unlock_button: 'Prompt 解锁按钮',
+    verify_submit_button: 'Verify 提交按钮',
+    wallet_custom_recharge_button: '钱包自定义充值',
+    shop_purchase_modal_confirm: '商城购买确认'
+};
+
+const ADMIN_WORKBENCH_EXPERIMENT_TARGET_LABELS = {
+    verify_success: '验证成功',
+    recharge_success: '充值成功',
+    shop_purchase: '商城成交',
+    unlock_success: '内容解锁',
+    affiliate_invite_click: '邀请点击',
+    checkin_success: '签到完成',
+    guestbook_post: '留言发布',
+    verify_submit: '验证提交',
+    recharge_click: '充值点击',
+    shop_view: '商城浏览',
+    prompt_view: '内容浏览'
+};
+
+function getOpsAlertWorkspaceExperimentPlacementLabel(value = '') {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized) return '';
+    if (ADMIN_WORKBENCH_EXPERIMENT_PLACEMENT_LABELS[normalized]) {
+        return ADMIN_WORKBENCH_EXPERIMENT_PLACEMENT_LABELS[normalized];
+    }
+    return normalized
+        .split(/[_-]+/)
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ');
+}
+
+function getOpsAlertWorkspaceExperimentTargetLabel(value = '') {
+    const normalized = String(value || '').trim().toLowerCase();
+    return ADMIN_WORKBENCH_EXPERIMENT_TARGET_LABELS[normalized] || normalized;
+}
+
+function getOpsAlertWorkspaceExperimentSummary(context = {}, options = {}) {
+    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
+    const experimentName = normalizedContext.experimentName;
+    const variantName = normalizedContext.variantName;
+    const placementLabel = getOpsAlertWorkspaceExperimentPlacementLabel(normalizedContext.placement);
+    const targetMetricLabel = getOpsAlertWorkspaceExperimentTargetLabel(normalizedContext.targetMetric);
+    const siteLabel = normalizedContext.site === 'intl'
+        ? 'INTL'
+        : (normalizedContext.site === 'cn' ? 'CN' : '');
+    const compact = options.compact === true;
+
+    if (!experimentName && !variantName && !placementLabel && !targetMetricLabel) {
+        return '';
+    }
+
+    const parts = [];
+    if (experimentName) parts.push(`实验 ${experimentName}`);
+    if (variantName) parts.push(`变体 ${variantName}`);
+    if (placementLabel) parts.push(`入口 ${placementLabel}`);
+    if (targetMetricLabel) parts.push(`目标 ${targetMetricLabel}`);
+    if (siteLabel) parts.push(`站点 ${siteLabel}`);
+
+    return compact ? parts.join(' · ') : parts.join(' / ');
+}
+
+function buildOpsAlertWorkspaceExperimentContextState(context = {}, options = {}) {
+    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
+    const experimentSummary = getOpsAlertWorkspaceExperimentSummary(normalizedContext, { compact: false });
+    if (!experimentSummary) {
+        return null;
+    }
+
+    const chips = [];
+    if (normalizedContext.experimentName) {
+        chips.push({ label: '实验', value: normalizedContext.experimentName });
+    }
+    if (normalizedContext.variantName) {
+        chips.push({ label: '变体', value: normalizedContext.variantName });
+    }
+
+    const placementLabel = getOpsAlertWorkspaceExperimentPlacementLabel(normalizedContext.placement);
+    if (placementLabel) {
+        chips.push({ label: '入口', value: placementLabel });
+    }
+
+    const targetMetricLabel = getOpsAlertWorkspaceExperimentTargetLabel(normalizedContext.targetMetric);
+    if (targetMetricLabel) {
+        chips.push({ label: '目标', value: targetMetricLabel });
+    }
+
+    if (normalizedContext.site === 'cn' || normalizedContext.site === 'intl') {
+        chips.push({ label: '站点', value: normalizedContext.site === 'intl' ? 'INTL' : 'CN' });
+    }
+
+    if (normalizedContext.referenceLabel && normalizedContext.referenceValue) {
+        chips.push({ label: normalizedContext.referenceLabel, value: normalizedContext.referenceValue });
+    }
+
+    return {
+        title: String(options.title || '实验聚焦上下文').trim() || '实验聚焦上下文',
+        eyebrow: String(options.eyebrow || 'Experiment Context').trim() || 'Experiment Context',
+        summary: String(
+            options.summary
+            || `当前工作区是从实验结果下钻进入，建议围绕 ${experimentSummary} 继续排查和记录。`
+        ).trim(),
+        chips
+    };
 }
 
 function getOpsAlertWorkspaceTargetIdParts(context = {}) {
@@ -648,6 +774,10 @@ function getOpsAlertWorkspaceContextLabel(context = {}, options = {}) {
     const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
     if (normalizedContext.referenceLabel && normalizedContext.referenceValue) {
         return `${normalizedContext.referenceLabel}：${normalizedContext.referenceValue}`;
+    }
+    const experimentSummary = getOpsAlertWorkspaceExperimentSummary(normalizedContext, { compact: true });
+    if (experimentSummary) {
+        return experimentSummary;
     }
     return String(
         normalizedContext.title
@@ -6446,7 +6576,7 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
             if (!settingsOpened) {
                 return false;
             }
-            window.switchSettingsView?.('content');
+            window.switchSettingsView?.('google-one');
             await settleAdminWorkbench();
             const verifyMonitorRefresh = typeof window.refreshVerifyMonitor === 'function'
                 ? window.refreshVerifyMonitor(true).catch((error) => {
@@ -6461,6 +6591,7 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
                 })
             ]);
             scrollAdminWorkbenchTarget('verifyMonitorPanel');
+            window.renderVerifyMonitorWorkbenchContext?.(normalizedContext);
             window.focusVerifyMonitorWorkspace?.(normalizedContext);
         } else if (normalizedKey === 'admin-audit-monitor') {
             const settingsOpened = await ensureAdminWorkbenchModule('settings');
@@ -6502,6 +6633,7 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
                 await settleAdminWorkbench();
                 scrollAdminWorkbenchTarget('paymentsProviderStats');
             }
+            window.AdminPayments?.showWorkbenchContext?.(normalizedContext);
         } else if (normalizedKey === 'payments-ops') {
             const paymentsOpened = await ensureAdminWorkbenchModule('payments');
             if (!paymentsOpened) {
@@ -6509,6 +6641,7 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
             }
             await window.AdminPayments?.init?.();
             await window.AdminPayments?.focusExceptionTopic?.(getOpsAlertWorkspacePaymentsTopic(normalizedContext));
+            window.AdminPayments?.showWorkbenchContext?.(normalizedContext);
         } else if (normalizedKey === 'tickets-pending' || normalizedKey === 'tickets-resolved') {
             const nextStatus = normalizedKey === 'tickets-pending' ? 'pending' : 'resolved';
             const normalizedTicketId = String(normalizedContext.ticketId || '').trim()
@@ -6548,6 +6681,7 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
             }
             await settleAdminWorkbench();
             scrollAdminWorkbenchTarget('module-tickets');
+            window.AdminTickets?.showWorkbenchContext?.(normalizedContext);
         } else if (normalizedKey === 'shop-inventory') {
             const shopOpened = await ensureAdminWorkbenchModule('shop');
             if (!shopOpened) {
@@ -6840,6 +6974,10 @@ window.getOpsAlertWorkspacePaymentsTopic = getOpsAlertWorkspacePaymentsTopic;
 window.getOpsAlertWorkspaceSuccessLabel = getOpsAlertWorkspaceSuccessLabel;
 window.normalizeOpsAlertWorkspaceActionContext = normalizeOpsAlertWorkspaceActionContext;
 window.getOpsAlertWorkspaceAction = getOpsAlertWorkspaceAction;
+window.getOpsAlertWorkspaceExperimentSummary = getOpsAlertWorkspaceExperimentSummary;
+window.getOpsAlertWorkspaceExperimentPlacementLabel = getOpsAlertWorkspaceExperimentPlacementLabel;
+window.getOpsAlertWorkspaceExperimentTargetLabel = getOpsAlertWorkspaceExperimentTargetLabel;
+window.buildOpsAlertWorkspaceExperimentContextState = buildOpsAlertWorkspaceExperimentContextState;
 window.getAdminWorkbenchOpsAlertCaseStatusLabel = getOpsAlertCaseStatusLabel;
 window.getAdminWorkbenchOpsAlertCaseStatusTone = getOpsAlertCaseStatusTone;
 window.getOpsAlertCaseStatusLabel = getOpsAlertCaseStatusLabel;

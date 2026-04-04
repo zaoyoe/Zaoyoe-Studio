@@ -209,7 +209,11 @@
                 if (typeof window.loadBatches === 'function') window.loadBatches();
                 break;
             case 'analytics':
-                if (typeof window.initAnalyticsModule === 'function') window.initAnalyticsModule();
+                if (typeof window.reloadAnalyticsDashboard === 'function') {
+                    window.reloadAnalyticsDashboard({ reason: 'site-change', includeExperiments: true });
+                } else if (typeof window.initAnalyticsModule === 'function') {
+                    window.initAnalyticsModule();
+                }
                 break;
             case 'payments':
                 if (window.AdminPayments && typeof window.AdminPayments.reload === 'function') {

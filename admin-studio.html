@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=20260404_ADMIN_TICKET_REMINDER_ACTIVITY_LAYOUT_6">
+    <link rel="stylesheet" href="admin-studio.css?v=20260404_ANALYTICS_DUTY_BOARD_26">
     <link rel="stylesheet" href="admin-sidebar.css?v=20260403_COMMENTS_HOVER_BLUE_4">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260402_ADMIN_CHAT_INPUT_UI_13">
 
@@ -30,7 +30,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
     <!-- Prevent flash of wrong theme -->
-    <link rel="stylesheet" href="css/admin-studio-page.css?v=20260403_POINTS_LOOKUP_PANEL_WIDTH_1">
+    <link rel="stylesheet" href="css/admin-studio-page.css?v=20260404_ADMIN_TICKET_MODAL_POLISH_1">
     <script src="./js/theme-preload.js"></script>
 
 </head>
@@ -704,6 +704,9 @@
                     </button>
                     <button class="admin-tab" data-settings-view="content" data-admin-action="switch-settings-view">
                         内容设置
+                    </button>
+                    <button class="admin-tab" data-settings-view="google-one" data-admin-action="switch-settings-view">
+                        Google One API
                     </button>
                     <button class="admin-tab" data-settings-view="affiliate" data-admin-action="switch-settings-view">
                         推广返现
@@ -4849,159 +4852,6 @@
                             </div>
                         </div>
 
-                        <!-- Verification Service -->
-                        <div class="settings-section verify-service-section">
-                            <h3><i class="fas fa-shield-check"></i> Google One API</h3>
-                            <div class="config-item-row">
-                                <div class="config-label">
-                                    <span>每次验证价格</span>
-                                    <span class="config-hint">用户每次使用验证服务消耗的积分</span>
-                                </div>
-                                <div class="config-value">
-                                    <div class="input-with-addon">
-                                        <input type="number" id="cfgVerifyPrice" class="config-input" value="10" min="1"
-                                            max="100" step="1" data-admin-change-action="settings-save-verify-config">
-                                        <span class="input-addon">积分/次</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="config-item-row admin-studio-inline-style-attr-20"
-                               >
-                                <div class="config-label">
-                                    <span>验证 API Key</span>
-                                    <span class="config-hint">上游 Google One 用户 API 的 ak_ 密钥</span>
-                                </div>
-                                <input type="password" id="cfgVerifyApiKey" class="config-input admin-studio-inline-style-attr-21"
-                                    placeholder="ak_XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" autocomplete="new-password" readonly
-                                    data-admin-focus-action="settings-verify-api-key-unlock"
-                                    data-admin-blur-action="settings-verify-api-key-lock"
-                                   
-                                    data-admin-change-action="settings-save-verify-config">
-                            </div>
-                            <div class="config-item-row">
-                                <div class="config-label">
-                                    <span>验证 API Base URL</span>
-                                    <span class="config-hint">上游域名更新时在这里改，留空则回退到服务端默认值</span>
-                                </div>
-                                <input type="url" id="cfgVerifyApiBase" class="config-input"
-                                    placeholder="https://a8yx0rez5w.localto.net"
-                                    inputmode="url"
-                                    data-admin-change-action="settings-save-verify-config">
-                            </div>
-                            <div class="config-item-row">
-                                <div class="config-label">
-                                    <span>启用验证服务</span>
-                                    <span class="config-hint">关闭后主页不显示验证模块</span>
-                                </div>
-                                <div class="config-value">
-                                    <label class="toggle-switch">
-                                        <input type="checkbox" id="cfgVerifyEnabled" checked
-                                            data-admin-change-action="settings-save-verify-config">
-                                        <span class="toggle-slider"></span>
-                                    </label>
-                                </div>
-                            </div>
-                            <div class="config-item-row">
-                                <div class="config-label">
-                                    <span>API 余额</span>
-                                    <span class="config-hint">当前 API Key 的剩余额度</span>
-                                </div>
-                                <div class="config-value admin-studio-inline-style-attr-22">
-                                    <span id="cfgVerifyQuota"
-                                        class="admin-studio-inline-style-attr-23">
-                                        <i class="fas fa-spinner fa-spin admin-studio-inline-style-attr-24"></i> 加载中...
-                                    </span>
-                                    <button type="button" data-admin-action="settings-check-verify-quota" title="刷新额度"
-                                        class="admin-studio-inline-style-attr-25">
-                                        <i class="fas fa-sync-alt"></i>
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="verify-monitor-panel" id="verifyMonitorPanel">
-                                <div class="verify-monitor-panel__header">
-                                    <div class="verify-monitor-panel__intro">
-                                        <h4><i class="fas fa-wave-square"></i> 验证服务运维面板</h4>
-                                        <p>验证相关告警会优先指向这里，集中查看当前额度、接口状态、上游队列、最近任务与最近失败。</p>
-                                    </div>
-                                    <div class="verify-monitor-panel__toolbar">
-                                        <span id="verifyMonitorLastRefresh" class="verify-monitor-panel__timestamp">等待首次刷新</span>
-                                        <button type="button" class="btn-sm btn-secondary" data-admin-action="settings-refresh-verify-monitor">
-                                            <i class="fas fa-sync-alt"></i> 刷新状态
-                                        </button>
-                                    </div>
-                                </div>
-                                <div class="verify-monitor-grid">
-                                    <section class="verify-monitor-card" id="verifyMonitorQuotaPanel">
-                                        <div class="verify-monitor-card__eyebrow">当前额度</div>
-                                        <div class="verify-monitor-card__value" id="verifyMonitorQuotaValue">查询中...</div>
-                                        <div class="verify-monitor-card__meta" id="verifyMonitorQuotaMeta">正在读取 API 余额与单次成本。</div>
-                                    </section>
-                                    <section class="verify-monitor-card" id="verifyMonitorServicePanel">
-                                        <div class="verify-monitor-card__eyebrow">接口状态</div>
-                                        <div class="verify-monitor-card__value" id="verifyMonitorServiceValue">等待检测</div>
-                                        <div class="verify-monitor-card__meta" id="verifyMonitorServiceMeta">会综合启用状态、API Key 配置和最近一次接口探测结果。</div>
-                                    </section>
-                                    <section class="verify-monitor-card" id="verifyMonitorQueuePanel">
-                                        <div class="verify-monitor-card__eyebrow">队列状态</div>
-                                        <div class="verify-monitor-card__value" id="verifyMonitorQueueValue">等待检测</div>
-                                        <div class="verify-monitor-card__meta" id="verifyMonitorQueueMeta">会显示上游排队、运行中任务和本地活跃任务情况。</div>
-                                    </section>
-                                </div>
-                                <section class="verify-monitor-list-card" id="verifyMonitorFactsPanel">
-                                    <div class="verify-monitor-list-card__header">
-                                        <div>
-                                            <h5>运行画像</h5>
-                                            <p>把最近多页日志归并成任务事实面，优先看活跃负载、状态分布和高频失败原因。</p>
-                                        </div>
-                                        <span id="verifyMonitorFactsMeta" class="verify-monitor-list-card__meta">等待加载</span>
-                                    </div>
-                                    <div id="verifyMonitorFactsGrid" class="verify-monitor-facts">
-                                        <div class="verify-monitor-empty">正在生成运行画像...</div>
-                                    </div>
-                                </section>
-                                <section class="verify-monitor-list-card" id="verifyMonitorCasePanel">
-                                    <div class="verify-monitor-list-card__header">
-                                        <div>
-                                            <h5>验证告警工作区</h5>
-                                            <p>承接 verify quota / queue / failure / incident 告警，进入后可直接认领、观察和关闭。</p>
-                                        </div>
-                                        <span id="verifyMonitorCaseMeta" class="verify-monitor-list-card__meta">等待加载</span>
-                                    </div>
-                                    <div id="verifyMonitorCaseList" class="verify-monitor-list verify-monitor-list--compact">
-                                        <div class="verify-monitor-empty">正在加载验证告警工作区...</div>
-                                    </div>
-                                </section>
-                                <div class="verify-monitor-columns">
-                                    <section class="verify-monitor-list-card" id="verifyMonitorTasksPanel">
-                                        <div class="verify-monitor-list-card__header">
-                                            <div>
-                                                <h5>最近任务</h5>
-                                                <p>最近去重后的验证任务轨迹，适合排查堆积、卡住和重复重试。</p>
-                                            </div>
-                                            <span id="verifyMonitorTasksMeta" class="verify-monitor-list-card__meta">等待加载</span>
-                                        </div>
-                                        <div id="verifyMonitorRecentTasks" class="verify-monitor-list verify-monitor-list--compact">
-                                            <div class="verify-monitor-empty">正在加载最近任务...</div>
-                                        </div>
-                                        <div id="verifyMonitorTasksPagination" class="verify-monitor-list-card__footer"></div>
-                                    </section>
-                                    <section class="verify-monitor-list-card" id="verifyMonitorFailuresPanel">
-                                        <div class="verify-monitor-list-card__header">
-                                            <div>
-                                                <h5>最近失败</h5>
-                                                <p>优先展示最近失败和异常结果，方便对照告警里的错误原因快速排障。</p>
-                                            </div>
-                                            <span id="verifyMonitorFailuresMeta" class="verify-monitor-list-card__meta">等待加载</span>
-                                        </div>
-                                        <div id="verifyMonitorRecentFailures" class="verify-monitor-list verify-monitor-list--compact">
-                                            <div class="verify-monitor-empty">正在加载最近失败...</div>
-                                        </div>
-                                        <div id="verifyMonitorFailuresPagination" class="verify-monitor-list-card__footer"></div>
-                                    </section>
-                                </div>
-                            </div>
-                        </div>
-
                         <!-- Comments Rules -->
                         <div class="settings-section">
                             <h3><i class="fas fa-comments"></i> 评论规则</h3>
@@ -5043,6 +4893,193 @@
                                         <span class="config-unit">层</span>
                                         <span class="config-save-indicator">✓</span>
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="settings-view-google-one" class="view-section">
+                    <div class="module-content settings-google-one-layout">
+                        <div class="settings-google-one-shell">
+                            <section class="settings-section settings-section--compact settings-google-one-hero">
+                                <div class="settings-google-one-hero__copy">
+                                    <p class="settings-google-one-hero__eyebrow">内容设置 / 独立服务</p>
+                                    <h3><i class="fas fa-shield-check"></i> Google One API</h3>
+                                    <p class="settings-section__intro">把价格、凭据和运维面板拆开呈现，便于单独维护接入配置、额度状态和最近运行情况。</p>
+                                </div>
+                                <div class="settings-google-one-hero__actions">
+                                    <span id="verifyMonitorLastRefresh" class="verify-monitor-panel__timestamp">等待首次刷新</span>
+                                    <button type="button" class="btn-sm btn-secondary" data-admin-action="settings-refresh-verify-monitor">
+                                        <i class="fas fa-sync-alt"></i> 刷新状态
+                                    </button>
+                                </div>
+                            </section>
+
+                            <div class="settings-google-one-top-grid">
+                                <section class="settings-section settings-section--compact settings-google-one-card verify-service-section">
+                                    <div class="settings-google-one-card__head">
+                                        <div>
+                                            <h3><i class="fas fa-sliders-h"></i> 服务配置</h3>
+                                            <p class="settings-section__intro">先设置单次扣费、是否开启服务，以及当前 API 余额。</p>
+                                        </div>
+                                    </div>
+                                    <div class="config-item-row">
+                                        <div class="config-label">
+                                            <span>每次验证价格</span>
+                                            <span class="config-hint">用户每次使用验证服务消耗的积分</span>
+                                        </div>
+                                        <div class="config-value">
+                                            <div class="input-with-addon">
+                                                <input type="number" id="cfgVerifyPrice" class="config-input" value="10" min="1"
+                                                    max="100" step="1" data-admin-change-action="settings-save-verify-config">
+                                                <span class="input-addon">积分/次</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="config-item-row">
+                                        <div class="config-label">
+                                            <span>启用验证服务</span>
+                                            <span class="config-hint">关闭后主页不显示验证模块</span>
+                                        </div>
+                                        <div class="config-value">
+                                            <label class="toggle-switch">
+                                                <input type="checkbox" id="cfgVerifyEnabled" checked
+                                                    data-admin-change-action="settings-save-verify-config">
+                                                <span class="toggle-slider"></span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="config-item-row">
+                                        <div class="config-label">
+                                            <span>API 余额</span>
+                                            <span class="config-hint">当前 API Key 的剩余额度</span>
+                                        </div>
+                                        <div class="config-value admin-studio-inline-style-attr-22">
+                                            <span id="cfgVerifyQuota"
+                                                class="admin-studio-inline-style-attr-23">
+                                                <i class="fas fa-spinner fa-spin admin-studio-inline-style-attr-24"></i> 加载中...
+                                            </span>
+                                            <button type="button" data-admin-action="settings-check-verify-quota" title="刷新额度"
+                                                class="admin-studio-inline-style-attr-25">
+                                                <i class="fas fa-sync-alt"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </section>
+
+                                <section class="settings-section settings-section--compact settings-google-one-card verify-service-section">
+                                    <div class="settings-google-one-card__head">
+                                        <div>
+                                            <h3><i class="fas fa-key"></i> 接入凭据</h3>
+                                            <p class="settings-section__intro">集中维护上游密钥和 Base URL，接口迁移时只需要改这里。</p>
+                                        </div>
+                                    </div>
+                                    <div class="config-item-row admin-studio-inline-style-attr-20">
+                                        <div class="config-label">
+                                            <span>验证 API Key</span>
+                                            <span class="config-hint">上游 Google One 用户 API 的 ak_ 密钥</span>
+                                        </div>
+                                        <input type="password" id="cfgVerifyApiKey" class="config-input admin-studio-inline-style-attr-21"
+                                            placeholder="ak_XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" autocomplete="new-password" readonly
+                                            data-admin-focus-action="settings-verify-api-key-unlock"
+                                            data-admin-blur-action="settings-verify-api-key-lock"
+                                            data-admin-change-action="settings-save-verify-config">
+                                    </div>
+                                    <div class="config-item-row">
+                                        <div class="config-label">
+                                            <span>验证 API Base URL</span>
+                                            <span class="config-hint">上游域名更新时在这里改，留空则回退到服务端默认值</span>
+                                        </div>
+                                        <input type="url" id="cfgVerifyApiBase" class="config-input"
+                                            placeholder="https://a8yx0rez5w.localto.net"
+                                            inputmode="url"
+                                            data-admin-change-action="settings-save-verify-config">
+                                    </div>
+                                </section>
+                            </div>
+
+                            <div id="verifyMonitorPanel" class="settings-google-one-monitor-grid">
+                                <div class="admin-workbench-context-note" id="verifyMonitorFocusContext" hidden></div>
+                                <section class="settings-section settings-section--compact settings-google-one-card">
+                                    <div class="settings-google-one-card__head settings-google-one-card__head--split">
+                                        <div>
+                                            <h3><i class="fas fa-wave-square"></i> 运维总览</h3>
+                                            <p class="settings-section__intro">先看额度、接口和队列状态，判断服务是否处于健康可用状态。</p>
+                                        </div>
+                                    </div>
+                                    <div class="verify-monitor-grid">
+                                        <section class="verify-monitor-card" id="verifyMonitorQuotaPanel">
+                                            <div class="verify-monitor-card__eyebrow">当前额度</div>
+                                            <div class="verify-monitor-card__value" id="verifyMonitorQuotaValue">查询中...</div>
+                                            <div class="verify-monitor-card__meta" id="verifyMonitorQuotaMeta">正在读取 API 余额与单次成本。</div>
+                                        </section>
+                                        <section class="verify-monitor-card" id="verifyMonitorServicePanel">
+                                            <div class="verify-monitor-card__eyebrow">接口状态</div>
+                                            <div class="verify-monitor-card__value" id="verifyMonitorServiceValue">等待检测</div>
+                                            <div class="verify-monitor-card__meta" id="verifyMonitorServiceMeta">会综合启用状态、API Key 配置和最近一次接口探测结果。</div>
+                                        </section>
+                                        <section class="verify-monitor-card" id="verifyMonitorQueuePanel">
+                                            <div class="verify-monitor-card__eyebrow">队列状态</div>
+                                            <div class="verify-monitor-card__value" id="verifyMonitorQueueValue">等待检测</div>
+                                            <div class="verify-monitor-card__meta" id="verifyMonitorQueueMeta">会显示上游排队、运行中任务和本地活跃任务情况。</div>
+                                        </section>
+                                    </div>
+                                </section>
+
+                                <section class="settings-section settings-section--compact settings-google-one-card verify-monitor-list-card" id="verifyMonitorFactsPanel">
+                                    <div class="verify-monitor-list-card__header">
+                                        <div>
+                                            <h5>运行画像</h5>
+                                            <p>把最近多页日志归并成任务事实面，优先看活跃负载、状态分布和高频失败原因。</p>
+                                        </div>
+                                        <span id="verifyMonitorFactsMeta" class="verify-monitor-list-card__meta">等待加载</span>
+                                    </div>
+                                    <div id="verifyMonitorFactsGrid" class="verify-monitor-facts">
+                                        <div class="verify-monitor-empty">正在生成运行画像...</div>
+                                    </div>
+                                </section>
+
+                                <section class="settings-section settings-section--compact settings-google-one-card verify-monitor-list-card" id="verifyMonitorCasePanel">
+                                    <div class="verify-monitor-list-card__header">
+                                        <div>
+                                            <h5>验证告警工作区</h5>
+                                            <p>承接 verify quota / queue / failure / incident 告警，进入后可直接认领、观察和关闭。</p>
+                                        </div>
+                                        <span id="verifyMonitorCaseMeta" class="verify-monitor-list-card__meta">等待加载</span>
+                                    </div>
+                                    <div id="verifyMonitorCaseList" class="verify-monitor-list verify-monitor-list--compact">
+                                        <div class="verify-monitor-empty">正在加载验证告警工作区...</div>
+                                    </div>
+                                </section>
+
+                                <div class="settings-google-one-monitor-columns verify-monitor-columns">
+                                    <section class="settings-section settings-section--compact settings-google-one-card verify-monitor-list-card" id="verifyMonitorTasksPanel">
+                                        <div class="verify-monitor-list-card__header">
+                                            <div>
+                                                <h5>最近任务</h5>
+                                                <p>最近去重后的验证任务轨迹，适合排查堆积、卡住和重复重试。</p>
+                                            </div>
+                                            <span id="verifyMonitorTasksMeta" class="verify-monitor-list-card__meta">等待加载</span>
+                                        </div>
+                                        <div id="verifyMonitorRecentTasks" class="verify-monitor-list verify-monitor-list--compact">
+                                            <div class="verify-monitor-empty">正在加载最近任务...</div>
+                                        </div>
+                                        <div id="verifyMonitorTasksPagination" class="verify-monitor-list-card__footer"></div>
+                                    </section>
+                                    <section class="settings-section settings-section--compact settings-google-one-card verify-monitor-list-card" id="verifyMonitorFailuresPanel">
+                                        <div class="verify-monitor-list-card__header">
+                                            <div>
+                                                <h5>最近失败</h5>
+                                                <p>优先展示最近失败和异常结果，方便对照告警里的错误原因快速排障。</p>
+                                            </div>
+                                            <span id="verifyMonitorFailuresMeta" class="verify-monitor-list-card__meta">等待加载</span>
+                                        </div>
+                                        <div id="verifyMonitorRecentFailures" class="verify-monitor-list verify-monitor-list--compact">
+                                            <div class="verify-monitor-empty">正在加载最近失败...</div>
+                                        </div>
+                                        <div id="verifyMonitorFailuresPagination" class="verify-monitor-list-card__footer"></div>
+                                    </section>
                                 </div>
                             </div>
                         </div>
@@ -8069,6 +8106,7 @@
                     <div class="payments-access-state" id="paymentsAccessState" hidden></div>
 
                     <div id="paymentsDashboardBody">
+                        <div class="admin-workbench-context-note admin-workbench-context-note--compact" id="paymentsWorkbenchContext" hidden></div>
                         <div id="payments-tab-overview" class="payments-tab-content active">
                             <div class="payments-page-intro">
                                 <div class="payments-page-copy">
@@ -8374,10 +8412,16 @@
 
                     <!-- Analytics Tabs (centered, standalone) -->
                     <nav class="admin-tabs" id="analyticsTabsNav">
-                        <button class="admin-tab active" data-tab="users"
-                            data-admin-action="analytics-switch-tab">用户表现</button>
-                        <button class="admin-tab" data-tab="points" data-admin-action="analytics-switch-tab">积分生态</button>
-                        <button class="admin-tab" data-tab="ai" data-admin-action="analytics-switch-tab">AI 洞察</button>
+                        <button class="admin-tab active" data-tab="overview"
+                            data-admin-action="analytics-switch-tab">总览</button>
+                        <button class="admin-tab" data-tab="content"
+                            data-admin-action="analytics-switch-tab">内容</button>
+                        <button class="admin-tab" data-tab="monetization"
+                            data-admin-action="analytics-switch-tab">积分与交易</button>
+                        <button class="admin-tab" data-tab="verify"
+                            data-admin-action="analytics-switch-tab">验证服务</button>
+                        <button class="admin-tab" data-tab="growth"
+                            data-admin-action="analytics-switch-tab">社区与裂变</button>
                         <div class="admin-tab-indicator"></div>
                     </nav>
 
@@ -8476,9 +8520,9 @@
                         </div>
                     </div>
 
-                    <!-- Tab Content: Users Overview (Default) -->
-                    <div id="analytics-tab-users" class="analytics-tab-content active">
-                        <!-- KPI Cards Row Used ONLY for Users Tab -->
+                    <!-- Tab Content: Overview (Default) -->
+                    <div id="analytics-tab-overview" class="analytics-tab-content active">
+                        <!-- KPI Cards Row Used ONLY for Overview Tab -->
                         <div class="kpi-cards-row">
                             <div class="kpi-card" id="kpiDau">
                                 <div class="kpi-icon"><i class="fas fa-user-clock"></i></div>
@@ -8502,8 +8546,9 @@
                                 <div class="kpi-content">
                                     <div class="kpi-value-row">
                                         <div class="kpi-value" id="kpiNewUsersValue">--</div>
+                                        <div class="kpi-trend" id="kpiNewUsersTrend"></div>
                                     </div>
-                                    <div class="kpi-label">本周新增</div>
+                                    <div class="kpi-label">近 7 天新增</div>
                                 </div>
                             </div>
                             <div class="kpi-card" id="kpiComments">
@@ -8513,12 +8558,61 @@
                                         <div class="kpi-value" id="kpiCommentsValue">--</div>
                                         <div class="kpi-trend" id="kpiCommentsTrend"></div>
                                     </div>
-                                    <div class="kpi-label">总评论数</div>
+                                    <div class="kpi-label">累计评论数</div>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Charts Grid for Users -->
+                        <div class="charts-grid">
+                            <div class="chart-card glass-panel chart-wide">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-clipboard-list"></i> 今日待处理</h3>
+                                    <span class="analytics-panel-note" id="overviewDutyBoardMeta">规则待处理</span>
+                                </div>
+                                <div class="chart-body" id="overviewDutyBoard">
+                                    <div class="loading-text">加载中...</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="charts-grid analytics-action-layout">
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-bolt"></i> 快捷动作</h3>
+                                </div>
+                                <div class="chart-body">
+                                    <div class="analytics-action-grid">
+                                        <button type="button" class="analytics-action-btn" data-admin-action="analytics-open-destination" data-analytics-destination="analytics-content">
+                                            <i class="fas fa-chart-line"></i>
+                                            <span>看内容增长</span>
+                                        </button>
+                                        <button type="button" class="analytics-action-btn" data-admin-action="analytics-open-destination" data-analytics-destination="analytics-monetization">
+                                            <i class="fas fa-coins"></i>
+                                            <span>看积分与交易</span>
+                                        </button>
+                                        <button type="button" class="analytics-action-btn" data-admin-action="analytics-open-destination" data-analytics-destination="verify-monitor">
+                                            <i class="fas fa-shield-halved"></i>
+                                            <span>打开 Verify Monitor</span>
+                                        </button>
+                                        <button type="button" class="analytics-action-btn" data-admin-action="analytics-open-destination" data-analytics-destination="payments-queue">
+                                            <i class="fas fa-credit-card"></i>
+                                            <span>去支付排查</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-list-check"></i> 建议动作</h3>
+                                </div>
+                                <div class="chart-body analytics-compact-list" id="overviewActionRecommendations">
+                                    <div class="loading-text">加载中...</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Charts Grid for Overview -->
                         <div class="charts-grid">
                             <!-- User Trend Chart -->
                             <div class="chart-card glass-panel">
@@ -8534,12 +8628,44 @@
                             <div class="chart-card glass-panel">
                                 <div class="chart-header">
                                     <h3><i class="fas fa-chart-pie"></i> 渠道分布</h3>
+                                    <span class="analytics-panel-note" id="channelBreakdownMeta">真实事件优先</span>
                                 </div>
-                                <div class="chart-body">
-                                    <canvas id="channelChart"></canvas>
+                                <div class="chart-body analytics-chart-detail-layout">
+                                    <div class="analytics-chart-pane" id="channelChartPanel">
+                                        <canvas id="channelChart"></canvas>
+                                    </div>
+                                    <div class="analytics-detail-pane analytics-compact-list" id="channelBreakdownList">
+                                        <div class="loading-text">加载中...</div>
+                                    </div>
                                 </div>
                             </div>
 
+                            <!-- Geo Distribution -->
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-globe-asia"></i> 地理分布</h3>
+                                </div>
+                                <div class="chart-body" id="geoDistribution">
+                                    <canvas id="geoChart"></canvas>
+                                </div>
+                            </div>
+
+                            <!-- Overview Business Mix -->
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-compass-drafting"></i> 经营主线</h3>
+                                    <span class="analytics-panel-note" id="overviewBusinessMixMeta">真实事件优先</span>
+                                </div>
+                                <div class="chart-body analytics-compact-list" id="overviewBusinessMix">
+                                    <div class="loading-text">加载中...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab Content: Content -->
+                    <div id="analytics-tab-content" class="analytics-tab-content">
+                        <div class="charts-grid">
                             <!-- Content Trend Chart -->
                             <div class="chart-card glass-panel">
                                 <div class="chart-header">
@@ -8554,9 +8680,9 @@
                             <div class="chart-card glass-panel">
                                 <div class="chart-header">
                                     <h3><i class="fas fa-fire"></i> 热门内容 TOP 10</h3>
+                                    <span class="analytics-panel-note" id="topContentMeta">混合口径</span>
                                 </div>
                                 <div class="chart-body top-content-list" id="topContentList">
-                                    <!-- Populated by JS -->
                                     <div class="loading-text">加载中...</div>
                                 </div>
                             </div>
@@ -8571,29 +8697,6 @@
                                 </div>
                             </div>
 
-                            <!-- Top Contributors -->
-                            <div class="chart-card glass-panel">
-                                <div class="chart-header">
-                                    <h3><i class="fas fa-crown"></i> 贡献者排行榜</h3>
-                                </div>
-                                <div class="chart-body contributors-list" id="topContributorsList">
-                                    <div class="loading-text">加载中...</div>
-                                </div>
-                            </div>
-
-                            <!-- Community Stats -->
-                            <div class="chart-card glass-panel">
-                                <div class="chart-header">
-                                    <h3><i class="fas fa-heart"></i> 社区活跃趋势</h3>
-                                </div>
-                                <div class="chart-body">
-                                    <canvas id="communityChart"></canvas>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Deep Analytics for Users -->
-                        <div class="deep-analytics-grid">
                             <!-- Conversion Funnel -->
                             <div class="chart-card glass-panel">
                                 <div class="chart-header">
@@ -8603,32 +8706,12 @@
                                     <canvas id="funnelChart"></canvas>
                                 </div>
                             </div>
-
-                            <!-- Retention Cohort -->
-                            <div class="chart-card glass-panel">
-                                <div class="chart-header">
-                                    <h3><i class="fas fa-th"></i> 用户留存 (周)</h3>
-                                </div>
-                                <div class="chart-body" id="retentionCohort">
-                                    <div class="loading-text">加载中...</div>
-                                </div>
-                            </div>
-
-                            <!-- Geo Distribution -->
-                            <div class="chart-card glass-panel">
-                                <div class="chart-header">
-                                    <h3><i class="fas fa-globe-asia"></i> 地理分布</h3>
-                                </div>
-                                <div class="chart-body" id="geoDistribution">
-                                    <canvas id="geoChart"></canvas>
-                                </div>
-                            </div>
                         </div>
                     </div>
 
-                    <!-- Tab Content: Points Ecosystem -->
-                    <div id="analytics-tab-points" class="analytics-tab-content">
-                        <!-- Points KPIs (Will be enhanced) -->
+                    <!-- Tab Content: Monetization -->
+                    <div id="analytics-tab-monetization" class="analytics-tab-content">
+                        <!-- Monetization KPIs -->
                         <div class="kpi-cards-row">
                             <div class="kpi-card" id="kpiPoints">
                                 <div class="kpi-icon"><i class="fas fa-coins"></i></div>
@@ -8642,14 +8725,14 @@
                                 <div class="kpi-icon"><i class="fas fa-wallet"></i></div>
                                 <div class="kpi-content">
                                     <div class="kpi-value" id="kpiPointsInValue">--</div>
-                                    <div class="kpi-label">本周收入</div>
+                                    <div class="kpi-label">窗口收入</div>
                                 </div>
                             </div>
                             <div class="kpi-card">
                                 <div class="kpi-icon"><i class="fas fa-shopping-cart"></i></div>
                                 <div class="kpi-content">
                                     <div class="kpi-value" id="kpiPointsOutValue">--</div>
-                                    <div class="kpi-label">本周消耗</div>
+                                    <div class="kpi-label">窗口消耗</div>
                                 </div>
                             </div>
                             <div class="kpi-card">
@@ -8703,68 +8786,257 @@
                                 </div>
                             </div>
                         </div>
+
+                        <div class="charts-grid">
+                            <div class="chart-card glass-panel chart-wide">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-credit-card"></i> 真实交易转化</h3>
+                                    <span class="analytics-panel-note" id="commerceEventFunnelMeta">真实交易事件</span>
+                                </div>
+                                <div class="chart-body analytics-compact-list" id="commerceEventFunnel">
+                                    <div class="loading-text">加载中...</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
-                    <!-- Tab Content: AI Insights -->
-                    <div id="analytics-tab-ai" class="analytics-tab-content">
-                        <!-- AI Insight Card -->
-                        <div class="ai-insight-card glass-panel admin-studio-inline-style-attr-156" id="aiInsightCard">
-                            <div class="ai-insight-header">
-                                <div class="ai-icon"><i class="fas fa-robot"></i></div>
-                                <h3>AI 智能洞察</h3>
-                                <button class="btn-secondary" id="generateInsightBtn">
-                                    <i class="fas fa-magic"></i> 生成分析
-                                </button>
+                    <!-- Tab Content: Verify Service -->
+                    <div id="analytics-tab-verify" class="analytics-tab-content">
+                        <div class="kpi-cards-row">
+                            <div class="kpi-card" id="kpiVerifyRequests">
+                                <div class="kpi-icon"><i class="fas fa-shield-halved"></i></div>
+                                <div class="kpi-content">
+                                    <div class="kpi-value" id="kpiVerifyRequestsValue">--</div>
+                                    <div class="kpi-label">验证请求</div>
+                                </div>
                             </div>
-                            <div class="ai-insight-content" id="aiInsightContent">
-                                <p class="ai-placeholder">点击"生成分析"获取 AI 智能洞察...</p>
+                            <div class="kpi-card" id="kpiVerifySuccessRate">
+                                <div class="kpi-icon"><i class="fas fa-circle-check"></i></div>
+                                <div class="kpi-content">
+                                    <div class="kpi-value" id="kpiVerifySuccessRateValue">--</div>
+                                    <div class="kpi-label">完成率</div>
+                                </div>
+                            </div>
+                            <div class="kpi-card" id="kpiVerifyQueue">
+                                <div class="kpi-icon"><i class="fas fa-hourglass-half"></i></div>
+                                <div class="kpi-content">
+                                    <div class="kpi-value" id="kpiVerifyQueueValue">--</div>
+                                    <div class="kpi-label">处理中</div>
+                                </div>
+                            </div>
+                            <div class="kpi-card" id="kpiVerifyPoints">
+                                <div class="kpi-icon"><i class="fas fa-coins"></i></div>
+                                <div class="kpi-content">
+                                    <div class="kpi-value" id="kpiVerifyPointsValue">--</div>
+                                    <div class="kpi-label">已扣积分</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="charts-grid analytics-action-layout">
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-bolt"></i> 快捷动作</h3>
+                                </div>
+                                <div class="chart-body">
+                                    <div class="analytics-action-grid">
+                                        <button type="button" class="analytics-action-btn" data-admin-action="analytics-open-destination" data-analytics-destination="verify-monitor">
+                                            <i class="fas fa-wave-square"></i>
+                                            <span>打开 Verify Monitor</span>
+                                        </button>
+                                        <button type="button" class="analytics-action-btn" data-admin-action="analytics-open-destination" data-analytics-destination="settings-google-one">
+                                            <i class="fas fa-sliders"></i>
+                                            <span>检查验证配置</span>
+                                        </button>
+                                        <button type="button" class="analytics-action-btn" data-admin-action="analytics-open-destination" data-analytics-destination="tickets-pending">
+                                            <i class="fas fa-life-ring"></i>
+                                            <span>进入工单队列</span>
+                                        </button>
+                                        <button type="button" class="analytics-action-btn" data-admin-action="analytics-open-destination" data-analytics-destination="analytics-monetization">
+                                            <i class="fas fa-wallet"></i>
+                                            <span>看积分与交易</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-list-check"></i> 建议动作</h3>
+                                </div>
+                                <div class="chart-body analytics-compact-list" id="verifyActionRecommendations">
+                                    <div class="loading-text">加载中...</div>
+                                </div>
                             </div>
                         </div>
 
                         <div class="charts-grid">
-                            <!-- AI Prediction -->
                             <div class="chart-card glass-panel">
                                 <div class="chart-header">
-                                    <h3><i class="fas fa-chart-line"></i> 趋势预测 (未来7天)</h3>
-                                    <button class="btn-sm btn-secondary" data-admin-action="analytics-load-ai-prediction">
-                                        <i class="fas fa-sync-alt"></i> 生成
-                                    </button>
+                                    <h3><i class="fas fa-signal"></i> 验证状态拆解</h3>
                                 </div>
-                                <div class="chart-body" id="aiPredictionContent">
-                                    <p class="ai-placeholder">点击"生成"获取 AI 预测...</p>
+                                <div class="chart-body analytics-compact-list" id="verifyStatusList">
+                                    <div class="loading-text">加载中...</div>
                                 </div>
                             </div>
 
-                            <!-- A/B Experiments -->
                             <div class="chart-card glass-panel">
                                 <div class="chart-header">
-                                    <h3><i class="fas fa-flask"></i> A/B 实验管理</h3>
-                                    <div class="header-actions">
-                                        <button class="btn-sm btn-primary" data-admin-action="analytics-open-experiment-modal">
-                                            <i class="fas fa-plus"></i> 创建
-                                        </button>
-                                        <button class="btn-sm btn-secondary" data-admin-action="analytics-load-experiments-list">
-                                            <i class="fas fa-sync-alt"></i>
-                                        </button>
-                                    </div>
+                                    <h3><i class="fas fa-list-check"></i> 最近验证任务</h3>
                                 </div>
-                                <div class="chart-body experiments-list" id="experimentsList">
-                                    <div class="empty-state-hint">
-                                        <i class="fas fa-flask"></i>
-                                        <span>执行 SQL 后刷新</span>
-                                    </div>
-                                </div>
-                                <!-- A/B Results Chart -->
-                                <div class="ab-results-chart" id="abResultsChart" hidden>
-                                    <div class="ab-chart-header">
-                                        <span id="abChartTitle">实验结果对比</span>
-                                        <button class="btn-icon-sm" data-admin-action="analytics-close-ab-results-chart">
-                                            <i class="fas fa-times"></i>
-                                        </button>
-                                    </div>
-                                    <canvas id="abCompareChart" height="200"></canvas>
+                                <div class="chart-body analytics-compact-list" id="verifyRecentList">
+                                    <div class="loading-text">加载中...</div>
                                 </div>
                             </div>
+
+                            <div class="chart-card glass-panel chart-wide">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-triangle-exclamation"></i> 最近失败与阻塞</h3>
+                                </div>
+                                <div class="chart-body analytics-compact-list" id="verifyFailureList">
+                                    <div class="loading-text">加载中...</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="charts-grid">
+                            <div class="chart-card glass-panel chart-wide">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-shuffle"></i> 验证事件转化</h3>
+                                    <span class="analytics-panel-note" id="verifyEventFunnelMeta">真实验证事件</span>
+                                </div>
+                                <div class="chart-body analytics-compact-list" id="verifyEventFunnel">
+                                    <div class="loading-text">加载中...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab Content: Community & Growth -->
+                    <div id="analytics-tab-growth" class="analytics-tab-content">
+                        <div class="kpi-cards-row">
+                            <div class="kpi-card" id="kpiGrowthMessages">
+                                <div class="kpi-icon"><i class="fas fa-comments"></i></div>
+                                <div class="kpi-content">
+                                    <div class="kpi-value" id="kpiGrowthMessagesValue">--</div>
+                                    <div class="kpi-label">留言板发帖</div>
+                                </div>
+                            </div>
+                            <div class="kpi-card" id="kpiGrowthInteractions">
+                                <div class="kpi-icon"><i class="fas fa-heart"></i></div>
+                                <div class="kpi-content">
+                                    <div class="kpi-value" id="kpiGrowthInteractionsValue">--</div>
+                                    <div class="kpi-label">社区互动</div>
+                                </div>
+                            </div>
+                            <div class="kpi-card" id="kpiGrowthReferralRewards">
+                                <div class="kpi-icon"><i class="fas fa-share-nodes"></i></div>
+                                <div class="kpi-content">
+                                    <div class="kpi-value" id="kpiGrowthReferralRewardsValue">--</div>
+                                    <div class="kpi-label">返佣与拉新奖励</div>
+                                </div>
+                            </div>
+                            <div class="kpi-card" id="kpiGrowthCheckinRewards">
+                                <div class="kpi-icon"><i class="fas fa-calendar-check"></i></div>
+                                <div class="kpi-content">
+                                    <div class="kpi-value" id="kpiGrowthCheckinRewardsValue">--</div>
+                                    <div class="kpi-label">签到奖励</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="charts-grid analytics-action-layout">
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-bolt"></i> 快捷动作</h3>
+                                </div>
+                                <div class="chart-body">
+                                    <div class="analytics-action-grid">
+                                        <button type="button" class="analytics-action-btn" data-admin-action="analytics-open-destination" data-analytics-destination="comments-guestbook">
+                                            <i class="fas fa-comments"></i>
+                                            <span>处理留言治理</span>
+                                        </button>
+                                        <button type="button" class="analytics-action-btn" data-admin-action="analytics-open-destination" data-analytics-destination="settings-affiliate">
+                                            <i class="fas fa-share-nodes"></i>
+                                            <span>查看推广配置</span>
+                                        </button>
+                                        <button type="button" class="analytics-action-btn" data-admin-action="analytics-open-destination" data-analytics-destination="points">
+                                            <i class="fas fa-ticket-alt"></i>
+                                            <span>管理奖励批次</span>
+                                        </button>
+                                        <button type="button" class="analytics-action-btn" data-admin-action="analytics-open-destination" data-analytics-destination="analytics-content">
+                                            <i class="fas fa-fire"></i>
+                                            <span>回看内容增长</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-list-check"></i> 建议动作</h3>
+                                </div>
+                                <div class="chart-body analytics-compact-list" id="growthActionRecommendations">
+                                    <div class="loading-text">加载中...</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="charts-grid">
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-heart"></i> 社区活跃趋势</h3>
+                                </div>
+                                <div class="chart-body">
+                                    <canvas id="communityChart"></canvas>
+                                </div>
+                            </div>
+
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-crown"></i> 贡献者排行榜</h3>
+                                </div>
+                                <div class="chart-body contributors-list" id="topContributorsList">
+                                    <div class="loading-text">加载中...</div>
+                                </div>
+                            </div>
+
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-th"></i> 用户留存 (周)</h3>
+                                </div>
+                                <div class="chart-body" id="retentionCohort">
+                                    <div class="loading-text">加载中...</div>
+                                </div>
+                            </div>
+
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-bullhorn"></i> 裂变与激励拆解</h3>
+                                </div>
+                                <div class="chart-body analytics-compact-list" id="growthBreakdownList">
+                                    <div class="loading-text">加载中...</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="charts-grid">
+                            <div class="chart-card glass-panel chart-wide">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-seedling"></i> 真实增长动作</h3>
+                                    <span class="analytics-panel-note" id="growthEventFunnelMeta">真实增长事件</span>
+                                </div>
+                                <div class="chart-body analytics-compact-list" id="growthEventFunnel">
+                                    <div class="loading-text">加载中...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="analytics-tab-ai" class="analytics-tab-content" hidden aria-hidden="true">
+                        <div class="analytics-secondary-note">
+                            <i class="fas fa-circle-info"></i>
+                            <span>高级分析工具已从日常值班主流程移出，当前后台默认聚焦经营总览与处理动作。</span>
                         </div>
                     </div>
                 </div>
@@ -9017,6 +9289,7 @@
                     </div>
                 </div>
 
+                <div class="admin-workbench-context-note admin-workbench-context-note--compact" id="ticketsWorkbenchContext" hidden></div>
                 <div id="ticketsQueueControls" class="admin-ticket-workspace-block admin-ticket-workspace-block--queue">
                     <!-- Filters -->
                     <div class="admin-toolbar">
@@ -9036,26 +9309,57 @@
                                 <button class="filter-btn" data-status="rejected"
                                     data-admin-action="tickets-filter" data-ticket-status="rejected">已拒绝</button>
                             </div>
+                            <div id="ticketsSelectionToolbar" class="batch-actions-wrapper admin-ticket-selection-toolbar">
+                                <button type="button" id="ticketsSelectModeBtn" class="batch-btn admin-ticket-selection-toolbar__btn" data-admin-action="tickets-toggle-select-mode" title="选择模式" aria-pressed="false">
+                                    <i class="fas fa-check-square"></i>
+                                </button>
+                                <div id="ticketsBatchMenuContainer" class="batch-menu-container admin-ticket-selection-toolbar__menu" hidden>
+                                    <button type="button" id="ticketsBatchMenuTrigger" class="batch-btn admin-ticket-selection-toolbar__btn" data-admin-action="tickets-toggle-batch-menu" title="批量操作" aria-haspopup="menu" aria-expanded="false">
+                                        <i class="fas fa-ellipsis-h"></i>
+                                    </button>
+                                    <div id="ticketsBatchDropdownMenu" class="batch-dropdown-menu" role="menu" aria-label="售后工单批量操作">
+                                        <div id="ticketsSelectAllPageAction" class="batch-menu-item" data-admin-action="tickets-select-all-page" role="menuitem">
+                                            <i class="fas fa-check-double"></i>
+                                            <span>全选当前页</span>
+                                        </div>
+                                        <div class="batch-menu-divider"></div>
+                                        <div id="ticketsBulkAssignSelfAction" class="batch-menu-item" data-admin-action="tickets-bulk-assign-self" role="menuitem">
+                                            <i class="fas fa-user-check"></i>
+                                            <span>指派给我</span>
+                                        </div>
+                                        <div id="ticketsBulkClearAssigneeAction" class="batch-menu-item" data-admin-action="tickets-bulk-clear-assignee" role="menuitem">
+                                            <i class="fas fa-user-slash"></i>
+                                            <span>取消指派</span>
+                                        </div>
+                                        <div id="ticketsBulkResolveAction" class="batch-menu-item" data-admin-action="tickets-open-bulk-resolve" role="menuitem">
+                                            <i class="fas fa-check-circle"></i>
+                                            <span>批量解决</span>
+                                        </div>
+                                        <div id="ticketsBulkRejectAction" class="batch-menu-item" data-admin-action="tickets-open-bulk-reject" role="menuitem">
+                                            <i class="fas fa-ban"></i>
+                                            <span>批量拒绝</span>
+                                        </div>
+                                        <div class="batch-menu-divider"></div>
+                                        <div id="ticketsClearSelectionAction" class="batch-menu-item" data-admin-action="tickets-clear-selection" role="menuitem">
+                                            <i class="fas fa-eraser"></i>
+                                            <span>清空选择</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="ticketsSelectedCountWrapper" class="prompt-count admin-ticket-selection-toolbar__count" hidden>
+                                    <span class="select-count">已选 <span id="ticketsSelectedCount">0</span> 个待处理工单</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="admin-ticket-toolbar-right">
+                            <div class="admin-ticket-quick-filters">
+                                <button type="button" id="ticketOverdueFilterBtn" class="filter-btn admin-ticket-quick-filter-btn" data-admin-action="tickets-toggle-overdue">只看超时</button>
+                                <button type="button" id="ticketPriorityFilterBtn" class="filter-btn admin-ticket-quick-filter-btn" data-admin-action="tickets-toggle-priority">高优先</button>
+                                <button type="button" id="ticketMineFilterBtn" class="filter-btn admin-ticket-quick-filter-btn" data-admin-action="tickets-toggle-mine">我名下</button>
+                                <button type="button" id="ticketUnassignedFilterBtn" class="filter-btn admin-ticket-quick-filter-btn" data-admin-action="tickets-toggle-unassigned">未指派</button>
+                            </div>
                         </div>
                     </div>
-                    <div class="admin-ticket-toolbar-row">
-                    <div class="admin-ticket-quick-filters">
-                        <button type="button" id="ticketOverdueFilterBtn" class="filter-btn admin-ticket-quick-filter-btn" data-admin-action="tickets-toggle-overdue">只看超时</button>
-                        <button type="button" id="ticketPriorityFilterBtn" class="filter-btn admin-ticket-quick-filter-btn" data-admin-action="tickets-toggle-priority">高优先</button>
-                        <button type="button" id="ticketMineFilterBtn" class="filter-btn admin-ticket-quick-filter-btn" data-admin-action="tickets-toggle-mine">我名下</button>
-                        <button type="button" id="ticketUnassignedFilterBtn" class="filter-btn admin-ticket-quick-filter-btn" data-admin-action="tickets-toggle-unassigned">未指派</button>
-                    </div>
-                    <div id="ticketsBulkToolbar" class="admin-ticket-bulk-toolbar">
-                        <span id="ticketsBulkCount" class="admin-ticket-bulk-toolbar__count">可批量指派或批量处理当前页待处理工单</span>
-                        <div class="admin-ticket-bulk-toolbar__actions">
-                            <button type="button" id="ticketsBulkAssignSelfBtn" class="btn-secondary admin-ticket-bulk-toolbar__btn" data-admin-action="tickets-bulk-assign-self" disabled>指派给我</button>
-                            <button type="button" id="ticketsBulkClearAssigneeBtn" class="btn-secondary admin-ticket-bulk-toolbar__btn" data-admin-action="tickets-bulk-clear-assignee" disabled>取消指派</button>
-                            <button type="button" id="ticketsBulkResolveBtn" class="btn-secondary admin-ticket-bulk-toolbar__btn" data-admin-action="tickets-open-bulk-resolve" disabled>批量解决</button>
-                            <button type="button" id="ticketsBulkRejectBtn" class="btn-secondary admin-ticket-bulk-toolbar__btn" data-admin-action="tickets-open-bulk-reject" disabled>批量拒绝</button>
-                            <button type="button" id="ticketsClearSelectionBtn" class="btn-secondary admin-ticket-bulk-toolbar__btn" data-admin-action="tickets-clear-selection" disabled>清空选择</button>
-                        </div>
-                    </div>
-                </div>
                 </div>
 
                 <div id="ticketsOverviewSection" class="admin-ticket-workspace-block admin-ticket-workspace-block--overview">
@@ -9105,7 +9409,10 @@
                         <thead>
                             <tr>
                                 <th class="admin-ticket-selection-head">
-                                    <input type="checkbox" id="ticketsSelectAllCheckbox" class="admin-ticket-selection-checkbox" data-admin-change-action="tickets-toggle-select-all-page" aria-label="选择当前页全部待处理工单">
+                                    <label class="custom-checkbox admin-ticket-selection-control" aria-label="选择当前页全部待处理工单">
+                                        <input type="checkbox" id="ticketsSelectAllCheckbox" class="admin-ticket-selection-checkbox" data-admin-change-action="tickets-toggle-select-all-page" aria-label="选择当前页全部待处理工单">
+                                        <span class="checkmark"></span>
+                                    </label>
                                 </th>
                                 <th>工单号/时间</th>
                                 <th>关联订单号</th>
@@ -9136,9 +9443,6 @@
                                 <h2 id="ticketSummaryJobDetailTitle" class="admin-ticket-summary-job-modal__title">工单汇总详情</h2>
                                 <p id="ticketSummaryJobDetailSubtitle" class="admin-ticket-summary-job-modal__subtitle">回看外发窗口、人工备注和重试时间线</p>
                             </div>
-                            <button type="button" class="admin-ticket-summary-job-modal__close" data-admin-action="tickets-close-summary-job-detail" aria-label="关闭汇总详情">
-                                <i class="fas fa-times"></i>
-                            </button>
                         </div>
                         <div id="ticketSummaryJobDetailBody" class="admin-ticket-summary-job-modal__body"></div>
                         <div class="admin-ticket-summary-job-modal__footer">
@@ -9167,9 +9471,6 @@
                                 </p>
                             </div>
                             <div id="ticketReplyModalHeaderBadges" class="admin-ticket-reply-modal__header-badges"></div>
-                            <button type="button" class="admin-ticket-reply-modal__close" data-admin-action="tickets-close-reply-modal" aria-label="关闭工单处理面板">
-                                <i class="fas fa-times"></i>
-                            </button>
                         </div>
                         <!-- Body -->
                         <form id="ticketReplyForm" class="admin-studio-inline-style-attr-209 admin-ticket-reply-modal__form">
@@ -9288,9 +9589,6 @@
                                 <h2 id="ticketBulkProcessTitle" class="admin-ticket-bulk-modal__title">批量处理工单</h2>
                                 <p id="ticketBulkProcessCount" class="admin-ticket-bulk-modal__subtitle">本次将处理 0 个待处理工单</p>
                             </div>
-                            <button type="button" class="admin-ticket-bulk-modal__close" data-admin-action="tickets-close-bulk-process-modal" aria-label="关闭批量处理面板">
-                                <i class="fas fa-times"></i>
-                            </button>
                         </div>
                         <div class="admin-ticket-bulk-modal__body">
                             <div class="admin-ticket-reply-modal__templates-shell">
@@ -9369,13 +9667,28 @@
                 <div class="form-group">
                     <label>目标指标</label>
                     <select id="expTargetMetric" class="form-select">
-                        <option value="page_view">页面浏览量</option>
-                        <option value="button_click">按钮点击</option>
-                        <option value="signup">注册转化</option>
-                        <option value="purchase">购买转化</option>
-                        <option value="engagement">互动参与</option>
+                        <optgroup label="真实业务事件">
+                            <option value="verify_success">验证成功</option>
+                            <option value="recharge_success">充值成功</option>
+                            <option value="shop_purchase">商城成交</option>
+                            <option value="unlock_success">内容解锁</option>
+                            <option value="affiliate_invite_click">邀请点击</option>
+                            <option value="checkin_success">签到完成</option>
+                            <option value="guestbook_post">留言发布</option>
+                            <option value="verify_submit">验证提交</option>
+                            <option value="recharge_click">充值点击</option>
+                            <option value="shop_view">商城浏览</option>
+                            <option value="prompt_view">内容浏览</option>
+                        </optgroup>
+                        <optgroup label="通用兼容指标">
+                            <option value="page_view">页面浏览量</option>
+                            <option value="button_click">按钮点击</option>
+                            <option value="signup">注册转化</option>
+                            <option value="purchase">购买转化</option>
+                            <option value="engagement">互动参与</option>
+                        </optgroup>
                     </select>
-                    <small class="form-hint">选择要追踪的转化指标</small>
+                    <small class="form-hint">优先选择真实业务事件；旧的通用指标会在结果层自动映射到真实埋点。</small>
                 </div>
                 <div class="form-actions">
                     <button type="button" class="btn-secondary" data-admin-action="analytics-close-experiment-modal">取消</button>
@@ -9663,10 +9976,10 @@
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <!-- Chart.js for Analytics -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="js/admin-studio-bootstrap.js?v=20260403_ADMIN_HOMEPAGE_PREWARM_1"></script>
+<script src="js/admin-studio-bootstrap.js?v=20260404_ANALYTICS_PHASE1_LIFECYCLE_1"></script>
     <script src="js/ios-scroll-lock.js"></script>
     <script src="admin-users.js?v=20260402_ADMIN_USERS_ASSET_ACTIVITY_FIX_1"></script>
-    <script src="admin-points.js?v=20260403_ADMIN_POINTS_FEEDBACK_CONTEXT_ROUTING_1"></script>
+    <script src="admin-points.js?v=20260404_ADMIN_POINTS_ANALYTICS_CONTEXT_1"></script>
     <script src="admin-discounts.js?v=20260402_ADMIN_DISCOUNT_MUTATE_HANDLER_2"></script>
     <script src="starry-sky.js"></script>
     <!-- Flatpickr JS -->
@@ -9674,19 +9987,19 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh.js"></script>
     <script src="js/admin-api-auth.js?v=20260402_ADMIN_API_AUTH_5"></script>
     <script src="js/admin-ai.js"></script>
-    <script src="admin-comments.js?v=20260403_COMMENTS_PAGE_SIZE_2"></script>
-    <script src="admin-analytics.js?v=20260331_ANALYTICS_EXPERIMENT_OVERLAY_CLOSE_1"></script>
-    <script src="js/admin-payments.js?v=20260403_ADMIN_PAYMENTS_LOADING_SKELETON_1"></script>
-    <script src="js/local-smoke-fixtures.js?v=20260404_LOCAL_SMOKE_FIXTURES_31"></script>
-    <script src="js/admin-workbench.js?v=20260402_ADMIN_WORKBENCH_ACCESS_7"></script>
+    <script src="admin-comments.js?v=20260404_COMMENTS_ANALYTICS_CONTEXT_1"></script>
+    <script src="admin-analytics.js?v=20260404_ANALYTICS_DUTY_BOARD_20"></script>
+    <script src="js/admin-payments.js?v=20260404_ADMIN_PAYMENTS_WORKBENCH_CONTEXT_1"></script>
+    <script src="js/local-smoke-fixtures.js?v=20260404_LOCAL_SMOKE_FIXTURES_34"></script>
+    <script src="js/admin-workbench.js?v=20260404_ADMIN_WORKBENCH_EXPERIMENT_CONTEXT_1"></script>
     <script src="js/admin-ticket-links.js?v=20260401_ADMIN_TICKET_LINK_PROTOCOL_1"></script>
-    <script src="admin-config.js?v=20260403_ADMIN_TICKET_TEMPLATE_SETTINGS_1"></script>
+    <script src="admin-config.js?v=20260404_ADMIN_VERIFY_WORKBENCH_CONTEXT_1"></script>
     <script src="admin-homepage.js?v=20260403_HOMEPAGE_LOADING_PREWARM_1"></script>
     <script src="js/admin-studio-translate.js"></script>
-    <script src="js/admin-site-filter.js?v=20260323_SITE_FILTER_DELEGATION_1"></script>
-    <script src="js/admin-tickets.js?v=20260404_ADMIN_TICKET_OVERVIEW_COPY_1"></script>
+    <script src="js/admin-site-filter.js?v=20260404_ANALYTICS_SITE_RELOAD_1"></script>
+    <script src="js/admin-tickets.js?v=20260404_ADMIN_TICKETS_WORKBENCH_CONTEXT_1"></script>
     <script src="js/admin-access.js?v=20260403_ADMIN_ENTRY_WARMUP_1"></script>
-<script src="admin-studio.js?v=20260404_ADMIN_TICKET_WORKSPACE_NAV_1"></script>
+<script src="admin-studio.js?v=20260404_ANALYTICS_ACTION_ROUTING_2"></script>
     <script src="js/admin-shop.js?v=20260403_ADMIN_SHOP_TAB_PREFETCH_1"></script>
 </body>
 

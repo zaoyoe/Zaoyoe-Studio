@@ -74,6 +74,33 @@ const guestbookCache = {
 // Expose cache globally for debugging
 window.guestbookCache = guestbookCache;
 
+function trackGuestbookAnalyticsEvent(eventName, payload = {}, options = {}) {
+    const tracker = window.UserEventTracker;
+    if (!tracker || typeof tracker.track !== 'function') {
+        return;
+    }
+
+    const metadata = payload?.metadata && typeof payload.metadata === 'object' && !Array.isArray(payload.metadata)
+        ? payload.metadata
+        : {};
+    const normalizedPayload = {
+        module: payload.module || 'guestbook',
+        entityType: payload.entityType || 'message',
+        entityId: payload.entityId || null,
+        eventValue: payload.eventValue ?? null,
+        pointsDelta: payload.pointsDelta ?? null,
+        metadata
+    };
+
+    const trackingPromise = options.dedupeKey && typeof tracker.trackOnce === 'function'
+        ? tracker.trackOnce(options.dedupeKey, eventName, normalizedPayload, { eventType: options.eventType || 'engagement' })
+        : tracker.track(eventName, normalizedPayload, { eventType: options.eventType || 'engagement' });
+
+    void Promise.resolve(trackingPromise).catch((error) => {
+        console.debug('[GuestbookAnalytics] Track failed:', eventName, error?.message || error);
+    });
+}
+
 function invalidateGuestbookCache() {
     guestbookCache.lastFetch = null;
     console.log('🗑️ Guestbook cache invalidated');
@@ -605,6 +632,22 @@ async function addMessage(content, imageUrl = '', options = {}) {
         console.log('✅ Message added:', data.id);
         invalidateGuestbookCache();
         window.Cache?.invalidateCache?.('guestbook_messages');
+        trackGuestbookAnalyticsEvent('guestbook_post', {
+            entityId: String(data.id || '').trim() || null,
+            eventValue: content ? String(content).trim().length : 0,
+            metadata: {
+                message_id: String(data.id || '').trim() || null,
+                content_length: content ? String(content).trim().length : 0,
+                has_image: Boolean(imageUrl),
+                entry: (window.location.pathname === '/' || window.location.pathname === '/index.html')
+                    ? 'homepage_guestbook'
+                    : 'guestbook_page',
+                source_page: window.location.pathname || '/'
+            }
+        }, {
+            eventType: 'engagement',
+            dedupeKey: String(data.id || '').trim() ? `guestbook_post:${String(data.id).trim()}` : ''
+        });
         return {
             ...data,
             like_count: data.like_count || 0,

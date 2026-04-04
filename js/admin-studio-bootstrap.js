@@ -586,6 +586,13 @@
             return false;
         }
 
+        const activeModule = document.querySelector('.module-container.active');
+        const activeModuleId = activeModule?.id?.replace('module-', '') || null;
+
+        if (activeModuleId === 'analytics' && moduleId !== 'analytics') {
+            window.teardownAnalyticsModule?.();
+        }
+
         document.querySelectorAll('.sidebar-item').forEach((item) => {
             item.classList.remove('active');
         });

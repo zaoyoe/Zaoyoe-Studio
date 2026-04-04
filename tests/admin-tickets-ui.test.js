@@ -268,6 +268,79 @@ test('admin tickets reply state enables refund only for pending resolved tickets
     assert.match(noOrderState.refundHint, /没有关联订单/);
 });
 
+test('admin tickets selection mode reuses the compact batch menu pattern', () => {
+    const moduleElement = createElementStub({ dataset: { ticketWorkspace: 'queue' } });
+    const selectModeButton = createElementStub();
+    const batchMenuContainer = createElementStub({ hidden: true });
+    const batchMenuTrigger = createElementStub();
+    const batchDropdownMenu = createElementStub();
+    const selectedCountWrapper = createElementStub({ hidden: true });
+    const selectedCountNode = createElementStub();
+    const selectAllCheckbox = createElementStub();
+    const selectAllAction = createElementStub();
+    const assignAction = createElementStub();
+    const clearAssigneeAction = createElementStub();
+    const resolveAction = createElementStub();
+    const rejectAction = createElementStub();
+    const clearSelectionAction = createElementStub();
+    const { AdminTickets } = loadAdminTicketsRuntime({
+        elements: {
+            'module-tickets': moduleElement,
+            ticketsSelectModeBtn: selectModeButton,
+            ticketsBatchMenuContainer: batchMenuContainer,
+            ticketsBatchMenuTrigger: batchMenuTrigger,
+            ticketsBatchDropdownMenu: batchDropdownMenu,
+            ticketsSelectedCountWrapper: selectedCountWrapper,
+            ticketsSelectedCount: selectedCountNode,
+            ticketsSelectAllCheckbox: selectAllCheckbox,
+            ticketsSelectAllPageAction: selectAllAction,
+            ticketsBulkAssignSelfAction: assignAction,
+            ticketsBulkClearAssigneeAction: clearAssigneeAction,
+            ticketsBulkResolveAction: resolveAction,
+            ticketsBulkRejectAction: rejectAction,
+            ticketsClearSelectionAction: clearSelectionAction
+        }
+    });
+
+    AdminTickets.filteredTickets = [
+        { id: 'ticket-select-1', status: 'PENDING' },
+        { id: 'ticket-select-2', status: 'RESOLVED' }
+    ];
+
+    AdminTickets.toggleSelectionMode();
+
+    assert.equal(AdminTickets.selectionMode, true);
+    assert.equal(moduleElement.dataset.ticketSelectMode, 'true');
+    assert.equal(batchMenuContainer.hidden, false);
+    assert.equal(selectModeButton.classList.contains('active'), true);
+    assert.equal(selectedCountWrapper.hidden, true);
+    assert.equal(selectAllCheckbox.disabled, false);
+    assert.equal(selectAllAction.attributes['aria-disabled'], 'false');
+    assert.equal(assignAction.attributes['aria-disabled'], 'true');
+
+    AdminTickets.toggleBatchMenu();
+    assert.equal(batchMenuContainer.classList.contains('open'), true);
+    assert.equal(batchDropdownMenu.classList.contains('open'), true);
+    assert.equal(batchMenuTrigger.attributes['aria-expanded'], 'true');
+
+    AdminTickets.toggleTicketSelection('ticket-select-1', true);
+
+    assert.deepEqual(Array.from(AdminTickets.selectedTicketIds), ['ticket-select-1']);
+    assert.equal(selectedCountNode.textContent, '1');
+    assert.equal(selectedCountWrapper.hidden, false);
+    assert.equal(assignAction.attributes['aria-disabled'], 'false');
+
+    AdminTickets.clearSelectedTickets();
+    assert.equal(AdminTickets.batchMenuOpen, false);
+    assert.equal(clearSelectionAction.attributes['aria-disabled'], 'true');
+
+    AdminTickets.toggleSelectionMode();
+    assert.equal(AdminTickets.selectionMode, false);
+    assert.equal(moduleElement.dataset.ticketSelectMode, 'false');
+    assert.equal(batchMenuContainer.hidden, true);
+    assert.equal(selectAllCheckbox.disabled, true);
+});
+
 test('admin tickets detail state exposes summary, source context, and quick actions for the reply panel', () => {
     const { AdminTickets } = loadAdminTicketsRuntime();
     AdminTickets.parseLinkedChatSessionContext = () => ({
@@ -679,7 +752,20 @@ test('admin tickets renderOverview splits reminder status and summary tracking b
             summary_daily_hour: 9,
             summary_daily_minute: 30,
             activity: AdminTickets.buildEmptyReminderActivityOverview(),
-            summary_digest: AdminTickets.buildEmptyReminderSummaryDigest()
+            summary_digest: {
+                ...AdminTickets.buildEmptyReminderSummaryDigest(),
+                recent_jobs: [{
+                    id: 'summary-history-1',
+                    title: '工单超时汇总（6 条超时工单）',
+                    status: 'delivered',
+                    created_at: '2026-04-04T10:07:10.000Z',
+                    window_start_at: '2026-04-04T10:00:00.000Z',
+                    window_end_at: '2026-04-04T11:00:00.000Z',
+                    item_count: 6,
+                    channels: ['telegram'],
+                    attempt_count: 1
+                }]
+            }
         }
     };
 
@@ -695,7 +781,11 @@ test('admin tickets renderOverview splits reminder status and summary tracking b
     assert.match(reminderPanel.innerHTML, /admin-ticket-overview-reminder-summary-entry__cards/);
     assert.match(reminderPanel.innerHTML, /每日 SLA 汇总/);
     assert.match(reminderPanel.innerHTML, /提醒活动闭环/);
-    assert.match(reminderPanel.innerHTML, /admin-ticket-overview-reminder-actions--embedded/);
+    assert.match(reminderPanel.innerHTML, /admin-ticket-overview-reminder-summary-history-item__actions/);
+    assert.match(reminderPanel.innerHTML, /admin-ticket-overview-reminder-summary-actions--history/);
+    assert.doesNotMatch(reminderPanel.innerHTML, /只看超时工单/);
+    assert.doesNotMatch(reminderPanel.innerHTML, /打开提醒设置/);
+    assert.doesNotMatch(reminderPanel.innerHTML, /刷新概览/);
     assert.doesNotMatch(reminderPanel.innerHTML, /提醒已开启/);
 
     AdminTickets.syncTicketWorkspaceView('overview');
@@ -708,6 +798,9 @@ test('admin tickets renderOverview splits reminder status and summary tracking b
     assert.doesNotMatch(overviewGrid.innerHTML, /可直接退款/);
     assert.match(reminderPanel.innerHTML, /提醒已开启/);
     assert.doesNotMatch(reminderPanel.innerHTML, /每日 SLA 汇总/);
+    assert.doesNotMatch(reminderPanel.innerHTML, /只看超时工单/);
+    assert.doesNotMatch(reminderPanel.innerHTML, /打开提醒设置/);
+    assert.doesNotMatch(reminderPanel.innerHTML, /刷新概览/);
 });
 
 test('admin tickets workspace switch rerenders reminder panel content for summary tracking', () => {
@@ -1295,6 +1388,7 @@ test('admin tickets renderReminderSummaryComparisonBucket limits ongoing tickets
     assert.match(html, /连续两次都在的工单/);
     assert.match(html, /admin-ticket-summary-job-modal__comparison-list--limit-2/);
     assert.match(html, /admin-ticket-summary-job-modal__comparison-list--scrollable/);
+    assert.match(html, /admin-ticket-summary-job-modal__comparison-item-actions/);
 });
 
 test('admin tickets buildReminderSummaryHandoffSummary derives latest owner note and next step', () => {
@@ -1486,6 +1580,7 @@ test('admin tickets openReminderSummaryJobDetail renders the summary detail moda
     assert.match(bodyNode.innerHTML, /ticket-reminder-1/);
     assert.match(bodyNode.innerHTML, /ticket-reminder-2/);
     assert.match(bodyNode.innerHTML, /ticket-reminder-3/);
+    assert.match(bodyNode.innerHTML, /admin-ticket-overview-reminder-summary-preview-item__actions/);
     assert.equal(retryButton.disabled, false);
     assert.equal(retryButton.textContent, '重新加入重试队列');
     assert.equal(retryButton.dataset.summaryJobId, 'summary-detail-job-1');
@@ -1622,6 +1717,51 @@ test('admin tickets openSlaSummarySettings routes to the summary-focused reminde
 
     assert.equal(result, true);
     assert.equal(capturedOptions.focus, 'summary');
+});
+
+test('admin tickets openSlaSettings jumps into ops alerts monitors and focuses ticket reminder controls', () => {
+    const ticketConfigCard = createElementStub();
+    let generalScrollCount = 0;
+    let summaryScrollCount = 0;
+    const { AdminTickets, window, toasts } = loadAdminTicketsRuntime({
+        elements: {
+            'module-ops-alerts': createElementStub(),
+            opsAlertTicketsEnabledToggle: createElementStub({
+                scrollIntoView() {
+                    generalScrollCount += 1;
+                }
+            }),
+            opsAlertTicketsSummaryEnabledToggle: createElementStub({
+                scrollIntoView() {
+                    summaryScrollCount += 1;
+                }
+            })
+        },
+        querySelectors: {
+            '[data-config="ops-alerts-tickets"]': ticketConfigCard
+        }
+    });
+    const switchModuleCalls = [];
+    const switchViewCalls = [];
+    window.switchModule = (moduleName) => {
+        switchModuleCalls.push(moduleName);
+        return true;
+    };
+    window.switchOpsAlertsView = (viewName) => {
+        switchViewCalls.push(viewName);
+        return true;
+    };
+
+    const generalResult = AdminTickets.openSlaSettings();
+    const summaryResult = AdminTickets.openSlaSettings({ focus: 'summary' });
+
+    assert.equal(generalResult, true);
+    assert.equal(summaryResult, true);
+    assert.deepEqual(switchModuleCalls, ['ops-alerts', 'ops-alerts']);
+    assert.deepEqual(switchViewCalls, ['monitors', 'monitors']);
+    assert.equal(generalScrollCount, 1);
+    assert.equal(summaryScrollCount, 1);
+    assert.equal(toasts.length, 0);
 });
 
 test('admin tickets getTicketsSummaryHistoryUrl builds the central admin route for summary history', () => {

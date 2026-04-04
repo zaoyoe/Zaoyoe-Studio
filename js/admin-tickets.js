@@ -22,6 +22,8 @@ const AdminTickets = {
     overview: null,
     overviewErrorMessage: '',
     selectedTicketIds: [],
+    selectionMode: false,
+    batchMenuOpen: false,
     searchQuery: '',
     focusedTicketId: '',
     activeReminderSummaryJobId: '',
@@ -43,6 +45,35 @@ const AdminTickets = {
         if (delayMs > 0) {
             await new Promise((resolve) => window.setTimeout(resolve, delayMs));
         }
+    },
+
+    showWorkbenchContext: function (context = {}) {
+        const target = document.getElementById('ticketsWorkbenchContext');
+        if (!target) return false;
+
+        const contextState = window.buildOpsAlertWorkspaceExperimentContextState?.(context, {
+            title: '当前来自实验结果下钻',
+            eyebrow: 'Tickets Focus'
+        }) || null;
+
+        if (!contextState) {
+            target.hidden = true;
+            target.innerHTML = '';
+            return false;
+        }
+
+        target.innerHTML = `
+            <div class="admin-workbench-context-note__eyebrow">${this.escapeHtml(contextState.eyebrow || 'Experiment Context')}</div>
+            <div class="admin-workbench-context-note__title">${this.escapeHtml(contextState.title || '实验聚焦上下文')}</div>
+            <div class="admin-workbench-context-note__summary">${this.escapeHtml(contextState.summary || '')}</div>
+            <div class="admin-workbench-context-note__chips">
+                ${(Array.isArray(contextState.chips) ? contextState.chips : []).map((item) => `
+                    <span class="admin-workbench-context-note__chip">${this.escapeHtml(item.label || '')} · ${this.escapeHtml(item.value || '')}</span>
+                `).join('')}
+            </div>
+        `;
+        target.hidden = false;
+        return true;
     },
 
     fetchProfilesByIds: async function (userIds = []) {
@@ -128,6 +159,7 @@ const AdminTickets = {
     },
 
     init: async function (options = {}) {
+        this.showWorkbenchContext({});
         if (this._initPromise) return this._initPromise;
         if (this._initialized && options?.force !== true) return;
 
@@ -153,7 +185,7 @@ const AdminTickets = {
         const iconNode = document.createElement('i');
         const textNode = document.createElement('span');
 
-        cell.colSpan = 7;
+        cell.colSpan = this.selectionMode ? 7 : 6;
         cell.className = `empty-state admin-ticket-table-state-cell admin-ticket-table-state-cell--${variant}`;
 
         wrapper.className = 'admin-ticket-table-state';
@@ -175,7 +207,7 @@ const AdminTickets = {
 
         return Array.from({ length: rows }, (_, index) => `
             <tr class="admin-table-skeleton-row admin-ticket-table-skeleton-row" aria-hidden="true" data-skeleton-index="${index}">
-                <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span></div></td>
+                <td class="admin-ticket-selection-cell"><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span></div></td>
                 <td>
                     <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack">
                         <span class="admin-skeleton-block admin-skeleton-block--title ${titleWidths[index % titleWidths.length]}"></span>
@@ -1518,8 +1550,16 @@ const AdminTickets = {
                         <div class="admin-ticket-overview-reminder-summary-preview-item">
                             <div class="admin-ticket-overview-reminder-summary-preview-item__head">
                                 <div class="admin-ticket-overview-reminder-summary-preview-item__title">${this.escapeHtml(metaParts.join(' · '))}</div>
-                                ${this.safeText(item?.ticket_id).trim()
-                                    ? `
+                            </div>
+                            ${subMetaParts.length
+                                ? `<div class="admin-ticket-overview-reminder-summary-preview-item__meta">${this.escapeHtml(subMetaParts.join(' · '))}</div>`
+                                : ''}
+                            ${this.safeText(item?.reason).trim()
+                                ? `<div class="admin-ticket-overview-reminder-summary-preview-item__reason">${this.escapeHtml(item.reason)}</div>`
+                                : ''}
+                            ${this.safeText(item?.ticket_id).trim()
+                                ? `
+                                    <div class="admin-ticket-overview-reminder-summary-preview-item__actions">
                                         <button
                                             type="button"
                                             class="btn-secondary admin-ticket-overview-reminder-summary-preview-item__btn"
@@ -1527,14 +1567,8 @@ const AdminTickets = {
                                             data-ticket-id="${this.escapeHtml(item.ticket_id)}">
                                             定位
                                         </button>
-                                    `
-                                    : ''}
-                            </div>
-                            ${subMetaParts.length
-                                ? `<div class="admin-ticket-overview-reminder-summary-preview-item__meta">${this.escapeHtml(subMetaParts.join(' · '))}</div>`
-                                : ''}
-                            ${this.safeText(item?.reason).trim()
-                                ? `<div class="admin-ticket-overview-reminder-summary-preview-item__reason">${this.escapeHtml(item.reason)}</div>`
+                                    </div>
+                                `
                                 : ''}
                         </div>
                     `;
@@ -1574,13 +1608,15 @@ const AdminTickets = {
                 </div>
                 ${this.safeText(item?.ticket_id).trim()
                     ? `
-                        <button
-                            type="button"
-                            class="btn-secondary admin-ticket-summary-job-modal__comparison-item-btn"
-                            data-admin-action="tickets-open-reminder-ticket"
-                            data-ticket-id="${this.escapeHtml(item.ticket_id)}">
-                            ${this.escapeHtml(actionLabel)}
-                        </button>
+                        <div class="admin-ticket-summary-job-modal__comparison-item-actions">
+                            <button
+                                type="button"
+                                class="btn-secondary admin-ticket-summary-job-modal__comparison-item-btn"
+                                data-admin-action="tickets-open-reminder-ticket"
+                                data-ticket-id="${this.escapeHtml(item.ticket_id)}">
+                                ${this.escapeHtml(actionLabel)}
+                            </button>
+                        </div>
                     `
                     : ''}
             </div>
@@ -2006,8 +2042,13 @@ const AdminTickets = {
         }
 
         const canRetry = options.showRetry !== false && this.canRequestReminderSummaryRetry(entry);
+        const variant = this.safeText(options.variant).trim();
+        const actionClassNames = ['admin-ticket-overview-reminder-summary-actions'];
+        if (variant) {
+            actionClassNames.push(`admin-ticket-overview-reminder-summary-actions--${variant}`);
+        }
         return `
-            <div class="admin-ticket-overview-reminder-summary-actions">
+            <div class="${this.escapeHtml(actionClassNames.join(' '))}">
                 <button
                     type="button"
                     class="btn-secondary admin-ticket-overview-reminder-summary-actions__btn"
@@ -2555,9 +2596,11 @@ const AdminTickets = {
                         <article class="admin-ticket-overview-reminder-summary-history-item admin-ticket-overview-reminder-summary-history-item--${this.escapeHtml(statusMeta.tone)}">
                             <div class="admin-ticket-overview-reminder-summary-history-item__head">
                                 <div class="admin-ticket-overview-reminder-summary-history-item__title">${this.escapeHtml(entry?.title || '工单超时汇总')}</div>
-                                <span class="admin-ticket-overview-reminder-activity-item__status admin-ticket-overview-reminder-activity-item__status--${this.escapeHtml(statusMeta.tone)}">
-                                    ${this.escapeHtml(statusMeta.label)}
-                                </span>
+                                <div class="admin-ticket-overview-reminder-summary-history-item__actions">
+                                    <span class="admin-ticket-overview-reminder-activity-item__status admin-ticket-overview-reminder-activity-item__status--${this.escapeHtml(statusMeta.tone)}">
+                                        ${this.escapeHtml(statusMeta.label)}
+                                    </span>
+                                </div>
                             </div>
                             <div class="admin-ticket-overview-reminder-summary-history-item__meta">${this.escapeHtml(historyMeta.join(' · '))}</div>
                             <div class="admin-ticket-overview-reminder-summary-history-item__meta">${this.escapeHtml(deliveryMeta.join(' · '))}</div>
@@ -2584,7 +2627,8 @@ const AdminTickets = {
                                 ? `<div class="admin-ticket-overview-reminder-activity-item__error">${this.escapeHtml(entry.last_error)}</div>`
                                 : ''}
                             ${this.renderReminderSummaryJobActions(entry, {
-                                showRetry: this.canRequestReminderSummaryRetry(entry)
+                                showRetry: this.canRequestReminderSummaryRetry(entry),
+                                variant: 'history'
                             })}
                         </article>
                     `;
@@ -2593,26 +2637,10 @@ const AdminTickets = {
         `;
     },
 
-    renderReminderPanelActions: function (options = {}) {
-        const classes = ['admin-ticket-overview-reminder-actions'];
-        if (options?.embedded === true) {
-            classes.push('admin-ticket-overview-reminder-actions--embedded');
-        }
-
-        return `
-            <div class="${classes.join(' ')}">
-                <button type="button" class="btn-secondary" data-admin-action="tickets-open-overdue-queue">只看超时工单</button>
-                <button type="button" class="btn-secondary" data-admin-action="tickets-open-sla-settings">打开提醒设置</button>
-                <button type="button" class="btn-secondary" data-admin-action="tickets-refresh-overview">刷新概览</button>
-            </div>
-        `;
-    },
-
-    renderReminderActivityList: function (activity = {}, options = {}) {
+    renderReminderActivityList: function (activity = {}) {
         const reminderActivity = activity && typeof activity === 'object'
             ? activity
             : this.buildEmptyReminderActivityOverview();
-        const includeFooterActions = options?.includeFooterActions === true;
         const lookbackDays = Math.max(1, Number(reminderActivity?.lookback_days || 7) || 7);
         const latestEntries = [{
             title: '最近一次超时提醒',
@@ -2727,13 +2755,6 @@ const AdminTickets = {
                         }).join('')
                         : `<div class="admin-ticket-overview-empty">最近 ${lookbackDays} 天还没有记录到工单超时提醒外发结果。</div>`}
                 </div>
-                ${includeFooterActions
-                    ? `
-                        <div class="admin-ticket-overview-reminder-activity__footer">
-                            ${this.renderReminderPanelActions({ embedded: true })}
-                        </div>
-                    `
-                    : ''}
             </section>
         `;
     },
@@ -3048,9 +3069,7 @@ const AdminTickets = {
         `;
         const activitySection = `
             <section class="admin-ticket-overview-reminder-section admin-ticket-overview-reminder-section--activity">
-                ${this.renderReminderActivityList(activity, {
-                    includeFooterActions: isSummaryMode
-                })}
+                ${this.renderReminderActivityList(activity)}
             </section>
         `;
 
@@ -3058,7 +3077,6 @@ const AdminTickets = {
             <div class="admin-ticket-overview-reminder-grid admin-ticket-overview-reminder-grid--${isSummaryMode ? 'summary' : 'overview'}">
                 ${isSummaryMode ? `${summaryStatusStripSection}${summarySection}${activitySection}` : statusSection}
             </div>
-            ${isSummaryMode ? '' : this.renderReminderPanelActions()}
         `;
     },
 
@@ -3316,13 +3334,35 @@ const AdminTickets = {
             ? arguments[0]
             : {};
         const focus = this.safeText(options.focus).trim().toLowerCase();
-        const switched = window.switchModule?.('settings');
+        const switched = window.switchModule?.('ops-alerts');
         if (switched === false) {
-            this.notify('当前账号没有设置模块权限，无法打开提醒配置', 'warning');
+            this.notify('当前账号没有站外告警模块权限，无法打开提醒配置', 'warning');
             return false;
         }
 
-        window.switchSettingsView?.('pricing');
+        const switchOpsAlertsView = typeof window.switchOpsAlertsView === 'function'
+            ? window.switchOpsAlertsView
+            : (viewName) => {
+                const normalizedViewName = this.safeText(viewName).trim();
+                const opsAlertsModule = document.getElementById('module-ops-alerts');
+                if (!normalizedViewName || !opsAlertsModule) {
+                    return false;
+                }
+
+                if (typeof opsAlertsModule.querySelectorAll === 'function') {
+                    opsAlertsModule.querySelectorAll('.admin-tab[data-ops-alerts-view]').forEach((tab) => {
+                        tab.classList?.toggle?.('active', tab.dataset?.opsAlertsView === normalizedViewName);
+                    });
+                    opsAlertsModule.querySelectorAll('.view-section').forEach((section) => {
+                        section.classList?.toggle?.('active', section.id === `ops-alerts-view-${normalizedViewName}`);
+                    });
+                }
+                return true;
+            };
+        if (switchOpsAlertsView('monitors') === false) {
+            this.notify('当前环境暂时无法定位到工单提醒配置', 'warning');
+            return false;
+        }
 
         const highlightCard = () => {
             const card = typeof document.querySelector === 'function'
@@ -4852,44 +4892,115 @@ const AdminTickets = {
 
     clearSelectedTickets: function () {
         this.selectedTicketIds = [];
+        this.batchMenuOpen = false;
         this.syncSelectionControls();
         this.render();
+    },
+
+    toggleSelectionMode: function () {
+        this.selectionMode = !this.selectionMode;
+        if (!this.selectionMode) {
+            this.selectedTicketIds = [];
+            this.batchMenuOpen = false;
+        }
+        this.syncSelectionControls();
+        this.render();
+    },
+
+    toggleBatchMenu: function () {
+        if (!this.selectionMode) {
+            return;
+        }
+        this.batchMenuOpen = !this.batchMenuOpen;
+        this.syncSelectionControls();
+    },
+
+    closeBatchMenu: function () {
+        if (!this.batchMenuOpen) {
+            return;
+        }
+        this.batchMenuOpen = false;
+        this.syncSelectionControls();
+    },
+
+    selectAllCurrentPage: function () {
+        this.toggleSelectAllPage(true);
+        this.closeBatchMenu();
     },
 
     syncSelectionControls: function () {
         const selectedIds = this.normalizeSelectedTicketIds(this.selectedTicketIds);
         const selectableIds = this.getSelectableCurrentPageTicketIds();
         const selectedOnPage = selectableIds.filter((ticketId) => selectedIds.includes(ticketId));
+        const selectionModeEnabled = this.selectionMode === true;
+        const moduleElement = document.getElementById('module-tickets');
+        const selectModeButton = document.getElementById('ticketsSelectModeBtn');
+        const batchMenuContainer = document.getElementById('ticketsBatchMenuContainer');
+        const batchMenuTrigger = document.getElementById('ticketsBatchMenuTrigger');
+        const batchDropdown = document.getElementById('ticketsBatchDropdownMenu');
+        const selectedCountWrapper = document.getElementById('ticketsSelectedCountWrapper');
+        const selectedCountNode = document.getElementById('ticketsSelectedCount');
         const selectAllCheckbox = document.getElementById('ticketsSelectAllCheckbox');
-        const bulkToolbar = document.getElementById('ticketsBulkToolbar');
-        const countNode = document.getElementById('ticketsBulkCount');
-        const assignButton = document.getElementById('ticketsBulkAssignSelfBtn');
-        const clearButton = document.getElementById('ticketsBulkClearAssigneeBtn');
-        const clearSelectionButton = document.getElementById('ticketsClearSelectionBtn');
+        const selectAllAction = document.getElementById('ticketsSelectAllPageAction');
+        const assignAction = document.getElementById('ticketsBulkAssignSelfAction');
+        const clearAction = document.getElementById('ticketsBulkClearAssigneeAction');
+        const bulkResolveAction = document.getElementById('ticketsBulkResolveAction');
+        const bulkRejectAction = document.getElementById('ticketsBulkRejectAction');
+        const clearSelectionAction = document.getElementById('ticketsClearSelectionAction');
+
+        if (!selectionModeEnabled && this.batchMenuOpen) {
+            this.batchMenuOpen = false;
+        }
+
+        if (moduleElement?.dataset) {
+            moduleElement.dataset.ticketSelectMode = selectionModeEnabled ? 'true' : 'false';
+        }
+
+        if (selectModeButton) {
+            selectModeButton.classList.toggle('active', selectionModeEnabled);
+            selectModeButton.setAttribute('aria-pressed', selectionModeEnabled ? 'true' : 'false');
+        }
+
+        if (batchMenuContainer) {
+            batchMenuContainer.hidden = !selectionModeEnabled;
+            batchMenuContainer.classList.toggle('open', selectionModeEnabled && this.batchMenuOpen);
+        }
+
+        if (batchMenuTrigger) {
+            batchMenuTrigger.disabled = !selectionModeEnabled;
+            batchMenuTrigger.classList.toggle('active', selectionModeEnabled && this.batchMenuOpen);
+            batchMenuTrigger.setAttribute('aria-expanded', selectionModeEnabled && this.batchMenuOpen ? 'true' : 'false');
+        }
+
+        if (batchDropdown) {
+            batchDropdown.classList.toggle('open', selectionModeEnabled && this.batchMenuOpen);
+        }
+
+        if (selectedCountNode) {
+            selectedCountNode.textContent = String(selectedIds.length);
+        }
+
+        if (selectedCountWrapper) {
+            selectedCountWrapper.hidden = !(selectionModeEnabled && selectedIds.length > 0);
+        }
 
         if (selectAllCheckbox) {
-            selectAllCheckbox.disabled = selectableIds.length === 0;
-            selectAllCheckbox.checked = selectableIds.length > 0 && selectedOnPage.length === selectableIds.length;
-            selectAllCheckbox.indeterminate = selectedOnPage.length > 0 && selectedOnPage.length < selectableIds.length;
+            selectAllCheckbox.disabled = !selectionModeEnabled || selectableIds.length === 0;
+            selectAllCheckbox.checked = selectionModeEnabled && selectableIds.length > 0 && selectedOnPage.length === selectableIds.length;
+            selectAllCheckbox.indeterminate = selectionModeEnabled && selectedOnPage.length > 0 && selectedOnPage.length < selectableIds.length;
         }
 
-        if (bulkToolbar) {
-            bulkToolbar.classList.toggle('admin-ticket-bulk-toolbar--active', selectedIds.length > 0);
-        }
-
-        if (countNode) {
-            countNode.textContent = selectedIds.length > 0
-                ? `已选 ${selectedIds.length} 个待处理工单`
-                : '可批量指派或批量处理当前页待处理工单';
-        }
-
-        const bulkResolveButton = document.getElementById('ticketsBulkResolveBtn');
-        const bulkRejectButton = document.getElementById('ticketsBulkRejectBtn');
-
-        [assignButton, clearButton, clearSelectionButton, bulkResolveButton, bulkRejectButton].forEach((button) => {
-            if (button) {
-                button.disabled = selectedIds.length === 0;
+        const setMenuItemDisabled = (node, disabled) => {
+            if (!node) {
+                return;
             }
+            node.classList.toggle('is-disabled', disabled);
+            node.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+        };
+
+        setMenuItemDisabled(selectAllAction, !selectionModeEnabled || selectableIds.length === 0);
+        [assignAction, clearAction, bulkResolveAction, bulkRejectAction, clearSelectionAction].forEach((node) => {
+            setMenuItemDisabled(node, !selectionModeEnabled || selectedIds.length === 0);
         });
     },
 
@@ -6188,6 +6299,7 @@ const AdminTickets = {
     },
 
     submitBulkAssignment: async function (operation = 'assign_self') {
+        this.closeBatchMenu();
         const normalizedOperation = this.safeText(operation).trim().toLowerCase();
         const ticketIds = this.normalizeSelectedTicketIds(this.selectedTicketIds);
         if (!ticketIds.length) {
@@ -6349,6 +6461,7 @@ const AdminTickets = {
     },
 
     openBulkProcessModal: function (newStatus = '') {
+        this.closeBatchMenu();
         const state = this.syncBulkProcessModalState(newStatus);
         if (!state?.selectedTickets?.length) {
             this.notify('请先选择待处理工单', 'warning');
@@ -6514,13 +6627,15 @@ const AdminTickets = {
 
             const row = document.createElement('tr');
             const isFocusedTicket = this.safeText(ticket.id).trim() === this.safeText(this.focusedTicketId).trim();
-            const isSelectedTicket = this.isTicketSelected(ticket.id);
+            const isSelectedTicket = this.selectionMode === true && this.isTicketSelected(ticket.id);
             row.className = `admin-ticket-row${isFocusedTicket ? ' admin-ticket-row--focused' : ''}${isSelectedTicket ? ' admin-ticket-row--selected' : ''}`;
             row.dataset.ticketId = this.safeText(ticket.id);
 
             const selectionCell = document.createElement('td');
             selectionCell.className = 'admin-ticket-selection-cell';
             if (this.isTicketSelectable(ticket)) {
+                const selectionLabel = document.createElement('label');
+                selectionLabel.className = 'custom-checkbox admin-ticket-selection-control';
                 const selectionInput = document.createElement('input');
                 selectionInput.type = 'checkbox';
                 selectionInput.className = 'admin-ticket-selection-checkbox';
@@ -6529,7 +6644,11 @@ const AdminTickets = {
                 selectionInput.addEventListener('change', () => {
                     this.toggleTicketSelection(ticket.id, selectionInput.checked);
                 });
-                selectionCell.appendChild(selectionInput);
+                const selectionCheckmark = document.createElement('span');
+                selectionCheckmark.className = 'checkmark';
+                selectionLabel.appendChild(selectionInput);
+                selectionLabel.appendChild(selectionCheckmark);
+                selectionCell.appendChild(selectionLabel);
             } else {
                 const selectionMuted = document.createElement('span');
                 selectionMuted.className = 'admin-ticket-selection-muted';
@@ -6856,6 +6975,13 @@ const AdminTickets = {
 
 window.AdminTickets = AdminTickets;
 window.AdminTickets?.syncTicketWorkspaceView?.();
+document.addEventListener?.('click', (event) => {
+    const target = event?.target instanceof Element ? event.target : null;
+    if (target?.closest?.('#ticketsBatchMenuContainer')) {
+        return;
+    }
+    window.AdminTickets?.closeBatchMenu?.();
+});
 window.addEventListener?.('ops-alerts-config-updated', (event) => {
     window.AdminTickets?.handleOpsAlertsConfigUpdated?.(event);
 });

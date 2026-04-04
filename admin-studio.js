@@ -1370,6 +1370,12 @@ function bindAdminStudioDelegatedControls() {
             case 'analytics-view-context':
                 window.viewPromptContext?.(actionEl.dataset.promptId);
                 break;
+            case 'analytics-open-destination':
+                window.openAnalyticsDestination?.(
+                    actionEl.dataset.analyticsDestination,
+                    actionEl.dataset.analyticsContext || ''
+                );
+                break;
             case 'analytics-range-select-date':
                 event.stopPropagation();
                 window.selectRangeDate?.(
@@ -1397,7 +1403,7 @@ function bindAdminStudioDelegatedControls() {
                 window.loadAIPrediction?.();
                 break;
             case 'analytics-open-experiment-modal':
-                window.openExperimentModal?.();
+                window.openExperimentModal?.(actionEl.dataset.analyticsContext || '');
                 break;
             case 'analytics-load-experiments-list':
                 window.loadExperimentsList?.();
@@ -1417,13 +1423,14 @@ function bindAdminStudioDelegatedControls() {
             case 'analytics-show-ab-results': {
                 const experimentId = decodeURIComponent(actionEl.dataset.experimentId || '');
                 const experimentName = decodeURIComponent(actionEl.dataset.experimentName || '');
+                const targetMetric = decodeURIComponent(actionEl.dataset.experimentTargetMetric || '');
                 let variants = [];
                 try {
                     variants = JSON.parse(decodeURIComponent(actionEl.dataset.experimentVariants || '%5B%5D'));
                 } catch (err) {
                     console.warn('Failed to parse experiment variants payload', err);
                 }
-                window.showABResults?.(experimentId, experimentName, variants);
+                window.showABResults?.(experimentId, experimentName, variants, targetMetric);
                 break;
             }
             case 'points-switch-view':
@@ -1816,6 +1823,15 @@ function bindAdminStudioDelegatedControls() {
             case 'tickets-toggle-unassigned':
                 window.AdminTickets?.toggleQuickFilter?.('unassigned');
                 break;
+            case 'tickets-toggle-select-mode':
+                window.AdminTickets?.toggleSelectionMode?.();
+                break;
+            case 'tickets-toggle-batch-menu':
+                window.AdminTickets?.toggleBatchMenu?.();
+                break;
+            case 'tickets-select-all-page':
+                window.AdminTickets?.selectAllCurrentPage?.();
+                break;
             case 'tickets-open-overdue-queue':
                 window.AdminTickets?.openOverdueQueue?.();
                 break;
@@ -2143,8 +2159,23 @@ function bindAdminStudioDelegatedControls() {
     });
 
     document.addEventListener('click', (event) => {
-        const overlay = event.target instanceof HTMLElement && event.target.matches('[data-admin-overlay-close]');
-        if (!overlay || event.target !== overlay) {
+        const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+        if (!target) {
+            return;
+        }
+
+        const overlay = target.closest('[data-admin-overlay-close]');
+        if (!(overlay instanceof HTMLElement)) {
+            return;
+        }
+
+        if (overlay.dataset.adminOverlayClose === 'ticket-reply-modal' && target.closest('.admin-ticket-reply-modal__panel')) {
+            return;
+        }
+        if (overlay.dataset.adminOverlayClose === 'ticket-bulk-process-modal' && target.closest('.admin-ticket-bulk-modal__panel')) {
+            return;
+        }
+        if (overlay.dataset.adminOverlayClose === 'ticket-summary-job-detail-modal' && target.closest('.admin-ticket-summary-job-modal__dialog')) {
             return;
         }
 
@@ -2361,6 +2392,8 @@ function switchSettingsView(viewName) {
     }
 }
 
+window.switchSettingsView = switchSettingsView;
+
 function switchOpsAlertsView(viewName) {
     const opsAlertsModule = document.getElementById('module-ops-alerts');
     if (!opsAlertsModule) return;
@@ -2391,6 +2424,8 @@ function switchOpsAlertsView(viewName) {
         targetView.classList.add('active');
     }
 }
+
+window.switchOpsAlertsView = switchOpsAlertsView;
 
 function initOpsAlertsModule() {
     organizeOpsAlertsModule();

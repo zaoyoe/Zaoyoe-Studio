@@ -91,6 +91,35 @@
         return Number.isFinite(num) ? `${num.toFixed(2).replace(/\.00$/, '')}%` : '0%';
     }
 
+    function showWorkbenchContext(context = {}) {
+        const target = document.getElementById('paymentsWorkbenchContext');
+        if (!target) return false;
+
+        const contextState = window.buildOpsAlertWorkspaceExperimentContextState?.(context, {
+            title: '当前来自实验结果下钻',
+            eyebrow: 'Payments Focus'
+        }) || null;
+
+        if (!contextState) {
+            target.hidden = true;
+            target.innerHTML = '';
+            return false;
+        }
+
+        target.innerHTML = `
+            <div class="admin-workbench-context-note__eyebrow">${escapeHtml(contextState.eyebrow || 'Experiment Context')}</div>
+            <div class="admin-workbench-context-note__title">${escapeHtml(contextState.title || '实验聚焦上下文')}</div>
+            <div class="admin-workbench-context-note__summary">${escapeHtml(contextState.summary || '')}</div>
+            <div class="admin-workbench-context-note__chips">
+                ${(Array.isArray(contextState.chips) ? contextState.chips : []).map((item) => `
+                    <span class="admin-workbench-context-note__chip">${escapeHtml(item.label || '')} · ${escapeHtml(item.value || '')}</span>
+                `).join('')}
+            </div>
+        `;
+        target.hidden = false;
+        return true;
+    }
+
     function getFriendlyErrorMessage(error, fallback = '支付数据刷新失败，请稍后重试。') {
         const message = String(error?.message || '').trim();
         if (!message || message === 'Failed to fetch' || message === 'NetworkError when attempting to fetch resource.') {
@@ -2684,6 +2713,7 @@
         if (state.initializing) return;
         state.initializing = true;
         try {
+            showWorkbenchContext({});
             ensureRangeDefaults();
             state.autoRefreshEnabled = localStorage.getItem('paymentsAutoRefreshEnabled') !== '0';
 
@@ -3145,6 +3175,7 @@
         setExceptionTopicFilter,
         focusExceptionTopic,
         focusOpsAlertQueue,
-        focusOrder
+        focusOrder,
+        showWorkbenchContext
     };
 })();

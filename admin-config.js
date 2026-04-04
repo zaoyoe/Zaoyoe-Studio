@@ -21,6 +21,7 @@ let verifyMonitorState = getDefaultVerifyMonitorState();
 let adminAuditMonitorState = getDefaultAdminAuditMonitorState();
 let verifyMonitorFocusTimeoutId = 0;
 let adminAuditMonitorFocusTimeoutId = 0;
+let affiliateSettingsFocusTimeoutId = 0;
 let paymentChannelAccordionState = {
     mock: false,
     afdian: false,
@@ -1650,8 +1651,38 @@ function applyWorkspaceFocusState(target, selector, timeoutId, fallbackTargetId 
     return true;
 }
 
+function renderVerifyMonitorWorkbenchContext(context = {}) {
+    const target = document.getElementById('verifyMonitorFocusContext');
+    if (!target) return false;
+
+    const state = window.buildOpsAlertWorkspaceExperimentContextState?.(context, {
+        title: '当前来自实验结果下钻',
+        eyebrow: 'Verify Monitor Focus'
+    }) || null;
+
+    if (!state) {
+        setAdminConfigHiddenState(target, true);
+        target.innerHTML = '';
+        return false;
+    }
+
+    target.innerHTML = `
+        <div class="admin-workbench-context-note__eyebrow">${escapeConfigHtml(state.eyebrow || 'Experiment Context')}</div>
+        <div class="admin-workbench-context-note__title">${escapeConfigHtml(state.title || '实验聚焦上下文')}</div>
+        <div class="admin-workbench-context-note__summary">${escapeConfigHtml(state.summary || '')}</div>
+        <div class="admin-workbench-context-note__chips">
+            ${(Array.isArray(state.chips) ? state.chips : []).map((item) => `
+                <span class="admin-workbench-context-note__chip">${escapeConfigHtml(item.label || '')} · ${escapeConfigHtml(item.value || '')}</span>
+            `).join('')}
+        </div>
+    `;
+    setAdminConfigHiddenState(target, false);
+    return true;
+}
+
 function focusVerifyMonitorWorkspace(context = {}) {
     const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
+    renderVerifyMonitorWorkbenchContext(normalizedContext);
     const targetId = String(normalizedContext.targetId || normalizedContext.referenceValue || '').trim();
     const candidates = Array.from(document.querySelectorAll('[data-verify-monitor-target-id], [data-verify-monitor-log-id]'));
     const matched = candidates.find((element) => (
@@ -1697,6 +1728,96 @@ function focusAdminAuditMonitorWorkspace(context = {}) {
     }
 
     return focused;
+}
+
+function resolveAffiliateSettingsFocusTarget(context = {}) {
+    const normalizedFieldId = String(
+        context.fieldId
+        || context.targetId
+        || ''
+    ).trim();
+    const normalizedField = String(
+        context.field
+        || context.settingField
+        || context.focusField
+        || ''
+    ).trim().toLowerCase();
+    const normalizedSection = String(
+        context.section
+        || context.focusSection
+        || ''
+    ).trim().toLowerCase();
+
+    const fieldIdMap = {
+        commission_rate_shop: 'affiliate_setting_commission_rate_shop',
+        shop_commission: 'affiliate_setting_commission_rate_shop',
+        commission_rate_agent: 'affiliate_setting_commission_rate_agent',
+        agent_commission: 'affiliate_setting_commission_rate_agent',
+        registration_reward_points: 'affiliate_setting_registration_reward_points',
+        registration_reward: 'affiliate_setting_registration_reward_points',
+        activation_reward: 'affiliate_setting_registration_reward_points',
+        reward_notice: 'affiliate_setting_reward_notice',
+        legal_disclaimer: 'affiliate_setting_legal_disclaimer',
+        registration_reward_requires_purchase: 'affiliate_setting_registration_reward_requires_purchase',
+        requires_purchase: 'affiliate_setting_registration_reward_requires_purchase',
+        reward_badge_text: 'affiliate_poster_reward_badge_text',
+        poster: 'affiliate_poster_title'
+    };
+    const sectionIdMap = {
+        commission: 'affiliate_setting_commission_rate_shop',
+        reward: 'affiliate_setting_registration_reward_points',
+        notice: 'affiliate_setting_reward_notice',
+        poster: 'affiliate_poster_title'
+    };
+
+    const targetId = normalizedFieldId
+        || fieldIdMap[normalizedField]
+        || sectionIdMap[normalizedSection]
+        || '';
+    const fieldEl = targetId ? document.getElementById(targetId) : null;
+    const cardEl = fieldEl?.closest?.('.config-card') || document.getElementById('settings-view-affiliate');
+
+    return {
+        targetId,
+        fieldEl,
+        cardEl
+    };
+}
+
+function focusAffiliateSettingsContext(context = {}) {
+    const { fieldEl, cardEl } = resolveAffiliateSettingsFocusTarget(context);
+    const target = cardEl instanceof HTMLElement ? cardEl : document.getElementById('settings-view-affiliate');
+
+    document.querySelectorAll('#settings-view-affiliate .analytics-nav-focus-target--active').forEach((element) => {
+        element.classList.remove('analytics-nav-focus-target--active');
+    });
+
+    if (!(target instanceof HTMLElement)) {
+        return false;
+    }
+
+    target.classList.add('analytics-nav-focus-target--active');
+    target.scrollIntoView({ behavior: 'smooth', block: fieldEl ? 'center' : 'start' });
+
+    if (affiliateSettingsFocusTimeoutId) {
+        window.clearTimeout(affiliateSettingsFocusTimeoutId);
+    }
+
+    affiliateSettingsFocusTimeoutId = window.setTimeout(() => {
+        target.classList.remove('analytics-nav-focus-target--active');
+    }, 2600);
+
+    if (fieldEl instanceof HTMLElement && typeof fieldEl.focus === 'function') {
+        window.setTimeout(() => {
+            try {
+                fieldEl.focus({ preventScroll: true });
+            } catch (_) {
+                fieldEl.focus();
+            }
+        }, 90);
+    }
+
+    return true;
 }
 
 function getDefaultCheckinConfig() {
@@ -19586,6 +19707,7 @@ async function loadVerifyMonitor(force = false) {
         status: 'loading',
         message: '正在加载...'
     };
+    renderVerifyMonitorWorkbenchContext({});
     renderVerifyMonitorPanel();
 
     loadVerifyMonitor._loadingPromise = (async () => {
@@ -20369,8 +20491,10 @@ Object.assign(window, {
     submitOpsAlertBatchMuteModal,
     closeOpsAlertCaseComposer,
     submitOpsAlertCaseComposer,
+    renderVerifyMonitorWorkbenchContext,
     focusVerifyMonitorWorkspace,
     focusAdminAuditMonitorWorkspace,
+    focusAffiliateSettingsContext,
     handleShopRiskAction,
     handleShopRiskCaseAction,
     closeShopRiskCaseComposer,
