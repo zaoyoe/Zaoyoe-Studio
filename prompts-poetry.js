@@ -4717,6 +4717,7 @@ let currentModalImageIndex = 0;
 let currentModalImages = [];
 let isCommentMode = false;
 let currentPromptId = null;
+let currentPromptUnlockExperimentAssignment = null;
 const promptModalKeyboardDock = {
     attached: false,
     onViewportChange: null,
@@ -5538,6 +5539,12 @@ function openPromptModal(id) {
         title: item.title,
         textLength: item.prompt ? item.prompt.length : 0
     });
+    trackPromptAnalyticsEvent('prompt_view', {
+        entityId: String(currentPromptId || '').trim(),
+        metadata: buildPromptAnalyticsMetadata(item)
+    }, {
+        eventType: 'engagement'
+    });
 
     const modal = document.getElementById('promptModal');
     const modalInner = modal?.querySelector('.modal-inner');
@@ -5591,6 +5598,9 @@ function openPromptModal(id) {
     unlockBtn.className = 'unlock-btn';
     unlockBtn.disabled = false;
     unlockBtn.onclick = handleUnlockPrompt;
+    delete unlockBtn.dataset.experimentVariant;
+    currentPromptUnlockExperimentAssignment = null;
+    void applyPromptUnlockExperiment(currentPromptId);
 
     // Reset unlock lock for new prompt
     _unlockInProgress = false;
@@ -5844,6 +5854,110 @@ let _unlockInProgress = false;
 let _unlockPrice = 1; // 默认值，将从配置加载
 let _copyInProgress = false; // 防止重复复制操作
 
+function findPromptAnalyticsItem(promptId = currentPromptId) {
+    const normalizedPromptId = String(promptId || '').trim();
+    if (!normalizedPromptId) return null;
+
+    return PROMPTS.find((prompt) => (
+        String(prompt?.supabaseId || '').trim() === normalizedPromptId
+        || String(prompt?.id || '').trim() === normalizedPromptId
+    )) || null;
+}
+
+function buildPromptAnalyticsMetadata(promptItem = null) {
+    const item = promptItem || findPromptAnalyticsItem();
+    const localizedTitle = item ? String(getLocalizedField(item, 'title') || item.title || '').trim() : '';
+    const category = item?.category
+        || item?.prompt_type
+        || (Array.isArray(item?.aiTags) && item.aiTags.length > 0 ? item.aiTags[0] : '')
+        || '';
+
+    return {
+        prompt_id: String(item?.supabaseId || item?.id || currentPromptId || '').trim() || null,
+        local_prompt_id: item?.id ?? null,
+        category: String(category || '').trim() || null,
+        title: localizedTitle || null
+    };
+}
+
+function trackPromptAnalyticsEvent(eventName, payload = {}, options = {}) {
+    const tracker = window.UserEventTracker;
+    if (!tracker || typeof tracker.track !== 'function') {
+        return;
+    }
+
+    const metadata = payload?.metadata && typeof payload.metadata === 'object' && !Array.isArray(payload.metadata)
+        ? payload.metadata
+        : {};
+    const normalizedPayload = {
+        module: payload.module || 'prompt_gallery',
+        entityType: payload.entityType || 'prompt',
+        entityId: payload.entityId || String(currentPromptId || '').trim() || null,
+        eventValue: payload.eventValue ?? null,
+        pointsDelta: payload.pointsDelta ?? null,
+        experimentId: payload.experimentId ?? null,
+        variantId: payload.variantId ?? null,
+        metadata
+    };
+
+    const trackingPromise = options.dedupeKey && typeof tracker.trackOnce === 'function'
+        ? tracker.trackOnce(options.dedupeKey, eventName, normalizedPayload, { eventType: options.eventType || 'engagement' })
+        : tracker.track(eventName, normalizedPayload, { eventType: options.eventType || 'engagement' });
+
+    void Promise.resolve(trackingPromise).catch((error) => {
+        console.debug('[PromptAnalytics] Track failed:', eventName, error?.message || error);
+    });
+}
+
+function getPromptUnlockExperimentTrackingPayload() {
+    const assignment = currentPromptUnlockExperimentAssignment;
+    if (!assignment?.experimentName || !assignment?.variantName) {
+        return {};
+    }
+
+    return {
+        experimentId: assignment.experimentName,
+        variantId: assignment.variantName,
+        metadata: {
+            experiment_name: assignment.experimentName,
+            experiment_variant: assignment.variantName,
+            experiment_placement: 'prompt_unlock_button'
+        }
+    };
+}
+
+async function applyPromptUnlockExperiment(promptId = currentPromptId) {
+    currentPromptUnlockExperimentAssignment = null;
+    const tracker = window.UserEventTracker;
+    const unlockBtn = document.getElementById('unlockPromptBtn');
+    if (!unlockBtn || !tracker || typeof tracker.getExperimentAssignment !== 'function') {
+        return;
+    }
+
+    const normalizedPromptId = String(promptId || '').trim();
+    const assignment = await tracker.getExperimentAssignment('prompt_unlock_cta_copy_v1', {
+        module: 'prompt_gallery',
+        placement: 'prompt_unlock_button',
+        entityType: 'prompt',
+        entityId: normalizedPromptId || null,
+        metadata: {
+            prompt_id: normalizedPromptId || null
+        }
+    });
+
+    if (!unlockBtn || currentPromptId !== promptId || !unlockBtn.classList.contains('unlock-btn')) {
+        return;
+    }
+
+    currentPromptUnlockExperimentAssignment = assignment;
+    if (!assignment || assignment.isControl) {
+        return;
+    }
+
+    unlockBtn.innerHTML = `<i class="fas fa-gem"></i> 解锁全文 · ${_unlockPrice} 积分`;
+    unlockBtn.dataset.experimentVariant = assignment.variantName;
+}
+
 // 从数据库加载解锁价格配置
 async function loadUnlockPrice() {
     try {
@@ -5875,6 +5989,7 @@ async function handleUnlockPrompt() {
 
     const btn = document.getElementById('unlockPromptBtn');
     const originalHTML = btn?.innerHTML || `<i class="fas fa-gem"></i> ${_unlockPrice}`;
+    const promptMetadata = buildPromptAnalyticsMetadata();
 
     try {
         // 立即禁用按钮
@@ -5895,6 +6010,22 @@ async function handleUnlockPrompt() {
             return;
         }
 
+        const unlockExperiment = getPromptUnlockExperimentTrackingPayload();
+
+        trackPromptAnalyticsEvent('unlock_click', {
+            entityId: String(currentPromptId || '').trim(),
+            eventValue: _unlockPrice,
+            experimentId: unlockExperiment.experimentId ?? null,
+            variantId: unlockExperiment.variantId ?? null,
+            metadata: {
+                ...promptMetadata,
+                price: _unlockPrice,
+                ...(unlockExperiment.metadata || {})
+            }
+        }, {
+            eventType: 'conversion'
+        });
+
         // 调用新的 V2 RPC
         console.log('[Unlock] Calling unlock_prompt_v2 for prompt:', currentPromptId);
         const { data, error } = await window.supabaseClient
@@ -5913,6 +6044,21 @@ async function handleUnlockPrompt() {
         if (data?.success) {
             if (data.already_unlocked) {
                 console.log('[Unlock] Already unlocked, just showing');
+            } else {
+                trackPromptAnalyticsEvent('unlock_success', {
+                    entityId: String(currentPromptId || '').trim(),
+                    eventValue: _unlockPrice,
+                    pointsDelta: -Math.abs(Number(_unlockPrice) || 0),
+                    experimentId: unlockExperiment.experimentId ?? null,
+                    variantId: unlockExperiment.variantId ?? null,
+                    metadata: {
+                        ...promptMetadata,
+                        points_spent: _unlockPrice,
+                        ...(unlockExperiment.metadata || {})
+                    }
+                }, {
+                    eventType: 'conversion'
+                });
             }
             setPromptUnlocked();
             console.log('[Unlock] Success! New Balance:', data.new_balance);
@@ -5922,9 +6068,19 @@ async function handleUnlockPrompt() {
             // If insufficient points, open wallet modal for recharging
             if (errMsg.includes('积分不足') || errMsg.includes('Insufficient')) {
                 if (typeof WalletModal !== 'undefined' && WalletModal.open) {
-                    WalletModal.open();
+                    WalletModal.open('recharge', {
+                        entry: 'unlock_insufficient_points',
+                        sourceModule: 'prompt_gallery',
+                        promptId: String(currentPromptId || '').trim(),
+                        category: promptMetadata.category || null
+                    });
                 } else if (window.WalletModal && window.WalletModal.open) {
-                    window.WalletModal.open();
+                    window.WalletModal.open('recharge', {
+                        entry: 'unlock_insufficient_points',
+                        sourceModule: 'prompt_gallery',
+                        promptId: String(currentPromptId || '').trim(),
+                        category: promptMetadata.category || null
+                    });
                 }
             }
             if (btn) {

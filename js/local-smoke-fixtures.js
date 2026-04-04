@@ -1374,6 +1374,20 @@
                 delivered_at: '2026-03-31T08:42:40+08:00'
             }
         ],
+        abExperiments: [
+            {
+                id: 'exp-smoke-analytics-1',
+                name: 'Analytics Funnel Copy',
+                description: '本地 smoke 用于校验 analytics AI 分栏与实验卡片渲染。',
+                status: 'running',
+                target_metric: 'unlock_success',
+                variants: [
+                    { name: 'control', weight: 50 },
+                    { name: 'variant-b', weight: 50 }
+                ],
+                created_at: '2026-03-31T08:30:00+08:00'
+            }
+        ],
         opsAlertJobAttempts: [
             {
                 job_id: 'ticket-summary-job-retry',
@@ -1402,7 +1416,13 @@
         ],
         opsAlertCases: [],
         opsAlertCaseEvents: [],
-        results: []
+        results: [],
+        analyticsRealtimeChannelsCreated: 0,
+        analyticsRealtimeChannelsRemoved: 0,
+        analyticsReloadCalls: [],
+        analyticsRpcLastParams: {},
+        analyticsRpcCallCount: 0,
+        runtimeErrors: []
     };
 
     function buildHomepageConfigRows() {
@@ -2216,6 +2236,33 @@
         if (typeof globalScope.updateNotificationBadges !== 'function') {
             globalScope.updateNotificationBadges = function updateNotificationBadgesStub() {};
         }
+
+        if (globalScope.__localSmokeRuntimeErrorBound__ !== true) {
+            globalScope.__localSmokeRuntimeErrorBound__ = true;
+            const originalConsoleError = globalScope.console?.error?.bind(globalScope.console);
+            const originalConsoleWarn = globalScope.console?.warn?.bind(globalScope.console);
+
+            if (globalScope.console) {
+                globalScope.console.error = (...args) => {
+                    smokeState.runtimeErrors.push(`console.error:${args.map((item) => describeSmokeLogArg(item)).join(' ').slice(0, 360)}`);
+                    return originalConsoleError?.(...args);
+                };
+                globalScope.console.warn = (...args) => {
+                    smokeState.runtimeErrors.push(`console.warn:${args.map((item) => describeSmokeLogArg(item)).join(' ').slice(0, 360)}`);
+                    return originalConsoleWarn?.(...args);
+                };
+            }
+
+            globalScope.addEventListener('error', (event) => {
+                const message = event?.error?.message || event?.message || 'Unknown runtime error';
+                smokeState.runtimeErrors.push(`error:${String(message)}`);
+            });
+
+            globalScope.addEventListener('unhandledrejection', (event) => {
+                const message = event?.reason?.message || event?.reason || 'Unhandled rejection';
+                smokeState.runtimeErrors.push(`rejection:${String(message)}`);
+            });
+        }
     }
 
     function createResponse(payload = {}, status = 200) {
@@ -2225,6 +2272,25 @@
                 'Content-Type': 'application/json; charset=utf-8'
             }
         });
+    }
+
+    function describeSmokeLogArg(value) {
+        if (value instanceof Error) {
+            return value.stack || `${value.name}: ${value.message}`;
+        }
+        if (value && typeof value === 'object') {
+            const message = String(value.message || value.error_description || value.error || '').trim();
+            const code = String(value.code || value.statusCode || value.status || '').trim();
+            if (message || code) {
+                return `${code ? `${code} ` : ''}${message}`.trim();
+            }
+            try {
+                return JSON.stringify(value);
+            } catch (_) {
+                return '[object]';
+            }
+        }
+        return String(value);
     }
 
     function normalizeSmokeSite(site) {
@@ -2264,6 +2330,7 @@
             prompts: 'prompts',
             prompt_unlocks: 'promptUnlocks',
             prompt_comments: 'promptComments',
+            ab_experiments: 'abExperiments',
             blocked_users: 'blockedUsers',
             block_history: 'blockHistory',
             ops_alert_jobs: 'opsAlertJobs',
@@ -3643,9 +3710,330 @@
         return proxy;
     }
 
+    function clampSmokeAnalyticsDays(value, fallback = 7) {
+        const parsed = Number.parseInt(String(value ?? ''), 10);
+        if (!Number.isFinite(parsed) || parsed <= 0) {
+            return fallback;
+        }
+        return Math.min(365, Math.max(1, parsed));
+    }
+
+    function normalizeSmokeAnalyticsSite(site = '') {
+        const normalized = String(site || '').trim().toLowerCase();
+        return ['cn', 'intl'].includes(normalized) ? normalized : 'all';
+    }
+
+    function roundSmokeMetric(value, digits = 0) {
+        const precision = Math.max(0, Number(digits) || 0);
+        const factor = 10 ** precision;
+        return Math.round((Number(value) || 0) * factor) / factor;
+    }
+
+    function buildSmokeAnalyticsDateSeries(days = 7) {
+        const safeDays = clampSmokeAnalyticsDays(days, 7);
+        const rows = [];
+
+        for (let index = 0; index < safeDays; index += 1) {
+            const date = new Date(now.getTime());
+            date.setUTCDate(date.getUTCDate() - (safeDays - index - 1));
+            rows.push(date.toISOString().slice(0, 10));
+        }
+
+        return rows;
+    }
+
+    function getSmokeAnalyticsProfile(site = 'all') {
+        const profiles = {
+            all: {
+                key: 'all',
+                label: '全站',
+                tag: 'ALL',
+                dau: 214,
+                mau: 1486,
+                newUsersWeek: 76,
+                totalPoints: 36880,
+                totalComments: 648,
+                dauGrowth: 18,
+                newUsersGrowth: 11,
+                commentsGrowth: 24,
+                pointsIn: 2860,
+                pointsOut: 1980,
+                velocity: 12.6
+            },
+            cn: {
+                key: 'cn',
+                label: 'CN',
+                tag: 'CN',
+                dau: 132,
+                mau: 918,
+                newUsersWeek: 44,
+                totalPoints: 22840,
+                totalComments: 406,
+                dauGrowth: 15,
+                newUsersGrowth: 9,
+                commentsGrowth: 19,
+                pointsIn: 1710,
+                pointsOut: 1160,
+                velocity: 11.3
+            },
+            intl: {
+                key: 'intl',
+                label: 'INTL',
+                tag: 'INTL',
+                dau: 82,
+                mau: 568,
+                newUsersWeek: 26,
+                totalPoints: 14040,
+                totalComments: 242,
+                dauGrowth: 23,
+                newUsersGrowth: 15,
+                commentsGrowth: 31,
+                pointsIn: 1150,
+                pointsOut: 820,
+                velocity: 14.7
+            }
+        };
+
+        return profiles[normalizeSmokeAnalyticsSite(site)] || profiles.all;
+    }
+
+    function buildSmokeAnalyticsOverview(site = 'all') {
+        const profile = getSmokeAnalyticsProfile(site);
+        return {
+            dau: profile.dau,
+            mau: profile.mau,
+            new_users_today: Math.max(3, Math.round(profile.newUsersWeek / 7)),
+            new_users_week: profile.newUsersWeek,
+            total_points: profile.totalPoints,
+            total_comments: profile.totalComments,
+            dau_growth: profile.dauGrowth,
+            new_users_growth: profile.newUsersGrowth,
+            comments_growth: profile.commentsGrowth
+        };
+    }
+
+    function buildSmokeAnalyticsUserTrend(days = 7, site = 'all') {
+        const profile = getSmokeAnalyticsProfile(site);
+        return buildSmokeAnalyticsDateSeries(days).map((statDate, index) => ({
+            stat_date: statDate,
+            new_users: Math.max(2, Math.round(profile.newUsersWeek / 7) + (index % 4) - 1),
+            active_users: Math.max(12, Math.round(profile.dau * (0.8 + (index % 5) * 0.04)))
+        }));
+    }
+
+    function buildSmokeAnalyticsContentTrend(days = 7, site = 'all') {
+        const profile = getSmokeAnalyticsProfile(site);
+        return buildSmokeAnalyticsDateSeries(days).map((statDate, index) => ({
+            stat_date: statDate,
+            comments: Math.max(4, Math.round(profile.totalComments / 24) + index),
+            unlocks: Math.max(3, Math.round(profile.dau / 6) + (index % 3) * 2),
+            likes: Math.max(2, Math.round(profile.totalComments / 18) + (index % 5))
+        }));
+    }
+
+    function buildSmokeAnalyticsRevenueTrend(days = 7, site = 'all') {
+        const profile = getSmokeAnalyticsProfile(site);
+        return buildSmokeAnalyticsDateSeries(days).map((statDate, index) => ({
+            stat_date: statDate,
+            points_in: Math.max(60, Math.round(profile.pointsIn / 7) + index * 8),
+            points_out: Math.max(40, Math.round(profile.pointsOut / 7) + index * 6),
+            redemptions: Math.max(2, 8 + (index % 4))
+        }));
+    }
+
+    function buildSmokeAnalyticsChannelBreakdown(site = 'all', days = 7) {
+        const profile = getSmokeAnalyticsProfile(site);
+        const windowFactor = Math.max(1, clampSmokeAnalyticsDays(days, 7) / 7);
+        return [
+            { channel: `${profile.tag} 搜索`, batch_count: 2, total_codes: 28, used_codes: 20, total_points: Math.round(420 * windowFactor), redemption_rate: 71.4 },
+            { channel: `${profile.tag} 社群`, batch_count: 1, total_codes: 18, used_codes: 14, total_points: Math.round(280 * windowFactor), redemption_rate: 77.8 },
+            { channel: `${profile.tag} 活动`, batch_count: 1, total_codes: 12, used_codes: 8, total_points: Math.round(160 * windowFactor), redemption_rate: 66.7 }
+        ];
+    }
+
+    function buildSmokeAnalyticsTopContent(site = 'all', days = 7, limit = 10) {
+        const profile = getSmokeAnalyticsProfile(site);
+        return [
+            { prompt_id: 1001, title: `${profile.tag} 爆款 Prompt ${days}天`, unlock_count: 42, comment_count: 18, score: 102 },
+            { prompt_id: 1002, title: `${profile.tag} 高转化模板库`, unlock_count: 35, comment_count: 15, score: 85 },
+            { prompt_id: 1003, title: `${profile.tag} 验证脚本合集`, unlock_count: 27, comment_count: 11, score: 65 }
+        ].slice(0, Math.max(1, Number(limit) || 10));
+    }
+
+    function buildSmokeAnalyticsSummary(site = 'all', days = 7) {
+        return {
+            overview: buildSmokeAnalyticsOverview(site),
+            user_trend: buildSmokeAnalyticsUserTrend(days, site).slice(-7),
+            channel_breakdown: buildSmokeAnalyticsChannelBreakdown(site, days),
+            top_content: buildSmokeAnalyticsTopContent(site, days, 5)
+        };
+    }
+
+    function buildSmokeAnalyticsPointsHealth(site = 'all') {
+        const profile = getSmokeAnalyticsProfile(site);
+        return {
+            total_circulation: profile.totalPoints,
+            weekly_income: profile.pointsIn,
+            weekly_spend: profile.pointsOut,
+            monthly_spend: Math.round(profile.pointsOut * 4.1),
+            velocity: profile.velocity,
+            hoarding_rate: profile.key === 'intl' ? 28.4 : 34.2,
+            active_holders: profile.key === 'all' ? 216 : (profile.key === 'cn' ? 138 : 78),
+            hoarding_users: profile.key === 'all' ? 74 : (profile.key === 'cn' ? 49 : 25)
+        };
+    }
+
+    function buildSmokeAnalyticsPointsFlow(site = 'all', days = 7) {
+        const profile = getSmokeAnalyticsProfile(site);
+        const scale = Math.max(1, clampSmokeAnalyticsDays(days, 7) / 7);
+        return [
+            { source_node: '充值', target_node: '用户余额', value: roundSmokeMetric(profile.pointsIn * 0.58 * scale, 1) },
+            { source_node: '兑换码', target_node: '用户余额', value: roundSmokeMetric(profile.pointsIn * 0.42 * scale, 1) },
+            { source_node: '用户余额', target_node: '内容解锁', value: roundSmokeMetric(profile.pointsOut * 0.46 * scale, 1) },
+            { source_node: '用户余额', target_node: '验证服务', value: roundSmokeMetric(profile.pointsOut * 0.32 * scale, 1) },
+            { source_node: '用户余额', target_node: '商城消费', value: roundSmokeMetric(profile.pointsOut * 0.22 * scale, 1) }
+        ];
+    }
+
+    function buildSmokeAnalyticsPointsLeaderboard(site = 'all', limit = 10) {
+        const profile = getSmokeAnalyticsProfile(site);
+        return [
+            { user_id: `${profile.key}-user-1`, username: `${profile.tag} 头号玩家`, avatar_url: '', balance: 1880, total_spent: 1260 },
+            { user_id: `${profile.key}-user-2`, username: `${profile.tag} 运营样本`, avatar_url: '', balance: 1420, total_spent: 940 },
+            { user_id: `${profile.key}-user-3`, username: `${profile.tag} 验证达人`, avatar_url: '', balance: 980, total_spent: 760 }
+        ].slice(0, Math.max(1, Number(limit) || 10));
+    }
+
+    function buildSmokeAnalyticsPointsDistribution(site = 'all') {
+        const profile = getSmokeAnalyticsProfile(site);
+        const factor = profile.key === 'all' ? 2 : 1;
+        return [
+            { range_label: '0-99', user_count: 18 * factor },
+            { range_label: '100-499', user_count: 26 * factor },
+            { range_label: '500-999', user_count: 14 * factor },
+            { range_label: '1000+', user_count: 7 * factor }
+        ];
+    }
+
+    function buildSmokeAnalyticsRedemptionFunnel(site = 'all', days = 7) {
+        const scale = Math.max(1, clampSmokeAnalyticsDays(days, 7) / 7);
+        const generated = Math.round(54 * scale);
+        const redeemed = Math.round(generated * 0.72);
+        const users = Math.round(redeemed * 0.82);
+        return [
+            { step: '已生成', count: generated, conversion_rate: 100 },
+            { step: '已核销', count: redeemed, conversion_rate: roundSmokeMetric((redeemed / generated) * 100, 2) },
+            { step: '核销人数', count: users, conversion_rate: roundSmokeMetric((users / redeemed) * 100, 2) }
+        ];
+    }
+
+    function buildSmokeAnalyticsHeatmap(site = 'all') {
+        const profile = getSmokeAnalyticsProfile(site);
+        const base = profile.key === 'intl' ? 4 : 6;
+        return [
+            { day_of_week: 1, hour_of_day: 10, activity_count: base + 4 },
+            { day_of_week: 2, hour_of_day: 14, activity_count: base + 6 },
+            { day_of_week: 3, hour_of_day: 20, activity_count: base + 3 },
+            { day_of_week: 5, hour_of_day: 11, activity_count: base + 5 },
+            { day_of_week: 6, hour_of_day: 21, activity_count: base + 7 }
+        ];
+    }
+
+    function buildSmokeAnalyticsContributors(site = 'all', limit = 10) {
+        const profile = getSmokeAnalyticsProfile(site);
+        return [
+            { user_id: `${profile.key}-contrib-1`, username: `${profile.tag} 社区主理人`, avatar_url: '', comment_count: 24, message_count: 9, total_likes_received: 36, contribution_score: 88 },
+            { user_id: `${profile.key}-contrib-2`, username: `${profile.tag} 高赞作者`, avatar_url: '', comment_count: 18, message_count: 5, total_likes_received: 28, contribution_score: 71 }
+        ].slice(0, Math.max(1, Number(limit) || 10));
+    }
+
+    function buildSmokeAnalyticsCommunityTrend(days = 7, site = 'all') {
+        const profile = getSmokeAnalyticsProfile(site);
+        return buildSmokeAnalyticsDateSeries(days).map((statDate, index) => ({
+            stat_date: statDate,
+            messages: Math.max(1, Math.round(profile.dau / 18) + (index % 3)),
+            comments: Math.max(2, Math.round(profile.totalComments / 30) + index),
+            likes: Math.max(2, Math.round(profile.totalComments / 20) + (index % 4))
+        }));
+    }
+
+    function buildSmokeAnalyticsConversionFunnel(site = 'all', days = 7) {
+        const scale = Math.max(1, clampSmokeAnalyticsDays(days, 7) / 7);
+        const visitors = Math.round(120 * scale);
+        const viewers = Math.round(visitors * 0.68);
+        const unlockers = Math.round(visitors * 0.34);
+        return [
+            { step_name: '访问用户', step_order: 1, user_count: visitors, conversion_rate: 100, is_proxy_metric: true },
+            { step_name: '内容浏览', step_order: 2, user_count: viewers, conversion_rate: roundSmokeMetric((viewers / visitors) * 100, 1), is_proxy_metric: true },
+            { step_name: '内容解锁', step_order: 3, user_count: unlockers, conversion_rate: roundSmokeMetric((unlockers / visitors) * 100, 1), is_proxy_metric: true }
+        ];
+    }
+
+    function buildSmokeAnalyticsCohort(site = 'all') {
+        const profile = getSmokeAnalyticsProfile(site);
+        const offset = profile.key === 'intl' ? 4 : 0;
+        return [
+            { cohort_week: '03/03', week_0: 100, week_1: 54 - offset, week_2: 41 - offset, week_3: 35 - offset, week_4: 28 - offset },
+            { cohort_week: '03/10', week_0: 100, week_1: 58 - offset, week_2: 43 - offset, week_3: 31 - offset, week_4: 26 - offset },
+            { cohort_week: '03/17', week_0: 100, week_1: 61 - offset, week_2: 46 - offset, week_3: 33 - offset, week_4: 0 },
+            { cohort_week: '03/24', week_0: 100, week_1: 64 - offset, week_2: 0, week_3: 0, week_4: 0 }
+        ];
+    }
+
+    function buildSmokeAnalyticsGeo(site = 'all') {
+        if (normalizeSmokeAnalyticsSite(site) === 'intl') {
+            return [
+                { region: 'North America', user_count: 36 },
+                { region: 'Europe', user_count: 24 },
+                { region: 'Asia Pacific', user_count: 18 }
+            ];
+        }
+
+        if (normalizeSmokeAnalyticsSite(site) === 'cn') {
+            return [
+                { region: '华东', user_count: 42 },
+                { region: '华南', user_count: 28 },
+                { region: '华北', user_count: 19 }
+            ];
+        }
+
+        return [
+            { region: '华东', user_count: 42 },
+            { region: 'North America', user_count: 36 },
+            { region: 'Europe', user_count: 24 },
+            { region: '华南', user_count: 28 }
+        ];
+    }
+
+    function buildSmokeExperimentResults() {
+        return [
+            { variant_name: 'control', user_count: 120, conversion_count: 31, conversion_rate: 25.8 },
+            { variant_name: 'variant-b', user_count: 118, conversion_count: 39, conversion_rate: 33.1 }
+        ];
+    }
+
+    function buildSmokeExperimentResultsV2() {
+        return [
+            { dimension_type: 'overall', dimension_value: 'all', variant_name: 'control', assigned_user_count: 120, exposure_user_count: 96, conversion_count: 31, conversion_rate: 32.3 },
+            { dimension_type: 'overall', dimension_value: 'all', variant_name: 'variant-b', assigned_user_count: 118, exposure_user_count: 102, conversion_count: 39, conversion_rate: 38.2 },
+            { dimension_type: 'site', dimension_value: 'cn', variant_name: 'control', assigned_user_count: 58, exposure_user_count: 58, conversion_count: 18, conversion_rate: 31.0 },
+            { dimension_type: 'site', dimension_value: 'cn', variant_name: 'variant-b', assigned_user_count: 61, exposure_user_count: 61, conversion_count: 25, conversion_rate: 41.0 },
+            { dimension_type: 'site', dimension_value: 'intl', variant_name: 'control', assigned_user_count: 38, exposure_user_count: 38, conversion_count: 13, conversion_rate: 34.2 },
+            { dimension_type: 'site', dimension_value: 'intl', variant_name: 'variant-b', assigned_user_count: 41, exposure_user_count: 41, conversion_count: 14, conversion_rate: 34.1 },
+            { dimension_type: 'placement', dimension_value: 'prompt_unlock_button', variant_name: 'control', assigned_user_count: 54, exposure_user_count: 54, conversion_count: 17, conversion_rate: 31.5 },
+            { dimension_type: 'placement', dimension_value: 'prompt_unlock_button', variant_name: 'variant-b', assigned_user_count: 57, exposure_user_count: 57, conversion_count: 23, conversion_rate: 40.4 },
+            { dimension_type: 'placement', dimension_value: 'wallet_custom_recharge_button', variant_name: 'control', assigned_user_count: 42, exposure_user_count: 42, conversion_count: 14, conversion_rate: 33.3 },
+            { dimension_type: 'placement', dimension_value: 'wallet_custom_recharge_button', variant_name: 'variant-b', assigned_user_count: 45, exposure_user_count: 45, conversion_count: 16, conversion_rate: 35.6 }
+        ];
+    }
+
     function installSupabaseStub() {
-        const fakeClient = {
-            auth: {
+        const fakeClient = (globalScope.supabaseClient && typeof globalScope.supabaseClient === 'object')
+            ? globalScope.supabaseClient
+            : {};
+
+        fakeClient.__localSmokeClient = true;
+        fakeClient.auth = {
                 async getUser() {
                     return { data: { user: deepClone(smokeState.user) }, error: null };
                 },
@@ -3664,8 +4052,14 @@
                 async signOut() {
                     return { error: null };
                 }
-            },
-            async rpc(name) {
+            };
+        fakeClient.rpc = async function rpc(name, params = {}) {
+                smokeState.analyticsRpcCallCount += 1;
+                const safeParams = params && typeof params === 'object' ? params : {};
+                if (/^get_(overview_stats|user_trend|content_trend|revenue_trend|content_top|ai_summary_data|points_health|points_flow|points_leaderboard|points_distribution|redemption_funnel|activity_heatmap|top_contributors|community_stats|conversion_funnel|retention_cohort|geo_distribution_by_site)/.test(String(name || ''))) {
+                    smokeState.analyticsRpcLastParams[name] = deepClone(safeParams);
+                }
+
                 if (name === 'get_user_permissions') {
                     return {
                         data: {
@@ -3689,9 +4083,8 @@
                 }
 
                 if (name === 'fn_get_homepage_config') {
-                    const params = arguments[1] && typeof arguments[1] === 'object' ? arguments[1] : {};
-                    const site = normalizeSmokeSite(params.p_site);
-                    const includeHidden = params.p_include_hidden === true;
+                    const site = normalizeSmokeSite(safeParams.p_site);
+                    const includeHidden = safeParams.p_include_hidden === true;
                     const rows = getTableRows('homepage_config')
                         .filter((row) => row.site === site)
                         .filter((row) => includeHidden || row.is_visible !== false)
@@ -3707,13 +4100,173 @@
                     };
                 }
 
+                if (name === 'get_overview_stats' || name === 'get_overview_stats_with_trend') {
+                    return {
+                        data: deepClone(buildSmokeAnalyticsOverview(safeParams.p_site)),
+                        error: null
+                    };
+                }
+
+                if (name === 'get_user_trend') {
+                    return {
+                        data: deepClone(buildSmokeAnalyticsUserTrend(safeParams.p_days, safeParams.p_site)),
+                        error: null
+                    };
+                }
+
+                if (name === 'get_content_trend') {
+                    return {
+                        data: deepClone(buildSmokeAnalyticsContentTrend(safeParams.p_days, safeParams.p_site)),
+                        error: null
+                    };
+                }
+
+                if (name === 'get_revenue_trend') {
+                    return {
+                        data: deepClone(buildSmokeAnalyticsRevenueTrend(safeParams.p_days, safeParams.p_site)),
+                        error: null
+                    };
+                }
+
+                if (name === 'get_channel_breakdown') {
+                    return {
+                        data: deepClone(buildSmokeAnalyticsChannelBreakdown(safeParams.p_site, safeParams.p_days)),
+                        error: null
+                    };
+                }
+
+                if (name === 'get_content_top') {
+                    return {
+                        data: deepClone(buildSmokeAnalyticsTopContent(safeParams.p_site, clampSmokeAnalyticsDays(safeParams.p_days, 7), safeParams.p_limit)),
+                        error: null
+                    };
+                }
+
+                if (name === 'get_ai_summary_data') {
+                    return {
+                        data: deepClone(buildSmokeAnalyticsSummary(safeParams.p_site, safeParams.p_days)),
+                        error: null
+                    };
+                }
+
+                if (name === 'get_points_health') {
+                    return {
+                        data: deepClone(buildSmokeAnalyticsPointsHealth(safeParams.p_site)),
+                        error: null
+                    };
+                }
+
+                if (name === 'get_points_flow') {
+                    return {
+                        data: deepClone(buildSmokeAnalyticsPointsFlow(safeParams.p_site, safeParams.p_days)),
+                        error: null
+                    };
+                }
+
+                if (name === 'get_points_leaderboard') {
+                    return {
+                        data: deepClone(buildSmokeAnalyticsPointsLeaderboard(safeParams.p_site, safeParams.p_limit)),
+                        error: null
+                    };
+                }
+
+                if (name === 'get_points_distribution') {
+                    return {
+                        data: deepClone(buildSmokeAnalyticsPointsDistribution(safeParams.p_site)),
+                        error: null
+                    };
+                }
+
+                if (name === 'get_redemption_funnel') {
+                    return {
+                        data: deepClone(buildSmokeAnalyticsRedemptionFunnel(safeParams.p_site, safeParams.p_days)),
+                        error: null
+                    };
+                }
+
+                if (name === 'get_activity_heatmap') {
+                    return {
+                        data: deepClone(buildSmokeAnalyticsHeatmap(safeParams.p_site)),
+                        error: null
+                    };
+                }
+
+                if (name === 'get_top_contributors') {
+                    return {
+                        data: deepClone(buildSmokeAnalyticsContributors(safeParams.p_site, safeParams.p_limit)),
+                        error: null
+                    };
+                }
+
+                if (name === 'get_community_stats') {
+                    return {
+                        data: deepClone(buildSmokeAnalyticsCommunityTrend(safeParams.p_days, safeParams.p_site)),
+                        error: null
+                    };
+                }
+
+                if (name === 'get_conversion_funnel') {
+                    return {
+                        data: deepClone(buildSmokeAnalyticsConversionFunnel(safeParams.p_site, safeParams.p_days)),
+                        error: null
+                    };
+                }
+
+                if (name === 'get_retention_cohort') {
+                    return {
+                        data: deepClone(buildSmokeAnalyticsCohort(safeParams.p_site)),
+                        error: null
+                    };
+                }
+
+                if (name === 'get_geo_distribution_by_site') {
+                    return {
+                        data: deepClone(buildSmokeAnalyticsGeo(safeParams.p_site)),
+                        error: null
+                    };
+                }
+
+                if (name === 'track_event') {
+                    return {
+                        data: { success: true, event: safeParams.p_event_name || 'page_view' },
+                        error: null
+                    };
+                }
+
+                if (name === 'get_experiment_variant') {
+                    return {
+                        data: { variant_name: 'control', assigned: true },
+                        error: null
+                    };
+                }
+
+                if (name === 'get_experiment_results') {
+                    return {
+                        data: deepClone(buildSmokeExperimentResults()),
+                        error: null
+                    };
+                }
+
+                if (name === 'get_experiment_results_v2') {
+                    return {
+                        data: deepClone(buildSmokeExperimentResultsV2()),
+                        error: null
+                    };
+                }
+
                 return { data: null, error: null };
-            },
-            from(table) {
+            };
+        fakeClient.from = function from(table) {
                 return createQueryBuilder(String(table || '').trim());
-            },
-            channel() {
+            };
+        fakeClient.channel = function channel(name = '') {
+                const channelName = String(name || '').trim();
+                if (channelName.startsWith('analytics-')) {
+                    smokeState.analyticsRealtimeChannelsCreated += 1;
+                }
+
                 return {
+                    __smokeName: channelName,
                     on() {
                         return this;
                     },
@@ -3722,11 +4275,13 @@
                     },
                     unsubscribe() {}
                 };
-            },
-            removeChannel() {
+            };
+        fakeClient.removeChannel = function removeChannel(channel) {
+                if (String(channel?.__smokeName || '').startsWith('analytics-')) {
+                    smokeState.analyticsRealtimeChannelsRemoved += 1;
+                }
                 return Promise.resolve();
-            }
-        };
+            };
 
         globalScope.supabaseClient = fakeClient;
         globalScope.AdminAccess = {
@@ -4328,6 +4883,266 @@
 
         await runUserModalSmoke();
         await runExperimentModalSmoke();
+    }
+
+    async function runAdminAnalyticsSmoke() {
+        async function runAnalyticsSmokeStep(label, task, timeoutMs = 20000) {
+            let timerId = 0;
+            try {
+                return await Promise.race([
+                    Promise.resolve().then(task),
+                    new Promise((_, reject) => {
+                        timerId = globalScope.setTimeout(() => {
+                            reject(new Error(`${label} 超时`));
+                        }, timeoutMs);
+                    })
+                ]);
+            } finally {
+                if (timerId) {
+                    globalScope.clearTimeout(timerId);
+                }
+            }
+        }
+
+        await waitFor(
+            () => globalScope.switchModule && globalScope.switchAnalyticsTab && globalScope.AdminSiteFilter?.select && typeof globalScope.reloadAnalyticsDashboard === 'function' && typeof globalScope.initAnalyticsModule === 'function',
+            { message: 'Analytics 模块入口未加载完成' }
+        );
+        await waitFor(
+            () => globalScope.adminStudioAccessGranted === true || globalScope.isAdmin === true || globalScope.isSuperAdmin === true,
+            { message: 'Analytics smoke 等待后台访问态超时', timeoutMs: 20000 }
+        );
+
+        globalScope.AdminSiteFilter.select('cn');
+        await nextFrame();
+        await sleep(80);
+
+        if (typeof globalScope.reloadAnalyticsDashboard === 'function' && globalScope.reloadAnalyticsDashboard.__smokeWrapped !== true) {
+            const originalReload = globalScope.reloadAnalyticsDashboard;
+            const wrappedReload = async function wrappedReload(...args) {
+                const options = args[0] && typeof args[0] === 'object' ? args[0] : {};
+                smokeState.analyticsReloadCalls.push({
+                    reason: String(options.reason || 'unknown'),
+                    site: normalizeSmokeAnalyticsSite(globalScope.AdminSiteFilter?.getSiteFilter?.() || 'all'),
+                    timestamp: new Date().toISOString()
+                });
+                return originalReload.apply(this, args);
+            };
+            wrappedReload.__smokeWrapped = true;
+            globalScope.reloadAnalyticsDashboard = wrappedReload;
+        }
+
+        await waitFor(
+            () => {
+                globalScope.switchModule?.('analytics');
+                return document.getElementById('module-analytics')?.classList.contains('active')
+                    ? document.getElementById('module-analytics')
+                    : null;
+            },
+            { message: 'Analytics 模块未激活', timeoutMs: 20000, intervalMs: 120 }
+        );
+        await runAnalyticsSmokeStep('Analytics 初始化', () => globalScope.initAnalyticsModule(), 25000);
+        recordResult(
+            'Analytics 初始化流程已完成',
+            true,
+            `reloads=${smokeState.analyticsReloadCalls.length}`
+        );
+        await runAnalyticsSmokeStep(
+            'Analytics 首次刷新',
+            () => globalScope.reloadAnalyticsDashboard({ reason: 'smoke-analytics-initial', includeExperiments: false }),
+            25000
+        );
+        recordResult(
+            'Analytics 首次刷新已完成',
+            true,
+            `reloads=${smokeState.analyticsReloadCalls.length}`
+        );
+
+        let kpiValue = '';
+        try {
+            kpiValue = await waitFor(
+                () => {
+                    const value = document.getElementById('kpiDauValue')?.textContent || '';
+                    return value.trim() && value.trim() !== '--' ? value.trim() : null;
+                },
+                { message: 'Analytics 概览 KPI 未完成渲染', timeoutMs: 20000 }
+            );
+        } catch (_) {
+            throw new Error(
+                `Analytics 概览 KPI 未完成渲染 (active=${document.getElementById('module-analytics')?.classList.contains('active') === true ? 'yes' : 'no'}, dau=${String(document.getElementById('kpiDauValue')?.textContent || '').trim() || '<empty>'}, reloads=${smokeState.analyticsReloadCalls.length}, rpcCalls=${smokeState.analyticsRpcCallCount}, smokeClient=${globalScope.supabaseClient?.__localSmokeClient === true ? 'yes' : 'no'}, overviewSite=${smokeState.analyticsRpcLastParams.get_overview_stats_with_trend?.p_site || '<missing>'}, topDays=${smokeState.analyticsRpcLastParams.get_content_top?.p_days || '<missing>'}, runtime=${smokeState.runtimeErrors.slice(-6).join(' | ') || '<none>'})`
+            );
+        }
+        recordResult('Analytics 概览 KPI 已渲染', /^\d/.test(kpiValue), `dau=${kpiValue}`);
+
+        const topContentItems = await waitFor(
+            () => {
+                const items = Array.from(document.querySelectorAll('#topContentList .top-content-item'));
+                return items.length ? items : null;
+            },
+            { message: 'Analytics 热门内容未渲染', timeoutMs: 20000 }
+        );
+        recordResult(
+            'Analytics 热门内容列表已渲染',
+            topContentItems.length >= 2,
+            String(topContentItems[0]?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 64)
+        );
+
+        const proxyHint = await waitFor(
+            () => document.querySelector('#conversionFunnel .analytics-proxy-hint'),
+            { message: 'Analytics 代理漏斗提示未出现', timeoutMs: 20000 }
+        );
+        recordResult(
+            'Analytics 代理漏斗会显示口径提示',
+            /代理口径/.test(String(proxyHint?.textContent || '')),
+            String(proxyHint?.textContent || '').trim().slice(0, 64)
+        );
+
+        const reloadCountBeforeRange = smokeState.analyticsReloadCalls.length;
+        const rangeTrigger = document.querySelector('[data-admin-action="analytics-toggle-range-dropdown"]');
+        const presetThirtyDays = document.querySelector('.preset-btn[data-range="30"][data-admin-action="analytics-select-preset-range"]');
+        if (rangeTrigger instanceof HTMLElement && presetThirtyDays instanceof HTMLElement) {
+            rangeTrigger.click();
+            await sleep(80);
+            presetThirtyDays.click();
+            await waitFor(
+                () => String(document.getElementById('dateRangeLabel')?.textContent || '').includes('30'),
+                { message: 'Analytics 日期标签未切到 30 天' }
+            );
+            await waitFor(
+                () => Number(smokeState.analyticsRpcLastParams.get_content_top?.p_days) === 30,
+                { message: 'Analytics 热门内容 RPC 未收到 30 天窗口参数' }
+            );
+
+            const topContentText = String(document.getElementById('topContentList')?.textContent || '');
+            const topContentMeta = String(document.getElementById('topContentMeta')?.textContent || '').trim();
+            recordResult(
+                'Analytics 日期预设会更新整页范围标签',
+                String(document.getElementById('dateRangeLabel')?.textContent || '').includes('30'),
+                String(document.getElementById('dateRangeLabel')?.textContent || '').trim()
+            );
+            recordResult(
+                'Analytics 日期切换会把窗口参数传给关键 RPC',
+                smokeState.analyticsReloadCalls.length > reloadCountBeforeRange
+                    && Number(smokeState.analyticsRpcLastParams.get_content_top?.p_days) === 30
+                    && Number(smokeState.analyticsRpcLastParams.get_redemption_funnel?.p_days) === 30,
+                `reload+${smokeState.analyticsReloadCalls.length - reloadCountBeforeRange} / top=${smokeState.analyticsRpcLastParams.get_content_top?.p_days || 'n/a'} / funnel=${smokeState.analyticsRpcLastParams.get_redemption_funnel?.p_days || 'n/a'}`
+            );
+            recordResult(
+                'Analytics 热门内容会跟随日期窗口刷新',
+                topContentMeta.length > 0 && !/最近 7 天/.test(topContentMeta) && topContentText.trim().length > 0,
+                `${topContentMeta} | ${topContentText.replace(/\s+/g, ' ').trim().slice(0, 64)}`
+            );
+        } else {
+            recordResult('Analytics 日期预设会更新整页范围标签', false, '未找到日期范围控件');
+            recordResult('Analytics 日期切换会把窗口参数传给关键 RPC', false, '未找到日期范围控件');
+            recordResult('Analytics 热门内容会跟随日期窗口刷新', false, '未找到日期范围控件');
+        }
+
+        globalScope.switchAnalyticsTab?.('monetization');
+        await sleep(80);
+        const pointsTabActive = document.getElementById('analytics-tab-monetization')?.classList.contains('active') === true;
+        const pointsIncome = String(document.getElementById('kpiPointsInValue')?.textContent || '').trim();
+        recordResult(
+            'Analytics 分栏切到积分与交易后仍保留关键指标',
+            pointsTabActive && pointsIncome && pointsIncome !== '--',
+            `active=${pointsTabActive} / income=${pointsIncome || '<empty>'}`
+        );
+
+        globalScope.switchAnalyticsTab?.('verify');
+        await sleep(80);
+        const verifyTabActive = document.getElementById('analytics-tab-verify')?.classList.contains('active') === true;
+        const verifyRequests = String(document.getElementById('kpiVerifyRequestsValue')?.textContent || '').trim();
+        recordResult(
+            'Analytics 验证服务分栏会渲染业务摘要',
+            verifyTabActive && verifyRequests && verifyRequests !== '--',
+            `active=${verifyTabActive} / requests=${verifyRequests || '<empty>'}`
+        );
+
+        globalScope.switchAnalyticsTab?.('growth');
+        await sleep(80);
+        const growthTabActive = document.getElementById('analytics-tab-growth')?.classList.contains('active') === true;
+        const growthMessages = String(document.getElementById('kpiGrowthMessagesValue')?.textContent || '').trim();
+        recordResult(
+            'Analytics 社区与裂变分栏会渲染业务摘要',
+            growthTabActive && growthMessages && growthMessages !== '--',
+            `active=${growthTabActive} / messages=${growthMessages || '<empty>'}`
+        );
+
+        const advancedEntry = document.querySelector('.analytics-advanced-entry[data-analytics-destination="analytics-ai"]');
+        const advancedNavButton = document.querySelector('#analyticsTabsNav .admin-tab[data-tab="ai"]');
+        recordResult(
+            'Analytics 高级分析已移出主流程',
+            !advancedEntry && !advancedNavButton,
+            `entry=${advancedEntry instanceof HTMLElement ? 'yes' : 'no'} / nav=${advancedNavButton ? 'yes' : 'no'}`
+        );
+
+        globalScope.switchAnalyticsTab?.('overview');
+        await sleep(60);
+
+        const channelCountBeforeSite = smokeState.analyticsRealtimeChannelsCreated;
+        const reloadCountBeforeSite = smokeState.analyticsReloadCalls.length;
+        globalScope.AdminSiteFilter.select('intl');
+        await nextFrame();
+        await sleep(180);
+        await waitFor(
+            () => document.querySelector('.site-selector-label')?.textContent?.trim() === 'EN',
+            { message: 'Analytics 站点标签未切到 EN' }
+        );
+        await waitFor(
+            () => smokeState.analyticsRpcLastParams.get_content_top?.p_site === 'intl',
+            { message: 'Analytics 站点切换后未透传 site=intl 到内容榜 RPC' }
+        );
+
+        const topContentIntlText = String(document.getElementById('topContentList')?.textContent || '');
+        recordResult(
+            'Analytics 切站点只会 reload 不会重复订阅',
+            smokeState.analyticsRealtimeChannelsCreated === channelCountBeforeSite
+                && smokeState.analyticsReloadCalls.length > reloadCountBeforeSite,
+            `channels=${smokeState.analyticsRealtimeChannelsCreated - channelCountBeforeSite} / reloads=${smokeState.analyticsReloadCalls.length - reloadCountBeforeSite}`
+        );
+        recordResult(
+            'Analytics 切站点后热门内容会更新站点上下文',
+            /INTL/.test(topContentIntlText),
+            topContentIntlText.replace(/\s+/g, ' ').trim().slice(0, 64)
+        );
+
+        const removedBeforeLeave = smokeState.analyticsRealtimeChannelsRemoved;
+        const createdBeforeReturn = smokeState.analyticsRealtimeChannelsCreated;
+        globalScope.switchModule?.('points');
+        await waitFor(
+            () => document.getElementById('module-points')?.classList.contains('active')
+                ? document.getElementById('module-points')
+                : null,
+            { message: 'Points 模块未切换成功' }
+        );
+        await sleep(120);
+
+        globalScope.switchModule?.('analytics');
+        await waitFor(
+            () => document.getElementById('module-analytics')?.classList.contains('active')
+                ? document.getElementById('module-analytics')
+                : null,
+            { message: '返回 Analytics 模块失败' }
+        );
+        await sleep(180);
+
+        recordResult(
+            'Analytics 离开模块会 teardown realtime 订阅',
+            smokeState.analyticsRealtimeChannelsRemoved - removedBeforeLeave === 2,
+            `removed=${smokeState.analyticsRealtimeChannelsRemoved - removedBeforeLeave}`
+        );
+        recordResult(
+            'Analytics 返回模块会重新建立单份订阅',
+            smokeState.analyticsRealtimeChannelsCreated - createdBeforeReturn === 2,
+            `created=${smokeState.analyticsRealtimeChannelsCreated - createdBeforeReturn}`
+        );
+
+        if (shouldRunMobileLayoutChecks()) {
+            recordSelectorsNoHorizontalOverflow(
+                'Analytics 窄屏下顶部工具条没有横向溢出',
+                ['.analytics-toolbar', '#analyticsTabsNav']
+            );
+        }
     }
 
     async function runHomepageAdminSmoke() {
@@ -5473,21 +6288,19 @@
         const activitySection = document.querySelector('.admin-ticket-overview-reminder-activity');
         const activityStats = activitySection?.querySelector('.admin-ticket-overview-reminder-activity-stats');
         const activityList = activitySection?.querySelector('.admin-ticket-overview-reminder-activity-list');
-        const reminderActions = document.querySelector('#ticketsOverviewReminderPanel .admin-ticket-overview-reminder-actions');
         if (
             activitySection instanceof HTMLElement
             && activityStats instanceof HTMLElement
             && activityList instanceof HTMLElement
-            && reminderActions instanceof HTMLElement
         ) {
             const statsRect = activityStats.getBoundingClientRect();
             const listRect = activityList.getBoundingClientRect();
-            const actionsRect = reminderActions.getBoundingClientRect();
-            const noOverlap = statsRect.bottom <= (listRect.top + 2) && listRect.bottom <= (actionsRect.top + 2);
+            const sectionRect = activitySection.getBoundingClientRect();
+            const noOverlap = statsRect.bottom <= (listRect.top + 2) && listRect.bottom <= (sectionRect.bottom + 2);
             recordResult(
                 '售后工单提醒活动闭环区块不会相互覆盖',
                 noOverlap,
-                `statsBottom=${Math.round(statsRect.bottom)} / listTop=${Math.round(listRect.top)} / listBottom=${Math.round(listRect.bottom)} / actionsTop=${Math.round(actionsRect.top)}`
+                `statsBottom=${Math.round(statsRect.bottom)} / listTop=${Math.round(listRect.top)} / listBottom=${Math.round(listRect.bottom)} / sectionBottom=${Math.round(sectionRect.bottom)}`
             );
         } else {
             recordResult('售后工单提醒活动闭环区块不会相互覆盖', false, '未找到提醒活动闭环布局节点');
@@ -5525,13 +6338,28 @@
         if (ongoingList instanceof HTMLElement) {
             const ongoingCount = ongoingList.querySelectorAll('.admin-ticket-summary-job-modal__comparison-item').length;
             const hasScroll = ongoingList.scrollHeight > (ongoingList.clientHeight + 8);
+            const items = Array.from(ongoingList.querySelectorAll('.admin-ticket-summary-job-modal__comparison-item'));
+            const itemsClipped = items.some((item) => {
+                if (!(item instanceof HTMLElement)) {
+                    return false;
+                }
+                return item.scrollHeight > (item.clientHeight + 4);
+            });
             recordResult(
                 '连续两次都在的工单超过 2 条后会在列内滚动',
                 ongoingCount > 2 && hasScroll,
                 `count=${ongoingCount} / client=${ongoingList.clientHeight} / scroll=${ongoingList.scrollHeight}`
             );
+            recordResult(
+                '连续两次都在的工单卡片内容不会被截断',
+                !itemsClipped,
+                items.length
+                    ? items.map((item) => `${item.clientHeight}/${item.scrollHeight}`).join(' | ')
+                    : 'no-items'
+            );
         } else {
             recordResult('连续两次都在的工单超过 2 条后会在列内滚动', false, '未找到持续超时工单对比列表');
+            recordResult('连续两次都在的工单卡片内容不会被截断', false, '未找到持续超时工单对比列表');
         }
 
         globalScope.AdminTickets?.closeReminderSummaryJobDetail?.();
@@ -5545,7 +6373,9 @@
 
             const pathname = String(globalScope.location?.pathname || '').trim();
             if (/\/admin-studio(?:\.html)?$/i.test(pathname)) {
-                if (searchParams.get('module') === 'chat') {
+                if (searchParams.get('module') === 'analytics') {
+                    await runAdminAnalyticsSmoke();
+                } else if (searchParams.get('module') === 'chat') {
                     await runAdminChatSmoke();
                 } else if (searchParams.get('module') === 'shop') {
                     await runAdminShopSmoke();

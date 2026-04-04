@@ -218,6 +218,7 @@ let pointsBatchListFeedbackState = {
     detail: '',
     stats: []
 };
+let pointsAnalyticsFocusTimeoutId = 0;
 
 function buildPointsInlineFeedbackMarkup(message = '', tone = 'info') {
     const normalizedMessage = String(message || '').trim();
@@ -1321,7 +1322,150 @@ function switchPointsView(viewName) {
     schedulePointsViewPrefetch(viewName);
 }
 
+function focusPointsAnalyticsTarget(target, block = 'center') {
+    const focusTarget = target instanceof HTMLElement
+        ? target
+        : null;
+
+    document.querySelectorAll('#module-points .analytics-nav-focus-target--active').forEach((element) => {
+        element.classList.remove('analytics-nav-focus-target--active');
+    });
+
+    if (!(focusTarget instanceof HTMLElement)) {
+        return false;
+    }
+
+    focusTarget.classList.add('analytics-nav-focus-target--active');
+    focusTarget.scrollIntoView({ behavior: 'smooth', block });
+
+    if (pointsAnalyticsFocusTimeoutId) {
+        window.clearTimeout(pointsAnalyticsFocusTimeoutId);
+    }
+
+    pointsAnalyticsFocusTimeoutId = window.setTimeout(() => {
+        focusTarget.classList.remove('analytics-nav-focus-target--active');
+    }, 2600);
+
+    return true;
+}
+
+function openAnalyticsPointsContext(context = {}) {
+    const normalizedContext = context && typeof context === 'object' && !Array.isArray(context)
+        ? context
+        : {};
+    const batchId = String(normalizedContext.batchId || '').trim();
+    const code = String(normalizedContext.code || normalizedContext.focusCode || '').trim();
+    const requestedView = String(normalizedContext.view || '').trim().toLowerCase();
+    const lookupValue = String(
+        normalizedContext.lookupValue
+        || normalizedContext.ledgerId
+        || normalizedContext.referenceId
+        || ''
+    ).trim();
+    const search = String(
+        normalizedContext.search
+        || normalizedContext.batchName
+        || ''
+    ).trim();
+    const quick = String(normalizedContext.quick || '').trim().toLowerCase();
+    const channel = String(normalizedContext.channel || '').trim().toLowerCase();
+    const packageId = String(normalizedContext.packageId || '').trim();
+    const date = String(normalizedContext.date || '').trim().toLowerCase();
+
+    if (batchId) {
+        navigateToBatch(batchId, code ? { code } : {});
+        return true;
+    }
+
+    if (lookupValue || requestedView === 'lookup') {
+        switchPointsView('lookup');
+        window.setTimeout(() => {
+            const input = document.getElementById('lookupCodeInput');
+            if (input) {
+                input.value = lookupValue;
+                try {
+                    input.focus({ preventScroll: true });
+                } catch (_) {
+                    input.focus();
+                }
+            }
+
+            const lookupTask = lookupValue && typeof lookupCode === 'function'
+                ? lookupCode()
+                : Promise.resolve();
+            Promise.resolve(lookupTask).finally(() => {
+                const target = document.querySelector('#lookupResult .lookup-card') || document.getElementById('lookupResult');
+                focusPointsAnalyticsTarget(target, 'start');
+            });
+        }, 140);
+        return true;
+    }
+
+    const nextView = ['catalog', 'generate', 'batches'].includes(requestedView)
+        ? requestedView
+        : 'batches';
+
+    if (nextView === 'batches' && search) {
+        pendingBatchSearchTerm = search;
+    }
+
+    switchPointsView(nextView);
+
+    window.setTimeout(() => {
+        if (nextView === 'batches') {
+            const searchInput = document.getElementById('batchSearchInput');
+            if (searchInput && search) {
+                searchInput.value = search;
+            }
+            if (quick) {
+                filterBatchByQuick(quick);
+            }
+            if (date) {
+                filterBatchByDate(date);
+            }
+            if (channel) {
+                filterBatchByChannel(channel);
+            }
+            if (packageId) {
+                filterBatchByPackage(packageId);
+            }
+            if (search && !quick && !date && !channel && !packageId) {
+                applyBatchFilters();
+            }
+
+            if (searchInput) {
+                try {
+                    searchInput.focus({ preventScroll: true });
+                } catch (_) {
+                    searchInput.focus();
+                }
+            }
+
+            const focusTarget = document.querySelector('#batchesTableBody .points-batch-row') || document.getElementById('points-view-batches');
+            focusPointsAnalyticsTarget(focusTarget, 'start');
+            return;
+        }
+
+        if (nextView === 'catalog') {
+            const target = document.getElementById('pointsPackageForm') || document.getElementById('points-view-catalog');
+            focusPointsAnalyticsTarget(target, 'start');
+            document.getElementById('pointsCatalogSearchInput')?.focus?.();
+            return;
+        }
+
+        if (nextView === 'generate') {
+            const target = document.getElementById('pointsGeneratePreview') || document.getElementById('points-view-generate');
+            focusPointsAnalyticsTarget(target, 'start');
+            document.getElementById('batchName')?.focus?.();
+        }
+    }, 180);
+
+    return true;
+}
+
 window.switchPointsView = switchPointsView;
+window.navigateToBatch = navigateToBatch;
+window.openAnalyticsPointsContext = openAnalyticsPointsContext;
 window.prefetchPointsModule = prefetchPointsModule;
 
 // ========================================

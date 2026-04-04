@@ -1387,9 +1387,15 @@
             if (action === 'profile') {
                 window.openProfileModal?.(event);
             } else if (action === 'wallet') {
-                window.WalletModal?.open();
+                window.WalletModal?.open('balance', {
+                    entry: 'nav_wallet',
+                    sourceModule: 'auth_dropdown'
+                });
             } else if (action === 'orders') {
-                window.WalletModal?.open('orders');
+                window.WalletModal?.open('orders', {
+                    entry: 'nav_orders',
+                    sourceModule: 'auth_dropdown'
+                });
             } else if (action === 'switch-account') {
                 window.handleSwitchAccount?.(event);
             } else if (action === 'studio') {

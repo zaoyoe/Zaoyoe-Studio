@@ -893,10 +893,53 @@
         requestWalletRechargeScrollCueUpdate();
     }
 
+    function trackWalletAnalyticsEvent(eventName, payload = {}, options = {}) {
+        const tracker = window.UserEventTracker;
+        if (!tracker || typeof tracker.track !== 'function') {
+            return;
+        }
+
+        const metadata = payload?.metadata && typeof payload.metadata === 'object' && !Array.isArray(payload.metadata)
+            ? payload.metadata
+            : {};
+        const normalizedPayload = {
+            module: payload.module || 'wallet_modal',
+            entityType: payload.entityType || 'wallet',
+            entityId: payload.entityId || null,
+            eventValue: payload.eventValue ?? null,
+            pointsDelta: payload.pointsDelta ?? null,
+            experimentId: payload.experimentId ?? null,
+            variantId: payload.variantId ?? null,
+            metadata
+        };
+
+        const trackingPromise = options.dedupeKey && typeof tracker.trackOnce === 'function'
+            ? tracker.trackOnce(options.dedupeKey, eventName, normalizedPayload, { eventType: options.eventType || 'conversion' })
+            : tracker.track(eventName, normalizedPayload, { eventType: options.eventType || 'conversion' });
+
+        void Promise.resolve(trackingPromise).catch((error) => {
+            console.debug('[WalletAnalytics] Track failed:', eventName, error?.message || error);
+        });
+    }
+
+    function buildWalletSourceMetadata(context = {}) {
+        const normalizedContext = context && typeof context === 'object' && !Array.isArray(context)
+            ? context
+            : {};
+
+        return {
+            entry: String(normalizedContext.entry || '').trim() || 'wallet',
+            initial_view: String(normalizedContext.initial_view || normalizedContext.initialView || '').trim() || 'balance',
+            source_module: String(normalizedContext.source_module || normalizedContext.sourceModule || '').trim() || null
+        };
+    }
+
     const WalletModal = {
         isOpen: false,
         modalEl: null,
         pendingRechargeAction: null,
+        lastOpenContext: null,
+        customRechargeExperimentAssignment: null,
         promptCache: {}, // Local simple cache for titles
         verifyLogCache: {},
         affiliateStats: null,
@@ -1618,10 +1661,27 @@
         /**
          * Open the wallet modal
          */
-        async open(initialView) {
+        async open(initialView, context = {}) {
             if (this.isOpen) return;
 
             console.log('[WalletModal] Opening...', initialView ? `view: ${initialView}` : '');
+
+            const normalizedInitialView = String(initialView || 'balance').trim().toLowerCase() || 'balance';
+            const normalizedContext = context && typeof context === 'object' && !Array.isArray(context)
+                ? { ...context }
+                : {};
+            this.lastOpenContext = {
+                ...normalizedContext,
+                entry: String(normalizedContext.entry || '').trim() || `wallet_${normalizedInitialView}`,
+                initial_view: normalizedInitialView,
+                source_module: String(normalizedContext.sourceModule || normalizedContext.source_module || '').trim() || null
+            };
+            trackWalletAnalyticsEvent('wallet_open', {
+                entityId: 'wallet_modal',
+                metadata: this.lastOpenContext
+            }, {
+                eventType: 'engagement'
+            });
 
             // Close user dropdown menu first (prevent double overlay)
             const dropdown = document.getElementById('userDropdown');
@@ -2573,7 +2633,78 @@
                         : `该入口由管理员在后台控制显示。当前会跳转到${providerLabel}，具体支付回执与入账方式以你配置的通道说明为准。`));
             }
 
+            void this.applyCustomRechargeExperiment({
+                isFeatureEnabled,
+                isSimulationBlocked,
+                isDirectRechargeAllowed,
+                providerLabel
+            });
+
             requestWalletRechargeScrollCueUpdate();
+        },
+
+        getCustomRechargeExperimentTrackingPayload() {
+            const assignment = this.customRechargeExperimentAssignment;
+            if (!assignment?.experimentName || !assignment?.variantName) {
+                return {};
+            }
+
+            return {
+                experimentId: assignment.experimentName,
+                variantId: assignment.variantName,
+                metadata: {
+                    experiment_name: assignment.experimentName,
+                    experiment_variant: assignment.variantName,
+                    experiment_placement: 'wallet_custom_recharge_button'
+                }
+            };
+        },
+
+        async applyCustomRechargeExperiment(options = {}) {
+            const section = document.getElementById('wallet-custom-recharge-section');
+            const button = document.getElementById('wallet-custom-recharge-btn');
+            const subtitle = document.getElementById('wallet-custom-recharge-subtitle');
+            const badge = document.getElementById('wallet-custom-recharge-badge');
+            const tracker = window.UserEventTracker;
+
+            this.customRechargeExperimentAssignment = null;
+            if (!section || section.hidden || !button || !options.isFeatureEnabled || options.isSimulationBlocked || !tracker || typeof tracker.getExperimentAssignment !== 'function') {
+                if (button) delete button.dataset.experimentVariant;
+                return;
+            }
+
+            const assignment = await tracker.getExperimentAssignment('wallet_recharge_cta_copy_v1', {
+                module: 'wallet_modal',
+                placement: 'wallet_custom_recharge_button',
+                entityType: 'wallet',
+                entityId: 'wallet_custom_recharge',
+                metadata: this.lastOpenContext && typeof this.lastOpenContext === 'object' ? this.lastOpenContext : {}
+            });
+
+            const liveSection = document.getElementById('wallet-custom-recharge-section');
+            const liveButton = document.getElementById('wallet-custom-recharge-btn');
+            const liveSubtitle = document.getElementById('wallet-custom-recharge-subtitle');
+            const liveBadge = document.getElementById('wallet-custom-recharge-badge');
+            if (!liveSection || liveSection.hidden || !liveButton) {
+                return;
+            }
+
+            this.customRechargeExperimentAssignment = assignment;
+            delete liveButton.dataset.experimentVariant;
+            if (!assignment || assignment.isControl) {
+                return;
+            }
+
+            liveButton.dataset.experimentVariant = assignment.variantName;
+            liveButton.textContent = options.isDirectRechargeAllowed ? '立即充值到账' : `前往${options.providerLabel}充值`;
+            if (liveSubtitle) {
+                liveSubtitle.textContent = options.isDirectRechargeAllowed
+                    ? '输入积分后会立即生成报价，完成支付后更快回到账户积分。'
+                    : `输入积分数量后会按服务端报价跳转到${options.providerLabel}完成支付，回到钱包即可继续后续操作。`;
+            }
+            if (liveBadge) {
+                liveBadge.textContent = options.isDirectRechargeAllowed ? '快速到账' : `${options.providerLabel}实验`;
+            }
         },
 
         getDefaultAffiliatePosterConfig() {
@@ -3185,13 +3316,36 @@
         copyAffiliateLink() {
             const linkEl = document.getElementById('affiliate-link');
             if (!linkEl || !linkEl.value) return;
+            const sourceMeta = buildWalletSourceMetadata(this.lastOpenContext);
+            const analyticsMetadata = {
+                ...sourceMeta,
+                channel: 'copy_link',
+                invite_code: String(this.currentInviteCode || '').trim() || null,
+                invite_link: linkEl.value || null
+            };
 
             navigator.clipboard.writeText(linkEl.value).then(() => {
+                trackWalletAnalyticsEvent('affiliate_invite_click', {
+                    entityType: 'affiliate_invite',
+                    entityId: analyticsMetadata.invite_code,
+                    metadata: analyticsMetadata
+                }, {
+                    eventType: 'engagement'
+                });
                 this.showToast(window.i18n?.t('wallet.copiedLink') || '链接已复制到剪贴板，快去分享吧！', 'success');
             }).catch(err => {
                 console.error('Copy failed', err);
                 linkEl.select();
-                document.execCommand('copy');
+                const copied = document.execCommand('copy');
+                if (copied) {
+                    trackWalletAnalyticsEvent('affiliate_invite_click', {
+                        entityType: 'affiliate_invite',
+                        entityId: analyticsMetadata.invite_code,
+                        metadata: analyticsMetadata
+                    }, {
+                        eventType: 'engagement'
+                    });
+                }
                 this.showToast(window.i18n?.t('wallet.copiedLinkShort') || '链接已复制！', 'success');
             });
         },
@@ -3382,6 +3536,19 @@
                 const a = document.createElement('a');
                 a.href = dataUrl;
                 a.download = `Affiliate_Poster_${this.currentInviteCode}.png`;
+                trackWalletAnalyticsEvent('affiliate_invite_click', {
+                    entityType: 'affiliate_invite',
+                    entityId: String(this.currentInviteCode || '').trim() || null,
+                    metadata: {
+                        ...buildWalletSourceMetadata(this.lastOpenContext),
+                        channel: 'poster_download',
+                        invite_code: String(this.currentInviteCode || '').trim() || null,
+                        invite_link: linkEl.value || null,
+                        poster_template: activeTemplate?.id || null
+                    }
+                }, {
+                    eventType: 'engagement'
+                });
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
@@ -3691,11 +3858,27 @@
                 : null;
             const displayName = packageData?.name || packageName || '充值套餐';
             const isMockFlow = providerKey === 'mock';
+            const openContext = this.lastOpenContext && typeof this.lastOpenContext === 'object'
+                ? this.lastOpenContext
+                : {};
 
             try {
                 if (providerKey === 'mock' && !mockPayment.allowed) {
                     throw new Error(mockPayment.message || '当前环境已禁用模拟支付，请切换到真实支付通道。');
                 }
+
+                trackWalletAnalyticsEvent('recharge_click', {
+                    entityType: 'recharge_package',
+                    entityId: String(packageId || '').trim() || null,
+                    metadata: {
+                        entry: openContext.entry || 'wallet_recharge',
+                        initial_view: openContext.initial_view || 'recharge',
+                        source_module: openContext.source_module || null,
+                        channel: providerKey,
+                        package_id: String(packageId || '').trim() || null,
+                        package_name: displayName
+                    }
+                });
 
                 this.setRechargeActionPendingState({
                     kind: 'package',
@@ -3713,6 +3896,27 @@
                 });
 
                 if (paymentResult.mode === 'completed') {
+                    trackWalletAnalyticsEvent('recharge_success', {
+                        entityType: 'recharge',
+                        entityId: String(paymentResult.checkout_session_id || packageId || '').trim() || null,
+                        eventValue: Number(paymentResult.paid_amount || 0) || null,
+                        pointsDelta: Number(paymentResult.points_amount || packageData?.points_amount || 0) || null,
+                        metadata: {
+                            entry: openContext.entry || 'wallet_recharge',
+                            initial_view: openContext.initial_view || 'recharge',
+                            source_module: openContext.source_module || null,
+                            channel: providerKey,
+                            package_id: String(packageId || '').trim() || null,
+                            package_name: displayName,
+                            paid_amount: Number(paymentResult.paid_amount || 0) || null,
+                            points_amount: Number(paymentResult.points_amount || packageData?.points_amount || 0) || null,
+                            mode: paymentResult.mode || 'completed'
+                        }
+                    }, {
+                        dedupeKey: String(paymentResult.checkout_session_id || '').trim()
+                            ? `recharge_success:${String(paymentResult.checkout_session_id).trim()}`
+                            : ''
+                    });
                     this.showToast(paymentResult.message || `✅ 已为你完成「${displayName}」`, 'success');
 
                     this.invalidateOrderRecordsCache();
@@ -3775,6 +3979,9 @@
             const minPoints = Math.max(1, Number(rechargeOptions.custom_amount_min_points) || 1);
             const maxPoints = Math.max(minPoints, Number(rechargeOptions.custom_amount_max_points) || minPoints);
             const stepPoints = Math.max(1, Number(rechargeOptions.custom_amount_step) || 1);
+            const openContext = this.lastOpenContext && typeof this.lastOpenContext === 'object'
+                ? this.lastOpenContext
+                : {};
 
             if (!Number.isFinite(numericAmount) || !Number.isInteger(numericAmount) || normalizedAmount <= 0) {
                 this.showToast('请输入大于 0 的整数积分', 'error');
@@ -3796,6 +4003,23 @@
                 if (providerKey === 'mock' && !mockPayment.allowed) {
                     throw new Error(mockPayment.message || '当前环境已禁用模拟支付，请切换到真实支付通道。');
                 }
+
+                const customRechargeExperiment = this.getCustomRechargeExperimentTrackingPayload();
+                trackWalletAnalyticsEvent('recharge_click', {
+                    entityType: 'custom_recharge',
+                    entityId: 'custom_recharge',
+                    eventValue: normalizedAmount,
+                    experimentId: customRechargeExperiment.experimentId ?? null,
+                    variantId: customRechargeExperiment.variantId ?? null,
+                    metadata: {
+                        entry: openContext.entry || 'wallet_recharge',
+                        initial_view: openContext.initial_view || 'recharge',
+                        source_module: openContext.source_module || null,
+                        channel: providerKey,
+                        points_amount: normalizedAmount,
+                        ...(customRechargeExperiment.metadata || {})
+                    }
+                });
 
                 this.setRechargeActionPendingState({
                     kind: 'custom',
@@ -3838,6 +4062,29 @@
                 if (input) {
                     input.value = '';
                 }
+
+                trackWalletAnalyticsEvent('recharge_success', {
+                    entityType: 'custom_recharge',
+                    entityId: String(paymentResult.checkout_session_id || 'custom_recharge').trim(),
+                    eventValue: Number(paymentResult.paid_amount || 0) || null,
+                    pointsDelta: Number(paymentResult.points_amount || normalizedAmount || 0) || null,
+                    experimentId: customRechargeExperiment.experimentId ?? null,
+                    variantId: customRechargeExperiment.variantId ?? null,
+                    metadata: {
+                        entry: openContext.entry || 'wallet_recharge',
+                        initial_view: openContext.initial_view || 'recharge',
+                        source_module: openContext.source_module || null,
+                        channel: providerKey,
+                        points_amount: Number(paymentResult.points_amount || normalizedAmount || 0) || null,
+                        paid_amount: Number(paymentResult.paid_amount || 0) || null,
+                        mode: paymentResult.mode || 'completed',
+                        ...(customRechargeExperiment.metadata || {})
+                    }
+                }, {
+                    dedupeKey: String(paymentResult.checkout_session_id || '').trim()
+                        ? `recharge_success:${String(paymentResult.checkout_session_id).trim()}`
+                        : ''
+                });
 
                 this.showToast(paymentResult.message || `✅ 自定义充值成功！ +${this.formatPoints(normalizedAmount)} 积分`, 'success');
 
@@ -4198,6 +4445,31 @@
                     this.showToast('今日已签到过了', 'info');
                     this.loadCheckinData(); // refresh grid
                 } else if (data?.success) {
+                    const currentDate = new Date();
+                    const localDate = [
+                        currentDate.getFullYear(),
+                        String(currentDate.getMonth() + 1).padStart(2, '0'),
+                        String(currentDate.getDate()).padStart(2, '0')
+                    ].join('-');
+
+                    trackWalletAnalyticsEvent('checkin_success', {
+                        entityType: 'checkin',
+                        entityId: localDate,
+                        eventValue: Number(data.points || 0) || null,
+                        pointsDelta: Number(data.points || 0) || null,
+                        metadata: {
+                            ...buildWalletSourceMetadata(this.lastOpenContext),
+                            checkin_date: localDate,
+                            streak_days: Number(data.consecutive_days || 0) || 0,
+                            points_reward: Number(data.points || 0) || 0,
+                            base_reward: Number(data.base_reward || 0) || 0,
+                            bonus_reward: Number(data.bonus_reward || 0) || 0
+                        }
+                    }, {
+                        eventType: 'conversion',
+                        dedupeKey: `checkin_success:${window.SiteConfig?.site || 'cn'}:${localDate}`
+                    });
+
                     // Celebration Animations
                     this.playConfetti();
 

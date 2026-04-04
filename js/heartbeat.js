@@ -9,16 +9,6 @@
     let heartbeatTimer = null;
     let lastHeartbeat = 0;
 
-    // Generate or get session ID
-    function getSessionId() {
-        let sessionId = sessionStorage.getItem('session_id');
-        if (!sessionId) {
-            sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-            sessionStorage.setItem('session_id', sessionId);
-        }
-        return sessionId;
-    }
-
     // Send heartbeat
     async function sendHeartbeat() {
         // Prevent too frequent calls
@@ -27,40 +17,13 @@
         lastHeartbeat = now;
 
         try {
-            // Check if Supabase client exists and user is logged in
-            if (typeof supabaseClient === 'undefined') return;
-
-            const { data: { user } } = await supabaseClient.auth.getUser();
-            if (!user) return;
-
-            // Use RPC if available, otherwise direct insert
-            try {
-                await supabaseClient.rpc('track_event', {
-                    p_event_type: 'heartbeat',
-                    p_event_name: 'page_view',
-                    p_event_data: {
-                        page: window.location.pathname,
-                        referrer: document.referrer || null
-                    },
-                    p_page_url: window.location.href,
-                    p_session_id: getSessionId(),
-                    p_site: window.SiteConfig?.site || 'cn'
-                });
-            } catch (rpcError) {
-                // Fallback: direct insert to user_events
-                await supabaseClient.from('user_events').insert({
-                    user_id: user.id,
-                    session_id: getSessionId(),
-                    event_type: 'heartbeat',
-                    event_name: 'page_view',
-                    event_data: { page: window.location.pathname },
-                    page_url: window.location.href,
-                    site: window.SiteConfig?.site || 'cn',
-                    created_at: new Date().toISOString()
+            if (window.UserEventTracker && typeof window.UserEventTracker.heartbeat === 'function') {
+                await window.UserEventTracker.heartbeat({
+                    metadata: {
+                        source_page: window.location.pathname
+                    }
                 });
             }
-
-            console.log('[Heartbeat] Sent');
         } catch (err) {
             // Silently fail - don't interrupt user experience
             console.debug('[Heartbeat] Failed:', err.message);

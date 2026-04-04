@@ -29,8 +29,8 @@ DECLARE
     v_total_points_circulation BIGINT;
     v_total_comments INTEGER;
     v_today DATE := (NOW() AT TIME ZONE 'Asia/Shanghai')::date;
-    v_week_ago DATE := v_today - INTERVAL '7 days';
-    v_month_ago DATE := v_today - INTERVAL '30 days';
+    v_week_start DATE := v_today - 6;
+    v_month_start DATE := v_today - 29;
 BEGIN
     PERFORM public.require_admin_access();
 
@@ -49,11 +49,11 @@ BEGIN
     IF p_site IS NULL THEN
         SELECT COUNT(DISTINCT user_id) INTO v_mau
         FROM public.user_login_history
-        WHERE get_local_date(created_at) >= v_month_ago;
+        WHERE get_local_date(created_at) >= v_month_start;
     ELSE
         SELECT COUNT(DISTINCT user_id) INTO v_mau
         FROM public.user_login_history
-        WHERE get_local_date(created_at) >= v_month_ago AND site = p_site;
+        WHERE get_local_date(created_at) >= v_month_start AND site = p_site;
     END IF;
 
     -- New users today (auth.users has no site column, shared)
@@ -64,7 +64,7 @@ BEGIN
     -- New users this week
     SELECT COUNT(*) INTO v_new_users_week
     FROM auth.users
-    WHERE get_local_date(created_at) >= v_week_ago;
+    WHERE get_local_date(created_at) >= v_week_start;
 
     -- Total points in circulation
     IF p_site IS NULL THEN
@@ -108,7 +108,7 @@ RETURNS TABLE (
     active_users INTEGER
 ) AS $$
 DECLARE
-    v_start_date DATE := (NOW() AT TIME ZONE 'Asia/Shanghai')::date - p_days;
+    v_start_date DATE := (NOW() AT TIME ZONE 'Asia/Shanghai')::date - GREATEST(p_days - 1, 0);
 BEGIN
     PERFORM public.require_admin_access();
 
@@ -163,7 +163,7 @@ RETURNS TABLE (
     likes INTEGER
 ) AS $$
 DECLARE
-    v_start_date DATE := (NOW() AT TIME ZONE 'Asia/Shanghai')::date - p_days;
+    v_start_date DATE := (NOW() AT TIME ZONE 'Asia/Shanghai')::date - GREATEST(p_days - 1, 0);
 BEGIN
     PERFORM public.require_admin_access();
 
@@ -230,7 +230,7 @@ RETURNS TABLE (
     redemptions INTEGER
 ) AS $$
 DECLARE
-    v_start_date DATE := (NOW() AT TIME ZONE 'Asia/Shanghai')::date - p_days;
+    v_start_date DATE := (NOW() AT TIME ZONE 'Asia/Shanghai')::date - GREATEST(p_days - 1, 0);
 BEGIN
     PERFORM public.require_admin_access();
 
@@ -281,7 +281,11 @@ DROP FUNCTION IF EXISTS get_revenue_trend(INTEGER);
 -- 5. CONTENT TOP N (带站点过滤)
 -- ============================================
 
-CREATE OR REPLACE FUNCTION get_content_top(p_limit INTEGER DEFAULT 10, p_site VARCHAR DEFAULT NULL)
+CREATE OR REPLACE FUNCTION get_content_top(
+    p_limit INTEGER DEFAULT 10,
+    p_site VARCHAR DEFAULT NULL,
+    p_days INTEGER DEFAULT NULL
+)
 RETURNS TABLE (
     prompt_id BIGINT,
     title TEXT,
@@ -289,6 +293,12 @@ RETURNS TABLE (
     comment_count BIGINT,
     score NUMERIC
 ) AS $$
+DECLARE
+    v_start_date DATE := CASE
+        WHEN p_days IS NOT NULL AND p_days > 0
+            THEN (NOW() AT TIME ZONE 'Asia/Shanghai')::date - GREATEST(p_days - 1, 0)
+        ELSE NULL
+    END;
 BEGIN
     PERFORM public.require_admin_access();
 
@@ -302,8 +312,10 @@ BEGIN
     FROM public.prompts p
     LEFT JOIN public.prompt_unlocks u ON u.prompt_id = p.id
         AND (p_site IS NULL OR u.site = p_site)
+        AND (v_start_date IS NULL OR get_local_date(u.unlocked_at) >= v_start_date)
     LEFT JOIN public.prompt_comments c ON c.prompt_id = p.id
         AND (p_site IS NULL OR c.site = p_site)
+        AND (v_start_date IS NULL OR get_local_date(c.created_at) >= v_start_date)
     GROUP BY p.id, p.title
     ORDER BY score DESC
     LIMIT p_limit;
@@ -312,6 +324,99 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Drop old signature
 DROP FUNCTION IF EXISTS get_content_top(INTEGER);
+DROP FUNCTION IF EXISTS get_content_top(INTEGER, VARCHAR);
+
+DROP FUNCTION IF EXISTS get_content_top_v2(INTEGER, VARCHAR, INTEGER);
+
+CREATE OR REPLACE FUNCTION get_content_top_v2(
+    p_limit INTEGER DEFAULT 10,
+    p_site VARCHAR DEFAULT NULL,
+    p_days INTEGER DEFAULT NULL
+)
+RETURNS TABLE (
+    prompt_id TEXT,
+    title TEXT,
+    view_count BIGINT,
+    unlock_count BIGINT,
+    comment_count BIGINT,
+    score NUMERIC,
+    category TEXT
+) AS $$
+DECLARE
+    v_start_date DATE := CASE
+        WHEN p_days IS NOT NULL AND p_days > 0
+            THEN (NOW() AT TIME ZONE 'Asia/Shanghai')::date - GREATEST(p_days - 1, 0)
+        ELSE NULL
+    END;
+BEGIN
+    PERFORM public.require_admin_access();
+
+    RETURN QUERY
+    WITH scoped_events AS (
+        SELECT
+            COALESCE(
+                NULLIF(ue.event_data->>'entity_id', ''),
+                NULLIF(ue.event_data->'metadata'->>'prompt_id', '')
+            ) AS prompt_id,
+            NULLIF(ue.event_data->'metadata'->>'title', '') AS prompt_title,
+            NULLIF(ue.event_data->'metadata'->>'category', '') AS prompt_category,
+            ue.event_name
+        FROM public.user_events ue
+        WHERE ue.user_id IS NOT NULL
+          AND ue.event_name IN ('prompt_view', 'unlock_success')
+          AND (v_start_date IS NULL OR get_local_date(ue.created_at) >= v_start_date)
+          AND (
+              p_site IS NULL
+              OR COALESCE(NULLIF(ue.site, ''), NULLIF(ue.event_data->>'site', ''), 'cn') = p_site
+          )
+    ),
+    prompt_event_rollup AS (
+        SELECT
+            se.prompt_id,
+            MAX(se.prompt_title) FILTER (WHERE se.prompt_title IS NOT NULL) AS title,
+            MAX(se.prompt_category) FILTER (WHERE se.prompt_category IS NOT NULL) AS category,
+            COUNT(*) FILTER (WHERE se.event_name = 'prompt_view') AS view_count,
+            COUNT(*) FILTER (WHERE se.event_name = 'unlock_success') AS unlock_count
+        FROM scoped_events se
+        WHERE COALESCE(se.prompt_id, '') <> ''
+        GROUP BY se.prompt_id
+    ),
+    prompt_comment_rollup AS (
+        SELECT
+            c.prompt_id::TEXT AS prompt_id,
+            COUNT(*) AS comment_count
+        FROM public.prompt_comments c
+        WHERE (p_site IS NULL OR c.site = p_site)
+          AND (v_start_date IS NULL OR get_local_date(c.created_at) >= v_start_date)
+        GROUP BY c.prompt_id::TEXT
+    ),
+    prompt_keys AS (
+        SELECT prompt_id FROM prompt_event_rollup
+        UNION
+        SELECT prompt_id FROM prompt_comment_rollup
+    )
+    SELECT
+        pk.prompt_id,
+        COALESCE(NULLIF(per.title, ''), p.title, '未命名 Prompt')::TEXT AS title,
+        COALESCE(per.view_count, 0)::BIGINT AS view_count,
+        COALESCE(per.unlock_count, 0)::BIGINT AS unlock_count,
+        COALESCE(pcr.comment_count, 0)::BIGINT AS comment_count,
+        ROUND(
+            COALESCE(per.unlock_count, 0)::NUMERIC * 3
+            + COALESCE(pcr.comment_count, 0)::NUMERIC
+            + COALESCE(per.view_count, 0)::NUMERIC * 0.2,
+            2
+        ) AS score,
+        COALESCE(NULLIF(per.category, ''), '未分类')::TEXT AS category
+    FROM prompt_keys pk
+    LEFT JOIN prompt_event_rollup per ON per.prompt_id = pk.prompt_id
+    LEFT JOIN prompt_comment_rollup pcr ON pcr.prompt_id = pk.prompt_id
+    LEFT JOIN public.prompts p ON p.id::TEXT = pk.prompt_id
+    WHERE COALESCE(pk.prompt_id, '') <> ''
+    ORDER BY score DESC, unlock_count DESC, view_count DESC, comment_count DESC
+    LIMIT GREATEST(COALESCE(p_limit, 10), 1);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================
 -- 6. COMMUNITY STATS (带站点过滤)
@@ -325,7 +430,7 @@ RETURNS TABLE (
     likes INTEGER
 ) AS $$
 DECLARE
-    v_start_date DATE := (NOW() AT TIME ZONE 'Asia/Shanghai')::date - p_days;
+    v_start_date DATE := (NOW() AT TIME ZONE 'Asia/Shanghai')::date - GREATEST(p_days - 1, 0);
 BEGIN
     PERFORM public.require_admin_access();
 
@@ -694,10 +799,10 @@ BEGIN
     FROM (SELECT * FROM get_user_trend(p_days, p_site)) t;
 
     SELECT jsonb_agg(t) INTO v_channel_breakdown
-    FROM (SELECT * FROM get_channel_breakdown(p_site)) t;
+    FROM (SELECT * FROM get_channel_breakdown_v2(p_site, p_days)) t;
 
     SELECT jsonb_agg(t) INTO v_top_content
-    FROM (SELECT * FROM get_content_top(5, p_site)) t;
+    FROM (SELECT * FROM get_content_top_v2(5, p_site, p_days)) t;
 
     RETURN jsonb_build_object(
         'period_days', p_days,
@@ -713,6 +818,188 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- Drop old signature
 DROP FUNCTION IF EXISTS get_ai_summary_data(INTEGER);
 
+DROP FUNCTION IF EXISTS get_ai_summary_data_v2(INTEGER, VARCHAR);
+
+CREATE OR REPLACE FUNCTION get_ai_summary_data_v2(p_days INTEGER DEFAULT 7, p_site VARCHAR DEFAULT NULL)
+RETURNS JSONB AS $$
+DECLARE
+    v_start_date DATE := (NOW() AT TIME ZONE 'Asia/Shanghai')::date - GREATEST(COALESCE(p_days, 7) - 1, 0);
+    v_overview JSONB;
+    v_user_trend JSONB;
+    v_channel_breakdown JSONB;
+    v_top_content JSONB;
+    v_content_funnel JSONB;
+    v_event_overview JSONB;
+    v_event_funnels JSONB;
+BEGIN
+    PERFORM public.require_admin_access();
+
+    SELECT get_overview_stats(p_site) INTO v_overview;
+
+    SELECT jsonb_agg(t) INTO v_user_trend
+    FROM (SELECT * FROM get_user_trend(p_days, p_site)) t;
+
+    SELECT jsonb_agg(t) INTO v_channel_breakdown
+    FROM (SELECT * FROM get_channel_breakdown_v2(p_site, p_days)) t;
+
+    SELECT jsonb_agg(t) INTO v_top_content
+    FROM (SELECT * FROM get_content_top_v2(5, p_site, p_days)) t;
+
+    SELECT jsonb_agg(t) INTO v_content_funnel
+    FROM (SELECT * FROM get_conversion_funnel_v2(p_days, p_site)) t;
+
+    WITH scoped_events AS (
+        SELECT
+            ue.user_id,
+            ue.event_name
+        FROM public.user_events ue
+        WHERE ue.user_id IS NOT NULL
+          AND get_local_date(ue.created_at) >= v_start_date
+          AND (
+              p_site IS NULL
+              OR COALESCE(NULLIF(ue.site, ''), NULLIF(ue.event_data->>'site', ''), 'cn') = p_site
+          )
+          AND ue.event_name IN (
+              'page_view',
+              'prompt_view',
+              'unlock_click',
+              'unlock_success',
+              'wallet_open',
+              'recharge_click',
+              'recharge_success',
+              'verify_submit',
+              'verify_success',
+              'verify_fail',
+              'shop_view',
+              'shop_purchase',
+              'guestbook_post',
+              'affiliate_invite_click',
+              'checkin_success'
+          )
+    ),
+    event_rollup AS (
+        SELECT
+            COUNT(DISTINCT user_id) AS business_active_users,
+            COUNT(*) FILTER (WHERE event_name = 'page_view') AS page_view_count,
+            COUNT(DISTINCT user_id) FILTER (WHERE event_name = 'page_view') AS page_view_users,
+            COUNT(*) FILTER (WHERE event_name = 'prompt_view') AS prompt_view_count,
+            COUNT(DISTINCT user_id) FILTER (WHERE event_name = 'prompt_view') AS prompt_view_users,
+            COUNT(*) FILTER (WHERE event_name = 'unlock_click') AS unlock_click_count,
+            COUNT(DISTINCT user_id) FILTER (WHERE event_name = 'unlock_click') AS unlock_click_users,
+            COUNT(*) FILTER (WHERE event_name = 'unlock_success') AS unlock_success_count,
+            COUNT(DISTINCT user_id) FILTER (WHERE event_name = 'unlock_success') AS unlock_success_users,
+            COUNT(*) FILTER (WHERE event_name = 'wallet_open') AS wallet_open_count,
+            COUNT(DISTINCT user_id) FILTER (WHERE event_name = 'wallet_open') AS wallet_open_users,
+            COUNT(*) FILTER (WHERE event_name = 'recharge_click') AS recharge_click_count,
+            COUNT(DISTINCT user_id) FILTER (WHERE event_name = 'recharge_click') AS recharge_click_users,
+            COUNT(*) FILTER (WHERE event_name = 'recharge_success') AS recharge_success_count,
+            COUNT(DISTINCT user_id) FILTER (WHERE event_name = 'recharge_success') AS recharge_success_users,
+            COUNT(*) FILTER (WHERE event_name = 'verify_submit') AS verify_submit_count,
+            COUNT(DISTINCT user_id) FILTER (WHERE event_name = 'verify_submit') AS verify_submit_users,
+            COUNT(*) FILTER (WHERE event_name = 'verify_success') AS verify_success_count,
+            COUNT(DISTINCT user_id) FILTER (WHERE event_name = 'verify_success') AS verify_success_users,
+            COUNT(*) FILTER (WHERE event_name = 'verify_fail') AS verify_fail_count,
+            COUNT(DISTINCT user_id) FILTER (WHERE event_name = 'verify_fail') AS verify_fail_users,
+            COUNT(*) FILTER (WHERE event_name = 'shop_view') AS shop_view_count,
+            COUNT(DISTINCT user_id) FILTER (WHERE event_name = 'shop_view') AS shop_view_users,
+            COUNT(*) FILTER (WHERE event_name = 'shop_purchase') AS shop_purchase_count,
+            COUNT(DISTINCT user_id) FILTER (WHERE event_name = 'shop_purchase') AS shop_purchase_users,
+            COUNT(*) FILTER (WHERE event_name = 'guestbook_post') AS guestbook_post_count,
+            COUNT(DISTINCT user_id) FILTER (WHERE event_name = 'guestbook_post') AS guestbook_post_users,
+            COUNT(*) FILTER (WHERE event_name = 'affiliate_invite_click') AS affiliate_invite_click_count,
+            COUNT(DISTINCT user_id) FILTER (WHERE event_name = 'affiliate_invite_click') AS affiliate_invite_click_users,
+            COUNT(*) FILTER (WHERE event_name = 'checkin_success') AS checkin_success_count,
+            COUNT(DISTINCT user_id) FILTER (WHERE event_name = 'checkin_success') AS checkin_success_users
+        FROM scoped_events
+    )
+    SELECT
+        jsonb_build_object(
+            'business_active_users', COALESCE(business_active_users, 0),
+            'page_view_count', COALESCE(page_view_count, 0),
+            'page_view_users', COALESCE(page_view_users, 0),
+            'prompt_view_count', COALESCE(prompt_view_count, 0),
+            'prompt_view_users', COALESCE(prompt_view_users, 0),
+            'unlock_click_count', COALESCE(unlock_click_count, 0),
+            'unlock_click_users', COALESCE(unlock_click_users, 0),
+            'unlock_success_count', COALESCE(unlock_success_count, 0),
+            'unlock_success_users', COALESCE(unlock_success_users, 0),
+            'unlock_rate', ROUND(safe_divide(COALESCE(unlock_success_users, 0)::NUMERIC, NULLIF(prompt_view_users, 0)::NUMERIC) * 100, 2),
+            'wallet_open_count', COALESCE(wallet_open_count, 0),
+            'wallet_open_users', COALESCE(wallet_open_users, 0),
+            'recharge_click_count', COALESCE(recharge_click_count, 0),
+            'recharge_click_users', COALESCE(recharge_click_users, 0),
+            'recharge_success_count', COALESCE(recharge_success_count, 0),
+            'recharge_success_users', COALESCE(recharge_success_users, 0),
+            'recharge_success_rate', ROUND(safe_divide(COALESCE(recharge_success_users, 0)::NUMERIC, NULLIF(recharge_click_users, 0)::NUMERIC) * 100, 2),
+            'verify_submit_count', COALESCE(verify_submit_count, 0),
+            'verify_submit_users', COALESCE(verify_submit_users, 0),
+            'verify_success_count', COALESCE(verify_success_count, 0),
+            'verify_success_users', COALESCE(verify_success_users, 0),
+            'verify_fail_count', COALESCE(verify_fail_count, 0),
+            'verify_fail_users', COALESCE(verify_fail_users, 0),
+            'verify_success_rate', ROUND(safe_divide(COALESCE(verify_success_count, 0)::NUMERIC, NULLIF(verify_submit_count, 0)::NUMERIC) * 100, 2),
+            'shop_view_count', COALESCE(shop_view_count, 0),
+            'shop_view_users', COALESCE(shop_view_users, 0),
+            'shop_purchase_count', COALESCE(shop_purchase_count, 0),
+            'shop_purchase_users', COALESCE(shop_purchase_users, 0),
+            'shop_purchase_rate', ROUND(safe_divide(COALESCE(shop_purchase_users, 0)::NUMERIC, NULLIF(shop_view_users, 0)::NUMERIC) * 100, 2),
+            'guestbook_post_count', COALESCE(guestbook_post_count, 0),
+            'guestbook_post_users', COALESCE(guestbook_post_users, 0),
+            'affiliate_invite_click_count', COALESCE(affiliate_invite_click_count, 0),
+            'affiliate_invite_click_users', COALESCE(affiliate_invite_click_users, 0),
+            'checkin_success_count', COALESCE(checkin_success_count, 0),
+            'checkin_success_users', COALESCE(checkin_success_users, 0)
+        ),
+        jsonb_build_object(
+            'content', COALESCE(v_content_funnel, '[]'::JSONB),
+            'verify', jsonb_build_object(
+                'submit_count', COALESCE(verify_submit_count, 0),
+                'submit_users', COALESCE(verify_submit_users, 0),
+                'success_count', COALESCE(verify_success_count, 0),
+                'success_users', COALESCE(verify_success_users, 0),
+                'fail_count', COALESCE(verify_fail_count, 0),
+                'fail_users', COALESCE(verify_fail_users, 0),
+                'success_rate', ROUND(safe_divide(COALESCE(verify_success_count, 0)::NUMERIC, NULLIF(verify_submit_count, 0)::NUMERIC) * 100, 2)
+            ),
+            'commerce', jsonb_build_object(
+                'wallet_open_count', COALESCE(wallet_open_count, 0),
+                'wallet_open_users', COALESCE(wallet_open_users, 0),
+                'recharge_click_count', COALESCE(recharge_click_count, 0),
+                'recharge_click_users', COALESCE(recharge_click_users, 0),
+                'recharge_success_count', COALESCE(recharge_success_count, 0),
+                'recharge_success_users', COALESCE(recharge_success_users, 0),
+                'recharge_success_rate', ROUND(safe_divide(COALESCE(recharge_success_users, 0)::NUMERIC, NULLIF(recharge_click_users, 0)::NUMERIC) * 100, 2),
+                'shop_view_count', COALESCE(shop_view_count, 0),
+                'shop_view_users', COALESCE(shop_view_users, 0),
+                'shop_purchase_count', COALESCE(shop_purchase_count, 0),
+                'shop_purchase_users', COALESCE(shop_purchase_users, 0),
+                'shop_purchase_rate', ROUND(safe_divide(COALESCE(shop_purchase_users, 0)::NUMERIC, NULLIF(shop_view_users, 0)::NUMERIC) * 100, 2)
+            ),
+            'growth', jsonb_build_object(
+                'guestbook_post_count', COALESCE(guestbook_post_count, 0),
+                'guestbook_post_users', COALESCE(guestbook_post_users, 0),
+                'affiliate_invite_click_count', COALESCE(affiliate_invite_click_count, 0),
+                'affiliate_invite_click_users', COALESCE(affiliate_invite_click_users, 0),
+                'checkin_success_count', COALESCE(checkin_success_count, 0),
+                'checkin_success_users', COALESCE(checkin_success_users, 0)
+            )
+        )
+    INTO v_event_overview, v_event_funnels
+    FROM event_rollup;
+
+    RETURN jsonb_build_object(
+        'period_days', p_days,
+        'overview', v_overview,
+        'user_trend', v_user_trend,
+        'channel_breakdown', v_channel_breakdown,
+        'top_content', v_top_content,
+        'event_overview', COALESCE(v_event_overview, '{}'::JSONB),
+        'event_funnels', COALESCE(v_event_funnels, '{}'::JSONB),
+        'generated_at', NOW()
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- ============================================
 -- OVERVIEW WITH TREND (带站点过滤)
 -- ============================================
@@ -723,10 +1010,13 @@ DECLARE
     v_base JSONB;
     v_prev_dau INTEGER;
     v_prev_new_users INTEGER;
+    v_current_comments INTEGER;
     v_prev_comments INTEGER;
     v_today DATE := (NOW() AT TIME ZONE 'Asia/Shanghai')::date;
     v_yesterday DATE := v_today - 1;
-    v_prev_week DATE := v_today - 7;
+    v_current_window_start DATE := v_today - 6;
+    v_prev_window_start DATE := v_today - 13;
+    v_prev_window_end DATE := v_today - 7;
 BEGIN
     PERFORM public.require_admin_access();
 
@@ -743,21 +1033,36 @@ BEGIN
 
     -- Previous week new users
     SELECT COUNT(*) INTO v_prev_new_users
-    FROM auth.users WHERE get_local_date(created_at) BETWEEN (v_prev_week - 7) AND (v_prev_week - 1);
+    FROM auth.users
+    WHERE get_local_date(created_at) BETWEEN v_prev_window_start AND v_prev_window_end;
 
     -- Previous comments
     IF p_site IS NULL THEN
+        SELECT COUNT(*) INTO v_current_comments
+        FROM public.prompt_comments
+        WHERE get_local_date(created_at) BETWEEN v_current_window_start AND v_today;
+    ELSE
+        SELECT COUNT(*) INTO v_current_comments
+        FROM public.prompt_comments
+        WHERE get_local_date(created_at) BETWEEN v_current_window_start AND v_today
+          AND site = p_site;
+    END IF;
+
+    IF p_site IS NULL THEN
         SELECT COUNT(*) INTO v_prev_comments
-        FROM public.prompt_comments WHERE get_local_date(created_at) BETWEEN (v_prev_week - 7) AND (v_prev_week - 1);
+        FROM public.prompt_comments
+        WHERE get_local_date(created_at) BETWEEN v_prev_window_start AND v_prev_window_end;
     ELSE
         SELECT COUNT(*) INTO v_prev_comments
-        FROM public.prompt_comments WHERE get_local_date(created_at) BETWEEN (v_prev_week - 7) AND (v_prev_week - 1) AND site = p_site;
+        FROM public.prompt_comments
+        WHERE get_local_date(created_at) BETWEEN v_prev_window_start AND v_prev_window_end
+          AND site = p_site;
     END IF;
 
     RETURN v_base || jsonb_build_object(
         'dau_growth', CASE WHEN v_prev_dau > 0 THEN ROUND(((v_base->>'dau')::NUMERIC - v_prev_dau) / v_prev_dau * 100) ELSE 0 END,
         'new_users_growth', CASE WHEN v_prev_new_users > 0 THEN ROUND(((v_base->>'new_users_week')::NUMERIC - v_prev_new_users) / v_prev_new_users * 100) ELSE 0 END,
-        'comments_growth', CASE WHEN v_prev_comments > 0 THEN ROUND(((v_base->>'total_comments')::NUMERIC - v_prev_comments) / v_prev_comments * 100) ELSE 0 END
+        'comments_growth', CASE WHEN v_prev_comments > 0 THEN ROUND((COALESCE(v_current_comments, 0)::NUMERIC - v_prev_comments) / v_prev_comments * 100) ELSE 0 END
     );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -774,7 +1079,8 @@ GRANT EXECUTE ON FUNCTION get_overview_stats_with_trend(VARCHAR) TO authenticate
 GRANT EXECUTE ON FUNCTION get_user_trend(INTEGER, VARCHAR) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_content_trend(INTEGER, VARCHAR) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_revenue_trend(INTEGER, VARCHAR) TO authenticated;
-GRANT EXECUTE ON FUNCTION get_content_top(INTEGER, VARCHAR) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_content_top(INTEGER, VARCHAR, INTEGER) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_content_top_v2(INTEGER, VARCHAR, INTEGER) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_community_stats(INTEGER, VARCHAR) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_activity_heatmap(INTEGER, VARCHAR) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_top_contributors(INTEGER, VARCHAR) TO authenticated;
@@ -782,6 +1088,7 @@ GRANT EXECUTE ON FUNCTION get_points_leaderboard(INTEGER, VARCHAR) TO authentica
 GRANT EXECUTE ON FUNCTION get_points_health(VARCHAR) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_points_distribution(VARCHAR) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_ai_summary_data(INTEGER, VARCHAR) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_ai_summary_data_v2(INTEGER, VARCHAR) TO authenticated;
 
 -- ============================================
 -- 完成！在 Supabase SQL Editor 中执行本脚本

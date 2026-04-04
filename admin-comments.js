@@ -519,6 +519,105 @@ function updateFilterState(filterType, value) {
     }
 }
 
+function getCommentFilterOptionLabel(filterType, value) {
+    const normalizedType = String(filterType || '').trim().toLowerCase();
+    const normalizedValue = String(value || '').trim().toLowerCase();
+    const labels = {
+        date: {
+            all: '日期',
+            today: '今天',
+            week: '本周',
+            month: '本月',
+            custom: '自定义'
+        },
+        status: {
+            all: '回复',
+            replied: '有回复',
+            unreplied: '无回复'
+        },
+        type: {
+            all: '层级',
+            top: '主评论',
+            reply: '子回复'
+        }
+    };
+
+    return labels[normalizedType]?.[normalizedValue] || getDefaultLabel(normalizedType);
+}
+
+function syncAdminCommentsFilterUi() {
+    const searchInput = document.getElementById('commentSearch');
+    if (searchInput) {
+        searchInput.value = filterState.currentSearchInput || '';
+    }
+
+    const hasImageCheckbox = document.getElementById('filterHasImage');
+    if (hasImageCheckbox) {
+        hasImageCheckbox.checked = filterState.hasImage === true;
+    }
+
+    ['date', 'status', 'type'].forEach((filterType) => {
+        const dropdown = document.querySelector(`.filter-dropdown[data-filter="${filterType}"]`);
+        if (!dropdown) return;
+
+        const currentValue = String(filterState[filterType] || 'all');
+        dropdown.querySelectorAll('.filter-option').forEach((option) => {
+            option.classList.toggle('selected', String(option.dataset.value || '') === currentValue);
+        });
+
+        const btn = dropdown.querySelector('.filter-btn');
+        const label = dropdown.querySelector('.filter-label');
+        const isActive = currentValue !== 'all';
+        if (btn) {
+            btn.classList.toggle('active', isActive);
+        }
+        if (label) {
+            label.textContent = getCommentFilterOptionLabel(filterType, currentValue);
+        }
+    });
+
+    const dateFromInput = document.getElementById('filterDateFrom');
+    const dateToInput = document.getElementById('filterDateTo');
+    if (dateFromInput) {
+        dateFromInput.value = filterState.date === 'custom' ? (filterState.dateFrom || '') : '';
+    }
+    if (dateToInput) {
+        dateToInput.value = filterState.date === 'custom' ? (filterState.dateTo || '') : '';
+    }
+
+    renderFilterTags();
+}
+
+function openAnalyticsCommentContext(context = {}) {
+    const normalizedContext = context && typeof context === 'object' && !Array.isArray(context) ? context : {};
+    const targetView = String(normalizedContext.view || 'guestbook').trim().toLowerCase() === 'gallery' ? 'gallery' : 'guestbook';
+    const focusCommentId = String(
+        normalizedContext.focusCommentId
+        || normalizedContext.commentId
+        || normalizedContext.targetId
+        || ''
+    ).trim();
+    const status = ['all', 'replied', 'unreplied'].includes(String(normalizedContext.status || '').trim().toLowerCase())
+        ? String(normalizedContext.status || '').trim().toLowerCase()
+        : 'all';
+    const type = ['all', 'top', 'reply'].includes(String(normalizedContext.type || '').trim().toLowerCase())
+        ? String(normalizedContext.type || '').trim().toLowerCase()
+        : 'all';
+
+    filterState.date = 'all';
+    filterState.dateFrom = null;
+    filterState.dateTo = null;
+    filterState.status = status;
+    filterState.type = type;
+    filterState.hasImage = normalizedContext.hasImage === true;
+    filterState.currentSearchInput = String(normalizedContext.search || normalizedContext.searchTerm || '').trim();
+    filterState.searchTags = [];
+    pendingFocusedCommentId = focusCommentId;
+
+    syncAdminCommentsFilterUi();
+    switchCommentView(targetView);
+}
+
 /**
  * Get default label for filter type
  */
@@ -1863,6 +1962,7 @@ window.copyCommentId = function (id, parentId) {
 window.initCommentsModule = initCommentsModule;
 window.switchCommentView = switchCommentView;
 window.loadComments = loadComments;
+window.openAnalyticsCommentContext = openAnalyticsCommentContext;
 window.deleteComment = deleteComment;
 window.viewCommentContext = viewCommentContext;
 window.toggleSelectAll = toggleSelectAll;

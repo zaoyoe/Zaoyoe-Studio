@@ -150,6 +150,44 @@ test('active frontend runtime files no longer hardcode the production Supabase h
     assert.deepEqual(violations, [], violations.join('\n'));
 });
 
+test('settings split Google One API into its own tab immediately after content settings', () => {
+    const adminStudioSource = readRepoFile('admin-studio.html');
+    const adminStudioStyles = readRepoFile('admin-studio.css');
+    const contentTabIndex = adminStudioSource.indexOf('data-settings-view="content"');
+    const googleOneTabIndex = adminStudioSource.indexOf('data-settings-view="google-one"');
+    const contentViewIndex = adminStudioSource.indexOf('id="settings-view-content"');
+    const googleOneViewIndex = adminStudioSource.indexOf('id="settings-view-google-one"');
+    const affiliateViewIndex = adminStudioSource.indexOf('id="settings-view-affiliate"');
+
+    assert.notEqual(contentTabIndex, -1, 'admin-studio.html should include the content settings tab');
+    assert.notEqual(googleOneTabIndex, -1, 'admin-studio.html should include the Google One API settings tab');
+    assert.ok(googleOneTabIndex > contentTabIndex, 'the Google One API tab should render after the content settings tab');
+    assert.notEqual(contentViewIndex, -1, 'admin-studio.html should include the content settings view');
+    assert.notEqual(googleOneViewIndex, -1, 'admin-studio.html should include the Google One API settings view');
+    assert.notEqual(affiliateViewIndex, -1, 'admin-studio.html should include the affiliate settings view');
+    assert.ok(
+        googleOneViewIndex > contentViewIndex && googleOneViewIndex < affiliateViewIndex,
+        'the Google One API settings view should render after content settings and before affiliate settings'
+    );
+
+    const contentViewSource = adminStudioSource.slice(contentViewIndex, googleOneViewIndex);
+    const googleOneViewSource = adminStudioSource.slice(googleOneViewIndex, affiliateViewIndex);
+
+    assert.equal(contentViewSource.includes('cfgVerifyPrice'), false, 'settings-view-content should no longer include the Google One API pricing controls');
+    assert.equal(googleOneViewSource.includes('cfgVerifyPrice'), true, 'settings-view-google-one should host the Google One API pricing controls');
+    assert.equal(googleOneViewSource.includes('cfgVerifyApiKey'), true, 'settings-view-google-one should host the Google One API credential controls');
+    assert.equal(googleOneViewSource.includes('settings-google-one-hero'), true, 'settings-view-google-one should render the dedicated Google One API page hero');
+    assert.equal(googleOneViewSource.includes('settings-google-one-top-grid'), true, 'settings-view-google-one should split Google One API configuration into a dedicated top card grid');
+    assert.equal(googleOneViewSource.includes('settings-google-one-monitor-columns'), true, 'settings-view-google-one should split recent Google One API tasks and failures into dedicated monitor columns');
+    assert.match(
+        adminStudioStyles,
+        /#settings-view-google-one \.module-content\.settings-google-one-layout\s*\{[\s\S]*width:\s*min\(100%, 1520px\);/,
+        'admin-studio.css should give the Google One API settings view a dedicated centered single-column layout'
+    );
+    assert.equal(adminStudioStyles.includes('#settings-view-google-one .settings-google-one-top-grid'), true, 'admin-studio.css should define a dedicated split grid for the Google One API top cards');
+    assert.equal(adminStudioStyles.includes('#settings-view-google-one .settings-google-one-monitor-columns'), true, 'admin-studio.css should define dedicated monitor columns for Google One API operations panels');
+});
+
 test('vercel config disables automatic preview deployments for codex work branches', () => {
     const vercelConfig = readVercelConfig();
 
@@ -1251,7 +1289,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
         ['shop.html', 'css/shop-page.css?v=20260324_SHOP_RUNTIME_STYLE_1'],
-        ['admin-studio.html', 'css/admin-studio-page.css?v=20260403_POINTS_LOOKUP_PANEL_WIDTH_1'],
+        ['admin-studio.html', 'css/admin-studio-page.css?v=20260404_ADMIN_TICKET_MODAL_POLISH_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
         ['debug-realtime.html', 'css/debug-realtime-page.css?v=20260324_DEBUG_REALTIME_STYLE_ATTRS_1'],
@@ -1760,9 +1798,9 @@ test('shop storefront preserves the initial skeleton layout while first-load dat
         'js/shop-client.js should keep the server-rendered shop skeleton layout stable when the first request is still pending'
     );
     assert.equal(
-        shopHtmlSource.includes('js/shop-client.js?v=20260403_SHOP_SKELETON_LAYOUT_STABLE_1'),
+        shopHtmlSource.includes('js/shop-client.js?v=20260404_SHOP_PHASE3_EXPERIMENT_RUNTIME_1'),
         true,
-        'shop.html should reference the latest shop client runtime for the stable skeleton layout fix'
+        'shop.html should reference the latest shop client runtime for the phase 3 storefront events'
     );
 });
 
@@ -2105,7 +2143,7 @@ test('supabase guestbook runtime renderers externalize error, empty state, delet
 
     const htmlMarkers = [
         'style.css?v=20260324_GUESTBOOK_SUPABASE_RUNTIME_STYLE_1',
-        'supabase-guestbook-functions.js?v=20260324_GUESTBOOK_SUPABASE_RUNTIME_STYLE_1'
+        'supabase-guestbook-functions.js?v=20260404_GUESTBOOK_PHASE3_EVENTS_1'
     ];
 
     for (const marker of htmlMarkers) {
@@ -2230,6 +2268,7 @@ test('admin studio shell tabs and dashboards route core controls through delegat
         'data-admin-action="payments-toggle-provider-enabled"',
         'data-admin-action="payments-save-channel-settings"',
         'data-admin-action="analytics-switch-tab"',
+        'data-admin-action="analytics-open-destination"',
         'data-admin-action="analytics-export-data"',
         'data-admin-action="analytics-refresh-data"',
         'data-admin-change-action="homepage-handle-screenshot-upload"',
@@ -2243,14 +2282,24 @@ test('admin studio shell tabs and dashboards route core controls through delegat
 
     assert.equal(adminStudioScript.includes("closest('[data-admin-action]')"), true, 'admin-studio.js should delegate click-based admin controls');
     assert.equal(adminStudioScript.includes("closest('[data-admin-change-action]')"), true, 'admin-studio.js should delegate change-based admin controls');
+    assert.equal(adminStudioScript.includes("target.closest('[data-admin-overlay-close]')"), true, 'admin-studio.js should resolve overlay dismissal from the nearest overlay container');
+    assert.equal(adminStudioScript.includes("target.closest('.admin-ticket-reply-modal__panel')"), true, 'admin-studio.js should keep reply modal clicks inside the panel from triggering overlay dismissal');
+    assert.equal(adminStudioScript.includes("target.closest('.admin-ticket-bulk-modal__panel')"), true, 'admin-studio.js should keep bulk modal clicks inside the panel from triggering overlay dismissal');
+    assert.equal(adminStudioScript.includes("target.closest('.admin-ticket-summary-job-modal__dialog')"), true, 'admin-studio.js should keep summary detail clicks inside the dialog from triggering overlay dismissal');
     assert.equal(adminStudioScript.includes("window.AdminTickets?.setWorkspaceView?.(actionEl.dataset.ticketWorkspace, {"), true, 'admin-studio.js should switch ticket workspaces through the shared workspace helper');
     assert.equal(adminStudioScript.includes("scroll: false"), true, 'admin-studio.js should avoid auto-scrolling when switching ticket workspaces from the top tab bar');
     assert.equal(adminStudioCss.includes('#module-tickets[data-ticket-workspace="summary"] #ticketsOverviewPanel'), true, 'admin-studio.css should flatten the outer overview shell in summary tracking mode');
     assert.equal(adminStudioCss.includes('#module-tickets[data-ticket-workspace="summary"] #ticketsOverviewPanel .admin-ticket-overview-panels'), true, 'admin-studio.css should flatten the summary tracking panel stack into a single column');
     assert.equal(adminStudioCss.includes('.admin-ticket-overview-reminder-grid--summary .admin-ticket-overview-reminder-section--summary'), true, 'admin-studio.css should let the daily SLA summary section span the full summary tracking row');
     assert.equal(adminStudioCss.includes('#module-tickets[data-ticket-workspace="summary"] #ticketsOverviewReminderPanel .admin-ticket-overview-reminder-section--activity'), true, 'admin-studio.css should add extra breathing room above the summary reminder activity card');
-    assert.equal(adminStudioCss.includes('.admin-ticket-overview-reminder-activity__footer'), true, 'admin-studio.css should render the summary reminder actions inside a dedicated activity footer');
-    assert.equal(adminStudioCss.includes('.admin-ticket-overview-reminder-actions--embedded'), true, 'admin-studio.css should style the summary reminder actions as embedded footer actions');
+    assert.equal(adminStudioCss.includes('.admin-ticket-overview-reminder-summary-history-item__actions'), true, 'admin-studio.css should align summary history actions on the right side of each history card');
+    assert.equal(adminStudioCss.includes('.admin-ticket-overview-reminder-summary-actions--history'), true, 'admin-studio.css should pin summary history action buttons to the bottom-right of each history card');
+    assert.equal(adminStudioCss.includes('.admin-ticket-overview-reminder-summary-preview-item__actions'), true, 'admin-studio.css should pin summary preview ticket actions to the bottom-right of each preview card');
+    assert.equal(adminStudioCss.includes('.admin-ticket-summary-job-modal__comparison-item-actions'), true, 'admin-studio.css should pin comparison card actions to the bottom-right and isolate them from long text');
+    assert.equal(adminStudioCss.includes('.admin-ticket-bulk-modal.is-visible .admin-ticket-bulk-modal__panel'), true, 'admin-studio.css should animate the bulk process dialog panel into view');
+    assert.equal(adminStudioCss.includes('.admin-ticket-summary-job-modal.is-visible .admin-ticket-summary-job-modal__dialog'), true, 'admin-studio.css should animate the summary detail dialog into view');
+    assert.equal(adminStudioCss.includes('.admin-ticket-overview-reminder-activity__footer'), false, 'admin-studio.css should remove duplicate footer actions from the reminder activity card');
+    assert.equal(adminStudioCss.includes('.admin-ticket-overview-reminder-actions--embedded'), false, 'admin-studio.css should no longer style embedded duplicate footer actions inside the reminder panels');
 });
 
 test('admin general settings and export controls route through delegated bindings with real handler glue', () => {
@@ -3223,7 +3272,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'the standalone ops alerts module should render after the settings module closes'
     );
     assert.equal(
-        adminStudioSource.includes('js/admin-workbench.js?v=20260402_ADMIN_WORKBENCH_ACCESS_7'),
+        adminStudioSource.includes('js/admin-workbench.js?v=20260404_ADMIN_WORKBENCH_EXPERIMENT_CONTEXT_1'),
         true,
         'admin-studio.html should load the shared admin workbench runtime before admin config'
     );
@@ -3577,6 +3626,16 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
     for (const marker of sharedWorkbenchMarkers) {
         assert.equal(adminWorkbenchSource.includes(marker), true, `js/admin-workbench.js should contain ${marker}`);
     }
+    assert.equal(
+        adminWorkbenchSource.includes("window.switchSettingsView?.('google-one');"),
+        true,
+        'js/admin-workbench.js should route verify monitor workspaces into the Google One settings view'
+    );
+    assert.equal(
+        adminWorkbenchSource.includes("window.switchSettingsView?.('content');"),
+        false,
+        'js/admin-workbench.js should no longer route verify monitor workspaces into the content settings view'
+    );
     assert.equal(
         adminConfigSource.includes('return resolveOpsAlertWorkspaceActionResolver()({'),
         true,
@@ -5400,6 +5459,7 @@ test('admin points runtime renderers route batch tables and modals through deleg
         "case 'navigate-user':",
         "case 'invalidate-batch-from-codes':",
         "case 'save-batch-edit':",
+        'window.navigateToBatch = navigateToBatch;',
         "overlay.classList.add('is-visible')",
         "overlay.classList.remove('is-visible')"
     ];
@@ -5973,7 +6033,9 @@ test('admin comments runtime renderers route list items, filters, and block menu
         "action: 'toggle_pin'",
         "requireWritableCommentsSite({ label: `${scopeStr}用户封禁` })",
         "requireWritableCommentsSite({ label: `${scopeLabel}用户解封` })",
-        'action-btn action-block${blockState.blocked ? \' action-btn--blocked\' : \'\'}'
+        'action-btn action-block${blockState.blocked ? \' action-btn--blocked\' : \'\'}',
+        'function openAnalyticsCommentContext(context = {})',
+        'window.openAnalyticsCommentContext = openAnalyticsCommentContext;'
     ];
 
     for (const marker of delegatedMarkers) {
@@ -6279,7 +6341,12 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         'verify.html should load the latest verify-widget stylesheet version'
     );
     assert.equal(
-        verifyPageSource.includes('./verify-widget.js?v=20260324_VERIFY_WIDGET_RUNTIME_STYLE_1'),
+        verifyPageSource.includes('./js/user-event-tracker.js?v=20260404_PHASE3_EXPERIMENT_RUNTIME_1'),
+        true,
+        'verify.html should load the shared phase 3 user event tracker before the verify widget runtime'
+    );
+    assert.equal(
+        verifyPageSource.includes('./verify-widget.js?v=20260404_VERIFY_PHASE3_EXPERIMENT_RUNTIME_1'),
         true,
         'verify.html should load the latest verify-widget script version'
     );
@@ -6289,7 +6356,12 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         'index_old.html should load the latest verify-widget stylesheet version'
     );
     assert.equal(
-        archivedIndexSource.includes('./verify-widget.js?v=20260324_VERIFY_WIDGET_RUNTIME_STYLE_1'),
+        archivedIndexSource.includes('./js/user-event-tracker.js?v=20260404_PHASE3_EXPERIMENT_RUNTIME_1'),
+        true,
+        'index_old.html should load the shared phase 3 user event tracker before the verify widget runtime'
+    );
+    assert.equal(
+        archivedIndexSource.includes('./verify-widget.js?v=20260404_VERIFY_PHASE3_EXPERIMENT_RUNTIME_1'),
         true,
         'index_old.html should load the latest verify-widget script version'
     );
@@ -6471,6 +6543,9 @@ test('admin studio settings, discounts, and tickets controls route through deleg
         'data-admin-action="tickets-toggle-priority"',
         'data-admin-action="tickets-toggle-mine"',
         'data-admin-action="tickets-toggle-unassigned"',
+        'data-admin-action="tickets-toggle-select-mode"',
+        'data-admin-action="tickets-toggle-batch-menu"',
+        'data-admin-action="tickets-select-all-page"',
         'data-admin-action="tickets-bulk-assign-self"',
         'data-admin-action="tickets-bulk-clear-assignee"',
         'data-admin-action="tickets-open-bulk-resolve"',
@@ -6497,6 +6572,8 @@ test('admin studio settings, discounts, and tickets controls route through deleg
     assert.equal(adminStudioScript.includes('tickets-submit-reply'), true, 'admin-studio.js should delegate ticket reply submission');
     assert.equal(adminStudioScript.includes('tickets-switch-workspace'), true, 'admin-studio.js should delegate ticket workspace switching');
     assert.equal(adminStudioScript.includes('tickets-toggle-overdue'), true, 'admin-studio.js should delegate ticket overdue quick filters');
+    assert.equal(adminStudioScript.includes('tickets-toggle-select-mode'), true, 'admin-studio.js should delegate ticket select mode toggles');
+    assert.equal(adminStudioScript.includes('tickets-toggle-batch-menu'), true, 'admin-studio.js should delegate ticket batch menu toggles');
     assert.equal(adminStudioScript.includes('tickets-bulk-assign-self'), true, 'admin-studio.js should delegate ticket bulk assignment');
     assert.equal(adminStudioScript.includes('tickets-open-bulk-resolve'), true, 'admin-studio.js should delegate ticket bulk resolve actions');
     assert.equal(adminStudioScript.includes('tickets-submit-bulk-process'), true, 'admin-studio.js should delegate ticket batch processing');
@@ -6572,9 +6649,6 @@ test('discount and ticket admin renderers no longer emit inline row or paginatio
     const delegatedTicketMarkers = [
         'data-admin-action="tickets-pagination-go"',
         'data-admin-change-action="tickets-pagination-go"',
-        'data-admin-action="tickets-open-overdue-queue"',
-        'data-admin-action="tickets-open-sla-settings"',
-        'data-admin-action="tickets-refresh-overview"',
         'data-admin-action="tickets-open-summary-job-detail"',
         'data-admin-action="tickets-retry-summary-job"'
     ];
@@ -6614,9 +6688,10 @@ test('ticket admin surfaces user email in search and list rendering', () => {
     assert.equal(adminStudioSource.includes('placeholder="搜索工单号、订单号、用户、邮箱或描述..."'), true, 'admin-studio.html should mention ticket id, user, and email in the ticket search placeholder');
     assert.equal(adminStudioSource.includes('<th>用户 / 邮箱</th>'), true, 'admin-studio.html should label the ticket user column with email support');
     assert.equal(adminStudioSource.includes('js/admin-ticket-links.js?v=20260401_ADMIN_TICKET_LINK_PROTOCOL_1'), true, 'admin-studio.html should load the shared ticket link protocol before the ticket runtime');
-    assert.equal(adminStudioSource.includes('admin-studio.css?v=20260404_ADMIN_TICKET_REMINDER_ACTIVITY_LAYOUT_6'), true, 'admin-studio.html should load the cache-busted admin studio stylesheet for the reminder activity layout fix');
-    assert.equal(adminStudioSource.includes('admin-config.js?v=20260403_ADMIN_TICKET_TEMPLATE_SETTINGS_1'), true, 'admin-studio.html should load the cache-busted admin config script for configurable ticket reply templates');
-    assert.equal(adminStudioSource.includes('js/admin-tickets.js?v=20260404_ADMIN_TICKET_OVERVIEW_COPY_1'), true, 'admin-studio.html should load the cache-busted ticket admin script');
+    assert.equal(adminStudioSource.includes('admin-studio.css?v=20260404_ANALYTICS_DUTY_BOARD_26'), true, 'admin-studio.html should load the cache-busted admin studio stylesheet for analytics duty board states');
+    assert.equal(adminStudioSource.includes('analytics-advanced-entry'), false, 'admin-studio.html should keep advanced analytics out of the main toolbar flow');
+    assert.equal(adminStudioSource.includes('admin-config.js?v=20260404_ADMIN_VERIFY_WORKBENCH_CONTEXT_1'), true, 'admin-studio.html should load the cache-busted admin config script for configurable ticket reply templates');
+    assert.equal(adminStudioSource.includes('js/admin-tickets.js?v=20260404_ADMIN_TICKETS_WORKBENCH_CONTEXT_1'), true, 'admin-studio.html should load the cache-busted ticket admin script');
     assert.equal(ticketsSource.includes('pageSize: 12,'), true, 'js/admin-tickets.js should paginate tickets 12 at a time');
     assert.equal(ticketLinksSource.includes('root.AdminTicketLinks = api;'), true, 'js/admin-ticket-links.js should expose a shared ticket link protocol namespace');
     assert.equal(ticketLinksSource.includes('function buildLinkedTicketDescription(body = {}, actorLabel = \'\')'), true, 'js/admin-ticket-links.js should build linked ticket descriptions through the shared protocol');
@@ -6624,6 +6699,7 @@ test('ticket admin surfaces user email in search and list rendering', () => {
     assert.equal(ticketLinksSource.includes('function parseLinkedChatSessionContext(description = \'\')'), true, 'js/admin-ticket-links.js should parse linked chat ticket descriptions');
     assert.equal(ticketsSource.includes("fetchProfilesByIds: async function"), true, 'js/admin-tickets.js should fetch profile emails for ticket users');
     assert.equal(ticketsSource.includes("buildAdminTicketsUrl: function"), true, 'js/admin-tickets.js should build shared admin ticket URLs through the central admin route');
+    assert.equal(ticketsSource.includes("showWorkbenchContext: function (context = {})"), true, 'js/admin-tickets.js should render experiment workbench context notes when analytics opens the ticket module');
     assert.equal(ticketsSource.includes("getTicketsListUrl: function"), true, 'js/admin-tickets.js should build a shared server-side tickets list request URL');
     assert.equal(ticketsSource.includes("getTicketsAssignUrl: function"), true, 'js/admin-tickets.js should build a shared ticket assignment route URL');
     assert.equal(ticketsSource.includes("getTicketsBatchProcessUrl: function"), true, 'js/admin-tickets.js should build a shared ticket batch processing route URL');
@@ -6639,9 +6715,9 @@ test('ticket admin surfaces user email in search and list rendering', () => {
     assert.equal(ticketsSource.includes("getReminderWorkspaceMode: function"), true, 'js/admin-tickets.js should distinguish overview reminder status from summary tracking workspace mode');
     assert.equal(ticketsSource.includes("syncReminderWorkspacePresentation: function"), true, 'js/admin-tickets.js should update reminder headings and content when ticket workspaces change');
     assert.equal(ticketsSource.includes("renderReminderSummaryStatusStrip: function"), true, 'js/admin-tickets.js should render a compact reminder status strip for the summary tracking workspace');
-    assert.equal(ticketsSource.includes("renderReminderPanelActions: function"), true, 'js/admin-tickets.js should centralize the reminder action buttons markup');
+    assert.equal(ticketsSource.includes("renderReminderPanelActions: function"), false, 'js/admin-tickets.js should no longer render duplicate reminder action buttons inside the reminder panels');
     assert.equal(ticketsSource.includes("admin-ticket-overview-reminder-summary-entry__cards"), true, 'js/admin-tickets.js should render the daily SLA summary details as a horizontal subcard grid');
-    assert.equal(ticketsSource.includes("includeFooterActions: isSummaryMode"), true, 'js/admin-tickets.js should embed the reminder actions inside the activity card in summary tracking mode');
+    assert.equal(ticketsSource.includes("includeFooterActions: isSummaryMode"), false, 'js/admin-tickets.js should no longer embed duplicate reminder actions inside the summary activity card');
     assert.equal(ticketsSource.includes("getReminderSummaryHistoryFallbackMessage: function"), true, 'js/admin-tickets.js should normalize summary history fallback copy before rendering it in the UI');
     assert.equal(ticketsSource.includes("if (normalized === 'batch')"), true, 'js/admin-tickets.js should merge the legacy batch workspace into the main processing workspace');
     assert.equal(ticketsSource.includes("renderReminderSummaryManualEvent: function"), true, 'js/admin-tickets.js should render recent manual handoff notes for summary jobs');
@@ -6673,6 +6749,8 @@ test('ticket admin surfaces user email in search and list rendering', () => {
     assert.equal(ticketsSource.includes("loadOverview: async function"), true, 'js/admin-tickets.js should load the ticket SLA and efficiency overview');
     assert.equal(ticketsSource.includes("openOverdueQueue: function"), true, 'js/admin-tickets.js should expose a shortcut into the overdue queue');
     assert.equal(ticketsSource.includes("openSlaSettings: function"), true, 'js/admin-tickets.js should deep-link from the overview into ticket reminder settings');
+    assert.equal(ticketsSource.includes("window.switchModule?.('ops-alerts')"), true, 'js/admin-tickets.js should route reminder settings shortcuts into the ops alerts module');
+    assert.equal(ticketsSource.includes("switchOpsAlertsView('monitors')"), true, 'js/admin-tickets.js should focus the ops alerts monitors view before highlighting ticket reminder controls');
     assert.equal(ticketsSource.includes("renderReminderPanel: function"), true, 'js/admin-tickets.js should render the ticket reminder status panel');
     assert.equal(ticketsSource.includes("buildReplyTimelineItems: function"), true, 'js/admin-tickets.js should build a ticket processing timeline model');
     assert.equal(ticketsSource.includes("buildTicketPriorityMeta: function"), true, 'js/admin-tickets.js should derive ticket priority metadata for triage');
@@ -6695,7 +6773,13 @@ test('ticket admin surfaces user email in search and list rendering', () => {
     assert.equal(adminStudioSource.includes('ticketReplyTemplates'), true, 'admin-studio.html should include the ticket reply template container');
     assert.equal(adminStudioSource.includes('ticketReplyTimeline'), true, 'admin-studio.html should include the ticket reply timeline container');
     assert.equal(adminStudioSource.includes('ticketInternalNote'), true, 'admin-studio.html should include the admin-only internal note input');
-    assert.equal(adminStudioSource.includes('ticketsBulkToolbar'), true, 'admin-studio.html should include the ticket bulk action toolbar');
+    assert.equal(adminStudioSource.includes('admin-ticket-summary-job-modal__close'), false, 'admin-studio.html should dismiss the ticket summary detail modal through overlay clicks instead of an X close button');
+    assert.equal(adminStudioSource.includes('admin-ticket-reply-modal__close'), false, 'admin-studio.html should dismiss the ticket reply panel through overlay clicks instead of an X close button');
+    assert.equal(adminStudioSource.includes('admin-ticket-bulk-modal__close'), false, 'admin-studio.html should dismiss the ticket bulk process modal through overlay clicks instead of an X close button');
+    assert.equal(adminStudioSource.includes('ticketsSelectionToolbar'), true, 'admin-studio.html should include the ticket selection toolbar');
+    assert.equal(adminStudioSource.includes('ticketsBatchDropdownMenu'), true, 'admin-studio.html should include the ticket bulk action dropdown menu');
+    assert.equal(adminStudioSource.includes('ticketsSelectedCountWrapper'), true, 'admin-studio.html should include the ticket selected count wrapper');
+    assert.equal(adminStudioSource.includes('ticketsBulkToolbar'), false, 'admin-studio.html should no longer include the legacy ticket bulk action toolbar');
     assert.equal(adminStudioSource.includes('ticketsSelectAllCheckbox'), true, 'admin-studio.html should include the ticket page selection checkbox');
     assert.equal(adminStudioSource.includes('ticketBulkProcessModal'), true, 'admin-studio.html should include the ticket bulk process modal');
     assert.equal(adminStudioSource.includes('ticketMineFilterBtn'), true, 'admin-studio.html should include the ticket ownership quick filter');
@@ -6837,7 +6921,10 @@ test('discount admin runtime renderers externalize table states, copy toast, and
     const pageCssMarkers = [
         '[data-admin-action="discounts-open-generate-modal"].admin-studio-inline-style-attr-160:hover',
         '.admin-studio-inline-style-attr-164.is-visible',
-        '.admin-studio-inline-style-attr-164.is-visible .admin-studio-inline-style-attr-165'
+        '.admin-studio-inline-style-attr-164.is-visible .admin-studio-inline-style-attr-165',
+        '.admin-studio-inline-style-attr-202 { display:flex;',
+        'pointer-events:none; visibility:hidden; opacity:0;',
+        'animation:none; overflow: hidden;'
     ];
 
     for (const marker of pageCssMarkers) {
@@ -6965,10 +7052,6 @@ test('admin studio security, verify, affiliate, and experiment controls route th
         'data-admin-change-action="affiliate-save-setting"',
         'data-admin-change-action="affiliate-save-poster-field"',
         'data-admin-action="settings-add-api-key"',
-        'data-admin-action="analytics-load-ai-prediction"',
-        'data-admin-action="analytics-open-experiment-modal"',
-        'data-admin-action="analytics-load-experiments-list"',
-        'data-admin-action="analytics-close-ab-results-chart"',
         'data-admin-action="analytics-close-experiment-modal"',
         'data-admin-action="analytics-add-variant-row"'
     ];
@@ -6991,8 +7074,10 @@ test('admin studio security, verify, affiliate, and experiment controls route th
         'settings-save-verify-config',
         'affiliate-save-setting',
         'affiliate-save-poster-field',
+        "window.openExperimentModal?.(actionEl.dataset.analyticsContext || '');",
         'analytics-load-ai-prediction',
         'analytics-show-ab-results',
+        "window.showABResults?.(experimentId, experimentName, variants, targetMetric);",
         '[data-admin-focus-action]',
         '[data-admin-blur-action]',
         "form.id === 'experimentForm'",
@@ -7276,8 +7361,9 @@ test('shop admin order workflows externalize runtime table-row and modal styling
     }
 
     assert.equal(adminStudioSource.includes('js/admin-shop.js?v=20260403_ADMIN_SHOP_TAB_PREFETCH_1'), true, 'admin-studio.html should load the cache-busted shop admin script');
-    assert.equal(adminStudioSource.includes('admin-config.js?v=20260403_ADMIN_TICKET_TEMPLATE_SETTINGS_1'), true, 'admin-studio.html should load the cache-busted admin config script');
+    assert.equal(adminStudioSource.includes('admin-config.js?v=20260404_ADMIN_VERIFY_WORKBENCH_CONTEXT_1'), true, 'admin-studio.html should load the cache-busted admin config script');
     assert.equal(adminWorkbenchSource.includes('window.ShopAdmin?.focusOrder'), true, 'js/admin-workbench.js should directly focus shop order workspaces when an order id is available');
+    assert.equal(adminWorkbenchSource.includes('function buildOpsAlertWorkspaceExperimentContextState(context = {}, options = {})'), true, 'js/admin-workbench.js should build shared experiment context state for workbench destinations');
 });
 
 test('shop admin inventory workflows externalize runtime table and modal styling', () => {
@@ -7694,6 +7780,7 @@ test('admin studio create form and shop import/orders/fulfillment controls route
 test('analytics export controls and delivery runtime templates route through delegated actions', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioScript = readRepoFile('admin-studio.js');
+    const analyticsSource = readRepoFile('admin-analytics.js');
     const shopSource = readRepoFile('js/admin-shop.js');
 
     const removedInlineMarkers = [
@@ -7721,6 +7808,7 @@ test('analytics export controls and delivery runtime templates route through del
     }
 
     const delegatedHtmlMarkers = [
+        'data-admin-action="analytics-open-destination"',
         'data-admin-action="analytics-export-data"',
         'data-admin-action="analytics-refresh-data"'
     ];
@@ -7728,6 +7816,12 @@ test('analytics export controls and delivery runtime templates route through del
     for (const marker of delegatedHtmlMarkers) {
         assert.equal(adminStudioSource.includes(marker), true, `admin-studio.html should contain ${marker}`);
     }
+
+    assert.equal(
+        analyticsSource.includes('data-analytics-context="'),
+        true,
+        'admin-analytics.js should emit analytics action context attributes for routed cards'
+    );
 
     const delegatedShopActionMarkers = [
         'delivery-copy-restore-link',
@@ -7751,6 +7845,7 @@ test('analytics export controls and delivery runtime templates route through del
     }
 
     const delegatedHandlerMarkers = [
+        "case 'analytics-open-destination':",
         "case 'analytics-export-data':",
         "case 'analytics-refresh-data':",
         "case 'delivery-copy-restore-link':",
@@ -7779,11 +7874,17 @@ test('analytics export controls and delivery runtime templates route through del
         "case 'delivery-clear-conflict-audit-channel-filter':"
     ];
 
-    for (const marker of delegatedHandlerMarkers.slice(0, 2)) {
+    for (const marker of delegatedHandlerMarkers.slice(0, 3)) {
         assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
     }
 
-    for (const marker of delegatedHandlerMarkers.slice(2)) {
+    assert.equal(
+        adminStudioScript.includes("actionEl.dataset.analyticsContext || ''"),
+        true,
+        'admin-studio.js should forward analytics action context payloads to the destination router'
+    );
+
+    for (const marker of delegatedHandlerMarkers.slice(3)) {
         assert.equal(shopSource.includes(marker), true, `js/admin-shop.js should contain ${marker}`);
     }
 
@@ -7917,7 +8018,73 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
         'setAnalyticsVisibility(chartContainer, false);',
         'setAnalyticsVisibility(chartContainer, true);',
         'setAnalyticsVisibility(area, true);',
-        'setAnalyticsVisibility(area, false);'
+        'setAnalyticsVisibility(area, false);',
+        'function collectAnalyticsActionRecommendations(data = null)',
+        'function getAnalyticsAISourceData(data = null)',
+        'function buildOperationsHealthSnapshotFromPayloads({',
+        'function buildAnalyticsBusinessAnomalyCardsData(data = null, limit = 4)',
+        'function buildAnalyticsAIPulseSummaryData(data = null)',
+        'function buildAnalyticsAIActionCardsData(data = null, limit = 6)',
+        'function buildAnalyticsEventDrivenRecommendations(data = null) {',
+        'async function getAnalyticsSiteComparisonData(options = {}) {',
+        'function buildAnalyticsTopCategorySnapshot(rows = []) {',
+        'function buildAnalyticsSiteSnapshot(site = \'\', summaryWindow = {}) {',
+        'function buildAnalyticsSiteComparisonPayload(snapshots = []) {',
+        'function renderAnalyticsAISiteComparison(comparisonData = null) {',
+        'function applyAnalyticsDestinationSiteContext(context = {}) {',
+        'function buildAnalyticsExperimentTemplate(payload = {}) {',
+        'function getAnalyticsExperimentMetricDefinition(value = \'\') {',
+        'const ANALYTICS_EXPERIMENT_PLACEMENT_LABELS = {',
+        'const ANALYTICS_EXPERIMENT_PLACEMENT_DESTINATIONS = {',
+        'function buildAnalyticsExperimentBreakdownAction(dimensionType = \'\', dimensionValue = \'\', options = {}) {',
+        'function normalizeAnalyticsExperimentResultsPayload(results = [], variants = []) {',
+        'function buildAnalyticsExperimentResultsSummary(overviewRows = []) {',
+        'function renderAnalyticsExperimentResultsHighlights(overviewRows = [], targetMetricLabel = \'\') {',
+        'function renderAnalyticsExperimentBreakdownPanel(title, dimensionType, rows = [], options = {}) {',
+        "rpc('get_experiment_results_v2'",
+        'class="btn-sm btn-secondary ab-breakdown-row__action"',
+        'window.renderVerifyMonitorWorkbenchContext?.(normalizedContext);',
+        'window.AdminPayments?.showWorkbenchContext?.(normalizedContext);',
+        'window.AdminTickets?.showWorkbenchContext?.(normalizedContext);',
+        'function buildAnalyticsExperimentSuggestionsData(data = null, limit = 3) {',
+        'function renderAnalyticsExperimentSuggestions(items = []) {',
+        'function applyAnalyticsExperimentTemplate(context = null) {',
+        'data-experiment-target-metric="${encodeURIComponent(String(exp.target_metric || \'\'))}"',
+        'function getAnalyticsPercentRate(numerator, denominator, digits = 2) {',
+        'function buildCommerceEventFunnelViewData(summaryWindow = {}) {',
+        'function buildVerifyEventFunnelViewData(summaryWindow = {}) {',
+        'function buildGrowthEventFunnelViewData(summaryWindow = {}) {',
+        'async function loadEventFunnelPanels() {',
+        'function getAnalyticsActionGroupMeta(level = \'\')',
+        'function renderAnalyticsBusinessAnomalyCards(items = [])',
+        'function renderAnalyticsAIPulseSummary(items = [])',
+        'function renderAnalyticsAIActionCards(actionData = {})',
+        'function renderAIInsightMarkup(reportText, options = {})',
+        'function serializeAnalyticsActionContext(context = null)',
+        'function parseAnalyticsActionContext(context = null)',
+        'function focusAnalyticsDestinationTarget(targetOrId, options = {})',
+        'function scheduleAnalyticsWorkbenchOpen(workspaceKey = \'\', context = {}, delay = 120)',
+        'async function openAnalyticsPaymentsContext(mode = \'overview\', context = {})',
+        'async function openAnalyticsTicketsContext(mode = \'pending\', context = {})',
+        'async function getOperationsHealthSnapshotData(options = {})',
+        'function formatAnalyticsVerificationSample(row = {})',
+        'function formatAnalyticsPaymentAlertSample(item = {})',
+        'function formatAnalyticsTicketFocusSample(item = {})',
+        'function formatAnalyticsGuestbookMessageSample(row = {})',
+        '经营主线摘要：',
+        '交易事件转化：',
+        '验证事件转化：',
+        '增长动作：',
+        '站点对比：',
+        '实验建议候选：',
+        '运营健康快照：',
+        '=== 验证事件转化 ===',
+        '=== 增长动作 ===',
+        '=== 交易事件转化 ===',
+        '=== 经营异常 ===',
+        '=== 建议动作 ===',
+        '=== 实验建议 ===',
+        '5. 建议优先尝试的实验'
     ];
 
     for (const marker of analyticsMarkers) {
@@ -7929,7 +8096,37 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
         '[data-theme="dark"] .heatmap-cell--level-4',
         '.cohort-cell--level-4',
         '.flow-section-icon--inflow',
-        '.flow-section-icon--outflow'
+        '.flow-section-icon--outflow',
+        '.ai-pulse-grid',
+        '.ai-pulse-card__value',
+        '.ai-site-board',
+        '.ai-site-grid',
+        '.ai-site-card--focus',
+        '.ai-site-board__insight-pill',
+        '.ai-experiment-board',
+        '.ai-experiment-grid',
+        '.ai-experiment-card--warning',
+        '.ai-experiment-card__sample-pill',
+        '.ai-experiment-card__cta',
+        '.exp-target-chip--business',
+        '.exp-target-chip--legacy',
+        '.ai-anomaly-grid',
+        '.ai-anomaly-card--danger',
+        '.ai-anomaly-card__metric',
+        '.ai-anomaly-card__sample-pill',
+        '.ai-anomaly-card__cta',
+        '.ai-action-group--urgent',
+        '.ai-action-card-grid',
+        '.ai-action-card__sample-pill',
+        '.ai-action-card__cta',
+        '.analytics-nav-focus-target--active',
+        '.ab-results-highlight-grid',
+        '.ab-results-panel-grid',
+        '.ab-breakdown-card__rows',
+        '.ab-results-fallback-note',
+        '.ab-breakdown-row__action',
+        '.admin-workbench-context-note',
+        '.admin-workbench-context-note__chips'
     ];
 
     for (const marker of styleMarkers) {
@@ -7938,8 +8135,31 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
 
     const htmlMarkers = [
         '<div class="anomaly-alerts-area" id="anomalyAlertsArea" hidden>',
-        '<div class="ab-results-chart" id="abResultsChart" hidden>',
-        'admin-analytics.js?v=20260331_ANALYTICS_EXPERIMENT_OVERLAY_CLOSE_1'
+        'admin-analytics.js?v=20260404_ANALYTICS_DUTY_BOARD_20',
+        'admin-studio.css?v=20260404_ANALYTICS_DUTY_BOARD_26',
+        'admin-points.js?v=20260404_ADMIN_POINTS_ANALYTICS_CONTEXT_1',
+        'admin-config.js?v=20260404_ADMIN_VERIFY_WORKBENCH_CONTEXT_1',
+        'js/admin-payments.js?v=20260404_ADMIN_PAYMENTS_WORKBENCH_CONTEXT_1',
+        'js/admin-workbench.js?v=20260404_ADMIN_WORKBENCH_EXPERIMENT_CONTEXT_1',
+        'js/admin-tickets.js?v=20260404_ADMIN_TICKETS_WORKBENCH_CONTEXT_1',
+        'id="overviewDutyBoard"',
+        'id="channelBreakdownList"',
+        'id="overviewDutyBoardMeta"',
+        'id="channelBreakdownMeta"',
+        'id="overviewBusinessMixMeta"',
+        'id="topContentMeta"',
+        'id="commerceEventFunnelMeta"',
+        'id="verifyEventFunnelMeta"',
+        'id="growthEventFunnelMeta"',
+        'id="verifyMonitorFocusContext"',
+        'id="paymentsWorkbenchContext"',
+        'id="ticketsWorkbenchContext"',
+        '<option value="verify_success">验证成功</option>',
+        'id="commerceEventFunnel"',
+        'id="verifyEventFunnel"',
+        'id="growthEventFunnel"',
+        'data-analytics-destination="payments-queue"',
+        'data-analytics-destination="tickets-pending"'
     ];
 
     for (const marker of htmlMarkers) {
@@ -7988,6 +8208,7 @@ test('admin config runtime renderers externalize poster preview, toggle pulse, s
         'function getAdminConfigRichTextColorClass(color)',
         'function renderVerifyQuotaState(quotaEl, tone, iconClass, message, options = {})',
         'function getDefaultVerifyMonitorState()',
+        'function focusAffiliateSettingsContext(context = {})',
         'instance.hiddenInput.hidden = true;',
         'setAdminConfigHiddenState(badgeEl, accountsWithEmail.length === 0);',
         'class="affiliate-poster-preview ${getAffiliatePosterPreviewClass(preset.id)}"',
@@ -8223,10 +8444,173 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'prompts.html should load the latest prompts gallery stylesheet version'
     );
     assert.equal(
-        promptsHtml.includes('prompts-poetry.js?v=20260402_PROMPTS_IMAGE_PIPELINE_4'),
+        promptsHtml.includes('./js/user-event-tracker.js?v=20260404_PHASE3_EXPERIMENT_RUNTIME_1'),
+        true,
+        'prompts.html should load the shared phase 3 user event tracker'
+    );
+    assert.equal(
+        promptsHtml.includes('prompts-poetry.js?v=20260404_PROMPTS_PHASE3_EXPERIMENT_RUNTIME_1'),
         true,
         'prompts.html should load the latest prompts gallery runtime version'
     );
+});
+
+test('phase 3 tracker wires prompt, verify, and wallet conversion events', () => {
+    const trackerSource = readRepoFile('js/user-event-tracker.js');
+    const promptsSource = readRepoFile('prompts-poetry.js');
+    const verifyWidgetSource = readRepoFile('verify-widget.js');
+    const walletSource = readRepoFile('js/components/WalletModal.js');
+    const shopClientSource = readRepoFile('js/shop-client.js');
+    const guestbookSupabaseSource = readRepoFile('supabase-guestbook-functions.js');
+    const injectAuthSource = readRepoFile('inject-auth.js');
+    const indexSource = readRepoFile('index.html');
+    const archivedIndexSource = readRepoFile('index_old.html');
+    const guestbookSource = readRepoFile('guestbook.html');
+    const shopSource = readRepoFile('shop.html');
+    const verifyPageSource = readRepoFile('verify.html');
+
+    const trackerMarkers = [
+        'window.UserEventTracker = trackerApi;',
+        "async track(eventName, payload = {}, options = {})",
+        "async pageView(payload = {})",
+        "async heartbeat(payload = {})",
+        "async getExperimentAssignment(experimentName, options = {})",
+        "'experiment_exposure'",
+        "rpc('get_experiment_variant'",
+        ".from('user_events').insert(payload)",
+        "rpc('track_event'"
+    ];
+
+    for (const marker of trackerMarkers) {
+        assert.equal(trackerSource.includes(marker), true, `js/user-event-tracker.js should contain ${marker}`);
+    }
+
+    const promptsMarkers = [
+        "trackPromptAnalyticsEvent('prompt_view'",
+        "trackPromptAnalyticsEvent('unlock_click'",
+        "trackPromptAnalyticsEvent('unlock_success'",
+        "applyPromptUnlockExperiment(currentPromptId)",
+        "getPromptUnlockExperimentTrackingPayload()",
+        "WalletModal.open('recharge', {"
+    ];
+
+    for (const marker of promptsMarkers) {
+        assert.equal(promptsSource.includes(marker), true, `prompts-poetry.js should contain ${marker}`);
+    }
+
+    const verifyMarkers = [
+        "trackVerifyAnalyticsEvent('verify_submit'",
+        "trackVerifyAnalyticsEvent('verify_success'",
+        "trackVerifyAnalyticsEvent('verify_fail'",
+        "applyVerifySubmitExperiment()",
+        "getVerifySubmitExperimentTrackingPayload()",
+        "window.WalletModal?.open?.('balance', {"
+    ];
+
+    for (const marker of verifyMarkers) {
+        assert.equal(verifyWidgetSource.includes(marker), true, `verify-widget.js should contain ${marker}`);
+    }
+
+    const walletMarkers = [
+        "trackWalletAnalyticsEvent('wallet_open'",
+        "trackWalletAnalyticsEvent('recharge_click'",
+        "trackWalletAnalyticsEvent('recharge_success'",
+        "trackWalletAnalyticsEvent('affiliate_invite_click'",
+        "trackWalletAnalyticsEvent('checkin_success'",
+        "applyCustomRechargeExperiment({",
+        "getCustomRechargeExperimentTrackingPayload()",
+        'lastOpenContext: null,'
+    ];
+
+    for (const marker of walletMarkers) {
+        assert.equal(walletSource.includes(marker), true, `js/components/WalletModal.js should contain ${marker}`);
+    }
+
+    const shopMarkers = [
+        "trackShopAnalyticsEvent('shop_view'",
+        "trackShopAnalyticsEvent('shop_purchase'",
+        "applyPurchaseModalExperiment(productId)",
+        "getPurchaseExperimentTrackingPayload()",
+        'buyButton.dataset.productCategory = String(p.category || \'\');'
+    ];
+
+    for (const marker of shopMarkers) {
+        assert.equal(shopClientSource.includes(marker), true, `js/shop-client.js should contain ${marker}`);
+    }
+
+    const guestbookMarkers = [
+        "trackGuestbookAnalyticsEvent('guestbook_post'",
+        "entry: (window.location.pathname === '/' || window.location.pathname === '/index.html')"
+    ];
+
+    for (const marker of guestbookMarkers) {
+        assert.equal(guestbookSupabaseSource.includes(marker), true, `supabase-guestbook-functions.js should contain ${marker}`);
+    }
+
+    assert.equal(injectAuthSource.includes("entry: 'nav_wallet'"), true, 'inject-auth.js should tag wallet opens from the auth dropdown');
+    assert.equal(indexSource.includes('./js/user-event-tracker.js?v=20260404_PHASE3_EXPERIMENT_RUNTIME_1'), true, 'index.html should load the shared phase 3 experiment tracker');
+    assert.equal(guestbookSource.includes('js/user-event-tracker.js?v=20260404_PHASE3_EXPERIMENT_RUNTIME_1'), true, 'guestbook.html should load the shared phase 3 experiment tracker');
+    assert.equal(shopSource.includes('js/user-event-tracker.js?v=20260404_PHASE3_EXPERIMENT_RUNTIME_1'), true, 'shop.html should load the shared phase 3 experiment tracker');
+    assert.equal(indexSource.includes('./supabase-guestbook-functions.js?v=20260404_GUESTBOOK_PHASE3_EVENTS_1'), true, 'index.html should load the phase 3 guestbook runtime');
+    assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260404_GUESTBOOK_PHASE3_EVENTS_1'), true, 'guestbook.html should load the phase 3 guestbook runtime');
+    assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260404_GUESTBOOK_PHASE3_EVENTS_1'), true, 'index_old.html should load the phase 3 guestbook runtime');
+    assert.equal(shopSource.includes('js/shop-client.js?v=20260404_SHOP_PHASE3_EXPERIMENT_RUNTIME_1'), true, 'shop.html should load the phase 3 experiment-enabled shop runtime');
+    assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260404_SHOP_PHASE3_EXPERIMENT_RUNTIME_1'), true, 'index_old.html should load the phase 3 experiment-enabled shop runtime');
+    assert.equal(verifyPageSource.includes('js/components/WalletModal.js?v=20260404_WALLET_PHASE3_EXPERIMENT_RUNTIME_1'), true, 'verify.html should load the latest phase 3 experiment-enabled wallet modal runtime');
+});
+
+test('analytics phase 3 prefers real event rpc v2 for ai summary and conversion funnel', () => {
+    const analyticsSource = readRepoFile('admin-analytics.js');
+    const analyticsSummarySql = readRepoFile('supabase/analytics_site_filter.sql');
+    const analyticsAdvancedSql = readRepoFile('supabase/analytics_advanced_site_filter.sql');
+    const migrationSource = readRepoFile('supabase/migrations/20260404_admin_analytics_phase3_event_rpc_v2.sql');
+    const drilldownMigrationSource = readRepoFile('supabase/migrations/20260404_admin_analytics_phase3_drilldown_v2.sql');
+
+    const analyticsMarkers = [
+        "callAnalyticsRpcWithFallback('get_ai_summary_data_v2'",
+        "callAnalyticsRpcWithFallback('get_conversion_funnel_v2'",
+        "callAnalyticsRpcWithFallback('get_channel_breakdown_v2'",
+        "callAnalyticsRpcWithFallback('get_content_top_v2'",
+        "rpc('get_points_flow_v2'",
+        'buildAnalyticsEventDrivenRecommendations(data = null)',
+        'getAnalyticsSiteComparisonData({ summaryWindowData: data })',
+        'site_comparison:',
+        'applyAnalyticsDestinationSiteContext(normalizedContext);',
+        'buildCommerceEventFunnelViewData(summaryWindow)',
+        'buildVerifyEventFunnelViewData(summaryWindow)',
+        'buildGrowthEventFunnelViewData(summaryWindow)',
+        'function getAnalyticsSummaryWindowEventOverview(summaryWindow = {}) {',
+        'function enrichVerifyServiceSummaryWithEvents(summary = {}, summaryWindow = {}) {',
+        'function enrichGrowthSummaryWithEvents(summary = {}, summaryWindow = {}) {',
+        '真实行为摘要：',
+        '真实行为漏斗：'
+    ];
+
+    for (const marker of analyticsMarkers) {
+        assert.equal(analyticsSource.includes(marker), true, `admin-analytics.js should contain ${marker}`);
+    }
+
+    const sqlMarkers = [
+        'CREATE OR REPLACE FUNCTION get_ai_summary_data_v2',
+        'CREATE OR REPLACE FUNCTION get_conversion_funnel_v2',
+        'CREATE OR REPLACE FUNCTION get_channel_breakdown_v2',
+        'CREATE OR REPLACE FUNCTION get_content_top_v2',
+        'CREATE OR REPLACE FUNCTION get_points_flow_v2',
+        "'event_overview'",
+        "'event_funnels'",
+        "'Prompt 浏览'::TEXT"
+    ];
+
+    for (const marker of sqlMarkers) {
+        assert.equal(
+            analyticsSummarySql.includes(marker)
+            || analyticsAdvancedSql.includes(marker)
+            || migrationSource.includes(marker)
+            || drilldownMigrationSource.includes(marker),
+            true,
+            `phase 3 analytics sql should contain ${marker}`
+        );
+    }
 });
 
 test('prompt image delivery optimizes admin previews and cacheable fallback uploads', () => {
@@ -8253,9 +8637,9 @@ test('prompt image delivery optimizes admin previews and cacheable fallback uplo
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-studio.js?v=20260404_ADMIN_TICKET_WORKSPACE_NAV_1'),
+        adminStudioHtml.includes('admin-studio.js?v=20260404_ANALYTICS_ACTION_ROUTING_2'),
         true,
-        'admin-studio.html should reference the latest prompt upload runtime version'
+        'admin-studio.html should reference the latest analytics action routing runtime version'
     );
 });
 
@@ -8726,6 +9110,7 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         'function installSupabaseStub() {',
         'function installFetchStub() {',
         'async function runAdminStudioSmoke() {',
+        'async function runAdminAnalyticsSmoke() {',
         'async function runAdminPointsSmoke() {',
         'async function runAdminShopSmoke() {',
         'async function runAdminGallerySmoke() {',
@@ -8750,6 +9135,10 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         '首页模块会按站点加载配置',
         '页脚显隐也通过 homepage_config 保存',
         '切换站点后首页配置不会串站',
+        'Analytics 概览 KPI 已渲染',
+        'Analytics 日期切换会把窗口参数传给关键 RPC',
+        'Analytics 切站点只会 reload 不会重复订阅',
+        'Analytics 离开模块会 teardown realtime 订阅',
         'Gallery 管理列表会渲染全局 Prompt 资产',
         'Gallery 管理卡片会标记全局资产和双语覆盖状态',
         'Gallery 编辑态会回填主字段和显式双语字段',
@@ -8798,7 +9187,7 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
     }
 
     assert.equal(
-        adminStudioHtml.includes('js/local-smoke-fixtures.js?v=20260404_LOCAL_SMOKE_FIXTURES_31'),
+        adminStudioHtml.includes('js/local-smoke-fixtures.js?v=20260404_LOCAL_SMOKE_FIXTURES_34'),
         true,
         'admin-studio.html should load the local smoke fixtures entry'
     );
@@ -8808,7 +9197,7 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         'smoke-notifications.html should load the dedicated smoke harness stylesheet'
     );
     assert.equal(
-        smokeNotificationHtml.includes('js/local-smoke-fixtures.js?v=20260404_LOCAL_SMOKE_FIXTURES_31'),
+        smokeNotificationHtml.includes('js/local-smoke-fixtures.js?v=20260404_LOCAL_SMOKE_FIXTURES_34'),
         true,
         'smoke-notifications.html should load the local smoke fixtures entry'
     );
