@@ -34,6 +34,8 @@ const AdminTickets = {
     ticketReplyTemplateConfigTemplates: null,
     opsAlertsConfigSnapshot: null,
     _ticketReplyTemplateConfigLoaded: false,
+    analyticsWorkbenchContext: null,
+    analyticsIssueFocusKind: '',
 
     settleWorkspace: async function (delayMs = 60) {
         await new Promise((resolve) => {
@@ -50,21 +52,26 @@ const AdminTickets = {
     showWorkbenchContext: function (context = {}) {
         const target = document.getElementById('ticketsWorkbenchContext');
         if (!target) return false;
+        this.analyticsIssueFocusKind = '';
+        this.analyticsWorkbenchContext = context && typeof context === 'object' && !Array.isArray(context)
+            ? { ...context }
+            : null;
 
-        const contextState = window.buildOpsAlertWorkspaceExperimentContextState?.(context, {
-            title: '当前来自实验结果下钻',
+        const contextState = window.buildOpsAlertWorkspaceAnalyticsSignalContextState?.(this.analyticsWorkbenchContext || {}, {
+            title: '当前来自分析信号联动',
             eyebrow: 'Tickets Focus'
         }) || null;
 
         if (!contextState) {
             target.hidden = true;
             target.innerHTML = '';
+            this.renderAnalyticsIssueSummary();
             return false;
         }
 
         target.innerHTML = `
-            <div class="admin-workbench-context-note__eyebrow">${this.escapeHtml(contextState.eyebrow || 'Experiment Context')}</div>
-            <div class="admin-workbench-context-note__title">${this.escapeHtml(contextState.title || '实验聚焦上下文')}</div>
+            <div class="admin-workbench-context-note__eyebrow">${this.escapeHtml(contextState.eyebrow || 'Analytics Context')}</div>
+            <div class="admin-workbench-context-note__title">${this.escapeHtml(contextState.title || '分析信号聚焦上下文')}</div>
             <div class="admin-workbench-context-note__summary">${this.escapeHtml(contextState.summary || '')}</div>
             <div class="admin-workbench-context-note__chips">
                 ${(Array.isArray(contextState.chips) ? contextState.chips : []).map((item) => `
@@ -73,7 +80,690 @@ const AdminTickets = {
             </div>
         `;
         target.hidden = false;
+        this.renderAnalyticsIssueSummary();
         return true;
+    },
+
+    hasAnalyticsWorkbenchContext: function (context = this.analyticsWorkbenchContext) {
+        if (!context || typeof context !== 'object' || Array.isArray(context)) {
+            return false;
+        }
+
+        return Boolean(this.safeText(
+            context.referenceValue
+            || context.referenceLabel
+            || context.search
+            || context.query
+            || context.queryLabel
+            || context.productId
+            || context.productName
+        ).trim());
+    },
+
+    buildAnalyticsShopOrdersContext: function (context = this.analyticsWorkbenchContext, options = {}) {
+        if (!this.hasAnalyticsWorkbenchContext(context)) {
+            return null;
+        }
+
+        const normalizedContext = context && typeof context === 'object' && !Array.isArray(context)
+            ? context
+            : {};
+        const query = this.safeText(
+            normalizedContext.query
+            || normalizedContext.search
+            || normalizedContext.email
+            || normalizedContext.userId
+        ).trim();
+        if (!query) {
+            return null;
+        }
+
+        let issueKind = this.safeText(options.issueKind || normalizedContext.issueKind).trim().toLowerCase();
+        let issueValue = this.safeText(options.issueValue || normalizedContext.issueValue).trim().toLowerCase();
+        const currentFocus = this.safeText(this.analyticsIssueFocusKind || this.resolveAnalyticsPriorityFocusKind()).trim().toLowerCase();
+
+        if (!issueKind) {
+            if (currentFocus === 'refund') {
+                issueKind = 'refund';
+                issueValue = 'refunded';
+            } else if (currentFocus === 'delivery') {
+                issueKind = 'delivery';
+                issueValue = 'pending';
+            }
+        }
+
+        return {
+            tab: 'orders',
+            mode: 'orders',
+            query,
+            queryLabel: this.safeText(normalizedContext.queryLabel || '用户').trim() || '用户',
+            referenceLabel: this.safeText(normalizedContext.referenceLabel || '用户').trim() || '用户',
+            referenceValue: this.safeText(normalizedContext.referenceValue || query).trim() || query,
+            site: this.safeText(normalizedContext.site).trim().toLowerCase(),
+            productId: this.safeText(normalizedContext.productId).trim(),
+            productName: this.safeText(normalizedContext.productName).trim(),
+            userId: this.safeText(normalizedContext.userId).trim(),
+            email: this.safeText(normalizedContext.email).trim(),
+            signalLabel: this.safeText(normalizedContext.signalLabel).trim(),
+            signalValue: this.safeText(normalizedContext.signalValue).trim(),
+            rangeLabel: this.safeText(normalizedContext.rangeLabel).trim(),
+            issueKind,
+            issueValue,
+            refundStatus: issueKind === 'refund' ? 'refunded' : 'all',
+            deliveryStatus: issueKind === 'delivery' ? (issueValue || 'all') : 'all'
+        };
+    },
+
+    buildAnalyticsShopOrdersActionAttrs: function (context = this.analyticsWorkbenchContext, options = {}) {
+        const payload = this.buildAnalyticsShopOrdersContext(context, options);
+        if (!payload) {
+            return '';
+        }
+
+        const serializedContext = typeof serializeAnalyticsActionContext === 'function'
+            ? serializeAnalyticsActionContext(payload)
+            : '';
+        if (!serializedContext) {
+            return '';
+        }
+
+        return `data-admin-action="analytics-open-destination" data-analytics-destination="${this.escapeHtml(this.safeText(options.destination || 'shop-orders').trim() || 'shop-orders')}" data-analytics-context="${this.escapeHtml(serializedContext)}"`;
+    },
+
+    hasUserCommerceReturnContext: function (context = this.analyticsWorkbenchContext) {
+        if (!this.hasAnalyticsWorkbenchContext(context)) {
+            return false;
+        }
+
+        const normalizedContext = context && typeof context === 'object' && !Array.isArray(context)
+            ? context
+            : {};
+        const labels = [
+            this.safeText(normalizedContext.referenceLabel).trim(),
+            this.safeText(normalizedContext.queryLabel).trim()
+        ].filter(Boolean);
+        return Boolean(this.safeText(normalizedContext.userId).trim())
+            && (labels.includes('用户') || labels.includes('User') || Boolean(this.safeText(normalizedContext.email).trim()));
+    },
+
+    buildAnalyticsUserReturnContext: function (context = this.analyticsWorkbenchContext) {
+        if (!this.hasUserCommerceReturnContext(context)) {
+            return null;
+        }
+
+        const normalizedContext = context && typeof context === 'object' && !Array.isArray(context)
+            ? context
+            : {};
+        const userLabel = this.safeText(
+            normalizedContext.referenceValue
+            || normalizedContext.queryLabel
+            || normalizedContext.search
+            || normalizedContext.query
+            || normalizedContext.email
+            || normalizedContext.userId
+            || '当前用户'
+        ).trim() || '当前用户';
+        const focusKind = this.safeText(this.analyticsIssueFocusKind || this.resolveAnalyticsPriorityFocusKind()).trim().toLowerCase();
+        const focusLabelMap = {
+            status: '当前状态工单',
+            overdue: '超时工单',
+            priority: '高优工单',
+            refund: '退款类工单',
+            delivery: '履约类工单',
+            payment: '支付类工单'
+        };
+        const focusLabel = focusLabelMap[focusKind] || '售后问题';
+
+        return {
+            sourceLabel: this.safeText(normalizedContext.sourceLabel).trim() || '商品经营影响用户',
+            summary: `当前已围绕“${focusLabel}”处理 ${userLabel} 的售后承接链，适合回到用户侧继续确认订单、支付和售后是否同步回落。`,
+            signalLabel: this.safeText(normalizedContext.signalLabel).trim(),
+            signalValue: this.safeText(normalizedContext.signalValue).trim(),
+            productId: this.safeText(normalizedContext.productId).trim(),
+            productName: this.safeText(normalizedContext.productName).trim(),
+            site: this.safeText(normalizedContext.site).trim().toLowerCase(),
+            siteLabel: this.safeText(normalizedContext.siteLabel).trim(),
+            rangeLabel: this.safeText(normalizedContext.rangeLabel).trim(),
+            referenceLabel: '用户',
+            referenceValue: userLabel,
+            actionLabel: this.safeText(normalizedContext.actionLabel).trim() || '回到商品经营',
+            verificationMethod: this.safeText(normalizedContext.verificationMethod).trim() || '回到用户侧确认售后问题、订单承接链和商品预警是否一起回落。',
+            destination: this.safeText(normalizedContext.destination).trim().toLowerCase(),
+            destinationContext: normalizedContext.destinationContext && typeof normalizedContext.destinationContext === 'object' && !Array.isArray(normalizedContext.destinationContext)
+                ? { ...normalizedContext.destinationContext }
+                : {}
+        };
+    },
+
+    buildAnalyticsUserReturnAttrs: function (context = this.analyticsWorkbenchContext) {
+        const normalizedContext = context && typeof context === 'object' && !Array.isArray(context)
+            ? context
+            : {};
+        const analyticsContext = this.buildAnalyticsUserReturnContext(normalizedContext);
+        const userId = this.safeText(normalizedContext.userId).trim();
+        if (!userId || !analyticsContext) {
+            return '';
+        }
+
+        const serializedContext = typeof serializeAnalyticsActionContext === 'function'
+            ? serializeAnalyticsActionContext(analyticsContext)
+            : '';
+        return `data-admin-action="analytics-open-user-detail" data-user-id="${this.escapeHtml(userId)}"${serializedContext ? ` data-analytics-context="${this.escapeHtml(serializedContext)}"` : ''}`;
+    },
+
+    hasAnalyticsContentCommerceReturnContext: function (context = this.analyticsWorkbenchContext) {
+        if (!this.hasAnalyticsWorkbenchContext(context)) {
+            return false;
+        }
+
+        const normalizedContext = context && typeof context === 'object' && !Array.isArray(context)
+            ? context
+            : {};
+        return this.safeText(normalizedContext.destination).trim().toLowerCase() === 'analytics-content'
+            && this.safeText(normalizedContext.referenceLabel).trim() === 'Prompt'
+            && Boolean(this.safeText(normalizedContext.referenceValue || normalizedContext.promptTitle).trim());
+    },
+
+    buildAnalyticsContentCommerceReturnContext: function (context = this.analyticsWorkbenchContext) {
+        if (!this.hasAnalyticsContentCommerceReturnContext(context)) {
+            return null;
+        }
+
+        const normalizedContext = context && typeof context === 'object' && !Array.isArray(context)
+            ? context
+            : {};
+        const promptLabel = this.safeText(
+            normalizedContext.referenceValue
+            || normalizedContext.promptTitle
+            || normalizedContext.referenceLabel
+            || '当前内容'
+        ).trim() || '当前内容';
+        const focusKind = this.safeText(this.analyticsIssueFocusKind || this.resolveAnalyticsPriorityFocusKind()).trim().toLowerCase();
+        const focusLabelMap = {
+            status: '当前状态工单',
+            overdue: '超时工单',
+            priority: '高优工单',
+            refund: '退款类工单',
+            delivery: '履约类工单',
+            payment: '支付类工单'
+        };
+        const focusLabel = focusLabelMap[focusKind] || '售后问题';
+
+        return {
+            sourceLabel: this.safeText(normalizedContext.sourceLabel).trim() || '内容带货详情',
+            summary: `当前已围绕“${focusLabel}”处理 ${promptLabel} 的带货售后链，适合回到内容带货详情继续确认退款、履约和订单样本是否同步回落。`,
+            signalLabel: this.safeText(normalizedContext.signalLabel).trim(),
+            signalValue: this.safeText(normalizedContext.signalValue).trim(),
+            productId: this.safeText(normalizedContext.productId).trim(),
+            productName: this.safeText(normalizedContext.productName).trim(),
+            site: this.safeText(normalizedContext.site).trim().toLowerCase(),
+            siteLabel: this.safeText(normalizedContext.siteLabel).trim(),
+            rangeLabel: this.safeText(normalizedContext.rangeLabel).trim(),
+            referenceLabel: 'Prompt',
+            referenceValue: promptLabel,
+            referenceId: this.safeText(normalizedContext.promptId || normalizedContext.referenceId).trim(),
+            promptId: this.safeText(normalizedContext.promptId || normalizedContext.referenceId).trim(),
+            promptTitle: promptLabel,
+            actionLabel: this.safeText(normalizedContext.actionLabel).trim() || '回内容带货详情',
+            verificationMethod: this.safeText(normalizedContext.verificationMethod).trim() || '回到内容带货详情，确认带货问题摘要、订单样本和带货商品是否一起回落。',
+            destination: 'analytics-content',
+            destinationContext: {
+                sectionId: 'contentCommerceDetailSection',
+                focusTargetId: 'contentCommerceDetailSection'
+            }
+        };
+    },
+
+    buildAnalyticsContentCommerceReturnAttrs: function (context = this.analyticsWorkbenchContext) {
+        const normalizedContext = context && typeof context === 'object' && !Array.isArray(context)
+            ? context
+            : {};
+        const analyticsContext = this.buildAnalyticsContentCommerceReturnContext(normalizedContext);
+        if (!analyticsContext) {
+            return '';
+        }
+
+        const serializedContext = typeof serializeAnalyticsActionContext === 'function'
+            ? serializeAnalyticsActionContext(analyticsContext)
+            : '';
+        if (!serializedContext) {
+            return '';
+        }
+
+        return `data-admin-action="analytics-open-destination" data-analytics-destination="analytics-content" data-analytics-context="${this.escapeHtml(serializedContext)}"`;
+    },
+
+    buildAnalyticsIssueSummaryState: function () {
+        if (!this.hasAnalyticsWorkbenchContext() || this.currentWorkspaceView !== 'queue') {
+            return null;
+        }
+
+        const rows = Array.isArray(this.filteredTickets) ? this.filteredTickets : [];
+        const totalHits = Math.max(rows.length, Number(this.pagination?.totalItems || 0) || 0);
+        const sampleCount = rows.length;
+        const overdueCount = rows.filter((ticket) => ticket?.is_overdue === true).length;
+        const highPriorityCount = rows.filter((ticket) => ticket?.is_high_priority === true).length;
+        const refundCount = rows.filter((ticket) => this.safeText(ticket?.issue_type).trim().toUpperCase() === 'REFUND' || ticket?.can_refund === true).length;
+        const deliveryCount = rows.filter((ticket) => this.safeText(ticket?.issue_type).trim().toUpperCase() === 'DELIVERY').length;
+        const paymentCount = rows.filter((ticket) => this.safeText(ticket?.issue_type).trim().toUpperCase() === 'PAYMENT').length;
+        const statusLabel = this.getTicketStatusLabel(this.currentStatus || 'pending');
+        const referenceValue = this.safeText(
+            this.analyticsWorkbenchContext?.referenceValue
+            || this.analyticsWorkbenchContext?.queryLabel
+            || this.analyticsWorkbenchContext?.search
+            || this.analyticsWorkbenchContext?.query
+            || this.analyticsWorkbenchContext?.productName
+            || this.analyticsWorkbenchContext?.productId
+            || this.analyticsWorkbenchContext?.referenceLabel
+        ).trim();
+        const formatCount = (value) => Math.max(0, Number(value || 0) || 0).toLocaleString('zh-CN');
+
+        return {
+            eyebrow: 'Issue Summary',
+            title: '当前售后问题摘要',
+            summary: [
+                referenceValue
+                    ? `当前工单列表来自“${referenceValue}”，已切到 ${statusLabel} 队列。`
+                    : `当前工单列表已切到 ${statusLabel} 队列。`,
+                totalHits > sampleCount && sampleCount > 0
+                    ? `当前命中 ${formatCount(totalHits)} 单，以下类型统计基于当前页已加载的 ${formatCount(sampleCount)} 单样本。`
+                    : `当前命中 ${formatCount(totalHits)} 单。`
+            ].join(' '),
+            chips: [
+                { label: '命中工单', value: formatCount(totalHits) },
+                { label: '当前状态', value: statusLabel, action: 'status' },
+                { label: '当前页超时', value: formatCount(overdueCount), action: overdueCount > 0 ? 'overdue' : '' },
+                { label: '当前页高优', value: formatCount(highPriorityCount), action: highPriorityCount > 0 ? 'priority' : '' },
+                { label: '退款类', value: formatCount(refundCount), action: refundCount > 0 ? 'refund' : '' },
+                { label: '履约类', value: formatCount(deliveryCount), action: deliveryCount > 0 ? 'delivery' : '' },
+                { label: '支付类', value: formatCount(paymentCount), action: paymentCount > 0 ? 'payment' : '' }
+            ]
+        };
+    },
+
+    resolveAnalyticsPriorityFocusKind: function () {
+        const explicit = this.safeText(this.analyticsIssueFocusKind).trim().toLowerCase();
+        if (explicit) {
+            return explicit;
+        }
+
+        const search = this.safeText(this.searchQuery).trim().toUpperCase();
+        if (search === 'REFUND') return 'refund';
+        if (search === 'DELIVERY') return 'delivery';
+        if (search === 'PAYMENT') return 'payment';
+        if (this.quickFilters.overdueOnly) return 'overdue';
+        if (this.quickFilters.priority === 'high') return 'priority';
+        return 'status';
+    },
+
+    buildAnalyticsPrioritySummaryState: function () {
+        if (!this.hasAnalyticsWorkbenchContext() || this.currentWorkspaceView !== 'queue') {
+            return null;
+        }
+
+        const normalizedFocus = this.resolveAnalyticsPriorityFocusKind();
+        const rows = Array.isArray(this.filteredTickets) ? this.filteredTickets.slice() : [];
+        const sortRows = (items) => items.sort((left, right) => {
+            const leftOverdue = left?.is_overdue === true ? 1 : 0;
+            const rightOverdue = right?.is_overdue === true ? 1 : 0;
+            if (leftOverdue !== rightOverdue) return rightOverdue - leftOverdue;
+
+            const leftHigh = left?.is_high_priority === true ? 1 : 0;
+            const rightHigh = right?.is_high_priority === true ? 1 : 0;
+            if (leftHigh !== rightHigh) return rightHigh - leftHigh;
+
+            const leftScore = Number(left?.priority_score || 0) || 0;
+            const rightScore = Number(right?.priority_score || 0) || 0;
+            if (leftScore !== rightScore) return rightScore - leftScore;
+
+            const leftTime = new Date(left?.created_at || 0).getTime();
+            const rightTime = new Date(right?.created_at || 0).getTime();
+            return leftTime - rightTime;
+        });
+
+        let title = '建议先处理的工单';
+        let summary = '已从当前售后问题视角里顶出最该先处理的工单，方便直接进入处理。';
+        let items = rows;
+
+        if (normalizedFocus === 'overdue') {
+            title = '建议先处理的超时工单';
+            summary = '这些工单已经超时，适合优先处理以避免继续堆积。';
+            items = rows.filter((ticket) => ticket?.is_overdue === true);
+        } else if (normalizedFocus === 'priority') {
+            title = '建议先处理的高优工单';
+            summary = '这些工单被标记为高优先，建议先进入处理。';
+            items = rows.filter((ticket) => ticket?.is_high_priority === true);
+        } else if (normalizedFocus === 'refund') {
+            title = '建议先处理的退款工单';
+            summary = '这些工单与退款或补偿相关，更适合优先跟进。';
+            items = rows.filter((ticket) => this.safeText(ticket?.issue_type).trim().toUpperCase() === 'REFUND' || ticket?.can_refund === true);
+        } else if (normalizedFocus === 'delivery') {
+            title = '建议先处理的履约工单';
+            summary = '这些工单聚焦履约与发货，适合优先核查当前状态。';
+            items = rows.filter((ticket) => this.safeText(ticket?.issue_type).trim().toUpperCase() === 'DELIVERY');
+        } else if (normalizedFocus === 'payment') {
+            title = '建议先处理的支付工单';
+            summary = '这些工单聚焦支付异常，适合先核对订单状态与到账情况。';
+            items = rows.filter((ticket) => this.safeText(ticket?.issue_type).trim().toUpperCase() === 'PAYMENT');
+        } else {
+            title = '建议先处理的当前队列工单';
+            summary = '当前问题视角下已按超时、高优和等待时长排序，方便直接进入处理。';
+        }
+
+        const prioritizedTickets = sortRows(items).slice(0, 3);
+        const topItems = prioritizedTickets.map((ticket, index) => ({
+            rankLabel: `TOP ${index + 1}`,
+            id: this.safeText(ticket?.id).trim(),
+            title: `${this.safeText(ticket?.issue_type_label).trim() || this.getIssueTypeLabel(ticket?.issue_type)} · ${this.safeText(ticket?.id).trim().slice(0, 8) || '工单'}`,
+            meta: [
+                this.safeText(ticket?.sla_label).trim() || '等待处理中',
+                this.safeText(ticket?.priority_label).trim() || '常规优先级',
+                this.safeText(ticket?.order_id).trim() ? `订单 ${this.safeText(ticket?.order_id).trim().slice(0, 12)}` : '无关联订单',
+                this.safeText(ticket?.user_email).trim() || this.safeText(ticket?.refund_summary).trim() || '暂无补充说明'
+            ],
+            recommendation: (() => {
+                if (ticket?.is_overdue === true) {
+                    return '建议动作：先回复用户并确认当前处理路径，避免继续超时。';
+                }
+                const issueType = this.safeText(ticket?.issue_type).trim().toUpperCase();
+                if (issueType === 'REFUND' || ticket?.can_refund === true) {
+                    return '建议动作：先核对订单退款状态，再决定是否直接退款并回复用户。';
+                }
+                if (issueType === 'DELIVERY') {
+                    return '建议动作：先核查履约状态和发货进度，再同步处理结果。';
+                }
+                if (issueType === 'PAYMENT') {
+                    return '建议动作：先核查支付状态、到账结果和关联订单，再决定处理方案。';
+                }
+                return '建议动作：先查看工单详情，确认上下文后再进入处理。';
+            })(),
+            primaryActionLabel: (() => {
+                const issueType = this.safeText(ticket?.issue_type).trim().toUpperCase();
+                if (issueType === 'REFUND' || ticket?.can_refund === true) return '处理退款';
+                if (issueType === 'DELIVERY') return '处理履约';
+                if (issueType === 'PAYMENT') return '处理支付';
+                return '去处理';
+            })(),
+            canResolve: this.normalizeTicketStatusValue(ticket?.status) === 'PENDING',
+            canReject: this.normalizeTicketStatusValue(ticket?.status) === 'PENDING'
+        }));
+
+        if (!topItems.length) {
+            return null;
+        }
+
+        return {
+            eyebrow: 'Priority',
+            title,
+            summary,
+            items: topItems
+        };
+    },
+
+    renderAnalyticsPrioritySummary: function () {
+        const target = document.getElementById('ticketsPrioritySummary');
+        if (!target) return false;
+
+        const summaryState = this.buildAnalyticsPrioritySummaryState();
+        if (!summaryState) {
+            target.hidden = true;
+            target.innerHTML = '';
+            return false;
+        }
+
+        target.innerHTML = `
+            <div class="admin-workbench-context-note__eyebrow">${this.escapeHtml(summaryState.eyebrow || 'Priority')}</div>
+            <div class="admin-workbench-context-note__title">${this.escapeHtml(summaryState.title || '建议先处理的工单')}</div>
+            <div class="admin-workbench-context-note__summary">${this.escapeHtml(summaryState.summary || '')}</div>
+            ${(this.buildAnalyticsShopOrdersActionAttrs() || this.buildAnalyticsUserReturnAttrs() || this.buildAnalyticsContentCommerceReturnAttrs()) ? `
+                <div class="admin-workbench-context-note__chips">
+                    ${this.buildAnalyticsShopOrdersActionAttrs() ? `
+                        <button
+                            type="button"
+                            class="admin-workbench-context-note__chip admin-workbench-context-note__chip--action"
+                            ${this.buildAnalyticsShopOrdersActionAttrs()}
+                        >回订单承接链</button>
+                    ` : ''}
+                    ${this.buildAnalyticsUserReturnAttrs() ? `
+                        <button
+                            type="button"
+                            class="admin-workbench-context-note__chip admin-workbench-context-note__chip--action"
+                            ${this.buildAnalyticsUserReturnAttrs()}
+                        >回用户承接链</button>
+                    ` : ''}
+                    ${this.buildAnalyticsContentCommerceReturnAttrs() ? `
+                        <button
+                            type="button"
+                            class="admin-workbench-context-note__chip admin-workbench-context-note__chip--action"
+                            ${this.buildAnalyticsContentCommerceReturnAttrs()}
+                        >回内容带货详情</button>
+                    ` : ''}
+                </div>
+            ` : ''}
+            <div class="admin-workbench-priority-list">
+                ${(Array.isArray(summaryState.items) ? summaryState.items : []).map((item) => `
+                    <div class="admin-workbench-priority-item">
+                        <div class="admin-workbench-priority-item__top">
+                            <div class="admin-workbench-priority-item__title">${this.escapeHtml(item.title || '优先工单')}</div>
+                            ${item.rankLabel ? `<span class="admin-workbench-priority-item__rank">${this.escapeHtml(item.rankLabel)}</span>` : ''}
+                        </div>
+                        <div class="admin-workbench-priority-item__meta">
+                            ${(Array.isArray(item.meta) ? item.meta : []).filter(Boolean).map((entry) => `
+                                <span>${this.escapeHtml(entry)}</span>
+                            `).join('')}
+                        </div>
+                        ${item.recommendation ? `<div class="admin-workbench-priority-item__recommendation">${this.escapeHtml(item.recommendation)}</div>` : ''}
+                        <div class="admin-workbench-priority-item__actions">
+                            <button
+                                type="button"
+                                class="admin-workbench-priority-item__btn"
+                                data-admin-action="tickets-priority-open"
+                                data-ticket-id="${this.escapeHtml(item.id || '')}"
+                            >看工单</button>
+                            ${item.canResolve ? `
+                                <button
+                                    type="button"
+                                    class="admin-workbench-priority-item__btn"
+                                    data-admin-action="tickets-priority-resolve"
+                                    data-ticket-id="${this.escapeHtml(item.id || '')}"
+                                >${this.escapeHtml(item.primaryActionLabel || '去处理')}</button>
+                            ` : ''}
+                            ${item.canReject ? `
+                                <button
+                                    type="button"
+                                    class="admin-workbench-priority-item__btn"
+                                    data-admin-action="tickets-priority-reject"
+                                    data-ticket-id="${this.escapeHtml(item.id || '')}"
+                                >拒绝/关闭</button>
+                            ` : ''}
+                            ${this.buildAnalyticsShopOrdersActionAttrs(this.analyticsWorkbenchContext, {
+                                issueKind: this.resolveAnalyticsPriorityFocusKind(),
+                                issueValue: this.resolveAnalyticsPriorityFocusKind() === 'delivery' ? 'pending' : ''
+                            }) ? `
+                                <button
+                                    type="button"
+                                    class="admin-workbench-priority-item__btn"
+                                    ${this.buildAnalyticsShopOrdersActionAttrs(this.analyticsWorkbenchContext, {
+                                        issueKind: this.resolveAnalyticsPriorityFocusKind(),
+                                        issueValue: this.resolveAnalyticsPriorityFocusKind() === 'delivery' ? 'pending' : ''
+                                    })}
+                                >回订单承接链</button>
+                            ` : ''}
+                            ${this.buildAnalyticsContentCommerceReturnAttrs() ? `
+                                <button
+                                    type="button"
+                                    class="admin-workbench-priority-item__btn"
+                                    ${this.buildAnalyticsContentCommerceReturnAttrs()}
+                                >回内容带货详情</button>
+                            ` : ''}
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        target.hidden = false;
+        return true;
+    },
+
+    renderAnalyticsIssueSummary: function () {
+        const target = document.getElementById('ticketsIssueSummary');
+        if (!target) return false;
+
+        const summaryState = this.buildAnalyticsIssueSummaryState();
+        if (!summaryState) {
+            target.hidden = true;
+            target.innerHTML = '';
+            this.renderAnalyticsPrioritySummary();
+            return false;
+        }
+
+        target.innerHTML = `
+            <div class="admin-workbench-context-note__eyebrow">${this.escapeHtml(summaryState.eyebrow || 'Issue Summary')}</div>
+            <div class="admin-workbench-context-note__title">${this.escapeHtml(summaryState.title || '当前售后问题摘要')}</div>
+            <div class="admin-workbench-context-note__summary">${this.escapeHtml(summaryState.summary || '')}</div>
+            <div class="admin-workbench-context-note__chips">
+                ${(Array.isArray(summaryState.chips) ? summaryState.chips : []).map((item) => `
+                    ${item?.action
+                        ? `
+                            <button
+                                type="button"
+                                class="admin-workbench-context-note__chip admin-workbench-context-note__chip--action"
+                                data-admin-action="tickets-issue-summary-focus"
+                                data-ticket-issue-focus="${this.escapeHtml(item.action)}"
+                            >${this.escapeHtml(item.label || '')} · ${this.escapeHtml(item.value || '')}</button>
+                        `
+                        : `<span class="admin-workbench-context-note__chip">${this.escapeHtml(item.label || '')} · ${this.escapeHtml(item.value || '')}</span>`
+                    }
+                `).join('')}
+                ${this.buildAnalyticsShopOrdersActionAttrs(this.analyticsWorkbenchContext, {
+                    issueKind: this.analyticsIssueFocusKind || this.resolveAnalyticsPriorityFocusKind(),
+                    issueValue: this.analyticsIssueFocusKind === 'delivery' ? 'pending' : ''
+                })
+                    ? `
+                        <button
+                            type="button"
+                            class="admin-workbench-context-note__chip admin-workbench-context-note__chip--action"
+                            ${this.buildAnalyticsShopOrdersActionAttrs(this.analyticsWorkbenchContext, {
+                                issueKind: this.analyticsIssueFocusKind || this.resolveAnalyticsPriorityFocusKind(),
+                                issueValue: this.analyticsIssueFocusKind === 'delivery' ? 'pending' : ''
+                            })}
+                        >回订单承接链</button>
+                    `
+                    : ''
+                }
+                ${this.buildAnalyticsUserReturnAttrs()
+                    ? `
+                        <button
+                            type="button"
+                            class="admin-workbench-context-note__chip admin-workbench-context-note__chip--action"
+                            ${this.buildAnalyticsUserReturnAttrs()}
+                        >回用户承接链</button>
+                    `
+                    : ''
+                }
+                ${this.buildAnalyticsContentCommerceReturnAttrs()
+                    ? `
+                        <button
+                            type="button"
+                            class="admin-workbench-context-note__chip admin-workbench-context-note__chip--action"
+                            ${this.buildAnalyticsContentCommerceReturnAttrs()}
+                        >回内容带货详情</button>
+                    `
+                    : ''
+                }
+            </div>
+        `;
+        target.hidden = false;
+        this.renderAnalyticsPrioritySummary();
+        return true;
+    },
+
+    focusAnalyticsIssueSummary: function (kind = '') {
+        const normalizedKind = this.safeText(kind).trim().toLowerCase();
+        if (!normalizedKind) {
+            return null;
+        }
+        this.analyticsIssueFocusKind = normalizedKind;
+
+        const options = {
+            page: 1,
+            status: this.currentStatus,
+            searchQuery: this.searchQuery,
+            overdueOnly: this.quickFilters.overdueOnly,
+            priority: this.quickFilters.priority,
+            assignee: this.quickFilters.assignee
+        };
+
+        if (normalizedKind === 'status') {
+            options.status = this.currentStatus || 'pending';
+            options.overdueOnly = false;
+            options.priority = 'all';
+            options.searchQuery = '';
+        } else if (normalizedKind === 'overdue') {
+            options.status = 'pending';
+            options.overdueOnly = true;
+            options.priority = 'all';
+            options.searchQuery = '';
+        } else if (normalizedKind === 'priority') {
+            options.status = 'pending';
+            options.overdueOnly = false;
+            options.priority = 'high';
+            options.searchQuery = '';
+        } else if (normalizedKind === 'refund') {
+            options.status = 'pending';
+            options.overdueOnly = false;
+            options.priority = 'all';
+            options.searchQuery = 'REFUND';
+        } else if (normalizedKind === 'delivery') {
+            options.status = 'pending';
+            options.overdueOnly = false;
+            options.priority = 'all';
+            options.searchQuery = 'DELIVERY';
+        } else if (normalizedKind === 'payment') {
+            options.status = 'pending';
+            options.overdueOnly = false;
+            options.priority = 'all';
+            options.searchQuery = 'PAYMENT';
+        } else {
+            return null;
+        }
+
+        this.currentPage = 1;
+        this.syncSearchInput();
+        this.syncQuickFilterButtons();
+        return this.loadTickets(options);
+    },
+
+    focusAnalyticsPrioritySummary: async function (action = '', ticketId = '') {
+        const normalizedAction = this.safeText(action).trim().toLowerCase();
+        const normalizedTicketId = this.safeText(ticketId).trim();
+        if (!normalizedAction || !normalizedTicketId) {
+            return null;
+        }
+
+        if (normalizedAction === 'open') {
+            return this.focusTicket(normalizedTicketId, {
+                status: this.currentStatus || 'pending'
+            });
+        }
+
+        if (normalizedAction === 'resolve') {
+            const result = await this.focusTicket(normalizedTicketId, {
+                status: 'pending'
+            });
+            this.openReplyModal(normalizedTicketId, 'RESOLVED');
+            return result;
+        }
+
+        if (normalizedAction === 'reject') {
+            const result = await this.focusTicket(normalizedTicketId, {
+                status: 'pending'
+            });
+            this.openReplyModal(normalizedTicketId, 'REJECTED');
+            return result;
+        }
+
+        return null;
     },
 
     fetchProfilesByIds: async function (userIds = []) {
@@ -200,47 +890,291 @@ const AdminTickets = {
         return row;
     },
 
-    buildTableLoadingSkeleton: function (rowCount = 6) {
+    buildTableLoadingSkeleton: function (rowCount = 6, sampleTickets = []) {
         const rows = Math.max(4, Number.parseInt(rowCount, 10) || 6);
-        const titleWidths = ['admin-skeleton-w-40', 'admin-skeleton-w-50', 'admin-skeleton-w-60'];
-        const metaWidths = ['admin-skeleton-w-30', 'admin-skeleton-w-40'];
+        const includeSelection = this.selectionMode === true;
+        const idWidths = [86, 102, 92, 98];
+        const timeWidths = [76, 88, 82, 80];
+        const orderWidths = [104, 118, 92, 108];
+        const userIdWidths = [84, 96, 88, 92];
+        const emailWidths = [118, 132, 124, 128];
+        const statusWidths = [102, 112, 98, 106];
+        const samples = Array.isArray(sampleTickets) ? sampleTickets.filter(Boolean) : [];
+        const fallbackRows = [
+            {
+                idText: 'f381e3ed...',
+                timeText: '2026/4/2 09:26:20',
+                orderText: '-',
+                hasOrder: false,
+                userIdText: 'a77a3dfd...',
+                hasUserId: true,
+                userEmailText: 'vidfjiv@gmail.com',
+                tagLabels: ['客服会话', '其他问题'],
+                titleText: '[客服会话转工单] 告警标题：...',
+                replyPreviewText: '回复: 基维',
+                statusText: '已拒绝',
+                slaText: '已处理 · 已拒绝',
+                refundText: '无关联订单',
+                assigneeText: '负责人：未指派',
+                actionLayout: { primaryCount: 2, trailing: 'processed' }
+            },
+            {
+                idText: 'e5d43dd4...',
+                timeText: '2026/3/30 18:05:19',
+                orderText: '-',
+                hasOrder: false,
+                userIdText: '76d2ae4b...',
+                hasUserId: true,
+                userEmailText: 'ruihuashi620@gmail.com',
+                tagLabels: ['用户提交', '其他问题'],
+                titleText: '塞缝',
+                replyPreviewText: '回复: 塞缝',
+                statusText: '已拒绝',
+                slaText: '已处理 · 已拒绝',
+                refundText: '无关联订单',
+                assigneeText: '负责人：未指派',
+                actionLayout: { primaryCount: 2, trailing: 'processed' }
+            },
+            {
+                idText: '7913519a...',
+                timeText: '2026/3/30 17:59:13',
+                orderText: '-',
+                hasOrder: false,
+                userIdText: '76d2ae4b...',
+                hasUserId: true,
+                userEmailText: 'ruihuashi620@gmail.com',
+                tagLabels: ['用户提交', '其他问题'],
+                titleText: 'sfff',
+                replyPreviewText: '回复: 已收到你的反馈...',
+                statusText: '已拒绝',
+                slaText: '已处理 · 已拒绝',
+                refundText: '无关联订单',
+                assigneeText: '负责人：未指派',
+                actionLayout: { primaryCount: 2, trailing: 'processed' }
+            },
+            {
+                idText: 'deb83377...',
+                timeText: '2026/3/30 17:35:42',
+                orderText: '-',
+                hasOrder: false,
+                userIdText: '76d2ae4b...',
+                hasUserId: true,
+                userEmailText: 'ruihuashi620@gmail.com',
+                tagLabels: ['用户提交', '其他问题', '高优先'],
+                titleText: '塞缝',
+                replyPreviewText: '',
+                statusText: '待处理',
+                slaText: '已超时 207 小时 54 分钟',
+                refundText: '无关联订单',
+                assigneeText: '负责人：未指派',
+                actionLayout: { primaryCount: 2, trailing: 'decision' }
+            },
+            {
+                idText: 'c7ad177c...',
+                timeText: '2026/3/30 16:15:22',
+                orderText: '-',
+                hasOrder: false,
+                userIdText: '76d2ae4b...',
+                hasUserId: true,
+                userEmailText: 'ruihuashi620@gmail.com',
+                tagLabels: ['用户提交', '其他问题', '高优先'],
+                titleText: '塞缝',
+                replyPreviewText: '',
+                statusText: '待处理',
+                slaText: '已超时 209 小时 14 分钟',
+                refundText: '无关联订单',
+                assigneeText: '负责人：未指派',
+                actionLayout: { primaryCount: 2, trailing: 'decision' }
+            },
+            {
+                idText: '823060eb...',
+                timeText: '2026/3/30 16:03:28',
+                orderText: '-',
+                hasOrder: false,
+                userIdText: '76d2ae4b...',
+                hasUserId: true,
+                userEmailText: 'ruihuashi620@gmail.com',
+                tagLabels: ['用户提交', '其他问题', '高优先'],
+                titleText: '塞缝',
+                replyPreviewText: '',
+                statusText: '待处理',
+                slaText: '已超时 209 小时 26 分钟',
+                refundText: '无关联订单',
+                assigneeText: '负责人：未指派',
+                actionLayout: { primaryCount: 2, trailing: 'decision' }
+            }
+        ];
+        const inferLineWidth = (text = '', fallbackPx = 120, { min = 28, max = 220, scale = 6.5 } = {}) => {
+            const normalizedLength = this.safeText(text).trim().length;
+            if (!normalizedLength) {
+                return fallbackPx;
+            }
+            return Math.max(min, Math.min(max, Math.round(normalizedLength * scale)));
+        };
+        const buildSampleActionLayout = (ticket = {}, fallback = { primaryCount: 2, trailing: 'processed' }) => {
+            const workbenchActionCount = this.buildWorkbenchActionDefinitions(ticket).length;
+            const normalizedStatus = this.normalizeTicketStatusValue(ticket?.status);
+            if (normalizedStatus === 'PENDING') {
+                return {
+                    primaryCount: Math.max(2, workbenchActionCount),
+                    trailing: 'decision'
+                };
+            }
+            return {
+                primaryCount: Math.max(1, workbenchActionCount),
+                trailing: 'processed'
+            };
+        };
+        const buildRowDescriptor = (sample, index) => {
+            const fallback = fallbackRows[index % fallbackRows.length];
+            if (!sample) {
+                return fallback;
+            }
 
-        return Array.from({ length: rows }, (_, index) => `
-            <tr class="admin-table-skeleton-row admin-ticket-table-skeleton-row" aria-hidden="true" data-skeleton-index="${index}">
-                <td class="admin-ticket-selection-cell"><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span></div></td>
-                <td>
-                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack">
-                        <span class="admin-skeleton-block admin-skeleton-block--title ${titleWidths[index % titleWidths.length]}"></span>
-                        <span class="admin-skeleton-block admin-skeleton-block--line ${metaWidths[index % metaWidths.length]}"></span>
-                    </div>
-                </td>
-                <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-50"></span></div></td>
-                <td>
-                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack">
-                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-40"></span>
-                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-60"></span>
-                    </div>
-                </td>
-                <td>
-                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack">
-                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-80"></span>
-                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-60"></span>
-                    </div>
-                </td>
-                <td>
-                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack">
-                        <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span>
-                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span>
-                    </div>
-                </td>
-                <td>
-                    <div class="admin-table-skeleton-cell admin-table-skeleton-actions">
-                        <span class="admin-skeleton-block admin-skeleton-block--action"></span>
-                        <span class="admin-skeleton-block admin-skeleton-block--action"></span>
-                    </div>
-                </td>
-            </tr>
-        `).join('');
+            const orderId = this.safeText(sample?.order_id).trim();
+            const userId = this.safeText(sample?.user_id).trim();
+            const userEmail = this.safeText(sample?.user_email).trim();
+            const reasonText = this.safeText(sample?.reason || sample?.description).trim();
+            const replyText = this.safeText(sample?.admin_notes).trim();
+            const sourceLabel = this.safeText(sample?.source_label || '用户提交').trim();
+            const issueLabel = this.safeText(sample?.issue_type_label || '其他问题').trim();
+            const priorityLabel = sample?.is_high_priority ? this.safeText(sample?.priority_label || '高优先').trim() : '';
+            const tagLabels = [sourceLabel || fallback.tagLabels[0], issueLabel || fallback.tagLabels[1]];
+
+            if (priorityLabel) {
+                tagLabels.push(priorityLabel);
+            }
+
+            return {
+                idText: `${this.safeText(sample?.id).trim().slice(0, 8) || fallback.idText.replace(/\.\.\.$/, '')}...`,
+                timeText: this.formatDateTime(sample?.created_at) || fallback.timeText,
+                orderText: orderId ? `${orderId.slice(0, 18)}...` : '-',
+                hasOrder: Boolean(orderId),
+                userIdText: userId ? `${userId.slice(0, 8)}...` : '-',
+                hasUserId: Boolean(userId),
+                userEmailText: userEmail || '无邮箱',
+                tagLabels,
+                titleText: this.truncateText(reasonText || fallback.titleText, 20),
+                replyPreviewText: replyText ? `回复: ${this.truncateText(replyText, 20)}` : '',
+                statusText: this.getTicketStatusLabel(sample?.status || 'PENDING'),
+                slaText: this.safeText(sample?.sla_label, fallback.slaText || '等待中'),
+                refundText: this.safeText(sample?.refund_summary, fallback.refundText || '无关联订单'),
+                assigneeText: this.safeText(sample?.assignment_summary, fallback.assigneeText || '负责人：未指派'),
+                actionLayout: buildSampleActionLayout(sample, fallback.actionLayout)
+            };
+        };
+        const renderActionSkeleton = (layout = { primaryCount: 2, trailing: 'processed' }) => {
+            const primaryGlyphs = Array.from(
+                { length: Math.max(0, Number(layout.primaryCount) || 0) },
+                () => '<span class="admin-skeleton-block admin-ticket-action-glyph--skeleton"></span>'
+            ).join('');
+
+            if (layout.trailing === 'processed') {
+                return `
+                    ${primaryGlyphs}
+                    <span class="admin-ticket-processed-text admin-ticket-processed-text--skeleton">
+                        <span class="admin-skeleton-block admin-ticket-skeleton-processed"></span>
+                    </span>
+                `;
+            }
+
+            return `
+                ${primaryGlyphs}
+                <span class="admin-skeleton-block admin-ticket-action-glyph--skeleton"></span>
+                <span class="admin-skeleton-block admin-ticket-action-glyph--skeleton"></span>
+            `;
+        };
+
+        return Array.from({ length: rows }, (_, index) => {
+            const descriptor = buildRowDescriptor(samples[index] || null, index);
+            const tagWidths = descriptor.tagLabels.map((label, tagIndex) => inferLineWidth(label, 70, {
+                min: tagIndex === 0 ? 58 : 56,
+                max: tagIndex === 2 ? 72 : 84,
+                scale: 11
+            }));
+            const normalizedStatusText = this.safeText(descriptor.statusText).trim();
+            const isPendingRow = normalizedStatusText === '待处理';
+            const statusSkeletonPreset = isPendingRow
+                ? { badge: 88, sla: 116, refund: 64, assignee: 80 }
+                : { badge: 92, sla: 82, refund: 64, assignee: 80 };
+            const statusBadgeWidth = statusSkeletonPreset.badge;
+            const statusMetaWidths = {
+                sla: statusSkeletonPreset.sla,
+                refund: statusSkeletonPreset.refund,
+                assignee: statusSkeletonPreset.assignee
+            };
+
+            return `
+                <tr class="admin-table-skeleton-row admin-ticket-table-skeleton-row" aria-hidden="true" data-skeleton-index="${index}">
+                    ${includeSelection ? `
+                        <td class="admin-ticket-selection-cell">
+                            <div class="admin-table-skeleton-cell">
+                                <span class="admin-skeleton-block admin-skeleton-block--checkbox"></span>
+                            </div>
+                        </td>
+                    ` : ''}
+                    <td class="admin-ticket-nowrap-cell">
+                        <div class="admin-ticket-meta-id admin-ticket-meta-id--skeleton">
+                            <span class="admin-skeleton-block admin-skeleton-block--title" style="width:${inferLineWidth(descriptor.idText, idWidths[index % idWidths.length], { min: 70, max: 112, scale: 9.6 })}px"></span>
+                        </div>
+                        <div class="admin-ticket-meta-date admin-ticket-meta-date--skeleton">
+                            <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${inferLineWidth(descriptor.timeText, timeWidths[index % timeWidths.length], { min: 72, max: 118, scale: 5.1 })}px"></span>
+                        </div>
+                    </td>
+                    <td class="admin-ticket-nowrap-cell">
+                        <div class="admin-ticket-copyable admin-ticket-copyable--order admin-ticket-copyable--skeleton">
+                            ${descriptor.hasOrder
+                                ? `<span class="admin-skeleton-block admin-skeleton-block--line" style="width:${inferLineWidth(descriptor.orderText, orderWidths[index % orderWidths.length], { min: 78, max: 150, scale: 6.2 })}px"></span>`
+                                : '<span class="admin-skeleton-block admin-ticket-skeleton-dash"></span>'
+                            }
+                        </div>
+                    </td>
+                    <td class="admin-ticket-nowrap-cell">
+                        <div class="admin-ticket-copyable admin-ticket-copyable--user admin-ticket-copyable--skeleton">
+                            ${descriptor.hasUserId
+                                ? `<span class="admin-skeleton-block admin-skeleton-block--line" style="width:${inferLineWidth(descriptor.userIdText, userIdWidths[index % userIdWidths.length], { min: 68, max: 110, scale: 8.6 })}px"></span>`
+                                : '<span class="admin-skeleton-block admin-ticket-skeleton-dash"></span>'
+                            }
+                        </div>
+                        <div class="admin-ticket-meta-date admin-ticket-user-email admin-ticket-meta-date--skeleton">
+                            <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${inferLineWidth(descriptor.userEmailText, emailWidths[index % emailWidths.length], { min: 108, max: 182, scale: 6.2 })}px"></span>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="admin-ticket-meta-cluster admin-ticket-meta-cluster--skeleton">
+                            ${tagWidths.map((width) => `<span class="admin-skeleton-block admin-skeleton-block--pill" style="width:${width}px"></span>`).join('')}
+                        </div>
+                        <div class="admin-ticket-reason-preview admin-ticket-reason-preview--skeleton">
+                            <span class="admin-skeleton-block admin-skeleton-block--title" style="width:${inferLineWidth(descriptor.titleText, 168, { min: 112, max: 224, scale: 8.2 })}px"></span>
+                        </div>
+                        ${descriptor.replyPreviewText ? `
+                            <div class="admin-ticket-notes-preview admin-ticket-notes-preview--skeleton">
+                                <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${inferLineWidth(descriptor.replyPreviewText, 128, { min: 96, max: 188, scale: 6.1 })}px"></span>
+                            </div>
+                        ` : ''}
+                    </td>
+                    <td class="ticket-status-cell">
+                        <div class="admin-ticket-status-stack admin-ticket-status-stack--skeleton">
+                            <div class="status-badge admin-ticket-status-badge admin-ticket-status-badge--skeleton admin-skeleton-block" style="width:${statusBadgeWidth}px"></div>
+                            <div class="admin-ticket-sla-meta admin-ticket-sla-meta--skeleton">
+                                <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${statusMetaWidths.sla}px"></span>
+                            </div>
+                            <div class="admin-ticket-refund-meta admin-ticket-refund-meta--skeleton">
+                                <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${statusMetaWidths.refund}px"></span>
+                            </div>
+                            <div class="admin-ticket-assignee-meta admin-ticket-assignee-meta--skeleton">
+                                <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${statusMetaWidths.assignee}px"></span>
+                            </div>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="admin-ticket-action-wrap admin-ticket-action-wrap--skeleton">
+                            ${renderActionSkeleton(descriptor.actionLayout)}
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
     },
 
     buildAdminTicketsUrl: function (route = '', params = {}) {
@@ -407,6 +1341,7 @@ const AdminTickets = {
             rerender: true,
             mode: normalizedView
         });
+        this.renderAnalyticsIssueSummary();
 
         return normalizedView;
     },
@@ -3095,13 +4030,22 @@ const AdminTickets = {
             updatedAt.textContent = '正在加载';
         }
         if (grid) {
-            grid.innerHTML = Array.from({ length: 4 }, () => `
+            grid.innerHTML = Array.from({ length: 4 }, (_, index) => `
                 <div class="admin-ticket-overview-card">
-                    <div class="admin-ticket-overview-breakdown-skeleton">
-                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span>
-                        <span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-40"></span>
-                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-80"></span>
-                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-60"></span>
+                    <div class="admin-ticket-overview-card-skeleton">
+                        <div class="admin-ticket-overview-card-skeleton__head">
+                            <span class="admin-skeleton-block admin-ticket-overview-card-skeleton__icon"></span>
+                            <div class="admin-ticket-overview-card-skeleton__copy">
+                                <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span>
+                                <span class="admin-skeleton-block admin-skeleton-block--line ${index % 2 === 0 ? 'admin-skeleton-w-40' : 'admin-skeleton-w-50'}"></span>
+                            </div>
+                        </div>
+                        <span class="admin-skeleton-block admin-ticket-overview-card-skeleton__value" style="width:${34 + (index % 3) * 10}%"></span>
+                        <div class="admin-ticket-overview-card-skeleton__stats">
+                            <span class="admin-skeleton-block admin-ticket-overview-card-skeleton__stat" style="width:${28 + (index % 2) * 10}%"></span>
+                            <span class="admin-skeleton-block admin-ticket-overview-card-skeleton__stat" style="width:${46 + (index % 3) * 8}%"></span>
+                            <span class="admin-skeleton-block admin-ticket-overview-card-skeleton__stat" style="width:${38 + (index % 2) * 10}%"></span>
+                        </div>
                     </div>
                 </div>
             `).join('');
@@ -3109,28 +4053,52 @@ const AdminTickets = {
         if (sourceBreakdown) {
             sourceBreakdown.innerHTML = `
                 <div class="admin-ticket-overview-breakdown-skeleton">
-                    <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-80"></span>
-                    <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-60"></span>
-                    <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-70"></span>
+                    ${Array.from({ length: 4 }, (_, index) => `
+                        <div class="admin-ticket-overview-breakdown-skeleton__row">
+                            <span class="admin-skeleton-block admin-skeleton-block--pill admin-ticket-overview-breakdown-skeleton__pill" style="width:${64 + (index % 2) * 10}px"></span>
+                            <span class="admin-skeleton-block admin-ticket-overview-breakdown-skeleton__bar" style="width:${48 + (index % 3) * 12}%"></span>
+                            <span class="admin-skeleton-block admin-ticket-overview-breakdown-skeleton__metric" style="width:${26 + (index % 2) * 8}px"></span>
+                        </div>
+                    `).join('')}
                 </div>
             `;
         }
         if (issueBreakdown) {
             issueBreakdown.innerHTML = `
                 <div class="admin-ticket-overview-breakdown-skeleton">
-                    <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-70"></span>
-                    <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-60"></span>
-                    <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-80"></span>
+                    ${Array.from({ length: 4 }, (_, index) => `
+                        <div class="admin-ticket-overview-breakdown-skeleton__row">
+                            <span class="admin-skeleton-block admin-ticket-overview-breakdown-skeleton__dot"></span>
+                            <span class="admin-skeleton-block admin-ticket-overview-breakdown-skeleton__bar" style="width:${42 + (index % 3) * 11}%"></span>
+                            <span class="admin-skeleton-block admin-ticket-overview-breakdown-skeleton__metric" style="width:${32 + (index % 2) * 8}px"></span>
+                        </div>
+                    `).join('')}
                 </div>
             `;
         }
         if (reminderPanel) {
             reminderPanel.innerHTML = `
                 <div class="admin-ticket-overview-reminder-skeleton">
-                    <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-md"></span>
-                    <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-80"></span>
-                    <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-70"></span>
-                    <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-60"></span>
+                    <div class="admin-ticket-overview-reminder-skeleton__hero">
+                        <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-md"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-70"></span>
+                    </div>
+                    <div class="admin-ticket-overview-reminder-skeleton__metrics">
+                        ${Array.from({ length: 3 }, (_, index) => `
+                            <div class="admin-ticket-overview-reminder-skeleton__metric-card">
+                                <span class="admin-skeleton-block admin-ticket-overview-reminder-skeleton__metric-value" style="width:${38 + index * 10}%"></span>
+                                <span class="admin-skeleton-block admin-ticket-overview-reminder-skeleton__metric-label" style="width:${54 + index * 8}%"></span>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div class="admin-ticket-overview-reminder-skeleton__timeline">
+                        ${Array.from({ length: 3 }, (_, index) => `
+                            <div class="admin-ticket-overview-reminder-skeleton__timeline-row">
+                                <span class="admin-skeleton-block admin-ticket-overview-reminder-skeleton__timeline-dot"></span>
+                                <span class="admin-skeleton-block admin-ticket-overview-reminder-skeleton__timeline-line" style="width:${58 + index * 10}%"></span>
+                            </div>
+                        `).join('')}
+                    </div>
                 </div>
             `;
         }
@@ -4403,7 +5371,12 @@ const AdminTickets = {
         try {
             const tbody = document.getElementById('ticketsTableBody');
             if (tbody && options.showSkeleton !== false) {
-                tbody.innerHTML = this.buildTableLoadingSkeleton();
+                tbody.innerHTML = this.buildTableLoadingSkeleton(
+                    Math.max(6, Array.isArray(this.filteredTickets) && this.filteredTickets.length ? this.filteredTickets.length : 6),
+                    Array.isArray(this.filteredTickets) && this.filteredTickets.length
+                        ? this.filteredTickets
+                        : (Array.isArray(this.tickets) ? this.tickets : [])
+                );
             }
 
             const authState = await this.waitForAuthReady(Number(options?.authTimeoutMs || 2400));
@@ -6606,6 +7579,7 @@ const AdminTickets = {
             }));
             this.renderPagination(totalPages);
             this.syncSelectionControls();
+            this.renderAnalyticsIssueSummary();
             return;
         }
 
@@ -6789,6 +7763,7 @@ const AdminTickets = {
 
         this.renderPagination(totalPages);
         this.syncSelectionControls();
+        this.renderAnalyticsIssueSummary();
         if (focusedIndex >= 0) {
             this.scrollFocusedTicketIntoView();
         }
@@ -6939,6 +7914,7 @@ const AdminTickets = {
             } else {
                 this.notify('已完成工单处理', 'success');
             }
+            this.recordAnalyticsResolutionFeedback(ticket, newStatus, result, doRefund);
 
             await Promise.all([
                 this.loadOverview({
@@ -6969,6 +7945,64 @@ const AdminTickets = {
                 document.body.appendChild(toast);
                 setTimeout(() => toast.remove(), 2000);
             }
+        });
+    },
+
+    recordAnalyticsResolutionFeedback: function (ticket = {}, newStatus = '', result = {}, doRefund = false) {
+        if (typeof window.recordAnalyticsResolutionFeedback !== 'function' || !this.hasAnalyticsWorkbenchContext()) {
+            return null;
+        }
+
+        const normalizedNextStatus = this.normalizeTicketStatusValue(newStatus);
+        const issueTypeLabel = this.safeText(ticket?.issue_type_label).trim() || this.getIssueTypeLabel(ticket?.issue_type);
+        const actionLabel = normalizedNextStatus === 'REJECTED'
+            ? '拒绝/关闭'
+            : (doRefund && Number(result?.refundAmount || 0) > 0 ? '处理并退款' : '处理工单');
+        const ticketId = this.safeText(ticket?.id).trim();
+        const referenceLabel = this.safeText(this.analyticsWorkbenchContext?.referenceLabel).trim() || issueTypeLabel || '售后问题';
+        const referenceValue = this.safeText(this.analyticsWorkbenchContext?.referenceValue).trim()
+            || this.safeText(ticket?.order_id).trim()
+            || ticketId;
+        const title = `${actionLabel} · ${issueTypeLabel || '售后工单'}`;
+        const summary = normalizedNextStatus === 'REJECTED'
+            ? `工单 ${ticketId || '—'} 已关闭，建议回到商品分析确认对应售后风险是否下降。`
+            : (doRefund && Number(result?.refundAmount || 0) > 0
+                ? `工单 ${ticketId || '—'} 已解决，并退回 ${Math.max(0, Math.round(Number(result?.refundAmount || 0)))} 积分，建议回到商品分析确认退款风险是否回落。`
+                : `工单 ${ticketId || '—'} 已解决，建议回到商品分析确认对应售后风险是否下降。`);
+        const feedbackScope = this.safeText(this.analyticsWorkbenchContext?.feedbackScope).trim().toLowerCase();
+        const feedbackEntityType = this.safeText(this.analyticsWorkbenchContext?.feedbackEntityType).trim().toLowerCase() || 'tickets';
+        const feedbackEntityId = this.safeText(
+            this.analyticsWorkbenchContext?.feedbackEntityId
+            || ticket?.id
+            || ticket?.order_id
+            || issueTypeLabel
+            || feedbackEntityType
+        ).trim() || feedbackEntityType;
+        const feedbackEntityName = this.safeText(
+            this.analyticsWorkbenchContext?.feedbackEntityName
+            || referenceValue
+            || issueTypeLabel
+            || '售后工单'
+        ).trim() || '售后工单';
+        const statusKey = normalizedNextStatus === 'REJECTED' ? 'review' : 'resolved';
+        const statusLabel = statusKey === 'review' ? '待复查' : '已处理';
+
+        return window.recordAnalyticsResolutionFeedback({
+            module: 'tickets',
+            productId: this.analyticsWorkbenchContext?.productId,
+            productName: this.analyticsWorkbenchContext?.productName,
+            feedbackScope,
+            entityType: feedbackEntityType,
+            entityId: feedbackEntityId,
+            entityName: feedbackEntityName,
+            title,
+            summary,
+            actionLabel,
+            referenceLabel,
+            referenceValue,
+            tone: normalizedNextStatus === 'REJECTED' ? 'warning' : 'success',
+            statusKey,
+            statusLabel
         });
     }
 };

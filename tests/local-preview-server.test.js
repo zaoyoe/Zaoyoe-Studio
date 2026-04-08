@@ -42,6 +42,8 @@ test('local preview server returns executable fallback script when public config
 
     assert.match(body, /Local preview runtime config error/);
     assert.match(body, /__ZAOYOE_SUPABASE_CONFIG__ = null/);
+    assert.doesNotMatch(body, /__ZAOYOE_TRAFFIC_RUNTIME_DEFAULT_ENABLED__/);
+    assert.doesNotMatch(body, /__ZAOYOE_EXPERIMENT_RUNTIME_DEFAULT_ENABLED__/);
 });
 
 test('local preview server rewrites nested admin routes into the shared admin handler format', () => {

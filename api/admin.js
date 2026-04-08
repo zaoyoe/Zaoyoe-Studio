@@ -2,6 +2,18 @@ const {
     normalizeAdminSite,
     sendJson
 } = require('./_lib/admin');
+const analyticsPanelSupportBundleHandler = require('../server/api-handlers/admin/analytics/panel-support-bundle');
+const analyticsSnapshotBundleHandler = require('../server/api-handlers/admin/analytics/snapshot-bundle');
+const analyticsSummaryPayloadBundleHandler = require('../server/api-handlers/admin/analytics/summary-payload-bundle');
+const analyticsSummaryRowsBundleHandler = require('../server/api-handlers/admin/analytics/summary-rows-bundle');
+const analyticsSummaryWindowBundleHandler = require('../server/api-handlers/admin/analytics/summary-window-bundle');
+const analyticsTrendSeriesBundleHandler = require('../server/api-handlers/admin/analytics/trend-series-bundle');
+const analyticsVisualPanelBundleHandler = require('../server/api-handlers/admin/analytics/visual-panel-bundle');
+const analyticsProductSummaryBundleHandler = require('../server/api-handlers/admin/analytics/product-summary-bundle');
+const analyticsProductRankBundleHandler = require('../server/api-handlers/admin/analytics/product-rank-bundle');
+const analyticsProductHealthBundleHandler = require('../server/api-handlers/admin/analytics/product-health-bundle');
+const analyticsProductFunnelBundleHandler = require('../server/api-handlers/admin/analytics/product-funnel-bundle');
+const analyticsProductDetailBundleHandler = require('../server/api-handlers/admin/analytics/product-detail-bundle');
 const geminiHandler = require('../server/api-handlers/admin/gemini');
 const commentsListHandler = require('../server/api-handlers/admin/comments/list');
 const commentsBlocksHandler = require('../server/api-handlers/admin/comments/blocks');
@@ -50,6 +62,18 @@ const ticketSummaryActionsHandler = require('../server/api-handlers/admin/ticket
 const ticketSummaryHistoryHandler = require('../server/api-handlers/admin/tickets/summary-history');
 
 const ROUTE_HANDLERS = {
+    'analytics/panel-support-bundle': analyticsPanelSupportBundleHandler,
+    'analytics/snapshot-bundle': analyticsSnapshotBundleHandler,
+    'analytics/summary-payload-bundle': analyticsSummaryPayloadBundleHandler,
+    'analytics/summary-rows-bundle': analyticsSummaryRowsBundleHandler,
+    'analytics/summary-window-bundle': analyticsSummaryWindowBundleHandler,
+    'analytics/trend-series-bundle': analyticsTrendSeriesBundleHandler,
+    'analytics/visual-panel-bundle': analyticsVisualPanelBundleHandler,
+    'analytics/product-summary-bundle': analyticsProductSummaryBundleHandler,
+    'analytics/product-rank-bundle': analyticsProductRankBundleHandler,
+    'analytics/product-health-bundle': analyticsProductHealthBundleHandler,
+    'analytics/product-funnel-bundle': analyticsProductFunnelBundleHandler,
+    'analytics/product-detail-bundle': analyticsProductDetailBundleHandler,
     gemini: geminiHandler,
     'comments/list': commentsListHandler,
     'comments/blocks': commentsBlocksHandler,

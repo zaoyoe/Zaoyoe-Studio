@@ -9,7 +9,7 @@ const {
     resolvePublicSupabaseConfig
 } = require('../api/_lib/public-runtime-config');
 
-function withEnv(patch, callback) {
+async function withEnv(patch, callback) {
     const previous = {};
 
     for (const [key, value] of Object.entries(patch || {})) {
@@ -22,7 +22,7 @@ function withEnv(patch, callback) {
     }
 
     try {
-        return callback();
+        return await callback();
     } finally {
         for (const key of Object.keys(patch || {})) {
             if (previous[key] === undefined) {
@@ -100,6 +100,8 @@ test('public runtime config script exports globals for legacy browser scripts', 
     });
     assert.equal(context.window.SUPABASE_URL, 'https://runtime.supabase.co');
     assert.equal(context.window.SUPABASE_KEY, 'runtime-key');
+    assert.equal(Object.prototype.hasOwnProperty.call(context.window, '__ZAOYOE_TRAFFIC_RUNTIME_DEFAULT_ENABLED__'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(context.window, '__ZAOYOE_EXPERIMENT_RUNTIME_DEFAULT_ENABLED__'), false);
 });
 
 test('runtime Supabase config endpoint returns executable JavaScript', async () => {
@@ -109,7 +111,9 @@ test('runtime Supabase config endpoint returns executable JavaScript', async () 
 
     await withEnv({
         SUPABASE_URL: 'https://runtime.supabase.co',
-        SUPABASE_PUBLISHABLE_KEY: 'runtime-key'
+        SUPABASE_PUBLISHABLE_KEY: 'runtime-key',
+        SUPABASE_SERVICE_ROLE_KEY: null,
+        SUPABASE_SERVICE_KEY: null
     }, async () => {
         const req = { method: 'GET' };
         const res = createMockResponse();
@@ -118,7 +122,10 @@ test('runtime Supabase config endpoint returns executable JavaScript', async () 
 
         assert.equal(res.statusCode, 200);
         assert.equal(res.headers['content-type'], 'application/javascript; charset=utf-8');
+        assert.equal(res.headers['cache-control'], 'public, max-age=60, s-maxage=60');
         assert.match(res.body, /__ZAOYOE_SUPABASE_CONFIG__/);
+        assert.doesNotMatch(res.body, /__ZAOYOE_TRAFFIC_RUNTIME_DEFAULT_ENABLED__/);
+        assert.doesNotMatch(res.body, /__ZAOYOE_EXPERIMENT_RUNTIME_DEFAULT_ENABLED__/);
         assert.match(res.body, /SUPABASE_URL/);
         assert.match(res.body, /SUPABASE_KEY/);
     });

@@ -22,6 +22,26 @@ function normalizeInteger(value, fallback) {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function normalizeRefundStatus(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    return normalized && normalized !== 'all' ? normalized : 'all';
+}
+
+function normalizeDeliveryStatus(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    const allowed = new Set(['all', 'pending', 'processing', 'retry_waiting', 'requeued', 'dead_letter', 'delivered']);
+    return allowed.has(normalized) ? normalized : 'all';
+}
+
+function escapePostgrestLikeValue(value) {
+    return String(value || '')
+        .trim()
+        .replace(/\\/g, '\\\\')
+        .replace(/,/g, '\\,')
+        .replace(/\(/g, '\\(')
+        .replace(/\)/g, '\\)');
+}
+
 async function loadProfilesByIds(supabase, userIds = []) {
     const ids = [...new Set((Array.isArray(userIds) ? userIds : []).map(normalizeText).filter(Boolean))];
     if (!ids.length) {
@@ -150,12 +170,12 @@ function buildResolvedItems(order, inventoryContentMap, fallbackContentMap) {
     }];
 }
 
-async function queryOrders(supabase, { site, query, page, pageSize }) {
+async function queryOrders(supabase, { site, query, refundStatus, deliveryStatus, page, pageSize }) {
     const limit = pageSize;
     const from = (page - 1) * limit;
     const to = from + limit - 1;
     const normalizedQuery = normalizeText(query);
-    const searchedById = normalizedQuery.includes('-');
+    const searchedById = /^SHOP_ORDER_/i.test(normalizedQuery);
 
     let queryBuilder = supabase
         .from('shop_orders')
@@ -166,9 +186,26 @@ async function queryOrders(supabase, { site, query, page, pageSize }) {
         queryBuilder = queryBuilder.eq('site', site);
     }
 
+    if (normalizeRefundStatus(refundStatus) !== 'all') {
+        queryBuilder = queryBuilder.eq('refund_status', normalizeRefundStatus(refundStatus));
+    }
+
+    if (normalizeDeliveryStatus(deliveryStatus) !== 'all') {
+        queryBuilder = queryBuilder.eq('delivery_status', normalizeDeliveryStatus(deliveryStatus));
+    }
+
     if (searchedById) {
         queryBuilder = queryBuilder.eq('id', normalizedQuery.replace(/^SHOP_ORDER_/i, ''));
     } else {
+        if (normalizedQuery) {
+            const escapedQuery = escapePostgrestLikeValue(normalizedQuery);
+            queryBuilder = queryBuilder.or([
+                `id.ilike.%${escapedQuery}%`,
+                `snapshot_product_name.ilike.%${escapedQuery}%`,
+                `product_id.ilike.%${escapedQuery}%`,
+                `user_id.ilike.%${escapedQuery}%`
+            ].join(','));
+        }
         queryBuilder = queryBuilder.range(from, to);
     }
 
@@ -245,12 +282,16 @@ module.exports = async function adminShopOrdersHandler(req, res) {
         const searchParams = getSearchParams(req);
         const site = normalizeSite(searchParams.get('site') || req.adminSite);
         const query = normalizeText(searchParams.get('query'));
+        const refundStatus = normalizeRefundStatus(searchParams.get('refundStatus'));
+        const deliveryStatus = normalizeDeliveryStatus(searchParams.get('deliveryStatus'));
         const page = normalizeInteger(searchParams.get('page'), 1);
         const pageSize = Math.min(normalizeInteger(searchParams.get('pageSize'), 20), 100);
 
         const { rows, count } = await queryOrders(supabase, {
             site,
             query,
+            refundStatus,
+            deliveryStatus,
             page,
             pageSize
         });

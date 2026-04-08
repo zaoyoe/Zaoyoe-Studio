@@ -24,8 +24,20 @@ RETURNS JSONB AS $$
 DECLARE
     v_dau INTEGER;
     v_mau INTEGER;
+    v_login_dau INTEGER;
+    v_login_mau INTEGER;
+    v_business_dau INTEGER;
+    v_business_mau INTEGER;
     v_new_users_today INTEGER;
     v_new_users_week INTEGER;
+    v_global_new_users_today INTEGER;
+    v_global_new_users_week INTEGER;
+    v_site_attributed_new_users_today INTEGER;
+    v_site_attributed_new_users_week INTEGER;
+    v_selected_site_new_users_today INTEGER;
+    v_selected_site_new_users_week INTEGER;
+    v_unattributed_new_users_today INTEGER;
+    v_unattributed_new_users_week INTEGER;
     v_total_points_circulation BIGINT;
     v_total_comments INTEGER;
     v_today DATE := (NOW() AT TIME ZONE 'Asia/Shanghai')::date;
@@ -34,37 +46,155 @@ DECLARE
 BEGIN
     PERFORM public.require_admin_access();
 
-    -- DAU: Unique users who logged in today
+    -- Login activity reference (legacy DAU / MAU semantics).
     IF p_site IS NULL THEN
-        SELECT COUNT(DISTINCT user_id) INTO v_dau
+        SELECT COUNT(DISTINCT user_id) INTO v_login_dau
         FROM public.user_login_history
         WHERE get_local_date(created_at) = v_today;
     ELSE
-        SELECT COUNT(DISTINCT user_id) INTO v_dau
+        SELECT COUNT(DISTINCT user_id) INTO v_login_dau
         FROM public.user_login_history
         WHERE get_local_date(created_at) = v_today AND site = p_site;
     END IF;
 
-    -- MAU: Unique users who logged in last 30 days
     IF p_site IS NULL THEN
-        SELECT COUNT(DISTINCT user_id) INTO v_mau
+        SELECT COUNT(DISTINCT user_id) INTO v_login_mau
         FROM public.user_login_history
         WHERE get_local_date(created_at) >= v_month_start;
     ELSE
-        SELECT COUNT(DISTINCT user_id) INTO v_mau
+        SELECT COUNT(DISTINCT user_id) INTO v_login_mau
         FROM public.user_login_history
         WHERE get_local_date(created_at) >= v_month_start AND site = p_site;
     END IF;
 
-    -- New users today (auth.users has no site column, shared)
-    SELECT COUNT(*) INTO v_new_users_today
-    FROM auth.users
-    WHERE get_local_date(created_at) = v_today;
+    -- Business activity: distinct users with effective business events.
+    SELECT COUNT(DISTINCT ue.user_id)::INTEGER INTO v_business_dau
+    FROM public.user_events ue
+    WHERE ue.user_id IS NOT NULL
+      AND get_local_date(ue.created_at) = v_today
+      AND (
+          p_site IS NULL
+          OR COALESCE(NULLIF(ue.site, ''), NULLIF(ue.event_data->>'site', ''), 'cn') = p_site
+      )
+      AND ue.event_name IN (
+          'prompt_view',
+          'unlock_click',
+          'unlock_success',
+          'wallet_open',
+          'recharge_click',
+          'recharge_success',
+          'verify_submit',
+          'verify_success',
+          'verify_fail',
+          'shop_view',
+          'shop_purchase',
+          'guestbook_post',
+          'affiliate_invite_click',
+          'checkin_success'
+      );
 
-    -- New users this week
-    SELECT COUNT(*) INTO v_new_users_week
-    FROM auth.users
-    WHERE get_local_date(created_at) >= v_week_start;
+    SELECT COUNT(DISTINCT ue.user_id)::INTEGER INTO v_business_mau
+    FROM public.user_events ue
+    WHERE ue.user_id IS NOT NULL
+      AND get_local_date(ue.created_at) >= v_month_start
+      AND (
+          p_site IS NULL
+          OR COALESCE(NULLIF(ue.site, ''), NULLIF(ue.event_data->>'site', ''), 'cn') = p_site
+      )
+      AND ue.event_name IN (
+          'prompt_view',
+          'unlock_click',
+          'unlock_success',
+          'wallet_open',
+          'recharge_click',
+          'recharge_success',
+          'verify_submit',
+          'verify_success',
+          'verify_fail',
+          'shop_view',
+          'shop_purchase',
+          'guestbook_post',
+          'affiliate_invite_click',
+          'checkin_success'
+      );
+
+    v_dau := COALESCE(v_business_dau, 0);
+    v_mau := COALESCE(v_business_mau, 0);
+
+    -- New users: global registrations + site attribution based on first observed site activity.
+    WITH scoped_new_users AS (
+        SELECT
+            u.id AS user_id,
+            get_local_date(u.created_at) AS signup_date
+        FROM auth.users u
+        WHERE get_local_date(u.created_at) BETWEEN v_week_start AND v_today
+    ),
+    attributed_new_users AS (
+        SELECT
+            snu.user_id,
+            snu.signup_date,
+            first_touch.site_value AS attributed_site
+        FROM scoped_new_users snu
+        LEFT JOIN LATERAL (
+            SELECT observed_site.site_value
+            FROM (
+                SELECT
+                    ulh.created_at,
+                    CASE
+                        WHEN LOWER(BTRIM(COALESCE(ulh.site, ''))) IN ('cn', 'intl')
+                            THEN LOWER(BTRIM(ulh.site))
+                        ELSE NULL
+                    END AS site_value
+                FROM public.user_login_history ulh
+                WHERE ulh.user_id = snu.user_id
+                UNION ALL
+                SELECT
+                    ue.created_at,
+                    CASE
+                        WHEN LOWER(BTRIM(COALESCE(ue.site, ue.event_data->>'site', ''))) IN ('cn', 'intl')
+                            THEN LOWER(BTRIM(COALESCE(ue.site, ue.event_data->>'site', '')))
+                        ELSE NULL
+                    END AS site_value
+                FROM public.user_events ue
+                WHERE ue.user_id = snu.user_id
+            ) observed_site
+            WHERE observed_site.site_value IS NOT NULL
+            ORDER BY observed_site.created_at ASC, observed_site.site_value ASC
+            LIMIT 1
+        ) first_touch ON TRUE
+    )
+    SELECT
+        COUNT(*) FILTER (WHERE signup_date = v_today)::INTEGER,
+        COUNT(*)::INTEGER,
+        COUNT(*) FILTER (WHERE signup_date = v_today AND attributed_site IS NOT NULL)::INTEGER,
+        COUNT(*) FILTER (WHERE attributed_site IS NOT NULL)::INTEGER,
+        COUNT(*) FILTER (WHERE signup_date = v_today AND attributed_site = p_site)::INTEGER,
+        COUNT(*) FILTER (WHERE attributed_site = p_site)::INTEGER
+    INTO
+        v_global_new_users_today,
+        v_global_new_users_week,
+        v_site_attributed_new_users_today,
+        v_site_attributed_new_users_week,
+        v_selected_site_new_users_today,
+        v_selected_site_new_users_week
+    FROM attributed_new_users;
+
+    v_unattributed_new_users_today := GREATEST(
+        COALESCE(v_global_new_users_today, 0) - COALESCE(v_site_attributed_new_users_today, 0),
+        0
+    );
+    v_unattributed_new_users_week := GREATEST(
+        COALESCE(v_global_new_users_week, 0) - COALESCE(v_site_attributed_new_users_week, 0),
+        0
+    );
+
+    IF p_site IS NULL THEN
+        v_new_users_today := COALESCE(v_global_new_users_today, 0);
+        v_new_users_week := COALESCE(v_global_new_users_week, 0);
+    ELSE
+        v_new_users_today := COALESCE(v_selected_site_new_users_today, 0);
+        v_new_users_week := COALESCE(v_selected_site_new_users_week, 0);
+    END IF;
 
     -- Total points in circulation
     IF p_site IS NULL THEN
@@ -85,8 +215,32 @@ BEGIN
     RETURN jsonb_build_object(
         'dau', COALESCE(v_dau, 0),
         'mau', COALESCE(v_mau, 0),
+        'business_dau', COALESCE(v_business_dau, 0),
+        'business_mau', COALESCE(v_business_mau, 0),
+        'login_dau', COALESCE(v_login_dau, 0),
+        'login_mau', COALESCE(v_login_mau, 0),
+        'active_users_scope', 'business_event',
+        'login_users_scope', 'login_history',
+        'active_users_model', 'effective_business_event',
         'new_users_today', COALESCE(v_new_users_today, 0),
         'new_users_week', COALESCE(v_new_users_week, 0),
+        'global_new_users_today', COALESCE(v_global_new_users_today, 0),
+        'global_new_users_week', COALESCE(v_global_new_users_week, 0),
+        'site_attributed_new_users_today', COALESCE(
+            CASE WHEN p_site IS NULL THEN v_site_attributed_new_users_today ELSE v_selected_site_new_users_today END,
+            0
+        ),
+        'site_attributed_new_users_week', COALESCE(
+            CASE WHEN p_site IS NULL THEN v_site_attributed_new_users_week ELSE v_selected_site_new_users_week END,
+            0
+        ),
+        'unattributed_new_users_today', COALESCE(v_unattributed_new_users_today, 0),
+        'unattributed_new_users_week', COALESCE(v_unattributed_new_users_week, 0),
+        'new_users_scope', CASE
+            WHEN p_site IS NULL THEN 'global_registration'
+            ELSE 'site_first_touch'
+        END,
+        'site_attribution_model', 'first_site_activity',
         'total_points', COALESCE(v_total_points_circulation, 0),
         'total_comments', COALESCE(v_total_comments, 0),
         'generated_at', NOW()
@@ -101,14 +255,24 @@ DROP FUNCTION IF EXISTS get_overview_stats();
 -- 2. USER TREND (带站点过滤)
 -- ============================================
 
-CREATE OR REPLACE FUNCTION get_user_trend(p_days INTEGER DEFAULT 30, p_site VARCHAR DEFAULT NULL)
+DROP FUNCTION IF EXISTS get_user_trend(INTEGER, VARCHAR);
+DROP FUNCTION IF EXISTS get_user_trend(INTEGER, VARCHAR, DATE, DATE);
+
+CREATE OR REPLACE FUNCTION get_user_trend(
+    p_days INTEGER DEFAULT 30,
+    p_site VARCHAR DEFAULT NULL,
+    p_start_date DATE DEFAULT NULL,
+    p_end_date DATE DEFAULT NULL
+)
 RETURNS TABLE (
     stat_date DATE,
     new_users INTEGER,
-    active_users INTEGER
+    active_users INTEGER,
+    login_active_users INTEGER
 ) AS $$
 DECLARE
-    v_start_date DATE := (NOW() AT TIME ZONE 'Asia/Shanghai')::date - GREATEST(p_days - 1, 0);
+    v_end_date DATE := COALESCE(p_end_date, (NOW() AT TIME ZONE 'Asia/Shanghai')::date);
+    v_start_date DATE := COALESCE(p_start_date, v_end_date - GREATEST(COALESCE(p_days, 30) - 1, 0));
 BEGIN
     PERFORM public.require_admin_access();
 
@@ -116,34 +280,106 @@ BEGIN
     WITH date_series AS (
         SELECT generate_series(
             v_start_date,
-            (NOW() AT TIME ZONE 'Asia/Shanghai')::date,
+            v_end_date,
             INTERVAL '1 day'
         )::date AS d
     ),
-    new_users_by_day AS (
+    scoped_new_users AS (
+        SELECT
+            u.id AS user_id,
+            get_local_date(u.created_at) AS signup_date
+        FROM auth.users u
+        WHERE get_local_date(u.created_at) BETWEEN v_start_date AND v_end_date
+    ),
+    attributed_new_users AS (
         SELECT 
-            get_local_date(created_at) AS d,
-            COUNT(*)::INTEGER AS cnt
-        FROM auth.users
-        WHERE get_local_date(created_at) >= v_start_date
+            snu.user_id,
+            snu.signup_date AS d,
+            first_touch.site_value AS attributed_site
+        FROM scoped_new_users snu
+        LEFT JOIN LATERAL (
+            SELECT observed_site.site_value
+            FROM (
+                SELECT
+                    ulh.created_at,
+                    CASE
+                        WHEN LOWER(BTRIM(COALESCE(ulh.site, ''))) IN ('cn', 'intl')
+                            THEN LOWER(BTRIM(ulh.site))
+                        ELSE NULL
+                    END AS site_value
+                FROM public.user_login_history ulh
+                WHERE ulh.user_id = snu.user_id
+                UNION ALL
+                SELECT
+                    ue.created_at,
+                    CASE
+                        WHEN LOWER(BTRIM(COALESCE(ue.site, ue.event_data->>'site', ''))) IN ('cn', 'intl')
+                            THEN LOWER(BTRIM(COALESCE(ue.site, ue.event_data->>'site', '')))
+                        ELSE NULL
+                    END AS site_value
+                FROM public.user_events ue
+                WHERE ue.user_id = snu.user_id
+            ) observed_site
+            WHERE observed_site.site_value IS NOT NULL
+            ORDER BY observed_site.created_at ASC, observed_site.site_value ASC
+            LIMIT 1
+        ) first_touch ON TRUE
+    ),
+    new_users_by_day AS (
+        SELECT
+            anu.d,
+            COUNT(*)::INTEGER AS global_cnt,
+            COUNT(*) FILTER (WHERE anu.attributed_site = p_site)::INTEGER AS site_cnt
+        FROM attributed_new_users anu
         GROUP BY 1
     ),
-    active_users_by_day AS (
+    business_active_users_by_day AS (
+        SELECT
+            get_local_date(ue.created_at) AS d,
+            COUNT(DISTINCT ue.user_id)::INTEGER AS cnt
+        FROM public.user_events ue
+        WHERE ue.user_id IS NOT NULL
+          AND get_local_date(ue.created_at) BETWEEN v_start_date AND v_end_date
+          AND (
+              p_site IS NULL
+              OR COALESCE(NULLIF(ue.site, ''), NULLIF(ue.event_data->>'site', ''), 'cn') = p_site
+          )
+          AND ue.event_name IN (
+              'prompt_view',
+              'unlock_click',
+              'unlock_success',
+              'wallet_open',
+              'recharge_click',
+              'recharge_success',
+              'verify_submit',
+              'verify_success',
+              'verify_fail',
+              'shop_view',
+              'shop_purchase',
+              'guestbook_post',
+              'affiliate_invite_click',
+              'checkin_success'
+          )
+        GROUP BY 1
+    ),
+    login_active_users_by_day AS (
         SELECT 
             get_local_date(created_at) AS d,
             COUNT(DISTINCT user_id)::INTEGER AS cnt
         FROM public.user_login_history
-        WHERE get_local_date(created_at) >= v_start_date
+        WHERE get_local_date(created_at) BETWEEN v_start_date AND v_end_date
           AND (p_site IS NULL OR site = p_site)
         GROUP BY 1
     )
     SELECT 
         ds.d AS stat_date,
-        COALESCE(nu.cnt, 0) AS new_users,
-        COALESCE(au.cnt, 0) AS active_users
+        COALESCE(CASE WHEN p_site IS NULL THEN nu.global_cnt ELSE nu.site_cnt END, 0) AS new_users,
+        COALESCE(bau.cnt, 0) AS active_users,
+        COALESCE(lau.cnt, 0) AS login_active_users
     FROM date_series ds
     LEFT JOIN new_users_by_day nu ON nu.d = ds.d
-    LEFT JOIN active_users_by_day au ON au.d = ds.d
+    LEFT JOIN business_active_users_by_day bau ON bau.d = ds.d
+    LEFT JOIN login_active_users_by_day lau ON lau.d = ds.d
     ORDER BY ds.d ASC;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -155,7 +391,14 @@ DROP FUNCTION IF EXISTS get_user_trend(INTEGER);
 -- 3. CONTENT TREND (带站点过滤)
 -- ============================================
 
-CREATE OR REPLACE FUNCTION get_content_trend(p_days INTEGER DEFAULT 30, p_site VARCHAR DEFAULT NULL)
+DROP FUNCTION IF EXISTS get_content_trend(INTEGER, VARCHAR);
+
+CREATE OR REPLACE FUNCTION get_content_trend(
+    p_days INTEGER DEFAULT 30,
+    p_site VARCHAR DEFAULT NULL,
+    p_start_date DATE DEFAULT NULL,
+    p_end_date DATE DEFAULT NULL
+)
 RETURNS TABLE (
     stat_date DATE,
     comments INTEGER,
@@ -163,7 +406,8 @@ RETURNS TABLE (
     likes INTEGER
 ) AS $$
 DECLARE
-    v_start_date DATE := (NOW() AT TIME ZONE 'Asia/Shanghai')::date - GREATEST(p_days - 1, 0);
+    v_end_date DATE := COALESCE(p_end_date, (NOW() AT TIME ZONE 'Asia/Shanghai')::date);
+    v_start_date DATE := COALESCE(p_start_date, v_end_date - GREATEST(COALESCE(p_days, 30) - 1, 0));
 BEGIN
     PERFORM public.require_admin_access();
 
@@ -171,7 +415,7 @@ BEGIN
     WITH date_series AS (
         SELECT generate_series(
             v_start_date,
-            (NOW() AT TIME ZONE 'Asia/Shanghai')::date,
+            v_end_date,
             INTERVAL '1 day'
         )::date AS d
     ),
@@ -180,7 +424,7 @@ BEGIN
             get_local_date(created_at) AS d,
             COUNT(*)::INTEGER AS cnt
         FROM public.prompt_comments
-        WHERE get_local_date(created_at) >= v_start_date
+        WHERE get_local_date(created_at) BETWEEN v_start_date AND v_end_date
           AND (p_site IS NULL OR site = p_site)
         GROUP BY 1
     ),
@@ -189,7 +433,7 @@ BEGIN
             get_local_date(unlocked_at) AS d,
             COUNT(*)::INTEGER AS cnt
         FROM public.prompt_unlocks
-        WHERE get_local_date(unlocked_at) >= v_start_date
+        WHERE get_local_date(unlocked_at) BETWEEN v_start_date AND v_end_date
           AND (p_site IS NULL OR site = p_site)
         GROUP BY 1
     ),
@@ -198,7 +442,7 @@ BEGIN
             get_local_date(created_at) AS d,
             COUNT(*)::INTEGER AS cnt
         FROM public.comment_likes
-        WHERE get_local_date(created_at) >= v_start_date
+        WHERE get_local_date(created_at) BETWEEN v_start_date AND v_end_date
           AND (p_site IS NULL OR site = p_site)
         GROUP BY 1
     )
@@ -222,7 +466,14 @@ DROP FUNCTION IF EXISTS get_content_trend(INTEGER);
 -- 4. REVENUE TREND (带站点过滤)
 -- ============================================
 
-CREATE OR REPLACE FUNCTION get_revenue_trend(p_days INTEGER DEFAULT 30, p_site VARCHAR DEFAULT NULL)
+DROP FUNCTION IF EXISTS get_revenue_trend(INTEGER, VARCHAR);
+
+CREATE OR REPLACE FUNCTION get_revenue_trend(
+    p_days INTEGER DEFAULT 30,
+    p_site VARCHAR DEFAULT NULL,
+    p_start_date DATE DEFAULT NULL,
+    p_end_date DATE DEFAULT NULL
+)
 RETURNS TABLE (
     stat_date DATE,
     points_in BIGINT,
@@ -230,7 +481,8 @@ RETURNS TABLE (
     redemptions INTEGER
 ) AS $$
 DECLARE
-    v_start_date DATE := (NOW() AT TIME ZONE 'Asia/Shanghai')::date - GREATEST(p_days - 1, 0);
+    v_end_date DATE := COALESCE(p_end_date, (NOW() AT TIME ZONE 'Asia/Shanghai')::date);
+    v_start_date DATE := COALESCE(p_start_date, v_end_date - GREATEST(COALESCE(p_days, 30) - 1, 0));
 BEGIN
     PERFORM public.require_admin_access();
 
@@ -238,7 +490,7 @@ BEGIN
     WITH date_series AS (
         SELECT generate_series(
             v_start_date,
-            (NOW() AT TIME ZONE 'Asia/Shanghai')::date,
+            v_end_date,
             INTERVAL '1 day'
         )::date AS d
     ),
@@ -248,7 +500,7 @@ BEGIN
             COALESCE(SUM(amount) FILTER (WHERE amount > 0), 0)::BIGINT AS in_amt,
             COALESCE(ABS(SUM(amount) FILTER (WHERE amount < 0)), 0)::BIGINT AS out_amt
         FROM public.points_ledger
-        WHERE get_local_date(created_at) >= v_start_date
+        WHERE get_local_date(created_at) BETWEEN v_start_date AND v_end_date
           AND (p_site IS NULL OR site = p_site)
         GROUP BY 1
     ),
@@ -258,7 +510,7 @@ BEGIN
             COUNT(*)::INTEGER AS cnt
         FROM public.redemption_codes
         WHERE used_at IS NOT NULL 
-          AND get_local_date(used_at) >= v_start_date
+          AND get_local_date(used_at) BETWEEN v_start_date AND v_end_date
           AND (p_site IS NULL OR site = p_site)
         GROUP BY 1
     )
@@ -281,10 +533,14 @@ DROP FUNCTION IF EXISTS get_revenue_trend(INTEGER);
 -- 5. CONTENT TOP N (带站点过滤)
 -- ============================================
 
+DROP FUNCTION IF EXISTS get_content_top(INTEGER, VARCHAR, INTEGER);
+
 CREATE OR REPLACE FUNCTION get_content_top(
     p_limit INTEGER DEFAULT 10,
     p_site VARCHAR DEFAULT NULL,
-    p_days INTEGER DEFAULT NULL
+    p_days INTEGER DEFAULT NULL,
+    p_start_date DATE DEFAULT NULL,
+    p_end_date DATE DEFAULT NULL
 )
 RETURNS TABLE (
     prompt_id BIGINT,
@@ -295,10 +551,13 @@ RETURNS TABLE (
 ) AS $$
 DECLARE
     v_start_date DATE := CASE
+        WHEN p_start_date IS NOT NULL
+            THEN p_start_date
         WHEN p_days IS NOT NULL AND p_days > 0
-            THEN (NOW() AT TIME ZONE 'Asia/Shanghai')::date - GREATEST(p_days - 1, 0)
+            THEN COALESCE(p_end_date, (NOW() AT TIME ZONE 'Asia/Shanghai')::date) - GREATEST(p_days - 1, 0)
         ELSE NULL
     END;
+    v_end_date DATE := COALESCE(p_end_date, (NOW() AT TIME ZONE 'Asia/Shanghai')::date);
 BEGIN
     PERFORM public.require_admin_access();
 
@@ -312,10 +571,10 @@ BEGIN
     FROM public.prompts p
     LEFT JOIN public.prompt_unlocks u ON u.prompt_id = p.id
         AND (p_site IS NULL OR u.site = p_site)
-        AND (v_start_date IS NULL OR get_local_date(u.unlocked_at) >= v_start_date)
+        AND (v_start_date IS NULL OR get_local_date(u.unlocked_at) BETWEEN v_start_date AND v_end_date)
     LEFT JOIN public.prompt_comments c ON c.prompt_id = p.id
         AND (p_site IS NULL OR c.site = p_site)
-        AND (v_start_date IS NULL OR get_local_date(c.created_at) >= v_start_date)
+        AND (v_start_date IS NULL OR get_local_date(c.created_at) BETWEEN v_start_date AND v_end_date)
     GROUP BY p.id, p.title
     ORDER BY score DESC
     LIMIT p_limit;
@@ -327,11 +586,14 @@ DROP FUNCTION IF EXISTS get_content_top(INTEGER);
 DROP FUNCTION IF EXISTS get_content_top(INTEGER, VARCHAR);
 
 DROP FUNCTION IF EXISTS get_content_top_v2(INTEGER, VARCHAR, INTEGER);
+DROP FUNCTION IF EXISTS get_content_top_v2(INTEGER, VARCHAR, INTEGER, DATE, DATE);
 
 CREATE OR REPLACE FUNCTION get_content_top_v2(
     p_limit INTEGER DEFAULT 10,
     p_site VARCHAR DEFAULT NULL,
-    p_days INTEGER DEFAULT NULL
+    p_days INTEGER DEFAULT NULL,
+    p_start_date DATE DEFAULT NULL,
+    p_end_date DATE DEFAULT NULL
 )
 RETURNS TABLE (
     prompt_id TEXT,
@@ -344,10 +606,13 @@ RETURNS TABLE (
 ) AS $$
 DECLARE
     v_start_date DATE := CASE
+        WHEN p_start_date IS NOT NULL
+            THEN p_start_date
         WHEN p_days IS NOT NULL AND p_days > 0
-            THEN (NOW() AT TIME ZONE 'Asia/Shanghai')::date - GREATEST(p_days - 1, 0)
+            THEN COALESCE(p_end_date, (NOW() AT TIME ZONE 'Asia/Shanghai')::date) - GREATEST(p_days - 1, 0)
         ELSE NULL
     END;
+    v_end_date DATE := COALESCE(p_end_date, (NOW() AT TIME ZONE 'Asia/Shanghai')::date);
 BEGIN
     PERFORM public.require_admin_access();
 
@@ -364,7 +629,7 @@ BEGIN
         FROM public.user_events ue
         WHERE ue.user_id IS NOT NULL
           AND ue.event_name IN ('prompt_view', 'unlock_success')
-          AND (v_start_date IS NULL OR get_local_date(ue.created_at) >= v_start_date)
+          AND (v_start_date IS NULL OR get_local_date(ue.created_at) BETWEEN v_start_date AND v_end_date)
           AND (
               p_site IS NULL
               OR COALESCE(NULLIF(ue.site, ''), NULLIF(ue.event_data->>'site', ''), 'cn') = p_site
@@ -387,13 +652,13 @@ BEGIN
             COUNT(*) AS comment_count
         FROM public.prompt_comments c
         WHERE (p_site IS NULL OR c.site = p_site)
-          AND (v_start_date IS NULL OR get_local_date(c.created_at) >= v_start_date)
+          AND (v_start_date IS NULL OR get_local_date(c.created_at) BETWEEN v_start_date AND v_end_date)
         GROUP BY c.prompt_id::TEXT
     ),
     prompt_keys AS (
-        SELECT prompt_id FROM prompt_event_rollup
+        SELECT per.prompt_id AS prompt_id FROM prompt_event_rollup per
         UNION
-        SELECT prompt_id FROM prompt_comment_rollup
+        SELECT pcr.prompt_id AS prompt_id FROM prompt_comment_rollup pcr
     )
     SELECT
         pk.prompt_id,
@@ -422,7 +687,14 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- 6. COMMUNITY STATS (带站点过滤)
 -- ============================================
 
-CREATE OR REPLACE FUNCTION get_community_stats(p_days INTEGER DEFAULT 30, p_site VARCHAR DEFAULT NULL)
+DROP FUNCTION IF EXISTS get_community_stats(INTEGER, VARCHAR);
+
+CREATE OR REPLACE FUNCTION get_community_stats(
+    p_days INTEGER DEFAULT 30,
+    p_site VARCHAR DEFAULT NULL,
+    p_start_date DATE DEFAULT NULL,
+    p_end_date DATE DEFAULT NULL
+)
 RETURNS TABLE (
     stat_date DATE,
     messages INTEGER,
@@ -430,7 +702,8 @@ RETURNS TABLE (
     likes INTEGER
 ) AS $$
 DECLARE
-    v_start_date DATE := (NOW() AT TIME ZONE 'Asia/Shanghai')::date - GREATEST(p_days - 1, 0);
+    v_end_date DATE := COALESCE(p_end_date, (NOW() AT TIME ZONE 'Asia/Shanghai')::date);
+    v_start_date DATE := COALESCE(p_start_date, v_end_date - GREATEST(COALESCE(p_days, 30) - 1, 0));
 BEGIN
     PERFORM public.require_admin_access();
 
@@ -438,7 +711,7 @@ BEGIN
     WITH date_series AS (
         SELECT generate_series(
             v_start_date,
-            (NOW() AT TIME ZONE 'Asia/Shanghai')::date,
+            v_end_date,
             INTERVAL '1 day'
         )::date AS d
     ),
@@ -447,7 +720,7 @@ BEGIN
             get_local_date(created_at) AS d,
             COUNT(*)::INTEGER AS cnt
         FROM public.guestbook_messages
-        WHERE get_local_date(created_at) >= v_start_date
+        WHERE get_local_date(created_at) BETWEEN v_start_date AND v_end_date
           AND (p_site IS NULL OR site = p_site)
         GROUP BY 1
     ),
@@ -456,7 +729,7 @@ BEGIN
             get_local_date(created_at) AS d,
             COUNT(*)::INTEGER AS cnt
         FROM public.guestbook_comments
-        WHERE get_local_date(created_at) >= v_start_date
+        WHERE get_local_date(created_at) BETWEEN v_start_date AND v_end_date
           AND (p_site IS NULL OR site = p_site)
         GROUP BY 1
     ),
@@ -465,7 +738,7 @@ BEGIN
             get_local_date(created_at) AS d,
             COUNT(*)::INTEGER AS cnt
         FROM public.guestbook_likes
-        WHERE get_local_date(created_at) >= v_start_date
+        WHERE get_local_date(created_at) BETWEEN v_start_date AND v_end_date
           AND (p_site IS NULL OR site = p_site)
         GROUP BY 1
     )
@@ -489,25 +762,60 @@ DROP FUNCTION IF EXISTS get_community_stats(INTEGER);
 -- 7. ACTIVITY HEATMAP (带站点过滤)
 -- ============================================
 
-CREATE OR REPLACE FUNCTION get_activity_heatmap(p_days INTEGER DEFAULT 30, p_site VARCHAR DEFAULT NULL)
+DROP FUNCTION IF EXISTS get_activity_heatmap(INTEGER, VARCHAR, DATE, DATE);
+DROP FUNCTION IF EXISTS get_activity_heatmap(INTEGER, VARCHAR);
+
+CREATE OR REPLACE FUNCTION get_activity_heatmap(
+    p_days INTEGER DEFAULT 30,
+    p_site VARCHAR DEFAULT NULL,
+    p_start_date DATE DEFAULT NULL,
+    p_end_date DATE DEFAULT NULL
+)
 RETURNS TABLE (
     day_of_week INTEGER,
     hour_of_day INTEGER,
-    activity_count BIGINT
+    activity_count BIGINT,
+    is_proxy_metric BOOLEAN,
+    metric_basis TEXT,
+    metric_label TEXT
 ) AS $$
 DECLARE
-    v_start_date TIMESTAMPTZ := NOW() - (p_days || ' days')::INTERVAL;
+    v_end_date DATE := COALESCE(p_end_date, (NOW() AT TIME ZONE 'Asia/Shanghai')::date);
+    v_start_date DATE := COALESCE(p_start_date, v_end_date - GREATEST(COALESCE(p_days, 30) - 1, 0));
 BEGIN
     PERFORM public.require_admin_access();
 
     RETURN QUERY
-    SELECT 
-        EXTRACT(DOW FROM created_at AT TIME ZONE 'Asia/Shanghai')::INTEGER AS day_of_week,
-        EXTRACT(HOUR FROM created_at AT TIME ZONE 'Asia/Shanghai')::INTEGER AS hour_of_day,
-        COUNT(*) AS activity_count
-    FROM public.user_login_history
-    WHERE created_at >= v_start_date
-      AND (p_site IS NULL OR site = p_site)
+    SELECT
+        EXTRACT(DOW FROM ue.created_at AT TIME ZONE 'Asia/Shanghai')::INTEGER AS day_of_week,
+        EXTRACT(HOUR FROM ue.created_at AT TIME ZONE 'Asia/Shanghai')::INTEGER AS hour_of_day,
+        COUNT(*) AS activity_count,
+        FALSE AS is_proxy_metric,
+        'effective_business_event_heatmap'::TEXT AS metric_basis,
+        '真实业务事件热度'::TEXT AS metric_label
+    FROM public.user_events ue
+    WHERE ue.user_id IS NOT NULL
+      AND get_local_date(ue.created_at) BETWEEN v_start_date AND v_end_date
+      AND (
+          p_site IS NULL
+          OR COALESCE(NULLIF(ue.site, ''), NULLIF(ue.event_data->>'site', ''), 'cn') = p_site
+      )
+      AND ue.event_name IN (
+          'prompt_view',
+          'unlock_click',
+          'unlock_success',
+          'wallet_open',
+          'recharge_click',
+          'recharge_success',
+          'verify_submit',
+          'verify_success',
+          'verify_fail',
+          'shop_view',
+          'shop_purchase',
+          'guestbook_post',
+          'affiliate_invite_click',
+          'checkin_success'
+      )
     GROUP BY 1, 2
     ORDER BY 1, 2;
 END;
@@ -783,7 +1091,14 @@ DROP FUNCTION IF EXISTS get_points_distribution();
 -- 12. AI SUMMARY DATA (带站点过滤)
 -- ============================================
 
-CREATE OR REPLACE FUNCTION get_ai_summary_data(p_days INTEGER DEFAULT 7, p_site VARCHAR DEFAULT NULL)
+DROP FUNCTION IF EXISTS get_ai_summary_data(INTEGER, VARCHAR);
+
+CREATE OR REPLACE FUNCTION get_ai_summary_data(
+    p_days INTEGER DEFAULT 7,
+    p_site VARCHAR DEFAULT NULL,
+    p_start_date DATE DEFAULT NULL,
+    p_end_date DATE DEFAULT NULL
+)
 RETURNS JSONB AS $$
 DECLARE
     v_overview JSONB;
@@ -796,13 +1111,13 @@ BEGIN
     SELECT get_overview_stats(p_site) INTO v_overview;
 
     SELECT jsonb_agg(t) INTO v_user_trend
-    FROM (SELECT * FROM get_user_trend(p_days, p_site)) t;
+    FROM (SELECT * FROM get_user_trend(p_days, p_site, p_start_date, p_end_date)) t;
 
     SELECT jsonb_agg(t) INTO v_channel_breakdown
-    FROM (SELECT * FROM get_channel_breakdown_v2(p_site, p_days)) t;
+    FROM (SELECT * FROM get_channel_breakdown_v2(p_site, p_days, p_start_date, p_end_date)) t;
 
     SELECT jsonb_agg(t) INTO v_top_content
-    FROM (SELECT * FROM get_content_top_v2(5, p_site, p_days)) t;
+    FROM (SELECT * FROM get_content_top_v2(5, p_site, p_days, p_start_date, p_end_date)) t;
 
     RETURN jsonb_build_object(
         'period_days', p_days,
@@ -820,10 +1135,16 @@ DROP FUNCTION IF EXISTS get_ai_summary_data(INTEGER);
 
 DROP FUNCTION IF EXISTS get_ai_summary_data_v2(INTEGER, VARCHAR);
 
-CREATE OR REPLACE FUNCTION get_ai_summary_data_v2(p_days INTEGER DEFAULT 7, p_site VARCHAR DEFAULT NULL)
+CREATE OR REPLACE FUNCTION get_ai_summary_data_v2(
+    p_days INTEGER DEFAULT 7,
+    p_site VARCHAR DEFAULT NULL,
+    p_start_date DATE DEFAULT NULL,
+    p_end_date DATE DEFAULT NULL
+)
 RETURNS JSONB AS $$
 DECLARE
-    v_start_date DATE := (NOW() AT TIME ZONE 'Asia/Shanghai')::date - GREATEST(COALESCE(p_days, 7) - 1, 0);
+    v_end_date DATE := COALESCE(p_end_date, (NOW() AT TIME ZONE 'Asia/Shanghai')::date);
+    v_start_date DATE := COALESCE(p_start_date, v_end_date - GREATEST(COALESCE(p_days, 7) - 1, 0));
     v_overview JSONB;
     v_user_trend JSONB;
     v_channel_breakdown JSONB;
@@ -837,16 +1158,16 @@ BEGIN
     SELECT get_overview_stats(p_site) INTO v_overview;
 
     SELECT jsonb_agg(t) INTO v_user_trend
-    FROM (SELECT * FROM get_user_trend(p_days, p_site)) t;
+    FROM (SELECT * FROM get_user_trend(p_days, p_site, p_start_date, p_end_date)) t;
 
     SELECT jsonb_agg(t) INTO v_channel_breakdown
-    FROM (SELECT * FROM get_channel_breakdown_v2(p_site, p_days)) t;
+    FROM (SELECT * FROM get_channel_breakdown_v2(p_site, p_days, p_start_date, p_end_date)) t;
 
     SELECT jsonb_agg(t) INTO v_top_content
-    FROM (SELECT * FROM get_content_top_v2(5, p_site, p_days)) t;
+    FROM (SELECT * FROM get_content_top_v2(5, p_site, p_days, p_start_date, p_end_date)) t;
 
     SELECT jsonb_agg(t) INTO v_content_funnel
-    FROM (SELECT * FROM get_conversion_funnel_v2(p_days, p_site)) t;
+    FROM (SELECT * FROM get_conversion_funnel_v2(p_days, p_site, p_start_date, p_end_date)) t;
 
     WITH scoped_events AS (
         SELECT
@@ -854,7 +1175,7 @@ BEGIN
             ue.event_name
         FROM public.user_events ue
         WHERE ue.user_id IS NOT NULL
-          AND get_local_date(ue.created_at) >= v_start_date
+          AND get_local_date(ue.created_at) BETWEEN v_start_date AND v_end_date
           AND (
               p_site IS NULL
               OR COALESCE(NULLIF(ue.site, ''), NULLIF(ue.event_data->>'site', ''), 'cn') = p_site
@@ -879,7 +1200,7 @@ BEGIN
     ),
     event_rollup AS (
         SELECT
-            COUNT(DISTINCT user_id) AS business_active_users,
+            COUNT(DISTINCT user_id) FILTER (WHERE event_name <> 'page_view') AS business_active_users,
             COUNT(*) FILTER (WHERE event_name = 'page_view') AS page_view_count,
             COUNT(DISTINCT user_id) FILTER (WHERE event_name = 'page_view') AS page_view_users,
             COUNT(*) FILTER (WHERE event_name = 'prompt_view') AS prompt_view_count,
@@ -1009,6 +1330,8 @@ RETURNS JSONB AS $$
 DECLARE
     v_base JSONB;
     v_prev_dau INTEGER;
+    v_prev_login_dau INTEGER;
+    v_prev_business_dau INTEGER;
     v_prev_new_users INTEGER;
     v_current_comments INTEGER;
     v_prev_comments INTEGER;
@@ -1022,19 +1345,92 @@ BEGIN
 
     v_base := get_overview_stats(p_site);
 
-    -- Previous DAU
+    -- Previous login DAU reference.
     IF p_site IS NULL THEN
-        SELECT COUNT(DISTINCT user_id) INTO v_prev_dau
+        SELECT COUNT(DISTINCT user_id) INTO v_prev_login_dau
         FROM public.user_login_history WHERE get_local_date(created_at) = v_yesterday;
     ELSE
-        SELECT COUNT(DISTINCT user_id) INTO v_prev_dau
+        SELECT COUNT(DISTINCT user_id) INTO v_prev_login_dau
         FROM public.user_login_history WHERE get_local_date(created_at) = v_yesterday AND site = p_site;
     END IF;
 
-    -- Previous week new users
-    SELECT COUNT(*) INTO v_prev_new_users
-    FROM auth.users
-    WHERE get_local_date(created_at) BETWEEN v_prev_window_start AND v_prev_window_end;
+    -- Previous business DAU
+    SELECT COUNT(DISTINCT ue.user_id)::INTEGER INTO v_prev_business_dau
+    FROM public.user_events ue
+    WHERE ue.user_id IS NOT NULL
+      AND get_local_date(ue.created_at) = v_yesterday
+      AND (
+          p_site IS NULL
+          OR COALESCE(NULLIF(ue.site, ''), NULLIF(ue.event_data->>'site', ''), 'cn') = p_site
+      )
+      AND ue.event_name IN (
+          'prompt_view',
+          'unlock_click',
+          'unlock_success',
+          'wallet_open',
+          'recharge_click',
+          'recharge_success',
+          'verify_submit',
+          'verify_success',
+          'verify_fail',
+          'shop_view',
+          'shop_purchase',
+          'guestbook_post',
+          'affiliate_invite_click',
+          'checkin_success'
+      );
+
+    v_prev_dau := COALESCE(v_prev_business_dau, 0);
+
+    -- Previous week new users follows the same global/site attribution semantics as the current window.
+    WITH scoped_prev_new_users AS (
+        SELECT
+            u.id AS user_id,
+            get_local_date(u.created_at) AS signup_date
+        FROM auth.users u
+        WHERE get_local_date(u.created_at) BETWEEN v_prev_window_start AND v_prev_window_end
+    ),
+    attributed_prev_new_users AS (
+        SELECT
+            spnu.user_id,
+            spnu.signup_date,
+            first_touch.site_value AS attributed_site
+        FROM scoped_prev_new_users spnu
+        LEFT JOIN LATERAL (
+            SELECT observed_site.site_value
+            FROM (
+                SELECT
+                    ulh.created_at,
+                    CASE
+                        WHEN LOWER(BTRIM(COALESCE(ulh.site, ''))) IN ('cn', 'intl')
+                            THEN LOWER(BTRIM(ulh.site))
+                        ELSE NULL
+                    END AS site_value
+                FROM public.user_login_history ulh
+                WHERE ulh.user_id = spnu.user_id
+                UNION ALL
+                SELECT
+                    ue.created_at,
+                    CASE
+                        WHEN LOWER(BTRIM(COALESCE(ue.site, ue.event_data->>'site', ''))) IN ('cn', 'intl')
+                            THEN LOWER(BTRIM(COALESCE(ue.site, ue.event_data->>'site', '')))
+                        ELSE NULL
+                    END AS site_value
+                FROM public.user_events ue
+                WHERE ue.user_id = spnu.user_id
+            ) observed_site
+            WHERE observed_site.site_value IS NOT NULL
+            ORDER BY observed_site.created_at ASC, observed_site.site_value ASC
+            LIMIT 1
+        ) first_touch ON TRUE
+    )
+    SELECT
+        CASE
+            WHEN p_site IS NULL THEN COUNT(*)::INTEGER
+            ELSE COUNT(*) FILTER (WHERE attributed_site = p_site)::INTEGER
+        END
+    INTO v_prev_new_users
+    FROM attributed_prev_new_users;
 
     -- Previous comments
     IF p_site IS NULL THEN
@@ -1061,6 +1457,7 @@ BEGIN
 
     RETURN v_base || jsonb_build_object(
         'dau_growth', CASE WHEN v_prev_dau > 0 THEN ROUND(((v_base->>'dau')::NUMERIC - v_prev_dau) / v_prev_dau * 100) ELSE 0 END,
+        'login_dau_growth', CASE WHEN v_prev_login_dau > 0 THEN ROUND(((v_base->>'login_dau')::NUMERIC - v_prev_login_dau) / v_prev_login_dau * 100) ELSE 0 END,
         'new_users_growth', CASE WHEN v_prev_new_users > 0 THEN ROUND(((v_base->>'new_users_week')::NUMERIC - v_prev_new_users) / v_prev_new_users * 100) ELSE 0 END,
         'comments_growth', CASE WHEN v_prev_comments > 0 THEN ROUND((COALESCE(v_current_comments, 0)::NUMERIC - v_prev_comments) / v_prev_comments * 100) ELSE 0 END
     );
@@ -1076,19 +1473,19 @@ DROP FUNCTION IF EXISTS get_overview_stats_with_trend();
 
 GRANT EXECUTE ON FUNCTION get_overview_stats(VARCHAR) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_overview_stats_with_trend(VARCHAR) TO authenticated;
-GRANT EXECUTE ON FUNCTION get_user_trend(INTEGER, VARCHAR) TO authenticated;
-GRANT EXECUTE ON FUNCTION get_content_trend(INTEGER, VARCHAR) TO authenticated;
-GRANT EXECUTE ON FUNCTION get_revenue_trend(INTEGER, VARCHAR) TO authenticated;
-GRANT EXECUTE ON FUNCTION get_content_top(INTEGER, VARCHAR, INTEGER) TO authenticated;
-GRANT EXECUTE ON FUNCTION get_content_top_v2(INTEGER, VARCHAR, INTEGER) TO authenticated;
-GRANT EXECUTE ON FUNCTION get_community_stats(INTEGER, VARCHAR) TO authenticated;
-GRANT EXECUTE ON FUNCTION get_activity_heatmap(INTEGER, VARCHAR) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_user_trend(INTEGER, VARCHAR, DATE, DATE) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_content_trend(INTEGER, VARCHAR, DATE, DATE) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_revenue_trend(INTEGER, VARCHAR, DATE, DATE) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_content_top(INTEGER, VARCHAR, INTEGER, DATE, DATE) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_content_top_v2(INTEGER, VARCHAR, INTEGER, DATE, DATE) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_community_stats(INTEGER, VARCHAR, DATE, DATE) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_activity_heatmap(INTEGER, VARCHAR, DATE, DATE) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_top_contributors(INTEGER, VARCHAR) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_points_leaderboard(INTEGER, VARCHAR) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_points_health(VARCHAR) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_points_distribution(VARCHAR) TO authenticated;
-GRANT EXECUTE ON FUNCTION get_ai_summary_data(INTEGER, VARCHAR) TO authenticated;
-GRANT EXECUTE ON FUNCTION get_ai_summary_data_v2(INTEGER, VARCHAR) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_ai_summary_data(INTEGER, VARCHAR, DATE, DATE) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_ai_summary_data_v2(INTEGER, VARCHAR, DATE, DATE) TO authenticated;
 
 -- ============================================
 -- 完成！在 Supabase SQL Editor 中执行本脚本

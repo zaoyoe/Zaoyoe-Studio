@@ -237,6 +237,210 @@ test('admin router prefers explicit query route when both query and path routes 
     });
 });
 
+test('admin router resolves analytics snapshot bundle path routes', async () => {
+    await withAdminApiRouter(async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/analytics/snapshot-bundle?site=cn',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.handlerCalls.length, 1);
+        assert.equal(state.handlerCalls[0].adminRoute, 'analytics/snapshot-bundle');
+        assert.equal(state.handlerCalls[0].adminSite, 'cn');
+    });
+});
+
+test('admin router resolves analytics panel support bundle path routes', async () => {
+    await withAdminApiRouter(async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/analytics/panel-support-bundle?site=all',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.handlerCalls.length, 1);
+        assert.equal(state.handlerCalls[0].adminRoute, 'analytics/panel-support-bundle');
+        assert.equal(state.handlerCalls[0].adminSite, 'all');
+    });
+});
+
+test('admin router resolves analytics visual panel bundle path routes', async () => {
+    await withAdminApiRouter(async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/analytics/visual-panel-bundle?site=cn',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.handlerCalls.length, 1);
+        assert.equal(state.handlerCalls[0].adminRoute, 'analytics/visual-panel-bundle');
+        assert.equal(state.handlerCalls[0].adminSite, 'cn');
+    });
+});
+
+test('admin router resolves analytics trend series bundle path routes', async () => {
+    await withAdminApiRouter(async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/analytics/trend-series-bundle?site=intl',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.handlerCalls.length, 1);
+        assert.equal(state.handlerCalls[0].adminRoute, 'analytics/trend-series-bundle');
+        assert.equal(state.handlerCalls[0].adminSite, 'intl');
+    });
+});
+
+test('admin router resolves analytics summary window bundle path routes', async () => {
+    await withAdminApiRouter(async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/analytics/summary-window-bundle?site=all',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.handlerCalls.length, 1);
+        assert.equal(state.handlerCalls[0].adminRoute, 'analytics/summary-window-bundle');
+        assert.equal(state.handlerCalls[0].adminSite, 'all');
+    });
+});
+
+test('admin router resolves analytics summary rows bundle path routes', async () => {
+    await withAdminApiRouter(async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/analytics/summary-rows-bundle?site=intl',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.handlerCalls.length, 1);
+        assert.equal(state.handlerCalls[0].adminRoute, 'analytics/summary-rows-bundle');
+        assert.equal(state.handlerCalls[0].adminSite, 'intl');
+    });
+});
+
+test('admin router resolves analytics summary payload bundle path routes', async () => {
+    await withAdminApiRouter(async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/analytics/summary-payload-bundle?site=cn',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.handlerCalls.length, 1);
+        assert.equal(state.handlerCalls[0].adminRoute, 'analytics/summary-payload-bundle');
+        assert.equal(state.handlerCalls[0].adminSite, 'cn');
+    });
+});
+
+test('admin router resolves analytics product summary bundle path routes', async () => {
+    await withAdminApiRouter(async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/analytics/product-summary-bundle?site=cn',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.handlerCalls.length, 1);
+        assert.equal(state.handlerCalls[0].adminRoute, 'analytics/product-summary-bundle');
+        assert.equal(state.handlerCalls[0].adminSite, 'cn');
+    });
+});
+
+test('admin router resolves analytics product rank bundle path routes', async () => {
+    await withAdminApiRouter(async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/analytics/product-rank-bundle?site=all',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.handlerCalls.length, 1);
+        assert.equal(state.handlerCalls[0].adminRoute, 'analytics/product-rank-bundle');
+        assert.equal(state.handlerCalls[0].adminSite, 'all');
+    });
+});
+
+test('admin router resolves analytics product health bundle path routes', async () => {
+    await withAdminApiRouter(async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/analytics/product-health-bundle?site=intl',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.handlerCalls.length, 1);
+        assert.equal(state.handlerCalls[0].adminRoute, 'analytics/product-health-bundle');
+        assert.equal(state.handlerCalls[0].adminSite, 'intl');
+    });
+});
+
+test('admin router resolves analytics product funnel bundle path routes', async () => {
+    await withAdminApiRouter(async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/analytics/product-funnel-bundle?site=all',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.handlerCalls.length, 1);
+        assert.equal(state.handlerCalls[0].adminRoute, 'analytics/product-funnel-bundle');
+        assert.equal(state.handlerCalls[0].adminSite, 'all');
+    });
+});
+
+test('admin router resolves analytics product detail bundle path routes', async () => {
+    await withAdminApiRouter(async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/analytics/product-detail-bundle?site=cn&productId=product-1',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.handlerCalls.length, 1);
+        assert.equal(state.handlerCalls[0].adminRoute, 'analytics/product-detail-bundle');
+        assert.equal(state.handlerCalls[0].adminSite, 'cn');
+    });
+});
+
 test('admin router normalizes rewritten query routes that include admin prefixes or embedded query strings', async () => {
     await withAdminApiRouter(async ({ handler, state }) => {
         const res = createMockResponse();

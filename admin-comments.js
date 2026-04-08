@@ -221,14 +221,32 @@ function buildCommentLoadingSkeleton(count = 6) {
             <div class="item-header">
                 <span class="admin-skeleton-block admin-skeleton-block--avatar"></span>
                 <div class="item-meta">
-                    <span class="admin-skeleton-block admin-skeleton-block--title" style="width:${44 + (index % 3) * 12}%"></span>
-                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${26 + (index % 3) * 8}%"></span>
+                    <div class="comment-skeleton-meta-row">
+                        <span class="admin-skeleton-block admin-skeleton-block--title" style="width:${42 + (index % 3) * 10}%"></span>
+                        ${index % 2 === 0 ? '<span class="admin-skeleton-block admin-skeleton-block--pill comment-skeleton-chip" style="width:72px"></span>' : ''}
+                    </div>
+                    <div class="comment-skeleton-tags">
+                        <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${24 + (index % 3) * 8}%"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--pill comment-skeleton-chip comment-skeleton-chip--mini" style="width:${56 + (index % 2) * 12}px"></span>
+                    </div>
                 </div>
             </div>
             <div class="item-content">
                 <span class="admin-skeleton-block admin-skeleton-block--line" style="width:100%"></span>
                 <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${76 - (index % 2) * 12}%"></span>
                 <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${58 + (index % 3) * 10}%"></span>
+                ${index % 3 === 1 ? `
+                    <div class="comment-skeleton-reply">
+                        <span class="admin-skeleton-block admin-skeleton-block--pill comment-skeleton-chip comment-skeleton-chip--mini" style="width:58px"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line" style="width:84%"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line" style="width:62%"></span>
+                    </div>
+                ` : `
+                    <div class="comment-skeleton-context">
+                        <span class="admin-skeleton-block admin-skeleton-block--pill comment-skeleton-chip comment-skeleton-chip--mini" style="width:${68 + (index % 2) * 12}px"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${36 + (index % 3) * 10}%"></span>
+                    </div>
+                `}
             </div>
             <div class="item-actions">
                 <span class="admin-skeleton-block admin-skeleton-block--action"></span>

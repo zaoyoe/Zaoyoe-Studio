@@ -1,5 +1,7 @@
 # Admin Studio 数据分析 2.0 升级方案
 
+> 2026-04-05 结构更新说明：这份文档保留为早期 analytics 2.0 方案。若要按“商品为重点、分析中心与商城管理分离”的新版方向推进，请优先参考 [admin-studio-business-analytics-restructure-plan.md](/Volumes/chao/AI/xianyu_profit_calculator/docs/admin-studio-business-analytics-restructure-plan.md)。
+
 这份文档用于把 `Admin Studio` 里的“数据分析”从通用图表页升级成贴合本站经营链路的“经营驾驶舱”，并把前期诊断沉淀成一份可以直接拆前端、埋点、SQL/RPC 任务的落地方案。
 
 配套文档：
@@ -384,8 +386,8 @@ AI 洞察应该站在真实指标之上做总结、告警解释和建议生成�
 - `event_value`
 - `points_delta`
 - `metadata`
-- `experiment_id`
-- `variant_id`
+- `experiment_id`（可选，仅在手动启用 experiment runtime 时上报）
+- `variant_id`（可选，仅在手动启用 experiment runtime 时上报）
 
 这意味着当前 [js/heartbeat.js](/Volumes/chao/AI/xianyu_profit_calculator/js/heartbeat.js) 应该从“单页 heartbeat 脚本”升级成“全站共享 tracker”，heartbeat 只作为在线状态补充，不再承担主分析事件入口。
 
@@ -397,7 +399,7 @@ AI 洞察应该站在真实指标之上做总结、告警解释和建议生成�
 2. `验证服务`
 3. `商城`
 4. `留言板 + 推广 + 签到`
-5. `A/B experiment exposure + conversion`
+5. 可选：仅在手动启用 experiment runtime 时补 `A/B experiment exposure + conversion`
 
 这样可以最快补齐最核心的经营闭环。
 

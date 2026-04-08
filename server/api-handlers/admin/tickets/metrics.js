@@ -29,6 +29,7 @@ const TICKET_REMINDER_SUMMARY_AUDIT_ACTION_TYPES = Object.freeze([
     'ticket.summary_job_action'
 ]);
 const TICKET_REMINDER_SUMMARY_HISTORY_LIMIT = 4;
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 const {
     normalizeText,
@@ -51,6 +52,151 @@ function normalizeWholeNumber(value, fallback = 0, min = 0, max = Number.POSITIV
     }
 
     return Math.min(max, Math.max(min, parsed));
+}
+
+function getQueryParams(req) {
+    const url = new URL(req?.url || '', 'http://localhost');
+    return url.searchParams;
+}
+
+function parseQueryDate(value) {
+    const normalized = normalizeText(value, 120);
+    if (!normalized) {
+        return null;
+    }
+
+    const date = new Date(normalized);
+    if (Number.isNaN(date.getTime())) {
+        return null;
+    }
+
+    return date;
+}
+
+function buildRollingRangeWindow(days = 7, nowDate = new Date(), source = 'default') {
+    const normalizedDays = normalizeWholeNumber(days, 7, 1, 3660);
+    const endDate = nowDate instanceof Date ? new Date(nowDate) : new Date();
+    endDate.setHours(23, 59, 59, 999);
+    const startDate = new Date(endDate);
+    startDate.setHours(0, 0, 0, 0);
+    startDate.setDate(startDate.getDate() - Math.max(0, normalizedDays - 1));
+
+    return {
+        source,
+        mode: 'rolling',
+        days: normalizedDays,
+        startIso: startDate.toISOString(),
+        endIso: endDate.toISOString()
+    };
+}
+
+function buildExplicitRangeWindow(startDate, endDate, source = 'selected') {
+    const normalizedStart = startDate instanceof Date ? new Date(startDate) : null;
+    const normalizedEnd = endDate instanceof Date ? new Date(endDate) : null;
+    if (!(normalizedStart instanceof Date) || Number.isNaN(normalizedStart.getTime())) {
+        return null;
+    }
+    if (!(normalizedEnd instanceof Date) || Number.isNaN(normalizedEnd.getTime())) {
+        return null;
+    }
+    if (normalizedStart.getTime() > normalizedEnd.getTime()) {
+        return null;
+    }
+
+    const windowDays = Math.max(1, Math.floor((normalizedEnd.getTime() - normalizedStart.getTime()) / DAY_IN_MS) + 1);
+    return {
+        source,
+        mode: 'explicit',
+        days: windowDays,
+        startIso: normalizedStart.toISOString(),
+        endIso: normalizedEnd.toISOString()
+    };
+}
+
+function buildSelectedRangeWindow(params, nowDate = new Date()) {
+    const queryParams = params instanceof URLSearchParams ? params : new URLSearchParams();
+    const startDate = parseQueryDate(queryParams.get('startDate'));
+    const endDate = parseQueryDate(queryParams.get('endDate'));
+    const explicitWindow = buildExplicitRangeWindow(startDate, endDate, 'selected');
+    if (explicitWindow) {
+        return explicitWindow;
+    }
+
+    if (queryParams.has('days')) {
+        return buildRollingRangeWindow(queryParams.get('days'), nowDate, 'selected');
+    }
+
+    return null;
+}
+
+function resolveTicketMetricsWindows(params, nowDate = new Date()) {
+    const selectedWindow = buildSelectedRangeWindow(params, nowDate);
+    if (selectedWindow) {
+        return {
+            selectionApplied: true,
+            selectionWindow: selectedWindow,
+            efficiencyWindow: selectedWindow,
+            reminderWindow: selectedWindow
+        };
+    }
+
+    return {
+        selectionApplied: false,
+        selectionWindow: null,
+        efficiencyWindow: buildRollingRangeWindow(CLOSED_LOOKBACK_DAYS, nowDate, 'default'),
+        reminderWindow: buildRollingRangeWindow(REMINDER_ACTIVITY_LOOKBACK_DAYS, nowDate, 'default')
+    };
+}
+
+function buildWindowMeta(rangeWindow = null, fallbackDays = 0) {
+    return {
+        lookback_days: Math.max(1, normalizeWholeNumber(rangeWindow?.days, fallbackDays || 1, 1, 3660)),
+        window_days: Math.max(1, normalizeWholeNumber(rangeWindow?.days, fallbackDays || 1, 1, 3660)),
+        range_mode: normalizeText(rangeWindow?.mode, 20).toLowerCase() || 'rolling',
+        range_source: normalizeText(rangeWindow?.source, 20).toLowerCase() || 'default',
+        range_start_at: normalizeText(rangeWindow?.startIso, 80) || '',
+        range_end_at: normalizeText(rangeWindow?.endIso, 80) || ''
+    };
+}
+
+function serializeRangeWindow(rangeWindow = null, fallbackDays = 0) {
+    return buildWindowMeta(rangeWindow, fallbackDays);
+}
+
+function resolveEarliestIsoDate(rows = [], field = 'created_at') {
+    let earliestTimeMs = null;
+
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+        const timeMs = Date.parse(normalizeText(row?.[field], 80));
+        if (!Number.isFinite(timeMs)) {
+            return;
+        }
+        if (!Number.isFinite(earliestTimeMs) || timeMs < earliestTimeMs) {
+            earliestTimeMs = timeMs;
+        }
+    });
+
+    return Number.isFinite(earliestTimeMs)
+        ? new Date(earliestTimeMs).toISOString()
+        : '';
+}
+
+function resolveEarlierIsoDate(...values) {
+    let earliestTimeMs = null;
+
+    values.forEach((value) => {
+        const timeMs = Date.parse(normalizeText(value, 80));
+        if (!Number.isFinite(timeMs)) {
+            return;
+        }
+        if (!Number.isFinite(earliestTimeMs) || timeMs < earliestTimeMs) {
+            earliestTimeMs = timeMs;
+        }
+    });
+
+    return Number.isFinite(earliestTimeMs)
+        ? new Date(earliestTimeMs).toISOString()
+        : '';
 }
 
 function normalizeScheduleMode(value, fallback = 'rolling_window') {
@@ -142,23 +288,39 @@ async function fetchPendingTickets(supabase, { pageSize, maxPages }) {
         .order('created_at', { ascending: false }), pageSize, maxPages);
 }
 
-async function fetchRecentClosedTickets(supabase, sinceIso = '', { pageSize, maxPages }) {
-    return fetchPagedRows(() => supabase
-        .from('shop_tickets')
-        .select('id, user_id, order_id, issue_type, status, description, admin_notes, created_at, updated_at')
-        .in('status', ['RESOLVED', 'REJECTED'])
-        .gte('updated_at', sinceIso)
-        .order('updated_at', { ascending: false }), pageSize, maxPages);
+async function fetchRecentClosedTickets(supabase, startIso = '', endIso = '', { pageSize, maxPages }) {
+    return fetchPagedRows(() => {
+        let query = supabase
+            .from('shop_tickets')
+            .select('id, user_id, order_id, issue_type, status, description, admin_notes, created_at, updated_at')
+            .in('status', ['RESOLVED', 'REJECTED'])
+            .order('updated_at', { ascending: false });
+        if (startIso) {
+            query = query.gte('updated_at', startIso);
+        }
+        if (endIso) {
+            query = query.lte('updated_at', endIso);
+        }
+        return query;
+    }, pageSize, maxPages);
 }
 
-async function fetchRecentAuditRows(supabase, sinceIso = '', { pageSize, maxPages }) {
+async function fetchRecentAuditRows(supabase, startIso = '', endIso = '', { pageSize, maxPages }) {
     async function queryTable(tableName = 'admin_audit_logs_view', selection = 'id, action_type, details, created_at, admin_id, admin_email') {
-        return fetchPagedRows(() => supabase
-            .from(tableName)
-            .select(selection)
-            .in('action_type', TICKET_METRICS_ACTION_TYPES)
-            .gte('created_at', sinceIso)
-            .order('created_at', { ascending: false }), pageSize, maxPages);
+        return fetchPagedRows(() => {
+            let query = supabase
+                .from(tableName)
+                .select(selection)
+                .in('action_type', TICKET_METRICS_ACTION_TYPES)
+                .order('created_at', { ascending: false });
+            if (startIso) {
+                query = query.gte('created_at', startIso);
+            }
+            if (endIso) {
+                query = query.lte('created_at', endIso);
+            }
+            return query;
+        }, pageSize, maxPages);
     }
 
     try {
@@ -179,14 +341,22 @@ async function fetchRecentAuditRows(supabase, sinceIso = '', { pageSize, maxPage
     }
 }
 
-async function fetchRecentSummaryAuditRows(supabase, sinceIso = '', { pageSize, maxPages }) {
+async function fetchRecentSummaryAuditRows(supabase, startIso = '', endIso = '', { pageSize, maxPages }) {
     async function queryTable(tableName = 'admin_audit_logs_view', selection = 'id, action_type, details, created_at, admin_id, admin_email') {
-        return fetchPagedRows(() => supabase
-            .from(tableName)
-            .select(selection)
-            .in('action_type', TICKET_REMINDER_SUMMARY_AUDIT_ACTION_TYPES)
-            .gte('created_at', sinceIso)
-            .order('created_at', { ascending: false }), pageSize, maxPages);
+        return fetchPagedRows(() => {
+            let query = supabase
+                .from(tableName)
+                .select(selection)
+                .in('action_type', TICKET_REMINDER_SUMMARY_AUDIT_ACTION_TYPES)
+                .order('created_at', { ascending: false });
+            if (startIso) {
+                query = query.gte('created_at', startIso);
+            }
+            if (endIso) {
+                query = query.lte('created_at', endIso);
+            }
+            return query;
+        }, pageSize, maxPages);
     }
 
     try {
@@ -207,7 +377,7 @@ async function fetchRecentSummaryAuditRows(supabase, sinceIso = '', { pageSize, 
     }
 }
 
-async function fetchRecentReminderJobs(supabase, sinceIso = '', { pageSize, maxPages }, alertTypes = TICKET_REMINDER_ACTIVITY_ALERT_TYPES) {
+async function fetchRecentReminderJobs(supabase, startIso = '', endIso = '', { pageSize, maxPages }, alertTypes = TICKET_REMINDER_ACTIVITY_ALERT_TYPES) {
     const normalizedAlertTypes = Array.from(new Set(
         (Array.isArray(alertTypes) ? alertTypes : [])
             .map((alertType) => normalizeText(alertType, 80))
@@ -218,12 +388,20 @@ async function fetchRecentReminderJobs(supabase, sinceIso = '', { pageSize, maxP
     }
 
     try {
-        return await fetchPagedRows(() => supabase
-            .from('ops_alert_jobs')
-            .select('id, alert_type, severity, title, payload, channels, remaining_channels, status, attempt_count, max_attempts, next_retry_at, last_error, created_at, updated_at, delivered_at')
-            .in('alert_type', normalizedAlertTypes)
-            .gte('created_at', sinceIso)
-            .order('created_at', { ascending: false }), pageSize, maxPages);
+        return await fetchPagedRows(() => {
+            let query = supabase
+                .from('ops_alert_jobs')
+                .select('id, alert_type, severity, title, payload, channels, remaining_channels, status, attempt_count, max_attempts, next_retry_at, last_error, created_at, updated_at, delivered_at')
+                .in('alert_type', normalizedAlertTypes)
+                .order('created_at', { ascending: false });
+            if (startIso) {
+                query = query.gte('created_at', startIso);
+            }
+            if (endIso) {
+                query = query.lte('created_at', endIso);
+            }
+            return query;
+        }, pageSize, maxPages);
     } catch (error) {
         if (isMissingRelationError(error, 'ops_alert_jobs')) {
             return [];
@@ -232,19 +410,27 @@ async function fetchRecentReminderJobs(supabase, sinceIso = '', { pageSize, maxP
     }
 }
 
-async function fetchRecentReminderAttempts(supabase, sinceIso = '', jobIds = [], { pageSize, maxPages }) {
+async function fetchRecentReminderAttempts(supabase, startIso = '', endIso = '', jobIds = [], { pageSize, maxPages }) {
     const normalizedJobIds = Array.from(new Set((jobIds || []).map((jobId) => normalizeText(jobId, 120)).filter(Boolean)));
     if (!normalizedJobIds.length) {
         return [];
     }
 
     try {
-        return await fetchPagedRows(() => supabase
-            .from('ops_alert_job_attempts')
-            .select('job_id, channel, status, response_status, error_message, created_at')
-            .in('job_id', normalizedJobIds)
-            .gte('created_at', sinceIso)
-            .order('created_at', { ascending: false }), pageSize, maxPages);
+        return await fetchPagedRows(() => {
+            let query = supabase
+                .from('ops_alert_job_attempts')
+                .select('job_id, channel, status, response_status, error_message, created_at')
+                .in('job_id', normalizedJobIds)
+                .order('created_at', { ascending: false });
+            if (startIso) {
+                query = query.gte('created_at', startIso);
+            }
+            if (endIso) {
+                query = query.lte('created_at', endIso);
+            }
+            return query;
+        }, pageSize, maxPages);
     } catch (error) {
         if (isMissingRelationError(error, 'ops_alert_job_attempts')) {
             return [];
@@ -352,7 +538,7 @@ function buildReminderActivityEntry(job = null, attemptsByJobId = new Map()) {
     };
 }
 
-function buildReminderActivityOverview(reminderJobs = [], reminderAttempts = []) {
+function buildReminderActivityOverview(reminderJobs = [], reminderAttempts = [], rangeWindow = null) {
     const jobs = (Array.isArray(reminderJobs) ? reminderJobs : []).slice().sort(compareCreatedAtDescending);
     const attemptsByJobId = buildAttemptsByJobId(reminderAttempts);
 
@@ -378,7 +564,7 @@ function buildReminderActivityOverview(reminderJobs = [], reminderAttempts = [])
     });
 
     return {
-        lookback_days: REMINDER_ACTIVITY_LOOKBACK_DAYS,
+        ...buildWindowMeta(rangeWindow, REMINDER_ACTIVITY_LOOKBACK_DAYS),
         total_job_count: jobs.length,
         overdue_job_count: overdueJobs.length,
         recovered_job_count: recoveredJobs.length,
@@ -553,7 +739,7 @@ function buildReminderSummaryDigestEntry(job = null, attemptsByJobId = new Map()
     };
 }
 
-function buildReminderSummaryDigest(summaryJobs = [], reminderAttempts = [], summaryAuditRows = []) {
+function buildReminderSummaryDigest(summaryJobs = [], reminderAttempts = [], summaryAuditRows = [], rangeWindow = null) {
     const jobs = (Array.isArray(summaryJobs) ? summaryJobs : []).slice().sort(compareCreatedAtDescending);
     const attemptsByJobId = buildAttemptsByJobId(reminderAttempts);
     const summaryAuditMetaByJobId = buildSummaryAuditMetaByJobId(summaryAuditRows);
@@ -587,7 +773,7 @@ function buildReminderSummaryDigest(summaryJobs = [], reminderAttempts = [], sum
     });
 
     return {
-        lookback_days: REMINDER_ACTIVITY_LOOKBACK_DAYS,
+        ...buildWindowMeta(rangeWindow, REMINDER_ACTIVITY_LOOKBACK_DAYS),
         total_job_count: jobs.length,
         daily_job_count: dailyJobs.length,
         delivered_count: deliveredCount,
@@ -709,7 +895,7 @@ function buildPendingOverview(pendingRows = [], context = {}) {
     };
 }
 
-function buildEfficiencyOverview(closedRows = [], auditRows = []) {
+function buildEfficiencyOverview(closedRows = [], auditRows = [], rangeWindow = null) {
     const closedTickets = Array.isArray(closedRows) ? closedRows : [];
     const ticketIds = new Set(closedTickets.map((ticket) => normalizeText(ticket?.id, 120)).filter(Boolean));
     const firstTouchByTicketId = new Map();
@@ -796,7 +982,7 @@ function buildEfficiencyOverview(closedRows = [], auditRows = []) {
 
     const closedCount = closedTickets.length;
     return {
-        lookback_days: CLOSED_LOOKBACK_DAYS,
+        ...buildWindowMeta(rangeWindow, CLOSED_LOOKBACK_DAYS),
         closed_count: closedCount,
         resolved_count: resolvedCount,
         rejected_count: rejectedCount,
@@ -850,7 +1036,7 @@ function buildReminderOverview(runtime = null, ticketsConfig = {}) {
     };
 }
 
-async function loadTicketMetricsOverview({ supabase, nowDate = new Date(), runtime = null } = {}) {
+async function loadTicketMetricsOverview({ supabase, nowDate = new Date(), runtime = null, params = new URLSearchParams() } = {}) {
     const effectiveRuntime = runtime || await loadOpsAlertsRuntimeConfig(supabase).catch(() => null);
     const runtimeTicketsConfig = effectiveRuntime?.config?.tickets && typeof effectiveRuntime.config.tickets === 'object'
         ? effectiveRuntime.config.tickets
@@ -872,21 +1058,37 @@ async function loadTicketMetricsOverview({ supabase, nowDate = new Date(), runti
         DEFAULT_TICKET_SLA_MONITOR_CONFIG.pending_overdue_minutes,
         5
     );
-    const closedSinceIso = new Date(nowDate.getTime() - CLOSED_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
-    const auditSinceIso = new Date(nowDate.getTime() - TOUCH_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
-    const reminderSinceIso = new Date(nowDate.getTime() - REMINDER_ACTIVITY_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    const rangeWindows = resolveTicketMetricsWindows(params, nowDate);
+    const efficiencyWindow = rangeWindows.efficiencyWindow;
+    const reminderWindow = rangeWindows.reminderWindow;
+    const legacyTouchWindow = buildRollingRangeWindow(TOUCH_LOOKBACK_DAYS, nowDate, 'default');
+    const reminderJobsWindow = serializeRangeWindow(reminderWindow, REMINDER_ACTIVITY_LOOKBACK_DAYS);
+    const efficiencyWindowMeta = serializeRangeWindow(efficiencyWindow, CLOSED_LOOKBACK_DAYS);
 
-    const [pendingRows, closedRows, auditRows, reminderJobs, reminderSummaryJobs, summaryAuditRows] = await Promise.all([
+    const [pendingRows, closedRows, reminderJobs, reminderSummaryJobs] = await Promise.all([
         fetchPendingTickets(supabase, { pageSize, maxPages }),
-        fetchRecentClosedTickets(supabase, closedSinceIso, { pageSize, maxPages }),
-        fetchRecentAuditRows(supabase, auditSinceIso, { pageSize, maxPages }),
-        fetchRecentReminderJobs(supabase, reminderSinceIso, { pageSize, maxPages }, TICKET_REMINDER_ACTIVITY_ALERT_TYPES),
-        fetchRecentReminderJobs(supabase, reminderSinceIso, { pageSize, maxPages }, TICKET_REMINDER_SUMMARY_ALERT_TYPES),
-        fetchRecentSummaryAuditRows(supabase, reminderSinceIso, { pageSize, maxPages })
+        fetchRecentClosedTickets(supabase, efficiencyWindow.startIso, efficiencyWindow.endIso, { pageSize, maxPages }),
+        fetchRecentReminderJobs(supabase, reminderWindow.startIso, reminderWindow.endIso, { pageSize, maxPages }, TICKET_REMINDER_ACTIVITY_ALERT_TYPES),
+        fetchRecentReminderJobs(supabase, reminderWindow.startIso, reminderWindow.endIso, { pageSize, maxPages }, TICKET_REMINDER_SUMMARY_ALERT_TYPES)
+    ]);
+
+    const auditStartIso = rangeWindows.selectionApplied
+        ? resolveEarlierIsoDate(efficiencyWindow.startIso, resolveEarliestIsoDate(closedRows, 'created_at'))
+        : legacyTouchWindow.startIso;
+    const reminderReferenceRows = [
+        ...(Array.isArray(reminderJobs) ? reminderJobs : []),
+        ...(Array.isArray(reminderSummaryJobs) ? reminderSummaryJobs : [])
+    ];
+    const reminderEventStartIso = resolveEarlierIsoDate(reminderWindow.startIso, resolveEarliestIsoDate(reminderReferenceRows, 'created_at'));
+
+    const [auditRows, summaryAuditRows] = await Promise.all([
+        fetchRecentAuditRows(supabase, auditStartIso, efficiencyWindow.endIso, { pageSize, maxPages }),
+        fetchRecentSummaryAuditRows(supabase, reminderEventStartIso, reminderWindow.endIso, { pageSize, maxPages })
     ]);
     const reminderAttempts = await fetchRecentReminderAttempts(
         supabase,
-        reminderSinceIso,
+        reminderEventStartIso,
+        reminderWindow.endIso,
         [
             ...reminderJobs.map((job) => job?.id),
             ...reminderSummaryJobs.map((job) => job?.id)
@@ -911,14 +1113,20 @@ async function loadTicketMetricsOverview({ supabase, nowDate = new Date(), runti
 
     return {
         generated_at: nowDate.toISOString(),
+        range: {
+            selection_applied: rangeWindows.selectionApplied,
+            backlog_scope: 'current_snapshot',
+            efficiency: efficiencyWindowMeta,
+            reminder: reminderJobsWindow
+        },
         backlog: pendingOverview.backlog,
-        efficiency: buildEfficiencyOverview(closedRows, auditRows),
+        efficiency: buildEfficiencyOverview(closedRows, auditRows, efficiencyWindow),
         sources: pendingOverview.sources,
         issue_types: pendingOverview.issue_types,
         reminder: {
             ...buildReminderOverview(effectiveRuntime, runtimeTicketsConfig),
-            activity: buildReminderActivityOverview(reminderJobs, reminderAttempts),
-            summary_digest: buildReminderSummaryDigest(reminderSummaryJobs, reminderAttempts, summaryAuditRows)
+            activity: buildReminderActivityOverview(reminderJobs, reminderAttempts, reminderWindow),
+            summary_digest: buildReminderSummaryDigest(reminderSummaryJobs, reminderAttempts, summaryAuditRows, reminderWindow)
         }
     };
 }
@@ -935,9 +1143,11 @@ async function adminTicketsMetricsHandler(req, res) {
     try {
         const { supabase } = await requireAdmin(req, { permission: 'tickets.manage' });
         const nowDate = req?.now instanceof Date ? req.now : new Date();
+        const params = getQueryParams(req);
         const overview = await loadTicketMetricsOverview({
             supabase,
-            nowDate
+            nowDate,
+            params
         });
 
         return sendJson(res, 200, {

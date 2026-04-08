@@ -1,5 +1,10 @@
 -- ============================================
 -- Phase 3: A/B experiment results drilldown by exposure site and placement
+-- Historical note:
+-- Daily admin analytics no longer exposes A/B drilldown panels in the main
+-- workspace. This migration remains as already-applied database history and
+-- still supports the optional frontend experiment runtime when that runtime is
+-- manually enabled for focused investigation.
 -- ============================================
 
 CREATE OR REPLACE FUNCTION public.get_experiment_results_v2(p_experiment_id UUID)

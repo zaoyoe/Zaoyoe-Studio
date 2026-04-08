@@ -210,7 +210,7 @@
                 break;
             case 'analytics':
                 if (typeof window.reloadAnalyticsDashboard === 'function') {
-                    window.reloadAnalyticsDashboard({ reason: 'site-change', includeExperiments: true });
+                    window.reloadAnalyticsDashboard({ reason: 'site-change' });
                 } else if (typeof window.initAnalyticsModule === 'function') {
                     window.initAnalyticsModule();
                 }

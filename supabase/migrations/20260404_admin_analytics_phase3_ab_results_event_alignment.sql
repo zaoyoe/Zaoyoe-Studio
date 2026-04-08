@@ -1,5 +1,10 @@
 -- ============================================
 -- Phase 3: A/B experiment results align to real event metrics
+-- Historical note:
+-- Daily admin analytics no longer exposes A/B result surfaces in the
+-- primary workflow. This migration is retained for already-applied database
+-- history and the optional frontend experiment runtime that can still be
+-- manually enabled when needed.
 -- ============================================
 
 CREATE OR REPLACE FUNCTION public.experiment_metric_matches_event(

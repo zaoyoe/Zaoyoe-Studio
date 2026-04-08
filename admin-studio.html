@@ -19,8 +19,8 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=20260404_ANALYTICS_DUTY_BOARD_26">
-    <link rel="stylesheet" href="admin-sidebar.css?v=20260403_COMMENTS_HOVER_BLUE_4">
+    <link rel="stylesheet" href="admin-studio.css?v=20260408_POINTS_CUSTOM_BATCH_ICON_UI_2">
+    <link rel="stylesheet" href="admin-sidebar.css?v=20260408_COMMENTS_PANEL_SHELL_REMOVE_1">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260402_ADMIN_CHAT_INPUT_UI_13">
 
 
@@ -30,7 +30,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
     <!-- Prevent flash of wrong theme -->
-    <link rel="stylesheet" href="css/admin-studio-page.css?v=20260404_ADMIN_TICKET_MODAL_POLISH_1">
+    <link rel="stylesheet" href="css/admin-studio-page.css?v=20260408_ADMIN_STUDIO_CARD_GRADIENT_FLATTEN_1">
     <script src="./js/theme-preload.js"></script>
 
 </head>
@@ -114,9 +114,13 @@
                     <i class="fas fa-headset"></i>
                     <span>售后工单</span>
                 </div>
-                <div class="sidebar-item" data-module="analytics" data-admin-action="switch-module" data-module-id="analytics">
-                    <i class="fas fa-chart-line"></i>
-                    <span>数据分析</span>
+                <div class="sidebar-item" data-module="growth-center" data-admin-action="switch-module" data-module-id="growth-center" title="增长经营">
+                    <i class="fas fa-chart-area"></i>
+                    <span>增长经营</span>
+                </div>
+                <div class="sidebar-item" data-module="commerce-center" data-admin-action="switch-module" data-module-id="commerce-center" title="商品经营">
+                    <i class="fas fa-box-open"></i>
+                    <span>商品经营</span>
                 </div>
                 <div class="sidebar-item" data-module="payments" data-admin-action="switch-module" data-module-id="payments">
                     <i class="fas fa-credit-card"></i>
@@ -5400,7 +5404,7 @@
 
                         <!-- Analytics Settings Section -->
                         <div class="settings-section">
-                            <h3><i class="fas fa-chart-line"></i> 数据分析</h3>
+                            <h3><i class="fas fa-chart-line"></i> 经营分析中心</h3>
                             <div class="config-item-row">
                                 <div class="config-label">
                                     <span>自动刷新间隔</span>
@@ -6903,7 +6907,7 @@
 
                         <!-- Inventory Table -->
                         <div class="shop-table-container">
-                            <table class="shop-table">
+                            <table class="shop-table shop-table--inventory">
                                 <thead>
                                     <tr>
                                     <tr>
@@ -7097,6 +7101,9 @@
                             </button>
                         </div>
                     </div>
+                    <div id="shopOrdersContextHint" class="shop-orders-context-shell" hidden></div>
+                    <div id="shopOrdersUserFlowSummary" class="shop-orders-context-shell" hidden></div>
+                    <div id="shopOrdersIssueSummary" class="shop-orders-context-shell" hidden></div>
 
                     <div class="shop-table-container shop-table-container--orders">
                         <table class="shop-table shop-table--orders">
@@ -7161,6 +7168,8 @@
                                 <span class="shop-delivery-table-note">当前未联动筛选履约页。你可以输入关键字，或直接点击下方热点、趋势柱、冲突审计记录，把目标 / 通道 / 冲突时段 / 任务锁定回填到任务、死信、锁冲突和占位面板里。</span>
                             </div>
                         </div>
+
+                        <div id="deliveryIssueSummary" class="shop-orders-context-shell" hidden></div>
 
                         <section class="shop-delivery-subcard shop-delivery-subcard--wide">
                                 <div class="shop-delivery-subcard-header">
@@ -7248,7 +7257,7 @@
                         </section>
 
                         <div class="shop-table-container">
-                            <table class="shop-table">
+                            <table class="shop-table shop-table--delivery-tasks">
                                 <thead>
                                     <tr>
                                         <th>订单号</th>
@@ -7348,7 +7357,7 @@
                                 </div>
                                 <div class="shop-delivery-subcard-body">
                                     <div class="shop-table-container">
-                                        <table class="shop-table">
+                                        <table class="shop-table shop-table--dead-letter">
                                             <thead>
                                                 <tr>
                                                     <th>订单号</th>
@@ -7391,7 +7400,7 @@
                                 </div>
                                 <div class="shop-delivery-subcard-body">
                                     <div class="shop-table-container">
-                                        <table class="shop-table">
+                                        <table class="shop-table shop-table--lock-conflicts">
                                             <thead>
                                                 <tr>
                                                     <th>订单号</th>
@@ -7426,7 +7435,7 @@
                                 </div>
                                 <div class="shop-delivery-subcard-body">
                                     <div class="shop-table-container">
-                                        <table class="shop-table">
+                                        <table class="shop-table shop-table--reservation">
                                             <thead>
                                                 <tr>
                                                     <th>状态</th>
@@ -7457,7 +7466,7 @@
                                 </div>
                                 <div class="shop-delivery-subcard-body">
                                     <div class="shop-table-container">
-                                        <table class="shop-table">
+                                        <table class="shop-table shop-table--replay">
                                             <thead>
                                                 <tr>
                                                     <th>时间</th>
@@ -7522,7 +7531,7 @@
                                         </button>
                                     </div>
                                     <div class="shop-table-container">
-                                        <table class="shop-table">
+                                        <table class="shop-table shop-table--conflict-audit">
                                             <thead>
                                                 <tr>
                                                     <th>时间</th>
@@ -8107,13 +8116,9 @@
 
                     <div id="paymentsDashboardBody">
                         <div class="admin-workbench-context-note admin-workbench-context-note--compact" id="paymentsWorkbenchContext" hidden></div>
+                        <div class="admin-workbench-context-note admin-workbench-context-note--compact" id="paymentsIssueSummary" hidden></div>
+                        <div class="admin-workbench-context-note admin-workbench-context-note--compact" id="paymentsPrioritySummary" hidden></div>
                         <div id="payments-tab-overview" class="payments-tab-content active">
-                            <div class="payments-page-intro">
-                                <div class="payments-page-copy">
-                                    <h2><i class="fas fa-credit-card"></i> 支付总览</h2>
-                                    <p>聚焦充值支付通道、认领效率、成功率与回调稳定性，适合快速判断当前支付链路是否健康。</p>
-                                </div>
-                            </div>
                             <div class="kpi-cards-row payments-kpi-grid" id="paymentsOverviewGrid"></div>
                             <div class="chart-card glass-panel payments-card payments-refund-alert-panel" id="paymentsRefundAlertsPanel" hidden>
                                 <div class="chart-header">
@@ -8158,12 +8163,6 @@
                         </div>
 
                         <div id="payments-tab-finance" class="payments-tab-content">
-                            <div class="payments-page-intro">
-                                <div class="payments-page-copy">
-                                    <h2><i class="fas fa-sack-dollar"></i> 全站资金 / 积分收支</h2>
-                                    <p>把充值入账、商城消费、积分流入流出和站内余额拆开看，方便判断全站经营健康度。</p>
-                                </div>
-                            </div>
                             <div class="kpi-cards-row payments-kpi-grid" id="paymentsSitewideGrid"></div>
                             <div class="charts-grid payments-charts-grid">
                                 <div class="chart-card glass-panel payments-card">
@@ -8189,12 +8188,6 @@
                         </div>
 
                         <div id="payments-tab-ops" class="payments-tab-content">
-                            <div class="payments-page-intro">
-                                <div class="payments-page-copy">
-                                    <h2><i class="fas fa-shield-heart"></i> 异常运维</h2>
-                                    <p>集中处理异常队列、最近订单和测试数据清理，适合排查支付链路问题与上线收尾。</p>
-                                </div>
-                            </div>
                             <div class="chart-card glass-panel payments-card payments-card-wide" id="paymentsOpsAlertQueuePanel">
                                 <div class="chart-header">
                                     <h3><i class="fas fa-tower-broadcast"></i> 站外告警队列</h3>
@@ -8395,8 +8388,9 @@
             </div>
 
             <!-- ========== ANALYTICS MODULE ========== -->
-            <div id="module-analytics" class="module-container">
-                <div class="analytics-dashboard">
+            <div id="module-business-overview" class="module-container">
+                <div class="analytics-module-stage" id="analyticsWorkspaceHostBusinessOverview">
+                <div class="analytics-dashboard" id="analyticsWorkspaceRoot">
                     <!-- Status bar removed - elements moved to toolbar -->
                     <!-- Anomaly Alerts Area -->
                     <div class="anomaly-alerts-area" id="anomalyAlertsArea" hidden>
@@ -8411,17 +8405,35 @@
                     </div>
 
                     <!-- Analytics Tabs (centered, standalone) -->
-                    <nav class="admin-tabs" id="analyticsTabsNav">
-                        <button class="admin-tab active" data-tab="overview"
-                            data-admin-action="analytics-switch-tab">总览</button>
-                        <button class="admin-tab" data-tab="content"
-                            data-admin-action="analytics-switch-tab">内容</button>
-                        <button class="admin-tab" data-tab="monetization"
-                            data-admin-action="analytics-switch-tab">积分与交易</button>
-                        <button class="admin-tab" data-tab="verify"
-                            data-admin-action="analytics-switch-tab">验证服务</button>
-                        <button class="admin-tab" data-tab="growth"
-                            data-admin-action="analytics-switch-tab">社区与裂变</button>
+                    <nav class="admin-tabs analytics-center-tabs" id="analyticsTabsNav" aria-label="经营分析中心分区">
+                        <div class="analytics-tab-group analytics-tab-group--primary">
+                            <button class="analytics-tab-group__label active" type="button"
+                                data-admin-action="analytics-switch-tab" data-tab="overview"
+                                data-analytics-tab-group-trigger="primary" aria-pressed="true">经营主线</button>
+                            <div class="analytics-tab-group__tabs">
+                                <button class="admin-tab active" data-tab="overview"
+                                    data-admin-action="analytics-switch-tab">总览</button>
+                                <button class="admin-tab" data-tab="growth"
+                                    data-admin-action="analytics-switch-tab">用户增长</button>
+                                <button class="admin-tab" data-tab="content"
+                                    data-admin-action="analytics-switch-tab">内容带货</button>
+                                <button class="admin-tab" data-tab="product"
+                                    data-admin-action="analytics-switch-tab">商品经营</button>
+                                <button class="admin-tab" data-tab="ops"
+                                    data-admin-action="analytics-switch-tab">运营保障</button>
+                            </div>
+                        </div>
+                        <div class="analytics-tab-group analytics-tab-group--support">
+                            <button class="analytics-tab-group__label" type="button"
+                                data-admin-action="analytics-switch-tab" data-tab="monetization"
+                                data-analytics-tab-group-trigger="support" aria-pressed="false">经营支撑</button>
+                            <div class="analytics-tab-group__tabs">
+                                <button class="admin-tab" data-tab="monetization"
+                                    data-admin-action="analytics-switch-tab">交易承接</button>
+                                <button class="admin-tab" data-tab="verify"
+                                    data-admin-action="analytics-switch-tab">验证承接</button>
+                            </div>
+                        </div>
                         <div class="admin-tab-indicator"></div>
                     </nav>
 
@@ -8498,6 +8510,12 @@
                             </div>
                         </div>
                         <div class="toolbar-right">
+                            <button class="btn-sm btn-secondary analytics-advanced-toggle" type="button" id="analyticsAdvancedToggleBtn"
+                                data-admin-action="analytics-toggle-advanced-tools" aria-controls="analyticsAdvancedWorkspace" aria-expanded="false"
+                                title="高级分析默认关闭，仅在手动打开后可用">
+                                <i class="fas fa-wand-magic-sparkles"></i>
+                                <span id="analyticsAdvancedToggleLabel">按需高级分析</span>
+                            </button>
                             <button class="toolbar-icon-btn" type="button" data-admin-action="analytics-export-data" data-analytics-export-format="excel"
                                 title="导出 Excel (多工作表)">
                                 <i class="fas fa-file-excel"></i>
@@ -8520,6 +8538,68 @@
                         </div>
                     </div>
 
+                    <section class="analytics-business-center-shell glass-panel" aria-labelledby="analyticsBusinessCenterShellTitle">
+                        <div class="analytics-business-center-shell__header">
+                            <div class="analytics-business-center-shell__copy">
+                                <h3 id="analyticsBusinessCenterShellTitle"><i class="fas fa-layer-group"></i> 经营分析中心</h3>
+                            </div>
+                            <span class="analytics-panel-note" id="analyticsBusinessCenterShellMeta">总览 / 用户影响 / 内容带货 / 商品经营 / 运营保障</span>
+                        </div>
+                        <div class="analytics-business-center-shell__body" id="analyticsBusinessCenterShell">
+                            <div class="loading-text">经营分析中心加载中...</div>
+                        </div>
+                    </section>
+
+                    <section class="analytics-operating-focus glass-panel" aria-labelledby="analyticsOperatingFocusTitle">
+                        <div class="analytics-operating-focus__header">
+                            <div class="analytics-operating-focus__copy">
+                                <h3 id="analyticsOperatingFocusTitle"><i class="fas fa-location-crosshairs"></i> 当前经营视角</h3>
+                            </div>
+                            <span class="analytics-panel-note" id="analyticsOperatingFocusMeta">随当前分栏自动更新</span>
+                        </div>
+                        <div class="analytics-operating-focus__body" id="analyticsOperatingFocusWorkspace">
+                            <div class="loading-text">当前经营视角加载中...</div>
+                        </div>
+                    </section>
+
+                    <section id="analyticsAdvancedWorkspace" class="analytics-advanced-workspace" hidden aria-hidden="true">
+                        <div class="analytics-advanced-workspace__toolbar glass-panel">
+                            <div class="analytics-advanced-workspace__summary">
+                                <div class="analytics-advanced-workspace__eyebrow">手动工具区</div>
+                                <h3><i class="fas fa-wand-magic-sparkles"></i> 手动分析入口</h3>
+                                <p class="analytics-panel-note" id="analyticsAdvancedWorkspaceStatus">默认关闭，只在你手动展开和点击后生成洞察；后台日常分析不再包含 A/B 入口。</p>
+                            </div>
+                        </div>
+
+                        <div class="analytics-secondary-note">
+                            <i class="fas fa-hand"></i>
+                            <span>这里只有在你手动点击后才会触发 AI 洞察；不会参与日常自动刷新，也不会在切站点时自动运行。后台默认聚焦经营总览与处理动作，需要时再手动生成分析。</span>
+                        </div>
+
+                        <div class="charts-grid analytics-growth-insight-grid">
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-wand-magic-sparkles"></i> AI 洞察</h3>
+                                    <span class="analytics-panel-note">手动触发，可能消耗 Gemini 配额</span>
+                                </div>
+                                <div class="chart-body">
+                                    <div class="analytics-advanced-inline-actions">
+                                        <button type="button" class="btn-sm btn-secondary" id="generateInsightBtn">
+                                            <i class="fas fa-magic"></i> 生成分析
+                                        </button>
+                                    </div>
+                                    <div class="ai-insight-content" id="aiInsightContent">
+                                        <div class="empty-state-hint">
+                                            <i class="fas fa-sparkles"></i>
+                                            <span>需要时再手动生成 AI 洞察，默认不会自动调用模型。</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </section>
+
                     <!-- Tab Content: Overview (Default) -->
                     <div id="analytics-tab-overview" class="analytics-tab-content active">
                         <!-- KPI Cards Row Used ONLY for Overview Tab -->
@@ -8531,14 +8611,14 @@
                                         <div class="kpi-value" id="kpiDauValue">--</div>
                                         <div class="kpi-trend" id="kpiDauTrend"></div>
                                     </div>
-                                    <div class="kpi-label">日活用户 (DAU)</div>
+                                    <div class="kpi-label" id="kpiDauLabel">业务日活 (DAU)</div>
                                 </div>
                             </div>
                             <div class="kpi-card" id="kpiMau">
                                 <div class="kpi-icon"><i class="fas fa-users"></i></div>
                                 <div class="kpi-content">
                                     <div class="kpi-value" id="kpiMauValue">--</div>
-                                    <div class="kpi-label">月活用户 (MAU)</div>
+                                    <div class="kpi-label" id="kpiMauLabel">业务月活 (MAU)</div>
                                 </div>
                             </div>
                             <div class="kpi-card" id="kpiNewUsers">
@@ -8548,7 +8628,7 @@
                                         <div class="kpi-value" id="kpiNewUsersValue">--</div>
                                         <div class="kpi-trend" id="kpiNewUsersTrend"></div>
                                     </div>
-                                    <div class="kpi-label">近 7 天新增</div>
+                                    <div class="kpi-label" id="kpiNewUsersLabel">近 7 天全局注册</div>
                                 </div>
                             </div>
                             <div class="kpi-card" id="kpiComments">
@@ -8571,6 +8651,18 @@
                                 </div>
                                 <div class="chart-body" id="overviewDutyBoard">
                                     <div class="loading-text">加载中...</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="charts-grid">
+                            <div class="chart-card glass-panel chart-wide">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-compass-drafting"></i> 经营导航</h3>
+                                    <span class="analytics-panel-note" id="overviewOperatingNavigatorMeta">用户 / 内容 / 商品 / 运营保障</span>
+                                </div>
+                                <div class="chart-body" id="overviewOperatingNavigator">
+                                    <div class="loading-text">经营导航加载中...</div>
                                 </div>
                             </div>
                         </div>
@@ -8613,19 +8705,32 @@
                         </div>
 
                         <!-- Charts Grid for Overview -->
-                        <div class="charts-grid">
+                        <div class="charts-grid analytics-growth-insight-grid">
                             <!-- User Trend Chart -->
-                            <div class="chart-card glass-panel">
+                            <div class="chart-card glass-panel analytics-growth-card analytics-growth-card--full">
                                 <div class="chart-header">
                                     <h3><i class="fas fa-chart-area"></i> 用户增长趋势</h3>
+                                    <span class="analytics-panel-note" id="userTrendMeta">真实业务活跃优先</span>
                                 </div>
-                                <div class="chart-body">
-                                    <canvas id="userTrendChart"></canvas>
+                                <div class="chart-body" id="userTrendPanel">
+                                    <div class="analytics-user-trend-layout">
+                                        <div class="analytics-user-trend-chart-pane">
+                                            <canvas id="userTrendChart"></canvas>
+                                        </div>
+                                        <div class="analytics-user-trend-support-grid">
+                                            <div id="userGrowthCommerceImpact">
+                                                <div class="loading-text">商品影响用户层加载中...</div>
+                                            </div>
+                                            <div id="userValueCockpit">
+                                                <div class="loading-text">用户价值驾驶舱加载中...</div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
                             <!-- Channel Distribution Chart -->
-                            <div class="chart-card glass-panel">
+                            <div class="chart-card glass-panel analytics-growth-card">
                                 <div class="chart-header">
                                     <h3><i class="fas fa-chart-pie"></i> 渠道分布</h3>
                                     <span class="analytics-panel-note" id="channelBreakdownMeta">真实事件优先</span>
@@ -8641,12 +8746,17 @@
                             </div>
 
                             <!-- Geo Distribution -->
-                            <div class="chart-card glass-panel">
+                            <div class="chart-card glass-panel analytics-growth-card">
                                 <div class="chart-header">
                                     <h3><i class="fas fa-globe-asia"></i> 地理分布</h3>
                                 </div>
-                                <div class="chart-body" id="geoDistribution">
-                                    <canvas id="geoChart"></canvas>
+                                <div class="chart-body analytics-chart-detail-layout" id="geoDistribution">
+                                    <div class="analytics-chart-pane" id="geoChartPanel">
+                                        <canvas id="geoChart"></canvas>
+                                    </div>
+                                    <div class="analytics-detail-pane analytics-compact-list" id="geoBreakdownList">
+                                        <div class="loading-text">加载中...</div>
+                                    </div>
                                 </div>
                             </div>
 
@@ -8687,10 +8797,21 @@
                                 </div>
                             </div>
 
+                            <div class="chart-card glass-panel chart-wide analytics-nav-focus-target" id="contentCommerceDetailSection">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-store"></i> 内容带货详情</h3>
+                                    <span class="analytics-panel-note" id="contentCommerceDetailMeta">点击带货内容展开详情</span>
+                                </div>
+                                <div class="chart-body" id="contentCommerceDetailPanel">
+                                    <div class="loading-text">内容带货详情加载中...</div>
+                                </div>
+                            </div>
+
                             <!-- Activity Heatmap -->
                             <div class="chart-card glass-panel chart-wide">
                                 <div class="chart-header">
                                     <h3><i class="fas fa-th"></i> 活跃时段热力图</h3>
+                                    <span class="analytics-panel-note" id="activityHeatmapMeta">真实业务事件热度</span>
                                 </div>
                                 <div class="chart-body heatmap-container" id="activityHeatmap">
                                     <div class="loading-text">加载中...</div>
@@ -8701,9 +8822,159 @@
                             <div class="chart-card glass-panel">
                                 <div class="chart-header">
                                     <h3><i class="fas fa-filter"></i> 转化漏斗</h3>
+                                    <span class="analytics-panel-note" id="conversionFunnelMeta">真实业务事件漏斗</span>
                                 </div>
                                 <div class="chart-body" id="conversionFunnel">
                                     <canvas id="funnelChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab Content: Product -->
+                    <div id="analytics-tab-product" class="analytics-tab-content">
+                        <div class="analytics-secondary-note">
+                            <i class="fas fa-box-open"></i>
+                            <span>商品经营会独立承接站点与时间范围，后续总盘、榜单、商品漏斗、库存与履约健康、单品详情都会从这里下钻，而不再混在积分与交易里。</span>
+                        </div>
+
+                        <div class="charts-grid analytics-product-shell-grid">
+                            <div class="chart-card glass-panel chart-wide analytics-nav-focus-target" id="productAlertsSection">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-siren-on"></i> 商品预警中心</h3>
+                                    <span class="analytics-panel-note" id="productAlertsMeta">库存 / 履约 / 转化预警</span>
+                                </div>
+                                <div class="chart-body analytics-product-shell" id="productAlerts">
+                                    <div class="loading-text">商品预警中心加载中...</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="charts-grid analytics-product-shell-grid">
+                            <div class="chart-card glass-panel chart-wide analytics-nav-focus-target" id="productOverviewSection">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-chart-line"></i> 商品总盘</h3>
+                                    <span class="analytics-panel-note" id="productOverviewMeta">成交 / 浏览 / 站点对比</span>
+                                </div>
+                                <div class="chart-body analytics-product-shell" id="productOverview">
+                                    <div class="loading-text">商品总盘加载中...</div>
+                                </div>
+                            </div>
+
+                            <div class="chart-card glass-panel analytics-nav-focus-target" id="productRankingsSection">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-ranking-star"></i> 商品榜单</h3>
+                                    <span class="analytics-panel-note" id="productRankingsMeta">销量 / 收入 / 转化 / 风险榜</span>
+                                </div>
+                                <div class="chart-body analytics-product-shell analytics-product-shell--compact" id="productRankings">
+                                    <div class="loading-text">商品榜单加载中...</div>
+                                </div>
+                            </div>
+
+                            <div class="chart-card glass-panel analytics-nav-focus-target" id="productFunnelSection">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-filter-circle-dollar"></i> 商品漏斗</h3>
+                                    <span class="analytics-panel-note" id="productFunnelMeta">详情到支付 / 发货漏斗</span>
+                                </div>
+                                <div class="chart-body analytics-product-shell analytics-product-shell--compact" id="productFunnel">
+                                    <div class="loading-text">商品漏斗加载中...</div>
+                                </div>
+                            </div>
+
+                            <div class="chart-card glass-panel analytics-nav-focus-target" id="productHealthSection">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-triangle-exclamation"></i> 库存与履约健康</h3>
+                                    <span class="analytics-panel-note" id="productHealthMeta">库存 / 售后 / 履约风险</span>
+                                </div>
+                                <div class="chart-body analytics-product-shell analytics-product-shell--compact" id="productHealth">
+                                    <div class="loading-text">库存与履约健康加载中...</div>
+                                </div>
+                            </div>
+
+                            <div class="chart-card glass-panel analytics-nav-focus-target" id="productDetailPanelSection">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-cube"></i> 单品详情</h3>
+                                    <span class="analytics-panel-note" id="productDetailMeta">点击商品打开单品详情</span>
+                                </div>
+                                <div class="chart-body analytics-product-shell analytics-product-shell--detail" id="productDetailPanel">
+                                    <div class="empty-state-hint">
+                                        <i class="fas fa-cubes"></i>
+                                        <span>后续从商品榜单、商品漏斗或健康面板点击任一商品后，会在这里展开单品详情，统一承接趋势、来源、购买人群、库存与履约明细。</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab Content: Operations -->
+                    <div id="analytics-tab-ops" class="analytics-tab-content">
+                        <div class="analytics-secondary-note">
+                            <i class="fas fa-life-ring"></i>
+                            <span>运营保障驾驶舱会把支付、售后、履约、验证和站外告警收成同一层，后续总览、支付问题、售后工单、履约处理、验证服务和告警问题都会从这里进入。</span>
+                        </div>
+
+                        <div class="charts-grid analytics-ops-cockpit-grid">
+                            <div class="chart-card glass-panel chart-wide analytics-nav-focus-target" id="opsCockpitOverviewSection">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-satellite-dish"></i> 运营保障总览</h3>
+                                    <span class="analytics-panel-note" id="opsCockpitOverviewMeta">支付 / 工单 / 履约 / 验证 / 告警</span>
+                                </div>
+                                <div class="chart-body analytics-ops-cockpit" id="opsCockpitOverview">
+                                    <div class="loading-text">运营保障总览加载中...</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="charts-grid analytics-ops-cockpit-grid">
+                            <div class="chart-card glass-panel analytics-nav-focus-target" id="opsPaymentsSection">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-credit-card"></i> 支付问题</h3>
+                                    <span class="analytics-panel-note" id="opsPaymentsMeta">告警 / 死信 / 待重试</span>
+                                </div>
+                                <div class="chart-body analytics-ops-cockpit analytics-ops-cockpit--compact" id="opsPaymentsPanel">
+                                    <div class="loading-text">支付问题加载中...</div>
+                                </div>
+                            </div>
+
+                            <div class="chart-card glass-panel analytics-nav-focus-target" id="opsTicketsSection">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-headset"></i> 售后工单</h3>
+                                    <span class="analytics-panel-note" id="opsTicketsMeta">待处理 / 超时 / 高优</span>
+                                </div>
+                                <div class="chart-body analytics-ops-cockpit analytics-ops-cockpit--compact" id="opsTicketsPanel">
+                                    <div class="loading-text">售后工单加载中...</div>
+                                </div>
+                            </div>
+
+                            <div class="chart-card glass-panel analytics-nav-focus-target" id="opsFulfillmentSection">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-truck-fast"></i> 履约处理</h3>
+                                    <span class="analytics-panel-note" id="opsFulfillmentMeta">库存 / 履约 / 退款风险</span>
+                                </div>
+                                <div class="chart-body analytics-ops-cockpit analytics-ops-cockpit--compact" id="opsFulfillmentPanel">
+                                    <div class="loading-text">履约处理加载中...</div>
+                                </div>
+                            </div>
+
+                            <div class="chart-card glass-panel analytics-nav-focus-target" id="opsVerifySection">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-shield-halved"></i> 验证服务</h3>
+                                    <span class="analytics-panel-note" id="opsVerifyMeta">失败 / 活跃 / 队列</span>
+                                </div>
+                                <div class="chart-body analytics-ops-cockpit analytics-ops-cockpit--compact" id="opsVerifyPanel">
+                                    <div class="loading-text">验证服务加载中...</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="charts-grid analytics-ops-cockpit-grid">
+                            <div class="chart-card glass-panel chart-wide analytics-nav-focus-target" id="opsAlertsSection">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-tower-broadcast"></i> 站外告警</h3>
+                                    <span class="analytics-panel-note" id="opsAlertsMeta">投递健康 / 通道状态 / 最近异常</span>
+                                </div>
+                                <div class="chart-body analytics-ops-cockpit" id="opsAlertsPanel">
+                                    <div class="loading-text">站外告警加载中...</div>
                                 </div>
                             </div>
                         </div>
@@ -9004,6 +9275,7 @@
                             <div class="chart-card glass-panel">
                                 <div class="chart-header">
                                     <h3><i class="fas fa-th"></i> 用户留存 (周)</h3>
+                                    <span class="analytics-panel-note" id="retentionCohortMeta">真实业务回访留存</span>
                                 </div>
                                 <div class="chart-body" id="retentionCohort">
                                     <div class="loading-text">加载中...</div>
@@ -9040,8 +9312,15 @@
                         </div>
                     </div>
                 </div>
+                </div>
             </div>
-            <!-- END ANALYTICS MODULE -->
+            <div id="module-growth-center" class="module-container" hidden>
+                <div class="analytics-module-stage" id="analyticsWorkspaceHostGrowthCenter"></div>
+            </div>
+            <div id="module-commerce-center" class="module-container" hidden>
+                <div class="analytics-module-stage" id="analyticsWorkspaceHostCommerceCenter"></div>
+            </div>
+            <!-- END ANALYTICS MODULES -->
 
             <!-- ========== DISCOUNTS MODULE ========== -->
             <div id="module-discounts" class="module-container admin-studio-inline-style-attr-3">
@@ -9290,6 +9569,8 @@
                 </div>
 
                 <div class="admin-workbench-context-note admin-workbench-context-note--compact" id="ticketsWorkbenchContext" hidden></div>
+                <div class="admin-workbench-context-note admin-workbench-context-note--compact" id="ticketsIssueSummary" hidden></div>
+                <div class="admin-workbench-context-note admin-workbench-context-note--compact" id="ticketsPrioritySummary" hidden></div>
                 <div id="ticketsQueueControls" class="admin-ticket-workspace-block admin-ticket-workspace-block--queue">
                     <!-- Filters -->
                     <div class="admin-toolbar">
@@ -9630,76 +9911,6 @@
     </div>
     <!-- END admin-layout -->
 
-    <!-- A/B Experiment Modal -->
-    <div class="modal" id="experimentModal" data-admin-overlay-close="experiment-modal">
-        <div class="modal-content experiment-form">
-            <div class="modal-header">
-                <h3><i class="fas fa-flask"></i> 创建 A/B 实验</h3>
-                <button class="modal-close" type="button" data-admin-action="analytics-close-experiment-modal">&times;</button>
-            </div>
-            <form id="experimentForm">
-                <div class="form-group">
-                    <label>实验名称</label>
-                    <input type="text" id="expName" required placeholder="例：首页按钮颜色测试">
-                </div>
-                <div class="form-group">
-                    <label>描述</label>
-                    <input type="text" id="expDescription" placeholder="简短描述实验目的">
-                </div>
-                <div class="form-group">
-                    <label>变体设置</label>
-                    <div class="variants-list" id="variantsList">
-                        <div class="variant-row">
-                            <input type="text" placeholder="Control" value="Control" class="variant-name">
-                            <input type="number" placeholder="50" value="50" class="variant-weight" min="0" max="100">
-                            <span>%</span>
-                        </div>
-                        <div class="variant-row">
-                            <input type="text" placeholder="Variant A" value="Variant A" class="variant-name">
-                            <input type="number" placeholder="50" value="50" class="variant-weight" min="0" max="100">
-                            <span>%</span>
-                        </div>
-                    </div>
-                    <button type="button" class="btn-link" data-admin-action="analytics-add-variant-row">
-                        <i class="fas fa-plus"></i> 添加变体
-                    </button>
-                </div>
-                <div class="form-group">
-                    <label>目标指标</label>
-                    <select id="expTargetMetric" class="form-select">
-                        <optgroup label="真实业务事件">
-                            <option value="verify_success">验证成功</option>
-                            <option value="recharge_success">充值成功</option>
-                            <option value="shop_purchase">商城成交</option>
-                            <option value="unlock_success">内容解锁</option>
-                            <option value="affiliate_invite_click">邀请点击</option>
-                            <option value="checkin_success">签到完成</option>
-                            <option value="guestbook_post">留言发布</option>
-                            <option value="verify_submit">验证提交</option>
-                            <option value="recharge_click">充值点击</option>
-                            <option value="shop_view">商城浏览</option>
-                            <option value="prompt_view">内容浏览</option>
-                        </optgroup>
-                        <optgroup label="通用兼容指标">
-                            <option value="page_view">页面浏览量</option>
-                            <option value="button_click">按钮点击</option>
-                            <option value="signup">注册转化</option>
-                            <option value="purchase">购买转化</option>
-                            <option value="engagement">互动参与</option>
-                        </optgroup>
-                    </select>
-                    <small class="form-hint">优先选择真实业务事件；旧的通用指标会在结果层自动映射到真实埋点。</small>
-                </div>
-                <div class="form-actions">
-                    <button type="button" class="btn-secondary" data-admin-action="analytics-close-experiment-modal">取消</button>
-                    <button type="submit" class="btn-primary">创建实验</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-
-
     <!-- Product Edit Modal (Redesigned) -->
     <div id="productModal" class="modal-overlay admin-studio-inline-style-attr-216" data-shop-overlay-close="product-modal"
        >
@@ -9976,9 +10187,9 @@
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <!-- Chart.js for Analytics -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="js/admin-studio-bootstrap.js?v=20260404_ANALYTICS_PHASE1_LIFECYCLE_1"></script>
+<script src="js/admin-studio-bootstrap.js?v=20260407_ANALYTICS_CENTER_BOOTSTRAP_8"></script>
     <script src="js/ios-scroll-lock.js"></script>
-    <script src="admin-users.js?v=20260402_ADMIN_USERS_ASSET_ACTIVITY_FIX_1"></script>
+    <script src="admin-users.js?v=20260407_ADMIN_USERS_ANALYTICS_CONTEXT_8"></script>
     <script src="admin-points.js?v=20260404_ADMIN_POINTS_ANALYTICS_CONTEXT_1"></script>
     <script src="admin-discounts.js?v=20260402_ADMIN_DISCOUNT_MUTATE_HANDLER_2"></script>
     <script src="starry-sky.js"></script>
@@ -9987,20 +10198,34 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh.js"></script>
     <script src="js/admin-api-auth.js?v=20260402_ADMIN_API_AUTH_5"></script>
     <script src="js/admin-ai.js"></script>
-    <script src="admin-comments.js?v=20260404_COMMENTS_ANALYTICS_CONTEXT_1"></script>
-    <script src="admin-analytics.js?v=20260404_ANALYTICS_DUTY_BOARD_20"></script>
-    <script src="js/admin-payments.js?v=20260404_ADMIN_PAYMENTS_WORKBENCH_CONTEXT_1"></script>
+    <script src="admin-comments.js?v=20260408_COMMENTS_PANEL_HEADER_REMOVE_1"></script>
+    <script src="js/admin-analytics-metric-context.js?v=20260405_ANALYTICS_METRIC_CONTEXT_HELPERS_6"></script>
+    <script src="admin-analytics.js?v=20260407_ANALYTICS_PRODUCT_SHELL_8"></script>
+    <script src="js/admin-analytics-derived-bundles.js?v=20260405_ANALYTICS_DERIVED_BUNDLES_5"></script>
+    <script src="js/admin-analytics-runtime-controls.js?v=20260405_ANALYTICS_RUNTIME_CONTROLS_1"></script>
+    <script src="js/admin-analytics-panel-loaders.js?v=20260407_ANALYTICS_PANEL_LOADERS_70"></script>
+    <script src="js/admin-analytics-lifecycle.js?v=20260407_ANALYTICS_LIFECYCLE_16"></script>
+    <script src="js/admin-analytics-workbench.js?v=20260407_ANALYTICS_WORKBENCH_BUNDLE_13"></script>
+    <script src="js/admin-analytics-insight-cards.js?v=20260407_ANALYTICS_INSIGHT_CARDS_HELPERS_5"></script>
+    <script src="js/admin-analytics-ai-state.js?v=20260405_ANALYTICS_AI_STATE_1"></script>
+    <script src="js/admin-analytics-ai-dom.js?v=20260405_ANALYTICS_AI_DOM_1"></script>
+    <script src="js/admin-analytics-ai-helpers.js?v=20260405_ANALYTICS_AI_HELPERS_1"></script>
+    <script src="js/admin-analytics-ai-prompt-builders.js?v=20260405_ANALYTICS_AI_PROMPT_BUILDERS_1"></script>
+    <script src="js/admin-analytics-ai-controller.js?v=20260405_ANALYTICS_AI_CONTROLLER_1"></script>
+    <script src="js/admin-analytics-export-builders.js?v=20260405_ANALYTICS_EXPORT_BUILDERS_1"></script>
+    <script src="js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9"></script>
+    <script src="js/admin-payments.js?v=20260406_ADMIN_PAYMENTS_WORKBENCH_CONTEXT_11"></script>
     <script src="js/local-smoke-fixtures.js?v=20260404_LOCAL_SMOKE_FIXTURES_34"></script>
-    <script src="js/admin-workbench.js?v=20260404_ADMIN_WORKBENCH_EXPERIMENT_CONTEXT_1"></script>
+    <script src="js/admin-workbench.js?v=20260405_ADMIN_WORKBENCH_SIGNAL_CONTEXT_1"></script>
     <script src="js/admin-ticket-links.js?v=20260401_ADMIN_TICKET_LINK_PROTOCOL_1"></script>
-    <script src="admin-config.js?v=20260404_ADMIN_VERIFY_WORKBENCH_CONTEXT_1"></script>
+    <script src="admin-config.js?v=20260405_GENERAL_RUNTIME_REMOVAL_1"></script>
     <script src="admin-homepage.js?v=20260403_HOMEPAGE_LOADING_PREWARM_1"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js?v=20260404_ANALYTICS_SITE_RELOAD_1"></script>
-    <script src="js/admin-tickets.js?v=20260404_ADMIN_TICKETS_WORKBENCH_CONTEXT_1"></script>
+    <script src="js/admin-tickets.js?v=20260406_ADMIN_TICKETS_WORKBENCH_CONTEXT_11"></script>
     <script src="js/admin-access.js?v=20260403_ADMIN_ENTRY_WARMUP_1"></script>
-<script src="admin-studio.js?v=20260404_ANALYTICS_ACTION_ROUTING_2"></script>
-    <script src="js/admin-shop.js?v=20260403_ADMIN_SHOP_TAB_PREFETCH_1"></script>
+<script src="admin-studio.js?v=20260406_ADMIN_ACCESS_FORCE_REFRESH_3"></script>
+    <script src="js/admin-shop.js?v=20260406_ADMIN_SHOP_ANALYTICS_CONTEXT_12"></script>
 </body>
 
 <!-- Admin Chat Script -->
