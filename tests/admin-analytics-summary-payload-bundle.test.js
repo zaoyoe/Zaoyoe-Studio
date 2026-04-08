@@ -299,6 +299,9 @@ test('analytics summary payload bundle computes verify service metrics from the 
             error_message: index % 5 === 0 ? 'quota low' : ''
         };
     });
+    const verificationTimestamps = verificationRows.map((row) => String(row.created_at || ''));
+    const explicitStartDate = verificationTimestamps.slice().sort()[0];
+    const explicitEndDate = verificationTimestamps.slice().sort().at(-1);
 
     await withHandler({
         tables: {
@@ -314,7 +317,7 @@ test('analytics summary payload bundle computes verify service metrics from the 
         const res = createMockResponse();
         await handler({
             method: 'GET',
-            url: '/api/admin?route=analytics/summary-payload-bundle&site=all&days=30',
+            url: `/api/admin?route=analytics/summary-payload-bundle&site=all&startDate=${encodeURIComponent(explicitStartDate)}&endDate=${encodeURIComponent(explicitEndDate)}`,
             headers: {}
         }, res);
 

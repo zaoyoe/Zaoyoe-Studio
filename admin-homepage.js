@@ -218,7 +218,18 @@ const HomepageAdmin = (() => {
     }
 
     function renderHomepageReadModeBanner() {
-        document.getElementById('hp-read-mode-banner')?.remove();
+        const bannerId = 'hp-read-mode-banner';
+        const bannerClassName = 'hp-readonly-banner';
+        const existingBanner = document.getElementById(bannerId);
+        if (!existingBanner) {
+            return;
+        }
+
+        existingBanner.id = bannerId;
+        existingBanner.classList.add(bannerClassName);
+        existingBanner.hidden = true;
+        existingBanner.setAttribute('aria-hidden', 'true');
+        existingBanner.remove();
     }
 
     async function updateHomepageConfigRow({

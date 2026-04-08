@@ -81,15 +81,31 @@ function parseQueryDate(value) {
     return date;
 }
 
+function normalizeExplicitRangeValue(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) {
+        return '';
+    }
+
+    const date = new Date(normalized);
+    if (Number.isNaN(date.getTime())) {
+        return '';
+    }
+
+    return normalized;
+}
+
 function buildRangeWindow(params) {
-    const startDate = parseQueryDate(params.get('startDate'));
-    const endDate = parseQueryDate(params.get('endDate'));
+    const startValue = normalizeExplicitRangeValue(params.get('startDate'));
+    const endValue = normalizeExplicitRangeValue(params.get('endDate'));
+    const startDate = parseQueryDate(startValue);
+    const endDate = parseQueryDate(endValue);
 
     if (startDate && endDate && startDate.getTime() <= endDate.getTime()) {
         return {
             mode: 'explicit',
-            startIso: startDate.toISOString(),
-            endIso: endDate.toISOString()
+            startIso: startValue,
+            endIso: endValue
         };
     }
 

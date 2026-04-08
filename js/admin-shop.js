@@ -3390,10 +3390,15 @@ Example output format:
         return `
             <div class="admin-table-skeleton-cell admin-table-skeleton-actions shop-table-skeleton-actions-wrap">
                 ${normalizedWidths.map((width) => `
-                    <span class="admin-skeleton-block admin-skeleton-block--pill shop-table-skeleton-action-pill" style="width:${Math.max(56, Number(width) || 88)}px"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--pill shop-table-skeleton-action-pill ${this.getShopSkeletonWidthClass(width, 88)}"></span>
                 `).join('')}
             </div>
         `;
+    },
+
+    getShopSkeletonWidthClass: function (width, fallbackWidth = 88) {
+        const normalizedWidth = Math.max(1, Math.round(Number(width) || Number(fallbackWidth) || 88));
+        return `shop-table-skeleton-w-${normalizedWidth}`;
     },
 
     buildShopOrdersLoadingSkeleton: function (rowCount = 5) {
@@ -3418,7 +3423,7 @@ Example output format:
                 </td>
                 <td>
                     <div class="admin-table-skeleton-cell">
-                        <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${dateWidths[rowIndex % dateWidths.length]}px"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line ${this.getShopSkeletonWidthClass(dateWidths[rowIndex % dateWidths.length], 132)}"></span>
                     </div>
                 </td>
                 <td>
@@ -3428,12 +3433,12 @@ Example output format:
                 </td>
                 <td>
                     <div class="admin-table-skeleton-cell">
-                        <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${pointsWidths[rowIndex % pointsWidths.length]}px"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line ${this.getShopSkeletonWidthClass(pointsWidths[rowIndex % pointsWidths.length], 16)}"></span>
                     </div>
                 </td>
                 <td>
                     <div class="admin-table-skeleton-cell">
-                        <span class="admin-skeleton-block admin-skeleton-block--pill shop-table-skeleton-status-pill" style="width:${statusWidths[rowIndex % statusWidths.length]}px"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--pill shop-table-skeleton-status-pill ${this.getShopSkeletonWidthClass(statusWidths[rowIndex % statusWidths.length], 82)}"></span>
                     </div>
                 </td>
                 <td>
@@ -3481,7 +3486,7 @@ Example output format:
                 </td>
                 <td>
                     <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
-                        <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${52 + (rowIndex % 2) * 8}px"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line ${this.getShopSkeletonWidthClass(52 + (rowIndex % 2) * 8, 52)}"></span>
                         <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span>
                         <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-40"></span>
                     </div>
@@ -3702,7 +3707,7 @@ Example output format:
                 </td>
                 <td>
                     <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
-                        <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${18 + (rowIndex % 3) * 8}px"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line ${this.getShopSkeletonWidthClass(18 + (rowIndex % 3) * 8, 18)}"></span>
                         <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-40"></span>
                     </div>
                 </td>
@@ -3791,7 +3796,7 @@ Example output format:
                 </td>
                 <td>
                     <div class="admin-table-skeleton-cell">
-                        <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${dateWidths[rowIndex % dateWidths.length]}px"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line ${this.getShopSkeletonWidthClass(dateWidths[rowIndex % dateWidths.length], 118)}"></span>
                     </div>
                 </td>
                 <td>

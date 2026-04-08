@@ -1327,7 +1327,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
         ['shop.html', 'css/shop-page.css?v=20260324_SHOP_RUNTIME_STYLE_1'],
-        ['admin-studio.html', 'css/admin-studio-page.css?v=20260408_SECURITY_CHILD_HOVER_STATIC_1'],
+        ['admin-studio.html', 'css/admin-studio-page.css?v=20260408_ADMIN_STUDIO_CARD_GRADIENT_FLATTEN_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
         ['debug-realtime.html', 'css/debug-realtime-page.css?v=20260324_DEBUG_REALTIME_STYLE_ATTRS_1'],
@@ -6883,7 +6883,7 @@ test('ticket admin surfaces user email in search and list rendering', () => {
     assert.equal(adminStudioSource.includes('placeholder="搜索工单号、订单号、用户、邮箱或描述..."'), true, 'admin-studio.html should mention ticket id, user, and email in the ticket search placeholder');
     assert.equal(adminStudioSource.includes('<th>用户 / 邮箱</th>'), true, 'admin-studio.html should label the ticket user column with email support');
     assert.equal(adminStudioSource.includes('js/admin-ticket-links.js?v=20260401_ADMIN_TICKET_LINK_PROTOCOL_1'), true, 'admin-studio.html should load the shared ticket link protocol before the ticket runtime');
-    assert.equal(adminStudioSource.includes('admin-studio.css?v=20260407_ANALYTICS_CENTER_SHELL_83'), true, 'admin-studio.html should load the cache-busted admin studio stylesheet for analytics metric context states');
+    assert.equal(adminStudioSource.includes('admin-studio.css?v=20260408_POINTS_CUSTOM_BATCH_ICON_UI_2'), true, 'admin-studio.html should load the cache-busted admin studio stylesheet for analytics metric context states');
     assert.equal(adminStudioSource.includes('analytics-advanced-entry'), false, 'admin-studio.html should keep advanced analytics out of the main toolbar flow');
     assert.equal(adminStudioSource.includes('admin-config.js?v=20260405_GENERAL_RUNTIME_REMOVAL_1'), true, 'admin-studio.html should load the cache-busted admin config script for configurable ticket reply templates');
     assert.equal(adminStudioSource.includes('js/admin-tickets.js?v=20260406_ADMIN_TICKETS_WORKBENCH_CONTEXT_11'), true, 'admin-studio.html should load the cache-busted ticket admin script');
@@ -8527,7 +8527,7 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
         'js/admin-analytics-export-builders.js?v=20260405_ANALYTICS_EXPORT_BUILDERS_1',
         'js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9',
         'js/admin-studio-bootstrap.js?v=20260407_ANALYTICS_CENTER_BOOTSTRAP_8',
-        'admin-studio.css?v=20260407_ANALYTICS_CENTER_SHELL_83',
+        'admin-studio.css?v=20260408_POINTS_CUSTOM_BATCH_ICON_UI_2',
         'class="charts-grid analytics-growth-insight-grid"',
         'class="chart-card glass-panel analytics-growth-card analytics-growth-card--full"',
         'admin-points.js?v=20260404_ADMIN_POINTS_ANALYTICS_CONTEXT_1',
@@ -11121,7 +11121,7 @@ test('analytics ui polish keeps funnel hints visible, top-content and contributo
     assert.equal(adminStudioScript.includes("case 'analytics-open-content-commerce-detail':"), true, 'admin-studio.js should delegate content-commerce detail drill-down actions');
     assert.equal(adminStudioScript.includes("case 'analytics-open-user-detail':"), true, 'admin-studio.js should delegate analytics leaderboard user drill-down actions');
     assert.equal(adminStudioScript.includes('window.tryOpenOpsAlertWorkspaceUserModal'), true, 'admin-studio.js should reuse the workbench user-detail opener for analytics drill-down');
-    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260407_ANALYTICS_CENTER_SHELL_83'), true, 'admin-studio.html should reference the latest analytics ui polish stylesheet version');
+    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260408_POINTS_CUSTOM_BATCH_ICON_UI_2'), true, 'admin-studio.html should reference the latest analytics ui polish stylesheet version');
     assert.equal(adminStudioHtml.includes('js/admin-analytics-panel-loaders.js?v=20260407_ANALYTICS_PANEL_LOADERS_70'), true, 'admin-studio.html should reference the latest analytics panel loader runtime version');
     assert.equal(adminStudioHtml.includes('admin-studio.js?v=20260406_ADMIN_ACCESS_FORCE_REFRESH_3'), true, 'admin-studio.html should reference the latest admin studio action routing version');
 });
@@ -11191,7 +11191,7 @@ test('analytics user drill-down carries commerce context into the user detail mo
         assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
     }
 
-    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260407_ANALYTICS_CENTER_SHELL_83'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
+    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260408_POINTS_CUSTOM_BATCH_ICON_UI_2'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
     assert.equal(adminStudioHtml.includes('admin-users.js?v=20260407_ADMIN_USERS_ANALYTICS_CONTEXT_8'), true, 'admin-studio.html should reference the latest admin users runtime version');
     assert.equal(adminStudioHtml.includes('js/admin-analytics-panel-loaders.js?v=20260407_ANALYTICS_PANEL_LOADERS_70'), true, 'admin-studio.html should reference the latest analytics panel loader runtime version');
     assert.equal(adminStudioHtml.includes('admin-studio.js?v=20260406_ADMIN_ACCESS_FORCE_REFRESH_3'), true, 'admin-studio.html should reference the latest admin studio action routing version');
@@ -11238,7 +11238,7 @@ test('user detail tabs surface product commerce trace when opened from analytics
         assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
     }
 
-    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260407_ANALYTICS_CENTER_SHELL_83'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
+    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260408_POINTS_CUSTOM_BATCH_ICON_UI_2'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
     assert.equal(adminStudioHtml.includes('admin-users.js?v=20260407_ADMIN_USERS_ANALYTICS_CONTEXT_8'), true, 'admin-studio.html should reference the latest admin users runtime version');
 });
 
