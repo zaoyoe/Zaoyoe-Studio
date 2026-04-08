@@ -218,26 +218,7 @@ const HomepageAdmin = (() => {
     }
 
     function renderHomepageReadModeBanner() {
-        const content = document.getElementById('hp-section-content');
-        if (!content) return;
-
-        let banner = document.getElementById('hp-read-mode-banner');
-        if (!isHomepageAggregateMode()) {
-            banner?.remove();
-            return;
-        }
-
-        if (!banner) {
-            banner = document.createElement('div');
-            banner.id = 'hp-read-mode-banner';
-            banner.className = 'hp-readonly-banner';
-            content.insertBefore(banner, content.firstChild);
-        }
-
-        banner.innerHTML = `
-            <div class="hp-readonly-banner__title"><i class="fas fa-layer-group"></i> 全部站点聚合视图</div>
-            <div class="hp-readonly-banner__body">当前只展示 <strong>CN</strong> / <strong>INTL</strong> 的配置概览与显隐状态，不允许直接编辑。切换到具体站点后再保存修改。</div>
-        `;
+        document.getElementById('hp-read-mode-banner')?.remove();
     }
 
     async function updateHomepageConfigRow({
@@ -351,7 +332,7 @@ const HomepageAdmin = (() => {
                 <div class="hp-loading-shell__intro">
                     <div class="hp-loading-shell__copy">
                         <span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-30"></span>
-                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-80"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-70"></span>
                     </div>
                     <div class="hp-loading-shell__tabs">
                         <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span>
@@ -359,21 +340,89 @@ const HomepageAdmin = (() => {
                         <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span>
                     </div>
                 </div>
-                <div class="hp-loading-shell__grid">
-                    ${Array.from({ length: 2 }, (_, index) => `
-                        <div class="hp-loading-card">
-                            <div class="hp-loading-card__bar">
+                <div class="hp-loading-editor">
+                    <div class="hp-loading-control-bar">
+                        <div class="hp-loading-control hp-loading-control--toggle">
+                            <div class="hp-loading-control__copy">
                                 <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span>
-                                <span class="admin-skeleton-block admin-skeleton-block--pill ${index % 2 === 0 ? 'admin-skeleton-w-chip-sm' : 'admin-skeleton-w-chip-xs'}"></span>
+                                <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-40"></span>
                             </div>
-                            <div class="hp-loading-card__body">
-                                <span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-40"></span>
-                                <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-full"></span>
-                                <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-70"></span>
-                                <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-50"></span>
+                            <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span>
+                        </div>
+                        <div class="hp-loading-control hp-loading-control--order">
+                            <div class="hp-loading-control__copy">
+                                <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-20"></span>
+                                <span class="admin-skeleton-block hp-loading-control__field"></span>
                             </div>
                         </div>
-                    `).join('')}
+                        <div class="hp-loading-control hp-loading-control--status">
+                            <div class="hp-loading-control__copy">
+                                <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span>
+                                <div class="hp-loading-control__status-row">
+                                    <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span>
+                                    <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="hp-loading-shell__grid hp-loading-shell__grid--editor">
+                        <div class="hp-loading-card hp-loading-card--editor-main">
+                            <div class="hp-loading-card__bar hp-loading-card__bar--editor">
+                                <div class="hp-loading-card__title-group">
+                                    <span class="admin-skeleton-block hp-loading-card__icon"></span>
+                                    <div class="hp-loading-card__copy">
+                                        <span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-40"></span>
+                                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-60"></span>
+                                    </div>
+                                </div>
+                                <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span>
+                            </div>
+                            <div class="hp-loading-form-grid">
+                                ${Array.from({ length: 4 }, (_, index) => `
+                                    <div class="hp-loading-field${index === 3 ? ' hp-loading-field--wide' : ''}">
+                                        <span class="admin-skeleton-block admin-skeleton-block--line ${index === 0 ? 'admin-skeleton-w-30' : index === 1 ? 'admin-skeleton-w-40' : 'admin-skeleton-w-20'}"></span>
+                                        <span class="admin-skeleton-block hp-loading-field__input${index === 3 ? ' hp-loading-field__input--tall' : ''}"></span>
+                                    </div>
+                                `).join('')}
+                                <div class="hp-loading-field hp-loading-field--full">
+                                    <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-20"></span>
+                                    <div class="hp-loading-slider-row">
+                                        <span class="admin-skeleton-block hp-loading-slider-row__track"></span>
+                                        <span class="admin-skeleton-block hp-loading-slider-row__value"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="hp-loading-card hp-loading-card--editor-side">
+                            <div class="hp-loading-preview">
+                                <span class="admin-skeleton-block hp-loading-preview__media"></span>
+                                <div class="hp-loading-preview__meta">
+                                    <span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-50"></span>
+                                    <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-full"></span>
+                                    <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-70"></span>
+                                    <div class="hp-loading-preview__chips">
+                                        <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span>
+                                        <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="hp-loading-side-note">
+                                <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span>
+                                <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-full"></span>
+                                <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-60"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="hp-loading-footer">
+                        <div class="hp-loading-footer__meta">
+                            <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span>
+                            <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-20"></span>
+                        </div>
+                        <div class="hp-loading-footer__actions">
+                            <span class="admin-skeleton-block hp-loading-footer__action hp-loading-footer__action--secondary"></span>
+                            <span class="admin-skeleton-block hp-loading-footer__action"></span>
+                        </div>
+                    </div>
                 </div>
             </div>
         `;

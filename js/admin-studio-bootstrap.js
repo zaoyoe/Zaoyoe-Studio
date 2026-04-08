@@ -343,10 +343,10 @@
                 },
                 {
                     key: 'analytics.view',
-                    label: '数据分析',
+                    label: '经营分析中心',
                     icon: '📊',
-                    description: '查看后台数据面板与趋势统计',
-                    modules: ['analytics']
+                    description: '查看整站经营分析中心、趋势判断与经营闭环',
+                    modules: ['analytics', 'business-overview', 'growth-center', 'commerce-center']
                 }
             ]
         }
@@ -389,7 +389,19 @@
             anyOf: ['tickets.manage']
         },
         analytics: {
-            label: '数据分析',
+            label: '经营分析中心',
+            anyOf: ['analytics.view']
+        },
+        'business-overview': {
+            label: '经营总览',
+            anyOf: ['analytics.view']
+        },
+        'growth-center': {
+            label: '增长经营',
+            anyOf: ['analytics.view']
+        },
+        'commerce-center': {
+            label: '商品经营',
             anyOf: ['analytics.view']
         },
         payments: {
@@ -422,8 +434,102 @@
     window.ADMIN_PERMISSION_GROUPS = ADMIN_PERMISSION_GROUPS;
     window.ADMIN_MODULE_PERMISSION_MATRIX = ADMIN_MODULE_PERMISSION_MATRIX;
 
-    function normalizeAdminModuleId(moduleId) {
+    const ADMIN_ANALYTICS_MODULE_ALIASES = {
+        analytics: {
+            canonicalModuleId: 'analytics',
+            sidebarModuleId: 'growth-center',
+            routeModuleId: 'growth-center',
+            defaultTab: 'overview'
+        },
+        'business-center': {
+            canonicalModuleId: 'analytics',
+            sidebarModuleId: 'growth-center',
+            routeModuleId: 'growth-center',
+            defaultTab: 'overview'
+        },
+        'analytics-center': {
+            canonicalModuleId: 'analytics',
+            sidebarModuleId: 'growth-center',
+            routeModuleId: 'growth-center',
+            defaultTab: 'overview'
+        },
+        'business-overview': {
+            canonicalModuleId: 'analytics',
+            sidebarModuleId: 'growth-center',
+            routeModuleId: 'growth-center',
+            defaultTab: 'overview'
+        },
+        'growth-center': {
+            canonicalModuleId: 'analytics',
+            sidebarModuleId: 'growth-center',
+            routeModuleId: 'growth-center',
+            defaultTab: 'overview'
+        },
+        'commerce-center': {
+            canonicalModuleId: 'analytics',
+            sidebarModuleId: 'commerce-center',
+            routeModuleId: 'commerce-center',
+            defaultTab: 'product'
+        }
+    };
+
+    function normalizeAdminModuleValue(moduleId) {
         return String(moduleId || '').trim().toLowerCase();
+    }
+
+    function getAdminAnalyticsSidebarModuleIdForTab(tabId = '', options = {}) {
+        const normalizedTabId = normalizeAdminModuleValue(tabId);
+        const preferredModuleId = normalizeAdminModuleValue(options.preferredModuleId || options.scopeId || '');
+        switch (normalizedTabId) {
+            case 'overview':
+                return 'growth-center';
+            case 'growth':
+            case 'content':
+                return 'growth-center';
+            case 'product':
+            case 'ops':
+            case 'monetization':
+            case 'verify':
+                return 'commerce-center';
+            default:
+                return preferredModuleId === 'commerce-center' ? 'commerce-center' : 'growth-center';
+        }
+    }
+
+    function resolveAdminAnalyticsModuleConfig(moduleId = '', options = {}) {
+        const normalizedModuleId = normalizeAdminModuleValue(moduleId);
+        const baseConfig = ADMIN_ANALYTICS_MODULE_ALIASES[normalizedModuleId];
+        if (!baseConfig) {
+            return null;
+        }
+
+        const requestedTab = normalizeAdminModuleValue(options.analyticsTab || options.view || '');
+        const sidebarModuleId = requestedTab
+            ? getAdminAnalyticsSidebarModuleIdForTab(requestedTab, { preferredModuleId: baseConfig.sidebarModuleId })
+            : baseConfig.sidebarModuleId;
+
+        return {
+            ...baseConfig,
+            sidebarModuleId,
+            routeModuleId: sidebarModuleId,
+            defaultTab: requestedTab || baseConfig.defaultTab
+        };
+    }
+
+    function getAdminSidebarModuleId(moduleId = '', options = {}) {
+        const analyticsConfig = resolveAdminAnalyticsModuleConfig(moduleId, options);
+        if (analyticsConfig) {
+            return analyticsConfig.sidebarModuleId;
+        }
+        return normalizeAdminModuleValue(moduleId);
+    }
+
+    function normalizeAdminModuleId(moduleId) {
+        const analyticsConfig = resolveAdminAnalyticsModuleConfig(moduleId);
+        if (analyticsConfig) {
+            return analyticsConfig.canonicalModuleId;
+        }
+        return normalizeAdminModuleValue(moduleId);
     }
 
     function getAdminPermissionDefinition(permissionKey) {
@@ -475,14 +581,14 @@
     }
 
     function getFirstAccessibleAdminModule(preferredModule = '') {
-        const normalizedPreferredModule = normalizeAdminModuleId(preferredModule);
-        if (normalizedPreferredModule && hasModulePermission(normalizedPreferredModule)) {
-            return normalizedPreferredModule;
+        const preferredSidebarModule = getAdminSidebarModuleId(preferredModule);
+        if (preferredSidebarModule && hasModulePermission(preferredSidebarModule)) {
+            return preferredSidebarModule;
         }
 
         const sidebarItems = document.querySelectorAll('.sidebar-item[data-module]');
         for (const item of sidebarItems) {
-            const moduleId = normalizeAdminModuleId(item.dataset.module);
+            const moduleId = normalizeAdminModuleValue(item.dataset.module);
             if (moduleId && hasModulePermission(moduleId)) {
                 return moduleId;
             }
@@ -542,7 +648,7 @@
     }
 
     function applySidebarModuleAccess(item, accessible) {
-        const moduleId = normalizeAdminModuleId(item.dataset.module);
+        const moduleId = normalizeAdminModuleValue(item.dataset.module);
         const moduleDefinition = getAdminModuleDefinition(moduleId);
         const badge = ensureAdminModuleAccessBadge(item);
         const requirementText = getModulePermissionRequirementText(moduleId);
@@ -581,16 +687,28 @@
     }
 
     function baseSwitchModule(moduleId) {
-        const clickedItem = document.querySelector(`[data-module="${moduleId}"]`);
+        const normalizedRequestedModuleId = normalizeAdminModuleValue(moduleId);
+        const analyticsConfig = resolveAdminAnalyticsModuleConfig(normalizedRequestedModuleId);
+        const normalizedModuleId = analyticsConfig?.canonicalModuleId || normalizeAdminModuleId(normalizedRequestedModuleId);
+        const sidebarModuleId = analyticsConfig?.sidebarModuleId || normalizedRequestedModuleId || normalizedModuleId;
+        const targetContainerModuleId = analyticsConfig?.routeModuleId || normalizedRequestedModuleId || normalizedModuleId;
+        const clickedItem = document.querySelector(`[data-module="${sidebarModuleId}"]`)
+            || document.querySelector(`[data-module="${normalizedModuleId}"]`);
         if (clickedItem && clickedItem.classList.contains('disabled')) {
             return false;
         }
 
         const activeModule = document.querySelector('.module-container.active');
-        const activeModuleId = activeModule?.id?.replace('module-', '') || null;
+        const activeContainerModuleId = activeModule?.id?.replace('module-', '') || null;
+        const activeModuleId = normalizeAdminModuleId(activeContainerModuleId);
+        const switchingBetweenAnalyticsContainers = activeModuleId === 'analytics' && normalizedModuleId === 'analytics';
 
-        if (activeModuleId === 'analytics' && moduleId !== 'analytics') {
+        if (activeModuleId === 'analytics' && normalizedModuleId !== 'analytics') {
             window.teardownAnalyticsModule?.();
+        }
+
+        if (normalizedModuleId === 'analytics') {
+            attachAnalyticsWorkspace(targetContainerModuleId);
         }
 
         document.querySelectorAll('.sidebar-item').forEach((item) => {
@@ -605,29 +723,30 @@
             element.classList.remove('active');
         });
 
-        const target = document.getElementById(`module-${moduleId}`);
+        const target = document.getElementById(`module-${targetContainerModuleId}`)
+            || document.getElementById(`module-${normalizedModuleId}`);
         if (target) {
             target.hidden = false;
             target.classList.add('active');
 
-            if (moduleId === 'users') window.initUserModule?.();
-            if (moduleId === 'analytics') window.initAnalyticsModule?.();
-            if (moduleId === 'payments' && window.AdminPayments?.init) window.AdminPayments.init();
-            if (moduleId === 'shop') window.ShopAdmin?.init?.();
-            if (moduleId === 'ops-alerts') window.initOpsAlertsModule?.();
-            if (moduleId === 'discounts' && typeof window.AdminDiscounts !== 'undefined') window.AdminDiscounts.init();
-            if (moduleId === 'comments') {
+            if (normalizedModuleId === 'users') window.initUserModule?.();
+            if (normalizedModuleId === 'analytics' && !switchingBetweenAnalyticsContainers) window.initAnalyticsModule?.();
+            if (normalizedModuleId === 'payments' && window.AdminPayments?.init) window.AdminPayments.init();
+            if (normalizedModuleId === 'shop') window.ShopAdmin?.init?.();
+            if (normalizedModuleId === 'ops-alerts') window.initOpsAlertsModule?.();
+            if (normalizedModuleId === 'discounts' && typeof window.AdminDiscounts !== 'undefined') window.AdminDiscounts.init();
+            if (normalizedModuleId === 'comments') {
                 window.initCommentsModule?.();
-            } else if (moduleId === 'settings') {
+            } else if (normalizedModuleId === 'settings') {
                 window.initSettingsModule?.();
-            } else if (moduleId === 'points') {
+            } else if (normalizedModuleId === 'points') {
                 window.loadBatches?.();
                 window.loadPackagesForSelect?.();
             }
         }
 
         closeMobileSidebar();
-        scheduleAdminModulePrefetch(moduleId);
+        scheduleAdminModulePrefetch(normalizedModuleId);
         return true;
     }
 
@@ -640,17 +759,23 @@
         }
     }
 
-    function syncAdminStudioModuleUrl(moduleName) {
+    function syncAdminStudioModuleUrl(moduleName, options = {}) {
         const url = getAdminStudioUrlObject();
         if (!url || typeof window.history?.replaceState !== 'function') {
             return;
         }
 
-        const normalizedModule = String(moduleName || '').trim().toLowerCase() || 'gallery';
+        const normalizedModule = normalizeAdminModuleId(moduleName) || 'gallery';
+        const analyticsConfig = resolveAdminAnalyticsModuleConfig(moduleName, options);
         if (normalizedModule === 'gallery') {
             url.searchParams.delete('module');
         } else {
-            url.searchParams.set('module', normalizedModule);
+            url.searchParams.set(
+                'module',
+                normalizedModule === 'analytics'
+                    ? (analyticsConfig?.routeModuleId || 'growth-center')
+                    : normalizeAdminModuleValue(moduleName)
+            );
         }
 
         const nextRelativeUrl = `${url.pathname}${url.search}${url.hash}`;
@@ -660,9 +785,104 @@
         }
     }
 
-    function activateAdminStudioModule(moduleName) {
-        const normalizedModuleName = normalizeAdminModuleId(moduleName) || 'gallery';
-        const switched = baseSwitchModule(normalizedModuleName);
+    function syncAdminStudioAnalyticsSidebar(tabId = '', options = {}) {
+        const sidebarModuleId = getAdminAnalyticsSidebarModuleIdForTab(tabId, { preferredModuleId: options.preferredModuleId });
+        const activeModuleId = normalizeAdminModuleId(
+            document.querySelector('.module-container.active')?.id?.replace(/^module-/, '')
+        );
+        if (activeModuleId !== 'analytics' && options.force !== true) {
+            return sidebarModuleId;
+        }
+
+        document.querySelectorAll('.sidebar-item[data-module]').forEach((item) => {
+            if (!resolveAdminAnalyticsModuleConfig(item.dataset.module)) {
+                return;
+            }
+            item.classList.toggle('active', item.dataset.module === sidebarModuleId);
+        });
+
+        if (options.syncUrl === true) {
+            syncAdminStudioModuleUrl(sidebarModuleId, { analyticsTab: tabId });
+        }
+
+        return sidebarModuleId;
+    }
+
+    function getAnalyticsWorkspaceHostId(moduleId = '') {
+        const normalizedModuleId = normalizeAdminModuleValue(moduleId);
+        switch (normalizedModuleId) {
+            case 'growth-center':
+                return 'analyticsWorkspaceHostGrowthCenter';
+            case 'commerce-center':
+                return 'analyticsWorkspaceHostCommerceCenter';
+            case 'business-overview':
+            case 'business-center':
+            case 'analytics-center':
+            case 'analytics':
+            default:
+                return 'analyticsWorkspaceHostBusinessOverview';
+        }
+    }
+
+    function attachAnalyticsWorkspace(moduleId = '') {
+        const workspaceRoot = document.getElementById('analyticsWorkspaceRoot');
+        if (!workspaceRoot) {
+            return false;
+        }
+
+        const host = document.getElementById(getAnalyticsWorkspaceHostId(moduleId));
+        if (!host) {
+            return false;
+        }
+
+        if (workspaceRoot.parentElement !== host) {
+            host.appendChild(workspaceRoot);
+        }
+
+        return true;
+    }
+
+    function activateAdminStudioModule(moduleName, options = {}) {
+        const requestedModuleName = normalizeAdminModuleValue(moduleName) || 'gallery';
+        const normalizedModuleName = normalizeAdminModuleId(requestedModuleName) || 'gallery';
+        const analyticsConfig = resolveAdminAnalyticsModuleConfig(requestedModuleName, options);
+        const analyticsTab = analyticsConfig?.defaultTab || normalizeAdminModuleValue(options.analyticsTab || '') || '';
+        const analyticsSectionId = String(options.analyticsSectionId || '').trim();
+        const analyticsPromptId = String(options.analyticsPromptId || '').trim();
+        const analyticsProductId = String(options.analyticsProductId || '').trim();
+        const analyticsDetailFocus = String(options.analyticsDetailFocus || '').trim();
+        const isPlainCommerceEntry = normalizedModuleName === 'analytics'
+            && analyticsConfig?.sidebarModuleId === 'commerce-center'
+            && analyticsTab === 'product'
+            && !analyticsSectionId
+            && !analyticsPromptId
+            && !analyticsProductId
+            && !analyticsDetailFocus;
+
+        if (isPlainCommerceEntry && typeof window.resetAnalyticsProductDetailRuntime === 'function') {
+            window.resetAnalyticsProductDetailRuntime({ resetPanel: true });
+        }
+
+        if (normalizedModuleName === 'analytics' && analyticsTab && typeof window.syncAnalyticsRouteState === 'function') {
+            window.syncAnalyticsRouteState({
+                view: analyticsTab,
+                sectionId: analyticsSectionId,
+                promptId: analyticsPromptId,
+                productId: analyticsProductId,
+                detailFocus: analyticsDetailFocus
+            }, {
+                ensureAnalyticsModule: true
+            });
+        }
+
+        if (normalizedModuleName === 'analytics' && analyticsTab && typeof window.switchAnalyticsTab === 'function') {
+            window.switchAnalyticsTab(analyticsTab, {
+                syncRoute: false,
+                sectionId: analyticsSectionId
+            });
+        }
+
+        const switched = baseSwitchModule(requestedModuleName);
         if (!switched) {
             return false;
         }
@@ -683,7 +903,23 @@
             window.ShopAdmin.init();
         }
 
-        syncAdminStudioModuleUrl(normalizedModuleName);
+        syncAdminStudioModuleUrl(requestedModuleName, {
+            analyticsTab
+        });
+        if (normalizedModuleName === 'analytics') {
+            if (analyticsTab && typeof window.switchAnalyticsTab === 'function') {
+                window.switchAnalyticsTab(analyticsTab, {
+                    syncRoute: false,
+                    sectionId: analyticsSectionId
+                });
+            }
+            syncAdminStudioAnalyticsSidebar(analyticsTab || 'overview', { force: true });
+        }
+        if (isPlainCommerceEntry) {
+            window.requestAnimationFrame(() => {
+                window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+            });
+        }
         setAdminModuleNoticeVisible(false);
         return true;
     }
@@ -694,12 +930,20 @@
             return 'gallery';
         }
 
-        const requestedModule = String(url.searchParams.get('module') || '').trim().toLowerCase();
+        const requestedModule = normalizeAdminModuleValue(url.searchParams.get('module'));
         if (!requestedModule) {
             return 'gallery';
         }
 
-        return document.getElementById(`module-${requestedModule}`) ? requestedModule : 'gallery';
+        const analyticsConfig = resolveAdminAnalyticsModuleConfig(requestedModule);
+        if (analyticsConfig) {
+            return document.getElementById(`module-${analyticsConfig.sidebarModuleId || analyticsConfig.routeModuleId || analyticsConfig.canonicalModuleId}`)
+                ? analyticsConfig.sidebarModuleId
+                : 'gallery';
+        }
+
+        const normalizedModule = normalizeAdminModuleId(requestedModule);
+        return document.getElementById(`module-${normalizedModule}`) ? requestedModule : 'gallery';
     }
 
     function syncAdminStudioModuleAccess(options = {}) {
@@ -713,7 +957,7 @@
         const preferredModule = normalizeAdminModuleId(options.preferredModule || restoreAdminStudioModuleFromUrl());
 
         sidebarItems.forEach((item) => {
-            const moduleId = normalizeAdminModuleId(item.dataset.module);
+            const moduleId = normalizeAdminModuleValue(item.dataset.module);
             const accessible = hasModulePermission(moduleId);
             applySidebarModuleAccess(item, accessible);
             if (accessible) {
@@ -855,14 +1099,6 @@
             window.AdminTickets?.clearSelectedTickets?.();
         });
 
-        bindClick('[data-admin-action="analytics-open-experiment-modal"]', () => {
-            window.openExperimentModal?.();
-        });
-
-        bindClick('[data-admin-action="analytics-close-experiment-modal"]', () => {
-            window.closeExperimentModal?.();
-        });
-
         bindClick('[data-admin-action="settings-open-ops-alert-workspace"]', (element) => {
             window.openOpsAlertWorkspace?.(element.dataset.workspaceTarget, {
                 alertType: element.dataset.workspaceAlertType,
@@ -909,10 +1145,6 @@
                 window.AdminTickets?.toggleSelectAllPage?.(Boolean(ticketSelectAllCheckbox.checked));
             });
         }
-
-        bindSubmit('experimentForm', async (event) => {
-            await window.handleCreateExperiment?.(event);
-        });
 
         bindSubmit('shopRiskCaseComposerForm', async () => {
             await window.submitOpsAlertCaseComposer?.();
@@ -1133,7 +1365,8 @@
     }
 
     function switchModule(moduleName, options = {}) {
-        const normalizedModuleName = normalizeAdminModuleId(moduleName) || 'gallery';
+        const requestedModuleName = normalizeAdminModuleValue(moduleName) || 'gallery';
+        const normalizedModuleName = normalizeAdminModuleId(requestedModuleName) || 'gallery';
         if (!hasModulePermission(normalizedModuleName)) {
             if (options.silentDenied !== true) {
                 const moduleLabel = getAdminModuleDefinition(normalizedModuleName)?.label || normalizedModuleName;
@@ -1155,7 +1388,7 @@
             return false;
         }
 
-        return activateAdminStudioModule(normalizedModuleName);
+        return activateAdminStudioModule(requestedModuleName, options);
     }
 
     window.toggleMobileSidebar = toggleMobileSidebar;
@@ -1163,6 +1396,8 @@
     window.getAdminStudioUrlObject = getAdminStudioUrlObject;
     window.syncAdminStudioModuleUrl = syncAdminStudioModuleUrl;
     window.restoreAdminStudioModuleFromUrl = restoreAdminStudioModuleFromUrl;
+    window.getAdminAnalyticsSidebarModuleIdForTab = getAdminAnalyticsSidebarModuleIdForTab;
+    window.syncAdminStudioAnalyticsSidebar = syncAdminStudioAnalyticsSidebar;
     window.getAdminPermissionDefinition = getAdminPermissionDefinition;
     window.getAdminPermissionLabel = getAdminPermissionLabel;
     window.getAdminModuleDefinition = getAdminModuleDefinition;

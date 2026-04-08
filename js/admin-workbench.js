@@ -300,8 +300,8 @@ function normalizeOpsAlertWorkspaceContext(context = {}) {
         caseStatus: String(context.caseStatus || context.case_status || context.workspaceCaseStatus || '').trim().toLowerCase(),
         caseOwnerAdminId: String(context.caseOwnerAdminId || context.case_owner_admin_id || context.workspaceCaseOwnerAdminId || '').trim(),
         caseOwnerLabel: String(context.caseOwnerLabel || context.case_owner_label || context.workspaceCaseOwnerLabel || '').trim(),
-        experimentId: String(context.experimentId || context.experiment_id || '').trim(),
-        experimentName: String(context.experimentName || context.experiment_name || '').trim(),
+        signalSourceId: String(context.signalSourceId || context.signal_source_id || context.experimentId || context.experiment_id || '').trim(),
+        signalSourceName: String(context.signalSourceName || context.signal_source_name || context.experimentName || context.experiment_name || '').trim(),
         variantName: String(context.variantName || context.variant_name || '').trim(),
         placement: String(context.placement || context.placementKey || '').trim().toLowerCase(),
         targetMetric: String(context.targetMetric || context.target_metric || '').trim().toLowerCase(),
@@ -326,8 +326,8 @@ function buildOpsAlertWorkspaceContextAttrs(context = {}) {
         'data-workspace-case-status': normalizedContext.caseStatus || '',
         'data-workspace-case-owner-admin-id': normalizedContext.caseOwnerAdminId || '',
         'data-workspace-case-owner-label': normalizedContext.caseOwnerLabel || '',
-        'data-workspace-experiment-id': normalizedContext.experimentId || '',
-        'data-workspace-experiment-name': normalizedContext.experimentName || '',
+        'data-workspace-signal-source-id': normalizedContext.signalSourceId || '',
+        'data-workspace-signal-source-name': normalizedContext.signalSourceName || '',
         'data-workspace-variant-name': normalizedContext.variantName || '',
         'data-workspace-placement': normalizedContext.placement || '',
         'data-workspace-target-metric': normalizedContext.targetMetric || '',
@@ -351,8 +351,8 @@ function readOpsAlertWorkspaceContextDataset(dataset = {}) {
         caseStatus: dataset.workspaceCaseStatus,
         caseOwnerAdminId: dataset.workspaceCaseOwnerAdminId,
         caseOwnerLabel: dataset.workspaceCaseOwnerLabel,
-        experimentId: dataset.workspaceExperimentId,
-        experimentName: dataset.workspaceExperimentName,
+        signalSourceId: dataset.workspaceSignalSourceId || dataset.workspaceExperimentId,
+        signalSourceName: dataset.workspaceSignalSourceName || dataset.workspaceExperimentName,
         variantName: dataset.workspaceVariantName,
         placement: dataset.workspacePlacement,
         targetMetric: dataset.workspaceTargetMetric,
@@ -360,14 +360,14 @@ function readOpsAlertWorkspaceContextDataset(dataset = {}) {
     });
 }
 
-const ADMIN_WORKBENCH_EXPERIMENT_PLACEMENT_LABELS = {
+const ADMIN_WORKBENCH_ANALYTICS_SIGNAL_PLACEMENT_LABELS = {
     prompt_unlock_button: 'Prompt 解锁按钮',
     verify_submit_button: 'Verify 提交按钮',
     wallet_custom_recharge_button: '钱包自定义充值',
     shop_purchase_modal_confirm: '商城购买确认'
 };
 
-const ADMIN_WORKBENCH_EXPERIMENT_TARGET_LABELS = {
+const ADMIN_WORKBENCH_ANALYTICS_SIGNAL_TARGET_LABELS = {
     verify_success: '验证成功',
     recharge_success: '充值成功',
     shop_purchase: '商城成交',
@@ -381,11 +381,11 @@ const ADMIN_WORKBENCH_EXPERIMENT_TARGET_LABELS = {
     prompt_view: '内容浏览'
 };
 
-function getOpsAlertWorkspaceExperimentPlacementLabel(value = '') {
+function getOpsAlertWorkspaceAnalyticsSignalPlacementLabel(value = '') {
     const normalized = String(value || '').trim().toLowerCase();
     if (!normalized) return '';
-    if (ADMIN_WORKBENCH_EXPERIMENT_PLACEMENT_LABELS[normalized]) {
-        return ADMIN_WORKBENCH_EXPERIMENT_PLACEMENT_LABELS[normalized];
+    if (ADMIN_WORKBENCH_ANALYTICS_SIGNAL_PLACEMENT_LABELS[normalized]) {
+        return ADMIN_WORKBENCH_ANALYTICS_SIGNAL_PLACEMENT_LABELS[normalized];
     }
     return normalized
         .split(/[_-]+/)
@@ -394,29 +394,29 @@ function getOpsAlertWorkspaceExperimentPlacementLabel(value = '') {
         .join(' ');
 }
 
-function getOpsAlertWorkspaceExperimentTargetLabel(value = '') {
+function getOpsAlertWorkspaceAnalyticsSignalTargetLabel(value = '') {
     const normalized = String(value || '').trim().toLowerCase();
-    return ADMIN_WORKBENCH_EXPERIMENT_TARGET_LABELS[normalized] || normalized;
+    return ADMIN_WORKBENCH_ANALYTICS_SIGNAL_TARGET_LABELS[normalized] || normalized;
 }
 
-function getOpsAlertWorkspaceExperimentSummary(context = {}, options = {}) {
+function getOpsAlertWorkspaceAnalyticsSignalSummary(context = {}, options = {}) {
     const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
-    const experimentName = normalizedContext.experimentName;
+    const signalSourceName = normalizedContext.signalSourceName;
     const variantName = normalizedContext.variantName;
-    const placementLabel = getOpsAlertWorkspaceExperimentPlacementLabel(normalizedContext.placement);
-    const targetMetricLabel = getOpsAlertWorkspaceExperimentTargetLabel(normalizedContext.targetMetric);
+    const placementLabel = getOpsAlertWorkspaceAnalyticsSignalPlacementLabel(normalizedContext.placement);
+    const targetMetricLabel = getOpsAlertWorkspaceAnalyticsSignalTargetLabel(normalizedContext.targetMetric);
     const siteLabel = normalizedContext.site === 'intl'
         ? 'INTL'
         : (normalizedContext.site === 'cn' ? 'CN' : '');
     const compact = options.compact === true;
 
-    if (!experimentName && !variantName && !placementLabel && !targetMetricLabel) {
+    if (!signalSourceName && !variantName && !placementLabel && !targetMetricLabel) {
         return '';
     }
 
     const parts = [];
-    if (experimentName) parts.push(`实验 ${experimentName}`);
-    if (variantName) parts.push(`变体 ${variantName}`);
+    if (signalSourceName) parts.push(`来源 ${signalSourceName}`);
+    if (variantName) parts.push(`分组 ${variantName}`);
     if (placementLabel) parts.push(`入口 ${placementLabel}`);
     if (targetMetricLabel) parts.push(`目标 ${targetMetricLabel}`);
     if (siteLabel) parts.push(`站点 ${siteLabel}`);
@@ -424,27 +424,27 @@ function getOpsAlertWorkspaceExperimentSummary(context = {}, options = {}) {
     return compact ? parts.join(' · ') : parts.join(' / ');
 }
 
-function buildOpsAlertWorkspaceExperimentContextState(context = {}, options = {}) {
+function buildOpsAlertWorkspaceAnalyticsSignalContextState(context = {}, options = {}) {
     const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
-    const experimentSummary = getOpsAlertWorkspaceExperimentSummary(normalizedContext, { compact: false });
-    if (!experimentSummary) {
+    const signalSummary = getOpsAlertWorkspaceAnalyticsSignalSummary(normalizedContext, { compact: false });
+    if (!signalSummary) {
         return null;
     }
 
     const chips = [];
-    if (normalizedContext.experimentName) {
-        chips.push({ label: '实验', value: normalizedContext.experimentName });
+    if (normalizedContext.signalSourceName) {
+        chips.push({ label: '来源', value: normalizedContext.signalSourceName });
     }
     if (normalizedContext.variantName) {
-        chips.push({ label: '变体', value: normalizedContext.variantName });
+        chips.push({ label: '分组', value: normalizedContext.variantName });
     }
 
-    const placementLabel = getOpsAlertWorkspaceExperimentPlacementLabel(normalizedContext.placement);
+    const placementLabel = getOpsAlertWorkspaceAnalyticsSignalPlacementLabel(normalizedContext.placement);
     if (placementLabel) {
         chips.push({ label: '入口', value: placementLabel });
     }
 
-    const targetMetricLabel = getOpsAlertWorkspaceExperimentTargetLabel(normalizedContext.targetMetric);
+    const targetMetricLabel = getOpsAlertWorkspaceAnalyticsSignalTargetLabel(normalizedContext.targetMetric);
     if (targetMetricLabel) {
         chips.push({ label: '目标', value: targetMetricLabel });
     }
@@ -458,11 +458,11 @@ function buildOpsAlertWorkspaceExperimentContextState(context = {}, options = {}
     }
 
     return {
-        title: String(options.title || '实验聚焦上下文').trim() || '实验聚焦上下文',
-        eyebrow: String(options.eyebrow || 'Experiment Context').trim() || 'Experiment Context',
+        title: String(options.title || '分析信号聚焦上下文').trim() || '分析信号聚焦上下文',
+        eyebrow: String(options.eyebrow || 'Analytics Context').trim() || 'Analytics Context',
         summary: String(
             options.summary
-            || `当前工作区是从实验结果下钻进入，建议围绕 ${experimentSummary} 继续排查和记录。`
+            || `当前工作区由分析信号联动打开，建议围绕 ${signalSummary} 继续排查和记录。`
         ).trim(),
         chips
     };
@@ -775,9 +775,9 @@ function getOpsAlertWorkspaceContextLabel(context = {}, options = {}) {
     if (normalizedContext.referenceLabel && normalizedContext.referenceValue) {
         return `${normalizedContext.referenceLabel}：${normalizedContext.referenceValue}`;
     }
-    const experimentSummary = getOpsAlertWorkspaceExperimentSummary(normalizedContext, { compact: true });
-    if (experimentSummary) {
-        return experimentSummary;
+    const signalSummary = getOpsAlertWorkspaceAnalyticsSignalSummary(normalizedContext, { compact: true });
+    if (signalSummary) {
+        return signalSummary;
     }
     return String(
         normalizedContext.title
@@ -6974,10 +6974,10 @@ window.getOpsAlertWorkspacePaymentsTopic = getOpsAlertWorkspacePaymentsTopic;
 window.getOpsAlertWorkspaceSuccessLabel = getOpsAlertWorkspaceSuccessLabel;
 window.normalizeOpsAlertWorkspaceActionContext = normalizeOpsAlertWorkspaceActionContext;
 window.getOpsAlertWorkspaceAction = getOpsAlertWorkspaceAction;
-window.getOpsAlertWorkspaceExperimentSummary = getOpsAlertWorkspaceExperimentSummary;
-window.getOpsAlertWorkspaceExperimentPlacementLabel = getOpsAlertWorkspaceExperimentPlacementLabel;
-window.getOpsAlertWorkspaceExperimentTargetLabel = getOpsAlertWorkspaceExperimentTargetLabel;
-window.buildOpsAlertWorkspaceExperimentContextState = buildOpsAlertWorkspaceExperimentContextState;
+window.getOpsAlertWorkspaceAnalyticsSignalSummary = getOpsAlertWorkspaceAnalyticsSignalSummary;
+window.getOpsAlertWorkspaceAnalyticsSignalPlacementLabel = getOpsAlertWorkspaceAnalyticsSignalPlacementLabel;
+window.getOpsAlertWorkspaceAnalyticsSignalTargetLabel = getOpsAlertWorkspaceAnalyticsSignalTargetLabel;
+window.buildOpsAlertWorkspaceAnalyticsSignalContextState = buildOpsAlertWorkspaceAnalyticsSignalContextState;
 window.getAdminWorkbenchOpsAlertCaseStatusLabel = getOpsAlertCaseStatusLabel;
 window.getAdminWorkbenchOpsAlertCaseStatusTone = getOpsAlertCaseStatusTone;
 window.getOpsAlertCaseStatusLabel = getOpsAlertCaseStatusLabel;

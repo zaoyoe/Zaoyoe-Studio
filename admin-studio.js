@@ -20,7 +20,6 @@ const ADMIN_SCROLLBAR_AUTO_HIDE_CLASS = 'admin-scrollbar-auto-hide';
 const ADMIN_SCROLLBAR_AUTO_HIDE_VISIBLE_CLASS = 'admin-scrollbar-auto-hide--visible';
 const ADMIN_SCROLLBAR_AUTO_HIDE_BOUND_ATTR = 'data-admin-scrollbar-auto-hide-bound';
 const ADMIN_MODAL_SCROLL_LOCK_SELECTORS = [
-    '#experimentModal.active',
     '.modal-overlay.active',
     '.user-modal-overlay.active',
     '.custom-modal-overlay.active',
@@ -573,7 +572,9 @@ async function requireAdminStudioAccess() {
         return null;
     }
 
-    const access = await accessClient.getCurrentAdminAccess();
+    const access = await accessClient.getCurrentAdminAccess({
+        forceRefresh: true
+    });
 
     if (!access?.user) {
         renderAdminStudioAccessGate('denied', {
@@ -1313,6 +1314,18 @@ function bindAdminStudioDelegatedControls() {
             case 'payments-focus-ops-alert-queue':
                 window.AdminPayments?.focusOpsAlertQueue?.();
                 break;
+            case 'payments-issue-summary-focus':
+                window.AdminPayments?.focusAnalyticsIssueSummary?.(actionEl.dataset.paymentsIssueFocus);
+                break;
+            case 'payments-priority-focus-order':
+                window.AdminPayments?.focusAnalyticsPrioritySummary?.('order', actionEl.dataset.paymentsOrderId);
+                break;
+            case 'payments-priority-focus-topic':
+                window.AdminPayments?.focusAnalyticsPrioritySummary?.('topic', actionEl.dataset.paymentsTopicKey);
+                break;
+            case 'payments-priority-focus-ops':
+                window.AdminPayments?.focusAnalyticsPrioritySummary?.('ops');
+                break;
             case 'payments-preview-cleanup':
                 window.AdminPayments?.previewCleanup?.();
                 break;
@@ -1367,72 +1380,55 @@ function bindAdminStudioDelegatedControls() {
             case 'analytics-refresh-data':
                 window.refreshAllAnalytics?.();
                 break;
+            case 'analytics-toggle-advanced-tools':
+                window.toggleAnalyticsAdvancedTools?.();
+                break;
             case 'analytics-view-context':
                 window.viewPromptContext?.(actionEl.dataset.promptId);
                 break;
+            case 'analytics-open-content-commerce-detail':
+                window.openAnalyticsContentCommerceDetail?.(
+                    actionEl.dataset.promptId,
+                    {
+                        promptTitle: actionEl.dataset.promptTitle || '',
+                        focus: true
+                    }
+                );
+                break;
+            case 'analytics-open-user-detail': {
+                const userId = decodeURIComponent(actionEl.dataset.userId || '');
+                const analyticsContext = typeof parseAnalyticsActionContext === 'function'
+                    ? parseAnalyticsActionContext(actionEl.dataset.analyticsContext || '')
+                    : {};
+                if (!userId) {
+                    break;
+                }
+
+                if (typeof window.tryOpenOpsAlertWorkspaceUserModal === 'function') {
+                    void window.tryOpenOpsAlertWorkspaceUserModal(userId, {
+                        notifyDenied: true,
+                        analyticsContext
+                    });
+                    break;
+                }
+
+                window.switchModule?.('users');
+                setTimeout(() => {
+                    window.openUserModal?.(userId, {
+                        analyticsContext
+                    });
+                }, 0);
+                break;
+            }
             case 'analytics-open-destination':
                 window.openAnalyticsDestination?.(
                     actionEl.dataset.analyticsDestination,
                     actionEl.dataset.analyticsContext || ''
                 );
                 break;
-            case 'analytics-range-select-date':
-                event.stopPropagation();
-                window.selectRangeDate?.(
-                    Number(actionEl.dataset.analyticsYear || 0),
-                    Number(actionEl.dataset.analyticsMonth || 0),
-                    Number(actionEl.dataset.analyticsDay || 0)
-                );
-                break;
-            case 'analytics-range-change-month':
-                event.stopPropagation();
-                window.changeMonth?.(
-                    actionEl.dataset.calendarType || 'start',
-                    Number(actionEl.dataset.monthDelta || 0)
-                );
-                break;
-            case 'analytics-range-reset':
-                event.stopPropagation();
-                window.resetDateRange?.();
-                break;
-            case 'analytics-range-apply':
-                event.stopPropagation();
-                window.applyAndClose?.();
-                break;
             case 'analytics-load-ai-prediction':
                 window.loadAIPrediction?.();
                 break;
-            case 'analytics-open-experiment-modal':
-                window.openExperimentModal?.(actionEl.dataset.analyticsContext || '');
-                break;
-            case 'analytics-load-experiments-list':
-                window.loadExperimentsList?.();
-                break;
-            case 'analytics-close-ab-results-chart':
-                window.closeABResultsChart?.();
-                break;
-            case 'analytics-close-experiment-modal':
-                window.closeExperimentModal?.();
-                break;
-            case 'analytics-add-variant-row':
-                window.addVariantRow?.();
-                break;
-            case 'analytics-remove-variant-row':
-                actionEl.closest('.variant-row')?.remove();
-                break;
-            case 'analytics-show-ab-results': {
-                const experimentId = decodeURIComponent(actionEl.dataset.experimentId || '');
-                const experimentName = decodeURIComponent(actionEl.dataset.experimentName || '');
-                const targetMetric = decodeURIComponent(actionEl.dataset.experimentTargetMetric || '');
-                let variants = [];
-                try {
-                    variants = JSON.parse(decodeURIComponent(actionEl.dataset.experimentVariants || '%5B%5D'));
-                } catch (err) {
-                    console.warn('Failed to parse experiment variants payload', err);
-                }
-                window.showABResults?.(experimentId, experimentName, variants, targetMetric);
-                break;
-            }
             case 'points-switch-view':
                 window.switchPointsView?.(actionEl.dataset.pointsViewTarget);
                 break;
@@ -1544,6 +1540,22 @@ function bindAdminStudioDelegatedControls() {
             case 'users-close-modal':
                 window.closeUserModal?.();
                 break;
+            case 'users-open-analytics-destination': {
+                const destination = String(actionEl.dataset.analyticsDestination || '').trim();
+                const analyticsContext = typeof parseAnalyticsActionContext === 'function'
+                    ? parseAnalyticsActionContext(actionEl.dataset.analyticsContext || '')
+                    : {};
+                void (async () => {
+                    if (typeof window.closeUserModal === 'function') {
+                        const closed = await window.closeUserModal();
+                        if (closed === false) {
+                            return;
+                        }
+                    }
+                    window.openAnalyticsDestination?.(destination, analyticsContext);
+                })();
+                break;
+            }
             case 'users-switch-tab':
                 window.switchUserTab?.(actionEl.dataset.userTab);
                 break;
@@ -1822,6 +1834,18 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'tickets-toggle-unassigned':
                 window.AdminTickets?.toggleQuickFilter?.('unassigned');
+                break;
+            case 'tickets-issue-summary-focus':
+                window.AdminTickets?.focusAnalyticsIssueSummary?.(actionEl.dataset.ticketIssueFocus);
+                break;
+            case 'tickets-priority-open':
+                window.AdminTickets?.focusAnalyticsPrioritySummary?.('open', actionEl.dataset.ticketId);
+                break;
+            case 'tickets-priority-resolve':
+                window.AdminTickets?.focusAnalyticsPrioritySummary?.('resolve', actionEl.dataset.ticketId);
+                break;
+            case 'tickets-priority-reject':
+                window.AdminTickets?.focusAnalyticsPrioritySummary?.('reject', actionEl.dataset.ticketId);
                 break;
             case 'tickets-toggle-select-mode':
                 window.AdminTickets?.toggleSelectionMode?.();
@@ -2140,12 +2164,6 @@ function bindAdminStudioDelegatedControls() {
             return;
         }
 
-        if (form.id === 'experimentForm') {
-            event.preventDefault();
-            window.handleCreateExperiment?.(event);
-            return;
-        }
-
         if (form.id === 'shopRiskCaseComposerForm') {
             event.preventDefault();
             window.submitShopRiskCaseComposer?.();
@@ -2206,9 +2224,6 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'user-modal':
                 window.closeUserModal?.();
-                break;
-            case 'experiment-modal':
-                window.closeExperimentModal?.();
                 break;
             case 'inventory-release-modal':
                 window.ShopAdmin?.closeReleaseModal?.();

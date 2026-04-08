@@ -1,6 +1,6 @@
-const {
-    buildSupabaseRuntimeScript
-} = require('../_lib/public-runtime-config');
+const { buildSupabaseRuntimeScript } = require('../_lib/public-runtime-config');
+
+const RUNTIME_CONFIG_CACHE_CONTROL = 'public, max-age=60, s-maxage=60';
 
 module.exports = async function handler(req, res) {
     if (req.method !== 'GET') {
@@ -14,7 +14,7 @@ module.exports = async function handler(req, res) {
         const script = buildSupabaseRuntimeScript(process.env);
         res.status(200);
         res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-        res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=300, stale-while-revalidate=600');
+        res.setHeader('Cache-Control', RUNTIME_CONFIG_CACHE_CONTROL);
         res.end(script);
     } catch (error) {
         const serializedMessage = JSON.stringify(error.message || 'Failed to resolve public runtime config');
@@ -30,4 +30,8 @@ module.exports = async function handler(req, res) {
             ].join('\n')
         );
     }
+};
+
+module.exports._private = {
+    RUNTIME_CONFIG_CACHE_CONTROL
 };

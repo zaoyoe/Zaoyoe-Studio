@@ -770,6 +770,11 @@ function renderAdminRoleExpiryInlineBadge(user = {}) {
 
 // Render Users Table
 function renderUsersTable() {
+    const usersModule = document.getElementById('module-users');
+    if (usersModule?.dataset) {
+        usersModule.dataset.usersSelectMode = userState.selectMode ? 'true' : 'false';
+    }
+
     // 1. Filter Users
     const { status, level, role, adminExpiry, search, showTestAccounts } = userState.filters;
     const term = search ? search.toLowerCase() : '';
@@ -948,11 +953,27 @@ function renderUsersTable() {
 // Loading State
 function buildUsersTableLoadingSkeleton(rowCount = 7) {
     const rows = Math.max(4, Number.parseInt(rowCount, 10) || 7);
+    const includeCheckbox = userState.selectMode === true;
     const nameWidths = ['admin-skeleton-w-40', 'admin-skeleton-w-50', 'admin-skeleton-w-60'];
     const metaWidths = ['admin-skeleton-w-30', 'admin-skeleton-w-40'];
+    const pointsWidths = [32, 40, 36, 44];
+    const activeWidths = ['admin-skeleton-w-30', 'admin-skeleton-w-40', 'admin-skeleton-w-30', 'admin-skeleton-w-50'];
+    const tagLayouts = [
+        [56, 72],
+        [68],
+        [54, 64],
+        [74, 58]
+    ];
 
     return Array.from({ length: rows }, (_, index) => `
         <tr class="admin-table-skeleton-row users-table-skeleton-row" aria-hidden="true" data-skeleton-index="${index}">
+            ${includeCheckbox ? `
+                <td class="checkbox-col">
+                    <div class="admin-table-skeleton-cell">
+                        <span class="admin-skeleton-block admin-skeleton-block--checkbox"></span>
+                    </div>
+                </td>
+            ` : ''}
             <td>
                 <div class="admin-table-skeleton-cell">
                     <span class="admin-skeleton-block admin-skeleton-block--avatar"></span>
@@ -962,13 +983,28 @@ function buildUsersTableLoadingSkeleton(rowCount = 7) {
                     </div>
                 </div>
             </td>
-            <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-20"></span></div></td>
-            <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span></div></td>
-            <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span></div></td>
             <td>
-                <div class="admin-table-skeleton-cell">
-                    <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span>
+                <div class="admin-table-skeleton-cell users-table-skeleton-inline">
+                    <span class="admin-skeleton-block users-table-skeleton-dot users-table-skeleton-dot--asset"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${pointsWidths[index % pointsWidths.length]}px"></span>
+                </div>
+            </td>
+            <td>
+                <div class="admin-table-skeleton-cell users-table-skeleton-inline">
+                    <span class="admin-skeleton-block users-table-skeleton-dot"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--line ${activeWidths[index % activeWidths.length]}"></span>
+                </div>
+            </td>
+            <td>
+                <div class="admin-table-skeleton-cell users-table-skeleton-status">
                     <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span>
+                </div>
+            </td>
+            <td>
+                <div class="admin-table-skeleton-cell users-table-skeleton-tags">
+                    ${tagLayouts[index % tagLayouts.length].map((width) => `
+                        <span class="admin-skeleton-block admin-skeleton-block--pill" style="width:${width}px"></span>
+                    `).join('')}
                 </div>
             </td>
         </tr>
@@ -977,6 +1013,10 @@ function buildUsersTableLoadingSkeleton(rowCount = 7) {
 
 function renderUserLoading() {
     const tbody = document.getElementById('usersTableBody');
+    const usersModule = document.getElementById('module-users');
+    if (usersModule?.dataset) {
+        usersModule.dataset.usersSelectMode = userState.selectMode ? 'true' : 'false';
+    }
     if (tbody) {
         tbody.innerHTML = buildUsersTableLoadingSkeleton();
     }
@@ -1048,6 +1088,11 @@ function updateSelectModeUI() {
     const selectModeBtn = document.getElementById('userSelectModeBtn');
     const batchMenuContainer = document.getElementById('userBatchMenuContainer');
     const selectedCountWrapper = document.getElementById('userSelectedCountWrapper');
+    const usersModule = document.getElementById('module-users');
+
+    if (usersModule?.dataset) {
+        usersModule.dataset.usersSelectMode = userState.selectMode ? 'true' : 'false';
+    }
 
     if (selectModeBtn) {
         selectModeBtn.classList.toggle('active', userState.selectMode);
@@ -2679,6 +2724,7 @@ function createInitialUserModalData({ paymentFocusOrderId = '', preservedTabUiSt
         },
         isSuperAdmin: false,
         activeBans: [],
+        analyticsContext: null,
         paymentFocusOrderId,
         ledgerDetails: {},
         tabs
@@ -4275,6 +4321,7 @@ async function openUserModal(userId, options = {}) {
     const paymentFocusOrderId = String(options?.paymentOrderId || options?.payment_order_id || '').trim();
     clearAllUserModalTabFeedbackDismiss();
     currentModalData = createInitialUserModalData({ paymentFocusOrderId, preservedTabUiState });
+    currentModalData.analyticsContext = normalizeUserAnalyticsContext(options?.analyticsContext || null);
 
     const leftPanel = document.getElementById('userModalLeft');
     const tabContent = document.getElementById('userTabContent');
@@ -4338,7 +4385,7 @@ function getAdminPermissionGroupsForModal() {
                 { key: 'content.moderate', label: '内容审核', icon: '📝', description: 'Gallery 与评论审核', modules: ['gallery', 'comments'] },
                 { key: 'users.manage', label: '用户管理', icon: '👥', description: '用户详情与封禁处置', modules: ['users'] },
                 { key: 'prompts.manage', label: 'Prompt 管理', icon: '🎨', description: 'Prompt 运营与管理页', modules: ['gallery'] },
-                { key: 'analytics.view', label: '数据分析', icon: '📊', description: '后台分析与趋势看板', modules: ['analytics'] }
+                { key: 'analytics.view', label: '经营分析中心', icon: '📊', description: '整站经营分析中心与趋势闭环', modules: ['analytics', 'business-overview', 'growth-center', 'commerce-center'] }
             ]
         }
     ];
@@ -4499,6 +4546,326 @@ function buildUserProfileOverview(user, roleInfo, activeBans = []) {
     `;
 }
 
+function normalizeUserAnalyticsContext(rawContext = null) {
+    if (!rawContext) {
+        return null;
+    }
+
+    let parsed = rawContext;
+    if (typeof parsed === 'string') {
+        if (typeof parseAnalyticsActionContext === 'function') {
+            parsed = parseAnalyticsActionContext(parsed);
+        } else {
+            try {
+                parsed = JSON.parse(decodeURIComponent(parsed));
+            } catch (_error) {
+                parsed = null;
+            }
+        }
+    }
+
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return null;
+    }
+
+    const sourceLabel = String(parsed.sourceLabel || '').trim();
+    const summary = String(parsed.summary || '').trim();
+    const signalLabel = String(parsed.signalLabel || '').trim();
+    const signalValue = String(parsed.signalValue || '').trim();
+    const productId = String(parsed.productId || '').trim();
+    const productName = String(parsed.productName || '').trim();
+    const site = String(parsed.site || parsed.destinationContext?.site || '').trim().toLowerCase();
+    const siteLabel = String(parsed.siteLabel || '').trim();
+    const rangeLabel = String(parsed.rangeLabel || '').trim();
+    const referenceLabel = String(parsed.referenceLabel || '').trim();
+    const referenceValue = String(parsed.referenceValue || '').trim();
+    const actionLabel = String(parsed.actionLabel || '').trim();
+    const verificationMethod = String(parsed.verificationMethod || '').trim();
+    const feedbackScope = String(parsed.feedbackScope || '').trim().toLowerCase();
+    const feedbackEntityType = String(parsed.feedbackEntityType || '').trim().toLowerCase();
+    const feedbackEntityId = String(parsed.feedbackEntityId || '').trim();
+    const feedbackEntityName = String(parsed.feedbackEntityName || '').trim();
+    const destination = String(parsed.destination || '').trim().toLowerCase();
+    const destinationContext = parsed.destinationContext && typeof parsed.destinationContext === 'object' && !Array.isArray(parsed.destinationContext)
+        ? { ...parsed.destinationContext }
+        : {};
+
+    if (!destinationContext.productId && productId && destination === 'analytics-product-detail') {
+        destinationContext.productId = productId;
+    }
+    if (!destinationContext.productName && productName && destination === 'analytics-product-detail') {
+        destinationContext.productName = productName;
+    }
+
+    if (
+        !sourceLabel
+        && !summary
+        && !signalLabel
+        && !signalValue
+        && !productId
+        && !productName
+        && !siteLabel
+        && !rangeLabel
+        && !referenceLabel
+        && !referenceValue
+        && !actionLabel
+        && !verificationMethod
+        && !feedbackScope
+        && !feedbackEntityType
+        && !feedbackEntityId
+        && !feedbackEntityName
+        && !destination
+    ) {
+        return null;
+    }
+
+    return {
+        sourceLabel: sourceLabel || '商品经营上下文',
+        summary,
+        signalLabel,
+        signalValue,
+        productId,
+        productName,
+        site,
+        siteLabel,
+        rangeLabel,
+        referenceLabel,
+        referenceValue,
+        actionLabel: actionLabel || (destination === 'analytics-product-detail' ? '回到单品详情' : '回到商品经营'),
+        verificationMethod,
+        feedbackScope,
+        feedbackEntityType,
+        feedbackEntityId,
+        feedbackEntityName,
+        destination,
+        destinationContext
+    };
+}
+
+function buildUserAnalyticsTicketsContext(context = currentModalData?.analyticsContext, user = currentModalUser) {
+    const normalizedContext = normalizeUserAnalyticsContext(context);
+    const currentUser = user && typeof user === 'object' ? user : currentModalUser;
+    if (!normalizedContext || !currentUser || typeof currentUser !== 'object') {
+        return null;
+    }
+
+    const userId = String(currentUser.id || '').trim();
+    const email = String(currentUser.email || '').trim();
+    const displayName = String(
+        currentUser.nickname
+        || currentUser.display_name
+        || currentUser.username
+        || currentUser.name
+        || email
+        || userId
+    ).trim();
+    const searchValue = email || userId;
+    if (!searchValue) {
+        return null;
+    }
+
+    const userLabel = email && displayName && displayName !== email
+        ? `${displayName} · ${email}`
+        : (displayName || email || userId);
+
+    return {
+        mode: 'pending',
+        workspace: 'queue',
+        status: 'pending',
+        search: searchValue,
+        query: searchValue,
+        queryLabel: userLabel,
+        email,
+        userId,
+        referenceLabel: '用户',
+        referenceValue: userLabel,
+        productId: normalizedContext.productId,
+        productName: normalizedContext.productName,
+        sourceLabel: normalizedContext.sourceLabel || '商品经营影响用户',
+        summary: normalizedContext.summary || '当前售后问题列表来自商品经营影响用户，适合继续核对退款、履约与支付承接。',
+        actionLabel: normalizedContext.actionLabel || '回到商品经营',
+        verificationMethod: normalizedContext.verificationMethod || '处理后回看用户承接链、订单问题和商品预警是否同步回落。',
+        feedbackScope: normalizedContext.feedbackScope || 'user',
+        feedbackEntityType: normalizedContext.feedbackEntityType || 'user',
+        feedbackEntityId: normalizedContext.feedbackEntityId || userId,
+        feedbackEntityName: normalizedContext.feedbackEntityName || userLabel,
+        destination: normalizedContext.destination || '',
+        destinationContext: normalizedContext.destinationContext || {},
+        signalSourceName: normalizedContext.sourceLabel || '商品经营影响用户',
+        targetMetric: normalizedContext.signalLabel || '商品经营信号',
+        site: normalizedContext.site || '',
+        siteLabel: normalizedContext.siteLabel || '',
+        signalLabel: normalizedContext.signalLabel,
+        signalValue: normalizedContext.signalValue,
+        rangeLabel: normalizedContext.rangeLabel
+    };
+}
+
+function buildUserAnalyticsShopOrdersContext(context = currentModalData?.analyticsContext, user = currentModalUser) {
+    const normalizedContext = normalizeUserAnalyticsContext(context);
+    const currentUser = user && typeof user === 'object' ? user : currentModalUser;
+    if (!normalizedContext || !currentUser || typeof currentUser !== 'object') {
+        return null;
+    }
+
+    const userId = String(currentUser.id || '').trim();
+    const email = String(currentUser.email || '').trim();
+    const displayName = String(
+        currentUser.nickname
+        || currentUser.display_name
+        || currentUser.username
+        || currentUser.name
+        || email
+        || userId
+    ).trim();
+    const query = email || userId;
+    if (!query) {
+        return null;
+    }
+
+    const userLabel = email && displayName && displayName !== email
+        ? `${displayName} · ${email}`
+        : (displayName || email || userId);
+
+    return {
+        tab: 'orders',
+        mode: 'orders',
+        query,
+        queryLabel: userLabel,
+        referenceLabel: '用户',
+        referenceValue: userLabel,
+        userId,
+        email,
+        productId: normalizedContext.productId,
+        productName: normalizedContext.productName,
+        sourceLabel: normalizedContext.sourceLabel || '商品经营影响用户',
+        summary: normalizedContext.summary || '当前订单列表来自商品经营影响用户，适合继续核对订单、退款、履约和售后承接。',
+        actionLabel: normalizedContext.actionLabel || '回到商品经营',
+        verificationMethod: normalizedContext.verificationMethod || '处理后回看用户承接链、订单问题和商品预警是否同步回落。',
+        feedbackScope: normalizedContext.feedbackScope || 'user',
+        feedbackEntityType: normalizedContext.feedbackEntityType || 'user',
+        feedbackEntityId: normalizedContext.feedbackEntityId || userId,
+        feedbackEntityName: normalizedContext.feedbackEntityName || userLabel,
+        destination: normalizedContext.destination || '',
+        destinationContext: normalizedContext.destinationContext || {},
+        site: normalizedContext.site || '',
+        siteLabel: normalizedContext.siteLabel || '',
+        signalLabel: normalizedContext.signalLabel,
+        signalValue: normalizedContext.signalValue,
+        rangeLabel: normalizedContext.rangeLabel
+    };
+}
+
+function buildUserAnalyticsTicketsActionAttrs(context = currentModalData?.analyticsContext, user = currentModalUser) {
+    const ticketContext = buildUserAnalyticsTicketsContext(context, user);
+    if (!ticketContext) {
+        return '';
+    }
+
+    const serializedTicketContext = typeof serializeAnalyticsActionContext === 'function'
+        ? serializeAnalyticsActionContext(ticketContext)
+        : '';
+
+    return `data-admin-action="users-open-analytics-destination" data-analytics-destination="tickets"${serializedTicketContext ? ` data-analytics-context="${escapeHtml(serializedTicketContext)}"` : ''}`;
+}
+
+function buildUserAnalyticsShopOrdersActionAttrs(context = currentModalData?.analyticsContext, user = currentModalUser) {
+    const shopOrdersContext = buildUserAnalyticsShopOrdersContext(context, user);
+    if (!shopOrdersContext) {
+        return '';
+    }
+
+    const serializedShopOrdersContext = typeof serializeAnalyticsActionContext === 'function'
+        ? serializeAnalyticsActionContext(shopOrdersContext)
+        : '';
+
+    return `data-admin-action="users-open-analytics-destination" data-analytics-destination="shop-orders"${serializedShopOrdersContext ? ` data-analytics-context="${escapeHtml(serializedShopOrdersContext)}"` : ''}`;
+}
+
+function buildUserAnalyticsContextBlock(context = currentModalData?.analyticsContext) {
+    const normalizedContext = normalizeUserAnalyticsContext(context);
+    if (!normalizedContext) {
+        return '';
+    }
+
+    const chips = [
+        normalizedContext.signalLabel
+            ? `<span class="user-analytics-context__chip"><strong>信号</strong>${escapeHtml([
+                normalizedContext.signalLabel,
+                normalizedContext.signalValue
+            ].filter(Boolean).join(' · '))}</span>`
+            : '',
+        normalizedContext.productName || normalizedContext.productId
+            ? `<span class="user-analytics-context__chip"><strong>商品</strong>${escapeHtml(normalizedContext.productName || normalizedContext.productId)}</span>`
+            : '',
+        normalizedContext.rangeLabel
+            ? `<span class="user-analytics-context__chip"><strong>范围</strong>${escapeHtml(normalizedContext.rangeLabel)}</span>`
+            : '',
+        normalizedContext.siteLabel
+            ? `<span class="user-analytics-context__chip"><strong>站点</strong>${escapeHtml(normalizedContext.siteLabel)}</span>`
+            : '',
+        normalizedContext.referenceLabel && normalizedContext.referenceValue
+            ? `<span class="user-analytics-context__chip"><strong>${escapeHtml(normalizedContext.referenceLabel)}</strong>${escapeHtml(normalizedContext.referenceValue)}</span>`
+            : ''
+    ].filter(Boolean).join('');
+
+    const serializedDestinationContext = typeof serializeAnalyticsActionContext === 'function'
+        ? serializeAnalyticsActionContext(normalizedContext.destinationContext)
+        : '';
+    const hasDestination = Boolean(normalizedContext.destination);
+    const shopOrdersActionAttrs = buildUserAnalyticsShopOrdersActionAttrs(normalizedContext);
+    const ticketsActionAttrs = buildUserAnalyticsTicketsActionAttrs(normalizedContext);
+
+    return `
+        <div class="info-block user-analytics-context">
+            <div class="user-analytics-context__header">
+                <div class="admin-control-left">
+                    <div class="admin-control-icon"><i class="fas fa-box-open"></i></div>
+                    <span class="admin-control-title">商品经营上下文</span>
+                </div>
+                <span class="user-analytics-context__eyebrow">${escapeHtml(normalizedContext.sourceLabel)}</span>
+            </div>
+            ${normalizedContext.summary ? `<p class="user-analytics-context__summary">${escapeHtml(normalizedContext.summary)}</p>` : ''}
+            ${chips ? `<div class="user-analytics-context__chips">${chips}</div>` : ''}
+            ${normalizedContext.actionLabel ? `<div class="user-analytics-context__row"><strong>建议先做</strong><span>${escapeHtml(normalizedContext.actionLabel)}</span></div>` : ''}
+            ${normalizedContext.verificationMethod ? `<div class="user-analytics-context__row"><strong>验证方式</strong><span>${escapeHtml(normalizedContext.verificationMethod)}</span></div>` : ''}
+            ${(hasDestination || shopOrdersActionAttrs || ticketsActionAttrs) ? `
+                <div class="user-analytics-context__actions">
+                    ${hasDestination ? `
+                        <button
+                            type="button"
+                            class="modal-action-btn user-analytics-context__action"
+                            data-admin-action="users-open-analytics-destination"
+                            data-analytics-destination="${escapeHtml(normalizedContext.destination)}"
+                            ${serializedDestinationContext ? `data-analytics-context="${escapeHtml(serializedDestinationContext)}"` : ''}
+                        >
+                            <i class="fas fa-arrow-up-right-from-square"></i> ${escapeHtml(normalizedContext.actionLabel || '回到商品经营')}
+                        </button>
+                    ` : ''}
+                    ${shopOrdersActionAttrs ? `
+                        <button
+                            type="button"
+                            class="modal-action-btn user-analytics-context__action"
+                            ${shopOrdersActionAttrs}
+                        >
+                            <i class="fas fa-bag-shopping"></i> 看商城订单
+                        </button>
+                    ` : ''}
+                    ${ticketsActionAttrs ? `
+                        <button
+                            type="button"
+                            class="modal-action-btn user-analytics-context__action"
+                            ${ticketsActionAttrs}
+                        >
+                            <i class="fas fa-life-ring"></i> 看售后工单
+                        </button>
+                    ` : ''}
+                </div>
+            ` : ''}
+        </div>
+    `;
+}
+
 // Render Left Panel
 function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
     const leftPanel = document.getElementById('userModalLeft');
@@ -4565,6 +4932,8 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
         </div>
 
         ${buildUserProfileOverview(user, roleInfo, activeBans)}
+
+        ${buildUserAnalyticsContextBlock()}
 
         ${window.hasPermission && window.hasPermission('users.manage') ? `
         <div class="info-block tags-block">
@@ -5248,6 +5617,128 @@ function buildAffiliateTabLoadingSkeleton() {
     `;
 }
 
+function buildUserTabStandaloneActionSkeleton() {
+    return `
+        <div class="users-tab-skeleton-actionbar" aria-hidden="true">
+            <span class="users-tab-skeleton users-tab-skeleton--pill users-tab-skeleton--toolbar-main"></span>
+            <span class="users-tab-skeleton users-tab-skeleton--pill users-tab-skeleton--toolbar-action"></span>
+        </div>
+    `;
+}
+
+function buildUserTabNotesListSkeleton(count = 3) {
+    return `
+        <div class="users-tab-skeleton-structured-list users-tab-skeleton-structured-list--notes" aria-hidden="true">
+            ${Array.from({ length: count }, (_, index) => `
+                <div class="users-tab-skeleton-note">
+                    <div class="users-tab-skeleton-note__body">
+                        <span class="users-tab-skeleton users-tab-skeleton--line ${index % 2 === 0 ? 'users-tab-skeleton--w-line-wide' : 'users-tab-skeleton--w-line-mid'}"></span>
+                        <span class="users-tab-skeleton users-tab-skeleton--line users-tab-skeleton--w-line-wide"></span>
+                        <span class="users-tab-skeleton users-tab-skeleton--line ${index % 3 === 0 ? 'users-tab-skeleton--w-line-short' : 'users-tab-skeleton--w-line-mid'}"></span>
+                    </div>
+                    <div class="users-tab-skeleton-note__meta">
+                        <span class="users-tab-skeleton users-tab-skeleton--pill users-tab-skeleton--w-chip-mid"></span>
+                        <span class="users-tab-skeleton users-tab-skeleton--line users-tab-skeleton--w-chip-short"></span>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+function buildUserTabRelativesListSkeleton(count = 4) {
+    return `
+        <div class="users-tab-skeleton-structured-list users-tab-skeleton-structured-list--relatives" aria-hidden="true">
+            ${Array.from({ length: count }, (_, index) => `
+                <div class="users-tab-skeleton-related">
+                    <span class="users-tab-skeleton users-tab-skeleton--icon users-tab-skeleton--avatar"></span>
+                    <div class="users-tab-skeleton-related__copy">
+                        <span class="users-tab-skeleton users-tab-skeleton--title ${index % 2 === 0 ? 'users-tab-skeleton--w-title-mid' : 'users-tab-skeleton--w-title-wide'}"></span>
+                        <span class="users-tab-skeleton users-tab-skeleton--line ${index % 2 === 0 ? 'users-tab-skeleton--w-line-short' : 'users-tab-skeleton--w-line-mid'}"></span>
+                    </div>
+                    <span class="users-tab-skeleton users-tab-skeleton--action users-tab-skeleton-related__arrow"></span>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+function buildUserTabPaymentsListSkeleton(count = 4) {
+    return `
+        <div class="users-tab-skeleton-structured-list users-tab-skeleton-structured-list--payments" aria-hidden="true">
+            ${Array.from({ length: count }, (_, index) => `
+                <div class="users-tab-skeleton-transaction users-tab-skeleton-transaction--payment">
+                    <span class="users-tab-skeleton users-tab-skeleton--icon users-tab-skeleton-transaction__icon"></span>
+                    <div class="users-tab-skeleton-transaction__copy">
+                        <div class="users-tab-skeleton-transaction__head">
+                            <span class="users-tab-skeleton users-tab-skeleton--title ${index % 2 === 0 ? 'users-tab-skeleton--w-title-mid' : 'users-tab-skeleton--w-title-wide'}"></span>
+                            <span class="users-tab-skeleton users-tab-skeleton--pill users-tab-skeleton--w-chip-mid"></span>
+                        </div>
+                        <span class="users-tab-skeleton users-tab-skeleton--line users-tab-skeleton--w-line-short"></span>
+                        <div class="users-tab-skeleton-transaction__meta">
+                            <span class="users-tab-skeleton users-tab-skeleton--line users-tab-skeleton--w-chip-mid"></span>
+                            <span class="users-tab-skeleton users-tab-skeleton--line users-tab-skeleton--w-chip-wide"></span>
+                            <span class="users-tab-skeleton users-tab-skeleton--line users-tab-skeleton--w-chip-short"></span>
+                        </div>
+                    </div>
+                    <div class="users-tab-skeleton-transaction__side">
+                        <span class="users-tab-skeleton users-tab-skeleton--line users-tab-skeleton--w-chip-mid"></span>
+                        <span class="users-tab-skeleton users-tab-skeleton--line users-tab-skeleton--w-chip-short"></span>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+function buildUserTabLedgerListSkeleton(count = 4) {
+    return `
+        <div class="users-tab-skeleton-structured-list users-tab-skeleton-structured-list--ledger" aria-hidden="true">
+            ${Array.from({ length: count }, (_, index) => `
+                <div class="users-tab-skeleton-transaction users-tab-skeleton-transaction--ledger">
+                    <span class="users-tab-skeleton users-tab-skeleton--icon users-tab-skeleton-transaction__icon"></span>
+                    <div class="users-tab-skeleton-transaction__copy">
+                        <div class="users-tab-skeleton-transaction__head">
+                            <span class="users-tab-skeleton users-tab-skeleton--title ${index % 2 === 0 ? 'users-tab-skeleton--w-title-mid' : 'users-tab-skeleton--w-title-wide'}"></span>
+                            <span class="users-tab-skeleton users-tab-skeleton--line users-tab-skeleton--w-chip-short"></span>
+                        </div>
+                        <span class="users-tab-skeleton users-tab-skeleton--line users-tab-skeleton--w-line-short"></span>
+                        <div class="users-tab-skeleton-transaction__meta">
+                            <span class="users-tab-skeleton users-tab-skeleton--pill users-tab-skeleton--w-chip-short"></span>
+                            <span class="users-tab-skeleton users-tab-skeleton--pill users-tab-skeleton--w-chip-mid"></span>
+                            <span class="users-tab-skeleton users-tab-skeleton--line users-tab-skeleton--w-chip-short"></span>
+                        </div>
+                    </div>
+                    <span class="users-tab-skeleton users-tab-skeleton--action users-tab-skeleton-transaction__arrow"></span>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+function buildUserTabAuditListSkeleton(count = 4) {
+    return `
+        <div class="users-tab-skeleton-structured-list users-tab-skeleton-structured-list--audit" aria-hidden="true">
+            ${Array.from({ length: count }, (_, index) => `
+                <div class="users-tab-skeleton-audit-item">
+                    <span class="users-tab-skeleton users-tab-skeleton--icon users-tab-skeleton-audit-item__icon"></span>
+                    <div class="users-tab-skeleton-audit-item__copy">
+                        <div class="users-tab-skeleton-audit-item__head">
+                            <span class="users-tab-skeleton users-tab-skeleton--title ${index % 2 === 0 ? 'users-tab-skeleton--w-title-mid' : 'users-tab-skeleton--w-title-wide'}"></span>
+                            <span class="users-tab-skeleton users-tab-skeleton--line users-tab-skeleton--w-chip-short"></span>
+                        </div>
+                        <span class="users-tab-skeleton users-tab-skeleton--line users-tab-skeleton--w-line-short"></span>
+                        <div class="users-tab-skeleton-audit-item__details">
+                            <span class="users-tab-skeleton users-tab-skeleton--line users-tab-skeleton--w-line-wide"></span>
+                            <span class="users-tab-skeleton users-tab-skeleton--line ${index % 2 === 0 ? 'users-tab-skeleton--w-line-mid' : 'users-tab-skeleton--w-line-short'}"></span>
+                        </div>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
 function buildUserTabLoadingBody(tabName = currentTab) {
     const normalized = normalizeUserModalTab(tabName);
 
@@ -5257,28 +5748,31 @@ function buildUserTabLoadingBody(tabName = currentTab) {
         case 'notes':
             return `
                 ${buildUserTabToolbarSkeleton()}
-                ${buildUserTabSkeletonList(3, { chipCount: 2 })}
+                ${buildUserTabNotesListSkeleton(3)}
                 <div class="users-tab-skeleton-composer" aria-hidden="true">
                     <span class="users-tab-skeleton users-tab-skeleton--composer-input"></span>
                     <span class="users-tab-skeleton users-tab-skeleton--composer-button"></span>
                 </div>
             `;
         case 'relatives':
-            return buildUserTabSkeletonList(4, { chipCount: 1, avatar: true });
+            return `
+                ${buildUserTabStandaloneActionSkeleton()}
+                ${buildUserTabRelativesListSkeleton(4)}
+            `;
         case 'payments':
             return `
                 ${buildUserTabToolbarSkeleton()}
-                ${buildUserTabSkeletonList(4, { chipCount: 3, side: true })}
+                ${buildUserTabPaymentsListSkeleton(4)}
             `;
         case 'ledger':
             return `
                 ${buildUserTabToolbarSkeleton()}
-                ${buildUserTabSkeletonList(4, { chipCount: 3, side: true })}
+                ${buildUserTabLedgerListSkeleton(4)}
             `;
         case 'audit':
             return `
                 ${buildUserTabToolbarSkeleton()}
-                ${buildUserTabSkeletonList(4, { chipCount: 2 })}
+                ${buildUserTabAuditListSkeleton(4)}
             `;
         default:
             return `
@@ -5341,14 +5835,19 @@ function buildUserTabRefreshOverlay(tabName = '', variant = 'list') {
             bodyMarkup = buildAffiliateTabLoadingSkeleton();
             break;
         case 'notes':
-            bodyMarkup = buildUserTabSkeletonList(2, { chipCount: 2 });
+            bodyMarkup = buildUserTabNotesListSkeleton(2);
             break;
         case 'payments':
+            bodyMarkup = buildUserTabPaymentsListSkeleton(3);
+            break;
         case 'ledger':
-            bodyMarkup = buildUserTabSkeletonList(3, { chipCount: 3, side: true });
+            bodyMarkup = buildUserTabLedgerListSkeleton(3);
             break;
         case 'relatives':
-            bodyMarkup = buildUserTabSkeletonList(3, { chipCount: 1, avatar: true });
+            bodyMarkup = buildUserTabRelativesListSkeleton(3);
+            break;
+        case 'audit':
+            bodyMarkup = buildUserTabAuditListSkeleton(3);
             break;
         default:
             break;
@@ -5645,6 +6144,189 @@ function buildUsersTabError(message) {
     return `<div class="error-msg users-tab-error">加载失败: ${escapeHtml(message)}</div>`;
 }
 
+function buildUserAnalyticsCommerceTrace(tabName = '', rawData = []) {
+    const context = normalizeUserAnalyticsContext(currentModalData?.analyticsContext);
+    if (!context) {
+        return '';
+    }
+
+    const normalizedTab = normalizeUserModalTab(tabName);
+    const rows = Array.isArray(rawData) ? rawData : [];
+    const signalLabel = String(context.signalLabel || '商品信号').trim();
+    const signalValue = String(context.signalValue || '').trim();
+    const productLabel = String(context.productName || context.productId || '当前商品').trim();
+    const chips = [];
+    let title = '商品承接链';
+    let summary = String(context.summary || '').trim();
+    const feedbackEntries = typeof window.getAnalyticsResolutionFeedbackEntries === 'function'
+        ? window.getAnalyticsResolutionFeedbackEntries(
+            context.feedbackScope === 'user'
+                ? {
+                    feedbackScope: context.feedbackScope,
+                    entityType: context.feedbackEntityType || 'user',
+                    entityId: context.feedbackEntityId || '',
+                    entityName: context.feedbackEntityName || ''
+                }
+                : {
+                    productId: context.productId,
+                    productName: context.productName
+                }
+        )
+        : [];
+    const latestFeedbackEntry = Array.isArray(feedbackEntries) ? feedbackEntries[0] : null;
+
+    if (signalLabel) {
+        chips.push(`<span class="users-commerce-trace__chip"><strong>来源信号</strong>${escapeHtml([signalLabel, signalValue].filter(Boolean).join(' · '))}</span>`);
+    }
+    if (productLabel) {
+        chips.push(`<span class="users-commerce-trace__chip"><strong>商品</strong>${escapeHtml(productLabel)}</span>`);
+    }
+    if (context.rangeLabel) {
+        chips.push(`<span class="users-commerce-trace__chip"><strong>范围</strong>${escapeHtml(context.rangeLabel)}</span>`);
+    }
+    if (context.siteLabel) {
+        chips.push(`<span class="users-commerce-trace__chip"><strong>站点</strong>${escapeHtml(context.siteLabel)}</span>`);
+    }
+
+    if (normalizedTab === 'payments') {
+        title = '商品承接链 / 支付记录';
+        const settledCount = rows.filter((item) => isAdminPaymentSettled(item)).length;
+        const refundedCount = rows.filter((item) => {
+            const refundStatus = String(item?.refund_status || '').trim().toLowerCase();
+            return refundStatus && refundStatus !== 'none';
+        }).length;
+        const pendingCount = Math.max(0, rows.length - settledCount);
+
+        chips.push(`<span class="users-commerce-trace__chip"><strong>记录</strong>${formatNumber(rows.length)} 笔</span>`);
+        chips.push(`<span class="users-commerce-trace__chip"><strong>已支付</strong>${formatNumber(settledCount)} 笔</span>`);
+        if (pendingCount > 0) {
+            chips.push(`<span class="users-commerce-trace__chip"><strong>待支付/处理中</strong>${formatNumber(pendingCount)} 笔</span>`);
+        }
+        if (refundedCount > 0) {
+            chips.push(`<span class="users-commerce-trace__chip"><strong>退款相关</strong>${formatNumber(refundedCount)} 笔</span>`);
+        }
+
+        if (!summary) {
+            summary = rows.length > 0
+                ? '这里会把这位用户落到支付侧后的承接情况压成一屏，方便判断商品意图是否已经走到成交、退款或待核查阶段。'
+                : '这位用户虽然命中了商品经营信号，但当前支付记录里还没有形成可回看的充值/订单样本，建议先回到商品漏斗继续确认断点。';
+        }
+    } else if (normalizedTab === 'ledger') {
+        title = '商品承接链 / 积分流水';
+        const shopRelatedCount = rows.filter((item) => isAdminShopLedgerReason(item?.reason, item?.referenceId)).length;
+        const spendCount = rows.filter((item) => normalizeAdminLedgerValue(item?.amount) < 0).length;
+        const incomeCount = rows.filter((item) => normalizeAdminLedgerValue(item?.amount) >= 0).length;
+
+        chips.push(`<span class="users-commerce-trace__chip"><strong>流水</strong>${formatNumber(rows.length)} 条</span>`);
+        chips.push(`<span class="users-commerce-trace__chip"><strong>商城相关</strong>${formatNumber(shopRelatedCount)} 条</span>`);
+        if (spendCount > 0) {
+            chips.push(`<span class="users-commerce-trace__chip"><strong>支出</strong>${formatNumber(spendCount)} 条</span>`);
+        }
+        if (incomeCount > 0) {
+            chips.push(`<span class="users-commerce-trace__chip"><strong>入账</strong>${formatNumber(incomeCount)} 条</span>`);
+        }
+
+        if (!summary) {
+            summary = rows.length > 0
+                ? '这里用积分流水确认这位用户是否已经从商品浏览/意图走到商城消费、退款返还或其它经营结果。'
+                : '当前积分流水里还没有可对照的商品经营样本，建议结合商品总盘和单品详情继续观察后续承接。';
+        }
+    } else if (normalizedTab === 'activity') {
+        title = '商品承接链 / 活动记录';
+        const commentCount = rows.filter((item) => String(item?.type || '').trim().toLowerCase() === 'comment').length;
+        const guestbookCount = rows.filter((item) => String(item?.type || '').trim().toLowerCase() === 'guestbook').length;
+        const sourceSamples = rows
+            .map((item) => String(item?.source || '').trim())
+            .filter(Boolean)
+            .slice(0, 3);
+
+        chips.push(`<span class="users-commerce-trace__chip"><strong>活动</strong>${formatNumber(rows.length)} 条</span>`);
+        if (commentCount > 0) {
+            chips.push(`<span class="users-commerce-trace__chip"><strong>内容评论</strong>${formatNumber(commentCount)} 条</span>`);
+        }
+        if (guestbookCount > 0) {
+            chips.push(`<span class="users-commerce-trace__chip"><strong>留言板</strong>${formatNumber(guestbookCount)} 条</span>`);
+        }
+        if (sourceSamples.length > 0) {
+            chips.push(`<span class="users-commerce-trace__chip"><strong>最近内容</strong>${escapeHtml(sourceSamples.join(' / '))}</span>`);
+        }
+
+        if (!summary) {
+            summary = rows.length > 0
+                ? '这里把这位用户在内容侧留下的最近互动放到商品经营上下文里，方便判断商品影响前是否已有内容互动信号在预热。'
+                : '当前活动记录里还没有新的内容互动样本，建议结合商品漏斗继续看这位用户是否还停留在浏览或意图层。';
+        }
+    } else {
+        return '';
+    }
+
+    const serializedDestinationContext = typeof serializeAnalyticsActionContext === 'function'
+        ? serializeAnalyticsActionContext(context.destinationContext)
+        : '';
+    const shopOrdersActionAttrs = buildUserAnalyticsShopOrdersActionAttrs(context);
+    const ticketsActionAttrs = buildUserAnalyticsTicketsActionAttrs(context);
+    const feedbackMarkup = latestFeedbackEntry
+        ? `
+            <div class="users-commerce-trace__feedback">
+                <div class="users-commerce-trace__feedback-head">
+                    <span class="users-commerce-trace__feedback-eyebrow">最近处理回写</span>
+                    <span class="users-commerce-trace__feedback-status users-commerce-trace__feedback-status--${escapeHtml(String(latestFeedbackEntry.tone || 'warning').trim() || 'warning')}">${escapeHtml(String(latestFeedbackEntry.statusLabel || '待复查').trim() || '待复查')}</span>
+                </div>
+                <div class="users-commerce-trace__feedback-title">${escapeHtml(String(latestFeedbackEntry.title || latestFeedbackEntry.actionLabel || '最近处理').trim() || '最近处理')}</div>
+                <p class="users-commerce-trace__feedback-summary">${escapeHtml(String(latestFeedbackEntry.summary || '').trim() || '最近已在订单、支付或售后侧处理过该用户相关问题，建议结合当前承接链继续复查。')}</p>
+            </div>
+        `
+        : '';
+
+    return `
+        <div class="users-commerce-trace">
+            <div class="users-commerce-trace__header">
+                <div>
+                    <div class="users-commerce-trace__eyebrow">${escapeHtml(context.sourceLabel || '商品经营上下文')}</div>
+                    <strong class="users-commerce-trace__title">${escapeHtml(title)}</strong>
+                </div>
+                ${context.referenceLabel && context.referenceValue
+                    ? `<span class="users-commerce-trace__meta">${escapeHtml(`${context.referenceLabel} · ${context.referenceValue}`)}</span>`
+                    : ''}
+            </div>
+            <p class="users-commerce-trace__summary">${escapeHtml(summary)}</p>
+            <div class="users-commerce-trace__chips">
+                ${chips.join('')}
+            </div>
+            ${feedbackMarkup}
+            <div class="users-commerce-trace__actions">
+                <button
+                    type="button"
+                    class="btn-export users-commerce-trace__action"
+                    data-admin-action="users-open-analytics-destination"
+                    data-analytics-destination="${escapeHtml(context.destination || 'analytics-product')}"
+                    ${serializedDestinationContext ? `data-analytics-context="${escapeHtml(serializedDestinationContext)}"` : ''}
+                >
+                    <i class="fas fa-arrow-up-right-from-square"></i> ${escapeHtml(context.actionLabel || '回到商品经营')}
+                </button>
+                ${shopOrdersActionAttrs ? `
+                    <button
+                        type="button"
+                        class="btn-export users-commerce-trace__action"
+                        ${shopOrdersActionAttrs}
+                    >
+                        <i class="fas fa-bag-shopping"></i> 看商城订单
+                    </button>
+                ` : ''}
+                ${ticketsActionAttrs ? `
+                    <button
+                        type="button"
+                        class="btn-export users-commerce-trace__action"
+                        ${ticketsActionAttrs}
+                    >
+                        <i class="fas fa-life-ring"></i> 看售后工单
+                    </button>
+                ` : ''}
+            </div>
+        </div>
+    `;
+}
+
 // Render Ledger Tab
 function renderLedgerTab(container, rawData = currentModalData.pointsLedger || []) {
     const data = getUserModalTabVisibleData('ledger', rawData);
@@ -5652,6 +6334,7 @@ function renderLedgerTab(container, rawData = currentModalData.pointsLedger || [
     container.innerHTML = `
         ${buildUserTabToolbar('ledger', { includeCustomDate: true })}
         ${buildUserTabActionBanner('ledger')}
+        ${buildUserAnalyticsCommerceTrace('ledger', data)}
         <input type="text" id="ledgerDatePicker" class="users-hidden-date-picker" placeholder="选择日期范围">
         ${wrapUserTabRefreshShell('ledger', `
             <div class="data-list" id="ledgerList">
@@ -5667,6 +6350,7 @@ function renderPaymentsTab(container, rawData = currentModalData.paymentOrders |
     container.innerHTML = `
         ${buildUserTabToolbar('payments', { includeCustomDate: true, exportLabel: '导出充值记录' })}
         ${buildUserTabActionBanner('payments')}
+        ${buildUserAnalyticsCommerceTrace('payments', data)}
         <input type="text" id="paymentsDatePicker" class="users-hidden-date-picker" placeholder="选择日期范围">
         ${wrapUserTabRefreshShell('payments', `
             <div class="data-list" id="paymentsList">
@@ -6671,6 +7355,7 @@ function renderActivityTab(container, rawData = currentModalData.contentLog || [
     container.innerHTML = `
         ${buildUserTabToolbar('activity', { includeCustomDate: true })}
         ${buildUserTabActionBanner('activity')}
+        ${buildUserAnalyticsCommerceTrace('activity', data)}
         <input type="text" id="activityDatePicker" class="users-hidden-date-picker" placeholder="选择日期范围">
         ${wrapUserTabRefreshShell('activity', `
             <div class="data-list" id="activityList">
@@ -9129,7 +9814,7 @@ function renderAuditTab(container, rawData = currentModalData.auditLogs || []) {
             <div class="audit-list users-audit-list" id="auditList">
                 ${renderAuditItems(data)}
             </div>
-        `)}
+        `, { variant: 'audit' })}
     `;
 }
 

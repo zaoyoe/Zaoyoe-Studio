@@ -1534,34 +1534,70 @@ const batchPageSize = 10;
 // All available packages (for filter dropdown)
 let allPackages = [];
 
+function syncPointsBatchSelectModeState() {
+    const batchView = document.getElementById('points-view-batches');
+    if (batchView?.dataset) {
+        batchView.dataset.batchSelectMode = batchSelectMode ? 'true' : 'false';
+    }
+}
+
 function buildPointsBatchLoadingSkeleton(rowCount = batchPageSize) {
     const rows = Math.max(4, Number.parseInt(rowCount, 10) || batchPageSize);
+    const showCheckbox = batchSelectMode === true;
     return Array.from({ length: rows }, (_, index) => `
-        <tr class="admin-table-skeleton-row" aria-hidden="true" data-skeleton-index="${index}">
+        <tr class="admin-table-skeleton-row points-batch-skeleton-row" aria-hidden="true" data-skeleton-index="${index}">
+            ${showCheckbox ? `
             <td>
                 <div class="admin-table-skeleton-cell">
                     <span class="admin-skeleton-block admin-skeleton-block--checkbox"></span>
                 </div>
             </td>
+            ` : ''}
             <td>
-                <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack">
-                    <span class="admin-skeleton-block admin-skeleton-block--title" style="width:${42 + (index % 3) * 12}%"></span>
-                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${30 + (index % 2) * 12}%"></span>
+                <div class="points-batch-skeleton-stack">
+                    <span class="admin-skeleton-block admin-skeleton-block--title points-batch-skeleton-title" style="width:${44 + (index % 3) * 10}%"></span>
+                    <span class="points-batch-skeleton-chips">
+                        <span class="admin-skeleton-block admin-skeleton-block--pill points-batch-skeleton-chip" style="width:${40 + (index % 2) * 10}px"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--pill points-batch-skeleton-chip" style="width:${56 + ((index + 1) % 3) * 12}px"></span>
+                    </span>
+                    <span class="admin-skeleton-block admin-skeleton-block--line points-batch-skeleton-meta" style="width:${62 + (index % 3) * 8}%"></span>
                 </div>
             </td>
-            <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--pill" style="width:92px"></span></div></td>
-            <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--pill" style="width:76px"></span></div></td>
-            <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--line" style="width:52px"></span></div></td>
-            <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--line" style="width:48px"></span></div></td>
-            <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--line" style="width:116px"></span></div></td>
             <td>
-                <div class="admin-table-skeleton-cell admin-table-skeleton-actions">
+                <div class="points-batch-skeleton-stack points-batch-skeleton-stack--compact">
+                    <span class="admin-skeleton-block admin-skeleton-block--title points-batch-skeleton-package" style="width:${48 + (index % 2) * 14}%"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--line points-batch-skeleton-subline" style="width:${34 + (index % 3) * 12}%"></span>
+                </div>
+            </td>
+            <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--pill points-batch-skeleton-channel" style="width:${52 + (index % 2) * 8}px"></span></div></td>
+            <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--line points-batch-skeleton-number" style="width:${34 + (index % 2) * 10}px"></span></div></td>
+            <td>
+                <div class="points-batch-skeleton-usage">
+                    <span class="admin-skeleton-block admin-skeleton-block--line points-batch-skeleton-usage-value" style="width:${26 + (index % 2) * 8}px"></span>
+                    <span class="admin-skeleton-block points-batch-skeleton-usage-bar" style="width:${48 + (index % 3) * 16}px"></span>
+                </div>
+            </td>
+            <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--line points-batch-skeleton-date" style="width:${84 + (index % 3) * 12}px"></span></div></td>
+            <td>
+                <div class="admin-table-skeleton-cell admin-table-skeleton-actions points-batch-skeleton-actions">
+                    <span class="admin-skeleton-block admin-skeleton-block--action"></span>
                     <span class="admin-skeleton-block admin-skeleton-block--action"></span>
                     <span class="admin-skeleton-block admin-skeleton-block--action"></span>
                 </div>
             </td>
         </tr>
     `).join('');
+}
+
+function setPointsBatchQuickFilterLoading(loading = true) {
+    document.querySelectorAll('#pointsBatchQuickFilters .points-batch-quick-filter').forEach((button, index) => {
+        button.classList.toggle('is-loading', loading);
+        button.disabled = loading;
+        const countEl = button.querySelector('.points-batch-quick-filter__count');
+        if (countEl && loading) {
+            countEl.innerHTML = `<span class="admin-skeleton-block points-batch-quick-filter__count-skeleton" style="width:${20 + (index % 3) * 4}px"></span>`;
+        }
+    });
 }
 
 function getPointsBatchQuickCounts(rows = allBatches) {
@@ -1600,6 +1636,8 @@ function getPointsBatchQuickCounts(rows = allBatches) {
 
 function updateBatchQuickFilterUI(counts = getPointsBatchQuickCounts()) {
     document.querySelectorAll('#pointsBatchQuickFilters .points-batch-quick-filter').forEach((button) => {
+        button.classList.remove('is-loading');
+        button.disabled = false;
         button.classList.toggle('is-active', button.dataset.batchQuick === batchQuickFilterValue);
         const countEl = button.querySelector('.points-batch-quick-filter__count');
         if (countEl) {
@@ -1615,10 +1653,25 @@ function filterBatchByQuick(value = 'all') {
     applyBatchFilters();
 }
 
-function buildPointsBatchOverviewCard(iconClass, label, value, meta, tone = 'blue') {
+function buildPointsBatchCustomIconMarkup() {
     return `
-        <article class="points-batch-overview-card points-batch-overview-card--${tone}">
-            <div class="points-batch-overview-card__icon"><i class="${iconClass}"></i></div>
+        <span class="points-batch-overview-card__custom-icon" aria-hidden="true">
+            <span class="points-batch-overview-card__custom-stack">
+                <span class="points-batch-overview-card__custom-line points-batch-overview-card__custom-line--short"></span>
+                <span class="points-batch-overview-card__custom-line points-batch-overview-card__custom-line--mid"></span>
+                <span class="points-batch-overview-card__custom-line points-batch-overview-card__custom-line--long"></span>
+            </span>
+            <span class="points-batch-overview-card__custom-plus"></span>
+        </span>
+    `;
+}
+
+function buildPointsBatchOverviewCard(iconClass, label, value, meta, tone = 'blue', options = {}) {
+    const cardClass = String(options.cardClass || '').trim();
+    const iconMarkup = String(options.iconMarkup || '').trim() || `<i class="${iconClass}"></i>`;
+    return `
+        <article class="points-batch-overview-card points-batch-overview-card--${tone}${cardClass ? ` ${cardClass}` : ''}">
+            <div class="points-batch-overview-card__icon">${iconMarkup}</div>
             <div class="points-batch-overview-card__body">
                 <span class="points-batch-overview-card__label">${escapePointsHtml(label)}</span>
                 <strong class="points-batch-overview-card__value">${escapePointsHtml(value)}</strong>
@@ -1626,6 +1679,32 @@ function buildPointsBatchOverviewCard(iconClass, label, value, meta, tone = 'blu
             </div>
         </article>
     `;
+}
+
+function buildPointsBatchOverviewLoadingSkeleton(cardCount = 5) {
+    const cards = Math.max(4, Number.parseInt(cardCount, 10) || 5);
+    const tones = ['blue', 'green', 'amber', 'violet', 'slate'];
+    return Array.from({ length: cards }, (_, index) => `
+        <article class="points-batch-overview-card points-batch-overview-card--${tones[index % tones.length]} points-batch-overview-card--skeleton" aria-hidden="true">
+            <div class="points-batch-overview-card__icon">
+                <span class="admin-skeleton-block points-batch-overview-card__icon-skeleton"></span>
+            </div>
+            <div class="points-batch-overview-card__body">
+                <span class="admin-skeleton-block points-batch-overview-card__label-skeleton" style="width:${54 + (index % 3) * 10}%"></span>
+                <span class="admin-skeleton-block points-batch-overview-card__value-skeleton" style="width:${34 + (index % 2) * 14}%"></span>
+                <span class="admin-skeleton-block points-batch-overview-card__meta-skeleton" style="width:${60 + (index % 3) * 8}%"></span>
+            </div>
+        </article>
+    `).join('');
+}
+
+function renderPointsBatchOverviewLoading() {
+    const root = document.getElementById('pointsBatchOverview');
+    if (!root) {
+        return;
+    }
+    root.innerHTML = buildPointsBatchOverviewLoadingSkeleton();
+    setPointsBatchQuickFilterLoading(true);
 }
 
 function renderPointsBatchOverview() {
@@ -1643,7 +1722,10 @@ function renderPointsBatchOverview() {
         buildPointsBatchOverviewCard('fas fa-filter', '当前筛选命中', `${filteredBatches.length}`, `第 ${Math.min(batchCurrentPage, totalPages)} / ${totalPages} 页`, 'green'),
         buildPointsBatchOverviewCard('fas fa-hourglass-half', '即将过期', `${quickCounts.expiring}`, '未来 7 天内', 'amber'),
         buildPointsBatchOverviewCard('fas fa-signal', '低使用率', `${quickCounts.low_usage}`, '使用率 <= 20%', 'violet'),
-        buildPointsBatchOverviewCard('fas fa-sparkles', '自定义积分', `${quickCounts.custom}`, '按自定义面额发放', 'slate')
+        buildPointsBatchOverviewCard('', '自定义积分', `${quickCounts.custom}`, '按自定义面额发放', 'slate', {
+            cardClass: 'points-batch-overview-card--custom-points',
+            iconMarkup: buildPointsBatchCustomIconMarkup()
+        })
     ].join('');
 
     updateBatchQuickFilterUI(quickCounts);
@@ -1764,7 +1846,10 @@ function applyPendingGenerateSeed() {
 
 async function loadBatches() {
     const tbody = document.getElementById('batchesTableBody');
+    const colCount = batchSelectMode ? 8 : 7;
+    syncPointsBatchSelectModeState();
     tbody.innerHTML = buildPointsBatchLoadingSkeleton();
+    renderPointsBatchOverviewLoading();
     renderPointsBatchListFeedback();
 
     try {
@@ -1796,7 +1881,8 @@ async function loadBatches() {
     } catch (err) {
         console.error('Failed to load batches:', err);
         setPointsBatchListFeedback(`加载失败: ${err.message}`, 'error', 'action');
-        tbody.innerHTML = `<tr><td colspan="8" class="error-cell">加载失败: ${err.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${colCount}" class="error-cell">加载失败: ${err.message}</td></tr>`;
+        renderPointsBatchOverview();
     }
 }
 
@@ -1820,6 +1906,7 @@ async function loadPackagesForFilter() {
 function renderBatches() {
     const tbody = document.getElementById('batchesTableBody');
     const colCount = batchSelectMode ? 8 : 7;
+    syncPointsBatchSelectModeState();
 
     if (filteredBatches.length === 0) {
         if (allBatches.length === 0) {
@@ -1906,15 +1993,17 @@ function renderBatches() {
                 </td>
                 <td>${createdAt}</td>
                 <td class="actions-cell" data-points-action="batch-row-stop">
-                    <button class="btn-icon" type="button" data-points-action="open-batch-edit" data-batch-id="${encodeURIComponent(batch.id)}" title="编辑批次">
-                        <i class="fas fa-edit"></i>
-                    </button>
-                    <button class="btn-icon" type="button" data-points-action="export-batch-codes" data-batch-id="${encodeURIComponent(batch.id)}" title="导出Excel">
-                        <i class="fas fa-download"></i>
-                    </button>
-                    <button class="btn-icon" type="button" data-points-action="reissue-batch" data-batch-id="${encodeURIComponent(batch.id)}" title="续发同类批次">
-                        <i class="fas fa-wand-magic-sparkles"></i>
-                    </button>
+                    <div class="points-batch-actions">
+                        <button class="btn-icon" type="button" data-points-action="open-batch-edit" data-batch-id="${encodeURIComponent(batch.id)}" title="编辑批次">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="btn-icon" type="button" data-points-action="export-batch-codes" data-batch-id="${encodeURIComponent(batch.id)}" title="导出Excel">
+                            <i class="fas fa-download"></i>
+                        </button>
+                        <button class="btn-icon" type="button" data-points-action="reissue-batch" data-batch-id="${encodeURIComponent(batch.id)}" title="续发同类批次">
+                            <i class="fas fa-wand-magic-sparkles"></i>
+                        </button>
+                    </div>
                 </td>
             </tr>
         `;
@@ -1938,6 +2027,67 @@ function buildPointsCatalogSummaryCard(iconClass, label, value, tone = 'default'
             </div>
         </article>
     `;
+}
+
+function buildPointsCatalogSummaryLoadingSkeleton(cardCount = 6) {
+    const cards = Math.max(4, Number.parseInt(cardCount, 10) || 6);
+    const tones = ['blue', 'green', 'amber', 'violet', 'rose', 'slate'];
+    return Array.from({ length: cards }, (_, index) => `
+        <article class="points-catalog-summary-card points-catalog-summary-card--${tones[index % tones.length]} points-catalog-summary-card--skeleton payments-kpi-card payments-kpi-card-visual" aria-hidden="true">
+            <div class="payments-kpi-main">
+                <div class="kpi-icon points-catalog-summary-card__icon">
+                    <span class="admin-skeleton-block points-catalog-summary-card__icon-skeleton"></span>
+                </div>
+                <div class="kpi-content points-catalog-summary-card__body">
+                    <span class="admin-skeleton-block points-catalog-summary-card__value-skeleton" style="width:${40 + (index % 3) * 10}%"></span>
+                    <span class="admin-skeleton-block points-catalog-summary-card__label-skeleton" style="width:${62 + (index % 2) * 10}%"></span>
+                </div>
+            </div>
+        </article>
+    `).join('');
+}
+
+function buildPointsPackageMetricSkeleton() {
+    return `
+        <div class="points-package-metric-cell points-package-metric-cell--skeleton" aria-hidden="true">
+            ${Array.from({ length: 3 }, (_, index) => `
+                <span class="points-package-metric-pill points-package-metric-pill--skeleton">
+                    <span class="admin-skeleton-block points-package-metric-pill__value-skeleton" style="width:${42 + index * 6}%"></span>
+                    <span class="admin-skeleton-block points-package-metric-pill__label-skeleton" style="width:${54 + index * 4}%"></span>
+                </span>
+            `).join('')}
+        </div>
+    `;
+}
+
+function buildPointsPackageCatalogLoadingSkeleton(rowCount = 6) {
+    const rows = Math.max(4, Number.parseInt(rowCount, 10) || 6);
+    return Array.from({ length: rows }, (_, index) => `
+        <tr class="admin-table-skeleton-row points-package-skeleton-row" aria-hidden="true" data-skeleton-index="${index}">
+            <td>
+                <div class="points-package-skeleton-stack">
+                    <span class="admin-skeleton-block admin-skeleton-block--title points-package-skeleton-title" style="width:${52 + (index % 2) * 14}%"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--line points-package-skeleton-subline" style="width:${38 + (index % 3) * 12}%"></span>
+                </div>
+            </td>
+            <td>
+                <div class="points-package-skeleton-stack">
+                    <span class="admin-skeleton-block admin-skeleton-block--title points-package-skeleton-balance" style="width:${44 + (index % 3) * 12}%"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--line points-package-skeleton-subline" style="width:${62 + (index % 2) * 10}%"></span>
+                </div>
+            </td>
+            <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--line points-package-skeleton-price" style="width:${48 + (index % 2) * 10}px"></span></div></td>
+            <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--pill points-package-skeleton-status" style="width:${58 + (index % 2) * 10}px"></span></div></td>
+            <td>${buildPointsPackageMetricSkeleton()}</td>
+            <td>${buildPointsPackageMetricSkeleton()}</td>
+            <td>
+                <div class="admin-table-skeleton-cell admin-table-skeleton-actions points-package-skeleton-actions">
+                    <span class="admin-skeleton-block admin-skeleton-block--action"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--action"></span>
+                </div>
+            </td>
+        </tr>
+    `).join('');
 }
 
 function formatPointsPackageMetricCell(metric = {}) {
@@ -2559,20 +2709,13 @@ async function loadPointsPackageCatalog({ force = false } = {}) {
     const currentSite = getPointsReadSite();
 
     if (summaryEl) {
-        summaryEl.innerHTML = [
-            buildPointsCatalogSummaryCard('fas fa-box-open', '套餐总数', '...', 'blue'),
-            buildPointsCatalogSummaryCard('fas fa-check-circle', '启用套餐', '...', 'green'),
-            buildPointsCatalogSummaryCard('fas fa-layer-group', currentSite === 'all' ? '全部批次' : `${currentSite.toUpperCase()} 批次`, '...', 'amber'),
-            buildPointsCatalogSummaryCard('fas fa-ticket-alt', currentSite === 'all' ? '已发兑换码' : `${currentSite.toUpperCase()} 发码`, '...', 'violet'),
-            buildPointsCatalogSummaryCard('fas fa-bolt', currentSite === 'all' ? '已使用兑换码' : `${currentSite.toUpperCase()} 已用`, '...', 'rose'),
-            buildPointsCatalogSummaryCard('fas fa-pen-ruler', '自定义批次', '...', 'slate')
-        ].join('');
+        summaryEl.innerHTML = buildPointsCatalogSummaryLoadingSkeleton();
     }
     if (countEl) {
-        countEl.textContent = '加载中';
+        countEl.innerHTML = '<span class="admin-skeleton-block points-catalog-count-skeleton"></span>';
     }
     if (tbody) {
-        tbody.innerHTML = '<tr><td colspan="7" class="loading-cell">正在加载套餐目录...</td></tr>';
+        tbody.innerHTML = buildPointsPackageCatalogLoadingSkeleton();
     }
 
     try {
@@ -2580,6 +2723,19 @@ async function loadPointsPackageCatalog({ force = false } = {}) {
         renderPointsPackageCatalog(payload);
     } catch (error) {
         console.error('Failed to load points package catalog:', error);
+        if (summaryEl) {
+            summaryEl.innerHTML = [
+                buildPointsCatalogSummaryCard('fas fa-box-open', '套餐总数', '--', 'blue'),
+                buildPointsCatalogSummaryCard('fas fa-check-circle', '启用套餐', '--', 'green'),
+                buildPointsCatalogSummaryCard('fas fa-layer-group', currentSite === 'all' ? '全部批次' : `${currentSite.toUpperCase()} 批次`, '--', 'amber'),
+                buildPointsCatalogSummaryCard('fas fa-ticket-alt', currentSite === 'all' ? '已发兑换码' : `${currentSite.toUpperCase()} 发码`, '--', 'violet'),
+                buildPointsCatalogSummaryCard('fas fa-bolt', currentSite === 'all' ? '已使用兑换码' : `${currentSite.toUpperCase()} 已用`, '--', 'rose'),
+                buildPointsCatalogSummaryCard('fas fa-pen-ruler', '自定义批次', '--', 'slate')
+            ].join('');
+        }
+        if (countEl) {
+            countEl.textContent = '加载失败';
+        }
         if (tbody) {
             tbody.innerHTML = `<tr><td colspan="7" class="error-cell">加载套餐目录失败: ${error.message}</td></tr>`;
         }
@@ -4007,6 +4163,7 @@ function goToBatchPage(page) {
 // ========================================
 function toggleBatchSelectMode() {
     batchSelectMode = !batchSelectMode;
+    syncPointsBatchSelectModeState();
 
     // Use unique IDs specific to Points module to avoid conflicts with Gallery module
     const checkboxHeader = document.getElementById('batchCheckboxHeader');
@@ -4101,6 +4258,7 @@ function clearBatchSelection() {
     updateSelectedCount();
     const checkbox = document.getElementById('selectAllBatches');
     if (checkbox) checkbox.checked = false;
+    syncPointsBatchSelectModeState();
 
     // If in select mode, exit it
     if (batchSelectMode) {

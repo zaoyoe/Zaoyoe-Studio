@@ -7,14 +7,11 @@
 
     const SESSION_STORAGE_KEY = 'user_event_tracker_session_id_v1';
     const ONCE_STORAGE_PREFIX = 'user_event_tracker_once_v1:';
-    const EXPERIMENT_ASSIGNMENT_STORAGE_PREFIX = 'user_event_tracker_experiment_assignment_v1:';
     const USER_CACHE_TTL_MS = 15000;
-    const EXPERIMENT_ASSIGNMENT_TTL_MS = 30 * 60 * 1000;
 
     let trackerInitialized = false;
     let cachedUser = null;
     let cachedUserFetchedAt = 0;
-    const experimentAssignmentCache = new Map();
 
     function getSupabaseClient() {
         return window.supabaseClient || null;
@@ -138,8 +135,6 @@
             entity_id: normalizedPayload.entityId ?? normalizedPayload.entity_id ?? null,
             event_value: normalizedPayload.eventValue ?? normalizedPayload.event_value ?? null,
             points_delta: normalizedPayload.pointsDelta ?? normalizedPayload.points_delta ?? null,
-            experiment_id: normalizedPayload.experimentId ?? normalizedPayload.experiment_id ?? null,
-            variant_id: normalizedPayload.variantId ?? normalizedPayload.variant_id ?? null,
             referrer: document.referrer || null,
             metadata: normalizedMetadata && typeof normalizedMetadata === 'object' ? normalizedMetadata : {}
         });
@@ -225,80 +220,6 @@
         writeSessionValue(`${ONCE_STORAGE_PREFIX}${dedupeKey}`, '1');
     }
 
-    function isExperimentControlVariant(variantName = '') {
-        const normalized = String(variantName || '').trim().toLowerCase();
-        return ['control', 'default', 'baseline', 'original'].includes(normalized);
-    }
-
-    function getExperimentAssignmentCacheKey(experimentName = '') {
-        return `${getCurrentSiteValue()}:${String(experimentName || '').trim().toLowerCase()}`;
-    }
-
-    function readCachedExperimentAssignment(experimentName = '') {
-        const cacheKey = getExperimentAssignmentCacheKey(experimentName);
-        if (!cacheKey) return null;
-
-        const memoryValue = experimentAssignmentCache.get(cacheKey);
-        if (memoryValue && Number(memoryValue.expiresAt || 0) > Date.now()) {
-            return memoryValue.assignment || null;
-        }
-        experimentAssignmentCache.delete(cacheKey);
-
-        const raw = readSessionValue(`${EXPERIMENT_ASSIGNMENT_STORAGE_PREFIX}${cacheKey}`);
-        if (!raw) return null;
-
-        try {
-            const parsed = JSON.parse(raw);
-            if (parsed && Number(parsed.expiresAt || 0) > Date.now() && parsed.assignment) {
-                experimentAssignmentCache.set(cacheKey, parsed);
-                return parsed.assignment;
-            }
-        } catch (_error) {
-            // Ignore malformed cache payloads.
-        }
-
-        writeSessionValue(`${EXPERIMENT_ASSIGNMENT_STORAGE_PREFIX}${cacheKey}`, '');
-        return null;
-    }
-
-    function writeCachedExperimentAssignment(experimentName = '', assignment = null) {
-        const cacheKey = getExperimentAssignmentCacheKey(experimentName);
-        if (!cacheKey || !assignment) return;
-
-        const payload = {
-            expiresAt: Date.now() + EXPERIMENT_ASSIGNMENT_TTL_MS,
-            assignment
-        };
-        experimentAssignmentCache.set(cacheKey, payload);
-        writeSessionValue(`${EXPERIMENT_ASSIGNMENT_STORAGE_PREFIX}${cacheKey}`, JSON.stringify(payload));
-    }
-
-    function normalizeExperimentAssignment(experimentName = '', rawAssignment = null) {
-        if (!rawAssignment) return null;
-
-        const normalizedName = String(experimentName || '').trim();
-        const objectPayload = rawAssignment && typeof rawAssignment === 'object' && !Array.isArray(rawAssignment)
-            ? rawAssignment
-            : { variant_name: rawAssignment };
-        const variantName = String(
-            objectPayload.variant_name
-            || objectPayload.variant
-            || objectPayload.name
-            || ''
-        ).trim();
-
-        if (!normalizedName || !variantName) {
-            return null;
-        }
-
-        return {
-            experimentName: normalizedName,
-            variantName,
-            isControl: isExperimentControlVariant(variantName),
-            assigned: objectPayload.assigned !== false
-        };
-    }
-
     const trackerApi = {
         getSessionId,
 
@@ -375,91 +296,6 @@
                 },
                 { eventType: 'heartbeat' }
             );
-        },
-
-        async getExperimentAssignment(experimentName, options = {}) {
-            const normalizedExperimentName = String(experimentName || '').trim();
-            if (!normalizedExperimentName) {
-                return null;
-            }
-
-            const user = await getAuthenticatedUser();
-            const userId = String(user?.id || '').trim();
-            if (!userId) {
-                return null;
-            }
-
-            const cachedAssignment = readCachedExperimentAssignment(normalizedExperimentName);
-            if (cachedAssignment) {
-                if (options.trackExposure !== false) {
-                    await this.trackOnce(
-                        `experiment_exposure:${getCurrentSiteValue()}:${normalizedExperimentName}:${cachedAssignment.variantName}:${String(options.placement || 'default').trim() || 'default'}`,
-                        'experiment_exposure',
-                        {
-                            module: options.module || 'experiment_runtime',
-                            entityType: options.entityType || 'experiment',
-                            entityId: options.entityId || normalizedExperimentName,
-                            experimentId: normalizedExperimentName,
-                            variantId: cachedAssignment.variantName,
-                            metadata: {
-                                experiment_name: normalizedExperimentName,
-                                variant_name: cachedAssignment.variantName,
-                                placement: String(options.placement || '').trim() || null,
-                                ...(options.metadata && typeof options.metadata === 'object' ? options.metadata : {})
-                            }
-                        },
-                        { eventType: 'engagement' }
-                    );
-                }
-                return cachedAssignment;
-            }
-
-            const supabase = getSupabaseClient();
-            if (!supabase || typeof supabase.rpc !== 'function') {
-                return null;
-            }
-
-            try {
-                const { data, error } = await supabase.rpc('get_experiment_variant', {
-                    p_experiment_name: normalizedExperimentName
-                });
-                if (error) {
-                    throw error;
-                }
-
-                const assignment = normalizeExperimentAssignment(normalizedExperimentName, data);
-                if (!assignment) {
-                    return null;
-                }
-
-                writeCachedExperimentAssignment(normalizedExperimentName, assignment);
-
-                if (options.trackExposure !== false) {
-                    await this.trackOnce(
-                        `experiment_exposure:${getCurrentSiteValue()}:${normalizedExperimentName}:${assignment.variantName}:${String(options.placement || 'default').trim() || 'default'}`,
-                        'experiment_exposure',
-                        {
-                            module: options.module || 'experiment_runtime',
-                            entityType: options.entityType || 'experiment',
-                            entityId: options.entityId || normalizedExperimentName,
-                            experimentId: normalizedExperimentName,
-                            variantId: assignment.variantName,
-                            metadata: {
-                                experiment_name: normalizedExperimentName,
-                                variant_name: assignment.variantName,
-                                placement: String(options.placement || '').trim() || null,
-                                ...(options.metadata && typeof options.metadata === 'object' ? options.metadata : {})
-                            }
-                        },
-                        { eventType: 'engagement' }
-                    );
-                }
-
-                return assignment;
-            } catch (error) {
-                console.debug('[UserEventTracker] Failed to resolve experiment assignment:', normalizedExperimentName, error?.message || error);
-                return null;
-            }
         }
     };
 

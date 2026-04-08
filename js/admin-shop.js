@@ -78,10 +78,15 @@ const ShopAdmin = {
     focusedOrderId: '',
     pendingOpenOrderDetails: false,
     orderSearchRequestToken: 0,
+    orderSearchContext: null,
+    currentOrderRows: [],
+    orderRefundStatusFilter: 'all',
+    orderDeliveryStatusFilter: 'all',
     deliveryTaskPage: 1,
     deliveryTaskStatusFilter: 'all',
     deliveryTaskQuery: '',
     deliveryTaskQueryContext: null,
+    deliveryWorkbenchContext: null,
     deliveryConflictBucketFilter: null,
     deliveryTaskIdentityFilter: null,
     deliveryConflictAuditSelection: null,
@@ -95,6 +100,7 @@ const ShopAdmin = {
     deliveryRestoreLinkFeedbackTimer: null,
     deliveryPendingTaskReveal: null,
     deliveryPendingAuditReveal: null,
+    deliveryPendingSectionReveal: '',
     deliveryTaskPageSize: 8,
     deliveryDeadLetterPage: 1,
     deliveryDeadLetterReasonFilter: 'all',
@@ -480,7 +486,7 @@ Example output format:
         return payload;
     },
 
-    loadAllOrdersForExport: async function ({ site = 'all', pageSize = 100 } = {}) {
+    loadAllOrdersForExport: async function ({ site = 'all', pageSize = 100, refundStatus = 'all', deliveryStatus = 'all' } = {}) {
         const collectedRows = [];
         let page = 1;
         let total = null;
@@ -489,7 +495,9 @@ Example output format:
             const payload = await this.loadOrdersViaAdminApi({
                 site,
                 page,
-                pageSize
+                pageSize,
+                refundStatus,
+                deliveryStatus
             });
             const rows = Array.isArray(payload?.rows) ? payload.rows : [];
             const count = Number(payload?.count);
@@ -1110,7 +1118,21 @@ Example output format:
                 case 'refund-submit':
                     this.submitRefund(actionEl.dataset.orderId, actionEl);
                     break;
+                case 'order-user-flow-focus':
+                    this.applyOrderUserFlowFocus(
+                        actionEl.dataset.orderIssueKind,
+                        actionEl.dataset.orderIssueValue
+                    );
+                    break;
+                case 'order-user-flow-open-destination':
+                    this.openOrderUserFlowDestination(
+                        actionEl.dataset.analyticsDestination,
+                        actionEl.dataset.orderIssueKind,
+                        actionEl.dataset.orderIssueValue
+                    );
+                    break;
                 case 'orders-search':
+                    this.clearOrderSearchContext();
                     this.searchOrders(1);
                     break;
                 case 'orders-export':
@@ -1218,6 +1240,15 @@ Example output format:
                     break;
                 case 'delivery-clear-task-status-filter':
                     this.clearDeliveryTaskStatusFilter();
+                    break;
+                case 'delivery-issue-summary-focus':
+                    this.applyDeliveryIssueSummaryFocus(
+                        actionEl.dataset.deliveryIssueFocusKind,
+                        actionEl.dataset.deliveryIssueFocusValue
+                    );
+                    break;
+                case 'delivery-priority-action':
+                    this.applyDeliveryPriorityAction(actionEl.dataset.deliveryPriorityKey);
                     break;
                 case 'delivery-clear-dead-letter-reason-filter':
                     this.clearDeliveryDeadLetterReasonFilter();
@@ -1351,6 +1382,7 @@ Example output format:
                 case 'orders-search-enter':
                     if (event.key === 'Enter') {
                         event.preventDefault();
+                        this.clearOrderSearchContext();
                         this.searchOrders(1);
                     }
                     break;
@@ -3162,6 +3194,11 @@ Example output format:
 
         this.focusedOrderId = normalizedOrderId;
         this.pendingOpenOrderDetails = options?.openDetails !== false;
+        if (Object.prototype.hasOwnProperty.call(options || {}, 'context')) {
+            this.setOrderSearchContext(options.context);
+        } else {
+            this.renderOrderSearchContextHint();
+        }
 
         if (this.currentTab !== 'orders') {
             this.switchTab('orders', { load: false });
@@ -3326,6 +3363,446 @@ Example output format:
                         </td>
                     `;
                 }).join('')}
+            </tr>
+        `).join('');
+    },
+
+    buildShopSkeletonIconActions: function (count = 1, extraClass = '') {
+        const total = Math.max(1, Number.parseInt(count, 10) || 1);
+        const className = [
+            'admin-table-skeleton-cell',
+            'admin-table-skeleton-actions',
+            'shop-table-skeleton-actions-wrap',
+            'shop-table-skeleton-actions-wrap--icon',
+            String(extraClass || '').trim()
+        ].filter(Boolean).join(' ');
+        return `
+            <div class="${className}">
+                ${Array.from({ length: total }, () => '<span class="admin-skeleton-block admin-skeleton-block--action"></span>').join('')}
+            </div>
+        `;
+    },
+
+    buildShopSkeletonTextActions: function (widths = []) {
+        const normalizedWidths = Array.isArray(widths) && widths.length
+            ? widths
+            : [88, 96];
+        return `
+            <div class="admin-table-skeleton-cell admin-table-skeleton-actions shop-table-skeleton-actions-wrap">
+                ${normalizedWidths.map((width) => `
+                    <span class="admin-skeleton-block admin-skeleton-block--pill shop-table-skeleton-action-pill" style="width:${Math.max(56, Number(width) || 88)}px"></span>
+                `).join('')}
+            </div>
+        `;
+    },
+
+    buildShopOrdersLoadingSkeleton: function (rowCount = 5) {
+        const totalRows = Math.max(3, Number.parseInt(rowCount, 10) || 5);
+        const nameWidths = ['admin-skeleton-w-30', 'admin-skeleton-w-40', 'admin-skeleton-w-30', 'admin-skeleton-w-40'];
+        const emailWidths = ['admin-skeleton-w-20', 'admin-skeleton-w-30', 'admin-skeleton-w-20', 'admin-skeleton-w-30'];
+        const productWidths = ['admin-skeleton-w-60', 'admin-skeleton-w-70', 'admin-skeleton-w-50', 'admin-skeleton-w-60'];
+        const statusWidths = [88, 94, 82, 92];
+        const dateWidths = [132, 146, 124, 138];
+        const pointsWidths = [16, 20, 16, 24];
+
+        return Array.from({ length: totalRows }, (_, rowIndex) => `
+            <tr class="admin-table-skeleton-row shop-table-skeleton-row" aria-hidden="true" data-skeleton-index="${rowIndex}">
+                <td>
+                    <div class="admin-table-skeleton-cell">
+                        <span class="admin-skeleton-block admin-skeleton-block--avatar"></span>
+                        <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                            <span class="admin-skeleton-block admin-skeleton-block--title ${nameWidths[rowIndex % nameWidths.length]}"></span>
+                            <span class="admin-skeleton-block admin-skeleton-block--line ${emailWidths[rowIndex % emailWidths.length]}"></span>
+                        </div>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell">
+                        <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${dateWidths[rowIndex % dateWidths.length]}px"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell">
+                        <span class="admin-skeleton-block admin-skeleton-block--line ${productWidths[rowIndex % productWidths.length]}"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell">
+                        <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${pointsWidths[rowIndex % pointsWidths.length]}px"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell">
+                        <span class="admin-skeleton-block admin-skeleton-block--pill shop-table-skeleton-status-pill" style="width:${statusWidths[rowIndex % statusWidths.length]}px"></span>
+                    </div>
+                </td>
+                <td>
+                    ${this.buildShopSkeletonIconActions(1, 'shop-table-skeleton-actions-wrap--orders')}
+                </td>
+            </tr>
+        `).join('');
+    },
+
+    buildDeliveryTasksLoadingSkeleton: function (rowCount = 4) {
+        const totalRows = Math.max(3, Number.parseInt(rowCount, 10) || 4);
+        const orderWidths = ['admin-skeleton-w-30', 'admin-skeleton-w-40', 'admin-skeleton-w-30', 'admin-skeleton-w-40'];
+        const noteWidths = ['admin-skeleton-w-30', 'admin-skeleton-w-40', 'admin-skeleton-w-20', 'admin-skeleton-w-30'];
+        const targetWidths = ['admin-skeleton-w-60', 'admin-skeleton-w-70', 'admin-skeleton-w-50', 'admin-skeleton-w-60'];
+        const errorWidths = ['admin-skeleton-w-60', 'admin-skeleton-w-70', 'admin-skeleton-w-50', 'admin-skeleton-w-60'];
+        const actionWidths = [
+            [76, 88, 92],
+            [84, 92, 102],
+            [72, 86, 94],
+            [80, 90, 98]
+        ];
+
+        return Array.from({ length: totalRows }, (_, rowIndex) => `
+            <tr class="admin-table-skeleton-row shop-table-skeleton-row" aria-hidden="true" data-skeleton-index="${rowIndex}">
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--title ${orderWidths[rowIndex % orderWidths.length]}"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line ${noteWidths[rowIndex % noteWidths.length]}"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-50"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <div class="shop-table-skeleton-pill-row">
+                            <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span>
+                            <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span>
+                        </div>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-50"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${52 + (rowIndex % 2) * 8}px"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-40"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell">
+                        <span class="admin-skeleton-block admin-skeleton-block--line ${targetWidths[rowIndex % targetWidths.length]}"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-40"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--line ${errorWidths[rowIndex % errorWidths.length]}"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-40"></span>
+                    </div>
+                </td>
+                <td>
+                    ${this.buildShopSkeletonTextActions(actionWidths[rowIndex % actionWidths.length])}
+                </td>
+            </tr>
+        `).join('');
+    },
+
+    buildDeliveryDeadLetterLoadingSkeleton: function (rowCount = 3) {
+        const totalRows = Math.max(3, Number.parseInt(rowCount, 10) || 3);
+        const actionWidths = [
+            [104, 84, 92],
+            [112, 78, 96],
+            [108, 82, 88]
+        ];
+
+        return Array.from({ length: totalRows }, (_, rowIndex) => `
+            <tr class="admin-table-skeleton-row shop-table-skeleton-row" aria-hidden="true" data-skeleton-index="${rowIndex}">
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-30"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-40"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-50"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-60"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-50"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <div class="shop-table-skeleton-pill-row">
+                            <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span>
+                            <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span>
+                        </div>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-40"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-40"></span>
+                    </div>
+                </td>
+                <td>
+                    ${this.buildShopSkeletonTextActions(actionWidths[rowIndex % actionWidths.length])}
+                </td>
+            </tr>
+        `).join('');
+    },
+
+    buildDeliveryLockConflictLoadingSkeleton: function (rowCount = 3) {
+        const totalRows = Math.max(3, Number.parseInt(rowCount, 10) || 3);
+        const actionWidths = [
+            [104, 78, 88, 98],
+            [110, 84, 96, 86],
+            [108, 80, 92, 102]
+        ];
+
+        return Array.from({ length: totalRows }, (_, rowIndex) => `
+            <tr class="admin-table-skeleton-row shop-table-skeleton-row" aria-hidden="true" data-skeleton-index="${rowIndex}">
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-30"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-40"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-50"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <div class="shop-table-skeleton-pill-row">
+                            <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span>
+                            <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span>
+                        </div>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-50"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell">
+                        <div class="shop-table-skeleton-pill-row">
+                            <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span>
+                            <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span>
+                        </div>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-60"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-40"></span>
+                    </div>
+                </td>
+                <td>
+                    ${this.buildShopSkeletonTextActions(actionWidths[rowIndex % actionWidths.length])}
+                </td>
+            </tr>
+        `).join('');
+    },
+
+    buildDeliveryReservationLoadingSkeleton: function (rowCount = 3) {
+        const totalRows = Math.max(3, Number.parseInt(rowCount, 10) || 3);
+        const actionWidths = [
+            [104, 80, 92, 100],
+            [110, 86, 96, 88],
+            [108, 82, 94, 102]
+        ];
+
+        return Array.from({ length: totalRows }, (_, rowIndex) => `
+            <tr class="admin-table-skeleton-row shop-table-skeleton-row" aria-hidden="true" data-skeleton-index="${rowIndex}">
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <div class="shop-table-skeleton-pill-row">
+                            <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span>
+                            <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span>
+                        </div>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-50"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-30"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-20"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-50"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-60"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-40"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-70"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-60"></span>
+                        <div class="shop-table-skeleton-pill-row">
+                            <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span>
+                            <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span>
+                        </div>
+                    </div>
+                </td>
+                <td>
+                    ${this.buildShopSkeletonTextActions(actionWidths[rowIndex % actionWidths.length])}
+                </td>
+            </tr>
+        `).join('');
+    },
+
+    buildDeliveryReplayLoadingSkeleton: function (rowCount = 3) {
+        const totalRows = Math.max(3, Number.parseInt(rowCount, 10) || 3);
+
+        return Array.from({ length: totalRows }, (_, rowIndex) => `
+            <tr class="admin-table-skeleton-row shop-table-skeleton-row" aria-hidden="true" data-skeleton-index="${rowIndex}">
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-30"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-20"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell">
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-40"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-50"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <div class="shop-table-skeleton-pill-row">
+                            <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span>
+                            <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span>
+                        </div>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-60"></span>
+                        ${rowIndex % 2 === 0 ? '<span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-40"></span>' : ''}
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${18 + (rowIndex % 3) * 8}px"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-40"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <div class="shop-table-skeleton-pill-row">
+                            <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span>
+                            <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span>
+                        </div>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-50"></span>
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+    },
+
+    buildDeliveryConflictAuditLoadingSkeleton: function (rowCount = 3) {
+        const totalRows = Math.max(3, Number.parseInt(rowCount, 10) || 3);
+
+        return Array.from({ length: totalRows }, (_, rowIndex) => `
+            <tr class="admin-table-skeleton-row shop-table-skeleton-row" aria-hidden="true" data-skeleton-index="${rowIndex}">
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-30"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-20"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-60"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-40"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-50"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-md"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line ${rowIndex % 2 === 0 ? 'admin-skeleton-w-40' : 'admin-skeleton-w-50'}"></span>
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+    },
+
+    buildInventoryTableLoadingSkeleton: function (rowCount = 5) {
+        const totalRows = Math.max(3, Number.parseInt(rowCount, 10) || 5);
+        const actionCounts = [3, 2, 3, 2, 3];
+        const contentWidths = ['admin-skeleton-w-60', 'admin-skeleton-w-70', 'admin-skeleton-w-60', 'admin-skeleton-w-80'];
+        const dateWidths = [118, 132, 126, 136];
+        const checkboxCellClass = this.isSelectionMode
+            ? 'inv-checkbox-col shop-inventory-checkbox-col'
+            : 'inv-checkbox-col shop-inventory-checkbox-col shop-inventory-checkbox-col--hidden';
+
+        return Array.from({ length: totalRows }, (_, rowIndex) => `
+            <tr class="admin-table-skeleton-row shop-table-skeleton-row" aria-hidden="true" data-skeleton-index="${rowIndex}">
+                <td class="${checkboxCellClass}">
+                    <div class="admin-table-skeleton-cell">
+                        <span class="admin-skeleton-block admin-skeleton-block--checkbox"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell">
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-50"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell">
+                        <span class="admin-skeleton-block admin-skeleton-block--pill shop-table-skeleton-content-chip ${contentWidths[rowIndex % contentWidths.length]}"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell">
+                        <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell">
+                        <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${dateWidths[rowIndex % dateWidths.length]}px"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack shop-table-skeleton-stack--tight">
+                        <span class="admin-skeleton-block admin-skeleton-block--line ${rowIndex % 2 === 0 ? 'admin-skeleton-w-40' : 'admin-skeleton-w-20'}"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-20"></span>
+                    </div>
+                </td>
+                <td>
+                    ${this.buildShopSkeletonIconActions(actionCounts[rowIndex % actionCounts.length])}
+                </td>
             </tr>
         `).join('');
     },
@@ -5132,6 +5609,1157 @@ Example output format:
         return labels.length ? `影响范围：${labels.join(' / ')}` : '';
     },
 
+    normalizeShopAnalyticsDrilldownContext: function (context = {}) {
+        const normalizedContext = context && typeof context === 'object' && !Array.isArray(context)
+            ? context
+            : null;
+        if (!normalizedContext) return null;
+
+        const referenceLabel = String(normalizedContext.referenceLabel || normalizedContext.label || '').trim();
+        const referenceValue = String(normalizedContext.referenceValue || normalizedContext.value || '').trim();
+        const query = String(
+            normalizedContext.query
+            || normalizedContext.search
+            || normalizedContext.productName
+            || normalizedContext.productId
+            || ''
+        ).trim();
+        const queryLabel = String(normalizedContext.queryLabel || '').trim();
+        const site = String(normalizedContext.site || '').trim().toLowerCase();
+        const productId = String(normalizedContext.productId || '').trim();
+        const productName = String(normalizedContext.productName || '').trim();
+        const signalSourceName = String(normalizedContext.signalSourceName || '').trim();
+        const signalLabel = String(normalizedContext.signalLabel || normalizedContext.targetMetric || '').trim();
+        const signalValue = String(normalizedContext.signalValue || '').trim();
+        const rangeLabel = String(normalizedContext.rangeLabel || '').trim();
+        const userId = String(normalizedContext.userId || '').trim();
+        const email = String(normalizedContext.email || '').trim();
+        const sourceLabel = String(normalizedContext.sourceLabel || '').trim();
+        const summary = String(normalizedContext.summary || '').trim();
+        const actionLabel = String(normalizedContext.actionLabel || '').trim();
+        const verificationMethod = String(normalizedContext.verificationMethod || '').trim();
+        const siteLabel = String(normalizedContext.siteLabel || '').trim();
+        const destination = String(normalizedContext.destination || '').trim().toLowerCase();
+        const destinationContext = normalizedContext.destinationContext && typeof normalizedContext.destinationContext === 'object' && !Array.isArray(normalizedContext.destinationContext)
+            ? { ...normalizedContext.destinationContext }
+            : {};
+
+        if (
+            !referenceLabel
+            && !referenceValue
+            && !query
+            && !productId
+            && !productName
+            && !signalSourceName
+            && !signalLabel
+            && !rangeLabel
+            && !userId
+            && !email
+            && !sourceLabel
+            && !summary
+            && !actionLabel
+            && !verificationMethod
+            && !siteLabel
+            && !destination
+            && !['cn', 'intl'].includes(site)
+        ) {
+            return null;
+        }
+
+        return {
+            referenceLabel,
+            referenceValue,
+            query,
+            queryLabel,
+            site,
+            productId,
+            productName,
+            signalSourceName,
+            signalLabel,
+            signalValue,
+            rangeLabel,
+            userId,
+            email,
+            sourceLabel,
+            summary,
+            actionLabel,
+            verificationMethod,
+            siteLabel,
+            destination,
+            destinationContext,
+            refundStatus: String(normalizedContext.refundStatus || '').trim().toLowerCase(),
+            deliveryStatus: String(normalizedContext.deliveryStatus || '').trim().toLowerCase()
+        };
+    },
+
+    normalizeOrderRefundStatusFilter: function (value = 'all') {
+        const normalized = String(value || 'all').trim().toLowerCase();
+        return normalized && normalized !== 'all' ? normalized : 'all';
+    },
+
+    normalizeOrderDeliveryStatusFilter: function (value = 'all') {
+        const normalized = String(value || 'all').trim().toLowerCase();
+        const allowed = new Set([
+            'all',
+            'pending',
+            'processing',
+            'retry_waiting',
+            'requeued',
+            'dead_letter',
+            'delivered'
+        ]);
+        return allowed.has(normalized) ? normalized : 'all';
+    },
+
+    buildShopAnalyticsDrilldownContextState: function (context = {}, options = {}) {
+        const normalizedContext = this.normalizeShopAnalyticsDrilldownContext(context);
+        if (!normalizedContext) return null;
+
+        const chips = [{ label: '来源', value: '商品分析' }];
+        if (normalizedContext.site === 'cn' || normalizedContext.site === 'intl') {
+            chips.push({ label: '站点', value: normalizedContext.site === 'intl' ? 'INTL' : 'CN' });
+        }
+        if (normalizedContext.referenceLabel && normalizedContext.referenceValue) {
+            chips.push({
+                label: normalizedContext.referenceLabel,
+                value: normalizedContext.referenceValue
+            });
+        }
+        if (normalizedContext.refundStatus && normalizedContext.refundStatus !== 'all') {
+            chips.push({
+                label: '退款筛选',
+                value: normalizedContext.referenceValue || normalizedContext.refundStatus
+            });
+        }
+        if (normalizedContext.deliveryStatus && normalizedContext.deliveryStatus !== 'all') {
+            chips.push({
+                label: '履约筛选',
+                value: normalizedContext.referenceValue || normalizedContext.deliveryStatus
+            });
+        }
+        if (normalizedContext.query) {
+            chips.push({
+                label: normalizedContext.queryLabel || '当前查询',
+                value: normalizedContext.query
+            });
+        }
+        if (normalizedContext.signalLabel) {
+            chips.push({
+                label: '商品信号',
+                value: [normalizedContext.signalLabel, normalizedContext.signalValue].filter(Boolean).join(' · ')
+            });
+        }
+        if (normalizedContext.productName || normalizedContext.productId) {
+            chips.push({
+                label: '商品',
+                value: normalizedContext.productName || normalizedContext.productId
+            });
+        }
+        if (normalizedContext.rangeLabel) {
+            chips.push({
+                label: '范围',
+                value: normalizedContext.rangeLabel
+            });
+        }
+
+        return {
+            eyebrow: String(options.eyebrow || 'Analytics Drilldown').trim() || 'Analytics Drilldown',
+            title: String(options.title || '当前来自商品分析下钻').trim() || '当前来自商品分析下钻',
+            summary: String(
+                options.summary
+                || '当前列表由商品分析联动打开，建议先处理当前筛选结果，再继续放大到订单、履约和售后。'
+            ).trim(),
+            chips
+        };
+    },
+
+    renderShopAnalyticsDrilldownContextMarkup: function (context = {}, options = {}) {
+        const state = this.buildShopAnalyticsDrilldownContextState(context, options);
+        if (!state) return '';
+
+        return `
+            <div class="admin-workbench-context-note admin-workbench-context-note--compact shop-analytics-drilldown-note">
+                <div class="admin-workbench-context-note__eyebrow">${this.escapeHtml(state.eyebrow || 'Analytics Drilldown')}</div>
+                <div class="admin-workbench-context-note__title">${this.escapeHtml(state.title || '当前来自商品分析下钻')}</div>
+                <div class="admin-workbench-context-note__summary">${this.escapeHtml(state.summary || '')}</div>
+                <div class="admin-workbench-context-note__chips">
+                    ${(Array.isArray(state.chips) ? state.chips : []).map((item) => `
+                        <span class="admin-workbench-context-note__chip">${this.escapeHtml(item.label || '')} · ${this.escapeHtml(item.value || '')}</span>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    },
+
+    setOrderSearchContext: function (context = null) {
+        this.orderSearchContext = this.normalizeShopAnalyticsDrilldownContext(context);
+        this.orderRefundStatusFilter = this.normalizeOrderRefundStatusFilter(this.orderSearchContext?.refundStatus || 'all');
+        this.orderDeliveryStatusFilter = this.normalizeOrderDeliveryStatusFilter(this.orderSearchContext?.deliveryStatus || 'all');
+        this.renderOrderSearchContextHint();
+        this.renderOrderUserFlowSummary([], {
+            totalCount: 0,
+            loading: Boolean(this.hasUserCommerceOrderContext(this.orderSearchContext))
+        });
+    },
+
+    clearOrderSearchContext: function () {
+        this.orderRefundStatusFilter = 'all';
+        this.orderDeliveryStatusFilter = 'all';
+        this.currentOrderRows = [];
+        this.setOrderSearchContext(null);
+    },
+
+    buildUserCommerceReturnContext: function (context = this.orderSearchContext) {
+        const normalizedContext = this.normalizeShopAnalyticsDrilldownContext(context);
+        if (!normalizedContext || !normalizedContext.userId) {
+            return null;
+        }
+
+        const userLabel = this.safeText(
+            normalizedContext.referenceValue
+            || normalizedContext.query
+            || normalizedContext.email
+            || normalizedContext.userId
+            || '当前用户'
+        ).trim() || '当前用户';
+        const hasIssueFocus = this.normalizeOrderRefundStatusFilter(this.orderRefundStatusFilter) !== 'all'
+            || this.normalizeOrderDeliveryStatusFilter(this.orderDeliveryStatusFilter) !== 'all';
+        const issueFocusLabel = this.getOrderIssueFocusLabel();
+
+        return {
+            sourceLabel: normalizedContext.sourceLabel || '商品经营影响用户',
+            summary: hasIssueFocus
+                ? `当前已围绕“${issueFocusLabel || '订单问题'}”处理 ${userLabel} 的订单承接链，适合回到用户侧继续确认支付、履约和售后是否同步回落。`
+                : (normalizedContext.summary || `当前已按 ${userLabel} 打开商品经营影响用户的订单承接链，适合继续回到用户侧看整体承接是否收口。`),
+            signalLabel: normalizedContext.signalLabel,
+            signalValue: normalizedContext.signalValue,
+            productId: normalizedContext.productId,
+            productName: normalizedContext.productName,
+            site: normalizedContext.site,
+            siteLabel: normalizedContext.siteLabel,
+            rangeLabel: normalizedContext.rangeLabel,
+            referenceLabel: '用户',
+            referenceValue: userLabel,
+            actionLabel: normalizedContext.actionLabel || '回到商品经营',
+            verificationMethod: normalizedContext.verificationMethod || '回到用户侧确认订单、支付、售后和商品预警是否一起回落。',
+            destination: normalizedContext.destination || '',
+            destinationContext: normalizedContext.destinationContext || {}
+        };
+    },
+
+    buildUserCommerceReturnAttrs: function (context = this.orderSearchContext) {
+        const normalizedContext = this.normalizeShopAnalyticsDrilldownContext(context);
+        const analyticsContext = this.buildUserCommerceReturnContext(normalizedContext);
+        if (!normalizedContext?.userId || !analyticsContext) {
+            return '';
+        }
+
+        const serializedContext = typeof serializeAnalyticsActionContext === 'function'
+            ? serializeAnalyticsActionContext(analyticsContext)
+            : '';
+        return `data-admin-action="analytics-open-user-detail" data-user-id="${this.escapeForAttr(normalizedContext.userId)}"${serializedContext ? ` data-analytics-context="${this.escapeForAttr(serializedContext)}"` : ''}`;
+    },
+
+    findCurrentOrderRow: function (orderId = '') {
+        const normalizedOrderId = String(orderId || '').trim();
+        if (!normalizedOrderId) return null;
+        return (Array.isArray(this.currentOrderRows) ? this.currentOrderRows : []).find(
+            (row) => String(row?.id || '').trim() === normalizedOrderId
+        ) || null;
+    },
+
+    recordOrderResolutionFeedback: function (orderId = '', options = {}) {
+        if (typeof window.recordAnalyticsResolutionFeedback !== 'function') {
+            return null;
+        }
+
+        const normalizedContext = this.normalizeShopAnalyticsDrilldownContext(this.orderSearchContext) || {};
+        const feedbackScope = String(normalizedContext.feedbackScope || '').trim().toLowerCase();
+        const feedbackEntityType = String(normalizedContext.feedbackEntityType || 'shop-orders').trim().toLowerCase() || 'shop-orders';
+        const feedbackEntityName = String(
+            normalizedContext.feedbackEntityName
+            || normalizedContext.referenceValue
+            || normalizedContext.referenceLabel
+            || normalizedContext.productName
+            || normalizedContext.productId
+            || '订单承接'
+        ).trim() || '订单承接';
+        const feedbackEntityId = String(
+            normalizedContext.feedbackEntityId
+            || orderId
+            || feedbackEntityType
+        ).trim() || feedbackEntityType;
+        if (!normalizedContext.productId && !normalizedContext.productName && !feedbackScope && !feedbackEntityName) {
+            return null;
+        }
+
+        const order = this.findCurrentOrderRow(orderId) || {};
+        const targetStatus = String(options.targetStatus || '').trim().toLowerCase();
+        const targetStatusLabelMap = {
+            available: '重新上架',
+            frozen: '冻结问题',
+            fault: '故障维修',
+            reserve: '保留库存'
+        };
+        const targetStatusLabel = targetStatusLabelMap[targetStatus] || '库存已调整';
+        const referenceLabel = String(normalizedContext.referenceLabel || '用户').trim() || '用户';
+        const referenceValue = String(
+            normalizedContext.referenceValue
+            || normalizedContext.query
+            || normalizedContext.email
+            || normalizedContext.userId
+            || orderId
+        ).trim() || orderId;
+        const productLabel = String(
+            order?.product_name
+            || order?.name
+            || order?.product_title
+            || normalizedContext.productName
+            || normalizedContext.productId
+            || '当前商品'
+        ).trim();
+
+        return window.recordAnalyticsResolutionFeedback({
+            module: 'shop-orders',
+            productId: normalizedContext.productId,
+            productName: normalizedContext.productName || productLabel,
+            feedbackScope,
+            entityType: feedbackEntityType,
+            entityId: feedbackEntityId,
+            entityName: feedbackEntityName,
+            title: `订单退款 · ${productLabel}`,
+            summary: `${referenceLabel}“${referenceValue}”的订单 ${String(orderId || '').trim() || '—'} 已完成退款，并将库存切到“${targetStatusLabel}”。建议回到用户侧确认退款问题没有继续新增。`,
+            actionLabel: '订单退款',
+            referenceLabel,
+            referenceValue,
+            tone: 'warning',
+            statusKey: 'review',
+            statusLabel: '待复查'
+        });
+    },
+
+    renderOrderSearchContextHint: function () {
+        const container = document.getElementById('shopOrdersContextHint');
+        if (!container) return;
+
+        const hasUserContext = this.hasUserCommerceOrderContext(this.orderSearchContext);
+
+        const markup = this.renderShopAnalyticsDrilldownContextMarkup(this.orderSearchContext, {
+            title: hasUserContext ? '当前订单列表来自商品经营影响用户' : '当前订单列表来自商品分析下钻',
+            summary: hasUserContext
+                ? '已按这位受商品经营影响用户联动筛选订单列表，适合继续核对订单、退款、履约和售后承接。'
+                : '已按商品或关键词联动筛选订单列表，你可以继续看订单明细、退款、导出或改查询脱离当前上下文。'
+        });
+        const userReturnAttrs = this.buildUserCommerceReturnAttrs(this.orderSearchContext);
+        container.innerHTML = markup && userReturnAttrs
+            ? markup.replace(
+                '<div class="admin-workbench-context-note__chips">',
+                `<div class="admin-workbench-context-note__chips">
+                    <button
+                        type="button"
+                        class="admin-workbench-context-note__chip admin-workbench-context-note__chip--action"
+                        ${userReturnAttrs}
+                    >回用户承接链</button>`
+            )
+            : markup;
+        container.hidden = !markup;
+    },
+
+    hasUserCommerceOrderContext: function (context = this.orderSearchContext) {
+        const normalizedContext = this.normalizeShopAnalyticsDrilldownContext(context);
+        if (!normalizedContext) {
+            return false;
+        }
+
+        const labels = [
+            this.safeText(normalizedContext.queryLabel).trim(),
+            this.safeText(normalizedContext.referenceLabel).trim()
+        ].filter(Boolean);
+
+        return labels.includes('用户') || labels.includes('User') || Boolean(normalizedContext.userId || normalizedContext.email);
+    },
+
+    applyOrderUserFlowFocus: function (rawKind, rawValue) {
+        const kind = String(rawKind || '').trim().toLowerCase();
+        const value = String(rawValue || '').trim().toLowerCase();
+
+        if (kind === 'refund') {
+            this.orderRefundStatusFilter = this.normalizeOrderRefundStatusFilter(value || 'all');
+            this.orderDeliveryStatusFilter = 'all';
+        } else if (kind === 'delivery') {
+            this.orderDeliveryStatusFilter = this.normalizeOrderDeliveryStatusFilter(value || 'all');
+            this.orderRefundStatusFilter = 'all';
+        } else {
+            this.orderRefundStatusFilter = 'all';
+            this.orderDeliveryStatusFilter = 'all';
+        }
+
+        this.searchOrders(1);
+    },
+
+    buildOrderUserFlowDestinationContext: function (destination = '', item = {}) {
+        const normalizedDestination = String(destination || '').trim().toLowerCase();
+        const context = this.normalizeShopAnalyticsDrilldownContext(this.orderSearchContext) || {};
+        const userLabel = this.safeText(
+            context.referenceValue
+            || context.query
+            || context.email
+            || context.userId
+            || '当前用户'
+        ).trim() || '当前用户';
+        const query = this.safeText(context.query || context.email || context.userId).trim();
+        const issueKind = this.safeText(item.issueKind).trim().toLowerCase();
+        const issueValue = this.safeText(item.issueValue).trim().toLowerCase();
+        const issueLabel = this.safeText(item.title).trim() || '订单承接链';
+
+        const baseContext = {
+            referenceLabel: '用户',
+            referenceValue: userLabel,
+            query,
+            queryLabel: '用户',
+            site: this.safeText(context.site).trim().toLowerCase(),
+            siteLabel: this.safeText(context.siteLabel).trim(),
+            productId: this.safeText(context.productId).trim(),
+            productName: this.safeText(context.productName).trim(),
+            userId: this.safeText(context.userId).trim(),
+            email: this.safeText(context.email).trim(),
+            signalLabel: this.safeText(context.signalLabel).trim(),
+            signalValue: this.safeText(context.signalValue).trim(),
+            rangeLabel: this.safeText(context.rangeLabel).trim(),
+            sourceLabel: this.safeText(context.sourceLabel).trim() || '商品经营影响用户',
+            summary: this.safeText(context.summary).trim() || `当前已围绕 ${userLabel} 的订单承接链继续核对支付、履约和售后问题。`,
+            actionLabel: this.safeText(context.actionLabel).trim() || '回到商品经营',
+            verificationMethod: this.safeText(context.verificationMethod).trim() || '处理后回看用户侧承接链、订单问题和商品预警是否同步回落。',
+            destination: this.safeText(context.destination).trim().toLowerCase(),
+            destinationContext: context.destinationContext && typeof context.destinationContext === 'object' && !Array.isArray(context.destinationContext)
+                ? { ...context.destinationContext }
+                : {}
+        };
+
+        if (normalizedDestination === 'tickets') {
+            return {
+                ...baseContext,
+                mode: 'pending',
+                workspace: 'queue',
+                search: query || userLabel,
+                focusTargetId: 'ticketsIssueSummary',
+                issueSource: 'shop-order-user-flow',
+                issueKind,
+                issueValue,
+                contextTitle: issueLabel
+            };
+        }
+
+        if (normalizedDestination === 'payments-ops') {
+            return {
+                ...baseContext,
+                mode: 'ops',
+                focusTargetId: issueKind === 'refund' ? 'paymentsPrioritySummary' : 'paymentsIssueSummary',
+                topicKey: issueKind === 'refund' ? 'refund_failures' : '',
+                issueSource: 'shop-order-user-flow',
+                issueKind,
+                issueValue,
+                contextTitle: issueLabel
+            };
+        }
+
+        if (normalizedDestination === 'payments-overview') {
+            return {
+                ...baseContext,
+                mode: 'overview',
+                focusTargetId: 'paymentsIssueSummary',
+                issueSource: 'shop-order-user-flow',
+                issueKind,
+                issueValue,
+                contextTitle: issueLabel
+            };
+        }
+
+        return {
+            ...baseContext,
+            issueSource: 'shop-order-user-flow',
+            issueKind,
+            issueValue,
+            contextTitle: issueLabel
+        };
+    },
+
+    openOrderUserFlowDestination: function (destination = '', rawKind = '', rawValue = '') {
+        const normalizedDestination = String(destination || '').trim().toLowerCase();
+        if (!normalizedDestination || typeof window.openAnalyticsDestination !== 'function') {
+            return;
+        }
+
+        const issueKind = String(rawKind || '').trim().toLowerCase();
+        const issueValue = String(rawValue || '').trim().toLowerCase();
+        const issueLabels = {
+            refund: '退款相关订单',
+            delivery_dead_letter: '履约死信订单',
+            delivery_retry_waiting: '待重试订单',
+            delivery_pending: '待履约订单',
+            delivery_delivered: '已履约订单'
+        };
+        const issueKey = issueKind === 'refund'
+            ? 'refund'
+            : `delivery_${issueValue || issueKind}`;
+        const context = this.buildOrderUserFlowDestinationContext(normalizedDestination, {
+            issueKind,
+            issueValue,
+            title: issueLabels[issueKey] || '订单承接链'
+        });
+        window.openAnalyticsDestination(normalizedDestination, context);
+    },
+
+    renderOrderUserFlowSummary: function (rows = [], options = {}) {
+        const container = document.getElementById('shopOrdersUserFlowSummary');
+        if (!container) return;
+
+        if (!this.hasUserCommerceOrderContext()) {
+            container.innerHTML = '';
+            container.hidden = true;
+            return;
+        }
+
+        const safeRows = Array.isArray(rows) ? rows : [];
+        const matchedCount = Number(options.totalCount);
+        const totalCount = Number.isFinite(matchedCount) ? matchedCount : safeRows.length;
+        const isLoading = options.loading === true;
+        const userLabel = this.safeText(
+            this.orderSearchContext?.referenceValue
+            || this.orderSearchContext?.query
+            || this.orderSearchContext?.email
+            || this.orderSearchContext?.userId
+            || '当前用户'
+        ).trim() || '当前用户';
+        const refundedCount = safeRows.filter((row) => ['refunded', 'full_refund'].includes(String(row?.refund_status || '').trim().toLowerCase())).length;
+        const deadLetterCount = safeRows.filter((row) => String(row?.delivery_status || '').trim().toLowerCase() === 'dead_letter').length;
+        const retryWaitingCount = safeRows.filter((row) => String(row?.delivery_status || '').trim().toLowerCase() === 'retry_waiting').length;
+        const pendingDeliveryCount = safeRows.filter((row) => String(row?.delivery_status || '').trim().toLowerCase() === 'pending').length;
+        const deliveredCount = safeRows.filter((row) => String(row?.delivery_status || '').trim().toLowerCase() === 'delivered').length;
+        const uniqueProducts = new Set(
+            safeRows
+                .map((row) => this.safeText(row?.product_name || row?.name || row?.product_title).trim())
+                .filter(Boolean)
+        );
+        const latestProduct = safeRows
+            .map((row) => this.safeText(row?.product_name || row?.name || row?.product_title).trim())
+            .find(Boolean);
+        const userReturnAttrs = this.buildUserCommerceReturnAttrs(this.orderSearchContext);
+        const chips = [
+            { label: '用户', value: userLabel },
+            this.orderSearchContext?.signalLabel
+                ? { label: '商品信号', value: [this.orderSearchContext.signalLabel, this.orderSearchContext.signalValue].filter(Boolean).join(' · ') }
+                : null,
+            this.orderSearchContext?.productName || this.orderSearchContext?.productId
+                ? { label: '当前商品', value: this.orderSearchContext.productName || this.orderSearchContext.productId }
+                : null,
+            this.orderSearchContext?.rangeLabel
+                ? { label: '范围', value: this.orderSearchContext.rangeLabel }
+                : null,
+            { label: '命中订单', value: String(totalCount || 0) },
+            { label: '涉及商品', value: String(uniqueProducts.size || 0) },
+            refundedCount > 0 ? { label: '退款相关', value: String(refundedCount) } : null,
+            deadLetterCount > 0 ? { label: '死信', value: String(deadLetterCount) } : null,
+            retryWaitingCount > 0 ? { label: '待重试', value: String(retryWaitingCount) } : null,
+            pendingDeliveryCount > 0 ? { label: '待履约', value: String(pendingDeliveryCount) } : null,
+            deliveredCount > 0 ? { label: '已履约', value: String(deliveredCount) } : null
+        ].filter(Boolean);
+        const priorityCandidates = totalCount > 0
+            ? [
+                {
+                    key: 'refund',
+                    count: refundedCount,
+                    rank: 'TOP 1',
+                    title: '退款相关订单',
+                    whyImportant: '退款说明这位用户虽然已经成交，但承接链已经反向失败，最容易把本轮经营结论重新拉回待复查。',
+                    nextAction: '先核对退款订单是否已经完成库存回滚、售后回复和状态同步，避免已退款但仍挂在待复查里。',
+                    verification: '处理后回看这位用户的退款订单是否不再新增，同时确认商品预警里的退款风险开始回落。',
+                    issueKind: 'refund',
+                    issueValue: 'refunded'
+                },
+                {
+                    key: 'dead_letter',
+                    count: deadLetterCount,
+                    rank: 'TOP 2',
+                    title: '履约死信订单',
+                    whyImportant: '死信说明支付后的履约承接彻底中断，会直接影响用户体验并放大售后压力。',
+                    nextAction: '优先检查死信订单的上游失败或目标缺失，先把订单移出死信再继续核对售后承接。',
+                    verification: '处理后确认死信订单已转出死信，待重试/处理中样本开始回落，履约风险不再持续挂红。',
+                    issueKind: 'delivery',
+                    issueValue: 'dead_letter'
+                },
+                {
+                    key: 'retry_waiting',
+                    count: retryWaitingCount,
+                    rank: 'TOP 3',
+                    title: '待重试订单',
+                    whyImportant: '待重试说明这条订单链还有恢复空间，越早清理越能缩短这位用户的等待时间。',
+                    nextAction: '先确认失败原因和重试条件，优先把待重试订单推回处理中或已履约。',
+                    verification: '处理后回看待重试订单是否减少，且没有继续掉回相同的重试状态。',
+                    issueKind: 'delivery',
+                    issueValue: 'retry_waiting'
+                },
+                {
+                    key: 'pending',
+                    count: pendingDeliveryCount,
+                    rank: 'TOP 4',
+                    title: '待履约订单',
+                    whyImportant: '待履约偏多说明支付后的承接链没有顺畅推进，容易拖慢整条商品承接链。',
+                    nextAction: '先回看当前商品和站点的履约入口是否拥堵，再确认是否有库存或渠道侧阻塞。',
+                    verification: '处理后确认待履约订单开始转向处理中或已履约，且不会继续堆积。',
+                    issueKind: 'delivery',
+                    issueValue: 'pending'
+                },
+                {
+                    key: 'delivered',
+                    count: deliveredCount,
+                    rank: 'TOP 5',
+                    title: '已履约订单',
+                    whyImportant: '已履约样本能帮助确认这条承接链是否真的收口，还是在履约后又转成售后或退款问题。',
+                    nextAction: '回看已履约样本是否已经沉淀成复购或售后问题，确认这位用户的承接链是否真正收口。',
+                    verification: '处理后确认已履约订单没有继续转成退款或售后异常，并开始沉淀成稳定复购样本。',
+                    issueKind: 'delivery',
+                    issueValue: 'delivered'
+                }
+            ]
+                .filter((item) => item.count > 0)
+                .sort((left, right) => {
+                    const weight = {
+                        refund: 500,
+                        dead_letter: 400,
+                        retry_waiting: 300,
+                        pending: 200,
+                        delivered: 100
+                    };
+                    return (weight[right.key] + right.count) - (weight[left.key] + left.count);
+                })
+                .slice(0, 3)
+            : [];
+        const summary = isLoading
+            ? `正在按“${userLabel}”回看商品承接后的订单链路，订单样本返回后会补齐退款、履约和商品分布摘要。`
+            : (totalCount > 0
+                ? `这位受商品经营影响的用户当前命中 ${totalCount} 笔订单，涉及 ${uniqueProducts.size || 0} 个商品${latestProduct ? `，最近订单商品是「${latestProduct}」` : ''}，适合继续核对退款、履约和售后承接。`
+                : '这位用户已命中商品经营信号，但当前订单侧还没有形成样本，建议继续回看支付、积分或售后承接。');
+
+        container.innerHTML = `
+            <div class="admin-workbench-context-note admin-workbench-context-note--compact shop-analytics-drilldown-note shop-analytics-drilldown-note--issue">
+                <div class="admin-workbench-context-note__eyebrow">User Commerce View</div>
+                <div class="admin-workbench-context-note__title">${this.escapeHtml(`${userLabel} · 订单承接链`)}</div>
+                <div class="admin-workbench-context-note__summary">${this.escapeHtml(summary)}</div>
+                <div class="admin-workbench-context-note__chips">
+                    ${chips.map((item) => `
+                        <span class="admin-workbench-context-note__chip">${this.escapeHtml(item.label)} · ${this.escapeHtml(item.value)}</span>
+                    `).join('')}
+                </div>
+                ${(!isLoading && priorityCandidates.length > 0) ? `
+                    <div class="admin-workbench-priority-list">
+                        ${priorityCandidates.map((item, index) => `
+                            <div class="admin-workbench-priority-item">
+                                <div class="admin-workbench-priority-item__top">
+                                    <div class="admin-workbench-priority-item__title">${this.escapeHtml(item.title)}</div>
+                                    <div class="admin-workbench-priority-item__rank">${this.escapeHtml(item.rank || `TOP ${index + 1}`)}</div>
+                                </div>
+                                <div class="admin-workbench-priority-item__meta">
+                                    <span>命中订单 ${this.escapeHtml(String(item.count || 0))}</span>
+                                    <span>用户 ${this.escapeHtml(userLabel)}</span>
+                                </div>
+                                <div class="admin-workbench-priority-item__guidance">
+                                    <div class="admin-workbench-priority-item__guidance-item">
+                                        <span>为什么优先</span>
+                                        <p>${this.escapeHtml(item.whyImportant || '')}</p>
+                                    </div>
+                                    <div class="admin-workbench-priority-item__guidance-item">
+                                        <span>建议先做</span>
+                                        <p>${this.escapeHtml(item.nextAction || item.recommendation || '')}</p>
+                                    </div>
+                                    <div class="admin-workbench-priority-item__guidance-item">
+                                        <span>验证方式</span>
+                                        <p>${this.escapeHtml(item.verification || '处理后回看这位用户的订单、支付和售后信号是否开始回落。')}</p>
+                                    </div>
+                                </div>
+                                <div class="admin-workbench-priority-item__actions">
+                                    ${userReturnAttrs ? `
+                                        <button
+                                            type="button"
+                                            class="admin-workbench-priority-item__btn"
+                                            ${userReturnAttrs}
+                                        >
+                                            <i class="fas fa-user"></i> 回用户承接链
+                                        </button>
+                                    ` : ''}
+                                    <button
+                                        type="button"
+                                        class="admin-workbench-priority-item__btn"
+                                        data-shop-action="order-user-flow-focus"
+                                        data-order-issue-kind="${this.escapeForAttr(item.issueKind || '')}"
+                                        data-order-issue-value="${this.escapeForAttr(item.issueValue || '')}"
+                                    >
+                                        <i class="fas fa-list-check"></i> 看${this.escapeHtml(item.title)}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="admin-workbench-priority-item__btn"
+                                        data-shop-action="order-user-flow-open-destination"
+                                        data-analytics-destination="${this.escapeForAttr(item.issueKind === 'refund' ? 'payments-ops' : 'payments-overview')}"
+                                        data-order-issue-kind="${this.escapeForAttr(item.issueKind || '')}"
+                                        data-order-issue-value="${this.escapeForAttr(item.issueValue || '')}"
+                                    >
+                                        <i class="fas fa-credit-card"></i> 看支付问题
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="admin-workbench-priority-item__btn"
+                                        data-shop-action="order-user-flow-open-destination"
+                                        data-analytics-destination="tickets"
+                                        data-order-issue-kind="${this.escapeForAttr(item.issueKind || '')}"
+                                        data-order-issue-value="${this.escapeForAttr(item.issueValue || '')}"
+                                    >
+                                        <i class="fas fa-life-ring"></i> 看售后工单
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="admin-workbench-priority-item__btn"
+                                        data-shop-action="order-user-flow-focus"
+                                        data-order-issue-kind="reset"
+                                        data-order-issue-value="all"
+                                    >
+                                        <i class="fas fa-arrows-rotate"></i> 回到全部订单
+                                    </button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+        container.hidden = false;
+    },
+
+    buildOrderIssueGuidanceState: function ({ refundStatus = 'all', deliveryStatus = 'all', totalCount = 0 } = {}) {
+        const normalizedRefundStatus = this.normalizeOrderRefundStatusFilter(refundStatus);
+        const normalizedDeliveryStatus = this.normalizeOrderDeliveryStatusFilter(deliveryStatus);
+
+        if (normalizedRefundStatus !== 'all') {
+            return {
+                issueKind: 'refund',
+                issueValue: 'refunded',
+                whyImportant: `当前窗口命中 ${totalCount || 0} 笔退款相关订单，说明这位受商品经营影响用户的成交承接已经反向转成售后问题。`,
+                nextAction: '先核对退款状态、库存回滚和售后回复是否已经同步，再决定是否继续追支付或售后。',
+                verification: '处理后回看退款相关订单是否不再新增，并确认商品预警里的退款风险开始回落。'
+            };
+        }
+
+        const deliveryGuidanceMap = {
+            dead_letter: {
+                whyImportant: `当前窗口命中 ${totalCount || 0} 笔履约死信订单，说明订单已经卡在承接链最危险的断点。`,
+                nextAction: '先排查死信原因并把订单移出死信，再继续回看支付与售后是否同步收口。',
+                verification: '处理后确认死信订单转出死信，且这位用户的履约风险不再持续新增。'
+            },
+            retry_waiting: {
+                whyImportant: `当前窗口命中 ${totalCount || 0} 笔待重试订单，说明这条链路还有恢复空间，但还没有真正收口。`,
+                nextAction: '先确认失败原因和重试条件，优先把待重试订单推回处理中或已履约。',
+                verification: '处理后回看待重试订单是否减少，且没有继续掉回相同的重试状态。'
+            },
+            pending: {
+                whyImportant: `当前窗口命中 ${totalCount || 0} 笔待履约订单，说明支付后的承接还停在中间环节。`,
+                nextAction: '先核对库存、目标渠道和履约入口是否堵塞，再决定是否需要人工介入履约。',
+                verification: '处理后确认待履约订单开始转向处理中或已履约，且不会继续堆积。'
+            },
+            delivered: {
+                whyImportant: `当前窗口命中 ${totalCount || 0} 笔已履约订单，适合回看这条链路是否已经真正沉淀成稳定结果。`,
+                nextAction: '先抽样核对已履约订单是否又转成退款或售后问题，确认承接链已经真正收口。',
+                verification: '处理后确认已履约订单没有继续反弹成退款/售后，并逐步沉淀成稳定复购信号。'
+            }
+        };
+
+        if (normalizedDeliveryStatus !== 'all' && deliveryGuidanceMap[normalizedDeliveryStatus]) {
+            return {
+                issueKind: 'delivery',
+                issueValue: normalizedDeliveryStatus,
+                ...deliveryGuidanceMap[normalizedDeliveryStatus]
+            };
+        }
+
+        return {
+            issueKind: '',
+            issueValue: '',
+            whyImportant: `当前窗口命中 ${totalCount || 0} 笔问题订单，适合优先处理这位用户当前最影响商品承接链的问题。`,
+            nextAction: '先看当前订单问题类型，再决定优先去支付、履约还是售后继续处理。',
+            verification: '处理后回看问题订单是否开始减少，并确认用户侧的商品承接链开始回落。'
+        };
+    },
+
+    getOrderIssueFocusLabel: function () {
+        const refundStatus = this.normalizeOrderRefundStatusFilter(this.orderRefundStatusFilter);
+        const deliveryStatus = this.normalizeOrderDeliveryStatusFilter(this.orderDeliveryStatusFilter);
+        const refundLabel = refundStatus !== 'all'
+            ? (this.orderSearchContext?.referenceValue || '退款问题')
+            : '';
+        const deliveryLabelMap = {
+            pending: '待履约',
+            processing: '履约中',
+            retry_waiting: '待重试',
+            requeued: '已重排队',
+            dead_letter: '死信',
+            delivered: '已履约'
+        };
+        const deliveryLabel = deliveryStatus !== 'all'
+            ? (this.orderSearchContext?.referenceValue || deliveryLabelMap[deliveryStatus] || '履约问题')
+            : '';
+
+        if (refundLabel && deliveryLabel) {
+            return `${refundLabel} / ${deliveryLabel}`;
+        }
+        return refundLabel || deliveryLabel || '';
+    },
+
+    renderOrderIssueSummary: function (rows = [], options = {}) {
+        const container = document.getElementById('shopOrdersIssueSummary');
+        if (!container) return;
+
+        const refundStatus = this.normalizeOrderRefundStatusFilter(this.orderRefundStatusFilter);
+        const deliveryStatus = this.normalizeOrderDeliveryStatusFilter(this.orderDeliveryStatusFilter);
+        const hasIssueFocus = refundStatus !== 'all' || deliveryStatus !== 'all';
+        if (!hasIssueFocus) {
+            container.innerHTML = '';
+            container.hidden = true;
+            return;
+        }
+
+        const safeRows = Array.isArray(rows) ? rows : [];
+        const matchedCount = Number(options.totalCount);
+        const totalCount = Number.isFinite(matchedCount) ? matchedCount : safeRows.length;
+        const refundCount = safeRows.filter((row) => ['refunded', 'full_refund'].includes(String(row?.refund_status || '').trim().toLowerCase())).length;
+        const deadLetterCount = safeRows.filter((row) => String(row?.delivery_status || '').trim().toLowerCase() === 'dead_letter').length;
+        const retryCount = safeRows.filter((row) => String(row?.delivery_status || '').trim().toLowerCase() === 'retry_waiting').length;
+        const pendingCount = safeRows.filter((row) => String(row?.delivery_status || '').trim().toLowerCase() === 'pending').length;
+        const issueFocusLabel = this.getOrderIssueFocusLabel() || '问题订单';
+        const guidanceState = this.buildOrderIssueGuidanceState({
+            refundStatus,
+            deliveryStatus,
+            totalCount
+        });
+        const userReturnAttrs = this.buildUserCommerceReturnAttrs(this.orderSearchContext);
+        const chips = [
+            { label: '命中订单', value: String(totalCount || 0) },
+            { label: '退款订单', value: String(refundCount || 0) },
+            { label: '死信订单', value: String(deadLetterCount || 0) },
+            { label: '待重试', value: String(retryCount || 0) },
+            { label: '待履约', value: String(pendingCount || 0) }
+        ].filter((item) => item.value !== '0' || item.label === '命中订单');
+
+        container.innerHTML = `
+            <div class="admin-workbench-context-note admin-workbench-context-note--compact shop-analytics-drilldown-note shop-analytics-drilldown-note--issue">
+                <div class="admin-workbench-context-note__eyebrow">Order Issue View</div>
+                <div class="admin-workbench-context-note__title">${this.escapeHtml(`${issueFocusLabel} · 订单问题列表`)}</div>
+                <div class="admin-workbench-context-note__summary">当前订单列表已切到问题视角，适合优先处理退款、死信、待重试和待履约订单。</div>
+                <div class="admin-workbench-context-note__chips">
+                    ${chips.map((item) => `
+                        <span class="admin-workbench-context-note__chip">${this.escapeHtml(item.label)} · ${this.escapeHtml(item.value)}</span>
+                    `).join('')}
+                </div>
+                <div class="admin-workbench-priority-item__guidance shop-order-issue-guidance">
+                    <div class="admin-workbench-priority-item__guidance-item">
+                        <span>为什么优先</span>
+                        <p>${this.escapeHtml(guidanceState?.whyImportant || '当前订单列表已经聚焦到关键问题样本，适合优先处理。')}</p>
+                    </div>
+                    <div class="admin-workbench-priority-item__guidance-item">
+                        <span>建议先做</span>
+                        <p>${this.escapeHtml(guidanceState?.nextAction || '先核对当前问题类型，再决定优先回看支付、履约还是售后。')}</p>
+                    </div>
+                    <div class="admin-workbench-priority-item__guidance-item">
+                        <span>验证方式</span>
+                        <p>${this.escapeHtml(guidanceState?.verification || '处理后回看当前问题订单是否开始减少，并确认用户商品承接链开始回落。')}</p>
+                    </div>
+                </div>
+                <div class="admin-workbench-priority-item__actions shop-order-issue-actions">
+                    ${userReturnAttrs ? `
+                        <button
+                            type="button"
+                            class="admin-workbench-priority-item__btn"
+                            ${userReturnAttrs}
+                        >
+                            <i class="fas fa-user"></i> 回用户承接链
+                        </button>
+                    ` : ''}
+                    <button
+                        type="button"
+                        class="admin-workbench-priority-item__btn"
+                        data-shop-action="order-user-flow-open-destination"
+                        data-analytics-destination="${this.escapeForAttr(guidanceState?.issueKind === 'refund' ? 'payments-ops' : 'payments-overview')}"
+                        data-order-issue-kind="${this.escapeForAttr(guidanceState?.issueKind || '')}"
+                        data-order-issue-value="${this.escapeForAttr(guidanceState?.issueValue || '')}"
+                    >
+                        <i class="fas fa-credit-card"></i> 看支付问题
+                    </button>
+                    <button
+                        type="button"
+                        class="admin-workbench-priority-item__btn"
+                        data-shop-action="order-user-flow-open-destination"
+                        data-analytics-destination="tickets"
+                        data-order-issue-kind="${this.escapeForAttr(guidanceState?.issueKind || '')}"
+                        data-order-issue-value="${this.escapeForAttr(guidanceState?.issueValue || '')}"
+                    >
+                        <i class="fas fa-life-ring"></i> 看售后工单
+                    </button>
+                    <button
+                        type="button"
+                        class="admin-workbench-priority-item__btn"
+                        data-shop-action="order-user-flow-focus"
+                        data-order-issue-kind="reset"
+                        data-order-issue-value="all"
+                    >
+                        <i class="fas fa-arrows-rotate"></i> 回到全部订单
+                    </button>
+                </div>
+            </div>
+        `;
+        container.hidden = false;
+    },
+
+    getDeliveryIssueFocusLabel: function () {
+        const taskStatusMeta = this.getDeliveryTaskStatusFilterMeta(this.deliveryTaskStatusFilter);
+        const deadLetterReasonMeta = this.getDeliveryDeadLetterReasonFilterMeta(this.deliveryDeadLetterReasonFilter);
+        const deliveryStatus = String(this.deliveryWorkbenchContext?.deliveryStatus || '').trim().toLowerCase();
+        const queryLabel = String(this.deliveryTaskQueryContext?.label || this.deliveryWorkbenchContext?.queryLabel || '').trim();
+
+        if (String(this.deliveryDeadLetterReasonFilter || 'all').trim().toLowerCase() !== 'all') {
+            return deadLetterReasonMeta.label || '死信问题';
+        }
+
+        if (String(this.deliveryTaskStatusFilter || 'all').trim().toLowerCase() !== 'all') {
+            return this.deliveryWorkbenchContext?.referenceValue || taskStatusMeta.label || '履约问题';
+        }
+
+        if (deliveryStatus && this.deliveryWorkbenchContext?.referenceValue) {
+            return this.deliveryWorkbenchContext.referenceValue;
+        }
+
+        if (queryLabel) return queryLabel;
+        if (this.deliveryWorkbenchContext?.referenceValue) return this.deliveryWorkbenchContext.referenceValue;
+        if (this.deliveryWorkbenchContext?.referenceLabel) return this.deliveryWorkbenchContext.referenceLabel;
+        return '';
+    },
+
+    renderDeliveryIssueSummary: function (summary = {}) {
+        const container = document.getElementById('deliveryIssueSummary');
+        if (!container) return;
+
+        const hasWorkbenchContext = Boolean(this.deliveryWorkbenchContext);
+        const hasIssueFilters = String(this.deliveryTaskStatusFilter || 'all').trim().toLowerCase() !== 'all'
+            || String(this.deliveryDeadLetterReasonFilter || 'all').trim().toLowerCase() !== 'all';
+
+        if (!hasWorkbenchContext && !hasIssueFilters) {
+            container.innerHTML = '';
+            container.hidden = true;
+            return;
+        }
+
+        const focusLabel = this.getDeliveryIssueFocusLabel() || '履约问题';
+        const chips = [
+            { label: '命中任务', value: Number(summary.total || 0) },
+            { label: '待履约', value: Number(summary.pending || 0) },
+            { label: '处理中', value: Number(summary.processing || 0) },
+            { label: '待重试', value: Number(summary.retry_waiting || 0) },
+            { label: '死信', value: Number(summary.dead_letter || 0) },
+            { label: '冲突任务', value: Number(summary.conflict_tasks || 0) },
+            { label: '待解锁', value: Number(summary.force_unlock_candidates || 0) }
+        ].filter((item) => item.value > 0 || item.label === '命中任务');
+        const currentTaskStatus = String(this.deliveryTaskStatusFilter || 'all').trim().toLowerCase();
+        const currentLockState = String(this.deliveryLockStateFilter || 'all').trim().toLowerCase();
+        const hasActiveQuickFocus = currentTaskStatus !== 'all' || currentLockState !== 'all';
+        const quickFilters = [
+            {
+                label: `待履约 ${Number(summary.pending || 0)}`,
+                tone: 'warn',
+                active: currentTaskStatus === 'pending',
+                value: 'pending',
+                kind: 'status',
+                title: '点击快速切到待履约任务'
+            },
+            {
+                label: `处理中 ${Number(summary.processing || 0)}`,
+                tone: 'processing',
+                active: currentTaskStatus === 'processing',
+                value: 'processing',
+                kind: 'status',
+                title: '点击快速切到处理中任务'
+            },
+            {
+                label: `待重试 ${Number(summary.retry_waiting || 0)}`,
+                tone: 'warn',
+                active: currentTaskStatus === 'retry_waiting',
+                value: 'retry_waiting',
+                kind: 'status',
+                title: '点击快速切到待重试任务'
+            },
+            {
+                label: `死信 ${Number(summary.dead_letter || 0)}`,
+                tone: 'danger',
+                active: currentTaskStatus === 'dead_letter',
+                value: 'dead_letter',
+                kind: 'status',
+                title: '点击快速切到死信任务'
+            },
+            {
+                label: `待解锁 ${Number(summary.force_unlock_candidates || 0)}`,
+                tone: 'danger',
+                active: currentLockState === 'stale',
+                value: 'stale',
+                kind: 'lock',
+                title: '点击快速切到待解锁锁异常视角'
+            }
+        ];
+        const priorityCandidates = [
+            {
+                key: 'dead_letter',
+                count: Number(summary.dead_letter || 0),
+                tone: 'danger',
+                title: '死信任务会阻塞履约闭环，建议优先检查上游永久失败、目标缺失和冲突策略。',
+                label: '死信任务'
+            },
+            {
+                key: 'force_unlock',
+                count: Number(summary.force_unlock_candidates || 0),
+                tone: 'danger',
+                title: '待解锁通常意味着过期锁或缺锁残留，建议优先解除阻塞，避免队列继续卡住。',
+                label: '待解锁'
+            },
+            {
+                key: 'retry_waiting',
+                count: Number(summary.retry_waiting || 0),
+                tone: 'warn',
+                title: '待重试代表任务还可恢复，适合在死信之后优先清理，缩短用户等待。',
+                label: '待重试'
+            },
+            {
+                key: 'processing',
+                count: Number(summary.processing || 0),
+                tone: 'processing',
+                title: '处理中任务堆积时，说明当前吞吐或锁竞争需要关注。',
+                label: '处理中'
+            },
+            {
+                key: 'pending',
+                count: Number(summary.pending || 0),
+                tone: 'warn',
+                title: '待履约偏高时，说明新任务在入口堆积，建议核查扫描与批次策略。',
+                label: '待履约'
+            }
+        ]
+            .filter((item) => item.count > 0)
+            .sort((left, right) => {
+                const weight = {
+                    dead_letter: 500,
+                    force_unlock: 400,
+                    retry_waiting: 300,
+                    processing: 200,
+                    pending: 100
+                };
+                return (weight[right.key] + right.count) - (weight[left.key] + left.count);
+            })
+            .slice(0, 3);
+        const priorityActionForKey = (key) => {
+            if (key === 'force_unlock') {
+                return {
+                    action: 'delivery-priority-action',
+                    actionAttrs: {
+                        'delivery-priority-key': 'force_unlock'
+                    }
+                };
+            }
+            return {
+                action: 'delivery-priority-action',
+                actionAttrs: {
+                    'delivery-priority-key': key
+                }
+            };
+        };
+
+        container.innerHTML = `
+            <div class="admin-workbench-context-note admin-workbench-context-note--compact shop-analytics-drilldown-note shop-analytics-drilldown-note--issue">
+                <div class="admin-workbench-context-note__eyebrow">Fulfillment Issue View</div>
+                <div class="admin-workbench-context-note__title">${this.escapeHtml(`${focusLabel} · 履约问题列表`)}</div>
+                <div class="admin-workbench-context-note__summary">当前履约列表已切到问题视角，适合优先处理待履约、处理中、待重试和死信任务。</div>
+                ${priorityCandidates.length ? `
+                    <div class="analytics-product-detail-subsection">
+                        <span class="analytics-product-detail-subsection__label">建议先处理</span>
+                        <div class="admin-workbench-context-note__chips">
+                            ${priorityCandidates.map((item) => {
+                                const actionConfig = priorityActionForKey(item.key);
+                                return this.renderDeliveryQuickFilterChip({
+                                    label: `${item.label} ${item.count}`,
+                                    tone: item.tone,
+                                    active: item.key === 'force_unlock'
+                                        ? currentLockState === 'stale'
+                                        : currentTaskStatus === item.key,
+                                    title: item.title,
+                                    action: actionConfig.action,
+                                    actionAttrs: actionConfig.actionAttrs
+                                });
+                            }).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+                <div class="admin-workbench-context-note__chips">
+                    ${chips.map((item) => `
+                        <span class="admin-workbench-context-note__chip">${this.escapeHtml(item.label)} · ${this.escapeHtml(String(item.value || 0))}</span>
+                    `).join('')}
+                </div>
+                <div class="admin-workbench-context-note__chips">
+                    ${hasActiveQuickFocus ? this.renderDeliveryQuickFilterChip({
+                        label: '全部任务',
+                        tone: 'neutral',
+                        active: !hasActiveQuickFocus,
+                        title: '清除履约问题摘要快捷切换',
+                        action: 'delivery-issue-summary-focus',
+                        actionAttrs: {
+                            'delivery-issue-focus-kind': 'status',
+                            'delivery-issue-focus-value': 'all'
+                        }
+                    }) : ''}
+                    ${quickFilters.map((item) => this.renderDeliveryQuickFilterChip({
+                        label: item.label,
+                        tone: item.tone,
+                        active: item.active,
+                        title: item.title,
+                        action: 'delivery-issue-summary-focus',
+                        actionAttrs: {
+                            'delivery-issue-focus-kind': item.kind,
+                            'delivery-issue-focus-value': item.value
+                        }
+                    })).join('')}
+                </div>
+            </div>
+        `;
+        container.hidden = false;
+    },
+
+    revealPendingDeliverySection: function () {
+        const target = String(this.deliveryPendingSectionReveal || '').trim().toLowerCase();
+        if (!target) return;
+        const targetMap = {
+            tasks: 'deliveryTaskSummary',
+            dead_letter: 'deliveryDeadLetterSummary',
+            lock_conflicts: 'deliveryLockConflictSummary'
+        };
+        const element = document.getElementById(targetMap[target] || '');
+        if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        this.deliveryPendingSectionReveal = '';
+    },
+
+    setDeliveryWorkbenchContext: function (context = null) {
+        this.deliveryWorkbenchContext = this.normalizeShopAnalyticsDrilldownContext(context);
+        this.renderDeliveryTaskFilterHint();
+        this.renderDeliveryIssueSummary();
+    },
+
+    clearDeliveryWorkbenchContext: function () {
+        this.setDeliveryWorkbenchContext(null);
+    },
+
     buildDeliveryActiveFilterBreadcrumbs: function () {
         const crumbs = [];
         const query = String(this.deliveryTaskQuery || '').trim();
@@ -5522,6 +7150,10 @@ Example output format:
         if (!container) return;
 
         const breadcrumbs = this.buildDeliveryActiveFilterBreadcrumbs();
+        const analyticsContextMarkup = this.renderShopAnalyticsDrilldownContextMarkup(this.deliveryWorkbenchContext, {
+            title: '当前履约页来自商品分析下钻',
+            summary: '已按商品、关键词和问题视角联动筛到当前履约页，你可以直接处理履约、死信和异常任务。'
+        });
         const restoreLinkMeta = this.getDeliveryRestoreLinkFeedbackMeta();
         const mockModeNote = this.getDeliveryMockModeNote();
         const restoreLinkButtonClass = restoreLinkMeta.tone === 'success'
@@ -5533,6 +7165,7 @@ Example output format:
             container.innerHTML = `
                 <div class="shop-delivery-filter-banner shop-delivery-filter-banner--idle">
                     <div class="shop-delivery-filter-stack">
+                        ${analyticsContextMarkup}
                         <span class="shop-delivery-table-note">当前未联动筛选履约页。你可以输入关键字，或直接点击下方热点、趋势柱、冲突审计记录，把目标 / 通道 / 冲突时段 / 任务锁定回填到任务、死信、锁冲突和占位面板里。</span>
                         ${mockModeNote ? `<span class="shop-delivery-table-note shop-delivery-table-note--soft">${this.escapeHtml(mockModeNote)}</span>` : ''}
                         <span class="shop-delivery-table-note shop-delivery-table-note--soft">${this.escapeHtml(restoreLinkMeta.note)}</span>
@@ -5550,6 +7183,7 @@ Example output format:
         container.innerHTML = `
             <div class="shop-delivery-filter-banner">
                 <div class="shop-delivery-filter-stack">
+                    ${analyticsContextMarkup}
                     <span class="shop-delivery-table-note">当前已生效筛选已同步到对应面板。悬停面包屑可预览影响范围，点击任一项可单独移除。</span>
                     <div class="shop-delivery-filter-crumbs">
                         ${breadcrumbs.map((crumb) => this.renderDeliveryFilterBreadcrumb(crumb)).join('')}
@@ -7061,7 +8695,7 @@ Example output format:
         this.syncShopUrlState();
 
         if (tbody) {
-            tbody.innerHTML = this.buildShopTableLoadingSkeleton(8, { rowCount: 4, actionCount: 3 });
+            tbody.innerHTML = this.buildDeliveryTasksLoadingSkeleton(4);
         }
         if (summary) {
             summary.innerHTML = this.buildDeliveryMetaLoadingSkeleton();
@@ -7074,19 +8708,19 @@ Example output format:
             `;
         }
         if (deadLetterBody) {
-            deadLetterBody.innerHTML = this.buildShopTableLoadingSkeleton(6, { rowCount: 3 });
+            deadLetterBody.innerHTML = this.buildDeliveryDeadLetterLoadingSkeleton(3);
         }
         if (lockBody) {
-            lockBody.innerHTML = this.buildShopTableLoadingSkeleton(6, { rowCount: 3 });
+            lockBody.innerHTML = this.buildDeliveryLockConflictLoadingSkeleton(3);
         }
         if (reservationBody) {
-            reservationBody.innerHTML = this.buildShopTableLoadingSkeleton(6, { rowCount: 3 });
+            reservationBody.innerHTML = this.buildDeliveryReservationLoadingSkeleton(3);
         }
         if (replayBody) {
-            replayBody.innerHTML = this.buildShopTableLoadingSkeleton(6, { rowCount: 3 });
+            replayBody.innerHTML = this.buildDeliveryReplayLoadingSkeleton(3);
         }
         if (conflictAuditBody) {
-            conflictAuditBody.innerHTML = this.buildShopTableLoadingSkeleton(5, { rowCount: 3, actionCount: 1 });
+            conflictAuditBody.innerHTML = this.buildDeliveryConflictAuditLoadingSkeleton(3);
         }
         if (conflictTrendChart) {
             conflictTrendChart.innerHTML = this.buildDeliveryTrendLoadingSkeleton();
@@ -7204,6 +8838,7 @@ Example output format:
 
             this.renderDeliveryTaskSummary(result.summary || {});
             this.renderDeliveryTaskFilterHint();
+            this.renderDeliveryIssueSummary(result.summary || {});
             this.renderDeliveryTasks(result.tasks || [], result.total || 0, result.page || page, result.pageSize || this.deliveryTaskPageSize);
             if (this.deliveryPendingTaskReveal?.taskId || this.deliveryPendingTaskReveal?.orderId) {
                 window.requestAnimationFrame(() => this.revealFocusedDeliveryTaskRow());
@@ -7257,6 +8892,9 @@ Example output format:
             if (this.deliveryPendingAuditReveal?.auditId) {
                 window.requestAnimationFrame(() => this.revealFocusedDeliveryConflictAuditRow());
             }
+            if (this.deliveryPendingSectionReveal) {
+                window.requestAnimationFrame(() => this.revealPendingDeliverySection());
+            }
 
             await strategyPromise;
             if (Number(this.shopTabLoadGeneration.fulfillment || 0) === loadGeneration) {
@@ -7271,6 +8909,12 @@ Example output format:
             if (summary) {
                 summary.innerHTML = '<span class="shop-delivery-pill shop-delivery-pill--danger">履约任务加载失败</span>';
             }
+            const deliveryIssueSummary = document.getElementById('deliveryIssueSummary');
+            if (deliveryIssueSummary) {
+                deliveryIssueSummary.innerHTML = '';
+                deliveryIssueSummary.hidden = true;
+            }
+            this.deliveryPendingSectionReveal = '';
             if (tbody) {
                 tbody.innerHTML = `<tr><td colspan="8"><div class="shop-delivery-empty">履约任务加载失败：${this.escapeHtml(err.message || '未知错误')}</div></td></tr>`;
             }
@@ -7810,6 +9454,8 @@ Example output format:
 
     setDeliveryTaskStatusFilter: function (status) {
         this.deliveryTaskStatusFilter = status || 'all';
+        const taskFilter = document.getElementById('deliveryTaskStatusFilter');
+        if (taskFilter) taskFilter.value = this.deliveryTaskStatusFilter;
         this.deliveryTaskPage = 1;
         this.deliveryDeadLetterPage = 1;
         this.deliveryLockConflictPage = 1;
@@ -7821,8 +9467,68 @@ Example output format:
         this.setDeliveryTaskStatusFilter('all');
     },
 
+    applyDeliveryIssueSummaryFocus: function (focusKind, rawValue) {
+        const kind = String(focusKind || 'status').trim().toLowerCase();
+        const value = String(rawValue || 'all').trim().toLowerCase() || 'all';
+        const taskFilter = document.getElementById('deliveryTaskStatusFilter');
+        const deadLetterReasonFilter = document.getElementById('deliveryDeadLetterReasonFilter');
+        const lockStateFilter = document.getElementById('deliveryLockStateFilter');
+
+        if (kind === 'lock') {
+            const nextLockState = String(this.deliveryLockStateFilter || 'all').trim().toLowerCase() === value ? 'all' : value;
+            this.deliveryTaskStatusFilter = 'all';
+            this.deliveryDeadLetterReasonFilter = 'all';
+            this.deliveryLockStateFilter = nextLockState;
+            this.deliveryTaskPage = 1;
+            this.deliveryDeadLetterPage = 1;
+            this.deliveryLockConflictPage = 1;
+            this.deliveryReplayPage = 1;
+            if (taskFilter) taskFilter.value = 'all';
+            if (deadLetterReasonFilter) deadLetterReasonFilter.value = 'all';
+            if (lockStateFilter) lockStateFilter.value = nextLockState;
+            this.loadDeliveryTasks(1);
+            if (nextLockState !== 'all') {
+                window.requestAnimationFrame(() => {
+                    document.getElementById('deliveryLockConflictSummary')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                });
+            }
+            return;
+        }
+
+        const nextStatus = String(this.deliveryTaskStatusFilter || 'all').trim().toLowerCase() === value ? 'all' : value;
+        this.deliveryTaskStatusFilter = nextStatus;
+        this.deliveryDeadLetterReasonFilter = 'all';
+        this.deliveryLockStateFilter = 'all';
+        this.deliveryTaskPage = 1;
+        this.deliveryDeadLetterPage = 1;
+        this.deliveryLockConflictPage = 1;
+        this.deliveryReplayPage = 1;
+        if (taskFilter) taskFilter.value = nextStatus;
+        if (deadLetterReasonFilter) deadLetterReasonFilter.value = 'all';
+        if (lockStateFilter) lockStateFilter.value = 'all';
+        this.loadDeliveryTasks(1);
+    },
+
+    applyDeliveryPriorityAction: function (rawKey) {
+        const key = String(rawKey || '').trim().toLowerCase();
+        if (!key) return;
+
+        if (key === 'force_unlock') {
+            this.deliveryPendingSectionReveal = 'lock_conflicts';
+            this.applyDeliveryIssueSummaryFocus('lock', 'stale');
+            return;
+        }
+
+        if (['dead_letter', 'retry_waiting', 'processing', 'pending'].includes(key)) {
+            this.deliveryPendingSectionReveal = key === 'dead_letter' ? 'dead_letter' : 'tasks';
+            this.applyDeliveryIssueSummaryFocus('status', key);
+        }
+    },
+
     setDeliveryDeadLetterReasonFilter: function (reason) {
         this.deliveryDeadLetterReasonFilter = reason || 'all';
+        const deadLetterReasonFilter = document.getElementById('deliveryDeadLetterReasonFilter');
+        if (deadLetterReasonFilter) deadLetterReasonFilter.value = this.deliveryDeadLetterReasonFilter;
         this.deliveryDeadLetterPage = 1;
         this.loadDeliveryTasks(this.deliveryTaskPage || 1);
     },
@@ -7837,6 +9543,8 @@ Example output format:
 
     setDeliveryLockStateFilter: function (lockState) {
         this.deliveryLockStateFilter = lockState || 'all';
+        const lockStateFilter = document.getElementById('deliveryLockStateFilter');
+        if (lockStateFilter) lockStateFilter.value = this.deliveryLockStateFilter;
         this.deliveryLockConflictPage = 1;
         this.loadDeliveryTasks(this.deliveryTaskPage || 1);
     },
@@ -7936,8 +9644,19 @@ Example output format:
         if (orderSearchInput && orderSearchInput.value !== query) {
             orderSearchInput.value = query;
         }
+        if (Object.prototype.hasOwnProperty.call(normalizedOptions, 'context')) {
+            this.setOrderSearchContext(normalizedOptions.context);
+        } else {
+            this.renderOrderSearchContextHint();
+            this.renderOrderUserFlowSummary([], { totalCount: 0, loading: false });
+        }
+        this.renderOrderIssueSummary([], { totalCount: 0 });
+        this.renderOrderUserFlowSummary([], {
+            totalCount: 0,
+            loading: this.hasUserCommerceOrderContext()
+        });
 
-        tbody.innerHTML = this.buildShopTableLoadingSkeleton(6, { rowCount: 5, actionCount: 3 });
+        tbody.innerHTML = this.buildShopOrdersLoadingSkeleton(5);
 
         const limit = this.pageSize;
 
@@ -7947,7 +9666,9 @@ Example output format:
                 site,
                 page,
                 pageSize: limit,
-                query: query || null
+                query: query || null,
+                refundStatus: this.normalizeOrderRefundStatusFilter(this.orderRefundStatusFilter),
+                deliveryStatus: this.normalizeOrderDeliveryStatusFilter(this.orderDeliveryStatusFilter)
             });
 
             const data = Array.isArray(payload?.rows) ? payload.rows : [];
@@ -7957,12 +9678,21 @@ Example output format:
                 return { opened: true, matched: false, stale: true };
             }
 
+            this.currentOrderRows = data;
             tbody.innerHTML = '';
             if (!data || data.length === 0) {
+                this.currentOrderRows = [];
                 if (focusedOrderId) {
                     this.pendingOpenOrderDetails = false;
                 }
-                tbody.innerHTML = '<tr><td colspan="6" class="text-center">无数据 - 请检查订单号是否正确</td></tr>';
+                const issueFocusLabel = this.orderRefundStatusFilter !== 'all'
+                    ? `当前筛选下暂无匹配的退款订单`
+                    : (this.orderDeliveryStatusFilter !== 'all'
+                        ? `当前筛选下暂无匹配的履约问题订单`
+                        : '无数据 - 请检查订单号是否正确');
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center">${this.escapeHtml(issueFocusLabel)}</td></tr>`;
+                this.renderOrderIssueSummary([], { totalCount: 0 });
+                this.renderOrderUserFlowSummary([], { totalCount: 0, loading: false });
                 this.renderPagination('ordersPagination', page, count || 0, this.pageSize, 'searchOrders');
                 if (Number(this.shopTabLoadGeneration.orders || 0) === loadGeneration) {
                     this.shopTabLoadState.orders = 'loaded';
@@ -8041,6 +9771,8 @@ Example output format:
 
 
             // Render Pagination
+            this.renderOrderIssueSummary(data, { totalCount: count || data.length });
+            this.renderOrderUserFlowSummary(data, { totalCount: count || data.length, loading: false });
             this.renderPagination('ordersPagination', page, count || 0, this.pageSize, 'searchOrders');
 
             // Enable horizontal scroll with mouse wheel for mobile
@@ -8072,9 +9804,12 @@ Example output format:
                 return { opened: true, matched: false, stale: true };
             }
             console.error(err);
+            this.currentOrderRows = [];
             if (Number(this.shopTabLoadGeneration.orders || 0) === loadGeneration) {
                 this.shopTabLoadState.orders = 'error';
             }
+            this.renderOrderIssueSummary([], { totalCount: 0 });
+            this.renderOrderUserFlowSummary([], { totalCount: 0, loading: false });
             tbody.innerHTML = `<tr><td colspan="6" class="text-danger">Error: ${this.escapeHtml(err.message)}</td></tr>`;
             return { opened: false, matched: false, error: err };
         }
@@ -8255,6 +9990,7 @@ Example output format:
             }
 
             alert(result.message || '退款成功');
+            this.recordOrderResolutionFeedback(orderId, { targetStatus });
             this.invalidateShopTabCache();
             this.closeDynamicModal('refundModal');
             this.searchOrders(); // Refresh Order List
@@ -8396,6 +10132,7 @@ Example output format:
         const batchBtn = document.getElementById('batchActionsBtn');
         const inventoryView = document.getElementById('shop-view-inventory');
         const batchMenu = document.getElementById('batchActionMenu');
+        const checkboxCells = document.querySelectorAll('#shop-view-inventory .shop-inventory-checkbox-col');
 
         if (this.isSelectionMode) {
             btn.classList.add('active');
@@ -8407,6 +10144,10 @@ Example output format:
             if (batchBtn) batchBtn.classList.add('admin-studio-inline-style-attr-3');
             batchMenu?.classList.remove('is-open');
         }
+
+        checkboxCells.forEach((cell) => {
+            cell.classList.toggle('shop-inventory-checkbox-col--hidden', !this.isSelectionMode);
+        });
     },
 
     toggleBatchMenu: function () {
@@ -8477,30 +10218,41 @@ Example output format:
     },
 
     initInventoryBrowser: async function () {
+        const tbody = document.getElementById('inventoryTableBody');
+        if (tbody) {
+            tbody.innerHTML = this.buildInventoryTableLoadingSkeleton(5);
+        }
+
+        const inventoryLoadPromise = this.loadInventoryList();
+
         // Load products for custom dropdown
         const menu = document.getElementById('productDropdownMenu');
         if (menu && menu.children.length <= 1) {
-            const payload = await this.loadShopProductsViaAdminApi({
-                status: 'all',
-                fields: 'names',
-                order: 'name_asc'
-            });
-            const data = Array.isArray(payload?.rows) ? payload.rows : [];
-            if (data) {
-                data.forEach(p => {
-                    const item = document.createElement('div');
-                    item.className = 'custom-dropdown-item';
-                    item.dataset.value = p.id;
-                    item.textContent = p.name;
-                    menu.appendChild(item);
+            try {
+                const payload = await this.loadShopProductsViaAdminApi({
+                    status: 'all',
+                    fields: 'names',
+                    order: 'name_asc'
                 });
+                const data = Array.isArray(payload?.rows) ? payload.rows : [];
+                if (data) {
+                    data.forEach(p => {
+                        const item = document.createElement('div');
+                        item.className = 'custom-dropdown-item';
+                        item.dataset.value = p.id;
+                        item.textContent = p.name;
+                        menu.appendChild(item);
+                    });
+                }
+            } catch (err) {
+                console.error('[ShopAdmin] Load inventory product filter options error:', err);
             }
         }
 
         // Initialize Flatpickr for date inputs if not already initialized
         this.initInventoryDatePickers();
 
-        this.loadInventoryList();
+        await inventoryLoadPromise;
     },
 
     initInventoryDatePickers: function () {
@@ -8619,7 +10371,7 @@ Example output format:
 
         const loadGeneration = Number(this.shopTabLoadGeneration.inventory || 0);
         this.shopTabLoadState.inventory = 'loading';
-        tbody.innerHTML = this.buildShopTableLoadingSkeleton(7, { rowCount: 5, includeCheckbox: true, actionCount: 3 });
+        tbody.innerHTML = this.buildInventoryTableLoadingSkeleton(5);
 
         try {
             const result = await this.loadInventoryViaAdminApi(
@@ -8658,12 +10410,15 @@ Example output format:
                 const buyerInfo = item.status === 'sold'
                     ? `<div class="shop-inventory-buyer-email">${safeBuyerEmail}</div><div class="shop-inventory-buyer-order">${safeBuyerOrderId}</div>`
                     : '<span class="shop-inventory-empty-action">-</span>';
+                const checkboxCellClass = this.isSelectionMode
+                    ? 'inv-checkbox-col shop-inventory-checkbox-col'
+                    : 'inv-checkbox-col shop-inventory-checkbox-col shop-inventory-checkbox-col--hidden';
 
                 // Extract email only (assuming format: email----password----recovery)
                 const emailOnly = this.escapeHtml(item.content.split('----')[0] || item.content);
                 return `
                     <tr>
-                        <td class="inv-checkbox-col shop-inventory-checkbox-col">
+                        <td class="${checkboxCellClass}">
                             <input type="checkbox" class="inv-checkbox" data-id="${safeItemId}" data-shop-change="inventory-selection-count">
                         </td>
                         <td>${safeProductName}</td>
@@ -10238,7 +11993,12 @@ Example output format:
 
         try {
             const site = window.AdminSiteFilter?.getSiteFilter?.() || 'all';
-            const data = await this.loadAllOrdersForExport({ site, pageSize: 100 });
+            const data = await this.loadAllOrdersForExport({
+                site,
+                pageSize: 100,
+                refundStatus: this.normalizeOrderRefundStatusFilter(this.orderRefundStatusFilter),
+                deliveryStatus: this.normalizeOrderDeliveryStatusFilter(this.orderDeliveryStatusFilter)
+            });
 
             if (!data.length) {
                 alert('没有可导出的订单');

@@ -4717,7 +4717,6 @@ let currentModalImageIndex = 0;
 let currentModalImages = [];
 let isCommentMode = false;
 let currentPromptId = null;
-let currentPromptUnlockExperimentAssignment = null;
 const promptModalKeyboardDock = {
     attached: false,
     onViewportChange: null,
@@ -5598,9 +5597,6 @@ function openPromptModal(id) {
     unlockBtn.className = 'unlock-btn';
     unlockBtn.disabled = false;
     unlockBtn.onclick = handleUnlockPrompt;
-    delete unlockBtn.dataset.experimentVariant;
-    currentPromptUnlockExperimentAssignment = null;
-    void applyPromptUnlockExperiment(currentPromptId);
 
     // Reset unlock lock for new prompt
     _unlockInProgress = false;
@@ -5895,8 +5891,6 @@ function trackPromptAnalyticsEvent(eventName, payload = {}, options = {}) {
         entityId: payload.entityId || String(currentPromptId || '').trim() || null,
         eventValue: payload.eventValue ?? null,
         pointsDelta: payload.pointsDelta ?? null,
-        experimentId: payload.experimentId ?? null,
-        variantId: payload.variantId ?? null,
         metadata
     };
 
@@ -5907,55 +5901,6 @@ function trackPromptAnalyticsEvent(eventName, payload = {}, options = {}) {
     void Promise.resolve(trackingPromise).catch((error) => {
         console.debug('[PromptAnalytics] Track failed:', eventName, error?.message || error);
     });
-}
-
-function getPromptUnlockExperimentTrackingPayload() {
-    const assignment = currentPromptUnlockExperimentAssignment;
-    if (!assignment?.experimentName || !assignment?.variantName) {
-        return {};
-    }
-
-    return {
-        experimentId: assignment.experimentName,
-        variantId: assignment.variantName,
-        metadata: {
-            experiment_name: assignment.experimentName,
-            experiment_variant: assignment.variantName,
-            experiment_placement: 'prompt_unlock_button'
-        }
-    };
-}
-
-async function applyPromptUnlockExperiment(promptId = currentPromptId) {
-    currentPromptUnlockExperimentAssignment = null;
-    const tracker = window.UserEventTracker;
-    const unlockBtn = document.getElementById('unlockPromptBtn');
-    if (!unlockBtn || !tracker || typeof tracker.getExperimentAssignment !== 'function') {
-        return;
-    }
-
-    const normalizedPromptId = String(promptId || '').trim();
-    const assignment = await tracker.getExperimentAssignment('prompt_unlock_cta_copy_v1', {
-        module: 'prompt_gallery',
-        placement: 'prompt_unlock_button',
-        entityType: 'prompt',
-        entityId: normalizedPromptId || null,
-        metadata: {
-            prompt_id: normalizedPromptId || null
-        }
-    });
-
-    if (!unlockBtn || currentPromptId !== promptId || !unlockBtn.classList.contains('unlock-btn')) {
-        return;
-    }
-
-    currentPromptUnlockExperimentAssignment = assignment;
-    if (!assignment || assignment.isControl) {
-        return;
-    }
-
-    unlockBtn.innerHTML = `<i class="fas fa-gem"></i> 解锁全文 · ${_unlockPrice} 积分`;
-    unlockBtn.dataset.experimentVariant = assignment.variantName;
 }
 
 // 从数据库加载解锁价格配置
@@ -6010,17 +5955,12 @@ async function handleUnlockPrompt() {
             return;
         }
 
-        const unlockExperiment = getPromptUnlockExperimentTrackingPayload();
-
         trackPromptAnalyticsEvent('unlock_click', {
             entityId: String(currentPromptId || '').trim(),
             eventValue: _unlockPrice,
-            experimentId: unlockExperiment.experimentId ?? null,
-            variantId: unlockExperiment.variantId ?? null,
             metadata: {
                 ...promptMetadata,
-                price: _unlockPrice,
-                ...(unlockExperiment.metadata || {})
+                price: _unlockPrice
             }
         }, {
             eventType: 'conversion'
@@ -6049,12 +5989,9 @@ async function handleUnlockPrompt() {
                     entityId: String(currentPromptId || '').trim(),
                     eventValue: _unlockPrice,
                     pointsDelta: -Math.abs(Number(_unlockPrice) || 0),
-                    experimentId: unlockExperiment.experimentId ?? null,
-                    variantId: unlockExperiment.variantId ?? null,
                     metadata: {
                         ...promptMetadata,
-                        points_spent: _unlockPrice,
-                        ...(unlockExperiment.metadata || {})
+                        points_spent: _unlockPrice
                     }
                 }, {
                     eventType: 'conversion'

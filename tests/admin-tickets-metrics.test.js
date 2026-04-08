@@ -591,6 +591,10 @@ test('tickets metrics handler returns backlog, efficiency, distributions, and re
 
         assert.equal(res.statusCode, 200);
         assert.equal(payload.success, true);
+        assert.equal(payload.overview.range.selection_applied, false);
+        assert.equal(payload.overview.range.backlog_scope, 'current_snapshot');
+        assert.equal(payload.overview.range.efficiency.window_days, 30);
+        assert.equal(payload.overview.range.reminder.window_days, 7);
         assert.equal(payload.overview.backlog.total_pending, 2);
         assert.equal(payload.overview.backlog.assigned_count, 1);
         assert.equal(payload.overview.backlog.unassigned_count, 1);
@@ -626,6 +630,8 @@ test('tickets metrics handler returns backlog, efficiency, distributions, and re
         assert.equal(payload.overview.efficiency.resolved_rate_percent, 50);
         assert.equal(payload.overview.efficiency.rejected_rate_percent, 50);
         assert.equal(payload.overview.efficiency.refund_related_rate_percent, 50);
+        assert.equal(payload.overview.efficiency.window_days, 30);
+        assert.equal(payload.overview.efficiency.range_source, 'default');
 
         assert.equal(payload.overview.reminder.enabled, true);
         assert.equal(payload.overview.reminder.work_hours_only_enabled, true);
@@ -635,6 +641,8 @@ test('tickets metrics handler returns backlog, efficiency, distributions, and re
         assert.equal(payload.overview.reminder.summary_schedule_mode, 'hourly');
         assert.equal(payload.overview.reminder.summary_hourly_minute, 15);
         assert.equal(payload.overview.reminder.activity.lookback_days, 7);
+        assert.equal(payload.overview.reminder.activity.window_days, 7);
+        assert.equal(payload.overview.reminder.activity.range_source, 'default');
         assert.equal(payload.overview.reminder.activity.overdue_job_count, 1);
         assert.equal(payload.overview.reminder.activity.recovered_job_count, 1);
         assert.equal(payload.overview.reminder.activity.delivered_count, 1);
@@ -664,7 +672,249 @@ test('tickets metrics handler returns backlog, efficiency, distributions, and re
         assert.equal(payload.overview.reminder.summary_digest.latest_problem_job.last_error, 'Digest webhook timeout');
         assert.equal(payload.overview.reminder.summary_digest.latest_problem_job.latest_manual_event.title, '人工重新加入重试队列');
         assert.equal(payload.overview.reminder.summary_digest.recent_jobs.length, 2);
+        assert.equal(payload.overview.reminder.summary_digest.window_days, 7);
         assert.equal(payload.overview.reminder.summary_digest.recent_jobs[1].preview_items[0].reason, '用户再次催单');
+    });
+});
+
+test('tickets metrics handler applies selected analytics window to efficiency and reminder telemetry', async () => {
+    await withHandler({
+        tickets: [{
+            id: 'ticket-pending-1',
+            user_id: 'user-pending-1',
+            order_id: '',
+            issue_type: 'OTHER',
+            status: 'PENDING',
+            description: '等待人工处理',
+            created_at: '2026-04-02T23:00:00.000Z',
+            updated_at: '2026-04-03T10:00:00.000Z'
+        }, {
+            id: 'ticket-resolved-window-1',
+            user_id: 'user-window-1',
+            order_id: '',
+            issue_type: 'REFUND',
+            status: 'RESOLVED',
+            description: '选定窗口内结单',
+            created_at: '2026-04-03T07:00:00.000Z',
+            updated_at: '2026-04-03T08:00:00.000Z'
+        }, {
+            id: 'ticket-resolved-history-1',
+            user_id: 'user-history-1',
+            order_id: '',
+            issue_type: 'DELIVERY',
+            status: 'REJECTED',
+            description: '窗口外历史结单',
+            created_at: '2026-04-01T07:00:00.000Z',
+            updated_at: '2026-04-01T08:30:00.000Z'
+        }],
+        opsAlertJobs: [{
+            id: 'ticket-sla-job-overdue-window-1',
+            alert_type: 'ticket_sla_overdue',
+            severity: 'critical',
+            title: '工单超时未处理（window-1）',
+            payload: {
+                target_id: 'ticket-pending-1',
+                ticket_id: 'ticket-pending-1',
+                wait_label: '2 小时'
+            },
+            channels: ['feishu'],
+            remaining_channels: [],
+            status: 'delivered',
+            attempt_count: 1,
+            last_error: '',
+            created_at: '2026-04-03T10:10:00.000Z',
+            delivered_at: '2026-04-03T10:11:00.000Z'
+        }, {
+            id: 'ticket-sla-job-recovered-window-1',
+            alert_type: 'ticket_sla_recovered',
+            severity: 'warning',
+            title: '工单超时已恢复（window-1）',
+            payload: {
+                target_id: 'ticket-pending-1',
+                ticket_id: 'ticket-pending-1',
+                previous_wait_label: '2 小时 10 分钟'
+            },
+            channels: ['feishu'],
+            remaining_channels: [],
+            status: 'retry',
+            attempt_count: 1,
+            last_error: 'Webhook timeout',
+            created_at: '2026-04-03T11:20:00.000Z',
+            delivered_at: ''
+        }, {
+            id: 'ticket-sla-job-summary-window-1',
+            alert_type: 'ticket_sla_summary',
+            severity: 'warning',
+            title: '工单超时汇总（1 条超时工单）',
+            payload: {
+                summary_schedule_mode: 'daily',
+                summary_window_minutes: 1440,
+                summary_max_items: 5,
+                summary_daily_hour: 9,
+                summary_daily_minute: 15,
+                summary_timezone: 'Asia/Shanghai',
+                window_start_at: '2026-04-02T01:15:00.000Z',
+                window_end_at: '2026-04-03T01:15:00.000Z',
+                item_count: 1,
+                entry_path: '售后工单 -> 待处理 -> 工单详情',
+                items: [{
+                    payload: {
+                        ticket_id: 'ticket-pending-1',
+                        wait_label: '2 小时',
+                        ticket_status: 'PENDING',
+                        updated_at: '2026-04-03T10:10:00.000Z'
+                    }
+                }]
+            },
+            channels: ['feishu'],
+            remaining_channels: [],
+            status: 'delivered',
+            attempt_count: 1,
+            last_error: '',
+            created_at: '2026-04-03T12:15:00.000Z',
+            delivered_at: '2026-04-03T12:16:00.000Z'
+        }, {
+            id: 'ticket-sla-job-summary-history-1',
+            alert_type: 'ticket_sla_summary',
+            severity: 'warning',
+            title: '窗口外历史汇总',
+            payload: {
+                summary_schedule_mode: 'daily',
+                summary_window_minutes: 1440,
+                summary_max_items: 5,
+                summary_daily_hour: 9,
+                summary_daily_minute: 15,
+                summary_timezone: 'Asia/Shanghai',
+                window_start_at: '2026-04-01T01:15:00.000Z',
+                window_end_at: '2026-04-02T01:15:00.000Z',
+                item_count: 1,
+                entry_path: '售后工单 -> 待处理 -> 工单详情',
+                items: [{
+                    payload: {
+                        ticket_id: 'ticket-history-1',
+                        wait_label: '6 小时',
+                        ticket_status: 'PENDING',
+                        updated_at: '2026-04-02T08:10:00.000Z'
+                    }
+                }]
+            },
+            channels: ['email'],
+            remaining_channels: ['email'],
+            status: 'retry',
+            attempt_count: 1,
+            last_error: 'old error',
+            created_at: '2026-04-02T09:40:00.000Z',
+            delivered_at: ''
+        }],
+        opsAlertJobAttempts: [{
+            job_id: 'ticket-sla-job-overdue-window-1',
+            channel: 'feishu',
+            status: 'delivered',
+            response_status: 200,
+            error_message: '',
+            created_at: '2026-04-03T10:11:00.000Z'
+        }, {
+            job_id: 'ticket-sla-job-recovered-window-1',
+            channel: 'feishu',
+            status: 'failed',
+            response_status: 504,
+            error_message: 'Webhook timeout',
+            created_at: '2026-04-03T11:21:00.000Z'
+        }, {
+            job_id: 'ticket-sla-job-summary-window-1',
+            channel: 'feishu',
+            status: 'delivered',
+            response_status: 200,
+            error_message: '',
+            created_at: '2026-04-03T12:16:00.000Z'
+        }, {
+            job_id: 'ticket-sla-job-summary-history-1',
+            channel: 'email',
+            status: 'failed',
+            response_status: 504,
+            error_message: 'old error',
+            created_at: '2026-04-02T09:41:00.000Z'
+        }],
+        auditLogsView: [{
+            id: 'audit-assign-window-1',
+            action_type: 'ticket.assign',
+            created_at: '2026-04-03T07:15:00.000Z',
+            admin_id: 'admin-ticket-metrics-1',
+            admin_email: 'ops@example.com',
+            details: {
+                ticket_id: 'ticket-resolved-window-1',
+                assigned: true,
+                assignee_id: 'admin-ticket-metrics-1',
+                assignee_label: 'ops@example.com'
+            }
+        }, {
+            id: 'audit-process-window-1',
+            action_type: 'ticket.process',
+            created_at: '2026-04-03T08:00:00.000Z',
+            admin_id: 'admin-ticket-metrics-1',
+            admin_email: 'ops@example.com',
+            details: {
+                ticket_id: 'ticket-resolved-window-1',
+                new_status: 'RESOLVED',
+                refunded: true,
+                refund_outcome: 'refunded'
+            }
+        }, {
+            id: 'audit-process-history-1',
+            action_type: 'ticket.process',
+            created_at: '2026-04-01T08:30:00.000Z',
+            admin_id: 'admin-ticket-metrics-1',
+            admin_email: 'ops@example.com',
+            details: {
+                ticket_id: 'ticket-resolved-history-1',
+                new_status: 'REJECTED',
+                refund_outcome: 'not_requested'
+            }
+        }, {
+            id: 'audit-summary-note-window-1',
+            action_type: 'ticket.summary_job_action',
+            created_at: '2026-04-03T12:30:00.000Z',
+            admin_id: 'admin-ticket-metrics-1',
+            admin_email: 'lead@example.com',
+            details: {
+                action: 'add_note',
+                job_id: 'ticket-sla-job-summary-window-1',
+                note: '窗口内人工确认送达'
+            }
+        }]
+    }, async (handler) => {
+        const req = {
+            method: 'GET',
+            url: '/api/admin?route=tickets/metrics&startDate=2026-04-03T00:00:00.000Z&endDate=2026-04-03T23:59:59.999Z',
+            headers: {},
+            now: new Date('2026-04-03T11:30:00.000Z')
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.overview.range.selection_applied, true);
+        assert.equal(payload.overview.range.efficiency.window_days, 1);
+        assert.equal(payload.overview.range.efficiency.range_source, 'selected');
+        assert.equal(payload.overview.range.efficiency.range_start_at, '2026-04-03T00:00:00.000Z');
+        assert.equal(payload.overview.range.efficiency.range_end_at, '2026-04-03T23:59:59.999Z');
+        assert.equal(payload.overview.backlog.total_pending, 1);
+        assert.equal(payload.overview.efficiency.closed_count, 1);
+        assert.equal(payload.overview.efficiency.resolved_count, 1);
+        assert.equal(payload.overview.efficiency.rejected_count, 0);
+        assert.equal(payload.overview.efficiency.window_days, 1);
+        assert.equal(payload.overview.efficiency.range_source, 'selected');
+        assert.equal(payload.overview.reminder.activity.total_job_count, 2);
+        assert.equal(payload.overview.reminder.activity.overdue_job_count, 1);
+        assert.equal(payload.overview.reminder.activity.recovered_job_count, 1);
+        assert.equal(payload.overview.reminder.activity.window_days, 1);
+        assert.equal(payload.overview.reminder.summary_digest.total_job_count, 1);
+        assert.equal(payload.overview.reminder.summary_digest.failure_job_count, 0);
+        assert.equal(payload.overview.reminder.summary_digest.latest_job.latest_manual_event.title, '记录人工备注');
+        assert.equal(payload.overview.reminder.summary_digest.window_days, 1);
     });
 });
 

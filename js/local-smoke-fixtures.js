@@ -1374,20 +1374,6 @@
                 delivered_at: '2026-03-31T08:42:40+08:00'
             }
         ],
-        abExperiments: [
-            {
-                id: 'exp-smoke-analytics-1',
-                name: 'Analytics Funnel Copy',
-                description: '本地 smoke 用于校验 analytics AI 分栏与实验卡片渲染。',
-                status: 'running',
-                target_metric: 'unlock_success',
-                variants: [
-                    { name: 'control', weight: 50 },
-                    { name: 'variant-b', weight: 50 }
-                ],
-                created_at: '2026-03-31T08:30:00+08:00'
-            }
-        ],
         opsAlertJobAttempts: [
             {
                 job_id: 'ticket-summary-job-retry',
@@ -1420,6 +1406,7 @@
         analyticsRealtimeChannelsCreated: 0,
         analyticsRealtimeChannelsRemoved: 0,
         analyticsReloadCalls: [],
+        analyticsAdminRouteLastQuery: {},
         analyticsRpcLastParams: {},
         analyticsRpcCallCount: 0,
         runtimeErrors: []
@@ -2330,7 +2317,6 @@
             prompts: 'prompts',
             prompt_unlocks: 'promptUnlocks',
             prompt_comments: 'promptComments',
-            ab_experiments: 'abExperiments',
             blocked_users: 'blockedUsers',
             block_history: 'blockHistory',
             ops_alert_jobs: 'opsAlertJobs',
@@ -3957,15 +3943,41 @@
         }));
     }
 
-    function buildSmokeAnalyticsConversionFunnel(site = 'all', days = 7) {
+    function buildSmokeAnalyticsConversionFunnelV2(site = 'all', days = 7) {
         const scale = Math.max(1, clampSmokeAnalyticsDays(days, 7) / 7);
-        const visitors = Math.round(120 * scale);
-        const viewers = Math.round(visitors * 0.68);
-        const unlockers = Math.round(visitors * 0.34);
+        const profile = getSmokeAnalyticsProfile(site);
+        const promptViewUsers = Math.max(8, Math.round((profile.dau || 32) * 0.82 * scale));
+        const unlockClickUsers = Math.max(4, Math.round(promptViewUsers * 0.58));
+        const unlockSuccessUsers = Math.max(2, Math.round(promptViewUsers * 0.33));
+
         return [
-            { step_name: '访问用户', step_order: 1, user_count: visitors, conversion_rate: 100, is_proxy_metric: true },
-            { step_name: '内容浏览', step_order: 2, user_count: viewers, conversion_rate: roundSmokeMetric((viewers / visitors) * 100, 1), is_proxy_metric: true },
-            { step_name: '内容解锁', step_order: 3, user_count: unlockers, conversion_rate: roundSmokeMetric((unlockers / visitors) * 100, 1), is_proxy_metric: true }
+            {
+                step_name: 'Prompt 浏览',
+                step_order: 1,
+                user_count: promptViewUsers,
+                conversion_rate: 100,
+                is_proxy_metric: false,
+                metric_basis: 'user_events',
+                metric_label: '真实业务事件漏斗'
+            },
+            {
+                step_name: '解锁点击',
+                step_order: 2,
+                user_count: unlockClickUsers,
+                conversion_rate: roundSmokeMetric((unlockClickUsers / promptViewUsers) * 100, 1),
+                is_proxy_metric: false,
+                metric_basis: 'user_events',
+                metric_label: '真实业务事件漏斗'
+            },
+            {
+                step_name: '内容解锁',
+                step_order: 3,
+                user_count: unlockSuccessUsers,
+                conversion_rate: roundSmokeMetric((unlockSuccessUsers / promptViewUsers) * 100, 1),
+                is_proxy_metric: false,
+                metric_basis: 'user_events',
+                metric_label: '真实业务事件漏斗'
+            }
         ];
     }
 
@@ -4002,28 +4014,6 @@
             { region: 'North America', user_count: 36 },
             { region: 'Europe', user_count: 24 },
             { region: '华南', user_count: 28 }
-        ];
-    }
-
-    function buildSmokeExperimentResults() {
-        return [
-            { variant_name: 'control', user_count: 120, conversion_count: 31, conversion_rate: 25.8 },
-            { variant_name: 'variant-b', user_count: 118, conversion_count: 39, conversion_rate: 33.1 }
-        ];
-    }
-
-    function buildSmokeExperimentResultsV2() {
-        return [
-            { dimension_type: 'overall', dimension_value: 'all', variant_name: 'control', assigned_user_count: 120, exposure_user_count: 96, conversion_count: 31, conversion_rate: 32.3 },
-            { dimension_type: 'overall', dimension_value: 'all', variant_name: 'variant-b', assigned_user_count: 118, exposure_user_count: 102, conversion_count: 39, conversion_rate: 38.2 },
-            { dimension_type: 'site', dimension_value: 'cn', variant_name: 'control', assigned_user_count: 58, exposure_user_count: 58, conversion_count: 18, conversion_rate: 31.0 },
-            { dimension_type: 'site', dimension_value: 'cn', variant_name: 'variant-b', assigned_user_count: 61, exposure_user_count: 61, conversion_count: 25, conversion_rate: 41.0 },
-            { dimension_type: 'site', dimension_value: 'intl', variant_name: 'control', assigned_user_count: 38, exposure_user_count: 38, conversion_count: 13, conversion_rate: 34.2 },
-            { dimension_type: 'site', dimension_value: 'intl', variant_name: 'variant-b', assigned_user_count: 41, exposure_user_count: 41, conversion_count: 14, conversion_rate: 34.1 },
-            { dimension_type: 'placement', dimension_value: 'prompt_unlock_button', variant_name: 'control', assigned_user_count: 54, exposure_user_count: 54, conversion_count: 17, conversion_rate: 31.5 },
-            { dimension_type: 'placement', dimension_value: 'prompt_unlock_button', variant_name: 'variant-b', assigned_user_count: 57, exposure_user_count: 57, conversion_count: 23, conversion_rate: 40.4 },
-            { dimension_type: 'placement', dimension_value: 'wallet_custom_recharge_button', variant_name: 'control', assigned_user_count: 42, exposure_user_count: 42, conversion_count: 14, conversion_rate: 33.3 },
-            { dimension_type: 'placement', dimension_value: 'wallet_custom_recharge_button', variant_name: 'variant-b', assigned_user_count: 45, exposure_user_count: 45, conversion_count: 16, conversion_rate: 35.6 }
         ];
     }
 
@@ -4205,9 +4195,9 @@
                     };
                 }
 
-                if (name === 'get_conversion_funnel') {
+                if (name === 'get_conversion_funnel_v2') {
                     return {
-                        data: deepClone(buildSmokeAnalyticsConversionFunnel(safeParams.p_site, safeParams.p_days)),
+                        data: deepClone(buildSmokeAnalyticsConversionFunnelV2(safeParams.p_site, safeParams.p_days)),
                         error: null
                     };
                 }
@@ -4229,27 +4219,6 @@
                 if (name === 'track_event') {
                     return {
                         data: { success: true, event: safeParams.p_event_name || 'page_view' },
-                        error: null
-                    };
-                }
-
-                if (name === 'get_experiment_variant') {
-                    return {
-                        data: { variant_name: 'control', assigned: true },
-                        error: null
-                    };
-                }
-
-                if (name === 'get_experiment_results') {
-                    return {
-                        data: deepClone(buildSmokeExperimentResults()),
-                        error: null
-                    };
-                }
-
-                if (name === 'get_experiment_results_v2') {
-                    return {
-                        data: deepClone(buildSmokeExperimentResultsV2()),
                         error: null
                     };
                 }
@@ -4343,7 +4312,13 @@
             const method = String(init?.method || input?.method || 'GET').trim().toUpperCase();
             const adminRoute = url.pathname === '/api/admin'
                 ? normalizeSmokeAdminRoute(url.searchParams.get('route'))
-                : '';
+                : (url.pathname.startsWith('/api/admin/')
+                    ? normalizeSmokeAdminRoute(url.pathname)
+                    : '');
+
+            if (adminRoute && method === 'GET') {
+                smokeState.analyticsAdminRouteLastQuery[adminRoute] = Object.fromEntries(url.searchParams.entries());
+            }
 
             if (url.pathname === '/api/admin/settings/ops-alerts') {
                 if (method === 'GET') {
@@ -4657,11 +4632,147 @@
                 );
             }
 
-            if (url.pathname === '/api/admin/comments/summary') {
+            if (url.pathname === '/api/admin/comments/summary' || adminRoute === 'comments/summary') {
                 return createResponse({
                     success: true,
                     site: normalizeSmokeCommentsSite(url.searchParams.get('site') || 'all'),
                     summary: deepClone(buildSmokeCommentsSummary(url.searchParams.get('site') || 'all'))
+                });
+            }
+
+            if (adminRoute === 'analytics/trend-series-bundle') {
+                const site = normalizeSmokeAnalyticsSite(url.searchParams.get('site') || 'all');
+                const days = Number(url.searchParams.get('days') || 7) || 7;
+
+                return createResponse({
+                    success: true,
+                    site,
+                    generated_at: new Date().toISOString(),
+                    range: { days },
+                    partial_failure_count: 0,
+                    segments: {
+                        userTrend: {
+                            ok: true,
+                            statusCode: 200,
+                            message: '',
+                            rpc_name: 'get_user_trend',
+                            payload: deepClone(buildSmokeAnalyticsUserTrend(days, site))
+                        },
+                        contentTrend: {
+                            ok: true,
+                            statusCode: 200,
+                            message: '',
+                            rpc_name: 'get_content_trend',
+                            payload: deepClone(buildSmokeAnalyticsContentTrend(days, site))
+                        },
+                        revenueTrend: {
+                            ok: true,
+                            statusCode: 200,
+                            message: '',
+                            rpc_name: 'get_revenue_trend',
+                            payload: deepClone(buildSmokeAnalyticsRevenueTrend(days, site))
+                        }
+                    }
+                });
+            }
+
+            if (adminRoute === 'analytics/summary-window-bundle') {
+                const site = normalizeSmokeAnalyticsSite(url.searchParams.get('site') || 'all');
+                const days = Number(url.searchParams.get('days') || 7) || 7;
+                const includeComparisonSites = url.searchParams.get('includeComparisonSites') === '1';
+                const summarySites = new Set([site]);
+
+                if (site === 'all' || includeComparisonSites) {
+                    summarySites.add('all');
+                    summarySites.add('cn');
+                    summarySites.add('intl');
+                }
+
+                const summaries = {};
+                summarySites.forEach((summarySite) => {
+                    const summary = buildSmokeAnalyticsSummary(summarySite, days);
+                    summaries[summarySite] = {
+                        ok: true,
+                        statusCode: 200,
+                        message: '',
+                        summary: {
+                            overview: deepClone(summary.overview),
+                            user_trend: deepClone(summary.user_trend),
+                            channel_breakdown: deepClone(summary.channel_breakdown),
+                            top_content: deepClone(summary.top_content),
+                            event_overview: {},
+                            event_funnels: {},
+                            generated_at: new Date().toISOString()
+                        }
+                    };
+                });
+
+                return createResponse({
+                    success: true,
+                    site,
+                    generated_at: new Date().toISOString(),
+                    range: { days },
+                    partial_failure_count: 0,
+                    summaries
+                });
+            }
+
+            if (adminRoute === 'analytics/panel-support-bundle') {
+                const site = normalizeSmokeAnalyticsSite(url.searchParams.get('site') || 'all');
+                const days = Number(url.searchParams.get('days') || 7) || 7;
+                const topContentLimit = Number(url.searchParams.get('topContentLimit') || 10) || 10;
+                const pointsLeaderboardLimit = Number(url.searchParams.get('pointsLeaderboardLimit') || 10) || 10;
+
+                return createResponse({
+                    success: true,
+                    site,
+                    generated_at: new Date().toISOString(),
+                    range: { days },
+                    partial_failure_count: 0,
+                    segments: {
+                        channelBreakdown: {
+                            ok: true,
+                            statusCode: 200,
+                            message: '',
+                            rpc_name: 'get_channel_breakdown_v2',
+                            payload: deepClone(buildSmokeAnalyticsChannelBreakdown(site, days))
+                        },
+                        topContent: {
+                            ok: true,
+                            statusCode: 200,
+                            message: '',
+                            rpc_name: 'get_content_top_v2',
+                            payload: deepClone(buildSmokeAnalyticsTopContent(site, days, topContentLimit))
+                        },
+                        communityStats: {
+                            ok: true,
+                            statusCode: 200,
+                            message: '',
+                            rpc_name: 'get_community_stats',
+                            payload: deepClone(buildSmokeAnalyticsCommunityTrend(days, site))
+                        },
+                        pointsDistribution: {
+                            ok: true,
+                            statusCode: 200,
+                            message: '',
+                            rpc_name: 'get_points_distribution',
+                            payload: deepClone(buildSmokeAnalyticsPointsDistribution(site))
+                        },
+                        pointsLeaderboard: {
+                            ok: true,
+                            statusCode: 200,
+                            message: '',
+                            rpc_name: 'get_points_leaderboard',
+                            payload: deepClone(buildSmokeAnalyticsPointsLeaderboard(site, pointsLeaderboardLimit))
+                        },
+                        redemptionFunnel: {
+                            ok: true,
+                            statusCode: 200,
+                            message: '',
+                            rpc_name: 'get_redemption_funnel',
+                            payload: deepClone(buildSmokeAnalyticsRedemptionFunnel(site, days))
+                        }
+                    }
                 });
             }
 
@@ -4882,7 +4993,6 @@
         );
 
         await runUserModalSmoke();
-        await runExperimentModalSmoke();
     }
 
     async function runAdminAnalyticsSmoke() {
@@ -4932,12 +5042,11 @@
             globalScope.reloadAnalyticsDashboard = wrappedReload;
         }
 
+        const getActiveAnalyticsModule = () => document.querySelector('#module-business-overview.active, #module-growth-center.active, #module-commerce-center.active');
         await waitFor(
             () => {
-                globalScope.switchModule?.('analytics');
-                return document.getElementById('module-analytics')?.classList.contains('active')
-                    ? document.getElementById('module-analytics')
-                    : null;
+                globalScope.switchModule?.('business-overview');
+                return getActiveAnalyticsModule();
             },
             { message: 'Analytics 模块未激活', timeoutMs: 20000, intervalMs: 120 }
         );
@@ -4949,7 +5058,7 @@
         );
         await runAnalyticsSmokeStep(
             'Analytics 首次刷新',
-            () => globalScope.reloadAnalyticsDashboard({ reason: 'smoke-analytics-initial', includeExperiments: false }),
+            () => globalScope.reloadAnalyticsDashboard({ reason: 'smoke-analytics-initial' }),
             25000
         );
         recordResult(
@@ -4969,7 +5078,7 @@
             );
         } catch (_) {
             throw new Error(
-                `Analytics 概览 KPI 未完成渲染 (active=${document.getElementById('module-analytics')?.classList.contains('active') === true ? 'yes' : 'no'}, dau=${String(document.getElementById('kpiDauValue')?.textContent || '').trim() || '<empty>'}, reloads=${smokeState.analyticsReloadCalls.length}, rpcCalls=${smokeState.analyticsRpcCallCount}, smokeClient=${globalScope.supabaseClient?.__localSmokeClient === true ? 'yes' : 'no'}, overviewSite=${smokeState.analyticsRpcLastParams.get_overview_stats_with_trend?.p_site || '<missing>'}, topDays=${smokeState.analyticsRpcLastParams.get_content_top?.p_days || '<missing>'}, runtime=${smokeState.runtimeErrors.slice(-6).join(' | ') || '<none>'})`
+                `Analytics 概览 KPI 未完成渲染 (active=${getActiveAnalyticsModule() ? 'yes' : 'no'}, dau=${String(document.getElementById('kpiDauValue')?.textContent || '').trim() || '<empty>'}, reloads=${smokeState.analyticsReloadCalls.length}, rpcCalls=${smokeState.analyticsRpcCallCount}, smokeClient=${globalScope.supabaseClient?.__localSmokeClient === true ? 'yes' : 'no'}, overviewSite=${smokeState.analyticsRpcLastParams.get_overview_stats_with_trend?.p_site || '<missing>'}, topDays=${smokeState.analyticsRpcLastParams.get_content_top?.p_days || '<missing>'}, runtime=${smokeState.runtimeErrors.slice(-6).join(' | ') || '<none>'})`
             );
         }
         recordResult('Analytics 概览 KPI 已渲染', /^\d/.test(kpiValue), `dau=${kpiValue}`);
@@ -4989,11 +5098,11 @@
 
         const proxyHint = await waitFor(
             () => document.querySelector('#conversionFunnel .analytics-proxy-hint'),
-            { message: 'Analytics 代理漏斗提示未出现', timeoutMs: 20000 }
+            { message: 'Analytics 漏斗口径提示未出现', timeoutMs: 20000 }
         );
         recordResult(
-            'Analytics 代理漏斗会显示口径提示',
-            /代理口径/.test(String(proxyHint?.textContent || '')),
+            'Analytics 漏斗会显示真实事件口径提示',
+            /真实业务事件漏斗/.test(String(proxyHint?.textContent || '')),
             String(proxyHint?.textContent || '').trim().slice(0, 64)
         );
 
@@ -5009,23 +5118,28 @@
                 { message: 'Analytics 日期标签未切到 30 天' }
             );
             await waitFor(
-                () => Number(smokeState.analyticsRpcLastParams.get_content_top?.p_days) === 30,
-                { message: 'Analytics 热门内容 RPC 未收到 30 天窗口参数' }
+                () => smokeState.analyticsReloadCalls.length > reloadCountBeforeRange,
+                { message: 'Analytics 日期切换后未触发 dashboard reload' }
             );
 
             const topContentText = String(document.getElementById('topContentList')?.textContent || '');
             const topContentMeta = String(document.getElementById('topContentMeta')?.textContent || '').trim();
+            const panelSupportQuery = smokeState.analyticsAdminRouteLastQuery['analytics/panel-support-bundle'] || {};
+            const hasExplicitBundleRange = Boolean(panelSupportQuery.startDate && panelSupportQuery.endDate);
+            const hasThirtyDayWindow = Number(smokeState.analyticsRpcLastParams.get_content_top?.p_days) === 30
+                || Number(smokeState.analyticsRpcLastParams.get_redemption_funnel?.p_days) === 30
+                || Number(panelSupportQuery.days) === 30
+                || hasExplicitBundleRange;
             recordResult(
                 'Analytics 日期预设会更新整页范围标签',
                 String(document.getElementById('dateRangeLabel')?.textContent || '').includes('30'),
                 String(document.getElementById('dateRangeLabel')?.textContent || '').trim()
             );
             recordResult(
-                'Analytics 日期切换会把窗口参数传给关键 RPC',
+                'Analytics 日期切换会把窗口参数传给关键加载链路',
                 smokeState.analyticsReloadCalls.length > reloadCountBeforeRange
-                    && Number(smokeState.analyticsRpcLastParams.get_content_top?.p_days) === 30
-                    && Number(smokeState.analyticsRpcLastParams.get_redemption_funnel?.p_days) === 30,
-                `reload+${smokeState.analyticsReloadCalls.length - reloadCountBeforeRange} / top=${smokeState.analyticsRpcLastParams.get_content_top?.p_days || 'n/a'} / funnel=${smokeState.analyticsRpcLastParams.get_redemption_funnel?.p_days || 'n/a'}`
+                    && hasThirtyDayWindow,
+                `reload+${smokeState.analyticsReloadCalls.length - reloadCountBeforeRange} / top=${smokeState.analyticsRpcLastParams.get_content_top?.p_days || 'n/a'} / funnel=${smokeState.analyticsRpcLastParams.get_redemption_funnel?.p_days || 'n/a'} / bundleDays=${panelSupportQuery.days || 'n/a'} / bundleRange=${hasExplicitBundleRange ? 'explicit' : 'n/a'}`
             );
             recordResult(
                 'Analytics 热门内容会跟随日期窗口刷新',
@@ -5068,12 +5182,29 @@
             `active=${growthTabActive} / messages=${growthMessages || '<empty>'}`
         );
 
-        const advancedEntry = document.querySelector('.analytics-advanced-entry[data-analytics-destination="analytics-ai"]');
+        const advancedEntry = document.getElementById('analyticsAdvancedToggleBtn');
         const advancedNavButton = document.querySelector('#analyticsTabsNav .admin-tab[data-tab="ai"]');
+        const advancedWorkspace = document.getElementById('analyticsAdvancedWorkspace');
+        if (advancedEntry instanceof HTMLElement && advancedWorkspace?.hidden === false) {
+            advancedEntry.click();
+            await sleep(80);
+        }
         recordResult(
-            'Analytics 高级分析已移出主流程',
-            !advancedEntry && !advancedNavButton,
-            `entry=${advancedEntry instanceof HTMLElement ? 'yes' : 'no'} / nav=${advancedNavButton ? 'yes' : 'no'}`
+            'Analytics 高级分析改为按需入口',
+            advancedEntry instanceof HTMLElement && !advancedNavButton && advancedWorkspace?.hidden === true,
+            `entry=${advancedEntry instanceof HTMLElement ? 'yes' : 'no'} / nav=${advancedNavButton ? 'yes' : 'no'} / hidden=${advancedWorkspace?.hidden === true ? 'yes' : 'no'}`
+        );
+
+        if (advancedEntry instanceof HTMLElement) {
+            advancedEntry.click();
+            await sleep(80);
+        }
+        recordResult(
+            'Analytics 按需入口会展开手动工具区',
+            advancedWorkspace?.hidden === false
+                && document.getElementById('generateInsightBtn') instanceof HTMLElement
+                && !(document.getElementById('experimentsList') instanceof HTMLElement),
+            `hidden=${advancedWorkspace?.hidden === false ? 'no' : 'yes'} / insight=${document.getElementById('generateInsightBtn') instanceof HTMLElement ? 'yes' : 'no'} / legacy=${document.getElementById('experimentsList') instanceof HTMLElement ? 'yes' : 'no'}`
         );
 
         globalScope.switchAnalyticsTab?.('overview');
@@ -5089,8 +5220,9 @@
             { message: 'Analytics 站点标签未切到 EN' }
         );
         await waitFor(
-            () => smokeState.analyticsRpcLastParams.get_content_top?.p_site === 'intl',
-            { message: 'Analytics 站点切换后未透传 site=intl 到内容榜 RPC' }
+            () => smokeState.analyticsRpcLastParams.get_content_top?.p_site === 'intl'
+                || smokeState.analyticsAdminRouteLastQuery['analytics/panel-support-bundle']?.site === 'intl',
+            { message: 'Analytics 站点切换后未透传 site=intl 到内容榜加载链路' }
         );
 
         const topContentIntlText = String(document.getElementById('topContentList')?.textContent || '');
@@ -5117,11 +5249,9 @@
         );
         await sleep(120);
 
-        globalScope.switchModule?.('analytics');
+        globalScope.switchModule?.('business-overview');
         await waitFor(
-            () => document.getElementById('module-analytics')?.classList.contains('active')
-                ? document.getElementById('module-analytics')
-                : null,
+            () => getActiveAnalyticsModule(),
             { message: '返回 Analytics 模块失败' }
         );
         await sleep(180);
@@ -5981,30 +6111,6 @@
         );
     }
 
-    async function runExperimentModalSmoke() {
-        await waitFor(() => typeof globalScope.openExperimentModal === 'function', { message: 'A/B 实验弹窗入口未加载完成' });
-        globalScope.openExperimentModal();
-
-        const modal = await waitFor(
-            () => {
-                const node = document.getElementById('experimentModal');
-                return node?.classList.contains('active') ? node : null;
-            },
-            { message: 'A/B 实验弹窗未能打开' }
-        );
-
-        await nextFrame();
-        await sleep(60);
-        modal.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await sleep(120);
-
-        recordResult(
-            'A/B 实验弹窗支持点击外部关闭',
-            !modal.classList.contains('active'),
-            modal.classList.contains('active') ? 'overlay click did not dismiss modal' : 'overlay click dismissed modal'
-        );
-    }
-
     async function runAdminChatSmoke() {
         await waitFor(() => typeof globalScope.AdminChat === 'function', { message: '客服工作台脚本未加载完成' });
         globalScope.switchModule?.('chat');
@@ -6373,21 +6479,29 @@
 
             const pathname = String(globalScope.location?.pathname || '').trim();
             if (/\/admin-studio(?:\.html)?$/i.test(pathname)) {
-                if (searchParams.get('module') === 'analytics') {
+                const moduleParam = String(searchParams.get('module') || '').trim().toLowerCase();
+                if (
+                    moduleParam === 'analytics'
+                    || moduleParam === 'business-center'
+                    || moduleParam === 'analytics-center'
+                    || moduleParam === 'business-overview'
+                    || moduleParam === 'growth-center'
+                    || moduleParam === 'commerce-center'
+                ) {
                     await runAdminAnalyticsSmoke();
-                } else if (searchParams.get('module') === 'chat') {
+                } else if (moduleParam === 'chat') {
                     await runAdminChatSmoke();
-                } else if (searchParams.get('module') === 'shop') {
+                } else if (moduleParam === 'shop') {
                     await runAdminShopSmoke();
-                } else if (searchParams.get('module') === 'points') {
+                } else if (moduleParam === 'points') {
                     await runAdminPointsSmoke();
-                } else if (searchParams.get('module') === 'gallery') {
+                } else if (moduleParam === 'gallery') {
                     await runAdminGallerySmoke();
-                } else if (searchParams.get('module') === 'comments') {
+                } else if (moduleParam === 'comments') {
                     await runAdminCommentsSmoke();
-                } else if (searchParams.get('module') === 'homepage') {
+                } else if (moduleParam === 'homepage') {
                     await runHomepageAdminSmoke();
-                } else if (searchParams.get('module') === 'tickets') {
+                } else if (moduleParam === 'tickets') {
                     await runAdminTicketsSmoke();
                 } else {
                     await runAdminStudioSmoke();

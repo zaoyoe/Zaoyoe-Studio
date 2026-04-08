@@ -233,6 +233,302 @@ test('database migrations retire the legacy redemption overload and formalize th
     );
 });
 
+test('analytics site attribution migration formalizes first-site new-user and retention semantics', () => {
+    const migrationSql = readRepoFile(path.join('supabase', 'migrations', '20260405_admin_analytics_site_attribution_alignment.sql'));
+
+    assert.match(
+        migrationSql,
+        /CREATE OR REPLACE FUNCTION get_overview_stats\(p_site VARCHAR DEFAULT NULL\)/,
+        'analytics site attribution migration should redefine overview stats'
+    );
+    assert.match(
+        migrationSql,
+        /'site_attribution_model', 'first_site_activity'/,
+        'analytics site attribution migration should publish the first-site attribution model in overview payloads'
+    );
+    assert.match(
+        migrationSql,
+        /CREATE OR REPLACE FUNCTION get_user_trend\(/,
+        'analytics site attribution migration should redefine the user trend RPC'
+    );
+    assert.match(
+        migrationSql,
+        /COUNT\(\*\) FILTER \(WHERE attributed_site = p_site\)::INTEGER/,
+        'analytics site attribution migration should scope site new-user counts through attributed users'
+    );
+    assert.match(
+        migrationSql,
+        /CREATE OR REPLACE FUNCTION get_retention_cohort\(p_weeks INTEGER DEFAULT 8, p_site VARCHAR DEFAULT NULL\)/,
+        'analytics site attribution migration should redefine the retention cohort RPC'
+    );
+    assert.match(
+        migrationSql,
+        /WHERE p_site IS NULL OR ac\.attributed_site = p_site/,
+        'analytics site attribution migration should filter retention cohorts through the attributed site'
+    );
+    assert.match(
+        migrationSql,
+        /GRANT EXECUTE ON FUNCTION get_retention_cohort\(INTEGER, VARCHAR\) TO authenticated;/,
+        'analytics site attribution migration should preserve retention cohort grants'
+    );
+});
+
+test('analytics business-active migration promotes effective events while preserving login references', () => {
+    const migrationSql = readRepoFile(path.join('supabase', 'migrations', '20260405_admin_analytics_business_active_alignment.sql'));
+
+    assert.match(
+        migrationSql,
+        /'active_users_scope', 'business_event'/,
+        'analytics business-active migration should expose business-event semantics in overview payloads'
+    );
+    assert.match(
+        migrationSql,
+        /'active_users_model', 'effective_business_event'/,
+        'analytics business-active migration should describe the effective business-event model'
+    );
+    assert.match(
+        migrationSql,
+        /'login_dau', COALESCE\(v_login_dau, 0\)/,
+        'analytics business-active migration should preserve login dau as a reference field'
+    );
+    assert.match(
+        migrationSql,
+        /DROP FUNCTION IF EXISTS get_user_trend\(INTEGER, VARCHAR, DATE, DATE\);/,
+        'analytics business-active migration should drop the prior user trend signature before changing the return shape'
+    );
+    assert.match(
+        migrationSql,
+        /login_active_users INTEGER/,
+        'analytics business-active migration should expose login_active_users in the user trend return shape'
+    );
+    assert.match(
+        migrationSql,
+        /COUNT\(DISTINCT user_id\) FILTER \(WHERE event_name <> 'page_view'\) AS business_active_users/,
+        'analytics business-active migration should exclude bare page views from business-active rollups'
+    );
+    assert.match(
+        migrationSql,
+        /'login_dau_growth'/,
+        'analytics business-active migration should preserve login dau growth as a reference metric'
+    );
+});
+
+test('analytics range migration materializes explicit start and end date signatures', () => {
+    const migrationSql = readRepoFile(path.join('supabase', 'migrations', '20260405_admin_analytics_explicit_range_dates.sql'));
+
+    const markers = [
+        'CREATE OR REPLACE FUNCTION get_user_trend(',
+        'CREATE OR REPLACE FUNCTION get_content_trend(',
+        'CREATE OR REPLACE FUNCTION get_revenue_trend(',
+        'CREATE OR REPLACE FUNCTION get_content_top(',
+        'CREATE OR REPLACE FUNCTION get_content_top_v2(',
+        'CREATE OR REPLACE FUNCTION get_community_stats(',
+        'CREATE OR REPLACE FUNCTION get_activity_heatmap(',
+        'CREATE OR REPLACE FUNCTION get_conversion_funnel(',
+        'CREATE OR REPLACE FUNCTION get_conversion_funnel_v2(',
+        'CREATE OR REPLACE FUNCTION get_points_flow(',
+        'CREATE OR REPLACE FUNCTION get_points_flow_v2(',
+        'CREATE OR REPLACE FUNCTION get_redemption_funnel(',
+        'CREATE OR REPLACE FUNCTION get_channel_breakdown(',
+        'CREATE OR REPLACE FUNCTION get_channel_breakdown_v2(',
+        'CREATE OR REPLACE FUNCTION get_ai_summary_data(',
+        'CREATE OR REPLACE FUNCTION get_ai_summary_data_v2(',
+        'p_start_date DATE DEFAULT NULL',
+        'p_end_date DATE DEFAULT NULL',
+        'BETWEEN v_start_date AND v_end_date',
+        'GRANT EXECUTE ON FUNCTION get_ai_summary_data_v2(INTEGER, VARCHAR, DATE, DATE) TO authenticated;'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(
+            migrationSql.includes(marker),
+            true,
+            `analytics explicit range migration should contain ${marker}`
+        );
+    }
+});
+
+test('analytics proxy metric migration materializes explicit metadata for login-based panels', () => {
+    const migrationSql = readRepoFile(path.join('supabase', 'migrations', '20260405_admin_analytics_proxy_metric_annotations.sql'));
+
+    const markers = [
+        'DROP FUNCTION IF EXISTS get_activity_heatmap(INTEGER, VARCHAR, DATE, DATE);',
+        'DROP FUNCTION IF EXISTS get_retention_cohort(INTEGER, VARCHAR);',
+        'is_proxy_metric BOOLEAN',
+        'metric_basis TEXT',
+        'metric_label TEXT',
+        "'login_history'::TEXT AS metric_basis",
+        "'登录活跃代理口径'::TEXT AS metric_label",
+        "'site_attributed_cohort_login_activity'::TEXT AS metric_basis",
+        "'首站点归因 cohort + 登录回访代理口径'::TEXT AS metric_label",
+        'GRANT EXECUTE ON FUNCTION get_activity_heatmap(INTEGER, VARCHAR, DATE, DATE) TO authenticated;',
+        'GRANT EXECUTE ON FUNCTION get_retention_cohort(INTEGER, VARCHAR) TO authenticated;'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(
+            migrationSql.includes(marker),
+            true,
+            `analytics proxy metric migration should contain ${marker}`
+        );
+    }
+});
+
+test('analytics heatmap migration promotes real business events before login fallback', () => {
+    const migrationSql = readRepoFile(path.join('supabase', 'migrations', '20260405_admin_analytics_heatmap_business_event_alignment.sql'));
+
+    const markers = [
+        'DROP FUNCTION IF EXISTS get_activity_heatmap(INTEGER, VARCHAR, DATE, DATE);',
+        'v_has_business_events BOOLEAN := FALSE;',
+        'FROM public.user_events ue',
+        "'effective_business_event_heatmap'::TEXT AS metric_basis",
+        "'真实业务事件热度'::TEXT AS metric_label",
+        "'login_history'::TEXT AS metric_basis",
+        "'登录活跃代理口径'::TEXT AS metric_label",
+        'GRANT EXECUTE ON FUNCTION get_activity_heatmap(INTEGER, VARCHAR, DATE, DATE) TO authenticated;'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(
+            migrationSql.includes(marker),
+            true,
+            `analytics heatmap business-event migration should contain ${marker}`
+        );
+    }
+});
+
+test('analytics heatmap cleanup migration removes the legacy login fallback path', () => {
+    const migrationSql = readRepoFile(path.join('supabase', 'migrations', '20260405_admin_analytics_heatmap_remove_login_fallback.sql'));
+
+    const markers = [
+        'DROP FUNCTION IF EXISTS get_activity_heatmap(INTEGER, VARCHAR, DATE, DATE);',
+        'FROM public.user_events ue',
+        "'effective_business_event_heatmap'::TEXT AS metric_basis",
+        "'真实业务事件热度'::TEXT AS metric_label",
+        'GRANT EXECUTE ON FUNCTION get_activity_heatmap(INTEGER, VARCHAR, DATE, DATE) TO authenticated;'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(
+            migrationSql.includes(marker),
+            true,
+            `analytics heatmap cleanup migration should contain ${marker}`
+        );
+    }
+
+    assert.equal(
+        migrationSql.includes("'login_history'::TEXT AS metric_basis"),
+        false,
+        'analytics heatmap cleanup migration should remove the login-history fallback basis'
+    );
+    assert.equal(
+        migrationSql.includes('FROM public.user_login_history'),
+        false,
+        'analytics heatmap cleanup migration should no longer query user_login_history'
+    );
+});
+
+test('analytics retention migration promotes real business activity before login fallback', () => {
+    const migrationSql = readRepoFile(path.join('supabase', 'migrations', '20260405_admin_analytics_retention_business_activity_alignment.sql'));
+
+    const markers = [
+        'DROP FUNCTION IF EXISTS get_retention_cohort(INTEGER, VARCHAR, DATE, DATE);',
+        'p_start_date DATE DEFAULT NULL',
+        'p_end_date DATE DEFAULT NULL',
+        'v_has_business_events BOOLEAN := FALSE;',
+        'FROM public.user_events ue',
+        'site_attributed_cohort_effective_business_activity',
+        '首站点归因 cohort + 真实业务回访',
+        'site_attributed_cohort_login_activity',
+        '首站点归因 cohort + 登录回访代理口径',
+        'GRANT EXECUTE ON FUNCTION get_retention_cohort(INTEGER, VARCHAR, DATE, DATE) TO authenticated;'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(
+            migrationSql.includes(marker),
+            true,
+            `analytics retention business-activity migration should contain ${marker}`
+        );
+    }
+});
+
+test('analytics retention cleanup migration removes the legacy login fallback path', () => {
+    const migrationSql = readRepoFile(path.join('supabase', 'migrations', '20260405_admin_analytics_retention_remove_login_fallback.sql'));
+
+    const markers = [
+        'DROP FUNCTION IF EXISTS get_retention_cohort(INTEGER, VARCHAR, DATE, DATE);',
+        'FROM public.user_events ue',
+        'site_attributed_cohort_effective_business_activity',
+        '首站点归因 cohort + 真实业务回访',
+        'GRANT EXECUTE ON FUNCTION get_retention_cohort(INTEGER, VARCHAR, DATE, DATE) TO authenticated;'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(
+            migrationSql.includes(marker),
+            true,
+            `analytics retention cleanup migration should contain ${marker}`
+        );
+    }
+
+    assert.equal(
+        migrationSql.includes('site_attributed_cohort_login_activity'),
+        false,
+        'analytics retention cleanup migration should remove the login-activity fallback basis'
+    );
+    assert.equal(
+        migrationSql.includes('v_has_business_events BOOLEAN := FALSE;'),
+        false,
+        'analytics retention cleanup migration should remove the business-vs-login fallback gate'
+    );
+    assert.equal(
+        migrationSql.includes('WHERE NOT v_has_business_events'),
+        false,
+        'analytics retention cleanup migration should no longer switch retention activity to login history'
+    );
+});
+
+test('analytics cleanup migration removes the legacy proxy conversion funnel overloads', () => {
+    const migrationSql = readRepoFile(path.join('supabase', 'migrations', '20260405_admin_analytics_remove_legacy_conversion_funnel.sql'));
+
+    const markers = [
+        'REVOKE ALL ON FUNCTION public.get_conversion_funnel(INTEGER, VARCHAR, DATE, DATE) FROM PUBLIC;',
+        'REVOKE ALL ON FUNCTION public.get_conversion_funnel(INTEGER, VARCHAR, DATE, DATE) FROM authenticated;',
+        'DROP FUNCTION IF EXISTS public.get_conversion_funnel(INTEGER, VARCHAR, DATE, DATE);',
+        'REVOKE ALL ON FUNCTION public.get_conversion_funnel(INTEGER, VARCHAR) FROM authenticated;',
+        'DROP FUNCTION IF EXISTS public.get_conversion_funnel(INTEGER, VARCHAR);',
+        'REVOKE ALL ON FUNCTION public.get_conversion_funnel(INTEGER) FROM authenticated;',
+        'DROP FUNCTION IF EXISTS public.get_conversion_funnel(INTEGER);'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(
+            migrationSql.includes(marker),
+            true,
+            `analytics legacy conversion cleanup migration should contain ${marker}`
+        );
+    }
+});
+
+test('analytics content top prompt id fix keeps prompt key selection disambiguated', () => {
+    const rootSql = readRepoFile(path.join('supabase', 'analytics_site_filter.sql'));
+    const migrationSql = readRepoFile(path.join('supabase', 'migrations', '20260405_admin_analytics_content_top_prompt_id_disambiguation.sql'));
+
+    for (const source of [rootSql, migrationSql]) {
+        assert.match(
+            source,
+            /SELECT per\.prompt_id AS prompt_id FROM prompt_event_rollup per/,
+            'content top SQL should qualify prompt_event_rollup.prompt_id to avoid RETURNS TABLE ambiguity'
+        );
+        assert.match(
+            source,
+            /SELECT pcr\.prompt_id AS prompt_id FROM prompt_comment_rollup pcr/,
+            'content top SQL should qualify prompt_comment_rollup.prompt_id to avoid RETURNS TABLE ambiguity'
+        );
+    }
+});
+
 test('root legacy SQL scripts no longer ship executable single-site payment or redemption entrypoints', () => {
     const rootCommercialSql = readRepoFile('commercial_points_functions.sql');
     const rootRedemptionSql = readRepoFile('redemption_functions.sql');
@@ -290,5 +586,113 @@ test('root legacy SQL scripts no longer ship executable single-site payment or r
         afdianOrdersSql,
         /CREATE OR REPLACE FUNCTION public\.fn_(ensure_redemption_code_for_payment_order|apply_payment_order_review|process_afdian_payment|finalize_afdian_custom_payment)\(/,
         'afdian_orders.sql should be a deprecated stub, not an executable payment bundle'
+    );
+});
+
+test('root legacy analytics SQL scripts are deprecated stubs instead of executable single-site entrypoints', () => {
+    const analyticsRpcSql = readRepoFile(path.join('supabase', 'analytics_rpc.sql'));
+    const analyticsTrendSql = readRepoFile(path.join('supabase', 'analytics_trend.sql'));
+    const analyticsAdvancedSql = readRepoFile(path.join('supabase', 'analytics_advanced.sql'));
+
+    for (const [label, source] of [
+        ['analytics_rpc.sql', analyticsRpcSql],
+        ['analytics_trend.sql', analyticsTrendSql],
+        ['analytics_advanced.sql', analyticsAdvancedSql]
+    ]) {
+        assert.match(
+            source,
+            /Deprecated stub\./,
+            `${label} should explicitly declare itself as a deprecated stub`
+        );
+        assert.match(
+            source,
+            /Do not add executable analytics/i,
+            `${label} should warn against reintroducing executable analytics SQL`
+        );
+    }
+
+    assert.doesNotMatch(
+        analyticsRpcSql,
+        /CREATE OR REPLACE FUNCTION get_(overview_stats|user_trend|content_trend|revenue_trend|channel_breakdown|activity_heatmap)\(/,
+        'analytics_rpc.sql should not redefine executable legacy overview or chart RPCs'
+    );
+    assert.doesNotMatch(
+        analyticsTrendSql,
+        /CREATE OR REPLACE FUNCTION get_overview_stats_with_trend\(/,
+        'analytics_trend.sql should not redefine the old overview trend RPC'
+    );
+    assert.doesNotMatch(
+        analyticsAdvancedSql,
+        /CREATE OR REPLACE FUNCTION (public\.)?(require_admin_access|get_retention_cohort|get_points_flow|get_geo_distribution|get_geo_distribution_by_site|get_conversion_funnel)\(/,
+        'analytics_advanced.sql should not redefine executable advanced analytics RPCs'
+    );
+});
+
+test('phase3 A/B analytics migrations are explicitly marked as historical optional paths', () => {
+    const abResultsEventAlignmentSql = readRepoFile(path.join('supabase', 'migrations', '20260404_admin_analytics_phase3_ab_results_event_alignment.sql'));
+    const abResultsDrilldownSql = readRepoFile(path.join('supabase', 'migrations', '20260404_admin_analytics_phase3_ab_results_drilldown_v2.sql'));
+    const analyticsUpgradePlan = readRepoFile(path.join('docs', 'admin-studio-analytics-2-upgrade-plan.md'));
+
+    assert.match(
+        abResultsEventAlignmentSql,
+        /Historical note:/,
+        'phase3 A/B event-alignment migration should declare that it is historical-only context'
+    );
+    assert.match(
+        abResultsEventAlignmentSql,
+        /Daily admin analytics no longer exposes A\/B result surfaces/i,
+        'phase3 A/B event-alignment migration should clarify that the daily admin path no longer exposes these results'
+    );
+
+    assert.match(
+        abResultsDrilldownSql,
+        /Historical note:/,
+        'phase3 A/B drilldown migration should declare that it is historical-only context'
+    );
+    assert.match(
+        abResultsDrilldownSql,
+        /Daily admin analytics no longer exposes A\/B drilldown panels/i,
+        'phase3 A/B drilldown migration should clarify that the daily admin path no longer exposes these panels'
+    );
+
+    assert.match(
+        analyticsUpgradePlan,
+        /experiment_id`（可选，仅在手动启用 experiment runtime 时上报）/,
+        'analytics upgrade plan should mark experiment_id as optional and runtime-gated'
+    );
+    assert.match(
+        analyticsUpgradePlan,
+        /variant_id`（可选，仅在手动启用 experiment runtime 时上报）/,
+        'analytics upgrade plan should mark variant_id as optional and runtime-gated'
+    );
+    assert.match(
+        analyticsUpgradePlan,
+        /可选：仅在手动启用 experiment runtime 时补 `A\/B experiment exposure \+ conversion`/,
+        'analytics upgrade plan should demote A/B exposure work to an optional manual-runtime track'
+    );
+});
+
+test('traffic runtime config migration promotes traffic_runtime as the canonical key while preserving legacy compatibility', () => {
+    const migrationSql = readRepoFile(path.join('supabase', 'migrations', '20260405_admin_traffic_runtime_config_key_alignment.sql'));
+
+    for (const marker of [
+        "WHERE sc.config_key IN ('traffic_runtime', 'experiment_runtime')",
+        "'traffic_runtime'",
+        "'前台分流 runtime 开关'",
+        "'experiment_runtime'",
+        "'前台实验 runtime 开关（兼容旧键）'",
+        'ON CONFLICT (config_key) DO UPDATE'
+    ]) {
+        assert.equal(
+            migrationSql.includes(marker),
+            true,
+            `traffic runtime key-alignment migration should contain ${marker}`
+        );
+    }
+
+    assert.match(
+        migrationSql,
+        /ORDER BY sc\.updated_at DESC NULLS LAST, sc\.config_key = 'traffic_runtime' DESC/,
+        'traffic runtime key-alignment migration should prefer the newest traffic_runtime-compatible record'
     );
 });

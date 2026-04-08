@@ -153,43 +153,52 @@ const AdminDiscounts = {
 
     buildTableLoadingSkeleton: function (rowCount = 6) {
         const rows = Math.max(4, Number.parseInt(rowCount, 10) || 6);
-        const titleWidths = ['admin-skeleton-w-50', 'admin-skeleton-w-60', 'admin-skeleton-w-40'];
-        const metaWidths = ['admin-skeleton-w-30', 'admin-skeleton-w-40'];
+        const codeWidths = [92, 108, 96, 104];
+        const typeWidths = [78, 92, 86, 94];
+        const typeMetaWidths = ['admin-skeleton-w-20', 'admin-skeleton-w-30', 'admin-skeleton-w-20', 'admin-skeleton-w-30'];
+        const usageWidths = ['admin-skeleton-w-50', 'admin-skeleton-w-60', 'admin-skeleton-w-50', 'admin-skeleton-w-40'];
+        const expiryWidths = ['admin-skeleton-w-30', 'admin-skeleton-w-40', 'admin-skeleton-w-30', 'admin-skeleton-w-40'];
+        const policyWidths = [
+            ['admin-skeleton-w-50', 'admin-skeleton-w-40', 86],
+            ['admin-skeleton-w-60', 'admin-skeleton-w-50', 92],
+            ['admin-skeleton-w-50', 'admin-skeleton-w-40', 84],
+            ['admin-skeleton-w-60', 'admin-skeleton-w-50', 88]
+        ];
 
         return Array.from({ length: rows }, (_, index) => `
             <tr class="admin-table-skeleton-row admin-discount-table-skeleton-row" aria-hidden="true" data-skeleton-index="${index}">
                 <td>
-                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack">
-                        <span class="admin-skeleton-block admin-skeleton-block--title ${titleWidths[index % titleWidths.length]}"></span>
-                        <span class="admin-skeleton-block admin-skeleton-block--line ${metaWidths[index % metaWidths.length]}"></span>
+                    <div class="admin-table-skeleton-cell">
+                        <span class="admin-skeleton-block admin-discount-skeleton-code" style="width:${codeWidths[index % codeWidths.length]}px"></span>
                     </div>
                 </td>
                 <td>
-                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack">
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack admin-discount-skeleton-stack">
+                        <span class="admin-skeleton-block admin-skeleton-block--title" style="width:${typeWidths[index % typeWidths.length]}px"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line ${typeMetaWidths[index % typeMetaWidths.length]}"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack admin-discount-skeleton-stack">
+                        <span class="admin-skeleton-block admin-skeleton-block--line ${usageWidths[index % usageWidths.length]}"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line ${expiryWidths[index % expiryWidths.length]}"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack admin-discount-skeleton-stack admin-discount-skeleton-stack--center">
                         <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span>
-                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-40"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line ${expiryWidths[index % expiryWidths.length]}"></span>
                     </div>
                 </td>
                 <td>
-                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack">
-                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-60"></span>
-                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-40"></span>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack admin-discount-skeleton-stack admin-discount-skeleton-stack--center">
+                        <span class="admin-skeleton-block admin-skeleton-block--line ${policyWidths[index % policyWidths.length][0]}"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line ${policyWidths[index % policyWidths.length][1]}"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--pill" style="width:${policyWidths[index % policyWidths.length][2]}px"></span>
                     </div>
                 </td>
                 <td>
-                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack">
-                        <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span>
-                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span>
-                    </div>
-                </td>
-                <td>
-                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack">
-                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-70"></span>
-                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-50"></span>
-                    </div>
-                </td>
-                <td>
-                    <div class="admin-table-skeleton-cell admin-table-skeleton-actions">
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-actions admin-discount-action-wrap">
                         <span class="admin-skeleton-block admin-skeleton-block--action"></span>
                         <span class="admin-skeleton-block admin-skeleton-block--action"></span>
                     </div>

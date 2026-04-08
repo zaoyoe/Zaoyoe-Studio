@@ -24,6 +24,20 @@ const RUNTIME_PAGES = [
 
 const RUNTIME_SCRIPTS = [
     'supabase-client.js',
+    'js/admin-analytics-metric-context.js',
+    'js/admin-analytics-derived-bundles.js',
+    'js/admin-analytics-runtime-controls.js',
+    'js/admin-analytics-panel-loaders.js',
+    'js/admin-analytics-lifecycle.js',
+    'js/admin-analytics-workbench.js',
+    'js/admin-analytics-insight-cards.js',
+    'js/admin-analytics-ai-state.js',
+    'js/admin-analytics-ai-dom.js',
+    'js/admin-analytics-ai-helpers.js',
+    'js/admin-analytics-ai-prompt-builders.js',
+    'js/admin-analytics-ai-controller.js',
+    'js/admin-analytics-export-builders.js',
+    'js/admin-analytics-ai-export.js',
     'js/admin-shop.js',
     'js/admin-workbench.js',
     'js/admin-ticket-links.js',
@@ -94,6 +108,30 @@ function collectInlineScriptHashes(relativePaths = []) {
 
 function readRepoFile(relativePath) {
     return fs.readFileSync(path.join(REPO_ROOT, relativePath), 'utf8');
+}
+
+function readAdminAnalyticsRuntimeSource() {
+    return [
+        readRepoFile('js/admin-analytics-metric-context.js'),
+        readRepoFile('admin-analytics.js'),
+        readRepoFile('js/admin-analytics-derived-bundles.js'),
+        readRepoFile('js/admin-analytics-runtime-controls.js'),
+        readRepoFile('js/admin-analytics-panel-loaders.js'),
+        readRepoFile('js/admin-analytics-lifecycle.js'),
+        readRepoFile('js/admin-analytics-workbench.js'),
+        readRepoFile('js/admin-analytics-insight-cards.js'),
+        readRepoFile('js/admin-analytics-ai-state.js'),
+        readRepoFile('js/admin-analytics-ai-dom.js'),
+        readRepoFile('js/admin-analytics-ai-helpers.js'),
+        readRepoFile('js/admin-analytics-ai-prompt-builders.js'),
+        readRepoFile('js/admin-analytics-ai-controller.js'),
+        readRepoFile('js/admin-analytics-export-builders.js'),
+        readRepoFile('js/admin-analytics-ai-export.js')
+    ].join('\n');
+}
+
+function readAdminAnalyticsMetricContextSource() {
+    return readAdminAnalyticsRuntimeSource();
 }
 
 function collectRepositorySourceFiles(rootDir = REPO_ROOT) {
@@ -1289,7 +1327,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
         ['shop.html', 'css/shop-page.css?v=20260324_SHOP_RUNTIME_STYLE_1'],
-        ['admin-studio.html', 'css/admin-studio-page.css?v=20260404_ADMIN_TICKET_MODAL_POLISH_1'],
+        ['admin-studio.html', 'css/admin-studio-page.css?v=20260408_SECURITY_CHILD_HOVER_STATIC_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
         ['debug-realtime.html', 'css/debug-realtime-page.css?v=20260324_DEBUG_REALTIME_STYLE_ATTRS_1'],
@@ -1798,7 +1836,7 @@ test('shop storefront preserves the initial skeleton layout while first-load dat
         'js/shop-client.js should keep the server-rendered shop skeleton layout stable when the first request is still pending'
     );
     assert.equal(
-        shopHtmlSource.includes('js/shop-client.js?v=20260404_SHOP_PHASE3_EXPERIMENT_RUNTIME_1'),
+        shopHtmlSource.includes('js/shop-client.js?v=20260405_SHOP_RUNTIME_TRACKING_2'),
         true,
         'shop.html should reference the latest shop client runtime for the phase 3 storefront events'
     );
@@ -2271,6 +2309,7 @@ test('admin studio shell tabs and dashboards route core controls through delegat
         'data-admin-action="analytics-open-destination"',
         'data-admin-action="analytics-export-data"',
         'data-admin-action="analytics-refresh-data"',
+        'data-admin-action="analytics-toggle-advanced-tools"',
         'data-admin-change-action="homepage-handle-screenshot-upload"',
         'data-admin-change-action="payments-change-active-provider"',
         'data-admin-change-action="comments-toggle-select-all"'
@@ -2280,9 +2319,13 @@ test('admin studio shell tabs and dashboards route core controls through delegat
         assert.equal(adminStudioSource.includes(marker), true, `admin-studio.html should contain ${marker}`);
     }
 
+    assert.equal(adminStudioSource.includes('data-admin-action="analytics-load-experiments-list"'), false, 'admin-studio.html should not expose analytics experiments as a primary toolbar entry');
+
     assert.equal(adminStudioScript.includes("closest('[data-admin-action]')"), true, 'admin-studio.js should delegate click-based admin controls');
     assert.equal(adminStudioScript.includes("closest('[data-admin-change-action]')"), true, 'admin-studio.js should delegate change-based admin controls');
     assert.equal(adminStudioScript.includes("target.closest('[data-admin-overlay-close]')"), true, 'admin-studio.js should resolve overlay dismissal from the nearest overlay container');
+    assert.equal(adminStudioScript.includes("case 'analytics-toggle-advanced-tools':"), true, 'admin-studio.js should delegate the analytics advanced tools toggle');
+    assert.equal(adminStudioCss.includes('.analytics-advanced-workspace[hidden]'), true, 'admin-studio.css should force-hide the analytics advanced workspace when the hidden attribute is set');
     assert.equal(adminStudioScript.includes("target.closest('.admin-ticket-reply-modal__panel')"), true, 'admin-studio.js should keep reply modal clicks inside the panel from triggering overlay dismissal');
     assert.equal(adminStudioScript.includes("target.closest('.admin-ticket-bulk-modal__panel')"), true, 'admin-studio.js should keep bulk modal clicks inside the panel from triggering overlay dismissal');
     assert.equal(adminStudioScript.includes("target.closest('.admin-ticket-summary-job-modal__dialog')"), true, 'admin-studio.js should keep summary detail clicks inside the dialog from triggering overlay dismissal');
@@ -2811,6 +2854,61 @@ test('settings pricing runtime now keeps only the package migration shortcut and
     }
 });
 
+test('settings general view no longer exposes frontend traffic runtime controls', () => {
+    const adminStudioSource = readRepoFile('admin-studio.html');
+    const adminConfigSource = readRepoFile('admin-config.js');
+
+    const removedMarkers = [
+        '前台分流 runtime',
+        'cfgTrafficRuntimeEnabled',
+        'cfgTrafficRuntimeHint',
+        'cfgTrafficRuntimeAuditMeta',
+        'cfgTrafficRuntimeProbeStatus',
+        'cfgTrafficRuntimeProbeRefreshBtn',
+        "systemConfigCache[TRAFFIC_RUNTIME_SYSTEM_CONFIG_KEY]",
+        'function getTrafficRuntimeSystemConfig() {',
+        'function setTrafficRuntimeSystemConfig(config) {',
+        "applyTrafficRuntimeConfigUi(nextConfig);",
+        'async function loadTrafficRuntimeAdminState(options = {}) {',
+        'async function saveTrafficRuntimeConfig(config) {',
+        "const response = await fetch('/api/admin/settings/traffic-runtime', {",
+        'function renderTrafficRuntimeProbeState(state = trafficRuntimeProbeState) {',
+        'function renderTrafficRuntimeAuditState(state = trafficRuntimeAuditState) {',
+        'async function refreshTrafficRuntimeProbe(options = {}) {',
+        "showStandaloneSaveIndicator('cfgTrafficRuntimeProbeIndicator', '已探测');"
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(
+            adminStudioSource.includes(marker) || adminConfigSource.includes(marker),
+            false,
+            `general settings should no longer contain ${marker}`
+        );
+    }
+});
+
+test('admin-side runtime bridge is removed from active code paths', () => {
+    const removalChecks = [
+        { path: 'admin-config.js', markers: ['TRAFFIC_RUNTIME_SYSTEM_CONFIG_KEY', 'cfgTrafficRuntimeEnabled'] },
+        { path: 'api/admin.js', markers: ['settings/traffic-runtime', 'settings/experiment-runtime'] },
+        { path: 'api/runtime/supabase-config.js', markers: ['traffic_runtime', '__ZAOYOE_TRAFFIC_RUNTIME_DEFAULT_ENABLED__', '__ZAOYOE_EXPERIMENT_RUNTIME_DEFAULT_ENABLED__'] },
+        { path: 'api/_lib/public-runtime-config.js', markers: ['__ZAOYOE_TRAFFIC_RUNTIME_DEFAULT_ENABLED__', '__ZAOYOE_EXPERIMENT_RUNTIME_DEFAULT_ENABLED__'] }
+    ];
+
+    for (const { path, markers } of removalChecks) {
+        const source = readRepoFile(path);
+        for (const marker of markers) {
+            assert.equal(source.includes(marker), false, `${path} should no longer contain ${marker}`);
+        }
+    }
+
+    assert.equal(
+        fs.existsSync(path.join(REPO_ROOT, 'server', 'api-handlers', 'admin', 'settings', 'traffic-runtime.js')),
+        false,
+        'traffic runtime settings handler should be deleted'
+    );
+});
+
 test('admin ops alert controls expose delegated settings actions and runtime wiring', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioCss = readRepoFile('admin-studio.css');
@@ -3272,7 +3370,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'the standalone ops alerts module should render after the settings module closes'
     );
     assert.equal(
-        adminStudioSource.includes('js/admin-workbench.js?v=20260404_ADMIN_WORKBENCH_EXPERIMENT_CONTEXT_1'),
+        adminStudioSource.includes('js/admin-workbench.js?v=20260405_ADMIN_WORKBENCH_SIGNAL_CONTEXT_1'),
         true,
         'admin-studio.html should load the shared admin workbench runtime before admin config'
     );
@@ -4965,6 +5063,7 @@ test('admin studio routes hardened shell and dashboard controls through delegate
         'data-admin-action="homepage-switch-section"',
         'data-admin-action="payments-switch-tab"',
         'data-admin-action="analytics-switch-tab"',
+        'data-admin-action="analytics-toggle-advanced-tools"',
         'data-admin-change-action="comments-toggle-select-all"',
         'data-admin-change-action="homepage-handle-screenshot-upload"'
     ];
@@ -5501,9 +5600,30 @@ test('user modal expiry picker uses a body-mounted floating flatpickr inside the
 });
 
 test('admin studio centralizes module permissions and gates sidebar modules through the shared registry', () => {
+    const adminStudioSource = readRepoFile('admin-studio.html');
     const bootstrapSource = readRepoFile('js/admin-studio-bootstrap.js');
     const sidebarStyles = readRepoFile('admin-sidebar.css');
 
+    assert.doesNotMatch(
+        adminStudioSource,
+        /data-module="business-overview"[\s\S]*?<span>经营总览<\/span>/,
+        'admin-studio.html should remove the standalone business overview sidebar entry after consolidating overview into the growth center'
+    );
+    assert.match(
+        adminStudioSource,
+        /data-module="growth-center"[\s\S]*?<span>增长经营<\/span>/,
+        'admin-studio.html should expose the growth center sidebar entry for the analytics center split'
+    );
+    assert.match(
+        adminStudioSource,
+        /data-module="commerce-center"[\s\S]*?<span>商品经营<\/span>/,
+        'admin-studio.html should expose the commerce center sidebar entry for the analytics center split'
+    );
+    assert.match(
+        adminStudioSource,
+        /js\/admin-studio-bootstrap\.js\?v=20260407_ANALYTICS_CENTER_BOOTSTRAP_8/,
+        'admin-studio.html should load the cache-busted admin studio bootstrap for the split analytics center aliases'
+    );
     assert.match(
         bootstrapSource,
         /window\.ADMIN_PERMISSION_GROUPS\s*=\s*ADMIN_PERMISSION_GROUPS/,
@@ -5548,6 +5668,81 @@ test('admin studio centralizes module permissions and gates sidebar modules thro
         bootstrapSource,
         /adminModuleAccessNotice/,
         'admin-studio-bootstrap.js should render a dedicated empty state when no module permissions are assigned'
+    );
+    assert.match(
+        bootstrapSource,
+        /const ADMIN_ANALYTICS_MODULE_ALIASES = \{/,
+        'admin-studio-bootstrap.js should define the split analytics sidebar alias registry'
+    );
+    assert.match(
+        bootstrapSource,
+        /function getAdminAnalyticsSidebarModuleIdForTab\(tabId = '', options = \{\}\)/,
+        'admin-studio-bootstrap.js should map analytics tabs back to the split sidebar entries'
+    );
+    assert.match(
+        bootstrapSource,
+        /case 'overview':\s*return 'growth-center';/,
+        'admin-studio-bootstrap.js should keep overview inside the growth center'
+    );
+    assert.match(
+        bootstrapSource,
+        /'growth-center': \{[\s\S]*defaultTab: 'overview'/,
+        'admin-studio-bootstrap.js should default the growth center to the overview tab'
+    );
+    assert.match(
+        bootstrapSource,
+        /const isPlainCommerceEntry = normalizedModuleName === 'analytics'[\s\S]*analyticsConfig\?\.sidebarModuleId === 'commerce-center'[\s\S]*analyticsTab === 'product'/,
+        'admin-studio-bootstrap.js should detect plain commerce-center entry before restoring analytics state'
+    );
+    assert.match(
+        bootstrapSource,
+        /window\.resetAnalyticsProductDetailRuntime\(\{ resetPanel: true \}\);/,
+        'admin-studio-bootstrap.js should clear stale product-detail runtime state before entering commerce-center directly'
+    );
+    assert.match(
+        bootstrapSource,
+        /window\.scrollTo\(\{ top: 0, left: 0, behavior: 'auto' \}\);/,
+        'admin-studio-bootstrap.js should return the viewport to the top for plain commerce-center entry'
+    );
+    assert.match(
+        bootstrapSource,
+        /function resolveAdminAnalyticsModuleConfig\(moduleId = '', options = \{\}\)/,
+        'admin-studio-bootstrap.js should resolve analytics aliases through a shared module config helper'
+    );
+    assert.match(
+        bootstrapSource,
+        /function syncAdminStudioAnalyticsSidebar\(tabId = '', options = \{\}\)/,
+        'admin-studio-bootstrap.js should keep the split analytics sidebar entries in sync with the active analytics tab'
+    );
+    assert.match(
+        bootstrapSource,
+        /analyticsConfig\?\.routeModuleId \|\| 'growth-center'/,
+        'admin-studio-bootstrap.js should sync analytics urls to the active split sidebar route'
+    );
+    assert.match(
+        bootstrapSource,
+        /window\.getAdminAnalyticsSidebarModuleIdForTab = getAdminAnalyticsSidebarModuleIdForTab;/,
+        'admin-studio-bootstrap.js should expose the analytics sidebar alias resolver'
+    );
+    assert.match(
+        bootstrapSource,
+        /window\.syncAdminStudioAnalyticsSidebar = syncAdminStudioAnalyticsSidebar;/,
+        'admin-studio-bootstrap.js should expose the split analytics sidebar sync helper'
+    );
+    assert.match(
+        bootstrapSource,
+        /function attachAnalyticsWorkspace\(moduleId = ''\)/,
+        'admin-studio-bootstrap.js should move the shared analytics workspace into the active split module container'
+    );
+    assert.match(
+        bootstrapSource,
+        /return activateAdminStudioModule\(requestedModuleName, options\);/,
+        'admin-studio-bootstrap.js should preserve split analytics sidebar aliases when switchModule delegates to activateAdminStudioModule'
+    );
+    assert.match(
+        bootstrapSource,
+        /window\.syncAnalyticsRouteState\(\{\s*view: analyticsTab,\s*sectionId: analyticsSectionId,\s*promptId: analyticsPromptId,\s*productId: analyticsProductId,\s*detailFocus: analyticsDetailFocus\s*\}/,
+        'admin-studio-bootstrap.js should seed analytics route state before switching split analytics modules so sidebar clicks land on the correct module root'
     );
     assert.match(
         sidebarStyles,
@@ -6341,12 +6536,12 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         'verify.html should load the latest verify-widget stylesheet version'
     );
     assert.equal(
-        verifyPageSource.includes('./js/user-event-tracker.js?v=20260404_PHASE3_EXPERIMENT_RUNTIME_1'),
+        verifyPageSource.includes('./js/user-event-tracker.js?v=20260405_USER_EVENT_TRACKER_2'),
         true,
-        'verify.html should load the shared phase 3 user event tracker before the verify widget runtime'
+        'verify.html should load the shared user event tracker before the verify widget runtime'
     );
     assert.equal(
-        verifyPageSource.includes('./verify-widget.js?v=20260404_VERIFY_PHASE3_EXPERIMENT_RUNTIME_1'),
+        verifyPageSource.includes('./verify-widget.js?v=20260405_VERIFY_RUNTIME_TRACKING_1'),
         true,
         'verify.html should load the latest verify-widget script version'
     );
@@ -6356,12 +6551,12 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         'index_old.html should load the latest verify-widget stylesheet version'
     );
     assert.equal(
-        archivedIndexSource.includes('./js/user-event-tracker.js?v=20260404_PHASE3_EXPERIMENT_RUNTIME_1'),
+        archivedIndexSource.includes('./js/user-event-tracker.js?v=20260405_USER_EVENT_TRACKER_2'),
         true,
-        'index_old.html should load the shared phase 3 user event tracker before the verify widget runtime'
+        'index_old.html should load the shared user event tracker before the verify widget runtime'
     );
     assert.equal(
-        archivedIndexSource.includes('./verify-widget.js?v=20260404_VERIFY_PHASE3_EXPERIMENT_RUNTIME_1'),
+        archivedIndexSource.includes('./verify-widget.js?v=20260405_VERIFY_RUNTIME_TRACKING_1'),
         true,
         'index_old.html should load the latest verify-widget script version'
     );
@@ -6688,10 +6883,11 @@ test('ticket admin surfaces user email in search and list rendering', () => {
     assert.equal(adminStudioSource.includes('placeholder="搜索工单号、订单号、用户、邮箱或描述..."'), true, 'admin-studio.html should mention ticket id, user, and email in the ticket search placeholder');
     assert.equal(adminStudioSource.includes('<th>用户 / 邮箱</th>'), true, 'admin-studio.html should label the ticket user column with email support');
     assert.equal(adminStudioSource.includes('js/admin-ticket-links.js?v=20260401_ADMIN_TICKET_LINK_PROTOCOL_1'), true, 'admin-studio.html should load the shared ticket link protocol before the ticket runtime');
-    assert.equal(adminStudioSource.includes('admin-studio.css?v=20260404_ANALYTICS_DUTY_BOARD_26'), true, 'admin-studio.html should load the cache-busted admin studio stylesheet for analytics duty board states');
+    assert.equal(adminStudioSource.includes('admin-studio.css?v=20260407_ANALYTICS_CENTER_SHELL_83'), true, 'admin-studio.html should load the cache-busted admin studio stylesheet for analytics metric context states');
     assert.equal(adminStudioSource.includes('analytics-advanced-entry'), false, 'admin-studio.html should keep advanced analytics out of the main toolbar flow');
-    assert.equal(adminStudioSource.includes('admin-config.js?v=20260404_ADMIN_VERIFY_WORKBENCH_CONTEXT_1'), true, 'admin-studio.html should load the cache-busted admin config script for configurable ticket reply templates');
-    assert.equal(adminStudioSource.includes('js/admin-tickets.js?v=20260404_ADMIN_TICKETS_WORKBENCH_CONTEXT_1'), true, 'admin-studio.html should load the cache-busted ticket admin script');
+    assert.equal(adminStudioSource.includes('admin-config.js?v=20260405_GENERAL_RUNTIME_REMOVAL_1'), true, 'admin-studio.html should load the cache-busted admin config script for configurable ticket reply templates');
+    assert.equal(adminStudioSource.includes('js/admin-tickets.js?v=20260406_ADMIN_TICKETS_WORKBENCH_CONTEXT_11'), true, 'admin-studio.html should load the cache-busted ticket admin script');
+    assert.equal(ticketsSource.includes("recordAnalyticsResolutionFeedback: function (ticket = {}, newStatus = '', result = {}, doRefund = false) {"), true, 'js/admin-tickets.js should record analytics resolution feedback after ticket handling succeeds');
     assert.equal(ticketsSource.includes('pageSize: 12,'), true, 'js/admin-tickets.js should paginate tickets 12 at a time');
     assert.equal(ticketLinksSource.includes('root.AdminTicketLinks = api;'), true, 'js/admin-ticket-links.js should expose a shared ticket link protocol namespace');
     assert.equal(ticketLinksSource.includes('function buildLinkedTicketDescription(body = {}, actorLabel = \'\')'), true, 'js/admin-ticket-links.js should build linked ticket descriptions through the shared protocol');
@@ -6699,7 +6895,20 @@ test('ticket admin surfaces user email in search and list rendering', () => {
     assert.equal(ticketLinksSource.includes('function parseLinkedChatSessionContext(description = \'\')'), true, 'js/admin-ticket-links.js should parse linked chat ticket descriptions');
     assert.equal(ticketsSource.includes("fetchProfilesByIds: async function"), true, 'js/admin-tickets.js should fetch profile emails for ticket users');
     assert.equal(ticketsSource.includes("buildAdminTicketsUrl: function"), true, 'js/admin-tickets.js should build shared admin ticket URLs through the central admin route');
-    assert.equal(ticketsSource.includes("showWorkbenchContext: function (context = {})"), true, 'js/admin-tickets.js should render experiment workbench context notes when analytics opens the ticket module');
+    assert.equal(ticketsSource.includes("showWorkbenchContext: function (context = {})"), true, 'js/admin-tickets.js should render analytics signal context notes when analytics opens the ticket module');
+    assert.equal(ticketsSource.includes("buildAnalyticsIssueSummaryState: function () {"), true, 'js/admin-tickets.js should derive a queue issue summary when analytics opens the ticket module');
+    assert.equal(ticketsSource.includes("buildAnalyticsShopOrdersContext: function (context = this.analyticsWorkbenchContext, options = {}) {"), true, 'js/admin-tickets.js should build a shop-orders return context from the active analytics workbench state');
+    assert.equal(ticketsSource.includes("buildAnalyticsShopOrdersActionAttrs: function (context = this.analyticsWorkbenchContext, options = {}) {"), true, 'js/admin-tickets.js should build analytics-open-destination attrs for returning to shop orders');
+    assert.equal(ticketsSource.includes("buildAnalyticsUserReturnAttrs: function (context = this.analyticsWorkbenchContext) {"), true, 'js/admin-tickets.js should build user-detail return attrs for user-commerce ticket drill-downs');
+    assert.equal(ticketsSource.includes("buildAnalyticsContentCommerceReturnContext: function (context = this.analyticsWorkbenchContext) {"), true, 'js/admin-tickets.js should build content-commerce return context for content drill-down tickets');
+    assert.equal(ticketsSource.includes("renderAnalyticsIssueSummary: function () {"), true, 'js/admin-tickets.js should render a ticket issue summary note for analytics drill-downs');
+    assert.equal(ticketsSource.includes("focusAnalyticsIssueSummary: function (kind = '') {"), true, 'js/admin-tickets.js should let analytics issue summary chips jump into ticket subviews');
+    assert.equal(ticketsSource.includes("buildAnalyticsPrioritySummaryState: function () {"), true, 'js/admin-tickets.js should derive prioritized ticket items for analytics drill-downs');
+    assert.equal(ticketsSource.includes("renderAnalyticsPrioritySummary: function () {"), true, 'js/admin-tickets.js should render prioritized ticket items for analytics drill-downs');
+    assert.equal(ticketsSource.includes("focusAnalyticsPrioritySummary: async function (action = '', ticketId = '') {"), true, 'js/admin-tickets.js should let analytics priority items jump into ticket handling actions');
+    assert.equal(ticketsSource.includes('回订单承接链'), true, 'js/admin-tickets.js should provide a return-to-orders action from analytics-driven ticket views');
+    assert.equal(ticketsSource.includes('回用户承接链'), true, 'js/admin-tickets.js should provide a return-to-user action from user-commerce ticket views');
+    assert.equal(ticketsSource.includes('回内容带货详情'), true, 'js/admin-tickets.js should provide a return-to-content-commerce action from content drill-down ticket views');
     assert.equal(ticketsSource.includes("getTicketsListUrl: function"), true, 'js/admin-tickets.js should build a shared server-side tickets list request URL');
     assert.equal(ticketsSource.includes("getTicketsAssignUrl: function"), true, 'js/admin-tickets.js should build a shared ticket assignment route URL');
     assert.equal(ticketsSource.includes("getTicketsBatchProcessUrl: function"), true, 'js/admin-tickets.js should build a shared ticket batch processing route URL');
@@ -7002,7 +7211,7 @@ test('ticket admin runtime renderers externalize row states, modal visibility, a
     );
 });
 
-test('admin studio security, verify, affiliate, and experiment controls route through delegated actions', () => {
+test('admin studio security, verify, and affiliate controls route through delegated actions', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioScript = readRepoFile('admin-studio.js');
     const adminStudioStyles = readRepoFile('admin-studio.css');
@@ -7051,9 +7260,7 @@ test('admin studio security, verify, affiliate, and experiment controls route th
         'data-admin-blur-action="settings-verify-api-key-lock"',
         'data-admin-change-action="affiliate-save-setting"',
         'data-admin-change-action="affiliate-save-poster-field"',
-        'data-admin-action="settings-add-api-key"',
-        'data-admin-action="analytics-close-experiment-modal"',
-        'data-admin-action="analytics-add-variant-row"'
+        'data-admin-action="settings-add-api-key"'
     ];
 
     for (const marker of delegatedMarkers) {
@@ -7074,13 +7281,9 @@ test('admin studio security, verify, affiliate, and experiment controls route th
         'settings-save-verify-config',
         'affiliate-save-setting',
         'affiliate-save-poster-field',
-        "window.openExperimentModal?.(actionEl.dataset.analyticsContext || '');",
         'analytics-load-ai-prediction',
-        'analytics-show-ab-results',
-        "window.showABResults?.(experimentId, experimentName, variants, targetMetric);",
         '[data-admin-focus-action]',
         '[data-admin-blur-action]',
-        "form.id === 'experimentForm'",
         "case 'user-modal':"
     ];
 
@@ -7088,11 +7291,6 @@ test('admin studio security, verify, affiliate, and experiment controls route th
         assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
     }
 
-    assert.equal(
-        analyticsSource.includes('function bindExperimentModalOverlayDismiss()'),
-        true,
-        'admin-analytics.js should bind the experiment modal overlay dismiss handler'
-    );
     assert.equal(
         adminStudioSource.includes('id="userModalOverlay" data-admin-overlay-close="user-modal"'),
         true,
@@ -7142,10 +7340,8 @@ test('admin studio security, verify, affiliate, and experiment controls route th
     }
 
     assert.equal(adminConfigSource.includes('data-admin-action="settings-unlock-account"'), true, 'admin-config.js should render delegated locked-account actions');
-    assert.equal(analyticsSource.includes('data-admin-action="analytics-show-ab-results"'), true, 'admin-analytics.js should render delegated experiment result buttons');
-    assert.equal(analyticsSource.includes('data-admin-action="analytics-remove-variant-row"'), true, 'admin-analytics.js should render delegated variant removal buttons');
-    assert.equal(analyticsSource.includes('window.loadAIPrediction = loadAIPrediction;'), true, 'admin-analytics.js should expose loadAIPrediction for delegated use');
-    assert.equal(analyticsSource.includes('window.loadExperimentsList = loadExperimentsList;'), true, 'admin-analytics.js should expose loadExperimentsList for delegated use');
+    assert.equal(readAdminAnalyticsRuntimeSource().includes('window.loadAIPrediction = loadAIPrediction;'), true, 'analytics runtime should expose loadAIPrediction for delegated use');
+    assert.equal(analyticsSource.includes('window.loadExperimentsList = loadExperimentsList;'), false, 'admin-analytics.js should no longer expose experiments list loading in the daily analytics shell');
 });
 
 test('shop admin pagination and inventory/product workflows no longer emit targeted inline handlers', () => {
@@ -7360,10 +7556,10 @@ test('shop admin order workflows externalize runtime table-row and modal styling
         assert.equal(shopStyles.includes(marker), true, `css/admin-studio-page.css should contain ${marker}`);
     }
 
-    assert.equal(adminStudioSource.includes('js/admin-shop.js?v=20260403_ADMIN_SHOP_TAB_PREFETCH_1'), true, 'admin-studio.html should load the cache-busted shop admin script');
-    assert.equal(adminStudioSource.includes('admin-config.js?v=20260404_ADMIN_VERIFY_WORKBENCH_CONTEXT_1'), true, 'admin-studio.html should load the cache-busted admin config script');
+    assert.equal(adminStudioSource.includes('js/admin-shop.js?v=20260406_ADMIN_SHOP_ANALYTICS_CONTEXT_12'), true, 'admin-studio.html should load the cache-busted shop admin script');
+    assert.equal(adminStudioSource.includes('admin-config.js?v=20260405_GENERAL_RUNTIME_REMOVAL_1'), true, 'admin-studio.html should load the cache-busted admin config script');
     assert.equal(adminWorkbenchSource.includes('window.ShopAdmin?.focusOrder'), true, 'js/admin-workbench.js should directly focus shop order workspaces when an order id is available');
-    assert.equal(adminWorkbenchSource.includes('function buildOpsAlertWorkspaceExperimentContextState(context = {}, options = {})'), true, 'js/admin-workbench.js should build shared experiment context state for workbench destinations');
+    assert.equal(adminWorkbenchSource.includes('function buildOpsAlertWorkspaceAnalyticsSignalContextState(context = {}, options = {})'), true, 'js/admin-workbench.js should build shared analytics signal context state for workbench destinations');
 });
 
 test('shop admin inventory workflows externalize runtime table and modal styling', () => {
@@ -7893,7 +8089,7 @@ test('analytics export controls and delivery runtime templates route through del
 
 test('analytics calendar and config poster/editor templates route through delegated actions', () => {
     const adminStudioScript = readRepoFile('admin-studio.js');
-    const analyticsSource = readRepoFile('admin-analytics.js');
+    const analyticsSource = readAdminAnalyticsRuntimeSource();
     const adminConfigSource = readRepoFile('admin-config.js');
 
     const removedInlineMarkers = [
@@ -7928,15 +8124,11 @@ test('analytics calendar and config poster/editor templates route through delega
 
     const analyticsMarkers = [
         'data-admin-action="analytics-view-context"',
-        'data-admin-action="analytics-inline-select-date"',
-        'data-admin-action="analytics-range-select-date"',
-        'data-admin-action="analytics-range-change-month"',
-        'data-admin-action="analytics-range-reset"',
-        'data-admin-action="analytics-range-apply"'
+        'data-admin-action="analytics-inline-select-date"'
     ];
 
     for (const marker of analyticsMarkers) {
-        assert.equal(analyticsSource.includes(marker), true, `admin-analytics.js should contain ${marker}`);
+        assert.equal(analyticsSource.includes(marker), true, `analytics runtime should contain ${marker}`);
     }
 
     const configMarkers = [
@@ -7974,20 +8166,35 @@ test('analytics calendar and config poster/editor templates route through delega
         "case 'settings-rich-text-select-font-size':",
         "case 'analytics-view-context':",
         "case 'analytics-inline-select-date':",
-        "case 'analytics-range-select-date':",
-        "case 'analytics-range-change-month':",
-        "case 'analytics-range-reset':",
-        "case 'analytics-range-apply':",
         "case 'settings-affiliate-poster-upload':"
     ];
 
     for (const marker of adminScriptMarkers) {
         assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
     }
+
+    const removedLegacyRangeMarkers = [
+        'data-admin-action="analytics-range-select-date"',
+        'data-admin-action="analytics-range-change-month"',
+        'data-admin-action="analytics-range-reset"',
+        'data-admin-action="analytics-range-apply"',
+        "case 'analytics-range-select-date':",
+        "case 'analytics-range-change-month':",
+        "case 'analytics-range-reset':",
+        "case 'analytics-range-apply':"
+    ];
+
+    for (const marker of removedLegacyRangeMarkers) {
+        assert.equal(
+            analyticsSource.includes(marker) || adminStudioScript.includes(marker),
+            false,
+            `legacy analytics range-picker routing should no longer contain ${marker}`
+        );
+    }
 });
 
 test('analytics runtime renderers externalize heatmap, cohort, flow, and panel visibility styles', () => {
-    const analyticsSource = readRepoFile('admin-analytics.js');
+    const analyticsSource = readAdminAnalyticsRuntimeSource();
     const adminStudioStyles = readRepoFile('admin-studio.css');
     const adminStudioHtml = readRepoFile('admin-studio.html');
 
@@ -8015,45 +8222,125 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
         'cohort-cell--level-${getAnalyticsToneLevel',
         'flow-section-icon flow-section-icon--inflow',
         'flow-section-icon flow-section-icon--outflow',
-        'setAnalyticsVisibility(chartContainer, false);',
-        'setAnalyticsVisibility(chartContainer, true);',
+        'function setAnalyticsVisibility(element, hidden) {',
         'setAnalyticsVisibility(area, true);',
         'setAnalyticsVisibility(area, false);',
         'function collectAnalyticsActionRecommendations(data = null)',
         'function getAnalyticsAISourceData(data = null)',
         'function buildOperationsHealthSnapshotFromPayloads({',
+        'function getAnalyticsProductBundleSegmentPayload(bundle = null, key = \'\') {',
+        'function buildAnalyticsProductOverviewInsight(data = null) {',
+        'function buildAnalyticsContentUserValueOverviewInsight(data = null) {',
+        'function buildAnalyticsUserValueOverviewInsight(data = null) {',
+        'function buildAnalyticsOpsOverviewInsight(data = null) {',
+        'const overviewState = buildAnalyticsUserValueOverviewState({',
+        'function buildAnalyticsBusinessCenterCloseoutState(cards = []) {',
+        'function renderAnalyticsBusinessCenterCloseoutCard(state = null) {',
         'function buildAnalyticsBusinessAnomalyCardsData(data = null, limit = 4)',
         'function buildAnalyticsAIPulseSummaryData(data = null)',
         'function buildAnalyticsAIActionCardsData(data = null, limit = 6)',
         'function buildAnalyticsEventDrivenRecommendations(data = null) {',
+        'function buildAnalyticsOpsDestinationContext(entityType = \'\', entityName = \'\', extra = {}) {',
+        'function getAnalyticsResolutionFeedbackEntriesForOps(options = {}) {',
+        'function buildAnalyticsOpsFeedbackEntityRows(entries = [], entityStates = {}) {',
+        'function buildAnalyticsOpsFeedbackReviewRows(entries = [], entityStates = {}) {',
+        'function buildAnalyticsOpsFeedbackVerificationStatus(row = {}) {',
+        'function buildAnalyticsOpsFeedbackEvidence(row = {}, verificationState = null) {',
+        'function buildAnalyticsOpsFeedbackTimeline(row = {}, verificationState = null) {',
+        'function buildAnalyticsOpsConclusionRecords(entries = [], entityStates = {}, options = {}) {',
+        'function renderAnalyticsOpsConclusionRecords(entries = [], entityStates = {}, options = {}) {',
+        'function buildAnalyticsOpsFeedbackOverviewState(entries = [], entityStates = {}) {',
+        'function buildAnalyticsOpsEntityFeedbackDigest(entries = [], entityType = \'\', state = {}) {',
+        'function renderAnalyticsOpsFeedbackSummary(feedback = {}) {',
+        'function renderAnalyticsOpsEntityFeedbackDigest(digest = null) {',
+        'function isAnalyticsOpsTabActive() {',
+        'void loadOperationsCockpit();',
+        "label: '商品经营'",
+        "label: '内容→用户'",
+        "label: '用户价值'",
+        "value: stateLabel,",
+        '商品退款风险仍未完全收口',
+        '内容已带来成交，但用户价值层已有退款风险',
+        '内容带货已经开始沉淀用户价值',
+        '内容已带来成交，但用户价值仍停在首单层',
+        '内容已带来商品意图，尚未继续转成用户价值',
+        '内容已带来详情触达，用户价值仍停在前段',
+        '用户价值层已有退款风险仍待收口',
+        '用户已经形成首单成交，但复购层仍偏薄',
+        '商品影响用户层已起量，用户价值层仍停在前段',
+        '用户价值层已开始形成复购承接',
+        '商品履约风险仍在影响经营承接',
+        '高曝光低转化商品需要继续复查',
+        '商品链路已经起量，但成交尚未形成',
+        '运营保障当前仍有关键问题未收口',
+        '运营保障当前仍需要继续复查',
+        '当前仍有异常需要优先处理',
+        '当前重点在线索复查',
+        '已收口',
+        '放量中',
+        '仍异常',
+        '待复查',
         'async function getAnalyticsSiteComparisonData(options = {}) {',
         'function buildAnalyticsTopCategorySnapshot(rows = []) {',
         'function buildAnalyticsSiteSnapshot(site = \'\', summaryWindow = {}) {',
         'function buildAnalyticsSiteComparisonPayload(snapshots = []) {',
         'function renderAnalyticsAISiteComparison(comparisonData = null) {',
         'function applyAnalyticsDestinationSiteContext(context = {}) {',
-        'function buildAnalyticsExperimentTemplate(payload = {}) {',
-        'function getAnalyticsExperimentMetricDefinition(value = \'\') {',
-        'const ANALYTICS_EXPERIMENT_PLACEMENT_LABELS = {',
-        'const ANALYTICS_EXPERIMENT_PLACEMENT_DESTINATIONS = {',
-        'function buildAnalyticsExperimentBreakdownAction(dimensionType = \'\', dimensionValue = \'\', options = {}) {',
-        'function normalizeAnalyticsExperimentResultsPayload(results = [], variants = []) {',
-        'function buildAnalyticsExperimentResultsSummary(overviewRows = []) {',
-        'function renderAnalyticsExperimentResultsHighlights(overviewRows = [], targetMetricLabel = \'\') {',
-        'function renderAnalyticsExperimentBreakdownPanel(title, dimensionType, rows = [], options = {}) {',
-        "rpc('get_experiment_results_v2'",
-        'class="btn-sm btn-secondary ab-breakdown-row__action"',
         'window.renderVerifyMonitorWorkbenchContext?.(normalizedContext);',
         'window.AdminPayments?.showWorkbenchContext?.(normalizedContext);',
         'window.AdminTickets?.showWorkbenchContext?.(normalizedContext);',
-        'function buildAnalyticsExperimentSuggestionsData(data = null, limit = 3) {',
-        'function renderAnalyticsExperimentSuggestions(items = []) {',
-        'function applyAnalyticsExperimentTemplate(context = null) {',
-        'data-experiment-target-metric="${encodeURIComponent(String(exp.target_metric || \'\'))}"',
         'function getAnalyticsPercentRate(numerator, denominator, digits = 2) {',
         'function buildCommerceEventFunnelViewData(summaryWindow = {}) {',
         'function buildVerifyEventFunnelViewData(summaryWindow = {}) {',
         'function buildGrowthEventFunnelViewData(summaryWindow = {}) {',
+        'async function loadOverviewOperatingNavigator() {',
+        'const shellHasRenderedWorkspace = Boolean(',
+        'const focusHasRenderedWorkspace = Boolean(',
+        'function buildAnalyticsOverviewNavigatorCards(source = {}) {',
+        'function buildAnalyticsOverviewNavigatorMeta(cards = []) {',
+        'function buildAnalyticsBusinessCenterShellState(cards = null) {',
+        'function buildAnalyticsBusinessCenterCloseoutState(cards = []) {',
+        'function renderAnalyticsBusinessCenterCloseoutCard(state = null) {',
+        'function renderAnalyticsBusinessCenterShell(cards = null) {',
+        'function renderAnalyticsSectionNavigator(cards = []) {',
+        'function buildAnalyticsSectionNavigatorCards(source = {}) {',
+        'function buildAnalyticsOperatingHubItems(cards = []) {',
+        'function renderAnalyticsOperatingHub(items = []) {',
+        'function buildAnalyticsSectionNavigatorEntryItems(card = null) {',
+        'function getAnalyticsRouteState() {',
+        'function syncAnalyticsRouteState(nextState = {}, options = {}) {',
+        'window.getAnalyticsRouteState = getAnalyticsRouteState;',
+        'window.syncAnalyticsRouteState = syncAnalyticsRouteState;',
+        'window.restoreAnalyticsRouteState = restoreAnalyticsRouteState;',
+        'window.renderAnalyticsBusinessCenterShell = renderAnalyticsBusinessCenterShell;',
+        'function refreshAnalyticsOperatingFocusSectionActiveState() {',
+        'function scheduleAnalyticsOperatingFocusSectionRefresh() {',
+        'function renderAnalyticsOperatingFocusWorkspace(cards = null) {',
+        'window.refreshAnalyticsSectionNavigatorActiveState = refreshAnalyticsSectionNavigatorActiveState;',
+        'window.refreshAnalyticsOperatingFocusSectionActiveState = refreshAnalyticsOperatingFocusSectionActiveState;',
+        'window.scheduleAnalyticsOperatingFocusSectionRefresh = scheduleAnalyticsOperatingFocusSectionRefresh;',
+        'window.renderAnalyticsBusinessCenterShell?.();',
+        'window.renderAnalyticsOperatingFocusWorkspace = renderAnalyticsOperatingFocusWorkspace;',
+        'window.refreshAnalyticsSectionNavigatorActiveState?.();',
+        'window.scheduleAnalyticsOperatingFocusSectionRefresh?.();',
+        'window.renderAnalyticsOperatingFocusWorkspace?.();',
+        '经营分析中心',
+        '当前状态',
+        '经营分层导航',
+        '当前经营视角',
+        '视角内分区',
+        '当前经营入口',
+        '继续关注',
+        '最近查看',
+        '主入口',
+        '当前分区',
+        '下一分区',
+        '用户增长',
+        '提示词内容',
+        '运营承接',
+        '运营保障',
+        "const rawSite = hasOptionSite ? options.site : getAnalyticsSiteParam();",
+        "const site = String(rawSite || '').trim().toLowerCase() === 'all'",
         'async function loadEventFunnelPanels() {',
         'function getAnalyticsActionGroupMeta(level = \'\')',
         'function renderAnalyticsBusinessAnomalyCards(items = [])',
@@ -8071,20 +8358,20 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
         'function formatAnalyticsPaymentAlertSample(item = {})',
         'function formatAnalyticsTicketFocusSample(item = {})',
         'function formatAnalyticsGuestbookMessageSample(row = {})',
+        'syncRoute: false',
         '经营主线摘要：',
         '交易事件转化：',
         '验证事件转化：',
         '增长动作：',
         '站点对比：',
-        '实验建议候选：',
         '运营健康快照：',
         '=== 验证事件转化 ===',
         '=== 增长动作 ===',
         '=== 交易事件转化 ===',
         '=== 经营异常 ===',
         '=== 建议动作 ===',
-        '=== 实验建议 ===',
-        '5. 建议优先尝试的实验'
+        "const rpcSite = String(rawSite || '').trim().toLowerCase() === 'all'",
+        "await getAnalyticsSupabaseClient().rpc('get_points_health', { p_site: rpcSite })"
     ];
 
     for (const marker of analyticsMarkers) {
@@ -8098,18 +8385,15 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
         '.flow-section-icon--inflow',
         '.flow-section-icon--outflow',
         '.ai-pulse-grid',
+        '.analytics-dashboard {',
+        'overflow-anchor: none;',
+        '.analytics-business-center-shell__body {',
+        '.analytics-operating-focus__body {',
         '.ai-pulse-card__value',
         '.ai-site-board',
         '.ai-site-grid',
         '.ai-site-card--focus',
         '.ai-site-board__insight-pill',
-        '.ai-experiment-board',
-        '.ai-experiment-grid',
-        '.ai-experiment-card--warning',
-        '.ai-experiment-card__sample-pill',
-        '.ai-experiment-card__cta',
-        '.exp-target-chip--business',
-        '.exp-target-chip--legacy',
         '.ai-anomaly-grid',
         '.ai-anomaly-card--danger',
         '.ai-anomaly-card__metric',
@@ -8120,13 +8404,105 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
         '.ai-action-card__sample-pill',
         '.ai-action-card__cta',
         '.analytics-nav-focus-target--active',
-        '.ab-results-highlight-grid',
-        '.ab-results-panel-grid',
-        '.ab-breakdown-card__rows',
-        '.ab-results-fallback-note',
-        '.ab-breakdown-row__action',
         '.admin-workbench-context-note',
-        '.admin-workbench-context-note__chips'
+        '.admin-workbench-context-note__chips',
+        '.analytics-section-navigator {',
+        '.analytics-section-navigator__grid {',
+        '.analytics-section-navigator-card--active {',
+        '.analytics-section-navigator-card__entry {',
+        '.analytics-section-navigator-card__entry-badge {',
+        '.analytics-section-navigator-card__entry-chip {',
+        '.analytics-section-navigator-card__actions {',
+        '.analytics-operating-hub {',
+        '.analytics-operating-hub__grid {',
+        '.analytics-operating-hub__item--active {',
+        '.analytics-operating-hub__primary {',
+        '.analytics-operating-focus {',
+        '.analytics-operating-focus__sections {',
+        '.analytics-operating-focus__section-summary {',
+        '.analytics-operating-focus__section--wide {',
+        '.analytics-operating-focus__action-grid--sections {',
+        '.analytics-operating-focus__action-card {',
+        '.analytics-operating-focus__action-card--active {',
+        '.analytics-overview-navigator__grid',
+        '.analytics-overview-navigator-card__actions',
+        '#overviewOperatingNavigator.chart-body',
+        '.analytics-business-center-shell__grid {',
+        'grid-template-columns: minmax(0, 1fr);',
+        '.analytics-business-center-shell__lead-grid {',
+        'grid-template-columns: repeat(2, minmax(0, 1fr));',
+        'min-height: 320px;',
+        'align-items: start;',
+        '.analytics-business-center-shell__card {',
+        'overflow: hidden;',
+        'isolation: isolate;',
+        '.analytics-business-center-shell__card--watch {',
+        'grid-column: 1 / -1;',
+        'min-height: 430px;',
+        'grid-auto-flow: column;',
+        'align-items: stretch;',
+        'grid-auto-columns: minmax(220px, 1fr);',
+        'min-height: 270px;',
+        'overflow-x: auto;',
+        'padding-bottom: 12px;',
+        'scroll-snap-type: x proximity;',
+        'min-height: 240px;',
+        '.analytics-business-center-shell__watch-action {',
+        'margin-top: auto;',
+        '.analytics-growth-insight-grid {',
+        '.analytics-user-trend-support-grid {',
+        'grid-template-columns: minmax(0, 1fr);',
+        '.analytics-growth-card--full {',
+        '#userGrowthCommerceImpact,',
+        '#userValueCockpit {',
+        '.analytics-user-commerce-impact__chips {',
+        'flex-wrap: nowrap;',
+        'scrollbar-width: none;',
+        '.analytics-user-commerce-impact__chip {',
+        'flex: 0 0 auto;',
+        'white-space: nowrap;',
+        'overflow-y: visible;',
+        '.analytics-user-value-cockpit__stats {',
+        'grid-auto-columns: minmax(190px, 1fr);',
+        '.analytics-user-value-cockpit__grid {',
+        'display: flex;',
+        'flex: 1 1 calc((100% - 44px) / 3);',
+        'min-width: 280px;',
+        '--analytics-content-rail-max: 1040px;',
+        'width: min(100%, var(--analytics-content-rail-max));',
+        '.analytics-user-value-cockpit__grid + .analytics-product-detail-card--wide {',
+        '.analytics-user-value-cockpit .analytics-writeback-priority__list,',
+        'max-height: none;',
+        '.analytics-business-center-shell__card--closeout {',
+        '.analytics-business-center-shell__closeout-list {',
+        '.analytics-business-center-shell__closeout-item {',
+        '.analytics-overview-navigator__grid {',
+        'grid-auto-rows: minmax(0, 1fr);',
+        '.analytics-overview-navigator-card {',
+        'min-height: 232px;',
+        '.analytics-ops-cockpit {',
+        '.analytics-ops-cockpit__overview-top,',
+        '.analytics-ops-cockpit__stats {',
+        '.analytics-ops-cockpit__actions {',
+        '.analytics-ops-cockpit__feedback-digest {',
+        '.analytics-ops-cockpit__feedback-status {',
+        '#opsCockpitOverview.chart-body',
+        '#analyticsTabsNav.analytics-center-tabs {',
+        'justify-content: center;',
+        '#analyticsTabsNav .analytics-tab-group__label {',
+        'display: none;',
+        '#analyticsWorkspaceRoot,',
+        '#analyticsWorkspaceHostGrowthCenter,',
+        'width: 100%;',
+        '.analytics-product-chart-pane {',
+        'height: 240px;',
+        'max-height: 240px;',
+        '.analytics-product-chart-pane--compact {',
+        'height: 210px;',
+        '.analytics-product-panel--trend .analytics-product-chart-pane {',
+        'height: 260px;',
+        '#analyticsTabsNav .analytics-tab-group__label::after,',
+        '#analyticsTabsNav .analytics-tab-group__label.active::after,'
     ];
 
     for (const marker of styleMarkers) {
@@ -8135,26 +8511,108 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
 
     const htmlMarkers = [
         '<div class="anomaly-alerts-area" id="anomalyAlertsArea" hidden>',
-        'admin-analytics.js?v=20260404_ANALYTICS_DUTY_BOARD_20',
-        'admin-studio.css?v=20260404_ANALYTICS_DUTY_BOARD_26',
+        'js/admin-analytics-metric-context.js?v=20260405_ANALYTICS_METRIC_CONTEXT_HELPERS_6',
+        'admin-analytics.js?v=20260407_ANALYTICS_PRODUCT_SHELL_8',
+        'js/admin-analytics-derived-bundles.js?v=20260405_ANALYTICS_DERIVED_BUNDLES_5',
+        'js/admin-analytics-runtime-controls.js?v=20260405_ANALYTICS_RUNTIME_CONTROLS_1',
+        'js/admin-analytics-panel-loaders.js?v=20260407_ANALYTICS_PANEL_LOADERS_70',
+        'js/admin-analytics-lifecycle.js?v=20260407_ANALYTICS_LIFECYCLE_16',
+        'js/admin-analytics-workbench.js?v=20260407_ANALYTICS_WORKBENCH_BUNDLE_13',
+        'js/admin-analytics-insight-cards.js?v=20260407_ANALYTICS_INSIGHT_CARDS_HELPERS_5',
+        'js/admin-analytics-ai-state.js?v=20260405_ANALYTICS_AI_STATE_1',
+        'js/admin-analytics-ai-dom.js?v=20260405_ANALYTICS_AI_DOM_1',
+        'js/admin-analytics-ai-helpers.js?v=20260405_ANALYTICS_AI_HELPERS_1',
+        'js/admin-analytics-ai-prompt-builders.js?v=20260405_ANALYTICS_AI_PROMPT_BUILDERS_1',
+        'js/admin-analytics-ai-controller.js?v=20260405_ANALYTICS_AI_CONTROLLER_1',
+        'js/admin-analytics-export-builders.js?v=20260405_ANALYTICS_EXPORT_BUILDERS_1',
+        'js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9',
+        'js/admin-studio-bootstrap.js?v=20260407_ANALYTICS_CENTER_BOOTSTRAP_8',
+        'admin-studio.css?v=20260407_ANALYTICS_CENTER_SHELL_83',
+        'class="charts-grid analytics-growth-insight-grid"',
+        'class="chart-card glass-panel analytics-growth-card analytics-growth-card--full"',
         'admin-points.js?v=20260404_ADMIN_POINTS_ANALYTICS_CONTEXT_1',
-        'admin-config.js?v=20260404_ADMIN_VERIFY_WORKBENCH_CONTEXT_1',
-        'js/admin-payments.js?v=20260404_ADMIN_PAYMENTS_WORKBENCH_CONTEXT_1',
-        'js/admin-workbench.js?v=20260404_ADMIN_WORKBENCH_EXPERIMENT_CONTEXT_1',
-        'js/admin-tickets.js?v=20260404_ADMIN_TICKETS_WORKBENCH_CONTEXT_1',
+        'admin-config.js?v=20260405_GENERAL_RUNTIME_REMOVAL_1',
+        'js/admin-payments.js?v=20260406_ADMIN_PAYMENTS_WORKBENCH_CONTEXT_11',
+        'js/admin-workbench.js?v=20260405_ADMIN_WORKBENCH_SIGNAL_CONTEXT_1',
+        'js/admin-tickets.js?v=20260406_ADMIN_TICKETS_WORKBENCH_CONTEXT_11',
+        'js/admin-shop.js?v=20260406_ADMIN_SHOP_ANALYTICS_CONTEXT_12',
+        'data-tab="product"',
+        'data-tab="ops"',
+        'class="admin-tabs analytics-center-tabs"',
+        'class="analytics-tab-group analytics-tab-group--primary"',
+        'class="analytics-tab-group analytics-tab-group--support"',
+        'data-analytics-tab-group-trigger="primary"',
+        'data-analytics-tab-group-trigger="support"',
+        'data-module="growth-center"',
+        'data-module="commerce-center"',
+        'id="module-business-overview"',
+        'id="module-growth-center"',
+        'id="module-commerce-center"',
+        'id="analyticsWorkspaceRoot"',
+        'id="analyticsWorkspaceHostBusinessOverview"',
+        'id="analyticsWorkspaceHostGrowthCenter"',
+        'id="analyticsWorkspaceHostCommerceCenter"',
+        '<span>增长经营</span>',
+        '<span>商品经营</span>',
+        '经营主线',
+        '经营支撑',
+        '内容带货',
+        '交易承接',
+        '验证承接',
+        '用户增长',
+        'id="analytics-tab-product"',
+        'id="analytics-tab-ops"',
+        'id="productOverview"',
+        'id="productRankings"',
+        'id="productFunnel"',
+        'id="productHealth"',
+        'id="productDetailPanel"',
+        'id="opsCockpitOverview"',
+        'id="opsPaymentsPanel"',
+        'id="opsTicketsPanel"',
+        'id="opsFulfillmentPanel"',
+        'id="opsVerifyPanel"',
+        'id="opsAlertsPanel"',
+        'id="opsCockpitOverviewMeta"',
+        'id="opsPaymentsMeta"',
+        'id="opsTicketsMeta"',
+        'id="opsFulfillmentMeta"',
+        'id="opsVerifyMeta"',
+        'id="opsAlertsMeta"',
+        'id="productOverviewMeta"',
+        'id="productRankingsMeta"',
+        'id="productFunnelMeta"',
+        'id="productHealthMeta"',
+        'id="productDetailMeta"',
+        'id="analyticsBusinessCenterShell"',
+        'id="analyticsBusinessCenterShellMeta"',
+        '经营分析中心',
+        'id="analyticsOperatingFocusWorkspace"',
+        'id="analyticsOperatingFocusMeta"',
         'id="overviewDutyBoard"',
+        'id="overviewOperatingNavigator"',
         'id="channelBreakdownList"',
         'id="overviewDutyBoardMeta"',
+        'id="overviewOperatingNavigatorMeta"',
         'id="channelBreakdownMeta"',
         'id="overviewBusinessMixMeta"',
         'id="topContentMeta"',
+        'id="contentCommerceDetailSection"',
+        'id="contentCommerceDetailPanel"',
+        'id="contentCommerceDetailMeta"',
+        'id="activityHeatmapMeta"',
+        'id="conversionFunnelMeta"',
+        'id="retentionCohortMeta"',
         'id="commerceEventFunnelMeta"',
         'id="verifyEventFunnelMeta"',
         'id="growthEventFunnelMeta"',
         'id="verifyMonitorFocusContext"',
         'id="paymentsWorkbenchContext"',
+        'id="paymentsIssueSummary"',
+        'id="paymentsPrioritySummary"',
         'id="ticketsWorkbenchContext"',
-        '<option value="verify_success">验证成功</option>',
+        'id="ticketsIssueSummary"',
+        'id="ticketsPrioritySummary"',
         'id="commerceEventFunnel"',
         'id="verifyEventFunnel"',
         'id="growthEventFunnel"',
@@ -8166,10 +8624,889 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
         assert.equal(adminStudioHtml.includes(marker), true, `admin-studio.html should contain ${marker}`);
     }
 
+    assert.equal(adminStudioHtml.includes('id="analyticsOperatingHub"'), false, 'admin-studio.html should no longer render the redundant operating hub section');
+    assert.equal(adminStudioHtml.includes('id="analyticsSectionNavigator"'), false, 'admin-studio.html should no longer render the redundant section navigator section');
+    assert.equal(adminStudioHtml.includes('商品经营会独立承接站点与时间范围'), true, 'admin-studio.html should render the product engineering explanation note');
+    assert.equal(adminStudioHtml.includes('运营保障驾驶舱会把支付、售后、履约、验证和站外告警收成同一层'), true, 'admin-studio.html should render the operations engineering explanation note');
+    assert.equal(adminStudioHtml.includes('经营中心入口层'), false, 'admin-studio.html should no longer render the operating hub heading');
+    assert.equal(adminStudioHtml.includes('经营分层导航'), false, 'admin-studio.html should no longer render the section navigator heading');
+
+    assert.equal(
+        adminStudioHtml.indexOf('admin-analytics.js?v=20260407_ANALYTICS_PRODUCT_SHELL_8') < adminStudioHtml.indexOf('js/admin-analytics-derived-bundles.js?v=20260405_ANALYTICS_DERIVED_BUNDLES_5'),
+        true,
+        'admin-studio.html should load the analytics derived-bundle helper after the main analytics runtime'
+    );
+
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-derived-bundles.js?v=20260405_ANALYTICS_DERIVED_BUNDLES_5') < adminStudioHtml.indexOf('js/admin-analytics-runtime-controls.js?v=20260405_ANALYTICS_RUNTIME_CONTROLS_1'),
+        true,
+        'admin-studio.html should load the analytics runtime-controls helper after the derived bundle helper'
+    );
+
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-runtime-controls.js?v=20260405_ANALYTICS_RUNTIME_CONTROLS_1') < adminStudioHtml.indexOf('js/admin-analytics-panel-loaders.js?v=20260407_ANALYTICS_PANEL_LOADERS_70'),
+        true,
+        'admin-studio.html should load the analytics panel-loader helper after the main analytics runtime'
+    );
+
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-panel-loaders.js?v=20260407_ANALYTICS_PANEL_LOADERS_70') < adminStudioHtml.indexOf('js/admin-analytics-lifecycle.js?v=20260407_ANALYTICS_LIFECYCLE_16'),
+        true,
+        'admin-studio.html should load the analytics lifecycle helper after the panel-loader helper'
+    );
+
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-lifecycle.js?v=20260407_ANALYTICS_LIFECYCLE_16') < adminStudioHtml.indexOf('js/admin-analytics-workbench.js?v=20260407_ANALYTICS_WORKBENCH_BUNDLE_13'),
+        true,
+        'admin-studio.html should load the analytics workbench helper after the lifecycle helper'
+    );
+
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-workbench.js?v=20260407_ANALYTICS_WORKBENCH_BUNDLE_13') < adminStudioHtml.indexOf('js/admin-analytics-insight-cards.js?v=20260407_ANALYTICS_INSIGHT_CARDS_HELPERS_5'),
+        true,
+        'admin-studio.html should load the analytics insight-card helper after the workbench helper'
+    );
+
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-insight-cards.js?v=20260407_ANALYTICS_INSIGHT_CARDS_HELPERS_5') < adminStudioHtml.indexOf('js/admin-analytics-ai-helpers.js?v=20260405_ANALYTICS_AI_HELPERS_1'),
+        true,
+        'admin-studio.html should load the analytics ai-helper layer after the insight-card helper'
+    );
+
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-insight-cards.js?v=20260407_ANALYTICS_INSIGHT_CARDS_HELPERS_5') < adminStudioHtml.indexOf('js/admin-analytics-ai-state.js?v=20260405_ANALYTICS_AI_STATE_1'),
+        true,
+        'admin-studio.html should load the analytics ai-state layer after the insight-card helper'
+    );
+
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-ai-state.js?v=20260405_ANALYTICS_AI_STATE_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-dom.js?v=20260405_ANALYTICS_AI_DOM_1'),
+        true,
+        'admin-studio.html should load the analytics ai-dom layer after the ai-state layer'
+    );
+
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-ai-dom.js?v=20260405_ANALYTICS_AI_DOM_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-helpers.js?v=20260405_ANALYTICS_AI_HELPERS_1'),
+        true,
+        'admin-studio.html should load the analytics ai-helper layer after the ai-dom layer'
+    );
+
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-ai-helpers.js?v=20260405_ANALYTICS_AI_HELPERS_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-prompt-builders.js?v=20260405_ANALYTICS_AI_PROMPT_BUILDERS_1'),
+        true,
+        'admin-studio.html should load the analytics ai-prompt builder after the ai-helper layer'
+    );
+
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-ai-prompt-builders.js?v=20260405_ANALYTICS_AI_PROMPT_BUILDERS_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-controller.js?v=20260405_ANALYTICS_AI_CONTROLLER_1'),
+        true,
+        'admin-studio.html should load the analytics ai-controller after the ai-prompt builders'
+    );
+
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-ai-controller.js?v=20260405_ANALYTICS_AI_CONTROLLER_1') < adminStudioHtml.indexOf('js/admin-analytics-export-builders.js?v=20260405_ANALYTICS_EXPORT_BUILDERS_1'),
+        true,
+        'admin-studio.html should load the analytics export-builder helper after the insight-card helper'
+    );
+
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-export-builders.js?v=20260405_ANALYTICS_EXPORT_BUILDERS_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        true,
+        'admin-studio.html should load the analytics ai/export helper after the main analytics runtime'
+    );
+
     assert.match(
         adminStudioHtml,
         /admin-studio\.css\?v=[A-Za-z0-9_]+/,
         'admin-studio.html should load the latest admin stylesheet version'
+    );
+});
+
+test('analytics product tab shell adds a dedicated product analytics surface and route target', () => {
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+    const adminStudioStyles = readRepoFile('admin-studio.css');
+    const analyticsSource = readRepoFile('admin-analytics.js');
+    const panelLoaderSource = readRepoFile('js/admin-analytics-panel-loaders.js');
+    const workbenchSource = readRepoFile('js/admin-analytics-workbench.js');
+    const shopSource = readRepoFile('js/admin-shop.js');
+
+    const htmlMarkers = [
+        'data-tab="product"',
+        'id="analytics-tab-product"',
+        'id="productAlerts"',
+        'id="productOverview"',
+        'id="productRankings"',
+        'id="productFunnel"',
+        'id="productHealth"',
+        'id="productDetailPanel"',
+        'id="productAlertsMeta"',
+        'id="productOverviewMeta"',
+        'id="productRankingsMeta"',
+        'id="productFunnelMeta"',
+        'id="productHealthMeta"',
+        'id="productDetailMeta"'
+    ];
+
+    for (const marker of htmlMarkers) {
+        assert.equal(adminStudioHtml.includes(marker), true, `admin-studio.html should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.analytics-product-shell-grid {',
+        '.analytics-product-shell {',
+        '.analytics-product-alert-grid {',
+        '.analytics-product-alert-card {',
+        '.analytics-product-alert-card__digest {',
+        '.analytics-product-window-notice {',
+        '.analytics-writeback-note {',
+        '.analytics-writeback-summary {',
+        '.analytics-writeback-priority {',
+        '.analytics-writeback-priority__verification {',
+        '.analytics-writeback-priority__evidence {',
+        '.analytics-writeback-priority__timeline {',
+        '.analytics-writeback-conclusions {',
+        '.analytics-writeback-conclusion-card {',
+        '.analytics-product-history-summary {',
+        '.analytics-product-conclusion-digest {',
+        '.analytics-writeback-priority__checklist {',
+        '.analytics-product-shell__eyebrow {',
+        '.analytics-product-shell__pill-list {',
+        '.analytics-product-shell__list {',
+        '.analytics-product-funnel-stage-list {',
+        '.analytics-product-detail {',
+        '.analytics-product-token {',
+        '.analytics-product-order-row {',
+        '.analytics-product-detail-subsection {',
+        '.analytics-product-event-row {',
+        '.analytics-product-stage-badge {',
+        '.analytics-product-prompt-row {',
+        '.analytics-product-structure-layout {',
+        '.analytics-product-category-row {',
+        '.analytics-product-matrix-summary {',
+        '.analytics-product-matrix-chip {',
+        '.analytics-product-matrix-row {'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
+    }
+
+    const analyticsMarkers = [
+        "productAlertsMeta: { basis: '库存 / 履约 / 转化预警' }",
+        "productOverviewMeta: { basis: '成交 / 浏览 / 站点对比' }",
+        "productRankingsMeta: { basis: '销量 / 收入 / 转化 / 风险榜' }",
+        "productFunnelMeta: { basis: '详情到支付 / 发货漏斗' }",
+        "productHealthMeta: { basis: '库存 / 售后 / 履约风险' }",
+        "productDetailMeta: { basis: '点击商品打开单品详情' }",
+        'function getOverviewProductBundleSegmentPayload(bundle = null, key = \'\') {',
+        'function buildOverviewBusinessMixProductSignals({',
+        'function enrichOverviewBusinessMixSummaryWithProductSignals(summary = {}, productSignals = null) {',
+        'getAnalyticsProductSummaryBundle({',
+        'getAnalyticsProductRankBundle({',
+        'getAnalyticsProductHealthBundle({',
+        'title: \'商品经营\'',
+        '商品售后风险已进入经营总览',
+        '商品履约异常已经影响经营承接',
+        '商品高曝光低转化信号已进入总览'
+    ];
+
+    for (const marker of analyticsMarkers) {
+        assert.equal(analyticsSource.includes(marker), true, `admin-analytics.js should contain ${marker}`);
+    }
+
+    const shopMarkers = [
+        'buildUserCommerceReturnContext: function (context = this.orderSearchContext) {',
+        'buildUserCommerceReturnAttrs: function (context = this.orderSearchContext) {',
+        '回用户承接链'
+    ];
+
+    for (const marker of shopMarkers) {
+        assert.equal(shopSource.includes(marker), true, `js/admin-shop.js should contain ${marker}`);
+    }
+
+    const productPanelMarkers = [
+        'function buildAnalyticsProductDestinationAttrs(destination = \'\', context = null) {',
+        'function getAnalyticsResolutionFeedbackEntriesForProduct(options = {}) {',
+        'function buildAnalyticsResolutionFeedbackStatusSummary(entries = []) {',
+        'function buildAnalyticsResolutionPriorityProducts(entries = [], alertItems = []) {',
+        'function buildAnalyticsResolutionPriorityReason(row = {}, alertItem = {}, latestEntry = {}) {',
+        'function buildAnalyticsResolutionPriorityRecommendation(row = {}, alertItem = {}, latestEntry = {}) {',
+        'function buildAnalyticsResolutionPriorityVerification(row = {}, alertItem = {}, latestEntry = {}) {',
+        'function buildAnalyticsResolutionPriorityVerificationStatus(row = {}, alertItem = {}, latestEntry = {}) {',
+        'function buildAnalyticsResolutionPriorityEvidence(row = {}, alertItem = {}, latestEntry = {}, verificationState = {}) {',
+        'function buildAnalyticsResolutionPriorityTimeline(row = {}, alertItem = {}, latestEntry = {}, verificationState = {}) {',
+        'function buildAnalyticsResolutionConclusionRecords(entries = [], alertItems = [], options = {}) {',
+        'function renderAnalyticsResolutionConclusionRecords(entries = [], alertItems = [], options = {}) {',
+        'function renderAnalyticsProductConclusionHistory(options = {}) {',
+        'function buildAnalyticsProductConclusionDigest(entries = [], summary = {}) {',
+        'function renderAnalyticsProductConclusionDigest(entries = [], summary = {}) {',
+        'function buildAnalyticsProductAlertDigest(item = {}, summary = {}) {',
+        'function renderAnalyticsResolutionPriorityProducts(entries = [], alertItems = []) {',
+        'function renderAnalyticsResolutionFeedbackNote(options = {}) {',
+        'function renderAnalyticsProductNameButton(name = \'\', productId = \'\', options = {}) {',
+        'function buildAnalyticsProductAlertItems({ summary = {}, productMatrix = {}, healthPayloads = {}, rankPayloads = {} } = {}) {',
+        'function renderAnalyticsProductAlerts(alertItems = [], summary = {}) {',
+        'function getAnalyticsProductOverviewChartState() {',
+        'function renderAnalyticsProductCategoryBreakdown(payload = {}) {',
+        'function renderAnalyticsProductMatrix(payload = {}) {',
+        'function renderAnalyticsProductOverview(summary = {}, trendRows = [], comparison = {}, categoryBreakdown = {}, productMatrix = {}) {',
+        'function renderAnalyticsProductCategoryBreakdownChart(payload = {}) {',
+        'function renderAnalyticsProductOperatingMatrixChart(payload = {}) {',
+        'function buildAnalyticsProductRankMetaItems(row = {}, metaFormatter = null) {',
+        'function getAnalyticsProductDetailFocusConfig(detailFocus = \'\', summary = {}) {',
+        'function renderAnalyticsProductDetailFocusBanner(detailFocus = \'\', summary = {}) {',
+        'function getAnalyticsProductStatusBreakdownActions(kind = \'refund\', item = {}, summary = {}) {',
+        'function renderAnalyticsProductStatusBreakdownRow(item = {}, options = {}) {',
+        'function renderAnalyticsProductRankings(payloads = {}) {',
+        'function renderAnalyticsProductHealth(payloads = {}) {',
+        'function renderAnalyticsProductFunnel(payload = {}) {',
+        'function renderAnalyticsProductStaticToken(item = {}) {',
+        'function renderAnalyticsProductPromptSourceChip(source = {}) {',
+        'function renderAnalyticsProductPromptAttributionRow(source = {}) {',
+        'function renderAnalyticsProductEventStageRow(stage = {}) {',
+        'function renderAnalyticsProductDestinationActions(row = {}, options = {}) {',
+        'function renderAnalyticsProductDestinationRow(row = {}, options = {}) {',
+        'function renderAnalyticsProductDetailPanel(payload = {}, options = {}) {',
+        'function isAnalyticsProductTabActive() {',
+        'analytics-resolution-feedback-updated',
+        "'退款率 Top'",
+        "'履约异常率 Top'",
+        "'内容带货 Top'",
+        'productRiskBreakdownSection',
+        'productContentBreakdownSection',
+        '<strong>来源归因</strong>',
+        '<strong>售后与履约拆解</strong>',
+        '<strong>内容带货拆解</strong>',
+        '<strong>类目贡献</strong>',
+        '<strong>商品经营矩阵</strong>',
+        '<strong>购买用户分层</strong>',
+        '<strong>用户去向</strong>',
+        '最近处理回写',
+        '支付 / 售后 / 履约处理结果会回传到运营保障驾驶舱',
+        '最该复查的问题',
+        '沉淀最近一轮运营保障复查结论',
+        '最近一次验证依据',
+        '处理时间线',
+        '下次复查建议',
+        '已处理',
+        '待复查',
+        '仍异常',
+        '最该复查的商品',
+        'showPriorityProducts: true',
+        '排前原因',
+        '建议先做',
+        '验证方式',
+        '验证已通过',
+        '仍待验证',
+        '最近一次验证依据',
+        '处理时间线',
+        '最近处理',
+        '当前验证',
+        '下一步复查',
+        '复查结论记录',
+        '本轮复查已通过',
+        '本轮仍待复查',
+        '结论依据',
+        '下次复查建议',
+        '历史复查结论',
+        '最近 ${escapeHtml(formatNumber(rows.length))} 条回写',
+        '按时间倒序保留该商品最近一轮处理与复查结论',
+        'productConclusionHistorySection',
+        '本轮经营结论',
+        '已基本收口',
+        'analytics-product-conclusion-digest',
+        'analytics-product-alert-card__digest',
+        '本轮经营判断',
+        'function buildAnalyticsProductAlertGuidance(item = {}, summary = {}) {',
+        'analytics-product-alert-card__guidance',
+        '就地经营建议',
+        '为什么重要',
+        'function buildAnalyticsProductListGuidance(item = {}, options = {}) {',
+        'analytics-product-inline-guidance',
+        '经营建议',
+        'function buildAnalyticsProductCategoryGuidance(row = {}, index = 0, payload = {}) {',
+        '核心类目',
+        '低转化类目',
+        '首单入口分布',
+        '跨商品复购去向',
+        '后续复购商品',
+        'referenceLabel = mode === \'post-purchase\' ? \'后续复购商品\' : \'跨商品复购\'',
+        '<i class="fas fa-receipt"></i> 看订单',
+        '<i class="fas fa-truck-fast"></i> 去履约',
+        'async function loadProductAlerts() {',
+        '商品预警中心加载中...',
+        '当前窗口暂无商品预警信号',
+        '<i class="fas fa-headset"></i> 去售后',
+        "label: '看支付异常'",
+        "destination: 'payments-ops'",
+        "label: '看支付对账'",
+        "destination: 'payments-overview'",
+        'productCategoryBreakdownChartCanvas',
+        'productOperatingMatrixChartCanvas',
+        '<strong>来源 Prompt 归因明细</strong>',
+        '<strong>事件采集状态</strong>',
+        'first_purchase_destinations',
+        'cross_sell_destinations',
+        'post_purchase_destinations',
+        'shop-orders',
+        'shop-fulfillment',
+        '去售后',
+        '去履约',
+        'async function loadProductFunnel() {',
+        'async function loadProductDetailPanel(options = {}) {',
+        'function openAnalyticsProductDetail(productId = \'\', options = {}) {'
+    ];
+
+    for (const marker of productPanelMarkers) {
+        assert.equal(panelLoaderSource.includes(marker), true, `js/admin-analytics-panel-loaders.js should contain ${marker}`);
+    }
+
+    assert.equal(workbenchSource.includes("case 'analytics-product':"), true, 'analytics workbench routing should accept analytics-product destinations');
+    assert.equal(workbenchSource.includes("case 'analytics-ops':"), true, 'analytics workbench routing should accept analytics-ops destinations');
+    assert.equal(workbenchSource.includes('function resolveAnalyticsResolutionFeedbackStatus(entry = {}) {'), true, 'analytics workbench helper should normalize resolution feedback into product-alert status tiers');
+    assert.equal(workbenchSource.includes('const feedbackScope = String(options?.feedbackScope || \'\').trim().toLowerCase();'), true, 'analytics workbench helper should support scoped analytics resolution feedback reads');
+    assert.equal(workbenchSource.includes('window.recordAnalyticsResolutionFeedback = recordAnalyticsResolutionFeedback;'), true, 'analytics workbench helper should expose analytics resolution feedback recording for downstream modules');
+    assert.equal(workbenchSource.includes('window.getAnalyticsResolutionFeedbackEntries = getAnalyticsResolutionFeedbackEntries;'), true, 'analytics workbench helper should expose analytics resolution feedback reads for the analytics product panels');
+    assert.equal(workbenchSource.includes("case 'analytics-product-detail':"), true, 'analytics workbench routing should accept analytics-product-detail destinations');
+    assert.equal(workbenchSource.includes("case 'analytics-content':"), true, 'analytics workbench routing should accept analytics-content destinations');
+    assert.equal(workbenchSource.includes('window.openAnalyticsContentCommerceDetail(contentPromptId,'), true, 'analytics workbench routing should reopen analytics-side content-commerce detail drill-downs');
+    assert.equal(workbenchSource.includes("case 'shop-products':"), true, 'analytics workbench routing should accept shop-products destinations from product analytics');
+    assert.equal(workbenchSource.includes("case 'shop-orders':"), true, 'analytics workbench routing should accept shop-orders destinations from product analytics');
+    assert.equal(workbenchSource.includes("case 'shop-inventory':"), true, 'analytics workbench routing should accept shop-inventory destinations from product analytics');
+    assert.equal(workbenchSource.includes("case 'shop-fulfillment':"), true, 'analytics workbench routing should accept shop-fulfillment destinations from product analytics');
+    assert.equal(workbenchSource.includes("case 'ops-alerts-health':"), true, 'analytics workbench routing should accept ops-alert health destinations from analytics');
+    assert.equal(workbenchSource.includes('window.switchOpsAlertsView?.(targetView);'), true, 'analytics workbench routing should reuse ops-alerts view switching for the ops cockpit');
+    assert.equal(workbenchSource.includes('window.ShopAdmin?.switchTab?.(requestedTab);'), true, 'analytics workbench routing should reuse ShopAdmin tab switching for product drill-down');
+    assert.equal(workbenchSource.includes('window.ShopAdmin.editProduct(normalizedContext.productId)'), true, 'analytics workbench routing should open shop product details from product analytics');
+    assert.equal(workbenchSource.includes('window.ShopAdmin?.setOrderSearchContext?.(shopDrilldownContext);'), true, 'analytics workbench routing should push analytics context into shop order searches');
+    assert.equal(workbenchSource.includes('context: shopDrilldownContext'), true, 'analytics workbench routing should preserve analytics context when opening exact shop orders');
+    assert.equal(workbenchSource.includes('window.ShopAdmin?.setDeliveryWorkbenchContext?.('), true, 'analytics workbench routing should push analytics context into fulfillment drill-downs');
+    assert.equal(workbenchSource.includes('window.ShopAdmin.searchOrders(1, {'), true, 'analytics workbench routing should support product-driven order searches from analytics');
+    assert.equal(workbenchSource.includes('window.ShopAdmin.loadDeliveryTasks(1)'), true, 'analytics workbench routing should support fulfillment queue drill-downs from analytics');
+    assert.equal(workbenchSource.includes('window.ShopAdmin.showInventoryDetail(normalizedContext.inventoryId)'), true, 'analytics workbench routing should open inventory details from product analytics');
+    assert.equal(workbenchSource.includes('window.openAnalyticsProductDetail?.(normalizedContext.productId,'), true, 'analytics workbench routing should reopen analytics-side product detail drill-downs');
+    assert.equal(workbenchSource.includes("detailFocus: normalizedContext.detailFocus || ''"), true, 'analytics workbench routing should preserve product detail focus context');
+    assert.equal(workbenchSource.includes("focusTargetId: normalizedContext.focusTargetId || ''"), true, 'analytics workbench routing should preserve product detail focus targets');
+    assert.equal(shopSource.includes('setOrderSearchContext: function (context = null) {'), true, 'shop admin should accept analytics-driven order context');
+    assert.equal(shopSource.includes('hasUserCommerceOrderContext: function (context = this.orderSearchContext) {'), true, 'shop admin should detect user-driven commerce order contexts');
+    assert.equal(shopSource.includes('applyOrderUserFlowFocus: function (rawKind, rawValue) {'), true, 'shop admin should expose a quick-switch handler for user-commerce order issue focus');
+    assert.equal(shopSource.includes('buildOrderUserFlowDestinationContext: function (destination = \'\', item = {}) {'), true, 'shop admin should build payment and ticket destination context from user-commerce order flow state');
+    assert.equal(shopSource.includes('openOrderUserFlowDestination: function (destination = \'\', rawKind = \'\', rawValue = \'\') {'), true, 'shop admin should open downstream payment and ticket views from user-commerce order flow priorities');
+    assert.equal(shopSource.includes('renderOrderUserFlowSummary: function (rows = [], options = {}) {'), true, 'shop admin should render a user-level order commerce summary when analytics opens orders from user drill-downs');
+    assert.equal(shopSource.includes('renderOrderIssueSummary: function (rows = [], options = {}) {'), true, 'shop admin should render an order issue summary when analytics applies issue filters');
+    assert.equal(shopSource.includes('buildOrderIssueGuidanceState: function ({ refundStatus = \'all\', deliveryStatus = \'all\', totalCount = 0 } = {}) {'), true, 'shop admin should build recommendation and verification guidance for focused order issue views');
+    assert.equal(shopSource.includes('recordOrderResolutionFeedback: function (orderId = \'\', options = {}) {'), true, 'shop admin should record analytics writeback after order-side handling');
+    assert.equal(shopSource.includes('setDeliveryWorkbenchContext: function (context = null) {'), true, 'shop admin should accept analytics-driven fulfillment context');
+    assert.equal(shopSource.includes('当前订单列表来自商品分析下钻'), true, 'shop admin should render an analytics drill-down note for orders');
+    assert.equal(shopSource.includes('当前订单列表来自商品经营影响用户'), true, 'shop admin should render a dedicated user-commerce note for user-driven order drill-downs');
+    assert.equal(shopSource.includes('订单承接链'), true, 'shop admin should label user-driven order drill-down summaries explicitly');
+    assert.equal(shopSource.includes('退款相关订单'), true, 'shop admin should prioritize refund-related order issues inside the user commerce order flow');
+    assert.equal(shopSource.includes('履约死信订单'), true, 'shop admin should prioritize dead-letter fulfillment orders inside the user commerce order flow');
+    assert.equal(shopSource.includes('为什么优先'), true, 'shop admin should explain why an order issue is prioritized');
+    assert.equal(shopSource.includes('验证方式'), true, 'shop admin should surface how to verify an order issue has been resolved');
+    assert.equal(shopSource.includes("case 'order-user-flow-focus':"), true, 'shop admin should route order user-flow focus actions through delegated actions');
+    assert.equal(shopSource.includes("case 'order-user-flow-open-destination':"), true, 'shop admin should route user-commerce priority actions to downstream payment and ticket destinations');
+    assert.equal(shopSource.includes('看支付问题'), true, 'shop admin should provide a payment follow-up action from user-commerce order flow priorities');
+    assert.equal(shopSource.includes('看售后工单'), true, 'shop admin should provide a ticket follow-up action from user-commerce order flow priorities');
+    assert.equal(shopSource.includes('订单问题列表'), true, 'shop admin should label analytics-driven order issue views explicitly');
+    assert.equal(shopSource.includes('当前履约页来自商品分析下钻'), true, 'shop admin should render an analytics drill-down note for fulfillment');
+    assert.equal(shopSource.includes('renderDeliveryIssueSummary: function (summary = {}) {'), true, 'shop admin should render a fulfillment issue summary when analytics applies issue filters');
+    assert.equal(shopSource.includes('履约问题列表'), true, 'shop admin should label analytics-driven fulfillment issue views explicitly');
+    assert.equal(shopSource.includes('applyDeliveryIssueSummaryFocus: function (focusKind, rawValue) {'), true, 'shop admin should expose a quick-switch handler for fulfillment issue summary chips');
+    assert.equal(shopSource.includes("case 'delivery-issue-summary-focus':"), true, 'shop admin should route fulfillment issue summary chips through delegated actions');
+    assert.equal(shopSource.includes('建议先处理'), true, 'shop admin should surface prioritized next actions inside the fulfillment issue summary');
+    assert.equal(shopSource.includes('applyDeliveryPriorityAction: function (rawKey) {'), true, 'shop admin should expose direct priority actions for fulfillment issue recommendations');
+    assert.equal(shopSource.includes("case 'delivery-priority-action':"), true, 'shop admin should route fulfillment priority actions through delegated actions');
+    assert.equal(shopSource.includes('revealPendingDeliverySection: function () {'), true, 'shop admin should reveal the target fulfillment section after a priority action runs');
+    assert.equal(shopSource.includes('refundStatus: this.normalizeOrderRefundStatusFilter(this.orderRefundStatusFilter)'), true, 'shop admin should forward analytics refund issue focus to the orders API');
+    assert.equal(shopSource.includes('deliveryStatus: this.normalizeOrderDeliveryStatusFilter(this.orderDeliveryStatusFilter)'), true, 'shop admin should forward analytics delivery issue focus to the orders API');
+    assert.equal(adminStudioHtml.includes('id="shopOrdersContextHint"'), true, 'admin-studio.html should provide an orders drill-down context mount for shop analytics');
+    assert.equal(adminStudioHtml.includes('id="shopOrdersUserFlowSummary"'), true, 'admin-studio.html should provide a user-order flow summary mount for analytics-driven shop drill-downs');
+    assert.equal(adminStudioHtml.includes('id="shopOrdersIssueSummary"'), true, 'admin-studio.html should provide an order issue summary mount for analytics-driven shop drill-downs');
+    assert.equal(adminStudioHtml.includes('id="deliveryIssueSummary"'), true, 'admin-studio.html should provide a fulfillment issue summary mount for analytics-driven shop drill-downs');
+    assert.equal(
+        adminStudioHtml.includes('admin-analytics.js?v=20260407_ANALYTICS_PRODUCT_SHELL_8'),
+        true,
+        'admin-studio.html should reference the latest analytics product-shell runtime version'
+    );
+    assert.equal(
+        analyticsSource.includes("const pathname = '/api/admin';"),
+        true,
+        'admin-analytics.js should route analytics admin fetches through the canonical /api/admin endpoint'
+    );
+    assert.equal(
+        analyticsSource.includes("const pathname = normalizedRoute\n        ? `/api/admin/${normalizedRoute}`\n        : '/api/admin';"),
+        false,
+        'admin-analytics.js should no longer depend on nested admin analytics paths for bundle fetches'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-workbench.js?v=20260407_ANALYTICS_WORKBENCH_BUNDLE_13'),
+        true,
+        'admin-studio.html should reference the latest analytics workbench runtime version for product routing'
+    );
+});
+
+test('analytics panel loaders externalize dashboard fetch-and-render layers out of the main shell', () => {
+    const mainAnalyticsSource = readRepoFile('admin-analytics.js');
+    const panelLoaderSource = readRepoFile('js/admin-analytics-panel-loaders.js');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+    const adminStudioStyles = readRepoFile('admin-studio.css');
+
+    const helperMarkers = [
+        'async function resolveAnalyticsBundleFirstData(options = {}) {',
+        'async function fetchUserTrendData(days = getAnalyticsRangeDays(30)) {',
+        'function buildAnalyticsUserCommerceImpactSummary(productSummary = {}, userTrendRows = []) {',
+        'function renderAnalyticsUserCommerceImpactSample(sample = {}, item = {}, summary = {}) {',
+        'function renderAnalyticsUserCommerceImpactSummary(summary = {}) {',
+        'function buildAnalyticsUserValueCockpitSummary(productSummary = {}, userTrendRows = []) {',
+        'function renderAnalyticsUserValueCockpitBuyerSample(sample = {}, summary = {}, segment = {}) {',
+        'function renderAnalyticsUserValueCockpitProductRow(row = {}, label = \'\') {',
+        'function getAnalyticsResolutionFeedbackEntriesForUser(options = {}) {',
+        'function buildAnalyticsUserValueFeedbackVerificationStatus(entries = [], summary = {}) {',
+        'function buildAnalyticsUserValueConclusionDigest(entries = [], summary = {}) {',
+        'function buildAnalyticsUserValuePriorityDestinationContext(summary = {}, options = {}) {',
+        'function buildAnalyticsUserValuePriorityReviewItems(summary = {}, entries = []) {',
+        'function buildAnalyticsUserValuePrioritySummary(summary = {}, entries = []) {',
+        'function buildAnalyticsUserValueOverviewState({ summaryWindow = {}, productSummary = {} } = {}) {',
+        'function renderAnalyticsUserValuePriorityReview(summary = {}, entries = []) {',
+        'function renderAnalyticsUserValueConclusionDigest(entries = [], summary = {}) {',
+        'function renderAnalyticsUserValueFeedbackNote(summary = {}) {',
+        'function renderAnalyticsUserValueConclusionHistory(summary = {}) {',
+        'function renderAnalyticsUserValueCockpitSummary(summary = {}) {',
+        '用户价值驾驶舱',
+        '最该复查的用户承接',
+        '退款风险用户仍待收口',
+        '首单已形成，复购层仍偏薄',
+        '购买意图已出现，但还没转成成交用户',
+        '用户价值还停在浏览或详情前段',
+        '本轮用户价值结论',
+        '用户侧订单 / 支付 / 售后结果已回传到用户价值驾驶舱',
+        '首购商品去向',
+        '后续复购去向',
+        'function enrichAnalyticsGrowthSummaryWithProductSignals(summary = {}, productSummary = {}) {',
+        'function buildAnalyticsContentCommerceSummary(rows = []) {',
+        'function renderAnalyticsContentCommerceSummary(summary = {}) {',
+        'function buildAnalyticsContentCommerceOrderContext(row = {}, product = null) {',
+        'function buildAnalyticsContentCommerceGuidance(detail = {}) {',
+        'function renderAnalyticsTopContentCommerceProducts(row = {}) {',
+        'function renderAnalyticsTopContentCommerceActions(row = {}) {',
+        'function renderAnalyticsTopContentCommerceNote(row = {}) {',
+        'function buildAnalyticsContentCommerceUserDetailContext(detail = {}, signalLabel = \'\', signalValue = \'\') {',
+        'function renderAnalyticsContentCommerceUserSample(userId = \'\', detail = {}, options = {}) {',
+        'function renderAnalyticsContentCommerceOrderSample(order = {}, detail = {}) {',
+        'function renderAnalyticsContentCommerceDetailPanel(detail = null) {',
+        'function openAnalyticsContentCommerceDetail(promptId = \'\', options = {}) {',
+        'async function loadOverviewStats() {',
+        'async function loadPointsStats(days = getAnalyticsRangeDays()) {',
+        'async function loadActivityHeatmap(days = getAnalyticsRangeDays(30)) {',
+        'async function loadGeoDistribution() {',
+        'async function loadEventFunnelPanels() {',
+        'async function loadProductOverview() {',
+        'async function loadProductRankings() {',
+        'async function loadProductFunnel() {',
+        'async function loadProductHealth() {',
+        'async function loadProductDetailPanel(options = {}) {',
+        'function renderAnalyticsProductOverview(summary = {}, trendRows = [], comparison = {}, categoryBreakdown = {}, productMatrix = {}) {',
+        'function renderAnalyticsProductRankings(payloads = {}) {',
+        'function renderAnalyticsProductFunnel(payload = {}) {',
+        'function renderAnalyticsProductHealth(payloads = {}) {',
+        'function renderAnalyticsProductDetailPanel(payload = {}, options = {}) {',
+        'function openAnalyticsProductDetail(productId = \'\', options = {}) {',
+        'function renderAnalyticsProductTrendChart(rows = []) {',
+        'async function getAnalyticsOpsAlertHealthData(options = {}) {',
+        'async function loadOperationsCockpit() {',
+        'function renderAnalyticsOpsCockpitGuidance(guidance = null) {',
+        'function buildAnalyticsOpsPriorityIssues({',
+        'function renderAnalyticsOpsCockpitOverview(state = {}) {',
+        'function buildAnalyticsOpsCockpitOverviewState({',
+        'function buildAnalyticsOpsAlertsState(opsAlertHealth = {}) {',
+        'getAnalyticsProductSummaryBundle().catch(() => null)',
+        'getAnalyticsProductSummaryBundle({ days }).catch(() => null)',
+        'getAnalyticsProductRankBundle({ days }).catch(() => null)',
+        "getAnalyticsProductBundlePayloadOrThrow(productRankBundle, 'contentDrivenTop', 'Product content-driven rank unavailable')",
+        'analytics-user-commerce-impact',
+        'analytics-user-commerce-impact__sample',
+        'analytics-content-commerce-summary',
+        'analytics-content-detail',
+        'analytics-ops-cockpit__overview',
+        'analytics-ops-cockpit__actions',
+        'analytics-ops-cockpit__guidance',
+        'analytics-ops-cockpit__issue-grid',
+        '为什么优先',
+        '建议先做',
+        '验证方式',
+        "destination: 'analytics-ops'",
+        "destination: 'ops-alerts-health'",
+        'buildAnalyticsContentCommerceIssueCards(detail = {})',
+        'buildAnalyticsContentCommercePaymentsContext(detail = {}, issue = {})',
+        'buildAnalyticsContentCommerceTicketsContext(detail = {}, issue = {})',
+        'function getAnalyticsResolutionFeedbackEntriesForContent(options = {}) {',
+        "feedbackScope: 'content'",
+        "feedbackEntityType: 'prompt'",
+        'function buildAnalyticsContentCommerceFeedbackVerificationStatus(entries = [], detail = {}) {',
+        'function buildAnalyticsContentCommerceConclusionDigest(entries = [], detail = {}) {',
+        'function renderAnalyticsContentCommerceConclusionDigest(entries = [], detail = {}) {',
+        'function buildAnalyticsContentCommerceConclusionRecord(entries = [], detail = {}) {',
+        'function renderAnalyticsContentCommerceFeedbackNote(detail = {}) {',
+        'function renderAnalyticsContentCommerceConclusionHistory(detail = {}) {',
+        'function buildAnalyticsContentUserValueLinkGuidance(detail = {}) {',
+        'function renderAnalyticsContentUserValueLink(detail = {}) {',
+        'analytics-content-detail-issue-grid',
+        'analytics-content-detail-sample-grid',
+        'top-content-item__commerce',
+        '看商品经营',
+        '看商品漏斗',
+        '看带货详情',
+        '看带货商品',
+        '看订单链',
+        '内容 -> 用户价值',
+        '看用户价值',
+        '本轮内容经营结论',
+        '带货问题摘要',
+        '复查结论记录',
+        '历史复查结论',
+        '看支付问题',
+        '看售后工单'
+    ];
+
+    for (const marker of helperMarkers) {
+        assert.equal(panelLoaderSource.includes(marker), true, `js/admin-analytics-panel-loaders.js should contain ${marker}`);
+    }
+
+    assert.equal(adminStudioHtml.includes('id="userTrendPanel"'), true, 'admin-studio.html should expose a user trend panel mount');
+    assert.equal(adminStudioHtml.includes('id="userGrowthCommerceImpact"'), true, 'admin-studio.html should expose a user commerce impact mount');
+    assert.equal(adminStudioHtml.includes('id="userValueCockpit"'), true, 'admin-studio.html should expose a user value cockpit mount');
+    assert.equal(adminStudioStyles.includes('.analytics-user-commerce-impact {'), true, 'admin-studio.css should style the user commerce impact summary');
+    assert.equal(adminStudioStyles.includes('.analytics-user-commerce-impact__sample {'), true, 'admin-studio.css should style the user commerce impact sample buttons');
+    assert.equal(adminStudioStyles.includes('.analytics-user-value-cockpit {'), true, 'admin-studio.css should style the user value cockpit shell');
+    assert.equal(adminStudioStyles.includes('.analytics-user-value-cockpit__sample {'), true, 'admin-studio.css should style the user value cockpit buyer samples');
+    assert.equal(adminStudioStyles.includes('.top-content-item__commerce-actions {'), true, 'admin-studio.css should style content-commerce action rows');
+    assert.equal(adminStudioStyles.includes('.top-content-item__commerce-more {'), true, 'admin-studio.css should style the extra product count badge');
+    assert.equal(adminStudioStyles.includes('.analytics-content-detail {'), true, 'admin-studio.css should style the content-commerce detail shell');
+    assert.equal(adminStudioStyles.includes('.analytics-content-detail__actions {'), true, 'admin-studio.css should style the content-commerce detail action row');
+    assert.equal(adminStudioStyles.includes('.analytics-content-detail-issue-grid {'), true, 'admin-studio.css should style content-commerce issue grids');
+    assert.equal(adminStudioStyles.includes('.analytics-content-detail-issue-card {'), true, 'admin-studio.css should style content-commerce issue cards');
+    assert.equal(adminStudioStyles.includes('.analytics-content-detail-sample-grid {'), true, 'admin-studio.css should style content-commerce sample grids');
+    assert.equal(adminStudioStyles.includes('.analytics-content-detail-sample-card {'), true, 'admin-studio.css should style content-commerce sample cards');
+    assert.equal(adminStudioStyles.includes('.analytics-content-detail-product-row {'), true, 'admin-studio.css should style content-commerce detail product rows');
+    assert.equal(adminStudioStyles.includes('.analytics-ops-cockpit {'), true, 'admin-studio.css should style the ops cockpit shell');
+    assert.equal(adminStudioStyles.includes('.analytics-ops-cockpit__stats {'), true, 'admin-studio.css should style the ops cockpit stat grid');
+    assert.equal(adminStudioStyles.includes('.analytics-ops-cockpit__actions {'), true, 'admin-studio.css should style the ops cockpit action row');
+    assert.equal(adminStudioStyles.includes('.analytics-ops-cockpit__guidance {'), true, 'admin-studio.css should style card-level ops guidance blocks');
+    assert.equal(adminStudioStyles.includes('.analytics-ops-cockpit__issue-grid {'), true, 'admin-studio.css should style overview-level ops priority issue grids');
+
+    const removedFromMainMarkers = [
+        'async function resolveAnalyticsBundleFirstData(options = {}) {',
+        'async function loadOverviewStats() {',
+        'async function loadPointsStats(days = getAnalyticsRangeDays()) {',
+        'async function loadActivityHeatmap(days = getAnalyticsRangeDays(30)) {',
+        'async function loadGeoDistribution() {',
+        'async function loadProductOverview() {',
+        'async function loadProductRankings() {',
+        'async function loadProductFunnel() {',
+        'async function loadProductHealth() {',
+        'async function loadProductDetailPanel(options = {}) {'
+    ];
+
+    for (const marker of removedFromMainMarkers) {
+        assert.equal(mainAnalyticsSource.includes(marker), false, `admin-analytics.js should no longer contain ${marker}`);
+    }
+
+    assert.equal(
+        mainAnalyticsSource.includes('// Bundle-first panel fetchers are externalized in js/admin-analytics-panel-loaders.js.'),
+        true,
+        'admin-analytics.js should leave a shell note for externalized panel fetchers'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-panel-loaders.js?v=20260407_ANALYTICS_PANEL_LOADERS_70'),
+        true,
+        'admin-studio.html should load the analytics panel-loader helper'
+    );
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-runtime-controls.js?v=20260405_ANALYTICS_RUNTIME_CONTROLS_1') < adminStudioHtml.indexOf('js/admin-analytics-panel-loaders.js?v=20260407_ANALYTICS_PANEL_LOADERS_70'),
+        true,
+        'admin-studio.html should load the panel-loader helper after the runtime-controls shell'
+    );
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-panel-loaders.js?v=20260407_ANALYTICS_PANEL_LOADERS_70') < adminStudioHtml.indexOf('js/admin-analytics-workbench.js?v=20260407_ANALYTICS_WORKBENCH_BUNDLE_13'),
+        true,
+        'admin-studio.html should load the panel-loader helper before downstream analytics helpers'
+    );
+});
+
+test('analytics derived bundles externalize cache state and admin bundle wrappers out of the main shell', () => {
+    const mainAnalyticsSource = readRepoFile('admin-analytics.js');
+    const derivedBundleSource = readRepoFile('js/admin-analytics-derived-bundles.js');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const helperMarkers = [
+        'const analyticsDerivedState = {',
+        'function ensureAnalyticsDerivedContext(contextKey = getAnalyticsAIContextKey()) {',
+        'function getAnalyticsAISourceData(data = null) {',
+        'function buildAnalyticsSummaryWindowBundleQuery(options = {}) {',
+        'async function getAnalyticsAdminSnapshotBundle(options = {}) {',
+        'async function getAnalyticsSummaryRowsBundle(options = {}) {',
+        'async function getAnalyticsPanelSupportBundle(options = {}) {',
+        'async function getAnalyticsVisualPanelBundle(options = {}) {',
+        'async function getAnalyticsTrendSeriesBundle(options = {}) {',
+        'async function getAnalyticsProductSummaryBundle(options = {}) {',
+        'async function getAnalyticsProductRankBundle(options = {}) {',
+        'async function getAnalyticsProductHealthBundle(options = {}) {',
+        'async function getAnalyticsProductFunnelBundle(options = {}) {',
+        'async function getAnalyticsProductDetailBundle(options = {}) {',
+        'function getAnalyticsProductBundleSegment(bundle = null, key = \'\') {',
+        'async function getAnalyticsCommentsSummaryData(options = {}) {',
+        'async function getAnalyticsVerifyMonitorSnapshotData(options = {}) {'
+    ];
+
+    for (const marker of helperMarkers) {
+        assert.equal(derivedBundleSource.includes(marker), true, `js/admin-analytics-derived-bundles.js should contain ${marker}`);
+    }
+
+    const removedFromMainMarkers = [
+        'const analyticsDerivedState = {',
+        'function ensureAnalyticsDerivedContext(contextKey = getAnalyticsAIContextKey()) {',
+        'function getAnalyticsAISourceData(data = null) {',
+        'function buildAnalyticsSummaryWindowBundleQuery(options = {}) {',
+        'async function getAnalyticsAdminSnapshotBundle(options = {}) {',
+        'async function getAnalyticsSummaryRowsBundle(options = {}) {',
+        'async function getAnalyticsPanelSupportBundle(options = {}) {',
+        'async function getAnalyticsVisualPanelBundle(options = {}) {',
+        'async function getAnalyticsTrendSeriesBundle(options = {}) {',
+        'async function getAnalyticsProductSummaryBundle(options = {}) {',
+        'async function getAnalyticsProductRankBundle(options = {}) {',
+        'async function getAnalyticsProductHealthBundle(options = {}) {',
+        'async function getAnalyticsProductFunnelBundle(options = {}) {',
+        'async function getAnalyticsProductDetailBundle(options = {}) {',
+        'function getAnalyticsProductBundleSegment(bundle = null, key = \'\') {',
+        'async function getAnalyticsCommentsSummaryData(options = {}) {',
+        'async function getAnalyticsVerifyMonitorSnapshotData(options = {}) {'
+    ];
+
+    for (const marker of removedFromMainMarkers) {
+        assert.equal(mainAnalyticsSource.includes(marker), false, `admin-analytics.js should no longer contain ${marker}`);
+    }
+
+    assert.equal(
+        mainAnalyticsSource.includes('// Derived bundle cache, summary-window/site-comparison accessors, and admin bundle wrappers'),
+        true,
+        'admin-analytics.js should leave a shell note for externalized derived bundles'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-derived-bundles.js?v=20260405_ANALYTICS_DERIVED_BUNDLES_5'),
+        true,
+        'admin-studio.html should load the analytics derived-bundle helper'
+    );
+    assert.equal(
+        adminStudioHtml.indexOf('admin-analytics.js?v=20260407_ANALYTICS_PRODUCT_SHELL_8') < adminStudioHtml.indexOf('js/admin-analytics-derived-bundles.js?v=20260405_ANALYTICS_DERIVED_BUNDLES_5'),
+        true,
+        'admin-studio.html should load the derived-bundle helper after the main analytics shell'
+    );
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-derived-bundles.js?v=20260405_ANALYTICS_DERIVED_BUNDLES_5') < adminStudioHtml.indexOf('js/admin-analytics-runtime-controls.js?v=20260405_ANALYTICS_RUNTIME_CONTROLS_1'),
+        true,
+        'admin-studio.html should load the derived-bundle helper before the runtime-controls helper'
+    );
+});
+
+test('analytics runtime controls externalize date-range, refresh, and realtime toolbar orchestration out of the main shell', () => {
+    const mainAnalyticsSource = readRepoFile('admin-analytics.js');
+    const runtimeControlsSource = readRepoFile('js/admin-analytics-runtime-controls.js');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const helperMarkers = [
+        'let autoRefreshInterval = null;',
+        'function initDateRangeControls() {',
+        'function toggleDateRangeDropdown() {',
+        'function initInlineCalendar() {',
+        'function renderInlineCalendar() {',
+        'async function refreshChartsWithDateRange(days) {',
+        'function ensureAnalyticsAutoRefreshState() {',
+        'function initRealtimeFeatures() {',
+        'async function refreshAllAnalytics(options = {}) {',
+        'async function updateOnlineUsers() {',
+        'function updateLastUpdateTime() {'
+    ];
+
+    for (const marker of helperMarkers) {
+        assert.equal(runtimeControlsSource.includes(marker), true, `js/admin-analytics-runtime-controls.js should contain ${marker}`);
+    }
+
+    const removedFromMainMarkers = [
+        'let autoRefreshInterval = null;',
+        'function initDateRangeControls() {',
+        'function toggleDateRangeDropdown() {',
+        'function initInlineCalendar() {',
+        'async function refreshChartsWithDateRange(days) {',
+        'function ensureAnalyticsAutoRefreshState() {',
+        'function initRealtimeFeatures() {',
+        'async function refreshAllAnalytics(options = {}) {',
+        'async function updateOnlineUsers() {',
+        'function updateLastUpdateTime() {'
+    ];
+
+    for (const marker of removedFromMainMarkers) {
+        assert.equal(mainAnalyticsSource.includes(marker), false, `admin-analytics.js should no longer contain ${marker}`);
+    }
+
+    assert.equal(
+        mainAnalyticsSource.includes('// Date-range controls, refresh orchestration, online-user probes, and realtime toolbar helpers'),
+        true,
+        'admin-analytics.js should leave a shell note for externalized runtime controls'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-runtime-controls.js?v=20260405_ANALYTICS_RUNTIME_CONTROLS_1'),
+        true,
+        'admin-studio.html should load the analytics runtime-controls helper'
+    );
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-derived-bundles.js?v=20260405_ANALYTICS_DERIVED_BUNDLES_5') < adminStudioHtml.indexOf('js/admin-analytics-runtime-controls.js?v=20260405_ANALYTICS_RUNTIME_CONTROLS_1'),
+        true,
+        'admin-studio.html should load the runtime-controls helper after the derived-bundle helper'
+    );
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-runtime-controls.js?v=20260405_ANALYTICS_RUNTIME_CONTROLS_1') < adminStudioHtml.indexOf('js/admin-analytics-panel-loaders.js?v=20260407_ANALYTICS_PANEL_LOADERS_70'),
+        true,
+        'admin-studio.html should load the runtime-controls helper before downstream panel loaders'
+    );
+});
+
+test('analytics lifecycle helper externalizes init, tab routing, tracking, and anomaly hooks out of the main shell', () => {
+    const mainAnalyticsSource = readRepoFile('admin-analytics.js');
+    const lifecycleSource = readRepoFile('js/admin-analytics-lifecycle.js');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const helperMarkers = [
+        'async function initAnalyticsModule() {',
+        'function setupRealtimeSubscriptions() {',
+        'function teardownRealtimeSubscriptions() {',
+        'function animateKPIIncrement(elementId) {',
+        'function setupAnalyticsEvents() {',
+        'function switchAnalyticsTab(tabId, options = {}) {',
+        'await window.restoreAnalyticsRouteState?.({ focus: true });',
+        'function initAnalyticsTabIndicator() {',
+        'function destroyAnalyticsCharts() {',
+        'async function reloadAnalyticsDashboard() {',
+        'function teardownAnalyticsModule() {',
+        'const TrackingSDK = {',
+        'async function checkForAnomalies() {',
+        'function dismissAllAlerts() {',
+        'const originalAnalyticsRefresh = refreshAllAnalytics;',
+        'productTrendChart,',
+        'productTrendChart = null;',
+        'loadProductOverview(),',
+        'loadProductRankings(),',
+        'loadProductHealth(),'
+    ];
+
+    for (const marker of helperMarkers) {
+        assert.equal(lifecycleSource.includes(marker), true, `js/admin-analytics-lifecycle.js should contain ${marker}`);
+    }
+
+    const removedFromMainMarkers = [
+        'async function initAnalyticsModule() {',
+        'function setupRealtimeSubscriptions() {',
+        'function teardownRealtimeSubscriptions() {',
+        'function animateKPIIncrement(elementId) {',
+        'function setupAnalyticsEvents() {',
+        'function switchAnalyticsTab(tabId, options = {}) {',
+        'function initAnalyticsTabIndicator() {',
+        'function destroyAnalyticsCharts() {',
+        'async function reloadAnalyticsDashboard() {',
+        'function teardownAnalyticsModule() {',
+        'const TrackingSDK = {',
+        'async function checkForAnomalies() {',
+        'function dismissAllAlerts() {'
+    ];
+
+    for (const marker of removedFromMainMarkers) {
+        assert.equal(mainAnalyticsSource.includes(marker), false, `admin-analytics.js should no longer contain ${marker}`);
+    }
+
+    assert.equal(
+        mainAnalyticsSource.includes('// Lifecycle orchestration, tab routing, chart teardown, tracking sdk,'),
+        true,
+        'admin-analytics.js should leave a shell note for externalized lifecycle orchestration'
+    );
+    assert.equal(
+        lifecycleSource.includes('bindAnalyticsAdvancedWorkspaceToggle();'),
+        true,
+        'analytics lifecycle helper should bind the advanced workspace toggle during init'
+    );
+    assert.equal(
+        lifecycleSource.includes('loadProductFunnel(),'),
+        true,
+        'analytics lifecycle helper should refresh the product funnel panel during dashboard reload'
+    );
+    assert.equal(
+        lifecycleSource.includes('loadProductDetailPanel(),'),
+        true,
+        'analytics lifecycle helper should refresh the product detail panel during dashboard reload'
+    );
+    assert.equal(
+        lifecycleSource.includes("nav.querySelectorAll('.analytics-tab-group__label[data-analytics-tab-group-trigger]').forEach((button) => {"),
+        true,
+        'analytics lifecycle helper should sync clickable analytics tab-group labels with the active tab'
+    );
+    assert.equal(
+        lifecycleSource.includes("function getAnalyticsScopeConfigForTab(tabId = '', options = {}) {"),
+        true,
+        'analytics lifecycle helper should define split sidebar scope config for analytics tabs'
+    );
+    assert.equal(
+        lifecycleSource.includes('function getActiveAnalyticsSidebarModuleId() {'),
+        true,
+        'analytics lifecycle helper should detect the active analytics sidebar scope before resolving tab visibility'
+    );
+    assert.equal(
+        lifecycleSource.includes("function syncAnalyticsTabScope(tabId = '', options = {}) {"),
+        true,
+        'analytics lifecycle helper should keep analytics tab visibility aligned with the active sidebar scope'
+    );
+    assert.equal(
+        lifecycleSource.includes("button.hidden = !allowedTabs.has(buttonTabId);"),
+        true,
+        'analytics lifecycle helper should hide tab buttons that do not belong to the active analytics sidebar scope'
+    );
+    assert.equal(
+        lifecycleSource.includes("primaryLabel: '增长经营'") && lifecycleSource.includes("primaryLabel: '商品经营'"),
+        true,
+        'analytics lifecycle helper should map the growth and commerce scopes to the active analytics tab labels after removing the standalone overview sidebar'
+    );
+    assert.equal(
+        lifecycleSource.includes("primaryTabs: ['overview', 'growth', 'content']"),
+        true,
+        'analytics lifecycle helper should place overview inside the growth center alongside user growth and content commerce'
+    );
+    assert.equal(
+        lifecycleSource.includes('nav.hidden = allowedTabs.size <= 1;'),
+        true,
+        'analytics lifecycle helper should hide the top analytics tab rail when the current sidebar only has one page'
+    );
+    assert.equal(
+        lifecycleSource.includes("button.setAttribute('aria-pressed', isActive ? 'true' : 'false');"),
+        true,
+        'analytics lifecycle helper should keep analytics tab-group label accessibility state in sync'
+    );
+    assert.equal(
+        mainAnalyticsSource.includes('function bindAnalyticsAdvancedWorkspaceToggle() {'),
+        true,
+        'admin-analytics.js should expose a direct advanced workspace toggle binder'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-lifecycle.js?v=20260407_ANALYTICS_LIFECYCLE_16'),
+        true,
+        'admin-studio.html should load the analytics lifecycle helper'
+    );
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-panel-loaders.js?v=20260407_ANALYTICS_PANEL_LOADERS_70') < adminStudioHtml.indexOf('js/admin-analytics-lifecycle.js?v=20260407_ANALYTICS_LIFECYCLE_16'),
+        true,
+        'admin-studio.html should load the lifecycle helper after the panel-loaders helper'
+    );
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-lifecycle.js?v=20260407_ANALYTICS_LIFECYCLE_16') < adminStudioHtml.indexOf('js/admin-analytics-workbench.js?v=20260407_ANALYTICS_WORKBENCH_BUNDLE_13'),
+        true,
+        'admin-studio.html should load the lifecycle helper before downstream workbench helpers'
     );
 });
 
@@ -8444,18 +9781,18 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'prompts.html should load the latest prompts gallery stylesheet version'
     );
     assert.equal(
-        promptsHtml.includes('./js/user-event-tracker.js?v=20260404_PHASE3_EXPERIMENT_RUNTIME_1'),
+        promptsHtml.includes('./js/user-event-tracker.js?v=20260405_USER_EVENT_TRACKER_2'),
         true,
-        'prompts.html should load the shared phase 3 user event tracker'
+        'prompts.html should load the shared user event tracker'
     );
     assert.equal(
-        promptsHtml.includes('prompts-poetry.js?v=20260404_PROMPTS_PHASE3_EXPERIMENT_RUNTIME_1'),
+        promptsHtml.includes('prompts-poetry.js?v=20260405_PROMPTS_RUNTIME_TRACKING_1'),
         true,
         'prompts.html should load the latest prompts gallery runtime version'
     );
 });
 
-test('phase 3 tracker wires prompt, verify, and wallet conversion events', () => {
+test('shared user event tracker wires prompt, verify, and wallet conversion events', () => {
     const trackerSource = readRepoFile('js/user-event-tracker.js');
     const promptsSource = readRepoFile('prompts-poetry.js');
     const verifyWidgetSource = readRepoFile('verify-widget.js');
@@ -8474,9 +9811,6 @@ test('phase 3 tracker wires prompt, verify, and wallet conversion events', () =>
         "async track(eventName, payload = {}, options = {})",
         "async pageView(payload = {})",
         "async heartbeat(payload = {})",
-        "async getExperimentAssignment(experimentName, options = {})",
-        "'experiment_exposure'",
-        "rpc('get_experiment_variant'",
         ".from('user_events').insert(payload)",
         "rpc('track_event'"
     ];
@@ -8489,8 +9823,6 @@ test('phase 3 tracker wires prompt, verify, and wallet conversion events', () =>
         "trackPromptAnalyticsEvent('prompt_view'",
         "trackPromptAnalyticsEvent('unlock_click'",
         "trackPromptAnalyticsEvent('unlock_success'",
-        "applyPromptUnlockExperiment(currentPromptId)",
-        "getPromptUnlockExperimentTrackingPayload()",
         "WalletModal.open('recharge', {"
     ];
 
@@ -8502,8 +9834,6 @@ test('phase 3 tracker wires prompt, verify, and wallet conversion events', () =>
         "trackVerifyAnalyticsEvent('verify_submit'",
         "trackVerifyAnalyticsEvent('verify_success'",
         "trackVerifyAnalyticsEvent('verify_fail'",
-        "applyVerifySubmitExperiment()",
-        "getVerifySubmitExperimentTrackingPayload()",
         "window.WalletModal?.open?.('balance', {"
     ];
 
@@ -8517,8 +9847,6 @@ test('phase 3 tracker wires prompt, verify, and wallet conversion events', () =>
         "trackWalletAnalyticsEvent('recharge_success'",
         "trackWalletAnalyticsEvent('affiliate_invite_click'",
         "trackWalletAnalyticsEvent('checkin_success'",
-        "applyCustomRechargeExperiment({",
-        "getCustomRechargeExperimentTrackingPayload()",
         'lastOpenContext: null,'
     ];
 
@@ -8527,15 +9855,48 @@ test('phase 3 tracker wires prompt, verify, and wallet conversion events', () =>
     }
 
     const shopMarkers = [
+        "trackShopAnalyticsEvent('product_card_click'",
         "trackShopAnalyticsEvent('shop_view'",
+        "trackShopAnalyticsEvent('product_detail_view'",
+        "trackShopAnalyticsEvent('product_purchase_click'",
         "trackShopAnalyticsEvent('shop_purchase'",
-        "applyPurchaseModalExperiment(productId)",
-        "getPurchaseExperimentTrackingPayload()",
+        "trackShopAnalyticsEvent('product_purchase_success'",
+        'metadata.source_page = normalizedSourcePage;',
+        'metadata.source_channel = normalizedSourceChannel;',
+        'metadata.source_prompt_id = normalizedSourcePromptId;',
         'buyButton.dataset.productCategory = String(p.category || \'\');'
     ];
 
     for (const marker of shopMarkers) {
         assert.equal(shopClientSource.includes(marker), true, `js/shop-client.js should contain ${marker}`);
+    }
+
+    const removedMarkers = [
+        'getExperimentAssignment',
+        'setTrafficRuntimeEnabled',
+        'refreshTrafficRuntimeDefault',
+        '__ZAOYOE_TRAFFIC_RUNTIME_DEFAULT_ENABLED__',
+        '__ZAOYOE_EXPERIMENT_RUNTIME_DEFAULT_ENABLED__',
+        'applyPromptUnlockExperiment(',
+        'getPromptUnlockExperimentTrackingPayload(',
+        'applyVerifySubmitExperiment(',
+        'getVerifySubmitExperimentTrackingPayload(',
+        'applyCustomRechargeExperiment(',
+        'getCustomRechargeExperimentTrackingPayload(',
+        'applyPurchaseModalExperiment(',
+        'getPurchaseExperimentTrackingPayload('
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(
+            trackerSource.includes(marker)
+            || promptsSource.includes(marker)
+            || verifyWidgetSource.includes(marker)
+            || walletSource.includes(marker)
+            || shopClientSource.includes(marker),
+            false,
+            `tracker and consumer runtime code should no longer contain ${marker}`
+        );
     }
 
     const guestbookMarkers = [
@@ -8548,19 +9909,21 @@ test('phase 3 tracker wires prompt, verify, and wallet conversion events', () =>
     }
 
     assert.equal(injectAuthSource.includes("entry: 'nav_wallet'"), true, 'inject-auth.js should tag wallet opens from the auth dropdown');
-    assert.equal(indexSource.includes('./js/user-event-tracker.js?v=20260404_PHASE3_EXPERIMENT_RUNTIME_1'), true, 'index.html should load the shared phase 3 experiment tracker');
-    assert.equal(guestbookSource.includes('js/user-event-tracker.js?v=20260404_PHASE3_EXPERIMENT_RUNTIME_1'), true, 'guestbook.html should load the shared phase 3 experiment tracker');
-    assert.equal(shopSource.includes('js/user-event-tracker.js?v=20260404_PHASE3_EXPERIMENT_RUNTIME_1'), true, 'shop.html should load the shared phase 3 experiment tracker');
+    assert.equal(indexSource.includes('./js/user-event-tracker.js?v=20260405_USER_EVENT_TRACKER_2'), true, 'index.html should load the shared user event tracker');
+    assert.equal(guestbookSource.includes('js/user-event-tracker.js?v=20260405_USER_EVENT_TRACKER_2'), true, 'guestbook.html should load the shared user event tracker');
+    assert.equal(shopSource.includes('js/user-event-tracker.js?v=20260405_USER_EVENT_TRACKER_2'), true, 'shop.html should load the shared user event tracker');
     assert.equal(indexSource.includes('./supabase-guestbook-functions.js?v=20260404_GUESTBOOK_PHASE3_EVENTS_1'), true, 'index.html should load the phase 3 guestbook runtime');
     assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260404_GUESTBOOK_PHASE3_EVENTS_1'), true, 'guestbook.html should load the phase 3 guestbook runtime');
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260404_GUESTBOOK_PHASE3_EVENTS_1'), true, 'index_old.html should load the phase 3 guestbook runtime');
-    assert.equal(shopSource.includes('js/shop-client.js?v=20260404_SHOP_PHASE3_EXPERIMENT_RUNTIME_1'), true, 'shop.html should load the phase 3 experiment-enabled shop runtime');
-    assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260404_SHOP_PHASE3_EXPERIMENT_RUNTIME_1'), true, 'index_old.html should load the phase 3 experiment-enabled shop runtime');
-    assert.equal(verifyPageSource.includes('js/components/WalletModal.js?v=20260404_WALLET_PHASE3_EXPERIMENT_RUNTIME_1'), true, 'verify.html should load the latest phase 3 experiment-enabled wallet modal runtime');
+    assert.equal(shopSource.includes('js/shop-client.js?v=20260405_SHOP_RUNTIME_TRACKING_2'), true, 'shop.html should load the latest tracking-aware shop runtime');
+    assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260405_SHOP_RUNTIME_TRACKING_2'), true, 'index_old.html should load the latest tracking-aware shop runtime');
+    assert.equal(verifyPageSource.includes('js/components/WalletModal.js?v=20260405_WALLET_RUNTIME_TRACKING_1'), true, 'verify.html should load the latest tracking-aware wallet modal runtime');
 });
 
 test('analytics phase 3 prefers real event rpc v2 for ai summary and conversion funnel', () => {
-    const analyticsSource = readRepoFile('admin-analytics.js');
+    const analyticsSource = readAdminAnalyticsRuntimeSource();
+    const panelSupportBundleSource = readRepoFile('server/api-handlers/admin/analytics/panel-support-bundle.js');
+    const visualPanelBundleSource = readRepoFile('server/api-handlers/admin/analytics/visual-panel-bundle.js');
     const analyticsSummarySql = readRepoFile('supabase/analytics_site_filter.sql');
     const analyticsAdvancedSql = readRepoFile('supabase/analytics_advanced_site_filter.sql');
     const migrationSource = readRepoFile('supabase/migrations/20260404_admin_analytics_phase3_event_rpc_v2.sql');
@@ -8568,12 +9931,9 @@ test('analytics phase 3 prefers real event rpc v2 for ai summary and conversion 
 
     const analyticsMarkers = [
         "callAnalyticsRpcWithFallback('get_ai_summary_data_v2'",
-        "callAnalyticsRpcWithFallback('get_conversion_funnel_v2'",
-        "callAnalyticsRpcWithFallback('get_channel_breakdown_v2'",
-        "callAnalyticsRpcWithFallback('get_content_top_v2'",
-        "rpc('get_points_flow_v2'",
+        "callAnalyticsRpcWithFallback('get_points_flow_v2'",
         'buildAnalyticsEventDrivenRecommendations(data = null)',
-        'getAnalyticsSiteComparisonData({ summaryWindowData: data })',
+        'getAnalyticsSummaryContextBundle({',
         'site_comparison:',
         'applyAnalyticsDestinationSiteContext(normalizedContext);',
         'buildCommerceEventFunnelViewData(summaryWindow)',
@@ -8589,6 +9949,26 @@ test('analytics phase 3 prefers real event rpc v2 for ai summary and conversion 
     for (const marker of analyticsMarkers) {
         assert.equal(analyticsSource.includes(marker), true, `admin-analytics.js should contain ${marker}`);
     }
+
+    const bundleMarkers = [
+        "callRpcWithFallback(supabase, 'get_conversion_funnel_v2'",
+        "callRpcWithFallback(supabase, 'get_channel_breakdown_v2'",
+        "callRpcWithFallback(supabase, 'get_content_top_v2'"
+    ];
+
+    for (const marker of bundleMarkers) {
+        assert.equal(
+            visualPanelBundleSource.includes(marker) || panelSupportBundleSource.includes(marker),
+            true,
+            `analytics bundle handlers should contain ${marker}`
+        );
+    }
+
+    assert.equal(
+        visualPanelBundleSource.includes("callRpcWithFallback(supabase, 'get_conversion_funnel'"),
+        false,
+        'analytics visual panel bundle should no longer call the legacy proxy conversion funnel rpc'
+    );
 
     const sqlMarkers = [
         'CREATE OR REPLACE FUNCTION get_ai_summary_data_v2',
@@ -8611,6 +9991,1054 @@ test('analytics phase 3 prefers real event rpc v2 for ai summary and conversion 
             `phase 3 analytics sql should contain ${marker}`
         );
     }
+});
+
+test('analytics date range alignment keeps inclusive day math and explicit start/end rpc params', () => {
+    const analyticsSource = readAdminAnalyticsRuntimeSource();
+    const analyticsSummarySql = readRepoFile('supabase/analytics_site_filter.sql');
+    const analyticsAdvancedSql = readRepoFile('supabase/analytics_advanced_site_filter.sql');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const frontendMarkers = [
+        'const ANALYTICS_DAY_MS = 24 * 60 * 60 * 1000;',
+        'function getAnalyticsRangeDayDiff(startDate, endDate) {',
+        'function buildAnalyticsPresetRange(days = DEFAULT_ANALYTICS_DAYS, anchorDate = new Date()) {',
+        'params.p_start_date = normalizedStartDate;',
+        'params.p_end_date = normalizedEndDate;',
+        "query = applyAnalyticsTimeRange(query, 'created_at');",
+        "query.set('startDate', startIso);",
+        "query.set('endDate', endIso);",
+        'async function fetchUserTrendData(days = getAnalyticsRangeDays(30)) {',
+        "segmentKey: 'userTrend',",
+        "segmentKey: 'contentTrend',",
+        "segmentKey: 'revenueTrend',",
+        "segmentKey: 'activityHeatmap',",
+        "segmentKey: 'communityStats',",
+        "segmentKey: 'redemptionFunnel',"
+    ];
+
+    for (const marker of frontendMarkers) {
+        assert.equal(analyticsSource.includes(marker), true, `admin-analytics.js should contain ${marker}`);
+    }
+
+    const sqlMarkers = [
+        'p_start_date DATE DEFAULT NULL',
+        'p_end_date DATE DEFAULT NULL',
+        'BETWEEN v_start_date AND v_end_date',
+        'GRANT EXECUTE ON FUNCTION get_user_trend(INTEGER, VARCHAR, DATE, DATE) TO authenticated;',
+        'GRANT EXECUTE ON FUNCTION get_conversion_funnel_v2(INTEGER, VARCHAR, DATE, DATE) TO authenticated;'
+    ];
+
+    for (const marker of sqlMarkers) {
+        assert.equal(
+            analyticsSummarySql.includes(marker) || analyticsAdvancedSql.includes(marker),
+            true,
+            `analytics range alignment sql should contain ${marker}`
+        );
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('admin-analytics.js?v=20260407_ANALYTICS_PRODUCT_SHELL_8'),
+        true,
+        'admin-studio.html should reference the latest analytics range alignment runtime version'
+    );
+});
+
+test('analytics rpc date params keep local calendar days instead of utc-splitting them', () => {
+    const analyticsSource = readAdminAnalyticsRuntimeSource();
+
+    const markers = [
+        'function formatAnalyticsLocalDate(date) {',
+        "const year = date.getFullYear();",
+        "const month = String(date.getMonth() + 1).padStart(2, '0');",
+        "const day = String(date.getDate()).padStart(2, '0');",
+        'return `${year}-${month}-${day}`;',
+        'return formatAnalyticsLocalDate(date);'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(analyticsSource.includes(marker), true, `admin-analytics.js should contain ${marker}`);
+    }
+
+    assert.equal(
+        analyticsSource.includes("return date ? date.toISOString().split('T')[0] : null;"),
+        false,
+        'admin-analytics.js should no longer derive rpc date params by utc-splitting ISO strings'
+    );
+});
+
+test('analytics site attribution alignment keeps new-user and retention semantics consistent per site', () => {
+    const analyticsSource = readAdminAnalyticsRuntimeSource();
+    const analyticsSummarySql = readRepoFile('supabase/analytics_site_filter.sql');
+    const analyticsAdvancedSql = readRepoFile('supabase/analytics_advanced_site_filter.sql');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+    const migrationSource = readRepoFile('supabase/migrations/20260405_admin_analytics_site_attribution_alignment.sql');
+
+    const frontendMarkers = [
+        'function getAnalyticsNewUsersLabels(site = getAnalyticsSiteParam()) {',
+        'function getAnalyticsNewUsersTooltip(overview = {}, site = getAnalyticsSiteParam()) {',
+        'function syncAnalyticsNewUsersContext(overview = {}) {',
+        "label: getAnalyticsNewUsersLabels().seriesLabel",
+        "const newUsersLabel = getAnalyticsNewUsersLabels().weekLabel;",
+        'site_attributed_new_users_today',
+        'unattributed_new_users_week'
+    ];
+
+    for (const marker of frontendMarkers) {
+        assert.equal(analyticsSource.includes(marker), true, `admin-analytics.js should contain ${marker}`);
+    }
+
+    const sqlMarkers = [
+        "'site_attribution_model', 'first_site_activity'",
+        'COUNT(*) FILTER (WHERE attributed_site = p_site)::INTEGER',
+        'WHERE p_site IS NULL OR ac.attributed_site = p_site'
+    ];
+
+    for (const marker of sqlMarkers) {
+        assert.equal(
+            analyticsSummarySql.includes(marker)
+            || analyticsAdvancedSql.includes(marker)
+            || migrationSource.includes(marker),
+            true,
+            `analytics site attribution sql should contain ${marker}`
+        );
+    }
+
+    assert.equal(adminStudioHtml.includes('id="kpiNewUsersLabel"'), true, 'admin-studio.html should expose a dedicated new-users label hook');
+    assert.equal(
+        adminStudioHtml.includes('admin-analytics.js?v=20260407_ANALYTICS_PRODUCT_SHELL_8'),
+        true,
+        'admin-studio.html should reference the latest analytics site attribution runtime version'
+    );
+});
+
+test('analytics active user semantics prefer business events while preserving login references', () => {
+    const analyticsSource = readAdminAnalyticsRuntimeSource();
+    const analyticsSummarySql = readRepoFile('supabase/analytics_site_filter.sql');
+    const migrationSource = readRepoFile('supabase/migrations/20260405_admin_analytics_business_active_alignment.sql');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const frontendMarkers = [
+        'function getAnalyticsActiveUserLabels() {',
+        'function getAnalyticsActiveUsersTooltip(overview = {}) {',
+        'function syncAnalyticsActiveUsersContext(overview = {}) {',
+        'label: activeUserLabels.seriesLabel',
+        "return `登录活跃参考: ${formatNumber(loginActiveUsers)}`;",
+        '业务日活 (DAU)',
+        '登录日活参考'
+    ];
+
+    for (const marker of frontendMarkers) {
+        assert.equal(analyticsSource.includes(marker) || adminStudioHtml.includes(marker), true, `active user semantics should contain ${marker}`);
+    }
+
+    const sqlMarkers = [
+        "'active_users_scope', 'business_event'",
+        "'active_users_model', 'effective_business_event'",
+        'login_active_users INTEGER',
+        'COUNT(DISTINCT user_id) FILTER (WHERE event_name <> \'page_view\') AS business_active_users',
+        "'login_dau_growth'"
+    ];
+
+    for (const marker of sqlMarkers) {
+        assert.equal(
+            analyticsSummarySql.includes(marker) || migrationSource.includes(marker),
+            true,
+            `analytics active-user sql should contain ${marker}`
+        );
+    }
+
+    assert.equal(adminStudioHtml.includes('id="kpiDauLabel"'), true, 'admin-studio.html should expose a dedicated DAU label hook');
+    assert.equal(adminStudioHtml.includes('id="userTrendMeta"'), true, 'admin-studio.html should expose a dedicated user trend note hook');
+    assert.equal(
+        adminStudioHtml.includes('admin-analytics.js?v=20260407_ANALYTICS_PRODUCT_SHELL_8'),
+        true,
+        'admin-studio.html should reference the latest analytics active-user runtime version'
+    );
+});
+
+test('analytics proxy metric annotations label real-vs-proxy reference panels explicitly', () => {
+    const analyticsSource = readAdminAnalyticsMetricContextSource();
+    const analyticsSummarySql = readRepoFile('supabase/analytics_site_filter.sql');
+    const analyticsAdvancedSql = readRepoFile('supabase/analytics_advanced_site_filter.sql');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+    const adminStudioStyles = readRepoFile('admin-studio.css');
+    const migrationSource = readRepoFile('supabase/migrations/20260405_admin_analytics_proxy_metric_annotations.sql');
+    const heatmapMigrationSource = readRepoFile('supabase/migrations/20260405_admin_analytics_heatmap_business_event_alignment.sql');
+    const retentionMigrationSource = readRepoFile('supabase/migrations/20260405_admin_analytics_retention_business_activity_alignment.sql');
+    const retentionCleanupMigrationSource = readRepoFile('supabase/migrations/20260405_admin_analytics_retention_remove_login_fallback.sql');
+
+    const frontendMarkers = [
+        'function getAnalyticsMetricMeta(source, fallback = {}) {',
+        'function renderAnalyticsMetricHint(source, options = {}) {',
+        '真实业务事件热度',
+        '当前数据库仍在返回旧登录热力图，请执行最新 heatmap migration 后切到真实业务事件热度。',
+        '当前热力图按真实业务事件绘制，适合观察浏览、解锁、验证、充值等行为高峰。',
+        '当前漏斗按 Prompt 浏览、解锁点击、内容解锁三段真实事件计算。',
+        '首站点归因 cohort + 真实业务回访',
+        '当前留存按首站点归因 cohort + 真实业务事件回访计算，更接近真实复访质量。',
+        '当前数据库仍在返回旧登录留存，请执行最新 retention migration 后切到真实业务回访留存。',
+        'id="activityHeatmapMeta"',
+        'id="conversionFunnelMeta"',
+        'id="retentionCohortMeta"'
+    ];
+
+    for (const marker of frontendMarkers) {
+        assert.equal(
+            analyticsSource.includes(marker) || adminStudioHtml.includes(marker),
+            true,
+            `analytics proxy metric annotations should contain ${marker}`
+        );
+    }
+
+    const cssMarkers = [
+        '.analytics-proxy-hint {',
+        '.analytics-proxy-hint--real {'
+    ];
+
+    for (const marker of cssMarkers) {
+        assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
+    }
+
+    const sqlMarkers = [
+        'is_proxy_metric BOOLEAN',
+        'metric_basis TEXT',
+        'metric_label TEXT',
+        'effective_business_event_heatmap',
+        '真实业务事件热度',
+        'login_history',
+        '登录活跃代理口径',
+        'site_attributed_cohort_effective_business_activity',
+        '首站点归因 cohort + 真实业务回访',
+        'site_attributed_cohort_login_activity',
+        '首站点归因 cohort + 登录回访代理口径'
+    ];
+
+    for (const marker of sqlMarkers) {
+        assert.equal(
+            analyticsSummarySql.includes(marker)
+            || analyticsAdvancedSql.includes(marker)
+            || migrationSource.includes(marker)
+            || heatmapMigrationSource.includes(marker)
+            || retentionMigrationSource.includes(marker),
+            true,
+            `analytics proxy metric sql should contain ${marker}`
+        );
+    }
+
+    assert.equal(
+        retentionCleanupMigrationSource.includes('site_attributed_cohort_login_activity'),
+        false,
+        'retention cleanup migration should remove the login-based retention fallback basis'
+    );
+
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-metric-context.js?v=20260405_ANALYTICS_METRIC_CONTEXT_HELPERS_6'),
+        true,
+        'admin-studio.html should reference the latest analytics metric-context helper runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('admin-analytics.js?v=20260407_ANALYTICS_PRODUCT_SHELL_8'),
+        true,
+        'admin-studio.html should reference the latest analytics metric-context runtime version'
+    );
+});
+
+test('analytics metric context reaches exports and ai prompt guardrails', () => {
+    const analyticsSource = readAdminAnalyticsMetricContextSource();
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const markers = [
+        'async function fetchAnalyticsPanelMetricContext(days = getAnalyticsRangeDays(30), weeks = getAnalyticsCohortWeeks(days)) {',
+        'function buildAnalyticsMetricContextRows({ overview = {}, panelMetricContext = {} } = {}) {',
+        "panel_metric_context: supportBundle.panelMetricContext || {}",
+        '指标口径说明（请严格区分真实事件和代理参考',
+        'const metricContextRows = buildAnalyticsMetricContextRows({',
+        'metricContextRows,',
+        "csv += '=== 指标口径 ===\\n';",
+        "csv += '板块,指标口径,类型,依据,说明\\n';",
+        "XLSX.utils.book_append_sheet(wb, metricContextSheet, '指标口径');",
+        "'板块': panel || '未分类'",
+        "'类型': type || '混合口径'"
+    ];
+
+    for (const marker of markers) {
+        assert.equal(analyticsSource.includes(marker), true, `analytics export and ai metric context should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('admin-analytics.js?v=20260407_ANALYTICS_PRODUCT_SHELL_8'),
+        true,
+        'admin-studio.html should reference the latest analytics export/ai metric context runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-export-builders.js?v=20260405_ANALYTICS_EXPORT_BUILDERS_1'),
+        true,
+        'admin-studio.html should reference the latest analytics export-builder runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-ai-state.js?v=20260405_ANALYTICS_AI_STATE_1'),
+        true,
+        'admin-studio.html should reference the latest analytics ai-state runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-ai-helpers.js?v=20260405_ANALYTICS_AI_HELPERS_1'),
+        true,
+        'admin-studio.html should reference the latest analytics ai-helper runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-ai-prompt-builders.js?v=20260405_ANALYTICS_AI_PROMPT_BUILDERS_1'),
+        true,
+        'admin-studio.html should reference the latest analytics ai-prompt-builder runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-ai-controller.js?v=20260405_ANALYTICS_AI_CONTROLLER_1'),
+        true,
+        'admin-studio.html should reference the latest analytics ai-controller runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        true,
+        'admin-studio.html should reference the latest analytics ai/export helper runtime version'
+    );
+});
+
+test('analytics metric context also constrains local insights and action cards', () => {
+    const analyticsSource = readAdminAnalyticsMetricContextSource();
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const markers = [
+        'function getAnalyticsMetricContextRowsFromData(data = null) {',
+        'function getAnalyticsProxyMetricContextRows(data = null) {',
+        'function buildAnalyticsMetricContextObserveItem(data = null) {',
+        'function renderAnalyticsMetricContextNotice(data = null) {',
+        '代理参考面板需要结合真实事件复核',
+        '部分分析面板仍是代理参考口径',
+        '口径提醒：',
+        '需要做严格结论时，先看真实交易、验证和增长事件面板',
+        'Metric Context',
+        '当前窗口存在代理参考指标',
+        '回看代理面板'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(analyticsSource.includes(marker), true, `analytics local insight metric-context guardrails should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('admin-analytics.js?v=20260407_ANALYTICS_PRODUCT_SHELL_8'),
+        true,
+        'admin-studio.html should reference the latest analytics local-insight metric-context runtime version'
+    );
+});
+
+test('analytics summary context bundle reuses panel metric and comparison fetches across ai and export', () => {
+    const analyticsSource = readAdminAnalyticsMetricContextSource();
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const markers = [
+        'summaryWindowBundle: null,',
+        'panelMetricContext: null,',
+        'summaryContextBundle: null,',
+        'analyticsDerivedState.summaryWindowBundle = null;',
+        'analyticsDerivedState.panelMetricContext = null;',
+        'analyticsDerivedState.summaryContextBundle = null;',
+        'function buildAnalyticsSummaryWindowBundleQuery(options = {}) {',
+        'async function getAnalyticsSummaryWindowBundle(options = {}) {',
+        "'analytics/summary-window-bundle'",
+        'function getAnalyticsSummaryWindowBundleSegment(bundle = null, key = \'\') {',
+        'function normalizeAnalyticsSummaryWindowSiteKey(site = null) {',
+        'function getAnalyticsSummaryWindowBundleSegmentSummary(bundle = null, key = \'\') {',
+        "function createAnalyticsSummaryWindowBundleSegmentError(segment = null, fallbackMessage = 'Analytics summary window bundle segment failed') {",
+        'async function loadAnalyticsSummaryWindowBundleForSelection(options = {}) {',
+        'async function resolveAnalyticsSummaryWindowSiteSummary(site = null, options = {}) {',
+        "panelMetricContext: getAnalyticsDerivedStateValue('panelMetricContext'),",
+        "summaryContextBundle: getAnalyticsDerivedStateValue('summaryContextBundle')",
+        'async function getAnalyticsPanelMetricContextData(options = {}) {',
+        'async function getAnalyticsSummaryContextBundle(options = {}) {',
+        'async function getAnalyticsSummaryWindowData(options = {}) {',
+        'async function getAnalyticsSiteComparisonData(options = {}) {',
+        "return runAnalyticsDerivedRequest(",
+        "'summaryWindowBundle',",
+        "'summaryContextBundle',",
+        'const summaryContextBundle = summaryContextBundleResult.status === \'fulfilled\' && summaryContextBundleResult.value',
+        'const selectedSiteKey = normalizeAnalyticsSummaryWindowSiteKey(getAnalyticsSiteParam());',
+        'const bundle = await loadAnalyticsSummaryWindowBundleForSelection({',
+        'return resolveAnalyticsSummaryWindowSiteSummary(selectedSiteKey, {',
+        "const summaryWindowBundle = await loadAnalyticsSummaryWindowBundleForSelection({",
+        "resolveAnalyticsSummaryWindowSiteSummary('cn', {",
+        "resolveAnalyticsSummaryWindowSiteSummary('intl', {",
+        'getAnalyticsSummaryContextBundle({',
+        'const summaryContextBundle = supportBundle.summaryContextBundle || {};',
+        'panelMetricContext,',
+        'metricContextRows'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(analyticsSource.includes(marker), true, `analytics summary context bundle should contain ${marker}`);
+    }
+
+    const removedMarkers = [
+        'async function fetchAnalyticsSummaryWindowBundleForSite(site = null, options = {}) {'
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(analyticsSource.includes(marker), false, `analytics summary context bundle should no longer contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-metric-context.js?v=20260405_ANALYTICS_METRIC_CONTEXT_HELPERS_6'),
+        true,
+        'admin-studio.html should reference the latest analytics helper runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('admin-analytics.js?v=20260407_ANALYTICS_PRODUCT_SHELL_8'),
+        true,
+        'admin-studio.html should reference the latest analytics summary-context-bundle runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-workbench.js?v=20260407_ANALYTICS_WORKBENCH_BUNDLE_13'),
+        true,
+        'admin-studio.html should reference the latest analytics workbench helper runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-export-builders.js?v=20260405_ANALYTICS_EXPORT_BUILDERS_1'),
+        true,
+        'admin-studio.html should reference the latest analytics export-builder helper runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-ai-state.js?v=20260405_ANALYTICS_AI_STATE_1'),
+        true,
+        'admin-studio.html should reference the latest analytics ai-state runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-ai-helpers.js?v=20260405_ANALYTICS_AI_HELPERS_1'),
+        true,
+        'admin-studio.html should reference the latest analytics ai-helper runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-ai-prompt-builders.js?v=20260405_ANALYTICS_AI_PROMPT_BUILDERS_1'),
+        true,
+        'admin-studio.html should reference the latest analytics ai-prompt-builder runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-ai-controller.js?v=20260405_ANALYTICS_AI_CONTROLLER_1'),
+        true,
+        'admin-studio.html should reference the latest analytics ai-controller runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-insight-cards.js?v=20260407_ANALYTICS_INSIGHT_CARDS_HELPERS_5'),
+        true,
+        'admin-studio.html should reference the latest analytics insight-card helper runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        true,
+        'admin-studio.html should reference the latest analytics ai/export helper runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-metric-context.js?v=20260405_ANALYTICS_METRIC_CONTEXT_HELPERS_6') < adminStudioHtml.indexOf('admin-analytics.js?v=20260407_ANALYTICS_PRODUCT_SHELL_8'),
+        true,
+        'admin-studio.html should load the analytics metric-context helpers before the main analytics runtime'
+    );
+    assert.equal(
+        adminStudioHtml.indexOf('admin-analytics.js?v=20260407_ANALYTICS_PRODUCT_SHELL_8') < adminStudioHtml.indexOf('js/admin-analytics-workbench.js?v=20260407_ANALYTICS_WORKBENCH_BUNDLE_13'),
+        true,
+        'admin-studio.html should load the analytics workbench helper after the main analytics runtime'
+    );
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-workbench.js?v=20260407_ANALYTICS_WORKBENCH_BUNDLE_13') < adminStudioHtml.indexOf('js/admin-analytics-insight-cards.js?v=20260407_ANALYTICS_INSIGHT_CARDS_HELPERS_5'),
+        true,
+        'admin-studio.html should load the analytics insight-card helper after the workbench helper'
+    );
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-insight-cards.js?v=20260407_ANALYTICS_INSIGHT_CARDS_HELPERS_5') < adminStudioHtml.indexOf('js/admin-analytics-ai-state.js?v=20260405_ANALYTICS_AI_STATE_1'),
+        true,
+        'admin-studio.html should load the analytics ai-state layer after the insight-card helper'
+    );
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-ai-state.js?v=20260405_ANALYTICS_AI_STATE_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-helpers.js?v=20260405_ANALYTICS_AI_HELPERS_1'),
+        true,
+        'admin-studio.html should load the analytics ai helpers after the insight-card helper'
+    );
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-ai-helpers.js?v=20260405_ANALYTICS_AI_HELPERS_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-prompt-builders.js?v=20260405_ANALYTICS_AI_PROMPT_BUILDERS_1'),
+        true,
+        'admin-studio.html should load the analytics ai-prompt builders after the ai helpers'
+    );
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-ai-prompt-builders.js?v=20260405_ANALYTICS_AI_PROMPT_BUILDERS_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-controller.js?v=20260405_ANALYTICS_AI_CONTROLLER_1'),
+        true,
+        'admin-studio.html should load the analytics ai-controller after the ai-prompt builders'
+    );
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-ai-controller.js?v=20260405_ANALYTICS_AI_CONTROLLER_1') < adminStudioHtml.indexOf('js/admin-analytics-export-builders.js?v=20260405_ANALYTICS_EXPORT_BUILDERS_1'),
+        true,
+        'admin-studio.html should load the analytics export-builder helper after the ai-controller'
+    );
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-export-builders.js?v=20260405_ANALYTICS_EXPORT_BUILDERS_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        true,
+        'admin-studio.html should load the analytics ai/export helpers after the main analytics runtime'
+    );
+});
+
+test('analytics admin snapshot bundle consolidates admin summary fetches for operations, comments, and verify', () => {
+    const analyticsSource = readAdminAnalyticsRuntimeSource();
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const markers = [
+        'adminSnapshotBundle: null,',
+        'analyticsDerivedState.adminSnapshotBundle = null;',
+        'async function getAnalyticsAdminSnapshotBundle(options = {}) {',
+        "'adminSnapshotBundle',",
+        "'analytics/snapshot-bundle'",
+        "const bundleSegment = getAnalyticsSnapshotBundleSegment(bundle, 'comments');",
+        "const bundleSegment = getAnalyticsSnapshotBundleSegment(bundle, 'verifyMonitor');",
+        "const paymentsSegment = getAnalyticsSnapshotBundleSegment(bundle, 'payments');",
+        "const ticketsSegment = getAnalyticsSnapshotBundleSegment(bundle, 'tickets');",
+        "view: 'ops'",
+        'createAnalyticsSnapshotBundleSegmentError('
+    ];
+
+    for (const marker of markers) {
+        assert.equal(analyticsSource.includes(marker), true, `analytics admin snapshot bundle should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('admin-analytics.js?v=20260407_ANALYTICS_PRODUCT_SHELL_8'),
+        true,
+        'admin-studio.html should reference the latest analytics snapshot-bundle runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-workbench.js?v=20260407_ANALYTICS_WORKBENCH_BUNDLE_13'),
+        true,
+        'admin-studio.html should reference the latest analytics workbench bundle runtime version'
+    );
+});
+
+test('analytics summary rows bundle consolidates shared table scans across overview, verify, and growth', () => {
+    const analyticsSource = readAdminAnalyticsRuntimeSource();
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const markers = [
+        'summaryRowsBundle: null,',
+        'analyticsDerivedState.summaryRowsBundle = null;',
+        'function buildAnalyticsSummaryRowsBundleQuery(options = {}) {',
+        'async function getAnalyticsSummaryRowsBundle(options = {}) {',
+        "'summaryRowsBundle',",
+        "'analytics/summary-rows-bundle'",
+        "const bundledUnlockRows = getAnalyticsSummaryRowsBundleTable(rowsBundle, 'promptUnlocks');",
+        "const bundledRows = getAnalyticsSummaryRowsBundleTable(rowsBundle, 'verificationLogs');",
+        "const bundledGuestbookMessages = getAnalyticsSummaryRowsBundleTable(rowsBundle, 'guestbookMessages');",
+        "const bundledLedgerRows = getAnalyticsSummaryRowsBundleTable(rowsBundle, 'pointsLedger');"
+    ];
+
+    for (const marker of markers) {
+        assert.equal(analyticsSource.includes(marker), true, `analytics summary rows bundle should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('admin-analytics.js?v=20260407_ANALYTICS_PRODUCT_SHELL_8'),
+        true,
+        'admin-studio.html should reference the latest analytics summary-rows-bundle runtime version'
+    );
+});
+
+test('analytics summary payload bundle lets overview, verify, and growth consume server-built base summaries first', () => {
+    const analyticsSource = readAdminAnalyticsRuntimeSource();
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const markers = [
+        'summaryPayloadBundle: null,',
+        'analyticsDerivedState.summaryPayloadBundle = null;',
+        'async function getAnalyticsSummaryPayloadBundle(options = {}) {',
+        "'summaryPayloadBundle',",
+        "'analytics/summary-payload-bundle'",
+        "const payloadSegment = getAnalyticsSummaryPayloadBundleSegment(payloadBundle, 'overviewBusinessMix');",
+        "const payloadSegment = getAnalyticsSummaryPayloadBundleSegment(payloadBundle, 'verifyServiceSummary');",
+        "const payloadSegment = getAnalyticsSummaryPayloadBundleSegment(payloadBundle, 'growthSummary');",
+        'const productSignals = buildOverviewBusinessMixProductSignals({',
+        'return enrichOverviewBusinessMixSummaryWithProductSignals(',
+        'enrichOverviewBusinessMixSummaryWithEvents(payloadSegment.summary, summaryWindow || {}),',
+        'return enrichVerifyServiceSummaryWithEvents(payloadSegment.summary, summaryWindow || {});',
+        'return enrichGrowthSummaryWithEvents(payloadSegment.summary, summaryWindow || {});'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(analyticsSource.includes(marker), true, `analytics summary payload bundle should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('admin-analytics.js?v=20260407_ANALYTICS_PRODUCT_SHELL_8'),
+        true,
+        'admin-studio.html should reference the latest analytics summary-payload-bundle runtime version'
+    );
+});
+
+test('analytics panel support bundle consolidates channel, content, community, points, and redemption fetches across panels and export', () => {
+    const analyticsSource = readAdminAnalyticsRuntimeSource();
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const markers = [
+        'panelSupportBundle: null,',
+        'analyticsDerivedState.panelSupportBundle = null;',
+        'function buildAnalyticsPanelSupportBundleQuery(options = {}) {',
+        "query.set('topContentLimit', String(ANALYTICS_PANEL_SUPPORT_TOP_CONTENT_LIMIT));",
+        "query.set('pointsLeaderboardLimit', String(ANALYTICS_PANEL_SUPPORT_POINTS_LEADERBOARD_LIMIT));",
+        'async function getAnalyticsPanelSupportBundle(options = {}) {',
+        "'panelSupportBundle',",
+        "'analytics/panel-support-bundle'",
+        'function getAnalyticsPanelSupportBundleSegment(bundle = null, key = \'\') {',
+        "function createAnalyticsPanelSupportBundleSegmentError(segment = null, fallbackMessage = 'Analytics panel support bundle segment failed') {",
+        'async function resolveAnalyticsBundleFirstData(options = {}) {',
+        "segmentKey: 'channelBreakdown',",
+        "segmentKey: 'topContent',",
+        "segmentKey: 'communityStats',",
+        "segmentKey: 'pointsDistribution',",
+        "segmentKey: 'pointsLeaderboard',",
+        "segmentKey: 'redemptionFunnel',",
+        'const [',
+        'channelData,',
+        'communityData,',
+        'topContentData,',
+        'pointsDist,',
+        'pointsLead,',
+        'funnelData,',
+        'fetchChannelBreakdownData(days),',
+        'fetchPointsLeaderboardData(100),'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(analyticsSource.includes(marker), true, `analytics panel support bundle should contain ${marker}`);
+    }
+
+    const removedMarkers = [];
+
+    for (const marker of removedMarkers) {
+        assert.equal(analyticsSource.includes(marker), false, `analytics panel support bundle should no longer contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('admin-analytics.js?v=20260407_ANALYTICS_PRODUCT_SHELL_8'),
+        true,
+        'admin-studio.html should reference the latest analytics panel-support-bundle runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        true,
+        'admin-studio.html should reference the latest analytics ai/export runtime version for panel support bundle consumers'
+    );
+});
+
+test('analytics visual panel bundle consolidates heatmap, conversion, retention, contributors, and geo fetches across panels and metric context', () => {
+    const analyticsSource = readAdminAnalyticsRuntimeSource();
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const markers = [
+        'visualPanelBundle: null,',
+        'analyticsDerivedState.visualPanelBundle = null;',
+        'function buildAnalyticsVisualPanelBundleQuery(options = {}) {',
+        "query.set('weeks', String(weeks));",
+        "query.set('topContributorsLimit', '10');",
+        'async function getAnalyticsVisualPanelBundle(options = {}) {',
+        "'visualPanelBundle',",
+        "'analytics/visual-panel-bundle'",
+        'function getAnalyticsVisualPanelBundleSegment(bundle = null, key = \'\') {',
+        "function createAnalyticsVisualPanelBundleSegmentError(segment = null, fallbackMessage = 'Analytics visual panel bundle segment failed') {",
+        "const activityHeatmapSegment = getAnalyticsVisualPanelBundleSegment(visualBundle, 'activityHeatmap');",
+        "const retentionCohortSegment = getAnalyticsVisualPanelBundleSegment(visualBundle, 'retentionCohort');",
+        "const conversionFunnelSegment = getAnalyticsVisualPanelBundleSegment(visualBundle, 'conversionFunnel');",
+        'const conversionRows = conversionFunnelSegment?.ok && Array.isArray(conversionFunnelSegment.payload)',
+        'async function resolveAnalyticsBundleFirstData(options = {}) {',
+        'async function fetchActivityHeatmapData(days = getAnalyticsRangeDays(30)) {',
+        'async function fetchConversionFunnelData(days = getAnalyticsRangeDays(30)) {',
+        'async function fetchRetentionCohortData(weeks = getAnalyticsCohortWeeks(), days = getAnalyticsRangeDays()) {',
+        'async function fetchTopContributorsData(limit = 10) {',
+        'async function fetchGeoDistributionData() {',
+        "segmentKey: 'activityHeatmap',",
+        "segmentKey: 'conversionFunnel',",
+        "segmentKey: 'retentionCohort',",
+        "segmentKey: 'topContributors',",
+        "segmentKey: 'geoDistribution',",
+        'mapPayload: (payload) => ({'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(analyticsSource.includes(marker), true, `analytics visual panel bundle should contain ${marker}`);
+    }
+
+    const removedMarkers = [
+        "callAnalyticsRpcWithFallback('get_activity_heatmap'",
+        "callAnalyticsRpcWithFallback('get_conversion_funnel_v2'",
+        "callAnalyticsRpcWithFallback('get_conversion_funnel'",
+        "rpc('get_retention_cohort'",
+        "rpc('get_top_contributors'",
+        "rpc('get_geo_distribution_by_site'"
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(analyticsSource.includes(marker), false, `analytics visual panel bundle should no longer contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('admin-analytics.js?v=20260407_ANALYTICS_PRODUCT_SHELL_8'),
+        true,
+        'admin-studio.html should reference the latest analytics visual-panel-bundle runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-metric-context.js?v=20260405_ANALYTICS_METRIC_CONTEXT_HELPERS_6'),
+        true,
+        'admin-studio.html should reference the latest analytics metric-context runtime version for visual bundle consumers'
+    );
+});
+
+test('analytics trend series bundle consolidates trend fetches across charts, ai prediction, and export', () => {
+    const analyticsSource = readAdminAnalyticsRuntimeSource();
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const markers = [
+        'trendSeriesBundle: null,',
+        'analyticsDerivedState.trendSeriesBundle = null;',
+        'function buildAnalyticsTrendSeriesBundleQuery(options = {}) {',
+        'async function getAnalyticsTrendSeriesBundle(options = {}) {',
+        "'trendSeriesBundle',",
+        "'analytics/trend-series-bundle'",
+        'function getAnalyticsTrendSeriesBundleSegment(bundle = null, key = \'\') {',
+        "function createAnalyticsTrendSeriesBundleSegmentError(segment = null, fallbackMessage = 'Analytics trend series bundle segment failed') {",
+        'async function resolveAnalyticsBundleFirstData(options = {}) {',
+        'async function fetchUserTrendData(days = getAnalyticsRangeDays(30)) {',
+        'async function fetchContentTrendData(days = getAnalyticsRangeDays(30)) {',
+        'async function fetchRevenueTrendData(days = getAnalyticsRangeDays(30)) {',
+        "segmentKey: 'userTrend',",
+        "segmentKey: 'contentTrend',",
+        "segmentKey: 'revenueTrend',",
+        'const data = await fetchUserTrendData(days);',
+        'const data = await fetchContentTrendData(days);',
+        'const [',
+        'overviewData,',
+        'userTrendData,',
+        'contentTrendData,',
+        'revenueTrendData,',
+        'fetchUserTrendData(days),',
+        'fetchRevenueTrendData(days),'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(analyticsSource.includes(marker), true, `analytics trend series bundle should contain ${marker}`);
+    }
+
+    const fallbackMarkers = [
+        "directLoader: () => loadAnalyticsTrendSeriesDirect('get_user_trend', days)",
+        "directLoader: () => loadAnalyticsTrendSeriesDirect('get_content_trend', days)",
+        "directLoader: () => loadAnalyticsTrendSeriesDirect('get_revenue_trend', days)"
+    ];
+
+    for (const marker of fallbackMarkers) {
+        assert.equal(analyticsSource.includes(marker), true, `analytics trend series bundle should keep resilient direct fallback ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('admin-analytics.js?v=20260407_ANALYTICS_PRODUCT_SHELL_8'),
+        true,
+        'admin-studio.html should reference the latest analytics trend-series-bundle runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        true,
+        'admin-studio.html should reference the latest analytics ai/export runtime version for trend bundle consumers'
+    );
+});
+
+test('analytics ai and export helpers reuse the shared summary payload support bundle', () => {
+    const analyticsSource = readAdminAnalyticsRuntimeSource();
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const markers = [
+        'async function getAnalyticsAIExportSupportBundle(options = {}) {',
+        'const summaryWindowOverride = options.summaryWindowData || null;',
+        'const [payloadBundleResult, operationsHealthResult, summaryContextBundleResult] = await Promise.allSettled([',
+        "getAnalyticsSummaryPayloadSegmentSummary(payloadBundle, 'overviewBusinessMix')",
+        "getAnalyticsSummaryPayloadSegmentSummary(payloadBundle, 'verifyServiceSummary')",
+        "getAnalyticsSummaryPayloadSegmentSummary(payloadBundle, 'growthSummary')",
+        'const supportBundle = await getAnalyticsAIExportSupportBundle({',
+        'overview_business_mix: supportBundle.overviewBusinessMix || null,',
+        'const summaryContextBundle = supportBundle.summaryContextBundle || {};',
+        'const overviewBusinessMix = supportBundle.overviewBusinessMix || null;'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(analyticsSource.includes(marker), true, `analytics ai/export support bundle should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        true,
+        'admin-studio.html should reference the latest analytics ai/export shared-support runtime version'
+    );
+});
+
+test('analytics ai prompt builders isolate summary enrichment and prompt assembly from the ai shell', () => {
+    const analyticsSource = readAdminAnalyticsRuntimeSource();
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const markers = [
+        'function buildAnalyticsAISummaryData(data = null, supportBundle = {}) {',
+        'function buildAnalyticsAIPromptContext(aiSummaryData = null) {',
+        'function buildAnalyticsInsightPrompt(aiSummaryData = null, options = {}) {',
+        'function buildAnalyticsPredictionPrompt(trendSeries = [], days = 30) {',
+        'window.AdminAnalyticsAIPromptBuilders = Object.assign({}, window.AdminAnalyticsAIPromptBuilders || {}, {',
+        'aiSummaryData = buildAnalyticsAISummaryData(data, supportBundle);',
+        'const prompt = buildAnalyticsInsightPrompt(aiSummaryData, { rangeLabel });',
+        'const prompt = buildAnalyticsPredictionPrompt(trendSeries, days);'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(analyticsSource.includes(marker), true, `analytics ai prompt builders should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-ai-prompt-builders.js?v=20260405_ANALYTICS_AI_PROMPT_BUILDERS_1'),
+        true,
+        'admin-studio.html should reference the latest analytics ai-prompt-builder runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        true,
+        'admin-studio.html should reference the latest analytics ai shell runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-ai-prompt-builders.js?v=20260405_ANALYTICS_AI_PROMPT_BUILDERS_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        true,
+        'admin-studio.html should load the analytics ai-prompt builders before the ai shell runtime'
+    );
+});
+
+test('analytics ai state isolates cache and debounce globals from the main analytics runtime', () => {
+    const analyticsSource = readAdminAnalyticsRuntimeSource();
+    const mainAnalyticsSource = readRepoFile('admin-analytics.js');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const markers = [
+        'const analyticsAIState = {',
+        'function getAnalyticsAIState() {',
+        'function getAnalyticsInsightCacheValue() {',
+        'function getAnalyticsInsightCacheTimeValue() {',
+        'function getAnalyticsInsightCacheKeyValue() {',
+        'function getAnalyticsInsightCacheDuration() {',
+        'function setAnalyticsInsightCacheValue(value = null, contextKey = getAnalyticsAIContextKey(), timestamp = Date.now()) {',
+        'function isAnalyticsInsightDebouncing() {',
+        'function setAnalyticsInsightDebouncing(isActive) {',
+        'function resetAnalyticsAICache() {',
+        'window.AdminAnalyticsAIState = Object.assign({}, window.AdminAnalyticsAIState || {}, {'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(analyticsSource.includes(marker), true, `analytics ai state should contain ${marker}`);
+    }
+
+    const removedMainMarkers = [
+        'let aiInsightCache = null;',
+        'let aiInsightCacheTime = 0;',
+        'let aiInsightCacheKey = \'\';',
+        'const AI_CACHE_DURATION = 5 * 60 * 1000;',
+        'let aiInsightDebounce = false;'
+    ];
+
+    for (const marker of removedMainMarkers) {
+        assert.equal(mainAnalyticsSource.includes(marker), false, `admin-analytics.js should no longer contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-ai-state.js?v=20260405_ANALYTICS_AI_STATE_1'),
+        true,
+        'admin-studio.html should reference the latest analytics ai-state runtime version'
+    );
+});
+
+test('analytics ai dom helpers isolate workspace queries and binding from the ai shell', () => {
+    const analyticsSource = readAdminAnalyticsRuntimeSource();
+    const lifecycleSource = readRepoFile('js/admin-analytics-lifecycle.js');
+    const aiShellSource = readRepoFile('js/admin-analytics-ai-export.js');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const markers = [
+        'const ANALYTICS_AI_INSIGHT_BUTTON_ID = \'generateInsightBtn\';',
+        'const ANALYTICS_AI_PREDICTION_CONTENT_ID = \'aiPredictionContent\';',
+        'const ANALYTICS_AI_BINDING_FLAG = \'analyticsAiBound\';',
+        'function getAnalyticsAIInsightElements() {',
+        'function getAnalyticsAIPredictionContainer() {',
+        'function bindAnalyticsAIWorkspaceEvents() {',
+        "button.dataset[ANALYTICS_AI_BINDING_FLAG] === '1'",
+        "button.addEventListener('click', generateAIInsight);",
+        'window.AdminAnalyticsAIDom = Object.assign({}, window.AdminAnalyticsAIDom || {}, {',
+        'const { button: btn, content } = getAnalyticsAIInsightElements();',
+        'const container = getAnalyticsAIPredictionContainer();'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(analyticsSource.includes(marker), true, `analytics ai dom helpers should contain ${marker}`);
+    }
+
+    const removedShellMarkers = [
+        "document.getElementById('generateInsightBtn')",
+        "document.getElementById('aiPredictionContent')"
+    ];
+
+    for (const marker of removedShellMarkers) {
+        assert.equal(aiShellSource.includes(marker), false, `analytics ai shell should no longer contain ${marker}`);
+    }
+
+    assert.equal(
+        lifecycleSource.includes('bindAnalyticsAIWorkspaceEvents();'),
+        true,
+        'analytics lifecycle helper should bind the analytics ai workspace via the dom helper'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-ai-dom.js?v=20260405_ANALYTICS_AI_DOM_1'),
+        true,
+        'admin-studio.html should reference the latest analytics ai-dom runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-ai-state.js?v=20260405_ANALYTICS_AI_STATE_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-dom.js?v=20260405_ANALYTICS_AI_DOM_1'),
+        true,
+        'admin-studio.html should load the analytics ai-dom layer after the ai-state layer'
+    );
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-ai-dom.js?v=20260405_ANALYTICS_AI_DOM_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-helpers.js?v=20260405_ANALYTICS_AI_HELPERS_1'),
+        true,
+        'admin-studio.html should load the analytics ai-dom layer before the ai-helper layer'
+    );
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-ai-dom.js?v=20260405_ANALYTICS_AI_DOM_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        true,
+        'admin-studio.html should load the analytics ai-dom layer before the ai shell runtime'
+    );
+});
+
+test('analytics ai controller isolates cache, health checks, and loading state from the ai shell', () => {
+    const analyticsSource = readAdminAnalyticsRuntimeSource();
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const markers = [
+        'function renderAnalyticsInsightDebounceMessage(content) {',
+        'function getAnalyticsInsightCacheTtlRemaining(now = Date.now()) {',
+        'function syncAnalyticsInsightCacheContext(contextKey = getAnalyticsAIContextKey()) {',
+        'function renderAnalyticsCachedInsight(content, contextKey = getAnalyticsAIContextKey(), now = Date.now()) {',
+        'async function ensureAnalyticsAIReady(options = {}) {',
+        'function beginAnalyticsInsightDebounce(durationMs = 5000) {',
+        'function setAnalyticsInsightLoadingState(button, content, isLoading) {',
+        'function writeAnalyticsInsightCache(report, summaryData = null, contextKey = getAnalyticsAIContextKey()) {',
+        'function renderAnalyticsInsightResult(content, reportText, options = {}) {',
+        'function renderAnalyticsInsightError(content, error) {',
+        'function setAnalyticsPredictionLoadingState(container, isLoading = true) {',
+        'function renderAnalyticsPredictionError(container, error) {',
+        'window.AdminAnalyticsAIController = Object.assign({}, window.AdminAnalyticsAIController || {}, {',
+        'renderAnalyticsInsightDebounceMessage(content);',
+        'syncAnalyticsInsightCacheContext(currentCacheKey);',
+        'if (renderAnalyticsCachedInsight(content, currentCacheKey, now)) {',
+        'if (!await ensureAnalyticsAIReady({ content })) {',
+        'if (!beginAnalyticsInsightDebounce()) {',
+        'setAnalyticsInsightLoadingState(btn, content, true);',
+        'const cachedInsight = writeAnalyticsInsightCache(',
+        'renderAnalyticsInsightResult(content, cachedInsight.report, {',
+        'renderAnalyticsInsightError(content, err);',
+        'if (!await ensureAnalyticsAIReady({ content: container })) {',
+        'setAnalyticsPredictionLoadingState(container, true);',
+        'renderAnalyticsPredictionError(container, err);'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(analyticsSource.includes(marker), true, `analytics ai controller should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-ai-controller.js?v=20260405_ANALYTICS_AI_CONTROLLER_1'),
+        true,
+        'admin-studio.html should reference the latest analytics ai-controller runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        true,
+        'admin-studio.html should reference the latest analytics ai shell runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-ai-controller.js?v=20260405_ANALYTICS_AI_CONTROLLER_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        true,
+        'admin-studio.html should load the analytics ai-controller before the ai shell runtime'
+    );
+});
+
+test('analytics ai helpers isolate fallback insight and prediction rendering from the orchestration shell', () => {
+    const analyticsSource = readAdminAnalyticsRuntimeSource();
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const markers = [
+        'function hasAdminAI() {',
+        'function isGeminiQuotaError(error) {',
+        "function buildQuotaFallbackHint(label = '已切换为本地估算') {",
+        'function getAnalyticsInsightCacheReport(cacheValue = getAnalyticsInsightCacheValue()) {',
+        'function renderAIInsightMarkup(reportText, options = {}) {',
+        'function buildLocalAnalyticsInsight(data) {',
+        'function buildLocalPrediction(values, horizon = 7) {',
+        'function renderPredictionMarkup(predictions, note = \'\') {',
+        'function formatAIResponse(text) {',
+        'window.AdminAnalyticsAIHelpers = Object.assign({}, window.AdminAnalyticsAIHelpers || {}, {'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(analyticsSource.includes(marker), true, `analytics ai helpers should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-ai-helpers.js?v=20260405_ANALYTICS_AI_HELPERS_1'),
+        true,
+        'admin-studio.html should reference the latest analytics ai-helper runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        true,
+        'admin-studio.html should reference the latest analytics ai shell runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-ai-helpers.js?v=20260405_ANALYTICS_AI_HELPERS_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        true,
+        'admin-studio.html should load the analytics ai helpers before the ai shell runtime'
+    );
+});
+
+test('analytics export builders isolate csv and excel assembly from the ai runtime shell', () => {
+    const analyticsSource = readAdminAnalyticsRuntimeSource();
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const markers = [
+        'function exportAsCSV(data) {',
+        'function exportAsExcel(data) {',
+        'window.exportAsCSV = exportAsCSV;',
+        'window.exportAsExcel = exportAsExcel;',
+        "if (typeof window.exportAsCSV !== 'function') {",
+        "if (typeof window.exportAsExcel !== 'function') {"
+    ];
+
+    for (const marker of markers) {
+        assert.equal(analyticsSource.includes(marker), true, `analytics export builders should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-export-builders.js?v=20260405_ANALYTICS_EXPORT_BUILDERS_1'),
+        true,
+        'admin-studio.html should reference the latest analytics export-builder runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        true,
+        'admin-studio.html should reference the latest analytics ai shell runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.indexOf('js/admin-analytics-export-builders.js?v=20260405_ANALYTICS_EXPORT_BUILDERS_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        true,
+        'admin-studio.html should load the analytics export builders before the ai shell runtime'
+    );
 });
 
 test('prompt image delivery optimizes admin previews and cacheable fallback uploads', () => {
@@ -8637,10 +11065,181 @@ test('prompt image delivery optimizes admin previews and cacheable fallback uplo
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-studio.js?v=20260404_ANALYTICS_ACTION_ROUTING_2'),
+        adminStudioHtml.includes('admin-studio.js?v=20260406_ADMIN_ACCESS_FORCE_REFRESH_3'),
         true,
         'admin-studio.html should reference the latest analytics action routing runtime version'
     );
+});
+
+test('analytics ui polish keeps funnel hints visible, top-content and contributor titles drill down, and leaderboard user drill-down actionable', () => {
+    const adminStudioStyles = readRepoFile('admin-studio.css');
+    const analyticsPanelLoadersSource = readRepoFile('js/admin-analytics-panel-loaders.js');
+    const adminStudioScript = readRepoFile('admin-studio.js');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const styleMarkers = [
+        '#conversionFunnel.chart-body {',
+        '#conversionFunnel .analytics-funnel-chart-pane {',
+        '#pointsLeaderboard .leaderboard-user-link {',
+        '.top-content-item__title-btn {',
+        '.contributor-name-btn {',
+        '.analytics-recommendation-item__actions {',
+        '.analytics-compact-item__actions {',
+        'justify-content: flex-end;',
+        'margin-top: 12px;'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
+    }
+
+    const panelMarkers = [
+        'class="top-content-item__title top-content-item__title-btn"',
+        'class="contributor-name contributor-name-btn"',
+        'data-admin-action="analytics-open-user-detail"',
+        'class="leaderboard-user-link"',
+        'class="analytics-funnel-chart-pane"',
+        'class="analytics-funnel-chart-pane analytics-funnel-chart-pane--empty"'
+    ];
+
+    for (const marker of panelMarkers) {
+        assert.equal(analyticsPanelLoadersSource.includes(marker), true, `admin-analytics-panel-loaders.js should contain ${marker}`);
+    }
+
+    assert.equal(
+        analyticsPanelLoadersSource.includes('class="btn-view-context btn-view-context--icon"'),
+        false,
+        'admin-analytics-panel-loaders.js should no longer render a dedicated top-content context icon button'
+    );
+
+    assert.equal(
+        analyticsPanelLoadersSource.includes('</i> 看上下文'),
+        false,
+        'admin-analytics-panel-loaders.js should no longer render the top-content context button copy'
+    );
+
+    assert.equal(adminStudioScript.includes("case 'analytics-open-content-commerce-detail':"), true, 'admin-studio.js should delegate content-commerce detail drill-down actions');
+    assert.equal(adminStudioScript.includes("case 'analytics-open-user-detail':"), true, 'admin-studio.js should delegate analytics leaderboard user drill-down actions');
+    assert.equal(adminStudioScript.includes('window.tryOpenOpsAlertWorkspaceUserModal'), true, 'admin-studio.js should reuse the workbench user-detail opener for analytics drill-down');
+    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260407_ANALYTICS_CENTER_SHELL_83'), true, 'admin-studio.html should reference the latest analytics ui polish stylesheet version');
+    assert.equal(adminStudioHtml.includes('js/admin-analytics-panel-loaders.js?v=20260407_ANALYTICS_PANEL_LOADERS_70'), true, 'admin-studio.html should reference the latest analytics panel loader runtime version');
+    assert.equal(adminStudioHtml.includes('admin-studio.js?v=20260406_ADMIN_ACCESS_FORCE_REFRESH_3'), true, 'admin-studio.html should reference the latest admin studio action routing version');
+});
+
+test('analytics user drill-down carries commerce context into the user detail modal', () => {
+    const analyticsPanelLoadersSource = readRepoFile('js/admin-analytics-panel-loaders.js');
+    const adminStudioScript = readRepoFile('admin-studio.js');
+    const adminUsersSource = readRepoFile('admin-users.js');
+    const adminStudioStyles = readRepoFile('admin-studio.css');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const panelMarkers = [
+        'function buildAnalyticsUserDetailContext(context = {}) {',
+        'function buildAnalyticsOpenUserDetailAttrs(userId = \'\', context = null) {',
+        "sourceLabel: '用户增长 / 商品影响用户层'",
+        "sourceLabel: '商品详情 / 购买用户'",
+        "sourceLabel: '商品详情 / 最近订单'",
+        'data-analytics-context="'
+    ];
+
+    for (const marker of panelMarkers) {
+        assert.equal(analyticsPanelLoadersSource.includes(marker), true, `admin-analytics-panel-loaders.js should contain ${marker}`);
+    }
+
+    const studioMarkers = [
+        "case 'analytics-open-user-detail': {",
+        "const analyticsContext = typeof parseAnalyticsActionContext === 'function'",
+        "case 'users-open-analytics-destination': {",
+        'window.openUserModal?.(userId, {',
+        'analyticsContext',
+        'window.openAnalyticsDestination?.(destination, analyticsContext);'
+    ];
+
+    for (const marker of studioMarkers) {
+        assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
+    }
+
+    const userMarkers = [
+        'analyticsContext: null,',
+        'currentModalData.analyticsContext = normalizeUserAnalyticsContext(options?.analyticsContext || null);',
+        'function normalizeUserAnalyticsContext(rawContext = null) {',
+        'function buildUserAnalyticsTicketsContext(context = currentModalData?.analyticsContext, user = currentModalUser) {',
+        'function buildUserAnalyticsShopOrdersContext(context = currentModalData?.analyticsContext, user = currentModalUser) {',
+        "const feedbackScope = String(parsed.feedbackScope || '').trim().toLowerCase();",
+        "feedbackScope: normalizedContext.feedbackScope || 'user',",
+        'function buildUserAnalyticsTicketsActionAttrs(context = currentModalData?.analyticsContext, user = currentModalUser) {',
+        'function buildUserAnalyticsShopOrdersActionAttrs(context = currentModalData?.analyticsContext, user = currentModalUser) {',
+        'function buildUserAnalyticsContextBlock(context = currentModalData?.analyticsContext) {',
+        'data-admin-action="users-open-analytics-destination"',
+        '看商城订单',
+        '看售后工单'
+    ];
+
+    for (const marker of userMarkers) {
+        assert.equal(adminUsersSource.includes(marker), true, `admin-users.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.user-analytics-context {',
+        '.user-analytics-context__chip {',
+        '.user-analytics-context__actions {',
+        'flex-wrap: wrap;',
+        'gap: 8px;'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
+    }
+
+    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260407_ANALYTICS_CENTER_SHELL_83'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
+    assert.equal(adminStudioHtml.includes('admin-users.js?v=20260407_ADMIN_USERS_ANALYTICS_CONTEXT_8'), true, 'admin-studio.html should reference the latest admin users runtime version');
+    assert.equal(adminStudioHtml.includes('js/admin-analytics-panel-loaders.js?v=20260407_ANALYTICS_PANEL_LOADERS_70'), true, 'admin-studio.html should reference the latest analytics panel loader runtime version');
+    assert.equal(adminStudioHtml.includes('admin-studio.js?v=20260406_ADMIN_ACCESS_FORCE_REFRESH_3'), true, 'admin-studio.html should reference the latest admin studio action routing version');
+    assert.equal(adminUsersSource.includes('const feedbackEntries = typeof window.getAnalyticsResolutionFeedbackEntries === \'function\''), true, 'admin-users.js should read analytics resolution feedback entries for commerce trace context');
+    assert.equal(adminUsersSource.includes('users-commerce-trace__feedback'), true, 'admin-users.js should render a recent handling feedback block in commerce traces');
+});
+
+test('user detail tabs surface product commerce trace when opened from analytics commerce drill-down', () => {
+    const adminUsersSource = readRepoFile('admin-users.js');
+    const adminStudioStyles = readRepoFile('admin-studio.css');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const userMarkers = [
+        'function buildUserAnalyticsCommerceTrace(tabName = \'\', rawData = []) {',
+        "title = '商品承接链 / 支付记录';",
+        "title = '商品承接链 / 积分流水';",
+        "${buildUserAnalyticsCommerceTrace('ledger', data)}",
+        "${buildUserAnalyticsCommerceTrace('payments', data)}",
+        "${buildUserAnalyticsCommerceTrace('activity', data)}",
+        'isAdminPaymentSettled(item)',
+        'isAdminShopLedgerReason(item?.reason, item?.referenceId)',
+        "title = '商品承接链 / 活动记录';",
+        'function buildUserAnalyticsTicketsContext(context = currentModalData?.analyticsContext, user = currentModalUser) {',
+        'function buildUserAnalyticsShopOrdersContext(context = currentModalData?.analyticsContext, user = currentModalUser) {',
+        "feedbackScope: normalizedContext.feedbackScope || 'user',",
+        "feedbackEntityType: normalizedContext.feedbackEntityType || 'user',",
+        '看商城订单',
+        '看售后工单'
+    ];
+
+    for (const marker of userMarkers) {
+        assert.equal(adminUsersSource.includes(marker), true, `admin-users.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.users-commerce-trace {',
+        '.users-commerce-trace__chip {',
+        '.users-commerce-trace__actions {',
+        'flex-wrap: wrap;',
+        'gap: 8px;'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
+    }
+
+    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260407_ANALYTICS_CENTER_SHELL_83'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
+    assert.equal(adminStudioHtml.includes('admin-users.js?v=20260407_ADMIN_USERS_ANALYTICS_CONTEXT_8'), true, 'admin-studio.html should reference the latest admin users runtime version');
 });
 
 test('payments runtime controls, site filter, and admin chat menu route through delegated actions', () => {
@@ -8689,6 +11288,12 @@ test('payments runtime controls, site filter, and admin chat menu route through 
         "case 'payments-handle-anomaly-action':",
         "case 'payments-go-to-page':",
         "case 'payments-set-exception-topic-filter':",
+        "case 'payments-priority-focus-order':",
+        "case 'payments-priority-focus-topic':",
+        "case 'payments-priority-focus-ops':",
+        "case 'tickets-priority-open':",
+        "case 'tickets-priority-resolve':",
+        "case 'tickets-priority-reject':",
         "case 'site-filter-toggle-dropdown':",
         "case 'site-filter-select':"
     ];
@@ -8696,6 +11301,8 @@ test('payments runtime controls, site filter, and admin chat menu route through 
     for (const marker of adminScriptMarkers) {
         assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
     }
+
+    assert.equal(siteFilterSource.includes("includeExperiments: true"), false, 'js/admin-site-filter.js should not auto-load analytics experiments on site change');
 });
 
 test('payments runtime renderers externalize tooltip, tab, and trend styling', () => {
@@ -8730,7 +11337,25 @@ test('payments runtime renderers externalize tooltip, tab, and trend styling', (
         'paymentsTrendAnomalyGradient-',
         'function renderLoadingSkeletonForTab(tabId = state.activeTab) {',
         'function hasRenderedContentForTab(tabId = state.activeTab) {',
-        'class="payments-table payments-table-skeleton" aria-hidden="true"'
+        'class="payments-table payments-table-skeleton" aria-hidden="true"',
+        'function buildAnalyticsIssueSummaryState(data = {}, context = state.workbenchContext) {',
+        'function buildAnalyticsPrioritySummaryState(data = state.summary, focus = resolveAnalyticsPriorityFocusKind(data), context = state.workbenchContext) {',
+        'function buildShopOrdersReturnContext(context = state.workbenchContext) {',
+        'function buildShopOrdersReturnAttrs(context = state.workbenchContext, options = {}) {',
+        'function buildUserCommerceReturnAttrs(context = state.workbenchContext) {',
+        'function buildContentCommerceReturnContext(context = state.workbenchContext) {',
+        'function renderAnalyticsIssueSummary(data = state.summary, context = state.workbenchContext) {',
+        'function renderAnalyticsPrioritySummary(data = state.summary, context = state.workbenchContext) {',
+        'async function focusAnalyticsIssueSummary(kind = \'\') {',
+        'async function focusAnalyticsPrioritySummary(type = \'\', targetId = \'\') {',
+        'data-admin-action="payments-issue-summary-focus"',
+        'data-admin-action="payments-priority-focus-order"',
+        'data-admin-action="analytics-open-destination"',
+        '回订单承接链',
+        '回用户承接链',
+        '回内容带货详情',
+        'class="admin-workbench-priority-item__recommendation"',
+        'data-admin-action="payments-handle-anomaly-action"'
     ];
 
     for (const marker of runtimeMarkers) {
@@ -8746,7 +11371,12 @@ test('payments runtime renderers externalize tooltip, tab, and trend styling', (
         '.payments-refund-topic-card {',
         '.payments-trend-skeleton {',
         '.payments-kpi-card-skeleton .payments-kpi-main {',
-        '.payments-cleanup-note--skeleton {'
+        '.payments-cleanup-note--skeleton {',
+        '.admin-workbench-context-note__chip--action {',
+        '.admin-workbench-priority-list {',
+        '.admin-workbench-priority-item__btn {',
+        '.admin-workbench-priority-item__rank {',
+        '.admin-workbench-priority-item__recommendation {'
     ];
 
     for (const marker of styleMarkers) {
@@ -9117,7 +11747,6 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         'async function runHomepageAdminSmoke() {',
         'async function runAdminTicketsSmoke() {',
         'async function runUserModalSmoke() {',
-        'async function runExperimentModalSmoke() {',
         'async function runAdminCommentsSmoke() {',
         'async function runAdminChatSmoke() {',
         'async function runNotificationSmoke() {',
@@ -9131,7 +11760,6 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         '客服工作台队列总览已渲染',
         '快捷回复点击后会回填插值正文',
         '用户详情弹窗支持点击外部关闭',
-        'A/B 实验弹窗支持点击外部关闭',
         '首页模块会按站点加载配置',
         '页脚显隐也通过 homepage_config 保存',
         '切换站点后首页配置不会串站',
@@ -9395,4 +12023,28 @@ test('announcement settings panels keep the preview vertically centered and matc
         /#settings-view-notifications \.announcement-editor-side\s*\{[\s\S]*height:\s*100%;/,
         'admin-studio.css should let the announcement editor card stretch to match the preview column height'
     );
+});
+
+test('analytics admin fetch warms the admin cookie session before product bundle requests', () => {
+    const analyticsSource = readRepoFile('admin-analytics.js');
+    const lifecycleSource = readRepoFile('js/admin-analytics-lifecycle.js');
+
+    const analyticsMarkers = [
+        'async function ensureAnalyticsAdminCookieSession(options = {}) {',
+        'await ensureAnalyticsAdminCookieSession();',
+        "credentials: 'same-origin'",
+        "window.adminStudioSessionGranted = Boolean(sessionResult?.ok);",
+        "...(!hasAdminCookieSession ? (await getAnalyticsAdminAuthHeaders()) : { 'Content-Type': 'application/json' })",
+        'forceRefresh: true',
+        'window.AdminAccess?.clearCachedAdminStudioSession?.();',
+        'const shouldRetryAuth = (Number(response.status || 0) === 401 || Number(response.status || 0) === 403)'
+    ];
+
+    for (const marker of analyticsMarkers) {
+        assert.equal(
+            analyticsSource.includes(marker) || lifecycleSource.includes(marker),
+            true,
+            `analytics admin bundle auth flow should contain ${marker}`
+        );
+    }
 });

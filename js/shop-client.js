@@ -19,8 +19,6 @@ function trackShopAnalyticsEvent(eventName, payload = {}, options = {}) {
         entityId: payload.entityId || null,
         eventValue: payload.eventValue ?? null,
         pointsDelta: payload.pointsDelta ?? null,
-        experimentId: payload.experimentId ?? null,
-        variantId: payload.variantId ?? null,
         metadata
     };
 
@@ -31,6 +29,162 @@ function trackShopAnalyticsEvent(eventName, payload = {}, options = {}) {
     void Promise.resolve(trackingPromise).catch((error) => {
         console.debug('[ShopAnalytics] Track failed:', eventName, error?.message || error);
     });
+}
+
+function normalizeShopTrackingText(value, maxLength = 160) {
+    return String(value || '').trim().slice(0, Math.max(0, maxLength));
+}
+
+function parseShopTrackingUrl(value = '') {
+    const rawValue = normalizeShopTrackingText(value, 2000);
+    if (!rawValue) {
+        return null;
+    }
+
+    try {
+        return new URL(rawValue, window.location.origin);
+    } catch (_error) {
+        return null;
+    }
+}
+
+function inferShopSourcePageKeyFromUrl(urlObj) {
+    if (!urlObj) {
+        return '';
+    }
+
+    const currentHost = normalizeShopTrackingText(window.location.hostname || '', 255).toLowerCase();
+    const targetHost = normalizeShopTrackingText(urlObj.hostname || '', 255).toLowerCase();
+    if (targetHost && currentHost && targetHost !== currentHost) {
+        return 'external';
+    }
+
+    const pathname = normalizeShopTrackingText(urlObj.pathname || '/', 255).toLowerCase();
+    if (!pathname || pathname === '/' || pathname.endsWith('/index.html')) {
+        return 'home';
+    }
+    if (pathname.includes('prompts')) {
+        return 'prompts';
+    }
+    if (pathname.includes('shop')) {
+        return 'shop';
+    }
+    if (pathname.includes('verify')) {
+        return 'verify';
+    }
+    if (pathname.includes('guestbook')) {
+        return 'guestbook';
+    }
+
+    return normalizeShopTrackingText(pathname.split('/').pop()?.replace(/\.html?$/i, '') || '', 80);
+}
+
+function readShopPromptIdFromUrl(urlObj) {
+    if (!urlObj?.searchParams) {
+        return '';
+    }
+
+    const searchValue = normalizeShopTrackingText(
+        urlObj.searchParams.get('prompt_id')
+        || urlObj.searchParams.get('promptId')
+        || urlObj.searchParams.get('id')
+        || '',
+        160
+    );
+    if (searchValue) {
+        return searchValue;
+    }
+
+    const pageKey = inferShopSourcePageKeyFromUrl(urlObj);
+    if (pageKey !== 'prompts') {
+        return '';
+    }
+
+    const normalizedHash = normalizeShopTrackingText(
+        decodeURIComponent(String(urlObj.hash || '').replace(/^#/, '')),
+        160
+    );
+    if (!normalizedHash) {
+        return '';
+    }
+
+    const hashMatch = normalizedHash.match(/^(?:prompt-)?([A-Za-z0-9_-]+)$/);
+    return hashMatch ? normalizeShopTrackingText(hashMatch[1], 160) : '';
+}
+
+function inferShopSourceChannelFromUrl(urlObj) {
+    if (!urlObj) {
+        return '';
+    }
+
+    if (readShopPromptIdFromUrl(urlObj)) {
+        return 'prompt_content';
+    }
+
+    const pageKey = inferShopSourcePageKeyFromUrl(urlObj);
+    if (pageKey === 'home') {
+        return 'homepage';
+    }
+    if (pageKey === 'prompts') {
+        return 'prompt_content';
+    }
+    if (pageKey === 'guestbook') {
+        return 'guestbook';
+    }
+    if (pageKey === 'verify') {
+        return 'verify';
+    }
+    if (pageKey === 'external') {
+        return 'external';
+    }
+    if (pageKey === 'shop') {
+        return urlObj.searchParams?.get('category')
+            ? 'shop_category'
+            : 'shop_storefront';
+    }
+
+    return pageKey || 'shop_storefront';
+}
+
+function resolveShopSourceContext() {
+    const currentUrl = parseShopTrackingUrl(window.location.href);
+    const referrerUrl = parseShopTrackingUrl(document.referrer || '');
+    const referrerPage = inferShopSourcePageKeyFromUrl(referrerUrl);
+    const currentPage = inferShopSourcePageKeyFromUrl(currentUrl) || 'shop';
+    const sourcePromptId = readShopPromptIdFromUrl(currentUrl) || readShopPromptIdFromUrl(referrerUrl) || null;
+    const sourcePage = referrerPage && referrerPage !== 'shop'
+        ? referrerPage
+        : currentPage;
+    const sourceChannel = sourcePromptId
+        ? 'prompt_content'
+        : (inferShopSourceChannelFromUrl(referrerUrl) || inferShopSourceChannelFromUrl(currentUrl) || 'shop_storefront');
+
+    return {
+        sourcePage: normalizeShopTrackingText(sourcePage || 'shop', 80) || 'shop',
+        sourceChannel: normalizeShopTrackingText(sourceChannel || 'shop_storefront', 80) || 'shop_storefront',
+        sourcePromptId: sourcePromptId ? normalizeShopTrackingText(sourcePromptId, 160) : null
+    };
+}
+
+function buildShopTrackingMetadata(baseMetadata = {}, sourceContext = {}) {
+    const metadata = {
+        ...(baseMetadata && typeof baseMetadata === 'object' && !Array.isArray(baseMetadata) ? baseMetadata : {})
+    };
+    const normalizedSourcePage = normalizeShopTrackingText(sourceContext?.sourcePage || '', 80);
+    const normalizedSourceChannel = normalizeShopTrackingText(sourceContext?.sourceChannel || '', 80);
+    const normalizedSourcePromptId = normalizeShopTrackingText(sourceContext?.sourcePromptId || '', 160);
+
+    if (normalizedSourcePage) {
+        metadata.source_page = normalizedSourcePage;
+    }
+    if (normalizedSourceChannel) {
+        metadata.source_channel = normalizedSourceChannel;
+    }
+    if (normalizedSourcePromptId) {
+        metadata.source_prompt_id = normalizedSourcePromptId;
+    }
+
+    return metadata;
 }
 
 const ShopClient = {
@@ -456,6 +610,20 @@ const ShopClient = {
             if (!target || target.disabled) return;
 
             event.preventDefault?.();
+            const sourceContext = resolveShopSourceContext();
+            trackShopAnalyticsEvent('product_card_click', {
+                entityId: String(target.dataset.productId || '').trim() || null,
+                eventValue: Number(target.dataset.unitPrice || 0) || null,
+                metadata: buildShopTrackingMetadata({
+                    product_id: String(target.dataset.productId || '').trim() || null,
+                    product_name: decodeURIComponent(target.dataset.productName || ''),
+                    product_name_en: decodeURIComponent(target.dataset.productNameEn || ''),
+                    category: String(target.dataset.productCategory || '').trim() || null,
+                    unit_price: Number(target.dataset.unitPrice || 0) || null
+                }, sourceContext)
+            }, {
+                eventType: 'engagement'
+            });
             void this.buyProduct(
                 target.dataset.productId || '',
                 decodeURIComponent(target.dataset.productName || ''),
@@ -465,7 +633,8 @@ const ShopClient = {
                 target.dataset.maxPurchaseQuantity || '',
                 target.dataset.showPurchaseNotes === 'true',
                 target.dataset.purchaseNotes || '',
-                target.dataset.productCategory || ''
+                target.dataset.productCategory || '',
+                sourceContext
             );
         });
 
@@ -1239,6 +1408,7 @@ const ShopClient = {
         productId: null,
         productName: null,
         productNameEn: null,
+        productCategory: null,
         basePrice: 0,
         unitPrice: 0,
         quantity: 1,
@@ -1249,64 +1419,13 @@ const ShopClient = {
         discountValue: null,
         discountAmount: 0,
         purchaseNotes: '',
+        sourcePage: null,
+        sourceChannel: null,
+        sourcePromptId: null,
         configuredMaxQuantity: 99,
         unlimitedPurchases: false,
         maxQuantity: 99,
-        experimentAssignment: null,
         idempotencyKey: null
-    },
-
-    getPurchaseExperimentTrackingPayload: function () {
-        const assignment = this.currentPurchase?.experimentAssignment;
-        if (!assignment?.experimentName || !assignment?.variantName) {
-            return {};
-        }
-
-        return {
-            experimentId: assignment.experimentName,
-            variantId: assignment.variantName,
-            metadata: {
-                experiment_name: assignment.experimentName,
-                experiment_variant: assignment.variantName,
-                experiment_placement: 'shop_purchase_modal_confirm'
-            }
-        };
-    },
-
-    applyPurchaseModalExperiment: async function (productId = this.currentPurchase?.productId) {
-        const tracker = window.UserEventTracker;
-        const button = document.getElementById('confirmPurchaseBtn');
-        this.currentPurchase.experimentAssignment = null;
-        if (!button || !tracker || typeof tracker.getExperimentAssignment !== 'function') {
-            if (button) delete button.dataset.experimentVariant;
-            return;
-        }
-
-        const normalizedProductId = String(productId || '').trim();
-        const assignment = await tracker.getExperimentAssignment('shop_purchase_cta_copy_v1', {
-            module: 'shop_storefront',
-            placement: 'shop_purchase_modal_confirm',
-            entityType: 'product',
-            entityId: normalizedProductId || null,
-            metadata: {
-                product_id: normalizedProductId || null,
-                category: this.currentPurchase?.productCategory || null
-            }
-        });
-
-        const liveButton = document.getElementById('confirmPurchaseBtn');
-        if (!liveButton || String(this.currentPurchase?.productId || '').trim() !== normalizedProductId) {
-            return;
-        }
-
-        this.currentPurchase.experimentAssignment = assignment;
-        delete liveButton.dataset.experimentVariant;
-        if (!assignment || assignment.isControl) {
-            return;
-        }
-
-        liveButton.dataset.experimentVariant = assignment.variantName;
-        liveButton.innerHTML = '<i class="fas fa-shopping-cart"></i> <span>确认兑换并发货</span>';
     },
 
     isPurchaseModalKeyboardDockEnabled: function () {
@@ -1642,13 +1761,14 @@ const ShopClient = {
 
     // ---- New Purchase Flow via Modal ----
 
-    buyProduct: async function (productId, productName, productNameEn, price, rulesStr, maxPurchaseQuantity = 99, showPurchaseNotes = false, purchaseNotesEncoded = '', productCategory = '') {
+    buyProduct: async function (productId, productName, productNameEn, price, rulesStr, maxPurchaseQuantity = 99, showPurchaseNotes = false, purchaseNotesEncoded = '', productCategory = '', sourceContext = null) {
         const rules = rulesStr ? JSON.parse(decodeURIComponent(rulesStr)) : [];
         const purchaseNotes = showPurchaseNotes ? decodeURIComponent(purchaseNotesEncoded || '') : '';
         const quantityCap = this.normalizePurchaseQuantityCap(maxPurchaseQuantity);
         // 1. Open Modal immediately for instant feedback
         this.openPurchaseModal(productId, productName, productNameEn, price, rules, quantityCap, purchaseNotes, {
-            category: productCategory
+            category: productCategory,
+            sourceContext
         });
 
         // 2. Auth Check in background
@@ -1675,6 +1795,10 @@ const ShopClient = {
     openPurchaseModal: function (productId, productName, productNameEn, price, rules, maxPurchaseQuantity = 99, purchaseNotes = '', options = {}) {
         const quantityCap = this.normalizePurchaseQuantityCap(maxPurchaseQuantity);
         const unlimitedPurchases = options?.unlimitedPurchases === true;
+        const sourceContext = {
+            ...resolveShopSourceContext(),
+            ...(options?.sourceContext && typeof options.sourceContext === 'object' ? options.sourceContext : {})
+        };
         this.currentPurchase = {
             productId,
             productName,
@@ -1690,10 +1814,12 @@ const ShopClient = {
             discountValue: null,
             discountAmount: 0,
             purchaseNotes: typeof purchaseNotes === 'string' ? purchaseNotes.trim() : '',
+            sourcePage: normalizeShopTrackingText(sourceContext.sourcePage || '', 80) || null,
+            sourceChannel: normalizeShopTrackingText(sourceContext.sourceChannel || '', 80) || null,
+            sourcePromptId: normalizeShopTrackingText(sourceContext.sourcePromptId || '', 160) || null,
             configuredMaxQuantity: quantityCap,
             unlimitedPurchases,
             maxQuantity: unlimitedPurchases ? null : quantityCap,
-            experimentAssignment: null,
             idempotencyKey: this.createPurchaseIdempotencyKey()
         };
         this.purchaseModalBaseScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
@@ -1727,9 +1853,7 @@ const ShopClient = {
             const confirmText = window.i18n?.t('shop.confirmRedeem') || '确认兑换';
             btn.innerHTML = `<i class="fas fa-shopping-cart"></i> <span>${confirmText}</span>`;
             btn.disabled = false;
-            delete btn.dataset.experimentVariant;
         }
-        void this.applyPurchaseModalExperiment(productId);
 
         const modal = document.getElementById('shopPurchaseModal');
         modal.classList.remove('active');
@@ -1747,7 +1871,7 @@ const ShopClient = {
         trackShopAnalyticsEvent('shop_view', {
             entityId: String(productId || '').trim() || null,
             eventValue: Number(price || 0) || null,
-            metadata: {
+            metadata: buildShopTrackingMetadata({
                 product_id: String(productId || '').trim() || null,
                 product_name: productName || null,
                 product_name_en: productNameEn || null,
@@ -1755,7 +1879,23 @@ const ShopClient = {
                 unit_price: Number(price || 0) || null,
                 max_purchase_quantity: quantityCap,
                 has_purchase_notes: Boolean(purchaseNotes)
-            }
+            }, sourceContext)
+        }, {
+            eventType: 'engagement'
+        });
+
+        trackShopAnalyticsEvent('product_detail_view', {
+            entityId: String(productId || '').trim() || null,
+            eventValue: Number(price || 0) || null,
+            metadata: buildShopTrackingMetadata({
+                product_id: String(productId || '').trim() || null,
+                product_name: productName || null,
+                product_name_en: productNameEn || null,
+                category: String(options?.category || options?.productCategory || '').trim() || null,
+                unit_price: Number(price || 0) || null,
+                max_purchase_quantity: quantityCap,
+                has_purchase_notes: Boolean(purchaseNotes)
+            }, sourceContext)
         }, {
             eventType: 'engagement'
         });
@@ -1888,6 +2028,36 @@ const ShopClient = {
         btn.disabled = true;
 
         try {
+            const subtotal = Number(this.getCurrentPurchaseSubtotal?.() || 0) || 0;
+            const discountAmount = Number(this.currentPurchase?.discountAmount || 0) || 0;
+            const tentativeTotalPoints = Math.max(0, subtotal - discountAmount) || null;
+            const purchaseSourceContext = {
+                sourcePage: this.currentPurchase?.sourcePage || null,
+                sourceChannel: this.currentPurchase?.sourceChannel || null,
+                sourcePromptId: this.currentPurchase?.sourcePromptId || null
+            };
+            trackShopAnalyticsEvent('product_purchase_click', {
+                entityId: String(this.currentPurchase?.productId || '').trim() || null,
+                eventValue: tentativeTotalPoints,
+                metadata: buildShopTrackingMetadata({
+                    product_id: String(this.currentPurchase?.productId || '').trim() || null,
+                    product_name: this.currentPurchase?.productName || null,
+                    product_name_en: this.currentPurchase?.productNameEn || null,
+                    category: this.currentPurchase?.productCategory || null,
+                    quantity: Number(this.currentPurchase?.quantity || 0) || 1,
+                    unit_price: Number(this.currentPurchase?.unitPrice || 0) || null,
+                    subtotal_points: subtotal || null,
+                    discount_code: this.currentPurchase?.discountCode || null,
+                    discount_amount: discountAmount || null,
+                    total_points: tentativeTotalPoints
+                }, purchaseSourceContext)
+            }, {
+                eventType: 'conversion',
+                dedupeKey: String(this.currentPurchase?.idempotencyKey || '').trim()
+                    ? `product_purchase_click:${String(this.currentPurchase.idempotencyKey).trim()}`
+                    : ''
+            });
+
             const data = await this.purchaseWithServer();
             const purchaseData = data.data;
             let allContents = [];
@@ -1908,8 +2078,6 @@ const ShopClient = {
             this.currentPurchase.orderId = lastOrderId;
             this.currentPurchase.idempotencyKey = null;
 
-            const subtotal = Number(this.getCurrentPurchaseSubtotal?.() || 0) || 0;
-            const discountAmount = Number(this.currentPurchase?.discountAmount || 0) || 0;
             const totalPointsSpent = Math.max(
                 0,
                 Number(
@@ -1919,30 +2087,38 @@ const ShopClient = {
                     ?? (subtotal - discountAmount)
                 ) || 0
             );
-            const purchaseExperiment = this.getPurchaseExperimentTrackingPayload();
-
+            const purchaseSuccessMetadata = buildShopTrackingMetadata({
+                order_id: String(lastOrderId || '').trim() || null,
+                product_id: String(this.currentPurchase?.productId || '').trim() || null,
+                product_name: this.currentPurchase?.productName || null,
+                product_name_en: this.currentPurchase?.productNameEn || null,
+                category: this.currentPurchase?.productCategory || null,
+                quantity: Number(this.currentPurchase?.quantity || 0) || 1,
+                unit_price: Number(this.currentPurchase?.unitPrice || 0) || null,
+                subtotal_points: subtotal || null,
+                discount_code: this.currentPurchase?.discountCode || null,
+                discount_amount: discountAmount || null,
+                total_points: totalPointsSpent || null,
+                has_usage_instructions: Boolean(usageInstructions)
+            }, purchaseSourceContext);
+            trackShopAnalyticsEvent('product_purchase_success', {
+                entityType: 'shop_order',
+                entityId: String(lastOrderId || this.currentPurchase?.productId || '').trim() || null,
+                eventValue: totalPointsSpent || null,
+                pointsDelta: totalPointsSpent > 0 ? -Math.abs(totalPointsSpent) : null,
+                metadata: purchaseSuccessMetadata
+            }, {
+                eventType: 'conversion',
+                dedupeKey: String(lastOrderId || '').trim()
+                    ? `product_purchase_success:${String(lastOrderId).trim()}`
+                    : ''
+            });
             trackShopAnalyticsEvent('shop_purchase', {
                 entityType: 'shop_order',
                 entityId: String(lastOrderId || this.currentPurchase?.productId || '').trim() || null,
                 eventValue: totalPointsSpent || null,
                 pointsDelta: totalPointsSpent > 0 ? -Math.abs(totalPointsSpent) : null,
-                experimentId: purchaseExperiment.experimentId ?? null,
-                variantId: purchaseExperiment.variantId ?? null,
-                metadata: {
-                    order_id: String(lastOrderId || '').trim() || null,
-                    product_id: String(this.currentPurchase?.productId || '').trim() || null,
-                    product_name: this.currentPurchase?.productName || null,
-                    product_name_en: this.currentPurchase?.productNameEn || null,
-                    category: this.currentPurchase?.productCategory || null,
-                    quantity: Number(this.currentPurchase?.quantity || 0) || 1,
-                    unit_price: Number(this.currentPurchase?.unitPrice || 0) || null,
-                    subtotal_points: subtotal || null,
-                    discount_code: this.currentPurchase?.discountCode || null,
-                    ...(purchaseExperiment.metadata || {}),
-                    discount_amount: discountAmount || null,
-                    total_points: totalPointsSpent || null,
-                    has_usage_instructions: Boolean(usageInstructions)
-                }
+                metadata: purchaseSuccessMetadata
             }, {
                 eventType: 'conversion',
                 dedupeKey: String(lastOrderId || '').trim() ? `shop_purchase:${String(lastOrderId).trim()}` : ''

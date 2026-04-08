@@ -31,7 +31,6 @@
     let previewMode = 'success';
     let previewTimers = [];
     let ringResetTimer = null;
-    let currentVerifySubmitExperimentAssignment = null;
 
     const ERROR_CODE_MAP = {
         invalid_api_key: { zh: 'API Key 无效或缺失', en: 'Invalid or missing API key' },
@@ -92,8 +91,6 @@
             entityId: payload.entityId || null,
             eventValue: payload.eventValue ?? null,
             pointsDelta: payload.pointsDelta ?? null,
-            experimentId: payload.experimentId ?? null,
-            variantId: payload.variantId ?? null,
             metadata
         };
 
@@ -106,61 +103,8 @@
         });
     }
 
-    function getVerifySubmitExperimentTrackingPayload() {
-        const assignment = currentVerifySubmitExperimentAssignment;
-        if (!assignment?.experimentName || !assignment?.variantName) {
-            return {};
-        }
-
-        return {
-            experimentId: assignment.experimentName,
-            variantId: assignment.variantName,
-            metadata: {
-                experiment_name: assignment.experimentName,
-                experiment_variant: assignment.variantName,
-                experiment_placement: 'verify_submit_button'
-            }
-        };
-    }
-
     function buildVerifySubmitButtonMarkup(label) {
         return `<i class="fas fa-paper-plane"></i> ${label}`;
-    }
-
-    async function applyVerifySubmitExperiment() {
-        currentVerifySubmitExperimentAssignment = null;
-        const tracker = window.UserEventTracker;
-        const submitBtn = document.getElementById('verifySubmitBtn');
-        if (!submitBtn || submitBtn.classList.contains('verify-submit-btn--maintenance') || !tracker || typeof tracker.getExperimentAssignment !== 'function') {
-            if (submitBtn) delete submitBtn.dataset.experimentVariant;
-            return;
-        }
-
-        const assignment = await tracker.getExperimentAssignment('verify_submit_cta_copy_v1', {
-            module: 'verify_widget',
-            placement: 'verify_submit_button',
-            entityType: 'verify_task',
-            entityId: 'verify_submit',
-            metadata: {
-                site: getCurrentSiteValue()
-            }
-        });
-
-        const liveButton = document.getElementById('verifySubmitBtn');
-        if (!liveButton || liveButton.classList.contains('verify-submit-btn--maintenance')) {
-            return;
-        }
-
-        currentVerifySubmitExperimentAssignment = assignment;
-        delete liveButton.dataset.experimentVariant;
-        if (!assignment || assignment.isControl) {
-            return;
-        }
-
-        liveButton.dataset.experimentVariant = assignment.variantName;
-        liveButton.innerHTML = buildVerifySubmitButtonMarkup(
-            getCurrentSiteValue() === 'intl' ? 'Submit Verification' : '提交验证任务'
-        );
     }
 
     function isTransientAvatarUrl(url) {
@@ -1087,7 +1031,6 @@
         updateQuotaDisplay();
         loadHistory();
         syncRingStateFromInputs();
-        void applyVerifySubmitExperiment();
         if (currentUser) restorePendingTask({ restart: true });
 
         if (!walletBalanceListenerBound) {
@@ -1568,7 +1511,6 @@
 
         const entry = parsed.entry;
         const totalCost = CONFIG.pricePerVerify;
-        const verifyExperiment = getVerifySubmitExperimentTrackingPayload();
         if (userBalance < totalCost) {
             showSingleResult(
                 'error',
@@ -1643,14 +1585,11 @@
                 batchStats.failed = 1;
                 updateBatchProgress(1, 1);
                 trackVerifyAnalyticsEvent('verify_fail', {
-                    experimentId: verifyExperiment.experimentId ?? null,
-                    variantId: verifyExperiment.variantId ?? null,
                     metadata: {
                         reason_code: String(data.code || 'submit_failed').trim() || 'submit_failed',
                         stage_label: 'submit',
                         priority: entry.priority,
-                        points_cost: totalCost,
-                        ...(verifyExperiment.metadata || {})
+                        points_cost: totalCost
                     }
                 });
                 await logToHistory(entry.email, 'failed', {
@@ -1670,14 +1609,11 @@
                 batchStats.failed = 1;
                 updateBatchProgress(1, 1);
                 trackVerifyAnalyticsEvent('verify_fail', {
-                    experimentId: verifyExperiment.experimentId ?? null,
-                    variantId: verifyExperiment.variantId ?? null,
                     metadata: {
                         reason_code: 'missing_job_id',
                         stage_label: 'submit',
                         priority: entry.priority,
-                        points_cost: totalCost,
-                        ...(verifyExperiment.metadata || {})
+                        points_cost: totalCost
                     }
                 });
                 await logToHistory(entry.email, 'failed', {
@@ -1702,12 +1638,9 @@
                 entityId: String(jobId || '').trim(),
                 eventValue: totalCost,
                 pointsDelta: -Math.abs(Number(totalCost) || 0),
-                experimentId: verifyExperiment.experimentId ?? null,
-                variantId: verifyExperiment.variantId ?? null,
                 metadata: {
                     priority: entry.priority,
-                    points_cost: totalCost,
-                    ...(verifyExperiment.metadata || {})
+                    points_cost: totalCost
                 }
             }, {
                 dedupeKey: `verify_submit:${String(jobId || '').trim()}`
@@ -1756,14 +1689,11 @@
             batchStats.failed = 1;
             updateBatchProgress(1, 1);
             trackVerifyAnalyticsEvent('verify_fail', {
-                experimentId: verifyExperiment.experimentId ?? null,
-                variantId: verifyExperiment.variantId ?? null,
                 metadata: {
                     reason_code: 'submit_error',
                     stage_label: 'submit',
                     priority: entry.priority,
-                    points_cost: totalCost,
-                    ...(verifyExperiment.metadata || {})
+                    points_cost: totalCost
                 }
             });
             await logToHistory(entry.email, 'error', {
@@ -1831,20 +1761,16 @@
                             ? Math.max(0, Math.round(Number(data.elapsed_seconds) * 1000))
                             : Math.max(0, Date.now() - Number(taskInfo.submittedAt || startTime));
                         const resolvedJobId = String(jobId || '').trim();
-                        const verifyExperiment = getVerifySubmitExperimentTrackingPayload();
 
                         if (display.success) {
                             trackVerifyAnalyticsEvent('verify_success', {
                                 entityId: resolvedJobId || null,
                                 eventValue: resolvedDurationMs,
-                                experimentId: verifyExperiment.experimentId ?? null,
-                                variantId: verifyExperiment.variantId ?? null,
                                 metadata: {
                                     duration_ms: resolvedDurationMs,
                                     priority: Number(taskInfo.priority ?? entry.priority ?? 0) || 0,
                                     points_cost: Number(taskInfo.pointsCost ?? CONFIG.pricePerVerify) || CONFIG.pricePerVerify,
-                                    restored: taskInfo.restored === true,
-                                    ...(verifyExperiment.metadata || {})
+                                    restored: taskInfo.restored === true
                                 }
                             }, {
                                 dedupeKey: resolvedJobId ? `verify_terminal:${resolvedJobId}:success` : ''
@@ -1852,16 +1778,13 @@
                         } else {
                             trackVerifyAnalyticsEvent('verify_fail', {
                                 entityId: resolvedJobId || null,
-                                experimentId: verifyExperiment.experimentId ?? null,
-                                variantId: verifyExperiment.variantId ?? null,
                                 metadata: {
                                     duration_ms: resolvedDurationMs,
                                     reason_code: String(data?.error || data?.code || 'failed').trim() || 'failed',
                                     stage_label: formatStageLabel(data?.stage_label),
                                     priority: Number(taskInfo.priority ?? entry.priority ?? 0) || 0,
                                     points_cost: Number(taskInfo.pointsCost ?? CONFIG.pricePerVerify) || CONFIG.pricePerVerify,
-                                    restored: taskInfo.restored === true,
-                                    ...(verifyExperiment.metadata || {})
+                                    restored: taskInfo.restored === true
                                 }
                             }, {
                                 dedupeKey: resolvedJobId ? `verify_terminal:${resolvedJobId}:failed` : ''
@@ -1910,11 +1833,9 @@
             submitBtn.classList.remove('verify-submit-btn--maintenance');
             submitBtn.disabled = false;
             submitBtn.innerHTML = buildVerifySubmitButtonMarkup(t('verify.startVerify', '提交账号'));
-            delete submitBtn.dataset.experimentVariant;
         }
         if (resetBtn) resetBtn.disabled = false;
         setPreviewControlsDisabled(false);
-        void applyVerifySubmitExperiment();
 
         if (showSummary) {
             showBatchSummary();

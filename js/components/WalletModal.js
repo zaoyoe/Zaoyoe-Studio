@@ -908,8 +908,6 @@
             entityId: payload.entityId || null,
             eventValue: payload.eventValue ?? null,
             pointsDelta: payload.pointsDelta ?? null,
-            experimentId: payload.experimentId ?? null,
-            variantId: payload.variantId ?? null,
             metadata
         };
 
@@ -939,7 +937,6 @@
         modalEl: null,
         pendingRechargeAction: null,
         lastOpenContext: null,
-        customRechargeExperimentAssignment: null,
         promptCache: {}, // Local simple cache for titles
         verifyLogCache: {},
         affiliateStats: null,
@@ -2633,78 +2630,7 @@
                         : `该入口由管理员在后台控制显示。当前会跳转到${providerLabel}，具体支付回执与入账方式以你配置的通道说明为准。`));
             }
 
-            void this.applyCustomRechargeExperiment({
-                isFeatureEnabled,
-                isSimulationBlocked,
-                isDirectRechargeAllowed,
-                providerLabel
-            });
-
             requestWalletRechargeScrollCueUpdate();
-        },
-
-        getCustomRechargeExperimentTrackingPayload() {
-            const assignment = this.customRechargeExperimentAssignment;
-            if (!assignment?.experimentName || !assignment?.variantName) {
-                return {};
-            }
-
-            return {
-                experimentId: assignment.experimentName,
-                variantId: assignment.variantName,
-                metadata: {
-                    experiment_name: assignment.experimentName,
-                    experiment_variant: assignment.variantName,
-                    experiment_placement: 'wallet_custom_recharge_button'
-                }
-            };
-        },
-
-        async applyCustomRechargeExperiment(options = {}) {
-            const section = document.getElementById('wallet-custom-recharge-section');
-            const button = document.getElementById('wallet-custom-recharge-btn');
-            const subtitle = document.getElementById('wallet-custom-recharge-subtitle');
-            const badge = document.getElementById('wallet-custom-recharge-badge');
-            const tracker = window.UserEventTracker;
-
-            this.customRechargeExperimentAssignment = null;
-            if (!section || section.hidden || !button || !options.isFeatureEnabled || options.isSimulationBlocked || !tracker || typeof tracker.getExperimentAssignment !== 'function') {
-                if (button) delete button.dataset.experimentVariant;
-                return;
-            }
-
-            const assignment = await tracker.getExperimentAssignment('wallet_recharge_cta_copy_v1', {
-                module: 'wallet_modal',
-                placement: 'wallet_custom_recharge_button',
-                entityType: 'wallet',
-                entityId: 'wallet_custom_recharge',
-                metadata: this.lastOpenContext && typeof this.lastOpenContext === 'object' ? this.lastOpenContext : {}
-            });
-
-            const liveSection = document.getElementById('wallet-custom-recharge-section');
-            const liveButton = document.getElementById('wallet-custom-recharge-btn');
-            const liveSubtitle = document.getElementById('wallet-custom-recharge-subtitle');
-            const liveBadge = document.getElementById('wallet-custom-recharge-badge');
-            if (!liveSection || liveSection.hidden || !liveButton) {
-                return;
-            }
-
-            this.customRechargeExperimentAssignment = assignment;
-            delete liveButton.dataset.experimentVariant;
-            if (!assignment || assignment.isControl) {
-                return;
-            }
-
-            liveButton.dataset.experimentVariant = assignment.variantName;
-            liveButton.textContent = options.isDirectRechargeAllowed ? '立即充值到账' : `前往${options.providerLabel}充值`;
-            if (liveSubtitle) {
-                liveSubtitle.textContent = options.isDirectRechargeAllowed
-                    ? '输入积分后会立即生成报价，完成支付后更快回到账户积分。'
-                    : `输入积分数量后会按服务端报价跳转到${options.providerLabel}完成支付，回到钱包即可继续后续操作。`;
-            }
-            if (liveBadge) {
-                liveBadge.textContent = options.isDirectRechargeAllowed ? '快速到账' : `${options.providerLabel}实验`;
-            }
         },
 
         getDefaultAffiliatePosterConfig() {
@@ -4004,20 +3930,16 @@
                     throw new Error(mockPayment.message || '当前环境已禁用模拟支付，请切换到真实支付通道。');
                 }
 
-                const customRechargeExperiment = this.getCustomRechargeExperimentTrackingPayload();
                 trackWalletAnalyticsEvent('recharge_click', {
                     entityType: 'custom_recharge',
                     entityId: 'custom_recharge',
                     eventValue: normalizedAmount,
-                    experimentId: customRechargeExperiment.experimentId ?? null,
-                    variantId: customRechargeExperiment.variantId ?? null,
                     metadata: {
                         entry: openContext.entry || 'wallet_recharge',
                         initial_view: openContext.initial_view || 'recharge',
                         source_module: openContext.source_module || null,
                         channel: providerKey,
-                        points_amount: normalizedAmount,
-                        ...(customRechargeExperiment.metadata || {})
+                        points_amount: normalizedAmount
                     }
                 });
 
@@ -4068,8 +3990,6 @@
                     entityId: String(paymentResult.checkout_session_id || 'custom_recharge').trim(),
                     eventValue: Number(paymentResult.paid_amount || 0) || null,
                     pointsDelta: Number(paymentResult.points_amount || normalizedAmount || 0) || null,
-                    experimentId: customRechargeExperiment.experimentId ?? null,
-                    variantId: customRechargeExperiment.variantId ?? null,
                     metadata: {
                         entry: openContext.entry || 'wallet_recharge',
                         initial_view: openContext.initial_view || 'recharge',
@@ -4077,8 +3997,7 @@
                         channel: providerKey,
                         points_amount: Number(paymentResult.points_amount || normalizedAmount || 0) || null,
                         paid_amount: Number(paymentResult.paid_amount || 0) || null,
-                        mode: paymentResult.mode || 'completed',
-                        ...(customRechargeExperiment.metadata || {})
+                        mode: paymentResult.mode || 'completed'
                     }
                 }, {
                     dedupeKey: String(paymentResult.checkout_session_id || '').trim()

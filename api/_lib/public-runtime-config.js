@@ -52,7 +52,7 @@ function resolvePublicSupabaseConfig(env = process.env) {
     };
 }
 
-function buildSupabaseRuntimeScript(env = process.env) {
+function buildSupabaseRuntimeScript(env = process.env, options = {}) {
     const config = resolvePublicSupabaseConfig(env);
     const serializedConfig = JSON.stringify(config);
     const serializedUrl = JSON.stringify(config.url);

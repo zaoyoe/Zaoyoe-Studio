@@ -1655,8 +1655,8 @@ function renderVerifyMonitorWorkbenchContext(context = {}) {
     const target = document.getElementById('verifyMonitorFocusContext');
     if (!target) return false;
 
-    const state = window.buildOpsAlertWorkspaceExperimentContextState?.(context, {
-        title: '当前来自实验结果下钻',
+    const state = window.buildOpsAlertWorkspaceAnalyticsSignalContextState?.(context, {
+        title: '当前来自分析信号联动',
         eyebrow: 'Verify Monitor Focus'
     }) || null;
 
@@ -1667,8 +1667,8 @@ function renderVerifyMonitorWorkbenchContext(context = {}) {
     }
 
     target.innerHTML = `
-        <div class="admin-workbench-context-note__eyebrow">${escapeConfigHtml(state.eyebrow || 'Experiment Context')}</div>
-        <div class="admin-workbench-context-note__title">${escapeConfigHtml(state.title || '实验聚焦上下文')}</div>
+        <div class="admin-workbench-context-note__eyebrow">${escapeConfigHtml(state.eyebrow || 'Analytics Context')}</div>
+        <div class="admin-workbench-context-note__title">${escapeConfigHtml(state.title || '分析信号聚焦上下文')}</div>
         <div class="admin-workbench-context-note__summary">${escapeConfigHtml(state.summary || '')}</div>
         <div class="admin-workbench-context-note__chips">
             ${(Array.isArray(state.chips) ? state.chips : []).map((item) => `
