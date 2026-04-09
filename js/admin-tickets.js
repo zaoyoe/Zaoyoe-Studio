@@ -5197,6 +5197,11 @@ const AdminTickets = {
     loadOverviewViaSupabaseFallback: async function (options = {}) {
         const requestId = Number(options?.requestId || 0);
         const reminderConfig = this.buildClientSideReminderOverview();
+        const reminderLookbackDays = Math.max(
+            30,
+            Number(reminderConfig?.activity?.lookback_days || 7) || 7,
+            Number(reminderConfig?.summary_digest?.lookback_days || 7) || 7
+        );
         const nowDate = new Date();
         const closedSinceMs = nowDate.getTime() - (30 * 24 * 60 * 60 * 1000);
         const { data, error } = await window.supabaseClient
@@ -5209,12 +5214,18 @@ const AdminTickets = {
         }
 
         const enrichedRows = await this.enrichClientSideTicketRows(data || []);
-        const reminderTelemetryPromise = this.loadClientSideReminderActivityAndSummary(reminderConfig?.activity?.lookback_days || 7)
+        const reminderTelemetryPromise = this.loadClientSideReminderActivityAndSummary(reminderLookbackDays)
             .catch((reminderError) => {
                 console.warn('[AdminTickets] client-side reminder telemetry load skipped:', reminderError);
                 return {
-                    activity: reminderConfig.activity,
-                    summary_digest: reminderConfig.summary_digest
+                    activity: {
+                        ...reminderConfig.activity,
+                        lookback_days: reminderLookbackDays
+                    },
+                    summary_digest: {
+                        ...reminderConfig.summary_digest,
+                        lookback_days: reminderLookbackDays
+                    }
                 };
             });
         let auditRows = [];
@@ -5224,10 +5235,34 @@ const AdminTickets = {
             console.warn('[AdminTickets] client-side audit load skipped:', auditError);
         }
         const reminderTelemetry = await reminderTelemetryPromise;
+        const reminderActivity = reminderTelemetry?.activity && typeof reminderTelemetry.activity === 'object'
+            ? {
+                ...reminderTelemetry.activity,
+                lookback_days: Math.max(
+                    reminderLookbackDays,
+                    Number(reminderTelemetry.activity.lookback_days || reminderLookbackDays) || reminderLookbackDays
+                )
+            }
+            : {
+                ...reminderConfig.activity,
+                lookback_days: reminderLookbackDays
+            };
+        const reminderSummaryDigest = reminderTelemetry?.summary_digest && typeof reminderTelemetry.summary_digest === 'object'
+            ? {
+                ...reminderTelemetry.summary_digest,
+                lookback_days: Math.max(
+                    reminderLookbackDays,
+                    Number(reminderTelemetry.summary_digest.lookback_days || reminderLookbackDays) || reminderLookbackDays
+                )
+            }
+            : {
+                ...reminderConfig.summary_digest,
+                lookback_days: reminderLookbackDays
+            };
         const reminder = {
             ...reminderConfig,
-            activity: reminderTelemetry?.activity || reminderConfig.activity,
-            summary_digest: reminderTelemetry?.summary_digest || reminderConfig.summary_digest
+            activity: reminderActivity,
+            summary_digest: reminderSummaryDigest
         };
 
         const assignmentByTicketId = this.buildClientSideAssignmentMap(

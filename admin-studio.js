@@ -495,6 +495,10 @@ function isMissingPromptBilingualSchemaCacheError(error = null) {
         return false;
     }
 
+    if (message.includes('prompt 双语字段') && message.includes('schema cache')) {
+        return true;
+    }
+
     const mentionsPromptField = PROMPT_BILINGUAL_FIELD_KEYS.some((fieldName) => (
         message.includes(`column ${fieldName}`)
         || message.includes(`prompts.${fieldName}`)
@@ -520,18 +524,11 @@ async function fetchPromptBilingualVerificationRow(promptId = '') {
         return null;
     }
 
-    const client = getAdminStudioSupabaseClient();
-    const { data, error } = await client
-        .from('prompts')
-        .select(PROMPT_BILINGUAL_VERIFY_SELECT_FIELDS)
-        .eq('id', normalizedPromptId)
-        .single();
-
-    if (error) {
-        throw error;
-    }
-
-    return data && typeof data === 'object' ? data : null;
+    const payload = await fetchAdminPromptItem(normalizedPromptId, {
+        site: getAdminPromptsReadSite(),
+        hydrateBilingual: false
+    });
+    return payload?.row && typeof payload.row === 'object' ? payload.row : null;
 }
 
 async function fetchPromptBilingualVerificationRows(promptIds = []) {
@@ -544,17 +541,16 @@ async function fetchPromptBilingualVerificationRows(promptIds = []) {
         return [];
     }
 
-    const client = getAdminStudioSupabaseClient();
-    const { data, error } = await client
-        .from('prompts')
-        .select(PROMPT_BILINGUAL_VERIFY_SELECT_FIELDS)
-        .in('id', normalizedIds);
+    const payloads = await Promise.all(
+        normalizedIds.map((id) => fetchAdminPromptItem(id, {
+            site: getAdminPromptsReadSite(),
+            hydrateBilingual: false
+        }))
+    );
 
-    if (error) {
-        throw error;
-    }
-
-    return Array.isArray(data) ? data : [];
+    return payloads
+        .map((payload) => payload?.row)
+        .filter((row) => row && typeof row === 'object');
 }
 
 function buildPromptBilingualPersistencePayload(attemptedPayload = {}) {
@@ -583,17 +579,13 @@ async function persistPromptBilingualFieldsViaSupabase(promptId = '', attemptedP
         return null;
     }
 
-    const client = getAdminStudioSupabaseClient();
-    const { error } = await client
-        .from('prompts')
-        .update(persistencePayload)
-        .eq('id', normalizedPromptId);
-
-    if (error) {
-        throw error;
-    }
-
-    return fetchPromptBilingualVerificationRow(normalizedPromptId);
+    const payload = await mutateAdminPrompt({
+        action: 'patch',
+        site: getAdminPromptsReadSite(),
+        id: normalizedPromptId,
+        payload: persistencePayload
+    });
+    return payload?.row && typeof payload.row === 'object' ? payload.row : null;
 }
 
 async function hydratePromptRowsBilingualProjection(rows = []) {
@@ -748,70 +740,19 @@ async function parseAdminPromptsResponse(response) {
     return payload;
 }
 
-function isMissingPromptUpdatedAtSchemaCacheError(error = null) {
-    const message = String(error?.message || '').toLowerCase();
-    if (!message) {
-        return false;
-    }
-
-    return (
-        message.includes('updated_at')
-        && message.includes('prompts')
-        && (
-            message.includes('schema cache')
-            || message.includes('does not exist')
-            || message.includes('column updated_at')
-        )
-    );
-}
-
-async function updateAdminPromptViaSupabaseFallback({ id, payload = {}, site = getAdminPromptsReadSite() } = {}) {
-    const client = getAdminStudioSupabaseClient();
-    const normalizedId = String(id || '').trim();
-    if (!normalizedId) {
-        throw new Error('Prompt id is required for Supabase fallback update');
-    }
-
-    const fallbackPayload = payload && typeof payload === 'object'
-        ? { ...payload }
-        : {};
-    delete fallbackPayload.updated_at;
-
-    const { error } = await client
-        .from('prompts')
-        .update(fallbackPayload)
-        .eq('id', normalizedId);
-
-    if (error) {
-        throw new Error(error.message || 'Supabase fallback update failed');
-    }
-
-    const cachedRow = getAdminGalleryPromptById(normalizedId) || {};
-    return {
-        success: true,
-        site,
-        row: {
-            ...cachedRow,
-            ...fallbackPayload,
-            id: normalizedId
-        },
-        fallback: 'supabase-direct-update'
-    };
-}
-
-async function fetchAdminPromptList({ site = getAdminPromptsReadSite() } = {}) {
+async function fetchAdminPromptList({ site = getAdminPromptsReadSite(), hydrateBilingual = true } = {}) {
     const response = await (window.AdminApi?.fetch || fetch)(buildAdminPromptsUrl({ site }), {
         credentials: 'include'
     });
 
     const payload = await parseAdminPromptsResponse(response);
-    if (Array.isArray(payload?.rows) && payload.rows.length) {
+    if (hydrateBilingual && Array.isArray(payload?.rows) && payload.rows.length) {
         payload.rows = await hydratePromptRowsBilingualProjection(payload.rows);
     }
     return payload;
 }
 
-async function fetchAdminPromptItem(id, { site = getAdminPromptsReadSite() } = {}) {
+async function fetchAdminPromptItem(id, { site = getAdminPromptsReadSite(), hydrateBilingual = true } = {}) {
     const response = await (window.AdminApi?.fetch || fetch)(buildAdminPromptsUrl({
         id,
         site
@@ -820,7 +761,7 @@ async function fetchAdminPromptItem(id, { site = getAdminPromptsReadSite() } = {
     });
 
     const payload = await parseAdminPromptsResponse(response);
-    if (payload?.row && typeof payload.row === 'object') {
+    if (hydrateBilingual && payload?.row && typeof payload.row === 'object') {
         const [hydratedRow] = await hydratePromptRowsBilingualProjection([payload.row]);
         if (hydratedRow) {
             payload.row = hydratedRow;
@@ -844,16 +785,7 @@ async function mutateAdminPrompt({ action, site, id, payload = {} } = {}) {
         })
     });
 
-    try {
-        return await parseAdminPromptsResponse(response);
-    } catch (error) {
-        const normalizedAction = String(action || '').trim().toLowerCase();
-        if ((normalizedAction === 'update' || normalizedAction === 'patch') && isMissingPromptUpdatedAtSchemaCacheError(error)) {
-            console.warn('[Gallery] Falling back to direct Supabase prompt update because prompts.updated_at is unavailable:', error);
-            return updateAdminPromptViaSupabaseFallback({ id, payload, site });
-        }
-        throw error;
-    }
+    return parseAdminPromptsResponse(response);
 }
 
 async function deleteAdminPrompts({ site, id, ids = [] } = {}) {
