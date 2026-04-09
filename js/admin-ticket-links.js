@@ -13,6 +13,7 @@
 
     const OPS_ALERT_TICKET_PREFIX = '[站内代办转工单]';
     const CHAT_SESSION_TICKET_PREFIX = '[客服会话转工单]';
+    const COMMENT_TICKET_PREFIX = '[评论管理转工单]';
 
     function sanitizeText(value, maxLength = 4000) {
         return String(value || '').trim().slice(0, Math.max(0, maxLength));
@@ -24,6 +25,13 @@
 
     function normalizeAlertType(value) {
         return sanitizeText(value, 120).toLowerCase();
+    }
+
+    function normalizeCommentTicketView(value) {
+        const normalized = sanitizeText(value, 40).toLowerCase();
+        if (normalized === 'gallery') return 'gallery';
+        if (normalized === 'guestbook') return 'guestbook';
+        return '';
     }
 
     function inferLinkedOpsAlertCategoryKey(context = {}) {
@@ -126,6 +134,82 @@
         return context.session_id || context.user_email ? context : null;
     }
 
+    function parseLinkedCommentContext(description = '') {
+        const normalizedDescription = sanitizeText(description, 4000);
+        if (!normalizedDescription.includes(COMMENT_TICKET_PREFIX)) {
+            return null;
+        }
+
+        const lines = normalizedDescription
+            .split(/\r?\n/)
+            .map((line) => sanitizeText(line, 4000))
+            .filter(Boolean);
+
+        const context = {
+            view: '',
+            entity_type: '',
+            entity_label: '',
+            comment_id: '',
+            prompt_id: '',
+            message_id: '',
+            context_title: '',
+            author: '',
+            site: ''
+        };
+
+        for (const line of lines) {
+            if (line.startsWith('评论视图：')) {
+                context.view = normalizeCommentTicketView(line.slice('评论视图：'.length));
+                continue;
+            }
+            if (line.startsWith('实体类型：')) {
+                context.entity_type = sanitizeText(line.slice('实体类型：'.length), 80).toLowerCase();
+                continue;
+            }
+            if (line.startsWith('评论类型：')) {
+                context.entity_label = sanitizeText(line.slice('评论类型：'.length), 120);
+                continue;
+            }
+            if (line.startsWith('评论来源：') && !context.entity_label) {
+                context.entity_label = sanitizeText(line.slice('评论来源：'.length), 120);
+                continue;
+            }
+            if (line.startsWith('评论ID：')) {
+                context.comment_id = sanitizeText(line.slice('评论ID：'.length), 160);
+                continue;
+            }
+            if (line.startsWith('Prompt ID：')) {
+                context.prompt_id = sanitizeText(line.slice('Prompt ID：'.length), 160);
+                continue;
+            }
+            if (line.startsWith('留言主贴 ID：')) {
+                context.message_id = sanitizeText(line.slice('留言主贴 ID：'.length), 160);
+                continue;
+            }
+            if (line.startsWith('上下文：')) {
+                context.context_title = sanitizeText(line.slice('上下文：'.length), 240);
+                continue;
+            }
+            if (line.startsWith('评论作者：')) {
+                context.author = sanitizeText(line.slice('评论作者：'.length), 255);
+                continue;
+            }
+            if (line.startsWith('站点：')) {
+                context.site = sanitizeText(line.slice('站点：'.length), 20).toLowerCase();
+            }
+        }
+
+        if (!context.view) {
+            if (context.prompt_id || context.entity_type === 'prompt_comment') {
+                context.view = 'gallery';
+            } else if (context.comment_id) {
+                context.view = 'guestbook';
+            }
+        }
+
+        return context.comment_id ? context : null;
+    }
+
     function buildLinkedTicketDescription(body = {}, actorLabel = '') {
         const source = normalizeSource(body.source || body.source_type || body.sourceType);
         const title = sanitizeText(body.title, 240);
@@ -169,12 +253,14 @@
     return {
         OPS_ALERT_TICKET_PREFIX,
         CHAT_SESSION_TICKET_PREFIX,
+        COMMENT_TICKET_PREFIX,
         sanitizeText,
         normalizeSource,
         normalizeAlertType,
         inferLinkedOpsAlertCategoryKey,
         parseLinkedOpsAlertContext,
         parseLinkedChatSessionContext,
+        parseLinkedCommentContext,
         buildLinkedTicketDescription
     };
 }));

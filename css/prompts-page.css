@@ -13,7 +13,7 @@ body {
 }
 
 /* Content areas start hidden, fade in when ready */
-.featured-banner {
+.featured-banner:not(.featured-banner--visible) {
     display: none;
     /* Hidden until JS shows it */
 }

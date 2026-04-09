@@ -5985,6 +5985,61 @@ function buildUserWorkbenchEntry(context = {}) {
     };
 }
 
+function buildCommentsWorkbenchEntry(context = {}) {
+    const focusCommentId = String(
+        context.focusCommentId
+        || context.commentId
+        || context.comment_id
+        || context.targetId
+        || context.target_id
+        || ''
+    ).trim();
+    const promptId = String(context.promptId || context.prompt_id || '').trim();
+    const promptTitle = String(
+        context.promptTitle
+        || context.prompt_title
+        || context.contextTitle
+        || context.context_title
+        || ''
+    ).trim();
+    const view = String(
+        context.view
+        || context.commentView
+        || context.comment_view
+        || (promptId ? 'gallery' : 'guestbook')
+    ).trim().toLowerCase() === 'gallery'
+        ? 'gallery'
+        : 'guestbook';
+    const queue = String(context.queue || '').trim().toLowerCase() || 'all';
+    const search = String(
+        context.search
+        || context.referenceValue
+        || context.reference_value
+        || focusCommentId
+        || ''
+    ).trim();
+    const site = String(context.site || '').trim().toLowerCase();
+
+    if (!focusCommentId && !search) {
+        return null;
+    }
+
+    return {
+        workspaceKey: 'comments',
+        label: '评论治理',
+        context: {
+            view,
+            queue,
+            search,
+            site,
+            promptId,
+            promptTitle,
+            focusCommentId,
+            commentId: focusCommentId
+        }
+    };
+}
+
 function buildTicketQueueWorkbenchEntry(context = {}) {
     const ticketId = String(context.ticketId || context.ticket_id || context.id || '').trim();
     if (!ticketId) {
@@ -6159,6 +6214,16 @@ function buildTicketWorkbenchEntry(target = 'chat', ticket = {}, options = {}) {
     }
 
     if (normalizedTarget === 'source') {
+        if (options.linkedCommentContext && typeof options.linkedCommentContext === 'object') {
+            return buildCommentsWorkbenchEntry({
+                ...options.linkedCommentContext,
+                referenceValue: options.linkedCommentContext.comment_id || '',
+                focusCommentId: options.linkedCommentContext.comment_id || '',
+                commentId: options.linkedCommentContext.comment_id || '',
+                commentView: options.linkedCommentContext.view || '',
+                queue: 'escalated'
+            });
+        }
         return buildLinkedOpsAlertSourceWorkbenchEntry(options.linkedOpsAlertContext || null, {
             workspaceAction: options.workspaceAction || null,
             labelVariant: 'ticket',
@@ -6520,6 +6585,9 @@ async function focusOpsAlertWorkspacePaymentOrder(paymentOrderId) {
 
 async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
     const normalizedKey = String(workspaceKey || '').trim().toLowerCase();
+    const rawContext = context && typeof context === 'object' && !Array.isArray(context)
+        ? context
+        : {};
     const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
     const workspaceSearchValue = getOpsAlertWorkspaceSearchValue(normalizedContext);
     if (!normalizedKey) {
@@ -6571,6 +6639,54 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
 
             await settleAdminWorkbench();
             scrollAdminWorkbenchTarget('module-chat');
+        } else if (normalizedKey === 'comments') {
+            const commentsOpened = await ensureAdminWorkbenchModule('comments');
+            if (!commentsOpened) {
+                return false;
+            }
+
+            const commentsContext = {
+                view: String(
+                    rawContext.view
+                    || rawContext.commentView
+                    || rawContext.comment_view
+                    || (String(rawContext.promptId || rawContext.prompt_id || '').trim() ? 'gallery' : 'guestbook')
+                ).trim().toLowerCase() === 'gallery'
+                    ? 'gallery'
+                    : 'guestbook',
+                queue: String(rawContext.queue || '').trim().toLowerCase() || 'all',
+                search: String(
+                    rawContext.search
+                    || rawContext.referenceValue
+                    || rawContext.reference_value
+                    || rawContext.focusCommentId
+                    || rawContext.commentId
+                    || rawContext.comment_id
+                    || ''
+                ).trim(),
+                promptId: String(rawContext.promptId || rawContext.prompt_id || '').trim(),
+                promptTitle: String(
+                    rawContext.promptTitle
+                    || rawContext.prompt_title
+                    || rawContext.contextTitle
+                    || rawContext.context_title
+                    || ''
+                ).trim(),
+                focusCommentId: String(rawContext.focusCommentId || rawContext.commentId || rawContext.comment_id || '').trim(),
+                commentId: String(rawContext.commentId || rawContext.comment_id || rawContext.focusCommentId || '').trim(),
+                site: String(rawContext.site || normalizedContext.site || '').trim().toLowerCase()
+            };
+
+            if (typeof window.openAdminUserCommentContext === 'function') {
+                window.openAdminUserCommentContext(commentsContext);
+            } else if (typeof window.openAnalyticsCommentContext === 'function') {
+                window.openAnalyticsCommentContext(commentsContext);
+            } else {
+                throw new Error('评论工作区尚未就绪');
+            }
+
+            await settleAdminWorkbench();
+            scrollAdminWorkbenchTarget('module-comments');
         } else if (normalizedKey === 'verify-monitor') {
             const settingsOpened = await ensureAdminWorkbenchModule('settings');
             if (!settingsOpened) {

@@ -299,3 +299,110 @@ test('points runtime loads package catalog through dedicated admin handler and e
         assert.equal(stylesSource.includes(marker), true, `admin-studio.css should contain ${marker}`);
     }
 });
+
+test('points local smoke opens a batch row with codes when verifying batch detail loading', () => {
+    const smokeSource = readRepoFile('js/local-smoke-fixtures.js');
+
+    const markers = [
+        "let generatedBatchId = '';",
+        "generatedBatchId = String(",
+        "row.name === 'Smoke 批次生成'",
+        "return getTableRows('redemption_codes').some((codeRow) => String(codeRow?.batch_id || '').trim() === batchId);",
+        "batch=${targetBatchRow.dataset.batchId || '<unknown>'}"
+    ];
+
+    for (const marker of markers) {
+        assert.equal(smokeSource.includes(marker), true, `js/local-smoke-fixtures.js should contain ${marker}`);
+    }
+});
+
+test('points batch detail view guards against stale responses and can hydrate a batch outside the local list snapshot', () => {
+    const pointsSource = readRepoFile('admin-points.js');
+
+    const markers = [
+        'let pointsBatchListLoadRequestId = 0;',
+        'let pointsBatchCodesRequestId = 0;',
+        'let pointsPendingBatchOpenHandle = 0;',
+        'let pointsPendingBatchOpenToken = 0;',
+        'function upsertPointsBatchRow(batch = null) {',
+        'function clearPendingPointsBatchOpen() {',
+        'function schedulePointsBatchOpen(batchId = \'\', { code = \'\', delayMs = 200 } = {}) {',
+        'const requestId = ++pointsBatchListLoadRequestId;',
+        'const requestId = ++pointsBatchCodesRequestId;',
+        "const headerTitle = batch?.name || '批次详情';",
+        'let initialPayload = null;',
+        'batch = upsertPointsBatchRow(initialPayload?.batch || null) || null;',
+        'batch = upsertPointsBatchRow(payload?.batch || batch) || batch;',
+        "if (requestId !== pointsBatchCodesRequestId || String(window.currentViewBatchId || '').trim() !== normalizedBatchId) {"
+    ];
+
+    for (const marker of markers) {
+        assert.equal(pointsSource.includes(marker), true, `admin-points.js should contain ${marker}`);
+    }
+});
+
+test('points batch edit save refreshes both the batch list and the active batch detail workbench', () => {
+    const pointsSource = readRepoFile('admin-points.js');
+
+    const markers = [
+        'async function refreshPointsAfterBatchMutation({ batchId = \'\', onMissing = null } = {}) {',
+        'await loadBatches();',
+        'const activeBatchId = normalizedBatchId || String(window.currentViewBatchId || \'\').trim();',
+        'await syncCurrentPointsBatchDetailAfterListReload({ onMissing });',
+        'await refreshPointsAfterBatchMutation({ batchId: normalizedBatchId });',
+        'if (shouldReturnToCodes) {',
+        'await viewBatchCodes(normalizedBatchId);'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(pointsSource.includes(marker), true, `admin-points.js should contain ${marker}`);
+    }
+});
+
+test('points batch workflows preserve return-to-detail context and clear stale cross-site state', () => {
+    const pointsSource = readRepoFile('admin-points.js');
+
+    const markers = [
+        'let pointsBatchEditContext = {',
+        'function clearPointsLookupResult({ renderEmptyState = false } = {}) {',
+        'async function refreshPointsLookupResultIfNeeded({ activeViewOnly = false } = {}) {',
+        'function syncSelectedBatchIdsWithAvailableRows(rows = allBatches) {',
+        'async function syncCurrentPointsBatchDetailAfterListReload({ onMissing = null } = {}) {',
+        'function dismissPointsSiteScopedOverlaysOnSiteChange() {',
+        'function openBatchEditModal(batchId, { returnToCodes = false } = {}) {',
+        'returnToCodes: Boolean(returnToCodes)',
+        'const shouldReturnToCodes = pointsBatchEditContext.returnToCodes',
+        'await refreshPointsLookupResultIfNeeded();',
+        'await syncCurrentPointsBatchDetailAfterListReload({ onMissing });',
+        'clearPendingPointsBatchCodeFocus();',
+        'clearPendingPointsBatchOpen();',
+        'Boolean(window.__pointsSiteChangeClosedBatchDetail)',
+        "clearPointsLookupResult({ renderEmptyState: activeView === 'points-view-lookup' });",
+        'announcePointsAction(`已切换站点，旧站点的${dismissedOverlays.join(\'、\')}弹窗已关闭。`, \'info\');',
+        "setPointsBatchListFeedback('已切换站点，原来的批次详情已关闭，请在当前站点重新选择批次。', 'info', 'action');"
+    ];
+
+    for (const marker of markers) {
+        assert.equal(pointsSource.includes(marker), true, `admin-points.js should contain ${marker}`);
+    }
+});
+
+test('points local smoke exercises batch edit, invalidate, lookup refresh, site change, and delete closure flows', () => {
+    const smokeSource = readRepoFile('js/local-smoke-fixtures.js');
+
+    const markers = [
+        '批次编辑保存会同步刷新当前详情工作台',
+        '批次作废后详情和兑换码状态会同步刷新',
+        '批次和兑换码变更后 Lookup 会回刷最新状态',
+        '切换站点会关闭旧批次详情并清空过期 Lookup 结果',
+        '删除当前批次会关闭详情并清理选中态',
+        "globalScope.AdminSiteFilter.select('intl');",
+        "String(globalScope.currentViewBatchId || '').trim() === generatedBatchId",
+        "typeof globalScope.batchDeleteBatches === 'function'",
+        "document.querySelector('.delete-options-modal [data-points-action=\"execute-delete-option\"]')"
+    ];
+
+    for (const marker of markers) {
+        assert.equal(smokeSource.includes(marker), true, `js/local-smoke-fixtures.js should contain ${marker}`);
+    }
+});

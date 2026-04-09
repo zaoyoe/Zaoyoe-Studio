@@ -1812,9 +1812,9 @@ const FramerHome = {
             loading="lazy"
             decoding="async"
             data-home-avatar-fallback="${encodeURIComponent(fallbackSrc)}">
-          <div class="home-guestbook-card__author">${safeName}</div>
         </div>
         <p class="home-guestbook-card__content">${safeContent}</p>
+        <div class="home-guestbook-card__author">${safeName}</div>
       </article>
     `;
   },
@@ -2041,8 +2041,6 @@ const FramerHome = {
     section.innerHTML = `
       <div class="home-guestbook-stage fade-in-up" data-home-guestbook-stage>
         <div class="home-guestbook-particle-field" data-home-guestbook-particles aria-hidden="true"></div>
-        <div class="home-guestbook-halo home-guestbook-halo--outer" aria-hidden="true"></div>
-        <div class="home-guestbook-halo home-guestbook-halo--inner" aria-hidden="true"></div>
 
         <section class="home-guestbook-center" aria-label="${title}">
           <h2 class="home-guestbook-center__title">${title}</h2>

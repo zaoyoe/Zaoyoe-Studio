@@ -98,6 +98,9 @@ test('gallery module routes prompt mutations through writable site guard', () =>
         "window.AdminSiteFilter?.requireWritableSite?.({ label: '批量删除 Prompt' })",
         "window.AdminSiteFilter?.requireWritableSite?.({ label: '批量重分析 Prompt' })",
         "window.AdminSiteFilter?.requireWritableSite?.({ label: '分析无标签 Prompt' })",
+        "window.AdminSiteFilter?.requireWritableSite?.({",
+        "批量加入首页精选",
+        "gallery-batch-localize",
         "buildAdminPromptsUrl(params = {})",
         "/api/admin/prompts/manage"
     ];

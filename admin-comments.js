@@ -13,14 +13,19 @@ if (typeof getSupabase === 'undefined') {
 // Current state
 let currentCommentView = 'guestbook'; // 'guestbook' or 'gallery'
 let commentsData = [];
+let commentsById = new Map();
 let commentsLoading = false;
 let commentsInitialized = false;
 let filteredComments = []; // Global filtered data for export
+let commentsSummaryState = null;
 const COMMENTS_DEFAULT_PAGE_SIZE = 20;
 const COMMENTS_EXPORT_PAGE_SIZE = 200;
 const COMMENTS_PREFETCH_VIEWS = ['guestbook', 'gallery'];
 let retainedSelectedCommentIds = new Set();
 let pendingFocusedCommentId = '';
+let activeCommentQueue = 'all';
+let activeCommentDetailId = '';
+let commentDetailLoading = false;
 let commentsPaginationState = {
     page: 1,
     pageSize: COMMENTS_DEFAULT_PAGE_SIZE,
@@ -48,7 +53,10 @@ const filterState = {
     type: 'all',           // 'all', 'top', 'reply'
     hasImage: false,       // checkbox
     source: 'all',         // 'all', 'guestbook', 'gallery'
-    searchTags: []         // Array of search strings
+    queue: 'all',          // governance queue
+    searchTags: [],        // Array of search strings
+    promptId: '',
+    promptTitle: ''
 };
 
 function getCommentsReadSite() {
@@ -115,7 +123,9 @@ async function fetchAdminCommentsList({
     status = 'all',
     type = 'all',
     source = 'all',
+    queue = 'all',
     hasImage = false,
+    promptId = '',
     search = '',
     searchTag = []
 } = {}) {
@@ -129,7 +139,9 @@ async function fetchAdminCommentsList({
         status: status !== 'all' ? status : '',
         type: type !== 'all' ? type : '',
         source: source !== 'all' ? source : '',
+        queue: queue !== 'all' ? queue : '',
         hasImage: hasImage ? '1' : '',
+        promptId,
         search,
         searchTag
     }), {
@@ -169,7 +181,7 @@ async function fetchAdminCommentBlockState(userId, site = getCommentsReadSite())
     return parseAdminCommentsResponse(response);
 }
 
-async function mutateAdminCommentBlockState({ action, userId, scope, days = null, site } = {}) {
+async function mutateAdminCommentBlockState({ action, userId, scope, days = null, reason = '', site } = {}) {
     const response = await (window.AdminApi?.fetch || fetch)('/api/admin/comments/blocks', {
         method: 'POST',
         credentials: 'include',
@@ -181,6 +193,7 @@ async function mutateAdminCommentBlockState({ action, userId, scope, days = null
             userId,
             scope,
             days,
+            reason,
             site
         })
     });
@@ -203,6 +216,57 @@ async function toggleCommentPinViaAdminApi({ id, promptId, currentStatus, site }
             id,
             promptId,
             currentStatus
+        })
+    });
+
+    const payload = await parseAdminCommentsResponse(response);
+    invalidateCommentsViewCache();
+    return payload;
+}
+
+async function fetchAdminCommentWorkflowDetail({
+    site = getCommentsReadSite(),
+    entityType = '',
+    entityId = ''
+} = {}) {
+    const response = await (window.AdminApi?.fetch || fetch)(buildAdminCommentsUrl('comments/workflow', {
+        site,
+        entityType,
+        entityId
+    }), {
+        credentials: 'include'
+    });
+
+    return parseAdminCommentsResponse(response);
+}
+
+async function mutateAdminCommentWorkflow({
+    action,
+    site = getCommentsReadSite(),
+    entityType = '',
+    entityId = '',
+    status = '',
+    priority = '',
+    tags = [],
+    note = '',
+    comment = null
+} = {}) {
+    const response = await (window.AdminApi?.fetch || fetch)('/api/admin/comments/workflow', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            action,
+            site,
+            entityType,
+            entityId,
+            status,
+            priority,
+            tags,
+            note,
+            comment
         })
     });
 
@@ -283,6 +347,266 @@ function buildCommentContextUrl(comment = {}) {
     return `${url.pathname}${url.search}`;
 }
 
+function getAdminCommentsRouteUrlObject() {
+    if (typeof window.getAdminStudioUrlObject === 'function') {
+        const resolvedUrl = window.getAdminStudioUrlObject();
+        if (resolvedUrl) {
+            return resolvedUrl;
+        }
+    }
+
+    try {
+        return new URL(window.location.href);
+    } catch (error) {
+        console.warn('[Comments] Failed to parse current URL:', error);
+        return null;
+    }
+}
+
+function getAdminCommentsRouteState() {
+    const url = getAdminCommentsRouteUrlObject();
+    const searchParams = url?.searchParams;
+    return {
+        view: String(searchParams?.get('comments_view') || '').trim().toLowerCase() === 'gallery' ? 'gallery' : 'guestbook',
+        queue: String(searchParams?.get('comments_queue') || '').trim().toLowerCase() || 'all',
+        promptId: String(searchParams?.get('comments_prompt_id') || '').trim(),
+        promptTitle: String(searchParams?.get('comments_prompt_title') || '').trim(),
+        focusCommentId: String(searchParams?.get('comments_focus_id') || '').trim()
+    };
+}
+
+function syncAdminCommentsRouteState(nextState = {}, options = {}) {
+    const url = getAdminCommentsRouteUrlObject();
+    if (!url || typeof window.history?.replaceState !== 'function') {
+        return false;
+    }
+
+    const currentState = getAdminCommentsRouteState();
+    const view = Object.prototype.hasOwnProperty.call(nextState, 'view')
+        ? (String(nextState.view || '').trim().toLowerCase() === 'gallery' ? 'gallery' : 'guestbook')
+        : currentState.view;
+    const queue = Object.prototype.hasOwnProperty.call(nextState, 'queue')
+        ? (String(nextState.queue || '').trim().toLowerCase() || 'all')
+        : (currentState.queue || 'all');
+    const promptId = view === 'gallery'
+        ? (Object.prototype.hasOwnProperty.call(nextState, 'promptId')
+            ? String(nextState.promptId || '').trim()
+            : currentState.promptId)
+        : '';
+    const promptTitle = promptId
+        ? (Object.prototype.hasOwnProperty.call(nextState, 'promptTitle')
+            ? String(nextState.promptTitle || '').trim()
+            : currentState.promptTitle)
+        : '';
+    const focusCommentId = Object.prototype.hasOwnProperty.call(nextState, 'focusCommentId')
+        ? String(nextState.focusCommentId || '').trim()
+        : currentState.focusCommentId;
+
+    if (options.ensureCommentsModule === true) {
+        url.searchParams.set('module', 'comments');
+    }
+
+    url.searchParams.set('comments_view', view);
+    if (queue && queue !== 'all') {
+        url.searchParams.set('comments_queue', queue);
+    } else {
+        url.searchParams.delete('comments_queue');
+    }
+    if (promptId) {
+        url.searchParams.set('comments_prompt_id', promptId);
+        if (promptTitle) {
+            url.searchParams.set('comments_prompt_title', promptTitle);
+        } else {
+            url.searchParams.delete('comments_prompt_title');
+        }
+    } else {
+        url.searchParams.delete('comments_prompt_id');
+        url.searchParams.delete('comments_prompt_title');
+    }
+
+    if (focusCommentId) {
+        url.searchParams.set('comments_focus_id', focusCommentId);
+    } else {
+        url.searchParams.delete('comments_focus_id');
+    }
+
+    const nextRelativeUrl = `${url.pathname}${url.search}${url.hash}`;
+    const currentRelativeUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (nextRelativeUrl !== currentRelativeUrl) {
+        window.history.replaceState(window.history.state, '', nextRelativeUrl);
+    }
+    return true;
+}
+
+function clearAdminCommentsPromptContext({ syncRoute = true } = {}) {
+    filterState.promptId = '';
+    filterState.promptTitle = '';
+    if (syncRoute) {
+        syncAdminCommentsRouteState({
+            view: currentCommentView,
+            promptId: '',
+            promptTitle: ''
+        });
+    }
+}
+
+function renderCommentsPromptContextBar() {
+    const container = document.getElementById('commentsPromptContextBar');
+    if (!container) {
+        return;
+    }
+
+    const shouldShow = currentCommentView === 'gallery' && Boolean(String(filterState.promptId || '').trim());
+    if (!shouldShow) {
+        container.innerHTML = '';
+        container.hidden = true;
+        container.classList.add('comments-prompt-context--hidden');
+        return;
+    }
+
+    const promptTitle = String(filterState.promptTitle || filterState.promptId || '').trim();
+    container.hidden = false;
+    container.classList.remove('comments-prompt-context--hidden');
+    container.innerHTML = `
+        <div class="comments-prompt-context__head">
+            <div>
+                <div class="comments-prompt-context__eyebrow">Prompt 评论上下文</div>
+                <div class="comments-prompt-context__title">${escapeHtml(promptTitle)}</div>
+                <div class="comments-prompt-context__meta">${escapeHtml(getCommentSiteLabel(getCommentsReadSite()))} · ID ${escapeHtml(filterState.promptId)}</div>
+            </div>
+            <div class="comments-prompt-context__actions">
+                <button type="button" class="comments-prompt-context__btn" data-comments-action="open-prompt-gallery">
+                    <i class="fas fa-palette"></i> Gallery
+                </button>
+                <button type="button" class="comments-prompt-context__btn comments-prompt-context__btn--primary" data-comments-action="open-prompt-homepage">
+                    <i class="fas fa-house"></i> Homepage
+                </button>
+                <button type="button" class="comments-prompt-context__btn" data-comments-action="open-prompt-analytics">
+                    <i class="fas fa-chart-line"></i> Analytics
+                </button>
+                <button type="button" class="comments-prompt-context__btn" data-comments-action="clear-prompt-context">
+                    <i class="fas fa-xmark"></i> 清除上下文
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+function openAdminPromptCommentContext(context = {}) {
+    const normalizedContext = context && typeof context === 'object' && !Array.isArray(context) ? context : {};
+    const promptId = String(normalizedContext.promptId || normalizedContext.id || '').trim();
+    if (!promptId) {
+        return false;
+    }
+
+    filterState.date = 'all';
+    filterState.dateFrom = null;
+    filterState.dateTo = null;
+    filterState.status = 'all';
+    filterState.type = 'all';
+    filterState.hasImage = false;
+    filterState.currentSearchInput = '';
+    filterState.searchTags = [];
+    filterState.queue = 'all';
+    filterState.promptId = promptId;
+    filterState.promptTitle = String(normalizedContext.promptTitle || normalizedContext.title || '').trim();
+    pendingFocusedCommentId = String(normalizedContext.focusCommentId || '').trim();
+    activeCommentQueue = 'all';
+
+    syncAdminCommentsFilterUi();
+    syncAdminCommentsRouteState({
+        view: 'gallery',
+        queue: 'all',
+        promptId: filterState.promptId,
+        promptTitle: filterState.promptTitle,
+        focusCommentId: pendingFocusedCommentId
+    }, {
+        ensureCommentsModule: true
+    });
+
+    if (typeof window.switchModule === 'function') {
+        window.switchModule('comments');
+    }
+    switchCommentView('gallery');
+    return true;
+}
+
+function openAdminUserCommentContext(context = {}) {
+    const normalizedContext = context && typeof context === 'object' && !Array.isArray(context) ? context : {};
+    const targetView = String(
+        normalizedContext.view
+        || normalizedContext.commentView
+        || normalizedContext.comment_view
+        || (String(normalizedContext.promptId || normalizedContext.prompt_id || '').trim() ? 'gallery' : 'guestbook')
+    ).trim().toLowerCase() === 'gallery'
+        ? 'gallery'
+        : 'guestbook';
+    const focusCommentId = String(
+        normalizedContext.focusCommentId
+        || normalizedContext.commentId
+        || normalizedContext.comment_id
+        || ''
+    ).trim();
+    const promptId = targetView === 'gallery'
+        ? String(normalizedContext.promptId || normalizedContext.prompt_id || '').trim()
+        : '';
+    const promptTitle = targetView === 'gallery'
+        ? String(normalizedContext.promptTitle || normalizedContext.prompt_title || '').trim()
+        : '';
+    const queue = String(normalizedContext.queue || '').trim().toLowerCase() || 'all';
+    const search = String(
+        normalizedContext.search
+        || normalizedContext.userId
+        || normalizedContext.user_id
+        || normalizedContext.email
+        || focusCommentId
+        || ''
+    ).trim();
+
+    filterState.date = 'all';
+    filterState.dateFrom = null;
+    filterState.dateTo = null;
+    filterState.status = 'all';
+    filterState.type = 'all';
+    filterState.queue = queue;
+    filterState.hasImage = false;
+    filterState.currentSearchInput = search;
+    filterState.searchTags = [];
+    filterState.promptId = promptId;
+    filterState.promptTitle = promptTitle;
+    pendingFocusedCommentId = focusCommentId;
+    activeCommentQueue = queue;
+
+    syncAdminCommentsFilterUi();
+    syncAdminCommentsRouteState({
+        view: targetView,
+        queue,
+        promptId,
+        promptTitle,
+        focusCommentId
+    }, {
+        ensureCommentsModule: true
+    });
+
+    if (typeof window.switchModule === 'function') {
+        window.switchModule('comments');
+    }
+    switchCommentView(targetView);
+    return true;
+}
+
+function restoreAdminCommentsRouteContext() {
+    const routeState = getAdminCommentsRouteState();
+    filterState.queue = routeState.queue || 'all';
+    filterState.promptId = routeState.view === 'gallery' ? routeState.promptId : '';
+    filterState.promptTitle = routeState.view === 'gallery' ? routeState.promptTitle : '';
+    pendingFocusedCommentId = routeState.focusCommentId || pendingFocusedCommentId;
+    currentCommentView = routeState.view;
+    activeCommentQueue = filterState.queue;
+    window.currentCommentView = currentCommentView;
+    return routeState;
+}
+
 function getCommentCurrentScopeBlockState(comment) {
     const state = comment?.user_block_state && typeof comment.user_block_state === 'object'
         ? comment.user_block_state
@@ -334,6 +658,7 @@ function buildCommentUserBlockBadge(comment) {
  */
 function initCommentsModule() {
     console.log('Initializing Comments Module...');
+    const routeState = restoreAdminCommentsRouteContext();
 
     // Check if supabase is available
     if (!getSupabase()) {
@@ -346,11 +671,19 @@ function initCommentsModule() {
     // Prevent double initialization
     if (commentsInitialized) {
         console.log('Comments module already initialized');
+        syncAdminCommentsFilterUi();
+        loadCommentStats();
+        loadComments(routeState.view || currentCommentView, {
+            resetPage: true,
+            focusCommentId: routeState.focusCommentId || pendingFocusedCommentId
+        });
         return;
     }
     commentsInitialized = true;
+    currentCommentView = routeState.view || currentCommentView;
     window.currentCommentView = currentCommentView;
 
+    syncAdminCommentsFilterUi();
     loadCommentStats();
     loadComments(currentCommentView, { resetPage: true });
     setupCommentEventHandlers();
@@ -362,6 +695,11 @@ function initCommentsModule() {
 function setupCommentEventHandlers() {
     // Setup filter dropdowns
     setupFilterDropdowns();
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            closeCommentDetailDrawer();
+        }
+    });
 }
 
 /**
@@ -563,6 +901,13 @@ function getCommentFilterOptionLabel(filterType, value) {
     return labels[normalizedType]?.[normalizedValue] || getDefaultLabel(normalizedType);
 }
 
+function syncCommentQueueUi() {
+    document.querySelectorAll('.comment-queue-btn').forEach((button) => {
+        const queue = String(button.dataset.commentsQueue || 'all').trim().toLowerCase() || 'all';
+        button.classList.toggle('active', queue === (filterState.queue || 'all'));
+    });
+}
+
 function syncAdminCommentsFilterUi() {
     const searchInput = document.getElementById('commentSearch');
     if (searchInput) {
@@ -603,6 +948,8 @@ function syncAdminCommentsFilterUi() {
         dateToInput.value = filterState.date === 'custom' ? (filterState.dateTo || '') : '';
     }
 
+    syncCommentQueueUi();
+    renderCommentsPromptContextBar();
     renderFilterTags();
 }
 
@@ -621,18 +968,32 @@ function openAnalyticsCommentContext(context = {}) {
     const type = ['all', 'top', 'reply'].includes(String(normalizedContext.type || '').trim().toLowerCase())
         ? String(normalizedContext.type || '').trim().toLowerCase()
         : 'all';
+    const queue = String(normalizedContext.queue || '').trim().toLowerCase() || 'all';
 
     filterState.date = 'all';
     filterState.dateFrom = null;
     filterState.dateTo = null;
     filterState.status = status;
     filterState.type = type;
+    filterState.queue = queue;
     filterState.hasImage = normalizedContext.hasImage === true;
     filterState.currentSearchInput = String(normalizedContext.search || normalizedContext.searchTerm || '').trim();
     filterState.searchTags = [];
+    filterState.promptId = '';
+    filterState.promptTitle = '';
     pendingFocusedCommentId = focusCommentId;
+    activeCommentQueue = queue;
 
     syncAdminCommentsFilterUi();
+    syncAdminCommentsRouteState({
+        view: targetView,
+        queue,
+        promptId: '',
+        promptTitle: '',
+        focusCommentId
+    }, {
+        ensureCommentsModule: true
+    });
     switchCommentView(targetView);
 }
 
@@ -645,7 +1006,8 @@ function getDefaultLabel(filterType) {
         user: '用户',
         status: '状态',
         type: '类型',
-        source: '来源'
+        source: '来源',
+        queue: '队列'
     };
     return labels[filterType] || filterType;
 }
@@ -658,11 +1020,122 @@ function isReplyLevelComment(comment) {
     return String(comment?.level || '').trim() === 'reply';
 }
 
+function getCommentWorkflow(comment) {
+    return comment?.workflow && typeof comment.workflow === 'object' && !Array.isArray(comment.workflow)
+        ? comment.workflow
+        : {
+            status: 'pending',
+            priority: 'normal',
+            tags: [],
+            note_count: 0,
+            linked_ticket_count: 0,
+            linked_ticket_ids: [],
+            assignee_id: '',
+            assignee_label: '',
+            exists: false
+        };
+}
+
+function getCommentWorkflowStatusMeta(status) {
+    const normalized = String(status || '').trim().toLowerCase();
+    const map = {
+        pending: { label: '待处理', tone: 'pending' },
+        in_review: { label: '复核中', tone: 'review' },
+        escalated: { label: '已升级', tone: 'escalated' },
+        resolved: { label: '已解决', tone: 'resolved' },
+        ignored: { label: '已忽略', tone: 'muted' }
+    };
+    return map[normalized] || map.pending;
+}
+
+function getCommentSiteLabel(site) {
+    return String(site || '').trim().toLowerCase() === 'intl' ? 'INTL' : 'CN';
+}
+
+function getCommentUserRiskLabel(comment) {
+    const summary = comment?.user_summary && typeof comment.user_summary === 'object'
+        ? comment.user_summary
+        : {};
+    const riskLevel = String(summary.risk_level || '').trim().toLowerCase();
+    if (riskLevel === 'blocked') return '封禁中';
+    if (riskLevel === 'watch') return '需关注';
+    return '正常';
+}
+
+function isBlockedComment(comment) {
+    const state = comment?.user_block_state && typeof comment.user_block_state === 'object'
+        ? comment.user_block_state
+        : {};
+    if (state.hasGlobalBlock === true) {
+        return true;
+    }
+    if (comment?.type === 'gallery') {
+        return state.isGalleryBlocked === true;
+    }
+    return state.isGuestbookBlocked === true;
+}
+
+function isHighRiskComment(comment) {
+    const workflow = getCommentWorkflow(comment);
+    const tags = Array.isArray(workflow.tags) ? workflow.tags : [];
+    return isBlockedComment(comment)
+        || String(workflow.priority || '').trim().toLowerCase() === 'high'
+        || tags.some((tag) => ['risk', 'high_risk', 'spam', 'abuse'].includes(String(tag || '').toLowerCase()));
+}
+
+function matchesCommentQueue(comment, queue) {
+    const normalizedQueue = String(queue || '').trim().toLowerCase() || 'all';
+    const workflow = getCommentWorkflow(comment);
+
+    if (normalizedQueue === 'all') {
+        return true;
+    }
+    if (normalizedQueue === 'guestbook_unreplied') {
+        return comment?.type === 'guestbook'
+            && comment?.record_type === 'message'
+            && getCommentReplyCount(comment) <= 0;
+    }
+    if (normalizedQueue === 'high_risk') {
+        return isHighRiskComment(comment);
+    }
+    if (normalizedQueue === 'blocked_user') {
+        return isBlockedComment(comment);
+    }
+    if (normalizedQueue === 'escalated') {
+        return String(workflow.status || '').trim().toLowerCase() === 'escalated'
+            || Number(workflow.linked_ticket_count || 0) > 0;
+    }
+    return true;
+}
+
+function getCommentContextTitle(comment) {
+    return String(comment?.context_title || comment?.prompt_title || '').trim();
+}
+
+function getCommentEntityLabel(comment) {
+    return String(comment?.entity_label || '').trim()
+        || (comment?.type === 'gallery' ? '画廊评论' : '留言内容');
+}
+
+function getCommentSummaryMetricText(comment) {
+    const likeCount = Number(comment?.like_count ?? comment?.likes ?? 0) || 0;
+    const replyCount = Number(comment?.reply_count || 0) || 0;
+    return `赞 ${likeCount} · 回复 ${replyCount}`;
+}
+
 /**
  * Apply filters to comments array
  */
 function applyFilters(comments) {
     return comments.filter(comment => {
+        if (filterState.promptId && String(comment.context || '').trim() !== String(filterState.promptId).trim()) {
+            return false;
+        }
+
+        if (!matchesCommentQueue(comment, filterState.queue)) {
+            return false;
+        }
+
         // Date filter
         if (filterState.date !== 'all') {
             const commentDate = new Date(comment.created_at);
@@ -698,9 +1171,10 @@ function applyFilters(comments) {
                 const matchesContent = comment.content.toLowerCase().includes(searchTerm);
                 const matchesAuthor = comment.author.toLowerCase().includes(searchTerm);
                 const matchesPrompt = comment.prompt_title && comment.prompt_title.toLowerCase().includes(searchTerm);
+                const matchesPromptId = comment.context && String(comment.context).toLowerCase().includes(searchTerm);
                 const matchesId = comment.id && comment.id.toLowerCase().includes(searchTerm);
                 const matchesParentId = comment.parent_id && String(comment.parent_id).toLowerCase().includes(searchTerm);
-                return matchesContent || matchesAuthor || matchesPrompt || matchesId || matchesParentId;
+                return matchesContent || matchesAuthor || matchesPrompt || matchesPromptId || matchesId || matchesParentId;
             });
             if (!matchesTags) return false;
         }
@@ -716,10 +1190,11 @@ function applyFilters(comments) {
                 const matchesContent = comment.content.toLowerCase().includes(searchTerm);
                 const matchesAuthor = comment.author.toLowerCase().includes(searchTerm);
                 const matchesPrompt = comment.prompt_title && comment.prompt_title.toLowerCase().includes(searchTerm);
+                const matchesPromptId = comment.context && String(comment.context).toLowerCase().includes(searchTerm);
                 const matchesId = comment.id && comment.id.toLowerCase().includes(searchTerm);
                 const matchesParentId = comment.parent_id && String(comment.parent_id).toLowerCase().includes(searchTerm);
 
-                if (!matchesContent && !matchesAuthor && !matchesPrompt && !matchesId && !matchesParentId) return false;
+                if (!matchesContent && !matchesAuthor && !matchesPrompt && !matchesPromptId && !matchesId && !matchesParentId) return false;
             }
         }
 
@@ -742,15 +1217,37 @@ function applyFilters(comments) {
     });
 }
 
+function updateCommentQueueCounts(summary = {}) {
+    const queueCounts = summary?.queueCounts && typeof summary.queueCounts === 'object'
+        ? summary.queueCounts
+        : {};
+    const totalFeedback = Number(summary?.totalFeedback || summary?.totalCount || 0);
+    const countsById = {
+        commentQueueCountAll: totalFeedback,
+        commentQueueCountGuestbookUnreplied: Number(queueCounts.guestbook_unreplied || 0),
+        commentQueueCountHighRisk: Number(queueCounts.high_risk || 0),
+        commentQueueCountBlockedUser: Number(queueCounts.blocked_user || 0),
+        commentQueueCountEscalated: Number(queueCounts.escalated || 0)
+    };
+
+    Object.entries(countsById).forEach(([id, value]) => {
+        const node = document.getElementById(id);
+        if (node) {
+            node.textContent = String(Math.max(0, value));
+        }
+    });
+}
+
 /**
  * Load comment statistics
  */
 async function loadCommentStats() {
     try {
         const payload = await fetchAdminCommentSummary(getCommentsReadSite());
-        const totalCount = Number(payload?.summary?.totalCount || 0);
-        const todayCount = Number(payload?.summary?.todayCount || 0);
-        const activeUsersCount = Number(payload?.summary?.activeUsersCount || 0);
+        commentsSummaryState = payload?.summary || {};
+        const totalCount = Number(payload?.summary?.totalFeedback || payload?.summary?.totalCount || 0);
+        const todayCount = Number(payload?.summary?.todayFeedbackCount || payload?.summary?.todayCount || 0);
+        const activeUsersCount = Number(payload?.summary?.activeUsers7d || payload?.summary?.activeUsersCount || 0);
         const weekGrowth = Number(payload?.summary?.weekGrowth || 0);
 
         // Update UI
@@ -759,6 +1256,7 @@ async function loadCommentStats() {
         document.getElementById('activeUsersCount').textContent = activeUsersCount;
         document.getElementById('weekGrowth').textContent =
             weekGrowth >= 0 ? `+${weekGrowth}%` : `${weekGrowth}%`;
+        updateCommentQueueCounts(payload?.summary || {});
 
     } catch (error) {
         console.error('Error loading comment stats:', error);
@@ -771,6 +1269,11 @@ async function loadCommentStats() {
 function switchCommentView(view) {
     currentCommentView = view;
     window.currentCommentView = view;
+    if (view === 'gallery' && filterState.queue === 'guestbook_unreplied') {
+        filterState.queue = 'all';
+        activeCommentQueue = 'all';
+    }
+    syncCommentQueueUi();
 
     // Update tab active state
     document.querySelectorAll('[data-comment-view]').forEach(tab => {
@@ -821,6 +1324,25 @@ function renderFilterTags() {
     // Has Image
     if (filterState.hasImage) {
         tagsHtml += createTagHtml('hasImage', '包含', '图片');
+    }
+
+    if (filterState.queue && filterState.queue !== 'all') {
+        const queueLabels = {
+            guestbook_unreplied: '未回复留言',
+            high_risk: '高风险评论',
+            blocked_user: '已封禁用户内容',
+            escalated: '已升级工单评论'
+        };
+        tagsHtml += createTagHtml('queue', '队列', queueLabels[filterState.queue] || filterState.queue);
+    }
+
+    if (filterState.promptId) {
+        tagsHtml += createTagHtml(
+            'prompt',
+            'Prompt',
+            filterState.promptTitle || filterState.promptId,
+            filterState.promptId
+        );
     }
 
     // User Search Tags
@@ -877,6 +1399,13 @@ window.removeFilter = function (type, id) {
     } else if (type === 'searchTag') {
         // Remove specific tag from array
         filterState.searchTags = filterState.searchTags.filter(t => t !== id);
+    } else if (type === 'queue') {
+        filterState.queue = 'all';
+        activeCommentQueue = 'all';
+        syncCommentQueueUi();
+    } else if (type === 'prompt') {
+        filterState.promptId = '';
+        filterState.promptTitle = '';
     }
 
     loadComments(currentCommentView, { resetPage: true });
@@ -953,7 +1482,9 @@ function buildCommentsListRequestParams(view, overrides = {}) {
         status: filterState.status,
         type: filterState.type,
         source: filterState.source,
+        queue: filterState.queue,
         hasImage: filterState.hasImage,
+        promptId: view === 'gallery' ? filterState.promptId : '',
         search: filterState.currentSearchInput,
         searchTag: filterState.searchTags
     };
@@ -974,7 +1505,9 @@ function buildCommentsViewCacheKey(requestParams = {}) {
         status: requestParams.status || 'all',
         type: requestParams.type || 'all',
         source: requestParams.source || 'all',
+        queue: requestParams.queue || 'all',
         hasImage: requestParams.hasImage === true,
+        promptId: String(requestParams.promptId || '').trim(),
         search: String(requestParams.search || '').trim(),
         searchTag: tags
     });
@@ -1317,6 +1850,583 @@ function refreshCommentsForUserStatus(userId) {
     });
 }
 
+function getCommentById(commentId) {
+    const normalizedId = String(commentId || '').trim();
+    if (!normalizedId) {
+        return null;
+    }
+    return commentsById.get(normalizedId) || commentsData.find((item) => String(item?.id || '').trim() === normalizedId) || null;
+}
+
+function selectCommentQueue(queue = 'all') {
+    const normalizedQueue = String(queue || '').trim().toLowerCase() || 'all';
+    filterState.queue = normalizedQueue;
+    activeCommentQueue = normalizedQueue;
+    syncCommentQueueUi();
+
+    const nextView = normalizedQueue === 'guestbook_unreplied' ? 'guestbook' : currentCommentView;
+    syncAdminCommentsRouteState({
+        view: nextView,
+        queue: normalizedQueue,
+        promptId: nextView === 'gallery' ? filterState.promptId : '',
+        promptTitle: nextView === 'gallery' ? filterState.promptTitle : ''
+    }, {
+        ensureCommentsModule: true
+    });
+
+    if (nextView !== currentCommentView) {
+        switchCommentView(nextView);
+        return;
+    }
+
+    loadComments(currentCommentView, { resetPage: true });
+}
+
+function ensureCommentDetailDrawer() {
+    let drawer = document.getElementById('commentDetailDrawer');
+    if (drawer) {
+        return drawer;
+    }
+
+    drawer = document.createElement('div');
+    drawer.id = 'commentDetailDrawer';
+    drawer.className = 'comment-detail-drawer';
+    drawer.innerHTML = `
+        <div class="comment-detail-drawer__backdrop" data-comments-action="close-detail-drawer"></div>
+        <aside class="comment-detail-drawer__panel" aria-label="评论详情">
+            <div class="comment-detail-drawer__header">
+                <div>
+                    <div class="comment-detail-drawer__eyebrow">Comment V2</div>
+                    <h3 class="comment-detail-drawer__title" id="commentDetailDrawerTitle">评论详情</h3>
+                </div>
+                <button type="button" class="comment-detail-drawer__close" data-comments-action="close-detail-drawer" aria-label="关闭评论详情">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="comment-detail-drawer__body" id="commentDetailDrawerBody"></div>
+        </aside>
+    `;
+
+    document.body.appendChild(drawer);
+    return drawer;
+}
+
+function closeCommentDetailDrawer() {
+    activeCommentDetailId = '';
+    const drawer = document.getElementById('commentDetailDrawer');
+    if (drawer) {
+        drawer.classList.remove('is-open');
+    }
+}
+
+function buildCommentDrawerActionButton({ action = '', label = '', icon = 'arrow-right', disabled = false, extraAttrs = '' } = {}) {
+    return `
+        <button type="button" class="comment-detail-drawer__action-btn" data-comments-action="${escapeHtml(action)}" ${disabled ? 'disabled' : ''} ${extraAttrs}>
+            <i class="fas fa-${escapeHtml(icon)}"></i>
+            <span>${escapeHtml(label)}</span>
+        </button>
+    `;
+}
+
+function renderCommentDetailDrawer(comment, detail = {}, options = {}) {
+    const drawer = ensureCommentDetailDrawer();
+    const body = drawer.querySelector('#commentDetailDrawerBody');
+    const title = drawer.querySelector('#commentDetailDrawerTitle');
+    if (!body || !title) {
+        return;
+    }
+
+    const workflow = detail?.workflow && typeof detail.workflow === 'object'
+        ? detail.workflow
+        : getCommentWorkflow(comment);
+    const workflowMeta = getCommentWorkflowStatusMeta(workflow.status);
+    const userSummary = comment?.user_summary && typeof comment.user_summary === 'object'
+        ? comment.user_summary
+        : {};
+    const tickets = Array.isArray(detail?.tickets) ? detail.tickets : [];
+    const notes = Array.isArray(detail?.notes) ? detail.notes : [];
+    const tags = Array.isArray(workflow.tags) ? workflow.tags : [];
+    const ticketIds = Array.isArray(workflow.linked_ticket_ids) ? workflow.linked_ticket_ids : [];
+    const contextTitle = getCommentContextTitle(comment) || getCommentEntityLabel(comment);
+
+    title.textContent = `${getCommentEntityLabel(comment)} · ${comment.author || '未知用户'}`;
+
+    if (options.error) {
+        body.innerHTML = `<div class="comment-detail-drawer__empty">加载失败：${escapeHtml(options.error)}</div>`;
+        drawer.classList.add('is-open');
+        return;
+    }
+
+    body.innerHTML = `
+        <section class="comment-detail-drawer__section">
+            <div class="comment-detail-drawer__hero">
+                <div class="comment-detail-drawer__hero-main">
+                    <div class="comment-detail-drawer__hero-row">
+                        <span class="comment-detail-chip comment-detail-chip--site">${escapeHtml(getCommentSiteLabel(comment.site))}</span>
+                        <span class="comment-detail-chip comment-detail-chip--entity">${escapeHtml(getCommentEntityLabel(comment))}</span>
+                        <span class="comment-detail-chip comment-detail-chip--status comment-detail-chip--${escapeHtml(workflowMeta.tone)}">${escapeHtml(workflowMeta.label)}</span>
+                    </div>
+                    <div class="comment-detail-drawer__hero-title">${escapeHtml(contextTitle)}</div>
+                    <div class="comment-detail-drawer__hero-meta">${escapeHtml(comment.author || '未知用户')} · ${escapeHtml(formatTimeAgo(comment.created_at))} · ${escapeHtml(getCommentSummaryMetricText(comment))}</div>
+                </div>
+                <div class="comment-detail-drawer__hero-side">
+                    <div class="comment-detail-drawer__hero-side-label">风险</div>
+                    <div class="comment-detail-drawer__hero-side-value">${escapeHtml(getCommentUserRiskLabel(comment))}</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="comment-detail-drawer__section">
+            <div class="comment-detail-drawer__section-head">
+                <h4>治理动作</h4>
+                <span>跨模块联动</span>
+            </div>
+            <div class="comment-detail-drawer__action-grid">
+                ${buildCommentDrawerActionButton({
+                    action: 'open-comment-user',
+                    label: '查看用户',
+                    icon: 'user',
+                    disabled: !comment?.user_id,
+                    extraAttrs: `data-comment-id="${encodeURIComponent(comment.id)}"`
+                })}
+                ${buildCommentDrawerActionButton({
+                    action: 'view-comment-context',
+                    label: '查看上下文',
+                    icon: 'external-link-alt',
+                    disabled: !comment?.context,
+                    extraAttrs: `data-context-url="${encodeURIComponent(buildCommentContextUrl(comment))}"`
+                })}
+                ${buildCommentDrawerActionButton({
+                    action: 'open-comment-prompt',
+                    label: comment?.type === 'gallery' ? '编辑 Prompt' : '返回评论列表',
+                    icon: comment?.type === 'gallery' ? 'wand-magic-sparkles' : 'comments',
+                    disabled: comment?.type !== 'gallery',
+                    extraAttrs: `data-comment-id="${encodeURIComponent(comment.id)}"`
+                })}
+                ${buildCommentDrawerActionButton({
+                    action: tickets.length > 0 ? 'open-comment-ticket' : 'create-comment-ticket',
+                    label: tickets.length > 0 ? '查看工单' : '创建工单',
+                    icon: 'headset',
+                    disabled: !window.hasPermission || !window.hasPermission('tickets.manage'),
+                    extraAttrs: tickets.length > 0
+                        ? `data-ticket-id="${encodeURIComponent(tickets[0]?.id || ticketIds[0] || '')}" data-comment-id="${encodeURIComponent(comment.id)}"`
+                        : `data-comment-id="${encodeURIComponent(comment.id)}"`
+                })}
+            </div>
+        </section>
+
+        <section class="comment-detail-drawer__section">
+            <div class="comment-detail-drawer__section-head">
+                <h4>线程上下文</h4>
+                <span>${escapeHtml(getCommentEntityLabel(comment))}</span>
+            </div>
+            <div class="comment-detail-thread">
+                ${comment.root_snippet ? `
+                    <div class="comment-detail-thread__item">
+                        <span class="comment-detail-thread__label">线程主文</span>
+                        <div class="comment-detail-thread__content">${escapeHtml(comment.root_snippet)}</div>
+                    </div>
+                ` : ''}
+                ${comment.parent_snippet ? `
+                    <div class="comment-detail-thread__item">
+                        <span class="comment-detail-thread__label">上级内容</span>
+                        <div class="comment-detail-thread__content">${escapeHtml(comment.parent_snippet)}</div>
+                    </div>
+                ` : ''}
+                <div class="comment-detail-thread__item comment-detail-thread__item--current">
+                    <span class="comment-detail-thread__label">当前评论</span>
+                    <div class="comment-detail-thread__content">${escapeHtml(comment.content || '')}</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="comment-detail-drawer__section">
+            <div class="comment-detail-drawer__section-head">
+                <h4>用户侧信号</h4>
+                <span>${escapeHtml(getCommentUserRiskLabel(comment))}</span>
+            </div>
+            <div class="comment-detail-stat-grid">
+                <div class="comment-detail-stat"><span>留言主贴</span><strong>${Number(userSummary.guestbook_message_count || 0)}</strong></div>
+                <div class="comment-detail-stat"><span>留言评论</span><strong>${Number(userSummary.guestbook_comment_count || 0)}</strong></div>
+                <div class="comment-detail-stat"><span>画廊评论</span><strong>${Number(userSummary.gallery_comment_count || 0)}</strong></div>
+                <div class="comment-detail-stat"><span>处理中工单</span><strong>${Number(userSummary.active_ticket_count || 0)}</strong></div>
+                <div class="comment-detail-stat"><span>订单</span><strong>${Number(userSummary.order_count || 0)}</strong></div>
+                <div class="comment-detail-stat"><span>支付单</span><strong>${Number(userSummary.payment_order_count || 0)}</strong></div>
+            </div>
+        </section>
+
+        <section class="comment-detail-drawer__section">
+            <div class="comment-detail-drawer__section-head">
+                <h4>Workflow</h4>
+                <span>${escapeHtml(workflow.assignee_label || '未指派')}</span>
+            </div>
+            <div class="comment-detail-drawer__toolbar">
+                <div class="comment-detail-drawer__status-group">
+                    ${['pending', 'in_review', 'escalated', 'resolved'].map((status) => {
+                        const meta = getCommentWorkflowStatusMeta(status);
+                        return `
+                            <button type="button" class="comment-status-pill${workflow.status === status ? ' active' : ''}" data-comments-action="set-workflow-status" data-comment-id="${encodeURIComponent(comment.id)}" data-workflow-status="${escapeHtml(status)}">
+                                ${escapeHtml(meta.label)}
+                            </button>
+                        `;
+                    }).join('')}
+                </div>
+                <div class="comment-detail-drawer__toolbar-actions">
+                    <button type="button" class="comment-detail-drawer__minor-btn" data-comments-action="assign-comment-self" data-comment-id="${encodeURIComponent(comment.id)}">指派给我</button>
+                    <button type="button" class="comment-detail-drawer__minor-btn${String(workflow.priority || '').trim().toLowerCase() === 'high' ? ' is-active' : ''}" data-comments-action="toggle-comment-priority" data-comment-id="${encodeURIComponent(comment.id)}">
+                        ${String(workflow.priority || '').trim().toLowerCase() === 'high' ? '取消高优先' : '标记高优先'}
+                    </button>
+                    <button type="button" class="comment-detail-drawer__minor-btn" data-comments-action="edit-comment-tags" data-comment-id="${encodeURIComponent(comment.id)}">编辑标签</button>
+                </div>
+            </div>
+            <div class="comment-detail-tag-list">
+                ${tags.length
+            ? tags.map((tag) => `<span class="comment-detail-chip comment-detail-chip--tag">${escapeHtml(tag)}</span>`).join('')
+            : '<span class="comment-detail-drawer__empty-inline">暂无标签</span>'}
+            </div>
+        </section>
+
+        <section class="comment-detail-drawer__section">
+            <div class="comment-detail-drawer__section-head">
+                <h4>备注</h4>
+                <span>${Number(workflow.note_count || 0)} 条</span>
+            </div>
+            <div class="comment-detail-note-composer">
+                <textarea id="commentWorkflowNoteInput" class="comment-detail-note-input" placeholder="记录处理判断、交接信息或补充证据"></textarea>
+                <button type="button" class="comment-detail-drawer__action-btn comment-detail-drawer__action-btn--primary" data-comments-action="add-workflow-note" data-comment-id="${encodeURIComponent(comment.id)}">
+                    <i class="fas fa-note-sticky"></i>
+                    <span>添加备注</span>
+                </button>
+            </div>
+            <div class="comment-detail-note-list">
+                ${notes.length
+            ? notes.map((note) => `
+                <div class="comment-detail-note-item">
+                    <div class="comment-detail-note-item__meta">${escapeHtml(note.admin_label || note.admin_id || 'Admin')} · ${escapeHtml(formatTimeAgo(note.created_at))}</div>
+                    <div class="comment-detail-note-item__content">${escapeHtml(note.note || '')}</div>
+                </div>
+            `).join('')
+            : '<div class="comment-detail-drawer__empty-inline">还没有备注</div>'}
+            </div>
+        </section>
+
+        <section class="comment-detail-drawer__section">
+            <div class="comment-detail-drawer__section-head">
+                <h4>关联工单</h4>
+                <span>${tickets.length || Number(workflow.linked_ticket_count || 0)} 张</span>
+            </div>
+            <div class="comment-detail-ticket-list">
+                ${tickets.length
+            ? tickets.map((ticket) => `
+                <button type="button" class="comment-detail-ticket-item" data-comments-action="open-comment-ticket" data-ticket-id="${encodeURIComponent(ticket.id || '')}" data-comment-id="${encodeURIComponent(comment.id)}">
+                    <div class="comment-detail-ticket-item__id">${escapeHtml(ticket.id || '')}</div>
+                    <div class="comment-detail-ticket-item__meta">${escapeHtml(ticket.status || 'PENDING')} · ${escapeHtml(formatTimeAgo(ticket.created_at))}</div>
+                </button>
+            `).join('')
+            : '<div class="comment-detail-drawer__empty-inline">当前没有关联工单</div>'}
+            </div>
+        </section>
+    `;
+
+    drawer.classList.add('is-open');
+}
+
+async function openCommentDetail(commentId) {
+    const comment = getCommentById(commentId);
+    if (!comment) {
+        showToast('未找到当前评论', 'error');
+        return;
+    }
+
+    const drawer = ensureCommentDetailDrawer();
+    const body = drawer.querySelector('#commentDetailDrawerBody');
+    const title = drawer.querySelector('#commentDetailDrawerTitle');
+    activeCommentDetailId = comment.id;
+    commentDetailLoading = true;
+
+    if (title) {
+        title.textContent = '加载评论详情';
+    }
+    if (body) {
+        body.innerHTML = '<div class="comment-detail-drawer__empty">正在加载评论治理详情...</div>';
+    }
+    drawer.classList.add('is-open');
+
+    try {
+        const detail = await fetchAdminCommentWorkflowDetail({
+            site: comment.site || getCommentsReadSite(),
+            entityType: comment.entity_type,
+            entityId: comment.id
+        });
+        if (activeCommentDetailId !== comment.id) {
+            return;
+        }
+        renderCommentDetailDrawer(comment, detail);
+    } catch (error) {
+        console.error('Failed to load comment detail:', error);
+        renderCommentDetailDrawer(comment, null, {
+            error: error.message || '未知错误'
+        });
+    } finally {
+        commentDetailLoading = false;
+    }
+}
+
+function openCommentUser(commentId) {
+    const comment = getCommentById(commentId);
+    if (!comment?.user_id) {
+        showToast('当前评论缺少用户信息', 'error');
+        return;
+    }
+
+    window.switchModule?.('users');
+    window.setTimeout(() => {
+        window.openUserModal?.(comment.user_id, {
+            defaultTab: 'content',
+            analyticsContext: {
+                sourceLabel: '评论管理',
+                summary: `${getCommentEntityLabel(comment)} · ${comment.author || '未知用户'}`,
+                referenceLabel: '评论',
+                referenceValue: comment.id,
+                destination: 'comments',
+                destinationContext: {
+                    view: currentCommentView,
+                    focusCommentId: comment.id
+                }
+            }
+        });
+    }, 160);
+}
+
+function openCommentPromptAdmin(commentId) {
+    const comment = getCommentById(commentId);
+    if (!comment || comment.type !== 'gallery' || !comment.context) {
+        showToast('当前评论没有可编辑的 Prompt', 'info');
+        return;
+    }
+
+    window.switchModule?.('gallery');
+    window.setTimeout(() => {
+        window.editPrompt?.(comment.context);
+    }, 180);
+}
+
+function openCommentTicket(ticketId, commentId = '') {
+    const normalizedTicketId = String(ticketId || '').trim();
+    if (!normalizedTicketId) {
+        showToast('当前评论还没有关联工单', 'info');
+        return;
+    }
+
+    window.switchModule?.('tickets');
+    window.setTimeout(async () => {
+        try {
+            await window.AdminTickets?.init?.();
+            await window.AdminTickets?.focusTicket?.(normalizedTicketId, { status: 'all' });
+        } catch (error) {
+            console.warn('Failed to open linked ticket:', error);
+        }
+    }, 180);
+
+    if (commentId) {
+        activeCommentDetailId = commentId;
+    }
+}
+
+async function createCommentTicket(commentId) {
+    const comment = getCommentById(commentId);
+    if (!comment) {
+        showToast('未找到当前评论', 'error');
+        return;
+    }
+
+    try {
+        const payload = await mutateAdminCommentWorkflow({
+            action: 'create_ticket',
+            site: comment.site || getCommentsReadSite(),
+            entityType: comment.entity_type,
+            entityId: comment.id,
+            comment
+        });
+        showToast(payload?.message || '已创建工单', 'success');
+        await loadCommentStats();
+        prepareCommentReloadState({
+            preserveSelection: true,
+            focusCommentId: comment.id
+        });
+        await loadComments(currentCommentView, {
+            preserveSelection: true,
+            focusCommentId: comment.id
+        });
+        if (payload?.ticket_id) {
+            openCommentTicket(payload.ticket_id, comment.id);
+        } else {
+            await openCommentDetail(comment.id);
+        }
+    } catch (error) {
+        console.error('Failed to create comment ticket:', error);
+        showToast(error.message || '创建工单失败', 'error');
+    }
+}
+
+async function updateCommentWorkflowStatus(commentId, status) {
+    const comment = getCommentById(commentId);
+    if (!comment) {
+        return;
+    }
+
+    try {
+        await mutateAdminCommentWorkflow({
+            action: 'set_status',
+            site: comment.site || getCommentsReadSite(),
+            entityType: comment.entity_type,
+            entityId: comment.id,
+            status
+        });
+        showToast('状态已更新', 'success');
+        await loadCommentStats();
+        prepareCommentReloadState({
+            preserveSelection: true,
+            focusCommentId: comment.id
+        });
+        await loadComments(currentCommentView, {
+            preserveSelection: true,
+            focusCommentId: comment.id
+        });
+        await openCommentDetail(comment.id);
+    } catch (error) {
+        console.error('Failed to update comment workflow status:', error);
+        showToast(error.message || '状态更新失败', 'error');
+    }
+}
+
+async function assignCommentWorkflowSelf(commentId) {
+    const comment = getCommentById(commentId);
+    if (!comment) {
+        return;
+    }
+
+    try {
+        await mutateAdminCommentWorkflow({
+            action: 'assign_self',
+            site: comment.site || getCommentsReadSite(),
+            entityType: comment.entity_type,
+            entityId: comment.id
+        });
+        showToast('已指派给当前管理员', 'success');
+        await loadComments(currentCommentView, {
+            preserveSelection: true,
+            focusCommentId: comment.id
+        });
+        await openCommentDetail(comment.id);
+    } catch (error) {
+        console.error('Failed to assign comment workflow:', error);
+        showToast(error.message || '指派失败', 'error');
+    }
+}
+
+async function toggleCommentWorkflowPriority(commentId) {
+    const comment = getCommentById(commentId);
+    if (!comment) {
+        return;
+    }
+
+    const currentPriority = String(getCommentWorkflow(comment).priority || 'normal').trim().toLowerCase();
+    const nextPriority = currentPriority === 'high' ? 'normal' : 'high';
+
+    try {
+        await mutateAdminCommentWorkflow({
+            action: 'set_priority',
+            site: comment.site || getCommentsReadSite(),
+            entityType: comment.entity_type,
+            entityId: comment.id,
+            priority: nextPriority
+        });
+        showToast(nextPriority === 'high' ? '已标记高优先' : '已恢复常规优先级', 'success');
+        await loadComments(currentCommentView, {
+            preserveSelection: true,
+            focusCommentId: comment.id
+        });
+        await openCommentDetail(comment.id);
+    } catch (error) {
+        console.error('Failed to toggle comment priority:', error);
+        showToast(error.message || '优先级更新失败', 'error');
+    }
+}
+
+async function editCommentWorkflowTags(commentId) {
+    const comment = getCommentById(commentId);
+    if (!comment) {
+        return;
+    }
+
+    const currentTags = Array.isArray(getCommentWorkflow(comment).tags)
+        ? getCommentWorkflow(comment).tags
+        : [];
+    const nextValue = window.prompt('请输入标签，使用英文逗号分隔', currentTags.join(', '));
+    if (nextValue === null) {
+        return;
+    }
+
+    try {
+        await mutateAdminCommentWorkflow({
+            action: 'set_tags',
+            site: comment.site || getCommentsReadSite(),
+            entityType: comment.entity_type,
+            entityId: comment.id,
+            tags: nextValue
+                .split(',')
+                .map((item) => item.trim())
+                .filter(Boolean)
+        });
+        showToast('标签已更新', 'success');
+        await loadComments(currentCommentView, {
+            preserveSelection: true,
+            focusCommentId: comment.id
+        });
+        await openCommentDetail(comment.id);
+    } catch (error) {
+        console.error('Failed to update comment tags:', error);
+        showToast(error.message || '标签更新失败', 'error');
+    }
+}
+
+async function addCommentWorkflowNote(commentId) {
+    const comment = getCommentById(commentId);
+    const input = document.getElementById('commentWorkflowNoteInput');
+    const note = String(input?.value || '').trim();
+
+    if (!comment) {
+        return;
+    }
+    if (!note) {
+        showToast('请先填写备注', 'info');
+        return;
+    }
+
+    try {
+        await mutateAdminCommentWorkflow({
+            action: 'add_note',
+            site: comment.site || getCommentsReadSite(),
+            entityType: comment.entity_type,
+            entityId: comment.id,
+            note
+        });
+        if (input) {
+            input.value = '';
+        }
+        showToast('备注已添加', 'success');
+        await loadComments(currentCommentView, {
+            preserveSelection: true,
+            focusCommentId: comment.id
+        });
+        await openCommentDetail(comment.id);
+    } catch (error) {
+        console.error('Failed to add comment note:', error);
+        showToast(error.message || '备注保存失败', 'error');
+    }
+}
+
 async function fetchAllFilteredCommentsForExport(view) {
     const baseParams = buildCommentsListRequestParams(view, {
         page: 1,
@@ -1346,9 +2456,16 @@ async function fetchAllFilteredCommentsForExport(view) {
 async function loadComments(view, options = {}) {
     console.log('loadComments called for view:', view);
     // Render active filters
+    renderCommentsPromptContextBar();
     renderFilterTags();
 
     const normalizedView = view === 'gallery' ? 'gallery' : 'guestbook';
+    if (normalizedView !== 'gallery' && filterState.promptId) {
+        filterState.promptId = '';
+        filterState.promptTitle = '';
+        renderCommentsPromptContextBar();
+        renderFilterTags();
+    }
     const normalizedOptions = {
         resetPage: options?.resetPage === true,
         preserveSelection: options?.preserveSelection === true,
@@ -1415,8 +2532,16 @@ async function loadComments(view, options = {}) {
         const data = Array.isArray(payload?.comments) ? payload.comments : [];
 
         commentsData = data;
+        commentsById = new Map(data.map((comment) => [String(comment?.id || '').trim(), comment]).filter(([id]) => Boolean(id)));
         filteredComments = data;
         updateCommentsPaginationState(payload?.pagination, data.length);
+        syncAdminCommentsRouteState({
+            view: normalizedView,
+            queue: filterState.queue,
+            promptId: normalizedView === 'gallery' ? filterState.promptId : '',
+            promptTitle: normalizedView === 'gallery' ? filterState.promptTitle : '',
+            focusCommentId: pendingFocusedCommentId
+        });
         renderCommentList(filteredComments);
         renderCommentsPagination();
         restoreCommentSelectionState();
@@ -1428,6 +2553,7 @@ async function loadComments(view, options = {}) {
 
     } catch (error) {
         console.error('Error loading comments:', error);
+        commentsById = new Map();
         commentsPaginationState.totalItems = 0;
         commentsPaginationState.totalPages = 1;
         clearRetainedCommentSelection();
@@ -1457,9 +2583,8 @@ function renderCommentList(comments) {
         return;
     }
 
-    // Render comments with new structure
     container.innerHTML = comments.map(comment => {
-        const avatarInitial = comment.author.charAt(0).toUpperCase();
+        const avatarInitial = (comment.author || '?').charAt(0).toUpperCase();
         const avatarMarkup = comment.avatar
             ? `<img class="item-avatar-image" src="${escapeHtml(comment.avatar)}" alt="" loading="lazy" decoding="async">`
             : avatarInitial;
@@ -1467,24 +2592,27 @@ function renderCommentList(comments) {
         const contextUrl = buildCommentContextUrl(comment);
         const blockState = getCommentCurrentScopeBlockState(comment);
         const blockBadge = buildCommentUserBlockBadge(comment);
-        // Reply badge - shown for guestbook replies and nested gallery replies
-        const isReply = isReplyLevelComment(comment);
-        const replyBadge = isReply ? `<span class="reply-badge">Reply</span>` : '';
-
-        // Context Pill for List (inline) or Grid (in content)
-        // We put it in content for Grid, and List view will handle flow via CSS
+        const workflow = getCommentWorkflow(comment);
+        const workflowMeta = getCommentWorkflowStatusMeta(workflow.status);
+        const contextTitle = getCommentContextTitle(comment);
+        const entityLabel = getCommentEntityLabel(comment);
+        const userRiskLabel = getCommentUserRiskLabel(comment);
+        const summaryMetric = getCommentSummaryMetricText(comment);
+        const rootSnippet = String(comment.root_snippet || '').trim();
+        const parentSnippet = String(comment.parent_snippet || '').trim();
+        const hasTicket = Number(workflow.linked_ticket_count || 0) > 0;
+        const previewSnippet = parentSnippet && parentSnippet !== rootSnippet
+            ? parentSnippet
+            : rootSnippet;
 
         return `
             <div class="comment-admin-item" data-id="${comment.id}" data-type="${comment.type}" data-user-id="${escapeHtml(comment.user_id || '')}" data-record-type="${comment.record_type || ''}" data-comments-action="toggle-selection" data-checkbox-id="cb-${comment.id}">
-                
-                <!-- 1. Checkbox Wrapper -->
                 <div class="item-checkbox-wrapper">
                     <input type="checkbox" class="comment-checkbox" id="cb-${comment.id}" 
                         data-id="${comment.id}" data-type="${comment.type}" data-record-type="${comment.record_type || ''}"
                         data-comments-change="selection">
                 </div>
 
-                <!-- 2. Header: Avatar + Meta (Name, Time) -->
                 <div class="item-header">
                     <div class="item-avatar${comment.avatar ? ' item-avatar--image' : ''}">
                         ${avatarMarkup}
@@ -1493,24 +2621,34 @@ function renderCommentList(comments) {
                         <div class="item-meta-row">
                             <span class="item-name" title="${escapeHtml(comment.author)}">${escapeHtml(comment.author)}</span>
                             ${blockBadge}
+                            <span class="comment-workflow-badge comment-workflow-badge--${escapeHtml(workflowMeta.tone)}">${escapeHtml(workflowMeta.label)}</span>
                         </div>
-                        <span class="item-time">${timeStr}</span>
+                        <div class="item-meta-subrow">
+                            <span class="item-time">${timeStr}</span>
+                            <span class="comment-context-pill">${escapeHtml(getCommentSiteLabel(comment.site))}</span>
+                            <span class="comment-context-pill comment-context-pill--entity">${escapeHtml(entityLabel)}</span>
+                            ${hasTicket ? '<span class="comment-context-pill comment-context-pill--ticket">已升级工单</span>' : ''}
+                        </div>
                     </div>
                 </div>
 
-                <!-- 3. Content Body -->
                 <div class="item-content">
+                    ${contextTitle ? `<div class="item-context-title">${escapeHtml(contextTitle)}</div>` : ''}
                     <p class="item-text">${escapeHtml(comment.content)}</p>
+                    ${previewSnippet ? `<div class="item-context-snippet">${escapeHtml(previewSnippet)}</div>` : ''}
+                    <div class="item-content-footer">
+                        <span class="item-summary-risk">${escapeHtml(userRiskLabel)}</span>
+                        <span class="item-summary-metric">${escapeHtml(summaryMetric)}</span>
+                    </div>
                 </div>
 
-                <!-- 4. Actions Container (delete on top, view below) -->
                 <div class="item-actions">
                     <div class="action-info-wrapper">
-                         <button class="action-info" type="button" data-comments-action="copy-comment-id" data-comment-id="${encodeURIComponent(comment.id)}" data-parent-id="${encodeURIComponent(comment.parent_id || '')}" title="复制 ID">
+                        <button class="action-info" type="button" data-comments-action="copy-comment-id" data-comment-id="${encodeURIComponent(comment.id)}" data-parent-id="${encodeURIComponent(comment.parent_id || '')}" title="复制 ID">
                             <i class="fas fa-info-circle"></i>
                         </button>
                     </div>
-                    
+
                     ${comment.type === 'gallery' && window.hasPermission && window.hasPermission('content.moderate') ? `
                     <button class="action-btn ${comment.is_pinned ? 'active' : ''}" 
                         type="button"
@@ -1531,20 +2669,21 @@ function renderCommentList(comments) {
                     </div>
                     ` : ''}
 
+                    <button class="action-detail" type="button" data-comments-action="open-detail" data-comment-id="${encodeURIComponent(comment.id)}" title="查看治理详情">
+                        <i class="fas fa-expand"></i>
+                    </button>
+
                     ${comment.context ?
                 `<button class="action-view" type="button" data-comments-action="view-comment-context" data-context-url="${encodeURIComponent(contextUrl)}" title="查看上下文">
                         <i class="fas fa-external-link-alt"></i>
                     </button>` : ''}
-                    
+
                     ${window.hasPermission && window.hasPermission('content.moderate') ? `
                     <button class="action-delete" type="button" data-comments-action="delete-comment" data-comment-id="${encodeURIComponent(comment.id)}" data-comment-type="${encodeURIComponent(comment.type)}" data-comment-record-type="${encodeURIComponent(comment.record_type || '')}" title="删除">
                         <i class="fas fa-trash"></i>
                     </button>
                     ` : ''}
                 </div>
-
-                <!-- Reply Badge (bottom-left in Grid, below avatar in List) -->
-                ${replyBadge}
 
             </div>
         `;
@@ -1722,7 +2861,12 @@ function generateCSV(data) {
         { header: 'Content', key: 'content' },
         { header: 'Date', key: 'created_at' },
         { header: 'Type', key: 'type' },
+        { header: 'Entity', key: 'entity_label' },
+        { header: 'Context', key: 'context_title' },
         { header: 'Likes', key: 'likes' },
+        { header: 'Replies', key: 'reply_count' },
+        { header: 'Workflow', key: 'workflow_status' },
+        { header: 'Tickets', key: 'ticket_count' },
         { header: 'Prompt Title', key: 'prompt_title' },
         { header: 'Prompt ID', key: 'context' },
         { header: 'Parent ID', key: 'parent_id' }
@@ -1735,6 +2879,13 @@ function generateCSV(data) {
     const dataRows = data.map(item => {
         return columns.map(col => {
             let val = item[col.key] || '';
+
+            if (col.key === 'workflow_status') {
+                val = getCommentWorkflow(item).status || '';
+            }
+            if (col.key === 'ticket_count') {
+                val = getCommentWorkflow(item).linked_ticket_count || 0;
+            }
 
             // Format specific fields
             if (col.key === 'content') {
@@ -1781,11 +2932,14 @@ async function batchDeleteComments() {
             action: 'delete_many'
         });
         const deleted = Number(payload?.deletedCount || 0);
+        const cascadeDeleted = Number(payload?.cascadeDeletedCount || 0);
         prepareCommentReloadState({
             preserveSelection: true,
             removeSelectionIds: deletedIds
         });
-        showToast(`成功删除 ${deleted} 条评论`, 'success');
+        showToast(cascadeDeleted > 0
+            ? `成功删除 ${deleted} 条内容（含级联 ${cascadeDeleted} 条）`
+            : `成功删除 ${deleted} 条评论`, 'success');
         loadCommentStats();
         loadComments(currentCommentView, { preserveSelection: true });
     } catch (error) {
@@ -1809,7 +2963,7 @@ async function deleteComment(id, type, recordType = '') {
 
     try {
         const fallbackFocusId = findAdjacentCommentId(id, [id]);
-        await moderateCommentsViaAdminApi({
+        const payload = await moderateCommentsViaAdminApi({
             site: writableSite,
             action: 'delete',
             items: [{
@@ -1837,7 +2991,11 @@ async function deleteComment(id, type, recordType = '') {
             preserveSelection: true,
             focusCommentId: fallbackFocusId
         });
-        showToast('评论已删除', 'success');
+        const cascadeDeleted = Number(payload?.cascadeDeletedCount || 0);
+        const deleted = Number(payload?.deletedCount || 0);
+        showToast(cascadeDeleted > 0
+            ? `已删除 ${deleted} 条内容（含级联 ${cascadeDeleted} 条）`
+            : '评论已删除', 'success');
 
     } catch (error) {
         console.error('Error deleting comment:', error);
@@ -1981,6 +3139,9 @@ window.initCommentsModule = initCommentsModule;
 window.switchCommentView = switchCommentView;
 window.loadComments = loadComments;
 window.openAnalyticsCommentContext = openAnalyticsCommentContext;
+window.openAdminPromptCommentContext = openAdminPromptCommentContext;
+window.openAdminUserCommentContext = openAdminUserCommentContext;
+window.clearAdminCommentsPromptContext = clearAdminCommentsPromptContext;
 window.deleteComment = deleteComment;
 window.viewCommentContext = viewCommentContext;
 window.toggleSelectAll = toggleSelectAll;
@@ -1994,6 +3155,7 @@ window.copyCommentId = window.copyCommentId;
 
 window.addEventListener('admin-site-changed', () => {
     invalidateCommentsViewCache();
+    closeCommentDetailDrawer();
 
     if (!isCommentsModuleActive()) {
         return;
@@ -2030,6 +3192,22 @@ function bindAdminCommentsRuntimeDelegates() {
                     decodeURIComponent(actionEl.dataset.filterId || '')
                 );
                 break;
+            case 'clear-prompt-context':
+                clearAdminCommentsPromptContext();
+                loadComments(currentCommentView, { resetPage: true });
+                break;
+            case 'open-prompt-gallery':
+                window.openAdminGalleryPromptContext?.(filterState.promptId, { ensureModule: true });
+                break;
+            case 'open-prompt-homepage':
+                window.HomepageAdmin?.openPromptSectionContext?.(filterState.promptId, { ensureModule: true });
+                break;
+            case 'open-prompt-analytics':
+                window.switchModule?.('growth-center', {
+                    analyticsTab: 'content',
+                    analyticsPromptId: filterState.promptId
+                });
+                break;
             case 'toggle-selection':
                 toggleCommentSelection(event, actionEl.dataset.checkboxId || '');
                 break;
@@ -2054,6 +3232,60 @@ function bindAdminCommentsRuntimeDelegates() {
                     decodeURIComponent(actionEl.dataset.userId || ''),
                     actionEl
                 );
+                break;
+            case 'select-queue':
+                event.stopPropagation();
+                selectCommentQueue(actionEl.dataset.commentsQueue || 'all');
+                break;
+            case 'open-detail':
+                event.stopPropagation();
+                openCommentDetail(decodeURIComponent(actionEl.dataset.commentId || ''));
+                break;
+            case 'close-detail-drawer':
+                event.stopPropagation();
+                closeCommentDetailDrawer();
+                break;
+            case 'open-comment-user':
+                event.stopPropagation();
+                openCommentUser(decodeURIComponent(actionEl.dataset.commentId || ''));
+                break;
+            case 'open-comment-prompt':
+                event.stopPropagation();
+                openCommentPromptAdmin(decodeURIComponent(actionEl.dataset.commentId || ''));
+                break;
+            case 'create-comment-ticket':
+                event.stopPropagation();
+                void createCommentTicket(decodeURIComponent(actionEl.dataset.commentId || ''));
+                break;
+            case 'open-comment-ticket':
+                event.stopPropagation();
+                openCommentTicket(
+                    decodeURIComponent(actionEl.dataset.ticketId || ''),
+                    decodeURIComponent(actionEl.dataset.commentId || '')
+                );
+                break;
+            case 'set-workflow-status':
+                event.stopPropagation();
+                void updateCommentWorkflowStatus(
+                    decodeURIComponent(actionEl.dataset.commentId || ''),
+                    actionEl.dataset.workflowStatus || ''
+                );
+                break;
+            case 'assign-comment-self':
+                event.stopPropagation();
+                void assignCommentWorkflowSelf(decodeURIComponent(actionEl.dataset.commentId || ''));
+                break;
+            case 'toggle-comment-priority':
+                event.stopPropagation();
+                void toggleCommentWorkflowPriority(decodeURIComponent(actionEl.dataset.commentId || ''));
+                break;
+            case 'edit-comment-tags':
+                event.stopPropagation();
+                void editCommentWorkflowTags(decodeURIComponent(actionEl.dataset.commentId || ''));
+                break;
+            case 'add-workflow-note':
+                event.stopPropagation();
+                void addCommentWorkflowNote(decodeURIComponent(actionEl.dataset.commentId || ''));
                 break;
             case 'view-comment-context':
                 event.stopPropagation();
@@ -2253,12 +3485,11 @@ function renderBlockDropdownMenu(userId, { isGuestbookBlocked = false, isGallery
             <div class="block-menu-divider"></div>
             <button class="block-menu-btn" type="button" data-comments-action="unblock-user" data-user-id="${encodedUserId}" data-user-scope="all">🚫 解封全站</button>
         `;
-        html += `
-            <div class="block-menu-divider"></div>
-            <button class="block-menu-btn" type="button" data-comments-action="check-user-status" data-user-id="${encodedUserId}">查看状态详情</button>
-        `;
-        return html;
+    } else {
+        html += `<button class="block-menu-btn" type="button" data-comments-action="block-user" data-user-id="${encodedUserId}" data-user-scope="all" data-block-days="permanent">永久封禁全站</button>`;
     }
+
+    html += '<div class="block-menu-divider"></div>';
 
     if (isGuestbookBlocked) {
         html += `<button class="block-menu-btn" type="button" data-comments-action="unblock-user" data-user-id="${encodedUserId}" data-user-scope="guestbook">🚫 解封留言板</button>`;
@@ -2292,6 +3523,7 @@ window.blockUser = async function (userId, scope, days) {
     const scopeStr = scope === 'guestbook' ? '留言板' : (scope === 'all' ? '全站' : '画廊');
 
     if (!confirm(`确定要 [${durationStr}] 封禁该用户在 [${scopeStr}] 的权限吗？`)) return;
+    const reason = window.prompt('可选：填写封禁原因（会写入封禁历史）', '') || '';
 
     try {
         const writableSite = requireWritableCommentsSite({ label: `${scopeStr}用户封禁` });
@@ -2304,6 +3536,7 @@ window.blockUser = async function (userId, scope, days) {
             userId,
             scope,
             days,
+            reason,
             site: writableSite
         });
 
@@ -2354,6 +3587,7 @@ window.unblockUser = async function (userId, scope) {
         : (scope === 'all' ? '全站' : '画廊');
 
     if (!confirm(`确定要解除该用户在 [${scopeLabel}] 的封禁吗？`)) return;
+    const reason = window.prompt('可选：填写解封说明（会写入封禁历史）', '') || '';
 
     try {
         const writableSite = requireWritableCommentsSite({ label: `${scopeLabel}用户解封` });
@@ -2365,6 +3599,7 @@ window.unblockUser = async function (userId, scope) {
             action: 'unblock',
             userId,
             scope,
+            reason,
             site: writableSite
         });
 

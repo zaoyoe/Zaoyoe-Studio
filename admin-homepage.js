@@ -113,7 +113,7 @@ const HomepageAdmin = (() => {
             case 'hero':
                 return { title: '', subtitle: '', enable_auto: false };
             case 'prompts':
-                return { section_title: '', section_subtitle: '', max_items: '', sort: '', enable_auto: false };
+                return { section_title: '', section_subtitle: '', max_items: '', sort: '', enable_auto: false, featured_items: [] };
             case 'shop':
                 return { section_title: '', section_subtitle: '', max_items: '', category: '', sort: '', enable_auto: false };
             case 'verify':
@@ -169,6 +169,146 @@ const HomepageAdmin = (() => {
         return normalized ? escapeHomepageHtml(normalized) : fallback;
     }
 
+    function normalizeHomepageFeaturedPromptItems(value) {
+        if (!Array.isArray(value)) {
+            return [];
+        }
+
+        return value
+            .map((item) => {
+                if (!item || typeof item !== 'object') {
+                    return null;
+                }
+
+                const id = String(item.id || '').trim();
+                if (!id) {
+                    return null;
+                }
+
+                return {
+                    id,
+                    title: String(item.title || '').trim(),
+                    title_zh: String(item.title_zh || '').trim(),
+                    title_en: String(item.title_en || '').trim(),
+                    image: String(item.image || item.image_url || '').trim(),
+                    tags: Array.isArray(item.tags)
+                        ? item.tags.map((tag) => String(tag || '').trim()).filter(Boolean)
+                        : []
+                };
+            })
+            .filter(Boolean);
+    }
+
+    function buildHomepageFeaturedPromptItem(prompt = {}) {
+        const images = Array.isArray(prompt.images) ? prompt.images : [];
+        return {
+            id: String(prompt.id || '').trim(),
+            title: String(prompt.title || '').trim(),
+            title_zh: String(prompt.title_zh || '').trim(),
+            title_en: String(prompt.title_en || '').trim(),
+            image: String(images[0] || '').trim(),
+            tags: Array.isArray(prompt.tags)
+                ? prompt.tags.map((tag) => String(tag || '').trim()).filter(Boolean)
+                : []
+        };
+    }
+
+    function getHomepageFeaturedPromptLabel(item = {}) {
+        return String(item.title || item.title_zh || item.title_en || item.id || '').trim() || '未命名 Prompt';
+    }
+
+    function getHomepageFeaturedPromptItemsForSite(site = getHomepageReadSite()) {
+        const normalizedSite = normalizeHomepageSite(site);
+        if (normalizedSite === 'all') {
+            return [];
+        }
+
+        const promptsConfig = getHomepageSectionConfigBySite('prompts', normalizedSite);
+        return normalizeHomepageFeaturedPromptItems(promptsConfig?.content?.featured_items);
+    }
+
+    function getHomepageFeaturedPromptSites(promptId = '') {
+        const normalizedPromptId = String(promptId || '').trim();
+        if (!normalizedPromptId) {
+            return [];
+        }
+
+        return ['cn', 'intl'].filter((site) => (
+            getHomepageFeaturedPromptItemsForSite(site).some((item) => item.id === normalizedPromptId)
+        ));
+    }
+
+    function isPromptFeatured(promptId = '', options = {}) {
+        const normalizedPromptId = String(promptId || '').trim();
+        if (!normalizedPromptId) {
+            return false;
+        }
+
+        const normalizedSite = normalizeHomepageSite(options.site || getHomepageReadSite());
+        if (normalizedSite === 'all') {
+            return getHomepageFeaturedPromptSites(normalizedPromptId).length > 0;
+        }
+
+        return getHomepageFeaturedPromptItemsForSite(normalizedSite).some((item) => item.id === normalizedPromptId);
+    }
+
+    function getHomepageAdminRouteUrlObject() {
+        if (typeof window.getAdminStudioUrlObject === 'function') {
+            const resolvedUrl = window.getAdminStudioUrlObject();
+            if (resolvedUrl) {
+                return resolvedUrl;
+            }
+        }
+
+        try {
+            return new URL(window.location.href);
+        } catch (error) {
+            console.warn('[Homepage] Failed to parse current URL:', error);
+            return null;
+        }
+    }
+
+    function getHomepageAdminRouteState() {
+        const url = getHomepageAdminRouteUrlObject();
+        const searchParams = url?.searchParams;
+        const requestedSection = String(searchParams?.get('homepage_section') || '').trim().toLowerCase();
+        return {
+            section: HOMEPAGE_MANAGED_SECTIONS.includes(requestedSection) ? requestedSection : currentSection,
+            focusPromptId: String(searchParams?.get('homepage_prompt_id') || '').trim()
+        };
+    }
+
+    function syncHomepageAdminRouteState(nextState = {}, options = {}) {
+        const url = getHomepageAdminRouteUrlObject();
+        if (!url || typeof window.history?.replaceState !== 'function') {
+            return false;
+        }
+
+        const currentState = getHomepageAdminRouteState();
+        const section = String(nextState.section || currentState.section || currentSection || 'hero').trim().toLowerCase();
+        const focusPromptId = Object.prototype.hasOwnProperty.call(nextState, 'focusPromptId')
+            ? String(nextState.focusPromptId || '').trim()
+            : currentState.focusPromptId;
+
+        if (options.ensureHomepageModule === true) {
+            url.searchParams.set('module', 'homepage');
+        }
+
+        url.searchParams.set('homepage_section', section);
+        if (focusPromptId) {
+            url.searchParams.set('homepage_prompt_id', focusPromptId);
+        } else {
+            url.searchParams.delete('homepage_prompt_id');
+        }
+
+        const nextRelativeUrl = `${url.pathname}${url.search}${url.hash}`;
+        const currentRelativeUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        if (nextRelativeUrl !== currentRelativeUrl) {
+            window.history.replaceState(window.history.state, '', nextRelativeUrl);
+        }
+        return true;
+    }
+
     function buildHomepageSectionSummaryLines(section, cfg = null) {
         const content = cfg?.content || {};
 
@@ -186,7 +326,18 @@ const HomepageAdmin = (() => {
                 return [
                     { label: '标题', value: formatHomepageSummaryValue(content.section_title) },
                     { label: '副标题', value: formatHomepageSummaryValue(content.section_subtitle) },
-                    { label: '数量', value: formatHomepageSummaryValue(content.max_items, '默认') }
+                    { label: '数量', value: formatHomepageSummaryValue(content.max_items, '默认') },
+                    {
+                        label: '模式',
+                        value: content.enable_auto === false ? '手动精选' : '自动聚合'
+                    },
+                    {
+                        label: '精选',
+                        value: formatHomepageSummaryValue(
+                            normalizeHomepageFeaturedPromptItems(content.featured_items).length,
+                            '0'
+                        )
+                    }
                 ];
             case 'shop':
                 return [
@@ -491,6 +642,10 @@ const HomepageAdmin = (() => {
     async function init() {
         const loading = document.getElementById('hp-loading');
         const content = document.getElementById('hp-section-content');
+        const routeState = getHomepageAdminRouteState();
+        if (routeState.section) {
+            currentSection = routeState.section;
+        }
 
         if (initialized) {
             await ensureHomepageConfigLoaded();
@@ -611,6 +766,7 @@ const HomepageAdmin = (() => {
                 setInputValue('hp-prompts-subtitle', content.section_subtitle);
                 setInputValue('hp-prompts-max', content.max_items);
                 setSelectValue('hp-prompts-sort', content.sort);
+                renderHomepageFeaturedPromptList(getHomepageAdminRouteState().focusPromptId);
                 break;
 
             case 'shop':
@@ -649,9 +805,321 @@ const HomepageAdmin = (() => {
         }
     }
 
+    function renderHomepageFeaturedPromptList(focusPromptId = '') {
+        const container = document.getElementById('hp-prompts-featured-list');
+        if (!container) {
+            return;
+        }
+
+        if (isHomepageAggregateMode()) {
+            const siteGroups = ['cn', 'intl']
+                .map((site) => ({
+                    site,
+                    label: getHomepageSiteLabel(site),
+                    items: getHomepageFeaturedPromptItemsForSite(site)
+                }))
+                .filter((group) => group.items.length > 0);
+
+            if (!siteGroups.length) {
+                container.innerHTML = '<div class="hp-featured-empty">当前还没有任何站点配置手动精选 Prompt。</div>';
+                return;
+            }
+
+            container.innerHTML = siteGroups.map((group) => `
+                <section class="hp-featured-site-group">
+                    <div class="hp-featured-site-group__head">
+                        <strong>${escapeHomepageHtml(group.label)}</strong>
+                        <span>${escapeHomepageHtml(String(group.items.length))} 个精选</span>
+                    </div>
+                    <div class="hp-featured-site-group__list">
+                        ${group.items.map((item, index) => {
+                            const title = getHomepageFeaturedPromptLabel(item);
+                            const thumb = item.image
+                                ? `<img class="hp-featured-prompt__thumb" src="${escapeHomepageHtml(item.image)}" alt="${escapeHomepageHtml(title)}" loading="lazy" decoding="async">`
+                                : '<div class="hp-featured-prompt__thumb" aria-hidden="true"></div>';
+                            const tagLine = Array.isArray(item.tags) && item.tags.length > 0
+                                ? item.tags.join(' · ')
+                                : `ID ${item.id}`;
+                            const encodedTitle = encodeURIComponent(title);
+
+                            return `
+                                <div class="hp-featured-prompt ${item.id === focusPromptId ? 'is-focused' : ''}" data-homepage-prompt-id="${escapeHomepageHtml(item.id)}">
+                                    <div class="hp-featured-prompt__rank">#${escapeHomepageHtml(String(index + 1))}</div>
+                                    ${thumb}
+                                    <div class="hp-featured-prompt__meta">
+                                        <div class="hp-featured-prompt__title">${escapeHomepageHtml(title)}</div>
+                                        <div class="hp-featured-prompt__sub">${escapeHomepageHtml(tagLine)}</div>
+                                    </div>
+                                    <div class="hp-featured-prompt__actions">
+                                        <button class="hp-featured-prompt__jump" type="button" data-admin-action="homepage-open-featured-gallery" data-homepage-prompt-id="${escapeHomepageHtml(item.id)}" data-homepage-prompt-title="${escapeHomepageHtml(encodedTitle)}">
+                                            Gallery
+                                        </button>
+                                        <button class="hp-featured-prompt__jump" type="button" data-admin-action="homepage-open-featured-comments" data-homepage-prompt-id="${escapeHomepageHtml(item.id)}" data-homepage-prompt-title="${escapeHomepageHtml(encodedTitle)}">
+                                            评论
+                                        </button>
+                                        <button class="hp-featured-prompt__jump" type="button" data-admin-action="homepage-open-featured-analytics" data-homepage-prompt-id="${escapeHomepageHtml(item.id)}" data-homepage-prompt-title="${escapeHomepageHtml(encodedTitle)}">
+                                            分析
+                                        </button>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </section>
+            `).join('');
+            return;
+        }
+
+        const promptsConfig = configCache.prompts || null;
+        const items = normalizeHomepageFeaturedPromptItems(promptsConfig?.content?.featured_items);
+        if (!items.length) {
+            container.innerHTML = '<div class="hp-featured-empty">当前站点还没有手动精选 Prompt。</div>';
+            return;
+        }
+
+        container.innerHTML = items.map((item) => {
+            const title = getHomepageFeaturedPromptLabel(item);
+            const thumb = item.image
+                ? `<img class="hp-featured-prompt__thumb" src="${escapeHomepageHtml(item.image)}" alt="${escapeHomepageHtml(title)}" loading="lazy" decoding="async">`
+                : '<div class="hp-featured-prompt__thumb" aria-hidden="true"></div>';
+            const tagLine = Array.isArray(item.tags) && item.tags.length > 0
+                ? item.tags.join(' · ')
+                : `ID ${item.id}`;
+            const encodedTitle = encodeURIComponent(title);
+            const index = items.findIndex((entry) => entry.id === item.id);
+            const canMoveUp = index > 0;
+            const canMoveDown = index < items.length - 1;
+
+            return `
+                <div class="hp-featured-prompt ${item.id === focusPromptId ? 'is-focused' : ''}" data-homepage-prompt-id="${escapeHomepageHtml(item.id)}">
+                    <div class="hp-featured-prompt__rank">#${escapeHomepageHtml(String(index + 1))}</div>
+                    ${thumb}
+                    <div class="hp-featured-prompt__meta">
+                        <div class="hp-featured-prompt__title">${escapeHomepageHtml(title)}</div>
+                        <div class="hp-featured-prompt__sub">${escapeHomepageHtml(tagLine)}</div>
+                    </div>
+                    <div class="hp-featured-prompt__actions">
+                        <div class="hp-featured-prompt__sort">
+                            <button class="hp-featured-prompt__sort-btn" type="button" ${canMoveUp ? '' : 'disabled'} data-admin-action="homepage-move-featured-prompt" data-homepage-prompt-id="${escapeHomepageHtml(item.id)}" data-homepage-direction="up">
+                                上移
+                            </button>
+                            <button class="hp-featured-prompt__sort-btn" type="button" ${canMoveDown ? '' : 'disabled'} data-admin-action="homepage-move-featured-prompt" data-homepage-prompt-id="${escapeHomepageHtml(item.id)}" data-homepage-direction="down">
+                                下移
+                            </button>
+                        </div>
+                        <div class="hp-featured-prompt__jump-group">
+                            <button class="hp-featured-prompt__jump" type="button" data-admin-action="homepage-open-featured-gallery" data-homepage-prompt-id="${escapeHomepageHtml(item.id)}" data-homepage-prompt-title="${escapeHomepageHtml(encodedTitle)}">
+                                Gallery
+                            </button>
+                            <button class="hp-featured-prompt__jump" type="button" data-admin-action="homepage-open-featured-comments" data-homepage-prompt-id="${escapeHomepageHtml(item.id)}" data-homepage-prompt-title="${escapeHomepageHtml(encodedTitle)}">
+                                评论
+                            </button>
+                            <button class="hp-featured-prompt__jump" type="button" data-admin-action="homepage-open-featured-analytics" data-homepage-prompt-id="${escapeHomepageHtml(item.id)}" data-homepage-prompt-title="${escapeHomepageHtml(encodedTitle)}">
+                                分析
+                            </button>
+                            <button class="hp-featured-prompt__remove" type="button" data-admin-action="homepage-remove-featured-prompt" data-homepage-prompt-id="${escapeHomepageHtml(item.id)}">
+                                移除
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function applyHomepageSavedSectionRow(section, savedRow = {}, site = currentReadSite) {
+        const normalizedSite = normalizeHomepageSite(savedRow.site || site);
+        const normalizedSection = String(savedRow.section || section || '').trim().toLowerCase();
+        if (!normalizedSection || normalizedSite === 'all') {
+            return;
+        }
+
+        const record = buildHomepageConfigRecord(savedRow);
+        configCacheBySite[normalizedSite][normalizedSection] = record;
+        applyHomepageConfigForSite(getHomepageReadSite());
+        if (currentSection === normalizedSection) {
+            renderSection(normalizedSection);
+        }
+        renderAllVisibilityToggles();
+        renderHomepageAggregateSummaries();
+    }
+
     // ============================================
     // SAVE
     // ============================================
+
+    async function saveHomepageFeaturedPromptItems(items, { site, successMessage = '首页精选 Prompt 已更新', focusPromptId = '' } = {}) {
+        const normalizedSite = normalizeHomepageSite(site);
+        const cfg = getHomepageSectionConfigBySite('prompts', normalizedSite);
+        if (!cfg?.id) {
+            throw new Error(`缺少 ${normalizedSite.toUpperCase()} 站 prompts 区块配置，无法保存首页精选`);
+        }
+
+        const content = {
+            ...(cfg.content || {}),
+            enable_auto: false,
+            featured_items: normalizeHomepageFeaturedPromptItems(items)
+        };
+
+        const result = await updateHomepageConfigRow({
+            id: cfg.id,
+            section: 'prompts',
+            site: normalizedSite,
+            content,
+            is_visible: cfg.is_visible,
+            display_order: cfg.display_order
+        });
+        const savedRow = result.row || {};
+
+        applyHomepageSavedSectionRow('prompts', savedRow, normalizedSite);
+        invalidateHomepageRuntimeCaches(normalizedSite);
+        invalidateSectionVisibilityCaches();
+        syncHomepageAdminRouteState({
+            section: 'prompts',
+            focusPromptId
+        });
+
+        if (typeof showToast === 'function') {
+            showToast(successMessage, 'success');
+        }
+
+        return savedRow;
+    }
+
+    async function addFeaturedPrompt(prompt, options = {}) {
+        const writableSite = options.site || requireWritableHomepageSite({ label: '加入首页精选 Prompt' });
+        if (!writableSite) {
+            return false;
+        }
+
+        await ensureHomepageConfigLoaded();
+        const nextItem = buildHomepageFeaturedPromptItem(prompt);
+        if (!nextItem.id) {
+            throw new Error('Prompt 缺少有效 id，无法加入首页精选');
+        }
+
+        const cfg = getHomepageSectionConfigBySite('prompts', writableSite);
+        const existingItems = normalizeHomepageFeaturedPromptItems(cfg?.content?.featured_items);
+        const dedupedItems = existingItems.filter((item) => item.id !== nextItem.id);
+        const nextItems = [nextItem, ...dedupedItems];
+
+        await saveHomepageFeaturedPromptItems(nextItems, {
+            site: writableSite,
+            successMessage: '已加入首页精选 Prompt',
+            focusPromptId: nextItem.id
+        });
+
+        if (options.navigate === true) {
+            window.switchModule?.('homepage');
+            await init();
+            switchSection('prompts');
+        }
+
+        return true;
+    }
+
+    async function addFeaturedPrompts(prompts = [], options = {}) {
+        const writableSite = options.site || requireWritableHomepageSite({ label: '批量加入首页精选 Prompt' });
+        if (!writableSite) {
+            return false;
+        }
+
+        await ensureHomepageConfigLoaded();
+        const cfg = getHomepageSectionConfigBySite('prompts', writableSite);
+        const existingItems = normalizeHomepageFeaturedPromptItems(cfg?.content?.featured_items);
+        const existingById = new Map(
+            existingItems.map((item) => [String(item.id || '').trim(), item])
+        );
+        const orderedIds = [];
+
+        (Array.isArray(prompts) ? prompts : []).forEach((prompt) => {
+            const nextItem = buildHomepageFeaturedPromptItem(prompt);
+            if (!nextItem.id) {
+                return;
+            }
+            existingById.set(nextItem.id, nextItem);
+            orderedIds.push(nextItem.id);
+        });
+
+        const uniqueOrderedIds = [...new Set(orderedIds)].filter(Boolean);
+        if (!uniqueOrderedIds.length) {
+            throw new Error('没有可加入首页精选的 Prompt');
+        }
+
+        const remainingItems = existingItems.filter((item) => !uniqueOrderedIds.includes(item.id));
+        const nextItems = [
+            ...uniqueOrderedIds.map((id) => existingById.get(id)).filter(Boolean),
+            ...remainingItems.map((item) => existingById.get(item.id)).filter(Boolean)
+        ];
+
+        await saveHomepageFeaturedPromptItems(nextItems, {
+            site: writableSite,
+            successMessage: `已加入 ${uniqueOrderedIds.length} 条首页精选 Prompt`,
+            focusPromptId: uniqueOrderedIds[0] || ''
+        });
+
+        if (options.navigate === true) {
+            window.switchModule?.('homepage');
+            await init();
+            switchSection('prompts');
+        }
+
+        return true;
+    }
+
+    async function removeFeaturedPrompt(promptId, options = {}) {
+        const writableSite = options.site || requireWritableHomepageSite({ label: '移除首页精选 Prompt' });
+        if (!writableSite) {
+            return false;
+        }
+
+        await ensureHomepageConfigLoaded();
+        const cfg = getHomepageSectionConfigBySite('prompts', writableSite);
+        const existingItems = normalizeHomepageFeaturedPromptItems(cfg?.content?.featured_items);
+        const nextItems = existingItems.filter((item) => item.id !== String(promptId || '').trim());
+
+        await saveHomepageFeaturedPromptItems(nextItems, {
+            site: writableSite,
+            successMessage: '已移除首页精选 Prompt',
+            focusPromptId: ''
+        });
+        renderHomepageFeaturedPromptList('');
+        return true;
+    }
+
+    async function moveFeaturedPrompt(promptId, direction, options = {}) {
+        const writableSite = options.site || requireWritableHomepageSite({
+            label: direction === 'up' ? '上移首页精选 Prompt' : '下移首页精选 Prompt'
+        });
+        if (!writableSite) {
+            return false;
+        }
+
+        await ensureHomepageConfigLoaded();
+        const cfg = getHomepageSectionConfigBySite('prompts', writableSite);
+        const existingItems = normalizeHomepageFeaturedPromptItems(cfg?.content?.featured_items);
+        const currentIndex = existingItems.findIndex((item) => item.id === String(promptId || '').trim());
+        if (currentIndex === -1) {
+            return false;
+        }
+
+        const nextIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+        if (nextIndex < 0 || nextIndex >= existingItems.length) {
+            return false;
+        }
+
+        const nextItems = [...existingItems];
+        const [movedItem] = nextItems.splice(currentIndex, 1);
+        nextItems.splice(nextIndex, 0, movedItem);
+
+        await saveHomepageFeaturedPromptItems(nextItems, {
+            site: writableSite,
+            successMessage: '首页精选 Prompt 顺序已更新',
+            focusPromptId: movedItem.id
+        });
+        renderHomepageFeaturedPromptList(movedItem.id);
+        return true;
+    }
 
     async function saveSection(section) {
         const cfg = configCache[section];
@@ -695,6 +1163,7 @@ const HomepageAdmin = (() => {
                 content.section_subtitle = getInputValue('hp-prompts-subtitle');
                 content.max_items = parseInt(getInputValue('hp-prompts-max')) || 6;
                 content.sort = getSelectValue('hp-prompts-sort');
+                content.featured_items = normalizeHomepageFeaturedPromptItems(content.featured_items);
                 await autoTranslatePair(content, 'section_title');
                 await autoTranslatePair(content, 'section_subtitle');
                 break;
@@ -801,6 +1270,13 @@ const HomepageAdmin = (() => {
 
     function switchSection(section) {
         currentSection = section;
+        renderSection(section);
+        syncHomepageAdminRouteState({
+            section,
+            focusPromptId: section === 'prompts' ? getHomepageAdminRouteState().focusPromptId : ''
+        }, {
+            ensureHomepageModule: true
+        });
 
         // Update tab active state
         const tabNav = document.getElementById('homepageTabsNav');
@@ -821,6 +1297,25 @@ const HomepageAdmin = (() => {
             const isActive = view.getAttribute('data-hp-view') === section;
             setHomepageSectionViewState(view, isActive);
         });
+    }
+
+    async function openPromptSectionContext(promptId = '', options = {}) {
+        const normalizedPromptId = String(promptId || '').trim();
+
+        if (options.ensureModule === true) {
+            window.switchModule?.('homepage');
+        }
+
+        await init();
+        syncHomepageAdminRouteState({
+            section: 'prompts',
+            focusPromptId: normalizedPromptId
+        }, {
+            ensureHomepageModule: options.ensureModule === true
+        });
+        switchSection('prompts');
+        renderHomepageFeaturedPromptList(normalizedPromptId);
+        return true;
     }
 
     // ============================================
@@ -1404,11 +1899,19 @@ const HomepageAdmin = (() => {
     return {
         init,
         prefetch,
+        ensureLoaded: ensureHomepageConfigLoaded,
         switchSection,
         saveSection,
         toggleVisible,
         toggleField,
         toggleSectionVisibility,
+        addFeaturedPrompt,
+        addFeaturedPrompts,
+        removeFeaturedPrompt,
+        moveFeaturedPrompt,
+        isPromptFeatured,
+        getFeaturedPromptSites: getHomepageFeaturedPromptSites,
+        openPromptSectionContext,
         _handleScreenshotUpload
     };
 })();

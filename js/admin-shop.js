@@ -263,7 +263,7 @@ const ShopAdmin = {
         }
     },
 
-    // Translate Chinese text to English using Gemini API
+    // Translate Chinese text to English using the configured admin AI provider
     translateToEnglish: async function (name, description) {
         if (!window.AdminAI?.configured) {
             console.warn('[ShopAdmin] No server AI proxy, skipping translation');
@@ -280,7 +280,7 @@ Example output format:
 
         try {
             const text = await window.AdminAI.generateText(prompt, {
-                model: 'gemini-2.0-flash',
+                model: window.AdminAI?.defaultModel || 'gemini-2.0-flash',
                 generationConfig: { temperature: 0.1, maxOutputTokens: 500 }
             });
 

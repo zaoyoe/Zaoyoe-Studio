@@ -49,7 +49,7 @@ function renderAnalyticsCachedInsight(content, contextKey = getAnalyticsAIContex
 
 async function ensureAnalyticsAIReady(options = {}) {
     const content = options.content || null;
-    const missingMessage = String(options.missingMessage || '请先在后台 API 配置或 Vercel 环境变量中配置 Gemini Key');
+    const missingMessage = String(options.missingMessage || window.AdminAI?.getMissingConfigMessage?.() || '请先在后台完成当前 AI 服务配置');
 
     if (!hasAdminAI()) {
         try {

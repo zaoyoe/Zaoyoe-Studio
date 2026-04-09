@@ -61,3 +61,27 @@ test('growth center runtime and styles expose unified asset and workflow surface
         assert.equal(stylesSource.includes(marker), true, `css/admin-studio-page.css should contain ${marker}`);
     }
 });
+
+test('growth center local smoke uses dedicated marketing asset center fixtures and dispatcher', () => {
+    const smokeSource = readRepoFile('js/local-smoke-fixtures.js');
+    const pointsSource = readRepoFile('admin-points.js');
+
+    const smokeMarkers = [
+        'async function runGrowthCenterSmoke()',
+        "url.pathname === '/api/admin/marketing/assets-center'",
+        'buildSmokeMarketingAssetsResponse(',
+        'runSmokeMarketingWorkflow(',
+        "if (moduleParam === 'growth-center') {",
+        'await runGrowthCenterSmoke();'
+    ];
+
+    for (const marker of smokeMarkers) {
+        assert.equal(smokeSource.includes(marker), true, `js/local-smoke-fixtures.js should contain ${marker}`);
+    }
+
+    assert.equal(
+        pointsSource.includes('window.openPointsPackageEditor = openPointsPackageEditor;'),
+        true,
+        'admin-points.js should expose package editor linkage for growth center asset jumps'
+    );
+});

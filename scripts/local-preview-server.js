@@ -9,6 +9,7 @@ const { buildSupabaseRuntimeScript } = require('../api/_lib/public-runtime-confi
 const adminApiHandler = require('../api/admin');
 
 const DEFAULT_SMOKE_RESULT_TTL_MS = 10 * 60 * 1000;
+const DEFAULT_LOCAL_PREVIEW_BODY_LIMIT = '25mb';
 
 function getDefaultEnvFiles(repoRoot) {
     return [
@@ -87,6 +88,11 @@ function applyPreviewEnvToProcess(envValues = {}) {
     });
 }
 
+function resolveLocalPreviewListenHost(value = process.env.LOCAL_PREVIEW_HOST || process.env.HOST) {
+    const normalized = String(value || '').trim();
+    return normalized || undefined;
+}
+
 function createSmokeResultStore(options = {}) {
     const ttlMs = Math.max(1000, Number(options.ttlMs || DEFAULT_SMOKE_RESULT_TTL_MS));
     const records = new Map();
@@ -145,8 +151,11 @@ function createLocalPreviewApp(options = {}) {
 
     applyPreviewEnvToProcess(previewEnv);
 
-    app.use(express.json());
-    app.use(express.urlencoded({ extended: false }));
+    app.use(express.json({ limit: DEFAULT_LOCAL_PREVIEW_BODY_LIMIT }));
+    app.use(express.urlencoded({
+        extended: false,
+        limit: DEFAULT_LOCAL_PREVIEW_BODY_LIMIT
+    }));
 
     app.get('/healthz', (req, res) => {
         res.json({
@@ -226,9 +235,22 @@ function createLocalPreviewApp(options = {}) {
 
 if (require.main === module) {
     const { app, port } = createLocalPreviewApp();
-    app.listen(port, '127.0.0.1', () => {
+    const listenHost = resolveLocalPreviewListenHost();
+    const onListening = () => {
+        if (listenHost) {
+            console.log(`[local-preview] http://${listenHost}:${port}`);
+            return;
+        }
+
+        console.log(`[local-preview] http://localhost:${port}`);
         console.log(`[local-preview] http://127.0.0.1:${port}`);
-    });
+    };
+
+    if (listenHost) {
+        app.listen(port, listenHost, onListening);
+    } else {
+        app.listen(port, onListening);
+    }
 }
 
 module.exports = {
@@ -236,7 +258,9 @@ module.exports = {
     buildLocalPreviewAdminHandlerUrl,
     createSmokeResultStore,
     createLocalPreviewApp,
+    DEFAULT_LOCAL_PREVIEW_BODY_LIMIT,
     getDefaultEnvFiles,
     loadPreviewEnv,
+    resolveLocalPreviewListenHost,
     resolveLocalPreviewRuntimeScript
 };

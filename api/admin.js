@@ -14,11 +14,13 @@ const analyticsProductRankBundleHandler = require('../server/api-handlers/admin/
 const analyticsProductHealthBundleHandler = require('../server/api-handlers/admin/analytics/product-health-bundle');
 const analyticsProductFunnelBundleHandler = require('../server/api-handlers/admin/analytics/product-funnel-bundle');
 const analyticsProductDetailBundleHandler = require('../server/api-handlers/admin/analytics/product-detail-bundle');
+const codexHandler = require('../server/api-handlers/admin/codex');
 const geminiHandler = require('../server/api-handlers/admin/gemini');
 const commentsListHandler = require('../server/api-handlers/admin/comments/list');
 const commentsBlocksHandler = require('../server/api-handlers/admin/comments/blocks');
 const commentsModerateHandler = require('../server/api-handlers/admin/comments/moderate');
 const commentsSummaryHandler = require('../server/api-handlers/admin/comments/summary');
+const commentsWorkflowHandler = require('../server/api-handlers/admin/comments/workflow');
 const discountsBatchHistoryHandler = require('../server/api-handlers/admin/discounts/batch-history');
 const discountsAssetsHandler = require('../server/api-handlers/admin/discounts/assets');
 const discountsDetailHandler = require('../server/api-handlers/admin/discounts/detail');
@@ -46,6 +48,7 @@ const paymentsActionsHandler = require('../server/api-handlers/admin/payments/ac
 const paymentsCleanupHandler = require('../server/api-handlers/admin/payments/cleanup');
 const paymentsShopRefundHandler = require('../server/api-handlers/admin/payments/shop-refund');
 const paymentsSummaryHandler = require('../server/api-handlers/admin/payments/summary');
+const settingsCodexConfigHandler = require('../server/api-handlers/admin/settings/codex-config');
 const settingsGeminiKeyHandler = require('../server/api-handlers/admin/settings/gemini-key');
 const settingsAdminAuditMonitorHandler = require('../server/api-handlers/admin/settings/admin-audit-monitor');
 const settingsOpsAlertHealthHandler = require('../server/api-handlers/admin/settings/ops-alert-health');
@@ -79,11 +82,13 @@ const ROUTE_HANDLERS = {
     'analytics/product-health-bundle': analyticsProductHealthBundleHandler,
     'analytics/product-funnel-bundle': analyticsProductFunnelBundleHandler,
     'analytics/product-detail-bundle': analyticsProductDetailBundleHandler,
+    codex: codexHandler,
     gemini: geminiHandler,
     'comments/list': commentsListHandler,
     'comments/blocks': commentsBlocksHandler,
     'comments/moderate': commentsModerateHandler,
     'comments/summary': commentsSummaryHandler,
+    'comments/workflow': commentsWorkflowHandler,
     'discounts/batch-history': discountsBatchHistoryHandler,
     'discounts/assets': discountsAssetsHandler,
     'discounts/detail': discountsDetailHandler,
@@ -99,6 +104,7 @@ const ROUTE_HANDLERS = {
     'prompts/manage': promptsManageHandler,
     'access/session': accessSessionHandler,
     'settings/admin-audit-monitor': settingsAdminAuditMonitorHandler,
+    'settings/codex-config': settingsCodexConfigHandler,
     'settings/gemini-key': settingsGeminiKeyHandler,
     'settings/ops-alert-health': settingsOpsAlertHealthHandler,
     'settings/ops-alerts': settingsOpsAlertsHandler,
