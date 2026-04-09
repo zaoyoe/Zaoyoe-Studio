@@ -2187,6 +2187,26 @@ body.mobile-menu-open .chat-widget-fab {
         margin-top 560ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+#guestbook-section .guestbook-list {
+    display: contents;
+}
+
+#guestbook-section .guestbook-actions {
+    display: contents;
+}
+
+#guestbook-section .guestbook-card-body {
+    display: contents;
+}
+
+#guestbook-section .guestbook-card {}
+
+#guestbook-section .guestbook-avatar {}
+
+#guestbook-section .guestbook-author {}
+
+#guestbook-section .guestbook-content {}
+
 #guestbook-section .home-guestbook-cards {
     position: absolute;
     inset: 0;

@@ -3278,7 +3278,9 @@ async function getVerifyServiceSummaryData(options = {}) {
             ]);
             const payloadSegment = getAnalyticsSummaryPayloadBundleSegment(payloadBundle, 'verifyServiceSummary');
             if (payloadSegment?.ok && payloadSegment.summary) {
-                const enrichedSummary = enrichVerifyServiceSummaryWithEvents(payloadSegment.summary, summaryWindow || {});
+                const enrichedSummary = (() => {
+                    return enrichVerifyServiceSummaryWithEvents(payloadSegment.summary, summaryWindow || {});
+                })();
                 if (hasVerifyServiceSummarySignal(enrichedSummary)) {
                     return enrichedSummary;
                 }

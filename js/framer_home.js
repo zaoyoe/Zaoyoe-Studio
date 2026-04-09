@@ -2064,8 +2064,10 @@ const FramerHome = {
           </div>
         </section>
 
-        <div class="home-guestbook-cards">
-          ${cardsMarkup}
+        <div class="guestbook-list">
+          <div class="home-guestbook-cards">
+            ${cardsMarkup}
+          </div>
         </div>
       </div>
     `;
