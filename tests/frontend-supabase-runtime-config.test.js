@@ -60,6 +60,13 @@ function readVercelConfig() {
     return JSON.parse(readRepoFile('vercel.json'));
 }
 
+function readVercelIgnoreEntries() {
+    return readRepoFile('.vercelignore')
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+}
+
 function getGlobalCspHeaderValue() {
     const config = readVercelConfig();
     const globalHeaders = Array.isArray(config.headers) ? config.headers : [];
@@ -170,6 +177,38 @@ function collectRepositoryHtmlFiles(rootDir = REPO_ROOT) {
     return collectRepositorySourceFiles(rootDir).filter((relativePath) => /\.(html)(\.bak)?$/i.test(relativePath));
 }
 
+function collectApiRouteFiles(rootDir = path.join(REPO_ROOT, 'api')) {
+    const files = [];
+    const stack = ['.'];
+
+    while (stack.length > 0) {
+        const relativeDir = stack.pop();
+        const absoluteDir = path.join(rootDir, relativeDir);
+        const entries = fs.readdirSync(absoluteDir, { withFileTypes: true });
+
+        for (const entry of entries) {
+            const relativePath = path.join(relativeDir, entry.name);
+            const normalizedPath = path.join('api', relativePath).replace(/\\/g, '/').replace(/^api\/\.\//, 'api/');
+
+            if (entry.isDirectory()) {
+                if (entry.name === '_lib') {
+                    continue;
+                }
+                stack.push(relativePath);
+                continue;
+            }
+
+            if (!/\.js$/i.test(entry.name)) {
+                continue;
+            }
+
+            files.push(normalizedPath);
+        }
+    }
+
+    return files.sort();
+}
+
 test('active frontend runtime files no longer hardcode the production Supabase host or publishable key', () => {
     const violations = [];
 
@@ -241,6 +280,30 @@ test('vercel admin rewrite supports nested admin settings routes', () => {
 
     assert.ok(adminRewrite, 'vercel.json should include a catch-all /api/admin rewrite');
     assert.equal(adminRewrite.destination, '/api/admin?route=:path*');
+});
+
+test('vercel hobby deployment keeps auth and runtime endpoints within the serverless function limit', () => {
+    const vercelConfig = readVercelConfig();
+    const rewrites = Array.isArray(vercelConfig.rewrites) ? vercelConfig.rewrites : [];
+    const ignoredEntries = new Set(readVercelIgnoreEntries());
+    const authRewrite = rewrites.find((entry) => entry?.source === '/api/auth/:path*');
+    const runtimeRewrite = rewrites.find((entry) => entry?.source === '/api/runtime/:path*');
+    const deployedApiRouteFiles = collectApiRouteFiles().filter((relativePath) => !ignoredEntries.has(relativePath));
+
+    assert.ok(authRewrite, 'vercel.json should rewrite auth endpoints through the shared public handler');
+    assert.equal(authRewrite.destination, '/api/public?scope=auth&route=:path*');
+    assert.ok(runtimeRewrite, 'vercel.json should rewrite runtime endpoints through the shared public handler');
+    assert.equal(runtimeRewrite.destination, '/api/public?scope=runtime&route=:path*');
+    assert.equal(ignoredEntries.has('api/auth/login-security.js'), true, '.vercelignore should exclude the standalone auth login-security function');
+    assert.equal(ignoredEntries.has('api/runtime/supabase-config.js'), true, '.vercelignore should exclude the standalone runtime supabase-config function');
+    assert.ok(
+        deployedApiRouteFiles.length <= 11,
+        [
+            'Vercel Hobby allows at most 12 serverless functions, and middleware already consumes one slot.',
+            `Expected at most 11 deployed API entrypoints, found ${deployedApiRouteFiles.length}.`,
+            ...deployedApiRouteFiles
+        ].join('\n')
+    );
 });
 
 test('frontend entry pages load the shared Supabase runtime config before initialization', () => {

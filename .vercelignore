@@ -7,3 +7,5 @@ node_modules/
 functions/
 firebase-debug.log
 firebase-debug.*.log
+api/auth/login-security.js
+api/runtime/supabase-config.js

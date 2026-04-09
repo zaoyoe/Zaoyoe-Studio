@@ -29,6 +29,14 @@
             "destination": "/api/admin?route=:path*"
         },
         {
+            "source": "/api/auth/:path*",
+            "destination": "/api/public?scope=auth&route=:path*"
+        },
+        {
+            "source": "/api/runtime/:path*",
+            "destination": "/api/public?scope=runtime&route=:path*"
+        },
+        {
             "source": "/api/:path*",
             "destination": "/api/:path*"
         },
