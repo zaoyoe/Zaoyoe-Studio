@@ -58,6 +58,27 @@ function normalizeText(value, maxLength = 200) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
 }
 
+function normalizeBoolean(value, fallback = false) {
+    if (typeof value === 'boolean') {
+        return value;
+    }
+
+    const normalized = normalizeText(value, 20).toLowerCase();
+    if (!normalized) {
+        return fallback;
+    }
+
+    if (['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)) {
+        return true;
+    }
+
+    if (['0', 'false', 'no', 'off', 'disabled'].includes(normalized)) {
+        return false;
+    }
+
+    return fallback;
+}
+
 function normalizeStringArray(value, maxLength = 160) {
     return [...new Set(
         (Array.isArray(value) ? value : [])
@@ -123,6 +144,279 @@ async function ensureFallbackCategory(supabase, categoryName = 'other') {
     return insertResult.data[0];
 }
 
+function appendProductValidationIssue(list, type, code, message, field = '') {
+    if (!Array.isArray(list) || !message) {
+        return;
+    }
+
+    list.push({
+        type,
+        code: normalizeText(code, 80) || null,
+        field: normalizeText(field, 80) || null,
+        message: normalizeText(message, 500)
+    });
+}
+
+function isLocalWebhookUrl(urlObject) {
+    const hostname = normalizeText(urlObject?.hostname, 255).toLowerCase();
+    return ['localhost', '127.0.0.1', '0.0.0.0'].includes(hostname);
+}
+
+function validateWebhookTarget(rawValue) {
+    const value = normalizeText(rawValue, 2000);
+    if (!value) {
+        return {
+            valid: false,
+            message: 'API 商品必须填写 Webhook URL。'
+        };
+    }
+
+    let parsed = null;
+    try {
+        parsed = new URL(value);
+    } catch (error) {
+        return {
+            valid: false,
+            message: 'Webhook URL 格式无效，请填写完整的 http(s) 地址。'
+        };
+    }
+
+    const protocol = normalizeText(parsed.protocol, 20).toLowerCase();
+    if (!['https:', 'http:'].includes(protocol)) {
+        return {
+            valid: false,
+            message: 'Webhook URL 仅支持 http 或 https。'
+        };
+    }
+
+    if (protocol === 'http:' && !isLocalWebhookUrl(parsed)) {
+        return {
+            valid: true,
+            warning: '当前 Webhook 使用的是非加密 HTTP 地址，正式环境建议改为 HTTPS。'
+        };
+    }
+
+    return {
+        valid: true
+    };
+}
+
+function formatValidationMessages(issues = []) {
+    return (Array.isArray(issues) ? issues : [])
+        .map((issue) => normalizeText(issue?.message, 500))
+        .filter(Boolean)
+        .join('；');
+}
+
+function isMissingRpcFunctionError(error, functionName = '') {
+    const message = normalizeText(error?.message, 400).toLowerCase();
+    const hint = normalizeText(error?.hint, 400).toLowerCase();
+    const normalizedFunctionName = normalizeText(functionName, 120).toLowerCase();
+    if (!normalizedFunctionName) {
+        return false;
+    }
+
+    return message.includes('could not find the function')
+        || message.includes('function')
+        && message.includes(normalizedFunctionName)
+        || hint.includes(normalizedFunctionName);
+}
+
+async function validateProductPayload(supabase, { productId = '', payload = {}, pendingCategory = null } = {}) {
+    const safePayload = payload && typeof payload === 'object' ? payload : {};
+    const safePendingCategory = pendingCategory && typeof pendingCategory === 'object' ? pendingCategory : null;
+    const blockingIssues = [];
+    const warnings = [];
+
+    const name = normalizeText(safePayload.name, 160);
+    const category = normalizeText(safePayload.category || safePendingCategory?.name, 120);
+    const deliveryType = normalizeText(safePayload.delivery_type, 20).toUpperCase() === 'API' ? 'API' : 'KEY';
+    const webhookTarget = normalizeText(safePayload.webhook_target, 2000);
+    const isActive = normalizeBoolean(safePayload.is_active, true);
+    const maxPurchaseQuantity = normalizePositiveInteger(safePayload.max_purchase_quantity);
+    const purchaseLimit24hQuantity = normalizePositiveInteger(safePayload.purchase_limit_24h_quantity);
+    const purchaseLimitWindowQuantity = normalizePositiveInteger(safePayload.purchase_limit_window_quantity);
+    const purchaseLimitWindowMinutes = normalizePositiveInteger(safePayload.purchase_limit_window_minutes);
+    const perAccountPurchaseLimit = normalizePositiveInteger(safePayload.per_account_purchase_limit);
+    const showPurchaseNotes = normalizeBoolean(safePayload.show_purchase_notes, false);
+    const purchaseNotes = normalizeText(safePayload.purchase_notes, 4000);
+    const showUsageInstructions = normalizeBoolean(safePayload.show_usage_instructions, false);
+    const usageInstructions = normalizeText(safePayload.usage_instructions, 4000);
+
+    if (!name) {
+        appendProductValidationIssue(blockingIssues, 'blocking', 'name_required', '商品名称不能为空。', 'name');
+    }
+
+    if (!category) {
+        appendProductValidationIssue(blockingIssues, 'blocking', 'category_required', '请选择商品分类。', 'category');
+    }
+
+    if (
+        Number.isFinite(maxPurchaseQuantity)
+        && Number.isFinite(perAccountPurchaseLimit)
+        && maxPurchaseQuantity > perAccountPurchaseLimit
+    ) {
+        appendProductValidationIssue(
+            blockingIssues,
+            'blocking',
+            'purchase_limit_conflict',
+            '单次限购不能大于每账号限购数量，请先调整限购配置。',
+            'max_purchase_quantity'
+        );
+    }
+
+    if (purchaseLimitWindowQuantity && !purchaseLimitWindowMinutes) {
+        appendProductValidationIssue(
+            blockingIssues,
+            'blocking',
+            'window_minutes_required',
+            '填写 N 分钟累计上限时，必须同时填写 N 分钟。',
+            'purchase_limit_window_minutes'
+        );
+    }
+
+    if (deliveryType === 'API') {
+        const webhookValidation = validateWebhookTarget(webhookTarget);
+        if (!webhookValidation.valid) {
+            appendProductValidationIssue(
+                blockingIssues,
+                'blocking',
+                'webhook_target_invalid',
+                webhookValidation.message,
+                'webhook_target'
+            );
+        } else if (webhookValidation.warning) {
+            appendProductValidationIssue(
+                warnings,
+                'warning',
+                'webhook_target_http',
+                webhookValidation.warning,
+                'webhook_target'
+            );
+        }
+    }
+
+    let availableStockCount = null;
+    if (productId) {
+        availableStockCount = await countAvailableInventory(supabase, productId);
+    }
+
+    if (deliveryType === 'KEY' && productId && isActive && Number(availableStockCount || 0) <= 0) {
+        appendProductValidationIssue(
+            warnings,
+            'warning',
+            'key_stock_empty',
+            '当前 KEY 商品可用库存为 0，上架后会直接暴露缺货风险。',
+            'delivery_type'
+        );
+    }
+
+    if (deliveryType === 'API' && productId && Number(availableStockCount || 0) > 0) {
+        appendProductValidationIssue(
+            warnings,
+            'warning',
+            'api_with_stock',
+            `当前商品仍有 ${availableStockCount} 条可用库存，切换到 API 模式后这些 KEY 库存不会参与发货。`,
+            'delivery_type'
+        );
+    }
+
+    if (deliveryType === 'KEY' && purchaseLimit24hQuantity && purchaseLimit24hQuantity < 2) {
+        appendProductValidationIssue(
+            warnings,
+            'warning',
+            'tight_daily_limit',
+            '24 小时累计上限当前非常严格，建议确认是否真的要把单日购买限制为 1。',
+            'purchase_limit_24h_quantity'
+        );
+    }
+
+    if (
+        isActive
+        && !showPurchaseNotes
+        && !purchaseNotes
+        && !showUsageInstructions
+        && !usageInstructions
+    ) {
+        appendProductValidationIssue(
+            warnings,
+            'warning',
+            'missing_post_purchase_guidance',
+            '当前商品没有填写注意事项或使用说明，建议至少补 1 个，减少购买后的人工解释成本。',
+            'purchase_notes'
+        );
+    }
+
+    return {
+        blockingIssues,
+        warnings,
+        inventoryHealth: {
+            availableStockCount: Number.isFinite(Number(availableStockCount))
+                ? Number(availableStockCount)
+                : null
+        }
+    };
+}
+
+async function tryRpcCategoryRename(supabase, categoryId, nextName) {
+    if (!supabase || typeof supabase.rpc !== 'function') {
+        return null;
+    }
+
+    const { data, error } = await supabase.rpc('fn_admin_shop_rename_category', {
+        p_category_id: categoryId,
+        p_next_name: nextName
+    });
+
+    if (error) {
+        if (isMissingRpcFunctionError(error, 'fn_admin_shop_rename_category')) {
+            return null;
+        }
+        throw error;
+    }
+
+    return data && typeof data === 'object' ? data : {};
+}
+
+async function tryRpcCategoryDelete(supabase, categoryId, fallbackName = 'other') {
+    if (!supabase || typeof supabase.rpc !== 'function') {
+        return null;
+    }
+
+    const { data, error } = await supabase.rpc('fn_admin_shop_delete_category', {
+        p_category_id: categoryId,
+        p_fallback_name: fallbackName
+    });
+
+    if (error) {
+        if (isMissingRpcFunctionError(error, 'fn_admin_shop_delete_category')) {
+            return null;
+        }
+        throw error;
+    }
+
+    return data && typeof data === 'object' ? data : {};
+}
+
+async function tryRpcProductReorder(supabase, assignments = []) {
+    if (!supabase || typeof supabase.rpc !== 'function') {
+        return null;
+    }
+
+    const { data, error } = await supabase.rpc('fn_admin_shop_reorder_products', {
+        p_assignments: assignments
+    });
+
+    if (error) {
+        if (isMissingRpcFunctionError(error, 'fn_admin_shop_reorder_products')) {
+            return null;
+        }
+        throw error;
+    }
+
+    return data && typeof data === 'object' ? data : {};
+}
+
 module.exports = async (req, res) => {
     if (req.method !== 'POST') {
         res.setHeader('Allow', 'POST');
@@ -151,6 +445,20 @@ module.exports = async (req, res) => {
 
             if (!payload) {
                 return sendJson(res, 400, { success: false, message: 'payload is required' });
+            }
+
+            const validation = await validateProductPayload(supabase, {
+                productId,
+                payload,
+                pendingCategory
+            });
+
+            if (validation.blockingIssues.length) {
+                return sendJson(res, 400, {
+                    success: false,
+                    message: formatValidationMessages(validation.blockingIssues) || '商品配置校验失败',
+                    validation
+                });
             }
 
             if (pendingCategory?.name) {
@@ -205,7 +513,31 @@ module.exports = async (req, res) => {
 
             return sendJson(res, 200, {
                 success: true,
-                product: savedProduct
+                product: savedProduct,
+                validation
+            });
+        }
+
+        if (action === 'validate_product') {
+            const payload = body.payload && typeof body.payload === 'object' ? body.payload : null;
+            const productId = normalizeText(body.productId, 160);
+            const pendingCategory = body.pendingCategory && typeof body.pendingCategory === 'object'
+                ? body.pendingCategory
+                : null;
+
+            if (!payload) {
+                return sendJson(res, 400, { success: false, message: 'payload is required' });
+            }
+
+            const validation = await validateProductPayload(supabase, {
+                productId,
+                payload,
+                pendingCategory
+            });
+
+            return sendJson(res, 200, {
+                success: true,
+                validation
             });
         }
 
@@ -365,22 +697,33 @@ module.exports = async (req, res) => {
 
             const previousName = categoryRow.name;
             if (previousName !== nextName) {
-                const { error: renameError } = await supabase
-                    .from('shop_categories')
-                    .update({ name: nextName })
-                    .eq('id', categoryId);
+                const rpcResult = await tryRpcCategoryRename(supabase, categoryId, nextName);
 
-                if (renameError) {
-                    return sendJson(res, 400, { success: false, message: renameError.message });
+                if (rpcResult?.success === false) {
+                    return sendJson(res, 400, {
+                        success: false,
+                        message: normalizeText(rpcResult.message, 500) || '分类重命名失败'
+                    });
                 }
 
-                const { error: moveProductsError } = await supabase
-                    .from('shop_products')
-                    .update({ category: nextName })
-                    .eq('category', previousName);
+                if (!rpcResult) {
+                    const { error: renameError } = await supabase
+                        .from('shop_categories')
+                        .update({ name: nextName })
+                        .eq('id', categoryId);
 
-                if (moveProductsError) {
-                    return sendJson(res, 400, { success: false, message: moveProductsError.message });
+                    if (renameError) {
+                        return sendJson(res, 400, { success: false, message: renameError.message });
+                    }
+
+                    const { error: moveProductsError } = await supabase
+                        .from('shop_products')
+                        .update({ category: nextName })
+                        .eq('category', previousName);
+
+                    if (moveProductsError) {
+                        return sendJson(res, 400, { success: false, message: moveProductsError.message });
+                    }
                 }
             }
 
@@ -487,24 +830,40 @@ module.exports = async (req, res) => {
                 });
             }
 
-            const fallbackCategory = await ensureFallbackCategory(supabase, 'other');
+            let fallbackCategory = null;
+            const rpcResult = await tryRpcCategoryDelete(supabase, categoryId, 'other');
 
-            const { error: moveProductsError } = await supabase
-                .from('shop_products')
-                .update({ category: fallbackCategory.name })
-                .eq('category', categoryRow.name);
-
-            if (moveProductsError) {
-                return sendJson(res, 400, { success: false, message: moveProductsError.message });
+            if (rpcResult?.success === false) {
+                return sendJson(res, 400, {
+                    success: false,
+                    message: normalizeText(rpcResult.message, 500) || '分类删除失败'
+                });
             }
 
-            const { error: deleteError } = await supabase
-                .from('shop_categories')
-                .delete()
-                .eq('id', categoryId);
+            if (rpcResult?.success === true) {
+                fallbackCategory = {
+                    name: normalizeText(rpcResult.fallback_category, 120) || 'other'
+                };
+            } else {
+                fallbackCategory = await ensureFallbackCategory(supabase, 'other');
 
-            if (deleteError) {
-                return sendJson(res, 400, { success: false, message: deleteError.message });
+                const { error: moveProductsError } = await supabase
+                    .from('shop_products')
+                    .update({ category: fallbackCategory.name })
+                    .eq('category', categoryRow.name);
+
+                if (moveProductsError) {
+                    return sendJson(res, 400, { success: false, message: moveProductsError.message });
+                }
+
+                const { error: deleteError } = await supabase
+                    .from('shop_categories')
+                    .delete()
+                    .eq('id', categoryId);
+
+                if (deleteError) {
+                    return sendJson(res, 400, { success: false, message: deleteError.message });
+                }
             }
 
             await writeAdminAuditLog({
@@ -632,17 +991,28 @@ module.exports = async (req, res) => {
                 });
             }
 
-            for (const assignment of uniqueAssignments) {
-                const { error: updateError } = await supabase
-                    .from('shop_products')
-                    .update({
-                        category: assignment.category,
-                        sort_order: assignment.sort_order
-                    })
-                    .eq('id', assignment.id);
+            const rpcResult = await tryRpcProductReorder(supabase, uniqueAssignments);
 
-                if (updateError) {
-                    return sendJson(res, 400, { success: false, message: updateError.message });
+            if (rpcResult?.success === false) {
+                return sendJson(res, 400, {
+                    success: false,
+                    message: normalizeText(rpcResult.message, 500) || '商品排序更新失败'
+                });
+            }
+
+            if (!rpcResult) {
+                for (const assignment of uniqueAssignments) {
+                    const { error: updateError } = await supabase
+                        .from('shop_products')
+                        .update({
+                            category: assignment.category,
+                            sort_order: assignment.sort_order
+                        })
+                        .eq('id', assignment.id);
+
+                    if (updateError) {
+                        return sendJson(res, 400, { success: false, message: updateError.message });
+                    }
                 }
             }
 

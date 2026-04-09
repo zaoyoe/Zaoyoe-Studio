@@ -814,6 +814,195 @@
             color: #10b981;
         }
 
+        .shop-discount-message--warning {
+            color: #f59e0b;
+        }
+
+        .shop-discount-message--info {
+            color: #60a5fa;
+        }
+
+        .shop-discount-assets-shell {
+            display: grid;
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        .shop-discount-assets-group {
+            display: grid;
+            gap: 8px;
+        }
+
+        .shop-discount-assets-group__title {
+            font-size: 12px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.58);
+        }
+
+        .shop-discount-assets-grid {
+            display: grid;
+            gap: 8px;
+        }
+
+        .shop-discount-asset-card {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(255, 255, 255, 0.06);
+            color: #fff;
+            text-align: left;
+            display: grid;
+            gap: 6px;
+            transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+        }
+
+        .shop-discount-asset-card:hover:not(:disabled) {
+            transform: translateY(-1px);
+            border-color: rgba(255, 255, 255, 0.22);
+            background: rgba(255, 255, 255, 0.09);
+        }
+
+        .shop-discount-asset-card.is-selected {
+            border-color: rgba(16, 185, 129, 0.55);
+            background: rgba(16, 185, 129, 0.12);
+        }
+
+        .shop-discount-asset-card.is-disabled,
+        .shop-discount-asset-card:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .shop-discount-asset-card__top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            font-size: 14px;
+        }
+
+        .shop-discount-asset-card__cta {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.72);
+        }
+
+        .shop-discount-asset-card__meta {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.72);
+            line-height: 1.5;
+        }
+
+        .shop-discount-asset-card__hint {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.84);
+            line-height: 1.45;
+        }
+
+        .shop-discount-assets-empty {
+            margin-top: 12px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            color: rgba(255, 255, 255, 0.62);
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .shop-price-waterfall-panel {
+            margin-top: 10px;
+        }
+
+        .shop-price-waterfall {
+            display: grid;
+            gap: 10px;
+            padding: 12px 14px;
+            border-radius: 16px;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .shop-price-waterfall__header {
+            display: grid;
+            gap: 8px;
+        }
+
+        .shop-price-waterfall__title {
+            font-size: 12px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.62);
+        }
+
+        .shop-price-waterfall__policy {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .shop-price-waterfall__policy-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.08);
+            color: rgba(255, 255, 255, 0.78);
+            font-size: 11px;
+        }
+
+        .shop-price-waterfall__rows {
+            display: grid;
+            gap: 8px;
+        }
+
+        .shop-price-waterfall__row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .shop-price-waterfall__row-copy {
+            display: grid;
+            gap: 3px;
+            min-width: 0;
+        }
+
+        .shop-price-waterfall__row-copy strong {
+            font-size: 13px;
+            color: #fff;
+        }
+
+        .shop-price-waterfall__row-copy span {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.62);
+            line-height: 1.4;
+        }
+
+        .shop-price-waterfall__row-value {
+            font-size: 14px;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.88);
+            white-space: nowrap;
+        }
+
+        .shop-price-waterfall__row--discount .shop-price-waterfall__row-value {
+            color: #10b981;
+        }
+
+        .shop-price-waterfall__row--total .shop-price-waterfall__row-value {
+            color: #fbbf24;
+            font-size: 16px;
+        }
+
+        .shop-price-waterfall__footer {
+            font-size: 11px;
+            line-height: 1.5;
+            color: rgba(255, 255, 255, 0.6);
+        }
+
         .shop-btn:active {
             transform: translateY(0);
             filter: brightness(0.9);

@@ -1780,8 +1780,125 @@ function bindAdminStudioDelegatedControls() {
             case 'discounts-open-generate-modal':
                 window.AdminDiscounts?.openGenerateModal?.();
                 break;
+            case 'discounts-export-filtered-audit-summaries':
+                void window.AdminDiscounts?.exportFilteredAuditSummaries?.();
+                break;
+            case 'discounts-open-batch-restore-history-modal':
+                void window.AdminDiscounts?.openBatchRestoreHistoryModal?.();
+                break;
+            case 'discounts-set-batch-history-filter':
+                window.AdminDiscounts?.setBatchRestoreHistoryFilter?.(actionEl.dataset.discountHistoryFilter || '');
+                break;
+            case 'discounts-open-history-run-detail':
+                window.AdminDiscounts?.openBatchRestoreHistoryRunDetail?.(actionEl.dataset.discountBatchRunId || '');
+                break;
+            case 'discounts-open-batch-restore-modal':
+                window.AdminDiscounts?.openBatchRestoreModal?.();
+                break;
+            case 'discounts-close-batch-restore-result-modal':
+                window.AdminDiscounts?.closeBatchRestoreResultModal?.();
+                break;
+            case 'discounts-close-batch-restore-history-modal':
+                window.AdminDiscounts?.closeBatchRestoreHistoryModal?.();
+                break;
+            case 'discounts-close-history-run-detail':
+                window.AdminDiscounts?.closeBatchRestoreHistoryRunDetail?.();
+                break;
+            case 'discounts-refresh-batch-restore-history':
+                void window.AdminDiscounts?.loadBatchRestoreHistory?.({ force: true });
+                break;
+            case 'discounts-copy-batch-restore-result-summary':
+                void window.AdminDiscounts?.copyBatchRestoreSummary?.();
+                break;
+            case 'discounts-export-batch-restore-result-summary':
+                window.AdminDiscounts?.exportBatchRestoreSummary?.();
+                break;
+            case 'discounts-copy-batch-restore-failed-summary':
+                void window.AdminDiscounts?.copyBatchRestoreFailedSummary?.();
+                break;
+            case 'discounts-export-batch-restore-failed-summary':
+                window.AdminDiscounts?.exportBatchRestoreFailedSummary?.();
+                break;
+            case 'discounts-copy-history-run-summary':
+                void window.AdminDiscounts?.copyBatchRestoreHistoryRunSummary?.(actionEl.dataset.discountBatchRunId || '', 'all');
+                break;
+            case 'discounts-export-history-run-summary':
+                window.AdminDiscounts?.exportBatchRestoreHistoryRunSummary?.(actionEl.dataset.discountBatchRunId || '', 'all');
+                break;
+            case 'discounts-copy-history-run-failed-summary':
+                void window.AdminDiscounts?.copyBatchRestoreHistoryRunSummary?.(actionEl.dataset.discountBatchRunId || '', 'failed');
+                break;
+            case 'discounts-export-history-run-failed-summary':
+                window.AdminDiscounts?.exportBatchRestoreHistoryRunSummary?.(actionEl.dataset.discountBatchRunId || '', 'failed');
+                break;
+            case 'discounts-retry-history-run':
+                void window.AdminDiscounts?.retryBatchRestoreHistoryRun?.(actionEl.dataset.discountBatchRunId || '');
+                break;
+            case 'discounts-retry-history-run-item':
+                void window.AdminDiscounts?.retryBatchRestoreHistoryRun?.(
+                    actionEl.dataset.discountBatchRunId || '',
+                    { discountId: actionEl.dataset.discountId || '' }
+                );
+                break;
+            case 'discounts-open-detail-by-reference':
+                void window.AdminDiscounts?.openDetailByReference?.({
+                    id: actionEl.dataset.discountId || '',
+                    code: actionEl.dataset.discountCode || ''
+                });
+                break;
+            case 'discounts-open-detail-modal':
+                window.AdminDiscounts?.openDetailModal?.(actionEl.dataset.discountId || '');
+                break;
+            case 'discounts-open-restore-modal':
+                window.AdminDiscounts?.openRestoreModal?.(actionEl.dataset.discountId || '');
+                break;
+            case 'discounts-open-edit-modal':
+                window.AdminDiscounts?.openEditModal?.(actionEl.dataset.discountId || '');
+                break;
+            case 'discounts-open-edit-from-detail':
+                void window.AdminDiscounts?.openEditFromDetail?.(actionEl.dataset.discountId || '');
+                break;
+            case 'discounts-assign-assets':
+                void window.AdminDiscounts?.assignAssetsFromDetail?.(actionEl.dataset.discountId || '');
+                break;
             case 'discounts-copy-code':
                 window.AdminDiscounts?.copyCode?.(actionEl.dataset.discountCode || '');
+                break;
+            case 'discounts-copy-audit-summary':
+                void window.AdminDiscounts?.copyAuditSummary?.();
+                break;
+            case 'discounts-export-audit-summary':
+                window.AdminDiscounts?.exportAuditSummary?.();
+                break;
+            case 'discounts-clear-workbench-context':
+                window.AdminDiscounts?.clearWorkbenchContext?.();
+                break;
+            case 'discounts-close-detail-modal':
+                window.AdminDiscounts?.closeDetailModal?.();
+                break;
+            case 'discounts-set-timeline-filter':
+                window.AdminDiscounts?.setDetailTimelineFilter?.(actionEl.dataset.discountTimelineFilter || '');
+                break;
+            case 'discounts-close-restore-modal':
+                window.AdminDiscounts?.closeRestoreModal?.();
+                break;
+            case 'discounts-close-batch-restore-modal':
+                window.AdminDiscounts?.closeBatchRestoreModal?.();
+                break;
+            case 'discounts-open-related-order':
+                void window.AdminDiscounts?.openRelatedOrder?.(actionEl.dataset.orderId || '');
+                break;
+            case 'discounts-submit-restore-modal':
+                void window.AdminDiscounts?.submitRestoreModal?.();
+                break;
+            case 'discounts-submit-batch-restore-modal':
+                void window.AdminDiscounts?.submitBatchRestoreModal?.();
+                break;
+            case 'discounts-retry-batch-restore-failures':
+                void window.AdminDiscounts?.retryBatchRestoreFailures?.();
+                break;
+            case 'discounts-skip-batch-restore-item':
+                window.AdminDiscounts?.skipBatchRestoreResultItem?.(actionEl.dataset.discountId || '');
                 break;
             case 'discounts-toggle-status':
                 window.AdminDiscounts?.toggleStatus?.(
@@ -2100,10 +2217,15 @@ function bindAdminStudioDelegatedControls() {
             case 'discounts-search':
                 window.AdminDiscounts?.search?.();
                 break;
+            case 'discounts-search-batch-history':
+                window.AdminDiscounts?.searchBatchRestoreHistory?.();
+                break;
             case 'discounts-format-expiry-date':
+            case 'discounts-format-start-date':
                 window.AdminDiscounts?.formatExpiryDateInput?.(actionEl);
                 break;
             case 'discounts-format-expiry-time':
+            case 'discounts-format-start-time':
                 window.AdminDiscounts?.formatExpiryTimeInput?.(actionEl);
                 break;
             case 'tickets-search':
@@ -2196,10 +2318,49 @@ function bindAdminStudioDelegatedControls() {
         if (overlay.dataset.adminOverlayClose === 'ticket-summary-job-detail-modal' && target.closest('.admin-ticket-summary-job-modal__dialog')) {
             return;
         }
+        if (overlay.dataset.adminOverlayClose === 'discount-generate-modal' && target.closest('.admin-discount-form-modal__dialog')) {
+            return;
+        }
+        if (overlay.dataset.adminOverlayClose === 'discount-detail-modal' && target.closest('.admin-discount-detail-dialog')) {
+            return;
+        }
+        if (overlay.dataset.adminOverlayClose === 'discount-restore-modal' && target.closest('.admin-discount-restore-dialog')) {
+            return;
+        }
+        if (overlay.dataset.adminOverlayClose === 'discount-batch-restore-modal' && target.closest('.admin-discount-restore-dialog')) {
+            return;
+        }
+        if (overlay.dataset.adminOverlayClose === 'discount-batch-restore-result-modal' && target.closest('.admin-discount-restore-dialog')) {
+            return;
+        }
+        if (overlay.dataset.adminOverlayClose === 'discount-batch-restore-history-modal' && target.closest('.admin-discount-restore-dialog')) {
+            return;
+        }
+        if (overlay.dataset.adminOverlayClose === 'discount-batch-restore-history-run-detail-modal' && target.closest('.admin-discount-restore-dialog')) {
+            return;
+        }
 
         switch (overlay.dataset.adminOverlayClose) {
             case 'discount-generate-modal':
                 window.AdminDiscounts?.closeGenerateModal?.();
+                break;
+            case 'discount-detail-modal':
+                window.AdminDiscounts?.closeDetailModal?.();
+                break;
+            case 'discount-restore-modal':
+                window.AdminDiscounts?.closeRestoreModal?.();
+                break;
+            case 'discount-batch-restore-modal':
+                window.AdminDiscounts?.closeBatchRestoreModal?.();
+                break;
+            case 'discount-batch-restore-result-modal':
+                window.AdminDiscounts?.closeBatchRestoreResultModal?.();
+                break;
+            case 'discount-batch-restore-history-modal':
+                window.AdminDiscounts?.closeBatchRestoreHistoryModal?.();
+                break;
+            case 'discount-batch-restore-history-run-detail-modal':
+                window.AdminDiscounts?.closeBatchRestoreHistoryRunDetail?.();
                 break;
             case 'ticket-reply-modal':
                 window.AdminTickets?.closeReplyModal?.();

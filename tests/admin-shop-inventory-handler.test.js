@@ -62,6 +62,9 @@ async function withShopInventoryHandler(initialState, callback) {
                                 return state.rpcResult;
                             },
                             from(table) {
+                                const tableQueue = Array.isArray(state.tableResults?.[table])
+                                    ? state.tableResults[table]
+                                    : null;
                                 return {
                                     select(columns) {
                                         state.tableReads.push({ table, method: 'select', args: [columns] });
@@ -77,7 +80,10 @@ async function withShopInventoryHandler(initialState, callback) {
                                     },
                                     order(column, options) {
                                         state.tableReads.push({ table, method: 'order', args: [column, options] });
-                                        return Promise.resolve(state.orderLookupResult || { data: [], error: null });
+                                        const nextResult = tableQueue?.length
+                                            ? tableQueue.shift()
+                                            : (state.orderLookupResult || { data: [], error: null });
+                                        return Promise.resolve(nextResult);
                                     }
                                 };
                             }
@@ -214,11 +220,14 @@ test('shop inventory handler can resolve missing order ids through server-side o
             },
             error: null
         },
-        orderLookupResult: {
-            data: [
-                { id: 'ord_1', user_id: 'user_1', product_id: 'prod_1', created_at: '2026-04-03T08:00:00.000Z' }
-            ],
-            error: null
+        tableResults: {
+            shop_orders: [{ data: [], error: null }],
+            shop_order_items: [{
+                data: [
+                    { order_id: 'ord_1', inventory_id: 'inv_1', created_at: '2026-04-03T08:00:00.000Z' }
+                ],
+                error: null
+            }]
         }
     }, async ({ handler, state }) => {
         const req = {
@@ -236,9 +245,9 @@ test('shop inventory handler can resolve missing order ids through server-side o
         assert.equal(payload.items[0]?.order_id, 'ord_1');
         assert.equal(payload.items[1]?.order_id, null);
         assert.equal(
-            state.tableReads.some((entry) => entry.table === 'shop_orders' && entry.method === 'select'),
+            state.tableReads.some((entry) => entry.table === 'shop_order_items' && entry.method === 'select'),
             true,
-            'handler should resolve orphan order ids on the server'
+            'handler should resolve orphan order ids through exact order-item linkage'
         );
     });
 });

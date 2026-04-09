@@ -251,6 +251,65 @@ test('shop orders handler supports free-text product search for analytics drill-
     });
 });
 
+test('shop orders handler resolves order content through exact order-item linkage when inventory_id is empty', async () => {
+    await withShopOrdersHandler({
+        shop_orders: [
+            {
+                id: 'ord_linked',
+                user_id: 'user_linked',
+                product_id: 'prod-linked',
+                inventory_id: null,
+                snapshot_product_name: 'Linked Account',
+                created_at: '2026-04-06T08:00:00.000Z',
+                total_price: 120,
+                price_paid: 120
+            }
+        ],
+        shop_order_items: [
+            {
+                id: 'item_1',
+                order_id: 'ord_linked',
+                inventory_id: 'inv_linked',
+                snapshot_product_name: 'Linked Account',
+                price_paid: 120,
+                created_at: '2026-04-06T08:00:01.000Z'
+            }
+        ],
+        shop_inventory: [
+            {
+                id: 'inv_linked',
+                content: 'linked@example.com----secret',
+                status: 'sold'
+            }
+        ],
+        profiles: [
+            { id: 'user_linked', username: 'linked-user', avatar_url: null, email: 'linked@example.com' }
+        ]
+    }, async ({ handler, state }) => {
+        const req = {
+            method: 'GET',
+            headers: {},
+            url: '/api/admin?route=shop/orders&query=Linked&page=1&pageSize=10'
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.rows.length, 1);
+        assert.equal(payload.rows[0]?.linkage_source, 'order_items');
+        assert.deepEqual(payload.rows[0]?.linked_inventory_ids, ['inv_linked']);
+        assert.equal(payload.rows[0]?.resolved_items?.[0]?.content, 'linked@example.com----secret');
+        assert.equal(
+            state.calls.some((entry) => entry.table === 'shop_order_items' && entry.inFilters.some(([column]) => column === 'order_id')),
+            true,
+            'handler should load exact order-item rows before attempting to resolve inventory content'
+        );
+    });
+});
+
 test('shop orders handler still resolves explicit SHOP_ORDER_ ids exactly', async () => {
     await withShopOrdersHandler({
         shop_orders: [
@@ -360,6 +419,55 @@ test('shop orders handler supports refund and delivery issue filters for analyti
             state.calls.some((entry) => entry.table === 'shop_orders' && entry.eqFilters.some(([column, value]) => column === 'delivery_status' && value === 'dead_letter')),
             true,
             'handler should forward analytics delivery filters into the shop order query'
+        );
+    });
+});
+
+test('shop orders handler falls back to profile search when query matches user email', async () => {
+    await withShopOrdersHandler({
+        shop_orders: [
+            {
+                id: 'ord_email_1',
+                user_id: 'user_email_1',
+                product_id: 'prod_api',
+                inventory_id: null,
+                snapshot_product_name: 'Webhook Goods',
+                created_at: '2026-04-08T10:00:00.000Z',
+                total_price: 300,
+                price_paid: 300,
+                refund_status: 'none',
+                delivery_status: 'pending'
+            }
+        ],
+        profiles: [
+            { id: 'user_email_1', username: 'ops-user', avatar_url: null, email: 'ops@example.com' }
+        ],
+        shop_order_items: [],
+        shop_inventory: []
+    }, async ({ handler, state }) => {
+        const req = {
+            method: 'GET',
+            headers: {},
+            url: '/api/admin?route=shop/orders&query=ops%40example.com&page=1&pageSize=10'
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.count, 1);
+        assert.equal(payload.rows[0]?.id, 'ord_email_1');
+        assert.equal(
+            state.calls.some((entry) => entry.table === 'profiles' && entry.orExpression.includes('email.ilike.%ops@example.com%')),
+            true,
+            'handler should search profiles when direct order search misses and user email is provided'
+        );
+        assert.equal(
+            state.calls.some((entry) => entry.table === 'shop_orders' && entry.inFilters.some(([column, values]) => column === 'user_id' && values.includes('user_email_1'))),
+            true,
+            'handler should map profile ids back into the shop order query'
         );
     });
 });

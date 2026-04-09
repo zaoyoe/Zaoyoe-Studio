@@ -49,6 +49,10 @@ function createQueryBuilder(state, table) {
             operations.push({ method: 'eq', args: [column, value] });
             return builder;
         },
+        in(column, values) {
+            operations.push({ method: 'in', args: [column, values] });
+            return builder;
+        },
         is(column, value) {
             operations.push({ method: 'is', args: [column, value] });
             return builder;
@@ -169,13 +173,39 @@ test('shop inventory detail handler loads inventory, related order, and sibling 
                     error: null
                 },
                 {
+                    data: [],
+                    error: null
+                },
+                {
                     data: [
                         {
                             id: 'ord_1',
                             user_id: 'user_1',
-                            product_id: 'prod_1',
                             created_at: '2026-04-03T02:00:00.000Z',
                             price_paid: 99
+                        }
+                    ],
+                    error: null
+                }
+            ],
+            shop_order_items: [
+                {
+                    data: [
+                        {
+                            order_id: 'ord_1',
+                            inventory_id: 'inv_1',
+                            created_at: '2026-04-03T02:00:00.000Z'
+                        }
+                    ],
+                    error: null
+                },
+                {
+                    data: [
+                        {
+                            inventory_id: 'inv_1'
+                        },
+                        {
+                            inventory_id: 'inv_2'
                         }
                     ],
                     error: null

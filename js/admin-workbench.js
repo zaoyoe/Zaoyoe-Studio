@@ -6765,6 +6765,7 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
             if (discountSearchValue) {
                 window.AdminDiscounts?.search?.();
             }
+            window.AdminDiscounts?.showWorkbenchContext?.(normalizedContext);
             scrollAdminWorkbenchTarget('module-discounts');
         } else if (normalizedKey === 'shop-risk-users') {
             const riskUserId = getOpsAlertWorkspaceRiskUserId(normalizedContext);

@@ -2,14 +2,14 @@ const {
     requireAdmin,
     sendJson
 } = require('../../../../api/_lib/admin');
+const {
+    normalizeText,
+    loadOrderLinksByInventoryIds
+} = require('./_order-linkage');
 
 function getSearchParams(req) {
     const url = new URL(req.url || '', 'http://localhost');
     return url.searchParams;
-}
-
-function normalizeText(value, maxLength = 200) {
-    return String(value || '').trim().slice(0, Math.max(0, maxLength));
 }
 
 function normalizePositiveInteger(value, fallback, maxValue = 10000) {
@@ -20,67 +20,41 @@ function normalizePositiveInteger(value, fallback, maxValue = 10000) {
     return Math.min(parsed, maxValue);
 }
 
-function normalizeBoolean(value) {
-    const normalized = String(value || '').trim().toLowerCase();
-    return normalized === '1' || normalized === 'true' || normalized === 'yes';
-}
-
 async function resolveMissingOrderIds(supabase, items = []) {
     const safeItems = Array.isArray(items) ? items : [];
     const candidates = safeItems.filter((item) => (
-        String(item?.status || '').trim().toLowerCase() === 'sold'
+        ['sold', 'frozen', 'fault'].includes(String(item?.status || '').trim().toLowerCase())
         && !normalizeText(item?.order_id, 160)
-        && normalizeText(item?.buyer_id, 160)
-        && normalizeText(item?.product_id, 160)
+        && normalizeText(item?.id, 160)
     ));
 
     if (!candidates.length) {
         return safeItems;
     }
 
-    const buyerIds = [...new Set(candidates.map((item) => normalizeText(item?.buyer_id, 160)).filter(Boolean))];
-    const productIds = [...new Set(candidates.map((item) => normalizeText(item?.product_id, 160)).filter(Boolean))];
+    const orderLinksByInventoryId = await loadOrderLinksByInventoryIds(
+        supabase,
+        candidates.map((item) => item?.id)
+    );
 
-    if (!buyerIds.length || !productIds.length) {
-        return safeItems;
-    }
-
-    const { data, error } = await supabase
-        .from('shop_orders')
-        .select('id, user_id, product_id, created_at')
-        .in('user_id', buyerIds)
-        .in('product_id', productIds)
-        .is('inventory_id', null)
-        .order('created_at', { ascending: false });
-
-    if (error) {
-        throw error;
-    }
-
-    const orphanPool = Array.isArray(data) ? [...data] : [];
     return safeItems.map((item) => {
         if (
-            String(item?.status || '').trim().toLowerCase() !== 'sold'
+            !['sold', 'frozen', 'fault'].includes(String(item?.status || '').trim().toLowerCase())
             || normalizeText(item?.order_id, 160)
-            || !normalizeText(item?.buyer_id, 160)
-            || !normalizeText(item?.product_id, 160)
+            || !normalizeText(item?.id, 160)
         ) {
             return item;
         }
 
-        const matchIndex = orphanPool.findIndex((entry) => (
-            normalizeText(entry?.user_id, 160) === normalizeText(item?.buyer_id, 160)
-            && normalizeText(entry?.product_id, 160) === normalizeText(item?.product_id, 160)
-        ));
-
-        if (matchIndex === -1) {
+        const link = orderLinksByInventoryId.get(normalizeText(item?.id, 160));
+        if (!link?.order_id) {
             return item;
         }
 
-        const [matchedOrder] = orphanPool.splice(matchIndex, 1);
         return {
             ...item,
-            order_id: matchedOrder?.id || item?.order_id || null
+            order_id: link.order_id || item?.order_id || null,
+            order_link_source: link.source || null
         };
     });
 }
@@ -104,7 +78,6 @@ module.exports = async function adminShopInventoryHandler(req, res) {
         const search = normalizeText(searchParams.get('search'), 200) || null;
         const dateFrom = normalizeText(searchParams.get('dateFrom') || searchParams.get('date_from'), 80) || null;
         const dateTo = normalizeText(searchParams.get('dateTo') || searchParams.get('date_to'), 80) || null;
-        const includeOrderHints = normalizeBoolean(searchParams.get('includeOrderHints') || searchParams.get('include_order_hints'));
 
         const { data, error } = await supabase.rpc('fn_admin_list_inventory', {
             p_product_id: productId,
@@ -127,9 +100,7 @@ module.exports = async function adminShopInventoryHandler(req, res) {
             });
         }
 
-        const items = includeOrderHints
-            ? await resolveMissingOrderIds(supabase, data.items)
-            : (Array.isArray(data.items) ? data.items : []);
+        const items = await resolveMissingOrderIds(supabase, data.items);
 
         return sendJson(res, 200, {
             success: true,

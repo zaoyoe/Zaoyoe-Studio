@@ -14,6 +14,9 @@ const {
 const {
     requireSupportedSite
 } = require('../_lib/site');
+const {
+    buildPricingWaterfall
+} = require('../_lib/discount-pricing');
 
 function normalizePurchaseBody(body = {}, headers = {}) {
     const quantityValue = Number(body?.quantity ?? body?.p_quantity ?? 1);
@@ -24,6 +27,7 @@ function normalizePurchaseBody(body = {}, headers = {}) {
         quantity,
         site: requireSupportedSite(body?.site || body?.p_site || 'cn', { fieldName: 'site' }),
         discountCode: String(body?.discountCode || body?.p_discount_code || '').trim().toUpperCase() || null,
+        discountAssetId: String(body?.discountAssetId || body?.p_discount_asset_id || '').trim() || null,
         agentId: String(body?.agentId || body?.p_agent_id || '').trim() || null,
         idempotencyKey: String(
             body?.idempotencyKey
@@ -46,6 +50,7 @@ function buildIdempotencyFingerprint({ userId, payload }) {
             quantity: payload.quantity,
             site: payload.site,
             discountCode: payload.discountCode || '',
+            discountAssetId: payload.discountAssetId || '',
             agentId: payload.agentId || '',
             idempotencyKey: payload.idempotencyKey || ''
         }))
@@ -139,6 +144,7 @@ module.exports = async function handler(req, res) {
             p_site: payload.site,
             p_quantity: payload.quantity,
             p_discount_code: payload.discountCode,
+            p_discount_asset_id: payload.discountAssetId,
             p_agent_id: payload.agentId
         });
 
@@ -154,7 +160,25 @@ module.exports = async function handler(req, res) {
             });
         }
 
-        return sendJson(res, 200, responsePayload);
+        const responseData = responsePayload?.data && typeof responsePayload.data === 'object' && !Array.isArray(responsePayload.data)
+            ? responsePayload.data
+            : {};
+        const pricingWaterfall = buildPricingWaterfall({
+            ...responseData,
+            discount_code: responseData.discount_code || payload.discountCode,
+            discount_asset_id: payload.discountAssetId || responseData.discount_asset_id || null
+        }, {
+            quantity: payload.quantity
+        });
+
+        return sendJson(res, 200, {
+            ...responsePayload,
+            data: {
+                ...responseData,
+                pricing_waterfall: pricingWaterfall.rows,
+                stacking_policy: pricingWaterfall.stacking_policy
+            }
+        });
     } catch (error) {
         return sendJson(res, error.statusCode || 500, {
             success: false,

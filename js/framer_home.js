@@ -35,6 +35,10 @@ const HOME_SHOP_CAROUSEL_GAP = 24;
 const HOME_SHOP_CAROUSEL_EXTRA_BUFFER = HOME_SHOP_CAROUSEL_CARD_WIDTH + (HOME_SHOP_CAROUSEL_GAP * 2);
 const HOME_LOOP_MIN_PIXELS_PER_SECOND = 10;
 const HOME_LOOP_MAX_PIXELS_PER_SECOND = 140;
+const HOME_GUESTBOOK_CARD_SLOTS = ['l1', 'l2', 'l3', 'r1', 'r2', 'r3'];
+const HOME_GUESTBOOK_PARTICLE_COUNT = 24;
+const HOME_GUESTBOOK_PARTICLE_SEED = 20260409;
+const HOME_GUESTBOOK_PARTICLE_RESET_SEED = 9090909;
 const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
 const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
 
@@ -92,6 +96,27 @@ function writeHomepagePrefetchCache(payload, site = getHomepageRuntimeSite()) {
     site
   }));
   sessionStorage.removeItem(HOMEPAGE_PREFETCH_CACHE_KEY);
+}
+
+function escapeHomeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function clampHomeValue(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function createHomeSeededRandom(seed) {
+  let state = seed >>> 0;
+  return function next() {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
 }
 
 function resetMobileSubmenus(mobileMenu) {
@@ -420,6 +445,7 @@ const FramerHome = {
   // Cached data
   cachedData: null,
   config: null,
+  guestbookRuntime: null,
 
   /**
    * Initialize the homepage
@@ -893,8 +919,8 @@ const FramerHome = {
         return data || [];
       }, 10);
 
-      // Apply limit from config
-      return messages.slice(0, config.max_items || 5);
+      // Homepage layout is tuned for 6 cards on desktop, so always keep up to 6.
+      return messages.slice(0, Math.max(Number(config.max_items) || 0, HOME_GUESTBOOK_CARD_SLOTS.length));
     } catch (error) {
       console.error('Failed to fetch guestbook:', error);
       return [];
@@ -947,7 +973,7 @@ const FramerHome = {
       prompts: { enable_auto: true, max_items: 24, sort: 'popular', section_title: 'AI 提示词工作室', section_subtitle: '让创作更高效，让灵感更自由' },
       shop: { enable_auto: true, max_items: 8, section_title: '精选资源商城', section_subtitle: '优质资源，助力成长' },
       verify: { enable_auto: true, section_title: 'Gemini 验证', section_subtitle: '快速验证您的 API 密钥' },
-      guestbook: { enable_auto: true, max_items: 5, section_title: '留言板', section_subtitle: '用户的声音' },
+      guestbook: { enable_auto: true, max_items: 6, section_title: '留言板', section_subtitle: '用户的声音' },
       ticker: { enable_auto: true, speed: 30 }
     };
 
@@ -1031,6 +1057,7 @@ const FramerHome = {
       setHomeSectionVisibility(document.getElementById('guestbook-section'), true);
       this.renderGuestbook();
     } else {
+      this.destroyGuestbookExperience();
       setHomeSectionVisibility(document.getElementById('guestbook-section'), false);
     }
 
@@ -1723,11 +1750,280 @@ const FramerHome = {
   },
 
   /**
+   * Stop guestbook-specific scroll + particle runtime
+   */
+  destroyGuestbookExperience() {
+    const runtime = this.guestbookRuntime;
+    if (!runtime) {
+      return;
+    }
+
+    if (runtime.scrollHandler) {
+      window.removeEventListener('scroll', runtime.scrollHandler);
+    }
+
+    if (runtime.resizeHandler) {
+      window.removeEventListener('resize', runtime.resizeHandler);
+    }
+
+    if (runtime.progressFrame) {
+      window.cancelAnimationFrame(runtime.progressFrame);
+    }
+
+    if (runtime.particleFrame) {
+      window.cancelAnimationFrame(runtime.particleFrame);
+    }
+
+    this.guestbookRuntime = null;
+  },
+
+  getGuestbookAvatarUrl(message) {
+    const username = String(message?.profiles?.username || message?.username || 'U').trim() || 'U';
+    return message?.profiles?.avatar_url
+      || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(username)}&backgroundColor=6b9ece`;
+  },
+
+  getGuestbookDisplayName(message) {
+    const username = String(message?.profiles?.username || message?.username || '').trim();
+    return username || (window.i18n?.getCurrentLanguage?.() === 'en' ? 'Anonymous' : '匿名用户');
+  },
+
+  getGuestbookMessagePreview(message) {
+    return String(message?.content || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  },
+
+  createGuestbookCardMarkup(message, slot) {
+    const displayName = this.getGuestbookDisplayName(message);
+    const safeName = escapeHomeHtml(displayName);
+    const safeContent = escapeHomeHtml(this.getGuestbookMessagePreview(message));
+    const avatarSrc = escapeHomeHtml(this.getGuestbookAvatarUrl(message));
+    const fallbackSrc = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(displayName || 'U')}&backgroundColor=6b9ece`;
+    const side = slot.startsWith('l') ? 'left' : 'right';
+
+    return `
+      <article class="home-guestbook-card home-guestbook-card--${slot}" data-home-guestbook-card data-card-side="${side}">
+        <div class="home-guestbook-card__head">
+          <img
+            src="${avatarSrc}"
+            alt="${safeName}"
+            class="home-guestbook-avatar"
+            loading="lazy"
+            decoding="async"
+            data-home-avatar-fallback="${encodeURIComponent(fallbackSrc)}">
+          <div class="home-guestbook-card__author">${safeName}</div>
+        </div>
+        <p class="home-guestbook-card__content">${safeContent}</p>
+      </article>
+    `;
+  },
+
+  getGuestbookParticleModeScale() {
+    if (window.innerWidth <= 760) {
+      return 0.56;
+    }
+
+    if (window.innerWidth <= 980) {
+      return 0.68;
+    }
+
+    if (window.innerWidth <= 1180) {
+      return 0.76;
+    }
+
+    if (window.innerWidth <= 1440) {
+      return 0.84;
+    }
+
+    return 1;
+  },
+
+  createGuestbookParticleDescriptor(random, index) {
+    const streak = index >= 20;
+    const angle = (random() * 360) - 180;
+    const minDistance = streak
+      ? 90 + (random() * 90)
+      : 54 + (random() * 72);
+    const maxDistance = streak
+      ? 430 + (random() * 150)
+      : 340 + (random() * 220);
+    const startDistance = minDistance + ((maxDistance - minDistance) * random());
+
+    return {
+      angle,
+      distance: startDistance,
+      minDistance,
+      maxDistance,
+      speed: streak ? 14 + (random() * 16) : 9 + (random() * 12),
+      drift: (random() - 0.5) * (streak ? 0.8 : 0.45),
+      phase: random() * Math.PI * 2,
+      pulseSpeed: 0.5 + (random() * 0.7),
+      tilt: streak ? ((random() - 0.5) * 16) : ((random() - 0.5) * 8),
+      opacityBase: streak ? 0.12 + (random() * 0.12) : 0.28 + (random() * 0.42),
+      size: streak ? 2 : 1.4 + (random() * 1.8),
+      glow: streak ? 0 : 6 + (random() * 8),
+      streak,
+      length: streak ? 10 + (random() * 10) : 0,
+      thickness: streak ? 1.2 + (random() * 0.9) : 0,
+      color: streak
+        ? (random() > 0.72 ? 'rgba(245,210,100,0.24)' : 'rgba(255,255,255,0.28)')
+        : (random() > 0.82
+          ? 'rgba(245,210,100,0.5)'
+          : random() > 0.6
+            ? 'rgba(192,210,255,0.56)'
+            : 'rgba(255,255,255,0.68)')
+    };
+  },
+
+  initializeGuestbookParticles(runtime) {
+    if (!runtime?.particleField) {
+      return;
+    }
+
+    const random = createHomeSeededRandom(HOME_GUESTBOOK_PARTICLE_SEED);
+    runtime.particleResetRandom = createHomeSeededRandom(HOME_GUESTBOOK_PARTICLE_RESET_SEED);
+    runtime.particles = [];
+    runtime.lastParticleFrameTime = 0;
+
+    for (let index = 0; index < HOME_GUESTBOOK_PARTICLE_COUNT; index += 1) {
+      const seed = this.createGuestbookParticleDescriptor(random, index);
+      const particle = document.createElement('span');
+      particle.className = seed.streak ? 'home-guestbook-particle home-guestbook-particle--streak' : 'home-guestbook-particle';
+      particle.style.setProperty('--particle-size', String(seed.size || 2));
+      particle.style.setProperty('--particle-color', seed.color || 'rgba(255,255,255,0.6)');
+      particle.style.setProperty('--particle-glow', String(seed.glow || 10));
+
+      if (seed.streak) {
+        particle.style.setProperty('--particle-length', String(seed.length || 10));
+        particle.style.setProperty('--particle-thickness', String(seed.thickness || 1.4));
+      }
+
+      runtime.particleField.appendChild(particle);
+      runtime.particles.push({
+        ...seed,
+        element: particle
+      });
+    }
+
+    const animateParticles = (now) => {
+      if (!this.guestbookRuntime || this.guestbookRuntime !== runtime) {
+        return;
+      }
+
+      if (!runtime.lastParticleFrameTime) {
+        runtime.lastParticleFrameTime = now;
+      }
+
+      const deltaSeconds = Math.min(0.05, (now - runtime.lastParticleFrameTime) / 1000);
+      runtime.lastParticleFrameTime = now;
+      const timeSeconds = now / 1000;
+      const scale = this.getGuestbookParticleModeScale();
+
+      runtime.particles.forEach((particle) => {
+        particle.distance += particle.speed * deltaSeconds;
+        particle.angle += particle.drift * deltaSeconds * 18;
+
+        if (particle.distance > particle.maxDistance) {
+          particle.distance = particle.minDistance + (runtime.particleResetRandom() * Math.min(22, particle.maxDistance - particle.minDistance));
+          particle.angle += (runtime.particleResetRandom() - 0.5) * 26;
+          particle.phase = runtime.particleResetRandom() * Math.PI * 2;
+        }
+
+        const radius = particle.distance * scale;
+        const progress = (particle.distance - particle.minDistance) / Math.max(1, particle.maxDistance - particle.minDistance);
+        const fadeIn = Math.min(1, progress / 0.22);
+        const fadeOut = Math.min(1, (1 - progress) / 0.28);
+        const pulse = 0.92 + (Math.sin((timeSeconds * particle.pulseSpeed) + particle.phase) * 0.08);
+        const opacity = Math.max(0.02, particle.opacityBase * fadeIn * fadeOut * pulse);
+        const tilt = particle.tilt * (0.72 + (progress * 0.28));
+
+        particle.element.style.opacity = opacity.toFixed(3);
+        particle.element.style.transform = [
+          'translate(-50%, -50%)',
+          `rotate(${particle.angle.toFixed(3)}deg)`,
+          `translateY(${-radius.toFixed(2)}px)`,
+          `rotate(${tilt.toFixed(3)}deg)`
+        ].join(' ');
+      });
+
+      runtime.particleFrame = window.requestAnimationFrame(animateParticles);
+    };
+
+    runtime.particleFrame = window.requestAnimationFrame(animateParticles);
+  },
+
+  initGuestbookExperience(section) {
+    const stage = section?.querySelector('[data-home-guestbook-stage]');
+    const particleField = section?.querySelector('[data-home-guestbook-particles]');
+    if (!stage || !particleField) {
+      return;
+    }
+
+    const runtime = {
+      section,
+      stage,
+      particleField,
+      progressFrame: 0,
+      particleFrame: 0,
+      particles: [],
+      scheduled: false
+    };
+
+    const updateScrollProgress = () => {
+      if (!this.guestbookRuntime || this.guestbookRuntime !== runtime) {
+        return;
+      }
+
+      if (window.innerWidth <= 760) {
+        stage.style.setProperty('--home-guestbook-scroll-progress', '0');
+        return;
+      }
+
+      const rect = stage.getBoundingClientRect();
+      const viewportCenter = window.innerHeight / 2;
+      const stageCenter = rect.top + (rect.height / 2);
+      const distance = Math.abs(stageCenter - viewportCenter);
+      const maxDistance = Math.max(window.innerHeight * 0.72, 1);
+      const normalized = clampHomeValue(distance / maxDistance, 0, 1);
+      const easedProgress = Math.pow(normalized, 1.08);
+
+      stage.style.setProperty('--home-guestbook-scroll-progress', easedProgress.toFixed(4));
+    };
+
+    const scheduleProgressUpdate = () => {
+      if (runtime.scheduled) {
+        return;
+      }
+
+      runtime.scheduled = true;
+      runtime.progressFrame = window.requestAnimationFrame(() => {
+        runtime.scheduled = false;
+        updateScrollProgress();
+      });
+    };
+
+    runtime.scrollHandler = scheduleProgressUpdate;
+    runtime.resizeHandler = scheduleProgressUpdate;
+    this.guestbookRuntime = runtime;
+
+    window.addEventListener('scroll', runtime.scrollHandler, { passive: true });
+    window.addEventListener('resize', runtime.resizeHandler);
+
+    this.initializeGuestbookParticles(runtime);
+    updateScrollProgress();
+  },
+
+  /**
    * Render Guestbook section
    */
   renderGuestbook() {
-    const messages = this.cachedData.guestbook;
-    const config = this.config.guestbook;
+    this.destroyGuestbookExperience();
+
+    const messages = Array.isArray(this.cachedData.guestbook)
+      ? this.cachedData.guestbook.slice(0, HOME_GUESTBOOK_CARD_SLOTS.length)
+      : [];
+    const config = this.config.guestbook || {};
     const section = document.getElementById('guestbook-section');
 
     if (!messages || messages.length === 0) {
@@ -1736,38 +2032,41 @@ const FramerHome = {
     }
     setHomeSectionVisibility(section, true);
 
+    const title = escapeHomeHtml(this.getLocalizedField(config, 'section_title') || window.i18n?.t('home.guestbook.title') || '留言板');
+    const subtitle = escapeHomeHtml(this.getLocalizedField(config, 'section_subtitle') || window.i18n?.t('home.guestbook.subtitle') || '用户的声音');
+    const cardsMarkup = messages
+      .map((message, index) => this.createGuestbookCardMarkup(message, HOME_GUESTBOOK_CARD_SLOTS[index]))
+      .join('');
+
     section.innerHTML = `
-      <div class="section-header fade-in-up">
-        <h2 class="section-title">${this.getLocalizedField(config, 'section_title') || window.i18n?.t('home.guestbook.title') || '留言板'}</h2>
-        <p class="section-subtitle">${this.getLocalizedField(config, 'section_subtitle') || window.i18n?.t('home.guestbook.subtitle') || '用户的声音'}</p>
-      </div>
-      
-      <div class="guestbook-list">
-        ${messages.map(msg => `
-          <div class="glass-card fade-in-up guestbook-card">
-            <img src="${msg.profiles?.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(msg.profiles?.username || 'U')}&backgroundColor=6b9ece`}" 
-                 data-home-avatar-fallback="${encodeURIComponent(`https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(msg.profiles?.username || 'U')}&backgroundColor=6b9ece`)}"
-                 class="guestbook-avatar">
-            <div class="guestbook-card-body">
-              <div class="guestbook-author">${msg.profiles?.username || '匿名用户'}</div>
-              <p class="guestbook-content">${msg.content}</p>
-            </div>
+      <div class="home-guestbook-stage fade-in-up" data-home-guestbook-stage>
+        <div class="home-guestbook-particle-field" data-home-guestbook-particles aria-hidden="true"></div>
+        <div class="home-guestbook-halo home-guestbook-halo--outer" aria-hidden="true"></div>
+        <div class="home-guestbook-halo home-guestbook-halo--inner" aria-hidden="true"></div>
+
+        <section class="home-guestbook-center" aria-label="${title}">
+          <h2 class="home-guestbook-center__title">${title}</h2>
+          <p class="home-guestbook-center__subtitle">${subtitle}</p>
+
+          <div class="home-guestbook-center__actions">
+            <a href="/guestbook.html"
+              data-home-open-guestbook="1"
+              data-home-hover-lift="1"
+              class="btn btn-secondary guestbook-action-btn">
+              <i class="fas fa-pen-fancy"></i>
+              ${window.i18n?.t('home.guestbook.writeMessage') || '写留言'}
+            </a>
+            <a href="/guestbook.html"
+              class="btn btn-secondary guestbook-action-btn"
+              data-home-hover-lift="1">
+              ${window.i18n?.t('home.guestbook.viewAll') || '查看全部留言'}
+            </a>
           </div>
-        `).join('')}
-      </div>
-      
-      <div class="guestbook-actions">
-        <a href="/guestbook.html"
-          data-home-open-guestbook="1"
-          data-home-hover-lift="1"
-          class="btn btn-secondary guestbook-action-btn">
-          <i class="fas fa-pen-fancy"></i>
-          ${window.i18n?.t('home.guestbook.writeMessage') || '写留言'}
-        </a>
-        <a href="/guestbook.html" class="btn btn-secondary guestbook-action-btn"
-          data-home-hover-lift="1">
-          ${window.i18n?.t('home.guestbook.viewAll') || '查看全部留言'}
-        </a>
+        </section>
+
+        <div class="home-guestbook-cards">
+          ${cardsMarkup}
+        </div>
       </div>
     `;
 
@@ -1781,6 +2080,7 @@ const FramerHome = {
       image.src = decodeURIComponent(fallbackSrc);
     });
     bindHoverLiftTargets(section);
+    this.initGuestbookExperience(section);
   },
 
   /**

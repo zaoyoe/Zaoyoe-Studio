@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>首页留言板环绕布局预览</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <link rel="stylesheet" href="./css/framer_home.css?v=20260329_HOME_SPEED_CURVE_5">
+  <link rel="stylesheet" href="./css/guestbook-layout-preview.css?v=20260409_GUESTBOOK_LAYOUT_PREVIEW_1">
+</head>
+<body data-preview-mode="desktop">
+  <header class="preview-toolbar">
+    <div class="preview-toolbar__copy">
+      <div class="preview-toolbar__eyebrow">Homepage Guestbook Preview</div>
+      <h1>留言板环绕式布局预览</h1>
+      <p id="previewModeNote">桌面构图：当留言板区域处于视窗中心时卡片归位，继续滚动会向左右两侧飞散。</p>
+    </div>
+
+    <div class="preview-toolbar__actions" aria-label="预览模式切换">
+      <button class="preview-mode-btn is-active" type="button" data-preview-mode-target="desktop">桌面构图</button>
+      <button class="preview-mode-btn" type="button" data-preview-mode-target="compact">紧凑桌面</button>
+      <button class="preview-mode-btn" type="button" data-preview-mode-target="mobile">移动预览</button>
+    </div>
+  </header>
+
+  <main class="preview-main">
+    <div class="preview-scroll-spacer" aria-hidden="true"></div>
+
+    <section class="preview-frame" aria-label="留言板区域预览">
+      <div class="preview-frame__glow preview-frame__glow--left"></div>
+      <div class="preview-frame__glow preview-frame__glow--right"></div>
+
+      <div class="guestbook-stage">
+        <div class="guestbook-particle-field" id="guestbookParticleField" aria-hidden="true"></div>
+        <div class="guestbook-stage__halo guestbook-stage__halo--outer"></div>
+        <div class="guestbook-stage__halo guestbook-stage__halo--inner"></div>
+
+        <section class="guestbook-center">
+          <div class="guestbook-center__kicker">COMMUNITY NOTES</div>
+          <h2 class="guestbook-center__title">留言板</h2>
+          <p class="guestbook-center__subtitle">用户的声音</p>
+          <p class="guestbook-center__description">
+            首页只展示精选留言摘要，让标题成为中心，两侧卡片像被风吹起的便签一样围绕。
+          </p>
+
+          <div class="guestbook-center__actions">
+            <a href="/guestbook.html" class="btn btn-secondary guestbook-action-btn" aria-label="写留言">
+              <i class="fas fa-pen-fancy"></i>
+              写留言
+            </a>
+            <a href="/guestbook.html" class="btn btn-secondary guestbook-action-btn">查看全部留言</a>
+          </div>
+
+          <p class="guestbook-center__meta">建议首页控制在 6 张卡片内，每张仅展示 2 到 3 行摘要。</p>
+        </section>
+
+        <div class="guestbook-cards">
+          <article class="guestbook-card guestbook-card--l1" data-card-side="left">
+            <div class="guestbook-card__head">
+              <div class="guestbook-avatar guestbook-avatar--amber">Z</div>
+              <div class="guestbook-card__author">Zaoyoe</div>
+            </div>
+            <p class="guestbook-card__content">现在这一版的标题终于能立住了，首页一眼就知道这是社区入口，不再像普通列表。</p>
+          </article>
+
+          <article class="guestbook-card guestbook-card--l2" data-card-side="left">
+            <div class="guestbook-card__head">
+              <div class="guestbook-avatar guestbook-avatar--blue">林</div>
+              <div class="guestbook-card__author">林晚青</div>
+            </div>
+            <p class="guestbook-card__content">如果首页只露出最有代表性的几条留言，信息密度会更舒服，也更像“精选反馈墙”。</p>
+          </article>
+
+          <article class="guestbook-card guestbook-card--l3" data-card-side="left">
+            <div class="guestbook-card__head">
+              <div class="guestbook-avatar guestbook-avatar--mint">陈</div>
+              <div class="guestbook-card__author">陈野</div>
+            </div>
+            <p class="guestbook-card__content">这一块别太规整，轻微旋转和错位会更有呼吸感，像是被贴在标题周围的真实便签。</p>
+          </article>
+
+          <article class="guestbook-card guestbook-card--r1" data-card-side="right">
+            <div class="guestbook-card__head">
+              <div class="guestbook-avatar guestbook-avatar--rose">苏</div>
+              <div class="guestbook-card__author">苏漾</div>
+            </div>
+            <p class="guestbook-card__content">按钮放进中间很合理，用户看完留言后下一步动作也更顺，不用再往下找。</p>
+          </article>
+
+          <article class="guestbook-card guestbook-card--r2" data-card-side="right">
+            <div class="guestbook-card__head">
+              <div class="guestbook-avatar guestbook-avatar--violet">K</div>
+              <div class="guestbook-card__author">Kalei</div>
+            </div>
+            <p class="guestbook-card__content">卡片如果宽度更小、内容更短，整个版面会轻很多，现在这个方向已经接近首页 hero 的感觉了。</p>
+          </article>
+
+          <article class="guestbook-card guestbook-card--r3" data-card-side="right">
+            <div class="guestbook-card__head">
+              <div class="guestbook-avatar guestbook-avatar--ink">许</div>
+              <div class="guestbook-card__author">许观</div>
+            </div>
+            <p class="guestbook-card__content">移动端可以降级成错位双列，不必强行环绕，只要保留“精选留言”的气质就够了。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <div class="preview-scroll-spacer preview-scroll-spacer--end" aria-hidden="true"></div>
+  </main>
+
+  <script src="./js/guestbook-layout-preview.js?v=20260409_GUESTBOOK_LAYOUT_PREVIEW_1"></script>
+</body>
+</html>

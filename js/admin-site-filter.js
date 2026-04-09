@@ -123,6 +123,14 @@
         return currentFilter === 'all' ? null : currentFilter;
     }
 
+    function isAnalyticsModuleId(moduleId = '') {
+        const normalized = String(moduleId || '').trim().toLowerCase();
+        return normalized === 'analytics'
+            || normalized === 'business-overview'
+            || normalized === 'growth-center'
+            || normalized === 'commerce-center';
+    }
+
     /**
      * Render the site filter dropdown into target element
      */
@@ -190,6 +198,15 @@
 
         const moduleId = activeModule.id.replace('module-', '');
 
+        if (isAnalyticsModuleId(moduleId)) {
+            if (typeof window.reloadAnalyticsDashboard === 'function') {
+                window.reloadAnalyticsDashboard({ reason: 'site-change' });
+            } else if (typeof window.initAnalyticsModule === 'function') {
+                window.initAnalyticsModule();
+            }
+            return;
+        }
+
         // Call appropriate reload function based on active module
         switch (moduleId) {
             case 'users':
@@ -207,13 +224,6 @@
                 break;
             case 'points':
                 if (typeof window.loadBatches === 'function') window.loadBatches();
-                break;
-            case 'analytics':
-                if (typeof window.reloadAnalyticsDashboard === 'function') {
-                    window.reloadAnalyticsDashboard({ reason: 'site-change' });
-                } else if (typeof window.initAnalyticsModule === 'function') {
-                    window.initAnalyticsModule();
-                }
                 break;
             case 'payments':
                 if (window.AdminPayments && typeof window.AdminPayments.reload === 'function') {

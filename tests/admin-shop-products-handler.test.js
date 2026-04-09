@@ -53,6 +53,10 @@ function createQueryBuilder(state, table) {
             operations.push({ method: 'in', args: [column, values] });
             return builder;
         },
+        or(expression) {
+            operations.push({ method: 'or', args: [expression] });
+            return builder;
+        },
         order(column, options) {
             operations.push({ method: 'order', args: [column, options] });
             return finalize('order');
@@ -202,5 +206,43 @@ test('shop products handler rejects non-GET methods', async () => {
         assert.equal(res.statusCode, 405);
         assert.equal(payload.success, false);
         assert.equal(payload.message, 'Method not allowed');
+    });
+});
+
+test('shop products handler supports query and delivery filters for运营检索', async () => {
+    await withShopProductsHandler({
+        queryResults: {
+            shop_products: [
+                {
+                    data: [{ id: 'prod_api_1', name: 'API Gift', delivery_type: 'API', is_active: true }],
+                    error: null
+                }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const req = {
+            method: 'GET',
+            headers: {},
+            url: '/api/admin/shop/products?status=active&deliveryType=api&query=Gift&fields=full'
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.rows.length, 1);
+        assert.deepEqual(state.queryCalls[0], {
+            table: 'shop_products',
+            operations: [
+                { method: 'select', args: ['*'] },
+                { method: 'eq', args: ['is_active', true] },
+                { method: 'eq', args: ['delivery_type', 'API'] },
+                { method: 'or', args: ['id.ilike.%Gift%,name.ilike.%Gift%,category.ilike.%Gift%,delivery_type.ilike.%Gift%'] },
+                { method: 'order', args: ['display_order', { ascending: false }] }
+            ],
+            mode: 'order'
+        });
     });
 });

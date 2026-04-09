@@ -13,6 +13,10 @@ function loadAdminSiteFilter(options = {}) {
     const storage = new Map(Object.entries(options.localStorage || {}));
     const toasts = [];
     const dispatchedEvents = [];
+    const analyticsReloads = [];
+    const usersReloads = [];
+    const paymentsReloads = [];
+    const activeModuleId = String(options.activeModuleId || '').trim();
     const context = {
         console: {
             log() {},
@@ -31,7 +35,12 @@ function loadAdminSiteFilter(options = {}) {
             getElementById() {
                 return null;
             },
-            querySelector() {
+            querySelector(selector) {
+                if (activeModuleId && selector === '.module-container.active') {
+                    return {
+                        id: `module-${activeModuleId}`
+                    };
+                }
                 return null;
             },
             querySelectorAll() {
@@ -50,6 +59,17 @@ function loadAdminSiteFilter(options = {}) {
         },
         dispatchEvent(event) {
             dispatchedEvents.push(event);
+        },
+        reloadAnalyticsDashboard(payload) {
+            analyticsReloads.push(payload || null);
+        },
+        loadUsers() {
+            usersReloads.push(true);
+        },
+        AdminPayments: {
+            reload() {
+                paymentsReloads.push(true);
+            }
         }
     };
     context.globalThis = context.window;
@@ -60,7 +80,10 @@ function loadAdminSiteFilter(options = {}) {
         AdminSiteFilter: context.window.AdminSiteFilter,
         storage,
         toasts,
-        dispatchedEvents
+        dispatchedEvents,
+        analyticsReloads,
+        usersReloads,
+        paymentsReloads
     };
 }
 
@@ -107,6 +130,26 @@ test('admin site filter requireWritableSite warns in all mode and resolves when 
         site: 'cn',
         writableSite: 'cn',
         isAllSitesSelected: false
+    });
+});
+
+test('admin site filter reloads analytics aliases through the shared analytics dashboard refresher', () => {
+    const analyticsAliases = ['analytics', 'business-overview', 'growth-center', 'commerce-center'];
+
+    analyticsAliases.forEach((activeModuleId) => {
+        const { AdminSiteFilter, analyticsReloads, usersReloads, paymentsReloads } = loadAdminSiteFilter({
+            activeModuleId,
+            localStorage: {
+                admin_site_filter: 'all'
+            }
+        });
+
+        AdminSiteFilter.select('intl');
+
+        assert.equal(analyticsReloads.length, 1, `${activeModuleId} should trigger one analytics reload on site change`);
+        assert.deepEqual(JSON.parse(JSON.stringify(analyticsReloads[0])), { reason: 'site-change' });
+        assert.equal(usersReloads.length, 0, `${activeModuleId} should not trigger user reloads`);
+        assert.equal(paymentsReloads.length, 0, `${activeModuleId} should not trigger payment reloads`);
     });
 });
 

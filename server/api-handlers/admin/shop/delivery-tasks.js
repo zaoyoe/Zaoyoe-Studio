@@ -119,6 +119,21 @@ const CONFLICT_AUDIT_SELECT = `
     next_attempt_at,
     created_at
 `;
+const TASK_REASON_SCAN_SELECT = `
+    id,
+    order_id,
+    status,
+    attempt_count,
+    max_attempts,
+    last_error,
+    last_response_status,
+    last_conflict_reason,
+    lock_token,
+    lock_expires_at,
+    manual_replay_requested_at,
+    dead_lettered_at,
+    created_at
+`;
 
 function parsePositiveInt(value, fallback, max = 100) {
     const parsed = Number.parseInt(value, 10);
@@ -596,6 +611,26 @@ function matchesConflictBucketTask(task = {}, bucketSelection = null) {
     return false;
 }
 
+function applyConflictBucketTaskQuery(taskQuery, conflictBucket = null) {
+    if (!conflictBucket?.active) {
+        return taskQuery;
+    }
+
+    const taskIds = unique(conflictBucket.task_ids || []);
+    const orderIds = unique(conflictBucket.order_ids || []);
+    if (!taskIds.length && !orderIds.length) {
+        return taskQuery.eq('id', '__empty_conflict_bucket__');
+    }
+
+    if (taskIds.length && orderIds.length) {
+        return taskQuery.or(`id.in.(${taskIds.join(',')}),order_id.in.(${orderIds.join(',')})`);
+    }
+    if (taskIds.length) {
+        return taskQuery.in('id', taskIds);
+    }
+    return taskQuery.in('order_id', orderIds);
+}
+
 function applyTaskIdentityFilter(taskQuery, taskIdentity = null) {
     if (!taskIdentity) return taskQuery;
     if (taskIdentity.task_id) {
@@ -979,31 +1014,6 @@ async function fetchTaskPage({ supabase, page, pageSize, status, query, lockStat
         };
     }
 
-    if (conflictBucket?.active) {
-        const allTasks = await fetchAllRows(() => {
-            let taskQuery = supabase
-                .from('shop_webhook_tasks')
-                .select(TASK_SELECT)
-                .order(sortColumn, { ascending })
-                .order('created_at', { ascending: false });
-
-            if (status && status !== 'all') {
-                taskQuery = taskQuery.eq('status', status);
-            }
-
-            taskQuery = applyTaskSearch(taskQuery, query);
-            taskQuery = applyTaskIdentityFilter(taskQuery, taskIdentity);
-            taskQuery = applyTaskLockStateFilter(taskQuery, lockState);
-            return taskQuery;
-        });
-
-        const filtered = (allTasks || []).filter((task) => (
-            matchesConflictBucketTask(task, conflictBucket)
-            && matchesTaskIdentity(task, taskIdentity)
-        ));
-        return paginateRows(filtered, page, pageSize);
-    }
-
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
 
@@ -1017,6 +1027,7 @@ async function fetchTaskPage({ supabase, page, pageSize, status, query, lockStat
         taskQuery = taskQuery.eq('status', status);
     }
 
+    taskQuery = applyConflictBucketTaskQuery(taskQuery, conflictBucket);
     taskQuery = applyTaskSearch(taskQuery, query);
     taskQuery = applyTaskIdentityFilter(taskQuery, taskIdentity);
     taskQuery = applyTaskLockStateFilter(taskQuery, lockState);
@@ -1040,14 +1051,52 @@ async function fetchDeadLetterPage({ supabase, page, pageSize, reason, query, co
         };
     }
 
-    const allDeadLetters = await fetchAllRows(() => {
+    if (normalizeFilterValue(reason, DEAD_LETTER_REASON_KEYS, 'all') === 'all' && !conflictBucket?.active) {
+        const from = (page - 1) * pageSize;
+        const to = from + pageSize - 1;
         let taskQuery = supabase
             .from('shop_webhook_tasks')
-            .select(TASK_SELECT)
+            .select(TASK_SELECT, { count: 'exact' })
             .eq('status', 'dead_letter')
             .order('dead_lettered_at', { ascending: false })
             .order('created_at', { ascending: false });
 
+        taskQuery = applyTaskSearch(taskQuery, query);
+        taskQuery = applyTaskIdentityFilter(taskQuery, taskIdentity);
+        const { data, count, error } = await taskQuery.range(from, to);
+        if (error) throw error;
+
+        const allTasks = await fetchAllRows(() => {
+            let summaryQuery = supabase
+                .from('shop_webhook_tasks')
+                .select(TASK_REASON_SCAN_SELECT)
+                .eq('status', 'dead_letter')
+                .order('dead_lettered_at', { ascending: false })
+                .order('created_at', { ascending: false });
+
+            summaryQuery = applyTaskSearch(summaryQuery, query);
+            summaryQuery = applyTaskIdentityFilter(summaryQuery, taskIdentity);
+            return summaryQuery;
+        }, 100, 20);
+
+        return {
+            page,
+            pageSize,
+            total: Number(count || 0),
+            tasks: Array.isArray(data) ? data : [],
+            allTasks
+        };
+    }
+
+    const allDeadLetters = await fetchAllRows(() => {
+        let taskQuery = supabase
+            .from('shop_webhook_tasks')
+            .select(conflictBucket?.active ? TASK_SELECT : TASK_REASON_SCAN_SELECT)
+            .eq('status', 'dead_letter')
+            .order('dead_lettered_at', { ascending: false })
+            .order('created_at', { ascending: false });
+
+        taskQuery = applyConflictBucketTaskQuery(taskQuery, conflictBucket);
         taskQuery = applyTaskSearch(taskQuery, query);
         taskQuery = applyTaskIdentityFilter(taskQuery, taskIdentity);
         return taskQuery;
@@ -1058,8 +1107,37 @@ async function fetchDeadLetterPage({ supabase, page, pageSize, reason, query, co
         && matchesConflictBucketTask(task, conflictBucket)
         && matchesTaskIdentity(task, taskIdentity)
     ));
+
+    let tasks = filtered;
+    if (!conflictBucket?.active) {
+        const pageIds = paginateRows(filtered, page, pageSize).tasks.map((task) => task.id);
+        if (pageIds.length) {
+            const { data, error } = await supabase
+                .from('shop_webhook_tasks')
+                .select(TASK_SELECT)
+                .in('id', pageIds);
+            if (error) throw error;
+
+            const rowsById = Object.fromEntries((Array.isArray(data) ? data : []).map((task) => [task.id, task]));
+            tasks = pageIds.map((id) => rowsById[id]).filter(Boolean);
+        } else {
+            tasks = [];
+        }
+    }
+
+    if (!conflictBucket?.active) {
+        return {
+            page,
+            pageSize,
+            total: filtered.length,
+            tasks,
+            allTasks: filtered
+        };
+    }
+
     return {
-        ...paginateRows(filtered, page, pageSize),
+        ...paginateRows(tasks, page, pageSize),
+        total: filtered.length,
         allTasks: filtered
     };
 }
@@ -1072,25 +1150,41 @@ async function fetchLockConflictPage({ supabase, page, pageSize, lockState, quer
         };
     }
 
-    const allLockTasks = await fetchAllRows(() => {
-        let taskQuery = supabase
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+    let taskQuery = supabase
+        .from('shop_webhook_tasks')
+        .select(TASK_SELECT, { count: 'exact' })
+        .eq('status', 'processing')
+        .order('lock_expires_at', { ascending: true })
+        .order('created_at', { ascending: false });
+
+    taskQuery = applyConflictBucketTaskQuery(taskQuery, conflictBucket);
+    taskQuery = applyTaskSearch(taskQuery, query);
+    taskQuery = applyTaskIdentityFilter(taskQuery, taskIdentity);
+    taskQuery = applyTaskLockStateFilter(taskQuery, lockState);
+
+    const { data, count, error } = await taskQuery.range(from, to);
+    if (error) throw error;
+
+    const allTasks = await fetchAllRows(() => {
+        let summaryQuery = supabase
             .from('shop_webhook_tasks')
-            .select(TASK_SELECT)
+            .select(TASK_REASON_SCAN_SELECT)
             .eq('status', 'processing')
             .order('lock_expires_at', { ascending: true })
             .order('created_at', { ascending: false });
 
-        taskQuery = applyTaskSearch(taskQuery, query);
-        taskQuery = applyTaskIdentityFilter(taskQuery, taskIdentity);
-        taskQuery = applyTaskLockStateFilter(taskQuery, lockState);
-        return taskQuery;
-    });
+        summaryQuery = applyConflictBucketTaskQuery(summaryQuery, conflictBucket);
+        summaryQuery = applyTaskSearch(summaryQuery, query);
+        summaryQuery = applyTaskIdentityFilter(summaryQuery, taskIdentity);
+        summaryQuery = applyTaskLockStateFilter(summaryQuery, lockState);
+        return summaryQuery;
+    }, 100, 20);
 
-    const filtered = (allLockTasks || []).filter((task) => {
+    const normalized = normalizeFilterValue(lockState, LOCK_STATE_KEYS, 'all');
+    const filteredAllTasks = (allTasks || []).filter((task) => {
         const state = getLockState(task);
-        const normalized = normalizeFilterValue(lockState, LOCK_STATE_KEYS, 'all');
-        if (!matchesConflictBucketTask(task, conflictBucket)) return false;
-        if (!matchesTaskIdentity(task, taskIdentity)) return false;
         if (normalized === 'all') {
             return ['locked_active', 'locked_stale', 'locked_unknown', 'lock_missing'].includes(state);
         }
@@ -1100,8 +1194,11 @@ async function fetchLockConflictPage({ supabase, page, pageSize, lockState, quer
     });
 
     return {
-        ...paginateRows(filtered, page, pageSize),
-        allTasks: filtered
+        page,
+        pageSize,
+        total: Number(count || 0),
+        tasks: Array.isArray(data) ? data : [],
+        allTasks: filteredAllTasks
     };
 }
 
@@ -1234,7 +1331,7 @@ async function fetchConflictAnalyticsWindow({ supabase, analyticsWindow = ANALYT
     const windowRange = getConflictAnalyticsWindowRange(analyticsWindow);
     const records = await fetchAllRows(() => supabase
         .from('shop_webhook_task_conflicts')
-        .select(CONFLICT_AUDIT_SELECT)
+        .select('id, task_id, order_id, scope, reason_key, target_key, channel_key, worker_name, lock_token, task_status, next_attempt_at, created_at')
         .gte('created_at', windowRange.start_at)
         .order('created_at', { ascending: false }), pageSize, maxPages);
 

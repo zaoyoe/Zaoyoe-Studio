@@ -915,7 +915,10 @@ const HomepageAdmin = (() => {
 
     function setSelectValue(id, value) {
         const el = document.getElementById(id);
-        if (el) el.value = value ?? '';
+        if (el) {
+            el.value = value ?? '';
+            window.ShopAdmin?.scheduleShopCustomSelectSync?.(el);
+        }
     }
 
     function getSelectValue(id) {

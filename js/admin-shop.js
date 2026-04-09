@@ -76,6 +76,8 @@ const ShopAdmin = {
     inventoryPage: 1,
     ordersPage: 1,
     focusedOrderId: '',
+    currentOrderDetailId: '',
+    orderDetailRequestToken: 0,
     pendingOpenOrderDetails: false,
     orderSearchRequestToken: 0,
     orderSearchContext: null,
@@ -115,6 +117,8 @@ const ShopAdmin = {
     pageSize: 10,
     currentCategory: 'all', // State for category filter
     currentStatusFilter: 'active', // State for status filter: 'active' or 'deleted'
+    productSearchQuery: '',
+    currentProductDeliveryFilter: 'all',
     currentImportCategory: 'all', // State for import filter
     allProductsForImport: [], // Cache for import list (active products)
     deletedProductsForImport: [], // Cache for deleted products (recycle bin)
@@ -123,6 +127,7 @@ const ShopAdmin = {
     editingProductSnapshot: null, // Original product row for resilient saves on existing items
     purchaseNotesSchemaAvailable: null, // null = unknown, false = remote DB not migrated yet
     richTextEditorsReady: false,
+    shopCustomSelectBridgeReady: false,
 
     // ==================== Site-Context Editing ====================
     SITE_FIELD_MAP: {
@@ -486,7 +491,26 @@ Example output format:
         return payload;
     },
 
-    loadAllOrdersForExport: async function ({ site = 'all', pageSize = 100, refundStatus = 'all', deliveryStatus = 'all' } = {}) {
+    loadOrderDetailViaAdminApi: async function (orderId) {
+        const normalizedId = String(orderId || '').trim();
+        if (!normalizedId) {
+            throw new Error('缺少订单 ID');
+        }
+
+        const response = await (window.AdminApi?.fetch || fetch)(
+            this.buildAdminShopUrl('shop/order-detail', { id: normalizedId }),
+            { credentials: 'include' }
+        );
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || '订单详情加载失败');
+        }
+
+        return payload;
+    },
+
+    loadAllOrdersForExport: async function ({ site = 'all', pageSize = 100, query = '', refundStatus = 'all', deliveryStatus = 'all' } = {}) {
         const collectedRows = [];
         let page = 1;
         let total = null;
@@ -496,6 +520,7 @@ Example output format:
                 site,
                 page,
                 pageSize,
+                query: String(query || '').trim() || null,
                 refundStatus,
                 deliveryStatus
             });
@@ -548,6 +573,29 @@ Example output format:
         });
 
         // Reload Grid
+        this.loadProducts();
+    },
+
+    applyProductSearch: function () {
+        const input = document.getElementById('productSearchInput');
+        this.productSearchQuery = String(input?.value || '').trim();
+        this.loadProducts();
+    },
+
+    clearProductSearch: function () {
+        this.productSearchQuery = '';
+        const input = document.getElementById('productSearchInput');
+        if (input) {
+            input.value = '';
+        }
+        this.loadProducts();
+    },
+
+    setProductDeliveryFilter: function (value = 'all') {
+        const normalizedValue = String(value || '').trim().toLowerCase();
+        this.currentProductDeliveryFilter = ['all', 'key', 'api'].includes(normalizedValue)
+            ? normalizedValue
+            : 'all';
         this.loadProducts();
     },
 
@@ -628,6 +676,247 @@ Example output format:
         });
         this.bindOverlayDismiss('importInventoryModal', () => {
             this.closeImportModal();
+        });
+    },
+
+    isManagedShopSelect: function (element) {
+        return element instanceof HTMLSelectElement
+            && element.dataset.shopCustomSelect === 'true';
+    },
+
+    getManagedShopSelects: function (root = document) {
+        if (!(root instanceof Element) && root !== document) {
+            return [];
+        }
+        return Array.from(root.querySelectorAll('select[data-shop-custom-select="true"]'));
+    },
+
+    closeShopCustomSelects: function (exceptSelectId = '') {
+        document.querySelectorAll('.shop-custom-select.is-open').forEach((wrapper) => {
+            if (exceptSelectId && wrapper.dataset.selectId === exceptSelectId) {
+                return;
+            }
+            wrapper.classList.remove('is-open');
+            const trigger = wrapper.querySelector('.shop-custom-select__trigger');
+            if (trigger instanceof HTMLElement) {
+                trigger.setAttribute('aria-expanded', 'false');
+            }
+        });
+    },
+
+    scheduleShopCustomSelectSync: function (select) {
+        if (!this.isManagedShopSelect(select)) {
+            return;
+        }
+
+        if (select.__shopCustomSyncFrame) {
+            window.cancelAnimationFrame(select.__shopCustomSyncFrame);
+        }
+
+        select.__shopCustomSyncFrame = window.requestAnimationFrame(() => {
+            select.__shopCustomSyncFrame = 0;
+            this.syncShopCustomSelect(select);
+        });
+    },
+
+    observeShopCustomSelect: function (select) {
+        if (!this.isManagedShopSelect(select) || select.__shopCustomObserver) {
+            return;
+        }
+
+        const observer = new MutationObserver(() => {
+            this.scheduleShopCustomSelectSync(select);
+        });
+
+        observer.observe(select, {
+            attributes: true,
+            attributeFilter: ['disabled'],
+            childList: true,
+            subtree: true
+        });
+
+        select.__shopCustomObserver = observer;
+    },
+
+    ensureShopCustomSelectBridge: function () {
+        if (this.shopCustomSelectBridgeReady) {
+            return;
+        }
+        this.shopCustomSelectBridgeReady = true;
+
+        const selectProto = window.HTMLSelectElement?.prototype;
+        if (!selectProto) {
+            return;
+        }
+
+        const patchProperty = (propertyName) => {
+            const descriptor = Object.getOwnPropertyDescriptor(selectProto, propertyName);
+            if (!descriptor?.configurable || typeof descriptor.set !== 'function' || typeof descriptor.get !== 'function') {
+                return;
+            }
+
+            const markerKey = `__shopCustomSelectPatched_${propertyName}`;
+            if (selectProto[markerKey]) {
+                return;
+            }
+
+            Object.defineProperty(selectProto, propertyName, {
+                configurable: true,
+                enumerable: descriptor.enumerable,
+                get: function getShopSelectProperty() {
+                    return descriptor.get.call(this);
+                },
+                set: function setShopSelectProperty(nextValue) {
+                    descriptor.set.call(this, nextValue);
+                    if (window.ShopAdmin?.isManagedShopSelect?.(this)) {
+                        window.ShopAdmin.scheduleShopCustomSelectSync(this);
+                    }
+                }
+            });
+
+            selectProto[markerKey] = true;
+        };
+
+        patchProperty('value');
+        patchProperty('selectedIndex');
+    },
+
+    createShopCustomSelectWrapper: function (select) {
+        if (!this.isManagedShopSelect(select)) {
+            return null;
+        }
+
+        let wrapper = select.nextElementSibling;
+        if (!(wrapper instanceof HTMLElement) || !wrapper.classList.contains('shop-custom-select')) {
+            wrapper = document.createElement('div');
+            const classNames = ['shop-custom-select'];
+            select.classList.forEach((className) => {
+                classNames.push(className);
+            });
+            wrapper.className = classNames.join(' ');
+            wrapper.dataset.selectId = select.id || '';
+            wrapper.innerHTML = `
+                <button type="button" class="shop-custom-select__trigger" aria-haspopup="listbox" aria-expanded="false">
+                    <span class="shop-custom-select__label"></span>
+                    <i class="fas fa-chevron-down shop-custom-select__icon" aria-hidden="true"></i>
+                </button>
+                <div class="shop-custom-select__menu" role="listbox"></div>
+            `;
+            select.insertAdjacentElement('afterend', wrapper);
+
+            wrapper.addEventListener('click', (event) => {
+                const target = event.target instanceof Element ? event.target : null;
+                if (!target) {
+                    return;
+                }
+
+                const option = target.closest('[data-shop-custom-select-option]');
+                if (option instanceof HTMLElement) {
+                    event.preventDefault();
+                    const optionValue = option.dataset.value ?? '';
+                    if (select.disabled || option.getAttribute('aria-disabled') === 'true') {
+                        return;
+                    }
+                    select.value = optionValue;
+                    select.dispatchEvent(new Event('change', { bubbles: true }));
+                    this.syncShopCustomSelect(select);
+                    this.closeShopCustomSelects();
+                    return;
+                }
+
+                const trigger = target.closest('.shop-custom-select__trigger');
+                if (!(trigger instanceof HTMLElement) || select.disabled) {
+                    return;
+                }
+
+                event.preventDefault();
+                const shouldOpen = !wrapper.classList.contains('is-open');
+                this.closeShopCustomSelects(shouldOpen ? (select.id || '') : '');
+                wrapper.classList.toggle('is-open', shouldOpen);
+                trigger.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+            });
+
+            wrapper.addEventListener('keydown', (event) => {
+                if (select.disabled) {
+                    return;
+                }
+
+                if (event.key === 'Escape') {
+                    wrapper.classList.remove('is-open');
+                    const trigger = wrapper.querySelector('.shop-custom-select__trigger');
+                    trigger?.setAttribute('aria-expanded', 'false');
+                    trigger?.focus();
+                    return;
+                }
+
+                if ((event.key === 'Enter' || event.key === ' ') && event.target instanceof HTMLElement && event.target.classList.contains('shop-custom-select__trigger')) {
+                    event.preventDefault();
+                    event.target.click();
+                }
+            });
+        }
+
+        select.classList.add('shop-native-select--hidden');
+        select.setAttribute('tabindex', '-1');
+        this.observeShopCustomSelect(select);
+        return wrapper;
+    },
+
+    syncShopCustomSelect: function (selectOrId) {
+        const select = typeof selectOrId === 'string'
+            ? document.getElementById(selectOrId)
+            : selectOrId;
+        if (!this.isManagedShopSelect(select)) {
+            return;
+        }
+
+        const wrapper = this.createShopCustomSelectWrapper(select);
+        if (!(wrapper instanceof HTMLElement)) {
+            return;
+        }
+
+        const trigger = wrapper.querySelector('.shop-custom-select__trigger');
+        const label = wrapper.querySelector('.shop-custom-select__label');
+        const menu = wrapper.querySelector('.shop-custom-select__menu');
+        if (!(trigger instanceof HTMLElement) || !(label instanceof HTMLElement) || !(menu instanceof HTMLElement)) {
+            return;
+        }
+
+        const options = Array.from(select.options || []);
+        const selectedOption = options.find((option) => option.selected) || options[select.selectedIndex] || options[0] || null;
+        label.textContent = selectedOption?.textContent?.trim() || '请选择';
+        wrapper.classList.toggle('is-disabled', !!select.disabled);
+        trigger.disabled = !!select.disabled;
+        trigger.setAttribute('aria-expanded', wrapper.classList.contains('is-open') ? 'true' : 'false');
+        menu.setAttribute('aria-label', select.getAttribute('aria-label') || label.textContent || '下拉菜单');
+
+        menu.innerHTML = options
+            .filter((option) => !option.hidden)
+            .map((option) => {
+                const optionValue = String(option.value ?? '');
+                const selected = optionValue === String(select.value ?? '');
+                const disabled = option.disabled;
+                return `
+                    <button
+                        type="button"
+                        class="shop-custom-select__option${selected ? ' is-selected' : ''}"
+                        role="option"
+                        aria-selected="${selected ? 'true' : 'false'}"
+                        aria-disabled="${disabled ? 'true' : 'false'}"
+                        data-shop-custom-select-option="true"
+                        data-value="${this.escapeForAttr(optionValue)}"
+                    >
+                        <span class="shop-custom-select__option-copy">${this.escapeHtml(option.textContent?.trim() || '')}</span>
+                        ${selected ? '<i class="fas fa-check shop-custom-select__option-check" aria-hidden="true"></i>' : ''}
+                    </button>
+                `;
+            }).join('');
+    },
+
+    enhanceShopCustomSelects: function (root = document) {
+        this.ensureShopCustomSelectBridge();
+        this.getManagedShopSelects(root).forEach((select) => {
+            this.syncShopCustomSelect(select);
         });
     },
 
@@ -939,6 +1228,12 @@ Example output format:
                 case 'product-filter-status':
                     this.filterStatus(actionEl.dataset.status, actionEl);
                     break;
+                case 'product-apply-search':
+                    this.applyProductSearch();
+                    break;
+                case 'product-clear-search':
+                    this.clearProductSearch();
+                    break;
                 case 'product-toggle-selection-mode':
                     this.toggleProductSelectionMode();
                     break;
@@ -1105,7 +1400,22 @@ Example output format:
                     this.showOrderContent(actionEl.dataset.orderId, actionEl.dataset.itemsData);
                     break;
                 case 'order-close-content':
+                    this.currentOrderDetailId = '';
                     this.closeDynamicModal(actionEl.dataset.modalId || 'orderContentModal');
+                    break;
+                case 'order-refresh-detail':
+                    this.showOrderContent(actionEl.dataset.orderId, actionEl.dataset.itemsData);
+                    break;
+                case 'order-copy-all-content':
+                    navigator.clipboard.writeText(actionEl.dataset.content || '').then(() => {
+                        const originalHtml = actionEl.innerHTML;
+                        actionEl.innerHTML = '<i class="fas fa-check"></i> 已复制';
+                        setTimeout(() => {
+                            actionEl.innerHTML = originalHtml;
+                        }, 1600);
+                    }).catch(() => {
+                        alert('复制失败，请手动复制');
+                    });
                     break;
                 case 'order-actions-stop':
                     break;
@@ -1132,7 +1442,7 @@ Example output format:
                     );
                     break;
                 case 'orders-search':
-                    this.clearOrderSearchContext();
+                    this.clearOrderSearchContext({ preserveFilters: true });
                     this.searchOrders(1);
                     break;
                 case 'orders-export':
@@ -1318,6 +1628,19 @@ Example output format:
                 case 'delivery-conflict-audit-reason':
                     this.applyDeliveryConflictAuditFilters();
                     break;
+                case 'product-delivery-filter':
+                    this.setProductDeliveryFilter(actionEl.value);
+                    break;
+                case 'orders-filter-refund':
+                    this.orderRefundStatusFilter = this.normalizeOrderRefundStatusFilter(actionEl.value);
+                    this.syncOrderFilterControls();
+                    this.searchOrders(1);
+                    break;
+                case 'orders-filter-delivery':
+                    this.orderDeliveryStatusFilter = this.normalizeOrderDeliveryStatusFilter(actionEl.value);
+                    this.syncOrderFilterControls();
+                    this.searchOrders(1);
+                    break;
                 case 'product-handle-icon-upload':
                     this.handleIconUpload(actionEl);
                     break;
@@ -1382,8 +1705,14 @@ Example output format:
                 case 'orders-search-enter':
                     if (event.key === 'Enter') {
                         event.preventDefault();
-                        this.clearOrderSearchContext();
+                        this.clearOrderSearchContext({ preserveFilters: true });
                         this.searchOrders(1);
+                    }
+                    break;
+                case 'product-search-enter':
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        this.applyProductSearch();
                     }
                     break;
                 case 'delivery-task-query-enter':
@@ -1487,21 +1816,26 @@ Example output format:
         this.bindDelegatedHandlers();
         this.bindStaticOverlayDismisses();
         this.bindShopContextListeners();
+        this.enhanceShopCustomSelects();
         this.ensureRichTextEditors();
         this.ensureDeliveryWorkspaceMounted();
 
         // Close dropdowns when clicking outside
         document.addEventListener('click', (e) => {
+            if (!(e.target instanceof Element) || !e.target.closest('.shop-custom-select')) {
+                this.closeShopCustomSelects();
+            }
+
             // Close custom dropdown menu
             const dropdown = document.querySelector('.custom-dropdown');
             const menu = document.querySelector('.custom-dropdown-menu');
-            if (dropdown && menu && !dropdown.contains(e.target) && !menu.contains(e.target)) {
+            if (e.target instanceof Element && dropdown && menu && !dropdown.contains(e.target) && !menu.contains(e.target)) {
                 menu.classList.remove('show');
             }
 
             // Close category dropdown in product modal
             const categoryDropdown = document.getElementById('prodCategoryDropdown');
-            if (categoryDropdown && !categoryDropdown.contains(e.target)) {
+            if (e.target instanceof Element && categoryDropdown && !categoryDropdown.contains(e.target)) {
                 categoryDropdown.classList.remove('open');
             }
         });
@@ -3916,6 +4250,16 @@ Example output format:
         const container = document.getElementById('productsGrid');
         if (!container) return; // Grid container might be missing if HTML update failed
 
+        const productSearchInput = document.getElementById('productSearchInput');
+        if (productSearchInput && productSearchInput.value !== this.productSearchQuery) {
+            productSearchInput.value = this.productSearchQuery;
+        }
+
+        const deliveryFilterSelect = document.getElementById('productDeliveryFilter');
+        if (deliveryFilterSelect) {
+            deliveryFilterSelect.value = this.currentProductDeliveryFilter || 'all';
+        }
+
         const loadGeneration = Number(this.shopTabLoadGeneration.products || 0);
         this.shopTabLoadState.products = 'loading';
         container.classList.add('shop-grid', 'shop-admin-products-grid');
@@ -3926,6 +4270,8 @@ Example output format:
             const payload = await this.loadShopProductsViaAdminApi({
                 status: this.currentStatusFilter === 'active' ? 'active' : 'deleted',
                 category: this.currentCategory !== 'all' ? this.currentCategory : null,
+                query: this.productSearchQuery || null,
+                deliveryType: this.currentProductDeliveryFilter !== 'all' ? this.currentProductDeliveryFilter : null,
                 fields: 'full',
                 order: 'display_order_desc'
             });
@@ -4705,6 +5051,55 @@ Example output format:
         return `Save failed: ${details}`;
     },
 
+    validateProductPayloadViaAdminApi: async function ({ productId = '', payload = null, pendingCategory = null } = {}) {
+        const headers = await this.getAdminAuthHeaders();
+        const response = await fetch(this.buildAdminShopUrl('shop/mutate'), {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                action: 'validate_product',
+                site: window.AdminSiteFilter?.getSiteFilter?.() || 'all',
+                productId: productId || null,
+                payload,
+                pendingCategory
+            })
+        });
+
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || '商品配置校验失败');
+        }
+
+        return result.validation && typeof result.validation === 'object'
+            ? result.validation
+            : { blockingIssues: [], warnings: [] };
+    },
+
+    buildProductValidationSummary: function (validation = {}) {
+        const blockingIssues = Array.isArray(validation?.blockingIssues) ? validation.blockingIssues : [];
+        const warnings = Array.isArray(validation?.warnings) ? validation.warnings : [];
+        const lines = [];
+
+        if (blockingIssues.length) {
+            lines.push('以下配置必须先修正：');
+            blockingIssues.forEach((issue, index) => {
+                lines.push(`${index + 1}. ${String(issue?.message || '').trim()}`);
+            });
+        }
+
+        if (warnings.length) {
+            if (lines.length) {
+                lines.push('');
+            }
+            lines.push('以下配置建议再确认：');
+            warnings.forEach((issue, index) => {
+                lines.push(`${index + 1}. ${String(issue?.message || '').trim()}`);
+            });
+        }
+
+        return lines.filter(Boolean).join('\n');
+    },
+
     // Toggle Custom Delivery Type Dropdown
     toggleDeliveryTypeDropdown: function (e) {
         if (e) e.stopPropagation();
@@ -5125,6 +5520,26 @@ Example output format:
             }
 
             try {
+                const validation = await this.validateProductPayloadViaAdminApi({
+                    productId: id,
+                    payload,
+                    pendingCategory: this.pendingCategory && payload.category === this.pendingCategory.name
+                        ? this.pendingCategory
+                        : null
+                });
+
+                if (Array.isArray(validation?.blockingIssues) && validation.blockingIssues.length) {
+                    alert(this.buildProductValidationSummary(validation));
+                    return;
+                }
+
+                if (Array.isArray(validation?.warnings) && validation.warnings.length) {
+                    const confirmed = window.confirm(`${this.buildProductValidationSummary(validation)}\n\n确认继续保存吗？`);
+                    if (!confirmed) {
+                        return;
+                    }
+                }
+
                 let mutationResult;
                 if (id) {
                     const upsertPayload = this.buildExistingProductUpsertPayload(id, payload);
@@ -5800,6 +6215,7 @@ Example output format:
         this.orderSearchContext = this.normalizeShopAnalyticsDrilldownContext(context);
         this.orderRefundStatusFilter = this.normalizeOrderRefundStatusFilter(this.orderSearchContext?.refundStatus || 'all');
         this.orderDeliveryStatusFilter = this.normalizeOrderDeliveryStatusFilter(this.orderSearchContext?.deliveryStatus || 'all');
+        this.syncOrderFilterControls();
         this.renderOrderSearchContextHint();
         this.renderOrderUserFlowSummary([], {
             totalCount: 0,
@@ -5807,11 +6223,32 @@ Example output format:
         });
     },
 
-    clearOrderSearchContext: function () {
-        this.orderRefundStatusFilter = 'all';
-        this.orderDeliveryStatusFilter = 'all';
+    clearOrderSearchContext: function (options = {}) {
+        const preserveFilters = options && typeof options === 'object' && options.preserveFilters === true;
+        if (!preserveFilters) {
+            this.orderRefundStatusFilter = 'all';
+            this.orderDeliveryStatusFilter = 'all';
+        }
         this.currentOrderRows = [];
-        this.setOrderSearchContext(null);
+        this.orderSearchContext = null;
+        this.syncOrderFilterControls();
+        this.renderOrderSearchContextHint();
+        this.renderOrderUserFlowSummary([], {
+            totalCount: 0,
+            loading: false
+        });
+    },
+
+    syncOrderFilterControls: function () {
+        const refundSelect = document.getElementById('orderRefundStatusFilter');
+        if (refundSelect) {
+            refundSelect.value = this.normalizeOrderRefundStatusFilter(this.orderRefundStatusFilter);
+        }
+
+        const deliverySelect = document.getElementById('orderDeliveryStatusFilter');
+        if (deliverySelect) {
+            deliverySelect.value = this.normalizeOrderDeliveryStatusFilter(this.orderDeliveryStatusFilter);
+        }
     },
 
     buildUserCommerceReturnContext: function (context = this.orderSearchContext) {
@@ -5999,6 +6436,7 @@ Example output format:
             this.orderDeliveryStatusFilter = 'all';
         }
 
+        this.syncOrderFilterControls();
         this.searchOrders(1);
     },
 
@@ -9615,6 +10053,9 @@ Example output format:
             } else {
                 await this.loadDeliveryTasks(this.deliveryTaskPage || 1);
             }
+            if (this.currentOrderDetailId) {
+                await this.showOrderContent(this.currentOrderDetailId);
+            }
         } catch (err) {
             console.error('[ShopAdmin] performDeliveryTaskAction failed:', err);
             alert(`履约任务操作失败：${err.message || '未知错误'}`);
@@ -9645,6 +10086,7 @@ Example output format:
         this.orderSearchRequestToken = requestToken;
         this.focusedOrderId = focusedOrderId;
         this.pendingOpenOrderDetails = shouldOpenDetails;
+        this.syncOrderFilterControls();
 
         if (orderSearchInput && orderSearchInput.value !== query) {
             orderSearchInput.value = query;
@@ -9836,71 +10278,398 @@ Example output format:
             .replace(/'/g, '&#039;');
     },
 
-    // Show order content in a modal
-    showOrderContent: function (orderId, itemsData) {
-        this.closeDynamicModal?.('orderContentModal');
-        let items = [];
+    parseOrderItemsData: function (itemsData) {
+        if (!itemsData) return [];
         try {
-            items = JSON.parse(decodeURIComponent(itemsData));
-        } catch (e) {
-            console.error('Failed to parse items:', e);
-            items = [{ content: decodeURIComponent(itemsData) || '解析失败' }];
+            const parsed = JSON.parse(decodeURIComponent(itemsData));
+            return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+        } catch (error) {
+            console.error('[ShopAdmin] Failed to parse order items data:', error);
+            const fallback = decodeURIComponent(String(itemsData || ''));
+            return fallback ? [{ content: fallback }] : [];
         }
+    },
+
+    formatOrderDetailTime: function (value) {
+        if (!value) return '—';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return '—';
+        return date.toLocaleString('zh-CN');
+    },
+
+    getOrderRefundStatusBadge: function (order = {}) {
+        const status = String(order?.refund_status || 'none').trim().toLowerCase();
+        if (status === 'refunded' || status === 'full_refund') {
+            return this.renderDeliveryBadge('已退款', 'muted');
+        }
+        if (status === 'pending') {
+            return this.renderDeliveryBadge('退款处理中', 'warn');
+        }
+        return this.renderDeliveryBadge('正常', 'processing');
+    },
+
+    getOrderDetailTaskLockState: function (task = {}) {
+        if (!task?.lock_token) {
+            return String(task?.status || '').trim().toLowerCase() === 'processing'
+                ? 'lock_missing'
+                : 'unlocked';
+        }
+        const expiresAt = task?.lock_expires_at ? new Date(task.lock_expires_at).getTime() : 0;
+        if (!Number.isFinite(expiresAt) || !expiresAt) {
+            return 'locked_unknown';
+        }
+        return expiresAt > Date.now() ? 'locked_active' : 'locked_stale';
+    },
+
+    getOrderTicketIssueLabel: function (issueType) {
+        const normalized = String(issueType || '').trim().toUpperCase();
+        const labels = {
+            DELIVERY: '履约问题',
+            VERIFICATION: '验证问题',
+            REFUND: '退款问题',
+            PAYMENT: '支付问题',
+            ORDER: '订单问题',
+            ACCOUNT: '账号问题',
+            OTHER: '其他问题'
+        };
+        return labels[normalized] || normalized || '其他问题';
+    },
+
+    getOrderTicketStatusBadge: function (status) {
+        const normalized = String(status || '').trim().toUpperCase();
+        if (normalized === 'RESOLVED') return this.renderDeliveryBadge('已解决', 'success');
+        if (normalized === 'REJECTED') return this.renderDeliveryBadge('已拒绝', 'muted');
+        return this.renderDeliveryBadge('待处理', 'warn');
+    },
+
+    getOrderCaseStatusBadge: function (status) {
+        const normalized = String(status || '').trim().toLowerCase();
+        if (normalized === 'resolved') return this.renderDeliveryBadge('已收口', 'success');
+        if (normalized === 'claimed') return this.renderDeliveryBadge('处理中', 'processing');
+        return this.renderDeliveryBadge('待跟进', 'warn');
+    },
+
+    buildOrderDetailLoadingMarkup: function (orderId) {
+        return `
+            <div class="shop-order-content-modal shop-order-detail-modal custom-scrollbar">
+                <div class="shop-order-content-header shop-order-detail-header">
+                    <div>
+                        <div class="shop-order-detail-eyebrow">Order Detail</div>
+                        <h3 class="shop-order-content-title">订单详情加载中</h3>
+                    </div>
+                    <button type="button" class="shop-order-content-close" data-shop-action="order-close-content" data-modal-id="orderContentModal" aria-label="关闭">&times;</button>
+                </div>
+                <div class="shop-order-content-body shop-order-detail-body">
+                    <div class="shop-order-detail-loading">
+                        <div class="shop-order-detail-loading__hero"></div>
+                        <div class="shop-order-detail-loading__grid">
+                            <div class="shop-order-detail-loading__card"></div>
+                            <div class="shop-order-detail-loading__card"></div>
+                            <div class="shop-order-detail-loading__card"></div>
+                        </div>
+                        <div class="shop-order-content-meta">订单号：<code class="shop-order-content-order-id">${this.escapeHtml(orderId || '')}</code></div>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
+    buildOrderDetailErrorMarkup: function (message, orderId, fallbackItems = []) {
+        const safeOrderId = this.escapeHtml(orderId || '');
+        const fallbackContent = (Array.isArray(fallbackItems) ? fallbackItems : []).map((item) => `
+            <div class="shop-order-content-item">
+                <div class="shop-order-content-item-title">${this.escapeHtml(item.product_name || '商品')}</div>
+                <div class="shop-order-content-item-value">${this.escapeHtml(item.content || '无内容')}</div>
+            </div>
+        `).join('');
+
+        return `
+            <div class="shop-order-content-modal shop-order-detail-modal custom-scrollbar">
+                <div class="shop-order-content-header shop-order-detail-header">
+                    <div>
+                        <div class="shop-order-detail-eyebrow">Order Detail</div>
+                        <h3 class="shop-order-content-title">订单详情加载失败</h3>
+                    </div>
+                    <button type="button" class="shop-order-content-close" data-shop-action="order-close-content" data-modal-id="orderContentModal" aria-label="关闭">&times;</button>
+                </div>
+                <div class="shop-order-content-body shop-order-detail-body">
+                    <div class="shop-order-detail-empty">
+                        <div class="shop-order-detail-empty__title">暂时拿不到聚合上下文</div>
+                        <div class="shop-order-detail-empty__summary">${this.escapeHtml(message || '订单详情加载失败')}</div>
+                        <div class="shop-order-content-meta">订单号：<code class="shop-order-content-order-id">${safeOrderId}</code></div>
+                        <div class="shop-order-detail-inline-actions">
+                            <button type="button" class="shop-order-detail-inline-btn shop-order-detail-inline-btn--primary" data-shop-action="order-refresh-detail" data-order-id="${this.escapeForAttr(orderId)}">
+                                <i class="fas fa-rotate-right"></i> 重试加载
+                            </button>
+                        </div>
+                    </div>
+                    ${fallbackContent ? `
+                        <div class="shop-order-detail-section">
+                            <div class="shop-order-detail-section__header">
+                                <div class="shop-order-detail-section__title"><i class="fas fa-box-open"></i> 当前缓存的订单内容</div>
+                            </div>
+                            <div class="shop-order-content-box">${fallbackContent}</div>
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    },
+
+    renderOrderDetailBody: function (payload = {}, fallbackItems = []) {
+        const order = payload?.order || {};
+        const payment = payload?.payment || {};
+        const fulfillment = payload?.fulfillment || {};
+        const tickets = payload?.tickets || {};
+        const risk = payload?.risk || {};
+        const user = order?.profiles || {};
+        const orderId = String(order?.id || '').trim();
+        const deliveryTask = fulfillment?.task || null;
+        const orderItems = Array.isArray(order?.resolved_items) && order.resolved_items.length
+            ? order.resolved_items
+            : (Array.isArray(fallbackItems) ? fallbackItems : []);
+        const linkedInventoryItems = Array.isArray(order?.linked_inventory_items) ? order.linked_inventory_items : [];
+        const deliveryAttempts = Array.isArray(fulfillment?.attempts) ? fulfillment.attempts : [];
+        const ticketRecords = Array.isArray(tickets?.records) ? tickets.records : [];
+        const riskRecords = Array.isArray(risk?.records) ? risk.records : [];
+        const avatarSeed = encodeURIComponent(String(user?.username || user?.email || order?.user_id || 'U'));
+        const avatar = user?.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${avatarSeed}&backgroundColor=6b9ece`;
+        const joinedContent = orderItems.map((item) => String(item?.content || '').trim()).filter(Boolean).join('\n');
+        const safeOrderId = this.escapeHtml(orderId);
+        const safeProductName = this.escapeHtml(order?.snapshot_product_name || orderItems[0]?.product_name || '未知商品');
+        const siteLabel = String(payment?.site || order?.site || 'cn').trim().toLowerCase() === 'intl' ? 'INTL' : 'CN';
+        const refundBadge = this.getOrderRefundStatusBadge(order);
+        const deliveryBadge = this.getOrderDeliveryStatusBadge(order);
+        const canRefund = !['refunded', 'full_refund'].includes(String(order?.refund_status || '').trim().toLowerCase());
+        const taskForActions = deliveryTask
+            ? {
+                ...deliveryTask,
+                attempts: deliveryAttempts,
+                lock_state: this.getOrderDetailTaskLockState(deliveryTask)
+            }
+            : null;
+        const heroPills = [
+            this.renderDeliveryMetaBadge(`站点 ${siteLabel}`, 'neutral'),
+            this.renderDeliveryMetaBadge(`数量 ${Math.max(1, Number(payment?.item_count || order?.item_count || orderItems.length || 1) || 1)}`, 'muted'),
+            payment?.discount_code ? this.renderDeliveryMetaBadge(`优惠码 ${this.escapeHtml(String(payment.discount_code).toUpperCase())}`, 'processing') : '',
+            order?.linkage_source ? this.renderDeliveryMetaBadge(`关联 ${this.escapeHtml(String(order.linkage_source).replace(/_/g, ' '))}`, 'muted') : ''
+        ].filter(Boolean).join('');
+
+        const inventoryMarkup = linkedInventoryItems.length
+            ? linkedInventoryItems.map((item) => `
+                <div class="shop-order-detail-list-row">
+                    <div class="shop-order-detail-list-row__main">
+                        <div class="shop-order-detail-list-row__title">${this.escapeHtml(item.product_name || '商品')}</div>
+                        <div class="shop-order-detail-list-row__meta">
+                            <span>ID ${this.escapeHtml(this.shortenDeliveryToken(item.id || '', 8, 4) || '—')}</span>
+                            <span>状态 ${this.escapeHtml(item.status || '—')}</span>
+                            <span>售出 ${this.escapeHtml(this.formatOrderDetailTime(item.sold_at))}</span>
+                        </div>
+                        <div class="shop-order-detail-list-row__content">${this.escapeHtml(this.truncateText(item.content || '无内容', 120))}</div>
+                    </div>
+                    ${item.id ? `
+                        <button type="button" class="shop-order-detail-inline-btn" data-shop-action="inventory-show-detail" data-inventory-id="${this.escapeForAttr(item.id)}">
+                            <i class="fas fa-info-circle"></i> 库存详情
+                        </button>
+                    ` : ''}
+                </div>
+            `).join('')
+            : '<div class="shop-order-detail-empty-inline">当前订单没有精确命中的库存记录。</div>';
+
+        const itemsMarkup = orderItems.length
+            ? orderItems.map((item) => `
+                <div class="shop-order-content-item">
+                    <div class="shop-order-content-item-title">${this.escapeHtml(item.product_name || '商品')}</div>
+                    <div class="shop-order-content-item-value">${this.escapeHtml(item.content || '无内容')}</div>
+                </div>
+            `).join('')
+            : '<div class="shop-order-detail-empty-inline">暂无订单内容。</div>';
+
+        const ticketMarkup = ticketRecords.length
+            ? ticketRecords.map((ticket) => `
+                <div class="shop-order-detail-list-row">
+                    <div class="shop-order-detail-list-row__main">
+                        <div class="shop-order-detail-list-row__title">${this.escapeHtml(this.getOrderTicketIssueLabel(ticket.issue_type))}</div>
+                        <div class="shop-order-detail-list-row__meta">
+                            <span>${this.escapeHtml(this.formatOrderDetailTime(ticket.created_at))}</span>
+                            <span>${this.escapeHtml(ticket.id || '')}</span>
+                        </div>
+                        <div class="shop-order-detail-list-row__content">${this.escapeHtml(this.truncateText(ticket.description || '无描述', 96))}</div>
+                    </div>
+                    <div class="shop-order-detail-list-row__badge">${this.getOrderTicketStatusBadge(ticket.status)}</div>
+                </div>
+            `).join('')
+            : '<div class="shop-order-detail-empty-inline">当前订单暂无工单。</div>';
+
+        const riskMarkup = riskRecords.length
+            ? riskRecords.map((record) => `
+                <div class="shop-order-detail-list-row">
+                    <div class="shop-order-detail-list-row__main">
+                        <div class="shop-order-detail-list-row__title">${this.escapeHtml(record.alert_type || record.target_id || '风控信号')}</div>
+                        <div class="shop-order-detail-list-row__meta">
+                            <span>${this.escapeHtml(record.target_id || '—')}</span>
+                            <span>${this.escapeHtml(this.formatOrderDetailTime(record.updated_at))}</span>
+                        </div>
+                        <div class="shop-order-detail-list-row__content">${this.escapeHtml(this.truncateText(record.note || record.resolution || '暂无补充说明', 96))}</div>
+                    </div>
+                    <div class="shop-order-detail-list-row__badge">${this.getOrderCaseStatusBadge(record.status)}</div>
+                </div>
+            `).join('')
+            : `<div class="shop-order-detail-empty-inline">${risk?.candidate_targets?.length ? '当前订单未命中已落库的风控 case。' : '当前订单暂无风控 case。'}</div>`;
+
+        const fulfillmentPills = [
+            deliveryBadge,
+            refundBadge,
+            deliveryTask?.id ? this.renderDeliveryMetaBadge(`任务 ${this.shortenDeliveryToken(deliveryTask.id, 8, 4)}`, 'neutral') : '',
+            taskForActions ? this.getDeliveryLockBadge(taskForActions) : '',
+            fulfillment?.case ? this.getOrderCaseStatusBadge(fulfillment.case.status) : ''
+        ].filter(Boolean).join('');
+
+        return `
+            <div class="shop-order-content-modal shop-order-detail-modal custom-scrollbar">
+                <div class="shop-order-content-header shop-order-detail-header">
+                    <div>
+                        <div class="shop-order-detail-eyebrow">Order Detail</div>
+                        <h3 class="shop-order-content-title">${safeProductName}</h3>
+                    </div>
+                    <div class="shop-order-detail-inline-actions">
+                        <button type="button" class="shop-order-detail-inline-btn" data-shop-action="order-refresh-detail" data-order-id="${this.escapeForAttr(orderId)}">
+                            <i class="fas fa-rotate-right"></i> 刷新
+                        </button>
+                        <button type="button" class="shop-order-content-close" data-shop-action="order-close-content" data-modal-id="orderContentModal" aria-label="关闭">&times;</button>
+                    </div>
+                </div>
+                <div class="shop-order-content-body shop-order-detail-body">
+                    <div class="shop-order-detail-hero">
+                        <div class="shop-order-detail-user">
+                            <img src="${this.escapeHtml(avatar)}" class="shop-order-detail-user__avatar" alt="avatar">
+                            <div class="shop-order-detail-user__copy">
+                                <div class="shop-order-detail-user__name">${this.escapeHtml(user?.username || 'Unknown')}</div>
+                                <div class="shop-order-detail-user__email">${this.escapeHtml(user?.email || order?.user_id || '—')}</div>
+                                <div class="shop-order-detail-user__id">用户 ID：<code>${this.escapeHtml(order?.user_id || '—')}</code></div>
+                            </div>
+                        </div>
+                        <div class="shop-order-detail-hero__meta">
+                            <div class="shop-order-content-meta">订单号：<code class="shop-order-content-order-id">${safeOrderId}</code></div>
+                            <div class="shop-order-detail-hero__pills">${heroPills}</div>
+                            <div class="shop-order-detail-hero__stats">
+                                <div class="shop-order-detail-stat"><span>下单时间</span><strong>${this.escapeHtml(this.formatOrderDetailTime(order?.created_at))}</strong></div>
+                                <div class="shop-order-detail-stat"><span>支付积分</span><strong>${this.escapeHtml(String(payment?.total_price || order?.total_price || order?.price_paid || 0))}</strong></div>
+                                <div class="shop-order-detail-stat"><span>退款状态</span><strong>${refundBadge}</strong></div>
+                                <div class="shop-order-detail-stat"><span>履约状态</span><strong>${deliveryBadge}</strong></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="shop-order-detail-grid">
+                        <div class="shop-order-detail-section">
+                            <div class="shop-order-detail-section__header">
+                                <div class="shop-order-detail-section__title"><i class="fas fa-boxes-stacked"></i> 库存与内容</div>
+                                <div class="shop-order-detail-inline-actions">
+                                    ${joinedContent ? `
+                                        <button type="button" class="shop-order-detail-inline-btn" data-shop-action="order-copy-all-content" data-content="${this.escapeForAttr(joinedContent)}">
+                                            <i class="fas fa-copy"></i> 复制全部内容
+                                        </button>
+                                    ` : ''}
+                                </div>
+                            </div>
+                            <div class="shop-order-detail-list">${inventoryMarkup}</div>
+                            <div class="shop-order-content-box">${itemsMarkup}</div>
+                        </div>
+
+                        <div class="shop-order-detail-section">
+                            <div class="shop-order-detail-section__header">
+                                <div class="shop-order-detail-section__title"><i class="fas fa-truck-fast"></i> 履约与动作</div>
+                            </div>
+                            <div class="shop-order-detail-hero__pills">${fulfillmentPills || '<span class="shop-order-detail-empty-inline">暂无履约上下文</span>'}</div>
+                            <div class="shop-order-detail-kv">
+                                <div><span>最近错误</span><strong>${this.escapeHtml(fulfillment?.delivery_last_error || deliveryTask?.last_error || '—')}</strong></div>
+                                <div><span>最近更新</span><strong>${this.escapeHtml(this.formatOrderDetailTime(fulfillment?.delivery_updated_at || deliveryTask?.updated_at))}</strong></div>
+                                <div><span>完成时间</span><strong>${this.escapeHtml(this.formatOrderDetailTime(fulfillment?.delivery_completed_at || deliveryTask?.delivered_at))}</strong></div>
+                                <div><span>冲突次数</span><strong>${this.escapeHtml(String(deliveryTask?.conflict_count || 0))}</strong></div>
+                            </div>
+                            <div class="shop-order-detail-attempts">${deliveryTask ? this.renderDeliveryAttemptLines({ attempts: deliveryAttempts }) : '<div class="shop-order-detail-empty-inline">当前订单还没有履约任务。</div>'}</div>
+                            <div class="shop-order-detail-inline-actions">
+                                ${taskForActions ? this.renderDeliveryActionButtons(taskForActions) : ''}
+                                ${canRefund ? `
+                                    <button type="button" class="shop-order-detail-inline-btn shop-order-detail-inline-btn--danger" data-shop-action="order-refund" data-order-id="${this.escapeForAttr(orderId)}">
+                                        <i class="fas fa-undo"></i> 订单退款
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="shop-order-detail-grid shop-order-detail-grid--secondary">
+                        <div class="shop-order-detail-section">
+                            <div class="shop-order-detail-section__header">
+                                <div class="shop-order-detail-section__title"><i class="fas fa-life-ring"></i> 工单摘要</div>
+                                <div class="shop-order-detail-hero__pills">
+                                    ${this.renderDeliveryMetaBadge(`总数 ${Number(tickets?.total || 0)}`, Number(tickets?.total || 0) ? 'processing' : 'muted')}
+                                    ${this.renderDeliveryMetaBadge(`待处理 ${Number(tickets?.pending || 0)}`, Number(tickets?.pending || 0) ? 'warn' : 'muted')}
+                                </div>
+                            </div>
+                            <div class="shop-order-detail-list">${ticketMarkup}</div>
+                        </div>
+
+                        <div class="shop-order-detail-section">
+                            <div class="shop-order-detail-section__header">
+                                <div class="shop-order-detail-section__title"><i class="fas fa-shield-halved"></i> 风控摘要</div>
+                                <div class="shop-order-detail-hero__pills">
+                                    ${this.renderDeliveryMetaBadge(`Case ${Number(risk?.total || 0)}`, Number(risk?.total || 0) ? 'danger' : 'muted')}
+                                    ${this.renderDeliveryMetaBadge(`未收口 ${Number(risk?.open || 0)}`, Number(risk?.open || 0) ? 'warn' : 'muted')}
+                                </div>
+                            </div>
+                            <div class="shop-order-detail-list">${riskMarkup}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
+    // Show order detail in a modal
+    showOrderContent: async function (orderId, itemsData) {
+        const normalizedOrderId = String(orderId || '').trim();
+        if (!normalizedOrderId) return;
+
+        const fallbackItems = this.parseOrderItemsData(itemsData);
+        const requestToken = (this.orderDetailRequestToken || 0) + 1;
+        this.orderDetailRequestToken = requestToken;
+        this.currentOrderDetailId = normalizedOrderId;
+        this.closeDynamicModal?.('orderContentModal');
 
         const overlay = document.createElement('div');
         overlay.id = 'orderContentModal';
         overlay.dataset.shopOverlayClose = 'dynamic-modal';
         overlay.dataset.modalId = 'orderContentModal';
         overlay.className = 'shop-order-content-overlay';
-
-        const contentHtml = items.map(item => `
-            <div class="shop-order-content-item">
-                <div class="shop-order-content-item-title">
-                    ${this.escapeHtml(item.product_name || '商品')}
-                </div>
-                <div class="shop-order-content-item-value">
-                    ${this.escapeHtml(item.content)}
-                </div>
-            </div>
-        `).join('');
-
-        const allContent = items.map((p) => p.content || '').join('\n');
-        const safeOrderId = this.escapeHtml(orderId || '');
-
-        overlay.innerHTML = `
-            <div class="shop-order-content-modal">
-                <div class="shop-order-content-header">
-                    <h3 class="shop-order-content-title">📦 订单内容</h3>
-                    <button type="button" class="shop-order-content-close" data-shop-action="order-close-content" data-modal-id="orderContentModal" aria-label="关闭">&times;</button>
-                </div>
-                <div class="shop-order-content-body">
-                    <div class="shop-order-content-meta">
-                        订单号: <code class="shop-order-content-order-id">${safeOrderId}</code>
-                    </div>
-                    <div id="orderContentBox" class="shop-order-content-box">${contentHtml}</div>
-                    <div class="shop-order-content-note">
-                        点击上方内容框可复制
-                    </div>
-                </div>
-            </div>
-        `;
-
-        // Click to copy
-        overlay.querySelector('#orderContentBox').addEventListener('click', () => {
-            navigator.clipboard.writeText(allContent).then(() => {
-                alert('✅ 内容已复制到剪贴板');
-            }).catch(() => {
-                alert('复制失败，请手动选择复制');
-            });
-        });
+        overlay.innerHTML = `<div id="orderContentShell">${this.buildOrderDetailLoadingMarkup(normalizedOrderId)}</div>`;
 
         this.bindOverlayDismiss(overlay, () => {
+            this.currentOrderDetailId = '';
             this.closeDynamicModal('orderContentModal');
         });
         document.body.appendChild(overlay);
         requestAnimationFrame(() => {
             overlay.classList.add('is-visible');
         });
+
+        try {
+            const payload = await this.loadOrderDetailViaAdminApi(normalizedOrderId);
+            if (requestToken !== this.orderDetailRequestToken) return;
+            const shell = overlay.querySelector('#orderContentShell');
+            if (shell) {
+                shell.innerHTML = this.renderOrderDetailBody(payload, fallbackItems);
+            }
+        } catch (error) {
+            console.error('[ShopAdmin] Failed to load order detail:', error);
+            if (requestToken !== this.orderDetailRequestToken) return;
+            const shell = overlay.querySelector('#orderContentShell');
+            if (shell) {
+                shell.innerHTML = this.buildOrderDetailErrorMarkup(error?.message || '订单详情加载失败', normalizedOrderId, fallbackItems);
+            }
+        }
     },
 
     // Open Enhanced Refund Modal
@@ -9998,7 +10767,10 @@ Example output format:
             this.recordOrderResolutionFeedback(orderId, { targetStatus });
             this.invalidateShopTabCache();
             this.closeDynamicModal('refundModal');
-            this.searchOrders(); // Refresh Order List
+            await this.searchOrders(); // Refresh Order List
+            if (this.currentOrderDetailId && String(this.currentOrderDetailId) === String(orderId)) {
+                await this.showOrderContent(orderId);
+            }
             // Also try refresh inventory list if possible, or user will switch tab
             if (this.currentTab === 'inventory') this.loadInventoryList();
         } catch (err) {
@@ -11998,9 +12770,11 @@ Example output format:
 
         try {
             const site = window.AdminSiteFilter?.getSiteFilter?.() || 'all';
+            const query = String(document.getElementById('orderSearchInput')?.value || '').trim();
             const data = await this.loadAllOrdersForExport({
                 site,
                 pageSize: 100,
+                query,
                 refundStatus: this.normalizeOrderRefundStatusFilter(this.orderRefundStatusFilter),
                 deliveryStatus: this.normalizeOrderDeliveryStatusFilter(this.orderDeliveryStatusFilter)
             });

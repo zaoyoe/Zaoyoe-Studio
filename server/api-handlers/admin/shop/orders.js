@@ -3,6 +3,15 @@ const {
     requireAdmin,
     sendJson
 } = require('../../../../api/_lib/admin');
+const {
+    normalizeText,
+    loadInventoryRecordsByIds,
+    loadOrderItemsByOrderIds,
+    collectLinkedInventoryIds,
+    buildLinkedInventoryItems,
+    buildResolvedItems,
+    resolveOrderLinkageSource
+} = require('./_order-linkage');
 
 function getSearchParams(req) {
     const url = new URL(req.url || '', 'http://localhost');
@@ -11,10 +20,6 @@ function getSearchParams(req) {
 
 function normalizeSite(value) {
     return normalizeAdminSite(value, { defaultValue: 'all' }) || 'all';
-}
-
-function normalizeText(value) {
-    return String(value || '').trim();
 }
 
 function normalizeInteger(value, fallback) {
@@ -68,6 +73,70 @@ async function loadProfilesByIds(supabase, userIds = []) {
     return new Map((data || []).map((row) => [normalizeText(row?.id), row]));
 }
 
+async function searchProfileIdsByQuery(supabase, query) {
+    const normalizedQuery = normalizeText(query, 160);
+    if (!normalizedQuery) {
+        return [];
+    }
+
+    const escapedQuery = escapePostgrestLikeValue(normalizedQuery);
+    const { data, error } = await supabase
+        .from('profiles')
+        .select('id')
+        .or([
+            `username.ilike.%${escapedQuery}%`,
+            `email.ilike.%${escapedQuery}%`
+        ].join(','))
+        .range(0, 49);
+
+    if (error) {
+        throw error;
+    }
+
+    return [...new Set((Array.isArray(data) ? data : []).map((row) => normalizeText(row?.id)).filter(Boolean))];
+}
+
+async function queryOrdersByUserIds(supabase, { site, userIds, refundStatus, deliveryStatus, page, pageSize }) {
+    const normalizedUserIds = [...new Set((Array.isArray(userIds) ? userIds : []).map((value) => normalizeText(value, 160)).filter(Boolean))];
+    if (!normalizedUserIds.length) {
+        return {
+            rows: [],
+            count: 0
+        };
+    }
+
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+    let queryBuilder = supabase
+        .from('shop_orders')
+        .select('*', { count: 'exact' })
+        .in('user_id', normalizedUserIds)
+        .order('created_at', { ascending: false })
+        .range(from, to);
+
+    if (site !== 'all') {
+        queryBuilder = queryBuilder.eq('site', site);
+    }
+
+    if (normalizeRefundStatus(refundStatus) !== 'all') {
+        queryBuilder = queryBuilder.eq('refund_status', normalizeRefundStatus(refundStatus));
+    }
+
+    if (normalizeDeliveryStatus(deliveryStatus) !== 'all') {
+        queryBuilder = queryBuilder.eq('delivery_status', normalizeDeliveryStatus(deliveryStatus));
+    }
+
+    const { data, count, error } = await queryBuilder;
+    if (error) {
+        throw error;
+    }
+
+    return {
+        rows: Array.isArray(data) ? data : [],
+        count: Number(count) || 0
+    };
+}
+
 async function loadAuthEmailsByIds(adminSupabase, userIds = []) {
     const ids = [...new Set((Array.isArray(userIds) ? userIds : []).map(normalizeText).filter(Boolean))];
     if (!ids.length || !adminSupabase?.auth?.admin?.getUserById) {
@@ -85,89 +154,6 @@ async function loadAuthEmailsByIds(adminSupabase, userIds = []) {
     }));
 
     return new Map(rows);
-}
-
-async function loadInventoryContentMap(supabase, inventoryIds = []) {
-    const ids = [...new Set((Array.isArray(inventoryIds) ? inventoryIds : []).map(normalizeText).filter(Boolean))];
-    if (!ids.length) {
-        return new Map();
-    }
-
-    const { data, error } = await supabase
-        .from('shop_inventory')
-        .select('id, content')
-        .in('id', ids);
-
-    if (error) throw error;
-
-    return new Map((data || []).map((row) => [normalizeText(row?.id), row?.content || '']));
-}
-
-async function loadFallbackInventoryContent(supabase, orders = []) {
-    const safeOrders = Array.isArray(orders) ? orders : [];
-    const userIds = [...new Set(
-        safeOrders
-            .filter((row) => !row?.inventory_id && row?.user_id)
-            .map((row) => normalizeText(row.user_id))
-            .filter(Boolean)
-    )];
-
-    if (!userIds.length) {
-        return new Map();
-    }
-
-    const { data, error } = await supabase
-        .from('shop_inventory')
-        .select('id, content, buyer_id, sold_at, product_id')
-        .in('buyer_id', userIds)
-        .eq('status', 'sold')
-        .order('sold_at', { ascending: false });
-
-    if (error) throw error;
-
-    const buckets = new Map();
-    (data || []).forEach((row) => {
-        const key = `${normalizeText(row?.buyer_id)}:${normalizeText(row?.product_id)}`;
-        const existing = buckets.get(key) || [];
-        existing.push(row?.content || '');
-        buckets.set(key, existing);
-    });
-
-    const fallbackMap = new Map();
-    safeOrders.forEach((order) => {
-        if (order?.inventory_id || !order?.user_id) return;
-        const key = `${normalizeText(order.user_id)}:${normalizeText(order.product_id)}`;
-        const bucket = buckets.get(key);
-        if (!bucket?.length) return;
-        const count = Math.max(1, Number.parseInt(String(order?.item_count || '1'), 10) || 1);
-        fallbackMap.set(normalizeText(order.id), bucket.splice(0, count));
-    });
-
-    return fallbackMap;
-}
-
-function buildResolvedItems(order, inventoryContentMap, fallbackContentMap) {
-    const safeItems = Array.isArray(order?.items) ? order.items.filter(Boolean) : [];
-    if (safeItems.length) {
-        return safeItems;
-    }
-
-    const productName = normalizeText(order?.snapshot_product_name) || 'Unknown';
-    const fallbackContents = fallbackContentMap.get(normalizeText(order?.id)) || [];
-    if (fallbackContents.length) {
-        return fallbackContents.map((content) => ({
-            product_name: productName,
-            content,
-            price: order?.price_paid || 0
-        }));
-    }
-
-    const inventoryContent = inventoryContentMap.get(normalizeText(order?.inventory_id)) || '无内容';
-    return [{
-        product_name: productName,
-        content: inventoryContent,
-        price: order?.price_paid || 0
-    }];
 }
 
 async function queryOrders(supabase, { site, query, refundStatus, deliveryStatus, page, pageSize }) {
@@ -238,33 +224,29 @@ async function queryOrders(supabase, { site, query, refundStatus, deliveryStatus
                 }
             }
 
-            if ((!data || !data.length) && ledgerRecord.user_id && ledgerRecord.created_at) {
-                const ledgerTime = new Date(ledgerRecord.created_at);
-                const timeWindow = 60 * 1000;
-                let userOrdersQuery = supabase
-                    .from('shop_orders')
-                    .select('*', { count: 'exact' })
-                    .eq('user_id', ledgerRecord.user_id)
-                    .gte('created_at', new Date(ledgerTime.getTime() - timeWindow).toISOString())
-                    .lte('created_at', new Date(ledgerTime.getTime() + timeWindow).toISOString())
-                    .order('created_at', { ascending: false });
+        }
+    }
 
-                if (site !== 'all') {
-                    userOrdersQuery = userOrdersQuery.eq('site', site);
-                }
+    const rows = Array.isArray(data) ? data : [];
+    const totalCount = Number(count) || 0;
 
-                const userOrdersResult = await userOrdersQuery;
-                if (!userOrdersResult.error && userOrdersResult.data?.length) {
-                    data = userOrdersResult.data;
-                    count = userOrdersResult.count || userOrdersResult.data.length;
-                }
-            }
+    if (!rows.length && normalizedQuery && !searchedById) {
+        const profileIds = await searchProfileIdsByQuery(supabase, normalizedQuery);
+        if (profileIds.length) {
+            return queryOrdersByUserIds(supabase, {
+                site,
+                userIds: profileIds,
+                refundStatus,
+                deliveryStatus,
+                page,
+                pageSize
+            });
         }
     }
 
     return {
-        rows: Array.isArray(data) ? data : [],
-        count: Number(count) || 0
+        rows,
+        count: totalCount
     };
 }
 
@@ -297,17 +279,22 @@ module.exports = async function adminShopOrdersHandler(req, res) {
         });
 
         const userIds = rows.map((row) => row?.user_id);
-        const inventoryIds = rows.map((row) => row?.inventory_id);
-        const [profileMap, authEmailMap, inventoryContentMap, fallbackContentMap] = await Promise.all([
+        const orderItemsByOrderId = await loadOrderItemsByOrderIds(supabase, rows.map((row) => row?.id));
+        const linkedInventoryIds = rows.flatMap((row) => (
+            collectLinkedInventoryIds(row, orderItemsByOrderId.get(normalizeText(row?.id, 160)) || [])
+        ));
+        const [profileMap, authEmailMap, inventoryRecordsById] = await Promise.all([
             loadProfilesByIds(supabase, userIds),
             loadAuthEmailsByIds(adminSupabase, userIds),
-            loadInventoryContentMap(supabase, inventoryIds),
-            loadFallbackInventoryContent(supabase, rows)
+            loadInventoryRecordsByIds(supabase, linkedInventoryIds)
         ]);
 
         const enrichedRows = rows.map((row) => {
             const userId = normalizeText(row?.user_id);
             const profile = profileMap.get(userId) || {};
+            const orderId = normalizeText(row?.id, 160);
+            const orderItems = orderItemsByOrderId.get(orderId) || [];
+            const linkedItems = buildLinkedInventoryItems(row, orderItems, inventoryRecordsById);
             return {
                 ...row,
                 profiles: {
@@ -316,7 +303,11 @@ module.exports = async function adminShopOrdersHandler(req, res) {
                     avatar_url: profile?.avatar_url || null,
                     email: normalizeText(profile?.email) || authEmailMap.get(userId) || null
                 },
-                resolved_items: buildResolvedItems(row, inventoryContentMap, fallbackContentMap)
+                linkage_source: resolveOrderLinkageSource(row, orderItems),
+                linked_inventory_ids: collectLinkedInventoryIds(row, orderItems),
+                linked_inventory_items: linkedItems,
+                order_item_count: orderItems.length,
+                resolved_items: buildResolvedItems(row, orderItems, inventoryRecordsById)
             };
         });
 

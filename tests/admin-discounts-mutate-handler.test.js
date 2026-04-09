@@ -259,12 +259,18 @@ test('discounts mutate handler creates discount codes and writes audit context',
                     discount_value: 80,
                     max_uses: 100,
                     max_uses_per_user: 1,
-                    expires_at: '2026-05-01T00:00:00.000Z',
+                    starts_at: '2099-04-10T00:00:00.000Z',
+                    expires_at: '2099-05-01T00:00:00.000Z',
                     applicable_site: 'cn',
                     scope_type: 'product',
                     scope_product_id: 'prod_1',
                     allow_zero_total: true,
-                    is_active: true
+                    is_active: true,
+                    is_exclusive: false,
+                    stack_priority: 15,
+                    pricing_apply_stage: 'catalog_price',
+                    recovery_strategy: 'observation_then_restore',
+                    observation_window_hours: 48
                 }
             }
         }, res);
@@ -275,11 +281,97 @@ test('discounts mutate handler creates discount codes and writes audit context',
         assert.equal(state.discountRows[0].code, 'FLASH0');
         assert.equal(state.discountRows[0].scope_product_id, 'prod_1');
         assert.equal(state.discountRows[0].allow_zero_total, true);
+        assert.equal(state.discountRows[0].starts_at, '2099-04-10T00:00:00.000Z');
+        assert.equal(state.discountRows[0].is_exclusive, false);
+        assert.equal(state.discountRows[0].stack_priority, 15);
+        assert.equal(state.discountRows[0].pricing_apply_stage, 'catalog_price');
+        assert.equal(state.discountRows[0].recovery_strategy, 'observation_then_restore');
+        assert.equal(state.discountRows[0].observation_window_hours, 48);
+        assert.equal(state.discountRows[0].version_no, 1);
+        assert.equal(state.discountRows[0].lifecycle_status, 'scheduled');
         assert.equal(state.auditCalls.length, 1);
         assert.equal(state.auditCalls[0].site, 'cn');
         assert.equal(state.auditCalls[0].module, 'discounts');
         assert.equal(state.auditCalls[0].actionType, 'discount.code.create');
         assert.equal(state.auditCalls[0].details.code, 'FLASH0');
+    });
+});
+
+test('discounts mutate handler updates discount codes and writes change audit context', async () => {
+    await withDiscountsMutateHandler({
+        discountRows: [
+            {
+                id: 'discount_cn',
+                code: 'SPRING2026',
+                is_active: true,
+                applicable_site: 'cn',
+                discount_type: 'percent',
+                discount_value: 85,
+                max_uses: 10,
+                max_uses_per_user: 1,
+                allow_zero_total: false,
+                scope_type: 'all',
+                scope_category: null,
+                scope_product_id: null,
+                is_exclusive: true,
+                stack_priority: 100,
+                pricing_apply_stage: 'order_discount',
+                starts_at: null,
+                expires_at: null,
+                recovery_strategy: 'manual_only',
+                observation_window_hours: 24,
+                version_no: 1,
+                used_count: 0
+            }
+        ]
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'update',
+                site: 'cn',
+                payload: {
+                    id: 'discount_cn',
+                    code: 'SPRINGVIP',
+                    discount_type: 'fixed',
+                    discount_value: 30,
+                    max_uses: 50,
+                    max_uses_per_user: 2,
+                    starts_at: '2099-04-12T08:00:00.000Z',
+                    applicable_site: 'cn',
+                    scope_type: 'category',
+                    scope_category: 'cards',
+                    allow_zero_total: true,
+                    is_active: true,
+                    is_exclusive: false,
+                    stack_priority: 8,
+                    pricing_apply_stage: 'balance_offset',
+                    recovery_strategy: 'auto_restore',
+                    observation_window_hours: 12
+                }
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().success, true);
+        assert.equal(state.discountRows[0].code, 'SPRINGVIP');
+        assert.equal(state.discountRows[0].discount_type, 'fixed');
+        assert.equal(state.discountRows[0].scope_type, 'category');
+        assert.equal(state.discountRows[0].scope_category, 'cards');
+        assert.equal(state.discountRows[0].allow_zero_total, true);
+        assert.equal(state.discountRows[0].starts_at, '2099-04-12T08:00:00.000Z');
+        assert.equal(state.discountRows[0].is_exclusive, false);
+        assert.equal(state.discountRows[0].stack_priority, 8);
+        assert.equal(state.discountRows[0].pricing_apply_stage, 'balance_offset');
+        assert.equal(state.discountRows[0].recovery_strategy, 'auto_restore');
+        assert.equal(state.discountRows[0].version_no, 2);
+        assert.equal(state.auditCalls.length, 1);
+        assert.equal(state.auditCalls[0].actionType, 'discount.code.update');
+        assert.equal(state.auditCalls[0].details.previous_code, 'SPRING2026');
+        assert.equal(state.auditCalls[0].details.code, 'SPRINGVIP');
     });
 });
 
@@ -299,7 +391,11 @@ test('discounts mutate handler blocks cross-site discount toggles', async () => 
                 scope_type: 'all',
                 scope_category: null,
                 scope_product_id: null,
-                expires_at: null
+                expires_at: null,
+                recovery_strategy: 'observation_then_restore',
+                observation_window_hours: 36,
+                lifecycle_status: 'paused_risk',
+                status_reason: 'risk_auto_pause'
             }
         ]
     }, async ({ handler, state }) => {
@@ -320,6 +416,163 @@ test('discounts mutate handler blocks cross-site discount toggles', async () => 
         assert.equal(res.json().success, false);
         assert.match(res.json().message, /INTL 站点/);
         assert.equal(state.discountRows[0].is_active, true);
+        assert.equal(state.auditCalls.length, 0);
+    });
+});
+
+test('discounts mutate handler records restore review context when re-enabling a discount', async () => {
+    await withDiscountsMutateHandler({
+        discountRows: [
+            {
+                id: 'discount_cn',
+                code: 'FLASH0',
+                is_active: false,
+                applicable_site: 'cn',
+                discount_type: 'percent',
+                discount_value: 80,
+                max_uses: 100,
+                max_uses_per_user: 1,
+                allow_zero_total: false,
+                scope_type: 'all',
+                scope_category: null,
+                scope_product_id: null,
+                expires_at: null,
+                recovery_strategy: 'observation_then_restore',
+                observation_window_hours: 24,
+                lifecycle_status: 'paused_risk',
+                status_reason: 'risk_auto_pause'
+            }
+        ]
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'toggle_status',
+                site: 'cn',
+                id: 'discount_cn',
+                isActive: true,
+                review_note: '已人工复核最近命中订单与账号，确认活动配置正常，现恢复该优惠码。',
+                risk_reviewed: true,
+                resolve_case_requested: true,
+                operation_source: 'risk_restore_modal'
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().success, true);
+        assert.equal(state.discountRows[0].is_active, true);
+        assert.equal(state.discountRows[0].status_reason, 'risk_observation');
+        assert.match(String(state.discountRows[0].observation_ends_at || ''), /T/);
+        assert.equal(state.auditCalls.length, 1);
+        assert.equal(state.auditCalls[0].actionType, 'discount.code.toggle');
+        assert.equal(state.auditCalls[0].details.next_active, true);
+        assert.equal(state.auditCalls[0].details.review_note, '已人工复核最近命中订单与账号，确认活动配置正常，现恢复该优惠码。');
+        assert.equal(state.auditCalls[0].details.risk_reviewed, true);
+        assert.equal(state.auditCalls[0].details.resolve_case_requested, true);
+        assert.equal(state.auditCalls[0].details.operation_source, 'risk_restore_modal');
+    });
+});
+
+test('discounts mutate handler pauses coupons manually without overwriting risk recovery fields', async () => {
+    await withDiscountsMutateHandler({
+        discountRows: [
+            {
+                id: 'discount_pause',
+                code: 'PAUSE10',
+                is_active: true,
+                applicable_site: 'cn',
+                discount_type: 'percent',
+                discount_value: 90,
+                max_uses: 20,
+                max_uses_per_user: 1,
+                allow_zero_total: false,
+                scope_type: 'all',
+                scope_category: null,
+                scope_product_id: null,
+                expires_at: null,
+                recovery_strategy: 'manual_only',
+                observation_window_hours: 24,
+                lifecycle_status: 'active',
+                status_reason: 'manual_active'
+            }
+        ]
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'toggle_status',
+                site: 'cn',
+                id: 'discount_pause',
+                isActive: false
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().success, true);
+        assert.equal(state.discountRows[0].is_active, false);
+        assert.equal(state.discountRows[0].lifecycle_status, 'paused_manual');
+        assert.equal(state.discountRows[0].status_reason, 'manual_pause');
+        assert.equal(state.auditCalls[0].details.lifecycle_status, 'paused_manual');
+    });
+});
+
+test('discounts mutate handler blocks renaming coupons that already have redemption history', async () => {
+    await withDiscountsMutateHandler({
+        discountRows: [
+            {
+                id: 'discount_used',
+                code: 'USED10',
+                is_active: true,
+                applicable_site: 'cn',
+                discount_type: 'percent',
+                discount_value: 90,
+                max_uses: 20,
+                max_uses_per_user: 1,
+                allow_zero_total: false,
+                scope_type: 'all',
+                scope_category: null,
+                scope_product_id: null,
+                expires_at: null,
+                starts_at: null,
+                recovery_strategy: 'manual_only',
+                observation_window_hours: 24,
+                version_no: 3,
+                used_count: 2
+            }
+        ]
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'update',
+                site: 'cn',
+                payload: {
+                    id: 'discount_used',
+                    code: 'USED10NEW',
+                    discount_type: 'percent',
+                    discount_value: 90,
+                    max_uses: 20,
+                    max_uses_per_user: 1,
+                    applicable_site: 'cn',
+                    scope_type: 'all',
+                    is_active: true
+                }
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 409);
+        assert.equal(res.json().success, false);
+        assert.match(res.json().message, /不能直接改码/);
+        assert.equal(state.discountRows[0].code, 'USED10');
         assert.equal(state.auditCalls.length, 0);
     });
 });
