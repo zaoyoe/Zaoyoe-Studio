@@ -19,8 +19,8 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1">
-    <link rel="stylesheet" href="admin-sidebar.css?v=20260408_COMMENTS_PANEL_SHELL_REMOVE_1">
+    <link rel="stylesheet" href="admin-studio.css?v=20260409_GALLERY_P2_OPS_1">
+    <link rel="stylesheet" href="admin-sidebar.css?v=20260409_ADMIN_COMMENTS_FOOTER_ALIGN_4">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260402_ADMIN_CHAT_INPUT_UI_13">
 
 
@@ -312,7 +312,7 @@
                                     </button>
                                     <div class="config-inline-note gallery-bilingual-note">
                                         <i class="fas fa-circle-info"></i>
-                                        <span>主字段仍按当前工作流保存；这里用于显式校对和覆盖 `zh / en` 双语文案，避免继续黑盒翻译。</span>
+                                        <span>主字段会先由 AI 分析自动回填；这里用于显式校对和覆盖 `zh / en` 双语文案，避免继续黑盒翻译。</span>
                                     </div>
                                     <div class="gallery-bilingual-fields admin-studio-inline-style-attr-3" id="promptBilingualFields">
                                         <div class="gallery-bilingual-grid">
@@ -358,6 +358,46 @@
                                                 </label>
                                                 <textarea id="promptTextEn" rows="4" placeholder="Review or override the English prompt text"></textarea>
                                             </div>
+                                        </div>
+                                    </div>
+                                </section>
+
+                                <section class="gallery-ops-panel">
+                                    <div class="config-inline-note gallery-ops-note">
+                                        <i class="fas fa-compass-drafting"></i>
+                                        <span>这里保存 Prompt 的运营状态与交接备注。状态会回写到 Gallery 卡片，并给 Homepage / Comments / Analytics 提供统一的经营上下文。</span>
+                                    </div>
+                                    <div class="gallery-ops-grid">
+                                        <div class="form-group">
+                                            <label for="promptOpsStatus">
+                                                <i class="fas fa-diagram-project"></i>
+                                                运营状态
+                                            </label>
+                                            <div class="custom-select" id="promptOpsStatusDropdown">
+                                                <input type="hidden" id="promptOpsStatus" name="promptOpsStatus" value="">
+                                                <div class="select-display">
+                                                    <span class="select-text">自动判断</span>
+                                                    <i class="fas fa-chevron-down select-arrow"></i>
+                                                </div>
+                                                <div class="select-options">
+                                                    <div class="select-option selected" data-value="">自动判断</div>
+                                                    <div class="select-option" data-value="draft">草稿</div>
+                                                    <div class="select-option" data-value="review">待复核</div>
+                                                    <div class="select-option" data-value="needs-localization">待补双语</div>
+                                                    <div class="select-option" data-value="homepage-candidate">首页候选</div>
+                                                    <div class="select-option" data-value="featured">已上首页</div>
+                                                    <div class="select-option" data-value="ready">可发布</div>
+                                                    <div class="select-option" data-value="live">已上线</div>
+                                                    <div class="select-option" data-value="archived">已归档</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="form-group form-group--full">
+                                            <label for="promptOpsNote">
+                                                <i class="fas fa-note-sticky"></i>
+                                                运营备注
+                                            </label>
+                                            <textarea id="promptOpsNote" rows="3" placeholder="记录当前站点的运营判断、首页策略、评论风险或后续跟进项"></textarea>
                                         </div>
                                     </div>
                                 </section>
@@ -435,13 +475,17 @@
 
                     <!-- MANAGE VIEW -->
                     <div id="view-manage" class="view-section">
+                        <div class="config-inline-note gallery-site-context-banner" id="gallerySiteContextBanner">
+                            <i class="fas fa-compass"></i>
+                            <span>Gallery 正在读取全局 Prompt 资产；切换站点只会影响交互数据视角与可写范围。</span>
+                        </div>
                         <!-- Search Toolbar -->
                         <div class="manage-toolbar">
                             <!-- Search Bar with Dropdown Wrapper -->
                             <div class="admin-search-wrapper">
                                 <div class="admin-search">
                                     <i class="fas fa-search"></i>
-                                    <input type="text" id="adminSearchInput" placeholder="Search prompts..."
+                                    <input type="text" id="adminSearchInput" placeholder="搜索提示词..."
                                         autocomplete="off">
                                 </div>
                                 <!-- Search Dropdown -->
@@ -457,31 +501,77 @@
                                 <div class="custom-select filter-custom-select" id="categoryFilterDropdown">
                                     <input type="hidden" id="categoryFilter" name="categoryFilter" value="">
                                     <div class="select-display">
-                                        <span class="select-text">All</span>
+                                        <span class="select-text">全部分类</span>
                                         <i class="fas fa-chevron-down select-arrow"></i>
                                     </div>
                                     <div class="select-options">
-                                        <div class="select-option selected" data-value="">All</div>
-                                        <div class="select-option" data-value="Photography">Photography</div>
-                                        <div class="select-option" data-value="3D Art">3D Art</div>
-                                        <div class="select-option" data-value="Illustration">Illustration</div>
-                                        <div class="select-option" data-value="Creative">Creative</div>
-                                        <div class="select-option" data-value="Miniature">Miniature</div>
-                                        <div class="select-option" data-value="Animation">Animation</div>
+                                        <div class="select-option selected" data-value="">全部分类</div>
+                                        <div class="select-option" data-value="Photography">摄影</div>
+                                        <div class="select-option" data-value="3D Art">3D 艺术</div>
+                                        <div class="select-option" data-value="Illustration">插画</div>
+                                        <div class="select-option" data-value="Creative">创意</div>
+                                        <div class="select-option" data-value="Miniature">微缩</div>
+                                        <div class="select-option" data-value="Animation">动画</div>
                                     </div>
                                 </div>
                                 <!-- Date Filter - Custom Dropdown -->
                                 <div class="custom-select filter-custom-select" id="dateFilterDropdown">
                                     <input type="hidden" id="dateFilter" name="dateFilter" value="">
                                     <div class="select-display">
-                                        <span class="select-text">All</span>
+                                        <span class="select-text">全部时间</span>
                                         <i class="fas fa-chevron-down select-arrow"></i>
                                     </div>
                                     <div class="select-options">
-                                        <div class="select-option selected" data-value="">All</div>
-                                        <div class="select-option" data-value="today">Today</div>
-                                        <div class="select-option" data-value="week">Week</div>
-                                        <div class="select-option" data-value="month">Month</div>
+                                        <div class="select-option selected" data-value="">全部时间</div>
+                                        <div class="select-option" data-value="today">今天</div>
+                                        <div class="select-option" data-value="week">近 7 天</div>
+                                        <div class="select-option" data-value="month">近 30 天</div>
+                                    </div>
+                                </div>
+                                <div class="custom-select filter-custom-select" id="languageFilterDropdown">
+                                    <input type="hidden" id="languageFilter" name="languageFilter" value="">
+                                    <div class="select-display">
+                                        <span class="select-text">语言覆盖</span>
+                                        <i class="fas fa-chevron-down select-arrow"></i>
+                                    </div>
+                                    <div class="select-options">
+                                        <div class="select-option selected" data-value="">语言覆盖</div>
+                                        <div class="select-option" data-value="bilingual-ready">中英双语齐全</div>
+                                        <div class="select-option" data-value="zh-ready">中文已齐</div>
+                                        <div class="select-option" data-value="en-ready">英文已齐</div>
+                                        <div class="select-option" data-value="needs-translation">待补双语</div>
+                                    </div>
+                                </div>
+                                <div class="custom-select filter-custom-select" id="statusFilterDropdown">
+                                    <input type="hidden" id="statusFilter" name="statusFilter" value="">
+                                    <div class="select-display">
+                                        <span class="select-text">运营状态</span>
+                                        <i class="fas fa-chevron-down select-arrow"></i>
+                                    </div>
+                                    <div class="select-options">
+                                        <div class="select-option selected" data-value="">运营状态</div>
+                                        <div class="select-option" data-value="draft">草稿</div>
+                                        <div class="select-option" data-value="review">待复核</div>
+                                        <div class="select-option" data-value="needs-localization">待补双语</div>
+                                        <div class="select-option" data-value="homepage-candidate">首页候选</div>
+                                        <div class="select-option" data-value="featured">已上首页</div>
+                                        <div class="select-option" data-value="ready">可发布</div>
+                                        <div class="select-option" data-value="live">已上线</div>
+                                        <div class="select-option" data-value="archived">已归档</div>
+                                    </div>
+                                </div>
+                                <div class="custom-select filter-custom-select" id="sortFilterDropdown">
+                                    <input type="hidden" id="sortFilter" name="sortFilter" value="updated-desc">
+                                    <div class="select-display">
+                                        <span class="select-text">最近更新</span>
+                                        <i class="fas fa-chevron-down select-arrow"></i>
+                                    </div>
+                                    <div class="select-options">
+                                        <div class="select-option selected" data-value="updated-desc">最近更新</div>
+                                        <div class="select-option" data-value="created-desc">最新创建</div>
+                                        <div class="select-option" data-value="engagement-desc">互动最高</div>
+                                        <div class="select-option" data-value="status-priority">运营优先</div>
+                                        <div class="select-option" data-value="title-asc">标题排序</div>
                                     </div>
                                 </div>
                             </div>
@@ -512,6 +602,31 @@
                                             <span>补充标签</span>
                                         </div>
                                         <div class="batch-menu-divider"></div>
+                                        <div class="batch-menu-item" data-admin-action="gallery-batch-set-status" data-gallery-batch-status="review">
+                                            <i class="fas fa-magnifying-glass"></i>
+                                            <span>批量设为待复核</span>
+                                        </div>
+                                        <div class="batch-menu-item" data-admin-action="gallery-batch-set-status" data-gallery-batch-status="homepage-candidate">
+                                            <i class="fas fa-thumbtack"></i>
+                                            <span>批量设为首页候选</span>
+                                        </div>
+                                        <div class="batch-menu-item" data-admin-action="gallery-batch-add-homepage">
+                                            <i class="fas fa-house"></i>
+                                            <span>批量加入首页精选</span>
+                                        </div>
+                                        <div class="batch-menu-item" id="batchLocalizeMenuItem" data-admin-action="gallery-batch-localize">
+                                            <i class="fas fa-language"></i>
+                                            <span>批量补全双语</span>
+                                        </div>
+                                        <div class="batch-menu-item" data-admin-action="gallery-batch-set-status" data-gallery-batch-status="archived">
+                                            <i class="fas fa-box-archive"></i>
+                                            <span>批量归档</span>
+                                        </div>
+                                        <div class="batch-menu-item" data-admin-action="gallery-batch-set-status" data-gallery-batch-status="">
+                                            <i class="fas fa-rotate-left"></i>
+                                            <span>清除运营状态</span>
+                                        </div>
+                                        <div class="batch-menu-divider"></div>
                                         <div class="batch-menu-item danger" id="batchDeleteMenuItem">
                                             <i class="fas fa-trash-alt"></i>
                                             <span>批量删除</span>
@@ -521,8 +636,10 @@
                             </div>
                             <div class="prompt-count admin-studio-inline-style-attr-3" id="promptCountWrapper">
                                 <span class="select-count">已选 <span id="selectedCount">0</span> 项</span>
+                                <span class="batch-action-feedback" id="batchActionFeedback" hidden></span>
                             </div>
                         </div>
+                        <div class="gallery-ops-overview" id="galleryOpsOverview"></div>
                         <div class="admin-grid" id="adminGrid">
                             <!-- Dynamically loaded -->
                         </div>
@@ -549,20 +666,43 @@
                     <div class="comment-stats-compact" id="commentStatsCompact">
                         <div class="stat-badge accent">
                             <span class="stat-badge-value" id="totalCommentsCount">0</span>
-                            <span class="stat-badge-label">总评论</span>
+                            <span class="stat-badge-label" id="totalCommentsLabel">总反馈</span>
                         </div>
                         <div class="stat-badge">
                             <span class="stat-badge-value" id="todayCommentsCount">0</span>
-                            <span class="stat-badge-label">今日新增</span>
+                            <span class="stat-badge-label" id="todayCommentsLabel">今日反馈</span>
                         </div>
                         <div class="stat-badge">
                             <span class="stat-badge-value" id="activeUsersCount">0</span>
-                            <span class="stat-badge-label">活跃用户</span>
+                            <span class="stat-badge-label" id="activeUsersLabel">7天用户</span>
                         </div>
                         <div class="stat-badge">
                             <span class="stat-badge-value" id="weekGrowth">+0%</span>
-                            <span class="stat-badge-label">周增长</span>
+                            <span class="stat-badge-label" id="weekGrowthLabel">周变化</span>
                         </div>
+                    </div>
+
+                    <div class="comment-queue-bar" id="commentQueueBar" aria-label="评论治理队列">
+                        <button type="button" class="comment-queue-btn active" data-comments-action="select-queue" data-comments-queue="all">
+                            <span class="comment-queue-btn__label">全部治理</span>
+                            <span class="comment-queue-btn__count" id="commentQueueCountAll">0</span>
+                        </button>
+                        <button type="button" class="comment-queue-btn" data-comments-action="select-queue" data-comments-queue="guestbook_unreplied">
+                            <span class="comment-queue-btn__label">未回复留言</span>
+                            <span class="comment-queue-btn__count" id="commentQueueCountGuestbookUnreplied">0</span>
+                        </button>
+                        <button type="button" class="comment-queue-btn" data-comments-action="select-queue" data-comments-queue="high_risk">
+                            <span class="comment-queue-btn__label">高风险评论</span>
+                            <span class="comment-queue-btn__count" id="commentQueueCountHighRisk">0</span>
+                        </button>
+                        <button type="button" class="comment-queue-btn" data-comments-action="select-queue" data-comments-queue="blocked_user">
+                            <span class="comment-queue-btn__label">已封禁用户内容</span>
+                            <span class="comment-queue-btn__count" id="commentQueueCountBlockedUser">0</span>
+                        </button>
+                        <button type="button" class="comment-queue-btn" data-comments-action="select-queue" data-comments-queue="escalated">
+                            <span class="comment-queue-btn__label">已升级工单评论</span>
+                            <span class="comment-queue-btn__count" id="commentQueueCountEscalated">0</span>
+                        </button>
                     </div>
 
                     <!-- Unified Compact Toolbar -->
@@ -678,6 +818,8 @@
                             </button>
                         </div>
                     </div>
+
+                    <div id="commentsPromptContextBar" class="comments-prompt-context comments-prompt-context--hidden" hidden></div>
 
                     <!-- Active Filter Tags -->
                     <div id="activeFilterTags" class="filter-tags-container"></div>
@@ -5392,9 +5534,59 @@
                             <div class="api-keys-list" id="settingsApiKeysList">
                                 <!-- Dynamic key items -->
                             </div>
+                            <div class="api-relay-config-panel" id="codexConfigPanel">
+                                <div class="api-relay-config-panel__head">
+                                    <div class="api-relay-config-panel__copy">
+                                        <h4>Codex / OpenAI 兼容中转</h4>
+                                        <p>未来切换中转站时，通常只需要调整 Base URL、模型名和接口格式；API Key 会继续由服务端安全保存。</p>
+                                    </div>
+                                    <span class="api-relay-config-panel__badge" id="codexConfigSourceBadge">待配置</span>
+                                </div>
+                                <div class="api-relay-config-grid">
+                                    <label class="api-relay-config-field" for="codexBaseUrlInput">
+                                        <span>Base URL</span>
+                                        <input type="url" class="config-input" id="codexBaseUrlInput"
+                                            placeholder="https://api.cisct.xyz" autocomplete="off" spellcheck="false">
+                                    </label>
+                                    <label class="api-relay-config-field" for="codexModelInput">
+                                        <span>Model</span>
+                                        <input type="text" class="config-input" id="codexModelInput"
+                                            placeholder="gpt-5.4" autocomplete="off" spellcheck="false">
+                                    </label>
+                                    <label class="api-relay-config-field" for="codexApiFormatInput">
+                                        <span>接口格式</span>
+                                        <select class="config-input" id="codexApiFormatInput">
+                                            <option value="responses">responses</option>
+                                            <option value="chat.completions">chat.completions</option>
+                                        </select>
+                                    </label>
+                                </div>
+                                <div class="api-relay-config-actions">
+                                    <button class="btn-add-config btn-add-config--compact btn-add-config--ghost" type="button"
+                                        data-admin-action="settings-prompt-codex-key">
+                                        <i class="fas fa-key"></i> 录入 / 更新 Key
+                                    </button>
+                                    <button class="btn-add-config btn-add-config--compact btn-add-config--ghost" type="button"
+                                        id="codexConnectivityTestButton" data-admin-action="settings-test-codex-config">
+                                        <i class="fas fa-plug"></i> 测试 Codex 连通性
+                                    </button>
+                                    <button class="btn-add-config btn-add-config--compact" type="button"
+                                        data-admin-action="settings-save-codex-config">
+                                        <i class="fas fa-save"></i> 保存 Codex 配置
+                                    </button>
+                                    <button class="btn-add-config btn-add-config--compact btn-add-config--danger" type="button"
+                                        id="codexDeleteConfigButton" data-admin-action="settings-delete-codex-config">
+                                        <i class="fas fa-trash-alt"></i> 删除后台配置
+                                    </button>
+                                </div>
+                                <p class="settings-status api-relay-config-panel__status" id="codexConfigStatus">
+                                    <span class="status-dot"></span>
+                                    <span>检测中...</span>
+                                </p>
+                            </div>
                             <button class="btn-add-config admin-studio-inline-style-attr-26" type="button" data-admin-action="settings-add-api-key"
                                >
-                                <i class="fas fa-plus"></i> 添加新 Key
+                                <i class="fas fa-plus"></i> 录入 Gemini Key
                             </button>
                             <p class="settings-status admin-studio-inline-style-attr-26" id="apiKeyStatus">
                                 <span class="status-dot"></span>
@@ -5513,11 +5705,11 @@
                                                 data-dropdown-id="aiServiceDropdown" data-option-value="gemini"
                                                 data-option-label="Gemini">
                                                 Gemini</div>
-                                            <div class="dropdown-option" data-value="openai"
+                                            <div class="dropdown-option" data-value="codex"
                                                 data-admin-action="settings-select-dropdown-option"
-                                                data-dropdown-id="aiServiceDropdown" data-option-value="openai"
-                                                data-option-label="OpenAI">
-                                                OpenAI</div>
+                                                data-dropdown-id="aiServiceDropdown" data-option-value="codex"
+                                                data-option-label="Codex Relay">
+                                                Codex Relay</div>
                                             <div class="dropdown-option" data-value="claude"
                                                 data-admin-action="settings-select-dropdown-option"
                                                 data-dropdown-id="aiServiceDropdown" data-option-value="claude"
@@ -7810,6 +8002,19 @@
                                         class="hp-auto-hint">— 自动从数据库拉取最热门的提示词</span></div>
                                 <div class="status-toggle" id="hp-prompts-auto"
                                     data-admin-action="homepage-toggle-field" data-homepage-section="prompts" data-homepage-field="enable_auto"></div>
+                            </div>
+
+                            <div class="config-card">
+                                <div class="config-card-header" data-admin-action="homepage-toggle-config-card">
+                                    <div class="config-card-title"><i class="fas fa-thumbtack"></i><span>首页精选 Prompt</span></div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="config-inline-note">
+                                        <i class="fas fa-circle-info"></i>
+                                        <span>从 Gallery 可一键加入当前站点首页精选；这里展示已收录条目，关闭自动聚合后首页将按这份清单渲染。</span>
+                                    </div>
+                                    <div class="hp-featured-prompts" id="hp-prompts-featured-list"></div>
+                                </div>
                             </div>
 
                             <div class="hp-save-bar">
@@ -10554,7 +10759,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="js/admin-studio-bootstrap.js?v=20260407_ANALYTICS_CENTER_BOOTSTRAP_8"></script>
     <script src="js/ios-scroll-lock.js"></script>
-    <script src="admin-users.js?v=20260407_ADMIN_USERS_ANALYTICS_CONTEXT_8"></script>
+    <script src="admin-users.js?v=20260409_ADMIN_USERS_COMMENT_CONTEXT_9"></script>
     <script src="admin-points.js?v=20260404_ADMIN_POINTS_ANALYTICS_CONTEXT_1"></script>
     <script src="admin-discounts.js?v=20260409_ADMIN_DISCOUNT_P1_ASSETS_ROI_1"></script>
     <script src="js/admin-growth-center.js?v=20260409_MARKETING_ASSET_CENTER_P2_1"></script>
@@ -10564,7 +10769,7 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh.js"></script>
     <script src="js/admin-api-auth.js?v=20260402_ADMIN_API_AUTH_5"></script>
     <script src="js/admin-ai.js"></script>
-    <script src="admin-comments.js?v=20260408_COMMENTS_PANEL_HEADER_REMOVE_1"></script>
+    <script src="admin-comments.js?v=20260409_ADMIN_COMMENTS_FOOTER_ORDER_2"></script>
     <script src="js/admin-analytics-metric-context.js?v=20260405_ANALYTICS_METRIC_CONTEXT_HELPERS_6"></script>
     <script src="admin-analytics.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1"></script>
     <script src="js/admin-analytics-derived-bundles.js?v=20260405_ANALYTICS_DERIVED_BUNDLES_5"></script>
@@ -10582,15 +10787,15 @@
     <script src="js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9"></script>
     <script src="js/admin-payments.js?v=20260406_ADMIN_PAYMENTS_WORKBENCH_CONTEXT_11"></script>
     <script src="js/local-smoke-fixtures.js?v=20260404_LOCAL_SMOKE_FIXTURES_34"></script>
-    <script src="js/admin-workbench.js?v=20260405_ADMIN_WORKBENCH_SIGNAL_CONTEXT_1"></script>
-    <script src="js/admin-ticket-links.js?v=20260401_ADMIN_TICKET_LINK_PROTOCOL_1"></script>
+    <script src="js/admin-workbench.js?v=20260409_ADMIN_WORKBENCH_COMMENT_SOURCE_2"></script>
+    <script src="js/admin-ticket-links.js?v=20260409_ADMIN_TICKET_LINK_PROTOCOL_2"></script>
     <script src="admin-config.js?v=20260405_GENERAL_RUNTIME_REMOVAL_1"></script>
-    <script src="admin-homepage.js?v=20260403_HOMEPAGE_LOADING_PREWARM_1"></script>
-    <script src="js/admin-studio-translate.js"></script>
-    <script src="js/admin-site-filter.js?v=20260409_ANALYTICS_SITE_ALIAS_RELOAD_2"></script>
-    <script src="js/admin-tickets.js?v=20260406_ADMIN_TICKETS_WORKBENCH_CONTEXT_11"></script>
+    <script src="admin-homepage.js?v=20260409_HOMEPAGE_FEATURED_BATCH_1"></script>
+    <script src="js/admin-studio-translate.js?v=20260409_GALLERY_BATCH_LOCALIZE_7"></script>
+    <script src="js/admin-site-filter.js?v=20260409_GALLERY_WRITE_GUARDS_1"></script>
+    <script src="js/admin-tickets.js?v=20260409_ADMIN_TICKETS_COMMENT_SOURCE_12"></script>
     <script src="js/admin-access.js?v=20260403_ADMIN_ENTRY_WARMUP_1"></script>
-<script src="admin-studio.js?v=20260409_ADMIN_DISCOUNT_OVERLAY_GUARD_1"></script>
+<script src="admin-studio.js?v=20260409_GALLERY_BATCH_LOCALIZE_18"></script>
     <script src="js/admin-shop.js?v=20260406_ADMIN_SHOP_ANALYTICS_CONTEXT_12"></script>
 </body>
 

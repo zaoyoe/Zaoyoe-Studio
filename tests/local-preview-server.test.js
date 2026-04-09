@@ -8,6 +8,8 @@ const {
     applyPreviewEnvToProcess,
     buildLocalPreviewAdminHandlerUrl,
     createSmokeResultStore,
+    DEFAULT_LOCAL_PREVIEW_BODY_LIMIT,
+    resolveLocalPreviewListenHost,
     resolveLocalPreviewRuntimeScript
 } = require('../scripts/local-preview-server');
 
@@ -96,6 +98,17 @@ test('local preview server seeds process env from loaded preview values without 
             process.env.LOCAL_PREVIEW_TEST_MARKER = originalMarker;
         }
     }
+});
+
+test('local preview server listen host defaults to localhost-compatible any-address mode', () => {
+    assert.equal(resolveLocalPreviewListenHost(''), undefined);
+    assert.equal(resolveLocalPreviewListenHost(undefined), undefined);
+    assert.equal(resolveLocalPreviewListenHost('127.0.0.1'), '127.0.0.1');
+    assert.equal(resolveLocalPreviewListenHost('::1'), '::1');
+});
+
+test('local preview server raises JSON body limit for image-analysis payloads', () => {
+    assert.equal(DEFAULT_LOCAL_PREVIEW_BODY_LIMIT, '25mb');
 });
 
 test('local preview server smoke result store caches and expires run results', () => {

@@ -415,6 +415,16 @@ test('settings gemini-key handler requires settings.manage permission', async ()
     });
 });
 
+test('settings codex-config handler requires settings.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/settings/codex-config.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'settings.manage' });
+    });
+});
+
 test('ops alerts settings handler requires ops_alerts.manage permission', async () => {
     await withAdminHandler('../server/api-handlers/admin/settings/ops-alerts.js', async ({ handler, state }) => {
         const res = createMockResponse();
@@ -427,6 +437,18 @@ test('ops alerts settings handler requires ops_alerts.manage permission', async 
 
 test('admin gemini proxy allows either prompts.manage or content.moderate', async () => {
     await withAdminHandler('../server/api-handlers/admin/gemini.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, {
+            anyOf: ['prompts.manage', 'content.moderate']
+        });
+    });
+});
+
+test('admin codex proxy allows either prompts.manage or content.moderate', async () => {
+    await withAdminHandler('../server/api-handlers/admin/codex.js', async ({ handler, state }) => {
         const res = createMockResponse();
         await handler({ method: 'GET', headers: {} }, res);
 

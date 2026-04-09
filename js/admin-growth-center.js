@@ -403,6 +403,7 @@ const AdminGrowthCenter = {
 
     openAsset(moduleId = '', assetType = '', id = '') {
         const normalizedModuleId = this.safeText(moduleId, 80).toLowerCase();
+        const normalizedAssetType = this.safeText(assetType, 80).toLowerCase();
         const normalizedId = this.safeText(id, 160);
         if (!normalizedModuleId) {
             return;
@@ -414,8 +415,31 @@ const AdminGrowthCenter = {
         }
 
         window.setTimeout(() => {
-            if (normalizedModuleId === 'discounts' && assetType === 'discount') {
+            if (normalizedModuleId === 'discounts' && normalizedAssetType === 'discount') {
                 window.AdminDiscounts?.openDetailModal?.(normalizedId);
+                return;
+            }
+
+            if (normalizedModuleId === 'points') {
+                if (normalizedAssetType === 'points_batch') {
+                    window.openAnalyticsPointsContext?.({
+                        batchId: normalizedId,
+                        view: 'batches'
+                    });
+                    return;
+                }
+
+                if (normalizedAssetType === 'points_package') {
+                    window.switchPointsView?.('catalog');
+                    window.openAnalyticsPointsContext?.({
+                        view: 'catalog',
+                        packageId: normalizedId
+                    });
+                    window.setTimeout(() => {
+                        window.switchPointsView?.('catalog');
+                        window.openPointsPackageEditor?.(normalizedId);
+                    }, 120);
+                }
             }
         }, 220);
     },

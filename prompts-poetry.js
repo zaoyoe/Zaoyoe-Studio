@@ -2485,6 +2485,41 @@ const PROMPT_NAV_SKELETON_COUNT = 8;
 const PROMPT_GALLERY_EAGER_IMAGE_COUNT = 4;
 const promptGalleryImageWarmCache = new Set();
 
+function getPromptAdminVisibilityStatus(prompt = {}) {
+    const aiTags = prompt?.aiTags && typeof prompt.aiTags === 'object' && !Array.isArray(prompt.aiTags)
+        ? prompt.aiTags
+        : (prompt?.ai_tags && typeof prompt.ai_tags === 'object' && !Array.isArray(prompt.ai_tags)
+            ? prompt.ai_tags
+            : {});
+    const adminOps = aiTags?.admin && typeof aiTags.admin === 'object' && !Array.isArray(aiTags.admin)
+        ? aiTags.admin
+        : (aiTags?.ops && typeof aiTags.ops === 'object' && !Array.isArray(aiTags.ops)
+            ? aiTags.ops
+            : {});
+    return String(adminOps.status || '').trim().toLowerCase();
+}
+
+function hasPromptPageVisibleCopy(value) {
+    return String(value || '').trim().length > 0;
+}
+
+function isPromptVisibleOnPromptsPage(prompt = {}) {
+    const status = getPromptAdminVisibilityStatus(prompt);
+    if (status === 'draft' || status === 'archived') {
+        return false;
+    }
+
+    const hasBaseTitle = hasPromptPageVisibleCopy(prompt?.title);
+    const hasPromptText = hasPromptPageVisibleCopy(prompt?.prompt_text || prompt?.prompt);
+    const hasImages = Array.isArray(prompt?.images) && prompt.images.some((item) => hasPromptPageVisibleCopy(item));
+
+    return hasBaseTitle && hasPromptText && hasImages;
+}
+
+function filterVisiblePromptsForPromptsPage(prompts = []) {
+    return (Array.isArray(prompts) ? prompts : []).filter((prompt) => isPromptVisibleOnPromptsPage(prompt));
+}
+
 async function loadPromptsFromSupabase() {
     if (!window.supabaseClient) {
         console.log('Supabase client not available, using static data');
@@ -2522,6 +2557,7 @@ async function loadPromptsFromSupabase() {
                 dominantColors: item.dominant_colors || [],
                 aiTags: item.ai_tags || {}
             }));
+            const visibleSupabasePrompts = filterVisiblePromptsForPromptsPage(supabasePrompts);
 
             // REPLACE PROMPTS with only Supabase data (ignore local prompts-data.js)
             if (typeof PROMPTS !== 'undefined') {
@@ -2529,13 +2565,13 @@ async function loadPromptsFromSupabase() {
                 while (PROMPTS.length > 0) {
                     PROMPTS.pop();
                 }
-                supabasePrompts.forEach(p => PROMPTS.push(p));
+                visibleSupabasePrompts.forEach(p => PROMPTS.push(p));
             } else {
                 // If PROMPTS doesn't exist, create it
-                window.PROMPTS = supabasePrompts;
+                window.PROMPTS = visibleSupabasePrompts;
             }
 
-            console.log(`Loaded ${supabasePrompts.length} prompts from Supabase (replaced local data)`);
+            console.log(`Loaded ${visibleSupabasePrompts.length} visible prompts from Supabase (filtered ${Math.max(0, supabasePrompts.length - visibleSupabasePrompts.length)} hidden prompts)`);
             return true;
         }
 
@@ -2556,13 +2592,16 @@ function buildPromptCardSkeletonMarkup(index = 0) {
 
     return `
         <div class="prompt-card-media-skeleton" aria-hidden="true">
-            <div class="skeleton prompt-card-skeleton-image"></div>
+            <div class="skeleton prompts-skeleton-block prompt-card-skeleton-image"></div>
+            <div class="prompt-card-skeleton-topbar">
+                <span class="skeleton prompts-skeleton-block prompt-card-skeleton-fav"></span>
+            </div>
             <div class="prompt-card-skeleton-overlay">
-                <div class="skeleton prompt-card-skeleton-title ${titleWidthClass}"></div>
+                <div class="skeleton prompts-skeleton-block prompt-card-skeleton-title ${titleWidthClass}"></div>
                 <div class="prompt-card-skeleton-dots">
-                    <span class="skeleton prompt-card-skeleton-dot"></span>
-                    <span class="skeleton prompt-card-skeleton-dot"></span>
-                    <span class="skeleton prompt-card-skeleton-dot"></span>
+                    <span class="skeleton prompts-skeleton-block prompt-card-skeleton-dot"></span>
+                    <span class="skeleton prompts-skeleton-block prompt-card-skeleton-dot"></span>
+                    <span class="skeleton prompts-skeleton-block prompt-card-skeleton-dot"></span>
                 </div>
             </div>
         </div>
@@ -2599,6 +2638,20 @@ function renderPromptNavSkeletons(count = PROMPT_NAV_SKELETON_COUNT) {
     navContainer.classList.remove('loaded', 'nav-items--hydrated');
     navContainer.classList.add('nav-items--skeleton');
     navContainer.innerHTML = buildPromptNavSkeletonMarkup(count);
+}
+
+function renderFeaturedBannerSkeleton() {
+    const banner = document.getElementById('featuredBanner');
+    const image = document.getElementById('featuredImage');
+    if (!banner) return;
+
+    banner.classList.add('featured-banner--visible', 'featured-banner--loading');
+    banner.classList.remove('featured-banner--revealed', 'featured-banner--interactive');
+    banner.onclick = null;
+
+    if (image) {
+        image.removeAttribute('src');
+    }
 }
 
 function warmPromptGalleryLeadImages(items = []) {
@@ -2655,10 +2708,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     initializePromptStaticControls();
     syncPromptNavOffset();
     renderPromptNavSkeletons();
+    renderFeaturedBannerSkeleton();
     renderPromptGallerySkeletons();
 
     // Try to load from Supabase first
     await loadPromptsFromSupabase();
+
+    if (Array.isArray(PROMPTS) && PROMPTS.length > 0) {
+        const visiblePrompts = filterVisiblePromptsForPromptsPage(PROMPTS);
+        if (visiblePrompts.length !== PROMPTS.length) {
+            while (PROMPTS.length > 0) {
+                PROMPTS.pop();
+            }
+            visiblePrompts.forEach((prompt) => PROMPTS.push(prompt));
+        }
+    }
 
     // Assign IDs to PROMPTS for favorites to work
     PROMPTS.forEach((p, i) => p.id = i);
@@ -2671,7 +2735,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initAmbientLight(); // New: Living background
     initStarrySky(); // New: Starry background for dark mode
     generateDynamicNav(); // New: AI-driven navigation
-    renderFeaturedBanner(); // New: Today's featured artwork
+    void renderFeaturedBanner(); // New: Today's featured artwork
 
     // Load gallery config (items per page, default sort) before rendering
     await loadGalleryConfig();
@@ -2717,6 +2781,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Check for URL parameter to open specific prompt
     handleUrlPromptParam();
+});
+
+window.addEventListener('languageChanged', () => {
+    if (!Array.isArray(PROMPTS) || PROMPTS.length === 0) {
+        return;
+    }
+
+    void renderFeaturedBanner();
+    renderGallery(currentFilter, false);
 });
 
 // Handle hash changes when page is already loaded (e.g., from admin "View Context" button)
@@ -3398,7 +3471,161 @@ function initStarrySky() {
 // ========================================
 // FEATURED BANNER (Today's Featured)
 // ========================================
-function renderFeaturedBanner() {
+function getPromptHomepageBannerSite() {
+    return window.SiteConfig?.site === 'intl' ? 'intl' : 'cn';
+}
+
+function getPromptHomepagePrefetchCacheKey(site = getPromptHomepageBannerSite()) {
+    return `homepage_prefetch_${site === 'intl' ? 'intl' : 'cn'}`;
+}
+
+function readPromptHomepagePrefetchConfig(site = getPromptHomepageBannerSite()) {
+    try {
+        const raw = sessionStorage.getItem(getPromptHomepagePrefetchCacheKey(site));
+        if (!raw) return null;
+
+        const parsed = JSON.parse(raw);
+        if (parsed?.site && parsed.site !== site) {
+            return null;
+        }
+
+        return parsed?.config && typeof parsed.config === 'object' ? parsed.config : null;
+    } catch (error) {
+        return null;
+    }
+}
+
+function normalizeHomepageFeaturedBannerItems(value) {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    return value
+        .map((item) => {
+            if (!item || typeof item !== 'object') {
+                return null;
+            }
+
+            const id = String(item.id || '').trim();
+            if (!id) {
+                return null;
+            }
+
+            return {
+                id,
+                title: String(item.title || item.title_zh || item.title_en || '').trim(),
+                image: String(item.image || item.image_url || '').trim()
+            };
+        })
+        .filter(Boolean);
+}
+
+async function loadHomepagePromptsConfigForBanner(site = getPromptHomepageBannerSite()) {
+    const prefetchedConfig = readPromptHomepagePrefetchConfig(site);
+    if (!window.supabaseClient) {
+        return prefetchedConfig;
+    }
+
+    try {
+        const { data, error } = await window.supabaseClient
+            .rpc('fn_get_homepage_config', {
+                p_site: site,
+                p_include_hidden: true
+            });
+
+        if (error) {
+            throw error;
+        }
+
+        const config = {};
+        (Array.isArray(data) ? data : []).forEach((item) => {
+            const section = String(item?.section || '').trim();
+            if (!section) return;
+            config[section] = item?.content && typeof item.content === 'object'
+                ? item.content
+                : {};
+        });
+
+        return Object.keys(config).length ? config : prefetchedConfig;
+    } catch (error) {
+        console.warn('[Prompts] Failed to load homepage config for featured banner:', error?.message || error);
+        return prefetchedConfig;
+    }
+}
+
+function findPromptByHomepageFeaturedItemId(featuredItemId = '') {
+    const normalizedId = String(featuredItemId || '').trim();
+    if (!normalizedId || !Array.isArray(PROMPTS) || PROMPTS.length === 0) {
+        return null;
+    }
+
+    let prompt = PROMPTS.find((item) => String(item?.supabaseId || item?.id || '').trim() === normalizedId);
+    if (prompt) {
+        return prompt;
+    }
+
+    const numericId = Number.parseInt(normalizedId, 10);
+    if (!Number.isNaN(numericId)) {
+        prompt = PROMPTS.find((item) => item?.supabaseId === numericId || item?.id === numericId);
+    }
+
+    return prompt || null;
+}
+
+function resolveHomepageFeaturedBannerPrompt(config = null) {
+    const featuredItems = normalizeHomepageFeaturedBannerItems(config?.prompts?.featured_items);
+    for (const item of featuredItems) {
+        const prompt = findPromptByHomepageFeaturedItemId(item.id);
+        if (prompt) {
+            return prompt;
+        }
+    }
+    return null;
+}
+
+function resolveDailyFeaturedPrompt() {
+    if (!Array.isArray(PROMPTS) || PROMPTS.length === 0) {
+        return null;
+    }
+
+    const today = new Date().toDateString();
+    const seed = today.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const randomIndex = seed % PROMPTS.length;
+    return PROMPTS[randomIndex] || null;
+}
+
+function buildFeaturedBannerDescription(featured = {}) {
+    const localizedDescription = String(getLocalizedField(featured, 'description') || '').trim();
+    if (localizedDescription) {
+        return localizedDescription;
+    }
+
+    const aiTags = featured?.aiTags;
+    if (!aiTags || typeof aiTags !== 'object') {
+        return '';
+    }
+
+    const currentLanguage = getCurrentLanguage();
+    const fallbackLanguage = currentLanguage === 'en' ? 'zh' : 'en';
+    const mood = aiTags.mood?.[currentLanguage]?.[0] || aiTags.mood?.[fallbackLanguage]?.[0] || '';
+    const style = aiTags.styles?.[currentLanguage]?.[0] || aiTags.styles?.[fallbackLanguage]?.[0] || '';
+    const scene = aiTags.scenes?.[currentLanguage]?.[0] || aiTags.scenes?.[fallbackLanguage]?.[0] || '';
+
+    let description = '';
+    if (mood && style && currentLanguage === 'en') {
+        description = `A ${mood.toLowerCase()} piece with ${style.toLowerCase()} aesthetics`;
+        if (scene) description += `, featuring ${scene.toLowerCase()}`;
+        description += '.';
+    } else if (mood && style) {
+        description = `${mood}氛围的${style}作品`;
+        if (scene) description += `，主题围绕${scene}`;
+        description += '。';
+    }
+
+    return description;
+}
+
+function applyFeaturedBannerPrompt(featured = null) {
     const banner = document.getElementById('featuredBanner');
     const image = document.getElementById('featuredImage');
     const title = document.getElementById('featuredTitle');
@@ -3406,8 +3633,9 @@ function renderFeaturedBanner() {
 
     if (!banner) return;
 
-    // Hide banner if no data
-    if (!PROMPTS || PROMPTS.length === 0) {
+    banner.classList.remove('featured-banner--loading');
+
+    if (!featured) {
         banner.classList.remove('featured-banner--visible', 'featured-banner--revealed', 'featured-banner--interactive');
         banner.onclick = null;
         return;
@@ -3421,13 +3649,6 @@ function renderFeaturedBanner() {
         forcePromptPageTop();
     });
 
-    // Pick a random artwork (or use a daily seed for consistency)
-    const today = new Date().toDateString();
-    const seed = today.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-    const randomIndex = seed % PROMPTS.length;
-
-    const featured = PROMPTS[randomIndex];
-
     // Set image (use first image from the array)
     if (image && featured.images && featured.images.length > 0) {
         image.src = featured.images[0];
@@ -3435,26 +3656,29 @@ function renderFeaturedBanner() {
 
     // Set title
     if (title) {
-        title.textContent = featured.title;
+        title.textContent = getLocalizedField(featured, 'title') || featured.title || '';
     }
 
-    // Generate description from AI tags or use default
-    if (description && featured.aiTags) {
-        const mood = featured.aiTags.mood?.en?.[0] || '';
-        const style = featured.aiTags.styles?.en?.[0] || '';
-        const scene = featured.aiTags.scenes?.en?.[0] || '';
-
-        let desc = '';
-        if (mood && style) {
-            desc = `A ${mood.toLowerCase()} piece with ${style.toLowerCase()} aesthetics`;
-            if (scene) desc += `, featuring ${scene.toLowerCase()}`;
-            desc += '.';
-        }
-        description.textContent = desc;
+    if (description) {
+        description.textContent = buildFeaturedBannerDescription(featured);
     }
 
     // Click to open modal
     banner.onclick = () => openPromptModal(featured.id);
+}
+
+async function renderFeaturedBanner() {
+    const banner = document.getElementById('featuredBanner');
+    if (!banner) return;
+
+    if (!Array.isArray(PROMPTS) || PROMPTS.length === 0) {
+        applyFeaturedBannerPrompt(null);
+        return;
+    }
+
+    const homepageConfig = await loadHomepagePromptsConfigForBanner();
+    const featured = resolveHomepageFeaturedBannerPrompt(homepageConfig) || resolveDailyFeaturedPrompt();
+    applyFeaturedBannerPrompt(featured);
 }
 
 // ========================================

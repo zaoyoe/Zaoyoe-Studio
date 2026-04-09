@@ -18,6 +18,9 @@
     };
     const WRITABLE_ACTION_LABELS = Object.freeze({
         'comments-batch-delete': '批量删除评论',
+        'gallery-batch-add-homepage': '批量加入首页精选',
+        'gallery-batch-localize': '批量补全 Prompt 双语',
+        'gallery-batch-set-status': '批量更新 Prompt 运营状态',
         'homepage-save-section': '保存首页分区',
         'payments-handle-anomaly-action': '执行支付异常处理',
         'points-batch-invalidate': '批量作废兑换码',
@@ -166,6 +169,16 @@
         currentFilter = normalizeSiteFilterValue(value);
         localStorage.setItem('admin_site_filter', currentFilter);
 
+        if (typeof window.clearPendingPointsBatchOpen === 'function') {
+            window.clearPendingPointsBatchOpen();
+        }
+        if (typeof window.closeCodesModal === 'function' && String(window.currentViewBatchId || '').trim()) {
+            window.closeCodesModal();
+            window.__pointsSiteChangeClosedBatchDetail = true;
+        } else {
+            window.__pointsSiteChangeClosedBatchDetail = false;
+        }
+
         // Close dropdown
         const menu = document.getElementById('siteSelectorMenu');
         if (menu) menu.classList.remove('show');
@@ -223,6 +236,12 @@
                 }
                 break;
             case 'points':
+                if (typeof window.clearPendingPointsBatchOpen === 'function') {
+                    window.clearPendingPointsBatchOpen();
+                }
+                if (typeof window.closeCodesModal === 'function' && String(window.currentViewBatchId || '').trim()) {
+                    window.closeCodesModal();
+                }
                 if (typeof window.loadBatches === 'function') window.loadBatches();
                 break;
             case 'payments':
@@ -236,6 +255,13 @@
                     window.loadComments(view);
                 }
                 if (typeof window.loadCommentStats === 'function') window.loadCommentStats();
+                break;
+            case 'gallery':
+                if (typeof window.handleAdminGallerySiteChange === 'function') {
+                    window.handleAdminGallerySiteChange();
+                } else if (typeof window.loadAdminPrompts === 'function') {
+                    window.loadAdminPrompts();
+                }
                 break;
             case 'chat':
                 // Re-initialize chat to reload sessions with new filter

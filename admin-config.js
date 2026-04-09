@@ -3193,9 +3193,12 @@ function getDefaultIntegrationsConfig() {
 function normalizeIntegrationsConfig(raw) {
     const defaults = getDefaultIntegrationsConfig();
     const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
-    const aiService = ['gemini', 'openai', 'claude'].includes(source.ai_service)
-        ? source.ai_service
-        : defaults.ai_service;
+    const rawAiService = String(source.ai_service || '').trim().toLowerCase();
+    const aiService = rawAiService === 'openai'
+        ? 'codex'
+        : (['gemini', 'codex', 'claude'].includes(rawAiService)
+            ? rawAiService
+            : defaults.ai_service);
 
     return {
         google_login_enabled: source.google_login_enabled !== false,
@@ -19091,7 +19094,8 @@ const REFRESH_INTERVAL_LABELS = {
 
 const AI_SERVICE_LABELS = {
     gemini: 'Gemini',
-    openai: 'OpenAI',
+    codex: 'Codex Relay',
+    openai: 'Codex Relay',
     claude: 'Claude'
 };
 
@@ -19145,6 +19149,9 @@ function renderGeneralSettingsConfig() {
         AI_SERVICE_LABELS[integrationsConfig.ai_service] || AI_SERVICE_LABELS.gemini
     );
 
+    window.ADMIN_AI_SERVICE = integrationsConfig.ai_service;
+    window.AdminAI?.setPreferredService?.(integrationsConfig.ai_service);
+
     const siteTitleInput = document.getElementById('cfgSiteTitle');
     if (siteTitleInput) siteTitleInput.value = seoConfig.site_title;
 
@@ -19168,7 +19175,13 @@ function renderGeneralSettingsConfig() {
         performanceConfig.cache_duration_seconds,
         CACHE_DURATION_LABELS[performanceConfig.cache_duration_seconds] || CACHE_DURATION_LABELS[86400]
     );
+
+    window.checkApiKey?.();
 }
+
+window.getCurrentAdminAIService = function getCurrentAdminAIService() {
+    return normalizeIntegrationsConfig(systemConfigCache['integrations']).ai_service;
+};
 
 async function saveVerifyConfig() {
     const priceInput = document.getElementById('cfgVerifyPrice');
@@ -20120,6 +20133,9 @@ window.selectDropdownOption = function (dropdownId, value, displayText) {
         const config = normalizeIntegrationsConfig(systemConfigCache['integrations']);
         config.ai_service = value;
         saveConfig('integrations', config);
+        window.ADMIN_AI_SERVICE = config.ai_service;
+        window.AdminAI?.setPreferredService?.(config.ai_service, { refresh: true });
+        window.checkApiKey?.();
     } else if (dropdownId === 'cacheDurationDropdown') {
         const config = normalizePerformanceConfig(systemConfigCache['performance']);
         config.cache_duration_seconds = parseInt(value, 10) || getDefaultPerformanceConfig().cache_duration_seconds;

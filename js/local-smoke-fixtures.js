@@ -564,7 +564,10 @@
                 id: 'SHOP-20260331-001',
                 user_id: '00000000-0000-4000-8000-000000000001',
                 created_at: '2026-03-31T05:55:00+08:00',
+                site: 'cn',
                 price_paid: 128,
+                discount_code: 'SPRING20',
+                discount_amount: 20,
                 snapshot_product_name: '春季体验套餐 · 含人工核对与延迟发货补偿权益',
                 refund_status: '',
                 delivery_status: 'processing'
@@ -573,10 +576,90 @@
                 id: 'SHOP-20260331-002',
                 user_id: '00000000-0000-4000-8000-000000000002',
                 created_at: '2026-03-31T06:50:00+08:00',
+                site: 'cn',
                 price_paid: 68,
+                discount_code: 'RISKFIX',
+                discount_amount: 10,
                 snapshot_product_name: '月度会员',
                 refund_status: '',
                 delivery_status: 'delivered'
+            }
+        ],
+        discountCodes: [
+            {
+                id: 'discount-cn-spring',
+                code: 'SPRING20',
+                applicable_site: 'cn',
+                is_active: true,
+                lifecycle_status: 'scheduled',
+                status_reason: 'scheduled_start',
+                distribution_mode: 'public_claim',
+                starts_at: '2026-04-10T00:00:00+08:00',
+                expires_at: '2026-05-10T00:00:00+08:00',
+                created_at: '2026-03-31T07:20:00+08:00',
+                is_exclusive: false,
+                stack_priority: 12,
+                pricing_apply_stage: 'catalog_price'
+            },
+            {
+                id: 'discount-cn-risk',
+                code: 'RISKFIX',
+                applicable_site: 'cn',
+                is_active: true,
+                lifecycle_status: 'paused_risk',
+                status_reason: 'risk_hold',
+                distribution_mode: 'user_assigned',
+                starts_at: '2026-03-20T00:00:00+08:00',
+                expires_at: '2026-04-30T00:00:00+08:00',
+                last_paused_at: '2026-04-08T19:30:00+08:00',
+                created_at: '2026-03-18T09:20:00+08:00',
+                is_exclusive: true,
+                stack_priority: 90,
+                pricing_apply_stage: 'order_discount'
+            },
+            {
+                id: 'discount-intl-global',
+                code: 'GLOBAL10',
+                applicable_site: 'intl',
+                is_active: true,
+                lifecycle_status: 'active',
+                status_reason: 'manual_enabled',
+                distribution_mode: 'public_claim',
+                starts_at: '2026-03-15T00:00:00+08:00',
+                expires_at: '2026-04-25T00:00:00+08:00',
+                created_at: '2026-03-12T11:00:00+08:00',
+                is_exclusive: false,
+                stack_priority: 18,
+                pricing_apply_stage: 'catalog_price'
+            }
+        ],
+        discountUserAssets: [
+            {
+                id: 'discount-asset-cn-1',
+                discount_id: 'discount-cn-spring',
+                asset_status: 'available',
+                assigned_at: '2026-03-31T08:12:00+08:00',
+                claimed_at: '2026-03-31T08:20:00+08:00',
+                consumed_at: '',
+                restored_at: ''
+            },
+            {
+                id: 'discount-asset-cn-2',
+                discount_id: 'discount-cn-risk',
+                asset_status: 'consumed',
+                assigned_at: '2026-03-31T08:40:00+08:00',
+                claimed_at: '2026-03-31T08:42:00+08:00',
+                consumed_at: '2026-03-31T09:05:00+08:00',
+                restored_at: ''
+            },
+            {
+                id: 'discount-asset-intl-1',
+                discount_id: 'discount-intl-global',
+                asset_status: 'available',
+                assigned_at: '2026-03-31T08:48:00+08:00',
+                claimed_at: '2026-03-31T08:53:00+08:00',
+                consumed_at: '',
+                restored_at: ''
             }
         ],
         paymentOrders: [
@@ -962,6 +1045,112 @@
                 site: 'cn',
                 status: 'active',
                 created_at: '2026-03-31T09:40:00+08:00'
+            }
+        ],
+        marketingAssetWorkflows: [
+            {
+                id: 'marketing-workflow-1',
+                workflow_key: 'discount_lifecycle_sync',
+                workflow_name: '优惠券生命周期同步',
+                asset_family: 'discount',
+                status: 'active',
+                schedule_label: '建议每小时执行',
+                sort_order: 1,
+                next_run_at: '2026-04-09T10:00:00+08:00',
+                last_run_at: '',
+                last_run_status: '',
+                last_run_summary: '',
+                due_count_by_site: {
+                    cn: 2,
+                    intl: 0,
+                    all: 2
+                }
+            },
+            {
+                id: 'marketing-workflow-2',
+                workflow_key: 'risk_observation_closeout',
+                workflow_name: '观察期收口',
+                asset_family: 'discount',
+                status: 'active',
+                schedule_label: '建议每 2 小时执行',
+                sort_order: 2,
+                next_run_at: '2026-04-09T11:00:00+08:00',
+                last_run_at: '2026-04-09T07:30:00+08:00',
+                last_run_status: 'success',
+                last_run_summary: '观察期收口完成：关闭 1 张优惠券的观察状态。',
+                due_count_by_site: {
+                    cn: 1,
+                    intl: 0,
+                    all: 1
+                }
+            },
+            {
+                id: 'marketing-workflow-3',
+                workflow_key: 'retired_discount_archive',
+                workflow_name: '历史优惠归档',
+                asset_family: 'discount',
+                status: 'active',
+                schedule_label: '建议每日执行',
+                sort_order: 3,
+                next_run_at: '2026-04-10T00:00:00+08:00',
+                last_run_at: '2026-04-08T23:40:00+08:00',
+                last_run_status: 'success',
+                last_run_summary: '历史归档完成：归档 2 张已退休优惠券。',
+                due_count_by_site: {
+                    cn: 0,
+                    intl: 0,
+                    all: 0
+                }
+            },
+            {
+                id: 'marketing-workflow-4',
+                workflow_key: 'marketing_asset_recap',
+                workflow_name: '营销资产复盘快照',
+                asset_family: 'combined',
+                status: 'active',
+                schedule_label: '建议每日执行',
+                sort_order: 4,
+                next_run_at: '2026-04-09T23:55:00+08:00',
+                last_run_at: '2026-04-08T23:55:00+08:00',
+                last_run_status: 'success',
+                last_run_summary: '复盘快照已生成：当前共有 3 张优惠券，其中 1 张生效中。',
+                due_count_by_site: {
+                    cn: 0,
+                    intl: 1,
+                    all: 1
+                }
+            }
+        ],
+        marketingAssetWorkflowRuns: [
+            {
+                id: 'marketing-run-1',
+                workflow_id: 'marketing-workflow-2',
+                workflow_key: 'risk_observation_closeout',
+                started_at: '2026-04-09T07:30:00+08:00',
+                finished_at: '2026-04-09T07:31:00+08:00',
+                run_status: 'success',
+                summary: '观察期收口完成：关闭 1 张优惠券的观察状态。',
+                site_context: 'cn'
+            },
+            {
+                id: 'marketing-run-2',
+                workflow_id: 'marketing-workflow-3',
+                workflow_key: 'retired_discount_archive',
+                started_at: '2026-04-08T23:40:00+08:00',
+                finished_at: '2026-04-08T23:41:00+08:00',
+                run_status: 'success',
+                summary: '历史归档完成：归档 2 张已退休优惠券。',
+                site_context: 'all'
+            },
+            {
+                id: 'marketing-run-3',
+                workflow_id: 'marketing-workflow-4',
+                workflow_key: 'marketing_asset_recap',
+                started_at: '2026-04-08T23:55:00+08:00',
+                finished_at: '2026-04-08T23:56:00+08:00',
+                run_status: 'success',
+                summary: '复盘快照已生成：当前共有 3 张优惠券，其中 1 张生效中。',
+                site_context: 'all'
             }
         ],
         redemptionCodes: [
@@ -2303,6 +2492,8 @@
             shop_categories: 'shopCategories',
             shop_inventory: 'shopInventory',
             shop_orders: 'shopOrders',
+            discount_codes: 'discountCodes',
+            discount_user_assets: 'discountUserAssets',
             payment_orders: 'paymentOrders',
             verification_logs: 'verificationLogs',
             shop_tickets: 'shopTickets',
@@ -2319,6 +2510,8 @@
             prompt_comments: 'promptComments',
             blocked_users: 'blockedUsers',
             block_history: 'blockHistory',
+            marketing_asset_workflows: 'marketingAssetWorkflows',
+            marketing_asset_workflow_runs: 'marketingAssetWorkflowRuns',
             ops_alert_jobs: 'opsAlertJobs',
             ops_alert_job_attempts: 'opsAlertJobAttempts',
             ops_alert_cases: 'opsAlertCases',
@@ -4017,6 +4210,386 @@
         ];
     }
 
+    function matchesSmokeSiteScope(value = '', site = 'all') {
+        const normalizedSite = normalizeSmokeAnalyticsSite(site);
+        if (normalizedSite === 'all') {
+            return true;
+        }
+
+        const normalizedValue = normalizeSmokeAnalyticsSite(value || 'all');
+        return normalizedValue === 'all' || normalizedValue === normalizedSite;
+    }
+
+    function getSmokeTimestamp(value = '') {
+        const parsed = Date.parse(String(value || '').trim());
+        return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    function formatSmokeLifecycleLabel(status = '') {
+        const normalized = String(status || '').trim().toLowerCase();
+        switch (normalized) {
+            case 'scheduled':
+                return '待生效';
+            case 'paused_risk':
+                return '风险暂停';
+            case 'paused_manual':
+                return '手动暂停';
+            case 'expired':
+                return '已过期';
+            case 'archived':
+                return '已归档';
+            case 'active':
+            default:
+                return '生效中';
+        }
+    }
+
+    function formatSmokeDistributionLabel(mode = '') {
+        const normalized = String(mode || '').trim().toLowerCase();
+        if (normalized === 'public_claim') return '公开领券';
+        if (normalized === 'user_assigned') return '定向发券';
+        return '通用暗码';
+    }
+
+    function formatSmokeSiteLabel(site = '') {
+        const normalized = normalizeSmokeAnalyticsSite(site);
+        if (normalized === 'cn') return 'CN';
+        if (normalized === 'intl') return 'INTL';
+        return 'ALL';
+    }
+
+    function buildSmokeMarketingWorkflowResult(workflowKey = '', site = 'all', stats = {}) {
+        const normalizedSite = normalizeSmokeAnalyticsSite(site);
+        if (workflowKey === 'discount_lifecycle_sync') {
+            return {
+                workflow_key: workflowKey,
+                run_status: 'success',
+                trigger_source: 'manual',
+                stats,
+                summary: `同步完成：激活 ${stats.activated_count || 0} 张，预排 ${stats.scheduled_count || 0} 张，过期 ${stats.expired_count || 0} 张。`,
+                site_context: normalizedSite
+            };
+        }
+
+        if (workflowKey === 'risk_observation_closeout') {
+            return {
+                workflow_key: workflowKey,
+                run_status: 'success',
+                trigger_source: 'manual',
+                stats,
+                summary: `观察期收口完成：关闭 ${stats.observation_closed_count || 0} 张优惠券的观察状态。`,
+                site_context: normalizedSite
+            };
+        }
+
+        if (workflowKey === 'retired_discount_archive') {
+            return {
+                workflow_key: workflowKey,
+                run_status: 'success',
+                trigger_source: 'manual',
+                stats,
+                summary: `历史归档完成：归档 ${stats.archived_count || 0} 张已退休优惠券。`,
+                site_context: normalizedSite
+            };
+        }
+
+        return {
+            workflow_key: workflowKey,
+            run_status: 'success',
+            trigger_source: 'manual',
+            stats,
+            summary: `复盘快照已生成：当前共有 ${stats.discount_count || 0} 张优惠券，其中 ${stats.active_count || 0} 张生效中。`,
+            site_context: normalizedSite
+        };
+    }
+
+    function buildSmokeMarketingAssetsResponse(site = 'all') {
+        const normalizedSite = normalizeSmokeAnalyticsSite(site);
+        const discounts = getTableRows('discount_codes')
+            .filter((row) => matchesSmokeSiteScope(row?.applicable_site, normalizedSite));
+        const discountAssets = getTableRows('discount_user_assets');
+        const orders = getTableRows('shop_orders')
+            .filter((row) => matchesSmokeSiteScope(row?.site, normalizedSite));
+        const packages = getTableRows('points_packages');
+        const batches = getTableRows('redemption_batches')
+            .filter((row) => matchesSmokeSiteScope(row?.site, normalizedSite));
+        const workflows = getTableRows('marketing_asset_workflows')
+            .slice()
+            .sort((left, right) => Number(left?.sort_order || 0) - Number(right?.sort_order || 0));
+        const workflowRuns = getTableRows('marketing_asset_workflow_runs');
+        const ordersByCode = new Map();
+        const assetsByDiscountId = new Map();
+        const batchesByPackageId = new Map();
+
+        orders.forEach((row) => {
+            const code = String(row?.discount_code || '').trim().toUpperCase();
+            if (!code) return;
+            const bucket = ordersByCode.get(code) || [];
+            bucket.push(row);
+            ordersByCode.set(code, bucket);
+        });
+
+        discountAssets.forEach((row) => {
+            const discountId = String(row?.discount_id || '').trim();
+            if (!discountId) return;
+            const bucket = assetsByDiscountId.get(discountId) || [];
+            bucket.push(row);
+            assetsByDiscountId.set(discountId, bucket);
+        });
+
+        batches.forEach((row) => {
+            const packageId = String(row?.package_id || '').trim();
+            if (!packageId) return;
+            const bucket = batchesByPackageId.get(packageId) || [];
+            bucket.push(row);
+            batchesByPackageId.set(packageId, bucket);
+        });
+
+        const discountItems = discounts.map((discount) => {
+            const code = String(discount?.code || '').trim().toUpperCase();
+            const orderRows = ordersByCode.get(code) || [];
+            const assetRows = assetsByDiscountId.get(String(discount?.id || '').trim()) || [];
+            const netRevenue = orderRows.reduce((sum, row) => sum + Math.max(0, Number(row?.price_paid) || 0), 0);
+            const recentActivityAt = [
+                discount?.last_restored_at,
+                discount?.last_paused_at,
+                discount?.starts_at,
+                discount?.expires_at,
+                assetRows.map((row) => row?.consumed_at || row?.assigned_at || '').sort((left, right) => getSmokeTimestamp(right) - getSmokeTimestamp(left))[0],
+                orderRows.map((row) => row?.created_at || '').sort((left, right) => getSmokeTimestamp(right) - getSmokeTimestamp(left))[0],
+                discount?.created_at
+            ].find((value) => getSmokeTimestamp(value) > 0) || '';
+
+            return {
+                type: 'discount',
+                id: String(discount?.id || '').trim(),
+                label: code || '优惠券',
+                status_label: formatSmokeLifecycleLabel(discount?.lifecycle_status),
+                family_label: '优惠券',
+                site_label: formatSmokeSiteLabel(discount?.applicable_site),
+                delivery_label: String(discount?.distribution_mode || '').trim(),
+                stacking_policy: {
+                    pricing_apply_stage: String(discount?.pricing_apply_stage || '').trim() || 'order_discount',
+                    apply_stage_label: String(discount?.pricing_apply_stage || '').trim() === 'catalog_price' ? '目录价阶段' : '订单优惠阶段',
+                    exclusivity_label: discount?.is_exclusive === false ? '可叠加' : '排他券',
+                    stack_priority: Math.max(1, Number(discount?.stack_priority) || 100)
+                },
+                recent_activity_at: recentActivityAt,
+                metrics: [
+                    `${orderRows.length} 单净核销`,
+                    `${assetRows.length} 张已发放`,
+                    `净营收 ${netRevenue}`
+                ],
+                destination_module: 'discounts',
+                destination_id: String(discount?.id || '').trim()
+            };
+        });
+
+        const packageItems = packages.map((pkg) => {
+            const packageBatches = batchesByPackageId.get(String(pkg?.id || '').trim()) || [];
+            const generatedCount = packageBatches.reduce((sum, row) => sum + Math.max(0, Number(row?.total_count) || 0), 0);
+            const usedCount = packageBatches.reduce((sum, row) => sum + Math.max(0, Number(row?.used_count) || 0), 0);
+            const recentActivityAt = packageBatches
+                .map((row) => row?.created_at || '')
+                .sort((left, right) => getSmokeTimestamp(right) - getSmokeTimestamp(left))[0]
+                || String(pkg?.created_at || '').trim();
+
+            return {
+                type: 'points_package',
+                id: String(pkg?.id || '').trim(),
+                label: String(pkg?.name || '').trim() || '积分套餐',
+                status_label: pkg?.is_active === false ? '已停用' : '生效中',
+                family_label: '兑换码/套餐',
+                site_label: formatSmokeSiteLabel(normalizedSite),
+                recent_activity_at: recentActivityAt,
+                metrics: [
+                    `${packageBatches.length} 个批次`,
+                    `${usedCount}/${generatedCount} 已核销`,
+                    `${Math.max(0, Number(pkg?.points_amount) || 0) + Math.max(0, Number(pkg?.bonus_points) || 0)} 积分权益`
+                ],
+                destination_module: 'points',
+                destination_id: String(pkg?.id || '').trim()
+            };
+        });
+
+        const unifiedAssets = [...discountItems, ...packageItems]
+            .sort((left, right) => getSmokeTimestamp(right?.recent_activity_at) - getSmokeTimestamp(left?.recent_activity_at));
+
+        const workflowRows = workflows.map((workflow) => {
+            const workflowId = String(workflow?.id || '').trim();
+            const latestRun = workflowRuns
+                .filter((run) => {
+                    const runWorkflowId = String(run?.workflow_id || '').trim();
+                    const runSite = normalizeSmokeAnalyticsSite(run?.site_context || 'all');
+                    return (!workflowId || runWorkflowId === workflowId)
+                        && (normalizedSite === 'all' || runSite === 'all' || runSite === normalizedSite);
+                })
+                .sort((left, right) => getSmokeTimestamp(right?.started_at) - getSmokeTimestamp(left?.started_at))[0];
+            const dueCountBySite = workflow?.due_count_by_site && typeof workflow.due_count_by_site === 'object'
+                ? workflow.due_count_by_site
+                : {};
+            const dueCount = Math.max(0, Number(dueCountBySite[normalizedSite] ?? dueCountBySite.all ?? 0) || 0);
+            return {
+                workflow_key: String(workflow?.workflow_key || '').trim(),
+                workflow_name: String(workflow?.workflow_name || '').trim() || '营销工作流',
+                asset_family: String(workflow?.asset_family || '').trim() || 'combined',
+                status: String(workflow?.status || '').trim() || 'active',
+                schedule_label: String(workflow?.schedule_label || '').trim() || '手动执行',
+                due_count: dueCount,
+                next_run_at: String(workflow?.next_run_at || '').trim(),
+                last_run_at: String(workflow?.last_run_at || '').trim(),
+                last_run_status: String(workflow?.last_run_status || '').trim(),
+                last_run_summary: String(workflow?.last_run_summary || '').trim(),
+                latest_run: latestRun
+                    ? {
+                        started_at: String(latestRun?.started_at || '').trim(),
+                        summary: String(latestRun?.summary || '').trim(),
+                        run_status: String(latestRun?.run_status || '').trim()
+                    }
+                    : null
+            };
+        });
+
+        return {
+            success: true,
+            generated_at: new Date().toISOString(),
+            site_context: normalizedSite,
+            summary: {
+                discount_count: discountItems.length,
+                package_count: packageItems.length,
+                issued_asset_count: discountAssets.filter((row) => discountItems.some((item) => item.id === String(row?.discount_id || '').trim())).length,
+                redemption_generated_count: batches.reduce((sum, row) => sum + Math.max(0, Number(row?.total_count) || 0), 0),
+                recent_revenue_net: orders
+                    .filter((row) => String(row?.discount_code || '').trim())
+                    .reduce((sum, row) => sum + Math.max(0, Number(row?.price_paid) || 0), 0),
+                due_workflow_count: workflowRows.filter((row) => row.status === 'active' && row.due_count > 0).length
+            },
+            asset_families: [
+                {
+                    key: 'discount',
+                    label: '优惠券',
+                    summary: {
+                        total_count: discountItems.length,
+                        active_count: discountItems.filter((item) => item.status_label === '生效中').length,
+                        scheduled_count: discountItems.filter((item) => item.status_label === '待生效').length,
+                        asset_issued_count: discountAssets.filter((row) => discountItems.some((item) => item.id === String(row?.discount_id || '').trim())).length
+                    },
+                    primary_action: {
+                        module: 'discounts',
+                        label: '打开优惠券模块'
+                    }
+                },
+                {
+                    key: 'points_package',
+                    label: '兑换码/套餐',
+                    summary: {
+                        package_count: packageItems.length,
+                        batch_count: batches.length,
+                        used_code_count: batches.reduce((sum, row) => sum + Math.max(0, Number(row?.used_count) || 0), 0)
+                    },
+                    primary_action: {
+                        module: 'points',
+                        label: '打开兑换码/套餐'
+                    }
+                }
+            ],
+            unified_assets: unifiedAssets,
+            workflows: workflowRows
+        };
+    }
+
+    function runSmokeMarketingWorkflow(workflowKey = '', site = 'all') {
+        const normalizedKey = String(workflowKey || '').trim().toLowerCase();
+        const normalizedSite = normalizeSmokeAnalyticsSite(site);
+        const workflows = getTableRows('marketing_asset_workflows').map((row) => ({ ...row }));
+        const discounts = getTableRows('discount_codes').map((row) => ({ ...row }));
+        const target = workflows.find((row) => String(row?.workflow_key || '').trim().toLowerCase() === normalizedKey);
+
+        if (!target) {
+            return createResponse({
+                success: false,
+                message: 'workflow_key 无效'
+            }, 400);
+        }
+
+        const dueCountBySite = target.due_count_by_site && typeof target.due_count_by_site === 'object'
+            ? { ...target.due_count_by_site }
+            : {};
+        const visibleDiscounts = discounts.filter((row) => matchesSmokeSiteScope(row?.applicable_site, normalizedSite));
+        let stats = {};
+
+        if (normalizedKey === 'discount_lifecycle_sync') {
+            const scheduledRows = visibleDiscounts.filter((row) => String(row?.lifecycle_status || '').trim().toLowerCase() === 'scheduled');
+            const activatedRow = scheduledRows[0];
+            if (activatedRow) {
+                activatedRow.lifecycle_status = 'active';
+                activatedRow.status_reason = 'scheduled_activated';
+            }
+            stats = {
+                activated_count: activatedRow ? 1 : 0,
+                scheduled_count: Math.max(0, scheduledRows.length - (activatedRow ? 1 : 0)),
+                expired_count: 0
+            };
+        } else if (normalizedKey === 'risk_observation_closeout') {
+            stats = {
+                observation_closed_count: visibleDiscounts.some((row) => String(row?.lifecycle_status || '').trim().toLowerCase() === 'paused_risk') ? 1 : 0
+            };
+        } else if (normalizedKey === 'retired_discount_archive') {
+            stats = {
+                archived_count: 0
+            };
+        } else {
+            stats = {
+                discount_count: visibleDiscounts.length,
+                active_count: visibleDiscounts.filter((row) => String(row?.lifecycle_status || '').trim().toLowerCase() === 'active').length
+            };
+        }
+
+        const nowIso = new Date().toISOString();
+        const runResult = buildSmokeMarketingWorkflowResult(normalizedKey, normalizedSite, stats);
+        target.last_run_at = nowIso;
+        target.last_run_status = 'success';
+        target.last_run_summary = runResult.summary;
+        target.next_run_at = nowIso;
+        if (normalizedSite === 'all') {
+            dueCountBySite.cn = 0;
+            dueCountBySite.intl = 0;
+            dueCountBySite.all = 0;
+        } else {
+            dueCountBySite[normalizedSite] = 0;
+            dueCountBySite.all = Math.max(0, Number(dueCountBySite.cn || 0) + Number(dueCountBySite.intl || 0));
+        }
+        target.due_count_by_site = dueCountBySite;
+
+        setTableRows('marketing_asset_workflows', workflows);
+        setTableRows('discount_codes', discounts);
+
+        const nextRuns = [
+            {
+                id: `marketing-run-${Date.now()}`,
+                workflow_id: String(target?.id || '').trim(),
+                workflow_key: normalizedKey,
+                started_at: nowIso,
+                finished_at: nowIso,
+                run_status: 'success',
+                summary: runResult.summary,
+                site_context: normalizedSite
+            },
+            ...getTableRows('marketing_asset_workflow_runs')
+        ];
+        setTableRows('marketing_asset_workflow_runs', nextRuns);
+
+        return createResponse({
+            success: true,
+            workflow: {
+                workflow_key: normalizedKey,
+                workflow_name: String(target?.workflow_name || '').trim(),
+                site_context: normalizedSite
+            },
+            run_result: runResult
+        });
+    }
+
     function installSupabaseStub() {
         const fakeClient = (globalScope.supabaseClient && typeof globalScope.supabaseClient === 'object')
             ? globalScope.supabaseClient
@@ -4630,6 +5203,30 @@
                     url.searchParams.get('site') || 'all',
                     url.searchParams.get('q') || url.searchParams.get('code') || ''
                 );
+            }
+
+            if (url.pathname === '/api/admin/marketing/assets-center') {
+                if (method === 'GET') {
+                    return createResponse(deepClone(buildSmokeMarketingAssetsResponse(url.searchParams.get('site') || 'all')));
+                }
+
+                if (method === 'POST') {
+                    let body = {};
+                    try {
+                        body = JSON.parse(String(init?.body || '{}'));
+                    } catch (_) {
+                        body = {};
+                    }
+
+                    if (String(body?.action || '').trim().toLowerCase() !== 'run_workflow') {
+                        return createResponse({
+                            success: false,
+                            message: 'action 或 workflow_key 无效'
+                        }, 400);
+                    }
+
+                    return runSmokeMarketingWorkflow(body?.workflow_key || body?.workflowKey, body?.site || 'all');
+                }
             }
 
             if (url.pathname === '/api/admin/comments/summary' || adminRoute === 'comments/summary') {
@@ -5275,6 +5872,186 @@
         }
     }
 
+    async function runGrowthCenterSmoke() {
+        await waitFor(
+            () => globalScope.switchModule && globalScope.switchAnalyticsTab && globalScope.AdminSiteFilter?.select && globalScope.AdminGrowthCenter?.load,
+            { message: '营销资产中心入口未加载完成' }
+        );
+        await waitFor(
+            () => globalScope.adminStudioAccessGranted === true || globalScope.isAdmin === true || globalScope.isSuperAdmin === true,
+            { message: '营销资产中心 smoke 等待后台访问态超时', timeoutMs: 20000 }
+        );
+
+        const waitForGrowthCenterWorkspace = async () => waitFor(
+            () => {
+                const module = document.getElementById('module-growth-center');
+                const workspace = document.getElementById('marketingAssetCenterWorkspace');
+                const root = workspace?.querySelector('.marketing-asset-center');
+                return module?.classList.contains('active') && root
+                    ? { module, workspace, root }
+                    : null;
+            },
+            { message: '营销资产中心未成功渲染', timeoutMs: 20000 }
+        );
+
+        const activateGrowthCenter = async (force = true) => {
+            globalScope.switchModule?.('growth-center', { analyticsTab: 'growth' });
+            await waitFor(
+                () => document.getElementById('module-growth-center')?.classList.contains('active')
+                    ? document.getElementById('module-growth-center')
+                    : null,
+                { message: '增长经营模块未切换成功', timeoutMs: 20000 }
+            );
+            globalScope.switchAnalyticsTab?.('growth');
+            await waitFor(
+                () => document.querySelector('#analyticsTabsNav .admin-tab.active[data-tab="growth"]'),
+                { message: '增长经营分栏未切到 growth' }
+            );
+            await Promise.resolve(globalScope.AdminGrowthCenter?.load?.({ force })).catch(() => {});
+            await sleep(120);
+            return waitForGrowthCenterWorkspace();
+        };
+
+        globalScope.AdminSiteFilter.select('cn');
+        await nextFrame();
+        await sleep(80);
+        let { workspace, root } = await activateGrowthCenter(true);
+
+        const summaryCards = root.querySelectorAll('.marketing-asset-center__summary-card');
+        recordResult(
+            '营销资产中心摘要卡已渲染',
+            summaryCards.length >= 6,
+            `cards=${summaryCards.length}`
+        );
+
+        const familyCards = root.querySelectorAll('.marketing-asset-center__family-card');
+        recordResult(
+            '营销资产中心家族分组已渲染',
+            familyCards.length >= 2,
+            `families=${familyCards.length}`
+        );
+
+        const unifiedAssets = root.querySelectorAll('.marketing-asset-center__list-item');
+        recordResult(
+            '营销资产中心统一资产列表已渲染',
+            unifiedAssets.length >= 3,
+            `assets=${unifiedAssets.length}`
+        );
+
+        const workflowCards = root.querySelectorAll('.marketing-asset-center__workflow-card');
+        recordResult(
+            '营销资产中心工作流卡片已渲染',
+            workflowCards.length >= 4,
+            `workflows=${workflowCards.length}`
+        );
+
+        const metaText = String(document.getElementById('marketingAssetCenterMeta')?.textContent || '').trim();
+        recordResult(
+            '营销资产中心会同步当前站点口径',
+            /CN/.test(metaText),
+            metaText || '<empty>'
+        );
+
+        const pointsFamilyAction = root.querySelector('[data-growth-center-action="open-module"][data-growth-center-module="points"]');
+        if (pointsFamilyAction instanceof HTMLElement) {
+            pointsFamilyAction.click();
+            await waitFor(
+                () => document.getElementById('module-points')?.classList.contains('active')
+                    ? document.getElementById('module-points')
+                    : null,
+                { message: '营销资产中心未能跳转到 Points 模块' }
+            );
+            recordResult('营销资产中心可跳转到兑换码/套餐模块', true, 'module=points');
+        } else {
+            recordResult('营销资产中心可跳转到兑换码/套餐模块', false, '未找到兑换码/套餐入口按钮');
+        }
+
+        ({ workspace, root } = await activateGrowthCenter(true));
+
+        const pointsAssetAction = Array.from(root.querySelectorAll('[data-growth-center-action="open-asset"]'))
+            .find((button) => String(button?.getAttribute('data-growth-center-module') || '').trim().toLowerCase() === 'points');
+        if (pointsAssetAction instanceof HTMLElement) {
+            pointsAssetAction.click();
+            await waitFor(
+                () => document.getElementById('module-points')?.classList.contains('active')
+                    ? document.getElementById('module-points')
+                    : null,
+                { message: '营销资产中心未能打开 points 资产上下文' }
+            );
+            let activePointsView = '';
+            try {
+                activePointsView = await waitFor(
+                    () => {
+                        const activeViewId = String(document.querySelector('#module-points .view-section.active')?.id || '').trim();
+                        return activeViewId === 'points-view-catalog' ? activeViewId : null;
+                    },
+                    { message: 'Points 资产上下文未切到 catalog 视图', timeoutMs: 2500, intervalMs: 80 }
+                );
+            } catch (_) {
+                activePointsView = String(document.querySelector('#module-points .view-section.active')?.id || '').trim();
+            }
+            recordResult(
+                '营销资产中心资产条目可联动到 Points 上下文',
+                activePointsView === 'points-view-catalog',
+                activePointsView || '<none>'
+            );
+        } else {
+            recordResult('营销资产中心资产条目可联动到 Points 上下文', false, '未找到可联动的 points 资产条目');
+        }
+
+        ({ workspace, root } = await activateGrowthCenter(true));
+
+        const workflowButton = root.querySelector('[data-growth-center-action="run-workflow"][data-growth-center-workflow-key]');
+        if (workflowButton instanceof HTMLElement) {
+            const workflowKey = String(workflowButton.getAttribute('data-growth-center-workflow-key') || '').trim();
+            const beforeText = String(
+                root.querySelector(`[data-growth-center-workflow-key="${workflowKey}"]`)?.closest('.marketing-asset-center__workflow-card')?.textContent
+                || ''
+            ).replace(/\s+/g, ' ').trim();
+            workflowButton.click();
+            const refreshedWorkflow = await waitFor(
+                () => {
+                    const currentWorkspace = document.getElementById('marketingAssetCenterWorkspace');
+                    const button = currentWorkspace?.querySelector(`[data-growth-center-workflow-key="${workflowKey}"]`);
+                    const card = button?.closest('.marketing-asset-center__workflow-card');
+                    const text = String(card?.textContent || '').replace(/\s+/g, ' ').trim();
+                    return card && text && text !== beforeText && /最近执行/.test(text)
+                        ? { card, text }
+                        : null;
+                },
+                { message: '营销资产中心工作流执行后未刷新卡片', timeoutMs: 20000 }
+            );
+            recordResult(
+                '营销资产中心可手动执行工作流并刷新状态',
+                /同步完成|观察期收口完成|历史归档完成|复盘快照已生成/.test(refreshedWorkflow.text),
+                refreshedWorkflow.text.slice(0, 96)
+            );
+        } else {
+            recordResult('营销资产中心可手动执行工作流并刷新状态', false, '未找到工作流执行按钮');
+        }
+
+        globalScope.AdminSiteFilter.select('intl');
+        await nextFrame();
+        await sleep(180);
+        ({ workspace, root } = await activateGrowthCenter(true));
+
+        const intlMetaText = String(document.getElementById('marketingAssetCenterMeta')?.textContent || '').trim();
+        const intlAssetText = String(root.querySelector('.marketing-asset-center__list-item')?.textContent || '').replace(/\s+/g, ' ').trim();
+        recordResult(
+            '营销资产中心切站点后会刷新上下文',
+            /INTL/.test(intlMetaText) && /INTL/.test(intlAssetText),
+            `${intlMetaText} | ${intlAssetText.slice(0, 72)}`
+        );
+
+        const relevantRuntimeErrors = smokeState.runtimeErrors.filter((entry) => /marketing|growth.?center|AdminGrowthCenter|points package|openPointsPackageEditor/i.test(String(entry || '')));
+
+        recordResult(
+            '营销资产中心本地 smoke 未触发运行时错误',
+            relevantRuntimeErrors.length === 0,
+            relevantRuntimeErrors.slice(-4).join(' | ') || 'ok'
+        );
+    }
+
     async function runHomepageAdminSmoke() {
         await waitFor(() => globalScope.switchModule && globalScope.AdminSiteFilter?.select, { message: '首页模块入口未加载完成' });
         globalScope.AdminSiteFilter.select('cn');
@@ -5521,6 +6298,8 @@
     }
 
     async function runAdminPointsSmoke() {
+        let generatedBatchId = '';
+
         await waitFor(
             () => globalScope.switchModule && globalScope.switchPointsView && globalScope.AdminSiteFilter?.select,
             { message: '兑换码/套餐模块入口未加载完成' }
@@ -5662,6 +6441,12 @@
                 { message: '兑换码生成未通过 points manage handler 创建批次' }
             );
 
+            generatedBatchId = String(
+                getTableRows('redemption_batches')
+                    .find((row) => row.name === 'Smoke 批次生成' && normalizeSmokeSite(row.site) === 'cn')
+                    ?.id || ''
+            ).trim();
+
             recordResult(
                 '兑换码生成会通过 points manage handler 写回批次和兑换码',
                 getTableRows('redemption_batches').some((row) => row.name === 'Smoke 批次生成' && normalizeSmokeSite(row.site) === 'cn')
@@ -5693,9 +6478,34 @@
             `rows=${document.querySelectorAll('#batchesTableBody tr[data-batch-id]').length}`
         );
 
-        const firstBatchRow = document.querySelector('#batchesTableBody tr[data-batch-id]');
-        if (firstBatchRow instanceof HTMLElement) {
-            firstBatchRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        let targetBatchRow = Array.from(document.querySelectorAll('#batchesTableBody tr[data-batch-id]'))
+            .find((row) => {
+                if (!(row instanceof HTMLElement)) {
+                    return false;
+                }
+                const batchId = String(row.dataset.batchId || row.getAttribute('data-batch-id') || '').trim();
+                if (generatedBatchId && batchId === generatedBatchId) {
+                    return true;
+                }
+                return getTableRows('redemption_codes').some((codeRow) => String(codeRow?.batch_id || '').trim() === batchId);
+            });
+
+        if (targetBatchRow instanceof HTMLElement) {
+            const selectToggleBtn = document.getElementById('batchSelectToggle');
+            if (selectToggleBtn instanceof HTMLElement && !selectToggleBtn.classList.contains('active')) {
+                selectToggleBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                await nextFrame();
+                targetBatchRow = Array.from(document.querySelectorAll('#batchesTableBody tr[data-batch-id]'))
+                    .find((row) => String(row?.getAttribute('data-batch-id') || '').trim() === generatedBatchId) || targetBatchRow;
+            }
+
+            const targetCheckbox = targetBatchRow.querySelector('input[data-points-change="toggle-selection"]');
+            if (targetCheckbox instanceof HTMLInputElement && !targetCheckbox.checked) {
+                targetCheckbox.click();
+                await nextFrame();
+            }
+
+            targetBatchRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
             await waitFor(
                 () => document.querySelector('.codes-modal .codes-table')
@@ -5707,10 +6517,228 @@
             recordResult(
                 '批次详情会通过 points batches handler 加载兑换码',
                 Boolean(document.querySelector('.codes-modal .codes-table')),
-                `rows=${document.querySelectorAll('.codes-modal .codes-table tbody tr').length}`
+                `batch=${targetBatchRow.dataset.batchId || '<unknown>'} / rows=${document.querySelectorAll('.codes-modal .codes-table tbody tr').length}`
             );
+
+            const openBatchEditBtn = document.querySelector(`.codes-modal [data-points-action="open-batch-edit-from-codes"][data-batch-id="${encodeURIComponent(generatedBatchId)}"]`);
+            if (openBatchEditBtn instanceof HTMLElement) {
+                openBatchEditBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+                const batchEditForm = await waitFor(
+                    () => {
+                        const form = document.getElementById('batchEditForm');
+                        return form instanceof HTMLFormElement ? form : null;
+                    },
+                    { message: '批次编辑工作台未打开' }
+                );
+
+                const editNameInput = document.getElementById('editBatchName');
+                const editNotesInput = document.getElementById('editBatchNotes');
+                const editExpiryInput = document.getElementById('editBatchExpires');
+
+                if (
+                    editNameInput instanceof HTMLInputElement
+                    && editNotesInput instanceof HTMLTextAreaElement
+                    && editExpiryInput instanceof HTMLInputElement
+                ) {
+                    editNameInput.value = 'Smoke 批次生成（已编辑）';
+                    editNameInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    editNotesInput.value = 'smoke batch note';
+                    editNotesInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    editExpiryInput.value = '2026-04-12 12:00';
+                    editExpiryInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    batchEditForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+                    await waitFor(
+                        () => getTableRows('redemption_batches').some((row) => String(row?.id || '').trim() === generatedBatchId && row.name === 'Smoke 批次生成（已编辑）'),
+                        { message: '批次编辑保存未通过 points manage handler 写回' }
+                    );
+
+                    await waitFor(
+                        () => {
+                            const heroTitle = document.querySelector('.codes-modal .points-batch-codes-hero__title');
+                            return heroTitle && String(heroTitle.textContent || '').includes('Smoke 批次生成（已编辑）')
+                                ? heroTitle
+                                : null;
+                        },
+                        { message: '批次编辑保存后未回到更新后的批次详情工作台' }
+                    );
+
+                    recordResult(
+                        '批次编辑保存会同步刷新当前详情工作台',
+                        Boolean(document.querySelector('.codes-modal .points-batch-codes-hero__title'))
+                            && getTableRows('redemption_batches').some((row) => String(row?.id || '').trim() === generatedBatchId && row.name === 'Smoke 批次生成（已编辑）' && row.notes === 'smoke batch note'),
+                        JSON.stringify(getTableRows('redemption_batches').find((row) => String(row?.id || '').trim() === generatedBatchId) || {})
+                    );
+                } else {
+                    recordResult('批次编辑保存会同步刷新当前详情工作台', false, '未找到批次编辑表单字段');
+                }
+            } else {
+                recordResult('批次编辑保存会同步刷新当前详情工作台', false, '未找到批次编辑入口');
+            }
+
+            const invalidateBtn = document.querySelector(`.codes-modal [data-points-action="invalidate-batch-from-codes"][data-batch-id="${encodeURIComponent(generatedBatchId)}"]`);
+            if (invalidateBtn instanceof HTMLElement) {
+                invalidateBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+                const invalidateForm = await waitFor(
+                    () => document.querySelector('.points-batch-invalidate-modal-overlay [data-points-submit="submit-batch-invalidate"]'),
+                    { message: '批次作废弹窗未打开' }
+                );
+
+                invalidateForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+                await waitFor(
+                    () => getTableRows('redemption_codes').filter((row) => String(row?.batch_id || '').trim() === generatedBatchId && String(row?.status || '').trim() === 'disabled').length >= 2,
+                    { message: '批次作废未通过 points manage handler 更新兑换码状态' }
+                );
+
+                recordResult(
+                    '批次作废后详情和兑换码状态会同步刷新',
+                    getTableRows('redemption_codes').filter((row) => String(row?.batch_id || '').trim() === generatedBatchId && String(row?.status || '').trim() === 'disabled').length >= 2
+                        && Boolean(document.querySelector('.codes-modal .points-batch-codes-workbench')),
+                    `disabled=${getTableRows('redemption_codes').filter((row) => String(row?.batch_id || '').trim() === generatedBatchId && String(row?.status || '').trim() === 'disabled').length}`
+                );
+            } else {
+                recordResult('批次作废后详情和兑换码状态会同步刷新', false, '未找到批次作废入口');
+            }
+
+            const lookupCodeBtn = document.querySelector('.codes-modal [data-points-action="lookup-code-item"]');
+            const focusedCode = String(getTableRows('redemption_codes').find((row) => String(row?.batch_id || '').trim() === generatedBatchId)?.code || '').trim();
+            if (lookupCodeBtn instanceof HTMLElement && focusedCode) {
+                lookupCodeBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+                await waitFor(
+                    () => {
+                        const badge = document.querySelector('#lookupResult .lookup-status-badge');
+                        return badge && String(badge.textContent || '').includes('已禁用') ? badge : null;
+                    },
+                    { message: '兑换码作废后 lookup 结果未刷新到最新状态' }
+                );
+
+                recordResult(
+                    '批次和兑换码变更后 Lookup 会回刷最新状态',
+                    String(document.querySelector('#lookupResult .lookup-status-badge')?.textContent || '').includes('已禁用'),
+                    `status=${String(document.querySelector('#lookupResult .lookup-status-badge')?.textContent || '').trim() || '<empty>'}`
+                );
+
+                const navigateBatchBtn = document.querySelector(`#lookupResult [data-points-action="navigate-batch"][data-code="${encodeURIComponent(focusedCode)}"]`);
+                if (navigateBatchBtn instanceof HTMLElement) {
+                    navigateBatchBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+                    await waitFor(
+                        () => {
+                            const table = document.querySelector('.codes-modal .codes-table');
+                            return table && String(globalScope.currentViewBatchId || '').trim() === generatedBatchId
+                                ? table
+                                : null;
+                        },
+                        { message: 'Lookup 返回批次详情失败' }
+                    );
+                }
+            } else {
+                recordResult('批次和兑换码变更后 Lookup 会回刷最新状态', false, '未找到 lookup 跳转入口');
+            }
+
+            globalScope.AdminSiteFilter.select('intl');
+            await nextFrame();
+            await sleep(80);
+
+            try {
+                await waitFor(
+                    () => !document.querySelector('.codes-modal-overlay'),
+                    { message: '切换站点后旧批次详情未自动关闭' }
+                );
+            } catch (_) {
+                throw new Error([
+                    '切换站点后旧批次详情未自动关闭',
+                    `activeView=${document.querySelector('#module-points .view-section.active')?.id || '<none>'}`,
+                    `currentViewBatchId=${String(globalScope.currentViewBatchId || '').trim() || '<empty>'}`,
+                    `overlay=${document.querySelector('.codes-modal-overlay .codes-modal-header__eyebrow')?.textContent?.trim() || '<unknown>'}`,
+                    `site=${String(globalScope.AdminSiteFilter?.getSiteFilter?.() || '').trim() || '<empty>'}`
+                ].join(' | '));
+            }
+
+            globalScope.switchPointsView?.('lookup');
+            await waitFor(
+                () => {
+                    const title = document.querySelector('#lookupResult .lookup-empty-state__title');
+                    return title && String(title.textContent || '').includes('准备开始查询') ? title : null;
+                },
+                { message: '切换站点后 Lookup 仍残留旧结果' }
+            );
+
+            recordResult(
+                '切换站点会关闭旧批次详情并清空过期 Lookup 结果',
+                !document.querySelector('.codes-modal-overlay')
+                    && String(document.querySelector('#lookupResult .lookup-empty-state__title')?.textContent || '').includes('准备开始查询'),
+                `lookup=${String(document.querySelector('#lookupResult .lookup-empty-state__title')?.textContent || '').trim() || '<empty>'}`
+            );
+
+            globalScope.AdminSiteFilter.select('cn');
+            await nextFrame();
+            await sleep(80);
+            globalScope.switchPointsView?.('batches');
+
+            const refreshedBatchRow = await waitFor(
+                () => Array.from(document.querySelectorAll('#batchesTableBody tr[data-batch-id]'))
+                    .find((row) => String(row?.getAttribute('data-batch-id') || '').trim() === generatedBatchId),
+                { message: '切回 CN 后未恢复目标批次列表' }
+            );
+
+            if (selectToggleBtn instanceof HTMLElement && !selectToggleBtn.classList.contains('active')) {
+                selectToggleBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                await nextFrame();
+            }
+
+            const refreshedCheckbox = refreshedBatchRow instanceof HTMLElement
+                ? refreshedBatchRow.querySelector('input[data-points-change="toggle-selection"]')
+                : null;
+            if (refreshedCheckbox instanceof HTMLInputElement && !refreshedCheckbox.checked) {
+                refreshedCheckbox.click();
+                await nextFrame();
+            }
+
+            refreshedBatchRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            await waitFor(
+                () => document.querySelector('.codes-modal .codes-table')
+                    ? document.querySelector('.codes-modal .codes-table')
+                    : null,
+                { message: '批次删除前未能重新打开批次详情' }
+            );
+
+            if (typeof globalScope.batchDeleteBatches === 'function') {
+                await globalScope.batchDeleteBatches();
+
+                const deleteConfirmBtn = await waitFor(
+                    () => document.querySelector('.delete-options-modal [data-points-action="execute-delete-option"]'),
+                    { message: '批次删除确认弹窗未打开' }
+                );
+
+                deleteConfirmBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+                await waitFor(
+                    () => !getTableRows('redemption_batches').some((row) => String(row?.id || '').trim() === generatedBatchId),
+                    { message: '批次删除未通过 points manage handler 写回' }
+                );
+
+                await waitFor(
+                    () => !document.querySelector('.codes-modal-overlay'),
+                    { message: '删除当前批次后详情弹窗未关闭' }
+                );
+
+                recordResult(
+                    '删除当前批次会关闭详情并清理选中态',
+                    !getTableRows('redemption_batches').some((row) => String(row?.id || '').trim() === generatedBatchId)
+                        && !document.querySelector('.codes-modal-overlay')
+                        && String(document.getElementById('pointsBatchSelectedCount')?.textContent || '').trim() === '0',
+                    `selected=${String(document.getElementById('pointsBatchSelectedCount')?.textContent || '').trim() || '<empty>'}`
+                );
+            } else {
+                recordResult('删除当前批次会关闭详情并清理选中态', false, '批次删除函数未暴露到全局');
+            }
         } else {
-            recordResult('批次详情会通过 points batches handler 加载兑换码', false, '未找到可点击的批次行');
+            recordResult('批次详情会通过 points batches handler 加载兑换码', false, '未找到包含兑换码明细的批次行');
         }
     }
 
@@ -6480,12 +7508,13 @@
             const pathname = String(globalScope.location?.pathname || '').trim();
             if (/\/admin-studio(?:\.html)?$/i.test(pathname)) {
                 const moduleParam = String(searchParams.get('module') || '').trim().toLowerCase();
-                if (
+                if (moduleParam === 'growth-center') {
+                    await runGrowthCenterSmoke();
+                } else if (
                     moduleParam === 'analytics'
                     || moduleParam === 'business-center'
                     || moduleParam === 'analytics-center'
                     || moduleParam === 'business-overview'
-                    || moduleParam === 'growth-center'
                     || moduleParam === 'commerce-center'
                 ) {
                     await runAdminAnalyticsSmoke();

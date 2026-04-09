@@ -67,6 +67,19 @@ function readVercelIgnoreEntries() {
         .filter(Boolean);
 }
 
+const SHARED_PUBLIC_FUNCTION_WRAPPERS = [
+    'api/auth/login-security.js',
+    'api/payments/auth-check.js',
+    'api/payments/config.js',
+    'api/payments/create.js',
+    'api/payments/mock/complete.js',
+    'api/runtime/supabase-config.js',
+    'api/shop/available-discounts.js',
+    'api/shop/claim-discount.js',
+    'api/shop/purchase.js',
+    'api/shop/validate-discount.js'
+];
+
 function getGlobalCspHeaderValue() {
     const config = readVercelConfig();
     const globalHeaders = Array.isArray(config.headers) ? config.headers : [];
@@ -282,25 +295,37 @@ test('vercel admin rewrite supports nested admin settings routes', () => {
     assert.equal(adminRewrite.destination, '/api/admin?route=:path*');
 });
 
-test('vercel hobby deployment keeps auth and runtime endpoints within the serverless function limit', () => {
+test('vercel hobby deployment routes public endpoints through the shared handler with headroom', () => {
     const vercelConfig = readVercelConfig();
     const rewrites = Array.isArray(vercelConfig.rewrites) ? vercelConfig.rewrites : [];
     const ignoredEntries = new Set(readVercelIgnoreEntries());
     const authRewrite = rewrites.find((entry) => entry?.source === '/api/auth/:path*');
+    const paymentsRewrite = rewrites.find((entry) => entry?.source === '/api/payments/:path*');
     const runtimeRewrite = rewrites.find((entry) => entry?.source === '/api/runtime/:path*');
+    const shopRewrite = rewrites.find((entry) => entry?.source === '/api/shop/:path*');
     const deployedApiRouteFiles = collectApiRouteFiles().filter((relativePath) => !ignoredEntries.has(relativePath));
 
     assert.ok(authRewrite, 'vercel.json should rewrite auth endpoints through the shared public handler');
     assert.equal(authRewrite.destination, '/api/public?scope=auth&route=:path*');
+    assert.ok(paymentsRewrite, 'vercel.json should rewrite payment endpoints through the shared public handler');
+    assert.equal(paymentsRewrite.destination, '/api/public?scope=payments&route=:path*');
     assert.ok(runtimeRewrite, 'vercel.json should rewrite runtime endpoints through the shared public handler');
     assert.equal(runtimeRewrite.destination, '/api/public?scope=runtime&route=:path*');
-    assert.equal(ignoredEntries.has('api/auth/login-security.js'), true, '.vercelignore should exclude the standalone auth login-security function');
-    assert.equal(ignoredEntries.has('api/runtime/supabase-config.js'), true, '.vercelignore should exclude the standalone runtime supabase-config function');
+    assert.ok(shopRewrite, 'vercel.json should rewrite shop endpoints through the shared public handler');
+    assert.equal(shopRewrite.destination, '/api/public?scope=shop&route=:path*');
+    for (const relativePath of SHARED_PUBLIC_FUNCTION_WRAPPERS) {
+        assert.equal(
+            ignoredEntries.has(relativePath),
+            true,
+            `.vercelignore should exclude the standalone public wrapper ${relativePath}`
+        );
+    }
     assert.ok(
-        deployedApiRouteFiles.length <= 11,
+        deployedApiRouteFiles.length <= 5,
         [
             'Vercel Hobby allows at most 12 serverless functions, and middleware already consumes one slot.',
-            `Expected at most 11 deployed API entrypoints, found ${deployedApiRouteFiles.length}.`,
+            'Keep enough headroom so future public endpoint additions do not immediately break deploys.',
+            `Expected at most 5 deployed API entrypoints, found ${deployedApiRouteFiles.length}.`,
             ...deployedApiRouteFiles
         ].join('\n')
     );
@@ -1384,7 +1409,7 @@ test('privacy page reuses the shared Supabase bootstrap instead of inlining a du
 test('selected runtime, preview, and tooling pages externalize page-specific style blocks into dedicated CSS files', () => {
     const expectations = new Map([
         ['verify.html', 'css/verify-page.css?v=20260324_VERIFY_STYLE_ATTRS_1'],
-        ['prompts.html', 'css/prompts-page.css?v=20260324_PROMPTS_STYLE_ATTRS_1'],
+        ['prompts.html', 'css/prompts-page.css?v=20260409_PROMPTS_FEATURED_BANNER_VISIBLE_1'],
         ['reset-password.html', 'css/reset-password-page.css?v=20260324_RESET_PASSWORD_RUNTIME_STYLE_1'],
         ['privacy.html', 'css/privacy-page.css?v=20260324_PRIVACY_STYLES_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
@@ -2007,12 +2032,14 @@ test('framer home runtime renderers externalize homepage section visibility, tem
 
     for (const source of pageSources) {
         assert.equal(
-            source.includes('css/framer_home.css?v=20260329_HOME_SPEED_CURVE_5'),
+            source.includes('css/framer_home.css?v=20260409_GUESTBOOK_ORBIT_2')
+                || source.includes('./css/framer_home.css?v=20260409_GUESTBOOK_ORBIT_2'),
             true,
             'home-nav entry pages should load the latest framer_home stylesheet version'
         );
         assert.equal(
-            source.includes('js/framer_home.js?v=20260331_HOME_DUAL_SITE_RPC_1'),
+            source.includes('js/framer_home.js?v=20260409_GUESTBOOK_ORBIT_2')
+                || source.includes('./js/framer_home.js?v=20260409_GUESTBOOK_ORBIT_2'),
             true,
             'home-nav entry pages should load the latest framer_home script version'
         );
@@ -2421,6 +2448,7 @@ test('admin general settings and export controls route through delegated binding
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioScript = readRepoFile('admin-studio.js');
     const adminConfigSource = readRepoFile('admin-config.js');
+    const adminAiSource = readRepoFile('js/admin-ai.js');
 
     const removedInlineMarkers = [
         'onclick="addNewApiKey()"',
@@ -2455,7 +2483,12 @@ test('admin general settings and export controls route through delegated binding
         "case 'settings-select-dropdown-option':",
         "case 'settings-save-seo':",
         "case 'settings-prompt-api-key':",
-        "case 'settings-delete-api-key':"
+        "case 'settings-delete-api-key':",
+        "case 'settings-prompt-codex-key':",
+        "case 'settings-test-codex-config':",
+        "case 'settings-save-codex-config':",
+        "case 'settings-delete-codex-config':",
+        "case 'settings-focus-codex-config':"
     ];
 
     for (const marker of delegatedHandlerMarkers) {
@@ -2471,6 +2504,17 @@ test('admin general settings and export controls route through delegated binding
         assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should render ${marker}`);
     }
 
+    const staticSettingsMarkers = [
+        'data-admin-action="settings-prompt-codex-key"',
+        'data-admin-action="settings-test-codex-config"',
+        'data-admin-action="settings-save-codex-config"',
+        'data-admin-action="settings-delete-codex-config"'
+    ];
+
+    for (const marker of staticSettingsMarkers) {
+        assert.equal(adminStudioSource.includes(marker), true, `admin-studio.html should render ${marker}`);
+    }
+
     const configGlueMarkers = [
         'function renderGeneralSettingsConfig()',
         'function saveSeoSettings()',
@@ -2480,12 +2524,26 @@ test('admin general settings and export controls route through delegated binding
         'fetchPointsExportRows',
         'setupGeneralSettingsEventListeners()',
         'window.saveSeoSettings = saveSeoSettings;',
-        'window.exportSettingsData = exportSettingsData;'
+        'window.exportSettingsData = exportSettingsData;',
+        'window.ADMIN_AI_SERVICE = integrationsConfig.ai_service;',
+        'window.AdminAI?.setPreferredService?.(integrationsConfig.ai_service);'
     ];
 
     for (const marker of configGlueMarkers) {
         assert.equal(adminConfigSource.includes(marker), true, `admin-config.js should contain ${marker}`);
     }
+
+    assert.equal(adminStudioSource.includes('data-option-value="codex"'), true, 'admin-studio.html should expose Codex Relay as an AI service option');
+    assert.equal(adminStudioSource.includes('Codex Relay'), true, 'admin-studio.html should label the Codex relay option clearly');
+    assert.equal(adminAiSource.includes("route: '/api/admin?route=codex'"), true, 'js/admin-ai.js should route Codex Relay through the dedicated admin proxy');
+    assert.equal(adminAiSource.includes("if (normalized === 'openai') return 'codex';"), true, 'js/admin-ai.js should map legacy openai ai_service values onto the Codex runtime');
+    assert.equal(adminStudioScript.includes('function openCurrentAIConfigEntry() {'), true, 'admin-studio.js should expose a generic current-provider config entry helper');
+    assert.equal(adminStudioScript.includes("fetch('/api/admin?route=settings/codex-config'"), true, 'admin-studio.js should load Codex config through the query-routed admin endpoint');
+    assert.equal(adminStudioScript.includes('window.testCodexConnectivity = testCodexConnectivity;'), true, 'admin-studio.js should expose the Codex connectivity test workflow');
+    assert.equal(adminStudioScript.includes('async function activateCodexAsCurrentAIService(options = {}) {'), true, 'admin-studio.js should auto-activate Codex Relay after a successful Codex save');
+    assert.equal(adminAiSource.includes('const responseText = await response.text();'), true, 'js/admin-ai.js should preserve raw admin proxy responses when JSON parsing fails');
+    assert.equal(adminAiSource.includes('function extractAdminProxyText(response = {}) {'), true, 'js/admin-ai.js should extract text from multiple admin proxy response shapes');
+    assert.equal(adminStudioScript.includes('await checkApiKey();'), true, 'admin-studio.js should restore provider health status after analysis failures');
 });
 
 test('admin studio runtime prompt workflows externalize visibility, empty-state, and overlay style state', () => {
@@ -3442,7 +3500,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'the standalone ops alerts module should render after the settings module closes'
     );
     assert.equal(
-        adminStudioSource.includes('js/admin-workbench.js?v=20260405_ADMIN_WORKBENCH_SIGNAL_CONTEXT_1'),
+        adminStudioSource.includes('js/admin-workbench.js?v=20260409_ADMIN_WORKBENCH_COMMENT_SOURCE_2'),
         true,
         'admin-studio.html should load the shared admin workbench runtime before admin config'
     );
@@ -6040,7 +6098,7 @@ test('admin points runtime renderers externalize tab state, panel visibility, an
         "setAdminPointsVisibility(exportSelectedOption, selectedBatchIds.size > 0);",
         'class="codes-modal delete-options-modal points-delete-options-modal"',
         'class="codes-modal-body points-delete-options-modal-body"',
-        'class="error-text points-codes-error"',
+        "function buildPointsBatchCodesLoadFailureMarkup(message = '', detail = '')",
         'class="code-value admin-points-reference-id"',
         'class="value admin-points-ledger-amount',
         'class="value admin-points-lookup-value-sans"',
@@ -6726,7 +6784,7 @@ test('homepage admin runtime renderers externalize retry, visibility, tab indica
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-homepage.js?v=20260403_HOMEPAGE_LOADING_PREWARM_1'),
+        adminStudioSource.includes('admin-homepage.js?v=20260409_HOMEPAGE_FEATURED_BATCH_1'),
         true,
         'admin-studio.html should load the latest homepage admin script version'
     );
@@ -7003,20 +7061,22 @@ test('ticket admin surfaces user email in search and list rendering', () => {
 
     assert.equal(adminStudioSource.includes('placeholder="搜索工单号、订单号、用户、邮箱或描述..."'), true, 'admin-studio.html should mention ticket id, user, and email in the ticket search placeholder');
     assert.equal(adminStudioSource.includes('<th>用户 / 邮箱</th>'), true, 'admin-studio.html should label the ticket user column with email support');
-    assert.equal(adminStudioSource.includes('js/admin-ticket-links.js?v=20260401_ADMIN_TICKET_LINK_PROTOCOL_1'), true, 'admin-studio.html should load the shared ticket link protocol before the ticket runtime');
-    assert.equal(adminStudioSource.includes('admin-studio.css?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1'), true, 'admin-studio.html should load the cache-busted admin studio stylesheet for analytics metric context states');
+    assert.equal(adminStudioSource.includes('js/admin-ticket-links.js?v=20260409_ADMIN_TICKET_LINK_PROTOCOL_2'), true, 'admin-studio.html should load the shared ticket link protocol before the ticket runtime');
+    assert.equal(adminStudioSource.includes('admin-studio.css?v=20260409_GALLERY_P2_OPS_1'), true, 'admin-studio.html should load the cache-busted admin studio stylesheet for analytics metric context states');
     assert.equal(adminStudioSource.includes('analytics-advanced-entry'), false, 'admin-studio.html should keep advanced analytics out of the main toolbar flow');
     assert.equal(adminStudioSource.includes('admin-config.js?v=20260405_GENERAL_RUNTIME_REMOVAL_1'), true, 'admin-studio.html should load the cache-busted admin config script for configurable ticket reply templates');
     assert.equal(adminStudioSource.includes('admin-discounts.js?v=20260409_ADMIN_DISCOUNT_P1_ASSETS_ROI_1'), true, 'admin-studio.html should load the cache-busted discount runtime for the P1 assets and ROI workspace');
-    assert.equal(adminStudioSource.includes('js/admin-tickets.js?v=20260406_ADMIN_TICKETS_WORKBENCH_CONTEXT_11'), true, 'admin-studio.html should load the cache-busted ticket admin script');
+    assert.equal(adminStudioSource.includes('js/admin-tickets.js?v=20260409_ADMIN_TICKETS_COMMENT_SOURCE_12'), true, 'admin-studio.html should load the cache-busted ticket admin script');
     assert.equal(ticketsSource.includes("recordAnalyticsResolutionFeedback: function (ticket = {}, newStatus = '', result = {}, doRefund = false) {"), true, 'js/admin-tickets.js should record analytics resolution feedback after ticket handling succeeds');
     assert.equal(ticketsSource.includes('pageSize: 12,'), true, 'js/admin-tickets.js should paginate tickets 12 at a time');
     assert.equal(ticketLinksSource.includes('root.AdminTicketLinks = api;'), true, 'js/admin-ticket-links.js should expose a shared ticket link protocol namespace');
     assert.equal(ticketLinksSource.includes('function buildLinkedTicketDescription(body = {}, actorLabel = \'\')'), true, 'js/admin-ticket-links.js should build linked ticket descriptions through the shared protocol');
     assert.equal(ticketLinksSource.includes('function parseLinkedOpsAlertContext(description = \'\')'), true, 'js/admin-ticket-links.js should parse linked ops alert ticket descriptions');
     assert.equal(ticketLinksSource.includes('function parseLinkedChatSessionContext(description = \'\')'), true, 'js/admin-ticket-links.js should parse linked chat ticket descriptions');
+    assert.equal(ticketLinksSource.includes('function parseLinkedCommentContext(description = \'\')'), true, 'js/admin-ticket-links.js should parse linked comment ticket descriptions');
     assert.equal(ticketsSource.includes("fetchProfilesByIds: async function"), true, 'js/admin-tickets.js should fetch profile emails for ticket users');
     assert.equal(ticketsSource.includes("buildAdminTicketsUrl: function"), true, 'js/admin-tickets.js should build shared admin ticket URLs through the central admin route');
+    assert.equal(ticketsSource.includes("parseLinkedCommentContext: function (description = '') {"), true, 'js/admin-tickets.js should parse linked comment workbench context');
     assert.equal(ticketsSource.includes("showWorkbenchContext: function (context = {})"), true, 'js/admin-tickets.js should render analytics signal context notes when analytics opens the ticket module');
     assert.equal(ticketsSource.includes("buildAnalyticsIssueSummaryState: function () {"), true, 'js/admin-tickets.js should derive a queue issue summary when analytics opens the ticket module');
     assert.equal(ticketsSource.includes("buildAnalyticsShopOrdersContext: function (context = this.analyticsWorkbenchContext, options = {}) {"), true, 'js/admin-tickets.js should build a shop-orders return context from the active analytics workbench state');
@@ -7487,6 +7547,20 @@ test('admin studio security, verify, and affiliate controls route through delega
     assert.match(adminStudioStyles, /\.config-textarea\s*\{[\s\S]*box-sizing: border-box;/, 'admin-studio.css should keep config textareas inside their cards');
     assert.equal(adminConfigSource.includes('setLockedAccountsRefreshButtonState'), true, 'admin-config.js should manage locked account refresh button state');
     assert.equal(adminConfigSource.includes('showLockedAccountsRefreshIndicator'), true, 'admin-config.js should surface locked account refresh feedback');
+    assert.equal(adminStudioSource.includes('id="codexConfigPanel"'), true, 'admin-studio.html should render a dedicated Codex relay config panel');
+    assert.equal(adminStudioSource.includes('id="codexBaseUrlInput"'), true, 'admin-studio.html should expose a Codex base URL input');
+    assert.equal(adminStudioSource.includes('id="codexModelInput"'), true, 'admin-studio.html should expose a Codex model input');
+    assert.equal(adminStudioSource.includes('id="codexApiFormatInput"'), true, 'admin-studio.html should expose a Codex API format selector');
+    assert.equal(adminStudioSource.includes('data-admin-action="settings-save-codex-config"'), true, 'admin-studio.html should expose a delegated Codex config save action');
+    assert.equal(adminStudioSource.includes('data-admin-action="settings-prompt-codex-key"'), true, 'admin-studio.html should expose a delegated Codex key entry action');
+    assert.equal(adminStudioSource.includes('data-admin-action="settings-delete-codex-config"'), true, 'admin-studio.html should expose a delegated Codex delete action');
+    assert.equal(adminStudioScript.includes('function renderCodexConfigPanel() {'), true, 'admin-studio.js should render the Codex relay config panel state');
+    assert.equal(adminStudioScript.includes('async function saveCodexConfig() {'), true, 'admin-studio.js should expose Codex config persistence');
+    assert.equal(adminStudioScript.includes('window.promptForCodexKey = promptForCodexKey;'), true, 'admin-studio.js should expose Codex key management for delegated actions');
+    assert.equal(adminStudioScript.includes('window.saveCodexConfig = saveCodexConfig;'), true, 'admin-studio.js should expose Codex config saves for delegated actions');
+    assert.equal(adminStudioScript.includes('window.focusCodexConfigPanel = focusCodexConfigPanel;'), true, 'admin-studio.js should expose Codex panel focus handling');
+    assert.equal(adminStudioStyles.includes('.api-relay-config-panel'), true, 'admin-studio.css should style the Codex relay config panel');
+    assert.equal(adminStudioStyles.includes('.api-relay-config-grid'), true, 'admin-studio.css should lay out the Codex relay config fields');
 
     const removedDynamicMarkers = [
         `onclick="unlockAccount('`,
@@ -8696,14 +8770,14 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
         'js/admin-analytics-export-builders.js?v=20260405_ANALYTICS_EXPORT_BUILDERS_1',
         'js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9',
         'js/admin-studio-bootstrap.js?v=20260407_ANALYTICS_CENTER_BOOTSTRAP_8',
-        'admin-studio.css?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1',
+        'admin-studio.css?v=20260409_GALLERY_P2_OPS_1',
         'class="charts-grid analytics-growth-insight-grid"',
         'class="chart-card glass-panel analytics-growth-card analytics-growth-card--full"',
         'admin-points.js?v=20260404_ADMIN_POINTS_ANALYTICS_CONTEXT_1',
         'admin-config.js?v=20260405_GENERAL_RUNTIME_REMOVAL_1',
         'js/admin-payments.js?v=20260406_ADMIN_PAYMENTS_WORKBENCH_CONTEXT_11',
-        'js/admin-workbench.js?v=20260405_ADMIN_WORKBENCH_SIGNAL_CONTEXT_1',
-        'js/admin-tickets.js?v=20260406_ADMIN_TICKETS_WORKBENCH_CONTEXT_11',
+        'js/admin-workbench.js?v=20260409_ADMIN_WORKBENCH_COMMENT_SOURCE_2',
+        'js/admin-tickets.js?v=20260409_ADMIN_TICKETS_COMMENT_SOURCE_12',
         'js/admin-shop.js?v=20260406_ADMIN_SHOP_ANALYTICS_CONTEXT_12',
         'data-tab="product"',
         'data-tab="ops"',
@@ -9970,7 +10044,7 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.css?v=20260402_PROMPTS_NAV_STABILITY_1'),
+        promptsHtml.includes('prompts-poetry.css?v=20260409_PROMPTS_FEATURED_SKELETON_LEFT_LOCK_1'),
         true,
         'prompts.html should load the latest prompts gallery stylesheet version'
     );
@@ -9980,7 +10054,7 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'prompts.html should load the shared user event tracker'
     );
     assert.equal(
-        promptsHtml.includes('prompts-poetry.js?v=20260405_PROMPTS_RUNTIME_TRACKING_1'),
+        promptsHtml.includes('prompts-poetry.js?v=20260409_PROMPTS_VISIBILITY_2'),
         true,
         'prompts.html should load the latest prompts gallery runtime version'
     );
@@ -11259,7 +11333,7 @@ test('prompt image delivery optimizes admin previews and cacheable fallback uplo
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-studio.js?v=20260409_ADMIN_DISCOUNT_OVERLAY_GUARD_1'),
+        adminStudioHtml.includes('admin-studio.js?v=20260409_GALLERY_BATCH_LOCALIZE_18'),
         true,
         'admin-studio.html should reference the latest analytics action routing runtime version'
     );
@@ -11315,9 +11389,9 @@ test('analytics ui polish keeps funnel hints visible, top-content and contributo
     assert.equal(adminStudioScript.includes("case 'analytics-open-content-commerce-detail':"), true, 'admin-studio.js should delegate content-commerce detail drill-down actions');
     assert.equal(adminStudioScript.includes("case 'analytics-open-user-detail':"), true, 'admin-studio.js should delegate analytics leaderboard user drill-down actions');
     assert.equal(adminStudioScript.includes('window.tryOpenOpsAlertWorkspaceUserModal'), true, 'admin-studio.js should reuse the workbench user-detail opener for analytics drill-down');
-    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1'), true, 'admin-studio.html should reference the latest analytics ui polish stylesheet version');
+    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260409_GALLERY_P2_OPS_1'), true, 'admin-studio.html should reference the latest analytics ui polish stylesheet version');
     assert.equal(adminStudioHtml.includes('js/admin-analytics-panel-loaders.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1'), true, 'admin-studio.html should reference the latest analytics panel loader runtime version');
-    assert.equal(adminStudioHtml.includes('admin-studio.js?v=20260409_ADMIN_DISCOUNT_OVERLAY_GUARD_1'), true, 'admin-studio.html should reference the latest admin studio action routing version');
+    assert.equal(adminStudioHtml.includes('admin-studio.js?v=20260409_GALLERY_BATCH_LOCALIZE_18'), true, 'admin-studio.html should reference the latest admin studio action routing version');
 });
 
 test('analytics user drill-down carries commerce context into the user detail modal', () => {
@@ -11344,9 +11418,11 @@ test('analytics user drill-down carries commerce context into the user detail mo
         "case 'analytics-open-user-detail': {",
         "const analyticsContext = typeof parseAnalyticsActionContext === 'function'",
         "case 'users-open-analytics-destination': {",
+        "case 'users-open-comment-context': {",
         'window.openUserModal?.(userId, {',
         'analyticsContext',
-        'window.openAnalyticsDestination?.(destination, analyticsContext);'
+        'window.openAnalyticsDestination?.(destination, analyticsContext);',
+        'window.openAdminUserCommentContext?.(commentContext);'
     ];
 
     for (const marker of studioMarkers) {
@@ -11365,6 +11441,7 @@ test('analytics user drill-down carries commerce context into the user detail mo
         'function buildUserAnalyticsShopOrdersActionAttrs(context = currentModalData?.analyticsContext, user = currentModalUser) {',
         'function buildUserAnalyticsContextBlock(context = currentModalData?.analyticsContext) {',
         'data-admin-action="users-open-analytics-destination"',
+        'data-admin-action="users-open-comment-context"',
         '看商城订单',
         '看售后工单'
     ];
@@ -11385,10 +11462,10 @@ test('analytics user drill-down carries commerce context into the user detail mo
         assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
     }
 
-    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
-    assert.equal(adminStudioHtml.includes('admin-users.js?v=20260407_ADMIN_USERS_ANALYTICS_CONTEXT_8'), true, 'admin-studio.html should reference the latest admin users runtime version');
+    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260409_GALLERY_P2_OPS_1'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
+    assert.equal(adminStudioHtml.includes('admin-users.js?v=20260409_ADMIN_USERS_COMMENT_CONTEXT_9'), true, 'admin-studio.html should reference the latest admin users runtime version');
     assert.equal(adminStudioHtml.includes('js/admin-analytics-panel-loaders.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1'), true, 'admin-studio.html should reference the latest analytics panel loader runtime version');
-    assert.equal(adminStudioHtml.includes('admin-studio.js?v=20260409_ADMIN_DISCOUNT_OVERLAY_GUARD_1'), true, 'admin-studio.html should reference the latest admin studio action routing version');
+    assert.equal(adminStudioHtml.includes('admin-studio.js?v=20260409_GALLERY_BATCH_LOCALIZE_18'), true, 'admin-studio.html should reference the latest admin studio action routing version');
     assert.equal(adminUsersSource.includes('const feedbackEntries = typeof window.getAnalyticsResolutionFeedbackEntries === \'function\''), true, 'admin-users.js should read analytics resolution feedback entries for commerce trace context');
     assert.equal(adminUsersSource.includes('users-commerce-trace__feedback'), true, 'admin-users.js should render a recent handling feedback block in commerce traces');
 });
@@ -11432,8 +11509,8 @@ test('user detail tabs surface product commerce trace when opened from analytics
         assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
     }
 
-    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
-    assert.equal(adminStudioHtml.includes('admin-users.js?v=20260407_ADMIN_USERS_ANALYTICS_CONTEXT_8'), true, 'admin-studio.html should reference the latest admin users runtime version');
+    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260409_GALLERY_P2_OPS_1'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
+    assert.equal(adminStudioHtml.includes('admin-users.js?v=20260409_ADMIN_USERS_COMMENT_CONTEXT_9'), true, 'admin-studio.html should reference the latest admin users runtime version');
 });
 
 test('payments runtime controls, site filter, and admin chat menu route through delegated actions', () => {

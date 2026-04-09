@@ -48,6 +48,21 @@ const OPTIONAL_PROMPT_MUTATION_FIELDS = new Set([
     ...OPTIONAL_PROMPT_COLUMN_FIELDS,
     'updated_at'
 ]);
+const PROMPT_SCHEMA_RELOAD_SQL = "select pg_notify('pgrst', 'reload schema');";
+
+function buildPromptSelectFields(excludedFields = []) {
+    const excluded = new Set(
+        (Array.isArray(excludedFields) ? excludedFields : [])
+            .map((field) => String(field || '').trim())
+            .filter(Boolean)
+    );
+
+    return [
+        ...PROMPT_REQUIRED_SELECT_FIELDS,
+        ...PROMPT_OPTIONAL_SELECT_FIELDS.filter((field) => !excluded.has(field)),
+        ...PROMPT_BILINGUAL_SELECT_FIELDS.filter((field) => !excluded.has(field))
+    ].join(', ');
+}
 
 function getSearchParams(req) {
     const url = new URL(req.url || '', 'http://localhost');
@@ -73,7 +88,24 @@ function isMissingOptionalPromptColumnError(error) {
     return OPTIONAL_PROMPT_COLUMN_FIELDS.some((field) => (
         message.includes(`column ${field}`) ||
         message.includes(`prompts.${field}`) ||
-        message.includes(`"${field}"`)
+        message.includes(`"${field}"`) ||
+        message.includes(`'${field}'`) ||
+        message.includes(`column of 'prompts'`) && message.includes(`'${field}'`) ||
+        message.includes(`column of "prompts"`) && message.includes(`"${field}"`)
+    ));
+}
+
+function getMissingOptionalPromptColumnFields(error) {
+    const message = String(error?.message || '').toLowerCase();
+    if (!message) return [];
+
+    return OPTIONAL_PROMPT_COLUMN_FIELDS.filter((field) => (
+        message.includes(`column ${field}`) ||
+        message.includes(`prompts.${field}`) ||
+        message.includes(`"${field}"`) ||
+        message.includes(`'${field}'`) ||
+        (message.includes(`column of 'prompts'`) && message.includes(`'${field}'`)) ||
+        (message.includes(`column of "prompts"`) && message.includes(`"${field}"`))
     ));
 }
 
@@ -166,11 +198,23 @@ function applyPromptFieldFallbacks(row = {}) {
     return safeRow;
 }
 
-function stripUnsupportedPromptPayloadFields(payload = {}) {
+function payloadHasVisibleBilingualFields(payload = {}, fieldNames = PROMPT_BILINGUAL_SELECT_FIELDS) {
+    const safePayload = payload && typeof payload === 'object' ? payload : {};
+    return (Array.isArray(fieldNames) ? fieldNames : []).some((fieldName) => String(safePayload[fieldName] || '').trim());
+}
+
+function stripUnsupportedPromptPayloadFields(payload = {}, fieldsToStrip = OPTIONAL_PROMPT_MUTATION_FIELDS) {
     const safePayload = payload && typeof payload === 'object' ? { ...payload } : {};
     let removed = false;
+    const stripSet = fieldsToStrip instanceof Set
+        ? fieldsToStrip
+        : new Set(
+            (Array.isArray(fieldsToStrip) ? fieldsToStrip : [fieldsToStrip])
+                .map((field) => String(field || '').trim())
+                .filter(Boolean)
+        );
 
-    for (const fieldName of OPTIONAL_PROMPT_MUTATION_FIELDS) {
+    for (const fieldName of stripSet) {
         if (Object.prototype.hasOwnProperty.call(safePayload, fieldName)) {
             delete safePayload[fieldName];
             removed = true;
@@ -263,66 +307,88 @@ function buildPromptMutationPayload(body, { action = 'create' } = {}) {
     return payload;
 }
 
+async function executePromptSelectWithFallback(executor) {
+    const excludedFields = new Set();
+
+    while (true) {
+        const selectFields = buildPromptSelectFields([...excludedFields]);
+        const result = await executor(selectFields);
+        if (!result?.error) {
+            return result;
+        }
+
+        const missingFields = getMissingOptionalPromptColumnFields(result.error)
+            .filter((field) => !excludedFields.has(field));
+        if (!missingFields.length) {
+            return result;
+        }
+
+        missingFields.forEach((field) => excludedFields.add(field));
+    }
+}
+
+async function executePromptMutationWithFallback(executor, payload = {}) {
+    const excludedFields = new Set();
+    const attemptedPayload = payload && typeof payload === 'object' ? { ...payload } : {};
+
+    while (true) {
+        const { payload: nextPayload } = stripUnsupportedPromptPayloadFields(payload, excludedFields);
+        const selectFields = buildPromptSelectFields([...excludedFields]);
+        const result = await executor(nextPayload, selectFields);
+
+        if (!result?.error) {
+            return result;
+        }
+
+        const missingFields = getMissingOptionalPromptColumnFields(result.error)
+            .filter((field) => !excludedFields.has(field));
+        if (!missingFields.length) {
+            return result;
+        }
+
+        const missingBilingualFields = missingFields.filter((field) => PROMPT_BILINGUAL_SELECT_FIELDS.includes(field));
+        if (missingBilingualFields.length > 0 && payloadHasVisibleBilingualFields(attemptedPayload, missingBilingualFields)) {
+            const error = new Error(`Prompt 双语字段尚未被 API schema cache 识别。若你已执行加列 SQL，请再执行 ${PROMPT_SCHEMA_RELOAD_SQL}`);
+            error.statusCode = 409;
+            return { data: null, error };
+        }
+
+        missingFields.forEach((field) => excludedFields.add(field));
+    }
+}
+
 async function loadPromptList(supabase) {
-    const primaryResult = await supabase
-        .from('prompts')
-        .select(PROMPT_SELECT_FIELDS)
-        .order('created_at', { ascending: false });
+    const result = await executePromptSelectWithFallback((selectFields) => (
+        supabase
+            .from('prompts')
+            .select(selectFields)
+            .order('created_at', { ascending: false })
+    ));
 
-    if (!primaryResult?.error) {
-        return (primaryResult.data || []).map((row) => applyPromptFieldFallbacks(row));
-    }
-
-    if (!isMissingOptionalPromptColumnError(primaryResult.error)) {
-        throw primaryResult.error;
-    }
-
-    const fallbackResult = await supabase
-        .from('prompts')
-        .select(PROMPT_LEGACY_SELECT_FIELDS)
-        .order('created_at', { ascending: false });
-
-    if (fallbackResult.error) throw fallbackResult.error;
-    return (fallbackResult.data || []).map((row) => applyPromptFieldFallbacks(row));
+    if (result.error) throw result.error;
+    return (result.data || []).map((row) => applyPromptFieldFallbacks(row));
 }
 
 async function loadPromptById(supabase, id) {
-    const primaryResult = await supabase
-        .from('prompts')
-        .select(PROMPT_SELECT_FIELDS)
-        .eq('id', id)
-        .single();
-
-    if (!primaryResult?.error) {
-        return applyPromptFieldFallbacks(primaryResult.data);
-    }
-
-    if (isMissingOptionalPromptColumnError(primaryResult.error)) {
-        const fallbackResult = await supabase
+    const result = await executePromptSelectWithFallback((selectFields) => (
+        supabase
             .from('prompts')
-            .select(PROMPT_LEGACY_SELECT_FIELDS)
+            .select(selectFields)
             .eq('id', id)
-            .single();
+            .single()
+    ));
 
-        if (!fallbackResult?.error) {
-            return applyPromptFieldFallbacks(fallbackResult.data);
-        }
-
-        if (fallbackResult.error.code === 'PGRST116') {
-            const notFoundError = new Error('Prompt not found');
-            notFoundError.statusCode = 404;
-            throw notFoundError;
-        }
-        throw fallbackResult.error;
+    if (!result?.error) {
+        return applyPromptFieldFallbacks(result.data);
     }
 
-    if (primaryResult.error.code === 'PGRST116') {
+    if (result.error.code === 'PGRST116') {
         const notFoundError = new Error('Prompt not found');
         notFoundError.statusCode = 404;
         throw notFoundError;
     }
 
-    throw primaryResult.error;
+    throw result.error;
 }
 
 function createEmptyPromptSiteMetrics() {
@@ -415,71 +481,36 @@ async function attachPromptSiteMetrics(supabase, rows) {
 }
 
 async function insertPromptRow(supabase, payload) {
-    const primaryResult = await supabase
-        .from('prompts')
-        .insert(payload)
-        .select(PROMPT_SELECT_FIELDS)
-        .single();
+    const result = await executePromptMutationWithFallback((nextPayload, selectFields) => (
+        supabase
+            .from('prompts')
+            .insert(nextPayload)
+            .select(selectFields)
+            .single()
+    ), payload);
 
-    if (!primaryResult?.error) {
-        return applyPromptFieldFallbacks(primaryResult.data);
+    if (result.error) {
+        throw result.error;
     }
 
-    if (!isMissingOptionalPromptColumnError(primaryResult.error)) {
-        throw primaryResult.error;
-    }
-
-    const { payload: fallbackPayload, removed } = stripUnsupportedPromptPayloadFields(payload);
-    if (!removed) {
-        throw primaryResult.error;
-    }
-
-    const fallbackResult = await supabase
-        .from('prompts')
-        .insert(fallbackPayload)
-        .select(PROMPT_LEGACY_SELECT_FIELDS)
-        .single();
-
-    if (fallbackResult.error) {
-        throw fallbackResult.error;
-    }
-
-    return applyPromptFieldFallbacks(fallbackResult.data);
+    return applyPromptFieldFallbacks(result.data);
 }
 
 async function updatePromptRow(supabase, id, payload) {
-    const primaryResult = await supabase
-        .from('prompts')
-        .update(payload)
-        .eq('id', id)
-        .select(PROMPT_SELECT_FIELDS)
-        .single();
+    const result = await executePromptMutationWithFallback((nextPayload, selectFields) => (
+        supabase
+            .from('prompts')
+            .update(nextPayload)
+            .eq('id', id)
+            .select(selectFields)
+            .single()
+    ), payload);
 
-    if (!primaryResult?.error) {
-        return applyPromptFieldFallbacks(primaryResult.data);
+    if (result.error) {
+        throw result.error;
     }
 
-    if (!isMissingOptionalPromptColumnError(primaryResult.error)) {
-        throw primaryResult.error;
-    }
-
-    const { payload: fallbackPayload, removed } = stripUnsupportedPromptPayloadFields(payload);
-    if (!removed) {
-        throw primaryResult.error;
-    }
-
-    const fallbackResult = await supabase
-        .from('prompts')
-        .update(fallbackPayload)
-        .eq('id', id)
-        .select(PROMPT_LEGACY_SELECT_FIELDS)
-        .single();
-
-    if (fallbackResult.error) {
-        throw fallbackResult.error;
-    }
-
-    return applyPromptFieldFallbacks(fallbackResult.data);
+    return applyPromptFieldFallbacks(result.data);
 }
 
 module.exports = async (req, res) => {

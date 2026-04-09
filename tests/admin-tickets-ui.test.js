@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const ticketLinksProtocol = require('../js/admin-ticket-links.js');
 
 const adminTicketsPath = path.resolve(__dirname, '../js/admin-tickets.js');
 
@@ -146,7 +147,8 @@ function loadAdminTicketsRuntime(options = {}) {
             return true;
         },
         alert() {},
-        supabaseClient: options.supabaseClient || createSupabaseClientStub()
+        supabaseClient: options.supabaseClient || createSupabaseClientStub(),
+        AdminTicketLinks: options.ticketLinks || null
     };
 
     const context = {
@@ -2052,4 +2054,40 @@ test('admin tickets submitBulkProcess posts selected ids through the batch proce
     assert.deepEqual(fetchCalls[0].body.ticketIds, ['ticket-bulk-process-1', 'ticket-bulk-process-2']);
     assert.equal(fetchCalls[0].body.adminReply, '当前问题已统一处理完成');
     assert.equal(fetchCalls[0].body.internalNote, '批量处理自夜间清队列');
+});
+
+test('admin tickets can route comment-linked tickets back to the comments workspace', () => {
+    const { AdminTickets } = loadAdminTicketsRuntime({
+        ticketLinks: ticketLinksProtocol
+    });
+
+    const ticket = {
+        id: 'ticket-comment-1',
+        status: 'PENDING',
+        description: [
+            '[评论管理转工单]',
+            '评论类型：画廊评论',
+            '评论视图：gallery',
+            '实体类型：prompt_comment',
+            '评论ID：comment_1',
+            'Prompt ID：prompt_1',
+            '上下文：Prompt One',
+            '站点：cn'
+        ].join('\n')
+    };
+
+    const sourceMeta = AdminTickets.getTicketSourceMeta(ticket);
+    assert.equal(sourceMeta.sourceType, 'comment_workflow');
+    assert.equal(sourceMeta.sourceLabel, '评论治理');
+
+    const sourceEntry = AdminTickets.buildTicketWorkbenchEntry(ticket, 'source');
+    assert.equal(sourceEntry?.workspaceKey, 'comments');
+    assert.equal(sourceEntry?.label, '评论治理');
+    assert.equal(sourceEntry?.context?.view, 'gallery');
+    assert.equal(sourceEntry?.context?.queue, 'escalated');
+    assert.equal(sourceEntry?.context?.focusCommentId, 'comment_1');
+    assert.equal(sourceEntry?.context?.promptId, 'prompt_1');
+
+    const actions = AdminTickets.buildWorkbenchActionDefinitions(ticket);
+    assert.equal(actions.some((action) => action.target === 'source' && /评论治理/.test(action.title)), true);
 });

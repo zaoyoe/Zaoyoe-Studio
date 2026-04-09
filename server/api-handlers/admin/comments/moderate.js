@@ -10,6 +10,12 @@ const {
     collectDescendantCommentIds,
     uniqueIds
 } = require('./shared');
+const {
+    COMMENT_WORKFLOW_NOTES_TABLE,
+    COMMENT_WORKFLOW_TABLE,
+    COMMENT_WORKFLOW_TICKETS_TABLE,
+    isMissingCommentWorkflowSchemaError
+} = require('./_workflow');
 
 function normalizeCommentItems(input) {
     const items = Array.isArray(input?.items)
@@ -105,6 +111,7 @@ async function deleteGuestbookItems(supabase, site, { messageIds = [], commentId
         .filter(comment => selectedMessageIds.includes(comment.message_id))
         .map(comment => comment.id);
     const likeCommentIds = uniqueIds([...descendantCommentIds, ...messageCascadeCommentIds]);
+    const deletedCommentIds = uniqueIds([...selectedCommentIds, ...likeCommentIds]);
 
     await Promise.all([
         deleteGuestbookLikes(supabase, site, 'message', selectedMessageIds),
@@ -136,9 +143,14 @@ async function deleteGuestbookItems(supabase, site, { messageIds = [], commentId
     }
 
     return {
+        selectedGuestbookMessages: selectedMessageIds.length,
+        selectedGuestbookComments: selectedCommentIds.length,
         deletedGuestbookMessages: selectedMessageIds.length,
-        deletedGuestbookComments: selectedCommentIds.length,
-        cleanedGuestbookLikes: selectedMessageIds.length + likeCommentIds.length
+        deletedGuestbookComments: deletedCommentIds.length,
+        cascadeDeletedGuestbookComments: Math.max(0, deletedCommentIds.length - selectedCommentIds.length),
+        cleanedGuestbookLikes: selectedMessageIds.length + likeCommentIds.length,
+        deletedGuestbookMessageIds: selectedMessageIds,
+        deletedGuestbookCommentIds: deletedCommentIds
     };
 }
 
@@ -146,7 +158,8 @@ async function deleteGalleryItems(supabase, site, galleryIds) {
     const normalizedIds = uniqueIds(galleryIds);
     if (!normalizedIds.length) {
         return {
-            deletedGalleryComments: 0
+            deletedGalleryComments: 0,
+            deletedGalleryIds: []
         };
     }
 
@@ -163,7 +176,8 @@ async function deleteGalleryItems(supabase, site, galleryIds) {
     const existingIds = (existingRows || []).map(row => row.id).filter(Boolean);
     if (!existingIds.length) {
         return {
-            deletedGalleryComments: 0
+            deletedGalleryComments: 0,
+            deletedGalleryIds: []
         };
     }
 
@@ -178,7 +192,105 @@ async function deleteGalleryItems(supabase, site, galleryIds) {
     if (error) throw error;
 
     return {
-        deletedGalleryComments: existingIds.length
+        deletedGalleryComments: existingIds.length,
+        deletedGalleryIds: existingIds
+    };
+}
+
+async function cleanupCommentWorkflowArtifacts(supabase, site, {
+    guestbookMessageIds = [],
+    guestbookCommentIds = [],
+    galleryCommentIds = []
+} = {}) {
+    const workflowIds = [];
+    const workflowRows = [];
+    const groups = [
+        {
+            entityType: 'guestbook_message',
+            ids: uniqueIds(guestbookMessageIds)
+        },
+        {
+            entityType: 'guestbook_comment',
+            ids: uniqueIds(guestbookCommentIds)
+        },
+        {
+            entityType: 'prompt_comment',
+            ids: uniqueIds(galleryCommentIds)
+        }
+    ].filter((group) => group.ids.length > 0);
+
+    if (!groups.length) {
+        return {
+            deletedWorkflowRows: 0,
+            deletedNoteRows: 0,
+            deletedTicketLinkRows: 0
+        };
+    }
+
+    try {
+        for (const group of groups) {
+            const { data, error } = await applyCommentsSiteFilter(
+                supabase
+                    .from(COMMENT_WORKFLOW_TABLE)
+                    .select('id')
+                    .eq('entity_type', group.entityType)
+                    .in('entity_id', group.ids),
+                site
+            );
+
+            if (error) {
+                throw error;
+            }
+
+            workflowRows.push(...(data || []));
+        }
+    } catch (error) {
+        if (isMissingCommentWorkflowSchemaError(error)) {
+            return {
+                deletedWorkflowRows: 0,
+                deletedNoteRows: 0,
+                deletedTicketLinkRows: 0
+            };
+        }
+        throw error;
+    }
+
+    workflowIds.push(...uniqueIds(workflowRows.map((row) => row.id)));
+    if (!workflowIds.length) {
+        return {
+            deletedWorkflowRows: 0,
+            deletedNoteRows: 0,
+            deletedTicketLinkRows: 0
+        };
+    }
+
+    const [
+        { data: deletedNotes, error: noteError },
+        { data: deletedLinks, error: linkError },
+        { data: deletedWorkflows, error: workflowError }
+    ] = await Promise.all([
+        supabase
+            .from(COMMENT_WORKFLOW_NOTES_TABLE)
+            .delete()
+            .in('workflow_id', workflowIds),
+        supabase
+            .from(COMMENT_WORKFLOW_TICKETS_TABLE)
+            .delete()
+            .in('workflow_id', workflowIds),
+        supabase
+            .from(COMMENT_WORKFLOW_TABLE)
+            .delete()
+            .in('id', workflowIds)
+    ]);
+
+    if (noteError) throw noteError;
+    if (linkError) throw linkError;
+    if (workflowError) throw workflowError;
+
+    return {
+        deletedWorkflowRows: Array.isArray(deletedWorkflows) ? deletedWorkflows.length : 0,
+        deletedNoteRows: Array.isArray(deletedNotes) ? deletedNotes.length : 0,
+        deletedTicketLinkRows: Array.isArray(deletedLinks) ? deletedLinks.length : 0
     };
 }
 
@@ -303,11 +415,18 @@ module.exports = async (req, res) => {
             commentIds: guestbookCommentIds
         });
         const galleryResult = await deleteGalleryItems(supabase, site, galleryIds);
+        const workflowCleanup = await cleanupCommentWorkflowArtifacts(supabase, site, {
+            guestbookMessageIds: guestbookResult.deletedGuestbookMessageIds,
+            guestbookCommentIds: guestbookResult.deletedGuestbookCommentIds,
+            galleryCommentIds: galleryResult.deletedGalleryIds
+        });
 
         const deletedCount =
             guestbookResult.deletedGuestbookMessages
             + guestbookResult.deletedGuestbookComments
             + galleryResult.deletedGalleryComments;
+        const selectedCount = items.length;
+        const cascadeDeletedCount = Math.max(0, deletedCount - selectedCount);
 
         await writeAdminAuditLog({
             supabase,
@@ -316,11 +435,17 @@ module.exports = async (req, res) => {
             site,
             actionType: 'comments.delete',
             details: {
+                selected_guestbook_messages: guestbookResult.selectedGuestbookMessages,
+                selected_guestbook_comments: guestbookResult.selectedGuestbookComments,
                 deleted_guestbook_messages: guestbookResult.deletedGuestbookMessages,
                 deleted_guestbook_comments: guestbookResult.deletedGuestbookComments,
+                cascade_deleted_guestbook_comments: guestbookResult.cascadeDeletedGuestbookComments,
                 deleted_gallery_comments: galleryResult.deletedGalleryComments,
                 cleaned_guestbook_likes: guestbookResult.cleanedGuestbookLikes,
-                requested_item_count: items.length,
+                deleted_workflow_rows: workflowCleanup.deletedWorkflowRows,
+                deleted_workflow_notes: workflowCleanup.deletedNoteRows,
+                deleted_workflow_ticket_links: workflowCleanup.deletedTicketLinkRows,
+                requested_item_count: selectedCount,
                 item_ids: items.map(item => item.id).slice(0, 20)
             }
         });
@@ -329,10 +454,13 @@ module.exports = async (req, res) => {
             success: true,
             site,
             deletedCount,
+            selectedCount,
+            cascadeDeletedCount,
             summary: {
                 guestbookMessages: guestbookResult.deletedGuestbookMessages,
                 guestbookComments: guestbookResult.deletedGuestbookComments,
-                galleryComments: galleryResult.deletedGalleryComments
+                galleryComments: galleryResult.deletedGalleryComments,
+                workflowRows: workflowCleanup.deletedWorkflowRows
             }
         });
     } catch (error) {

@@ -5197,6 +5197,11 @@ const AdminTickets = {
     loadOverviewViaSupabaseFallback: async function (options = {}) {
         const requestId = Number(options?.requestId || 0);
         const reminderConfig = this.buildClientSideReminderOverview();
+        const reminderLookbackDays = Math.max(
+            30,
+            Number(reminderConfig?.activity?.lookback_days || 7) || 7,
+            Number(reminderConfig?.summary_digest?.lookback_days || 7) || 7
+        );
         const nowDate = new Date();
         const closedSinceMs = nowDate.getTime() - (30 * 24 * 60 * 60 * 1000);
         const { data, error } = await window.supabaseClient
@@ -5209,12 +5214,18 @@ const AdminTickets = {
         }
 
         const enrichedRows = await this.enrichClientSideTicketRows(data || []);
-        const reminderTelemetryPromise = this.loadClientSideReminderActivityAndSummary(reminderConfig?.activity?.lookback_days || 7)
+        const reminderTelemetryPromise = this.loadClientSideReminderActivityAndSummary(reminderLookbackDays)
             .catch((reminderError) => {
                 console.warn('[AdminTickets] client-side reminder telemetry load skipped:', reminderError);
                 return {
-                    activity: reminderConfig.activity,
-                    summary_digest: reminderConfig.summary_digest
+                    activity: {
+                        ...reminderConfig.activity,
+                        lookback_days: reminderLookbackDays
+                    },
+                    summary_digest: {
+                        ...reminderConfig.summary_digest,
+                        lookback_days: reminderLookbackDays
+                    }
                 };
             });
         let auditRows = [];
@@ -5224,10 +5235,34 @@ const AdminTickets = {
             console.warn('[AdminTickets] client-side audit load skipped:', auditError);
         }
         const reminderTelemetry = await reminderTelemetryPromise;
+        const reminderActivity = reminderTelemetry?.activity && typeof reminderTelemetry.activity === 'object'
+            ? {
+                ...reminderTelemetry.activity,
+                lookback_days: Math.max(
+                    reminderLookbackDays,
+                    Number(reminderTelemetry.activity.lookback_days || reminderLookbackDays) || reminderLookbackDays
+                )
+            }
+            : {
+                ...reminderConfig.activity,
+                lookback_days: reminderLookbackDays
+            };
+        const reminderSummaryDigest = reminderTelemetry?.summary_digest && typeof reminderTelemetry.summary_digest === 'object'
+            ? {
+                ...reminderTelemetry.summary_digest,
+                lookback_days: Math.max(
+                    reminderLookbackDays,
+                    Number(reminderTelemetry.summary_digest.lookback_days || reminderLookbackDays) || reminderLookbackDays
+                )
+            }
+            : {
+                ...reminderConfig.summary_digest,
+                lookback_days: reminderLookbackDays
+            };
         const reminder = {
             ...reminderConfig,
-            activity: reminderTelemetry?.activity || reminderConfig.activity,
-            summary_digest: reminderTelemetry?.summary_digest || reminderConfig.summary_digest
+            activity: reminderActivity,
+            summary_digest: reminderSummaryDigest
         };
 
         const assignmentByTicketId = this.buildClientSideAssignmentMap(
@@ -6056,6 +6091,13 @@ const AdminTickets = {
             };
         }
 
+        if (this.parseLinkedCommentContext(ticket?.description)) {
+            return {
+                sourceType: 'comment_workflow',
+                sourceLabel: '评论治理'
+            };
+        }
+
         return {
             sourceType: 'user_ticket',
             sourceLabel: '用户提交'
@@ -6329,6 +6371,7 @@ const AdminTickets = {
         const updatedAtLabel = this.formatDateTime(ticket?.updated_at);
         const currentStatus = this.normalizeTicketStatusValue(ticket?.status);
         const linkedChatContext = this.parseLinkedChatSessionContext(ticket?.description);
+        const linkedCommentContext = this.parseLinkedCommentContext(ticket?.description);
         const linkedOpsAlertContext = this.parseLinkedOpsAlertContext(ticket?.description);
         const waitLabel = this.safeText(ticket?.sla_label).trim() || this.safeText(detailState?.subtitle).trim();
         const adminNotes = this.safeText(ticket?.admin_notes).trim();
@@ -6349,6 +6392,20 @@ const AdminTickets = {
                     linkedChatContext.title ? `会话标题：${linkedChatContext.title}` : '',
                     linkedChatContext.session_id ? `会话标识：${linkedChatContext.session_id}` : '',
                     linkedChatContext.user_email ? `来源邮箱：${linkedChatContext.user_email}` : ''
+                ].filter(Boolean).join('\n'),
+                icon: 'fa-comments',
+                tone: ''
+            });
+        } else if (linkedCommentContext) {
+            items.push({
+                title: '评论治理升级',
+                time: createdAtLabel,
+                detail: [
+                    linkedCommentContext.entity_label ? `评论类型：${linkedCommentContext.entity_label}` : '',
+                    linkedCommentContext.context_title ? `上下文：${linkedCommentContext.context_title}` : '',
+                    linkedCommentContext.comment_id ? `评论ID：${linkedCommentContext.comment_id}` : '',
+                    linkedCommentContext.prompt_id ? `Prompt ID：${linkedCommentContext.prompt_id}` : '',
+                    linkedCommentContext.message_id ? `留言主贴 ID：${linkedCommentContext.message_id}` : ''
                 ].filter(Boolean).join('\n'),
                 icon: 'fa-comments',
                 tone: ''
@@ -6526,6 +6583,40 @@ const AdminTickets = {
                 contextItems.push({
                     label: '来源邮箱',
                     value: linkedChatContext.user_email
+                });
+            }
+        }
+
+        const linkedCommentContext = this.parseLinkedCommentContext(ticket?.description);
+        if (linkedCommentContext) {
+            if (linkedCommentContext.entity_label) {
+                contextItems.push({
+                    label: '评论类型',
+                    value: linkedCommentContext.entity_label
+                });
+            }
+            if (linkedCommentContext.context_title) {
+                contextItems.push({
+                    label: '评论上下文',
+                    value: linkedCommentContext.context_title
+                });
+            }
+            if (linkedCommentContext.comment_id) {
+                contextItems.push({
+                    label: '评论 ID',
+                    value: linkedCommentContext.comment_id
+                });
+            }
+            if (linkedCommentContext.prompt_id) {
+                contextItems.push({
+                    label: 'Prompt ID',
+                    value: linkedCommentContext.prompt_id
+                });
+            }
+            if (linkedCommentContext.message_id) {
+                contextItems.push({
+                    label: '留言主贴 ID',
+                    value: linkedCommentContext.message_id
                 });
             }
         }
@@ -6934,6 +7025,14 @@ const AdminTickets = {
         return null;
     },
 
+    parseLinkedCommentContext: function (description = '') {
+        const protocol = this.getTicketLinkProtocol();
+        if (protocol?.parseLinkedCommentContext) {
+            return protocol.parseLinkedCommentContext(this.safeText(description));
+        }
+        return null;
+    },
+
     getOpsAlertWorkspaceActionForContext: function (context = {}) {
         if (typeof window.getOpsAlertWorkspaceAction !== 'function') {
             return null;
@@ -6977,12 +7076,14 @@ const AdminTickets = {
 
     buildTicketWorkbenchEntry: function (ticket = {}, target = 'chat') {
         const linkedChatContext = this.parseLinkedChatSessionContext(ticket.description);
+        const linkedCommentContext = this.parseLinkedCommentContext(ticket.description);
         const linkedOpsAlertContext = this.parseLinkedOpsAlertContext(ticket.description);
         const sourceAction = linkedOpsAlertContext ? this.getOpsAlertWorkspaceActionForContext(linkedOpsAlertContext) : null;
 
         if (typeof window.buildTicketWorkbenchEntry === 'function') {
             return window.buildTicketWorkbenchEntry(target, ticket, {
                 linkedChatContext,
+                linkedCommentContext,
                 linkedOpsAlertContext,
                 workspaceAction: sourceAction
             });
@@ -7071,6 +7172,23 @@ const AdminTickets = {
             };
         }
 
+        if (normalizedTarget === 'source' && linkedCommentContext?.comment_id) {
+            const focusCommentId = this.safeText(linkedCommentContext.comment_id).trim();
+            return {
+                workspaceKey: 'comments',
+                label: '评论治理',
+                context: {
+                    view: this.safeText(linkedCommentContext.view).trim().toLowerCase() === 'gallery' ? 'gallery' : 'guestbook',
+                    queue: 'escalated',
+                    search: focusCommentId,
+                    site: this.safeText(linkedCommentContext.site).trim().toLowerCase(),
+                    promptId: this.safeText(linkedCommentContext.prompt_id).trim(),
+                    focusCommentId,
+                    commentId: focusCommentId
+                }
+            };
+        }
+
         return null;
     },
 
@@ -7099,8 +7217,11 @@ const AdminTickets = {
                 return false;
             }
             if (normalizedTarget === 'source') {
+                const linkedCommentContext = this.parseLinkedCommentContext(ticket.description);
                 const linkedOpsAlertContext = this.parseLinkedOpsAlertContext(ticket.description);
-                if (!linkedOpsAlertContext) {
+                if (linkedCommentContext) {
+                    window.showToast?.('这张工单的评论治理入口暂时无法打开', 'info');
+                } else if (!linkedOpsAlertContext) {
                     window.showToast?.('这张工单没有关联原始站内代办', 'info');
                 } else {
                     window.showToast?.('当前原始代办仍指向工单处理页，无需重复跳转', 'info');

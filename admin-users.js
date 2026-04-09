@@ -7371,7 +7371,13 @@ function renderActivityItems(data) {
         return buildUsersTabEmptyState('暂无内容记录');
     }
     return data.map(item => `
-        <div class="data-list-item">
+        <div
+            class="data-list-item users-activity-item${item.commentId ? ' users-activity-item--link' : ''}"
+            ${item.commentId ? 'data-admin-action="users-open-comment-context"' : ''}
+            ${item.view ? `data-comment-view="${escapeHtml(String(item.view || 'guestbook'))}"` : ''}
+            ${item.commentId ? `data-comment-id="${encodeURIComponent(String(item.commentId || ''))}"` : ''}
+            ${item.promptId ? `data-prompt-id="${encodeURIComponent(String(item.promptId || ''))}"` : ''}
+            ${item.promptTitle ? `data-prompt-title="${encodeURIComponent(String(item.promptTitle || ''))}"` : ''}>
             <div class="users-tab-item-icon users-tab-item-icon-info">
                 <i class="fas ${item.type === 'comment' ? 'fa-comment' : 'fa-book'} users-tab-item-icon-glyph"></i>
             </div>
@@ -7379,6 +7385,7 @@ function renderActivityItems(data) {
                 <div class="users-tab-item-title">${escapeHtml(item.content.substring(0, 80))}${item.content.length > 80 ? '...' : ''}</div>
                 <div class="users-tab-item-subtitle">${escapeHtml(String(item.source || '-'))} · ${formatTimeAgo(item.created_at)}</div>
             </div>
+            ${item.commentId ? '<i class="fas fa-arrow-up-right-from-square users-related-arrow"></i>' : ''}
         </div>
     `).join('');
 }
@@ -8019,16 +8026,22 @@ function closeUserDrawer() {
 async function fetchUserContentLog(userId) {
     try {
         // Fetch from both comments and guestbook
-        const [galleryComments, guestbookMessages] = await Promise.all([
+        const [galleryComments, guestbookMessages, guestbookComments] = await Promise.all([
             window.supabaseClient
                 .from('prompt_comments')
-                .select('id, content, created_at, prompt_id, prompts(title)')
+                .select('id, content, created_at, prompt_id, parent_id, prompts(title)')
                 .eq('user_id', userId)
                 .order('created_at', { ascending: false })
                 .limit(5),
             window.supabaseClient
                 .from('guestbook_messages')
                 .select('id, content, created_at')
+                .eq('user_id', userId)
+                .order('created_at', { ascending: false })
+                .limit(5),
+            window.supabaseClient
+                .from('guestbook_comments')
+                .select('id, content, created_at, message_id, parent_id')
                 .eq('user_id', userId)
                 .order('created_at', { ascending: false })
                 .limit(5)
@@ -8043,7 +8056,12 @@ async function fetchUserContentLog(userId) {
                     type: 'comment',
                     content: c.content,
                     source: `📸 ${promptTitle}`,
-                    created_at: c.created_at
+                    created_at: c.created_at,
+                    view: 'gallery',
+                    commentId: c.id,
+                    promptId: c.prompt_id,
+                    promptTitle,
+                    isReply: Boolean(c.parent_id)
                 });
             });
         }
@@ -8051,10 +8069,28 @@ async function fetchUserContentLog(userId) {
         if (guestbookMessages.data) {
             guestbookMessages.data.forEach(m => {
                 items.push({
-                    type: 'guestbook',
+                    type: 'guestbook_message',
                     content: m.content,
-                    source: '留言板',
-                    created_at: m.created_at
+                    source: '留言板主贴',
+                    created_at: m.created_at,
+                    view: 'guestbook',
+                    commentId: m.id,
+                    messageId: m.id
+                });
+            });
+        }
+
+        if (guestbookComments.data) {
+            guestbookComments.data.forEach(c => {
+                items.push({
+                    type: c.parent_id ? 'guestbook_reply' : 'guestbook_comment',
+                    content: c.content,
+                    source: c.parent_id ? '留言板回复' : '留言板评论',
+                    created_at: c.created_at,
+                    view: 'guestbook',
+                    commentId: c.id,
+                    messageId: c.message_id,
+                    isReply: Boolean(c.parent_id)
                 });
             });
         }

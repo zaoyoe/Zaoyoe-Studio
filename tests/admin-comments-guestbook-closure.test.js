@@ -22,6 +22,8 @@ test('comments admin frontend routes stats, list, and moderation through admin c
         "requireWritableCommentsSite({ label: `${scopeStr}用户封禁` })",
         "requireWritableCommentsSite({ label: `${scopeLabel}用户解封` })",
         "function buildCommentContextUrl(comment = {})",
+        "function openAdminPromptCommentContext(context = {})",
+        "function syncAdminCommentsRouteState(nextState = {}, options = {})",
         "function prepareCommentReloadState({ preserveSelection = false, removeSelectionIds = [], focusCommentId = '' } = {})",
         "function restoreCommentSelectionState()",
         "function focusCommentCard(commentId)",
@@ -33,6 +35,7 @@ test('comments admin frontend routes stats, list, and moderation through admin c
         "url.searchParams.set('messageId', contextId)",
         "new URL('prompts.html', window.location.origin)",
         'data-user-id="${escapeHtml(comment.user_id || \'\')}"',
+        "window.openAdminPromptCommentContext = openAdminPromptCommentContext;",
         'action-btn action-block${blockState.blocked ? \' action-btn--blocked\' : \'\'}',
         'refreshCommentsForUserStatus(userId);'
     ];
@@ -73,10 +76,12 @@ test('guestbook page consumes admin deep links and routes them through smart scr
 test('comments summary handler includes guestbook replies alongside messages and gallery comments', () => {
     const source = readRepoFile('server/api-handlers/admin/comments/summary.js');
 
-    assert.match(source, /from\('guestbook_messages'\)\.select\('\*', \{ count: 'exact', head: true \}\)/);
-    assert.match(source, /from\('guestbook_comments'\)\.select\('\*', \{ count: 'exact', head: true \}\)/);
-    assert.match(source, /from\('prompt_comments'\)\.select\('\*', \{ count: 'exact', head: true \}\)/);
-    assert.match(source, /const totalCount = \(guestbookMessageCount \|\| 0\) \+ \(guestbookCommentCount \|\| 0\) \+ \(galleryCount \|\| 0\);/);
+    assert.match(source, /from\('guestbook_messages'\)\.select\('id, user_id, created_at'\)/);
+    assert.match(source, /from\('guestbook_comments'\)\.select\('id, user_id, parent_id, message_id, created_at'\)/);
+    assert.match(source, /from\('prompt_comments'\)\.select\('id, user_id, parent_id, created_at'\)/);
+    assert.match(source, /from\('admin_comment_workflows'\)/);
+    assert.match(source, /const totalFeedback = totalMessages \+ totalComments \+ totalReplies;/);
+    assert.match(source, /queueCounts:\s*\{/);
 });
 
 test('comments list handler loads guestbook replies and guestbook comment like counts', () => {
@@ -85,14 +90,19 @@ test('comments list handler loads guestbook replies and guestbook comment like c
     assert.equal(/from\('guestbook_messages'\)\s*\.select\(/.test(source), true);
     assert.equal(/from\('guestbook_comments'\)\s*\.select\(/.test(source), true);
     assert.equal(/from\('guestbook_likes'\)\s*\.select\('target_id, target_type'\)/.test(source), true);
+    assert.equal(/promptId:\s*sanitizeText\(searchParams\.get\('promptId'\), 160\)/.test(source), true);
+    assert.equal(/if \(filters\.promptId && sanitizeText\(comment\?\.context \|\| comment\?\.prompt_id, 160\) !== filters\.promptId\)/.test(source), true);
+    assert.equal(/function applyCommentQueueFilter\(comment, queue = 'all'\)/.test(source), true);
     assert.equal(/record_type: comment\.parent_id \? 'reply' : 'comment'/.test(source), true);
     assert.equal(/reply_count: commentReplyCounts\[comment\.id\] \|\| 0/.test(source), true);
+    assert.equal(/context_title:\s*promptTitle/.test(source), true);
+    assert.equal(/prompt_id:\s*comment\.prompt_id/.test(source), true);
     assert.equal(/pagination:\s*\{/.test(source), true);
     assert.equal(/totalItems: pagination\.totalItems/.test(source), true);
     assert.equal(/totalPages: pagination\.totalPages/.test(source), true);
     assert.equal(/fetchCommentBlockStateRows/.test(source), true);
     assert.equal(/buildCommentUserBlockStateMap/.test(source), true);
-    assert.equal(/user_block_state: userBlockStateMap\[userId\]/.test(source), true);
+    assert.equal(/user_block_state: userBlockStateMap\[String\(comment\?\.user_id \|\| ''\)\.trim\(\)\]/.test(source), true);
     assert.equal(/\.limit\(50\)/.test(source), false);
     assert.equal(/\.limit\(100\)/.test(source), false);
 });

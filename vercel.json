@@ -33,8 +33,16 @@
             "destination": "/api/public?scope=auth&route=:path*"
         },
         {
+            "source": "/api/payments/:path*",
+            "destination": "/api/public?scope=payments&route=:path*"
+        },
+        {
             "source": "/api/runtime/:path*",
             "destination": "/api/public?scope=runtime&route=:path*"
+        },
+        {
+            "source": "/api/shop/:path*",
+            "destination": "/api/public?scope=shop&route=:path*"
         },
         {
             "source": "/api/:path*",

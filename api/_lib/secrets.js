@@ -2,6 +2,7 @@ const crypto = require('crypto');
 
 const SECRET_ALGORITHM = 'aes-256-gcm';
 const GEMINI_SECRET_KEY = 'gemini_api_key';
+const CODEX_SECRET_KEY = 'codex_api_key';
 const PAYMENT_CHANNEL_SECRET_KEYS = {
     afdian_token: 'payment_provider_afdian_token',
     hupijiao_api_key: 'payment_provider_hupijiao_api_key',
@@ -183,16 +184,75 @@ async function resolveGeminiRuntimeConfig(supabase) {
     };
 }
 
+function normalizeOptionalUrl(value) {
+    return String(value || '').trim().replace(/\/+$/, '');
+}
+
+function normalizeCodexApiFormat(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    return normalized === 'responses' ? 'responses' : 'chat.completions';
+}
+
+async function resolveCodexRuntimeConfig(supabase) {
+    let storedSecret = null;
+
+    try {
+        storedSecret = await getStoredAdminSecret(supabase, CODEX_SECRET_KEY);
+    } catch (error) {
+        if (!process.env.CODEX_API_KEY) {
+            throw error;
+        }
+    }
+
+    const envApiKey = String(process.env.CODEX_API_KEY || process.env.OPENAI_API_KEY || '').trim();
+    const envBaseUrl = normalizeOptionalUrl(
+        process.env.CODEX_API_BASE_URL
+        || process.env.OPENAI_API_BASE_URL
+        || process.env.OPENAI_BASE_URL
+    );
+    const envModel = String(process.env.CODEX_MODEL || process.env.OPENAI_MODEL || '').trim();
+    const envApiFormat = normalizeCodexApiFormat(
+        process.env.CODEX_API_FORMAT
+        || process.env.OPENAI_API_FORMAT
+        || process.env.OPENAI_WIRE_API
+        || 'responses'
+    );
+    const metadata = storedSecret?.metadata && typeof storedSecret.metadata === 'object'
+        ? storedSecret.metadata
+        : {};
+    const apiKey = storedSecret?.value || envApiKey || '';
+    const baseUrl = normalizeOptionalUrl(metadata.baseUrl || metadata.base_url || envBaseUrl);
+    const source = storedSecret?.value
+        ? 'stored'
+        : (envApiKey ? 'environment' : 'missing');
+    const configured = Boolean(apiKey && baseUrl);
+    const model = String(metadata.model || envModel || 'gpt-5.4').trim() || 'gpt-5.4';
+    const apiFormat = normalizeCodexApiFormat(metadata.apiFormat || metadata.api_format || envApiFormat || 'responses');
+
+    return {
+        configured,
+        source,
+        model,
+        apiKey,
+        baseUrl,
+        apiFormat,
+        updatedAt: storedSecret?.updated_at || null,
+        updatedBy: storedSecret?.updated_by || null
+    };
+}
+
 module.exports = {
     __testUtils: {
         getEncryptionKey,
         readIndependentSecret
     },
+    CODEX_SECRET_KEY,
     GEMINI_SECRET_KEY,
     OPS_ALERT_SECRET_KEYS,
     PAYMENT_CHANNEL_SECRET_KEYS,
     deleteStoredAdminSecret,
     getStoredAdminSecret,
+    resolveCodexRuntimeConfig,
     resolveGeminiRuntimeConfig,
     upsertStoredAdminSecret
 };

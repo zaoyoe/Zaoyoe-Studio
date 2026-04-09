@@ -9116,6 +9116,31 @@ function renderAnalyticsContentOperatingCockpit(state = {}) {
                     <button
                         type="button"
                         class="btn-sm btn-secondary"
+                        data-admin-action="analytics-open-prompt-gallery"
+                        data-prompt-id="${escapeHtml(String(activeDetail?.prompt_id || '').trim())}"
+                    >
+                        <i class="fas fa-palette"></i> 去 Gallery
+                    </button>
+                    <button
+                        type="button"
+                        class="btn-sm btn-secondary"
+                        data-admin-action="analytics-open-prompt-comments"
+                        data-prompt-id="${escapeHtml(String(activeDetail?.prompt_id || '').trim())}"
+                        data-prompt-title="${escapeHtml(encodeURIComponent(promptLabel))}"
+                    >
+                        <i class="fas fa-comments"></i> 看评论
+                    </button>
+                    <button
+                        type="button"
+                        class="btn-sm btn-secondary"
+                        data-admin-action="analytics-open-prompt-homepage"
+                        data-prompt-id="${escapeHtml(String(activeDetail?.prompt_id || '').trim())}"
+                    >
+                        <i class="fas fa-house"></i> 去 Homepage
+                    </button>
+                    <button
+                        type="button"
+                        class="btn-sm btn-secondary"
                         data-admin-action="analytics-open-content-commerce-detail"
                         data-prompt-id="${escapeHtml(String(activeDetail?.prompt_id || '').trim())}"
                         data-prompt-title="${escapeHtml(promptLabel)}"
@@ -9445,6 +9470,31 @@ function renderAnalyticsContentCommerceDetailPanel(detail = null) {
                         data-prompt-id="${escapeHtml(String(detail?.prompt_id || '').trim())}"
                     >
                         <i class="fas fa-arrow-up-right-from-square"></i> 看 Prompt 上下文
+                    </button>
+                    <button
+                        type="button"
+                        class="btn-sm btn-secondary"
+                        data-admin-action="analytics-open-prompt-gallery"
+                        data-prompt-id="${escapeHtml(String(detail?.prompt_id || '').trim())}"
+                    >
+                        <i class="fas fa-palette"></i> 去 Gallery
+                    </button>
+                    <button
+                        type="button"
+                        class="btn-sm btn-secondary"
+                        data-admin-action="analytics-open-prompt-comments"
+                        data-prompt-id="${escapeHtml(String(detail?.prompt_id || '').trim())}"
+                        data-prompt-title="${escapeHtml(encodeURIComponent(promptTitle))}"
+                    >
+                        <i class="fas fa-comments"></i> 看评论
+                    </button>
+                    <button
+                        type="button"
+                        class="btn-sm btn-secondary"
+                        data-admin-action="analytics-open-prompt-homepage"
+                        data-prompt-id="${escapeHtml(String(detail?.prompt_id || '').trim())}"
+                    >
+                        <i class="fas fa-house"></i> 去 Homepage
                     </button>
                     ${primaryProduct
                         ? `<button

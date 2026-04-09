@@ -41,6 +41,7 @@ async function withPromptsManageHandler(options, callback) {
         updateFilters: [],
         deleteFilters: [],
         updatePayload: null,
+        updatePayloads: [],
         insertPayload: null,
         rows: options.rows || [],
         row: options.row || null,
@@ -58,6 +59,7 @@ async function withPromptsManageHandler(options, callback) {
                     : null
             }
             : null,
+        updateResponses: Array.isArray(options.updateResponses) ? [...options.updateResponses] : null,
         deletedRows: options.deletedRows || [],
         auditEntries: []
     };
@@ -147,6 +149,7 @@ async function withPromptsManageHandler(options, callback) {
                                     },
                                     update(payload) {
                                         state.updatePayload = payload;
+                                        state.updatePayloads.push(payload);
                                         return {
                                             eq(field, value) {
                                                 state.updateFilters.push({ field, value });
@@ -156,6 +159,9 @@ async function withPromptsManageHandler(options, callback) {
                                                 return this;
                                             },
                                             async single() {
+                                                if (state.updateResponses?.length) {
+                                                    return state.updateResponses.shift();
+                                                }
                                                 return {
                                                     data: state.row,
                                                     error: state.row ? null : { code: 'PGRST116', message: 'not found' }
@@ -543,6 +549,98 @@ test('prompts manage handler updates prompt rows with explicit id filter and aud
         assert.equal(typeof state.updatePayload.updated_at, 'string');
         assert.equal(state.auditEntries[0]?.site, 'intl');
         assert.equal(state.auditEntries[0]?.module, 'prompts');
+    });
+});
+
+test('prompts manage handler updates prompt rows when updated_at schema cache is unavailable', async () => {
+    await withPromptsManageHandler({
+        row: {
+            id: 'prompt-legacy-update',
+            title: 'Legacy Prompt Updated',
+            tags: ['Photography'],
+            description: 'Updated without updated_at column'
+        },
+        updateResponses: [
+            {
+                data: null,
+                error: {
+                    code: 'PGRST204',
+                    message: "Could not find the 'updated_at' column of 'prompts' in the schema cache"
+                }
+            },
+            {
+                data: {
+                    id: 'prompt-legacy-update',
+                    title: 'Legacy Prompt Updated',
+                    tags: ['Photography'],
+                    description: 'Updated without updated_at column'
+                },
+                error: null
+            }
+        ]
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'patch',
+                id: 'prompt-legacy-update',
+                site: 'cn',
+                description: 'Updated without updated_at column'
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().success, true);
+        assert.equal(state.updatePayloads.length, 2);
+        assert.deepEqual(state.updatePayloads[0], {
+            description: 'Updated without updated_at column',
+            updated_at: state.updatePayloads[0].updated_at
+        });
+        assert.equal(typeof state.updatePayloads[0].updated_at, 'string');
+        assert.deepEqual(state.updatePayloads[1], {
+            description: 'Updated without updated_at column'
+        });
+    });
+});
+
+test('prompts manage handler returns a schema reload hint when bilingual prompt fields are unavailable in api schema cache', async () => {
+    await withPromptsManageHandler({
+        row: {
+            id: 'prompt-bilingual-cache',
+            title: 'Prompt bilingual cache',
+            tags: ['Creative'],
+            description: 'desc'
+        },
+        updateResponses: [
+            {
+                data: null,
+                error: {
+                    code: 'PGRST204',
+                    message: "Could not find the 'title_en' column of 'prompts' in the schema cache"
+                }
+            }
+        ]
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'patch',
+                id: 'prompt-bilingual-cache',
+                site: 'cn',
+                title_en: 'Prompt bilingual cache',
+                description_en: 'desc'
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 409);
+        assert.match(res.json().message, /reload schema/i);
+        assert.match(res.json().message, /pg_notify/i);
     });
 });
 

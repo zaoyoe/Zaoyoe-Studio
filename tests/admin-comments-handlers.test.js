@@ -68,10 +68,27 @@ class FakeQuery {
         this.limitCount = null;
         this.selectOptions = {};
         this.payload = null;
+        this.upsertConflictFields = [];
     }
 
     select(_selection = '*', options = {}) {
         this.selectOptions = options || {};
+        return this;
+    }
+
+    insert(payload) {
+        this.mode = 'insert';
+        this.payload = Array.isArray(payload) ? payload : [payload || {}];
+        return this;
+    }
+
+    upsert(payload, options = {}) {
+        this.mode = 'upsert';
+        this.payload = Array.isArray(payload) ? payload : [payload || {}];
+        this.upsertConflictFields = String(options?.onConflict || '')
+            .split(',')
+            .map((field) => String(field || '').trim())
+            .filter(Boolean);
         return this;
     }
 
@@ -141,6 +158,15 @@ class FakeQuery {
 
         return {
             data: rows[0],
+            error: null
+        };
+    }
+
+    async maybeSingle() {
+        const result = await this.exec();
+        const rows = Array.isArray(result.data) ? result.data : [];
+        return {
+            data: rows[0] || null,
             error: null
         };
     }
@@ -235,8 +261,75 @@ class FakeQuery {
         return nextRows.filter((row) => matchedIds.has(row.id));
     }
 
+    generateRowId() {
+        this.state.rowCounter += 1;
+        return `${this.table}_${this.state.rowCounter}`;
+    }
+
+    normalizeInsertRow(row) {
+        const normalized = deepClone(row || {});
+        if (!normalized.id) {
+            normalized.id = this.generateRowId();
+        }
+        if (!normalized.created_at) {
+            normalized.created_at = '2026-04-09T00:00:00.000Z';
+        }
+        if (!normalized.updated_at) {
+            normalized.updated_at = normalized.created_at;
+        }
+        return normalized;
+    }
+
+    insertRows() {
+        const rows = (Array.isArray(this.payload) ? this.payload : [this.payload])
+            .map((row) => this.normalizeInsertRow(row));
+        this.state.tables[this.table] = [...this.getRows(), ...rows];
+        return rows;
+    }
+
+    upsertRows() {
+        const rows = (Array.isArray(this.payload) ? this.payload : [this.payload]).map((row) => deepClone(row || {}));
+        const currentRows = [...this.getRows()];
+        const nextRows = [...currentRows];
+        const touchedRows = [];
+
+        rows.forEach((incoming) => {
+            const matchIndex = nextRows.findIndex((existing) => this.upsertConflictFields.every((field) => existing?.[field] === incoming?.[field]));
+            if (matchIndex >= 0) {
+                nextRows[matchIndex] = {
+                    ...nextRows[matchIndex],
+                    ...incoming,
+                    updated_at: incoming.updated_at || nextRows[matchIndex].updated_at || '2026-04-09T00:00:00.000Z'
+                };
+                touchedRows.push(nextRows[matchIndex]);
+                return;
+            }
+
+            const inserted = this.normalizeInsertRow(incoming);
+            nextRows.push(inserted);
+            touchedRows.push(inserted);
+        });
+
+        this.state.tables[this.table] = nextRows;
+        return touchedRows;
+    }
+
     async exec() {
         const matchedRows = this.applyFilters(this.getRows());
+
+        if (this.mode === 'insert') {
+            return {
+                data: this.insertRows(),
+                error: null
+            };
+        }
+
+        if (this.mode === 'upsert') {
+            return {
+                data: this.upsertRows(),
+                error: null
+            };
+        }
 
         if (this.mode === 'delete') {
             return {
@@ -288,11 +381,19 @@ async function withCommentsHandler(relativePath, options, callback) {
             prompt_comments: deepClone(options?.tables?.prompt_comments || []),
             profiles: deepClone(options?.tables?.profiles || []),
             prompts: deepClone(options?.tables?.prompts || []),
-            comment_likes: deepClone(options?.tables?.comment_likes || [])
+            comment_likes: deepClone(options?.tables?.comment_likes || []),
+            admin_comment_workflows: deepClone(options?.tables?.admin_comment_workflows || []),
+            admin_comment_workflow_notes: deepClone(options?.tables?.admin_comment_workflow_notes || []),
+            admin_comment_ticket_links: deepClone(options?.tables?.admin_comment_ticket_links || []),
+            shop_tickets: deepClone(options?.tables?.shop_tickets || []),
+            shop_orders: deepClone(options?.tables?.shop_orders || []),
+            payment_orders: deepClone(options?.tables?.payment_orders || []),
+            block_history: deepClone(options?.tables?.block_history || [])
         },
         fromCalls: [],
         requireAdminCalls: [],
-        auditCalls: []
+        auditCalls: [],
+        rowCounter: 0
     };
 
     delete require.cache[handlerPath];
@@ -368,6 +469,9 @@ test('comments summary handler aggregates guestbook messages, guestbook replies,
         assert.equal(res.json().summary.totalCount, 3);
         assert.equal(res.json().summary.todayCount, 3);
         assert.equal(res.json().summary.activeUsersCount, 2);
+        assert.equal(res.json().summary.totalMessages, 1);
+        assert.equal(res.json().summary.totalComments, 2);
+        assert.equal(res.json().summary.totalReplies, 0);
         assert.equal(res.json().site, 'cn');
     });
 });
@@ -460,9 +564,12 @@ test('comments list handler returns guestbook messages, replies, and like counts
         assert.equal(replyRow.id, 'c2');
         assert.equal(replyRow.record_type, 'reply');
         assert.equal(replyRow.likes, 1);
+        assert.equal(replyRow.entity_type, 'guestbook_comment');
+        assert.equal(replyRow.thread_root_id, 'm1');
 
         assert.equal(commentRow.id, 'c1');
         assert.equal(commentRow.record_type, 'comment');
+        assert.equal(commentRow.level, 'top');
         assert.equal(commentRow.reply_count, 1);
         assert.equal(commentRow.likes, 2);
         assert.equal(commentRow.user_block_state?.isGuestbookBlocked, true);
@@ -470,6 +577,7 @@ test('comments list handler returns guestbook messages, replies, and like counts
 
         assert.equal(messageRow.id, 'm1');
         assert.equal(messageRow.record_type, 'message');
+        assert.equal(messageRow.entity_type, 'guestbook_message');
         assert.equal(messageRow.reply_count, 2);
         assert.equal(messageRow.site, 'cn');
         assert.equal(messageRow.user_block_state?.isGuestbookBlocked, false);
@@ -553,6 +661,61 @@ test('comments list handler returns gallery rows without relying on schema relat
         assert.equal(topRow.likes, 2);
         assert.equal(topRow.is_pinned, true);
         assert.equal(topRow.user_block_state?.isGalleryBlocked, false);
+    });
+});
+
+test('comments list handler can scope gallery moderation rows to a single prompt id', async () => {
+    await withCommentsHandler('../server/api-handlers/admin/comments/list.js', {
+        tables: {
+            prompt_comments: [
+                {
+                    id: 'g1',
+                    site: 'cn',
+                    prompt_id: 'p1',
+                    parent_id: null,
+                    content: 'prompt one comment',
+                    user_id: 'u1',
+                    created_at: '2026-03-31T11:00:00.000Z',
+                    image_url: null,
+                    is_pinned: false,
+                    is_featured: false
+                },
+                {
+                    id: 'g2',
+                    site: 'cn',
+                    prompt_id: 'p2',
+                    parent_id: null,
+                    content: 'prompt two comment',
+                    user_id: 'u2',
+                    created_at: '2026-03-31T10:00:00.000Z',
+                    image_url: null,
+                    is_pinned: false,
+                    is_featured: false
+                }
+            ],
+            profiles: [
+                { id: 'u1', username: 'alice', avatar_url: null, email: 'alice@example.com' },
+                { id: 'u2', username: 'bob', avatar_url: null, email: 'bob@example.com' }
+            ],
+            prompts: [
+                { id: 'p1', title: 'Prompt One', title_zh: '提示词一', title_en: 'Prompt One' },
+                { id: 'p2', title: 'Prompt Two', title_zh: '提示词二', title_en: 'Prompt Two' }
+            ]
+        }
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/comments/list?view=gallery&site=cn&promptId=p2',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().comments.length, 1);
+        assert.equal(res.json().pagination.totalItems, 1);
+        assert.equal(res.json().comments[0]?.id, 'g2');
+        assert.equal(res.json().comments[0]?.context, 'p2');
     });
 });
 
@@ -713,7 +876,9 @@ test('comments moderate handler deletes guestbook reply trees, clears likes, and
         }, res);
 
         assert.equal(res.statusCode, 200);
-        assert.equal(res.json().deletedCount, 1);
+        assert.equal(res.json().deletedCount, 2);
+        assert.equal(res.json().selectedCount, 1);
+        assert.equal(res.json().cascadeDeletedCount, 1);
         assert.equal(state.tables.guestbook_comments.length, 0);
         assert.deepEqual(
             state.tables.guestbook_likes.map((row) => row.id),
@@ -760,5 +925,128 @@ test('comments moderate handler toggles gallery pin state per site and writes au
         assert.equal(state.auditCalls.length, 1);
         assert.equal(state.auditCalls[0].actionType, 'comments.pin');
         assert.equal(state.auditCalls[0].site, 'cn');
+    });
+});
+
+test('comments list handler attaches workflow state and user signals for V2 governance cards', async () => {
+    await withCommentsHandler('../server/api-handlers/admin/comments/list.js', {
+        tables: {
+            prompt_comments: [
+                {
+                    id: 'g1',
+                    site: 'cn',
+                    prompt_id: 'p1',
+                    parent_id: null,
+                    content: 'need escalation',
+                    user_id: 'u2',
+                    created_at: '2026-03-31T11:00:00.000Z',
+                    image_url: null,
+                    is_pinned: false,
+                    is_featured: false
+                }
+            ],
+            profiles: [
+                { id: 'u2', username: 'bob', avatar_url: null, email: 'bob@example.com' },
+                { id: 'admin_9', username: 'ops', avatar_url: null, email: 'ops@example.com' }
+            ],
+            prompts: [
+                { id: 'p1', title: 'Prompt One', title_zh: '提示词一', title_en: 'Prompt One' }
+            ],
+            admin_comment_workflows: [
+                {
+                    id: 'wf_1',
+                    site: 'cn',
+                    entity_type: 'prompt_comment',
+                    entity_id: 'g1',
+                    status: 'escalated',
+                    priority: 'high',
+                    assignee_id: 'admin_9',
+                    assignee_label: '',
+                    tags: ['risk', 'ticketed'],
+                    note_count: 2,
+                    linked_ticket_count: 1,
+                    linked_ticket_ids: ['ticket_1'],
+                    resolved_at: null,
+                    updated_at: '2026-03-31T12:00:00.000Z',
+                    last_activity_at: '2026-03-31T12:00:00.000Z',
+                    metadata: {}
+                }
+            ],
+            shop_tickets: [
+                { id: 'ticket_1', user_id: 'u2', status: 'PENDING', created_at: '2026-03-31T12:00:00.000Z' }
+            ],
+            shop_orders: [
+                { id: 'order_1', user_id: 'u2' }
+            ],
+            payment_orders: [
+                { id: 'pay_1', user_id: 'u2' }
+            ]
+        }
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/comments/list?view=gallery&site=cn&queue=escalated',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().comments.length, 1);
+        const row = res.json().comments[0];
+        assert.equal(row.workflow.status, 'escalated');
+        assert.equal(row.workflow.priority, 'high');
+        assert.equal(row.workflow.assignee_label, 'ops@example.com');
+        assert.deepEqual(row.workflow.tags, ['risk', 'ticketed']);
+        assert.equal(row.user_summary.active_ticket_count, 1);
+        assert.equal(row.user_summary.order_count, 1);
+        assert.equal(row.user_summary.payment_order_count, 1);
+    });
+});
+
+test('comments workflow handler creates linked tickets and updates workflow state', async () => {
+    await withCommentsHandler('../server/api-handlers/admin/comments/workflow.js', {
+        tables: {
+            profiles: [
+                { id: 'admin_1', username: 'admin', avatar_url: null, email: 'admin@example.com' }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'create_ticket',
+                site: 'cn',
+                entityType: 'prompt_comment',
+                entityId: 'g1',
+                comment: {
+                    id: 'g1',
+                    site: 'cn',
+                    type: 'gallery',
+                    entity_type: 'prompt_comment',
+                    entity_label: '画廊评论',
+                    user_id: 'user_1',
+                    author: 'bob',
+                    content: 'please help',
+                    prompt_id: 'p1',
+                    context_title: 'Prompt One',
+                    root_snippet: 'top thread',
+                    parent_snippet: ''
+                }
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.tables.shop_tickets.length, 1);
+        assert.equal(state.tables.admin_comment_workflows.length, 1);
+        assert.equal(state.tables.admin_comment_workflows[0].status, 'escalated');
+        assert.equal(state.tables.admin_comment_workflows[0].linked_ticket_count, 1);
+        assert.equal(state.tables.admin_comment_ticket_links.length, 1);
+        assert.equal(res.json().ticket_id, state.tables.shop_tickets[0].id);
+        assert.equal(state.auditCalls.length, 1);
+        assert.equal(state.auditCalls[0].actionType, 'comments.ticket.create');
     });
 });
