@@ -67,6 +67,19 @@ function readVercelIgnoreEntries() {
         .filter(Boolean);
 }
 
+const SHARED_PUBLIC_FUNCTION_WRAPPERS = [
+    'api/auth/login-security.js',
+    'api/payments/auth-check.js',
+    'api/payments/config.js',
+    'api/payments/create.js',
+    'api/payments/mock/complete.js',
+    'api/runtime/supabase-config.js',
+    'api/shop/available-discounts.js',
+    'api/shop/claim-discount.js',
+    'api/shop/purchase.js',
+    'api/shop/validate-discount.js'
+];
+
 function getGlobalCspHeaderValue() {
     const config = readVercelConfig();
     const globalHeaders = Array.isArray(config.headers) ? config.headers : [];
@@ -282,25 +295,37 @@ test('vercel admin rewrite supports nested admin settings routes', () => {
     assert.equal(adminRewrite.destination, '/api/admin?route=:path*');
 });
 
-test('vercel hobby deployment keeps auth and runtime endpoints within the serverless function limit', () => {
+test('vercel hobby deployment routes public endpoints through the shared handler with headroom', () => {
     const vercelConfig = readVercelConfig();
     const rewrites = Array.isArray(vercelConfig.rewrites) ? vercelConfig.rewrites : [];
     const ignoredEntries = new Set(readVercelIgnoreEntries());
     const authRewrite = rewrites.find((entry) => entry?.source === '/api/auth/:path*');
+    const paymentsRewrite = rewrites.find((entry) => entry?.source === '/api/payments/:path*');
     const runtimeRewrite = rewrites.find((entry) => entry?.source === '/api/runtime/:path*');
+    const shopRewrite = rewrites.find((entry) => entry?.source === '/api/shop/:path*');
     const deployedApiRouteFiles = collectApiRouteFiles().filter((relativePath) => !ignoredEntries.has(relativePath));
 
     assert.ok(authRewrite, 'vercel.json should rewrite auth endpoints through the shared public handler');
     assert.equal(authRewrite.destination, '/api/public?scope=auth&route=:path*');
+    assert.ok(paymentsRewrite, 'vercel.json should rewrite payment endpoints through the shared public handler');
+    assert.equal(paymentsRewrite.destination, '/api/public?scope=payments&route=:path*');
     assert.ok(runtimeRewrite, 'vercel.json should rewrite runtime endpoints through the shared public handler');
     assert.equal(runtimeRewrite.destination, '/api/public?scope=runtime&route=:path*');
-    assert.equal(ignoredEntries.has('api/auth/login-security.js'), true, '.vercelignore should exclude the standalone auth login-security function');
-    assert.equal(ignoredEntries.has('api/runtime/supabase-config.js'), true, '.vercelignore should exclude the standalone runtime supabase-config function');
+    assert.ok(shopRewrite, 'vercel.json should rewrite shop endpoints through the shared public handler');
+    assert.equal(shopRewrite.destination, '/api/public?scope=shop&route=:path*');
+    for (const relativePath of SHARED_PUBLIC_FUNCTION_WRAPPERS) {
+        assert.equal(
+            ignoredEntries.has(relativePath),
+            true,
+            `.vercelignore should exclude the standalone public wrapper ${relativePath}`
+        );
+    }
     assert.ok(
-        deployedApiRouteFiles.length <= 11,
+        deployedApiRouteFiles.length <= 5,
         [
             'Vercel Hobby allows at most 12 serverless functions, and middleware already consumes one slot.',
-            `Expected at most 11 deployed API entrypoints, found ${deployedApiRouteFiles.length}.`,
+            'Keep enough headroom so future public endpoint additions do not immediately break deploys.',
+            `Expected at most 5 deployed API entrypoints, found ${deployedApiRouteFiles.length}.`,
             ...deployedApiRouteFiles
         ].join('\n')
     );

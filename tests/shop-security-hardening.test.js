@@ -11,8 +11,7 @@ function readRepoFile(relativePath) {
 
 test('shop discount validation is no longer handled by public table reads in the user client', () => {
     const shopClientSource = readRepoFile(path.join('js', 'shop-client.js'));
-    const validateDiscountRouteSource = readRepoFile(path.join('api', 'shop', 'validate-discount.js'));
-    const purchaseRouteSource = readRepoFile(path.join('api', 'shop', 'purchase.js'));
+    const sharedShopHandlerSource = readRepoFile(path.join('server', 'api-handlers', 'public', 'shop.js'));
 
     assert.doesNotMatch(
         shopClientSource,
@@ -35,37 +34,27 @@ test('shop discount validation is no longer handled by public table reads in the
         'shop-client.js should submit purchases through the hardened API route'
     );
     assert.match(
-        validateDiscountRouteSource,
+        sharedShopHandlerSource,
         /requireAuthenticatedUser/,
-        'shop discount validation route should require an authenticated user'
+        'shared shop handlers should require an authenticated user'
     );
     assert.match(
-        validateDiscountRouteSource,
+        sharedShopHandlerSource,
         /takeRateLimitToken/,
-        'shop discount validation route should apply rate limiting'
+        'shared shop handlers should apply rate limiting'
     );
     assert.match(
-        validateDiscountRouteSource,
+        sharedShopHandlerSource,
         /rpc\('fn_validate_discount_code'/,
         'shop discount validation route should delegate to the server-side discount RPC'
     );
     assert.match(
-        purchaseRouteSource,
-        /requireAuthenticatedUser/,
-        'shop purchase route should require an authenticated user'
-    );
-    assert.match(
-        purchaseRouteSource,
-        /takeRateLimitToken/,
-        'shop purchase route should apply rate limiting'
-    );
-    assert.match(
-        purchaseRouteSource,
+        sharedShopHandlerSource,
         /duplicate_submission/,
         'shop purchase route should reject duplicate submissions through an idempotency guard'
     );
     assert.match(
-        purchaseRouteSource,
+        sharedShopHandlerSource,
         /rpc\('fn_purchase_shop_item'/,
         'shop purchase route should delegate to the server-side purchase RPC'
     );
