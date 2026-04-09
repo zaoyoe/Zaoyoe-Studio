@@ -2,14 +2,15 @@ const {
     requireAdmin,
     sendJson
 } = require('../../../../api/_lib/admin');
+const {
+    normalizeText,
+    loadOrderLinksByInventoryIds,
+    loadInventoryRecordsByIds
+} = require('./_order-linkage');
 
 function getSearchParams(req) {
     const url = new URL(req.url || '', 'http://localhost');
     return url.searchParams;
-}
-
-function normalizeText(value, maxLength = 200) {
-    return String(value || '').trim().slice(0, Math.max(0, maxLength));
 }
 
 async function selectSingleRow(queryBuilder) {
@@ -37,9 +38,7 @@ async function loadInventoryRecord(supabase, inventoryId) {
 async function loadOrderForInventory(supabase, inventoryRecord) {
     const status = normalizeText(inventoryRecord?.status, 40).toLowerCase();
     const inventoryId = normalizeText(inventoryRecord?.id, 160);
-    const buyerId = normalizeText(inventoryRecord?.buyer_id, 160);
-    const productId = normalizeText(inventoryRecord?.product_id, 160);
-    const shouldLookupOrder = ['sold', 'frozen', 'fault'].includes(status) || Boolean(buyerId);
+    const shouldLookupOrder = ['sold', 'frozen', 'fault'].includes(status) || Boolean(inventoryId);
 
     if (!shouldLookupOrder) {
         return null;
@@ -52,17 +51,21 @@ async function loadOrderForInventory(supabase, inventoryRecord) {
             .eq('inventory_id', inventoryId)
             .order('created_at', { ascending: false })
     );
+    let orderLinkSource = orderRecord ? 'order' : null;
 
-    if (!orderRecord && buyerId) {
-        orderRecord = await selectSingleRow(
-            supabase
-                .from('shop_orders')
-                .select('*')
-                .eq('user_id', buyerId)
-                .eq('product_id', productId)
-                .is('inventory_id', null)
-                .order('created_at', { ascending: false })
-        );
+    if (!orderRecord && inventoryId) {
+        const linkage = await loadOrderLinksByInventoryIds(supabase, [inventoryId]);
+        const linkedOrderId = linkage.get(inventoryId)?.order_id || null;
+        if (linkedOrderId) {
+            orderRecord = await selectSingleRow(
+                supabase
+                    .from('shop_orders')
+                    .select('*')
+                    .eq('id', linkedOrderId)
+                    .order('created_at', { ascending: false })
+            );
+            orderLinkSource = linkage.get(inventoryId)?.source || 'order_item';
+        }
     }
 
     if (!orderRecord?.user_id) {
@@ -77,11 +80,15 @@ async function loadOrderForInventory(supabase, inventoryRecord) {
     );
 
     if (!profileRecord) {
-        return orderRecord;
+        return {
+            ...orderRecord,
+            order_link_source: orderLinkSource
+        };
     }
 
     return {
         ...orderRecord,
+        order_link_source: orderLinkSource,
         profiles: profileRecord
     };
 }
@@ -110,29 +117,38 @@ async function loadHistoryItems(supabase, inventoryRecord, inventoryId, buyerId)
     }));
 }
 
-async function loadSameOrderItems(supabase, inventoryId, buyerId, anchorTime) {
-    if (!buyerId || !anchorTime) {
-        return [];
-    }
-
-    const anchorDate = new Date(anchorTime);
-    if (Number.isNaN(anchorDate.getTime())) {
+async function loadSameOrderItems(supabase, orderId, inventoryId) {
+    if (!orderId) {
         return [];
     }
 
     const { data, error } = await supabase
-        .from('shop_inventory')
-        .select('id, content, sold_at')
-        .eq('buyer_id', buyerId)
-        .gte('sold_at', new Date(anchorDate.getTime() - 60000).toISOString())
-        .lte('sold_at', new Date(anchorDate.getTime() + 60000).toISOString())
-        .neq('id', inventoryId);
+        .from('shop_order_items')
+        .select('inventory_id')
+        .eq('order_id', orderId);
 
     if (error) {
         throw error;
     }
 
-    return (Array.isArray(data) ? data : []).map((row) => ({
+    const relatedInventoryIds = (Array.isArray(data) ? data : [])
+        .map((row) => normalizeText(row?.inventory_id, 160))
+        .filter((id) => id && id !== inventoryId);
+
+    if (!relatedInventoryIds.length) {
+        return [];
+    }
+
+    const inventoryRecordsById = await loadInventoryRecordsByIds(
+        supabase,
+        relatedInventoryIds,
+        'id, content, sold_at'
+    );
+
+    return relatedInventoryIds
+        .map((relatedInventoryId) => inventoryRecordsById.get(relatedInventoryId))
+        .filter(Boolean)
+        .map((row) => ({
         shop_inventory: row
     }));
 }
@@ -168,10 +184,9 @@ module.exports = async function adminShopInventoryDetailHandler(req, res) {
 
         const order = await loadOrderForInventory(supabase, inventory);
         const buyerId = normalizeText(order?.user_id || inventory?.buyer_id, 160);
-        const anchorTime = normalizeText(order?.created_at || inventory?.sold_at, 80) || null;
         const [historyItems, sameOrderItems] = await Promise.all([
             loadHistoryItems(supabase, inventory, inventoryId, buyerId),
-            loadSameOrderItems(supabase, inventoryId, buyerId, anchorTime)
+            loadSameOrderItems(supabase, normalizeText(order?.id, 160), inventoryId)
         ]);
 
         return sendJson(res, 200, {

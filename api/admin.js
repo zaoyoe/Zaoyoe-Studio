@@ -19,8 +19,12 @@ const commentsListHandler = require('../server/api-handlers/admin/comments/list'
 const commentsBlocksHandler = require('../server/api-handlers/admin/comments/blocks');
 const commentsModerateHandler = require('../server/api-handlers/admin/comments/moderate');
 const commentsSummaryHandler = require('../server/api-handlers/admin/comments/summary');
+const discountsBatchHistoryHandler = require('../server/api-handlers/admin/discounts/batch-history');
+const discountsAssetsHandler = require('../server/api-handlers/admin/discounts/assets');
+const discountsDetailHandler = require('../server/api-handlers/admin/discounts/detail');
 const discountsListHandler = require('../server/api-handlers/admin/discounts/list');
 const discountsMutateHandler = require('../server/api-handlers/admin/discounts/mutate');
+const marketingAssetsCenterHandler = require('../server/api-handlers/admin/marketing/assets-center');
 const homepageConfigHandler = require('../server/api-handlers/admin/homepage/config');
 const pointsBatchesHandler = require('../server/api-handlers/admin/points/batches');
 const pointsCatalogHandler = require('../server/api-handlers/admin/points/catalog');
@@ -33,6 +37,7 @@ const shopCategoriesHandler = require('../server/api-handlers/admin/shop/categor
 const shopInventoryDetailHandler = require('../server/api-handlers/admin/shop/inventory-detail');
 const shopInventoryHandler = require('../server/api-handlers/admin/shop/inventory');
 const shopMutateHandler = require('../server/api-handlers/admin/shop/mutate');
+const shopOrderDetailHandler = require('../server/api-handlers/admin/shop/order-detail');
 const shopOrdersHandler = require('../server/api-handlers/admin/shop/orders');
 const shopProductsHandler = require('../server/api-handlers/admin/shop/products');
 const shopDeliveryActionsHandler = require('../server/api-handlers/admin/shop/delivery-actions');
@@ -79,8 +84,12 @@ const ROUTE_HANDLERS = {
     'comments/blocks': commentsBlocksHandler,
     'comments/moderate': commentsModerateHandler,
     'comments/summary': commentsSummaryHandler,
+    'discounts/batch-history': discountsBatchHistoryHandler,
+    'discounts/assets': discountsAssetsHandler,
+    'discounts/detail': discountsDetailHandler,
     'discounts/list': discountsListHandler,
     'discounts/mutate': discountsMutateHandler,
+    'marketing/assets-center': marketingAssetsCenterHandler,
     'homepage/config': homepageConfigHandler,
     'points/batches': pointsBatchesHandler,
     'points/catalog': pointsCatalogHandler,
@@ -112,6 +121,7 @@ const ROUTE_HANDLERS = {
     'shop/inventory-detail': shopInventoryDetailHandler,
     'shop/inventory': shopInventoryHandler,
     'shop/mutate': shopMutateHandler,
+    'shop/order-detail': shopOrderDetailHandler,
     'shop/orders': shopOrdersHandler,
     'shop/products': shopProductsHandler,
     'shop/delivery-actions': shopDeliveryActionsHandler,

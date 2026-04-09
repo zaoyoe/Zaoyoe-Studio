@@ -910,7 +910,14 @@ test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async (
         ],
         entitlements: [],
         discountCodes: [
-            { code: 'FLASH0', is_active: true }
+            {
+                code: 'FLASH0',
+                is_active: true,
+                lifecycle_status: 'active',
+                status_reason: 'manual_active',
+                recovery_strategy: 'manual_only',
+                observation_window_hours: 24
+            }
         ]
     };
     const supabase = createSupabaseStub(state);
@@ -933,6 +940,8 @@ test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async (
     assert.equal(first.auto_response_applied, 1);
     assert.equal(first.auto_response_failed, 0);
     assert.equal(state.discountCodes[0].is_active, false);
+    assert.equal(state.discountCodes[0].lifecycle_status, 'paused_risk');
+    assert.equal(state.discountCodes[0].status_reason, 'risk_auto_pause');
     assert.equal(state.jobs.length, 5);
     assert.equal(state.jobs.every((job) => job.alert_type === 'shop_order_risk_anomaly'), true);
     assert.equal(state.jobs.every((job) => typeof job.payload?.risk_score === 'number'), true);
@@ -1206,7 +1215,17 @@ test('runShopOrderRiskSweep enqueues recovery notices without duplicating admin 
             { user_id: 'admin-1', role_name: 'admin', expires_at: null },
             { user_id: 'admin-2', role_name: 'super_admin', expires_at: null }
         ],
-        systemNotifications: []
+        systemNotifications: [],
+        discountCodes: [
+            {
+                code: 'FLASH0',
+                is_active: false,
+                lifecycle_status: 'paused_risk',
+                status_reason: 'risk_auto_pause',
+                recovery_strategy: 'manual_only',
+                observation_window_hours: 24
+            }
+        ]
     };
     const supabase = createSupabaseStub(state);
     const runtime = createOpsRuntime();
@@ -1219,6 +1238,8 @@ test('runShopOrderRiskSweep enqueues recovery notices without duplicating admin 
     assert.equal(first.anomaly_count, 0);
     assert.equal(first.recovered_count, 1);
     assert.equal(first.recovered_queued, 1);
+    assert.equal(first.auto_recovery_attempted, 1);
+    assert.equal(first.auto_recovery_manual_only, 1);
     assert.equal(first.admin_notifications_created, 0);
     assert.equal(state.jobs.length, 2);
     assert.equal(state.jobs[1].alert_type, 'shop_order_risk_recovered');
@@ -1227,6 +1248,8 @@ test('runShopOrderRiskSweep enqueues recovery notices without duplicating admin 
     assert.equal(state.jobs[1].payload.previous_primary_action, 'disable-coupon');
     assert.equal(state.jobs[1].payload.previous_auto_response_status, 'applied');
     assert.match(state.jobs[1].payload.previous_auto_response_summary, /FLASH0/);
+    assert.equal(state.jobs[1].payload.recovery_auto_status, 'manual_only');
+    assert.match(state.jobs[1].payload.recovery_auto_summary, /仅人工恢复/);
     assert.equal(state.systemNotifications.length, 0);
 
     const second = await runShopOrderRiskSweep(supabase, {
@@ -1239,4 +1262,62 @@ test('runShopOrderRiskSweep enqueues recovery notices without duplicating admin 
     assert.equal(second.admin_notifications_created, 0);
     assert.equal(state.jobs.length, 2);
     assert.equal(state.systemNotifications.length, 0);
+});
+
+test('runShopOrderRiskSweep auto-restores coupons when recovery strategy allows it', async () => {
+    const state = {
+        jobs: [
+            {
+                id: 'risk-alert-auto-1',
+                alert_type: 'shop_order_risk_anomaly',
+                severity: 'critical',
+                title: '优惠码高频使用异常（FLASHAUTO）',
+                created_at: '2026-03-27T09:50:00.000Z',
+                payload: {
+                    target_id: 'shop_order_risk:coupon:FLASHAUTO',
+                    signal_type: 'discount_code_spike',
+                    discount_code: 'FLASHAUTO',
+                    risk_score: 95,
+                    risk_level: 'critical',
+                    primary_action: 'disable-coupon',
+                    auto_response_action: 'disable-coupon',
+                    auto_response_status: 'applied',
+                    auto_response_summary: '系统已自动停用优惠码 FLASHAUTO。',
+                    response_summary: '建议停用优惠码 FLASHAUTO。'
+                }
+            }
+        ],
+        orders: [],
+        profiles: [],
+        entitlements: [],
+        discountCodes: [
+            {
+                code: 'FLASHAUTO',
+                is_active: false,
+                lifecycle_status: 'paused_risk',
+                status_reason: 'risk_auto_pause',
+                recovery_strategy: 'observation_then_restore',
+                observation_window_hours: 12,
+                observation_ends_at: null
+            }
+        ]
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createOpsRuntime();
+
+    const result = await runShopOrderRiskSweep(supabase, {
+        runtime,
+        now: '2026-03-27T10:20:00.000Z'
+    });
+
+    assert.equal(result.recovered_count, 1);
+    assert.equal(result.auto_recovery_attempted, 1);
+    assert.equal(result.auto_recovery_applied, 1);
+    assert.equal(result.auto_recovery_failed, 0);
+    assert.equal(state.discountCodes[0].is_active, true);
+    assert.equal(state.discountCodes[0].status_reason, 'risk_observation');
+    assert.ok(Date.parse(state.discountCodes[0].observation_ends_at) > Date.parse('2026-03-27T10:20:00.000Z'));
+    assert.equal(state.jobs.length, 2);
+    assert.equal(state.jobs[1].payload.recovery_auto_status, 'observation');
+    assert.match(state.jobs[1].payload.recovery_auto_summary, /观察期/);
 });

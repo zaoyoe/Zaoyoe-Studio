@@ -99,7 +99,9 @@ const ANALYTICS_PANEL_NOTE_DEFINITIONS = {
     productHealthMeta: { basis: '库存 / 售后 / 履约风险' },
     productDetailMeta: { basis: '点击商品打开单品详情' },
     topContentMeta: { basis: '浏览/解锁/评论混合口径' },
+    contentOperatingCockpitMeta: { basis: '内容级经营判断 / 复查 / 建议动作' },
     contentCommerceDetailMeta: { basis: '点击带货内容展开详情' },
+    userValueCockpitStandaloneMeta: { basis: '首单 / 复购 / 跨商品 / 风险复查' },
     activityHeatmapMeta: { basis: '真实业务事件热度' },
     conversionFunnelMeta: { basis: '真实业务事件漏斗' },
     retentionCohortMeta: { basis: '真实业务回访留存' },
@@ -2309,6 +2311,84 @@ function buildVerifyEventFunnelViewData(summaryWindow = {}) {
     };
 }
 
+function hasVerifyServiceSummarySignal(summary = {}) {
+    const metrics = summary?.metrics && typeof summary.metrics === 'object'
+        ? summary.metrics
+        : {};
+    return normalizeAnalyticsCountValue(metrics.requestCount) > 0
+        || normalizeAnalyticsCountValue(metrics.successCount) > 0
+        || normalizeAnalyticsCountValue(metrics.activeCount) > 0
+        || normalizeAnalyticsCountValue(metrics.failedCount) > 0
+        || (Array.isArray(summary?.recentItems) && summary.recentItems.length > 0)
+        || (Array.isArray(summary?.focusItems) && summary.focusItems.length > 0);
+}
+
+function buildVerifyEventFunnelFallbackViewData(summary = {}) {
+    const metrics = summary?.metrics && typeof summary.metrics === 'object'
+        ? summary.metrics
+        : {};
+    const requestCount = normalizeAnalyticsCountValue(metrics.requestCount);
+    const successCount = normalizeAnalyticsCountValue(metrics.successCount);
+    const activeCount = normalizeAnalyticsCountValue(metrics.activeCount);
+    const failedCount = normalizeAnalyticsCountValue(metrics.failedCount);
+    const issueCount = failedCount + activeCount;
+
+    if (![requestCount, successCount, issueCount].some((value) => value > 0)) {
+        return {
+            items: [],
+            exportRows: [],
+            compatibilityMode: false
+        };
+    }
+
+    const successRate = normalizeAnalyticsNumber(metrics.successRate) || getAnalyticsPercentRate(successCount, requestCount);
+    const issueRate = getAnalyticsPercentRate(issueCount, requestCount);
+
+    return {
+        compatibilityMode: true,
+        items: [
+            {
+                title: '提交任务',
+                value: formatNumber(requestCount),
+                meta: `成功 ${formatNumber(successCount)} / 风险 ${formatNumber(issueCount)}`,
+                badgeLabel: '兼容口径',
+                badgeTone: 'neutral',
+                summary: '当前缺少 verify_* 真实事件时，先回退到验证任务摘要口径帮助排查。',
+                actionLabel: '打开 Verify Monitor',
+                destination: 'verify-monitor',
+                icon: 'fas fa-wave-square'
+            },
+            {
+                title: '成功完成',
+                value: formatNumber(successCount),
+                meta: `完成率 ${formatPercent(successRate)}`,
+                badgeLabel: '兼容口径',
+                badgeTone: getAnalyticsRateBadgeTone(successRate, { successAbove: 80, warningAbove: 55 }),
+                summary: '基于验证任务摘要估算当前窗口的完成表现，适合继续回看验证配置和队列。',
+                actionLabel: successRate < 80 ? '检查验证配置' : '打开 Verify Monitor',
+                destination: successRate < 80 ? 'settings-google-one' : 'verify-monitor',
+                icon: successRate < 80 ? 'fas fa-sliders' : 'fas fa-wave-square'
+            },
+            {
+                title: '失败 / 阻塞',
+                value: formatNumber(issueCount),
+                meta: `失败 ${formatNumber(failedCount)} / 处理中 ${formatNumber(activeCount)}`,
+                badgeLabel: `占提交 ${formatPercent(issueRate)}`,
+                badgeTone: issueCount > 0 ? getAnalyticsRateBadgeTone(100 - issueRate, { successAbove: 92, warningAbove: 80 }) : 'neutral',
+                summary: '兼容口径会把失败与处理中任务一起提出来，避免当前窗口完全看不到验证承接风险。',
+                actionLabel: '打开 Verify Monitor',
+                destination: 'verify-monitor',
+                icon: 'fas fa-wave-square'
+            }
+        ],
+        exportRows: [
+            { '阶段': '提交任务', '用户数': requestCount, '事件数': requestCount, '比率(%)': 100, '说明': '兼容口径：验证任务摘要' },
+            { '阶段': '成功完成', '用户数': successCount, '事件数': successCount, '比率(%)': successRate, '说明': '兼容口径：验证任务摘要中的成功任务' },
+            { '阶段': '失败 / 阻塞', '用户数': issueCount, '事件数': issueCount, '比率(%)': issueRate, '说明': '兼容口径：失败任务 + 处理中任务' }
+        ]
+    };
+}
+
 function buildGrowthEventFunnelViewData(summaryWindow = {}) {
     const eventOverview = getAnalyticsSummaryWindowEventOverview(summaryWindow);
     const eventFunnels = getAnalyticsSummaryWindowEventFunnels(summaryWindow);
@@ -3198,7 +3278,12 @@ async function getVerifyServiceSummaryData(options = {}) {
             ]);
             const payloadSegment = getAnalyticsSummaryPayloadBundleSegment(payloadBundle, 'verifyServiceSummary');
             if (payloadSegment?.ok && payloadSegment.summary) {
-                return enrichVerifyServiceSummaryWithEvents(payloadSegment.summary, summaryWindow || {});
+                const enrichedSummary = (() => {
+                    return enrichVerifyServiceSummaryWithEvents(payloadSegment.summary, summaryWindow || {});
+                })();
+                if (hasVerifyServiceSummarySignal(enrichedSummary)) {
+                    return enrichedSummary;
+                }
             }
 
             const rowsBundle = await getAnalyticsSummaryRowsBundle({
@@ -3214,8 +3299,22 @@ async function getVerifyServiceSummaryData(options = {}) {
                     { orderBy: 'created_at', rangeColumn: 'created_at' }
                 );
             const baseSummary = buildVerifyServiceSummaryFromRows(rows);
+            const enrichedSummary = enrichVerifyServiceSummaryWithEvents(baseSummary, summaryWindow || {});
+            if (hasVerifyServiceSummarySignal(enrichedSummary)) {
+                return enrichedSummary;
+            }
 
-            return enrichVerifyServiceSummaryWithEvents(baseSummary, summaryWindow || {});
+            const snapshot = await getAnalyticsVerifyMonitorSnapshotData({
+                contextKey,
+                forceRefresh: options.forceRefresh
+            }).catch(() => null);
+            const fallbackSummary = buildVerifyServiceSummaryFallback({
+                snapshot,
+                summaryWindow: summaryWindow || {}
+            });
+            return hasVerifyServiceSummarySignal(fallbackSummary)
+                ? fallbackSummary
+                : enrichedSummary;
         },
         { contextKey, forceRefresh: options.forceRefresh }
     );

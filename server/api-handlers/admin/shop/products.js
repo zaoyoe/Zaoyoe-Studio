@@ -26,6 +26,15 @@ function parseIdList(value) {
     )];
 }
 
+function escapePostgrestLikeValue(value) {
+    return String(value || '')
+        .trim()
+        .replace(/\\/g, '\\\\')
+        .replace(/,/g, '\\,')
+        .replace(/\(/g, '\\(')
+        .replace(/\)/g, '\\)');
+}
+
 function getSelectClause(fieldsMode) {
     if (fieldsMode === 'names') {
         return 'id, name';
@@ -66,6 +75,12 @@ module.exports = async function adminShopProductsHandler(req, res) {
         const ids = parseIdList(searchParams.get('ids'));
         const status = normalizeEnum(searchParams.get('status'), ['all', 'active', 'deleted'], 'all');
         const fields = normalizeEnum(searchParams.get('fields'), ['full', 'names', 'import'], 'full');
+        const searchQuery = normalizeText(searchParams.get('query'), 160);
+        const deliveryType = normalizeEnum(
+            searchParams.get('deliveryType') || searchParams.get('delivery_type'),
+            ['all', 'key', 'api'],
+            'all'
+        );
         const order = normalizeEnum(
             searchParams.get('order'),
             ['display_order_desc', 'name_asc', 'sort_order_asc'],
@@ -106,6 +121,22 @@ module.exports = async function adminShopProductsHandler(req, res) {
 
         if (category && category !== 'all') {
             query = query.eq('category', category);
+        }
+
+        if (deliveryType === 'key') {
+            query = query.eq('delivery_type', 'KEY');
+        } else if (deliveryType === 'api') {
+            query = query.eq('delivery_type', 'API');
+        }
+
+        if (searchQuery) {
+            const escapedQuery = escapePostgrestLikeValue(searchQuery);
+            query = query.or([
+                `id.ilike.%${escapedQuery}%`,
+                `name.ilike.%${escapedQuery}%`,
+                `category.ilike.%${escapedQuery}%`,
+                `delivery_type.ilike.%${escapedQuery}%`
+            ].join(','));
         }
 
         query = applyOrder(query, order);

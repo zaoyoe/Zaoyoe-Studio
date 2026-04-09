@@ -151,6 +151,36 @@ test('discounts list handler requires discounts.manage permission', async () => 
     });
 });
 
+test('discounts assets handler requires discounts.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/discounts/assets.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'POST', body: { action: 'assign', site: 'cn', discount_id: 'discount_1' }, headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'discounts.manage' });
+    });
+});
+
+test('marketing assets center requires analytics.view permission for reads', async () => {
+    await withAdminHandler('../server/api-handlers/admin/marketing/assets-center.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'analytics.view' });
+    });
+});
+
+test('marketing assets center requires discounts.manage permission for workflow runs', async () => {
+    await withAdminHandler('../server/api-handlers/admin/marketing/assets-center.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'POST', body: { action: 'run_workflow', workflow_key: 'discount_lifecycle_sync', site: 'cn' }, headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'discounts.manage' });
+    });
+});
+
 test('homepage config handler requires homepage.manage permission', async () => {
     await withAdminHandler('../server/api-handlers/admin/homepage/config.js', async ({ handler, state }) => {
         const res = createMockResponse();

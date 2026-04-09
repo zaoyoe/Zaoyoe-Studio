@@ -3896,6 +3896,12 @@ window.addEventListener('analytics-resolution-feedback-updated', () => {
     if (isAnalyticsOpsTabActive()) {
         void loadOperationsCockpit();
     }
+
+    if (typeof isAnalyticsModuleVisible === 'function' && isAnalyticsModuleVisible()) {
+        updateAnalyticsContentOperatingCockpitPanel();
+        updateAnalyticsContentCommerceDetailPanel();
+        void loadUserTrendChart(getAnalyticsRangeDays());
+    }
 });
 
 async function loadOverviewStats() {
@@ -3999,6 +4005,11 @@ function getAnalyticsSectionNavigatorTonePriority(tone = '') {
             return 5;
     }
 }
+
+const ANALYTICS_CONTENT_OPERATING_SECTION_ID = 'contentOperatingCockpitSection';
+const ANALYTICS_USER_VALUE_SECTION_ID = 'userValueCockpitSection';
+const ANALYTICS_USER_VALUE_OVERVIEW_PANEL_ID = 'userValueCockpit';
+const ANALYTICS_USER_VALUE_STANDALONE_PANEL_ID = 'userValueCockpitStandalone';
 
 function getAnalyticsSectionNavigatorActiveKey() {
     const activeTab = document.querySelector('#analyticsTabsNav .admin-tab.active')?.dataset?.tab || '';
@@ -4344,6 +4355,13 @@ function getAnalyticsOperatingFocusSectionItems(activeTabId = 'overview') {
         case 'content':
             return [
                 {
+                    label: '内容经营页',
+                    summary: '先看内容级经营判断、复查结论和建议动作。',
+                    icon: 'fas fa-compass-drafting',
+                    destination: 'analytics-content',
+                    context: { sectionId: ANALYTICS_CONTENT_OPERATING_SECTION_ID, focusTargetId: ANALYTICS_CONTENT_OPERATING_SECTION_ID }
+                },
+                {
                     label: '热门内容',
                     summary: '先看当前窗口最强的内容热点和带货内容。',
                     icon: 'fas fa-fire',
@@ -4474,6 +4492,13 @@ function getAnalyticsOperatingFocusSectionItems(activeTabId = 'overview') {
             ];
         case 'growth':
             return [
+                {
+                    label: '用户价值',
+                    summary: '先看首单、复购、跨商品和风险复查是否形成独立价值层。',
+                    icon: 'fas fa-user-group',
+                    destination: 'analytics-growth',
+                    context: { sectionId: ANALYTICS_USER_VALUE_SECTION_ID, focusTargetId: ANALYTICS_USER_VALUE_SECTION_ID }
+                },
                 {
                     label: '社区趋势',
                     summary: '先看社区活跃、互动和近期波动。',
@@ -5871,7 +5896,7 @@ function buildAnalyticsSectionNavigatorCards(source = {}) {
 function buildAnalyticsSectionNavigatorMeta(cards = []) {
     return (Array.isArray(cards) ? cards : [])
         .map((card) => `${card.navLabel || card.eyebrow || '经营'} ${card.statusLabel || '观察中'}`)
-        .join(' · ') || '总览 / 用户影响 / 内容带货 / 商品经营 / 运营保障';
+        .join(' · ') || '总览 / 用户影响 / 内容经营 / 商品经营 / 运营保障';
 }
 
 function renderAnalyticsSectionNavigator(cards = []) {
@@ -5999,16 +6024,16 @@ function buildAnalyticsOverviewNavigatorUserCard({ summaryWindow = {}, productSu
         summary,
         metrics,
         actions: [
-            ...leadingActions,
             {
-                label: '看用户增长',
-                destination: 'analytics-overview',
-                icon: 'fas fa-chart-area',
+                label: '看用户价值',
+                destination: 'analytics-growth',
+                icon: 'fas fa-user-group',
                 context: {
-                    sectionId: 'userTrendPanel',
-                    focusTargetId: 'userTrendPanel'
+                    sectionId: ANALYTICS_USER_VALUE_SECTION_ID,
+                    focusTargetId: ANALYTICS_USER_VALUE_SECTION_ID
                 }
             },
+            ...leadingActions,
             commerceImpact?.hasSignal ? {
                 label: buyerUsers > 0 ? '看成交用户' : '看商品承接',
                 destination: buyerUsers > 0 ? 'analytics-product' : 'analytics-product',
@@ -6076,16 +6101,27 @@ function buildAnalyticsOverviewNavigatorContentCard({ topContentRows = [] } = {}
         ].filter(Boolean),
         actions: [
             {
-                label: promptLabel ? '看带货详情' : '看内容分栏',
+                label: '看内容经营页',
                 destination: 'analytics-content',
-                icon: promptLabel ? 'fas fa-chart-column' : 'fas fa-fire',
+                icon: 'fas fa-compass-drafting',
                 context: {
                     promptId: topPrompt?.prompt_id || '',
                     promptTitle: promptLabel,
-                    sectionId: promptLabel ? 'contentCommerceDetailSection' : 'topContentList',
-                    focusTargetId: promptLabel ? 'contentCommerceDetailSection' : 'topContentList'
+                    sectionId: ANALYTICS_CONTENT_OPERATING_SECTION_ID,
+                    focusTargetId: ANALYTICS_CONTENT_OPERATING_SECTION_ID
                 }
             },
+            promptLabel ? {
+                label: '看带货详情',
+                destination: 'analytics-content',
+                icon: 'fas fa-chart-column',
+                context: {
+                    promptId: topPrompt?.prompt_id || '',
+                    promptTitle: promptLabel,
+                    sectionId: 'contentCommerceDetailSection',
+                    focusTargetId: 'contentCommerceDetailSection'
+                }
+            } : null,
             {
                 label: '看带货商品',
                 destination: 'analytics-product',
@@ -6340,7 +6376,7 @@ async function loadOverviewOperatingNavigator() {
         shellContainer.innerHTML = renderAnalyticsProductLoadingState('经营分析中心加载中...');
     }
     if (shellMeta) {
-        shellMeta.textContent = '总览 / 用户影响 / 内容带货 / 商品经营 / 运营保障';
+        shellMeta.textContent = '总览 / 用户影响 / 内容经营 / 商品经营 / 运营保障';
     }
     if (meta) {
         meta.textContent = '用户 / 内容 / 商品 / 运营保障';
@@ -6830,8 +6866,8 @@ function buildAnalyticsUserValuePriorityDestinationContext(summary = {}, options
         verificationMethod,
         destination: 'analytics-growth',
         destinationContext: {
-            sectionId: 'userTrendPanel',
-            focusTargetId: 'userValueCockpit',
+            sectionId: ANALYTICS_USER_VALUE_SECTION_ID,
+            focusTargetId: ANALYTICS_USER_VALUE_SECTION_ID,
             ...destinationContext
         },
         buyerUsers: Number(summary?.buyerUsers || 0),
@@ -6898,8 +6934,8 @@ function buildAnalyticsUserValuePriorityReviewItems(summary = {}, entries = []) 
                     label: '看用户价值',
                     destination: 'analytics-growth',
                     context: {
-                        sectionId: 'userTrendPanel',
-                        focusTargetId: 'userValueCockpit'
+                        sectionId: ANALYTICS_USER_VALUE_SECTION_ID,
+                        focusTargetId: ANALYTICS_USER_VALUE_SECTION_ID
                     }
                 }
             ]
@@ -6940,8 +6976,8 @@ function buildAnalyticsUserValuePriorityReviewItems(summary = {}, entries = []) 
                     label: '看用户价值',
                     destination: 'analytics-growth',
                     context: {
-                        sectionId: 'userTrendPanel',
-                        focusTargetId: 'userValueCockpit'
+                        sectionId: ANALYTICS_USER_VALUE_SECTION_ID,
+                        focusTargetId: ANALYTICS_USER_VALUE_SECTION_ID
                     }
                 }
             ]
@@ -6986,8 +7022,8 @@ function buildAnalyticsUserValuePriorityReviewItems(summary = {}, entries = []) 
                     label: '看用户价值',
                     destination: 'analytics-growth',
                     context: {
-                        sectionId: 'userTrendPanel',
-                        focusTargetId: 'userValueCockpit'
+                        sectionId: ANALYTICS_USER_VALUE_SECTION_ID,
+                        focusTargetId: ANALYTICS_USER_VALUE_SECTION_ID
                     }
                 }
             ]
@@ -7028,8 +7064,8 @@ function buildAnalyticsUserValuePriorityReviewItems(summary = {}, entries = []) 
                     label: '看用户价值',
                     destination: 'analytics-growth',
                     context: {
-                        sectionId: 'userTrendPanel',
-                        focusTargetId: 'userValueCockpit'
+                        sectionId: ANALYTICS_USER_VALUE_SECTION_ID,
+                        focusTargetId: ANALYTICS_USER_VALUE_SECTION_ID
                     }
                 }
             ]
@@ -7412,7 +7448,9 @@ async function loadUserTrendChart(days = 30) {
         const ctx = document.getElementById('userTrendChart');
         if (!ctx) return;
         const commerceImpactContainer = document.getElementById('userGrowthCommerceImpact');
-        const userValueContainer = document.getElementById('userValueCockpit');
+        const userValueContainer = document.getElementById(ANALYTICS_USER_VALUE_OVERVIEW_PANEL_ID);
+        const userValueStandaloneContainer = document.getElementById(ANALYTICS_USER_VALUE_STANDALONE_PANEL_ID);
+        const userValueStandaloneMeta = document.getElementById('userValueCockpitStandaloneMeta');
 
         const theme = getChartTheme();
         const activeUserLabels = getAnalyticsActiveUserLabels();
@@ -7489,51 +7527,58 @@ async function loadUserTrendChart(days = 30) {
             }
         });
 
-        if (commerceImpactContainer) {
-            let productSummary = {};
-            if (productSummaryBundle) {
-                try {
-                    productSummary = getAnalyticsProductBundlePayloadOrThrow(
-                        productSummaryBundle,
-                        'summary',
-                        'Product summary unavailable'
-                    ) || {};
-                } catch (error) {
-                    console.warn('[Analytics] Failed to read product summary for user commerce impact:', error);
-                }
+        let productSummary = {};
+        if (productSummaryBundle) {
+            try {
+                productSummary = getAnalyticsProductBundlePayloadOrThrow(
+                    productSummaryBundle,
+                    'summary',
+                    'Product summary unavailable'
+                ) || {};
+            } catch (error) {
+                console.warn('[Analytics] Failed to read product summary for user value cockpit:', error);
             }
+        }
 
+        if (commerceImpactContainer) {
             const commerceImpactSummary = buildAnalyticsUserCommerceImpactSummary(productSummary, data);
             commerceImpactContainer.innerHTML = renderAnalyticsUserCommerceImpactSummary(commerceImpactSummary);
-            if (userValueContainer) {
-                const userValueSummary = buildAnalyticsUserValueCockpitSummary(productSummary, data);
-                userValueContainer.innerHTML = renderAnalyticsUserValueCockpitSummary(userValueSummary);
-            }
-        } else if (userValueContainer) {
-            let productSummary = {};
-            if (productSummaryBundle) {
-                try {
-                    productSummary = getAnalyticsProductBundlePayloadOrThrow(
-                        productSummaryBundle,
-                        'summary',
-                        'Product summary unavailable'
-                    ) || {};
-                } catch (error) {
-                    console.warn('[Analytics] Failed to read product summary for user value cockpit:', error);
-                }
-            }
-            const userValueSummary = buildAnalyticsUserValueCockpitSummary(productSummary, data);
+        }
+
+        const userValueSummary = buildAnalyticsUserValueCockpitSummary(productSummary, data);
+        if (userValueContainer) {
             userValueContainer.innerHTML = renderAnalyticsUserValueCockpitSummary(userValueSummary);
+        }
+        if (userValueStandaloneContainer) {
+            userValueStandaloneContainer.innerHTML = renderAnalyticsUserValueCockpitSummary(userValueSummary);
+        }
+        if (userValueStandaloneMeta) {
+            userValueStandaloneMeta.textContent = userValueSummary?.hasSignal
+                ? [
+                    userValueSummary.stateLabel || '',
+                    `成交 ${formatNumber(userValueSummary.buyerUsers || 0)}`,
+                    `复购 ${formatNumber(userValueSummary.repeatBuyers || 0)}`,
+                    `跨商品 ${formatNumber(userValueSummary.crossProductBuyers || 0)}`
+                ].filter(Boolean).join(' · ')
+                : '当前窗口暂无用户价值层信号';
         }
     } catch (err) {
         console.error('[Analytics] Failed to load user trend:', err);
         const commerceImpactContainer = document.getElementById('userGrowthCommerceImpact');
-        const userValueContainer = document.getElementById('userValueCockpit');
+        const userValueContainer = document.getElementById(ANALYTICS_USER_VALUE_OVERVIEW_PANEL_ID);
+        const userValueStandaloneContainer = document.getElementById(ANALYTICS_USER_VALUE_STANDALONE_PANEL_ID);
+        const userValueStandaloneMeta = document.getElementById('userValueCockpitStandaloneMeta');
         if (commerceImpactContainer) {
             commerceImpactContainer.innerHTML = renderHintState('fas fa-users-viewfinder', '商品影响用户层加载失败', 'error');
         }
         if (userValueContainer) {
             userValueContainer.innerHTML = renderHintState('fas fa-user-group', '用户价值驾驶舱加载失败', 'error');
+        }
+        if (userValueStandaloneContainer) {
+            userValueStandaloneContainer.innerHTML = renderHintState('fas fa-user-group', '用户价值驾驶舱加载失败', 'error');
+        }
+        if (userValueStandaloneMeta) {
+            userValueStandaloneMeta.textContent = '用户价值驾驶舱加载失败';
         }
     }
 }
@@ -8224,6 +8269,8 @@ function getAnalyticsContentCommerceDetailState() {
     if (!globalThis.__analyticsContentCommerceDetailState || typeof globalThis.__analyticsContentCommerceDetailState !== 'object') {
         globalThis.__analyticsContentCommerceDetailState = {
             rows: [],
+            promptRows: [],
+            summary: {},
             rowMap: new Map(),
             activePromptId: '',
             activePromptTitle: ''
@@ -8233,7 +8280,7 @@ function getAnalyticsContentCommerceDetailState() {
     return globalThis.__analyticsContentCommerceDetailState;
 }
 
-function setAnalyticsContentCommerceDetailRows(rows = []) {
+function setAnalyticsContentCommerceDetailRows(rows = [], options = {}) {
     const state = getAnalyticsContentCommerceDetailState();
     const normalizedRows = (Array.isArray(rows) ? rows : [])
         .filter((row) => row && String(row?.prompt_id || '').trim())
@@ -8241,6 +8288,10 @@ function setAnalyticsContentCommerceDetailRows(rows = []) {
     const rowMap = new Map(normalizedRows.map((row) => [String(row.prompt_id || '').trim(), row]));
 
     state.rows = normalizedRows;
+    state.promptRows = normalizedRows.slice();
+    state.summary = options?.summary && typeof options.summary === 'object'
+        ? { ...options.summary }
+        : {};
     state.rowMap = rowMap;
 
     if (!state.activePromptId || !rowMap.has(state.activePromptId)) {
@@ -8890,8 +8941,8 @@ function renderAnalyticsContentUserValueLink(detail = {}) {
                     type="button"
                     class="btn-sm btn-secondary"
                     ${buildAnalyticsProductDestinationAttrs('analytics-growth', {
-                        sectionId: 'userValueCockpit',
-                        focusTargetId: 'userValueCockpit',
+                        sectionId: ANALYTICS_USER_VALUE_SECTION_ID,
+                        focusTargetId: ANALYTICS_USER_VALUE_SECTION_ID,
                         promptId: String(detail?.prompt_id || '').trim(),
                         promptTitle: promptLabel,
                         referenceLabel: 'Prompt',
@@ -8922,6 +8973,263 @@ function renderAnalyticsContentUserValueLink(detail = {}) {
             </div>
         </section>
     `;
+}
+
+function buildAnalyticsContentOperatingPriorityRows(rows = []) {
+    return (Array.isArray(rows) ? rows : [])
+        .filter((row) => row && String(row?.prompt_id || '').trim())
+        .map((row) => ({
+            ...row,
+            __priorityScore: (
+                normalizeAnalyticsNumber(row?.gmv_points) * 1000
+                + normalizeAnalyticsCountValue(row?.purchase_success_count) * 100
+                + normalizeAnalyticsCountValue(row?.purchase_click_count) * 10
+                + normalizeAnalyticsCountValue(row?.detail_view_count)
+                + normalizeAnalyticsCountValue(row?.score) / 100
+            )
+        }))
+        .sort((left, right) => (
+            normalizeAnalyticsNumber(right?.__priorityScore) - normalizeAnalyticsNumber(left?.__priorityScore)
+            || normalizeAnalyticsNumber(right?.gmv_points) - normalizeAnalyticsNumber(left?.gmv_points)
+            || normalizeAnalyticsCountValue(right?.purchase_success_count) - normalizeAnalyticsCountValue(left?.purchase_success_count)
+            || normalizeAnalyticsCountValue(right?.purchase_click_count) - normalizeAnalyticsCountValue(left?.purchase_click_count)
+        ))
+        .slice(0, 3);
+}
+
+function renderAnalyticsContentOperatingPriorityList(rows = [], activePromptId = '') {
+    const items = buildAnalyticsContentOperatingPriorityRows(rows);
+    if (!items.length) {
+        return renderHintState('fas fa-compass-drafting', '当前窗口暂无可以独立经营判断的内容样本');
+    }
+
+    return `
+        <div class="analytics-content-operating-cockpit__priority-list">
+            ${items.map((item, index) => {
+                const promptId = String(item?.prompt_id || '').trim();
+                const promptLabel = buildAnalyticsTopContentCommerceLabel(item);
+                const guidance = buildAnalyticsContentCommerceGuidance(item);
+                const primaryProduct = Array.isArray(item?.products) ? (item.products[0] || null) : null;
+                const isActive = promptId && promptId === String(activePromptId || '').trim();
+                return `
+                    <article class="analytics-content-operating-cockpit__priority-item${isActive ? ' is-active' : ''}">
+                        <div class="analytics-content-operating-cockpit__priority-top">
+                            <div class="analytics-content-operating-cockpit__priority-rank">TOP ${index + 1}</div>
+                            <div class="analytics-content-operating-cockpit__priority-metrics">
+                                <span class="analytics-status-chip analytics-status-chip--${escapeHtml(guidance.statusTone || 'accent')}">${escapeHtml(guidance.statusLabel || '继续观察')}</span>
+                                <span class="analytics-product-matrix-chip analytics-product-matrix-chip--neutral">支付 ${escapeHtml(formatNumber(item?.purchase_success_count || 0))}</span>
+                                <span class="analytics-product-matrix-chip analytics-product-matrix-chip--neutral">GMV ${escapeHtml(formatNumber(item?.gmv_points || 0))}</span>
+                            </div>
+                        </div>
+                        <div class="analytics-content-operating-cockpit__priority-summary">
+                            <strong>${escapeHtml(promptLabel)}</strong>
+                            <span>${escapeHtml(String(item?.category || '未分类').trim() || '未分类')} · 热度 ${escapeHtml(formatNumber(item?.score || 0))} · 带货商品 ${escapeHtml(formatNumber(item?.product_count || 0))}</span>
+                        </div>
+                        <div class="analytics-content-operating-cockpit__priority-note">${escapeHtml(guidance.reason || '')}</div>
+                        <div class="analytics-content-operating-cockpit__priority-actions">
+                            <button
+                                type="button"
+                                class="btn-sm btn-secondary"
+                                data-admin-action="analytics-open-content-commerce-detail"
+                                data-prompt-id="${escapeHtml(promptId)}"
+                                data-prompt-title="${escapeHtml(promptLabel)}"
+                            >
+                                <i class="fas fa-chart-column"></i> 看带货详情
+                            </button>
+                            ${primaryProduct
+                                ? `<button
+                                        type="button"
+                                        class="btn-sm btn-secondary"
+                                        ${buildAnalyticsProductDestinationAttrs('shop-orders', buildAnalyticsContentCommerceOrderContext(item, primaryProduct))}
+                                    >
+                                        <i class="fas fa-cart-shopping"></i> 看订单链
+                                    </button>`
+                                : ''}
+                            <button
+                                type="button"
+                                class="btn-sm btn-secondary"
+                                ${buildAnalyticsProductDestinationAttrs('analytics-growth', {
+                                    sectionId: ANALYTICS_USER_VALUE_SECTION_ID,
+                                    focusTargetId: ANALYTICS_USER_VALUE_SECTION_ID,
+                                    promptId,
+                                    promptTitle: promptLabel,
+                                    referenceLabel: 'Prompt',
+                                    referenceValue: promptLabel,
+                                    signalLabel: '内容经营',
+                                    signalValue: `支付 ${formatNumber(item?.purchase_success_count || 0)} · GMV ${formatNumber(item?.gmv_points || 0)}`
+                                })}
+                            >
+                                <i class="fas fa-user-group"></i> 看用户价值
+                            </button>
+                        </div>
+                    </article>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+function renderAnalyticsContentOperatingCockpit(state = {}) {
+    const summary = state?.summary && typeof state.summary === 'object' ? state.summary : {};
+    const promptRows = Array.isArray(state?.promptRows) ? state.promptRows : [];
+    const activeDetail = state?.activeDetail && typeof state.activeDetail === 'object'
+        ? state.activeDetail
+        : (promptRows[0] || null);
+
+    if (!activeDetail) {
+        return renderHintState('fas fa-compass-drafting', '当前窗口暂无内容经营样本');
+    }
+
+    const promptLabel = buildAnalyticsTopContentCommerceLabel(activeDetail);
+    const guidance = buildAnalyticsContentCommerceGuidance(activeDetail);
+    const issues = buildAnalyticsContentCommerceIssueCards(activeDetail);
+    const feedbackEntries = getAnalyticsResolutionFeedbackEntriesForContent({
+        promptId: activeDetail?.prompt_id || '',
+        promptTitle: promptLabel,
+        limit: 6
+    });
+    const primaryProduct = Array.isArray(activeDetail?.products) ? (activeDetail.products[0] || null) : null;
+
+    return `
+        <div class="analytics-content-operating-cockpit">
+            <section class="analytics-content-operating-cockpit__hero">
+                <div class="analytics-content-operating-cockpit__copy">
+                    <div class="analytics-content-operating-cockpit__eyebrow">内容经营页</div>
+                    <strong>${escapeHtml(summary.prompt_count > 0
+                        ? `当前窗口有 ${formatNumber(summary.prompt_count)} 个 Prompt 正在承担商品承接，当前最值得盯的是 ${promptLabel}`
+                        : `${promptLabel} 是当前最值得继续跟进的内容样本`)}</strong>
+                    <p>${escapeHtml(summary.prompt_count > 0
+                        ? `归因支付 ${formatNumber(summary.purchase_success_count || 0)} · 归因 GMV ${formatNumber(summary.gmv_points || 0)} · 详情触达 ${formatNumber(summary.detail_view_count || 0)}`
+                        : guidance.reason || '')}</p>
+                </div>
+                <div class="analytics-content-operating-cockpit__actions">
+                    <button
+                        type="button"
+                        class="btn-sm btn-secondary"
+                        ${buildAnalyticsProductDestinationAttrs('analytics-content', {
+                            sectionId: 'topContentList',
+                            focusTargetId: 'topContentList'
+                        })}
+                    >
+                        <i class="fas fa-fire"></i> 看热门内容
+                    </button>
+                    <button
+                        type="button"
+                        class="btn-sm btn-secondary"
+                        data-admin-action="analytics-open-content-commerce-detail"
+                        data-prompt-id="${escapeHtml(String(activeDetail?.prompt_id || '').trim())}"
+                        data-prompt-title="${escapeHtml(promptLabel)}"
+                    >
+                        <i class="fas fa-chart-column"></i> 看带货详情
+                    </button>
+                    ${primaryProduct
+                        ? `<button
+                                type="button"
+                                class="btn-sm btn-secondary"
+                                ${buildAnalyticsProductDestinationAttrs('analytics-product-detail', {
+                                    productId: primaryProduct.product_id,
+                                    productName: primaryProduct.product_name,
+                                    referenceLabel: 'Prompt',
+                                    referenceValue: promptLabel,
+                                    signalLabel: '内容经营',
+                                    signalValue: `支付 ${formatNumber(activeDetail?.purchase_success_count || 0)} · GMV ${formatNumber(activeDetail?.gmv_points || 0)}`,
+                                    focusTargetId: 'productContentBreakdownSection'
+                                })}
+                            >
+                                <i class="fas fa-cube"></i> 看主带货商品
+                            </button>`
+                        : ''}
+                </div>
+            </section>
+
+            ${renderAnalyticsContentCommerceSummary(summary)}
+            ${renderAnalyticsContentCommerceConclusionDigest(feedbackEntries, activeDetail)}
+
+            <div class="analytics-product-metric-grid analytics-product-metric-grid--detail">
+                ${renderAnalyticsProductMetricCard('带货商品', formatNumber(activeDetail?.product_count || 0), `主带货商品 ${primaryProduct?.product_name || '—'}`, 'default')}
+                ${renderAnalyticsProductMetricCard('详情触达', formatNumber(activeDetail?.detail_view_count || 0), `内容浏览 ${formatNumber(activeDetail?.view_count || 0)}`, 'accent')}
+                ${renderAnalyticsProductMetricCard('购买意图', formatNumber(activeDetail?.purchase_click_count || 0), `解锁 ${formatNumber(activeDetail?.unlock_count || 0)}`, 'warning')}
+                ${renderAnalyticsProductMetricCard('归因支付', formatNumber(activeDetail?.purchase_success_count || 0), `订单样本 ${formatNumber(Array.isArray(activeDetail?.order_samples) ? activeDetail.order_samples.length : 0)}`, 'success')}
+                ${renderAnalyticsProductMetricCard('归因 GMV', formatNumber(activeDetail?.gmv_points || 0), `热度 ${formatNumber(activeDetail?.score || 0)}`, 'success')}
+            </div>
+
+            ${renderAnalyticsProductInlineGuidance(guidance)}
+
+            <section class="analytics-product-detail-card analytics-product-detail-card--wide">
+                <div class="analytics-product-detail-card__head">
+                    <strong>当前最值得盯的内容</strong>
+                    <span>按成交、意图和详情触达综合排序</span>
+                </div>
+                ${renderAnalyticsContentOperatingPriorityList(promptRows, activeDetail?.prompt_id || '')}
+            </section>
+
+            <section class="analytics-product-detail-card analytics-product-detail-card--wide">
+                <div class="analytics-product-detail-card__head">
+                    <strong>当前问题摘要</strong>
+                    <span>支付 / 售后 / 履约的即时经营判断</span>
+                </div>
+                <div class="analytics-content-detail-issue-grid">
+                    ${issues.length > 0
+                        ? issues.map((issue) => renderAnalyticsContentCommerceIssueCard(issue, activeDetail)).join('')
+                        : renderHintState('fas fa-shield-check', '当前窗口暂无需要优先处理的内容经营问题')}
+                </div>
+            </section>
+
+            ${renderAnalyticsContentUserValueLink(activeDetail)}
+            ${renderAnalyticsContentCommerceFeedbackNote(activeDetail)}
+            ${renderAnalyticsContentCommerceConclusionHistory(activeDetail)}
+        </div>
+    `;
+}
+
+function updateAnalyticsContentOperatingCockpitPanel(options = {}) {
+    const container = document.getElementById('contentOperatingCockpitPanel');
+    const meta = document.getElementById('contentOperatingCockpitMeta');
+    if (!container) {
+        return;
+    }
+
+    const status = String(options?.status || '').trim().toLowerCase();
+    if (status === 'loading') {
+        container.innerHTML = renderAnalyticsProductLoadingState('内容经营页加载中...');
+        if (meta) meta.textContent = '内容经营页加载中';
+        return;
+    }
+
+    if (status === 'error') {
+        const message = String(options?.message || '内容经营页加载失败').trim() || '内容经营页加载失败';
+        container.innerHTML = renderHintState('fas fa-compass-drafting', message, 'error');
+        if (meta) meta.textContent = message;
+        return;
+    }
+
+    const detailState = getAnalyticsContentCommerceDetailState();
+    const activeDetail = getActiveAnalyticsContentCommerceDetailRow();
+    const promptRows = Array.isArray(detailState?.promptRows) ? detailState.promptRows : [];
+    const summary = detailState?.summary && typeof detailState.summary === 'object'
+        ? detailState.summary
+        : {};
+
+    if (!activeDetail) {
+        container.innerHTML = renderHintState('fas fa-compass-drafting', '当前窗口暂无内容经营样本');
+        if (meta) meta.textContent = '当前窗口暂无内容经营样本';
+        return;
+    }
+
+    container.innerHTML = renderAnalyticsContentOperatingCockpit({
+        summary,
+        promptRows,
+        activeDetail
+    });
+
+    if (meta) {
+        const guidance = buildAnalyticsContentCommerceGuidance(activeDetail);
+        meta.textContent = [
+            Number(summary?.prompt_count || 0) > 0 ? `${formatNumber(summary.prompt_count)} 个 Prompt` : '',
+            guidance.statusLabel || '',
+            buildAnalyticsTopContentCommerceLabel(activeDetail)
+        ].filter(Boolean).join(' · ');
+    }
 }
 
 function renderAnalyticsContentCommerceIssueCard(issue = {}, detail = {}) {
@@ -9305,6 +9613,7 @@ function openAnalyticsContentCommerceDetail(promptId = '', options = {}) {
     }
 
     updateAnalyticsContentCommerceDetailPanel();
+    updateAnalyticsContentOperatingCockpitPanel();
 
     if (options.focus !== false && typeof focusAnalyticsDestinationTarget === 'function') {
         setTimeout(() => {
@@ -9360,6 +9669,7 @@ async function restoreAnalyticsRouteState(options = {}) {
 window.restoreAnalyticsRouteState = restoreAnalyticsRouteState;
 
 async function loadTopContent(days = getAnalyticsRangeDays()) {
+    updateAnalyticsContentOperatingCockpitPanel({ status: 'loading' });
     updateAnalyticsContentCommerceDetailPanel({ status: 'loading' });
     try {
         const [data, productRankBundle] = await Promise.all([
@@ -9373,6 +9683,7 @@ async function loadTopContent(days = getAnalyticsRangeDays()) {
         if (!data || data.length === 0) {
             container.innerHTML = '<div class="empty-state">暂无数据</div>';
             setAnalyticsContentCommerceDetailRows([]);
+            updateAnalyticsContentOperatingCockpitPanel();
             updateAnalyticsContentCommerceDetailPanel();
             return;
         }
@@ -9402,7 +9713,10 @@ async function loadTopContent(days = getAnalyticsRangeDays()) {
                 comment_count: normalizeAnalyticsCountValue(item?.comment_count)
             };
         }).filter(Boolean);
-        setAnalyticsContentCommerceDetailRows(detailRows);
+        setAnalyticsContentCommerceDetailRows(detailRows, {
+            summary: contentCommerce.summary
+        });
+        updateAnalyticsContentOperatingCockpitPanel();
         updateAnalyticsContentCommerceDetailPanel();
 
         container.innerHTML = `
@@ -9459,6 +9773,10 @@ async function loadTopContent(days = getAnalyticsRangeDays()) {
             container.innerHTML = '<div class="error-state">加载失败</div>';
         }
         setAnalyticsContentCommerceDetailRows([]);
+        updateAnalyticsContentOperatingCockpitPanel({
+            status: 'error',
+            message: '内容经营页加载失败'
+        });
         updateAnalyticsContentCommerceDetailPanel({
             status: 'error',
             message: '内容带货详情加载失败'
@@ -9571,6 +9889,8 @@ async function fetchGeoDistributionData() {
         unavailableMessage: 'Geo distribution bundle unavailable',
         warningMessage: '[Analytics] Visual panel bundle geo distribution unavailable:',
         createSegmentError: createAnalyticsVisualPanelBundleSegmentError,
+        allowDirectRetryOnEmpty: true,
+        isPayloadEmpty: (payload) => !Array.isArray(payload) || !payload.some((row) => Number(row?.user_count || 0) > 0),
         directLoader: () => loadAnalyticsStaticRpcRowsDirect('get_geo_distribution_by_site')
     });
 }
@@ -11873,6 +12193,7 @@ async function loadEventFunnelPanels() {
     const commerceContainer = document.getElementById('commerceEventFunnel');
     const verifyContainer = document.getElementById('verifyEventFunnel');
     const growthContainer = document.getElementById('growthEventFunnel');
+    const verifyMeta = document.getElementById('verifyEventFunnelMeta');
 
     if (!commerceContainer && !verifyContainer && !growthContainer) {
         return;
@@ -11881,7 +12202,14 @@ async function loadEventFunnelPanels() {
     try {
         const summaryWindow = await loadAnalyticsSummaryWindowFallbackData();
         const commerceView = buildCommerceEventFunnelViewData(summaryWindow);
-        const verifyView = buildVerifyEventFunnelViewData(summaryWindow);
+        let verifyView = buildVerifyEventFunnelViewData(summaryWindow);
+        if ((!Array.isArray(verifyView?.items) || !verifyView.items.length) && typeof getVerifyServiceSummaryData === 'function') {
+            const verifySummary = await getVerifyServiceSummaryData().catch(() => null);
+            const compatibilityView = buildVerifyEventFunnelFallbackViewData(verifySummary || {});
+            if (Array.isArray(compatibilityView?.items) && compatibilityView.items.length) {
+                verifyView = compatibilityView;
+            }
+        }
         const growthView = buildGrowthEventFunnelViewData(summaryWindow);
 
         if (commerceContainer) {
@@ -11894,8 +12222,15 @@ async function loadEventFunnelPanels() {
         if (verifyContainer) {
             verifyContainer.innerHTML = renderAnalyticsCompactItems(verifyView.items, {
                 iconClass: 'fas fa-shuffle',
-                message: '真实验证事件开始采集中'
+                message: verifyView?.compatibilityMode
+                    ? '真实验证事件缺失，已切到验证任务兼容口径'
+                    : '真实验证事件开始采集中'
             });
+        }
+        if (verifyMeta) {
+            verifyMeta.textContent = verifyView?.compatibilityMode
+                ? '兼容口径：验证任务摘要'
+                : '真实验证事件';
         }
 
         if (growthContainer) {
@@ -11917,6 +12252,9 @@ async function loadEventFunnelPanels() {
                 iconClass: 'fas fa-shuffle',
                 message: '当前窗口暂无真实验证事件'
             });
+        }
+        if (verifyMeta) {
+            verifyMeta.textContent = '真实验证事件';
         }
         if (growthContainer) {
             growthContainer.innerHTML = renderAnalyticsCompactItems([], {

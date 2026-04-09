@@ -163,7 +163,14 @@ test('shop purchase uses the request-scoped client and normalized payload', asyn
                                 data: {
                                     order_id: 'order-1',
                                     remaining_points: 8,
-                                    content: 'KEY-123'
+                                    content: 'KEY-123',
+                                    discount_code: 'ABCD1234',
+                                    subtotal: 200,
+                                    discount_amount: 20,
+                                    final_total: 180,
+                                    is_exclusive: false,
+                                    stack_priority: 12,
+                                    pricing_apply_stage: 'catalog_price'
                                 }
                             },
                             error: null
@@ -200,6 +207,19 @@ test('shop purchase uses the request-scoped client and normalized payload', asyn
         assert.equal(res.statusCode, 200);
         assert.equal(payload.success, true);
         assert.equal(rpcCalls.length, 1);
+        assert.deepEqual(payload.data.stacking_policy, {
+            is_exclusive: false,
+            stack_priority: 12,
+            pricing_apply_stage: 'catalog_price',
+            apply_stage_label: '目录价阶段',
+            exclusivity_label: '可并行',
+            summary: '当前预留并行权益优先级，按 目录价阶段 与优先级 12 参与结算。'
+        });
+        assert.equal(Array.isArray(payload.data.pricing_waterfall), true);
+        assert.equal(payload.data.pricing_waterfall.length, 4);
+        assert.equal(payload.data.pricing_waterfall[2].key, 'discount');
+        assert.equal(payload.data.pricing_waterfall[2].amount, 20);
+        assert.equal(payload.data.pricing_waterfall[2].display_amount, -20);
         assert.deepEqual(rpcCalls[0], {
             name: 'fn_purchase_shop_item',
             params: {
@@ -208,6 +228,7 @@ test('shop purchase uses the request-scoped client and normalized payload', asyn
                 p_site: 'cn',
                 p_quantity: 2,
                 p_discount_code: 'ABCD1234',
+                p_discount_asset_id: null,
                 p_agent_id: 'agent-7'
             }
         });
@@ -221,6 +242,100 @@ test('shop purchase uses the request-scoped client and normalized payload', asyn
         },
         takeRateLimitToken(options = {}) {
             rateLimitKeys.push(options.key);
+            return {
+                allowed: true,
+                limit: 10,
+                remaining: 9,
+                resetAt: Date.now() + 60_000,
+                retryAfterSeconds: 60
+            };
+        },
+        applyRateLimitHeaders() {}
+    });
+});
+
+test('shop purchase forwards discount asset id to the purchase rpc', async () => {
+    const rpcCalls = [];
+
+    await withShopPurchaseHandler({
+        async requireAuthenticatedUser() {
+            return {
+                user: {
+                    id: 'user-asset',
+                    email: 'member@example.com'
+                },
+                requestSupabase: {
+                    rpc(name, params) {
+                        rpcCalls.push({ name, params });
+                        return Promise.resolve({
+                            data: {
+                                success: true,
+                                data: {
+                                    order_id: 'order-asset-1',
+                                    remaining_points: 66,
+                                    content: 'KEY-ASSET-001',
+                                    discount_code: 'WALLET20',
+                                    subtotal: 120,
+                                    discount_amount: 20,
+                                    final_total: 100,
+                                    is_exclusive: true,
+                                    stack_priority: 100,
+                                    pricing_apply_stage: 'order_discount'
+                                }
+                            },
+                            error: null
+                        });
+                    }
+                },
+                supabase: null
+            };
+        },
+        sendJson(res, status, payload) {
+            res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify(payload));
+        }
+    }, async (handler) => {
+        const req = {
+            method: 'POST',
+            headers: {
+                'x-forwarded-for': '203.0.113.77'
+            },
+            body: {
+                productId: 'product-wallet-1',
+                quantity: 1,
+                site: 'cn',
+                discountCode: 'wallet20',
+                discountAssetId: ' asset-9 ',
+                idempotencyKey: 'wallet-click-1'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(rpcCalls.length, 1);
+        assert.equal(payload.data.stacking_policy.exclusivity_label, '排他券');
+        assert.equal(payload.data.pricing_waterfall[3].amount, 100);
+        assert.deepEqual(rpcCalls[0], {
+            name: 'fn_purchase_shop_item',
+            params: {
+                p_product_id: 'product-wallet-1',
+                p_user_id: 'user-asset',
+                p_site: 'cn',
+                p_quantity: 1,
+                p_discount_code: 'WALLET20',
+                p_discount_asset_id: 'asset-9',
+                p_agent_id: null
+            }
+        });
+    }, {
+        resolveClientIp() {
+            return '203.0.113.77';
+        },
+        takeRateLimitToken() {
             return {
                 allowed: true,
                 limit: 10,

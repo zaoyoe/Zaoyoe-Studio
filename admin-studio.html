@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=20260408_POINTS_CUSTOM_BATCH_ICON_UI_2">
+    <link rel="stylesheet" href="admin-studio.css?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1">
     <link rel="stylesheet" href="admin-sidebar.css?v=20260408_COMMENTS_PANEL_SHELL_REMOVE_1">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260402_ADMIN_CHAT_INPUT_UI_13">
 
@@ -30,7 +30,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
     <!-- Prevent flash of wrong theme -->
-    <link rel="stylesheet" href="css/admin-studio-page.css?v=20260408_ADMIN_STUDIO_CARD_GRADIENT_FLATTEN_1">
+    <link rel="stylesheet" href="css/admin-studio-page.css?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1">
     <script src="./js/theme-preload.js"></script>
 
 </head>
@@ -4138,7 +4138,7 @@
                         </div>
                         <div class="admin-shop-risk-case-modal__field" id="shopRiskCaseComposerOwnerField" hidden>
                             <label for="shopRiskCaseComposerOwnerSelect">负责人</label>
-                            <select id="shopRiskCaseComposerOwnerSelect" class="config-input"></select>
+                            <select id="shopRiskCaseComposerOwnerSelect" class="config-input" data-shop-custom-select="true"></select>
                             <div class="admin-shop-risk-case-modal__hint" id="shopRiskCaseComposerOwnerHint"></div>
                         </div>
                         <div class="admin-shop-risk-case-modal__field">
@@ -6546,6 +6546,29 @@
                         <!-- Dynamic category buttons will be inserted here by JS -->
                     </div>
 
+                    <div class="shop-product-toolbar-shell">
+                        <div class="shop-product-toolbar-row">
+                            <div class="search-pill shop-product-toolbar-search-box">
+                                <i class="fas fa-search"></i>
+                                <input type="text" id="productSearchInput" placeholder="搜索商品名 / 分类 / ID"
+                                    data-shop-keydown="product-search-enter">
+                            </div>
+                            <select id="productDeliveryFilter" class="config-input shop-product-toolbar-select"
+                                data-shop-custom-select="true"
+                                data-shop-change="product-delivery-filter">
+                                <option value="all">全部发货模式</option>
+                                <option value="key">仅 KEY 商品</option>
+                                <option value="api">仅 API 商品</option>
+                            </select>
+                            <button class="btn btn-primary shop-theme-primary-btn" type="button" data-shop-action="product-apply-search">
+                                搜索
+                            </button>
+                            <button class="btn btn-secondary" type="button" data-shop-action="product-clear-search">
+                                清空
+                            </button>
+                        </div>
+                    </div>
+
                     <!-- Product Selection Controls (Inventory Style) -->
                     <div id="productSelectControls"
                         class="admin-studio-inline-style-attr-47">
@@ -6855,7 +6878,7 @@
                             <!-- Search Box -->
                             <div class="inv-search-box admin-studio-inline-style-attr-93">
                                 <i class="fas fa-search"></i>
-                                <input type="text" id="invSearchInput" placeholder="搜索内容/批次..."
+                                <input type="text" id="invSearchInput" placeholder="搜索内容 / 批次 / 订单 / 邮箱..."
                                     data-shop-keydown="inventory-search-enter">
                             </div>
                             <!-- Hidden Date State -->
@@ -7013,6 +7036,7 @@
                         <div class="admin-studio-inline-style-attr-124">
                             <label class="admin-studio-inline-style-attr-125">选择商品</label>
                             <select id="releaseProductSelect"
+                                data-shop-custom-select="true"
                                 class="admin-studio-inline-style-attr-126"></select>
                         </div>
                         <div class="admin-studio-inline-style-attr-127">
@@ -7044,6 +7068,7 @@
                         <div class="admin-studio-inline-style-attr-124">
                             <label class="admin-studio-inline-style-attr-125">选择商品</label>
                             <select id="importProductSelect"
+                                data-shop-custom-select="true"
                                 class="admin-studio-inline-style-attr-126"></select>
                         </div>
                         <div class="admin-studio-inline-style-attr-124">
@@ -7087,10 +7112,28 @@
                             <div class="lookup-search-box admin-studio-inline-style-attr-139"
                                >
                                 <i class="fas fa-search admin-studio-inline-style-attr-140"></i>
-                                <input type="text" id="orderSearchInput" placeholder="输入订单号查询"
+                                <input type="text" id="orderSearchInput" placeholder="搜索订单号 / 商品 / 用户 / 邮箱"
                                    
                                     data-shop-keydown="orders-search-enter" class="admin-studio-inline-style-attr-141">
                             </div>
+                            <select id="orderRefundStatusFilter" class="config-input shop-orders-filter-select"
+                                data-shop-custom-select="true"
+                                data-shop-change="orders-filter-refund">
+                                <option value="all">全部退款状态</option>
+                                <option value="refunded">仅已退款</option>
+                                <option value="none">仅正常订单</option>
+                            </select>
+                            <select id="orderDeliveryStatusFilter" class="config-input shop-orders-filter-select"
+                                data-shop-custom-select="true"
+                                data-shop-change="orders-filter-delivery">
+                                <option value="all">全部履约状态</option>
+                                <option value="pending">待履约</option>
+                                <option value="processing">处理中</option>
+                                <option value="retry_waiting">待重试</option>
+                                <option value="requeued">已重排队</option>
+                                <option value="dead_letter">死信</option>
+                                <option value="delivered">已履约</option>
+                            </select>
                             <button class="btn btn-primary shop-theme-primary-btn admin-studio-inline-style-attr-142" type="button" data-shop-action="orders-search"
                                >
                                 查询
@@ -7138,6 +7181,7 @@
                             </div>
                             <div class="shop-delivery-controls">
                                 <select id="deliveryTaskStatusFilter" class="shop-delivery-filter"
+                                    data-shop-custom-select="true"
                                     data-shop-change="delivery-task-status-filter">
                                     <option value="all">全部状态</option>
                                     <option value="pending">待履约</option>
@@ -7294,6 +7338,7 @@
                                 <div class="shop-delivery-analytics-stack">
                                 <div class="shop-delivery-analytics-toolbar">
                                     <select id="deliveryAnalyticsWindowFilter" class="shop-delivery-filter"
+                                            data-shop-custom-select="true"
                                             data-shop-change="delivery-analytics-window">
                                             <option value="24h">近 24 小时</option>
                                             <option value="72h">近 72 小时</option>
@@ -7340,6 +7385,7 @@
                                     </div>
                                     <div class="shop-delivery-subcard-tools">
                                         <select id="deliveryDeadLetterReasonFilter" class="shop-delivery-filter"
+                                            data-shop-custom-select="true"
                                             data-shop-change="delivery-dead-letter-reason">
                                             <option value="all">全部原因</option>
                                             <option value="manual">人工标记</option>
@@ -7390,6 +7436,7 @@
                                     </div>
                                     <div class="shop-delivery-subcard-tools">
                                         <select id="deliveryLockStateFilter" class="shop-delivery-filter"
+                                            data-shop-custom-select="true"
                                             data-shop-change="delivery-lock-state">
                                             <option value="all">全部锁异常</option>
                                             <option value="active">仅活跃锁</option>
@@ -7502,6 +7549,7 @@
                                 <div class="shop-delivery-subcard-body">
                                     <div class="shop-delivery-subcard-tools shop-delivery-subcard-tools--body">
                                         <select id="deliveryConflictAuditReasonFilter" class="shop-delivery-filter"
+                                            data-shop-custom-select="true"
                                             data-shop-change="delivery-conflict-audit-reason">
                                             <option value="all">全部原因</option>
                                             <option value="target_conflicts">目标类冲突</option>
@@ -7803,6 +7851,7 @@
                                                 class="config-input" id="hp-shop-max" min="1" max="50" placeholder="8">
                                         </div>
                                         <div class="hp-field"><label>分类筛选</label><select class="config-input"
+                                                data-shop-custom-select="true"
                                                 id="hp-shop-category">
                                                 <option value="all">全部分类</option>
                                                 <option value="prompt">提示词</option>
@@ -7810,6 +7859,7 @@
                                                 <option value="resource">资源</option>
                                             </select></div>
                                         <div class="hp-field"><label>排序方式</label><select class="config-input"
+                                                data-shop-custom-select="true"
                                                 id="hp-shop-sort">
                                                 <option value="popular">🔥 热门优先</option>
                                                 <option value="latest">🕐 最新优先</option>
@@ -8416,7 +8466,7 @@
                                 <button class="admin-tab" data-tab="growth"
                                     data-admin-action="analytics-switch-tab">用户增长</button>
                                 <button class="admin-tab" data-tab="content"
-                                    data-admin-action="analytics-switch-tab">内容带货</button>
+                                    data-admin-action="analytics-switch-tab">内容经营</button>
                                 <button class="admin-tab" data-tab="product"
                                     data-admin-action="analytics-switch-tab">商品经营</button>
                                 <button class="admin-tab" data-tab="ops"
@@ -8543,7 +8593,7 @@
                             <div class="analytics-business-center-shell__copy">
                                 <h3 id="analyticsBusinessCenterShellTitle"><i class="fas fa-layer-group"></i> 经营分析中心</h3>
                             </div>
-                            <span class="analytics-panel-note" id="analyticsBusinessCenterShellMeta">总览 / 用户影响 / 内容带货 / 商品经营 / 运营保障</span>
+                            <span class="analytics-panel-note" id="analyticsBusinessCenterShellMeta">总览 / 用户影响 / 内容经营 / 商品经营 / 运营保障</span>
                         </div>
                         <div class="analytics-business-center-shell__body" id="analyticsBusinessCenterShell">
                             <div class="loading-text">经营分析中心加载中...</div>
@@ -8775,6 +8825,18 @@
 
                     <!-- Tab Content: Content -->
                     <div id="analytics-tab-content" class="analytics-tab-content">
+                        <div class="charts-grid analytics-content-operating-grid">
+                            <div class="chart-card glass-panel chart-wide analytics-nav-focus-target" id="contentOperatingCockpitSection">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-compass-drafting"></i> 内容经营页</h3>
+                                    <span class="analytics-panel-note" id="contentOperatingCockpitMeta">内容级经营判断 / 复查 / 建议动作</span>
+                                </div>
+                                <div class="chart-body" id="contentOperatingCockpitPanel">
+                                    <div class="loading-text">内容经营页加载中...</div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="charts-grid">
                             <!-- Content Trend Chart -->
                             <div class="chart-card glass-panel">
@@ -9254,6 +9316,30 @@
                         </div>
 
                         <div class="charts-grid">
+                            <div class="chart-card glass-panel chart-wide">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-layer-group"></i> 营销资产中心</h3>
+                                    <span class="analytics-panel-note" id="marketingAssetCenterMeta">优惠券 / 兑换码 / 工作流</span>
+                                </div>
+                                <div class="chart-body" id="marketingAssetCenterWorkspace">
+                                    <div class="loading-text">营销资产中心加载中...</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="charts-grid analytics-growth-insight-grid analytics-growth-insight-grid--standalone">
+                            <div class="chart-card glass-panel chart-wide analytics-nav-focus-target" id="userValueCockpitSection">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-user-group"></i> 用户价值驾驶舱</h3>
+                                    <span class="analytics-panel-note" id="userValueCockpitStandaloneMeta">首单 / 复购 / 跨商品 / 风险复查</span>
+                                </div>
+                                <div class="chart-body" id="userValueCockpitStandalone">
+                                    <div class="loading-text">用户价值驾驶舱加载中...</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="charts-grid">
                             <div class="chart-card glass-panel">
                                 <div class="chart-header">
                                     <h3><i class="fas fa-heart"></i> 社区活跃趋势</h3>
@@ -9324,6 +9410,7 @@
 
             <!-- ========== DISCOUNTS MODULE ========== -->
             <div id="module-discounts" class="module-container admin-studio-inline-style-attr-3">
+                <div class="admin-workbench-context-note admin-workbench-context-note--compact" id="discountsWorkbenchContext" hidden></div>
                 
                 <!-- Toolbar -->
                 <div class="admin-toolbar admin-studio-inline-style-attr-157">
@@ -9331,24 +9418,44 @@
                        >
                         <div class="search-bar">
                             <i class="fas fa-search"></i>
-                            <input type="text" id="discountSearchInput" placeholder="搜索优惠码或创建者..."
+                            <input type="text" id="discountSearchInput" placeholder="搜索优惠码、商品、分类或站点..."
                                 data-admin-input-action="discounts-search">
                         </div>
                         <div class="filter-dropdowns admin-studio-inline-style-attr-159">
                             <button class="filter-btn active" data-status="all"
                                 data-admin-action="discounts-filter" data-discount-status="all">全部</button>
+                            <button class="filter-btn" data-status="scheduled"
+                                data-admin-action="discounts-filter" data-discount-status="scheduled">待生效</button>
                             <button class="filter-btn" data-status="active"
                                 data-admin-action="discounts-filter" data-discount-status="active">生效中</button>
-                            <button class="filter-btn" data-status="used"
-                                data-admin-action="discounts-filter" data-discount-status="used">已核销/失效</button>
+                            <button class="filter-btn" data-status="paused_risk"
+                                data-admin-action="discounts-filter" data-discount-status="paused_risk">风控停用</button>
+                            <button class="filter-btn" data-status="paused_manual"
+                                data-admin-action="discounts-filter" data-discount-status="paused_manual">手动停用</button>
+                            <button class="filter-btn" data-status="expired"
+                                data-admin-action="discounts-filter" data-discount-status="expired">已过期</button>
+                            <button class="filter-btn" data-status="exhausted"
+                                data-admin-action="discounts-filter" data-discount-status="exhausted">已用尽</button>
                         </div>
                     </div>
-                    <button class="btn-primary admin-studio-inline-style-attr-160" data-admin-action="discounts-open-generate-modal"
-                       >
-                        <i class="fas fa-plus"></i> 生成优惠券
-                    </button>
+                    <div class="admin-discount-toolbar-actions">
+                        <button type="button" class="btn-secondary admin-discount-toolbar-export-btn" data-admin-action="discounts-open-batch-restore-history-modal">
+                            <i class="fas fa-clock-rotate-left"></i> 批量恢复历史
+                        </button>
+                        <button type="button" class="btn-secondary admin-discount-toolbar-export-btn" data-admin-action="discounts-open-batch-restore-modal" id="discountsBatchRestoreBtn">
+                            <i class="fas fa-shield-heart"></i> 批量恢复审批
+                        </button>
+                        <button type="button" class="btn-secondary admin-discount-toolbar-export-btn" data-admin-action="discounts-export-filtered-audit-summaries">
+                            <i class="fas fa-file-arrow-down"></i> 导出当前筛选复盘
+                        </button>
+                        <button class="btn-primary admin-studio-inline-style-attr-160" data-admin-action="discounts-open-generate-modal"
+                           >
+                            <i class="fas fa-plus"></i> 生成优惠券
+                        </button>
+                    </div>
                 </div>
                 <div class="admin-discount-scope-hint" id="discountsScopeHint">正在按当前站点口径加载优惠券...</div>
+                <div class="admin-discount-toolbar-summary" id="discountsOverviewStats" hidden></div>
 
                 <!-- Table Container -->
                 <div class="glass-panel table-view users-table-panel">
@@ -9379,34 +9486,31 @@
                 <div id="discountGenerateModal" class="modal-overlay admin-studio-inline-style-attr-164 admin-discount-generate-modal" data-admin-overlay-close="discount-generate-modal" aria-hidden="true"
                    >
                     <div
-                        class="admin-studio-inline-style-attr-165">
+                        class="admin-studio-inline-style-attr-165 admin-discount-form-modal__dialog">
                         <!-- Modal Header -->
-                        <div class="admin-studio-inline-style-attr-166">
+                        <div class="admin-studio-inline-style-attr-166 admin-discount-form-modal__header">
+                            <div class="admin-discount-form-modal__header-main">
                             <div
-                                class="admin-studio-inline-style-attr-167">
+                                class="admin-studio-inline-style-attr-167 admin-discount-form-modal__icon">
                                 <i class="fas fa-ticket-alt admin-studio-inline-style-attr-168"></i>
                             </div>
-                            <div>
-                                <h2 class="admin-studio-inline-style-attr-169">生成新优惠券</h2>
-                                <p class="admin-studio-inline-style-attr-170">创建折扣码供客户使用
-                                </p>
+                            <div class="admin-discount-form-modal__title-group">
+                                <h2 class="admin-studio-inline-style-attr-169" id="discountModalTitle">生成新优惠券</h2>
+                            </div>
                             </div>
                         </div>
 
-                        <form id="discountGenerateForm">
-                            <!-- Code Input -->
-                            <div class="admin-studio-inline-style-attr-171">
-                                <label
-                                    class="admin-studio-inline-style-attr-172">优惠码
-                                    <span class="admin-studio-inline-style-attr-173">(留空自动生成)</span></label>
-                                <input type="text" id="discountCodeInput" placeholder="输入自定义码或留空随机"
-                                    class="admin-studio-inline-style-attr-174">
+                        <form id="discountGenerateForm" class="admin-discount-form-modal__form">
+                            <div class="admin-discount-form-modal__column admin-discount-form-modal__column--main">
+                            <!-- Type & Value -->
+                            <section class="admin-discount-form-modal__panel admin-discount-form-modal__panel--pricing">
+                            <div class="admin-discount-form-modal__section-head">
+                                <div class="admin-discount-form-modal__section-title">优惠规则</div>
+                                <div class="admin-discount-form-modal__section-copy">先定义优惠类型和面额，再设置后续限制条件。</div>
                             </div>
-
-                            <!-- Type & Value Row -->
-                            <div class="admin-studio-inline-style-attr-175">
+                            <div class="admin-studio-inline-style-attr-175 admin-discount-form-modal__grid">
                                 <!-- Custom Dropdown for Type -->
-                                <div id="discountTypeWrapper" class="admin-studio-inline-style-attr-176">
+                                <div id="discountTypeWrapper" class="admin-studio-inline-style-attr-176 admin-discount-form-modal__field">
                                     <label
                                         class="admin-studio-inline-style-attr-177">优惠类型</label>
                                     <input type="hidden" id="discountValueType" value="percent">
@@ -9446,7 +9550,7 @@
                                         </div>
                                     </div>
                                 </div>
-                                <div>
+                                <div class="admin-discount-form-modal__field">
                                     <label
                                         class="admin-studio-inline-style-attr-177">优惠面额</label>
                                     <div class="admin-studio-inline-style-attr-188">
@@ -9457,16 +9561,51 @@
                                     </div>
                                 </div>
                             </div>
+                            </section>
 
                             <!-- Max Uses & Expiry Row -->
-                            <div class="admin-studio-inline-style-attr-191">
-                                <div>
+                            <section class="admin-discount-form-modal__panel admin-discount-form-modal__panel--limits">
+                            <div class="admin-discount-form-modal__section-head">
+                                <div class="admin-discount-form-modal__section-title">使用限制</div>
+                                <div class="admin-discount-form-modal__section-copy">约束核销次数、生效时间、适用站点和商品范围。</div>
+                            </div>
+                            <div class="admin-studio-inline-style-attr-191 admin-discount-form-modal__grid">
+                                <div class="admin-discount-form-modal__field">
                                     <label
                                         class="admin-studio-inline-style-attr-177">最大核销次数</label>
                                     <input type="number" id="discountMaxUses" placeholder="默认1次" value="1"
                                         class="admin-studio-inline-style-attr-192">
                                 </div>
-                                <div>
+                                <div class="admin-discount-form-modal__field">
+                                    <label class="admin-studio-inline-style-attr-177">每用户最多使用次数</label>
+                                    <input type="number" id="discountMaxUsesPerUser" placeholder="0 = 不限制" value="0" min="0"
+                                        class="admin-studio-inline-style-attr-192">
+                                </div>
+                            </div>
+
+                            <div class="admin-studio-inline-style-attr-191 admin-discount-form-modal__grid">
+                                <div class="admin-discount-form-modal__field">
+                                    <label
+                                        class="admin-studio-inline-style-attr-177">生效时间
+                                        <span class="admin-studio-inline-style-attr-173">(可选)</span></label>
+                                        <div class="admin-studio-inline-style-attr-159">
+                                            <div class="admin-studio-inline-style-attr-193">
+                                                <input type="text" id="discountStartsAtDate" placeholder="2026-11-11"
+                                                    maxlength="10" data-admin-input-action="discounts-format-start-date"
+                                                    class="admin-studio-inline-style-attr-194">
+                                            <i class="fas fa-calendar-alt admin-studio-inline-style-attr-195"
+                                               ></i>
+                                        </div>
+                                        <div class="admin-studio-inline-style-attr-196">
+                                            <input type="text" id="discountStartsAtTime" placeholder="00:00" maxlength="5"
+                                                data-admin-input-action="discounts-format-start-time"
+                                                class="admin-studio-inline-style-attr-197">
+                                            <i class="fas fa-clock admin-studio-inline-style-attr-195"
+                                               ></i>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="admin-discount-form-modal__field">
                                     <label
                                         class="admin-studio-inline-style-attr-177">过期时间
                                         <span class="admin-studio-inline-style-attr-173">(可选)</span></label>
@@ -9489,39 +9628,134 @@
                                 </div>
                             </div>
 
-                            <div class="admin-studio-inline-style-attr-191">
-                                <div>
+                            <div class="admin-studio-inline-style-attr-191 admin-discount-form-modal__grid">
+                                <div class="admin-discount-form-modal__field">
                                     <label class="admin-studio-inline-style-attr-177">适用站点</label>
-                                    <select id="discountApplicableSite" class="admin-studio-inline-style-attr-192">
-                                        <option value="">全部站点</option>
-                                        <option value="cn">仅 CN</option>
-                                        <option value="intl">仅 INTL</option>
-                                    </select>
+                                    <div class="admin-discount-form-modal__custom-select" id="discountApplicableSiteSelect">
+                                        <input type="hidden" id="discountApplicableSite" value="">
+                                        <button type="button"
+                                            id="discountApplicableSiteTrigger"
+                                            class="admin-discount-form-modal__select-trigger"
+                                            aria-haspopup="listbox"
+                                            aria-expanded="false"
+                                            aria-controls="discountApplicableSiteDropdown">
+                                            <span id="discountApplicableSiteLabel" class="admin-discount-form-modal__select-trigger-label">全部站点</span>
+                                            <i class="fas fa-chevron-down admin-discount-form-modal__select-trigger-chevron" aria-hidden="true"></i>
+                                        </button>
+                                        <div id="discountApplicableSiteDropdown"
+                                            class="admin-discount-form-modal__select-dropdown"
+                                            aria-hidden="true"
+                                            role="listbox">
+                                            <button type="button"
+                                                class="admin-discount-form-modal__select-option is-selected"
+                                                data-discount-generate-select-option="site"
+                                                data-select-value=""
+                                                role="option"
+                                                aria-selected="true">
+                                                <span class="admin-discount-form-modal__select-option-copy">
+                                                    <span class="admin-discount-form-modal__select-option-title">全部站点</span>
+                                                    <span class="admin-discount-form-modal__select-option-meta">国内站和国际站都可以使用</span>
+                                                </span>
+                                                <i class="fas fa-check admin-discount-form-modal__select-option-check" aria-hidden="true"></i>
+                                            </button>
+                                            <button type="button"
+                                                class="admin-discount-form-modal__select-option"
+                                                data-discount-generate-select-option="site"
+                                                data-select-value="cn"
+                                                role="option"
+                                                aria-selected="false">
+                                                <span class="admin-discount-form-modal__select-option-copy">
+                                                    <span class="admin-discount-form-modal__select-option-title">仅 CN</span>
+                                                    <span class="admin-discount-form-modal__select-option-meta">只在国内站生效</span>
+                                                </span>
+                                                <i class="fas fa-check admin-discount-form-modal__select-option-check" aria-hidden="true"></i>
+                                            </button>
+                                            <button type="button"
+                                                class="admin-discount-form-modal__select-option"
+                                                data-discount-generate-select-option="site"
+                                                data-select-value="intl"
+                                                role="option"
+                                                aria-selected="false">
+                                                <span class="admin-discount-form-modal__select-option-copy">
+                                                    <span class="admin-discount-form-modal__select-option-title">仅 INTL</span>
+                                                    <span class="admin-discount-form-modal__select-option-meta">只在国际站生效</span>
+                                                </span>
+                                                <i class="fas fa-check admin-discount-form-modal__select-option-check" aria-hidden="true"></i>
+                                            </button>
+                                        </div>
+                                    </div>
                                     <div class="admin-studio-inline-style-attr-173">留空表示国内站和国际站都可以使用。</div>
                                 </div>
-                                <div>
-                                    <label class="admin-studio-inline-style-attr-177">每用户最多使用次数</label>
-                                    <input type="number" id="discountMaxUsesPerUser" placeholder="0 = 不限制" value="0" min="0"
-                                        class="admin-studio-inline-style-attr-192">
+                                <div class="admin-discount-form-modal__field">
+                                    <label class="admin-studio-inline-style-attr-177">当前状态策略</label>
+                                    <div class="admin-studio-inline-style-attr-173 admin-discount-form-modal__hint">保存后会按生效时间、停用状态和风控恢复策略自动计算当前状态。</div>
                                 </div>
                             </div>
 
-                            <div class="admin-studio-inline-style-attr-191">
-                                <div>
+                            <div class="admin-studio-inline-style-attr-191 admin-discount-form-modal__grid admin-discount-form-modal__grid--scope">
+                                <div class="admin-discount-form-modal__field">
                                     <label class="admin-studio-inline-style-attr-177">适用范围</label>
-                                    <select id="discountScopeType" class="admin-studio-inline-style-attr-192">
-                                        <option value="all">全部商品</option>
-                                        <option value="category">指定分类</option>
-                                        <option value="product">指定商品</option>
-                                    </select>
+                                    <div class="admin-discount-form-modal__custom-select" id="discountScopeTypeSelect">
+                                        <input type="hidden" id="discountScopeType" value="all">
+                                        <button type="button"
+                                            id="discountScopeTypeTrigger"
+                                            class="admin-discount-form-modal__select-trigger"
+                                            aria-haspopup="listbox"
+                                            aria-expanded="false"
+                                            aria-controls="discountScopeTypeDropdown">
+                                            <span id="discountScopeTypeLabel" class="admin-discount-form-modal__select-trigger-label">全部商品</span>
+                                            <i class="fas fa-chevron-down admin-discount-form-modal__select-trigger-chevron" aria-hidden="true"></i>
+                                        </button>
+                                        <div id="discountScopeTypeDropdown"
+                                            class="admin-discount-form-modal__select-dropdown"
+                                            aria-hidden="true"
+                                            role="listbox">
+                                            <button type="button"
+                                                class="admin-discount-form-modal__select-option is-selected"
+                                                data-discount-generate-select-option="scope-type"
+                                                data-select-value="all"
+                                                role="option"
+                                                aria-selected="true">
+                                                <span class="admin-discount-form-modal__select-option-copy">
+                                                    <span class="admin-discount-form-modal__select-option-title">全部商品</span>
+                                                    <span class="admin-discount-form-modal__select-option-meta">不限制分类和具体商品</span>
+                                                </span>
+                                                <i class="fas fa-check admin-discount-form-modal__select-option-check" aria-hidden="true"></i>
+                                            </button>
+                                            <button type="button"
+                                                class="admin-discount-form-modal__select-option"
+                                                data-discount-generate-select-option="scope-type"
+                                                data-select-value="category"
+                                                role="option"
+                                                aria-selected="false">
+                                                <span class="admin-discount-form-modal__select-option-copy">
+                                                    <span class="admin-discount-form-modal__select-option-title">指定分类</span>
+                                                    <span class="admin-discount-form-modal__select-option-meta">只允许指定分类商品使用</span>
+                                                </span>
+                                                <i class="fas fa-check admin-discount-form-modal__select-option-check" aria-hidden="true"></i>
+                                            </button>
+                                            <button type="button"
+                                                class="admin-discount-form-modal__select-option"
+                                                data-discount-generate-select-option="scope-type"
+                                                data-select-value="product"
+                                                role="option"
+                                                aria-selected="false">
+                                                <span class="admin-discount-form-modal__select-option-copy">
+                                                    <span class="admin-discount-form-modal__select-option-title">指定商品</span>
+                                                    <span class="admin-discount-form-modal__select-option-meta">只允许单个商品使用</span>
+                                                </span>
+                                                <i class="fas fa-check admin-discount-form-modal__select-option-check" aria-hidden="true"></i>
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div id="discountScopeCategoryWrapper" hidden>
+                                <div id="discountScopeCategoryWrapper" class="admin-discount-form-modal__field" hidden>
                                     <label class="admin-studio-inline-style-attr-177">指定分类</label>
                                     <select id="discountScopeCategory" class="admin-studio-inline-style-attr-192">
                                         <option value="">请选择分类</option>
                                     </select>
                                 </div>
-                                <div id="discountScopeProductWrapper" hidden>
+                                <div id="discountScopeProductWrapper" class="admin-discount-form-modal__field" hidden>
                                     <label class="admin-studio-inline-style-attr-177">指定商品</label>
                                     <select id="discountScopeProduct" class="admin-studio-inline-style-attr-192">
                                         <option value="">请选择商品</option>
@@ -9529,28 +9763,159 @@
                                 </div>
                             </div>
 
-                            <div class="admin-studio-inline-style-attr-173">
+                            <div class="admin-studio-inline-style-attr-173 admin-discount-form-modal__note">
                                 可将优惠券限制为单个站点、单个分类或单个商品使用；“每用户最多使用次数”用于限制同一账号可重复使用的次数。
                             </div>
+                            </section>
+                            </div>
 
-                            <div class="admin-studio-inline-style-attr-171">
-                                <label class="admin-studio-inline-style-attr-172" for="discountAllowZeroTotal">
-                                    风控策略
-                                </label>
-                                <label class="admin-studio-inline-style-attr-159">
+                            <div class="admin-discount-form-modal__column admin-discount-form-modal__column--side">
+                            <section class="admin-discount-form-modal__panel admin-discount-form-modal__panel--compact admin-discount-form-modal__panel--risk">
+                            <div class="admin-discount-form-modal__section-head admin-discount-form-modal__section-head--compact">
+                                <div class="admin-discount-form-modal__section-title">风控策略</div>
+                                <div class="admin-discount-form-modal__section-copy">决定是否允许 0 元单，以及风控停用后的恢复路径。</div>
+                            </div>
+                            <div class="admin-studio-inline-style-attr-171 admin-discount-form-modal__field admin-discount-form-modal__field--full">
+                                <label class="admin-studio-inline-style-attr-159 admin-discount-form-modal__checkbox-row">
                                     <input type="checkbox" id="discountAllowZeroTotal">
                                     <span>允许折后总价为 0 积分</span>
                                 </label>
-                                <div class="admin-studio-inline-style-attr-173">默认关闭，避免优惠码被误配成“全免单”。</div>
+                                <div class="admin-studio-inline-style-attr-173 admin-discount-form-modal__hint">默认关闭，避免优惠码被误配成“全免单”。</div>
+                            </div>
+                            <div class="admin-studio-inline-style-attr-171 admin-discount-form-modal__field admin-discount-form-modal__field--full">
+                                <label class="admin-studio-inline-style-attr-172" for="discountRecoveryStrategy">风控恢复策略</label>
+                                <select id="discountRecoveryStrategy" class="admin-studio-inline-style-attr-192">
+                                    <option value="manual_only">仅人工恢复</option>
+                                    <option value="auto_restore">风险恢复后自动启用</option>
+                                    <option value="observation_then_restore">自动恢复并进入观察期</option>
+                                </select>
+                            </div>
+                            <div class="admin-studio-inline-style-attr-171 admin-discount-form-modal__field admin-discount-form-modal__field--full">
+                                <label class="admin-studio-inline-style-attr-172" for="discountObservationWindowHours">观察期时长（小时）</label>
+                                <input type="number" id="discountObservationWindowHours" value="24" min="1" max="168"
+                                    class="admin-studio-inline-style-attr-192">
+                                <div class="admin-studio-inline-style-attr-173 admin-discount-form-modal__hint">仅在“自动恢复并进入观察期”时生效，默认 24 小时。</div>
+                            </div>
+                            </section>
+
+                            <section class="admin-discount-form-modal__panel admin-discount-form-modal__panel--compact admin-discount-form-modal__panel--risk">
+                            <div class="admin-discount-form-modal__section-head admin-discount-form-modal__section-head--compact">
+                                <div class="admin-discount-form-modal__section-title">发放方式</div>
+                                <div class="admin-discount-form-modal__section-copy">控制这张券是暗码输入、公开领取，还是后台直接下发到用户卡券包。</div>
+                            </div>
+                            <div class="admin-studio-inline-style-attr-171 admin-discount-form-modal__field admin-discount-form-modal__field--full">
+                                <label class="admin-studio-inline-style-attr-172" for="discountDistributionMode">发放模式</label>
+                                <select id="discountDistributionMode" class="admin-studio-inline-style-attr-192">
+                                    <option value="general_code">通用暗码</option>
+                                    <option value="public_claim">公开领券</option>
+                                    <option value="user_assigned">定向发券</option>
+                                </select>
+                            </div>
+                            <div class="admin-studio-inline-style-attr-191 admin-discount-form-modal__grid">
+                                <div class="admin-discount-form-modal__field">
+                                    <label class="admin-studio-inline-style-attr-177">领取开始
+                                        <span class="admin-studio-inline-style-attr-173">(公开领券可选)</span></label>
+                                    <div class="admin-studio-inline-style-attr-159">
+                                        <div class="admin-studio-inline-style-attr-193">
+                                            <input type="text" id="discountClaimStartsAtDate" placeholder="2026-11-01"
+                                                maxlength="10" data-admin-input-action="discounts-format-start-date"
+                                                class="admin-studio-inline-style-attr-194">
+                                            <i class="fas fa-calendar-alt admin-studio-inline-style-attr-195"></i>
+                                        </div>
+                                        <div class="admin-studio-inline-style-attr-196">
+                                            <input type="text" id="discountClaimStartsAtTime" placeholder="10:00" maxlength="5"
+                                                data-admin-input-action="discounts-format-start-time"
+                                                class="admin-studio-inline-style-attr-197">
+                                            <i class="fas fa-clock admin-studio-inline-style-attr-195"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="admin-discount-form-modal__field">
+                                    <label class="admin-studio-inline-style-attr-177">领取截止
+                                        <span class="admin-studio-inline-style-attr-173">(公开领券可选)</span></label>
+                                    <div class="admin-studio-inline-style-attr-159">
+                                        <div class="admin-studio-inline-style-attr-193">
+                                            <input type="text" id="discountClaimExpiresAtDate" placeholder="2026-11-30"
+                                                maxlength="10" data-admin-input-action="discounts-format-expiry-date"
+                                                class="admin-studio-inline-style-attr-194">
+                                            <i class="fas fa-calendar-alt admin-studio-inline-style-attr-195"></i>
+                                        </div>
+                                        <div class="admin-studio-inline-style-attr-196">
+                                            <input type="text" id="discountClaimExpiresAtTime" placeholder="23:59" maxlength="5"
+                                                data-admin-input-action="discounts-format-expiry-time"
+                                                class="admin-studio-inline-style-attr-197">
+                                            <i class="fas fa-clock admin-studio-inline-style-attr-195"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="admin-studio-inline-style-attr-171 admin-discount-form-modal__field admin-discount-form-modal__field--full">
+                                <label class="admin-studio-inline-style-attr-172" for="discountClaimLimitPerUser">每用户领取上限</label>
+                                <input type="number" id="discountClaimLimitPerUser" value="1" min="0" class="admin-studio-inline-style-attr-192">
+                                <div class="admin-studio-inline-style-attr-173 admin-discount-form-modal__hint">仅公开领券时生效，0 表示不限领取次数。</div>
+                            </div>
+                            <div class="admin-studio-inline-style-attr-171 admin-discount-form-modal__field admin-discount-form-modal__field--full">
+                                <label class="admin-studio-inline-style-attr-172" for="discountCampaignTag">投放渠道标签</label>
+                                <input type="text" id="discountCampaignTag" placeholder="如: double11_push / vip_recall"
+                                    class="admin-studio-inline-style-attr-192">
+                            </div>
+                            <div class="admin-studio-inline-style-attr-171 admin-discount-form-modal__field admin-discount-form-modal__field--full">
+                                <label class="admin-studio-inline-style-attr-172" for="discountAudienceSegment">目标人群标签</label>
+                                <input type="text" id="discountAudienceSegment" placeholder="如: new_user / vip / churn_risk"
+                                    class="admin-studio-inline-style-attr-192">
+                            </div>
+                            </section>
+
+                            <section class="admin-discount-form-modal__panel admin-discount-form-modal__panel--compact admin-discount-form-modal__panel--risk">
+                            <div class="admin-discount-form-modal__section-head admin-discount-form-modal__section-head--compact">
+                                <div class="admin-discount-form-modal__section-title">叠加与价格阶段</div>
+                                <div class="admin-discount-form-modal__section-copy">先把优惠券放进明确的价格瀑布，再决定它是否允许与后续权益并行。</div>
+                            </div>
+                            <div class="admin-studio-inline-style-attr-171 admin-discount-form-modal__field admin-discount-form-modal__field--full">
+                                <label class="admin-studio-inline-style-attr-159 admin-discount-form-modal__checkbox-row">
+                                    <input type="checkbox" id="discountIsExclusive" checked>
+                                    <span>按排他券处理，不与其他营销权益叠加</span>
+                                </label>
+                            </div>
+                            <div class="admin-studio-inline-style-attr-191 admin-discount-form-modal__grid">
+                                <div class="admin-discount-form-modal__field">
+                                    <label class="admin-studio-inline-style-attr-177" for="discountPricingApplyStage">价格阶段</label>
+                                    <select id="discountPricingApplyStage" class="admin-studio-inline-style-attr-192">
+                                        <option value="catalog_price">目录价阶段</option>
+                                        <option value="order_discount" selected>订单优惠阶段</option>
+                                        <option value="balance_offset">余额抵扣阶段</option>
+                                    </select>
+                                </div>
+                                <div class="admin-discount-form-modal__field">
+                                    <label class="admin-studio-inline-style-attr-177" for="discountStackPriority">结算优先级</label>
+                                    <input type="number" id="discountStackPriority" value="100" min="1" max="9999"
+                                        class="admin-studio-inline-style-attr-192">
+                                </div>
+                            </div>
+                            <div class="admin-studio-inline-style-attr-173 admin-discount-form-modal__hint">当前前台仍是单券结算，这里先把价格瀑布和未来叠加口径收住，避免后续会员权益或返点接入时规则互相打架。</div>
+                            </section>
+
+                            <section class="admin-discount-form-modal__panel admin-discount-form-modal__panel--compact admin-discount-form-modal__panel--code">
+                            <div class="admin-discount-form-modal__section-head admin-discount-form-modal__section-head--compact">
+                                <div class="admin-discount-form-modal__section-title">优惠码</div>
+                                <div class="admin-discount-form-modal__section-copy">可手动指定，也可以留空交给系统自动生成。</div>
+                            </div>
+                            <div class="admin-studio-inline-style-attr-171 admin-discount-form-modal__field admin-discount-form-modal__field--full">
+                                <label
+                                    class="admin-studio-inline-style-attr-172">优惠码
+                                    <span class="admin-studio-inline-style-attr-173">(留空自动生成)</span></label>
+                                <input type="text" id="discountCodeInput" placeholder="输入自定义码或留空随机"
+                                    class="admin-studio-inline-style-attr-174">
+                                <div class="admin-studio-inline-style-attr-173 admin-discount-form-modal__hint">留空后会自动生成一串随机优惠码。</div>
+                            </div>
+                            </section>
                             </div>
 
                             <!-- Action Buttons -->
-                            <div class="admin-studio-inline-style-attr-198">
-                                <button type="button" data-admin-action="discounts-close-generate-modal"
-                                    class="admin-studio-inline-style-attr-199">取消</button>
+                            <div class="admin-studio-inline-style-attr-198 admin-discount-form-modal__actions">
                                 <button type="button" data-admin-action="discounts-submit-generate"
-                                    class="admin-studio-inline-style-attr-200">
-                                    <i class="fas fa-magic"></i> 立即生成
+                                    class="admin-studio-inline-style-attr-200 modal-action-btn admin-discount-form-modal__primary-btn">
+                                    <i class="fas fa-magic"></i> <span id="discountModalSubmitLabel">立即生成</span>
                                 </button>
                             </div>
                         </form>
@@ -10191,7 +10556,8 @@
     <script src="js/ios-scroll-lock.js"></script>
     <script src="admin-users.js?v=20260407_ADMIN_USERS_ANALYTICS_CONTEXT_8"></script>
     <script src="admin-points.js?v=20260404_ADMIN_POINTS_ANALYTICS_CONTEXT_1"></script>
-    <script src="admin-discounts.js?v=20260402_ADMIN_DISCOUNT_MUTATE_HANDLER_2"></script>
+    <script src="admin-discounts.js?v=20260409_ADMIN_DISCOUNT_P1_ASSETS_ROI_1"></script>
+    <script src="js/admin-growth-center.js?v=20260409_MARKETING_ASSET_CENTER_P2_1"></script>
     <script src="starry-sky.js"></script>
     <!-- Flatpickr JS -->
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
@@ -10200,10 +10566,10 @@
     <script src="js/admin-ai.js"></script>
     <script src="admin-comments.js?v=20260408_COMMENTS_PANEL_HEADER_REMOVE_1"></script>
     <script src="js/admin-analytics-metric-context.js?v=20260405_ANALYTICS_METRIC_CONTEXT_HELPERS_6"></script>
-    <script src="admin-analytics.js?v=20260407_ANALYTICS_PRODUCT_SHELL_8"></script>
+    <script src="admin-analytics.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1"></script>
     <script src="js/admin-analytics-derived-bundles.js?v=20260405_ANALYTICS_DERIVED_BUNDLES_5"></script>
     <script src="js/admin-analytics-runtime-controls.js?v=20260405_ANALYTICS_RUNTIME_CONTROLS_1"></script>
-    <script src="js/admin-analytics-panel-loaders.js?v=20260407_ANALYTICS_PANEL_LOADERS_70"></script>
+    <script src="js/admin-analytics-panel-loaders.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1"></script>
     <script src="js/admin-analytics-lifecycle.js?v=20260407_ANALYTICS_LIFECYCLE_16"></script>
     <script src="js/admin-analytics-workbench.js?v=20260407_ANALYTICS_WORKBENCH_BUNDLE_13"></script>
     <script src="js/admin-analytics-insight-cards.js?v=20260407_ANALYTICS_INSIGHT_CARDS_HELPERS_5"></script>
@@ -10221,10 +10587,10 @@
     <script src="admin-config.js?v=20260405_GENERAL_RUNTIME_REMOVAL_1"></script>
     <script src="admin-homepage.js?v=20260403_HOMEPAGE_LOADING_PREWARM_1"></script>
     <script src="js/admin-studio-translate.js"></script>
-    <script src="js/admin-site-filter.js?v=20260404_ANALYTICS_SITE_RELOAD_1"></script>
+    <script src="js/admin-site-filter.js?v=20260409_ANALYTICS_SITE_ALIAS_RELOAD_2"></script>
     <script src="js/admin-tickets.js?v=20260406_ADMIN_TICKETS_WORKBENCH_CONTEXT_11"></script>
     <script src="js/admin-access.js?v=20260403_ADMIN_ENTRY_WARMUP_1"></script>
-<script src="admin-studio.js?v=20260406_ADMIN_ACCESS_FORCE_REFRESH_3"></script>
+<script src="admin-studio.js?v=20260409_ADMIN_DISCOUNT_OVERLAY_GUARD_1"></script>
     <script src="js/admin-shop.js?v=20260406_ADMIN_SHOP_ANALYTICS_CONTEXT_12"></script>
 </body>
 

@@ -351,6 +351,141 @@ const ShopClient = {
         return this.currentPurchase.quantity * this.currentPurchase.unitPrice;
     },
 
+    getDefaultStackingPolicy: function () {
+        return {
+            is_exclusive: true,
+            stack_priority: 100,
+            pricing_apply_stage: 'order_discount',
+            exclusivity_label: '排他券',
+            apply_stage_label: '订单优惠阶段',
+            summary: '当前仅支持单券结算，优惠会在订单优惠阶段直接抵扣。'
+        };
+    },
+
+    buildLocalPricingWaterfall: function () {
+        const subtotal = this.getCurrentPurchaseSubtotal();
+        const discountAmount = Math.max(0, Number(this.currentPurchase.discountAmount) || 0);
+        const finalTotal = Math.max(0, subtotal - discountAmount);
+        const unitPrice = Math.max(0, Number(this.currentPurchase.unitPrice) || 0);
+        const quantity = Math.max(1, Number(this.currentPurchase.quantity) || 1);
+        const code = String(this.currentPurchase.discountCode || '').trim().toUpperCase();
+        const stackingPolicy = this.currentPurchase.stackingPolicy && typeof this.currentPurchase.stackingPolicy === 'object'
+            ? {
+                ...this.getDefaultStackingPolicy(),
+                ...this.currentPurchase.stackingPolicy
+            }
+            : this.getDefaultStackingPolicy();
+
+        const rows = [
+            {
+                key: 'unit_price',
+                label: '站点结算单价',
+                amount: unitPrice,
+                detail: `${unitPrice} x ${quantity}`,
+                tone: 'base'
+            },
+            {
+                key: 'subtotal',
+                label: '商品小计',
+                amount: subtotal,
+                detail: quantity > 1 ? `数量 ${quantity}` : '单件结算',
+                tone: 'subtotal'
+            }
+        ];
+
+        if (discountAmount > 0) {
+            rows.push({
+                key: 'discount',
+                label: code ? `优惠券 ${code}` : '优惠券抵扣',
+                amount: discountAmount,
+                display_amount: -discountAmount,
+                detail: `${stackingPolicy.apply_stage_label || '订单优惠阶段'} · ${stackingPolicy.exclusivity_label || '排他券'} · 优先级 ${stackingPolicy.stack_priority || 100}`,
+                tone: 'discount'
+            });
+        }
+
+        rows.push({
+            key: 'total',
+            label: '实付积分',
+            amount: finalTotal,
+            detail: discountAmount > 0 ? '已包含优惠抵扣' : '未使用优惠',
+            tone: 'total'
+        });
+
+        return {
+            rows,
+            stackingPolicy
+        };
+    },
+
+    syncPricingWaterfall: function ({ rows = null, stackingPolicy = null } = {}) {
+        const localState = this.buildLocalPricingWaterfall();
+        this.currentPurchase.pricingWaterfall = Array.isArray(rows) && rows.length
+            ? rows
+            : localState.rows;
+        this.currentPurchase.stackingPolicy = stackingPolicy && typeof stackingPolicy === 'object'
+            ? {
+                ...this.getDefaultStackingPolicy(),
+                ...stackingPolicy
+            }
+            : localState.stackingPolicy;
+        this.renderPurchasePriceWaterfall();
+        return {
+            rows: this.currentPurchase.pricingWaterfall,
+            stackingPolicy: this.currentPurchase.stackingPolicy
+        };
+    },
+
+    renderPurchasePriceWaterfall: function () {
+        const container = document.getElementById('purchasePriceWaterfall');
+        if (!container) {
+            return;
+        }
+
+        const fallback = this.buildLocalPricingWaterfall();
+        const waterfallRows = Array.isArray(this.currentPurchase.pricingWaterfall) && this.currentPurchase.pricingWaterfall.length
+            ? this.currentPurchase.pricingWaterfall
+            : fallback.rows;
+        const stackingPolicy = this.currentPurchase.stackingPolicy && typeof this.currentPurchase.stackingPolicy === 'object'
+            ? {
+                ...this.getDefaultStackingPolicy(),
+                ...this.currentPurchase.stackingPolicy
+            }
+            : fallback.stackingPolicy;
+
+        container.innerHTML = `
+            <div class="shop-price-waterfall">
+                <div class="shop-price-waterfall__header">
+                    <div class="shop-price-waterfall__title">价格瀑布</div>
+                    <div class="shop-price-waterfall__policy">
+                        <span class="shop-price-waterfall__policy-chip">${this.escapeHtml(stackingPolicy.exclusivity_label || '排他券')}</span>
+                        <span class="shop-price-waterfall__policy-chip">${this.escapeHtml(stackingPolicy.apply_stage_label || '订单优惠阶段')}</span>
+                        <span class="shop-price-waterfall__policy-chip">优先级 ${this.escapeHtml(String(stackingPolicy.stack_priority || 100))}</span>
+                    </div>
+                </div>
+                <div class="shop-price-waterfall__rows">
+                    ${waterfallRows.map((row) => {
+                        const tone = String(row?.tone || '').trim().toLowerCase() || 'base';
+                        const rawAmount = Number(row?.display_amount ?? row?.amount);
+                        const amount = Number.isFinite(rawAmount) ? rawAmount : 0;
+                        const prefix = amount > 0 && tone !== 'total' ? '+' : '';
+
+                        return `
+                            <div class="shop-price-waterfall__row shop-price-waterfall__row--${this.escapeHtml(tone)}">
+                                <div class="shop-price-waterfall__row-copy">
+                                    <strong>${this.escapeHtml(row?.label || '价格项')}</strong>
+                                    ${row?.detail ? `<span>${this.escapeHtml(row.detail)}</span>` : ''}
+                                </div>
+                                <div class="shop-price-waterfall__row-value">${this.escapeHtml(`${prefix}${amount}`)}</div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+                <div class="shop-price-waterfall__footer">${this.escapeHtml(stackingPolicy.summary || '当前仅支持单券结算。')}</div>
+            </div>
+        `;
+    },
+
     calculateDiscountAmount: function (subtotal) {
         const discountType = this.currentPurchase.discountType;
         const discountValue = Number(this.currentPurchase.discountValue);
@@ -375,6 +510,7 @@ const ShopClient = {
         const finalTotal = Math.max(0, subtotal - discountAmount);
         this.currentPurchase.discountAmount = discountAmount;
         document.getElementById('modalTotalPrice').textContent = finalTotal;
+        this.syncPricingWaterfall();
         return {
             subtotal,
             discountAmount,
@@ -391,16 +527,280 @@ const ShopClient = {
 
     resetDiscountState: function ({ clearMessage = true } = {}) {
         this.currentPurchase.discountCode = null;
+        this.currentPurchase.discountAssetId = null;
         this.currentPurchase.discountType = null;
         this.currentPurchase.discountValue = null;
         this.currentPurchase.discountAmount = 0;
+        this.currentPurchase.pricingWaterfall = [];
+        this.currentPurchase.stackingPolicy = this.getDefaultStackingPolicy();
         document.getElementById('modalTotalPrice').textContent = this.getCurrentPurchaseSubtotal();
+        this.syncPricingWaterfall();
         if (clearMessage) {
             this.setDiscountMessage('');
         }
+        this.renderPurchaseDiscountAssets();
     },
 
-    validateDiscountWithServer: async function (discountCode) {
+    buildDiscountAssetCardMarkup: function (item = {}, { selected = false, claimable = false } = {}) {
+        const label = claimable
+            ? (item.can_claim ? '立即领取' : '已达上限')
+            : (item.available ? (selected ? '已选中' : '直接使用') : '当前不可用');
+        const metaParts = [];
+        if (item.preview?.discount_amount > 0) {
+            metaParts.push(`预计优惠 ${item.preview.discount_amount}`);
+        }
+        if (item.preview?.final_total >= 0) {
+            metaParts.push(`实付 ${item.preview.final_total}`);
+        }
+        if (item.claim_expires_at) {
+            metaParts.push(`领取至 ${new Date(item.claim_expires_at).toLocaleString()}`);
+        } else if (item.expires_at) {
+            metaParts.push(`有效至 ${new Date(item.expires_at).toLocaleString()}`);
+        }
+        if (item.source_channel) {
+            metaParts.push(`渠道 ${item.source_channel}`);
+        }
+
+        return `
+            <button type="button"
+                class="shop-discount-asset-card${selected ? ' is-selected' : ''}${item.available === false && !claimable ? ' is-disabled' : ''}"
+                data-shop-discount-action="${claimable ? 'claim' : 'apply'}"
+                data-discount-asset-id="${this.escapeHtml(item.asset_id || '')}"
+                data-discount-id="${this.escapeHtml(item.discount_id || '')}"
+                data-discount-code="${this.escapeHtml(item.code || '')}"
+                ${claimable ? (!item.can_claim ? 'disabled' : '') : (!item.available ? 'disabled' : '')}>
+                <div class="shop-discount-asset-card__top">
+                    <strong>${this.escapeHtml(item.code || '优惠券')}</strong>
+                    <span class="shop-discount-asset-card__cta">${this.escapeHtml(label)}</span>
+                </div>
+                <div class="shop-discount-asset-card__meta">${this.escapeHtml(metaParts.join(' · ') || item.message || '可在当前商品结算时使用')}</div>
+                ${item.message ? `<div class="shop-discount-asset-card__hint">${this.escapeHtml(item.message)}</div>` : ''}
+            </button>
+        `;
+    },
+
+    renderPurchaseDiscountAssets: function () {
+        const container = document.getElementById('purchaseDiscountAssetsPanel');
+        if (!container) return;
+
+        const ownedItems = Array.isArray(this.currentPurchase.availableDiscountAssets)
+            ? this.currentPurchase.availableDiscountAssets
+            : [];
+        const claimableItems = Array.isArray(this.currentPurchase.claimableDiscounts)
+            ? this.currentPurchase.claimableDiscounts
+            : [];
+
+        if (!ownedItems.length && !claimableItems.length) {
+            container.innerHTML = '<div class="shop-discount-assets-empty">当前没有可直接选择的卡券，仍可继续输入暗码。</div>';
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="shop-discount-assets-shell">
+                ${ownedItems.length ? `
+                    <div class="shop-discount-assets-group">
+                        <div class="shop-discount-assets-group__title">我的可用优惠</div>
+                        <div class="shop-discount-assets-grid">
+                            ${ownedItems.map((item) => this.buildDiscountAssetCardMarkup(item, {
+                                selected: this.currentPurchase.discountAssetId && item.asset_id === this.currentPurchase.discountAssetId
+                            })).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+                ${claimableItems.length ? `
+                    <div class="shop-discount-assets-group">
+                        <div class="shop-discount-assets-group__title">可领取优惠</div>
+                        <div class="shop-discount-assets-grid">
+                            ${claimableItems.map((item) => this.buildDiscountAssetCardMarkup(item, { claimable: true })).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    },
+
+    loadAvailableDiscountAssetsWithServer: async function () {
+        const token = await this.getAccessToken();
+        if (!token) {
+            return {
+                owned_discounts: [],
+                claimable_discounts: []
+            };
+        }
+
+        const response = await fetch('/api/shop/available-discounts', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                productId: this.currentPurchase.productId,
+                quantity: this.currentPurchase.quantity,
+                agentId: this.currentAgentId,
+                site: window.SiteConfig?.site || 'cn'
+            })
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload?.success === false) {
+            throw new Error(payload?.message || '加载优惠券失败');
+        }
+
+        return payload;
+    },
+
+    claimDiscountWithServer: async function (discountId) {
+        const token = await this.getAccessToken();
+        if (!token) {
+            throw new Error(window.i18n?.t('shop.loginRequired') || '请先登录');
+        }
+
+        const response = await fetch('/api/shop/claim-discount', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                discountId,
+                site: window.SiteConfig?.site || 'cn'
+            })
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload?.success === false) {
+            throw new Error(payload?.message || '领取失败');
+        }
+
+        return payload;
+    },
+
+    applyDiscountPreviewState: function (preview = {}, { assetId = null, fallbackCode = '' } = {}) {
+        this.currentPurchase.discountCode = String(preview.discount_code || fallbackCode || '').trim().toUpperCase() || null;
+        this.currentPurchase.discountAssetId = assetId || null;
+        this.currentPurchase.discountType = preview.discount_type || null;
+        this.currentPurchase.discountValue = preview.discount_value ?? null;
+        this.currentPurchase.stackingPolicy = preview?.stacking_policy && typeof preview.stacking_policy === 'object'
+            ? {
+                ...this.getDefaultStackingPolicy(),
+                ...preview.stacking_policy
+            }
+            : this.getDefaultStackingPolicy();
+        const codeInput = document.getElementById('purchaseDiscountCode');
+        if (codeInput) {
+            codeInput.value = this.currentPurchase.discountCode || '';
+        }
+        const { discountAmount } = this.syncDiscountedTotal();
+        this.syncPricingWaterfall({
+            rows: Array.isArray(preview?.pricing_waterfall) ? preview.pricing_waterfall : null,
+            stackingPolicy: preview?.stacking_policy || null
+        });
+        this.setDiscountAppliedMessage(discountAmount);
+        this.renderPurchaseDiscountAssets();
+    },
+
+    refreshAppliedDiscountPreview: async function ({ silent = true } = {}) {
+        const currentCode = String(this.currentPurchase.discountCode || '').trim();
+        if (!currentCode) {
+            return;
+        }
+
+        const revision = Math.max(0, Number(this.currentPurchase.discountPreviewRevision || 0)) + 1;
+        this.currentPurchase.discountPreviewRevision = revision;
+        const discountAssetId = this.currentPurchase.discountAssetId || null;
+
+        try {
+            const validationPayload = await this.validateDiscountWithServer(currentCode, {
+                discountAssetId
+            });
+
+            if (this.currentPurchase.discountPreviewRevision !== revision) {
+                return;
+            }
+
+            this.applyDiscountPreviewState(validationPayload?.data || {}, {
+                assetId: discountAssetId,
+                fallbackCode: currentCode
+            });
+        } catch (error) {
+            if (this.currentPurchase.discountPreviewRevision !== revision) {
+                return;
+            }
+
+            const fallbackMessage = discountAssetId
+                ? '已选卡券在当前数量下不可用，已取消使用'
+                : '优惠码在当前数量下不可用，已取消使用';
+            this.resetDiscountState({ clearMessage: false });
+            this.setDiscountMessage(
+                `<i class="fas fa-exclamation-triangle" aria-hidden="true"></i><span>${this.escapeHtml(error.message || fallbackMessage)}</span>`,
+                { variant: silent ? 'warning' : 'error', html: true }
+            );
+        }
+    },
+
+    refreshPurchaseDiscountAssets: async function ({ silent = false } = {}) {
+        try {
+            const payload = await this.loadAvailableDiscountAssetsWithServer();
+            this.currentPurchase.availableDiscountAssets = Array.isArray(payload?.owned_discounts) ? payload.owned_discounts : [];
+            this.currentPurchase.claimableDiscounts = Array.isArray(payload?.claimable_discounts) ? payload.claimable_discounts : [];
+            this.renderPurchaseDiscountAssets();
+        } catch (error) {
+            this.currentPurchase.availableDiscountAssets = [];
+            this.currentPurchase.claimableDiscounts = [];
+            this.renderPurchaseDiscountAssets();
+            if (!silent) {
+                this.setDiscountMessage(error.message || '优惠券列表加载失败', { variant: 'error' });
+            }
+        }
+    },
+
+    applyOwnedDiscountAsset: async function (assetId, discountCode) {
+        const applyBtn = document.getElementById('applyDiscountBtn');
+        if (applyBtn) {
+            applyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            applyBtn.disabled = true;
+        }
+
+        try {
+            const validationPayload = await this.validateDiscountWithServer(discountCode, {
+                discountAssetId: assetId
+            });
+            this.applyDiscountPreviewState(validationPayload?.data || {}, {
+                assetId,
+                fallbackCode: discountCode
+            });
+        } catch (error) {
+            this.resetDiscountState({ clearMessage: false });
+            this.setDiscountMessage(
+                `<i class="fas fa-times-circle" aria-hidden="true"></i><span>${this.escapeHtml(error.message || '当前卡券不可用')}</span>`,
+                { variant: 'error', html: true }
+            );
+        } finally {
+            if (applyBtn) {
+                applyBtn.innerHTML = window.i18n?.t('shop.verify') || '验证';
+                applyBtn.disabled = false;
+            }
+        }
+    },
+
+    claimAndRefreshDiscountAsset: async function (discountId) {
+        try {
+            await this.claimDiscountWithServer(discountId);
+            await this.refreshPurchaseDiscountAssets({ silent: true });
+            this.setDiscountMessage(
+                `<i class="fas fa-check-circle" aria-hidden="true"></i><span>领取成功，已加入你的卡券包</span>`,
+                { variant: 'success', html: true }
+            );
+        } catch (error) {
+            this.setDiscountMessage(
+                `<i class="fas fa-times-circle" aria-hidden="true"></i><span>${this.escapeHtml(error.message || '领取失败')}</span>`,
+                { variant: 'error', html: true }
+            );
+        }
+    },
+
+    validateDiscountWithServer: async function (discountCode, options = {}) {
         const token = await this.getAccessToken();
         if (!token) {
             throw new Error(window.i18n?.t('shop.loginRequired') || '请先登录');
@@ -416,6 +816,7 @@ const ShopClient = {
                 productId: this.currentPurchase.productId,
                 quantity: this.currentPurchase.quantity,
                 discountCode,
+                discountAssetId: options.discountAssetId || this.currentPurchase.discountAssetId || null,
                 agentId: this.currentAgentId,
                 site: window.SiteConfig?.site || 'cn'
             })
@@ -450,6 +851,7 @@ const ShopClient = {
                 productId: this.currentPurchase.productId,
                 quantity: this.currentPurchase.quantity,
                 discountCode: this.currentPurchase.discountCode,
+                discountAssetId: this.currentPurchase.discountAssetId,
                 agentId: this.currentAgentId,
                 site: window.SiteConfig?.site || 'cn',
                 idempotencyKey: this.currentPurchase.idempotencyKey
@@ -669,6 +1071,27 @@ const ShopClient = {
                 return;
             }
 
+            const discountAssetTrigger = event.target instanceof Element
+                ? event.target.closest('[data-shop-discount-action="apply"]')
+                : null;
+            if (discountAssetTrigger) {
+                event.preventDefault?.();
+                void this.applyOwnedDiscountAsset(
+                    discountAssetTrigger.dataset.discountAssetId || '',
+                    discountAssetTrigger.dataset.discountCode || ''
+                );
+                return;
+            }
+
+            const claimDiscountTrigger = event.target instanceof Element
+                ? event.target.closest('[data-shop-discount-action="claim"]')
+                : null;
+            if (claimDiscountTrigger) {
+                event.preventDefault?.();
+                void this.claimAndRefreshDiscountAsset(claimDiscountTrigger.dataset.discountId || '');
+                return;
+            }
+
             if (event.target instanceof Element && event.target.closest('#confirmPurchaseBtn')) {
                 event.preventDefault?.();
                 void this.confirmPurchase();
@@ -783,7 +1206,12 @@ const ShopClient = {
         if (!msgBox) return;
 
         msgBox.classList.add('shop-discount-message');
-        msgBox.classList.remove('shop-discount-message--error', 'shop-discount-message--success');
+        msgBox.classList.remove(
+            'shop-discount-message--error',
+            'shop-discount-message--success',
+            'shop-discount-message--warning',
+            'shop-discount-message--info'
+        );
 
         if (!message) {
             msgBox.hidden = true;
@@ -1415,9 +1843,14 @@ const ShopClient = {
         orderId: null,
         rules: [],
         discountCode: null,
+        discountAssetId: null,
         discountType: null,
         discountValue: null,
         discountAmount: 0,
+        pricingWaterfall: [],
+        stackingPolicy: null,
+        availableDiscountAssets: [],
+        claimableDiscounts: [],
         purchaseNotes: '',
         sourcePage: null,
         sourceChannel: null,
@@ -1810,9 +2243,15 @@ const ShopClient = {
             orderId: null,
             rules: rules,
             discountCode: null,
+            discountAssetId: null,
             discountType: null,
             discountValue: null,
             discountAmount: 0,
+            pricingWaterfall: [],
+            stackingPolicy: this.getDefaultStackingPolicy(),
+            availableDiscountAssets: [],
+            claimableDiscounts: [],
+            discountPreviewRevision: 0,
             purchaseNotes: typeof purchaseNotes === 'string' ? purchaseNotes.trim() : '',
             sourcePage: normalizeShopTrackingText(sourceContext.sourcePage || '', 80) || null,
             sourceChannel: normalizeShopTrackingText(sourceContext.sourceChannel || '', 80) || null,
@@ -1842,6 +2281,10 @@ const ShopClient = {
         const applyBtn = document.getElementById('applyDiscountBtn');
         if (discountInput) discountInput.value = '';
         this.setDiscountMessage('');
+        this.currentPurchase.availableDiscountAssets = [];
+        this.currentPurchase.claimableDiscounts = [];
+        this.renderPurchaseDiscountAssets();
+        this.syncPricingWaterfall();
         if (applyBtn) {
             applyBtn.innerHTML = window.i18n?.t('shop.verify') || '验证';
             applyBtn.disabled = false;
@@ -1867,6 +2310,7 @@ const ShopClient = {
         // Lock background scroll on mobile Safari
         if (window.iOSScrollLock) window.iOSScrollLock.lockLight(modal);
         this.attachPurchaseModalKeyboardDock();
+        void this.refreshPurchaseDiscountAssets({ silent: true });
 
         trackShopAnalyticsEvent('shop_view', {
             entityId: String(productId || '').trim() || null,
@@ -1938,11 +2382,19 @@ const ShopClient = {
         let total = qty * unitPrice;
 
         if (this.currentPurchase.discountCode && this.currentPurchase.discountType) {
-            const { discountAmount } = this.syncDiscountedTotal();
-            this.setDiscountAppliedMessage(discountAmount);
+            document.getElementById('modalTotalPrice').textContent = total;
+            this.setDiscountMessage(
+                '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span>正在重算当前优惠...</span>',
+                { variant: 'info', html: true }
+            );
+            this.syncPricingWaterfall();
+            void this.refreshAppliedDiscountPreview({ silent: true });
         } else {
             document.getElementById('modalTotalPrice').textContent = total;
+            this.syncPricingWaterfall();
         }
+
+        void this.refreshPurchaseDiscountAssets({ silent: true });
 
         return total;
     },
@@ -1966,16 +2418,12 @@ const ShopClient = {
         }
 
         try {
+            this.currentPurchase.discountAssetId = null;
             const validationPayload = await this.validateDiscountWithServer(codeInput);
-            const preview = validationPayload?.data || {};
-
-            this.currentPurchase.discountCode = String(preview.discount_code || codeInput).trim().toUpperCase();
-            this.currentPurchase.discountType = preview.discount_type || null;
-            this.currentPurchase.discountValue = preview.discount_value ?? null;
-
-            const { discountAmount } = this.syncDiscountedTotal();
-
-            this.setDiscountAppliedMessage(discountAmount);
+            this.applyDiscountPreviewState(validationPayload?.data || {}, {
+                assetId: null,
+                fallbackCode: codeInput
+            });
 
         } catch (err) {
             if (!silent) {
