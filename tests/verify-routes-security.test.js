@@ -166,6 +166,8 @@ function createSupabaseStub(state = {}) {
     const balances = state.balances || {};
     const verifySettings = state.verifySettings || {
         price_per_verify: 10,
+        price_per_verify_extract: 10,
+        price_per_verify_full: 20,
         verify_api_key: 'verify-api-key',
         verify_api_base_url: 'https://verify.test'
     };
@@ -821,14 +823,16 @@ test('quota endpoint allows admins and proxies upstream data', async () => {
         }
     }, async ({ app }) => {
         const originalFetch = global.fetch;
-        global.fetch = async (input) => {
+        global.fetch = async (input, init) => {
             const url = String(input || '');
-            if (url === 'https://verify.test/api/balance') {
+            if (url === 'https://verify.test/openapi') {
+                const body = JSON.parse(init?.body || '{}');
+                assert.equal(body.action, 'get_balance');
+                assert.equal(body.cdkey, 'verify-api-key');
                 return new Response(JSON.stringify({
-                    balance: 11,
+                    remaining_uses: 11,
                     total_used: 4,
-                    cost_per_job: 1,
-                    name: 'primary-key'
+                    success: true
                 }), {
                     status: 200,
                     headers: {
@@ -853,8 +857,16 @@ test('quota endpoint allows admins and proxies upstream data', async () => {
             assert.equal(response.status, 200);
             assert.equal(payload.success, true);
             assert.equal(payload.balance, 11);
+            assert.equal(payload.remaining_uses, 11);
+            assert.equal(payload.remaining_extract_jobs, 22);
+            assert.equal(payload.remaining_full_jobs, 11);
             assert.equal(payload.total_used, 4);
-            assert.equal(payload.key_name, 'primary-key');
+            assert.equal(payload.extract_cost_per_job, 0.5);
+            assert.equal(payload.full_cost_per_job, 1);
+            assert.match(payload.key_name, /^veri\.\.\..+/);
+            assert.equal(Array.isArray(payload.key_states), true);
+            assert.equal(payload.key_states[0].api_key, 'verify-api-key');
+            assert.equal(payload.key_states[0].remaining_uses, 11);
         } finally {
             global.fetch = originalFetch;
         }
@@ -865,14 +877,16 @@ test('quota endpoint allows requests signed with verify monitor internal key', a
     await withEnv({ VERIFY_MONITOR_INTERNAL_KEY: 'verify-internal-secret' }, async () => {
         await withTestServer({}, async ({ app }) => {
             const originalFetch = global.fetch;
-            global.fetch = async (input) => {
+            global.fetch = async (input, init) => {
                 const url = String(input || '');
-                if (url === 'https://verify.test/api/balance') {
+                if (url === 'https://verify.test/openapi') {
+                    const body = JSON.parse(init?.body || '{}');
+                    assert.equal(body.action, 'get_balance');
+                    assert.equal(body.cdkey, 'verify-api-key');
                     return new Response(JSON.stringify({
-                        balance: 9,
+                        remaining_uses: 9,
                         total_used: 2,
-                        cost_per_job: 1,
-                        name: 'internal-key'
+                        success: true
                     }), {
                         status: 200,
                         headers: {
@@ -896,7 +910,12 @@ test('quota endpoint allows requests signed with verify monitor internal key', a
                 assert.equal(response.status, 200);
                 assert.equal(payload.success, true);
                 assert.equal(payload.balance, 9);
-                assert.equal(payload.key_name, 'internal-key');
+                assert.equal(payload.remaining_uses, 9);
+                assert.equal(payload.remaining_extract_jobs, 18);
+                assert.equal(payload.remaining_full_jobs, 9);
+                assert.match(payload.key_name, /^veri\.\.\..+/);
+                assert.equal(Array.isArray(payload.key_states), true);
+                assert.equal(payload.key_states[0].api_key, 'verify-api-key');
             } finally {
                 global.fetch = originalFetch;
             }
@@ -960,82 +979,89 @@ test('queue endpoint allows admins and proxies upstream data', async () => {
         },
         permissions: {
             'admin-1': { is_admin: true, is_super_admin: false }
-        }
-    }, async ({ app }) => {
-        const originalFetch = global.fetch;
-        global.fetch = async (input, init) => {
-            const url = String(input || '');
-            if (url === 'https://verify.test/api/queue') {
-                return new Response(JSON.stringify({
-                    queue_size: 7,
-                    running_jobs: 2
-                }), {
-                    status: 200,
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
+        },
+        verificationLogs: [
+            {
+                id: 'queue-log-1',
+                user_id: 'user-1',
+                site: 'cn',
+                verification_id: 'job-queue-1',
+                status: 'queued',
+                created_at: '2026-03-22T12:00:00.000Z',
+                message: JSON.stringify({ kind: 'google_one_job', job_id: 'job-queue-1', email: 'queued@example.com' })
+            },
+            {
+                id: 'queue-log-2',
+                user_id: 'user-2',
+                site: 'cn',
+                verification_id: 'job-run-1',
+                status: 'running',
+                created_at: '2026-03-22T12:01:00.000Z',
+                message: JSON.stringify({ kind: 'google_one_job', job_id: 'job-run-1', email: 'running@example.com' })
+            },
+            {
+                id: 'queue-log-3',
+                user_id: 'user-3',
+                site: 'cn',
+                verification_id: 'job-proc-1',
+                status: 'processing',
+                created_at: '2026-03-22T12:02:00.000Z',
+                message: JSON.stringify({ kind: 'google_one_job', job_id: 'job-proc-1', email: 'processing@example.com' })
             }
+        ]
+    }, async ({ app }) => {
+        const response = await dispatchRoute(app, {
+            url: '/api/queue',
+            headers: {
+                Authorization: 'Bearer admin-token'
+            }
+        });
+        const payload = response.json();
 
-            throw new Error(`Unexpected fetch URL in test: ${url}`);
-        };
+        assert.equal(response.status, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.queue_size, 1);
+        assert.equal(payload.running_jobs, 2);
+        assert.equal(payload.source, 'local_tracked_jobs');
+    });
+});
 
-        try {
+test('queue endpoint allows requests signed with verify monitor internal key', async () => {
+    await withEnv({ VERIFY_MONITOR_INTERNAL_KEY: 'verify-internal-secret' }, async () => {
+        await withTestServer({
+            verificationLogs: [
+                {
+                    id: 'internal-queue-log-1',
+                    user_id: 'user-1',
+                    site: 'cn',
+                    verification_id: 'job-queue-2',
+                    status: 'pending',
+                    created_at: '2026-03-22T12:00:00.000Z',
+                    message: JSON.stringify({ kind: 'google_one_job', job_id: 'job-queue-2', email: 'pending@example.com' })
+                },
+                {
+                    id: 'internal-queue-log-2',
+                    user_id: 'user-2',
+                    site: 'cn',
+                    verification_id: 'job-run-2',
+                    status: 'running',
+                    created_at: '2026-03-22T12:01:00.000Z',
+                    message: JSON.stringify({ kind: 'google_one_job', job_id: 'job-run-2', email: 'running@example.com' })
+                }
+            ]
+        }, async ({ app }) => {
             const response = await dispatchRoute(app, {
                 url: '/api/queue',
                 headers: {
-                    Authorization: 'Bearer admin-token'
+                    [VERIFY_MONITOR_INTERNAL_HEADER_NAME]: 'verify-internal-secret'
                 }
             });
             const payload = response.json();
 
             assert.equal(response.status, 200);
             assert.equal(payload.success, true);
-            assert.equal(payload.queue_size, 7);
-            assert.equal(payload.running_jobs, 2);
-        } finally {
-            global.fetch = originalFetch;
-        }
-    });
-});
-
-test('queue endpoint allows requests signed with verify monitor internal key', async () => {
-    await withEnv({ VERIFY_MONITOR_INTERNAL_KEY: 'verify-internal-secret' }, async () => {
-        await withTestServer({}, async ({ app }) => {
-            const originalFetch = global.fetch;
-            global.fetch = async (input) => {
-                const url = String(input || '');
-                if (url === 'https://verify.test/api/queue') {
-                    return new Response(JSON.stringify({
-                        queue_size: 3,
-                        running_jobs: 1
-                    }), {
-                        status: 200,
-                        headers: {
-                            'Content-Type': 'application/json'
-                        }
-                    });
-                }
-
-                throw new Error(`Unexpected fetch URL in test: ${url}`);
-            };
-
-            try {
-                const response = await dispatchRoute(app, {
-                    url: '/api/queue',
-                    headers: {
-                        [VERIFY_MONITOR_INTERNAL_HEADER_NAME]: 'verify-internal-secret'
-                    }
-                });
-                const payload = response.json();
-
-                assert.equal(response.status, 200);
-                assert.equal(payload.success, true);
-                assert.equal(payload.queue_size, 3);
-                assert.equal(payload.running_jobs, 1);
-            } finally {
-                global.fetch = originalFetch;
-            }
+            assert.equal(payload.queue_size, 1);
+            assert.equal(payload.running_jobs, 1);
         });
     });
 });
@@ -1197,12 +1223,17 @@ test('verify submit binds tracked job ownership to the authenticated user', asyn
         const originalFetch = global.fetch;
         global.fetch = async (input, init) => {
             const url = String(input || '');
-            if (url === 'https://verify.test/api/jobs') {
+            if (url === 'https://verify.test/openapi') {
+                const body = JSON.parse(init?.body || '{}');
+                assert.equal(body.action, 'submit_task');
+                assert.equal(body.cdkey, 'verify-api-key');
+                assert.equal(body.email, 'member@example.com');
+                assert.equal(body.twofa, 'totp-secret');
+                assert.equal(body.task_type, 'extract');
                 return new Response(JSON.stringify({
-                    job_id: 'job-queued-1',
-                    status: 'queued',
-                    queue_position: 3,
-                    estimated_wait_seconds: 25
+                    success: true,
+                    task_id: 'job-queued-1',
+                    message: '任务提交成功'
                 }), {
                     status: 200,
                     headers: {
@@ -1235,10 +1266,80 @@ test('verify submit binds tracked job ownership to the authenticated user', asyn
             assert.equal(response.status, 200);
             assert.equal(payload.success, true);
             assert.equal(payload.job_id, 'job-queued-1');
+            assert.equal(payload.task_type, 'extract');
+            assert.equal(payload.pricePerVerify, 10);
             assert.equal(state.verificationLogs.length, 1);
             assert.equal(state.verificationLogs[0].user_id, 'user-1');
             assert.equal(state.verificationLogs[0].site, 'cn');
             assert.equal(state.verificationLogs[0].verification_id, 'job-queued-1');
+        } finally {
+            global.fetch = originalFetch;
+        }
+    });
+});
+
+test('verify submit accepts full-flow mode and charges the configured full-flow price', async () => {
+    const state = {
+        tokens: {
+            'member-token': { id: 'user-1', email: 'member@example.com' }
+        },
+        balances: {
+            'user-1': 100
+        },
+        verifySettings: {
+            price_per_verify: 10,
+            price_per_verify_extract: 10,
+            price_per_verify_full: 26,
+            verify_api_key: 'verify-api-key',
+            verify_api_base_url: 'https://verify.test'
+        },
+        verificationLogs: []
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const originalFetch = global.fetch;
+        global.fetch = async (input, init) => {
+            const url = String(input || '');
+            if (url === 'https://verify.test/openapi') {
+                const body = JSON.parse(init?.body || '{}');
+                assert.equal(body.action, 'submit_task');
+                assert.equal(body.task_type, 'full');
+                return new Response(JSON.stringify({
+                    success: true,
+                    task_id: 'job-full-1',
+                    message: '全流程任务已提交'
+                }), {
+                    status: 200,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+            }
+
+            throw new Error(`Unexpected fetch URL in test: ${url}`);
+        };
+
+        try {
+            const response = await dispatchRoute(app, {
+                method: 'POST',
+                url: '/api/verify',
+                headers: {
+                    Authorization: 'Bearer member-token'
+                },
+                body: {
+                    email: 'member@example.com',
+                    password: 'pw',
+                    totpSecret: 'totp-secret',
+                    taskType: 'full'
+                }
+            });
+            const payload = response.json();
+
+            assert.equal(response.status, 200);
+            assert.equal(payload.success, true);
+            assert.equal(payload.job_id, 'job-full-1');
+            assert.equal(payload.task_type, 'full');
+            assert.equal(payload.pricePerVerify, 26);
         } finally {
             global.fetch = originalFetch;
         }
@@ -2123,6 +2224,7 @@ test('verify success polling deducts points only once per job id', async () => {
                     kind: 'google_one_job',
                     job_id: 'job-success-1',
                     email: 'member@example.com',
+                    task_type: 'extract',
                     raw_status: 'queued'
                 })
             }
@@ -2132,16 +2234,21 @@ test('verify success polling deducts points only once per job id', async () => {
 
     await withTestServer(state, async ({ app }) => {
         const originalFetch = global.fetch;
-        global.fetch = async (input) => {
+        global.fetch = async (input, init) => {
             const url = String(input || '');
-            if (url === 'https://verify.test/api/jobs/job-success-1') {
+            if (url === 'https://verify.test/openapi') {
+                const body = JSON.parse(init?.body || '{}');
+                assert.equal(body.action, 'get_status');
+                assert.equal(body.task_id, 'job-success-1');
                 return new Response(JSON.stringify({
-                    job_id: 'job-success-1',
-                    status: 'success',
+                    success: true,
+                    task_id: 'job-success-1',
+                    status: 'Success',
+                    task_type: 'extract',
                     stage: 3,
                     total_stages: 3,
                     stage_label: 'done',
-                    url: 'https://example.com/result',
+                    offer_url: 'https://example.com/result',
                     elapsed_seconds: 18
                 }), {
                     status: 200,
@@ -2183,6 +2290,169 @@ test('verify success polling deducts points only once per job id', async () => {
             assert.equal(state.pointsLedger[0].site, 'cn');
             assert.equal(state.verificationLogs[0].status, 'success');
             assert.equal(state.verificationLogs[0].points_deducted, 10);
+        } finally {
+            global.fetch = originalFetch;
+        }
+    });
+});
+
+test('verify status polling can repair a previously misclassified failed job once upstream reports success', async () => {
+    const state = {
+        tokens: {
+            'member-token': { id: 'user-1', email: 'member@example.com' }
+        },
+        balances: {
+            'user-1': 100
+        },
+        verificationLogs: [
+            {
+                id: 'verify-job-repair-1',
+                user_id: 'user-1',
+                site: 'cn',
+                verification_id: 'job-repair-1',
+                status: 'failed',
+                points_deducted: 0,
+                created_at: '2026-03-22T12:00:00.000Z',
+                message: JSON.stringify({
+                    kind: 'google_one_job',
+                    job_id: 'job-repair-1',
+                    email: 'member@example.com',
+                    task_type: 'extract',
+                    error_code: 'job_not_found',
+                    error_message: '任务不存在',
+                    raw_status: 'failed'
+                })
+            }
+        ],
+        pointsLedger: []
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const originalFetch = global.fetch;
+        global.fetch = async (input, init) => {
+            const url = String(input || '');
+            if (url === 'https://verify.test/openapi') {
+                const body = JSON.parse(init?.body || '{}');
+                assert.equal(body.action, 'get_status');
+                assert.equal(body.task_id, 'job-repair-1');
+                return new Response(JSON.stringify({
+                    success: true,
+                    task_id: 'job-repair-1',
+                    status: 'Success',
+                    task_type: 'extract',
+                    offer_url: 'https://example.com/repaired',
+                    elapsed_seconds: 21
+                }), {
+                    status: 200,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+            }
+
+            throw new Error(`Unexpected fetch URL in test: ${url}`);
+        };
+
+        try {
+            const response = await dispatchRoute(app, {
+                url: '/api/verify/status/job-repair-1',
+                headers: {
+                    Authorization: 'Bearer member-token'
+                }
+            });
+            const payload = response.json();
+
+            assert.equal(response.status, 200);
+            assert.equal(payload.success, true);
+            assert.equal(payload.status, 'success');
+            assert.equal(payload.url, 'https://example.com/repaired');
+            assert.equal(payload.pointsDeducted, 10);
+            assert.equal(state.verificationLogs[0].status, 'success');
+            assert.equal(state.verificationLogs[0].points_deducted, 10);
+        } finally {
+            global.fetch = originalFetch;
+        }
+    });
+});
+
+test('verify full-flow success polling deducts the configured full-flow price once per job id', async () => {
+    const state = {
+        tokens: {
+            'member-token': { id: 'user-1', email: 'member@example.com' }
+        },
+        balances: {
+            'user-1': 100
+        },
+        verifySettings: {
+            price_per_verify: 10,
+            price_per_verify_extract: 10,
+            price_per_verify_full: 24,
+            verify_api_key: 'verify-api-key',
+            verify_api_base_url: 'https://verify.test'
+        },
+        verificationLogs: [
+            {
+                id: 'verify-job-full-1',
+                user_id: 'user-1',
+                site: 'cn',
+                verification_id: 'job-full-1',
+                status: 'queued',
+                points_deducted: 0,
+                created_at: '2026-03-22T12:00:00.000Z',
+                message: JSON.stringify({
+                    kind: 'google_one_job',
+                    job_id: 'job-full-1',
+                    email: 'member@example.com',
+                    task_type: 'full',
+                    raw_status: 'queued'
+                })
+            }
+        ],
+        pointsLedger: []
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const originalFetch = global.fetch;
+        global.fetch = async (input, init) => {
+            const url = String(input || '');
+            if (url === 'https://verify.test/openapi') {
+                const body = JSON.parse(init?.body || '{}');
+                assert.equal(body.action, 'get_status');
+                assert.equal(body.task_id, 'job-full-1');
+                return new Response(JSON.stringify({
+                    success: true,
+                    task_id: 'job-full-1',
+                    status: 'Completed',
+                    task_type: 'full',
+                    message: '包绑卡流程完成',
+                    elapsed_seconds: 42
+                }), {
+                    status: 200,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+            }
+
+            throw new Error(`Unexpected fetch URL in test: ${url}`);
+        };
+
+        try {
+            const response = await dispatchRoute(app, {
+                url: '/api/verify/status/job-full-1',
+                headers: {
+                    Authorization: 'Bearer member-token'
+                }
+            });
+            const payload = response.json();
+
+            assert.equal(response.status, 200);
+            assert.equal(payload.success, true);
+            assert.equal(payload.task_type, 'full');
+            assert.equal(payload.pointsDeducted, 24);
+            assert.equal(state.metrics.deductCalls, 1);
+            assert.equal(state.pointsLedger.length, 1);
+            assert.equal(state.verificationLogs[0].points_deducted, 24);
         } finally {
             global.fetch = originalFetch;
         }

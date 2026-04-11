@@ -8,8 +8,11 @@
 (function () {
     'use strict';
 
+    const Contract = window.HomepageContract || null;
     const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
     const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
+    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260411_HOMEPAGE_P2_EXPERIMENTS_1';
+    const HOMEPAGE_GUESTBOOK_CARD_LIMIT = 6;
 
     // Only run on sub-pages (not homepage)
     if (window.location.pathname === '/' || window.location.pathname === '/index.html') return;
@@ -18,7 +21,7 @@
     let guestbookPrefetching = false;
 
     function getCurrentSite() {
-        return window.SiteConfig?.site || 'cn';
+        return Contract?.normalizeSite?.(window.SiteConfig?.site) || window.SiteConfig?.site || 'cn';
     }
 
     function getHomepagePrefetchCacheKey(site = getCurrentSite()) {
@@ -62,11 +65,413 @@
         }
     }
 
+    function getPromptPool() {
+        if (Array.isArray(window.PROMPTS)) {
+            return window.PROMPTS;
+        }
+        if (Array.isArray(window.promptsData)) {
+            return window.promptsData;
+        }
+        return [];
+    }
+
+    function getLocalizedField(obj, fieldBase) {
+        if (Contract?.getLocalizedField) {
+            return Contract.getLocalizedField(obj, fieldBase, window.i18n?.getCurrentLanguage?.() || 'zh') || '';
+        }
+
+        const lang = window.i18n?.getCurrentLanguage?.() || 'zh';
+        return obj?.[`${fieldBase}_${lang}`] || obj?.[fieldBase] || '';
+    }
+
+    function getHomepagePrimaryLanguage() {
+        return getCurrentSite() === 'intl' ? 'en' : 'zh';
+    }
+
+    function isHomepagePrimaryLanguageActive() {
+        return (window.i18n?.getCurrentLanguage?.() || 'zh') === getHomepagePrimaryLanguage();
+    }
+
+    function cloneExperimentValue(value) {
+        if (typeof value === 'string') {
+            return String(value);
+        }
+        if (Array.isArray(value)) {
+            return value.map((item) => ({ ...item }));
+        }
+        return value;
+    }
+
+    function getHomepageExperimentAssignmentStorageKey(experimentId = '') {
+        return `homepage_experiment_assignment_${getCurrentSite()}_${String(experimentId || '').trim()}`;
+    }
+
+    function resolveExperimentVariantKey(experiment = {}) {
+        if (!experiment?.id || experiment?.status === 'paused') {
+            return 'control';
+        }
+
+        try {
+            const stored = sessionStorage.getItem(getHomepageExperimentAssignmentStorageKey(experiment.id));
+            if (stored === 'control' || stored === 'variant') {
+                return stored;
+            }
+        } catch (error) {
+            // Ignore storage failures and fall back to a new assignment.
+        }
+
+        const trafficPercent = Math.min(95, Math.max(5, Number(experiment?.traffic_percent || 50) || 50));
+        const variantKey = Math.random() * 100 < trafficPercent ? 'variant' : 'control';
+
+        try {
+            sessionStorage.setItem(getHomepageExperimentAssignmentStorageKey(experiment.id), variantKey);
+        } catch (error) {
+            // Ignore storage failures.
+        }
+
+        return variantKey;
+    }
+
+    function getSectionExperimentValue(sectionKey, config = {}, field = '', fallbackValue = null) {
+        const matched = (Array.isArray(config?.experiments) ? config.experiments : [])
+            .find((experiment) => experiment?.field === field && experiment?.status !== 'paused');
+
+        if (!matched) {
+            return fallbackValue;
+        }
+
+        const isListField = field === 'featured_items' || field === 'custom_items';
+        if (!isListField && !isHomepagePrimaryLanguageActive()) {
+            return fallbackValue;
+        }
+
+        const variantKey = resolveExperimentVariantKey(matched);
+        return cloneExperimentValue(variantKey === 'variant' ? matched.variant_value : matched.control_value);
+    }
+
+    function normalizeFeaturedPromptLookupId(value) {
+        return String(value ?? '').trim();
+    }
+
+    function findFeaturedPromptRecord(promptPool = [], item = {}) {
+        const normalizedId = normalizeFeaturedPromptLookupId(item?.id);
+        if (!normalizedId || !Array.isArray(promptPool) || promptPool.length === 0) {
+            return null;
+        }
+
+        let matchedPrompt = promptPool.find((prompt) => {
+            const promptId = normalizeFeaturedPromptLookupId(prompt?.supabaseId ?? prompt?.id);
+            return Boolean(promptId) && promptId === normalizedId;
+        });
+
+        if (matchedPrompt) {
+            return matchedPrompt;
+        }
+
+        const numericId = Number.parseInt(normalizedId, 10);
+        if (Number.isNaN(numericId)) {
+            return null;
+        }
+
+        matchedPrompt = promptPool.find((prompt) => {
+            const supabaseId = Number.parseInt(prompt?.supabaseId, 10);
+            const promptId = Number.parseInt(prompt?.id, 10);
+            return (!Number.isNaN(supabaseId) && supabaseId === numericId)
+                || (!Number.isNaN(promptId) && promptId === numericId);
+        });
+
+        return matchedPrompt || null;
+    }
+
+    function buildFeaturedPromptFallback(item = {}) {
+        const normalizedId = normalizeFeaturedPromptLookupId(item?.id);
+        if (!normalizedId) {
+            return null;
+        }
+
+        const image = String(item?.image || item?.image_url || '').trim();
+        const tags = Array.isArray(item?.tags)
+            ? item.tags.map((tag) => String(tag || '').trim()).filter(Boolean).slice(0, 8)
+            : [];
+        const title = String(item?.title || item?.title_zh || item?.title_en || normalizedId).trim() || normalizedId;
+
+        return {
+            id: normalizedId,
+            title,
+            title_zh: String(item?.title_zh || item?.title || '').trim(),
+            title_en: String(item?.title_en || item?.title || '').trim(),
+            images: image ? [image] : [],
+            tags,
+            ai_tags: [...tags],
+            aiTags: tags.length > 0 ? { styles: { zh: [...tags], en: [...tags] } } : undefined,
+            homepage_featured_fallback: true
+        };
+    }
+
+    function aggregatePrompts(config = {}) {
+        const promptPool = getPromptPool();
+        const experimentFeaturedItems = getSectionExperimentValue('prompts', config, 'featured_items', null);
+        const featuredItems = Array.isArray(experimentFeaturedItems) && experimentFeaturedItems.length > 0
+            ? experimentFeaturedItems
+            : config.featured_items;
+
+        if ((Array.isArray(experimentFeaturedItems) && experimentFeaturedItems.length > 0) || (!config.enable_auto && Array.isArray(featuredItems) && featuredItems.length > 0)) {
+            return featuredItems
+                .map((item) => findFeaturedPromptRecord(promptPool, item) || buildFeaturedPromptFallback(item))
+                .filter(Boolean);
+        }
+
+        const maxItems = Number(config.max_items) || 24;
+        const sortStrategy = String(config.sort || 'popular').trim();
+        const sorted = [...promptPool];
+
+        if (sortStrategy === 'popular') {
+            sorted.sort((left, right) => {
+                const leftCount = Object.values(left.aiTags || {}).flat().length;
+                const rightCount = Object.values(right.aiTags || {}).flat().length;
+                return rightCount - leftCount;
+            });
+        } else if (sortStrategy === 'latest') {
+            sorted.reverse();
+        } else if (sortStrategy === 'random') {
+            sorted.sort(() => Math.random() - 0.5);
+        }
+
+        return sorted.slice(0, maxItems);
+    }
+
+    function aggregateShop(config = {}, products = []) {
+        const allProducts = Array.isArray(products) ? products : [];
+        const experimentCustomItems = getSectionExperimentValue('shop', config, 'custom_items', null);
+        const sourceCustomItems = Array.isArray(experimentCustomItems) && experimentCustomItems.length > 0
+            ? experimentCustomItems
+            : config.custom_items;
+        const curatedItems = Array.isArray(sourceCustomItems)
+            ? sourceCustomItems
+                .map((item) => {
+                    const normalizedId = String(item?.id || '').trim();
+                    if (!normalizedId) {
+                        return null;
+                    }
+                    const liveProduct = allProducts.find((product) => String(product?.id || '').trim() === normalizedId);
+                    return {
+                        ...(liveProduct || item),
+                        id: normalizedId,
+                        homepage_badge: String(item?.badge || '').trim(),
+                        homepage_curated: true,
+                        homepage_missing: !liveProduct
+                    };
+                })
+                .filter(Boolean)
+            : [];
+        const curatedIds = new Set(curatedItems.map((item) => String(item?.id || '').trim()).filter(Boolean));
+
+        let filtered = window.SiteConfig?.filterProductsForCurrentSite
+            ? window.SiteConfig.filterProductsForCurrentSite(allProducts)
+            : allProducts;
+
+        if (config.category && config.category !== 'all') {
+            filtered = filtered.filter((product) => product.category === config.category);
+        }
+
+        const sortStrategy = String(config.sort || 'popular').trim();
+        if (sortStrategy === 'latest') {
+            filtered = [...filtered].reverse();
+        } else if (sortStrategy === 'random') {
+            filtered = [...filtered].sort(() => Math.random() - 0.5);
+        }
+
+        const autoItems = filtered.filter((item) => !curatedIds.has(String(item?.id || '').trim()));
+        const maxItems = Number(config.max_items) || 6;
+
+        if (config.enable_auto === false) {
+            return curatedItems.slice(0, maxItems);
+        }
+
+        return [...curatedItems, ...autoItems].slice(0, maxItems);
+    }
+
+    function aggregateGuestbook(config = {}, messages = []) {
+        const sourceMessages = Array.isArray(messages) ? messages : [];
+        const maxItems = Math.max(1, Number(config.max_items) || HOMEPAGE_GUESTBOOK_CARD_LIMIT);
+        const experimentFeaturedItems = getSectionExperimentValue('guestbook', config, 'featured_items', null);
+        const sourceFeaturedItems = Array.isArray(experimentFeaturedItems) && experimentFeaturedItems.length > 0
+            ? experimentFeaturedItems
+            : config.featured_items;
+        const featuredItems = Array.isArray(sourceFeaturedItems)
+            ? sourceFeaturedItems
+                .map((item) => {
+                    const normalizedId = String(item?.id || '').trim();
+                    if (!normalizedId) {
+                        return null;
+                    }
+                    const liveMessage = sourceMessages.find((message) => String(message?.id || '').trim() === normalizedId);
+                    if (liveMessage) {
+                        return {
+                            ...liveMessage,
+                            homepage_curated: true,
+                            homepage_reason: String(item?.reason || '').trim()
+                        };
+                    }
+                    if (!item?.content) {
+                        return null;
+                    }
+                    return {
+                        id: normalizedId,
+                        content: String(item?.content || '').trim(),
+                        image_url: String(item?.image_url || '').trim(),
+                        like_count: Number(item?.like_count || 0) || 0,
+                        created_at: item?.created_at || null,
+                        username: String(item?.username || '').trim(),
+                        avatar_url: String(item?.avatar_url || '').trim(),
+                        homepage_curated: true,
+                        homepage_reason: String(item?.reason || '').trim(),
+                        homepage_missing: true
+                    };
+                })
+                .filter(Boolean)
+            : [];
+        const featuredIds = new Set(featuredItems.map((item) => String(item?.id || '').trim()).filter(Boolean));
+        const autoItems = sourceMessages.filter((item) => !featuredIds.has(String(item?.id || '').trim()));
+        const fallbackItems = Array.isArray(config.fallback_items)
+            ? config.fallback_items
+                .map((item, index) => {
+                    const content = String(item?.content || item?.text || '').trim();
+                    if (!content) {
+                        return null;
+                    }
+                    return {
+                        id: String(item?.id || `guestbook_fallback_${index + 1}`).trim(),
+                        content,
+                        author: String(item?.author || '').trim(),
+                        avatar_url: String(item?.avatar_url || '').trim(),
+                        homepage_fallback: true
+                    };
+                })
+                .filter(Boolean)
+            : [];
+
+        if (config.enable_auto === false) {
+            return [...featuredItems, ...fallbackItems].slice(0, Math.min(maxItems, HOMEPAGE_GUESTBOOK_CARD_LIMIT));
+        }
+
+        return [...featuredItems, ...autoItems, ...fallbackItems].slice(0, Math.min(maxItems, HOMEPAGE_GUESTBOOK_CARD_LIMIT));
+    }
+
+    function sanitizeTickerItems(value) {
+        return Array.isArray(value)
+            ? value.map((item) => String(item || '').trim()).filter(Boolean)
+            : [];
+    }
+
+    function buildTickerData(config = {}, prompts = [], shop = []) {
+        const lang = window.i18n?.getCurrentLanguage?.() || 'zh';
+        let top = [
+            ...sanitizeTickerItems(config.prompt_tags),
+            ...sanitizeTickerItems(config.activity_keywords),
+            ...sanitizeTickerItems(config.custom_items_top)
+        ];
+        let bottom = [
+            ...sanitizeTickerItems(config.product_categories),
+            ...sanitizeTickerItems(config.custom_items_bottom)
+        ];
+
+        if ((config.enable_auto !== false || top.length === 0) && config.enable_prompts !== false) {
+            const tagSet = new Set(top);
+            prompts.forEach((prompt) => {
+                if (prompt?.aiTags && typeof prompt.aiTags === 'object') {
+                    ['styles', 'objects', 'scenes', 'mood'].forEach((category) => {
+                        const tags = prompt.aiTags[category]?.[lang] || prompt.aiTags[category]?.zh || [];
+                        tags.forEach((tag) => tagSet.add(tag));
+                    });
+                }
+            });
+            top = Array.from(tagSet).slice(0, 20);
+        } else if (config.enable_prompts === false) {
+            top = [];
+        }
+
+        if ((config.enable_auto !== false || bottom.length === 0) && config.enable_products !== false) {
+            bottom = Array.from(new Set(
+                shop
+                    .map((product) => String(product?.category || '').trim())
+                    .filter(Boolean)
+            )).slice(0, 20);
+        } else if (config.enable_products === false) {
+            bottom = [];
+        }
+
+        return {
+            top,
+            bottom,
+            speed: Number(config.speed) || 30,
+            shopScrollSpeed: Number(config.shop_scroll_speed) || Number(config.speed) || 30,
+            enable_prompts: config.enable_prompts !== false,
+            enable_products: config.enable_products !== false
+        };
+    }
+
+    function buildHeroData(config = {}) {
+        const experimentTitle = getSectionExperimentValue('hero', config, 'title', '');
+        const experimentSubtitle = getSectionExperimentValue('hero', config, 'subtitle', '');
+        const configuredEntries = Array.isArray(config?.entries) && config.entries.length > 0
+            ? config.entries
+            : [
+                { id: 'prompts', icon: 'fa-wand-magic-sparkles', text: window.i18n?.t('home.entries.prompts') || '提示词', link: '/prompts.html', color: '#f472b6', section: 'prompts' },
+                { id: 'shop', icon: 'fa-store', text: window.i18n?.t('home.entries.shop') || '商城', link: '/shop.html', color: '#4ade80', section: 'shop' },
+                { id: 'verify', icon: 'fa-robot', text: window.i18n?.t('home.entries.verify') || '验证', link: '/verify.html', color: '#667eea', section: 'verify' },
+                { id: 'guestbook', icon: 'fa-comment-dots', text: window.i18n?.t('home.entries.guestbook') || '留言板', link: '#', color: '#f59e0b', action: 'openGuestbookModal', section: 'guestbook' }
+            ];
+        return {
+            title: experimentTitle || getLocalizedField(config, 'title') || window.i18n?.t('home.hero.title') || '早鸟',
+            subtitle: experimentSubtitle || getLocalizedField(config, 'subtitle') || window.i18n?.t('home.hero.subtitle') || 'AI 驱动的创意资源平台',
+            customImage: config.custom_image || null,
+            entries: configuredEntries
+                .filter((item) => item?.enabled !== false)
+                .map((item, index) => ({
+                    id: String(item?.id || item?.section || item?.action || item?.link || `hero_entry_${index + 1}`).trim(),
+                    icon: String(item?.icon || 'fa-star').trim(),
+                    text: getLocalizedField(item, 'text') || item?.text || `入口 ${index + 1}`,
+                    link: String(item?.link || (item?.section ? `#${item.section}` : '#')).trim() || '#',
+                    color: String(item?.color || '#ffffff').trim() || '#ffffff',
+                    action: String(item?.action || '').trim(),
+                    section: String(item?.section || '').trim()
+                }))
+                .slice(0, 8)
+        };
+    }
+
+    function buildVerifyData(config = {}) {
+        const experimentCtaText = getSectionExperimentValue('verify', config, 'cta_text', '');
+        const defaultValueProps = [
+            window.i18n?.t('home.verify.valueProps.fast') || '秒级校验',
+            window.i18n?.t('home.verify.valueProps.visible') || '过程可见',
+            window.i18n?.t('home.verify.valueProps.safe') || '结果可追踪'
+        ];
+        const defaultModels = ['Gemini', 'Claude', 'OpenAI'];
+        return {
+            title: getLocalizedField(config, 'section_title') || 'Gemini 验证',
+            subtitle: getLocalizedField(config, 'section_subtitle') || '快速验证您的 API 密钥',
+            features: Array.isArray(config.features) && config.features.length > 0
+                ? config.features
+                : ['批量验证', '实时反馈', '多模型支持'],
+            valueProps: Array.isArray(config.value_props) && config.value_props.length > 0
+                ? config.value_props
+                : defaultValueProps,
+            supportedModels: Array.isArray(config.supported_models) && config.supported_models.length > 0
+                ? config.supported_models
+                : defaultModels,
+            ctaText: String(experimentCtaText || config.cta_text || '').trim() || (window.i18n?.t('home.verify.cta') || '立即验证'),
+            riskNotice: String(config.risk_notice || '').trim() || (window.i18n?.t('home.verify.riskNotice') || '建议先使用测试账号完成校验，再切换正式账号。'),
+            link: String(config.cta_link || '').trim() || '/verify.html?source=homepage_verify',
+            screenshot: config.screenshot_path || '/assets/verify-preview.png'
+        };
+    }
+
     function checkAndPrefetch() {
         if (prefetching) return;
         const currentSite = getCurrentSite();
 
-        // Check if fresh data already exists
         try {
             const raw = sessionStorage.getItem(getHomepagePrefetchCacheKey(currentSite));
             if (raw) {
@@ -75,18 +480,19 @@
                     sessionStorage.removeItem(getHomepagePrefetchCacheKey(currentSite));
                     return;
                 }
-                const age = Date.now() - data.timestamp;
+
+                const age = Date.now() - (data.timestamp || 0);
                 const configUpdatedAt = getHomepageConfigLastUpdatedAt();
                 const isFreshConfig = !configUpdatedAt || (data.timestamp || 0) >= configUpdatedAt;
                 if (age < 300000 && isFreshConfig) {
-                    // Data is fresh (< 5 min), no need to prefetch
                     return;
                 }
                 sessionStorage.removeItem(getHomepagePrefetchCacheKey(currentSite));
             }
-        } catch (e) { /* ignore */ }
+        } catch (e) {
+            // ignore parse failures
+        }
 
-        // No fresh data — prefetch homepage config from Supabase
         prefetching = true;
         prefetchHomepageData().finally(() => { prefetching = false; });
     }
@@ -128,117 +534,58 @@
         try {
             if (!window.supabaseClient) return;
 
-            // Use the same Cache utility if available
-            const Cache = window.Cache;
+            const rows = await loadHomepageConfigRows(getCurrentSite());
+            const config = Contract?.buildConfigMap?.(rows) || {};
+            const sectionRows = Contract?.mapRowsBySection?.(rows) || {};
+            const sectionOrder = Contract?.sortSectionsByDisplayOrder?.(rows) || ['hero', 'prompts', 'shop', 'verify', 'guestbook', 'ticker'];
+            const promptPool = getPromptPool();
 
-            // Fetch homepage config
-            const config = Cache
-                ? await Cache.loadWithCache('homepage_config', async () => {
-                    const data = await loadHomepageConfigRows(getCurrentSite());
-                    const cfg = {};
-                    data.forEach(item => { cfg[item.section] = item.content; });
-                    return cfg;
-                }, 30)
-                : null;
-
-            if (!config) return;
-
-            // Fetch key data in parallel (lightweight versions)
             const [shopResult, guestbookResult] = await Promise.all([
-                Cache ? Cache.loadWithCache('shop_products', async () => {
-                    const { data } = await window.supabaseClient
-                        .from('shop_products')
-                        .select('*')
-                        .eq('is_active', true)
-                        .order('sort_order');
-                    return data || [];
-                }, 30) : Promise.resolve([]),
-                Cache ? Cache.loadWithCache('guestbook_messages', async () => {
-                    const currentSite = window.SiteConfig?.site || 'cn';
-                    const { data } = await window.supabaseClient
-                        .from('guestbook_messages')
-                        .select('*, profiles:user_id(id, username, avatar_url)')
-                        .eq('site', currentSite)
-                        .order('created_at', { ascending: false })
-                        .limit(5);
-                    return data || [];
-                }, 10) : Promise.resolve([])
+                window.supabaseClient
+                    .from('shop_products')
+                    .select('id, name, name_en, description, description_en, icon_url, price_points, price_points_intl, stock_count, category, display_order')
+                    .eq('is_active', true)
+                    .order('display_order', { ascending: false }),
+                window.supabaseClient
+                    .from('guestbook_messages')
+                    .select('id, content, image_url, like_count, created_at, user_id, profiles:user_id (username, avatar_url)')
+                    .eq('site', getCurrentSite())
+                    .order('created_at', { ascending: false })
+                    .limit(HOMEPAGE_GUESTBOOK_CARD_LIMIT)
             ]);
-            const filteredShopResult = window.SiteConfig?.filterProductsForCurrentSite
-                ? window.SiteConfig.filterProductsForCurrentSite(shopResult)
-                : shopResult;
 
-            // Build minimal hero data
-            const heroConfig = config.hero || {};
-            const currentLang = window.i18n?.getCurrentLanguage?.() || 'zh';
-            const hero = {
-                title: heroConfig[`title_${currentLang}`] || heroConfig.title || window.i18n?.t('home.hero.title') || '早鸟',
-                subtitle: heroConfig[`subtitle_${currentLang}`] || heroConfig.subtitle || window.i18n?.t('home.hero.subtitle') || 'AI 驱动的创意资源平台',
-                entries: heroConfig.entries || [
-                    { icon: 'fa-palette', text: '提示词图库', link: '/prompts.html', color: '#a78bfa' },
-                    { icon: 'fa-store', text: '资源商城', link: '/shop.html', color: '#34d399' },
-                    { icon: 'fa-robot', text: '验证', link: '/verify.html', color: '#60a5fa' },
-                    { icon: 'fa-comment-dots', text: '留言板', link: '#', color: '#f59e0b', action: 'openGuestbookModal', section: 'guestbook' }
-                ]
-            };
+            if (shopResult.error) throw shopResult.error;
+            if (guestbookResult.error) throw guestbookResult.error;
 
-            // Build verify data
-            const verifyConfig = config.verify || {};
-            const verify = {
-                title: verifyConfig.title || 'Gemini 验证',
-                subtitle: verifyConfig.subtitle || '快速验证您的 API 密钥',
-                features: verifyConfig.features || ['批量验证', '实时反馈', '多模型支持'],
-                link: verifyConfig.link || '/verify.html',
-                screenshot: verifyConfig.screenshot || '/assets/verify-screenshot.png'
-            };
-
-            // Load prompts from local data if available
-            const prompts = window.promptsData ? window.promptsData.slice(0, 20) : [];
-
-            // Build ticker data aligned with homepage runtime
-            const promptPool = Array.isArray(window.PROMPTS)
-                ? window.PROMPTS
-                : (Array.isArray(window.promptsData) ? window.promptsData : []);
-            const tickerLang = window.i18n?.getCurrentLanguage?.() || 'zh';
-            const tagSet = new Set();
-            promptPool.forEach((prompt) => {
-                if (prompt?.aiTags && typeof prompt.aiTags === 'object') {
-                    ['styles', 'objects', 'scenes', 'mood'].forEach((category) => {
-                        const tags = prompt.aiTags[category]?.[tickerLang] || prompt.aiTags[category]?.zh || [];
-                        tags.forEach((tag) => tagSet.add(tag));
-                    });
-                }
-            });
-            const productCategories = Array.from(new Set(
-                filteredShopResult
-                    .map((product) => String(product?.category || '').trim())
-                    .filter(Boolean)
-            ));
-            const ticker = {
-                top: Array.from(tagSet).slice(0, 20),
-                bottom: productCategories,
-                speed: config.ticker?.speed || 30,
-                shopScrollSpeed: config.ticker?.shop_scroll_speed || config.ticker?.speed || 30
-            };
-
-            // Save to sessionStorage
+            const allProducts = Array.isArray(shopResult.data) ? shopResult.data : [];
+            const guestbookMessages = Array.isArray(guestbookResult.data) ? guestbookResult.data : [];
+            const prompts = aggregatePrompts(config.prompts || {});
+            const shop = aggregateShop(config.shop || {}, allProducts);
+            const guestbook = aggregateGuestbook(config.guestbook || {}, guestbookMessages);
+            const ticker = buildTickerData(config.ticker || {}, promptPool, shop);
+            const cacheKind = promptPool.length > 0 ? 'complete' : 'partial';
             const currentSite = getCurrentSite();
+
             sessionStorage.setItem(getHomepagePrefetchCacheKey(currentSite), JSON.stringify({
                 cachedData: {
-                    hero,
+                    hero: buildHeroData(config.hero || {}),
                     prompts,
-                    shop: filteredShopResult,
-                    verify,
-                    guestbook: guestbookResult,
+                    shop,
+                    verify: buildVerifyData(config.verify || {}),
+                    guestbook,
                     ticker,
                     shopCategories: []
                 },
                 config,
+                sectionRows,
+                sectionOrder,
+                cacheKind,
+                schemaVersion: HOMEPAGE_PREFETCH_SCHEMA_VERSION,
                 timestamp: Date.now(),
                 site: currentSite
             }));
 
-            console.log('⚡ Homepage data prefetched on logo hover');
+            console.log(`⚡ Homepage data prefetched on logo hover (${cacheKind})`);
         } catch (e) {
             console.warn('Homepage prefetch failed:', e.message);
         }
@@ -250,7 +597,6 @@
         ));
     }
 
-    // Event delegation: logo hover keeps homepage warm, guestbook entry hover warms guestbook data
     document.addEventListener('mouseover', (e) => {
         if (shouldPrefetchGuestbook(e.target)) {
             prefetchGuestbookData();

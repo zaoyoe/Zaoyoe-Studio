@@ -47,8 +47,52 @@ function escapePostgrestLikeValue(value) {
         .replace(/\)/g, '\\)');
 }
 
+function escapePostgrestEqValue(value) {
+    return String(value || '')
+        .trim()
+        .replace(/\\/g, '\\\\')
+        .replace(/,/g, '\\,')
+        .replace(/\(/g, '\\(')
+        .replace(/\)/g, '\\)');
+}
+
+function isUuid(value) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || '').trim());
+}
+
+function filterUuidValues(values = []) {
+    return [...new Set(
+        (Array.isArray(values) ? values : [])
+            .map((value) => normalizeText(value, 160))
+            .filter((value) => value && isUuid(value))
+    )];
+}
+
+function buildOrderSearchExpression(query) {
+    const normalizedQuery = normalizeText(query, 160);
+    if (!normalizedQuery) {
+        return '';
+    }
+
+    const escapedLikeQuery = escapePostgrestLikeValue(normalizedQuery);
+    const filters = [
+        `snapshot_product_name.ilike.%${escapedLikeQuery}%`
+    ];
+
+    if (isUuid(normalizedQuery)) {
+        const escapedEqQuery = escapePostgrestEqValue(normalizedQuery);
+        filters.unshift(
+            `id.eq.${escapedEqQuery}`,
+            `product_id.eq.${escapedEqQuery}`,
+            `user_id.eq.${escapedEqQuery}`
+        );
+    }
+
+    return filters.join(',');
+}
+
 async function loadProfilesByIds(supabase, userIds = []) {
-    const ids = [...new Set((Array.isArray(userIds) ? userIds : []).map(normalizeText).filter(Boolean))];
+    const ids = filterUuidValues(userIds);
     if (!ids.length) {
         return new Map();
     }
@@ -97,7 +141,7 @@ async function searchProfileIdsByQuery(supabase, query) {
 }
 
 async function queryOrdersByUserIds(supabase, { site, userIds, refundStatus, deliveryStatus, page, pageSize }) {
-    const normalizedUserIds = [...new Set((Array.isArray(userIds) ? userIds : []).map((value) => normalizeText(value, 160)).filter(Boolean))];
+    const normalizedUserIds = filterUuidValues(userIds);
     if (!normalizedUserIds.length) {
         return {
             rows: [],
@@ -138,7 +182,7 @@ async function queryOrdersByUserIds(supabase, { site, userIds, refundStatus, del
 }
 
 async function loadAuthEmailsByIds(adminSupabase, userIds = []) {
-    const ids = [...new Set((Array.isArray(userIds) ? userIds : []).map(normalizeText).filter(Boolean))];
+    const ids = filterUuidValues(userIds);
     if (!ids.length || !adminSupabase?.auth?.admin?.getUserById) {
         return new Map();
     }
@@ -162,6 +206,9 @@ async function queryOrders(supabase, { site, query, refundStatus, deliveryStatus
     const to = from + limit - 1;
     const normalizedQuery = normalizeText(query);
     const searchedById = /^SHOP_ORDER_/i.test(normalizedQuery);
+    const cleanedShopOrderId = searchedById
+        ? normalizeText(normalizedQuery.replace(/^SHOP_ORDER_/i, ''), 160)
+        : '';
 
     let queryBuilder = supabase
         .from('shop_orders')
@@ -181,29 +228,42 @@ async function queryOrders(supabase, { site, query, refundStatus, deliveryStatus
     }
 
     if (searchedById) {
-        queryBuilder = queryBuilder.eq('id', normalizedQuery.replace(/^SHOP_ORDER_/i, ''));
+        if (isUuid(cleanedShopOrderId)) {
+            queryBuilder = queryBuilder
+                .eq('id', cleanedShopOrderId)
+                .range(0, 0);
+        } else {
+            queryBuilder = null;
+        }
     } else {
         if (normalizedQuery) {
-            const escapedQuery = escapePostgrestLikeValue(normalizedQuery);
-            queryBuilder = queryBuilder.or([
-                `id.ilike.%${escapedQuery}%`,
-                `snapshot_product_name.ilike.%${escapedQuery}%`,
-                `product_id.ilike.%${escapedQuery}%`,
-                `user_id.ilike.%${escapedQuery}%`
-            ].join(','));
+            queryBuilder = queryBuilder.or(buildOrderSearchExpression(normalizedQuery));
         }
         queryBuilder = queryBuilder.range(from, to);
     }
 
-    let { data, count, error } = await queryBuilder;
-    if (error) throw error;
+    let data = [];
+    let count = 0;
+    if (queryBuilder) {
+        const result = await queryBuilder;
+        data = result.data;
+        count = result.count;
+        if (result.error) throw result.error;
+    }
 
-    if (searchedById && (!data || data.length === 0)) {
-        const cleanedId = normalizedQuery.replace(/^SHOP_ORDER_/i, '');
+    if (searchedById && cleanedShopOrderId && (!data || data.length === 0)) {
+        const cleanedId = cleanedShopOrderId;
+        const ledgerFilters = [
+            `reference_id.ilike.%${escapePostgrestLikeValue(cleanedId)}%`
+        ];
+        if (isUuid(cleanedId)) {
+            ledgerFilters.unshift(`id.eq.${escapePostgrestEqValue(cleanedId)}`);
+        }
+
         const { data: ledgerData, error: ledgerError } = await supabase
             .from('points_ledger')
             .select('id, user_id, reference_id, created_at')
-            .or(`id.eq.${cleanedId},reference_id.ilike.%${cleanedId}%`)
+            .or(ledgerFilters.join(','))
             .limit(5);
 
         if (!ledgerError && ledgerData?.length) {
@@ -213,7 +273,7 @@ async function queryOrders(supabase, { site, query, refundStatus, deliveryStatus
                 orderId = String(ledgerRecord.reference_id).replace('SHOP_ORDER_', '');
             }
 
-            if (orderId) {
+            if (orderId && isUuid(orderId)) {
                 const directResult = await supabase
                     .from('shop_orders')
                     .select('*', { count: 'exact' })

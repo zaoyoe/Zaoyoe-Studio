@@ -8,11 +8,15 @@
 
     const CONFIG = {
         pricePerVerify: 10,
+        pricePerVerifyExtract: 10,
+        pricePerVerifyFull: 20,
         enabled: true,
         nodeServerUrl: window.VERIFY_SERVER_URL || 'https://zaoyoe-verify-server-production.up.railway.app',
         containerId: 'verify-widget-container',
         pollInterval: 3000,
-        pollTimeout: 300000
+        pollTimeout: 300000,
+        pollTimeoutExtract: 10 * 60 * 1000,
+        pollTimeoutFull: 30 * 60 * 1000
     };
     const PENDING_TASK_STORAGE_KEY = 'verify_pending_google_one_job_v1';
     const VERIFY_STYLE_DECL_KEY = 'style';
@@ -31,6 +35,8 @@
     let previewMode = 'success';
     let previewTimers = [];
     let ringResetTimer = null;
+    let historyRepairInFlight = false;
+    const attemptedHistoryRepairIds = new Set();
 
     const ERROR_CODE_MAP = {
         invalid_api_key: { zh: 'API Key 无效或缺失', en: 'Invalid or missing API key' },
@@ -76,6 +82,15 @@
         return window.SiteConfig?.site || 'cn';
     }
 
+    function getVerifySourceValue() {
+        try {
+            const url = new URL(window.location.href);
+            return String(url.searchParams.get('source') || '').trim();
+        } catch (_error) {
+            return '';
+        }
+    }
+
     function trackVerifyAnalyticsEvent(eventName, payload = {}, options = {}) {
         const tracker = window.UserEventTracker;
         if (!tracker || typeof tracker.track !== 'function') {
@@ -85,13 +100,14 @@
         const metadata = payload?.metadata && typeof payload.metadata === 'object' && !Array.isArray(payload.metadata)
             ? payload.metadata
             : {};
+        const source = getVerifySourceValue();
         const normalizedPayload = {
             module: payload.module || 'verify_widget',
             entityType: payload.entityType || 'verify_task',
             entityId: payload.entityId || null,
             eventValue: payload.eventValue ?? null,
             pointsDelta: payload.pointsDelta ?? null,
-            metadata
+            metadata: source ? { source, ...metadata } : metadata
         };
 
         const trackingPromise = options.dedupeKey && typeof tracker.trackOnce === 'function'
@@ -105,6 +121,118 @@
 
     function buildVerifySubmitButtonMarkup(label) {
         return `<i class="fas fa-paper-plane"></i> ${label}`;
+    }
+
+    function normalizeTaskType(value, fallback = 'extract') {
+        const normalized = String(value || '').trim().toLowerCase();
+        if (normalized === 'full') return 'full';
+        if (normalized === 'extract') return 'extract';
+        return fallback;
+    }
+
+    function getTaskTypePrice(taskType = 'extract') {
+        return normalizeTaskType(taskType) === 'full'
+            ? Number(CONFIG.pricePerVerifyFull || CONFIG.pricePerVerifyExtract || CONFIG.pricePerVerify || 20)
+            : Number(CONFIG.pricePerVerifyExtract || CONFIG.pricePerVerify || 10);
+    }
+
+    function getTaskTypeUsageCost(taskType = 'extract') {
+        return normalizeTaskType(taskType) === 'full' ? 1 : 0.5;
+    }
+
+    function getTaskPollTimeoutMs(taskType = 'extract') {
+        const fallbackTimeout = Number(CONFIG.pollTimeout) || 300000;
+        const configuredTimeout = normalizeTaskType(taskType) === 'full'
+            ? Number(CONFIG.pollTimeoutFull)
+            : Number(CONFIG.pollTimeoutExtract);
+        return Math.max(fallbackTimeout, Number.isFinite(configuredTimeout) && configuredTimeout > 0
+            ? configuredTimeout
+            : fallbackTimeout);
+    }
+
+    function getTaskTypeLabel(taskType = 'extract') {
+        const normalized = normalizeTaskType(taskType);
+        return normalized === 'full'
+            ? t('verify.taskTypeFull', '全流程包绑卡')
+            : t('verify.taskTypeExtract', '仅提取链接');
+    }
+
+    function getTaskTypeSubmitLabel(taskType = 'extract') {
+        return normalizeTaskType(taskType) === 'full'
+            ? t('verify.startFullTask', '提交包绑卡任务')
+            : t('verify.startExtractTask', '提交提链任务');
+    }
+
+    function getTaskTypeSuccessText(taskType = 'extract', hasLink = false) {
+        if (normalizeTaskType(taskType) === 'full') {
+            return t('verify.fullSuccessText', '包绑卡流程完成');
+        }
+        return hasLink
+            ? t('verify.extractSuccessText', '链接获取成功')
+            : t('verify.extractCompleteText', '提链任务完成');
+    }
+
+    function getTaskTypeGuideText(taskType = 'extract') {
+        if (normalizeTaskType(taskType) === 'full') {
+            return t('verify.fullGuideNote', '全流程模式会由服务商完成绑卡与订阅，不需要你再手动开链接。');
+        }
+        return t('verify.extractGuideNote', '提链模式成功后，请自行打开链接完成绑卡订阅；没有卡可前往商城购卡。');
+    }
+
+    function getTaskTypeModeMeta(taskType = 'extract') {
+        const normalized = normalizeTaskType(taskType);
+        if (normalized === 'full') {
+            return {
+                badge: t('verify.modeBadgeFull', '服务商包绑卡'),
+                description: t('verify.modeDescFull', '完成 Google One 订阅流程'),
+                price: getTaskTypePrice('full')
+            };
+        }
+
+        return {
+            badge: t('verify.modeBadgeExtract', '自行绑卡'),
+            description: t('verify.modeDescExtract', '仅拿到可用订阅链接'),
+            price: getTaskTypePrice('extract')
+        };
+    }
+
+    function getSelectedTaskType() {
+        const checked = document.querySelector('input[name="verifyTaskType"]:checked');
+        return normalizeTaskType(checked?.value || 'extract');
+    }
+
+    function setSelectedTaskType(taskType = 'extract') {
+        const normalized = normalizeTaskType(taskType);
+        const target = document.querySelector(`input[name="verifyTaskType"][value="${normalized}"]`);
+        if (target) {
+            target.checked = true;
+        }
+        updateTaskTypeUi();
+    }
+
+    function updateTaskTypeUi() {
+        const taskType = getSelectedTaskType();
+        const modeMeta = getTaskTypeModeMeta(taskType);
+        const singleCost = document.getElementById('verifySingleCost');
+        const submitBtn = document.getElementById('verifySubmitBtn');
+        const taskTypeNote = document.getElementById('verifyTaskTypeNote');
+        const extractPriceEl = document.getElementById('verifyExtractModePrice');
+        const fullPriceEl = document.getElementById('verifyFullModePrice');
+        const extractMetaEl = document.getElementById('verifyExtractModeMeta');
+        const fullMetaEl = document.getElementById('verifyFullModeMeta');
+
+        if (singleCost) singleCost.textContent = modeMeta.price;
+        if (submitBtn && !isLoading) {
+            submitBtn.innerHTML = buildVerifySubmitButtonMarkup(getTaskTypeSubmitLabel(taskType));
+        }
+        if (taskTypeNote) {
+            taskTypeNote.textContent = getTaskTypeGuideText(taskType);
+        }
+        if (extractPriceEl) extractPriceEl.textContent = getTaskTypePrice('extract');
+        if (fullPriceEl) fullPriceEl.textContent = getTaskTypePrice('full');
+        if (extractMetaEl) extractMetaEl.textContent = getTaskTypeModeMeta('extract').description;
+        if (fullMetaEl) fullMetaEl.textContent = getTaskTypeModeMeta('full').description;
+        updateQuotaDisplay();
     }
 
     function isTransientAvatarUrl(url) {
@@ -185,10 +313,11 @@
         const userId = String(task.userId || task.user_id || '').trim();
         const site = String(task.site || getCurrentSiteValue()).trim() || 'cn';
         const createdAt = String(task.createdAt || task.created_at || new Date().toISOString()).trim();
+        const taskType = normalizeTaskType(task.taskType || task.task_type || 'extract');
 
         if (!jobId || !email || !userId) return null;
 
-        return { jobId, email, userId, site, createdAt };
+        return { jobId, email, userId, site, createdAt, taskType };
     }
 
     function readPendingTask() {
@@ -301,6 +430,10 @@
                         entry: 'verify_balance',
                         sourceModule: 'verify_widget'
                     });
+                    break;
+                case 'switch-extract-mode':
+                    setSelectedTaskType('extract');
+                    syncRingStateFromInputs();
                     break;
                 case 'login-gate':
                     openLoginGate();
@@ -509,6 +642,71 @@
         return Number.isInteger(num) ? String(num) : num.toFixed(1);
     }
 
+    function getRemainingTaskCount(balance, taskType = 'extract') {
+        const numericBalance = Number(balance);
+        const usageCost = getTaskTypeUsageCost(taskType);
+        if (!Number.isFinite(numericBalance) || !Number.isFinite(usageCost) || usageCost <= 0) {
+            return 0;
+        }
+
+        return Math.max(0, Math.floor((numericBalance + 1e-9) / usageCost));
+    }
+
+    function buildQuotaSummary(balance) {
+        const numericBalance = Number(balance);
+        if (!Number.isFinite(numericBalance) || numericBalance < 0) {
+            return null;
+        }
+
+        const safeBalance = Math.max(0, Math.round(numericBalance * 100) / 100);
+        return {
+            remainingUses: safeBalance,
+            extractJobs: getRemainingTaskCount(safeBalance, 'extract'),
+            fullJobs: getRemainingTaskCount(safeBalance, 'full')
+        };
+    }
+
+    function getQuotaUnavailableMessage(taskType = 'extract') {
+        const normalizedTaskType = normalizeTaskType(taskType);
+        if (normalizedTaskType === 'full') {
+            return t('verify.fullQuotaExhausted', '当前剩余额度不足，至少需要 1.0 才能提交全流程任务。');
+        }
+
+        return t('verify.extractQuotaExhausted', '当前剩余额度不足，至少需要 0.5 才能提交提链任务。');
+    }
+
+    function buildQuotaWarningState(taskType = 'extract', quotaSummary = null) {
+        const normalizedTaskType = normalizeTaskType(taskType);
+        if (!quotaSummary) {
+            return null;
+        }
+
+        const requiredUses = getTaskTypeUsageCost(normalizedTaskType);
+        if (quotaSummary.remainingUses >= requiredUses) {
+            return null;
+        }
+
+        if (normalizedTaskType === 'full' && quotaSummary.extractJobs > 0) {
+            return {
+                tone: 'warning',
+                message: t(
+                    'verify.fullQuotaSuggestExtract',
+                    `当前已选择全流程包绑卡，至少需要 1.0；你当前还有 ${formatBalanceValue(quotaSummary.remainingUses)}，可切换到仅提链后继续提交。`
+                ),
+                action: {
+                    action: 'switch-extract-mode',
+                    label: t('verify.switchToExtractMode', '切换到仅提链')
+                }
+            };
+        }
+
+        return {
+            tone: 'danger',
+            message: getQuotaUnavailableMessage(normalizedTaskType),
+            action: null
+        };
+    }
+
     function formatStageLabel(stageLabel) {
         return String(stageLabel || '').replace(/_/g, ' ').trim();
     }
@@ -579,9 +777,15 @@
 
     function getHistoryDetail(item) {
         const payload = parseHistoryMessage(item?.message);
+        const taskType = normalizeTaskType(payload?.task_type);
+        const status = String(item?.status || payload?.raw_status || '').trim().toLowerCase();
 
         if (payload?.url) {
             return { type: 'url', text: payload.url, href: payload.url };
+        }
+
+        if (payload?.message) {
+            return { type: 'text', text: payload.message };
         }
 
         const errorText = payload?.error_message || getErrorLabel(payload?.error_code, '');
@@ -589,8 +793,91 @@
             return { type: 'text', text: errorText };
         }
 
+        if (status === 'success') {
+            return { type: 'text', text: getTaskTypeSuccessText(taskType, false) };
+        }
+
         const rawMessage = String(item?.message || '').trim();
         return { type: 'text', text: rawMessage || '--' };
+    }
+
+    function shouldAttemptHistoryRepair(item) {
+        const payload = parseHistoryMessage(item?.message);
+        const repairKey = String(item?.id || payload?.job_id || item?.verification_id || '').trim();
+        const jobId = String(payload?.job_id || item?.verification_id || '').trim();
+        const status = String(item?.status || payload?.raw_status || '').trim().toLowerCase();
+        const errorCode = String(payload?.error_code || '').trim().toLowerCase();
+        const errorMessage = String(payload?.error_message || payload?.message || '').trim().toLowerCase();
+
+        if (!jobId || !repairKey || attemptedHistoryRepairIds.has(repairKey)) {
+            return false;
+        }
+
+        if (status !== 'failed' || payload?.url) {
+            return false;
+        }
+
+        return errorCode === 'job_not_found'
+            || errorMessage.includes('job_not_found')
+            || errorMessage.includes('任务不存在')
+            || errorMessage.includes('not found');
+    }
+
+    async function repairFalseFailedHistory(items = []) {
+        if (historyRepairInFlight || !Array.isArray(items) || !items.length || !currentUser) {
+            return false;
+        }
+
+        const candidates = items.filter(shouldAttemptHistoryRepair).slice(0, 3);
+        if (!candidates.length) {
+            return false;
+        }
+
+        historyRepairInFlight = true;
+        let repaired = false;
+
+        try {
+            const headers = await getVerifyRequestHeaders();
+
+            for (const item of candidates) {
+                const payload = parseHistoryMessage(item?.message);
+                const repairKey = String(item?.id || payload?.job_id || item?.verification_id || '').trim();
+                const jobId = String(payload?.job_id || item?.verification_id || '').trim();
+                if (!jobId) continue;
+
+                if (repairKey) {
+                    attemptedHistoryRepairIds.add(repairKey);
+                }
+
+                const statusEndpoints = [
+                    `/api/public?scope=verify&route=status&taskId=${encodeURIComponent(jobId)}`,
+                    `${CONFIG.nodeServerUrl}/api/verify/status/${encodeURIComponent(jobId)}`
+                ];
+
+                for (const endpoint of statusEndpoints) {
+                    try {
+                        const response = await fetch(endpoint, { headers });
+                        const responsePayload = await response.json().catch(() => ({}));
+
+                        if (!response.ok && shouldFallbackVerifyEndpoint(response, responsePayload)) {
+                            continue;
+                        }
+
+                        const normalizedStatus = String(responsePayload?.status || '').trim().toLowerCase();
+                        if (response.ok && normalizedStatus && normalizedStatus !== 'failed') {
+                            repaired = true;
+                        }
+                        break;
+                    } catch (_) {
+                        // try the next endpoint
+                    }
+                }
+            }
+        } finally {
+            historyRepairInFlight = false;
+        }
+
+        return repaired;
     }
 
     function getHistoryDetailText(item) {
@@ -601,6 +888,7 @@
         const lang = getLang();
         const status = String(data?.status || '').toLowerCase();
         const stageLabel = formatStageLabel(data?.stage_label);
+        const taskType = normalizeTaskType(data?.task_type);
 
         if (status === 'queued') {
             const segments = [lang === 'zh' ? '排队中' : 'Queued'];
@@ -645,7 +933,7 @@
         }
 
         if (status === 'success') {
-            const successText = lang === 'zh' ? '链接获取成功' : 'Link ready';
+            const successText = getTaskTypeSuccessText(taskType, Boolean(data?.url));
             const safeUrl = String(data?.url || '').trim();
 
             return {
@@ -693,6 +981,8 @@
 
             if (!error && data?.config_value) {
                 CONFIG.pricePerVerify = Number(data.config_value.price_per_verify) || 10;
+                CONFIG.pricePerVerifyExtract = Number(data.config_value.price_per_verify_extract || data.config_value.price_per_verify) || 10;
+                CONFIG.pricePerVerifyFull = Number(data.config_value.price_per_verify_full) || Math.max(CONFIG.pricePerVerifyExtract, CONFIG.pricePerVerifyExtract * 2);
                 CONFIG.enabled = data.config_value.enabled !== false;
             }
         } catch (_) {
@@ -724,15 +1014,46 @@
         return headers;
     }
 
+    function shouldFallbackVerifyEndpoint(res, data = {}) {
+        const status = Number(res?.status || 0);
+        const message = String(data?.message || '').trim().toLowerCase();
+
+        if (status === 404 && (message === 'public route not found' || message.includes('route not found'))) {
+            return true;
+        }
+
+        if (status === 405 && message === 'method not allowed') {
+            return true;
+        }
+
+        if (status === 503 && message.includes('unavailable')) {
+            return true;
+        }
+
+        return false;
+    }
+
     async function loadApiQuota() {
         try {
             const headers = await getVerifyRequestHeaders();
-            const res = await fetch(`${CONFIG.nodeServerUrl}/api/quota`, { headers });
-            const data = await res.json();
-            if (data.success) {
-                apiCredits = Number(data.balance ?? data.credits ?? 0);
-            } else {
-                apiCredits = -1;
+            const quotaEndpoints = [
+                '/api/public?scope=config&route=verify-quota',
+                `${CONFIG.nodeServerUrl}/api/quota`
+            ];
+
+            apiCredits = -1;
+
+            for (const endpoint of quotaEndpoints) {
+                try {
+                    const res = await fetch(endpoint, { headers });
+                    const data = await res.json().catch(() => ({}));
+                    if (res.ok && data.success) {
+                        apiCredits = Number(data.balance ?? data.credits ?? data.remaining_uses ?? 0);
+                        break;
+                    }
+                } catch (_) {
+                    // try the next endpoint
+                }
             }
         } catch (_) {
             apiCredits = -1;
@@ -744,24 +1065,42 @@
         const quotaEl = document.getElementById('verifyApiQuota');
         const quotaBar = document.getElementById('verifyQuotaWarning');
         const submitBtn = document.getElementById('verifySubmitBtn');
+        const selectedTaskType = getSelectedTaskType();
+        const requiredUses = getTaskTypeUsageCost(selectedTaskType);
+        const quotaSummary = buildQuotaSummary(apiCredits);
+        const hasEnoughForSelectedTask = quotaSummary
+            ? quotaSummary.remainingUses >= requiredUses
+            : true;
+        const quotaWarningState = buildQuotaWarningState(selectedTaskType, quotaSummary);
 
         if (quotaEl) {
             if (apiCredits < 0) {
                 setVerifyQuotaTone(quotaEl, 'unknown');
+                quotaEl.title = t('verify.apiQuotaTitle', 'API 剩余额度');
                 quotaEl.innerHTML = '<i class="fas fa-question-circle"></i> <span class="verify-api-quota-value">--</span>';
             } else {
-                const tone = apiCredits > 5 ? 'ok' : apiCredits > 0 ? 'warning' : 'danger';
+                const tone = !hasEnoughForSelectedTask
+                    ? 'danger'
+                    : apiCredits >= 1
+                        ? 'ok'
+                        : apiCredits > 0
+                            ? 'warning'
+                            : 'danger';
                 setVerifyQuotaTone(quotaEl, tone);
-                quotaEl.innerHTML = `<i class="fas fa-gem"></i> <span class="verify-api-quota-value">${escapeHtml(formatBalanceValue(apiCredits))}</span>`;
+                quotaEl.title = `${t('verify.apiQuotaTitle', 'API 剩余额度')} ${formatBalanceValue(quotaSummary?.remainingUses)} · ${t('verify.taskTypeExtract', '仅提取链接')} ${quotaSummary?.extractJobs ?? 0} ${t('verify.countTimes', '次')} · ${t('verify.taskTypeFull', '全流程包绑卡')} ${quotaSummary?.fullJobs ?? 0} ${t('verify.countTimes', '次')}`;
+                quotaEl.innerHTML = `<i class="fas fa-gem"></i> <span class="verify-api-quota-value">${escapeHtml(formatBalanceValue(quotaSummary?.remainingUses))}</span><span class="verify-api-quota-meta">${escapeHtml(`提${quotaSummary?.extractJobs ?? 0} / 全${quotaSummary?.fullJobs ?? 0}`)}</span>`;
             }
         }
 
         if (quotaBar) {
-            if (apiCredits === 0) {
+            if (quotaWarningState) {
                 setVerifyHidden(quotaBar, false);
+                quotaBar.dataset.tone = quotaWarningState.tone || 'danger';
+                quotaBar.innerHTML = `<i class="fas fa-exclamation-triangle"></i><span class="verify-quota-warning__text">${escapeHtml(quotaWarningState.message)}</span>${quotaWarningState.action ? `<button type="button" class="verify-quota-warning__action" data-verify-action="${escapeHtml(quotaWarningState.action.action)}">${escapeHtml(quotaWarningState.action.label)}</button>` : ''}`;
                 if (submitBtn && !isLoading) submitBtn.disabled = true;
             } else {
                 setVerifyHidden(quotaBar, true);
+                quotaBar.dataset.tone = '';
                 if (submitBtn && !isLoading) submitBtn.disabled = false;
             }
         }
@@ -862,6 +1201,27 @@
                                         autocomplete="off"
                                         placeholder="${t('verify.totpPlaceholder', '3r6cu37xch4ej6d5shgouvsknd7jmhoy')}"
                                     />
+                                </div>
+
+                                <div class="verify-form-field">
+                                    <span class="verify-field-label">${t('verify.modeLabel', '业务模式')}</span>
+                                    <div class="verify-mode-selector">
+                                        <label class="verify-mode-option">
+                                            <input type="radio" name="verifyTaskType" value="extract" checked />
+                                            <span class="verify-mode-option__body">
+                                                <span class="verify-mode-option__title">${t('verify.modeExtractTitle', '仅提链')}</span>
+                                                <span class="verify-mode-option__meta"><span id="verifyExtractModePrice">${CONFIG.pricePerVerifyExtract}</span> ${t('verify.points', '积分')} · <span id="verifyExtractModeMeta">${t('verify.modeDescExtract', '仅拿到可用订阅链接')}</span></span>
+                                            </span>
+                                        </label>
+                                        <label class="verify-mode-option verify-mode-option--accent">
+                                            <input type="radio" name="verifyTaskType" value="full" />
+                                            <span class="verify-mode-option__body">
+                                                <span class="verify-mode-option__title">${t('verify.modeFullTitle', '全流程包绑卡')}</span>
+                                                <span class="verify-mode-option__meta"><span id="verifyFullModePrice">${CONFIG.pricePerVerifyFull}</span> ${t('verify.points', '积分')} · <span id="verifyFullModeMeta">${t('verify.modeDescFull', '完成 Google One 订阅流程')}</span></span>
+                                            </span>
+                                        </label>
+                                    </div>
+                                    <div class="verify-mode-note" id="verifyTaskTypeNote">${t('verify.extractGuideNote', '提链模式成功后，请自行打开链接完成绑卡订阅；没有卡可前往商城购卡。')}</div>
                                 </div>
 
                                 <div class="verify-form-meta">
@@ -1006,7 +1366,7 @@
                                         </div>
                                         <div class="verify-guide-note verify-guide-note-success">
                                             <i class="fas fa-credit-card"></i>
-                                            <span>${t('verify.guideNoteSuccessPrefix', '成功后：自行打开链接绑卡订阅。无卡可前往')}<a class="verify-guide-link verify-guide-link-inline" href="${shopUrl}" target="_blank" rel="noopener noreferrer">${t('verify.guideShopLink', '商城')}</a>${t('verify.guideNoteSuccessSuffix', '购卡。')}</span>
+                                            <span>${t('verify.guideNoteDualMode', '提链模式需要你自行打开链接绑卡；全流程模式会由服务商直接处理。需要卡时可前往')}<a class="verify-guide-link verify-guide-link-inline" href="${shopUrl}" target="_blank" rel="noopener noreferrer">${t('verify.guideShopLink', '商城')}</a>${t('verify.guideNoteDualModeSuffix', '购卡。')}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -1028,6 +1388,7 @@
         setupInputListener();
         updatePreviewModeUI();
         updatePriceDisplay();
+        updateTaskTypeUi();
         updateQuotaDisplay();
         loadHistory();
         syncRingStateFromInputs();
@@ -1172,6 +1533,7 @@
         const passwordInput = document.getElementById('verifyPasswordInput');
         const totpInput = document.getElementById('verifyTotpInput');
         const priorityToggle = document.getElementById('verifyPriorityToggle');
+        const taskTypeInputs = document.querySelectorAll('input[name="verifyTaskType"]');
 
         [emailInput, passwordInput, totpInput].forEach((input) => {
             if (!input) return;
@@ -1193,6 +1555,14 @@
         if (priorityToggle) {
             priorityToggle.addEventListener('change', syncRingStateFromInputs);
         }
+
+        taskTypeInputs.forEach((input) => {
+            input.addEventListener('change', () => {
+                updatePriceDisplay();
+                updateTaskTypeUi();
+                syncRingStateFromInputs();
+            });
+        });
     }
 
     function readFormEntry() {
@@ -1200,6 +1570,7 @@
         const passwordInput = document.getElementById('verifyPasswordInput');
         const totpInput = document.getElementById('verifyTotpInput');
         const priorityToggle = document.getElementById('verifyPriorityToggle');
+        const taskType = getSelectedTaskType();
 
         const email = String(emailInput?.value || '').trim().toLowerCase();
         const password = String(passwordInput?.value || '').trim();
@@ -1235,7 +1606,8 @@
                 email,
                 password,
                 totpSecret,
-                priority
+                priority,
+                taskType
             }
         };
     }
@@ -1258,6 +1630,7 @@
         }
         if (totpInput) totpInput.value = '';
         if (priorityToggle) priorityToggle.checked = false;
+        setSelectedTaskType('extract');
         if (passwordToggle) {
             passwordToggle.innerHTML = '<i class="fas fa-eye"></i>';
             passwordToggle.setAttribute('aria-label', t('verify.showPassword', '显示密码'));
@@ -1298,11 +1671,11 @@
 
     function updatePriceDisplay() {
         document.querySelectorAll('.per-price').forEach((el) => {
-            el.textContent = `（${CONFIG.pricePerVerify}${t('verify.perPrice', '积分/次')}）`;
+            el.textContent = `（${getTaskTypePrice(getSelectedTaskType())}${t('verify.perPrice', '积分/次')}）`;
         });
 
         const singleCost = document.getElementById('verifySingleCost');
-        if (singleCost) singleCost.textContent = CONFIG.pricePerVerify;
+        if (singleCost) singleCost.textContent = getTaskTypePrice(getSelectedTaskType());
     }
 
     function prepareExecutionDisplay(label, waitingMessage) {
@@ -1387,6 +1760,7 @@
                 status,
                 message: serializeHistoryMessage({
                     email: email || '',
+                    task_type: normalizeTaskType(payload.task_type || getSelectedTaskType()),
                     ...payload
                 }),
                 points_deducted: pointsDeducted,
@@ -1415,6 +1789,7 @@
 
         clearPreviewTimers();
         clearRingResetTimer();
+        setSelectedTaskType(pending.taskType || 'extract');
         prepareExecutionDisplay(pending.email, t('verify.resumePending', '正在恢复任务状态...'));
 
         isLoading = true;
@@ -1434,7 +1809,8 @@
             timer: null,
             submittedAt: Date.now(),
             priority: 0,
-            pointsCost: CONFIG.pricePerVerify,
+            taskType: normalizeTaskType(pending.taskType || 'extract'),
+            pointsCost: getTaskTypePrice(pending.taskType || 'extract'),
             restored: true
         });
         updateExecutionRing({ status: 'queued', queue_position: 0 });
@@ -1510,7 +1886,7 @@
         }
 
         const entry = parsed.entry;
-        const totalCost = CONFIG.pricePerVerify;
+        const totalCost = getTaskTypePrice(entry.taskType);
         if (userBalance < totalCost) {
             showSingleResult(
                 'error',
@@ -1564,20 +1940,59 @@
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 15000);
             const headers = await getVerifyRequestHeaders(true);
-            const res = await fetch(`${CONFIG.nodeServerUrl}/api/verify`, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({
-                    email: entry.email,
-                    password: entry.password,
-                    totpSecret: entry.totpSecret,
-                    priority: entry.priority
-                }),
-                signal: controller.signal
+            const submitEndpoints = [
+                '/api/public?scope=verify&route=submit',
+                `${CONFIG.nodeServerUrl}/api/verify`
+            ];
+            const requestBody = JSON.stringify({
+                email: entry.email,
+                password: entry.password,
+                totpSecret: entry.totpSecret,
+                priority: entry.priority,
+                taskType: entry.taskType
             });
+            let res = null;
+            let data = {};
+            let submitError = null;
+
+            for (const endpoint of submitEndpoints) {
+                try {
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        headers,
+                        body: requestBody,
+                        signal: controller.signal
+                    });
+                    const payload = await response.json().catch(() => ({}));
+
+                    if (response.ok && payload.success) {
+                        res = response;
+                        data = payload;
+                        submitError = null;
+                        break;
+                    }
+
+                    if (shouldFallbackVerifyEndpoint(response, payload)) {
+                        continue;
+                    }
+
+                    res = response;
+                    data = payload;
+                    submitError = null;
+                    break;
+                } catch (error) {
+                    submitError = error;
+                }
+            }
             clearTimeout(timeoutId);
 
-            const data = await res.json().catch(() => ({}));
+            if (!res && submitError) {
+                throw submitError;
+            }
+
+            if (!res) {
+                throw new Error(t('verify.loadFailed', '提交失败'));
+            }
 
             if (!res.ok || !data.success) {
                 const errorText = getErrorLabel(data.code, data.message || t('verify.loadFailed', '提交失败'));
@@ -1589,11 +2004,13 @@
                         reason_code: String(data.code || 'submit_failed').trim() || 'submit_failed',
                         stage_label: 'submit',
                         priority: entry.priority,
-                        points_cost: totalCost
+                        points_cost: totalCost,
+                        task_type: entry.taskType
                     }
                 });
                 await logToHistory(entry.email, 'failed', {
                     email: entry.email,
+                    task_type: entry.taskType,
                     error_code: data.code || '',
                     error_message: errorText,
                     raw_status: 'submit_failed'
@@ -1613,11 +2030,13 @@
                         reason_code: 'missing_job_id',
                         stage_label: 'submit',
                         priority: entry.priority,
-                        points_cost: totalCost
+                        points_cost: totalCost,
+                        task_type: entry.taskType
                     }
                 });
                 await logToHistory(entry.email, 'failed', {
                     email: entry.email,
+                    task_type: entry.taskType,
                     error_message: errorText,
                     raw_status: 'missing_job_id'
                 });
@@ -1631,6 +2050,7 @@
                 timer: null,
                 submittedAt: Date.now(),
                 priority: entry.priority,
+                taskType: normalizeTaskType(data.task_type || entry.taskType),
                 pointsCost: totalCost,
                 restored: false
             });
@@ -1640,7 +2060,8 @@
                 pointsDelta: -Math.abs(Number(totalCost) || 0),
                 metadata: {
                     priority: entry.priority,
-                    points_cost: totalCost
+                    points_cost: totalCost,
+                    task_type: entry.taskType
                 }
             }, {
                 dedupeKey: `verify_submit:${String(jobId || '').trim()}`
@@ -1649,7 +2070,8 @@
                 jobId,
                 email: entry.email,
                 userId,
-                site: getCurrentSiteValue()
+                site: getCurrentSiteValue(),
+                taskType: normalizeTaskType(data.task_type || entry.taskType)
             });
 
             const display = getResultDisplay({
@@ -1693,11 +2115,13 @@
                     reason_code: 'submit_error',
                     stage_label: 'submit',
                     priority: entry.priority,
-                    points_cost: totalCost
+                    points_cost: totalCost,
+                    task_type: entry.taskType
                 }
             });
             await logToHistory(entry.email, 'error', {
                 email: entry.email,
+                task_type: entry.taskType,
                 error_message: errorText,
                 raw_status: 'submit_error'
             });
@@ -1708,45 +2132,72 @@
     function pollTask(jobId, entry) {
         return new Promise((resolve) => {
             const startTime = Date.now();
-            const backgroundContinueText = t('verify.pendingBackgroundContinue', '连接暂时中断，任务仍在后台处理，可稍后在任务历史查看');
-            const backgroundContinueHint = t('verify.pendingBackgroundContinueHint', '你也可以刷新页面继续追踪当前任务');
+            const taskInfoAtStart = activeTasks.get(jobId) || {};
+            const pollTimeoutMs = getTaskPollTimeoutMs(taskInfoAtStart.taskType || entry.taskType || 'extract');
+            const backgroundContinueText = t('verify.pendingBackgroundContinue', '任务耗时较长，仍在后台处理，可稍后在任务历史查看');
+            const backgroundContinueHint = t('verify.pendingBackgroundContinueHint', '页面会继续自动同步；你也可以刷新页面继续追踪当前任务');
+            const statusRetryText = t('verify.statusRetrying', '状态同步中，任务仍在后台处理...');
+            let pollingRequestInFlight = false;
+            let backgroundNoticeShown = false;
 
             const timer = setInterval(async () => {
+                if (pollingRequestInFlight) {
+                    return;
+                }
+
                 if (!activeTasks.has(jobId)) {
                     clearInterval(timer);
                     resolve({ success: false, pointsDeducted: 0, terminal: false });
                     return;
                 }
 
-                if (Date.now() - startTime > CONFIG.pollTimeout) {
-                    clearInterval(timer);
-                    activeTasks.delete(jobId);
-                    updateResultItem(
-                        entry.index,
-                        'processing',
-                        `${escapeHtml(backgroundContinueText)}<div class="verify-result-subtle">${escapeHtml(backgroundContinueHint)}</div>`
-                    );
-                    resolve({ success: false, pointsDeducted: 0, terminal: false });
-                    return;
-                }
-
-                try {
-                    const headers = await getVerifyRequestHeaders();
-                    const res = await fetch(
-                        `${CONFIG.nodeServerUrl}/api/verify/status/${encodeURIComponent(jobId)}`,
-                        { headers }
-                    );
-                    const data = await res.json().catch(() => ({}));
-
-                    if (!res.ok) {
-                        clearInterval(timer);
-                        activeTasks.delete(jobId);
+                if (Date.now() - startTime > pollTimeoutMs) {
+                    if (!backgroundNoticeShown) {
+                        backgroundNoticeShown = true;
                         updateResultItem(
                             entry.index,
                             'processing',
                             `${escapeHtml(backgroundContinueText)}<div class="verify-result-subtle">${escapeHtml(backgroundContinueHint)}</div>`
                         );
-                        resolve({ success: false, pointsDeducted: 0, terminal: false });
+                    }
+                }
+
+                pollingRequestInFlight = true;
+
+                try {
+                    const headers = await getVerifyRequestHeaders();
+                    const statusEndpoints = [
+                        `/api/public?scope=verify&route=status&taskId=${encodeURIComponent(jobId)}`,
+                        `${CONFIG.nodeServerUrl}/api/verify/status/${encodeURIComponent(jobId)}`
+                    ];
+                    let res = null;
+                    let data = {};
+
+                    for (const endpoint of statusEndpoints) {
+                        try {
+                            const response = await fetch(endpoint, { headers });
+                            const payload = await response.json().catch(() => ({}));
+
+                            if (response.ok || !shouldFallbackVerifyEndpoint(response, payload)) {
+                                res = response;
+                                data = payload;
+                                break;
+                            }
+                        } catch (_) {
+                            // try the next endpoint
+                        }
+                    }
+
+                    if (!res) {
+                        throw new Error(t('verify.connectionLost', '连接中断，请重试'));
+                    }
+
+                    if (!res.ok) {
+                        updateResultItem(
+                            entry.index,
+                            'processing',
+                            `${escapeHtml(statusRetryText)}<div class="verify-result-subtle">${escapeHtml(backgroundContinueHint)}</div>`
+                        );
                         return;
                     }
 
@@ -1770,6 +2221,7 @@
                                     duration_ms: resolvedDurationMs,
                                     priority: Number(taskInfo.priority ?? entry.priority ?? 0) || 0,
                                     points_cost: Number(taskInfo.pointsCost ?? CONFIG.pricePerVerify) || CONFIG.pricePerVerify,
+                                    task_type: normalizeTaskType(taskInfo.taskType || entry.taskType || data?.task_type),
                                     restored: taskInfo.restored === true
                                 }
                             }, {
@@ -1784,6 +2236,7 @@
                                     stage_label: formatStageLabel(data?.stage_label),
                                     priority: Number(taskInfo.priority ?? entry.priority ?? 0) || 0,
                                     points_cost: Number(taskInfo.pointsCost ?? CONFIG.pricePerVerify) || CONFIG.pricePerVerify,
+                                    task_type: normalizeTaskType(taskInfo.taskType || entry.taskType || data?.task_type),
                                     restored: taskInfo.restored === true
                                 }
                             }, {
@@ -1800,6 +2253,13 @@
                     }
                 } catch (error) {
                     console.warn('[VerifyWidget] Poll error (retrying):', error.message);
+                    updateResultItem(
+                        entry.index,
+                        'processing',
+                        `${escapeHtml(statusRetryText)}<div class="verify-result-subtle">${escapeHtml(backgroundContinueHint)}</div>`
+                    );
+                } finally {
+                    pollingRequestInFlight = false;
                 }
             }, CONFIG.pollInterval);
 
@@ -1919,6 +2379,13 @@
     function hideBatchSummary() {
         const el = document.getElementById('verifyBatchSummary');
         setVerifyHidden(el, true);
+
+        const successEl = document.getElementById('successCount');
+        const failedEl = document.getElementById('failedCount');
+        const totalEl = document.getElementById('totalCount');
+        if (successEl) successEl.textContent = '0';
+        if (failedEl) failedEl.textContent = '0';
+        if (totalEl) totalEl.textContent = String(batchStats.total || 0);
     }
 
     function showSingleResult(type, title, message) {
@@ -2014,6 +2481,16 @@
                     </div>
                 `;
             }).join('');
+
+            void repairFalseFailedHistory(data)
+                .then((repaired) => {
+                    if (repaired) {
+                        loadHistory();
+                    }
+                })
+                .catch((error) => {
+                    console.warn('[VerifyHistory] Failed to repair false failures:', error?.message || error);
+                });
         } catch (_) {
             listEl.innerHTML = `<div class="verify-history-empty">${t('verify.loadFailed', '加载失败')}</div>`;
         }

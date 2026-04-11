@@ -41,9 +41,14 @@ const HOME_GUESTBOOK_PARTICLE_SEED = 20260409;
 const HOME_GUESTBOOK_PARTICLE_RESET_SEED = 9090909;
 const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
 const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
+const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260411_HOMEPAGE_P2_EXPERIMENTS_1';
+const HomepageContract = window.HomepageContract || null;
+const HOME_DEFAULT_SECTION_ORDER = Array.isArray(HomepageContract?.MANAGED_SECTION_ORDER)
+  ? [...HomepageContract.MANAGED_SECTION_ORDER]
+  : ['hero', 'prompts', 'shop', 'verify', 'guestbook', 'ticker'];
 
 function getHomepageRuntimeSite() {
-  return window.SiteConfig?.site === 'intl' ? 'intl' : 'cn';
+  return HomepageContract?.normalizeSite?.(window.SiteConfig?.site) || (window.SiteConfig?.site === 'intl' ? 'intl' : 'cn');
 }
 
 function getHomepagePrefetchCacheKey(site = getHomepageRuntimeSite()) {
@@ -77,6 +82,10 @@ function readHomepagePrefetchCache(site = getHomepageRuntimeSite()) {
     if (parsed?.site && parsed.site !== site) {
       return null;
     }
+    if (parsed?.schemaVersion !== HOMEPAGE_PREFETCH_SCHEMA_VERSION) {
+      sessionStorage.removeItem(key);
+      return null;
+    }
     return parsed;
   } catch (error) {
     sessionStorage.removeItem(key);
@@ -93,6 +102,7 @@ function clearHomepagePrefetchCache(site = getHomepageRuntimeSite()) {
 function writeHomepagePrefetchCache(payload, site = getHomepageRuntimeSite()) {
   sessionStorage.setItem(getHomepagePrefetchCacheKey(site), JSON.stringify({
     ...payload,
+    schemaVersion: HOMEPAGE_PREFETCH_SCHEMA_VERSION,
     site
   }));
   sessionStorage.removeItem(HOMEPAGE_PREFETCH_CACHE_KEY);
@@ -109,6 +119,202 @@ function escapeHomeHtml(value) {
 
 function clampHomeValue(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function sanitizeTickerItems(value) {
+  return Array.isArray(value)
+    ? value.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+}
+
+function getHomepagePrimaryLanguage() {
+  return getHomepageRuntimeSite() === 'intl' ? 'en' : 'zh';
+}
+
+function isHomepagePrimaryLanguageActive() {
+  return (window.i18n?.getCurrentLanguage?.() || 'zh') === getHomepagePrimaryLanguage();
+}
+
+function cloneHomeExperimentValue(value) {
+  if (typeof value === 'string') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => ({ ...item }));
+  }
+  return value;
+}
+
+function getHomepageExperimentAssignmentStorageKey(experimentId = '') {
+  return `homepage_experiment_assignment_${getHomepageRuntimeSite()}_${String(experimentId || '').trim()}`;
+}
+
+function resolveHomepageExperimentVariantKey(experiment = {}) {
+  if (!experiment?.id || experiment?.status === 'paused') {
+    return 'control';
+  }
+
+  try {
+    const stored = sessionStorage.getItem(getHomepageExperimentAssignmentStorageKey(experiment.id));
+    if (stored === 'control' || stored === 'variant') {
+      return stored;
+    }
+  } catch (error) {
+    // Ignore storage failures and fall back to a new assignment.
+  }
+
+  const trafficPercent = Math.min(95, Math.max(5, Number(experiment?.traffic_percent || 50) || 50));
+  const variantKey = Math.random() * 100 < trafficPercent ? 'variant' : 'control';
+
+  try {
+    sessionStorage.setItem(getHomepageExperimentAssignmentStorageKey(experiment.id), variantKey);
+  } catch (error) {
+    // Ignore storage failures.
+  }
+
+  return variantKey;
+}
+
+function getHomepageActiveExperimentPayloads() {
+  try {
+    const experiments = window.getHomepageActiveExperiments?.();
+    return Array.isArray(experiments) ? experiments : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function resolveHomepageExperimentSectionsForEvent(eventName = '', payload = {}) {
+  const metadata = payload?.metadata && typeof payload.metadata === 'object' ? payload.metadata : {};
+  const explicitSection = String(metadata.section || metadata.homepage_section || '').trim();
+  if (explicitSection) {
+    return [explicitSection];
+  }
+
+  switch (String(eventName || '').trim()) {
+    case 'homepage_experiment_impression':
+      return [];
+    case 'homepage_entry_click':
+      return ['hero'];
+    case 'homepage_prompt_click':
+      return ['prompts'];
+    case 'homepage_shop_click':
+      return ['shop'];
+    case 'homepage_verify_click':
+      return ['verify'];
+    case 'homepage_guestbook_click':
+      return ['guestbook'];
+    default:
+      return [];
+  }
+}
+
+function trackHomepageAnalyticsEvent(eventName, payload = {}, options = {}) {
+  const tracker = window.UserEventTracker;
+  if (!tracker || typeof tracker.track !== 'function') {
+    return;
+  }
+
+  const metadata = payload?.metadata && typeof payload.metadata === 'object' && !Array.isArray(payload.metadata)
+    ? payload.metadata
+    : {};
+  const normalizedPayload = {
+    module: payload.module || 'homepage',
+    entityType: payload.entityType || 'homepage_item',
+    entityId: payload.entityId || null,
+    eventValue: payload.eventValue ?? null,
+    metadata: {
+      site: getHomepageRuntimeSite(),
+      ...metadata
+    }
+  };
+  const experimentSections = resolveHomepageExperimentSectionsForEvent(eventName, payload);
+  const activeExperiments = getHomepageActiveExperimentPayloads().filter((experiment) => {
+    return experimentSections.length === 0
+      ? false
+      : experimentSections.includes(String(experiment?.section || '').trim());
+  });
+  if (activeExperiments.length > 0 && !Array.isArray(normalizedPayload.metadata.experiments)) {
+    normalizedPayload.metadata.experiments = activeExperiments;
+  }
+  const eventType = options.eventType
+    || (String(eventName || '').includes('impression') ? 'view' : (String(eventName || '').includes('click') ? 'click' : 'interaction'));
+  const trackingPromise = options.dedupeKey && typeof tracker.trackOnce === 'function'
+    ? tracker.trackOnce(options.dedupeKey, eventName, normalizedPayload, { eventType })
+    : tracker.track(eventName, normalizedPayload, { eventType });
+
+  void Promise.resolve(trackingPromise).catch((error) => {
+    console.debug('[HomepageAnalytics] Track failed:', eventName, error?.message || error);
+  });
+}
+
+function observeHomepageSectionImpression(sectionEl, sectionKey, extraEventName = '') {
+  if (!(sectionEl instanceof HTMLElement) || !sectionKey || sectionEl.dataset.homeImpressionTracked === '1') {
+    return;
+  }
+  if (sectionEl.dataset.homeImpressionObserverBound === '1') {
+    return;
+  }
+
+  sectionEl.dataset.homeImpressionObserverBound = '1';
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting || sectionEl.dataset.homeImpressionTracked === '1') {
+        return;
+      }
+
+      sectionEl.dataset.homeImpressionTracked = '1';
+      trackHomepageAnalyticsEvent('homepage_section_impression', {
+        entityType: 'homepage_section',
+        entityId: sectionKey,
+        metadata: {
+          section: sectionKey
+        }
+      }, {
+        dedupeKey: `homepage_section_impression:${getHomepageRuntimeSite()}:${sectionKey}`,
+        eventType: 'view'
+      });
+
+      if (extraEventName) {
+        trackHomepageAnalyticsEvent(extraEventName, {
+          entityType: 'homepage_section',
+          entityId: sectionKey,
+          metadata: {
+            section: sectionKey
+          }
+        }, {
+          dedupeKey: `${extraEventName}:${getHomepageRuntimeSite()}:${sectionKey}`,
+          eventType: 'view'
+        });
+      }
+
+      const sectionExperiments = window.getHomepageSectionActiveExperiments?.(sectionKey);
+      if (Array.isArray(sectionExperiments) && sectionExperiments.length > 0) {
+        sectionExperiments.forEach((experiment) => {
+          trackHomepageAnalyticsEvent('homepage_experiment_impression', {
+            entityType: 'homepage_experiment',
+            entityId: experiment.id || null,
+            metadata: {
+              experiment_id: experiment.id || null,
+              experiment_name: experiment.name || '',
+              section: experiment.section || sectionKey,
+              field: experiment.field || '',
+              variant_key: experiment.variant_key || 'control'
+            }
+          }, {
+            dedupeKey: `homepage_experiment_impression:${getHomepageRuntimeSite()}:${experiment.id || ''}:${experiment.variant_key || 'control'}`,
+            eventType: 'view'
+          });
+        });
+      }
+
+      observer.disconnect();
+    });
+  }, {
+    threshold: 0.35
+  });
+
+  observer.observe(sectionEl);
 }
 
 function createHomeSeededRandom(seed) {
@@ -446,6 +652,69 @@ const FramerHome = {
   cachedData: null,
   config: null,
   guestbookRuntime: null,
+  sectionExperimentAssignments: {},
+  activeExperiments: [],
+
+  resetActiveExperiments() {
+    this.sectionExperimentAssignments = {};
+    this.activeExperiments = [];
+    window.getHomepageActiveExperiments = () => [];
+    window.getHomepageSectionActiveExperiments = () => [];
+  },
+
+  resolveSectionExperiments(sectionKey, config = {}) {
+    const active = (Array.isArray(config?.experiments) ? config.experiments : [])
+      .map((experiment) => {
+        if (!experiment?.id || experiment?.status === 'paused') {
+          return null;
+        }
+
+        const isListField = experiment.field === 'featured_items' || experiment.field === 'custom_items';
+        if (!isListField && !isHomepagePrimaryLanguageActive()) {
+          return null;
+        }
+
+        const variantKey = resolveHomepageExperimentVariantKey(experiment);
+        const selectedValue = cloneHomeExperimentValue(
+          variantKey === 'variant' ? experiment.variant_value : experiment.control_value
+        );
+
+        return {
+          id: String(experiment.id || '').trim(),
+          name: String(experiment.name || '').trim(),
+          section: sectionKey,
+          field: String(experiment.field || '').trim(),
+          variant_key: variantKey,
+          traffic_percent: Number(experiment.traffic_percent || 50) || 50,
+          selected_value: selectedValue
+        };
+      })
+      .filter(Boolean);
+
+    this.sectionExperimentAssignments[sectionKey] = active;
+    this.activeExperiments = Object.values(this.sectionExperimentAssignments).flat().map((experiment) => ({
+      id: experiment.id,
+      name: experiment.name,
+      section: experiment.section,
+      field: experiment.field,
+      variant_key: experiment.variant_key
+    }));
+
+    window.getHomepageActiveExperiments = () => this.activeExperiments;
+    window.getHomepageSectionActiveExperiments = (section) => this.sectionExperimentAssignments?.[section] || [];
+
+    return active;
+  },
+
+  getSectionExperimentValue(sectionKey, config = {}, field = '', fallbackValue = null) {
+    const experiments = this.resolveSectionExperiments(sectionKey, config);
+    const matched = experiments.find((experiment) => experiment.field === field);
+    if (!matched) {
+      return fallbackValue;
+    }
+
+    return cloneHomeExperimentValue(matched.selected_value);
+  },
 
   /**
    * Initialize the homepage
@@ -488,8 +757,12 @@ const FramerHome = {
       console.log(`🌐 Homepage language changed to: ${e.detail.lang}, re-rendering...`);
 
       // Re-build all data with new language
+      this.resetActiveExperiments();
       this.cachedData.hero = this.buildHeroData(this.config.hero || {});
+      this.resolveSectionExperiments('prompts', this.config.prompts || {});
+      this.resolveSectionExperiments('shop', this.config.shop || {});
       this.cachedData.verify = this.buildVerifyData(this.config.verify || {});
+      this.resolveSectionExperiments('guestbook', this.config.guestbook || {});
 
       // CRITICAL: Rebuild ticker data with new language-specific tags
       this.cachedData.ticker = await this.buildTickerData(this.config.ticker);
@@ -600,7 +873,7 @@ const FramerHome = {
         const prefetch = readHomepagePrefetchCache();
         if (prefetch) {
           const age = Date.now() - prefetch.timestamp;
-          if (age < 300000) {
+          if (age < 300000 && prefetch.cacheKind === 'complete') {
             heroData = prefetch.cachedData?.hero || this.buildHeroData(prefetch.config?.hero || {});
           }
         }
@@ -643,11 +916,22 @@ const FramerHome = {
           // ONLY use cache if it was saved AFTER i18n was ready (a rudimentary check: title shouldn't equal its own key)
           const isTranslated = prefetch.cachedData?.hero?.title && !prefetch.cachedData.hero.title.includes('home.hero');
           const isFreshConfig = !configUpdatedAt || (prefetch.timestamp || 0) >= configUpdatedAt;
+          const isCompletePrefetch = prefetch.cacheKind === 'complete';
 
           // Use if < 5 minutes old and contains actual translated text
-          if (age < 300000 && prefetch.cachedData && prefetch.config && isTranslated && isFreshConfig) {
+          if (age < 300000 && prefetch.cachedData && prefetch.config && isTranslated && isFreshConfig && isCompletePrefetch) {
             this.cachedData = prefetch.cachedData;
             this.config = prefetch.config;
+            this.sectionRows = prefetch.sectionRows || {};
+            this.sectionOrder = Array.isArray(prefetch.sectionOrder) && prefetch.sectionOrder.length
+              ? prefetch.sectionOrder
+              : [...HOME_DEFAULT_SECTION_ORDER];
+            this.resetActiveExperiments();
+            this.resolveSectionExperiments('hero', this.config.hero || {});
+            this.resolveSectionExperiments('prompts', this.config.prompts || {});
+            this.resolveSectionExperiments('shop', this.config.shop || {});
+            this.resolveSectionExperiments('verify', this.config.verify || {});
+            this.resolveSectionExperiments('guestbook', this.config.guestbook || {});
             this.cachedData.ticker = await this.buildTickerData(this.config.ticker || {});
             this.writeHeroTextCache(this.cachedData.hero);
             console.log(`⚡ Using prefetched homepage data (${Math.round(age / 1000)}s old)`);
@@ -665,6 +949,7 @@ const FramerHome = {
     try {
       // Fetch homepage config from Supabase
       this.config = await this.fetchHomepageConfig();
+      this.resetActiveExperiments();
 
       // Aggregate section data in parallel to reduce initial waiting time
       const [prompts, shop, guestbook, shopCategories] = await Promise.all([
@@ -694,6 +979,9 @@ const FramerHome = {
         writeHomepagePrefetchCache({
           cachedData: this.cachedData,
           config: this.config,
+          sectionRows: this.sectionRows,
+          sectionOrder: this.sectionOrder,
+          cacheKind: 'complete',
           timestamp: Date.now()
         });
       } catch (e) {
@@ -728,12 +1016,11 @@ const FramerHome = {
     // Use cache with 30 minute TTL
     return await Cache.loadWithCache('homepage_config', async () => {
       const data = await loadHomepageConfigRows(getHomepageRuntimeSite());
+      this.sectionRows = HomepageContract?.mapRowsBySection?.(data) || {};
+      this.sectionOrder = HomepageContract?.sortSectionsByDisplayOrder?.(data) || [...HOME_DEFAULT_SECTION_ORDER];
 
       // Convert array to object keyed by section
-      const config = {};
-      data.forEach(item => {
-        config[item.section] = item.content;
-      });
+      const config = HomepageContract?.buildConfigMap?.(data) || {};
 
       return config;
     }, 30);
@@ -742,22 +1029,100 @@ const FramerHome = {
   /**
    * Build hero section data
    */
+  buildDefaultHeroEntries() {
+    return [
+      { id: 'prompts', icon: 'fa-wand-magic-sparkles', text: window.i18n?.t('home.entries.prompts') || '提示词', link: '/prompts.html', color: '#f472b6', section: 'prompts' },
+      { id: 'shop', icon: 'fa-store', text: window.i18n?.t('home.entries.shop') || '商城', link: '/shop.html', color: '#4ade80', section: 'shop' },
+      { id: 'verify', icon: 'fa-robot', text: window.i18n?.t('home.entries.verify') || '验证', link: '/verify.html', color: '#667eea', section: 'verify' },
+      { id: 'guestbook', icon: 'fa-comment-dots', text: window.i18n?.t('home.entries.guestbook') || '留言板', link: '#', color: '#f59e0b', action: 'openGuestbookModal', section: 'guestbook' }
+    ];
+  },
+
   buildHeroData(config) {
+    const configuredEntries = Array.isArray(config?.entries) && config.entries.length > 0
+      ? config.entries
+      : this.buildDefaultHeroEntries();
+    const experimentTitle = this.getSectionExperimentValue('hero', config, 'title', '');
+    const experimentSubtitle = this.getSectionExperimentValue('hero', config, 'subtitle', '');
+
     return {
       // Prioritize i18n translations for multilingual support
-      title: this.getLocalizedField(config, 'title') || window.i18n?.t('home.hero.title') || '早鸟',
-      subtitle: this.getLocalizedField(config, 'subtitle') || window.i18n?.t('home.hero.subtitle') || '创意 · 效率 · 无限可能',
-      cta: config.cta || {
-        primary: { text: '开始探索', link: '#prompts' },
-        secondary: { text: '了解更多', link: '#about' }
-      },
+      title: experimentTitle || this.getLocalizedField(config, 'title') || window.i18n?.t('home.hero.title') || '早鸟',
+      subtitle: experimentSubtitle || this.getLocalizedField(config, 'subtitle') || window.i18n?.t('home.hero.subtitle') || '创意 · 效率 · 无限可能',
       customImage: config.custom_image || null,
-      entries: [
-        { icon: 'fa-wand-magic-sparkles', text: window.i18n?.t('home.entries.prompts') || '提示词', link: '/prompts.html', color: '#f472b6', section: 'gallery' },
-        { icon: 'fa-store', text: window.i18n?.t('home.entries.shop') || '商城', link: '/shop.html', color: '#4ade80', section: 'shop' },
-        { icon: 'fa-robot', text: window.i18n?.t('home.entries.verify') || '验证', link: '/verify.html', color: '#667eea', section: 'verify' },
-        { icon: 'fa-comment-dots', text: window.i18n?.t('home.entries.guestbook') || '留言板', link: '#', color: '#f59e0b', action: 'openGuestbookModal', section: 'guestbook' }
-      ]
+      entries: configuredEntries
+        .filter((item) => item?.enabled !== false)
+        .map((item, index) => ({
+          id: String(item?.id || item?.section || item?.action || item?.link || `hero_entry_${index + 1}`).trim(),
+          icon: String(item?.icon || 'fa-star').trim(),
+          text: this.getLocalizedField(item, 'text') || item?.text || `入口 ${index + 1}`,
+          link: String(item?.link || (item?.section ? `#${item.section}` : '#')).trim() || '#',
+          color: String(item?.color || '#ffffff').trim() || '#ffffff',
+          action: String(item?.action || '').trim(),
+          section: String(item?.section || '').trim()
+        }))
+        .slice(0, 8)
+    };
+  },
+
+  normalizeFeaturedPromptLookupId(value) {
+    return String(value ?? '').trim();
+  },
+
+  findFeaturedPromptRecord(promptPool = [], item = {}) {
+    const normalizedId = this.normalizeFeaturedPromptLookupId(item?.id);
+    if (!normalizedId || !Array.isArray(promptPool) || promptPool.length === 0) {
+      return null;
+    }
+
+    let matchedPrompt = promptPool.find((prompt) => {
+      const promptId = this.normalizeFeaturedPromptLookupId(prompt?.supabaseId ?? prompt?.id);
+      return Boolean(promptId) && promptId === normalizedId;
+    });
+
+    if (matchedPrompt) {
+      return matchedPrompt;
+    }
+
+    const numericId = Number.parseInt(normalizedId, 10);
+    if (Number.isNaN(numericId)) {
+      return null;
+    }
+
+    matchedPrompt = promptPool.find((prompt) => {
+      const supabaseId = Number.parseInt(prompt?.supabaseId, 10);
+      const promptId = Number.parseInt(prompt?.id, 10);
+      return (!Number.isNaN(supabaseId) && supabaseId === numericId)
+        || (!Number.isNaN(promptId) && promptId === numericId);
+    });
+
+    return matchedPrompt || null;
+  },
+
+  buildFeaturedPromptFallback(item = {}) {
+    const normalizedId = this.normalizeFeaturedPromptLookupId(item?.id);
+    if (!normalizedId) {
+      return null;
+    }
+
+    const image = String(item?.image || item?.image_url || '').trim();
+    const tags = Array.isArray(item?.tags)
+      ? item.tags.map(tag => String(tag || '').trim()).filter(Boolean).slice(0, 8)
+      : [];
+    const title = String(item?.title || item?.title_zh || item?.title_en || normalizedId).trim() || normalizedId;
+    const titleZh = String(item?.title_zh || item?.title || '').trim();
+    const titleEn = String(item?.title_en || item?.title || '').trim();
+
+    return {
+      id: normalizedId,
+      title,
+      title_zh: titleZh,
+      title_en: titleEn,
+      images: image ? [image] : [],
+      tags,
+      ai_tags: [...tags],
+      aiTags: tags.length > 0 ? { styles: { zh: [...tags], en: [...tags] } } : undefined,
+      homepage_featured_fallback: true
     };
   },
 
@@ -766,13 +1131,16 @@ const FramerHome = {
    */
   async aggregatePrompts(config) {
     const promptPool = Array.isArray(window.PROMPTS) ? window.PROMPTS : [];
+    const experimentFeaturedItems = this.getSectionExperimentValue('prompts', config, 'featured_items', null);
+    const featuredItems = Array.isArray(experimentFeaturedItems) && experimentFeaturedItems.length > 0
+      ? experimentFeaturedItems
+      : config.featured_items;
 
     // Manual mode - use custom selected items
-    if (!config.enable_auto && config.featured_items?.length > 0) {
-      return config.featured_items
-        .map(item => promptPool.find(p => p.id === item.id))
-        .filter(Boolean)
-        .slice(0, config.max_items || 24);
+    if ((Array.isArray(experimentFeaturedItems) && experimentFeaturedItems.length > 0) || (!config.enable_auto && featuredItems?.length > 0)) {
+      return (featuredItems || [])
+        .map(item => this.findFeaturedPromptRecord(promptPool, item) || this.buildFeaturedPromptFallback(item))
+        .filter(Boolean);
     }
 
     // Auto mode - sort by strategy
@@ -805,39 +1173,85 @@ const FramerHome = {
   /**
    * Aggregate shop products from Supabase (with cache)
    */
-  async aggregateShop(config) {
-    if (!config.enable_auto && config.custom_items?.length > 0) {
-      return config.custom_items;
-    }
-
+  async fetchShopProductCatalog() {
     try {
-      // Use cache with 15 minute TTL for shop products
-      const allProducts = await Cache.loadWithCache('shop_products', async () => {
+      return await Cache.loadWithCache('shop_products', async () => {
         const { data, error } = await window.supabaseClient
           .from('shop_products')
-          .select('id, name, name_en, description, description_en, icon_url, price_points, price_points_intl, stock_count, category')
-          .eq('is_active', true)
+          .select('id, name, name_en, description, description_en, icon_url, price_points, price_points_intl, stock_count, category, is_active, display_order')
           .order('display_order', { ascending: false })
-          .limit(50);
+          .limit(120);
 
         if (error) throw error;
         return data || [];
       }, 15);
+    } catch (error) {
+      console.error('Failed to fetch shop catalog:', error);
+      return [];
+    }
+  },
+
+  resolveShopCuratedItem(productCatalog = [], item = {}) {
+    const normalizedId = String(item?.id || '').trim();
+    if (!normalizedId) {
+      return null;
+    }
+
+    const liveProduct = (Array.isArray(productCatalog) ? productCatalog : []).find((product) => String(product?.id || '').trim() === normalizedId);
+    const snapshot = liveProduct || item;
+    return {
+      ...(snapshot || {}),
+      id: normalizedId,
+      homepage_badge: String(item?.badge || '').trim(),
+      homepage_curated: true,
+      homepage_missing: !liveProduct
+    };
+  },
+
+  async aggregateShop(config) {
+    try {
+      const allProducts = await this.fetchShopProductCatalog();
+      const liveActiveProducts = (Array.isArray(allProducts) ? allProducts : []).filter((product) => product?.is_active !== false);
+      const experimentCustomItems = this.getSectionExperimentValue('shop', config, 'custom_items', null);
+      const sourceCustomItems = Array.isArray(experimentCustomItems) && experimentCustomItems.length > 0
+        ? experimentCustomItems
+        : config.custom_items;
+      const curatedItems = Array.isArray(sourceCustomItems)
+        ? sourceCustomItems
+          .map((item) => this.resolveShopCuratedItem(allProducts, item))
+          .filter(Boolean)
+        : [];
+      const curatedIds = new Set(curatedItems.map((item) => String(item?.id || '').trim()).filter(Boolean));
 
       // Filter by category if needed
       let filtered = window.SiteConfig?.filterProductsForCurrentSite
-        ? window.SiteConfig.filterProductsForCurrentSite(allProducts)
-        : allProducts;
+        ? window.SiteConfig.filterProductsForCurrentSite(liveActiveProducts)
+        : liveActiveProducts;
       if (config.category && config.category !== 'all') {
         filtered = filtered.filter(p => p.category === config.category);
       }
 
-      // Randomly select 6 products
-      const shuffled = filtered.sort(() => Math.random() - 0.5);
-      return shuffled.slice(0, 6);
+      const maxItems = Number(config.max_items) || 6;
+      const sortStrategy = String(config.sort || 'popular').trim();
+
+      if (sortStrategy === 'latest') {
+        filtered = [...filtered].reverse();
+      } else if (sortStrategy === 'random') {
+        filtered = [...filtered].sort(() => Math.random() - 0.5);
+      }
+
+      const autoItems = filtered.filter((item) => !curatedIds.has(String(item?.id || '').trim()));
+
+      if (config.enable_auto === false) {
+        return curatedItems.slice(0, maxItems);
+      }
+
+      return [...curatedItems, ...autoItems].slice(0, maxItems);
     } catch (error) {
       console.error('Failed to fetch shop products:', error);
-      return [];
+      return Array.isArray(config.custom_items)
+        ? config.custom_items.slice(0, Number(config.max_items) || 6)
+        : [];
     }
   },
 
@@ -874,37 +1288,48 @@ const FramerHome = {
    * Build Gemini verify section data
    */
   buildVerifyData(config) {
-    // Use features from config (saved via Admin Studio), fallback to defaults
     const defaultFeatures = [
       window.i18n?.t('home.verify.features.free') || '免费',
       window.i18n?.t('home.verify.features.realtime') || '实时',
       window.i18n?.t('home.verify.features.secure') || '安全'
     ];
+    const defaultValueProps = [
+      window.i18n?.t('home.verify.valueProps.fast') || '秒级校验',
+      window.i18n?.t('home.verify.valueProps.visible') || '过程可见',
+      window.i18n?.t('home.verify.valueProps.safe') || '结果可追踪'
+    ];
+    const defaultModels = [
+      'Gemini',
+      'Claude',
+      'OpenAI'
+    ];
 
+    const experimentCtaText = this.getSectionExperimentValue('verify', config, 'cta_text', '');
     return {
       title: this.getLocalizedField(config, 'section_title') || window.i18n?.t('home.verify.title') || 'Gemini 验证',
       subtitle: this.getLocalizedField(config, 'section_subtitle') || window.i18n?.t('home.verify.subtitle') || '快速验证您的 API 密钥，实时返回结果',
       screenshot: config.screenshot_path || '/assets/verify-preview.png',
       features: (config.features && config.features.length > 0) ? config.features : defaultFeatures,
-      link: '/verify.html'
+      valueProps: (config.value_props && config.value_props.length > 0) ? config.value_props : defaultValueProps,
+      supportedModels: (config.supported_models && config.supported_models.length > 0) ? config.supported_models : defaultModels,
+      ctaText: String(experimentCtaText || config.cta_text || '').trim() || (window.i18n?.t('home.verify.cta') || '立即验证'),
+      riskNotice: String(config.risk_notice || '').trim() || (window.i18n?.t('home.verify.riskNotice') || '建议先使用测试账号完成校验，再切换正式账号。'),
+      link: String(config.cta_link || '').trim() || '/verify.html?source=homepage_verify'
     };
   },
 
   /**
    * Aggregate guestbook messages (with cache)
    */
-  async aggregateGuestbook(config) {
-    if (!config.enable_auto) return [];
-
+  async fetchGuestbookMessages() {
     try {
-      // Use cache with 10 minute TTL for guestbook
-      const messages = await Cache.loadWithCache('guestbook_messages', async () => {
+      return await Cache.loadWithCache('guestbook_messages', async () => {
         const currentSite = window.SiteConfig?.site || 'cn';
         const { data, error } = await window.supabaseClient
           .from('guestbook_messages')
           .select(`
-            id, 
-            content, 
+            id,
+            content,
             image_url,
             like_count,
             created_at,
@@ -913,17 +1338,100 @@ const FramerHome = {
           `)
           .eq('site', currentSite)
           .order('created_at', { ascending: false })
-          .limit(10);
+          .limit(24);
 
         if (error) throw error;
         return data || [];
       }, 10);
-
-      // Homepage layout is tuned for 6 cards on desktop, so always keep up to 6.
-      return messages.slice(0, Math.max(Number(config.max_items) || 0, HOME_GUESTBOOK_CARD_SLOTS.length));
     } catch (error) {
       console.error('Failed to fetch guestbook:', error);
       return [];
+    }
+  },
+
+  resolveGuestbookFeaturedItem(messages = [], item = {}) {
+    const normalizedId = String(item?.id || '').trim();
+    if (!normalizedId) {
+      return null;
+    }
+
+    const liveMessage = (Array.isArray(messages) ? messages : []).find((message) => String(message?.id || '').trim() === normalizedId);
+    if (liveMessage) {
+      return {
+        ...liveMessage,
+        homepage_curated: true,
+        homepage_reason: String(item?.reason || '').trim()
+      };
+    }
+
+    if (!item?.content) {
+      return null;
+    }
+
+    return {
+      id: normalizedId,
+      content: String(item.content || '').trim(),
+      image_url: String(item.image_url || '').trim(),
+      like_count: Number(item.like_count || 0) || 0,
+      created_at: item.created_at || null,
+      user_id: item.user_id || null,
+      username: item.username || item?.profiles?.username || '',
+      avatar_url: item.avatar_url || item?.profiles?.avatar_url || '',
+      homepage_curated: true,
+      homepage_missing: true,
+      homepage_reason: String(item?.reason || '').trim()
+    };
+  },
+
+  buildGuestbookFallbackCard(item = {}, index = 0) {
+    const content = String(item?.content || item?.text || '').trim();
+    if (!content) {
+      return null;
+    }
+
+    return {
+      id: String(item?.id || `guestbook_fallback_${index + 1}`).trim(),
+      content,
+      author: String(item?.author || '').trim(),
+      avatar_url: String(item?.avatar_url || '').trim(),
+      homepage_fallback: true
+    };
+  },
+
+  async aggregateGuestbook(config) {
+    try {
+      const messages = await this.fetchGuestbookMessages();
+      const maxItems = Math.max(1, Number(config.max_items) || HOME_GUESTBOOK_CARD_SLOTS.length);
+      const experimentFeaturedItems = this.getSectionExperimentValue('guestbook', config, 'featured_items', null);
+      const sourceFeaturedItems = Array.isArray(experimentFeaturedItems) && experimentFeaturedItems.length > 0
+        ? experimentFeaturedItems
+        : config.featured_items;
+      const featuredItems = Array.isArray(sourceFeaturedItems)
+        ? sourceFeaturedItems
+          .map((item) => this.resolveGuestbookFeaturedItem(messages, item))
+          .filter(Boolean)
+        : [];
+      const fallbackItems = Array.isArray(config.fallback_items)
+        ? config.fallback_items
+          .map((item, index) => this.buildGuestbookFallbackCard(item, index))
+          .filter(Boolean)
+        : [];
+      const featuredIds = new Set(featuredItems.map((item) => String(item?.id || '').trim()).filter(Boolean));
+      const autoItems = (Array.isArray(messages) ? messages : []).filter((item) => !featuredIds.has(String(item?.id || '').trim()));
+
+      if (config.enable_auto === false) {
+        return [...featuredItems, ...fallbackItems].slice(0, Math.min(maxItems, HOME_GUESTBOOK_CARD_SLOTS.length));
+      }
+
+      return [...featuredItems, ...autoItems, ...fallbackItems].slice(0, Math.min(maxItems, HOME_GUESTBOOK_CARD_SLOTS.length));
+    } catch (error) {
+      console.error('Failed to fetch guestbook:', error);
+      const fallbackItems = Array.isArray(config.fallback_items)
+        ? config.fallback_items
+          .map((item, index) => this.buildGuestbookFallbackCard(item, index))
+          .filter(Boolean)
+        : [];
+      return fallbackItems.slice(0, Math.min(Number(config.max_items) || HOME_GUESTBOOK_CARD_SLOTS.length, HOME_GUESTBOOK_CARD_SLOTS.length));
     }
   },
 
@@ -933,32 +1441,49 @@ const FramerHome = {
   async buildTickerData(config = {}) {
     const lang = window.i18n?.getCurrentLanguage() || 'zh';
     const promptPool = Array.isArray(window.PROMPTS) ? window.PROMPTS : [];
+    const promptTagSeed = [
+      ...sanitizeTickerItems(config.prompt_tags),
+      ...sanitizeTickerItems(config.activity_keywords),
+      ...sanitizeTickerItems(config.custom_items_top)
+    ];
+    const productCategorySeed = [
+      ...sanitizeTickerItems(config.product_categories),
+      ...sanitizeTickerItems(config.custom_items_bottom)
+    ];
+    let tags = [...new Set(promptTagSeed)];
+    let productCategories = [...new Set(productCategorySeed)];
 
-    // Extract tags from aiTags (bilingual support)
-    const tagSet = new Set();
-    promptPool.forEach(p => {
-      if (p.aiTags && typeof p.aiTags === 'object') {
-        // Extract from all categories with current language
-        ['styles', 'objects', 'scenes', 'mood'].forEach(cat => {
-          const tags = p.aiTags[cat]?.[lang] || p.aiTags[cat]?.zh || [];
-          tags.forEach(t => tagSet.add(t));
-        });
-      }
-    });
+    if ((config.enable_auto !== false || tags.length === 0) && config.enable_prompts !== false) {
+      const tagSet = new Set(tags);
+      promptPool.forEach(p => {
+        if (p.aiTags && typeof p.aiTags === 'object') {
+          ['styles', 'objects', 'scenes', 'mood'].forEach(cat => {
+            const promptTags = p.aiTags[cat]?.[lang] || p.aiTags[cat]?.zh || [];
+            promptTags.forEach(tag => tagSet.add(tag));
+          });
+        }
+      });
+      tags = Array.from(tagSet).slice(0, 20);
+    }
 
-    const tags = Array.from(tagSet).slice(0, 20);
-
-    const productCategories = Array.from(new Set(
-      (this.cachedData?.shop || [])
-        .map((product) => String(product?.category || '').trim())
-        .filter(Boolean)
-    ));
+    if ((config.enable_auto !== false || productCategories.length === 0) && config.enable_products !== false) {
+      const categorySet = new Set(productCategories);
+      (this.cachedData?.shop || []).forEach((product) => {
+        const category = String(product?.category || '').trim();
+        if (category) {
+          categorySet.add(category);
+        }
+      });
+      productCategories = Array.from(categorySet).slice(0, 20);
+    }
 
     return {
       top: tags,
       bottom: productCategories,
       speed: config.speed || 30,
-      shopScrollSpeed: config.shop_scroll_speed || config.speed || 30
+      shopScrollSpeed: config.shop_scroll_speed || config.speed || 30,
+      enable_prompts: config.enable_prompts !== false,
+      enable_products: config.enable_products !== false
     };
   },
 
@@ -967,6 +1492,7 @@ const FramerHome = {
   */
   useFallbackData() {
     console.warn('⚠️ Using fallback data');
+    this.resetActiveExperiments();
     const promptPool = Array.isArray(window.PROMPTS) ? window.PROMPTS : [];
     this.config = {
       hero: { enable_auto: true },
@@ -976,6 +1502,8 @@ const FramerHome = {
       guestbook: { enable_auto: true, max_items: 6, section_title: '留言板', section_subtitle: '用户的声音' },
       ticker: { enable_auto: true, speed: 30 }
     };
+    this.sectionRows = {};
+    this.sectionOrder = [...HOME_DEFAULT_SECTION_ORDER];
 
     // Rebuild cachedData with fallback config
     this.cachedData = {
@@ -998,20 +1526,44 @@ const FramerHome = {
    * @returns {String} Localized value
    */
   getLocalizedField(obj, fieldBase) {
+    if (HomepageContract?.getLocalizedField) {
+      return HomepageContract.getLocalizedField(obj, fieldBase, window.i18n?.getCurrentLanguage?.() || 'zh') || '';
+    }
+
     if (!obj) return '';
     const lang = window.i18n?.getCurrentLanguage() || 'zh';
-
-    // Try language-specific field first (field_en / field_zh)
     const langField = `${fieldBase}_${lang}`;
     if (obj[langField]) return obj[langField];
-
-    // Fallback to base field
     if (obj[fieldBase]) return obj[fieldBase];
-
-    // Last resort: try the other language
-    const otherLang = lang === 'en' ? 'zh' : 'en';
-    const otherField = `${fieldBase}_${otherLang}`;
+    const otherField = `${fieldBase}_${lang === 'en' ? 'zh' : 'en'}`;
     return obj[otherField] || '';
+  },
+
+  applyHomepageSectionOrder() {
+    const main = document.getElementById('main-content');
+    if (!main) {
+      return;
+    }
+
+    const sectionMap = {
+      hero: document.getElementById('hero-section'),
+      prompts: document.getElementById('prompts-section'),
+      shop: document.getElementById('shop-section'),
+      verify: document.getElementById('verify-section'),
+      guestbook: document.getElementById('guestbook-section'),
+      ticker: document.getElementById('ticker-section')
+    };
+
+    const fragment = document.createDocumentFragment();
+    (Array.isArray(this.sectionOrder) && this.sectionOrder.length ? this.sectionOrder : HOME_DEFAULT_SECTION_ORDER).forEach((sectionKey) => {
+      const section = sectionMap[sectionKey];
+      if (section) {
+        fragment.appendChild(section);
+      }
+    });
+
+    const footer = main.querySelector('footer.framer-footer');
+    main.insertBefore(fragment, footer || null);
   },
 
   /**
@@ -1019,50 +1571,44 @@ const FramerHome = {
    */
   renderAll() {
     const sv = window.SectionVisibility;
+    this.applyHomepageSectionOrder();
 
-    // Hero
-    if (!sv || sv.isVisible('hero')) {
-      setHomeSectionVisibility(document.getElementById('hero-section'), true);
-      this.renderHero();
-    } else {
-      setHomeSectionVisibility(document.getElementById('hero-section'), false);
-    }
+    const renderers = {
+      hero: () => this.renderHero(),
+      prompts: () => this.renderPrompts(),
+      shop: () => this.renderShop(),
+      verify: () => this.renderVerify(),
+      guestbook: () => this.renderGuestbook(),
+      ticker: () => this.renderTicker()
+    };
+    const sectionIds = {
+      hero: 'hero-section',
+      prompts: 'prompts-section',
+      shop: 'shop-section',
+      verify: 'verify-section',
+      guestbook: 'guestbook-section',
+      ticker: 'ticker-section'
+    };
 
-    // Prompts / Gallery
-    if (!sv || sv.isVisible('gallery')) {
-      setHomeSectionVisibility(document.getElementById('prompts-section'), true);
-      this.renderPrompts();
-    } else {
-      setHomeSectionVisibility(document.getElementById('prompts-section'), false);
-    }
+    (Array.isArray(this.sectionOrder) && this.sectionOrder.length ? this.sectionOrder : HOME_DEFAULT_SECTION_ORDER).forEach((sectionKey) => {
+      const sectionEl = document.getElementById(sectionIds[sectionKey]);
+      const isVisible = !sv || sv.isVisible(sectionKey);
 
-    // Shop
-    if (!sv || sv.isVisible('shop')) {
-      setHomeSectionVisibility(document.getElementById('shop-section'), true);
-      this.renderShop();
-    } else {
-      setHomeSectionVisibility(document.getElementById('shop-section'), false);
-    }
+      if (sectionKey === 'guestbook' && !isVisible) {
+        this.destroyGuestbookExperience();
+      }
 
-    // Verify
-    if (!sv || sv.isVisible('verify')) {
-      setHomeSectionVisibility(document.getElementById('verify-section'), true);
-      this.renderVerify();
-    } else {
-      setHomeSectionVisibility(document.getElementById('verify-section'), false);
-    }
+      if (!sectionEl || typeof renderers[sectionKey] !== 'function') {
+        return;
+      }
 
-    // Guestbook
-    if (!sv || sv.isVisible('guestbook')) {
-      setHomeSectionVisibility(document.getElementById('guestbook-section'), true);
-      this.renderGuestbook();
-    } else {
-      this.destroyGuestbookExperience();
-      setHomeSectionVisibility(document.getElementById('guestbook-section'), false);
-    }
-
-    // Ticker always renders
-    this.renderTicker();
+      if (isVisible) {
+        setHomeSectionVisibility(sectionEl, true);
+        renderers[sectionKey]();
+      } else {
+        setHomeSectionVisibility(sectionEl, false);
+      }
+    });
 
     // Apply nav/footer visibility rules
     if (sv) sv.applySectionVisibility();
@@ -1369,7 +1915,15 @@ const FramerHome = {
     const heroSignature = JSON.stringify({
       title: data.title || '',
       subtitle: data.subtitle || '',
+      customImage: data.customImage || '',
+      cta: {
+        primary: data.cta?.primary?.text || '',
+        primaryLink: data.cta?.primary?.link || '',
+        secondary: data.cta?.secondary?.text || '',
+        secondaryLink: data.cta?.secondary?.link || ''
+      },
       entries: visibleEntries.map((entry) => ({
+        id: entry.id || '',
         icon: entry.icon || '',
         text: entry.text || '',
         link: entry.link || '',
@@ -1383,6 +1937,15 @@ const FramerHome = {
       return;
     }
 
+    setHomeRuntimeStyle(section, {
+      backgroundImage: data.customImage
+        ? `linear-gradient(180deg, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0.9)), url("${String(data.customImage).replace(/"/g, '%22')}")`
+        : '',
+      backgroundSize: data.customImage ? 'cover' : '',
+      backgroundPosition: data.customImage ? 'center center' : '',
+      backgroundRepeat: data.customImage ? 'no-repeat' : ''
+    });
+
     section.innerHTML = `
       <div class="raycast-beams">
         <div class="ray-beam ray-1"></div>
@@ -1391,9 +1954,8 @@ const FramerHome = {
         <div class="ray-beam ray-4"></div>
       </div>
       <div class="hero-noise-overlay"></div>
-      <h1 class="hero-title fade-in-up">${data.title}</h1>
-      <p class="hero-subtitle fade-in-up">${data.subtitle}</p>
-      
+      <h1 class="hero-title fade-in-up">${escapeHomeHtml(data.title || '')}</h1>
+      <p class="hero-subtitle fade-in-up">${escapeHomeHtml(data.subtitle || '')}</p>
       <!-- Progress Indicator (Ruler Style) -->
       <div class="hero-progress fade-in-up">
         <div class="hero-progress-track">
@@ -1406,10 +1968,18 @@ const FramerHome = {
       <div class="hero-carousel fade-in-up">
         <div class="hero-carousel-track">
           ${visibleEntries.map((entry, index) => `
-            <a href="${entry.link}" class="entry-card" data-index="${index}" ${entry.action ? `data-action="${entry.action}"` : ''}>
+            <a
+              href="${escapeHomeHtml(entry.link || '#')}"
+              class="entry-card"
+              data-index="${index}"
+              data-home-entry-id="${escapeHomeHtml(entry.id || `hero_entry_${index + 1}`)}"
+              data-home-entry-title="${escapeHomeHtml(entry.text || '')}"
+              data-home-entry-link="${escapeHomeHtml(entry.link || '#')}"
+              data-home-entry-section="${escapeHomeHtml(entry.section || '')}"
+              ${entry.action ? `data-action="${escapeHomeHtml(entry.action)}"` : ''}>
               <span class="entry-card-ui">
                 <i class="fas ${entry.icon} home-entry-card-icon" data-home-entry-color="${entry.color}"></i>
-                <span>${entry.text}</span>
+                <span>${escapeHomeHtml(entry.text || '')}</span>
               </span>
             </a>
           `).join('')}
@@ -1428,6 +1998,7 @@ const FramerHome = {
         color: icon.dataset.homeEntryColor || ''
       });
     });
+    observeHomepageSectionImpression(section, 'hero');
 
     // Initialize carousel interactions
     this.initCarousel();
@@ -1466,12 +2037,16 @@ const FramerHome = {
     const prompts = this.cachedData.prompts;
     const config = this.config.prompts;
     const section = document.getElementById('prompts-section');
+    if (!section) {
+      return;
+    }
 
     // Change section class to masonry style
     section.className = 'prompts-masonry-section';
 
-    // Distribute cards across 5 columns for balanced layout
-    const columns = this.distributeCardsToColumns(prompts, 5);
+    // Match the number of columns to the actual card count to avoid empty tracks.
+    const columnCount = Math.min(5, Math.max(1, prompts.length || 1));
+    const columns = this.distributeCardsToColumns(prompts, columnCount);
 
     section.innerHTML = `
       <div class="section-header fade-in-up">
@@ -1480,23 +2055,29 @@ const FramerHome = {
       </div>
       
       <div class="prompts-masonry-wrapper">
-        <div class="masonry-container">
+        <div class="masonry-container" data-columns="${columnCount}">
           ${columns.map((columnCards, columnIndex) => `
             <div class="masonry-column" data-column="${columnIndex}">
-              ${columnCards.map(prompt => {
-      // Extract 2-3 key tags for overlay
-      const displayTags = (prompt.ai_tags || []).slice(0, 3);
+                ${columnCards.map(prompt => {
+      const promptImage = Array.isArray(prompt.images) ? prompt.images[0] : (prompt.image || '');
+      const promptTitle = this.getLocalizedField(prompt, 'title') || prompt.title || prompt.title_zh || prompt.title_en || 'Prompt';
+      const promptId = this.normalizeFeaturedPromptLookupId(prompt?.supabaseId ?? prompt?.id);
+      const promptHref = promptId ? `/prompts.html?id=${encodeURIComponent(promptId)}` : '/prompts.html';
+      const cardMedia = promptImage
+        ? `<img src="${this.getOptimizedImageUrl(promptImage)}" 
+                         alt="${escapeHomeHtml(promptTitle)}" 
+                         loading="lazy"
+                         data-home-fallback-src="${encodeURIComponent(promptImage)}" />`
+        : `<div class="masonry-card-placeholder" aria-hidden="true"></div>`;
 
       return `
-                  <div class="masonry-card">
-                    <img src="${this.getOptimizedImageUrl(prompt.images[0])}" 
-                         alt="${prompt.title}" 
-                         loading="lazy"
-                         data-home-fallback-src="${encodeURIComponent(prompt.images[0])}" />
-                    <div class="masonry-card-tags">
-                      ${displayTags.map(tag => `<span class="masonry-tag">${tag}</span>`).join('')}
-                    </div>
-                  </div>
+                  <a
+                    href="${promptHref}"
+                    class="masonry-card masonry-card-link"
+                    data-home-prompt-id="${escapeHomeHtml(promptId || '')}"
+                    data-home-prompt-title="${escapeHomeHtml(promptTitle)}">
+                    ${cardMedia}
+                  </a>
                 `;
     }).join('')}
             </div>
@@ -1561,6 +2142,19 @@ const FramerHome = {
 
     // Initialize parallax after render
     this.initMasonryParallax();
+    section.querySelectorAll('[data-home-prompt-id]').forEach((card) => {
+      card.addEventListener('click', () => {
+        trackHomepageAnalyticsEvent('homepage_prompt_click', {
+          entityType: 'prompt',
+          entityId: card.dataset.homePromptId || null,
+          metadata: {
+            prompt_id: card.dataset.homePromptId || null,
+            title: card.dataset.homePromptTitle || ''
+          }
+        });
+      });
+    });
+    observeHomepageSectionImpression(section, 'prompts');
   },
 
   /**
@@ -1591,19 +2185,33 @@ const FramerHome = {
       ? Math.max(1, Math.ceil((minimumCycleWidth + HOME_SHOP_CAROUSEL_GAP) / (baseSequenceWidth + HOME_SHOP_CAROUSEL_GAP)))
       : 1;
     const cycleProducts = Array.from({ length: repeatCount }, () => products).flat();
-    const renderShopCard = (product) => `
-      <a href="/shop.html" class="shop-carousel-card">
+    const renderShopCard = (product) => {
+      const productId = String(product?.id || '').trim();
+      const productName = this.getLocalizedField(product, 'name');
+      const productDescription = this.getLocalizedField(product, 'description');
+      const stockText = Number(product?.stock_count || 0) > 0
+        ? `${window.i18n?.t('home.shop.stock') || '库存'} ${Number(product.stock_count || 0)}`
+        : (window.i18n?.t('home.shop.lowStock') || '库存紧张');
+      return `
+      <a
+        href="/shop.html"
+        class="shop-carousel-card"
+        data-home-shop-id="${escapeHomeHtml(productId)}"
+        data-home-shop-title="${escapeHomeHtml(productName || '')}">
+        ${product.homepage_badge ? `<span class="shop-card-badge">${escapeHomeHtml(product.homepage_badge)}</span>` : ''}
         <div class="shop-card-image">
           ${product.icon_url && (product.icon_url.startsWith('http') || product.icon_url.startsWith('/') || product.icon_url.startsWith('data:'))
-      ? `<img src="${product.icon_url}" alt="${this.getLocalizedField(product, 'name')}" loading="lazy" data-home-replace-parent-icon="1">`
+      ? `<img src="${product.icon_url}" alt="${escapeHomeHtml(productName)}" loading="lazy" data-home-replace-parent-icon="1">`
       : (product.icon_url && product.icon_url.startsWith('fa-') ? `<i class="fas ${product.icon_url} shop-card-icon"></i>` : `<i class="fas fa-box-open shop-card-icon shop-card-icon--fallback"></i>`)}
         </div>
         <div class="shop-card-info">
-          <h3>${this.getLocalizedField(product, 'name')}</h3>
-          <p>${this.getLocalizedField(product, 'description')}</p>
+          <h3>${escapeHomeHtml(productName)}</h3>
+          <p>${escapeHomeHtml(productDescription)}</p>
+          <span class="shop-card-meta">${escapeHomeHtml(product.category || '')}${product.category ? ' · ' : ''}${escapeHomeHtml(stockText)}</span>
         </div>
       </a>
     `;
+    };
 
     // Read shop_scroll_speed from ticker config and convert it into pixels-per-second motion
     const shopSpeed = this.config.ticker?.shop_scroll_speed || 30;
@@ -1651,6 +2259,19 @@ const FramerHome = {
         '--home-shop-cycle-width': cycleWidth ? `${cycleWidth}px` : ''
       });
     });
+    section.querySelectorAll('[data-home-shop-id]').forEach((card) => {
+      card.addEventListener('click', () => {
+        trackHomepageAnalyticsEvent('homepage_shop_click', {
+          entityType: 'shop_product',
+          entityId: card.dataset.homeShopId || null,
+          metadata: {
+            product_id: card.dataset.homeShopId || null,
+            title: card.dataset.homeShopTitle || ''
+          }
+        });
+      });
+    });
+    observeHomepageSectionImpression(section, 'shop');
   },
 
   /**
@@ -1659,36 +2280,67 @@ const FramerHome = {
   renderVerify() {
     const data = this.cachedData.verify;
     const section = document.getElementById('verify-section');
+    if (!section || !data) {
+      return;
+    }
     setHomeSectionVisibility(section, true);
 
     section.innerHTML = `
       <div class="verify-grid fade-in-up">
-        <div>
-          <h2 class="section-title">${data.title || window.i18n?.t('home.verify.title') || 'Gemini 验证'}</h2>
-          <p class="section-subtitle">${data.subtitle || window.i18n?.t('home.verify.subtitle') || '快速验证您的 API 密钥，实时返回结果'}</p>
+        <div class="verify-copy">
+          <h2 class="section-title">${escapeHomeHtml(data.title || window.i18n?.t('home.verify.title') || 'Gemini 验证')}</h2>
+          <p class="section-subtitle">${escapeHomeHtml(data.subtitle || window.i18n?.t('home.verify.subtitle') || '快速验证您的 API 密钥，实时返回结果')}</p>
           
           <div class="verify-features">
-            ${data.features.map(feature => `
+            ${(Array.isArray(data.features) ? data.features : []).map(feature => `
               <span class="verify-feature-chip">
-                ${feature}
+                ${escapeHomeHtml(feature)}
               </span>
             `).join('')}
           </div>
+
+          <div class="verify-value-props">
+            ${(Array.isArray(data.valueProps) ? data.valueProps : []).map((valueProp) => `
+              <div class="verify-value-prop">${escapeHomeHtml(valueProp)}</div>
+            `).join('')}
+          </div>
+
+          <div class="verify-supported-models">
+            ${(Array.isArray(data.supportedModels) ? data.supportedModels : []).map((model) => `
+              <span class="verify-supported-model">${escapeHomeHtml(model)}</span>
+            `).join('')}
+          </div>
+
+          <div class="verify-risk-note">${escapeHomeHtml(data.riskNotice || '')}</div>
           
           <div class="verify-actions">
-            <a href="${data.link}" class="btn btn-primary">${window.i18n?.t('home.verify.cta') || '立即验证'}</a>
+            <a href="${escapeHomeHtml(data.link || '/verify.html?source=homepage_verify')}" class="btn btn-primary" data-home-verify-cta="1">
+              ${escapeHomeHtml(data.ctaText || window.i18n?.t('home.verify.cta') || '立即验证')}
+            </a>
           </div>
         </div>
         
         <div class="verify-3d-container">
           <div class="verify-card-3d">
-            <img src="${data.screenshot}" alt="Gemini Verify" class="verify-screenshot">
+            <img src="${escapeHomeHtml(data.screenshot || '/assets/verify-preview.png')}" alt="Gemini Verify" class="verify-screenshot">
             <div class="verify-card-shine"></div>
           </div>
         </div>
       </div>
-      </div>
     `;
+
+    section.querySelector('[data-home-verify-cta="1"]')?.addEventListener('click', () => {
+      trackHomepageAnalyticsEvent('homepage_verify_click', {
+        entityType: 'homepage_section',
+        entityId: 'verify',
+        metadata: {
+          section: 'verify',
+          title: data.title || '',
+          cta_text: data.ctaText || ''
+        }
+      });
+    });
+    observeHomepageSectionImpression(section, 'verify', 'homepage_verify_impression');
 
     // Initialize 3D interaction
     this.initVerifyAnimation();
@@ -1778,13 +2430,14 @@ const FramerHome = {
   },
 
   getGuestbookAvatarUrl(message) {
-    const username = String(message?.profiles?.username || message?.username || 'U').trim() || 'U';
-    return message?.profiles?.avatar_url
+    const username = String(message?.author || message?.profiles?.username || message?.username || 'U').trim() || 'U';
+    return message?.avatar_url
+      || message?.profiles?.avatar_url
       || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(username)}&backgroundColor=6b9ece`;
   },
 
   getGuestbookDisplayName(message) {
-    const username = String(message?.profiles?.username || message?.username || '').trim();
+    const username = String(message?.author || message?.profiles?.username || message?.username || '').trim();
     return username || (window.i18n?.getCurrentLanguage?.() === 'en' ? 'Anonymous' : '匿名用户');
   },
 
@@ -1801,9 +2454,10 @@ const FramerHome = {
     const avatarSrc = escapeHomeHtml(this.getGuestbookAvatarUrl(message));
     const fallbackSrc = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(displayName || 'U')}&backgroundColor=6b9ece`;
     const side = slot.startsWith('l') ? 'left' : 'right';
+    const reason = escapeHomeHtml(message?.homepage_reason || (message?.homepage_fallback ? (window.i18n?.t('home.guestbook.opsPick') || '运营推荐') : ''));
 
     return `
-      <article class="home-guestbook-card home-guestbook-card--${slot}" data-home-guestbook-card data-card-side="${side}">
+      <article class="home-guestbook-card home-guestbook-card--${slot}${message?.homepage_fallback ? ' home-guestbook-card--fallback' : ''}" data-home-guestbook-card data-card-side="${side}">
         <div class="home-guestbook-card__head">
           <img
             src="${avatarSrc}"
@@ -1813,6 +2467,7 @@ const FramerHome = {
             decoding="async"
             data-home-avatar-fallback="${encodeURIComponent(fallbackSrc)}">
         </div>
+        ${reason ? `<div class="home-guestbook-card__reason">${reason}</div>` : ''}
         <p class="home-guestbook-card__content">${safeContent}</p>
         <div class="home-guestbook-card__author">${safeName}</div>
       </article>
@@ -2049,6 +2704,7 @@ const FramerHome = {
           <div class="home-guestbook-center__actions">
             <a href="/guestbook.html"
               data-home-open-guestbook="1"
+              data-home-guestbook-action="write"
               data-home-hover-lift="1"
               class="btn btn-secondary guestbook-action-btn">
               <i class="fas fa-pen-fancy"></i>
@@ -2056,6 +2712,7 @@ const FramerHome = {
             </a>
             <a href="/guestbook.html"
               class="btn btn-secondary guestbook-action-btn"
+              data-home-guestbook-action="view_all"
               data-home-hover-lift="1">
               ${window.i18n?.t('home.guestbook.viewAll') || '查看全部留言'}
             </a>
@@ -2080,6 +2737,20 @@ const FramerHome = {
       image.src = decodeURIComponent(fallbackSrc);
     });
     bindHoverLiftTargets(section);
+    section.querySelectorAll('[data-home-guestbook-action]').forEach((actionEl) => {
+      actionEl.addEventListener('click', () => {
+        trackHomepageAnalyticsEvent('homepage_guestbook_click', {
+          entityType: 'homepage_section',
+          entityId: 'guestbook',
+          metadata: {
+            section: 'guestbook',
+            action: actionEl.dataset.homeGuestbookAction || '',
+            label: actionEl.textContent?.trim() || ''
+          }
+        });
+      });
+    });
+    observeHomepageSectionImpression(section, 'guestbook');
     this.initGuestbookExperience(section);
   },
 
@@ -2097,8 +2768,9 @@ const FramerHome = {
     const bottomItems = Array.isArray(data.bottom) ? data.bottom.filter(Boolean) : [];
 
     const sv = window.SectionVisibility;
-    const showTopRow = (!sv || sv.isVisible('gallery')) && topItems.length > 0;   // top row = prompt tags
-    const showBottomRow = (!sv || sv.isVisible('shop')) && bottomItems.length > 0;   // bottom row = product categories
+    const tickerVisible = !sv || sv.isVisible('ticker');
+    const showTopRow = tickerVisible && data.enable_prompts !== false && (!sv || sv.isVisible('prompts')) && topItems.length > 0;
+    const showBottomRow = tickerVisible && data.enable_products !== false && (!sv || sv.isVisible('shop')) && bottomItems.length > 0;
 
     // If both rows hidden, hide entire ticker
     if (!showTopRow && !showBottomRow) {
@@ -2127,11 +2799,25 @@ const FramerHome = {
       ` : ''}
     `;
 
-    const renderTickerItem = (label) => `<div class="ticker-item">${label}</div>`;
+    const renderTickerItem = (label, role) => {
+      const safeLabel = escapeHomeHtml(label);
+      const href = role === 'top'
+        ? `/prompts.html?tag=${encodeURIComponent(label)}`
+        : `/shop.html?category=${encodeURIComponent(label)}`;
+      return `
+        <a
+          href="${href}"
+          class="ticker-item"
+          data-home-ticker-role-click="${role}"
+          data-home-ticker-label="${safeLabel}">
+          ${safeLabel}
+        </a>
+      `;
+    };
     configureHomeMeasuredLoopTrack(
       section.querySelector('[data-home-ticker-role="top"]'),
       topItems,
-      renderTickerItem,
+      (label) => renderTickerItem(label, 'top'),
       {
         groupClassName: 'ticker-track-group',
         cycleWidthVar: '--home-ticker-cycle-width',
@@ -2141,13 +2827,27 @@ const FramerHome = {
     configureHomeMeasuredLoopTrack(
       section.querySelector('[data-home-ticker-role="bottom"]'),
       bottomItems,
-      renderTickerItem,
+      (label) => renderTickerItem(label, 'bottom'),
       {
         groupClassName: 'ticker-track-group',
         cycleWidthVar: '--home-ticker-cycle-width',
         speedValue: tickerSpeed
       }
     );
+    section.querySelectorAll('[data-home-ticker-label]').forEach((item) => {
+      item.addEventListener('click', () => {
+        trackHomepageAnalyticsEvent('homepage_ticker_click', {
+          entityType: 'ticker_item',
+          entityId: item.dataset.homeTickerLabel || null,
+          metadata: {
+            section: 'ticker',
+            label: item.dataset.homeTickerLabel || '',
+            role: item.dataset.homeTickerRoleClick || ''
+          }
+        });
+      });
+    });
+    observeHomepageSectionImpression(section, 'ticker');
   },
 
   /**
@@ -2363,6 +3063,18 @@ const FramerHome = {
 
           activateThumb();
         } else {
+          trackHomepageAnalyticsEvent('homepage_entry_click', {
+            entityType: 'hero_entry',
+            entityId: card.dataset.homeEntryId || null,
+            metadata: {
+              section: 'hero',
+              entry_id: card.dataset.homeEntryId || null,
+              entry_label: card.dataset.homeEntryTitle || '',
+              link: card.dataset.homeEntryLink || '',
+              target_section: card.dataset.homeEntrySection || '',
+              action: card.getAttribute('data-action') || ''
+            }
+          });
           // Card is centered — check for custom action (e.g. guestbook modal)
           triggerCardAction(card, e);
           // Otherwise let the click through to navigate normally

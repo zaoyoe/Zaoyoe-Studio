@@ -34,6 +34,68 @@
         return '';
     }
 
+    function normalizeStructuredLinkedContext(value = {}) {
+        const context = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+        const sourceType = normalizeSource(context.source_type || context.sourceType || context.source);
+        const payload = context.context && typeof context.context === 'object' && !Array.isArray(context.context)
+            ? context.context
+            : context;
+
+        if (!sourceType) {
+            return null;
+        }
+
+        return {
+            source_type: sourceType,
+            source_label: sanitizeText(context.source_label || context.sourceLabel, 120),
+            context: {
+                ...payload
+            }
+        };
+    }
+
+    function readStructuredLinkedContext(ticketOrContext = {}) {
+        if (!ticketOrContext || typeof ticketOrContext !== 'object' || Array.isArray(ticketOrContext)) {
+            return null;
+        }
+
+        const candidates = [
+            ticketOrContext.linked_context,
+            ticketOrContext.linkedContext,
+            ticketOrContext.source_context,
+            ticketOrContext.sourceContext,
+            ticketOrContext.metadata?.linked_context,
+            ticketOrContext.metadata?.linkedContext,
+            ticketOrContext.metadata?.source_context,
+            ticketOrContext.metadata?.sourceContext
+        ];
+
+        for (const candidate of candidates) {
+            if (!candidate) {
+                continue;
+            }
+
+            if (typeof candidate === 'string') {
+                try {
+                    const parsed = JSON.parse(candidate);
+                    const normalized = normalizeStructuredLinkedContext(parsed);
+                    if (normalized) {
+                        return normalized;
+                    }
+                } catch (_) {
+                    continue;
+                }
+            }
+
+            const normalized = normalizeStructuredLinkedContext(candidate);
+            if (normalized) {
+                return normalized;
+            }
+        }
+
+        return null;
+    }
+
     function inferLinkedOpsAlertCategoryKey(context = {}) {
         const targetId = sanitizeText(context.target_id || context.targetId, 200).toLowerCase();
         if (targetId.startsWith('shop_order_risk:')) {
@@ -210,6 +272,45 @@
         return context.comment_id ? context : null;
     }
 
+    function parseLinkedTicketContext(ticketOrDescription = '') {
+        const structuredContext = readStructuredLinkedContext(ticketOrDescription);
+        if (structuredContext) {
+            return structuredContext;
+        }
+
+        const description = typeof ticketOrDescription === 'string'
+            ? ticketOrDescription
+            : sanitizeText(ticketOrDescription?.description, 4000);
+        const commentContext = parseLinkedCommentContext(description);
+        if (commentContext) {
+            return {
+                source_type: 'comment_workflow',
+                source_label: '评论治理',
+                context: commentContext
+            };
+        }
+
+        const chatContext = parseLinkedChatSessionContext(description);
+        if (chatContext) {
+            return {
+                source_type: 'chat_session',
+                source_label: '客服会话',
+                context: chatContext
+            };
+        }
+
+        const opsAlertContext = parseLinkedOpsAlertContext(description);
+        if (opsAlertContext) {
+            return {
+                source_type: 'ops_alert',
+                source_label: '站内代办',
+                context: opsAlertContext
+            };
+        }
+
+        return null;
+    }
+
     function buildLinkedTicketDescription(body = {}, actorLabel = '') {
         const source = normalizeSource(body.source || body.source_type || body.sourceType);
         const title = sanitizeText(body.title, 240);
@@ -261,6 +362,8 @@
         parseLinkedOpsAlertContext,
         parseLinkedChatSessionContext,
         parseLinkedCommentContext,
+        parseLinkedTicketContext,
+        readStructuredLinkedContext,
         buildLinkedTicketDescription
     };
 }));

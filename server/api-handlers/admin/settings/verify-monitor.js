@@ -355,12 +355,25 @@ function getVerifyAlertReference(job = {}) {
     };
 }
 
+function normalizeVerifyUpstreamEndpoint(value = '') {
+    const normalized = normalizeText(value, 240).replace(/\/+$/, '');
+    if (!normalized) {
+        return '';
+    }
+    return /\/openapi$/i.test(normalized) ? normalized : `${normalized}/openapi`;
+}
+
 function buildVerifyAlertDetailSummary(job = {}) {
     const payload = normalizePayload(job.payload);
+    const upstreamEndpoint = normalizeText(payload.upstream_endpoint, 240)
+        || normalizeVerifyUpstreamEndpoint(payload.api_base_url);
     const parts = [];
 
     if (normalizeText(payload.api_base_url, 240)) {
         parts.push(`API Base：${normalizeText(payload.api_base_url, 240)}`);
+    }
+    if (upstreamEndpoint) {
+        parts.push(`请求地址：${upstreamEndpoint}`);
     }
     if (Number.isFinite(Number(payload.balance))) {
         parts.push(`余额：${Number(payload.balance)}`);

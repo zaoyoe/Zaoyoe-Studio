@@ -70,10 +70,6 @@
             loadScript('./starry-sky.js?v=20260317_GUESTBOOK_STARRY_BG_1');
         }, 800);
 
-        scheduleOptionalTask(1400, () => {
-            loadScript('announcement-loader.js?v=8');
-        }, 1800);
-
         scheduleOptionalTask(2200, () => {
             loadStylesheet('css/chat-widget.css?v=20260324_CHAT_RUNTIME_STYLE_2');
             loadScript('js/components/ChatWidget.js?v=20260331_CHAT_POPUP_NAV_FIX_39', initChatWidgetIfReady);

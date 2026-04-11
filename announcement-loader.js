@@ -1,15 +1,54 @@
 /**
  * Announcement Loader - Standalone script for pages other than prompts.html
  * This script loads system announcements with full support for banners, modals, and toasts.
- * Version: 2026020301
+ * Version: 2026041005
  */
 
 (function () {
     'use strict';
 
     let currentAnnouncementElement = null;
+    let currentAnnouncementAckKey = '';
     let announcementOwnsScrollLock = false;
     let announcementOverflowRestore = null;
+    const acknowledgedAnnouncementKeys = new Set();
+    const dismissedAnnouncementKeys = new Set();
+    const ANNOUNCEMENT_ACK_STORAGE_PREFIX = 'announcement_acked_v2_';
+    let announcementBootstrapStarted = false;
+
+    function isLocalAnnouncementTestingHost() {
+        const host = String(window.location.hostname || '').trim().toLowerCase();
+        return host === 'localhost'
+            || host === '127.0.0.1'
+            || host === '0.0.0.0'
+            || host === '::1';
+    }
+
+    function shouldPersistAnnouncementAck() {
+        return true;
+    }
+
+    function clearLocalAnnouncementAckCache() {
+        if (!isLocalAnnouncementTestingHost() || !window.localStorage) {
+            return;
+        }
+
+        try {
+            const staleKeys = [];
+            for (let index = 0; index < window.localStorage.length; index += 1) {
+                const key = window.localStorage.key(index);
+                if (key && key.startsWith('announcement_acked_') && !key.startsWith(ANNOUNCEMENT_ACK_STORAGE_PREFIX)) {
+                    staleKeys.push(key);
+                }
+            }
+
+            staleKeys.forEach((key) => {
+                window.localStorage.removeItem(key);
+            });
+        } catch (error) {
+            console.warn('📢 [Loader] 清理本地公告已读缓存失败:', error);
+        }
+    }
 
     function toAnnouncementCssPropertyName(name) {
         if (typeof name !== 'string' || !name) return '';
@@ -93,12 +132,19 @@
             currentAnnouncementElement = null;
         }
 
+        currentAnnouncementAckKey = '';
+
         unlockAnnouncementBackground();
     }
 
     function dismissAnnouncement(element, ackKey, acknowledged = true) {
         if (acknowledged && ackKey) {
-            localStorage.setItem(ackKey, 'true');
+            acknowledgedAnnouncementKeys.add(ackKey);
+            if (shouldPersistAnnouncementAck()) {
+                localStorage.setItem(ackKey, 'true');
+            }
+        } else if (ackKey) {
+            dismissedAnnouncementKeys.add(ackKey);
         }
 
         ParticleSystem.stop();
@@ -107,8 +153,107 @@
             currentAnnouncementElement = null;
         }
 
+        if (element && (!currentAnnouncementElement || element === currentAnnouncementElement)) {
+            currentAnnouncementAckKey = '';
+        }
+
         element.remove();
         unlockAnnouncementBackground();
+    }
+
+    function normalizeAnnouncementPageId(value) {
+        const page = String(value || '').trim().toLowerCase();
+        if (!page) return '';
+        if (page === 'home' || page === 'homepage' || page === 'index' || page === '/') {
+            return 'index';
+        }
+        return page;
+    }
+
+    function normalizeAnnouncementPageTargets(value) {
+        const rawTargets = Array.isArray(value) ? value : [value];
+        const targets = [];
+
+        rawTargets.forEach((entry) => {
+            const normalized = normalizeAnnouncementPageId(entry);
+            if (normalized && !targets.includes(normalized)) {
+                targets.push(normalized);
+            }
+        });
+
+        return targets.length ? targets : ['all'];
+    }
+
+    function normalizeAnnouncementConfig(configValue = {}) {
+        const config = configValue && typeof configValue === 'object' && !Array.isArray(configValue)
+            ? configValue
+            : {};
+
+        return {
+            announcement_enabled: config.announcement_enabled === true,
+            announcement_content: String(config.announcement_content || ''),
+            announcement_type: String(config.announcement_type || 'banner').trim().toLowerCase() || 'banner',
+            announcement_color: String(config.announcement_color || 'purple').trim().toLowerCase() || 'purple',
+            announcement_size: String(config.announcement_size || 'medium').trim().toLowerCase() || 'medium',
+            announcement_decoration: String(config.announcement_decoration || 'none').trim().toLowerCase() || 'none',
+            announcement_pages: normalizeAnnouncementPageTargets(config.announcement_pages),
+            announcement_updated_at: String(config.announcement_updated_at || '').trim()
+        };
+    }
+
+    function buildAnnouncementAckKey(config = {}, currentPage = '') {
+        const normalizedPage = normalizeAnnouncementPageId(currentPage) || 'unknown';
+        const contentForHash = `${config.announcement_content || ''}|${config.announcement_updated_at || ''}|${normalizedPage}`;
+        let hash = 0;
+        for (let i = 0; i < contentForHash.length; i += 1) {
+            const char = contentForHash.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash &= hash;
+        }
+        return `${ANNOUNCEMENT_ACK_STORAGE_PREFIX}${normalizedPage}_${Math.abs(hash).toString(36)}`;
+    }
+
+    async function fetchAnnouncementConfigFromPublicApi() {
+        const response = await fetch('/api/public?scope=config&route=notifications', {
+            method: 'GET',
+            credentials: 'same-origin',
+            cache: 'no-store'
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload?.success) {
+            throw new Error(payload?.message || 'Failed to load public announcement config');
+        }
+
+        return normalizeAnnouncementConfig(payload?.config || {});
+    }
+
+    async function fetchAnnouncementConfigFromSupabase() {
+        if (!window.supabaseClient?.rpc) {
+            return null;
+        }
+
+        const { data, error } = await window.supabaseClient.rpc('get_system_config', { p_key: 'notifications' });
+        if (error) {
+            throw error;
+        }
+
+        return normalizeAnnouncementConfig(data || {});
+    }
+
+    async function fetchAnnouncementConfig() {
+        try {
+            return await fetchAnnouncementConfigFromPublicApi();
+        } catch (publicError) {
+            console.warn('📢 [Loader] 公共公告配置读取失败，回退到 Supabase RPC:', publicError);
+        }
+
+        try {
+            return await fetchAnnouncementConfigFromSupabase();
+        } catch (rpcError) {
+            console.error('📢 [Loader] Supabase 公告配置读取失败:', rpcError);
+            return null;
+        }
     }
 
     // Get current page ID for announcement targeting
@@ -126,31 +271,17 @@
     async function loadAnnouncement() {
         console.log('📢 [Loader] loadAnnouncement() 开始执行...');
 
-        if (!window.supabaseClient) {
-            console.warn('📢 [Loader] Supabase client 不可用, 等待初始化...');
-            // Wait for Supabase to initialize
-            setTimeout(loadAnnouncement, 500);
-            return;
-        }
-
         try {
-            const { data, error } = await window.supabaseClient.rpc('get_system_config', { p_key: 'notifications' });
+            const config = await fetchAnnouncementConfig();
 
-            if (error) {
-                console.error('📢 [Loader] 获取配置出错:', error);
-                return;
-            }
-
-            if (!data) {
+            if (!config) {
                 console.warn('📢 [Loader] notifications 配置不存在');
                 return;
             }
 
-            const config = data;
-
             // Check if current page is in target pages
-            const targetPages = config.announcement_pages || ['all'];
-            const currentPage = getCurrentPageId();
+            const targetPages = normalizeAnnouncementPageTargets(config.announcement_pages);
+            const currentPage = normalizeAnnouncementPageId(getCurrentPageId());
             console.log('📢 [Loader] 目标页面:', targetPages, '当前页面:', currentPage);
 
             if (!targetPages.includes('all') && !targetPages.includes(currentPage)) {
@@ -163,19 +294,25 @@
                 const color = config.announcement_color || 'purple';
                 const size = config.announcement_size || 'medium';
                 const content = config.announcement_content.replace(/\n/g, '<br>');
+                const ackKey = buildAnnouncementAckKey(config, currentPage);
 
-                // Generate unique ackKey using content hash + timestamp
-                const contentForHash = (config.announcement_content || '') + '|' + (config.announcement_updated_at || '');
-                let hash = 0;
-                for (let i = 0; i < contentForHash.length; i++) {
-                    const char = contentForHash.charCodeAt(i);
-                    hash = ((hash << 5) - hash) + char;
-                    hash = hash & hash;
+                if (acknowledgedAnnouncementKeys.has(ackKey)) {
+                    console.log('📢 [Loader] 当前会话已确认该公告');
+                    return;
                 }
-                const ackKey = 'announcement_acked_' + Math.abs(hash).toString(36);
 
-                if (localStorage.getItem(ackKey)) {
+                if (dismissedAnnouncementKeys.has(ackKey)) {
+                    console.log('📢 [Loader] 当前页面已关闭该公告，跳过重复渲染');
+                    return;
+                }
+
+                if (shouldPersistAnnouncementAck() && localStorage.getItem(ackKey)) {
                     console.log('📢 [Loader] 该公告已被用户确认');
+                    return;
+                }
+
+                if (currentAnnouncementElement && currentAnnouncementAckKey === ackKey) {
+                    console.log('📢 [Loader] 公告已在当前页面展示，跳过重复渲染');
                     return;
                 }
 
@@ -188,10 +325,45 @@
         }
     }
 
+    function scheduleAnnouncementLoad(delay) {
+        window.setTimeout(() => {
+            loadAnnouncement().catch((error) => {
+                console.error('📢 [Loader] 公告补挂失败:', error);
+            });
+        }, Math.max(0, Number(delay) || 0));
+    }
+
+    function startAnnouncementBootstrap() {
+        if (announcementBootstrapStarted) {
+            return;
+        }
+
+        announcementBootstrapStarted = true;
+        clearLocalAnnouncementAckCache();
+
+        scheduleAnnouncementLoad(900);
+        scheduleAnnouncementLoad(2200);
+        scheduleAnnouncementLoad(4200);
+
+        window.addEventListener('load', () => {
+            scheduleAnnouncementLoad(200);
+        }, { once: true });
+
+        window.addEventListener('pageshow', () => {
+            scheduleAnnouncementLoad(160);
+        });
+    }
+
     function showAnnouncement(type, color, size, content, ackKey, decoration) {
+        if (currentAnnouncementElement && currentAnnouncementAckKey === ackKey) {
+            return;
+        }
+
         if (currentAnnouncementElement) {
             clearCurrentAnnouncement();
         }
+
+        currentAnnouncementAckKey = ackKey || '';
 
         if (type === 'banner') {
             showBannerAnnouncement(color, size, content, ackKey, decoration);
@@ -981,7 +1153,7 @@
         if (dismissOnBackdrop) {
             element.addEventListener('click', (event) => {
                 if (event.target === element) {
-                    dismissAnnouncement(element, ackKey, true);
+                    dismissAnnouncement(element, ackKey, false);
                 }
             });
         }
@@ -1448,9 +1620,9 @@
 
     // Initialize when DOM is ready
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => setTimeout(loadAnnouncement, 1000));
+        document.addEventListener('DOMContentLoaded', startAnnouncementBootstrap, { once: true });
     } else {
-        setTimeout(loadAnnouncement, 1000);
+        startAnnouncementBootstrap();
     }
 
     // Expose for debugging

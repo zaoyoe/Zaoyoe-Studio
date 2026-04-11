@@ -97,6 +97,24 @@ function syncAnalyticsTabScope(tabId = '', options = {}) {
     return config;
 }
 
+function canReuseRecentAnalyticsDashboard(reason = '') {
+    const normalizedReason = String(reason || '').trim().toLowerCase();
+    if (normalizedReason !== 're-enter') {
+        return false;
+    }
+
+    if (!analyticsRuntime.initialized || !analyticsRuntime.lastLoadedAt) {
+        return false;
+    }
+
+    const contextKey = getAnalyticsAIContextKey();
+    if (!contextKey || analyticsRuntime.lastLoadedContextKey !== contextKey) {
+        return false;
+    }
+
+    return (Date.now() - analyticsRuntime.lastLoadedAt) <= ANALYTICS_REENTRY_REFRESH_TTL_MS;
+}
+
 async function initAnalyticsModule() {
     console.log('[Analytics] Initializing...');
     analyticsRuntime.moduleActive = true;
@@ -115,6 +133,8 @@ async function initAnalyticsModule() {
     bindAnalyticsAdvancedWorkspaceToggle();
 
     try {
+        const reloadReason = analyticsRuntime.initialized ? 're-enter' : 'initial-load';
+        const currentContextKey = getAnalyticsAIContextKey();
         if (!analyticsRuntime.initialized) {
             TrackingSDK.init();
         }
@@ -124,10 +144,15 @@ async function initAnalyticsModule() {
         ensureAnalyticsAutoRefreshState();
         await ensureAnalyticsAdminCookieSession();
 
-        await reloadAnalyticsDashboard({
-            reason: analyticsRuntime.initialized ? 're-enter' : 'initial-load'
-        });
+        if (analyticsRuntime.reloadPromise && analyticsRuntime.reloadContextKey === currentContextKey) {
+            await analyticsRuntime.reloadPromise;
+        } else if (!canReuseRecentAnalyticsDashboard(reloadReason)) {
+            await reloadAnalyticsDashboard({
+                reason: reloadReason
+            });
+        }
         await window.restoreAnalyticsRouteState?.({ focus: true });
+        window.dispatchEvent(new Event('resize'));
 
         analyticsRuntime.initialized = true;
         console.log('[Analytics] Initialized successfully');
@@ -334,68 +359,100 @@ function destroyAnalyticsCharts() {
     geoChart = null;
 }
 
-async function reloadAnalyticsDashboard() {
+async function reloadAnalyticsDashboard(options = {}) {
+    const reason = String(options?.reason || '').trim().toLowerCase();
+    const force = options?.force === true;
     const days = getAnalyticsRangeDays();
     const cohortWeeks = getAnalyticsCohortWeeks(days);
     const contextKey = getAnalyticsAIContextKey();
 
-    resetAnalyticsDerivedContext(contextKey);
-
-    const phases = [
-        [
-            updateOnlineUsers(),
-            loadOverviewStats(),
-            loadOverviewDutyBoard(),
-            loadOverviewOperatingNavigator(),
-            loadOverviewBusinessMix()
-        ],
-        [
-            loadUserTrendChart(days),
-            loadChannelChart(days),
-            loadGeoDistribution()
-        ],
-        [
-            loadContentTrendChart(days),
-            loadTopContent(days),
-            loadProductAlerts(),
-            loadProductOverview(),
-            loadProductRankings(),
-            loadProductFunnel(),
-            loadProductHealth(),
-            loadProductDetailPanel(),
-            loadOperationsCockpit(),
-            loadActivityHeatmap(days),
-            loadTopContributors(),
-            loadCommunityChart(days),
-            loadConversionFunnel(days),
-            loadRetentionCohort(cohortWeeks),
-            loadPointsFlow(days),
-            loadPointsStats(days),
-            loadPointsDistribution(),
-            loadPointsLeaderboard(),
-            loadRedemptionFunnel(days),
-            loadVerifyServiceSummary(),
-            loadGrowthSummary(),
-            loadEventFunnelPanels()
-        ]
-    ];
-
-    for (let index = 0; index < phases.length; index += 1) {
-        await Promise.allSettled(phases[index]);
-        updateLastUpdateTime();
-        if (index < phases.length - 1) {
-            await waitForAnalyticsPaint(2);
-        }
+    if (!force && analyticsRuntime.reloadPromise && analyticsRuntime.reloadContextKey === contextKey) {
+        return analyticsRuntime.reloadPromise;
     }
 
-    updateLastUpdateTime();
+    const requestId = analyticsRuntime.reloadRequestId + 1;
+    analyticsRuntime.reloadRequestId = requestId;
+    analyticsRuntime.reloadContextKey = contextKey;
+
+    const reloadPromise = (async () => {
+        resetAnalyticsDerivedContext(contextKey);
+
+        const phases = [
+            [
+                updateOnlineUsers(),
+                loadOverviewStats(),
+                loadOverviewDutyBoard(),
+                loadOverviewOperatingNavigator(),
+                loadOverviewBusinessMix()
+            ],
+            [
+                loadUserTrendChart(days),
+                loadChannelChart(days),
+                loadGeoDistribution()
+            ],
+            [
+                loadContentTrendChart(days),
+                loadTopContent(days),
+                loadProductAlerts(),
+                loadProductOverview(),
+                loadProductRankings(),
+                loadProductFunnel(),
+                loadProductHealth(),
+                loadProductDetailPanel(),
+                loadOperationsCockpit(),
+                loadActivityHeatmap(days),
+                loadTopContributors(),
+                loadCommunityChart(days),
+                loadConversionFunnel(days),
+                loadRetentionCohort(cohortWeeks),
+                loadPointsFlow(days),
+                loadPointsStats(days),
+                loadPointsDistribution(),
+                loadPointsLeaderboard(),
+                loadRedemptionFunnel(days),
+                loadVerifyServiceSummary(),
+                loadGrowthSummary(),
+                loadEventFunnelPanels()
+            ]
+        ];
+
+        for (let index = 0; index < phases.length; index += 1) {
+            await Promise.allSettled(phases[index]);
+            updateLastUpdateTime();
+            if (index < phases.length - 1) {
+                await waitForAnalyticsPaint(2);
+            }
+        }
+
+        updateLastUpdateTime();
+
+        if (requestId === analyticsRuntime.reloadRequestId) {
+            analyticsRuntime.lastLoadedAt = Date.now();
+            analyticsRuntime.lastLoadedContextKey = contextKey;
+            analyticsRuntime.lastReloadReason = reason;
+        }
+
+        return true;
+    })();
+
+    analyticsRuntime.reloadPromise = reloadPromise;
+
+    try {
+        return await reloadPromise;
+    } finally {
+        if (analyticsRuntime.reloadPromise === reloadPromise) {
+            analyticsRuntime.reloadPromise = null;
+        }
+    }
 }
 
-function teardownAnalyticsModule() {
+function teardownAnalyticsModule(options = {}) {
     analyticsRuntime.moduleActive = false;
     stopAutoRefresh();
     teardownRealtimeSubscriptions();
-    destroyAnalyticsCharts();
+    if (options?.destroyCharts === true) {
+        destroyAnalyticsCharts();
+    }
 }
 
 const TrackingSDK = {

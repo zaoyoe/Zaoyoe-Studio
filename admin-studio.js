@@ -20,6 +20,7 @@ const ADMIN_STUDIO_HIDDEN_CLASS = 'admin-studio-inline-style-attr-3';
 const ADMIN_SCROLLBAR_AUTO_HIDE_CLASS = 'admin-scrollbar-auto-hide';
 const ADMIN_SCROLLBAR_AUTO_HIDE_VISIBLE_CLASS = 'admin-scrollbar-auto-hide--visible';
 const ADMIN_SCROLLBAR_AUTO_HIDE_BOUND_ATTR = 'data-admin-scrollbar-auto-hide-bound';
+const ADMIN_GALLERY_LIST_REFRESH_TTL_MS = 15000;
 const ADMIN_MODAL_SCROLL_LOCK_SELECTORS = [
     '.modal-overlay.active',
     '.user-modal-overlay.active',
@@ -985,12 +986,6 @@ function initializeAdminStudioShell() {
         initSystemConfig();
     }
 
-    // Load manage view if switching to it
-    const manageTab = document.querySelector('[data-view="manage"]');
-    if (manageTab) {
-        manageTab.addEventListener('click', () => loadAdminPrompts());
-    }
-
     const galleryRouteState = getAdminGalleryRouteState();
     if (galleryRouteState.view === 'manage') {
         switchView('manage');
@@ -1038,6 +1033,17 @@ function bindAdminStudioDelegatedControls() {
         return false;
     }
 
+    function pulseAdminStudioDelegatedAction(actionEl) {
+        if (!actionEl?.classList || actionEl.hasAttribute?.('disabled')) {
+            return;
+        }
+
+        actionEl.classList.add('is-pressed');
+        window.setTimeout(() => {
+            actionEl.classList?.remove('is-pressed');
+        }, 180);
+    }
+
     document.addEventListener('click', (event) => {
         const target = event.target instanceof Element ? event.target : event.target?.parentElement;
         if (!target) {
@@ -1052,6 +1058,8 @@ function bindAdminStudioDelegatedControls() {
         if (!guardAdminStudioWritableAction(actionEl, event)) {
             return;
         }
+
+        pulseAdminStudioDelegatedAction(actionEl);
 
         switch (actionEl.dataset.adminAction) {
             case 'switch-module':
@@ -1123,7 +1131,7 @@ function bindAdminStudioDelegatedControls() {
                 break;
             }
             case 'switch-comment-view':
-                window.switchCommentView?.(actionEl.dataset.commentView);
+                (window.switchAdminCommentsView || window.switchCommentView)?.(actionEl.dataset.commentView);
                 break;
             case 'comments-export':
                 window.exportData?.(actionEl.dataset.exportFormat);
@@ -1131,8 +1139,26 @@ function bindAdminStudioDelegatedControls() {
             case 'comments-switch-layout':
                 window.switchLayoutView?.(actionEl.dataset.view);
                 break;
+            case 'comments-toggle-select-mode':
+                window.toggleCommentsSelectMode?.();
+                break;
+            case 'comments-toggle-batch-menu':
+                window.toggleCommentsBatchMenu?.();
+                break;
+            case 'comments-batch-select-all':
+                window.selectAllVisibleComments?.();
+                break;
+            case 'comments-batch-set-status':
+                window.batchSetCommentWorkflowStatus?.(actionEl.dataset.commentsBatchStatus || '', actionEl);
+                break;
+            case 'comments-batch-assign-self':
+                window.batchAssignCommentWorkflowSelf?.(actionEl);
+                break;
+            case 'comments-clear-selection':
+                window.clearSelectedComments?.();
+                break;
             case 'comments-batch-delete':
-                window.batchDeleteComments?.();
+                window.batchDeleteComments?.(actionEl);
                 break;
             case 'comments-pagination-go': {
                 const page = parseInt(actionEl.dataset.commentsPage || '', 10);
@@ -1511,6 +1537,28 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-handle-shop-risk-case':
                 window.handleShopRiskCaseAction?.(
                     actionEl.dataset.shopRiskCaseAction,
+                    (typeof window.readOpsAlertWorkspaceContextDataset === 'function'
+                        ? window.readOpsAlertWorkspaceContextDataset(actionEl.dataset)
+                        : {
+                            title: actionEl.dataset.workspaceTitle,
+                            alertType: actionEl.dataset.workspaceAlertType,
+                            category: actionEl.dataset.workspaceCategory,
+                            referenceLabel: actionEl.dataset.workspaceReferenceLabel,
+                            referenceValue: actionEl.dataset.workspaceReferenceValue,
+                            targetId: actionEl.dataset.workspaceTargetId,
+                            userId: actionEl.dataset.workspaceUserId,
+                            clientIp: actionEl.dataset.workspaceClientIp,
+                            discountCode: actionEl.dataset.workspaceDiscountCode,
+                            signalType: actionEl.dataset.workspaceSignalType,
+                            caseStatus: actionEl.dataset.workspaceCaseStatus,
+                            caseOwnerAdminId: actionEl.dataset.workspaceCaseOwnerAdminId,
+                            caseOwnerLabel: actionEl.dataset.workspaceCaseOwnerLabel
+                        })
+                );
+                break;
+            case 'settings-handle-ops-alert-case-action':
+                window.handleOpsAlertCaseAction?.(
+                    actionEl.dataset.opsAlertCaseAction,
                     (typeof window.readOpsAlertWorkspaceContextDataset === 'function'
                         ? window.readOpsAlertWorkspaceContextDataset(actionEl.dataset)
                         : {
@@ -2161,6 +2209,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-check-verify-quota':
                 window.checkVerifyQuota?.();
                 break;
+            case 'settings-clean-empty-verify-keys':
+                window.cleanZeroBalanceVerifyKeys?.();
+                break;
             case 'settings-refresh-verify-monitor':
                 window.refreshVerifyMonitor?.();
                 break;
@@ -2788,6 +2839,9 @@ function bindAdminStudioDelegatedControls() {
         if (overlay.dataset.adminOverlayClose === 'ticket-summary-job-detail-modal' && target.closest('.admin-ticket-summary-job-modal__dialog')) {
             return;
         }
+        if (overlay.dataset.adminOverlayClose === 'user-modal' && target.closest('#userModal')) {
+            return;
+        }
         if (overlay.dataset.adminOverlayClose === 'discount-generate-modal' && target.closest('.admin-discount-form-modal__dialog')) {
             return;
         }
@@ -2807,6 +2861,12 @@ function bindAdminStudioDelegatedControls() {
             return;
         }
         if (overlay.dataset.adminOverlayClose === 'discount-batch-restore-history-run-detail-modal' && target.closest('.admin-discount-restore-dialog')) {
+            return;
+        }
+        if (overlay.dataset.adminOverlayClose === 'shop-risk-case-modal' && target.closest('.admin-shop-risk-case-modal__dialog')) {
+            return;
+        }
+        if (overlay.dataset.adminOverlayClose === 'ops-alert-batch-mute-modal' && target.closest('.admin-shop-risk-case-modal__dialog')) {
             return;
         }
 
@@ -3015,7 +3075,7 @@ function switchView(viewName) {
     // Load data if switching to Manage view
     if (normalizedView === 'manage') {
         renderGallerySiteContextBanner();
-        loadAdminPrompts();
+        loadAdminPrompts({ allowCached: true });
     }
 }
 
@@ -3128,6 +3188,13 @@ const adminGalleryPrefetchState = {
     loaded: false,
     promise: null
 };
+const adminGalleryLoadState = {
+    site: '',
+    loaded: false,
+    loadedAt: 0,
+    promise: null,
+    requestId: 0
+};
 const adminGalleryViewState = {
     page: 1,
     pageSize: ADMIN_GALLERY_PAGE_SIZE,
@@ -3145,6 +3212,37 @@ function getGalleryActiveViewName() {
 
 function isGalleryManageViewActive() {
     return getGalleryActiveViewName() === 'manage';
+}
+
+function normalizeAdminGallerySite(site = getAdminPromptsReadSite()) {
+    const normalized = String(site || '').trim().toLowerCase();
+    return normalized === 'cn' || normalized === 'intl' ? normalized : 'all';
+}
+
+function hasFreshAdminGalleryPromptList(site = getAdminPromptsReadSite()) {
+    const normalizedSite = normalizeAdminGallerySite(site);
+    if (!adminGalleryLoadState.loaded || adminGalleryLoadState.site !== normalizedSite) {
+        return false;
+    }
+
+    return (Date.now() - adminGalleryLoadState.loadedAt) <= ADMIN_GALLERY_LIST_REFRESH_TTL_MS;
+}
+
+function markAdminGalleryPromptListLoaded(site = getAdminPromptsReadSite()) {
+    adminGalleryLoadState.site = normalizeAdminGallerySite(site);
+    adminGalleryLoadState.loaded = true;
+    adminGalleryLoadState.loadedAt = Date.now();
+}
+
+function markAdminGalleryPromptListStale(site = '') {
+    const normalizedSite = site ? normalizeAdminGallerySite(site) : '';
+    if (!normalizedSite || adminGalleryLoadState.site === normalizedSite) {
+        adminGalleryLoadState.loaded = false;
+        adminGalleryLoadState.loadedAt = 0;
+        if (!normalizedSite) {
+            adminGalleryLoadState.site = '';
+        }
+    }
 }
 
 function setAdminGalleryFilterDropdownValue(dropdownId, value = '') {
@@ -3630,6 +3728,67 @@ function invalidateAdminGalleryPrefetch() {
     adminGalleryPrefetchState.site = '';
     adminGalleryPrefetchState.loaded = false;
     adminGalleryPrefetchState.promise = null;
+    markAdminGalleryPromptListStale();
+}
+
+async function renderLoadedAdminPromptRows(rows = [], { siteContext = getAdminPromptsReadSite(), resetPage = true } = {}) {
+    const grid = document.getElementById('adminGrid');
+    const pagination = document.getElementById('adminGalleryPagination');
+    if (!grid) {
+        return false;
+    }
+
+    const safeRows = Array.isArray(rows) ? rows : [];
+    const normalizedSite = normalizeAdminGallerySite(siteContext);
+    renderGallerySiteContextBanner(siteContext || normalizedSite);
+    adminGalleryPrefetchState.site = normalizedSite;
+    adminGalleryPrefetchState.loaded = true;
+
+    allPrompts = safeRows;
+    SEARCH_INDEX = null;
+    HOT_TAGS_CACHE = null;
+
+    if (safeRows.length > 0) {
+        const fragment = document.createDocumentFragment();
+        safeRows.forEach((prompt) => {
+            fragment.appendChild(renderAdminCard(prompt));
+        });
+        grid.replaceChildren(fragment);
+        renderGalleryOpsOverview();
+        setAdminGallerySortFilterValue(document.getElementById('sortFilter')?.value || adminGalleryViewState.sortValue);
+        updateBatchButtonStates();
+
+        const searchInput = document.getElementById('adminSearchInput');
+        const activeQuery = String(searchInput?.value || '').trim().toLowerCase();
+        adminGalleryViewState.searchQuery = activeQuery;
+        setupAdminSearch();
+
+        if (activeQuery) {
+            await filterBySearch(activeQuery);
+        } else {
+            adminGalleryViewState.searchMatchedIds = null;
+            applyAdminGalleryFilters({ resetPage });
+        }
+
+        const routePromptId = pendingAdminGalleryFocusPromptId || getAdminGalleryRouteState().promptId;
+        if (routePromptId && isGalleryModuleActive() && isGalleryManageViewActive()) {
+            window.requestAnimationFrame(() => {
+                focusAdminGalleryPromptCard(routePromptId, {
+                    resetFilters: true,
+                    scroll: isGalleryManageViewActive()
+                });
+            });
+        }
+    } else {
+        renderGalleryOpsOverview();
+        renderAdminStudioEmptyMessage(grid, 'No prompts yet. Create your first one!');
+        if (pagination) {
+            pagination.innerHTML = '';
+        }
+    }
+
+    markAdminGalleryPromptListLoaded(normalizedSite);
+    return true;
 }
 
 function prefetchGalleryModule() {
@@ -3638,7 +3797,7 @@ function prefetchGalleryModule() {
         return Promise.resolve(false);
     }
 
-    const site = getAdminPromptsReadSite();
+    const site = normalizeAdminGallerySite(getAdminPromptsReadSite());
     if (adminGalleryPrefetchState.loaded && adminGalleryPrefetchState.site === site) {
         return Promise.resolve(true);
     }
@@ -3650,7 +3809,7 @@ function prefetchGalleryModule() {
     adminGalleryPrefetchState.site = site;
     adminGalleryPrefetchState.loaded = false;
     adminGalleryPrefetchState.promise = Promise.resolve()
-        .then(() => loadAdminPrompts())
+        .then(() => loadAdminPrompts({ allowCached: true }))
         .then(() => {
             adminGalleryPrefetchState.loaded = true;
             return true;
@@ -4048,15 +4207,45 @@ function handleAdminGallerySiteChange() {
     }
 
     if (isGalleryManageViewActive()) {
-        void loadAdminPrompts();
+        void loadAdminPrompts({ force: true });
     }
 }
 
 window.handleAdminGallerySiteChange = handleAdminGallerySiteChange;
 
-window.addEventListener('admin-site-changed', () => {
-    handleAdminGallerySiteChange();
-});
+function handleAdminGalleryShellContext(context = {}) {
+    const normalizedContext = context && typeof context === 'object' && !Array.isArray(context) ? context : {};
+    const rawContext = normalizedContext.raw && typeof normalizedContext.raw === 'object' ? normalizedContext.raw : {};
+    const payload = normalizedContext.payload && typeof normalizedContext.payload === 'object' ? normalizedContext.payload : {};
+    const focus = normalizedContext.focus && typeof normalizedContext.focus === 'object' ? normalizedContext.focus : {};
+    const promptId = String(
+        focus.promptId
+        || rawContext.promptId
+        || rawContext.prompt_id
+        || payload.promptId
+        || payload.prompt_id
+        || rawContext.id
+        || ''
+    ).trim();
+
+    if (promptId) {
+        return openAdminGalleryPromptContext(promptId, { ensureModule: false });
+    }
+
+    return false;
+}
+
+if (window.AdminShell?.registerModule) {
+    window.AdminShell.registerModule('gallery', {
+        onSiteChange: handleAdminGallerySiteChange,
+        handleContext: handleAdminGalleryShellContext,
+        reload: handleAdminGallerySiteChange
+    });
+} else {
+    window.addEventListener('admin-site-changed', () => {
+        handleAdminGallerySiteChange();
+    });
+}
 
 function promptHasVisibleCopy(value) {
     return typeof value === 'string' && value.trim().length > 0;
@@ -4114,71 +4303,78 @@ function buildPromptSiteMetricElement(siteLabel, siteMetrics, currentSite = 'all
     return metricRow;
 }
 
-async function loadAdminPrompts() {
-    const grid = document.getElementById('adminGrid');
-    const pagination = document.getElementById('adminGalleryPagination');
+async function loadAdminPrompts(options = {}) {
+    const site = normalizeAdminGallerySite(options?.site || getAdminPromptsReadSite());
+    const force = options?.force === true;
+    const allowCached = options?.allowCached === true;
+    const resetPage = options?.resetPage !== false;
+
+    if (!force && allowCached && hasFreshAdminGalleryPromptList(site)) {
+        await renderLoadedAdminPromptRows(allPrompts, {
+            siteContext: site,
+            resetPage
+        });
+        return {
+            rows: allPrompts,
+            siteContext: site,
+            fromCache: true
+        };
+    }
+
+    if (!force && allowCached && adminGalleryLoadState.promise && adminGalleryLoadState.site === site) {
+        return adminGalleryLoadState.promise;
+    }
+
+    const requestId = adminGalleryLoadState.requestId + 1;
+    adminGalleryLoadState.requestId = requestId;
+    adminGalleryLoadState.site = site;
+    adminGalleryLoadState.loaded = false;
+
+    const loadPromise = (async () => {
+        try {
+            if (typeof window.HomepageAdmin?.ensureLoaded === 'function') {
+                try {
+                    await window.HomepageAdmin.ensureLoaded();
+                } catch (homepageError) {
+                    console.warn('[Gallery] Failed to warm homepage featured state:', homepageError);
+                }
+            }
+            const payload = await fetchAdminPromptList({ site });
+            if (requestId !== adminGalleryLoadState.requestId) {
+                return {
+                    rows: allPrompts,
+                    siteContext: site,
+                    stale: true
+                };
+            }
+
+            await renderLoadedAdminPromptRows(payload.rows || [], {
+                siteContext: payload.siteContext || site,
+                resetPage
+            });
+            return {
+                ...payload,
+                fromCache: false
+            };
+        } catch (err) {
+            if (requestId === adminGalleryLoadState.requestId) {
+                adminGalleryPrefetchState.loaded = false;
+                markAdminGalleryPromptListStale(site);
+            }
+            console.error('Error loading prompts:', err);
+            showToast(`Failed to load prompts: ${err.message || 'Unknown error'}`, 'error');
+            throw err;
+        }
+    })();
+
+    adminGalleryLoadState.promise = loadPromise;
 
     try {
-        if (typeof window.HomepageAdmin?.ensureLoaded === 'function') {
-            try {
-                await window.HomepageAdmin.ensureLoaded();
-            } catch (homepageError) {
-                console.warn('[Gallery] Failed to warm homepage featured state:', homepageError);
-            }
+        return await loadPromise;
+    } finally {
+        if (adminGalleryLoadState.promise === loadPromise) {
+            adminGalleryLoadState.promise = null;
         }
-        const payload = await fetchAdminPromptList();
-        const data = payload.rows || [];
-        renderGallerySiteContextBanner(payload.siteContext || getAdminPromptsReadSite());
-        adminGalleryPrefetchState.site = getAdminPromptsReadSite();
-        adminGalleryPrefetchState.loaded = true;
-
-        // Cache prompts for local search
-        allPrompts = data || [];
-        SEARCH_INDEX = null;
-        HOT_TAGS_CACHE = null;
-
-        if (data && data.length > 0) {
-            const fragment = document.createDocumentFragment();
-            data.forEach((prompt) => {
-                fragment.appendChild(renderAdminCard(prompt));
-            });
-            grid.replaceChildren(fragment);
-            renderGalleryOpsOverview();
-            setAdminGallerySortFilterValue(document.getElementById('sortFilter')?.value || adminGalleryViewState.sortValue);
-            updateBatchButtonStates();
-
-            const searchInput = document.getElementById('adminSearchInput');
-            const activeQuery = String(searchInput?.value || '').trim().toLowerCase();
-            adminGalleryViewState.searchQuery = activeQuery;
-            setupAdminSearch();
-
-            if (activeQuery) {
-                await filterBySearch(activeQuery);
-            } else {
-                adminGalleryViewState.searchMatchedIds = null;
-                applyAdminGalleryFilters({ resetPage: true });
-            }
-
-            const routePromptId = pendingAdminGalleryFocusPromptId || getAdminGalleryRouteState().promptId;
-            if (routePromptId && isGalleryModuleActive() && isGalleryManageViewActive()) {
-                window.requestAnimationFrame(() => {
-                    focusAdminGalleryPromptCard(routePromptId, {
-                        resetFilters: true,
-                        scroll: isGalleryManageViewActive()
-                    });
-                });
-            }
-        } else {
-            renderGalleryOpsOverview();
-            renderAdminStudioEmptyMessage(grid, 'No prompts yet. Create your first one!');
-            if (pagination) {
-                pagination.innerHTML = '';
-            }
-        }
-    } catch (err) {
-        adminGalleryPrefetchState.loaded = false;
-        console.error('Error loading prompts:', err);
-        showToast(`Failed to load prompts: ${err.message || 'Unknown error'}`, 'error');
     }
 }
 
@@ -7690,6 +7886,10 @@ async function batchCompleteSelectedPromptBilingualFields() {
 // COMMENT VIEW SWITCHING
 // ========================================
 function switchCommentView(viewName) {
+    if (typeof window.switchAdminCommentsView === 'function') {
+        return window.switchAdminCommentsView(viewName);
+    }
+
     // Update active tab buttons
     document.querySelectorAll('.admin-tab[data-comment-view]').forEach(tab => {
         const isActive = tab.dataset.commentView === viewName;

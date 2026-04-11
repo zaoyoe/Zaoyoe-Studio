@@ -18,6 +18,7 @@ let opsAlertStrategySaveInFlight = false;
 let opsAlertUnifiedSummaryDraftDirty = false;
 let opsAlertStrategyBeforeUnloadReady = false;
 let verifyMonitorState = getDefaultVerifyMonitorState();
+let verifyKeyPoolCleanupInFlight = false;
 let adminAuditMonitorState = getDefaultAdminAuditMonitorState();
 let verifyMonitorFocusTimeoutId = 0;
 let adminAuditMonitorFocusTimeoutId = 0;
@@ -420,6 +421,7 @@ function renderVerifyQuotaState(quotaEl, tone, iconClass, message, options = {})
     quotaEl.classList.add('verify-quota-badge', `verify-quota-badge--${tone}`);
     const safeMessage = escapeConfigHtml(message);
     const textTag = options.emphasized ? 'strong' : 'span';
+    quotaEl.title = String(options.title || '').trim();
     quotaEl.innerHTML = `<i class="${iconClass} verify-quota-badge__icon" aria-hidden="true"></i> <${textTag} class="verify-quota-badge__text">${safeMessage}</${textTag}>`;
 }
 
@@ -493,6 +495,31 @@ function formatVerifyMonitorDecimal(value, digits = 1) {
     });
 }
 
+function getVerifyRemainingTaskCount(balance, unitCost) {
+    const numericBalance = Number(balance);
+    const numericUnitCost = Number(unitCost);
+    if (!Number.isFinite(numericBalance) || !Number.isFinite(numericUnitCost) || numericUnitCost <= 0) {
+        return 0;
+    }
+
+    return Math.max(0, Math.floor((numericBalance + 1e-9) / numericUnitCost));
+}
+
+function buildVerifyQuotaUsageSummary(balance) {
+    const numericBalance = Number(balance);
+    const safeBalance = Number.isFinite(numericBalance)
+        ? Math.max(0, Math.round(numericBalance * 100) / 100)
+        : 0;
+
+    return {
+        remainingUses: safeBalance,
+        extractCost: 0.5,
+        fullCost: 1,
+        extractJobs: getVerifyRemainingTaskCount(safeBalance, 0.5),
+        fullJobs: getVerifyRemainingTaskCount(safeBalance, 1)
+    };
+}
+
 function setVerifyMonitorCardTone(card, tone = 'neutral') {
     if (!card) return;
     VERIFY_MONITOR_CARD_TONE_CLASSES.forEach((className) => card.classList.remove(className));
@@ -513,16 +540,136 @@ function renderVerifyMonitorEmptyState(target, message) {
     target.innerHTML = `<div class="verify-monitor-empty">${escapeConfigHtml(message)}</div>`;
 }
 
+function normalizeVerifyCredentialList(value) {
+    const values = Array.isArray(value)
+        ? value
+        : String(value || '').split(/[\n,;]+/);
+
+    return [...new Set(
+        values
+            .map((entry) => String(entry || '').trim())
+            .filter(Boolean)
+    )];
+}
+
+function maskVerifyCredential(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return '';
+    if (normalized.length <= 8) return normalized;
+    return `${normalized.slice(0, 4)}...${normalized.slice(-4)}`;
+}
+
+function normalizeVerifyQuotaKeyStates(value) {
+    return (Array.isArray(value) ? value : [])
+        .map((item) => {
+            const remainingUses = Number(item?.remaining_uses ?? item?.balance ?? item?.credits);
+            const totalUsed = Number(item?.total_used);
+            return {
+                api_key: String(item?.api_key || '').trim(),
+                masked_key: String(item?.masked_key || '').trim(),
+                key_name: String(item?.key_name || '').trim(),
+                ok: item?.ok === true,
+                status: Number.isFinite(Number(item?.status)) ? Number(item.status) : null,
+                code: String(item?.code || '').trim(),
+                message: String(item?.message || '').trim(),
+                remaining_uses: Number.isFinite(remainingUses)
+                    ? Math.max(0, Math.round(remainingUses * 100) / 100)
+                    : null,
+                total_used: Number.isFinite(totalUsed)
+                    ? Math.max(0, totalUsed)
+                    : null
+            };
+        })
+        .filter((item) => item.api_key || item.masked_key || item.key_name);
+}
+
+function getZeroBalanceVerifyQuotaKeyStates(quotaState = verifyMonitorState.quota || {}) {
+    return normalizeVerifyQuotaKeyStates(quotaState?.key_states)
+        .filter((item) => item.ok && Number(item.remaining_uses) <= 0);
+}
+
+function applyVerifyCredentialInputs(configuredKeys = []) {
+    const normalizedKeys = normalizeVerifyCredentialList(configuredKeys);
+    const apiKeyInput = document.getElementById('cfgVerifyApiKey');
+    const apiKeysInput = document.getElementById('cfgVerifyApiKeys');
+    const configuredCredential = String(normalizedKeys[0] || '').trim();
+
+    if (apiKeyInput) {
+        if (configuredCredential) {
+            apiKeyInput.value = maskVerifyCredential(configuredCredential);
+            apiKeyInput.dataset.hasKey = 'true';
+        } else {
+            apiKeyInput.value = '';
+            delete apiKeyInput.dataset.hasKey;
+        }
+    }
+
+    if (apiKeysInput) {
+        apiKeysInput.value = normalizedKeys.join('\n');
+    }
+}
+
+function syncVerifyKeyPoolMaintenanceState() {
+    const cleanupButton = document.querySelector('[data-admin-action="settings-clean-empty-verify-keys"]');
+    const cleanupHint = document.getElementById('cfgVerifyKeyPoolCleanupHint');
+    if (!cleanupButton) return;
+
+    if (verifyKeyPoolCleanupInFlight) {
+        cleanupButton.disabled = true;
+        cleanupButton.textContent = '识别中...';
+        if (cleanupHint) {
+            cleanupHint.textContent = '正在刷新最新额度并识别可清理的 0 余额 key...';
+        }
+        return;
+    }
+
+    const quotaState = verifyMonitorState.quota || {};
+    const keyStates = normalizeVerifyQuotaKeyStates(quotaState.key_states);
+    const removableStates = getZeroBalanceVerifyQuotaKeyStates(quotaState);
+    const failedCount = keyStates.filter((item) => !item.ok).length;
+    const removableCount = removableStates.length;
+
+    cleanupButton.disabled = removableCount <= 0;
+    cleanupButton.textContent = removableCount > 0
+        ? `清理 0 余额 CDKey（${removableCount}）`
+        : '清理 0 余额 CDKey';
+
+    if (!cleanupHint) return;
+    if (!keyStates.length) {
+        cleanupHint.textContent = '先刷新 API 余额，再识别可清理的 0 余额 key。';
+        return;
+    }
+    if (removableCount > 0) {
+        cleanupHint.textContent = failedCount > 0
+            ? `已识别 ${removableCount} 张 0 余额 key，可一键清理；另有 ${failedCount} 张查询失败，暂不自动处理。`
+            : `已识别 ${removableCount} 张 0 余额 key，可一键从池子移除。`;
+        return;
+    }
+    cleanupHint.textContent = failedCount > 0
+        ? `当前没有明确 0 余额 key；另有 ${failedCount} 张查询失败，暂不自动清理。`
+        : '当前没有检测到 0 余额 key。';
+}
+
 function getVerifySettingsSnapshot() {
     const config = systemConfigCache['verify_settings'] || {};
     const apiKeyInput = document.getElementById('cfgVerifyApiKey');
-    const hasKey = Boolean(String(config.verify_api_key || '').trim())
+    const apiKeys = normalizeVerifyCredentialList([
+        ...(Array.isArray(config.verify_cdkeys) ? config.verify_cdkeys : []),
+        config.verify_cdkey,
+        config.verify_api_key
+    ]);
+    const hasKey = Boolean(apiKeys.length)
         || String(apiKeyInput?.dataset?.hasKey || '').toLowerCase() === 'true';
+    const extractPrice = parseInt(config.price_per_verify_extract || config.price_per_verify, 10) || 10;
+    const fullPrice = parseInt(config.price_per_verify_full, 10) || Math.max(extractPrice, Math.round(extractPrice * 2));
 
     return {
         enabled: config.enabled !== false,
         hasKey,
-        pricePerVerify: parseInt(config.price_per_verify, 10) || 10
+        keyCount: apiKeys.length,
+        pricePerVerify: parseInt(config.price_per_verify, 10) || 10,
+        pricePerVerifyExtract: extractPrice,
+        pricePerVerifyFull: fullPrice
     };
 }
 
@@ -557,13 +704,16 @@ function renderVerifyMonitorOverview() {
     if (quotaState.status === 'ready') {
         const balance = Number(quotaState.balance || 0);
         const tone = balance > 10 ? 'success' : balance > 0 ? 'warning' : 'danger';
+        const remainingUses = Number(quotaState.remaining_uses ?? balance);
+        const remainingExtractJobs = Number(quotaState.remaining_extract_jobs ?? getVerifyRemainingTaskCount(balance, 0.5));
+        const remainingFullJobs = Number(quotaState.remaining_full_jobs ?? getVerifyRemainingTaskCount(balance, 1));
         updateVerifyMonitorOverviewCard(
             'verifyMonitorQuotaPanel',
             'verifyMonitorQuotaValue',
             'verifyMonitorQuotaMeta',
             tone,
-            `${formatVerifyMonitorDecimal(balance)} 点`,
-            `API Key：${quotaState.key_name || '未命名'} · 已用 ${formatVerifyMonitorInteger(quotaState.total_used)} 次 · 单次成本 ${formatVerifyMonitorDecimal(quotaState.cost_per_job)}`
+            `${formatVerifyMonitorDecimal(remainingUses)} 额度`,
+            `${Number(quotaState.key_count || 0) > 1 ? 'CDKey 池' : 'CDKey'}：${quotaState.key_name || '未命名'} · 提链约 ${formatVerifyMonitorInteger(remainingExtractJobs)} 次 · 全流程约 ${formatVerifyMonitorInteger(remainingFullJobs)} 次 · 已用 ${formatVerifyMonitorInteger(quotaState.total_used)} 次`
         );
     } else if (quotaState.status === 'loading') {
         updateVerifyMonitorOverviewCard(
@@ -572,7 +722,7 @@ function renderVerifyMonitorOverview() {
             'verifyMonitorQuotaMeta',
             'neutral',
             '查询中...',
-            '正在读取 API 余额与单次成本。'
+            '正在读取 CDKey 剩余额度与可用次数。'
         );
     } else if (quotaState.status === 'error') {
         updateVerifyMonitorOverviewCard(
@@ -603,8 +753,8 @@ function renderVerifyMonitorOverview() {
         serviceMeta = '前台验证模块已关闭，用户当前无法发起新的验证请求。';
     } else if (!verifyConfig.hasKey) {
         serviceTone = 'danger';
-        serviceValue = '未配置 API Key';
-        serviceMeta = '请先填写 ak_ 密钥，否则额度查询和实际验证都会失败。';
+        serviceValue = '未配置 CDKey';
+        serviceMeta = '请先填写 aidone 服务商 CDKey，否则额度查询和实际验证都会失败。';
     } else if (quotaState.status === 'error' || queueState.status === 'error') {
         serviceTone = 'danger';
         serviceValue = '接口异常';
@@ -614,7 +764,7 @@ function renderVerifyMonitorOverview() {
     } else if (quotaState.status === 'ready' || queueState.status === 'ready') {
         serviceTone = 'success';
         serviceValue = '运行正常';
-        serviceMeta = `验证服务已启用 · 已配置 API Key · 每次验证 ${formatVerifyMonitorInteger(verifyConfig.pricePerVerify)} 积分`;
+        serviceMeta = `验证服务已启用 · 已配置 ${formatVerifyMonitorInteger(verifyConfig.keyCount || 1)} 张 CDKey · 提链 ${formatVerifyMonitorInteger(verifyConfig.pricePerVerifyExtract)} 积分 / 全流程 ${formatVerifyMonitorInteger(verifyConfig.pricePerVerifyFull)} 积分`;
     } else if (quotaState.status === 'loading' || queueState.status === 'loading') {
         serviceTone = 'neutral';
         serviceValue = '检测中...';
@@ -1070,6 +1220,7 @@ function renderVerifyMonitorPanel() {
     renderVerifyMonitorFacts();
     renderVerifyMonitorWorkspace();
     renderVerifyMonitorLists();
+    syncVerifyKeyPoolMaintenanceState();
 }
 
 function setAdminAuditMonitorCardTone(card, tone = 'neutral') {
@@ -2010,9 +2161,15 @@ function getDefaultVerifyMonitorState() {
         quota: {
             status: 'idle',
             balance: null,
+            remaining_uses: null,
+            remaining_extract_jobs: null,
+            remaining_full_jobs: null,
             total_used: null,
             cost_per_job: null,
+            extract_cost_per_job: null,
+            full_cost_per_job: null,
             key_name: '',
+            key_states: [],
             message: '等待检测'
         },
         queue: {
@@ -4979,15 +5136,49 @@ async function initSystemConfig() {
     }
 }
 
+const ADMIN_SYSTEM_CONFIG_DOMAINS = ['commerce', 'affiliate', 'governance', 'growth', 'verify'];
+
+async function parseAdminConfigApiResponse(response) {
+    let payload = {};
+
+    try {
+        payload = await response.json();
+    } catch (_) {
+        payload = {};
+    }
+
+    if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.message || `Config request failed (${response.status})`);
+    }
+
+    return payload;
+}
+
+async function fetchSystemConfigDomain(domain) {
+    const response = await (window.AdminApi?.fetch || fetch)(`/api/admin/settings/system-config?domain=${encodeURIComponent(domain)}`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: await getAdminConfigApiHeaders()
+    });
+
+    return parseAdminConfigApiResponse(response);
+}
+
 async function loadAllSystemConfig() {
     try {
-        const { data, error } = await supabaseClient.rpc('get_all_system_config');
+        const settledResults = await Promise.allSettled(
+            ADMIN_SYSTEM_CONFIG_DOMAINS.map((domain) => fetchSystemConfigDomain(domain))
+        );
 
-        if (error) throw error;
+        settledResults.forEach((result) => {
+            if (result.status !== 'fulfilled') {
+                console.warn('[Config] Domain load failed:', result.reason?.message || result.reason);
+                return;
+            }
 
-        // Cache configs
-        (data || []).forEach(item => {
-            systemConfigCache[item.config_key] = item.config_value;
+            Object.entries(result.value?.configs || {}).forEach(([configKey, configValue]) => {
+                systemConfigCache[configKey] = configValue;
+            });
         });
 
         // Render UI
@@ -11558,8 +11749,8 @@ function buildOpsAlertMonitorQuickActionAttrs(action = {}, category = {}, item =
 
 function buildOpsAlertMonitorCaseActionAttrs(action = {}, category = {}, item = {}) {
     const attrs = {
-        'data-admin-action': 'settings-handle-shop-risk-case',
-        'data-shop-risk-case-action': action.action || '',
+        'data-admin-action': 'settings-handle-ops-alert-case-action',
+        'data-ops-alert-case-action': action.action || '',
         ...buildOpsAlertMonitorContextAttrs(category, item)
     };
 
@@ -13773,14 +13964,26 @@ function renderAffiliatePosterTemplates(config = normalizeAffiliatePosterConfig(
 // UPDATE FUNCTIONS
 // ============================================
 
+const ADMIN_ANNOUNCEMENT_NOTIFICATION_META = Object.freeze({
+    scope: 'admin_personal',
+    category: 'announcement'
+});
+
 async function saveConfig(key, value) {
     try {
-        const { error } = await supabaseClient.rpc('update_system_config', {
-            p_key: key,
-            p_value: value
+        const response = await (window.AdminApi?.fetch || fetch)('/api/admin/settings/system-config', {
+            method: 'POST',
+            credentials: 'include',
+            headers: await getAdminConfigApiHeaders(),
+            body: JSON.stringify({
+                key,
+                value,
+                meta: key === 'notifications'
+                    ? { announcementNotification: ADMIN_ANNOUNCEMENT_NOTIFICATION_META }
+                    : undefined
+            })
         });
-
-        if (error) throw error;
+        await parseAdminConfigApiResponse(response);
 
         systemConfigCache[key] = value;
 
@@ -13853,252 +14056,6 @@ async function getAdminConfigApiHeaders() {
     }
 
     return headers;
-}
-
-function isMissingScopedSystemNotificationColumnError(error) {
-    const message = String(error?.message || '').toLowerCase();
-    return error?.code === '42703'
-        || error?.code === '42P01'
-        || (message.includes('column') && message.includes('does not exist'))
-        || (message.includes('schema cache') && message.includes('scope'))
-        || (message.includes('schema cache') && message.includes('category'));
-}
-
-async function insertClientSystemNotificationWithScope(payload = {}) {
-    let response = await window.supabaseClient
-        .from('system_notifications')
-        .insert(payload);
-
-    if (!response?.error || !isMissingScopedSystemNotificationColumnError(response.error)) {
-        return response;
-    }
-
-    const legacyPayload = { ...payload };
-    delete legacyPayload.scope;
-    delete legacyPayload.category;
-
-    response = await window.supabaseClient
-        .from('system_notifications')
-        .insert(legacyPayload);
-
-    return response;
-}
-
-function isActiveAdminRoleForClientNotification(role = {}, nowMs = Date.now()) {
-    const roleName = String(role?.role_name || '').trim().toLowerCase();
-    if (!['admin', 'super_admin'].includes(roleName)) {
-        return false;
-    }
-
-    const expiresAt = String(role?.expires_at || '').trim();
-    if (!expiresAt) {
-        return true;
-    }
-
-    const expiresMs = Date.parse(expiresAt);
-    return Number.isFinite(expiresMs) && expiresMs > nowMs;
-}
-
-async function listActiveAdminUserIdsForClientNotifications(excludeUserId = '') {
-    const { data, error } = await window.supabaseClient
-        .from('admin_roles')
-        .select('user_id, role_name, expires_at');
-
-    if (error) {
-        throw error;
-    }
-
-    const normalizedExcludeUserId = String(excludeUserId || '').trim();
-    const nowMs = Date.now();
-    return Array.from(new Set(
-        (data || [])
-            .filter((row) => isActiveAdminRoleForClientNotification(row, nowMs))
-            .map((row) => String(row?.user_id || '').trim())
-            .filter((userId) => userId && userId !== normalizedExcludeUserId)
-    ));
-}
-
-async function hasRecentClientSystemNotification({
-    userId = '',
-    title = '',
-    content = '',
-    scope = 'admin_personal',
-    category = 'general',
-    dedupeWindowMinutes = 30
-} = {}) {
-    const normalizedUserId = String(userId || '').trim();
-    const normalizedTitle = String(title || '').trim();
-    const normalizedContent = String(content || '').trim();
-    if (!normalizedUserId || !normalizedTitle || !normalizedContent || !(dedupeWindowMinutes > 0)) {
-        return false;
-    }
-
-    const sinceIso = new Date(Date.now() - dedupeWindowMinutes * 60 * 1000).toISOString();
-    let response = await window.supabaseClient
-        .from('system_notifications')
-        .select('id, title, content, created_at, scope, category')
-        .eq('user_id', normalizedUserId)
-        .eq('title', normalizedTitle)
-        .eq('scope', String(scope || '').trim() || 'admin_personal')
-        .eq('category', String(category || '').trim() || 'general')
-        .gte('created_at', sinceIso);
-
-    if (response?.error && isMissingScopedSystemNotificationColumnError(response.error)) {
-        response = await window.supabaseClient
-            .from('system_notifications')
-            .select('id, title, content, created_at')
-            .eq('user_id', normalizedUserId)
-            .eq('title', normalizedTitle)
-            .gte('created_at', sinceIso);
-    }
-
-    if (response?.error) {
-        console.warn('[Config] Announcement reminder dedupe lookup failed:', response.error.message || response.error);
-        return false;
-    }
-
-    return (response?.data || []).some((row) => String(row?.content || '').trim() === normalizedContent);
-}
-
-function getAnnouncementTypeLabel(type = 'banner') {
-    const normalized = String(type || '').trim().toLowerCase();
-    if (normalized === 'modal') {
-        return '弹窗公告';
-    }
-    if (normalized === 'toast') {
-        return '浮层提示';
-    }
-    return '横幅公告';
-}
-
-function getAnnouncementPageLabels(pages = []) {
-    const pageLabelMap = {
-        all: '全部页面',
-        prompts: '图库',
-        index: '主页',
-        shop: '商城',
-        verify: '验证',
-        guestbook: '留言'
-    };
-
-    const normalizedPages = Array.isArray(pages) ? pages : [];
-    if (!normalizedPages.length || normalizedPages.includes('all')) {
-        return [pageLabelMap.all];
-    }
-
-    return normalizedPages
-        .map((page) => pageLabelMap[String(page || '').trim().toLowerCase()] || String(page || '').trim())
-        .filter(Boolean);
-}
-
-function extractAnnouncementPreviewText(content = '', maxLength = 72) {
-    const raw = String(content || '').trim();
-    if (!raw) {
-        return '';
-    }
-
-    let plainText = raw.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(div|p|li)>/gi, '\n');
-    if (typeof document !== 'undefined' && document.createElement) {
-        const container = document.createElement('div');
-        container.innerHTML = plainText;
-        plainText = container.textContent || container.innerText || '';
-    } else {
-        plainText = plainText.replace(/<[^>]+>/g, ' ');
-    }
-
-    plainText = plainText.replace(/\s+/g, ' ').trim();
-    if (!plainText) {
-        return '';
-    }
-
-    return plainText.length > maxLength
-        ? `${plainText.slice(0, Math.max(1, maxLength - 1)).trim()}…`
-        : plainText;
-}
-
-async function notifyActiveAdminsAboutAnnouncement(previousConfig = {}, nextConfig = {}) {
-    if (!window.supabaseClient?.from || !window.supabaseClient?.auth) {
-        return { recipients: 0, created: 0, skipped: 0 };
-    }
-
-    const { data: { user } = {} } = await window.supabaseClient.auth.getUser();
-    const actorUserId = String(user?.id || '').trim();
-    const actorLabel = String(user?.email || '').trim() || '某位管理员';
-    const recipientIds = await listActiveAdminUserIdsForClientNotifications(actorUserId);
-    if (!recipientIds.length) {
-        return { recipients: 0, created: 0, skipped: 0 };
-    }
-
-    const previousEnabled = previousConfig?.announcement_enabled === true;
-    const nextEnabled = nextConfig?.announcement_enabled === true;
-    const announcementTypeLabel = getAnnouncementTypeLabel(nextConfig?.announcement_type);
-    const pageLabels = getAnnouncementPageLabels(nextConfig?.announcement_pages);
-    const previewText = extractAnnouncementPreviewText(nextConfig?.announcement_content);
-    const dedupeWindowMinutes = 20;
-
-    let title = '站内公告已更新';
-    let actionLabel = '更新';
-    if (nextEnabled && !previousEnabled) {
-        title = '站内公告已发布';
-        actionLabel = '发布';
-    } else if (!nextEnabled && previousEnabled) {
-        title = '站内公告已下线';
-        actionLabel = '下线';
-    } else if (!nextEnabled) {
-        title = '站内公告设置已更新';
-        actionLabel = '调整';
-    }
-
-    const lines = [
-        `${actorLabel} 刚刚${actionLabel}了站内公告。`,
-        `当前状态：${nextEnabled ? '已启用' : '已关闭'}`,
-        `展示形态：${announcementTypeLabel}`,
-        `显示页面：${pageLabels.join(' / ')}`
-    ];
-    if (previewText) {
-        lines.push(`公告摘要：${previewText}`);
-    }
-
-    const content = lines.join('\n');
-    let created = 0;
-    let skipped = 0;
-
-    for (const userId of recipientIds) {
-        const exists = await hasRecentClientSystemNotification({
-            userId,
-            title,
-            content,
-            scope: 'admin_personal',
-            category: 'announcement',
-            dedupeWindowMinutes
-        });
-        if (exists) {
-            skipped += 1;
-            continue;
-        }
-
-        const { error } = await insertClientSystemNotificationWithScope({
-            user_id: userId,
-            title,
-            content,
-            type: nextEnabled ? 'info' : 'warning',
-            is_read: false,
-            scope: 'admin_personal',
-            category: 'announcement'
-        });
-
-        if (error) {
-            throw error;
-        }
-
-        created += 1;
-    }
-
-    return {
-        recipients: recipientIds.length,
-        created,
-        skipped
-    };
 }
 
 async function loadPaymentChannelSettings(force = false) {
@@ -16563,7 +16520,7 @@ function getDefaultOpsAlertCaseComposerOwner(state = {}) {
     };
 }
 
-function getOpsAlertCaseComposerMeta(state = {}) {
+function getLocalOpsAlertCaseComposerMeta(state = {}) {
     return resolveOpsAlertCaseComposerMetaResolver()(state, {
         formatCount: formatVerifyMonitorInteger,
         singleFallback: '集中告警',
@@ -16637,7 +16594,7 @@ function buildLocalOpsAlertCaseComposerViewState(state = shopRiskCaseComposerSta
     const normalizedState = state && typeof state === 'object' && !Array.isArray(state)
         ? state
         : getDefaultShopRiskCaseComposerState();
-    const meta = getOpsAlertCaseComposerMeta(normalizedState);
+    const meta = getLocalOpsAlertCaseComposerMeta(normalizedState);
     const isAssignAction = String(normalizedState.action || '').trim().toLowerCase() === 'assign';
     const ownerOptions = getOpsAlertMonitorAssignableAdmins();
     const selectedOwner = getDefaultOpsAlertCaseComposerOwner(normalizedState);
@@ -17394,7 +17351,7 @@ function getShopRiskCaseComposerTargetLabel(context = {}) {
 }
 
 function getShopRiskCaseComposerMeta(action, context = {}) {
-    return getOpsAlertCaseComposerMeta({
+    return getLocalOpsAlertCaseComposerMeta({
         action,
         context,
         mode: 'single',
@@ -18040,6 +17997,30 @@ function showLockedAccountsRefreshIndicator(text = '已刷新', durationMs = 180
     showAdminConfigSaveIndicator(indicator, text, durationMs);
 }
 
+async function fetchSecurityLocksPayload() {
+    const response = await (window.AdminApi?.fetch || fetch)('/api/admin/settings/security-locks', {
+        method: 'GET',
+        credentials: 'include',
+        headers: await getAdminConfigApiHeaders()
+    });
+
+    return parseAdminConfigApiResponse(response);
+}
+
+async function mutateSecurityLocks(action, userId = '') {
+    const response = await (window.AdminApi?.fetch || fetch)('/api/admin/settings/security-locks', {
+        method: 'POST',
+        credentials: 'include',
+        headers: await getAdminConfigApiHeaders(),
+        body: JSON.stringify({
+            action,
+            userId
+        })
+    });
+
+    return parseAdminConfigApiResponse(response);
+}
+
 // Refresh locked accounts list
 async function refreshLockedAccounts(options = {}) {
     const { silent = false } = options;
@@ -18053,40 +18034,8 @@ async function refreshLockedAccounts(options = {}) {
     setLockedAccountsRefreshButtonState(true);
 
     try {
-        // Query profiles with locked_until > now
-        const { data: lockedAccounts, error } = await supabaseClient
-            .from('profiles')
-            .select('id, username, failed_login_attempts, locked_until')
-            .gt('locked_until', new Date().toISOString())
-            .order('locked_until', { ascending: false });
-
-        if (error) throw error;
-
-        // Get emails from auth.users via admin view
-        let accountsWithEmail = lockedAccounts || [];
-
-        // Try to get emails if admin view exists
-        try {
-            const { data: usersData } = await supabaseClient
-                .from('admin_users_view')
-                .select('id, email')
-                .in('id', accountsWithEmail.map(a => a.id));
-
-            if (usersData) {
-                const emailMap = {};
-                usersData.forEach(u => emailMap[u.id] = u.email);
-                accountsWithEmail = accountsWithEmail.map(a => ({
-                    ...a,
-                    email: emailMap[a.id] || a.username || a.id.substring(0, 8) + '...'
-                }));
-            }
-        } catch (e) {
-            // Fallback to username if admin view not available
-            accountsWithEmail = accountsWithEmail.map(a => ({
-                ...a,
-                email: a.username || a.id.substring(0, 8) + '...'
-            }));
-        }
+        const payload = await fetchSecurityLocksPayload();
+        const accountsWithEmail = Array.isArray(payload?.accounts) ? payload.accounts : [];
 
         // Update badge
         if (badgeEl) {
@@ -18162,11 +18111,7 @@ async function refreshLockedAccounts(options = {}) {
 // Unlock a single account
 async function unlockAccount(userId) {
     try {
-        // Use RPC to bypass RLS
-        const { data, error } = await supabaseClient
-            .rpc('admin_unlock_account', { target_user_id: userId });
-
-        if (error) throw error;
+        await mutateSecurityLocks('unlock_one', userId);
 
         if (typeof showToast === 'function') {
             showToast('账户已解锁', 'success');
@@ -18188,14 +18133,10 @@ async function unlockAllAccounts() {
     if (!confirm('确定要解锁所有账户吗？')) return;
 
     try {
-        // Use RPC to bypass RLS
-        const { data, error } = await supabaseClient
-            .rpc('admin_unlock_all_accounts');
-
-        if (error) throw error;
+        const payload = await mutateSecurityLocks('unlock_all');
 
         if (typeof showToast === 'function') {
-            showToast(`已解锁 ${data || 0} 个账户`, 'success');
+            showToast(`已解锁 ${payload?.unlockedCount || 0} 个账户`, 'success');
         }
 
         // Refresh list
@@ -18344,12 +18285,6 @@ async function saveAnnouncement() {
 
     if (!success) {
         return;
-    }
-
-    try {
-        await notifyActiveAdminsAboutAnnouncement(previousConfig, config);
-    } catch (notificationError) {
-        console.warn('[Config] Announcement admin reminder failed:', notificationError.message || notificationError);
     }
 
     if (saveBtn) {
@@ -19048,30 +18983,33 @@ function renderCommentRulesConfig() {
 function renderVerifyConfig() {
     const config = systemConfigCache['verify_settings'] || {
         price_per_verify: 10,
+        price_per_verify_extract: 10,
+        price_per_verify_full: 20,
         enabled: true,
         verify_api_key: '',
+        verify_cdkeys: [],
         verify_api_base_url: ''
     };
+    const extractPrice = Number(config.price_per_verify_extract || config.price_per_verify) || 10;
+    const fullPrice = Number(config.price_per_verify_full) || Math.max(extractPrice, Math.round(extractPrice * 2));
 
-    // Price input
     const priceInput = document.getElementById('cfgVerifyPrice');
-    if (priceInput) priceInput.value = config.price_per_verify || 10;
+    if (priceInput) priceInput.value = extractPrice;
 
-    // Enabled toggle
+    const fullPriceInput = document.getElementById('cfgVerifyPriceFull');
+    if (fullPriceInput) fullPriceInput.value = fullPrice;
+
     const enabledToggle = document.getElementById('cfgVerifyEnabled');
     if (enabledToggle) enabledToggle.checked = config.enabled !== false;
 
-    // API Key (show masked for security)
     const apiKeyInput = document.getElementById('cfgVerifyApiKey');
+    const configuredKeys = normalizeVerifyCredentialList([
+        ...(Array.isArray(config.verify_cdkeys) ? config.verify_cdkeys : []),
+        config.verify_cdkey,
+        config.verify_api_key
+    ]);
     if (apiKeyInput) {
-        if (config.verify_api_key) {
-            const key = config.verify_api_key;
-            apiKeyInput.value = key.length > 8 ? key.slice(0, 8) + '...' : key;
-            apiKeyInput.dataset.hasKey = 'true';
-        } else {
-            apiKeyInput.value = '';
-            delete apiKeyInput.dataset.hasKey;
-        }
+        applyVerifyCredentialInputs(configuredKeys);
     }
 
     const apiBaseInput = document.getElementById('cfgVerifyApiBase');
@@ -19183,31 +19121,48 @@ window.getCurrentAdminAIService = function getCurrentAdminAIService() {
     return normalizeIntegrationsConfig(systemConfigCache['integrations']).ai_service;
 };
 
-async function saveVerifyConfig() {
+async function saveVerifyConfig(options = {}) {
     const priceInput = document.getElementById('cfgVerifyPrice');
+    const fullPriceInput = document.getElementById('cfgVerifyPriceFull');
     const enabledToggle = document.getElementById('cfgVerifyEnabled');
     const apiKeyInput = document.getElementById('cfgVerifyApiKey');
+    const apiKeysInput = document.getElementById('cfgVerifyApiKeys');
     const apiBaseInput = document.getElementById('cfgVerifyApiBase');
+    const preserveExistingWhenEmpty = options?.preserveExistingWhenEmpty !== false;
 
     const config = systemConfigCache['verify_settings'] || {};
+    const extractPrice = Math.max(1, parseInt(priceInput?.value, 10) || Number(config.price_per_verify_extract || config.price_per_verify) || 10);
+    const fullPrice = Math.max(extractPrice, parseInt(fullPriceInput?.value, 10) || Number(config.price_per_verify_full) || Math.round(extractPrice * 2));
 
-    // Update price
     if (priceInput) {
-        config.price_per_verify = parseInt(priceInput.value) || 10;
+        config.price_per_verify = extractPrice;
+        config.price_per_verify_extract = extractPrice;
+        priceInput.value = extractPrice;
     }
 
-    // Update enabled
+    if (fullPriceInput) {
+        config.price_per_verify_full = fullPrice;
+        fullPriceInput.value = fullPrice;
+    }
+
     if (enabledToggle) {
         config.enabled = enabledToggle.checked;
     }
 
-    // Update API key only if it was changed (not masked)
-    if (apiKeyInput && !apiKeyInput.value.includes('...')) {
-        const newKey = apiKeyInput.value.trim();
-        if (newKey) {
-            config.verify_api_key = newKey;
-        }
-    }
+    const importedKeys = normalizeVerifyCredentialList(apiKeysInput?.value || '');
+    const singleKeyInputValue = apiKeyInput && !apiKeyInput.value.includes('...')
+        ? apiKeyInput.value.trim()
+        : '';
+    const finalKeys = normalizeVerifyCredentialList([
+        ...importedKeys,
+        singleKeyInputValue,
+        ...((preserveExistingWhenEmpty && !importedKeys.length && !singleKeyInputValue)
+            ? [config.verify_cdkey, config.verify_api_key]
+            : [])
+    ]);
+    config.verify_cdkeys = finalKeys;
+    config.verify_cdkey = finalKeys[0] || '';
+    config.verify_api_key = finalKeys[0] || '';
 
     if (apiBaseInput) {
         config.verify_api_base_url = String(apiBaseInput.value || '').trim().replace(/\/+$/, '');
@@ -19216,20 +19171,88 @@ async function saveVerifyConfig() {
 
     const success = await saveConfig('verify_settings', config);
 
-    if (success && typeof showToast === 'function') {
-        showToast('Google One API 配置已保存', 'success');
+    if (success && options?.toast !== false && typeof showToast === 'function') {
+        showToast(options?.successMessage || 'Google One / aidone 配置已保存', 'success');
     }
 
     // Update cache
     systemConfigCache['verify_settings'] = config;
+    verifyMonitorState.quota = {
+        ...(verifyMonitorState.quota || getDefaultVerifyMonitorState().quota),
+        key_states: normalizeVerifyQuotaKeyStates(verifyMonitorState.quota?.key_states).filter((item) => finalKeys.includes(item.api_key))
+    };
     renderVerifyMonitorPanel();
     refreshVerifyMonitor(true).catch((error) => {
         console.warn('[Config] Verify monitor refresh after save failed:', error.message);
     });
+
+    return success;
 }
 
 // Expose globally for HTML onclick handlers
 window.saveVerifyConfig = saveVerifyConfig;
+
+async function cleanZeroBalanceVerifyKeys() {
+    const cleanupButton = document.querySelector('[data-admin-action="settings-clean-empty-verify-keys"]');
+    const previousButtonLabel = cleanupButton?.textContent || '清理 0 余额 CDKey';
+    const previousConfig = systemConfigCache['verify_settings'] || {};
+    const previousKeys = normalizeVerifyCredentialList([
+        ...(Array.isArray(previousConfig.verify_cdkeys) ? previousConfig.verify_cdkeys : []),
+        previousConfig.verify_cdkey,
+        previousConfig.verify_api_key
+    ]);
+
+    try {
+        verifyKeyPoolCleanupInFlight = true;
+        if (cleanupButton) {
+            cleanupButton.disabled = true;
+            cleanupButton.textContent = '识别中...';
+        }
+
+        const quotaState = await checkVerifyQuota();
+        const removableStates = getZeroBalanceVerifyQuotaKeyStates(quotaState);
+        if (!removableStates.length) {
+            showToast('当前没有检测到可清理的 0 余额 CDKey', 'info');
+            return false;
+        }
+
+        const removableKeys = new Set(removableStates.map((item) => item.api_key).filter(Boolean));
+        const nextKeys = previousKeys.filter((key) => !removableKeys.has(key));
+        const removedCount = previousKeys.length - nextKeys.length;
+
+        if (removedCount <= 0) {
+            showToast('当前检测到的 0 余额 key 不在 CDKey 池里，无需清理', 'info');
+            return false;
+        }
+
+        applyVerifyCredentialInputs(nextKeys);
+        const success = await saveVerifyConfig({
+            preserveExistingWhenEmpty: false,
+            successMessage: removedCount === previousKeys.length
+                ? `已清空 ${removedCount} 张 0 余额 CDKey`
+                : `已清理 ${removedCount} 张 0 余额 CDKey`
+        });
+
+        if (!success) {
+            throw new Error('保存 CDKey 池失败');
+        }
+
+        return true;
+    } catch (error) {
+        applyVerifyCredentialInputs(previousKeys);
+        console.error('[Config] Clean zero balance verify keys failed:', error);
+        showToast('清理失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    } finally {
+        verifyKeyPoolCleanupInFlight = false;
+        if (cleanupButton) {
+            cleanupButton.textContent = previousButtonLabel;
+        }
+        syncVerifyKeyPoolMaintenanceState();
+    }
+}
+
+window.cleanZeroBalanceVerifyKeys = cleanZeroBalanceVerifyKeys;
 
 function showStandaloneSaveIndicator(elementId, text = '✓ 已保存') {
     const indicator = document.getElementById(elementId);
@@ -19598,13 +19621,29 @@ async function checkVerifyQuota() {
             const balance = Number(data.balance ?? data.credits ?? 0);
             const tone = balance > 5 ? 'success' : balance > 0 ? 'warning' : 'danger';
             const display = Number.isInteger(balance) ? balance : balance.toFixed(1);
-            renderVerifyQuotaState(quotaEl, tone, 'fas fa-gem', display, { emphasized: true });
+            const usageSummary = buildVerifyQuotaUsageSummary(balance);
+            renderVerifyQuotaState(
+                quotaEl,
+                tone,
+                'fas fa-gem',
+                `${display} · 提${usageSummary.extractJobs} / 全${usageSummary.fullJobs}`,
+                {
+                    emphasized: true,
+                    title: `剩余额度 ${formatVerifyMonitorDecimal(usageSummary.remainingUses)} · 提链约 ${formatVerifyMonitorInteger(usageSummary.extractJobs)} 次 · 全流程约 ${formatVerifyMonitorInteger(usageSummary.fullJobs)} 次`
+                }
+            );
             verifyMonitorState.quota = {
                 status: 'ready',
                 balance,
+                remaining_uses: Number(data.remaining_uses ?? balance),
+                remaining_extract_jobs: Number(data.remaining_extract_jobs ?? usageSummary.extractJobs),
+                remaining_full_jobs: Number(data.remaining_full_jobs ?? usageSummary.fullJobs),
                 total_used: Number(data.total_used || 0),
                 cost_per_job: Number(data.cost_per_job || 0),
+                extract_cost_per_job: Number(data.extract_cost_per_job || usageSummary.extractCost),
+                full_cost_per_job: Number(data.full_cost_per_job || usageSummary.fullCost),
                 key_name: String(data.key_name || '').trim(),
+                key_states: normalizeVerifyQuotaKeyStates(data.key_states),
                 checked_at: new Date().toISOString(),
                 message: ''
             };
@@ -19615,6 +19654,7 @@ async function checkVerifyQuota() {
                 ...(getDefaultVerifyMonitorState().quota),
                 status: 'error',
                 checked_at: new Date().toISOString(),
+                key_states: [],
                 message
             };
         }
@@ -19627,6 +19667,7 @@ async function checkVerifyQuota() {
             ...(getDefaultVerifyMonitorState().quota),
             status: 'error',
             checked_at: new Date().toISOString(),
+            key_states: [],
             message
         };
     } finally {
@@ -20345,11 +20386,22 @@ function getSelectedPages() {
     const selectedPages = [];
     selector.querySelectorAll('[data-page]:not([data-page="all"])').forEach(btn => {
         if (btn.classList.contains('active')) {
-            selectedPages.push(btn.dataset.page);
+            const normalizedPage = normalizeAnnouncementPageValue(btn.dataset.page);
+            if (normalizedPage) {
+                selectedPages.push(normalizedPage);
+            }
         }
     });
 
     return selectedPages.length > 0 ? selectedPages : ['all'];
+}
+
+function normalizeAnnouncementPageValue(page) {
+    const normalized = String(page || '').trim().toLowerCase();
+    if (normalized === 'home' || normalized === 'homepage' || normalized === '/') {
+        return 'index';
+    }
+    return normalized;
 }
 
 // Restore page selector state from saved config
@@ -20357,16 +20409,20 @@ function restorePageSelector(pages) {
     const selector = document.getElementById('pageTargetSelector');
     if (!selector) return;
 
+    const normalizedPages = Array.isArray(pages)
+        ? pages.map(normalizeAnnouncementPageValue).filter(Boolean)
+        : [];
+
     // Clear all active states
     selector.querySelectorAll('.page-btn').forEach(btn => btn.classList.remove('active'));
 
-    if (!pages || pages.length === 0 || pages.includes('all')) {
+    if (!normalizedPages.length || normalizedPages.includes('all')) {
         // Select "all" button
         const allBtn = selector.querySelector('[data-page="all"]');
         if (allBtn) allBtn.classList.add('active');
     } else {
         // Select individual pages
-        pages.forEach(page => {
+        normalizedPages.forEach(page => {
             const btn = selector.querySelector(`[data-page="${page}"]`);
             if (btn) btn.classList.add('active');
         });

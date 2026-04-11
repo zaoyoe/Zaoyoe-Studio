@@ -18,6 +18,12 @@ const {
 const {
     createShopHandlers
 } = require('../server/api-handlers/public/shop');
+const {
+    createPublicConfigHandlers
+} = require('../server/api-handlers/public/config');
+const {
+    createPublicVerifyHandlers
+} = require('../server/api-handlers/public/verify');
 
 const runtimeSupabaseConfigHandler = createRuntimeSupabaseConfigHandler({
     buildSupabaseRuntimeScript,
@@ -43,10 +49,22 @@ const shopHandlers = createShopHandlers({
     discountPricing,
     env: process.env
 });
+const publicConfigHandlers = createPublicConfigHandlers({
+    admin
+});
+const publicVerifyHandlers = createPublicVerifyHandlers({
+    admin
+});
 
 const ROUTE_HANDLERS = {
     auth: {
         'login-security': loginSecurityHandler
+    },
+    config: {
+        ...publicConfigHandlers
+    },
+    verify: {
+        ...publicVerifyHandlers
     },
     payments: {
         ...paymentHandlers

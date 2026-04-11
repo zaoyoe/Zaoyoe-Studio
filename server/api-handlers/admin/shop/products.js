@@ -35,6 +35,39 @@ function escapePostgrestLikeValue(value) {
         .replace(/\)/g, '\\)');
 }
 
+function escapePostgrestEqValue(value) {
+    return String(value || '')
+        .trim()
+        .replace(/\\/g, '\\\\')
+        .replace(/,/g, '\\,')
+        .replace(/\(/g, '\\(')
+        .replace(/\)/g, '\\)');
+}
+
+function isUuid(value) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim());
+}
+
+function buildProductSearchExpression(searchQuery) {
+    const normalizedQuery = normalizeText(searchQuery, 160);
+    if (!normalizedQuery) {
+        return '';
+    }
+
+    const escapedQuery = escapePostgrestLikeValue(normalizedQuery);
+    const filters = [
+        `name.ilike.%${escapedQuery}%`,
+        `category.ilike.%${escapedQuery}%`,
+        `delivery_type.ilike.%${escapedQuery}%`
+    ];
+
+    if (isUuid(normalizedQuery)) {
+        filters.unshift(`id.eq.${escapePostgrestEqValue(normalizedQuery)}`);
+    }
+
+    return filters.join(',');
+}
+
 function getSelectClause(fieldsMode) {
     if (fieldsMode === 'names') {
         return 'id, name';
@@ -130,13 +163,7 @@ module.exports = async function adminShopProductsHandler(req, res) {
         }
 
         if (searchQuery) {
-            const escapedQuery = escapePostgrestLikeValue(searchQuery);
-            query = query.or([
-                `id.ilike.%${escapedQuery}%`,
-                `name.ilike.%${escapedQuery}%`,
-                `category.ilike.%${escapedQuery}%`,
-                `delivery_type.ilike.%${escapedQuery}%`
-            ].join(','));
+            query = query.or(buildProductSearchExpression(searchQuery));
         }
 
         query = applyOrder(query, order);

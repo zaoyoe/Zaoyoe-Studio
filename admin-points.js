@@ -1408,12 +1408,12 @@ function schedulePointsViewPrefetch(activeView = getActivePointsViewName()) {
 
     if (typeof window.requestIdleCallback === 'function') {
         pointsViewPrefetchMode = 'idle';
-        pointsViewPrefetchHandle = window.requestIdleCallback(runPrefetch, { timeout: 1200 });
+        pointsViewPrefetchHandle = window.requestIdleCallback(runPrefetch, { timeout: 2400 });
         return true;
     }
 
     pointsViewPrefetchMode = 'timeout';
-    pointsViewPrefetchHandle = window.setTimeout(runPrefetch, 280);
+    pointsViewPrefetchHandle = window.setTimeout(runPrefetch, 600);
     return true;
 }
 

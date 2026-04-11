@@ -18,6 +18,39 @@ function normalizeText(value) {
     return String(value || '').trim();
 }
 
+function normalizeVerifyCredentialList(value) {
+    const queue = Array.isArray(value) ? [...value] : [value];
+    const result = [];
+    const seen = new Set();
+
+    while (queue.length) {
+        const current = queue.shift();
+        if (Array.isArray(current)) {
+            queue.unshift(...current);
+            continue;
+        }
+
+        String(current || '')
+            .split(/[\n,;]+/)
+            .map((entry) => normalizeText(entry))
+            .filter(Boolean)
+            .forEach((entry) => {
+                if (seen.has(entry)) return;
+                seen.add(entry);
+                result.push(entry);
+            });
+    }
+
+    return result;
+}
+
+function maskVerifyCredential(value) {
+    const normalized = normalizeText(value);
+    if (!normalized) return '';
+    if (normalized.length <= 8) return normalized;
+    return `${normalized.slice(0, 4)}...${normalized.slice(-4)}`;
+}
+
 function normalizeBoolean(value, fallback = false) {
     if (typeof value === 'boolean') return value;
     const normalized = normalizeText(value).toLowerCase();
@@ -34,6 +67,203 @@ function normalizeNumber(value, fallback = 0, min = null, max = null) {
     if (Number.isFinite(min)) next = Math.max(min, next);
     if (Number.isFinite(max)) next = Math.min(max, next);
     return next;
+}
+
+function normalizeJsonObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? value
+        : {};
+}
+
+function normalizeVerifyServiceApiBaseUrl(value) {
+    const normalized = normalizeText(value).replace(/\/+$/, '');
+    if (!normalized) return '';
+    return normalized.replace(/\/openapi$/i, '');
+}
+
+function normalizeVerifyServiceEndpoint(value) {
+    const normalized = normalizeText(value).replace(/\/+$/, '');
+    if (!normalized) return '';
+    return /\/openapi$/i.test(normalized) ? normalized : `${normalized}/openapi`;
+}
+
+function isMissingTableAccessError(error, tableName = '') {
+    const normalizedTableName = normalizeText(tableName).toLowerCase();
+    const code = normalizeText(error?.code).toUpperCase();
+    const message = [
+        error?.message,
+        error?.details,
+        error?.hint
+    ].filter(Boolean).join(' ').toLowerCase();
+    if (!normalizedTableName || !message.includes(normalizedTableName)) {
+        return false;
+    }
+
+    return (
+        code === '42P01'
+        || code === 'PGRST205'
+        || message.includes('does not exist')
+        || message.includes('undefined table')
+        || message.includes('unexpected table access')
+        || message.includes('schema cache')
+        || message.includes('could not find the table')
+    );
+}
+
+function buildVerifyServiceCaseTargetId(serviceStatus = {}) {
+    return `verify_service:${normalizeVerifyServiceApiBaseUrl(serviceStatus.api_base_url) || 'default'}`;
+}
+
+function buildVerifyServiceRecoveryResolution(serviceStatus = {}) {
+    const checkedAt = normalizeText(serviceStatus.checked_at);
+    if (checkedAt) {
+        return `验证服务健康检查已恢复正常（${checkedAt}），系统已自动关闭此前的不可用告警。`;
+    }
+    return '验证服务健康检查已恢复正常，系统已自动关闭此前的不可用告警。';
+}
+
+async function resolveVerifyServiceDisabledCase(supabase, serviceStatus = {}, options = {}) {
+    if (!serviceStatus?.ok) {
+        return {
+            resolved: false,
+            reason: 'service_unhealthy'
+        };
+    }
+
+    if (!supabase?.from) {
+        return {
+            resolved: false,
+            reason: 'supabase_unavailable'
+        };
+    }
+
+    const targetId = buildVerifyServiceCaseTargetId(serviceStatus);
+    let existingCase = null;
+
+    try {
+        const { data, error } = await supabase
+            .from('ops_alert_cases')
+            .select('*')
+            .eq('category_key', 'verify')
+            .eq('target_id', targetId)
+            .maybeSingle();
+
+        if (error) {
+            throw error;
+        }
+
+        existingCase = data || null;
+    } catch (error) {
+        if (isMissingTableAccessError(error, 'ops_alert_cases')) {
+            return {
+                resolved: false,
+                reason: 'missing_case_table'
+            };
+        }
+        throw error;
+    }
+
+    if (!existingCase) {
+        return {
+            resolved: false,
+            reason: 'missing_case'
+        };
+    }
+
+    if (normalizeText(existingCase.alert_type).toLowerCase() !== 'verify_service_disabled') {
+        return {
+            resolved: false,
+            reason: 'different_alert_type'
+        };
+    }
+
+    if (normalizeText(existingCase.status).toLowerCase() === 'resolved') {
+        return {
+            resolved: false,
+            reason: 'already_resolved'
+        };
+    }
+
+    const nowIso = normalizeText(serviceStatus.checked_at) || new Date(options.now || Date.now()).toISOString();
+    const resolution = buildVerifyServiceRecoveryResolution(serviceStatus);
+    const metadata = {
+        ...normalizeJsonObject(existingCase.metadata),
+        alert_type: 'verify_service_disabled',
+        auto_recovered_at: nowIso,
+        auto_recovered_by: 'verify_service_monitor',
+        recovered_service_status: normalizeText(serviceStatus.status) || 'available',
+        recovered_service_status_label: normalizeText(serviceStatus.status_label) || '可用',
+        recovered_api_base_url: normalizeText(serviceStatus.api_base_url) || null,
+        recovered_key_name: normalizeText(serviceStatus.key_name) || null
+    };
+    const nextRecord = {
+        ...existingCase,
+        category_key: 'verify',
+        target_id: targetId,
+        alert_type: 'verify_service_disabled',
+        status: 'resolved',
+        owner_admin_id: normalizeText(existingCase.owner_admin_id) || 'system:verify_service_monitor',
+        owner_label: normalizeText(existingCase.owner_label) || '系统健康检查',
+        resolution,
+        metadata,
+        last_action: 'resolved',
+        last_action_by: 'system:verify_service_monitor',
+        last_action_at: nowIso
+    };
+
+    try {
+        const { error } = await supabase
+            .from('ops_alert_cases')
+            .upsert(nextRecord, { onConflict: 'category_key,target_id' })
+            .select('*')
+            .single();
+
+        if (error) {
+            throw error;
+        }
+    } catch (error) {
+        if (isMissingTableAccessError(error, 'ops_alert_cases')) {
+            return {
+                resolved: false,
+                reason: 'missing_case_table'
+            };
+        }
+        throw error;
+    }
+
+    try {
+        const { error } = await supabase
+            .from('ops_alert_case_events')
+            .insert({
+                category_key: 'verify',
+                target_id: targetId,
+                alert_type: 'verify_service_disabled',
+                action: 'resolve',
+                status: 'resolved',
+                owner_admin_id: nextRecord.owner_admin_id,
+                owner_label: nextRecord.owner_label,
+                actor_admin_id: 'system:verify_service_monitor',
+                actor_label: '系统健康检查',
+                note: null,
+                resolution,
+                metadata,
+                created_at: nowIso
+            });
+
+        if (error) {
+            throw error;
+        }
+    } catch (error) {
+        if (!isMissingTableAccessError(error, 'ops_alert_case_events')) {
+            throw error;
+        }
+    }
+
+    return {
+        resolved: true,
+        reason: 'auto_resolved',
+        target_id: targetId
+    };
 }
 
 function normalizeVerifyServiceMonitorConfig(rawConfig = {}, env = process.env) {
@@ -109,64 +339,113 @@ function getStatusSummary(status) {
 }
 
 async function fetchVerifyServiceStatus(verifyConfig = {}, options = {}) {
-    const apiBaseUrl = String(verifyConfig.apiBaseUrl || verifyConfig.api_base_url || '').trim().replace(/\/+$/, '');
-    const apiKey = normalizeText(verifyConfig.apiKey || verifyConfig.api_key);
+    const apiBaseUrl = normalizeVerifyServiceApiBaseUrl(
+        String(verifyConfig.apiBaseUrl || verifyConfig.api_base_url || '').trim()
+    );
+    const apiKeys = normalizeVerifyCredentialList([
+        verifyConfig.apiKeys,
+        verifyConfig.api_keys,
+        verifyConfig.apiKey,
+        verifyConfig.api_key
+    ]);
     const checkedAt = new Date(options.now || Date.now()).toISOString();
 
-    if (!apiBaseUrl || !apiKey) {
+    if (!apiBaseUrl || !apiKeys.length) {
         return {
             ok: false,
             status: 'unconfigured',
             status_label: getStatusLabel('unconfigured'),
             reason: 'verify_api_not_configured',
-            last_error: buildMissingConfigMessage(apiBaseUrl, apiKey),
+            last_error: buildMissingConfigMessage(apiBaseUrl, apiKeys[0] || ''),
             api_base_url: apiBaseUrl || null,
             checked_at: checkedAt
         };
     }
 
-    let snapshot;
-    try {
-        snapshot = await fetchVerifyQuotaSnapshot(verifyConfig, {
-            fetchImpl: options.fetchImpl,
-            timeoutMs: options.timeoutMs,
-            now: options.now
+    const failedSnapshots = [];
+    for (const apiKey of apiKeys) {
+        let snapshot;
+        try {
+            snapshot = await fetchVerifyQuotaSnapshot({
+                ...verifyConfig,
+                apiKey,
+                api_key: apiKey
+            }, {
+                fetchImpl: options.fetchImpl,
+                timeoutMs: options.timeoutMs,
+                now: options.now
+            });
+        } catch (error) {
+            failedSnapshots.push({
+                ok: false,
+                apiKey,
+                status: 0,
+                error: normalizeText(error?.message) || 'verify_request_failed',
+                api_base_url: apiBaseUrl,
+                upstream_endpoint: normalizeVerifyServiceEndpoint(apiBaseUrl)
+            });
+            continue;
+        }
+
+        if (snapshot?.ok) {
+            const upstreamEndpoint = normalizeText(snapshot.upstream_endpoint)
+                || normalizeVerifyServiceEndpoint(snapshot.api_base_url || apiBaseUrl);
+            return {
+                ok: true,
+                status: 'available',
+                status_label: '可用',
+                key_name: normalizeText(snapshot.key_name) || maskVerifyCredential(apiKey),
+                api_base_url: normalizeVerifyServiceApiBaseUrl(snapshot.api_base_url) || apiBaseUrl,
+                upstream_endpoint: upstreamEndpoint,
+                checked_at: normalizeText(snapshot.checked_at) || checkedAt,
+                key_count: apiKeys.length,
+                healthy_key_count: 1
+            };
+        }
+
+        failedSnapshots.push({
+            ...snapshot,
+            apiKey,
+            api_base_url: normalizeVerifyServiceApiBaseUrl(snapshot?.api_base_url) || apiBaseUrl,
+            upstream_endpoint: normalizeText(snapshot?.upstream_endpoint)
+                || normalizeVerifyServiceEndpoint(snapshot?.api_base_url || apiBaseUrl)
         });
-    } catch (error) {
+    }
+
+    const firstFailedSnapshot = failedSnapshots.find((snapshot) => Number(snapshot?.status || 0) > 0)
+        || failedSnapshots[0]
+        || {};
+    const statusCode = Number(firstFailedSnapshot?.status || 0);
+
+    if (!statusCode && normalizeText(firstFailedSnapshot?.error) === 'verify_request_failed') {
         return {
             ok: false,
             status: 'unavailable',
             status_label: getStatusLabel('unavailable'),
             reason: 'verify_request_failed',
-            last_error: normalizeText(error?.message) || 'verify_request_failed',
+            last_error: 'verify_request_failed',
             api_base_url: apiBaseUrl,
-            checked_at: checkedAt
+            upstream_endpoint: normalizeText(firstFailedSnapshot?.upstream_endpoint) || normalizeVerifyServiceEndpoint(apiBaseUrl),
+            checked_at: checkedAt,
+            key_count: apiKeys.length,
+            healthy_key_count: 0
         };
     }
 
-    if (snapshot?.ok) {
-        return {
-            ok: true,
-            status: 'available',
-            status_label: '可用',
-            key_name: normalizeText(snapshot.key_name) || null,
-            api_base_url: normalizeText(snapshot.api_base_url) || apiBaseUrl,
-            checked_at: normalizeText(snapshot.checked_at) || checkedAt
-        };
-    }
-
-    const statusCode = Number(snapshot?.status || 0);
     const status = statusCode === 401 || statusCode === 403 ? 'auth_failed' : 'unavailable';
 
     return {
         ok: false,
         status,
         status_label: getStatusLabel(status),
-        reason: normalizeText(snapshot?.error) || (statusCode ? `balance_http_${statusCode}` : 'verify_upstream_unavailable'),
-        last_error: normalizeText(snapshot?.error) || (statusCode ? `balance_http_${statusCode}` : 'verify_upstream_unavailable'),
+        reason: normalizeText(firstFailedSnapshot?.error) || (statusCode ? `balance_http_${statusCode}` : 'verify_upstream_unavailable'),
+        last_error: normalizeText(firstFailedSnapshot?.error) || (statusCode ? `balance_http_${statusCode}` : 'verify_upstream_unavailable'),
         response_status: statusCode || null,
         api_base_url: apiBaseUrl,
-        checked_at: checkedAt
+        upstream_endpoint: normalizeText(firstFailedSnapshot?.upstream_endpoint) || normalizeVerifyServiceEndpoint(apiBaseUrl),
+        checked_at: checkedAt,
+        key_count: apiKeys.length,
+        healthy_key_count: 0
     };
 }
 
@@ -182,6 +461,7 @@ function buildVerifyServiceDisabledAlerts(serviceStatus = {}, rawConfig = {}) {
     const responseStatus = Number(serviceStatus.response_status);
     const hasResponseStatus = Number.isFinite(responseStatus) && responseStatus > 0;
     const title = getStatusTitle(status, keyName);
+    const targetId = buildVerifyServiceCaseTargetId(serviceStatus);
     const lines = [
         getStatusSummary(status),
         `当前状态：${statusLabel}`
@@ -192,6 +472,9 @@ function buildVerifyServiceDisabledAlerts(serviceStatus = {}, rawConfig = {}) {
     }
     if (normalizeText(serviceStatus.api_base_url)) {
         lines.push(`API Base：${normalizeText(serviceStatus.api_base_url)}`);
+    }
+    if (normalizeText(serviceStatus.upstream_endpoint)) {
+        lines.push(`请求地址：${normalizeText(serviceStatus.upstream_endpoint)}`);
     }
     if (normalizeText(serviceStatus.last_error)) {
         lines.push(`最近错误：${normalizeText(serviceStatus.last_error)}`);
@@ -210,11 +493,12 @@ function buildVerifyServiceDisabledAlerts(serviceStatus = {}, rawConfig = {}) {
         title,
         content: lines.join('\n'),
         payload: {
-            target_id: `verify_service:${normalizeText(serviceStatus.api_base_url) || 'default'}`,
+            target_id: targetId,
             service_status: status,
             service_status_label: statusLabel,
             key_name: keyName || null,
             api_base_url: normalizeText(serviceStatus.api_base_url) || null,
+            upstream_endpoint: normalizeText(serviceStatus.upstream_endpoint) || null,
             last_error: normalizeText(serviceStatus.last_error) || null,
             response_status: hasResponseStatus ? responseStatus : null,
             checked_at: normalizeText(serviceStatus.checked_at) || null,
@@ -223,7 +507,7 @@ function buildVerifyServiceDisabledAlerts(serviceStatus = {}, rawConfig = {}) {
         },
         dedupeKey: crypto
             .createHash('sha256')
-            .update(`verify_service_disabled:${status}:${normalizeText(serviceStatus.reason) || 'unknown'}:${normalizeText(serviceStatus.api_base_url) || 'default'}`)
+            .update(`verify_service_disabled:${status}:${normalizeText(serviceStatus.reason) || 'unknown'}:${targetId}`)
             .digest('hex'),
         dedupeWindowMinutes: Number(config.dedupe_window_minutes || DEFAULT_VERIFY_SERVICE_MONITOR_CONFIG.dedupe_window_minutes)
     }];
@@ -259,6 +543,9 @@ async function runVerifyServiceDisabledSweep(supabase, options = {}) {
     const serviceStatus = await fetchVerifyServiceStatus(verifyConfig, {
         fetchImpl: options.fetchImpl,
         timeoutMs: config.request_timeout_ms,
+        now: options.now
+    });
+    const recovery = await resolveVerifyServiceDisabledCase(supabase, serviceStatus, {
         now: options.now
     });
     const alerts = buildVerifyServiceDisabledAlerts(serviceStatus, config);
@@ -298,10 +585,13 @@ async function runVerifyServiceDisabledSweep(supabase, options = {}) {
         queued,
         deduped,
         skipped_no_channels: skippedNoChannels,
+        resolved_count: recovery?.resolved ? 1 : 0,
+        recovery_reason: recovery?.reason || null,
         status: serviceStatus.status,
         status_label: serviceStatus.status_label,
         last_error: serviceStatus.last_error,
         response_status: serviceStatus.response_status || null,
+        upstream_endpoint: serviceStatus.upstream_endpoint || null,
         results
     };
 }

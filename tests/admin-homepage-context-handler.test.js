@@ -1,0 +1,87 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const contextHandlerPath = path.resolve(__dirname, '../server/api-handlers/admin/homepage/context.js');
+const adminHomepagePath = path.resolve(__dirname, '../admin-homepage.js');
+const adminStudioHtmlPath = path.resolve(__dirname, '../admin-studio.html');
+
+test('homepage context handler exposes P1 orchestration payloads and mutations', () => {
+    const source = fs.readFileSync(contextHandlerPath, 'utf8');
+
+    assert.match(source, /fetchHomepagePromptCandidates\(supabase, site\)/);
+    assert.match(source, /fetchHomepageShopCatalog\(supabase\)/);
+    assert.match(source, /\.select\('id, name, name_en, description, description_en, icon_url, price_points, price_points_intl, stock_count, category, is_active, display_order'\)/);
+    assert.doesNotMatch(source, /name_zh, name_en, description, description_zh/);
+    assert.match(source, /fetchHomepageGuestbookCandidates\(supabase, site\)/);
+    assert.match(source, /fetchHomepageAnalytics\(supabase, site\)/);
+    assert.match(source, /loadHomepageTemplates\(supabase, site\)/);
+    assert.match(source, /loadHomepageSchedules\(supabase, site\)/);
+    assert.match(source, /orchestration_support/);
+    assert.match(source, /action === 'save_template'/);
+    assert.match(source, /action === 'apply_template'/);
+    assert.match(source, /action === 'schedule_publish'/);
+    assert.match(source, /action === 'cancel_schedule'/);
+    assert.match(source, /fetchHomepageExperimentResults\(supabase, site, rows = \[\]\)/);
+    assert.match(source, /buildHomepageRecommendations\(rows = \[\], context = \{\}\)/);
+    assert.match(source, /buildHomepageAlerts\(site, rows = \[\], health = null, recommendations = null, experiments = \[\]\)/);
+    assert.match(source, /buildHomepageReports\(site, analytics = \{\}, alerts = \{\}, recommendations = \{\}, experiments = \[\]\)/);
+    assert.match(source, /buildHomepageThemePackList\(site, templates = \[\]\)/);
+    assert.match(source, /action === 'save_experiment'/);
+    assert.match(source, /action === 'delete_experiment'/);
+    assert.match(source, /action === 'apply_experiment_winner'/);
+    assert.match(source, /action === 'apply_recommendation'/);
+    assert.match(source, /action === 'apply_theme_pack'/);
+    assert.match(source, /HOMEPAGE_P1_MIGRATION_HINT/);
+});
+
+test('homepage admin runtime and studio shell expose P1 orchestration controls', () => {
+    const runtimeSource = fs.readFileSync(adminHomepagePath, 'utf8');
+    const htmlSource = fs.readFileSync(adminStudioHtmlPath, 'utf8');
+
+    assert.match(runtimeSource, /\/api\/admin\/homepage\/context/);
+    assert.match(runtimeSource, /function saveHomepageTemplateFromCurrentSite\(\)/);
+    assert.match(runtimeSource, /function applySelectedHomepageTemplate\(\)/);
+    assert.match(runtimeSource, /function createHomepageScheduleForCurrentSite\(\)/);
+    assert.match(runtimeSource, /function cancelHomepageScheduleForCurrentSite\(scheduleId = ''\)/);
+    assert.match(runtimeSource, /function renderHomepagePromptCandidateList\(\)/);
+    assert.match(runtimeSource, /function renderHomepageShopCuratedList\(\)/);
+    assert.match(runtimeSource, /function hasHomepageShopProductSitePrice\(product = \{\}, site = currentReadSite\)/);
+    assert.match(runtimeSource, /已配置当前站点价格的商品自动生成/);
+    assert.match(runtimeSource, /function renderHomepageGuestbookFallbackList\(\)/);
+    assert.match(runtimeSource, /const HOMEPAGE_EXPERIMENT_SLOT_DEFS = Object\.freeze\(/);
+    assert.match(runtimeSource, /function renderHomepageExperimentComposer\(\)/);
+    assert.match(runtimeSource, /function saveHomepageExperimentForCurrentSite\(\)/);
+    assert.match(runtimeSource, /function applyHomepageExperimentWinnerForCurrentSite\(experimentId = ''\)/);
+    assert.match(runtimeSource, /function applyHomepageRecommendationForCurrentSite\(recommendationId = ''\)/);
+    assert.match(runtimeSource, /function applyHomepageThemePackForCurrentSite\(packId = ''\)/);
+    assert.match(runtimeSource, /const HOMEPAGE_SCROLL_CHAIN_SELECTOR = \[/);
+    assert.match(runtimeSource, /function bindHomepageNestedScrollBridge\(homepageModule\)/);
+    assert.match(runtimeSource, /data-homepage-direction="top"/);
+    assert.match(runtimeSource, /已置顶首页精选 Prompt/);
+    assert.match(runtimeSource, /id: 'hp-experiment-slot'/);
+    assert.match(runtimeSource, /id="hp-experiment-save-btn"/);
+    assert.match(runtimeSource, /data-homepage-experiment-apply-winner=/);
+    assert.match(runtimeSource, /data-homepage-recommendation-apply=/);
+    assert.match(runtimeSource, /data-homepage-report-copy="daily"/);
+    assert.match(runtimeSource, /id: 'hp-theme-pack-select'/);
+    assert.match(runtimeSource, /data-homepage-theme-pack-card=/);
+    assert.match(runtimeSource, /function updateHomepageThemePackSelectionState\(root = document\)/);
+    assert.match(runtimeSource, /id="hp-theme-pack-apply-btn"/);
+    assert.match(runtimeSource, /case 'add-prompt-candidate':/);
+    assert.match(runtimeSource, /case 'add-shop-product':/);
+    assert.match(runtimeSource, /case 'add-guestbook-candidate':/);
+    assert.match(runtimeSource, /case 'add-guestbook-fallback':/);
+
+    assert.match(runtimeSource, /id="hp-template-save-btn"/);
+    assert.match(runtimeSource, /id="hp-template-apply-btn"/);
+    assert.match(runtimeSource, /id="hp-schedule-create-btn"/);
+    assert.match(htmlSource, /id="hp-prompts-candidate-list"/);
+    assert.match(htmlSource, /id="hp-shop-curated-list"/);
+    assert.match(htmlSource, /id="hp-shop-product-list"/);
+    assert.match(htmlSource, /id="hp-guestbook-featured-list"/);
+    assert.match(htmlSource, /id="hp-guestbook-candidate-list"/);
+    assert.match(htmlSource, /id="hp-guestbook-fallback-list"/);
+    assert.match(htmlSource, /id="hp-hero-entries-list"/);
+});

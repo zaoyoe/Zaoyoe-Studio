@@ -6,27 +6,31 @@
  *   SectionVisibility.isVisible('shop')     → true/false
  *   SectionVisibility.applySectionVisibility() → 立即应用可见性
  * 
- * 支持分栏：hero, gallery(=prompts), shop, verify, guestbook, footer
+ * 支持分栏：hero, prompts(兼容 gallery), shop, verify, guestbook, ticker, footer
  * 按站点独立配置：cn / intl
  */
 (function () {
     'use strict';
 
+    const Contract = window.HomepageContract || null;
     const CACHE_KEY_PREFIX = 'zaoyoe_section_vis_';
-    const SECTIONS = ['hero', 'gallery', 'shop', 'verify', 'guestbook', 'footer'];
+    const SECTIONS = Array.isArray(Contract?.VISIBILITY_SECTION_ORDER)
+        ? [...Contract.VISIBILITY_SECTION_ORDER]
+        : ['hero', 'prompts', 'shop', 'verify', 'guestbook', 'ticker', 'footer'];
     const HIDDEN_CLASS = 'section-visibility-hidden';
     const HOMEPAGE_SECTION_MAP = {
         hero: 'hero',
-        gallery: 'prompts',
+        prompts: 'prompts',
         shop: 'shop',
         verify: 'verify',
         guestbook: 'guestbook',
+        ticker: 'ticker',
         footer: 'footer'
     };
 
     // Section → page mapping
     const SECTION_PAGES = {
-        gallery: '/prompts.html',
+        prompts: '/prompts.html',
         shop: '/shop.html',
         verify: '/verify.html',
         guestbook: '/guestbook.html'
@@ -34,7 +38,7 @@
 
     // Section → nav/footer selectors
     const SECTION_SELECTORS = {
-        gallery: {
+        prompts: {
             sections: ['#prompts-section'],
             navDesktop: 'a.nav-trigger[href="/prompts.html"]',
             navMobile: null, // handled dynamically
@@ -57,6 +61,12 @@
             navDesktop: 'a[href="/guestbook.html"]',
             navMobile: null,
             footer: 'a[href="/guestbook.html"]'
+        },
+        ticker: {
+            sections: ['#ticker-section'],
+            navDesktop: null,
+            navMobile: null,
+            footer: null
         },
         hero: {
             sections: ['#hero-section'],
@@ -81,6 +91,15 @@
         const defaults = {};
         SECTIONS.forEach(s => defaults[s] = true);
         return defaults;
+    }
+
+    function normalizeVisibilitySection(section) {
+        const normalized = Contract?.normalizeSection?.(section, { allowLegacy: true })
+            || String(section || '').trim().toLowerCase();
+        if (normalized === 'gallery') {
+            return 'prompts';
+        }
+        return normalized;
     }
 
     /**
@@ -135,9 +154,10 @@
      */
     function mapHomepageRowsToVisibility(rows, site) {
         const config = getDefaults();
+        const rowMap = Contract?.mapRowsBySection?.(rows || [], { allowLegacy: true }) || {};
 
         Object.entries(HOMEPAGE_SECTION_MAP).forEach(([logicalSection, rowSection]) => {
-            const row = (rows || []).find((item) => item?.section === rowSection);
+            const row = rowMap[rowSection] || (rows || []).find((item) => normalizeVisibilitySection(item?.section) === rowSection);
             if (row) {
                 config[logicalSection] = row.is_visible !== false;
             }
@@ -176,6 +196,7 @@
      * Check if a section is visible
      */
     function isVisible(section) {
+        const normalizedSection = normalizeVisibilitySection(section);
         if (!visibilityConfig) {
             // Try cache
             const cached = loadFromCache();
@@ -185,7 +206,7 @@
                 return true; // Default visible if no config
             }
         }
-        return visibilityConfig[section] !== false;
+        return visibilityConfig[normalizedSection] !== false;
     }
 
     /**

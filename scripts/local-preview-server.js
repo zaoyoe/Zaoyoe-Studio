@@ -6,10 +6,31 @@ const express = require('express');
 const dotenv = require('dotenv');
 
 const { buildSupabaseRuntimeScript } = require('../api/_lib/public-runtime-config');
-const adminApiHandler = require('../api/admin');
 
 const DEFAULT_SMOKE_RESULT_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_LOCAL_PREVIEW_BODY_LIMIT = '25mb';
+const LOCAL_PREVIEW_NO_STORE_EXTENSIONS = new Set([
+    '.html',
+    '.js',
+    '.mjs',
+    '.css',
+    '.json'
+]);
+
+function setLocalPreviewNoStoreHeaders(res) {
+    if (!res || typeof res.setHeader !== 'function') {
+        return;
+    }
+
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+}
+
+function shouldDisableLocalPreviewCache(filePath = '') {
+    const extension = path.extname(String(filePath || '')).trim().toLowerCase();
+    return LOCAL_PREVIEW_NO_STORE_EXTENSIONS.has(extension);
+}
 
 function getDefaultEnvFiles(repoRoot) {
     return [
@@ -74,6 +95,89 @@ function buildLocalPreviewAdminHandlerUrl(rawUrl = '/api/admin') {
     });
 
     return `${handlerUrl.pathname}${handlerUrl.search}`;
+}
+
+function buildLocalPreviewPublicHandlerUrl(rawUrl = '/api/public') {
+    const incomingUrl = new URL(String(rawUrl || '/api/public'), 'http://127.0.0.1:8000');
+    const queryScope = String(incomingUrl.searchParams.get('scope') || '').trim();
+    const queryRoute = String(incomingUrl.searchParams.get('route') || '').trim();
+    const pathSegments = incomingUrl.pathname
+        .replace(/^\/api\/public\/?/, '')
+        .replace(/^\/+|\/+$/g, '')
+        .split('/')
+        .filter(Boolean);
+    const handlerUrl = new URL('/api/public', incomingUrl.origin);
+
+    const scope = queryScope || pathSegments[0] || '';
+    const route = queryRoute || pathSegments.slice(1).join('/');
+
+    if (scope) {
+        handlerUrl.searchParams.set('scope', scope);
+    }
+    if (route) {
+        handlerUrl.searchParams.set('route', route);
+    }
+
+    incomingUrl.searchParams.forEach((value, key) => {
+        if ((key === 'scope' && scope) || (key === 'route' && route)) {
+            return;
+        }
+        handlerUrl.searchParams.append(key, value);
+    });
+
+    return `${handlerUrl.pathname}${handlerUrl.search}`;
+}
+
+function normalizeRequireCachePath(targetPath = '') {
+    const normalizedTargetPath = String(targetPath || '').trim();
+    if (!normalizedTargetPath) {
+        return '';
+    }
+
+    try {
+        if (typeof fs.realpathSync.native === 'function') {
+            return fs.realpathSync.native(normalizedTargetPath);
+        }
+        return fs.realpathSync(normalizedTargetPath);
+    } catch (_) {
+        return path.resolve(normalizedTargetPath);
+    }
+}
+
+function clearRequireCacheByPrefixes(prefixes = []) {
+    const normalizedPrefixes = (Array.isArray(prefixes) ? prefixes : [])
+        .map((prefix) => normalizeRequireCachePath(prefix))
+        .filter(Boolean)
+        .map((prefix) => prefix.endsWith(path.sep) ? prefix : `${prefix}${path.sep}`);
+
+    if (!normalizedPrefixes.length) {
+        return;
+    }
+
+    Object.keys(require.cache).forEach((moduleId) => {
+        const resolvedId = normalizeRequireCachePath(moduleId);
+        if (normalizedPrefixes.some((prefix) => resolvedId === prefix.slice(0, -1) || resolvedId.startsWith(prefix))) {
+            delete require.cache[moduleId];
+        }
+    });
+}
+
+function loadFreshAdminApiHandler(repoRoot = path.resolve(__dirname, '..')) {
+    const normalizedRepoRoot = path.resolve(repoRoot);
+    clearRequireCacheByPrefixes([
+        path.join(normalizedRepoRoot, 'api'),
+        path.join(normalizedRepoRoot, 'server', 'api-handlers', 'admin')
+    ]);
+    return require(path.join(normalizedRepoRoot, 'api', 'admin'));
+}
+
+function loadFreshPublicApiHandler(repoRoot = path.resolve(__dirname, '..')) {
+    const normalizedRepoRoot = path.resolve(repoRoot);
+    clearRequireCacheByPrefixes([
+        path.join(normalizedRepoRoot, 'api'),
+        path.join(normalizedRepoRoot, 'server', 'api-handlers', 'public')
+    ]);
+    return require(path.join(normalizedRepoRoot, 'api', 'public'));
 }
 
 function applyPreviewEnvToProcess(envValues = {}) {
@@ -151,6 +255,8 @@ function createLocalPreviewApp(options = {}) {
 
     applyPreviewEnvToProcess(previewEnv);
 
+    app.set('etag', false);
+
     app.use(express.json({ limit: DEFAULT_LOCAL_PREVIEW_BODY_LIMIT }));
     app.use(express.urlencoded({
         extended: false,
@@ -168,7 +274,7 @@ function createLocalPreviewApp(options = {}) {
     app.get('/api/runtime/supabase-config', (req, res) => {
         const script = resolveLocalPreviewRuntimeScript(envFiles, baseEnv);
         res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-        res.setHeader('Cache-Control', 'no-store');
+        setLocalPreviewNoStoreHeaders(res);
         res.status(200).send(script);
     });
 
@@ -183,7 +289,7 @@ function createLocalPreviewApp(options = {}) {
         }
 
         const record = smokeResultStore.get(runId);
-        res.setHeader('Cache-Control', 'no-store');
+        setLocalPreviewNoStoreHeaders(res);
         res.status(200).json({
             ok: true,
             found: Boolean(record),
@@ -202,7 +308,7 @@ function createLocalPreviewApp(options = {}) {
         }
 
         const record = smokeResultStore.set(runId, req.body || {});
-        res.setHeader('Cache-Control', 'no-store');
+        setLocalPreviewNoStoreHeaders(res);
         res.status(200).json({
             ok: true,
             result: record
@@ -211,19 +317,42 @@ function createLocalPreviewApp(options = {}) {
 
     app.all('/api/admin', async (req, res) => {
         req.url = buildLocalPreviewAdminHandlerUrl(req.originalUrl || req.url);
+        const adminApiHandler = loadFreshAdminApiHandler(repoRoot);
         return adminApiHandler(req, res);
     });
 
     app.all('/api/admin/*', async (req, res) => {
         req.url = buildLocalPreviewAdminHandlerUrl(req.originalUrl || req.url);
+        const adminApiHandler = loadFreshAdminApiHandler(repoRoot);
         return adminApiHandler(req, res);
     });
 
+    app.all('/api/public', async (req, res) => {
+        req.url = buildLocalPreviewPublicHandlerUrl(req.originalUrl || req.url);
+        const publicApiHandler = loadFreshPublicApiHandler(repoRoot);
+        return publicApiHandler(req, res);
+    });
+
+    app.all('/api/public/*', async (req, res) => {
+        req.url = buildLocalPreviewPublicHandlerUrl(req.originalUrl || req.url);
+        const publicApiHandler = loadFreshPublicApiHandler(repoRoot);
+        return publicApiHandler(req, res);
+    });
+
     app.use(express.static(repoRoot, {
-        extensions: ['html']
+        extensions: ['html'],
+        etag: false,
+        lastModified: false,
+        cacheControl: false,
+        setHeaders: (res, filePath) => {
+            if (shouldDisableLocalPreviewCache(filePath)) {
+                setLocalPreviewNoStoreHeaders(res);
+            }
+        }
     }));
 
     app.get('/', (req, res) => {
+        setLocalPreviewNoStoreHeaders(res);
         res.sendFile(path.join(repoRoot, 'index.html'));
     });
 
@@ -256,11 +385,17 @@ if (require.main === module) {
 module.exports = {
     applyPreviewEnvToProcess,
     buildLocalPreviewAdminHandlerUrl,
+    buildLocalPreviewPublicHandlerUrl,
+    clearRequireCacheByPrefixes,
     createSmokeResultStore,
     createLocalPreviewApp,
     DEFAULT_LOCAL_PREVIEW_BODY_LIMIT,
     getDefaultEnvFiles,
+    loadFreshAdminApiHandler,
+    loadFreshPublicApiHandler,
     loadPreviewEnv,
     resolveLocalPreviewListenHost,
-    resolveLocalPreviewRuntimeScript
+    resolveLocalPreviewRuntimeScript,
+    setLocalPreviewNoStoreHeaders,
+    shouldDisableLocalPreviewCache
 };

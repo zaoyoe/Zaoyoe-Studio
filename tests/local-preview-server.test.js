@@ -7,10 +7,16 @@ const path = require('node:path');
 const {
     applyPreviewEnvToProcess,
     buildLocalPreviewAdminHandlerUrl,
+    buildLocalPreviewPublicHandlerUrl,
+    clearRequireCacheByPrefixes,
     createSmokeResultStore,
     DEFAULT_LOCAL_PREVIEW_BODY_LIMIT,
+    loadFreshAdminApiHandler,
+    loadFreshPublicApiHandler,
     resolveLocalPreviewListenHost,
-    resolveLocalPreviewRuntimeScript
+    resolveLocalPreviewRuntimeScript,
+    setLocalPreviewNoStoreHeaders,
+    shouldDisableLocalPreviewCache
 } = require('../scripts/local-preview-server');
 
 test('local preview server serves Supabase runtime config from local env files', async () => {
@@ -58,6 +64,62 @@ test('local preview server preserves explicit admin query routes for shared hand
     const rewrittenUrl = buildLocalPreviewAdminHandlerUrl('/api/admin?route=shop/products&status=active&fields=full');
 
     assert.equal(rewrittenUrl, '/api/admin?route=shop%2Fproducts&status=active&fields=full');
+});
+
+test('local preview server rewrites nested public routes into the shared public handler format', () => {
+    const rewrittenUrl = buildLocalPreviewPublicHandlerUrl('/api/public/config/notifications?site=cn');
+
+    assert.equal(rewrittenUrl, '/api/public?scope=config&route=notifications&site=cn');
+});
+
+test('local preview server preserves explicit public query routes for shared handler urls', () => {
+    const rewrittenUrl = buildLocalPreviewPublicHandlerUrl('/api/public?scope=config&route=notifications&site=intl');
+
+    assert.equal(rewrittenUrl, '/api/public?scope=config&route=notifications&site=intl');
+});
+
+test('local preview server reloads shared admin handler modules without requiring a restart', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-preview-admin-handler-'));
+    const tempApiDir = path.join(tempRoot, 'api');
+    const tempAdminHandlerDir = path.join(tempRoot, 'server/api-handlers/admin');
+    const tempAdminEntry = path.join(tempApiDir, 'admin.js');
+    const tempNestedHandler = path.join(tempAdminHandlerDir, 'route.js');
+
+    fs.mkdirSync(tempApiDir, { recursive: true });
+    fs.mkdirSync(tempAdminHandlerDir, { recursive: true });
+
+    fs.writeFileSync(tempAdminEntry, "module.exports = require('../server/api-handlers/admin/route');\n");
+    fs.writeFileSync(tempNestedHandler, "module.exports = { version: 'v1' };\n");
+
+    const firstLoad = loadFreshAdminApiHandler(tempRoot);
+    assert.equal(firstLoad.version, 'v1');
+
+    fs.writeFileSync(tempNestedHandler, "module.exports = { version: 'v2' };\n");
+
+    const secondLoad = loadFreshAdminApiHandler(tempRoot);
+    assert.equal(secondLoad.version, 'v2');
+});
+
+test('local preview server reloads shared public handler modules without requiring a restart', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-preview-public-handler-'));
+    const tempApiDir = path.join(tempRoot, 'api');
+    const tempPublicHandlerDir = path.join(tempRoot, 'server/api-handlers/public');
+    const tempPublicEntry = path.join(tempApiDir, 'public.js');
+    const tempNestedHandler = path.join(tempPublicHandlerDir, 'route.js');
+
+    fs.mkdirSync(tempApiDir, { recursive: true });
+    fs.mkdirSync(tempPublicHandlerDir, { recursive: true });
+
+    fs.writeFileSync(tempPublicEntry, "module.exports = require('../server/api-handlers/public/route');\n");
+    fs.writeFileSync(tempNestedHandler, "module.exports = { version: 'v1' };\n");
+
+    const firstLoad = loadFreshPublicApiHandler(tempRoot);
+    assert.equal(firstLoad.version, 'v1');
+
+    fs.writeFileSync(tempNestedHandler, "module.exports = { version: 'v2' };\n");
+
+    const secondLoad = loadFreshPublicApiHandler(tempRoot);
+    assert.equal(secondLoad.version, 'v2');
 });
 
 test('local preview server seeds process env from loaded preview values without clobbering existing vars', () => {
@@ -111,6 +173,30 @@ test('local preview server raises JSON body limit for image-analysis payloads', 
     assert.equal(DEFAULT_LOCAL_PREVIEW_BODY_LIMIT, '25mb');
 });
 
+test('local preview server disables cache for homepage-critical static assets', () => {
+    assert.equal(shouldDisableLocalPreviewCache('/tmp/index.html'), true);
+    assert.equal(shouldDisableLocalPreviewCache('/tmp/announcement-loader.js'), true);
+    assert.equal(shouldDisableLocalPreviewCache('/tmp/admin-config.js'), true);
+    assert.equal(shouldDisableLocalPreviewCache('/tmp/theme.css'), true);
+    assert.equal(shouldDisableLocalPreviewCache('/tmp/runtime.json'), true);
+    assert.equal(shouldDisableLocalPreviewCache('/tmp/logo.png'), false);
+});
+
+test('local preview server no-store helper stamps strict cache-busting headers', () => {
+    const headers = new Map();
+    const response = {
+        setHeader(name, value) {
+            headers.set(String(name), String(value));
+        }
+    };
+
+    setLocalPreviewNoStoreHeaders(response);
+
+    assert.equal(headers.get('Cache-Control'), 'no-store');
+    assert.equal(headers.get('Pragma'), 'no-cache');
+    assert.equal(headers.get('Expires'), '0');
+});
+
 test('local preview server smoke result store caches and expires run results', () => {
     const store = createSmokeResultStore({ ttlMs: 50 });
 
@@ -134,4 +220,31 @@ test('local preview server smoke result store caches and expires run results', (
     } finally {
         Date.now = originalNow;
     }
+});
+
+test('local preview server cache clearing ignores unrelated modules', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-preview-cache-'));
+    const targetDir = path.join(tempRoot, 'target');
+    const otherDir = path.join(tempRoot, 'other');
+    const targetModule = path.join(targetDir, 'module.js');
+    const otherModule = path.join(otherDir, 'module.js');
+
+    fs.mkdirSync(targetDir, { recursive: true });
+    fs.mkdirSync(otherDir, { recursive: true });
+    fs.writeFileSync(targetModule, "module.exports = 'target';\n");
+    fs.writeFileSync(otherModule, "module.exports = 'other';\n");
+
+    const targetModuleId = require.resolve(targetModule);
+    const otherModuleId = require.resolve(otherModule);
+
+    require(targetModuleId);
+    require(otherModuleId);
+
+    assert.ok(require.cache[targetModuleId]);
+    assert.ok(require.cache[otherModuleId]);
+
+    clearRequireCacheByPrefixes([targetDir]);
+
+    assert.equal(Boolean(require.cache[targetModuleId]), false);
+    assert.equal(Boolean(require.cache[otherModuleId]), true);
 });

@@ -18445,6 +18445,11 @@ input:checked+.toggle-slider:before {
     color: var(--text-dim);
 }
 
+.settings-package-shortcut [data-admin-action="settings-open-points-catalog"] {
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
 .points-catalog-workspace {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -36494,6 +36499,51 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     gap: 22px;
 }
 
+#settings-view-google-one .config-item-row.verify-key-pool-row {
+    align-items: flex-start;
+    gap: 24px;
+}
+
+#settings-view-google-one .config-item-row.verify-key-pool-row .config-label {
+    flex: 1 1 0;
+    min-width: 0;
+    padding-top: 10px;
+}
+
+#settings-view-google-one #cfgVerifyApiKeys.verify-key-pool-input {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    min-height: 180px;
+    padding: 16px 18px;
+    box-sizing: border-box;
+    resize: vertical;
+    text-align: left;
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+}
+
+#settings-view-google-one .verify-key-pool-field {
+    flex: 0 0 clamp(360px, 40vw, 540px);
+    width: clamp(360px, 40vw, 540px);
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+#settings-view-google-one .verify-key-pool-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+#settings-view-google-one .verify-key-pool-actions .config-hint {
+    flex: 1 1 240px;
+    min-width: 0;
+}
+
 #module-ops-alerts .module-content.ops-alert-settings-layout {
     display: grid;
     grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
@@ -36547,6 +36597,25 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     #settings-view-google-one .settings-google-one-top-grid,
     #settings-view-google-one .settings-google-one-monitor-columns {
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    #settings-view-google-one .config-item-row.verify-key-pool-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 14px;
+    }
+
+    #settings-view-google-one .config-item-row.verify-key-pool-row .config-label {
+        padding-top: 0;
+    }
+
+    #settings-view-google-one #cfgVerifyApiKeys.verify-key-pool-input {
+        min-height: 168px;
+    }
+
+    #settings-view-google-one .verify-key-pool-field {
+        width: 100%;
+        flex-basis: auto;
     }
 
     #module-ops-alerts .module-content.ops-alert-settings-layout {
@@ -41924,6 +41993,10 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .admin-shop-risk-case-modal.is-visible {
     display: flex;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    z-index: 10050;
     animation: adminShopRiskCaseFadeIn 0.18s ease-out;
 }
 
@@ -43258,6 +43331,24 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 .btn-add-config:hover {
     background: rgba(107, 158, 206, 0.2);
     transform: translateY(-1px);
+}
+
+.btn-add-config:active,
+.btn-add-config.is-pressed {
+    background: rgba(107, 158, 206, 0.24);
+    border-style: solid;
+    filter: brightness(1.12);
+    transform: translateY(1px) scale(0.98);
+}
+
+.btn-add-config:focus-visible {
+    outline: 2px solid rgba(107, 158, 206, 0.72);
+    outline-offset: 3px;
+}
+
+.btn-add-config[aria-busy="true"] {
+    cursor: progress;
+    opacity: 0.84;
 }
 
 /* Channel Tags */

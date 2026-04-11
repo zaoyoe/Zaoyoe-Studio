@@ -9,6 +9,7 @@ const analyticsSummaryRowsBundleHandler = require('../server/api-handlers/admin/
 const analyticsSummaryWindowBundleHandler = require('../server/api-handlers/admin/analytics/summary-window-bundle');
 const analyticsTrendSeriesBundleHandler = require('../server/api-handlers/admin/analytics/trend-series-bundle');
 const analyticsVisualPanelBundleHandler = require('../server/api-handlers/admin/analytics/visual-panel-bundle');
+const analyticsProductDashboardBundleHandler = require('../server/api-handlers/admin/analytics/product-dashboard-bundle');
 const analyticsProductSummaryBundleHandler = require('../server/api-handlers/admin/analytics/product-summary-bundle');
 const analyticsProductRankBundleHandler = require('../server/api-handlers/admin/analytics/product-rank-bundle');
 const analyticsProductHealthBundleHandler = require('../server/api-handlers/admin/analytics/product-health-bundle');
@@ -28,6 +29,7 @@ const discountsListHandler = require('../server/api-handlers/admin/discounts/lis
 const discountsMutateHandler = require('../server/api-handlers/admin/discounts/mutate');
 const marketingAssetsCenterHandler = require('../server/api-handlers/admin/marketing/assets-center');
 const homepageConfigHandler = require('../server/api-handlers/admin/homepage/config');
+const homepageContextHandler = require('../server/api-handlers/admin/homepage/context');
 const pointsBatchesHandler = require('../server/api-handlers/admin/points/batches');
 const pointsCatalogHandler = require('../server/api-handlers/admin/points/catalog');
 const pointsLookupHandler = require('../server/api-handlers/admin/points/lookup');
@@ -56,6 +58,8 @@ const settingsOpsAlertsHandler = require('../server/api-handlers/admin/settings/
 const settingsOpsAlertMonitorHandler = require('../server/api-handlers/admin/settings/ops-alert-monitor');
 const settingsOpsAlertMonitorCasesHandler = require('../server/api-handlers/admin/settings/ops-alert-monitor-cases');
 const settingsPaymentChannelsHandler = require('../server/api-handlers/admin/settings/payment-channels');
+const settingsSecurityLocksHandler = require('../server/api-handlers/admin/settings/security-locks');
+const settingsSystemConfigHandler = require('../server/api-handlers/admin/settings/system-config');
 const settingsVerifyMonitorHandler = require('../server/api-handlers/admin/settings/verify-monitor');
 const settingsVerifyMonitorQuotaHandler = require('../server/api-handlers/admin/settings/verify-monitor-quota');
 const settingsVerifyMonitorQueueHandler = require('../server/api-handlers/admin/settings/verify-monitor-queue');
@@ -68,6 +72,8 @@ const ticketMetricsHandler = require('../server/api-handlers/admin/tickets/metri
 const ticketProcessHandler = require('../server/api-handlers/admin/tickets/process');
 const ticketSummaryActionsHandler = require('../server/api-handlers/admin/tickets/summary-actions');
 const ticketSummaryHistoryHandler = require('../server/api-handlers/admin/tickets/summary-history');
+const usersBlocksHandler = require('../server/api-handlers/admin/users/blocks');
+const usersManageHandler = require('../server/api-handlers/admin/users/manage');
 
 const ROUTE_HANDLERS = {
     'analytics/panel-support-bundle': analyticsPanelSupportBundleHandler,
@@ -77,6 +83,7 @@ const ROUTE_HANDLERS = {
     'analytics/summary-window-bundle': analyticsSummaryWindowBundleHandler,
     'analytics/trend-series-bundle': analyticsTrendSeriesBundleHandler,
     'analytics/visual-panel-bundle': analyticsVisualPanelBundleHandler,
+    'analytics/product-dashboard-bundle': analyticsProductDashboardBundleHandler,
     'analytics/product-summary-bundle': analyticsProductSummaryBundleHandler,
     'analytics/product-rank-bundle': analyticsProductRankBundleHandler,
     'analytics/product-health-bundle': analyticsProductHealthBundleHandler,
@@ -96,6 +103,7 @@ const ROUTE_HANDLERS = {
     'discounts/mutate': discountsMutateHandler,
     'marketing/assets-center': marketingAssetsCenterHandler,
     'homepage/config': homepageConfigHandler,
+    'homepage/context': homepageContextHandler,
     'points/batches': pointsBatchesHandler,
     'points/catalog': pointsCatalogHandler,
     'points/lookup': pointsLookupHandler,
@@ -111,6 +119,8 @@ const ROUTE_HANDLERS = {
     'settings/ops-alert-monitor': settingsOpsAlertMonitorHandler,
     'settings/ops-alert-monitor-cases': settingsOpsAlertMonitorCasesHandler,
     'settings/payment-channels': settingsPaymentChannelsHandler,
+    'settings/security-locks': settingsSecurityLocksHandler,
+    'settings/system-config': settingsSystemConfigHandler,
     'settings/verify-monitor': settingsVerifyMonitorHandler,
     'settings/verify-monitor/quota': settingsVerifyMonitorQuotaHandler,
     'settings/verify-monitor/queue': settingsVerifyMonitorQueueHandler,
@@ -136,7 +146,9 @@ const ROUTE_HANDLERS = {
     'payments/actions': paymentsActionsHandler,
     'payments/cleanup': paymentsCleanupHandler,
     'payments/shop-refund': paymentsShopRefundHandler,
-    'payments/summary': paymentsSummaryHandler
+    'payments/summary': paymentsSummaryHandler,
+    'users/blocks': usersBlocksHandler,
+    'users/manage': usersManageHandler
 };
 
 function normalizeAdminRouteValue(value = '') {

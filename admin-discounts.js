@@ -3,6 +3,8 @@
 // Handles creation and management of Discount Codes
 // ========================================
 
+const DISCOUNTS_ACTIVATION_REFRESH_TTL_MS = 15000;
+
 const AdminDiscounts = {
     requireWritableSite(options = {}) {
         return window.AdminSiteFilter?.requireWritableSite?.(options) || null;
@@ -14,8 +16,13 @@ const AdminDiscounts = {
     currentPage: 1,
     itemsPerPage: 10,
     controlsBound: false,
+    moduleInitialized: false,
     restrictionOptionsLoaded: false,
     restrictionOptionsPromise: null,
+    listLoadPromise: null,
+    listRequestToken: 0,
+    lastListLoadedAt: 0,
+    lastListSite: '',
     categories: [],
     products: [],
     categoryNameMap: new Map(),
@@ -47,6 +54,50 @@ const AdminDiscounts = {
 
     getReadSite: function () {
         return window.AdminSiteFilter?.getSiteFilter?.() || 'all';
+    },
+
+    isVisible: function () {
+        const module = document.getElementById('module-discounts');
+        return Boolean(module && module.classList.contains('active') && !module.hidden);
+    },
+
+    shouldReloadListOnActivate: function ({ force = false } = {}) {
+        const currentSite = this.getReadSite();
+        if (force || !this.lastListLoadedAt || !this.discounts.length) {
+            return true;
+        }
+
+        if (this.lastListSite !== currentSite) {
+            return true;
+        }
+
+        return (Date.now() - this.lastListLoadedAt) > DISCOUNTS_ACTIVATION_REFRESH_TTL_MS;
+    },
+
+    handleSiteChange: function () {
+        this.lastListLoadedAt = 0;
+        this.lastListSite = '';
+        this.currentPage = 1;
+        this.detailCache.clear();
+        this.activeDetailId = '';
+        this.batchRestoreResult = null;
+        this.activeBatchRestoreHistoryRunId = '';
+        this.batchRestoreHistoryState = {
+            loaded: false,
+            loading: false,
+            error: '',
+            runs: []
+        };
+
+        if (!this.isVisible()) {
+            return false;
+        }
+
+        void this.loadDiscounts({
+            force: true,
+            showLoading: true
+        });
+        return true;
     },
 
     buildAdminDiscountsUrl: function (route, params = {}) {
@@ -4022,8 +4073,19 @@ const AdminDiscounts = {
     init: function () {
         console.log('🎟️ Initializing Discounts Module...');
         this.bindStaticControls();
-        this.loadRestrictionOptions();
-        this.loadDiscounts();
+        void this.ensureRestrictionOptionsLoaded();
+        const shouldReload = this.shouldReloadListOnActivate();
+        this.moduleInitialized = true;
+
+        if (!shouldReload) {
+            this.renderScopeHint({ status: 'ready', scopeSummary: this.scopeSummary });
+            this.render();
+            return;
+        }
+
+        void this.loadDiscounts({
+            showLoading: !this.discounts.length || this.lastListSite !== this.getReadSite()
+        });
     },
 
     bindStaticControls: function () {
@@ -4301,42 +4363,81 @@ const AdminDiscounts = {
     // ----------------------------------------
     // DATA LOADING & RENDERING
     // ----------------------------------------
-    loadDiscounts: async function () {
+    loadDiscounts: async function (options = {}) {
         const tableBody = document.getElementById('discountsTableBody');
         if (!tableBody) return;
 
-        tableBody.innerHTML = this.buildTableLoadingSkeleton();
-        this.renderScopeHint({ status: 'loading' });
+        if (this.listLoadPromise && options?.force !== true) {
+            return this.listLoadPromise;
+        }
+
+        const requestToken = this.listRequestToken + 1;
+        this.listRequestToken = requestToken;
+        const shouldShowLoading = options?.showLoading !== false || !this.discounts.length;
+        if (shouldShowLoading) {
+            tableBody.innerHTML = this.buildTableLoadingSkeleton();
+            this.renderScopeHint({ status: 'loading' });
+        }
+
+        const loadPromise = (async () => {
+            try {
+                const currentSite = this.getReadSite();
+                const response = await (window.AdminApi?.fetch || fetch)(
+                    this.buildAdminDiscountsUrl('discounts/list', {
+                        site: currentSite
+                    }),
+                    { credentials: 'include' }
+                );
+                const payload = await this.parseAdminDiscountsResponse(response);
+
+                if (requestToken !== this.listRequestToken) {
+                    return false;
+                }
+
+                this.discounts = Array.isArray(payload.rows) ? payload.rows : [];
+                this.detailCache.clear();
+                this.scopeSummary = payload.scope_summary && typeof payload.scope_summary === 'object'
+                    ? payload.scope_summary
+                    : null;
+                this.lastListLoadedAt = Date.now();
+                this.lastListSite = currentSite;
+                this.renderScopeHint({ status: 'ready', scopeSummary: this.scopeSummary });
+                this.render();
+                return true;
+
+            } catch (err) {
+                if (requestToken !== this.listRequestToken) {
+                    return false;
+                }
+
+                console.error('Failed to load discounts:', err);
+                if (!shouldShowLoading && this.discounts.length > 0) {
+                    return false;
+                }
+
+                this.scopeSummary = null;
+                this.renderOverviewStats({ hidden: true });
+                this.renderScopeHint({
+                    status: 'error',
+                    message: `优惠券列表加载失败：${err.message}`
+                });
+                tableBody.replaceChildren(this.createTableStateRow({
+                    message: `加载失败: ${err.message}`,
+                    icon: 'fa-circle-exclamation',
+                    variant: 'error'
+                }));
+                return false;
+            }
+        })();
+
+        this.listLoadPromise = loadPromise;
 
         try {
-            const response = await (window.AdminApi?.fetch || fetch)(
-                this.buildAdminDiscountsUrl('discounts/list', {
-                    site: this.getReadSite()
-                }),
-                { credentials: 'include' }
-            );
-            const payload = await this.parseAdminDiscountsResponse(response);
-            this.discounts = Array.isArray(payload.rows) ? payload.rows : [];
-            this.detailCache.clear();
-            this.scopeSummary = payload.scope_summary && typeof payload.scope_summary === 'object'
-                ? payload.scope_summary
-                : null;
-            this.renderScopeHint({ status: 'ready', scopeSummary: this.scopeSummary });
-            this.render();
-
-        } catch (err) {
-            console.error('Failed to load discounts:', err);
-            this.scopeSummary = null;
-            this.renderOverviewStats({ hidden: true });
-            this.renderScopeHint({
-                status: 'error',
-                message: `优惠券列表加载失败：${err.message}`
-            });
-            tableBody.replaceChildren(this.createTableStateRow({
-                message: `加载失败: ${err.message}`,
-                icon: 'fa-circle-exclamation',
-                variant: 'error'
-            }));
+            return await loadPromise;
+        } finally {
+            if (this.listLoadPromise === loadPromise) {
+                this.listLoadPromise = null;
+            }
         }
     },
 
@@ -5008,3 +5109,14 @@ const AdminDiscounts = {
 
 // Auto-attach to window so admin-studio.html can find it
 window.AdminDiscounts = AdminDiscounts;
+
+if (window.AdminShell?.registerModule) {
+    window.AdminShell.registerModule('discounts', {
+        onSiteChange: () => AdminDiscounts.handleSiteChange(),
+        reload: () => AdminDiscounts.handleSiteChange()
+    });
+} else {
+    window.addEventListener('admin-site-changed', () => {
+        AdminDiscounts.handleSiteChange();
+    });
+}

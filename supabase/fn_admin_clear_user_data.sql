@@ -24,7 +24,7 @@ BEGIN
 
         -- Reset New Points Balance
         UPDATE points_balance 
-        SET paid_balance = 0, bonus_balance = 0, total_balance = 0 
+        SET paid_balance = 0, bonus_balance = 0 
         WHERE user_id = target_user_id;
         GET DIAGNOSTICS v_balance_count = ROW_COUNT;
     END IF;

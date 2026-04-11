@@ -1076,14 +1076,14 @@ Example output format:
             this.shopTabPrefetchMode = 'idle';
             this.shopTabPrefetchHandle = window.requestIdleCallback(() => {
                 void runPrefetch();
-            }, { timeout: 1200 });
+            }, { timeout: 2400 });
             return;
         }
 
         this.shopTabPrefetchMode = 'timeout';
         this.shopTabPrefetchHandle = window.setTimeout(() => {
             void runPrefetch();
-        }, 240);
+        }, 600);
     },
 
     bindShopContextListeners: function () {
@@ -10350,6 +10350,38 @@ Example output format:
     },
 
     buildOrderDetailLoadingMarkup: function (orderId) {
+        const safeOrderId = this.escapeHtml(orderId || '');
+        const buildSectionTitleSkeleton = (width) => `
+            <div class="shop-order-detail-loading__title-row">
+                <span class="shop-order-detail-loading__title-icon admin-skeleton-block"></span>
+                <span class="shop-order-detail-loading__title-text admin-skeleton-block admin-skeleton-block--title" style="width:${width}px"></span>
+            </div>
+        `;
+        const buildListRowSkeleton = ({ titleWidth, metaWidth, contentWidth, sideWidth, sideType = 'action' }) => `
+            <div class="shop-order-detail-list-row shop-order-detail-loading__row">
+                <div class="shop-order-detail-list-row__main">
+                    <span class="admin-skeleton-block admin-skeleton-block--title" style="width:${titleWidth}"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${metaWidth}"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${contentWidth}"></span>
+                </div>
+                ${sideType === 'badge'
+                    ? `<span class="shop-order-detail-loading__row-badge admin-skeleton-block admin-skeleton-block--pill" style="width:${sideWidth}"></span>`
+                    : `<span class="shop-order-detail-loading__row-action admin-skeleton-block" style="width:${sideWidth}"></span>`}
+            </div>
+        `;
+        const buildStatSkeleton = (labelWidth, valueWidth) => `
+            <div class="shop-order-detail-stat">
+                <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${labelWidth}"></span>
+                <span class="shop-order-detail-loading__stat-value admin-skeleton-block" style="width:${valueWidth}"></span>
+            </div>
+        `;
+        const buildKvSkeleton = (labelWidth, valueWidth) => `
+            <div>
+                <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${labelWidth}"></span>
+                <span class="shop-order-detail-loading__kv-value admin-skeleton-block" style="width:${valueWidth}"></span>
+            </div>
+        `;
+
         return `
             <div class="shop-order-content-modal shop-order-detail-modal custom-scrollbar">
                 <div class="shop-order-content-header shop-order-detail-header">
@@ -10357,17 +10389,119 @@ Example output format:
                         <div class="shop-order-detail-eyebrow">Order Detail</div>
                         <h3 class="shop-order-content-title">订单详情加载中</h3>
                     </div>
-                    <button type="button" class="shop-order-content-close" data-shop-action="order-close-content" data-modal-id="orderContentModal" aria-label="关闭">&times;</button>
+                    <div class="shop-order-detail-inline-actions shop-order-detail-loading__header-actions">
+                        <span class="shop-order-detail-loading__header-btn admin-skeleton-block"></span>
+                        <button type="button" class="shop-order-content-close" data-shop-action="order-close-content" data-modal-id="orderContentModal" aria-label="关闭">&times;</button>
+                    </div>
                 </div>
                 <div class="shop-order-content-body shop-order-detail-body">
-                    <div class="shop-order-detail-loading">
-                        <div class="shop-order-detail-loading__hero"></div>
-                        <div class="shop-order-detail-loading__grid">
-                            <div class="shop-order-detail-loading__card"></div>
-                            <div class="shop-order-detail-loading__card"></div>
-                            <div class="shop-order-detail-loading__card"></div>
+                    <div class="shop-order-detail-loading" aria-hidden="true">
+                        <div class="shop-order-detail-hero shop-order-detail-loading__hero">
+                            <div class="shop-order-detail-user shop-order-detail-loading__panel shop-order-detail-loading__panel--user">
+                                <div class="shop-order-detail-loading__user-main">
+                                    <span class="shop-order-detail-loading__avatar admin-skeleton-block"></span>
+                                    <div class="shop-order-detail-loading__user-copy">
+                                        <span class="admin-skeleton-block admin-skeleton-block--title" style="width:112px"></span>
+                                        <span class="admin-skeleton-block admin-skeleton-block--line" style="width:148px"></span>
+                                        <span class="admin-skeleton-block admin-skeleton-block--line" style="width:86%"></span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="shop-order-detail-hero__meta shop-order-detail-loading__panel shop-order-detail-loading__panel--meta">
+                                <div class="shop-order-content-meta">订单号：<code class="shop-order-content-order-id">${safeOrderId}</code></div>
+                                <div class="shop-order-detail-hero__pills">
+                                    <span class="admin-skeleton-block admin-skeleton-block--pill" style="width:68px"></span>
+                                    <span class="admin-skeleton-block admin-skeleton-block--pill" style="width:74px"></span>
+                                    <span class="admin-skeleton-block admin-skeleton-block--pill" style="width:116px"></span>
+                                </div>
+                                <div class="shop-order-detail-hero__stats">
+                                    ${buildStatSkeleton('36%', '72%')}
+                                    ${buildStatSkeleton('30%', '28%')}
+                                    ${buildStatSkeleton('32%', '56%')}
+                                    ${buildStatSkeleton('32%', '56%')}
+                                </div>
+                            </div>
                         </div>
-                        <div class="shop-order-content-meta">订单号：<code class="shop-order-content-order-id">${this.escapeHtml(orderId || '')}</code></div>
+
+                        <div class="shop-order-detail-grid shop-order-detail-loading__grid">
+                            <div class="shop-order-detail-section shop-order-detail-loading__panel">
+                                <div class="shop-order-detail-section__header">
+                                    ${buildSectionTitleSkeleton(118)}
+                                    <div class="shop-order-detail-inline-actions">
+                                        <span class="shop-order-detail-loading__action-btn admin-skeleton-block" style="width:112px"></span>
+                                    </div>
+                                </div>
+                                <div class="shop-order-detail-list">
+                                    ${buildListRowSkeleton({ titleWidth: '42%', metaWidth: '64%', contentWidth: '80%', sideWidth: '88px' })}
+                                    ${buildListRowSkeleton({ titleWidth: '36%', metaWidth: '58%', contentWidth: '72%', sideWidth: '88px' })}
+                                </div>
+                                <div class="shop-order-content-box shop-order-detail-loading__content-box">
+                                    <div class="shop-order-content-item shop-order-detail-loading__content-item">
+                                        <span class="admin-skeleton-block admin-skeleton-block--line" style="width:42%"></span>
+                                        <span class="shop-order-detail-loading__code-line admin-skeleton-block" style="width:92%"></span>
+                                    </div>
+                                    <div class="shop-order-content-item shop-order-detail-loading__content-item">
+                                        <span class="admin-skeleton-block admin-skeleton-block--line" style="width:34%"></span>
+                                        <span class="shop-order-detail-loading__code-line admin-skeleton-block" style="width:78%"></span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="shop-order-detail-section shop-order-detail-loading__panel">
+                                <div class="shop-order-detail-section__header">
+                                    ${buildSectionTitleSkeleton(108)}
+                                </div>
+                                <div class="shop-order-detail-hero__pills">
+                                    <span class="admin-skeleton-block admin-skeleton-block--pill" style="width:82px"></span>
+                                    <span class="admin-skeleton-block admin-skeleton-block--pill" style="width:82px"></span>
+                                    <span class="admin-skeleton-block admin-skeleton-block--pill" style="width:96px"></span>
+                                </div>
+                                <div class="shop-order-detail-kv">
+                                    ${buildKvSkeleton('42%', '76%')}
+                                    ${buildKvSkeleton('40%', '62%')}
+                                    ${buildKvSkeleton('36%', '72%')}
+                                    ${buildKvSkeleton('34%', '24%')}
+                                </div>
+                                <div class="shop-order-detail-loading__attempts">
+                                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:78%"></span>
+                                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:66%"></span>
+                                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:58%"></span>
+                                </div>
+                                <div class="shop-order-detail-inline-actions">
+                                    <span class="shop-order-detail-loading__action-btn admin-skeleton-block" style="width:96px"></span>
+                                    <span class="shop-order-detail-loading__action-btn admin-skeleton-block" style="width:108px"></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="shop-order-detail-grid shop-order-detail-grid--secondary shop-order-detail-loading__grid">
+                            <div class="shop-order-detail-section shop-order-detail-loading__panel">
+                                <div class="shop-order-detail-section__header">
+                                    ${buildSectionTitleSkeleton(94)}
+                                    <div class="shop-order-detail-hero__pills">
+                                        <span class="admin-skeleton-block admin-skeleton-block--pill" style="width:72px"></span>
+                                        <span class="admin-skeleton-block admin-skeleton-block--pill" style="width:86px"></span>
+                                    </div>
+                                </div>
+                                <div class="shop-order-detail-list">
+                                    ${buildListRowSkeleton({ titleWidth: '46%', metaWidth: '58%', contentWidth: '74%', sideWidth: '76px', sideType: 'badge' })}
+                                </div>
+                            </div>
+
+                            <div class="shop-order-detail-section shop-order-detail-loading__panel">
+                                <div class="shop-order-detail-section__header">
+                                    ${buildSectionTitleSkeleton(94)}
+                                    <div class="shop-order-detail-hero__pills">
+                                        <span class="admin-skeleton-block admin-skeleton-block--pill" style="width:72px"></span>
+                                        <span class="admin-skeleton-block admin-skeleton-block--pill" style="width:86px"></span>
+                                    </div>
+                                </div>
+                                <div class="shop-order-detail-list">
+                                    ${buildListRowSkeleton({ titleWidth: '44%', metaWidth: '56%', contentWidth: '68%', sideWidth: '76px', sideType: 'badge' })}
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -10644,7 +10778,7 @@ Example output format:
         overlay.dataset.shopOverlayClose = 'dynamic-modal';
         overlay.dataset.modalId = 'orderContentModal';
         overlay.className = 'shop-order-content-overlay';
-        overlay.innerHTML = `<div id="orderContentShell">${this.buildOrderDetailLoadingMarkup(normalizedOrderId)}</div>`;
+        overlay.innerHTML = `<div id="orderContentShell" class="shop-order-content-shell">${this.buildOrderDetailLoadingMarkup(normalizedOrderId)}</div>`;
 
         this.bindOverlayDismiss(overlay, () => {
             this.currentOrderDetailId = '';

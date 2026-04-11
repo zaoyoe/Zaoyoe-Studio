@@ -6477,13 +6477,15 @@ async function ensureAdminWorkbenchModule(moduleName, options = {}) {
         return true;
     }
 
-    if (typeof window.switchModule !== 'function') {
+    const moduleSwitcher = window.AdminShell?.activateModule || window.switchModule;
+    if (typeof moduleSwitcher !== 'function') {
         throw new Error('后台模块切换能力尚未就绪');
     }
 
-    const switched = window.switchModule(normalizedModuleName, {
+    const switched = moduleSwitcher(normalizedModuleName, {
         fallback: false,
         silentDenied: true,
+        reason: 'workbench-open-module',
         ...((options && typeof options === 'object') ? options : {})
     });
 

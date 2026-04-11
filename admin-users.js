@@ -20,30 +20,137 @@ const userState = {
         showTestAccounts: false
     }
 };
+const USERS_ACTIVATION_REFRESH_TTL_MS = 15000;
+let usersModuleInitialized = false;
+let usersModuleControlsBound = false;
+let usersLastLoadedAt = 0;
+let usersLastLoadedSite = '';
+let usersLoadPromise = null;
+let usersLoadRequestId = 0;
 
 // Prompt Cache for History Display
 let promptCache = {};
 let promptCacheLoaded = false;
+let promptCachePromise = null;
 
 async function fetchPromptCache() {
-    if (promptCacheLoaded) return;
-    try {
-        const { data, error } = await window.supabaseClient
-            .from('prompts')
-            .select('id, title');
+    if (promptCacheLoaded) return promptCache;
+    if (promptCachePromise) return promptCachePromise;
 
-        if (error) throw error;
+    promptCachePromise = (async () => {
+        try {
+            const { data, error } = await window.supabaseClient
+                .from('prompts')
+                .select('id, title');
 
-        if (data) {
-            data.forEach(p => {
-                promptCache[p.id] = p.title;
-            });
-            promptCacheLoaded = true;
-            console.log('📚 Ledger Prompt Cache Loaded:', Object.keys(promptCache).length);
+            if (error) throw error;
+
+            if (data) {
+                data.forEach(p => {
+                    promptCache[p.id] = p.title;
+                });
+                promptCacheLoaded = true;
+                console.log('📚 Ledger Prompt Cache Loaded:', Object.keys(promptCache).length);
+            }
+        } catch (e) {
+            console.error('Failed to load prompt cache for ledger:', e);
+        } finally {
+            promptCachePromise = null;
         }
-    } catch (e) {
-        console.error('Failed to load prompt cache for ledger:', e);
+
+        return promptCache;
+    })();
+
+    return promptCachePromise;
+}
+
+function isUsersModuleActive() {
+    const module = document.getElementById('module-users');
+    return Boolean(module && module.classList.contains('active') && !module.hidden);
+}
+
+function syncUserModuleControls() {
+    const searchInput = document.getElementById('userSearchInput');
+    if (searchInput && searchInput.value !== String(userState.filters.search || '')) {
+        searchInput.value = userState.filters.search || '';
     }
+
+    const showTestAccountsToggle = document.getElementById('userShowTestAccountsToggle');
+    if (showTestAccountsToggle) {
+        showTestAccountsToggle.checked = Boolean(userState.filters.showTestAccounts);
+    }
+
+    if (window._isSuperAdmin) {
+        const roleFilter = document.getElementById('adminRoleFilter');
+        const expiryFilter = document.getElementById('adminExpiryFilter');
+        setUsersHiddenState(roleFilter, false);
+        setUsersHiddenState(expiryFilter, false);
+    }
+}
+
+function bindUserModuleControls() {
+    if (usersModuleControlsBound) {
+        return;
+    }
+
+    usersModuleControlsBound = true;
+
+    const searchInput = document.getElementById('userSearchInput');
+    if (searchInput) {
+        searchInput.addEventListener('input', debounce(handleUserSearch, 500));
+    }
+
+    initUserFilterDropdowns();
+    bindUserModalOverlayDismiss();
+}
+
+function shouldReloadUsersOnActivate({ force = false } = {}) {
+    const currentSite = getUsersAuditSite();
+    if (force || !usersLastLoadedAt || !userState.users.length) {
+        return true;
+    }
+
+    if (usersLastLoadedSite !== currentSite) {
+        return true;
+    }
+
+    return (Date.now() - usersLastLoadedAt) > USERS_ACTIVATION_REFRESH_TTL_MS;
+}
+
+function refreshUsersOnActivate({ force = false } = {}) {
+    syncUserModuleControls();
+
+    if (!shouldReloadUsersOnActivate({ force })) {
+        renderUsersTable();
+        void maybeRestoreUserModalFromUrl();
+        return Promise.resolve(false);
+    }
+
+    const currentSite = getUsersAuditSite();
+    const shouldShowLoading = !userState.users.length || usersLastLoadedSite !== currentSite;
+    return loadUsers({
+        force,
+        showLoading: shouldShowLoading
+    });
+}
+
+function handleAdminUsersSiteChange() {
+    usersLastLoadedAt = 0;
+    usersLastLoadedSite = '';
+    userState.currentPage = 1;
+    userState.selectedUsers.clear();
+    closeUserFilterDropdowns();
+    renderBatchActionBar();
+
+    if (!isUsersModuleActive()) {
+        return false;
+    }
+
+    void loadUsers({
+        force: true,
+        showLoading: true
+    });
+    return true;
 }
 
 // Predefined tags with labels and CSS classes (moved to top for initialization order)
@@ -77,6 +184,10 @@ const USER_FILTER_DEFAULT_LABELS = {
     userRole: '角色',
     userAdminExpiry: '权限到期'
 };
+const ADMIN_USERS_NOTIFICATION_META = Object.freeze({
+    scope: 'user_personal',
+    category: 'admin_notice'
+});
 
 function getTagClass(tag) {
     return TAG_CONFIG[tag]?.class || 'tag-custom';
@@ -92,6 +203,103 @@ function normalizeUserIdentity(value) {
 
 function isLockedSuperAdminEmail(email = '') {
     return LOCKED_SUPER_ADMIN_EMAILS.has(normalizeUserIdentity(email));
+}
+
+function getUsersAuditSite() {
+    return window.AdminSiteFilter?.getSiteFilter?.() || 'all';
+}
+
+function requireWritableUsersPointsSite(options = {}) {
+    return window.AdminSiteFilter?.requireWritableSite?.(options) || null;
+}
+
+function buildAdminUsersApiUrl(route, params = {}) {
+    const url = new URL(`/api/admin/${route}`, window.location.origin);
+
+    Object.entries(params || {}).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === '') {
+            return;
+        }
+
+        if (Array.isArray(value)) {
+            value
+                .map((entry) => String(entry || '').trim())
+                .filter(Boolean)
+                .forEach((entry) => {
+                    url.searchParams.append(key, entry);
+                });
+            return;
+        }
+
+        url.searchParams.set(key, String(value));
+    });
+
+    return `${url.pathname}${url.search}`;
+}
+
+async function parseAdminUsersApiResponse(response) {
+    let payload = {};
+
+    try {
+        payload = await response.json();
+    } catch (_) {
+        payload = {};
+    }
+
+    if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.message || `Users request failed (${response.status})`);
+    }
+
+    return payload;
+}
+
+async function adminUsersApiFetch(input, init = {}) {
+    return (window.AdminApi?.fetch || fetch)(input, {
+        credentials: 'include',
+        ...init
+    });
+}
+
+async function postAdminUsersManage(action, payload = {}) {
+    const response = await adminUsersApiFetch('/api/admin/users/manage', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            action,
+            site: getUsersAuditSite(),
+            ...payload
+        })
+    });
+
+    return parseAdminUsersApiResponse(response);
+}
+
+async function fetchAdminUserBlocks(userId) {
+    const response = await adminUsersApiFetch(buildAdminUsersApiUrl('users/blocks', {
+        userId,
+        site: getUsersAuditSite()
+    }), {
+        method: 'GET'
+    });
+
+    return parseAdminUsersApiResponse(response);
+}
+
+async function mutateAdminUserBlocks(payload = {}) {
+    const response = await adminUsersApiFetch('/api/admin/users/blocks', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            site: getUsersAuditSite(),
+            ...payload
+        })
+    });
+
+    return parseAdminUsersApiResponse(response);
 }
 
 function formatAdminRoleExpiryCountdown(expiresAt) {
@@ -268,46 +476,14 @@ function ensureUsersTableEmptyState() {
 function initUserModule() {
     console.log('👥 Initializing User Module...');
 
-    // Clear search input to prevent browser autofill (e.g., "100")
-    const searchInput = document.getElementById('userSearchInput');
-    if (searchInput) {
-        searchInput.value = '';
+    bindUserModuleControls();
+
+    if (!usersModuleInitialized) {
+        usersModuleInitialized = true;
+        void fetchPromptCache();
     }
 
-    const showTestAccountsToggle = document.getElementById('userShowTestAccountsToggle');
-    if (showTestAccountsToggle) {
-        showTestAccountsToggle.checked = Boolean(userState.filters.showTestAccounts);
-    }
-
-    // Bind Search
-    document.getElementById('userSearchInput').addEventListener('input', debounce(handleUserSearch, 500));
-
-    // Bind Custom Filter Dropdowns
-    initUserFilterDropdowns();
-
-    // Show admin role filter for super admins
-    if (window._isSuperAdmin) {
-        const roleFilter = document.getElementById('adminRoleFilter');
-        const expiryFilter = document.getElementById('adminExpiryFilter');
-        setUsersHiddenState(roleFilter, false);
-        setUsersHiddenState(expiryFilter, false);
-    }
-
-    // Bind Modal Overlay Click
-    const overlay = document.getElementById('userModalOverlay');
-    if (overlay) {
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) {
-                closeUserModal();
-            }
-        });
-    }
-
-    // Initial Load
-    loadUsers();
-
-    // Fetch Prompt Cache
-    fetchPromptCache();
+    refreshUsersOnActivate();
 
     // Enable horizontal scroll with mouse wheel on desktop
     // Must use #module-users context to avoid selecting the wrong .users-table-panel (e.g., points batch table)
@@ -321,7 +497,9 @@ function initUserModule() {
 // Initialize Filter Dropdowns (Custom Component)
 function initUserFilterDropdowns() {
     const userModule = document.getElementById('module-users');
-    if (!userModule) return;
+    if (!userModule || userModule.dataset.filterDropdownsBound === '1') return;
+
+    userModule.dataset.filterDropdownsBound = '1';
 
     // Toggle dropdown on button click
     userModule.querySelectorAll('.filter-dropdown .filter-btn').forEach(btn => {
@@ -514,187 +692,223 @@ function debounce(func, wait) {
 }
 
 // Fetch Users from Supabase with Real Points Data
-async function loadUsers() {
-    renderUserLoading();
+async function loadUsers(options = {}) {
+    if (usersLoadPromise && options?.force !== true) {
+        return usersLoadPromise;
+    }
 
-    try {
-        let profiles = [];
-        let rpcError = null;
+    const requestId = ++usersLoadRequestId;
+    const shouldShowLoading = options?.showLoading !== false || !userState.users.length;
+    if (shouldShowLoading) {
+        renderUserLoading();
+    }
 
-        // Try RPC first (includes last_sign_in_at)
-        const { data: rpcData, error: err } = await window.supabaseClient.rpc('get_admin_users');
+    const loadPromise = (async () => {
+        try {
+            let profiles = [];
+            let rpcError = null;
 
-        if (!err && rpcData) {
-            profiles = rpcData;
-        } else {
-            rpcError = err;
-            console.warn('RPC get_admin_users failed, falling back to profiles table:', err.message);
-            // Fallback to standard profiles query
-            const { data: profileData, error: profileError } = await window.supabaseClient
-                .from('profiles')
-                .select('id, username, email, avatar_url');
+            // Try RPC first (includes last_sign_in_at)
+            const { data: rpcData, error: err } = await window.supabaseClient.rpc('get_admin_users');
 
-            if (profileError) throw profileError;
-            profiles = profileData || [];
-        }
+            if (!err && rpcData) {
+                profiles = rpcData;
+            } else {
+                rpcError = err;
+                console.warn('RPC get_admin_users failed, falling back to profiles table:', err.message);
+                // Fallback to standard profiles query
+                const { data: profileData, error: profileError } = await window.supabaseClient
+                    .from('profiles')
+                    .select('id, username, email, avatar_url');
 
-        // Fetch blocks, points, tags, and admin roles in parallel
-        const siteFilter = window.AdminSiteFilter ? AdminSiteFilter.getSiteParam() : null;
-
-        const loginHistoryQuery = window.supabaseClient
-            .from('user_login_history')
-            .select('user_id, created_at');
-
-        if (siteFilter) {
-            loginHistoryQuery.eq('site', siteFilter);
-        }
-
-        const [blocksResult, pointsResult, tagsResult, rolesResult, loginHistoryResult] = await Promise.all([
-            window.supabaseClient
-                .from('blocked_users')
-                .select('user_id, scope, expires_at'),
-            (function () {
-                let q = window.supabaseClient.from('points_balance').select('user_id, total_balance');
-                if (window.AdminSiteFilter) q = AdminSiteFilter.applySiteFilter(q);
-                return q;
-            })(),
-            window.supabaseClient
-                .from('user_tags')
-                .select('user_id, tag'),
-            window.supabaseClient
-                .from('admin_roles')
-                .select('user_id, role_name, permissions, expires_at'),
-            loginHistoryQuery
-        ]);
-
-        const blocks = blocksResult.data || [];
-        const points = pointsResult.data || [];
-        const tags = tagsResult.data || [];
-        const roles = rolesResult.data || [];
-        const loginHistoryRows = loginHistoryResult.data || [];
-
-        // Create lookup maps
-        const blockedMap = new Map();
-        blocks.forEach(b => blockedMap.set(b.user_id, b));
-
-        const pointsMap = new Map();
-        points.forEach((row) => {
-            const userId = String(row?.user_id || '').trim();
-            if (!userId) return;
-            const current = pointsMap.get(userId) || {
-                user_id: userId,
-                total_balance: 0
-            };
-            current.total_balance += Number(row?.total_balance || 0);
-            pointsMap.set(userId, current);
-        });
-
-        const latestLoginMap = new Map();
-        loginHistoryRows.forEach((row) => {
-            const userId = String(row?.user_id || '').trim();
-            const createdAt = String(row?.created_at || '').trim();
-            if (!userId || !createdAt) return;
-            const existing = latestLoginMap.get(userId);
-            if (!existing || new Date(createdAt).getTime() > new Date(existing).getTime()) {
-                latestLoginMap.set(userId, createdAt);
+                if (profileError) throw profileError;
+                profiles = profileData || [];
             }
-        });
 
-        const tagsMap = new Map();
-        tags.forEach(t => {
-            if (!tagsMap.has(t.user_id)) tagsMap.set(t.user_id, []);
-            tagsMap.get(t.user_id).push(t.tag);
-        });
+            // Fetch blocks, points, tags, and admin roles in parallel
+            const siteFilter = window.AdminSiteFilter ? AdminSiteFilter.getSiteParam() : null;
 
-        const rolesMap = new Map();
-        roles.forEach(r => {
-            // Check if role is not expired
-            if (!r.expires_at || new Date(r.expires_at) > new Date()) {
-                rolesMap.set(r.user_id, r);
+            const loginHistoryQuery = window.supabaseClient
+                .from('user_login_history')
+                .select('user_id, created_at');
+
+            if (siteFilter) {
+                loginHistoryQuery.eq('site', siteFilter);
             }
-        });
 
-        // Site-based user filtering: only show users with activity on selected site
-        if (siteFilter) {
-            // Fetch user IDs with activity on this site (login, points, comments, messages)
-            const [loginResult, commentsResult, messagesResult] = await Promise.all([
+            const [blocksResult, pointsResult, tagsResult, rolesResult, loginHistoryResult] = await Promise.all([
                 window.supabaseClient
-                    .from('user_login_history')
-                    .select('user_id')
-                    .eq('site', siteFilter),
+                    .from('blocked_users')
+                    .select('user_id, scope, expires_at'),
+                (function () {
+                    let q = window.supabaseClient.from('points_balance').select('user_id, total_balance');
+                    if (window.AdminSiteFilter) q = AdminSiteFilter.applySiteFilter(q);
+                    return q;
+                })(),
                 window.supabaseClient
-                    .from('prompt_comments')
-                    .select('user_id')
-                    .eq('site', siteFilter)
-                    .not('user_id', 'is', null),
+                    .from('user_tags')
+                    .select('user_id, tag'),
                 window.supabaseClient
-                    .from('guestbook_messages')
-                    .select('user_id')
-                    .eq('site', siteFilter)
-                    .not('user_id', 'is', null)
+                    .from('admin_roles')
+                    .select('user_id, role_name, permissions, expires_at'),
+                loginHistoryQuery
             ]);
 
-            const activeUserIds = new Set();
-            (loginResult.data || []).forEach(r => activeUserIds.add(r.user_id));
-            (commentsResult.data || []).forEach(r => activeUserIds.add(r.user_id));
-            (messagesResult.data || []).forEach(r => activeUserIds.add(r.user_id));
-            // Also include users with points on this site
-            points.forEach(p => activeUserIds.add(p.user_id));
+            const blocks = blocksResult.data || [];
+            const points = pointsResult.data || [];
+            const tags = tagsResult.data || [];
+            const roles = rolesResult.data || [];
+            const loginHistoryRows = loginHistoryResult.data || [];
 
-            profiles = profiles.filter(p => {
-                const uid = p.out_id || p.id;
-                return activeUserIds.has(uid);
+            // Create lookup maps
+            const blockedMap = new Map();
+            blocks.forEach(b => blockedMap.set(b.user_id, b));
+
+            const pointsMap = new Map();
+            points.forEach((row) => {
+                const userId = String(row?.user_id || '').trim();
+                if (!userId) return;
+                const current = pointsMap.get(userId) || {
+                    user_id: userId,
+                    total_balance: 0
+                };
+                current.total_balance += Number(row?.total_balance || 0);
+                pointsMap.set(userId, current);
             });
+
+            const latestLoginMap = new Map();
+            loginHistoryRows.forEach((row) => {
+                const userId = String(row?.user_id || '').trim();
+                const createdAt = String(row?.created_at || '').trim();
+                if (!userId || !createdAt) return;
+                const existing = latestLoginMap.get(userId);
+                if (!existing || new Date(createdAt).getTime() > new Date(existing).getTime()) {
+                    latestLoginMap.set(userId, createdAt);
+                }
+            });
+
+            const tagsMap = new Map();
+            tags.forEach(t => {
+                if (!tagsMap.has(t.user_id)) tagsMap.set(t.user_id, []);
+                tagsMap.get(t.user_id).push(t.tag);
+            });
+
+            const rolesMap = new Map();
+            roles.forEach(r => {
+                // Check if role is not expired
+                if (!r.expires_at || new Date(r.expires_at) > new Date()) {
+                    rolesMap.set(r.user_id, r);
+                }
+            });
+
+            // Site-based user filtering: only show users with activity on selected site
+            if (siteFilter) {
+                // Fetch user IDs with activity on this site (login, points, comments, messages)
+                const [loginResult, commentsResult, messagesResult] = await Promise.all([
+                    window.supabaseClient
+                        .from('user_login_history')
+                        .select('user_id')
+                        .eq('site', siteFilter),
+                    window.supabaseClient
+                        .from('prompt_comments')
+                        .select('user_id')
+                        .eq('site', siteFilter)
+                        .not('user_id', 'is', null),
+                    window.supabaseClient
+                        .from('guestbook_messages')
+                        .select('user_id')
+                        .eq('site', siteFilter)
+                        .not('user_id', 'is', null)
+                ]);
+
+                const activeUserIds = new Set();
+                (loginResult.data || []).forEach(r => activeUserIds.add(r.user_id));
+                (commentsResult.data || []).forEach(r => activeUserIds.add(r.user_id));
+                (messagesResult.data || []).forEach(r => activeUserIds.add(r.user_id));
+                // Also include users with points on this site
+                points.forEach(p => activeUserIds.add(p.user_id));
+
+                profiles = profiles.filter(p => {
+                    const uid = p.out_id || p.id;
+                    return activeUserIds.has(uid);
+                });
+            }
+
+            if (requestId !== usersLoadRequestId) {
+                return false;
+            }
+
+            // Transform to View Model with real data
+            userState.users = profiles.map(p => {
+                // Support both new out_ prefixed columns and legacy column names
+                const id = p.out_id || p.id;
+                const email = p.out_email || p.email;
+                const username = p.out_username || p.username;
+                const avatar_url = p.out_avatar_url || p.avatar_url;
+                const last_active = latestLoginMap.get(id) || p.out_last_active_at || p.out_last_sign_in_at || p.last_sign_in_at;
+                const created = p.out_created_at || p.created_at;
+
+                const userPoints = pointsMap.get(id);
+                const accountFlags = classifyUserAccount({ email, username });
+                const activeRole = rolesMap.get(id) || null;
+                return {
+                    id: id,
+                    username: username || 'Unknown',
+                    email: email || null,
+                    avatar_url: avatar_url,
+                    last_sign_in_at: last_active || null, // Use computed active time
+                    created_at: created || null,
+                    // Real Points Data (using new system)
+                    points: userPoints?.total_balance || 0,
+                    total_earned: userPoints?.total_balance || 0, // Fallback as total_earned is not in balance table yet
+                    vip_level: (userPoints?.balance || 0) >= 1000 ? 'VIP' : null,
+                    // Tags
+                    tags: tagsMap.get(id) || [],
+                    // Status
+                    is_banned: blockedMap.has(id),
+                    block_info: blockedMap.get(id),
+                    // Admin Role
+                    is_admin: rolesMap.has(id) || isLockedSuperAdminEmail(email),
+                    admin_role: activeRole,
+                    admin_role_expiry_meta: getAdminRoleExpiryMeta(activeRole, { email }),
+                    is_test_or_system: accountFlags.isTestOrSystem
+                };
+            });
+
+            usersLastLoadedAt = Date.now();
+            usersLastLoadedSite = getUsersAuditSite();
+            renderUsersTable();
+            void maybeRestoreUserModalFromUrl();
+            return true;
+
+        } catch (err) {
+            if (requestId !== usersLoadRequestId) {
+                return false;
+            }
+
+            console.error('Failed to load users:', err);
+            if (!shouldShowLoading && userState.users.length > 0) {
+                return false;
+            }
+
+            document.getElementById('usersTableBody').innerHTML = `
+                <tr><td colspan="5" class="loading-cell users-table-status-cell">
+                    加载失败: ${err.message}
+                </td></tr>
+            `;
+            hideUsersEmptyState();
+            return false;
         }
+    })();
 
-        // Transform to View Model with real data
-        userState.users = profiles.map(p => {
-            // Support both new out_ prefixed columns and legacy column names
-            const id = p.out_id || p.id;
-            const email = p.out_email || p.email;
-            const username = p.out_username || p.username;
-            const avatar_url = p.out_avatar_url || p.avatar_url;
-            const last_active = latestLoginMap.get(id) || p.out_last_active_at || p.out_last_sign_in_at || p.last_sign_in_at;
-            const created = p.out_created_at || p.created_at;
+    usersLoadPromise = loadPromise;
 
-            const userPoints = pointsMap.get(id);
-            const accountFlags = classifyUserAccount({ email, username });
-            const activeRole = rolesMap.get(id) || null;
-            return {
-                id: id,
-                username: username || 'Unknown',
-                email: email || null,
-                avatar_url: avatar_url,
-                last_sign_in_at: last_active || null, // Use computed active time
-                created_at: created || null,
-                // Real Points Data (using new system)
-                points: userPoints?.total_balance || 0,
-                total_earned: userPoints?.total_balance || 0, // Fallback as total_earned is not in balance table yet
-                vip_level: (userPoints?.balance || 0) >= 1000 ? 'VIP' : null,
-                // Tags
-                tags: tagsMap.get(id) || [],
-                // Status
-                is_banned: blockedMap.has(id),
-                block_info: blockedMap.get(id),
-                // Admin Role
-                is_admin: rolesMap.has(id) || isLockedSuperAdminEmail(email),
-                admin_role: activeRole,
-                admin_role_expiry_meta: getAdminRoleExpiryMeta(activeRole, { email }),
-                is_test_or_system: accountFlags.isTestOrSystem
-            };
-        });
-
-        renderUsersTable();
-        void maybeRestoreUserModalFromUrl();
-
-    } catch (err) {
-        console.error('Failed to load users:', err);
-        document.getElementById('usersTableBody').innerHTML = `
-            <tr><td colspan="5" class="loading-cell users-table-status-cell">
-                加载失败: ${err.message}
-            </td></tr>
-        `;
-        hideUsersEmptyState();
+    try {
+        return await loadPromise;
+    } finally {
+        if (usersLoadPromise === loadPromise) {
+            usersLoadPromise = null;
+        }
     }
 }
 
@@ -1257,23 +1471,11 @@ function isMissingNotificationScopeColumnError(error) {
 }
 
 async function insertSystemNotificationWithScope(payload = {}) {
-    let response = await window.supabaseClient
-        .from('system_notifications')
-        .insert(payload);
-
-    if (!response?.error || !isMissingNotificationScopeColumnError(response.error)) {
-        return response;
-    }
-
-    const legacyPayload = { ...payload };
-    delete legacyPayload.scope;
-    delete legacyPayload.category;
-
-    response = await window.supabaseClient
-        .from('system_notifications')
-        .insert(legacyPayload);
-
-    return response;
+    console.warn('[AdminUsers] Deprecated client notification writer invoked.', payload);
+    return {
+        data: null,
+        error: new Error('Deprecated client notification writer')
+    };
 }
 
 // Execute batch notification send
@@ -1281,6 +1483,8 @@ async function executeBatchNotification() {
     const title = document.getElementById('notifTitle')?.value.trim();
     const content = document.getElementById('notifContent')?.value.trim();
     const type = document.getElementById('notifType')?.value || 'info';
+    const scope = 'user_personal';
+    const category = 'admin_notice';
 
     if (!title) {
         showToast('请输入通知标题', 'error');
@@ -1298,20 +1502,14 @@ async function executeBatchNotification() {
     }
 
     try {
-        for (const userId of batchNotificationUserIds) {
-            const { error } = await insertSystemNotificationWithScope({
-                user_id: userId,
-                title,
-                content,
-                type,
-                scope: 'user_personal',
-                category: 'admin_notice'
-            });
-
-            if (error) {
-                throw error;
-            }
-        }
+        await postAdminUsersManage('send_notification', {
+            userIds: batchNotificationUserIds,
+            title,
+            content,
+            type,
+            scope,
+            category
+        });
 
         showToast(`成功发送通知给 ${batchNotificationUserIds.length} 位用户`, 'success');
 
@@ -1382,13 +1580,10 @@ async function batchUnbanUsers() {
     showToast(`正在解封 ${userIds.length} 位用户...`, 'info');
 
     try {
-        for (const userId of userIds) {
-            await window.supabaseClient
-                .from('blocked_users')
-                .delete()
-                .eq('user_id', userId);
-        }
-
+        await mutateAdminUserBlocks({
+            action: 'clear_all',
+            userIds
+        });
         showToast(`成功解封 ${userIds.length} 位用户`, 'success');
         clearAllSelections();
         loadUsers();
@@ -1452,41 +1647,31 @@ async function executeBatchPointsAdjustment() {
     confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 处理中...';
 
     try {
-        const { data: { user: adminUser } } = await window.supabaseClient.auth.getUser();
-
-        for (const userId of batchPointsUserIds) {
-            // Get current balance
-            const { data: current } = await window.supabaseClient
-                .from('user_points')
-                .select('balance, total_earned')
-                .eq('user_id', userId)
-                .maybeSingle();
-
-            const currentBalance = current?.balance || 0;
-            const currentTotal = current?.total_earned || 0;
-            const newBalance = currentBalance + amount;
-            const newTotalEarned = amount > 0 ? currentTotal + amount : currentTotal;
-
-            // Update points
-            await window.supabaseClient
-                .from('user_points')
-                .upsert({
-                    user_id: userId,
-                    balance: newBalance,
-                    total_earned: newTotalEarned,
-                    updated_at: new Date().toISOString()
-                }, { onConflict: 'user_id' });
-
-            // Log to ledger
-            await window.supabaseClient
-                .from('points_ledger')
-                .insert({
-                    user_id: userId,
-                    amount: amount,
-                    reason: `[批量调整] ${reason}`,
-                    admin_id: adminUser?.id
-                });
+        const site = requireWritableUsersPointsSite({ label: '批量调整积分' });
+        if (!site) {
+            return;
         }
+
+        const payload = await postAdminUsersManage('adjust_points', {
+            userIds: batchPointsUserIds,
+            amount,
+            reason,
+            site
+        });
+        const resultMap = new Map((payload?.results || []).map((entry) => [entry.userId, entry]));
+
+        batchPointsUserIds.forEach((userId) => {
+            const result = resultMap.get(userId);
+            if (!result) {
+                return;
+            }
+
+            const userIndex = userState.users.findIndex((user) => user.id === userId);
+            if (userIndex !== -1) {
+                userState.users[userIndex].points = Number(result.new_total || 0);
+                userState.users[userIndex].total_earned = Number(result.new_total || 0);
+            }
+        });
 
         showToast(`成功为 ${batchPointsUserIds.length} 位用户${amount > 0 ? '增加' : '扣除'} ${Math.abs(amount)} 积分`, 'success');
 
@@ -1708,48 +1893,26 @@ async function batchRenewAdminAccess() {
     showToast(`正在为 ${eligibleUsers.length} 位管理员顺延 ${renewDays} 天...`, 'info');
 
     try {
-        const nowMs = Date.now();
+        const payload = await postAdminUsersManage('batch_renew_admin', {
+            userIds: eligibleUsers.map((user) => user.id),
+            renewDays
+        });
+        const updatedMap = new Map((payload?.updated || []).map((entry) => [entry.userId, entry]));
 
-        for (const user of eligibleUsers) {
-            const currentExpiresAtMs = new Date(user.admin_role?.expires_at || '').getTime();
-            const baseMs = Number.isFinite(currentExpiresAtMs) && currentExpiresAtMs > nowMs ? currentExpiresAtMs : nowMs;
-            const nextExpiresAt = new Date(baseMs + (renewDays * 24 * 60 * 60 * 1000)).toISOString();
-
-            const { error } = await window.supabaseClient
-                .from('admin_roles')
-                .update({ expires_at: nextExpiresAt })
-                .eq('user_id', user.id);
-
-            if (error) throw error;
-
-            const previousRoleInfo = {
-                is_admin: true,
-                permissions: Array.isArray(user.admin_role?.permissions) ? user.admin_role.permissions : [],
-                expires_at: user.admin_role?.expires_at || null,
-                unlimited_shop_purchases: false
-            };
-            const permissionAudit = buildAdminPermissionChangeDetails(previousRoleInfo, {
-                isAdmin: true,
-                permissions: previousRoleInfo.permissions,
-                expiresAt: nextExpiresAt,
-                unlimitedShopPurchases: false
-            }, {
-                save_reason: 'batch-renew',
-                batch_extend_days: renewDays
-            });
-
-            if (permissionAudit.hasChanges) {
-                await logAdminAction('update_admin_permissions', user.id, permissionAudit.details);
+        eligibleUsers.forEach((user) => {
+            const updated = updatedMap.get(user.id);
+            if (!updated) {
+                return;
             }
 
             user.admin_role = {
                 ...(user.admin_role || {}),
                 user_id: user.id,
                 role_name: user.admin_role?.role_name || 'admin',
-                expires_at: nextExpiresAt
+                expires_at: updated.expires_at || null
             };
             user.admin_role_expiry_meta = getAdminRoleExpiryMeta(user.admin_role, { email: user.email });
-        }
+        });
 
         renderUsersTable();
         renderBatchActionBar();
@@ -1798,44 +1961,27 @@ async function batchSetAdminExpiry() {
     showToast(`正在为 ${eligibleUsers.length} 位管理员${isPermanent ? '设为长期有效' : '覆盖到期时间'}...`, 'info');
 
     try {
-        for (const user of eligibleUsers) {
-            const previousRoleInfo = {
-                is_admin: true,
-                permissions: Array.isArray(user.admin_role?.permissions) ? user.admin_role.permissions : [],
-                expires_at: user.admin_role?.expires_at || null,
-                unlimited_shop_purchases: false
-            };
+        const payload = await postAdminUsersManage('batch_set_admin_expiry', {
+            userIds: eligibleUsers.map((user) => user.id),
+            mode: isPermanent ? 'permanent' : 'absolute',
+            expiresAt: nextExpiresAt
+        });
+        const updatedMap = new Map((payload?.updated || []).map((entry) => [entry.userId, entry]));
 
-            const { error } = await window.supabaseClient
-                .from('admin_roles')
-                .update({ expires_at: nextExpiresAt })
-                .eq('user_id', user.id);
-
-            if (error) throw error;
-
-            const permissionAudit = buildAdminPermissionChangeDetails(previousRoleInfo, {
-                isAdmin: true,
-                permissions: previousRoleInfo.permissions,
-                expiresAt: nextExpiresAt,
-                unlimitedShopPurchases: false
-            }, {
-                save_reason: 'batch-set-expiry',
-                batch_expiry_mode: isPermanent ? 'permanent' : 'absolute',
-                batch_expiry_label: isPermanent ? '长期有效' : nextExpiresAt
-            });
-
-            if (permissionAudit.hasChanges) {
-                await logAdminAction('update_admin_permissions', user.id, permissionAudit.details);
+        eligibleUsers.forEach((user) => {
+            const updated = updatedMap.get(user.id);
+            if (!updated) {
+                return;
             }
 
             user.admin_role = {
                 ...(user.admin_role || {}),
                 user_id: user.id,
                 role_name: user.admin_role?.role_name || 'admin',
-                expires_at: nextExpiresAt
+                expires_at: updated.expires_at || null
             };
             user.admin_role_expiry_meta = getAdminRoleExpiryMeta(user.admin_role, { email: user.email });
-        }
+        });
 
         renderUsersTable();
         renderBatchActionBar();
@@ -1862,22 +2008,10 @@ async function batchAddTags() {
     showToast(`正在为 ${userIds.length} 位用户添加标签...`, 'info');
 
     try {
-        for (const userId of userIds) {
-            // Check if tag already exists
-            const { data: existing } = await window.supabaseClient
-                .from('user_tags')
-                .select('id')
-                .eq('user_id', userId)
-                .eq('tag', tag)
-                .single();
-
-            if (!existing) {
-                await window.supabaseClient
-                    .from('user_tags')
-                    .insert({ user_id: userId, tag: tag });
-            }
-        }
-
+        await postAdminUsersManage('add_tag', {
+            userIds,
+            tag
+        });
         showToast(`成功为 ${userIds.length} 位用户添加标签 "${getTagLabel(tag)}"`, 'success');
         clearAllSelections();
         loadUsers();
@@ -5306,43 +5440,38 @@ async function saveModalAdminPermissions(userId, options = {}) {
     modalAdminPermissionsState.lastError = '';
     syncModalAdminPermissionsSaveUi();
     modalAdminPermissionsState.savePromise = (async () => {
-        const { data: currentAuth } = await window.supabaseClient.auth.getUser();
-        const currentAdminId = currentAuth?.user?.id || null;
+        await postAdminUsersManage('update_admin_permissions', {
+            userId: targetUserId,
+            isAdmin: formState.isAdmin,
+            permissions: formState.permissions,
+            expiresAt: formState.expiresAt,
+            unlimitedShopPurchases: formState.unlimitedShopPurchases,
+            auditExtras: permissionAudit.hasChanges
+                ? {
+                    ...permissionAudit.details,
+                    save_reason: reason
+                }
+                : {
+                    save_reason: reason
+                }
+        });
 
-        if (formState.isAdmin) {
-            const { error } = await window.supabaseClient
-                .from('admin_roles')
-                .update({ permissions: formState.permissions, expires_at: formState.expiresAt })
-                .eq('user_id', targetUserId);
-
-            if (error) throw error;
-        }
-
-        if (formState.unlimitedShopPurchases) {
-            const { error } = await window.supabaseClient
-                .from('user_purchase_entitlements')
-                .upsert({
+        const userIndex = userState.users.findIndex((user) => user.id === targetUserId);
+        if (userIndex !== -1) {
+            userState.users[userIndex].is_admin = formState.isAdmin === true;
+            userState.users[userIndex].admin_role = formState.isAdmin
+                ? {
+                    ...(userState.users[userIndex].admin_role || {}),
                     user_id: targetUserId,
-                    unlimited_shop_purchases: true,
-                    updated_at: new Date().toISOString(),
-                    updated_by: currentAdminId
-                }, { onConflict: 'user_id' });
-
-            if (error) throw error;
-        } else {
-            const { error } = await window.supabaseClient
-                .from('user_purchase_entitlements')
-                .delete()
-                .eq('user_id', targetUserId);
-
-            if (error) throw error;
-        }
-
-        if (permissionAudit.hasChanges) {
-            logAdminAction('update_admin_permissions', targetUserId, {
-                ...permissionAudit.details,
-                save_reason: reason
-            });
+                    role_name: userState.users[userIndex].admin_role?.role_name || 'admin',
+                    permissions: [...formState.permissions],
+                    expires_at: formState.expiresAt || null
+                }
+                : null;
+            userState.users[userIndex].admin_role_expiry_meta = getAdminRoleExpiryMeta(
+                userState.users[userIndex].admin_role,
+                { email: userState.users[userIndex].email }
+            );
         }
 
         markModalAdminPermissionsAsSaved(formState, {
@@ -8502,10 +8631,8 @@ async function openBanModal(userId) {
     overlay.classList.add('active');
 
     try {
-        const { data: bans } = await window.supabaseClient
-            .from('blocked_users')
-            .select('*')
-            .eq('user_id', userId);
+        const payload = await fetchAdminUserBlocks(userId);
+        const bans = Array.isArray(payload?.blocks) ? payload.blocks : [];
 
         // Pre-select options based on existing bans
         if (bans && bans.length > 0) {
@@ -8556,95 +8683,37 @@ async function executeBanSelection() {
     const targetId = document.getElementById('banTargetUserId').value;
     const isBatchMode = targetId === '__BATCH__';
     const userIds = isBatchMode ? batchBanUserIds : [targetId];
+    const pendingSelections = Object.entries(pendingBanState).map(([scope, state]) => ({
+        scope,
+        action: state?.action === 'unban' ? 'unblock' : 'block',
+        days: state?.days || null
+    }));
 
-    const { data: { user: adminUser } } = await window.supabaseClient.auth.getUser();
-
-    if (Object.keys(pendingBanState).length === 0) {
+    if (pendingSelections.length === 0) {
         closeBanUserModal();
         return;
-    }
-
-    const promises = [];
-
-    for (const userId of userIds) {
-        for (const [scope, state] of Object.entries(pendingBanState)) {
-            if (state.action === 'ban') {
-                // Calculate expiry
-                let expiresAt = null;
-                if (state.days) {
-                    const date = new Date();
-                    date.setDate(date.getDate() + parseInt(state.days));
-                    expiresAt = date.toISOString();
-                }
-
-                const payload = {
-                    user_id: userId,
-                    scope: scope,
-                    reason: state.days ? `临时封禁 ${state.days}天` : '永久封禁',
-                    admin_id: adminUser?.id,
-                    expires_at: expiresAt
-                };
-
-                // Upsert
-                promises.push(
-                    window.supabaseClient
-                        .from('blocked_users')
-                        .upsert(payload, { onConflict: 'user_id, scope' })
-                        .then(async () => {
-                            logAdminAction('BAN_USER', userId, { scope, days: state.days });
-                            // Notify Ban (skip for batch to avoid spam, or just send)
-                            if (!isBatchMode) {
-                                await sendSystemNotification(
-                                    userId,
-                                    '账号封禁通知',
-                                    `您已被封禁 [${scope === 'all' ? '全站' : scope}] 权限。\n时长：${state.days ? state.days + '天' : '永久'}.\n此期间您将无法使用相关功能。`,
-                                    'warning'
-                                );
-                            }
-                        })
-                );
-
-                // Log history
-                promises.push(
-                    window.supabaseClient.from('block_history').insert({
-                        user_id: userId, action: 'block', scope, reason: payload.reason, admin_id: adminUser?.id
-                    })
-                );
-
-            } else if (state.action === 'unban') {
-                // Delete
-                promises.push(
-                    window.supabaseClient
-                        .from('blocked_users')
-                        .delete()
-                        .eq('user_id', userId)
-                        .eq('scope', scope)
-                        .then(async () => {
-                            logAdminAction('UNBAN_USER', userId, { scope });
-                            if (!isBatchMode) {
-                                await sendSystemNotification(
-                                    userId,
-                                    '封禁解除通知',
-                                    `您的 [${scope === 'all' ? '全站' : scope}] 封禁已被管理员解除。您可以正常使用了。`,
-                                    'success'
-                                );
-                            }
-                        })
-                );
-                // Log history
-                promises.push(
-                    window.supabaseClient.from('block_history').insert({
-                        user_id: userId, action: 'unblock', scope, reason: 'Manual Unban', admin_id: adminUser?.id
-                    })
-                );
-            }
-        }
     }
 
     closeBanUserModal();
 
     try {
-        await Promise.all(promises);
+        const items = [];
+        userIds.forEach((userId) => {
+            pendingSelections.forEach((selection) => {
+                items.push({
+                    userId,
+                    scope: selection.scope,
+                    action: selection.action,
+                    days: selection.days,
+                    notifyUser: !isBatchMode
+                });
+            });
+        });
+
+        await mutateAdminUserBlocks({
+            action: 'apply_selection',
+            items
+        });
 
         if (isBatchMode) {
             showToast(`成功处理 ${userIds.length} 位用户的封禁状态`, 'success');
@@ -8654,7 +8723,7 @@ async function executeBanSelection() {
         } else {
             // Refresh single user drawer
             await openUserDrawer(targetId);
-            showToast('✅ 操作执行成功', 'success');
+            showToast('操作执行成功', 'success');
         }
     } catch (err) {
         console.error('Ban exec failed', err);
@@ -8667,12 +8736,8 @@ async function showBanDetails(userId) {
     if (!userId) userId = document.getElementById('banTargetUserId').value;
 
     try {
-        const { data: bans, error } = await window.supabaseClient
-            .from('blocked_users')
-            .select('*')
-            .eq('user_id', userId);
-
-        if (error) throw error;
+        const payload = await fetchAdminUserBlocks(userId);
+        const bans = Array.isArray(payload?.blocks) ? payload.blocks : [];
 
         if (!bans || bans.length === 0) {
             alert('该用户当前没有生效的封禁记录。');
@@ -8702,12 +8767,9 @@ async function resetUserAvatar(userId) {
     if (!confirm('确定要重置该用户的头像为默认头像吗？')) return;
 
     try {
-        const { error } = await window.supabaseClient
-            .from('profiles')
-            .update({ avatar_url: null })
-            .eq('id', userId);
-
-        if (error) throw error;
+        await postAdminUsersManage('reset_avatar', {
+            userId
+        });
 
         const userIndex = userState.users.findIndex(u => u.id === userId);
         if (userIndex !== -1) {
@@ -8718,7 +8780,6 @@ async function resetUserAvatar(userId) {
         renderUsersTable();
 
         alert('头像已重置');
-        logAdminAction('RESET_AVATAR', userId, {});
     } catch (err) {
         console.error('Avatar reset failed:', err);
         alert('操作失败: ' + err.message);
@@ -8883,62 +8944,26 @@ async function adjustUserPoints(userId) {
         confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 处理中...';
 
         try {
-            // 1. Fetch latest points
-            const { data: currentPoints, error: fetchError } = await window.supabaseClient
-                .from('user_points')
-                .select('balance, total_earned')
-                .eq('user_id', userId)
-                .maybeSingle();
+            const site = requireWritableUsersPointsSite({ label: '调整积分' });
+            if (!site) {
+                return;
+            }
 
-            if (fetchError) throw fetchError;
-
-            const currentBalance = currentPoints?.balance || 0;
-            const currentTotalEarned = currentPoints?.total_earned || 0;
-            const newBalance = currentBalance + amount;
-            const newTotalEarned = amount > 0 ? currentTotalEarned + amount : currentTotalEarned;
-
-            // 2. Upsert user_points
-            const { error: upsertError } = await window.supabaseClient
-                .from('user_points')
-                .upsert({
-                    user_id: userId,
-                    balance: newBalance,
-                    total_earned: newTotalEarned,
-                    updated_at: new Date().toISOString()
-                }, { onConflict: 'user_id' });
-
-            if (upsertError) throw upsertError;
-
-            // 3. Get admin info for audit
-            const { data: { user: currentUser } } = await window.supabaseClient.auth.getUser();
-            const adminIdentity = currentUser?.email || 'Unknown';
-
-            // 4. Log to ledger
-            await window.supabaseClient
-                .from('points_ledger')
-                .insert({
-                    user_id: userId,
-                    amount: amount,
-                    reason: `admin_manual: [${adminIdentity}] ${reason} `,
-                    reference_id: 'admin_adjustment'
-                });
-
-            logAdminAction('UPDATE_POINT', userId, { amount, reason });
-
-            // Send System Notification
-            const changeStr = amount > 0 ? `+${amount}` : `${amount}`;
-            await sendSystemNotification(
+            const payload = await postAdminUsersManage('adjust_points', {
                 userId,
-                '积分变动通知',
-                `您的积分已${amount > 0 ? '增加' : '扣除'} ${Math.abs(amount)}。\n原因：${reason}`,
-                amount > 0 ? 'success' : 'warning'
-            );
+                amount,
+                reason,
+                site
+            });
+            const result = Array.isArray(payload?.results) ? payload.results[0] : null;
+            const nextTotal = Number(result?.new_total || 0);
+            const changeStr = amount > 0 ? `+${amount}` : `${amount}`;
 
             // 5. Update Local State
             const userIndex = userState.users.findIndex(u => u.id === userId);
             if (userIndex !== -1) {
-                userState.users[userIndex].points = newBalance;
-                userState.users[userIndex].total_earned = newTotalEarned;
+                userState.users[userIndex].points = nextTotal;
+                userState.users[userIndex].total_earned = nextTotal;
             }
 
             // 6. Refresh UI
@@ -8950,7 +8975,7 @@ async function adjustUserPoints(userId) {
 
             // Close and Reset
             closePointsModal();
-            console.log(`✅ Points adjusted for ${userId}: ${changeStr}, new balance: ${newBalance} `);
+            console.log(`✅ Points adjusted for ${userId}: ${changeStr}, new balance: ${nextTotal} `);
 
         } catch (err) {
             console.error('Points adjustment failed:', err);
@@ -9108,93 +9133,18 @@ async function clearAllUserContent(userId) {
         confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 处理中...';
 
         try {
-            const results = [];
-
-            // 1. Delete Gallery Comments
-            if (document.getElementById('ccCheckComments').checked) {
-                const { error } = await window.supabaseClient
-                    .from('prompt_comments')
-                    .delete()
-                    .eq('user_id', userId);
-                if (error) console.warn('删除画廊评论失败:', error);
-                else results.push('画廊评论');
-            }
-
-            // 2. Delete Guestbook Messages
-            if (document.getElementById('ccCheckGuestbook').checked) {
-                const { error } = await window.supabaseClient
-                    .from('guestbook_messages')
-                    .delete()
-                    .eq('user_id', userId);
-                if (error) console.warn('删除留言失败:', error);
-                else results.push('留言板留言');
-            }
-
-            // 3. Delete Points Ledger
-            if (document.getElementById('ccCheckPoints').checked) {
-                const { error } = await window.supabaseClient
-                    .from('points_ledger')
-                    .delete()
-                    .eq('user_id', userId);
-                if (error) console.warn('删除积分记录失败:', error);
-                else results.push('积分记录');
-
-                // Note: This does NOT reset the user's current points balance, only the history.
-                // If user wants to reset balance, they should adjust points manually or we'd need another option.
-                // Assuming "Clear Content" implies history/logs.
-            }
-
-            // 4. Delete Block History
-            if (document.getElementById('ccCheckBlocks').checked) {
-                const { error } = await window.supabaseClient
-                    .from('block_history')
-                    .delete()
-                    .eq('user_id', userId);
-                if (error) console.warn('删除封禁记录失败:', error);
-                else results.push('封禁记录');
-            }
-
-            // 5. Delete Notes
-            if (document.getElementById('ccCheckNotes').checked) {
-                const { error } = await window.supabaseClient
-                    .from('admin_notes')
-                    .delete()
-                    .eq('target_user_id', userId);
-                if (error) console.warn('删除备注失败:', error);
-                else results.push('内部备注');
-            }
-
-            // 6. Delete Audit Logs
-            if (document.getElementById('ccCheckAudit').checked) {
-                const { error } = await window.supabaseClient
-                    .from('admin_audit_logs')
-                    .delete()
-                    .eq('target_user_id', userId);
-                if (error) console.warn('删除审计日志失败:', error);
-                else results.push('审计日志');
-            }
-
-            // 7. Reset Points & Purchases (Consolidated Atomic RPC)
-            const checkPoints = document.getElementById('ccCheckResetPoints').checked;
-            const checkPurchases = document.getElementById('ccCheckPurchases').checked;
-
-            if (checkPoints || checkPurchases) {
-                const { data, error } = await window.supabaseClient
-                    .rpc('fn_admin_clear_user_data', {
-                        target_user_id: userId,
-                        clear_points: checkPoints,
-                        clear_purchases: checkPurchases
-                    });
-
-                if (error) {
-                    console.warn('清空用户数据失败:', error);
-                    results.push('清空失败: ' + error.message);
-                } else {
-                    if (checkPoints) results.push('剩余积分(重置为0)');
-                    if (checkPurchases) results.push('购买记录(已收回)');
-                    console.log('✅ Clear Data Result:', data);
-                }
-            }
+            const payload = await postAdminUsersManage('clear_content', {
+                userId,
+                comments: document.getElementById('ccCheckComments').checked,
+                guestbook: document.getElementById('ccCheckGuestbook').checked,
+                points: document.getElementById('ccCheckPoints').checked,
+                blocks: document.getElementById('ccCheckBlocks').checked,
+                notes: document.getElementById('ccCheckNotes').checked,
+                audit: document.getElementById('ccCheckAudit').checked,
+                resetPoints: document.getElementById('ccCheckResetPoints').checked,
+                purchases: document.getElementById('ccCheckPurchases').checked
+            });
+            const results = Array.isArray(payload?.clearedItems) ? payload.clearedItems : [];
 
             // Update Local State if points were reset
             if (document.getElementById('ccCheckResetPoints').checked) {
@@ -9212,7 +9162,6 @@ async function clearAllUserContent(userId) {
 
             closeClearContentModal();
             console.log(`✅ Cleared content for user ${userId}: ${results.join(', ')} `);
-            logAdminAction('CLEAR_CONTENT', userId, { cleared_items: results });
 
         } catch (err) {
             console.error('Clear content failed:', err);
@@ -9230,14 +9179,10 @@ async function clearAllUserContent(userId) {
 // Add tag to user
 async function addUserTag(userId, tag) {
     try {
-        const { error } = await window.supabaseClient
-            .from('user_tags')
-            .insert({ user_id: userId, tag: tag });
-
-        if (error) throw error;
-
-        // Log action
-        await logAdminAction('add_tag', userId, { tag });
+        await postAdminUsersManage('add_tag', {
+            userId,
+            tag
+        });
 
         // Update local state
         const userIndex = userState.users.findIndex(u => u.id === userId);
@@ -9257,16 +9202,10 @@ async function addUserTag(userId, tag) {
 // Remove tag from user
 async function removeUserTag(userId, tag) {
     try {
-        const { error } = await window.supabaseClient
-            .from('user_tags')
-            .delete()
-            .eq('user_id', userId)
-            .eq('tag', tag);
-
-        if (error) throw error;
-
-        // Log action
-        await logAdminAction('remove_tag', userId, { tag });
+        await postAdminUsersManage('remove_tag', {
+            userId,
+            tag
+        });
 
         // Update local state
         const userIndex = userState.users.findIndex(u => u.id === userId);
@@ -9341,21 +9280,7 @@ function resetTagInput(userId, inputElement) {
 // ============================================
 
 async function logAdminAction(action, targetUserId, details = {}) {
-    try {
-        const { data: { user } } = await window.supabaseClient.auth.getUser();
-        if (!user) return;
-
-        await window.supabaseClient
-            .from('admin_audit_logs')
-            .insert({
-                admin_id: user.id,
-                action_type: action,
-                target_user_id: targetUserId,
-                details: details
-            });
-    } catch (err) {
-        console.error('Audit log failed:', err);
-    }
+    console.warn('[AdminUsers] Deprecated client audit writer invoked.', action, targetUserId, details);
 }
 
 // Fetch audit log entries
@@ -9447,24 +9372,27 @@ async function toggleAdminRole(userId, enabled) {
     const toggleInput = document.getElementById(`adminRoleToggle - ${userId} `) || document.getElementById('modalAdminToggle');
 
     if (enabled) {
-        // Insert role with default permissions
         try {
-            const { data: currentUser } = await window.supabaseClient.auth.getUser();
-
-            const { error } = await window.supabaseClient
-                .from('admin_roles')
-                .upsert({
+            await postAdminUsersManage('grant_admin', {
+                userId,
+                permissions: ['content.moderate']
+            });
+            const userIndex = userState.users.findIndex((entry) => entry.id === userId);
+            if (userIndex !== -1) {
+                userState.users[userIndex].is_admin = true;
+                userState.users[userIndex].admin_role = {
+                    ...(userState.users[userIndex].admin_role || {}),
                     user_id: userId,
                     role_name: 'admin',
                     permissions: ['content.moderate'],
-                    granted_by: currentUser.user?.id,
-                    granted_at: new Date().toISOString()
-                }, { onConflict: 'user_id' });
-
-            if (error) throw error;
-
+                    expires_at: null
+                };
+                userState.users[userIndex].admin_role_expiry_meta = getAdminRoleExpiryMeta(
+                    userState.users[userIndex].admin_role,
+                    { email: userState.users[userIndex].email }
+                );
+            }
             console.log('✅ Admin role granted to', userId);
-            logAdminAction('grant_admin', userId, { permissions: ['content.moderate'] });
             return true;
         } catch (err) {
             console.error('Failed to grant admin role:', err);
@@ -9476,17 +9404,19 @@ async function toggleAdminRole(userId, enabled) {
             return false;
         }
     } else {
-        // Remove role
         try {
-            const { error } = await window.supabaseClient
-                .from('admin_roles')
-                .delete()
-                .eq('user_id', userId);
-
-            if (error) throw error;
-
+            await postAdminUsersManage('revoke_admin', {
+                userId
+            });
+            const userIndex = userState.users.findIndex((entry) => entry.id === userId);
+            if (userIndex !== -1) {
+                userState.users[userIndex].is_admin = false;
+                userState.users[userIndex].admin_role = null;
+                userState.users[userIndex].admin_role_expiry_meta = getAdminRoleExpiryMeta(null, {
+                    email: userState.users[userIndex].email
+                });
+            }
             console.log('✅ Admin role revoked from', userId);
-            logAdminAction('revoke_admin', userId, {});
             return true;
         } catch (err) {
             console.error('Failed to revoke admin role:', err);
@@ -9515,19 +9445,15 @@ async function saveAdminPermissions(userId) {
     const expiresAt = expiryInput.value ? new Date(expiryInput.value).toISOString() : null;
 
     try {
-        const { error } = await window.supabaseClient
-            .from('admin_roles')
-            .update({
-                permissions: permissions,
-                expires_at: expiresAt
-            })
-            .eq('user_id', userId);
-
-        if (error) throw error;
+        await postAdminUsersManage('update_admin_permissions', {
+            userId,
+            isAdmin: true,
+            permissions,
+            expiresAt
+        });
 
         alert('✅ 权限配置已保存');
         console.log('✅ Permissions saved for', userId, permissions, 'expires:', expiresAt);
-        logAdminAction('update_permissions', userId, { permissions, expires_at: expiresAt });
     } catch (err) {
         console.error('Failed to save permissions:', err);
         alert('保存权限失败: ' + err.message);
@@ -9568,6 +9494,15 @@ window.filterTabByDate = filterTabByDate;
 window.openCustomDatePicker = openCustomDatePicker;
 window.batchRenewAdminAccess = batchRenewAdminAccess;
 window.batchSetAdminExpiry = batchSetAdminExpiry;
+
+if (window.AdminShell?.registerModule) {
+    window.AdminShell.registerModule('users', {
+        onSiteChange: handleAdminUsersSiteChange,
+        reload: handleAdminUsersSiteChange
+    });
+} else {
+    window.addEventListener('admin-site-changed', handleAdminUsersSiteChange);
+}
 
 function bindAdminUsersRuntimeDelegates() {
     if (document.documentElement.dataset.adminUsersRuntimeDelegatesBound === '1') {
@@ -9777,7 +9712,6 @@ async function submitUserNote() {
     }
 
     try {
-        // Get current admin ID
         const { data: { user } } = await window.supabaseClient.auth.getUser();
         if (!user) throw new Error('Not authenticated');
 
@@ -9794,15 +9728,10 @@ async function submitUserNote() {
         setUserModalTabFeedback('notes', '正在发送备注...', 'info');
         renderUserTab('notes');
 
-        const { error } = await window.supabaseClient
-            .from('admin_notes')
-            .insert({
-                target_user_id: currentModalUser.id,
-                admin_id: user.id,
-                content: content
-            });
-
-        if (error) throw error;
+        await postAdminUsersManage('add_note', {
+            userId: currentModalUser.id,
+            content
+        });
 
         await reloadUserModalTab('notes', {
             preserveData: true,
@@ -9811,8 +9740,6 @@ async function submitUserNote() {
             errorMessage: '备注已发送，但同步最新记录失败，可稍后手动刷新',
             clearPendingNote: true
         });
-
-        logAdminAction('ADD_NOTE', currentModalUser.id, { content_preview: content.substring(0, 20) });
 
     } catch (err) {
         patchUserModalTabState('notes', {
@@ -10062,6 +9989,8 @@ async function sendSystemNotification(userId, titleArg = null, contentArg = null
     let title = titleArg;
     let content = contentArg;
     let type = typeArg;
+    const scope = 'user_personal';
+    const category = 'admin_notice';
 
     if (isManual) {
         title = document.getElementById('notifTitle').value.trim();
@@ -10088,23 +10017,19 @@ async function sendSystemNotification(userId, titleArg = null, contentArg = null
     }
 
     try {
-        const { error } = await insertSystemNotificationWithScope({
-            user_id: userId,
+        await postAdminUsersManage('send_notification', {
+            userId,
             title,
             content,
             type: type || 'info',
-            scope: 'user_personal',
-            category: 'admin_notice'
+            scope,
+            category
         });
-
-        if (error) throw error;
 
         if (isManual) {
             alert('✅ 通知发送成功');
             closeNotificationModal();
         }
-
-        logAdminAction('SEND_NOTIFICATION', userId, { title, type });
 
     } catch (err) {
         console.error('Failed to send notification:', err);

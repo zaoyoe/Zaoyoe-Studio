@@ -80,7 +80,7 @@ class ChatWidget {
         this.adminSessionSearchQuery = '';
         this.opsAlertCaseActionLocks = new Set();
         this.opsAlertBatchAssignBusy = false;
-        this.opsAlertViewFilter = 'all';
+        this.opsAlertViewFilter = 'active';
         this.opsAlertOwnerFilter = 'all';
         this.opsAlertAssignableAdmins = [];
         this.opsAlertCurrentAdminId = '';
@@ -4800,6 +4800,29 @@ class ChatWidget {
             .trim();
     }
 
+    buildOpsAlertFallbackContent(alertType = '', payload = {}, title = '') {
+        const normalizedAlertType = String(alertType || '').trim().toLowerCase();
+        if (normalizedAlertType !== 'verify_service_disabled') {
+            return '';
+        }
+
+        const apiBaseUrl = String(payload.api_base_url || '').trim().replace(/\/+$/, '');
+        const upstreamEndpoint = String(payload.upstream_endpoint || '').trim()
+            || (apiBaseUrl ? (/\/openapi$/i.test(apiBaseUrl) ? apiBaseUrl : `${apiBaseUrl}/openapi`) : '');
+        const lines = [];
+        if (payload.service_status_label) lines.push(`当前状态：${String(payload.service_status_label || '').trim()}`);
+        if (payload.key_name) lines.push(`API Key：${String(payload.key_name || '').trim()}`);
+        if (payload.api_base_url) lines.push(`API Base：${String(payload.api_base_url || '').trim()}`);
+        if (upstreamEndpoint) lines.push(`请求地址：${upstreamEndpoint}`);
+        if (payload.last_error) lines.push(`最近错误：${String(payload.last_error || '').trim()}`);
+        const responseStatus = Number(payload.response_status);
+        if (Number.isFinite(responseStatus) && responseStatus > 0) lines.push(`响应状态：${responseStatus}`);
+        if (payload.checked_at) lines.push(`检查时间：${String(payload.checked_at || '').trim()}`);
+        if (payload.entry_path) lines.push(`处理入口：${String(payload.entry_path || '').trim()}`);
+
+        return lines.filter(Boolean).join('\n') || String(title || '').trim();
+    }
+
     getOpsAlertSeverityLabel(severity = 'warning') {
         const normalized = String(severity || 'warning').trim().toLowerCase();
         const labelMap = {
@@ -4864,6 +4887,12 @@ class ChatWidget {
         }
 
         return '站外告警同步';
+    }
+
+    isOpsAlertClosed(alert = {}) {
+        const caseStatus = String(alert.case_status || '').trim().toLowerCase();
+        const queueStatus = String(alert.status || '').trim().toLowerCase();
+        return caseStatus === 'resolved' || ['suppressed', 'handled', 'ignored'].includes(queueStatus);
     }
 
     getOpsAlertReferenceLabel(payload = {}) {
@@ -5275,6 +5304,34 @@ class ChatWidget {
         return parts.join(' · ');
     }
 
+    buildOpsAlertBodyText(alert = {}) {
+        const rawContent = String(alert.displayContent || alert.content || alert.title || '系统告警').trim();
+        if (!rawContent) {
+            return '系统告警';
+        }
+
+        if (!this.isOpsAlertClosed(alert)) {
+            return rawContent;
+        }
+
+        const rewrittenLines = rawContent
+            .split('\n')
+            .map((line, index) => {
+                const normalizedLine = String(line || '').trim();
+                if (normalizedLine.startsWith('当前状态：')) {
+                    return line.replace('当前状态：', '触发时状态：');
+                }
+                if (index === 0 && normalizedLine) {
+                    return `该告警已关闭，以下为触发当时的历史快照。\n${line}`;
+                }
+                return line;
+            })
+            .join('\n')
+            .trim();
+
+        return rewrittenLines || rawContent;
+    }
+
     getOpsAlertLinkedTicketId(alert = {}) {
         const candidates = [
             alert.case_note,
@@ -5295,7 +5352,7 @@ class ChatWidget {
         if (!alert.caseCategoryKey || !alert.caseTargetId) {
             return false;
         }
-        if (String(alert.case_status || '').trim().toLowerCase() === 'resolved') {
+        if (this.isOpsAlertClosed(alert)) {
             return false;
         }
         if (String(alert.alertType || '').trim().toLowerCase().startsWith('ticket_')) {
@@ -5531,7 +5588,7 @@ class ChatWidget {
             alerts = alerts.filter((alert) => String(alert.case_owner_admin_id || '').trim() === this.opsAlertCurrentAdminId);
         }
         if (this.opsAlertViewFilter === 'active') {
-            alerts = alerts.filter((alert) => String(alert.case_status || '').trim().toLowerCase() !== 'resolved');
+            alerts = alerts.filter((alert) => !this.isOpsAlertClosed(alert));
         }
         const ownerFilter = String(this.opsAlertOwnerFilter || 'all').trim();
         if (!ownerFilter || ownerFilter === 'all') {
@@ -5557,7 +5614,7 @@ class ChatWidget {
 
     getOpsAlertOwnerFilterOptions() {
         const unresolvedAlerts = (Array.isArray(this.opsAlertMessages) ? this.opsAlertMessages : [])
-            .filter((alert) => String(alert.case_status || '').trim().toLowerCase() !== 'resolved');
+            .filter((alert) => !this.isOpsAlertClosed(alert));
         const hasUnassigned = unresolvedAlerts.some((alert) => !String(alert.case_owner_admin_id || '').trim());
         const ownerMap = new Map();
         unresolvedAlerts.forEach((alert) => {
@@ -5600,7 +5657,7 @@ class ChatWidget {
         const filteredAlerts = this.getFilteredOpsAlertMessages();
         const caseMap = new Map();
         filteredAlerts
-            .filter((alert) => String(alert.case_status || '').trim().toLowerCase() !== 'resolved')
+            .filter((alert) => !this.isOpsAlertClosed(alert))
             .forEach((alert) => {
                 const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId);
                 if (!alert.caseCategoryKey || !alert.caseTargetId || caseMap.has(caseKey)) {
@@ -6351,7 +6408,8 @@ class ChatWidget {
     normalizeOpsAlertJob(row = {}) {
         const payload = this.parseChatOpsPayload(row.payload);
         const alertType = String(row.alert_type || '').trim().toLowerCase();
-        const content = String(row.content || '').trim();
+        const rawContent = String(row.content || '').trim();
+        const content = rawContent || this.buildOpsAlertFallbackContent(alertType, payload, row.title);
         const entryPath = String(payload.entry_path || '').trim() || this.extractOpsAlertEntryPath(content);
         const createdAt = row.created_at || row.updated_at || new Date().toISOString();
         const updatedAt = row.updated_at || createdAt;
@@ -6413,7 +6471,7 @@ class ChatWidget {
 
     getOpsAlertActiveCount() {
         return (Array.isArray(this.opsAlertMessages) ? this.opsAlertMessages : [])
-            .filter((alert) => String(alert.case_status || '').trim().toLowerCase() !== 'resolved')
+            .filter((alert) => !this.isOpsAlertClosed(alert))
             .length;
     }
 
@@ -6429,7 +6487,7 @@ class ChatWidget {
     getOpsAlertOwnerSummary(limit = 2) {
         const owners = Array.from(new Set(
             (Array.isArray(this.opsAlertMessages) ? this.opsAlertMessages : [])
-                .filter((alert) => String(alert.case_status || '').trim().toLowerCase() !== 'resolved')
+                .filter((alert) => !this.isOpsAlertClosed(alert))
                 .map((alert) => String(alert.case_owner_label || '').trim())
                 .filter(Boolean)
         ));
@@ -6445,12 +6503,18 @@ class ChatWidget {
 
     buildOpsAlertSession() {
         const latest = this.opsAlertMessages[0] || null;
+        const latestActive = (Array.isArray(this.opsAlertMessages) ? this.opsAlertMessages : [])
+            .find((alert) => !this.isOpsAlertClosed(alert)) || null;
         const activeCount = this.getOpsAlertActiveCount();
         const mutedModuleCount = this.getOpsAlertMutedModuleCount();
         const ownerSummary = this.getOpsAlertOwnerSummary();
         const preview = this.opsAlertLoadError
             ? `同步失败：${this.opsAlertLoadError}`
-            : (latest?.preview || '站外告警会同步到这里');
+            : latestActive
+                ? (latestActive.preview || '站外告警会同步到这里')
+                : latest
+                    ? '当前没有未关闭的站内代办'
+                    : '站外告警会同步到这里';
 
         const totalCountLabel = this.opsAlertMessages.length > 99 ? '99+' : String(this.opsAlertMessages.length || 0);
         const subtextParts = this.opsAlertLoadError
@@ -6479,9 +6543,9 @@ class ChatWidget {
             sessionIds: [this.opsAlertSessionId],
             nickname: '站内代办',
             email: subtext,
-            lastLogin: latest?.created_at || '',
+            lastLogin: latestActive?.created_at || latest?.created_at || '',
             lastMessage: preview,
-            lastTime: latest?.updated_at || latest?.created_at || '',
+            lastTime: latestActive?.updated_at || latestActive?.created_at || latest?.updated_at || latest?.created_at || '',
             isAdmin: false,
             userId: '',
             avatarUrl: '',
@@ -6822,7 +6886,7 @@ class ChatWidget {
 
         const body = document.createElement('div');
         body.className = 'ops-alert-card-content';
-        body.textContent = alert.displayContent || alert.content || alert.title || '系统告警';
+        body.textContent = this.buildOpsAlertBodyText(alert);
 
         msgDiv.appendChild(header);
         msgDiv.appendChild(body);

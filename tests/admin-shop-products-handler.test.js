@@ -239,10 +239,40 @@ test('shop products handler supports query and delivery filters for运营检索'
                 { method: 'select', args: ['*'] },
                 { method: 'eq', args: ['is_active', true] },
                 { method: 'eq', args: ['delivery_type', 'API'] },
-                { method: 'or', args: ['id.ilike.%Gift%,name.ilike.%Gift%,category.ilike.%Gift%,delivery_type.ilike.%Gift%'] },
+                { method: 'or', args: ['name.ilike.%Gift%,category.ilike.%Gift%,delivery_type.ilike.%Gift%'] },
                 { method: 'order', args: ['display_order', { ascending: false }] }
             ],
             mode: 'order'
         });
+    });
+});
+
+test('shop products handler does not apply text operators to uuid id searches', async () => {
+    await withShopProductsHandler({
+        queryResults: {
+            shop_products: [
+                {
+                    data: [{ id: 'prod_api_7', name: '账号 7 天套餐', delivery_type: 'API', is_active: true }],
+                    error: null
+                }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const req = {
+            method: 'GET',
+            headers: {},
+            url: '/api/admin/shop/products?query=7&fields=full'
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+        const searchExpression = state.queryCalls[0]?.operations.find((operation) => operation.method === 'or')?.args?.[0] || '';
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(searchExpression.includes('name.ilike.%7%'), true);
+        assert.equal(searchExpression.includes('id.ilike'), false);
+        assert.equal(searchExpression.includes('id.eq.7'), false);
     });
 });

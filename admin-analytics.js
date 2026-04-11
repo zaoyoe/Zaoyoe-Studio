@@ -30,6 +30,7 @@ let analyticsProductDetailRequestId = 0;
 let analyticsDestinationFocusTimeoutId = 0;
 const DEFAULT_ANALYTICS_DAYS = 7;
 const ANALYTICS_DAY_MS = 24 * 60 * 60 * 1000;
+const ANALYTICS_REENTRY_REFRESH_TTL_MS = 15000;
 const ANALYTICS_ADVANCED_WORKSPACE_STORAGE_KEY = 'analyticsAdvancedWorkspaceOpen';
 const ANALYTICS_ADVANCED_TOGGLE_BINDING_FLAG = 'analyticsAdvancedToggleBound';
 const ANALYTICS_PANEL_SUPPORT_TOP_CONTENT_LIMIT = 100;
@@ -43,7 +44,13 @@ const analyticsRuntime = {
     realtimeBound: false,
     realtimeChannels: [],
     outsideClickBound: false,
-    focusScrollSyncQueued: false
+    focusScrollSyncQueued: false,
+    reloadPromise: null,
+    reloadRequestId: 0,
+    reloadContextKey: '',
+    lastLoadedAt: 0,
+    lastLoadedContextKey: '',
+    lastReloadReason: ''
 };
 
 function getAnalyticsGlobalDateRangeState() {

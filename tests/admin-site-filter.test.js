@@ -16,6 +16,7 @@ function loadAdminSiteFilter(options = {}) {
     const analyticsReloads = [];
     const usersReloads = [];
     const paymentsReloads = [];
+    const shellSiteChanges = [];
     const activeModuleId = String(options.activeModuleId || '').trim();
     const context = {
         console: {
@@ -72,6 +73,14 @@ function loadAdminSiteFilter(options = {}) {
             }
         }
     };
+    if (options.withAdminShell) {
+        context.window.AdminShell = {
+            handleSiteChange(detail) {
+                shellSiteChanges.push(detail);
+                return true;
+            }
+        };
+    }
     context.globalThis = context.window;
 
     vm.runInNewContext(script, context);
@@ -83,7 +92,8 @@ function loadAdminSiteFilter(options = {}) {
         dispatchedEvents,
         analyticsReloads,
         usersReloads,
-        paymentsReloads
+        paymentsReloads,
+        shellSiteChanges
     };
 }
 
@@ -151,6 +161,28 @@ test('admin site filter reloads analytics aliases through the shared analytics d
         assert.equal(usersReloads.length, 0, `${activeModuleId} should not trigger user reloads`);
         assert.equal(paymentsReloads.length, 0, `${activeModuleId} should not trigger payment reloads`);
     });
+});
+
+test('admin site filter delegates site reloads to the admin shell when available', () => {
+    const { AdminSiteFilter, analyticsReloads, usersReloads, paymentsReloads, shellSiteChanges } = loadAdminSiteFilter({
+        activeModuleId: 'users',
+        withAdminShell: true,
+        localStorage: {
+            admin_site_filter: 'all'
+        }
+    });
+
+    AdminSiteFilter.select('intl');
+
+    assert.equal(shellSiteChanges.length, 1);
+    assert.deepEqual(JSON.parse(JSON.stringify(shellSiteChanges[0])), {
+        site: 'intl',
+        writableSite: 'intl',
+        isAllSitesSelected: false
+    });
+    assert.equal(analyticsReloads.length, 0);
+    assert.equal(usersReloads.length, 0);
+    assert.equal(paymentsReloads.length, 0);
 });
 
 test('admin studio delegated controls and bootstrap use shared writable site guard', () => {
