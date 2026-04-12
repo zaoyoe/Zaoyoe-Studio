@@ -67,6 +67,7 @@ test('gallery p1 workflow and cross-module linkage surfaces prompt ops, homepage
         'async function moveFeaturedPrompt(promptId, direction, options = {})',
         'async function openPromptSectionContext(promptId = \'\', options = {})',
         'data-admin-action="homepage-move-featured-prompt"',
+        'data-homepage-direction="top"',
         'data-admin-action="homepage-open-featured-gallery"',
         'data-admin-action="homepage-open-featured-comments"',
         'data-admin-action="homepage-open-featured-analytics"',

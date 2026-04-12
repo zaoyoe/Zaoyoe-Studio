@@ -6,8 +6,12 @@ const path = require('node:path');
 const adminHomepagePath = path.resolve(__dirname, '../admin-homepage.js');
 const framerHomePath = path.resolve(__dirname, '../js/framer_home.js');
 const prefetchHomePath = path.resolve(__dirname, '../js/prefetch-home.js');
+const homepageContractPath = path.resolve(__dirname, '../js/homepage-contract.js');
 const guestbookRuntimePath = path.resolve(__dirname, '../supabase-guestbook-functions.js');
 const migrationPath = path.resolve(__dirname, '../supabase/migrations/20260331_homepage_config_dual_site_bootstrap.sql');
+const homepageP1MigrationPath = path.resolve(__dirname, '../supabase/migrations/20260411_homepage_p1_schedule_templates_and_runtime_rpc.sql');
+const homepageContextHandlerPath = path.resolve(__dirname, '../server/api-handlers/admin/homepage/context.js');
+const adminApiPath = path.resolve(__dirname, '../api/admin.js');
 
 test('homepage admin runtime prefers site rows and invalidates site-specific caches', () => {
     const source = fs.readFileSync(adminHomepagePath, 'utf8');
@@ -18,9 +22,13 @@ test('homepage admin runtime prefers site rows and invalidates site-specific cac
     assert.match(source, /const result = await fetchHomepageConfigRows\(currentReadSite\);/);
     assert.match(source, /const rows = Array\.isArray\(result\.rows\) \? result\.rows : \[\];/);
     assert.match(source, /\/api\/admin\/homepage\/config/);
+    assert.match(source, /include_draft', '1'/);
     assert.match(source, /return normalizeHomepageSite\(filter\);/);
+    assert.match(source, /action: 'save_draft'/);
+    assert.match(source, /action: 'publish'/);
+    assert.match(source, /action: 'rollback'/);
+    assert.match(source, /const VIS_TO_SECTION = \{ hero: 'hero', prompts: 'prompts', gallery: 'prompts', shop: 'shop', verify: 'verify', guestbook: 'guestbook', ticker: 'ticker' \};/);
     assert.doesNotMatch(source, /filter === 'all' \? 'cn' : filter/);
-    assert.doesNotMatch(source, /supabaseClient\s*\.from\('homepage_config'\)/);
     assert.doesNotMatch(source, /zaoyoe_\$\{cacheSite\}_cache_v1_homepage_config/);
 });
 
@@ -28,16 +36,38 @@ test('homepage frontend runtime reads and writes site-specific prefetch payloads
     const framerSource = fs.readFileSync(framerHomePath, 'utf8');
     const prefetchSource = fs.readFileSync(prefetchHomePath, 'utf8');
     const guestbookSource = fs.readFileSync(guestbookRuntimePath, 'utf8');
+    const contractSource = fs.readFileSync(homepageContractPath, 'utf8');
 
     assert.match(framerSource, /\.rpc\('fn_get_homepage_config'/);
     assert.match(framerSource, /function readHomepagePrefetchCache\(site = getHomepageRuntimeSite\(\)\)/);
     assert.match(framerSource, /sessionStorage\.setItem\(getHomepagePrefetchCacheKey\(site\), JSON\.stringify\(/);
-    assert.match(framerSource, /data\.forEach\(item => \{/);
+    assert.match(framerSource, /this\.sectionOrder = HomepageContract\?\.sortSectionsByDisplayOrder\?\.\(data\)/);
+    assert.match(framerSource, /prompt\?\.supabaseId \?\? prompt\?\.id/);
+    assert.match(framerSource, /this\.findFeaturedPromptRecord\(promptPool, item\) \|\| this\.buildFeaturedPromptFallback\(item\)/);
+    assert.match(framerSource, /const columnCount = Math\.min\(5, Math\.max\(1, prompts\.length \|\| 1\)\);/);
+    assert.match(framerSource, /class="masonry-container" data-columns="\$\{columnCount\}"/);
+    assert.doesNotMatch(framerSource, /config\.featured_items\?\.length > 0\) \{\s+return config\.featured_items[\s\S]*\.slice\(0, config\.max_items \|\| 24\);/);
+    assert.match(framerSource, /sv\.isVisible\('prompts'\)/);
+    assert.doesNotMatch(framerSource, /sv\.isVisible\('gallery'\)/);
     assert.doesNotMatch(framerSource, /sessionStorage\.getItem\(HOMEPAGE_PREFETCH_CACHE_KEY\)/);
 
     assert.match(prefetchSource, /\.rpc\('fn_get_homepage_config'/);
     assert.match(prefetchSource, /sessionStorage\.setItem\(getHomepagePrefetchCacheKey\(currentSite\), JSON\.stringify\(/);
+    assert.match(prefetchSource, /cacheKind = promptPool\.length > 0 \? 'complete' : 'partial'/);
+    assert.match(prefetchSource, /prompt\?\.supabaseId \?\? prompt\?\.id/);
+    assert.match(prefetchSource, /findFeaturedPromptRecord\(promptPool, item\) \|\| buildFeaturedPromptFallback\(item\)/);
+    assert.match(prefetchSource, /getSectionExperimentValue\('prompts', config, 'featured_items', null\)/);
+    assert.doesNotMatch(prefetchSource, /config\.featured_items\.length > 0\) \{\s+return config\.featured_items[\s\S]*\.slice\(0, Number\(config\.max_items\) \|\| 24\);/);
+    assert.match(prefetchSource, /config\.verify \|\| \{\}/);
+    assert.match(prefetchSource, /screenshot: config\.screenshot_path \|\| '\/assets\/verify-preview\.png'/);
     assert.doesNotMatch(prefetchSource, /sessionStorage\.getItem\(HOMEPAGE_PREFETCH_CACHE_KEY\)/);
+
+    assert.match(contractSource, /global\.HomepageContract = \{/);
+    assert.match(contractSource, /gallery: 'prompts'/);
+    assert.match(contractSource, /MANAGED_SECTION_ORDER = Object\.freeze\(\['hero', 'prompts', 'shop', 'verify', 'guestbook', 'ticker'\]\)/);
+    assert.match(contractSource, /EXPERIMENT_FIELD_RULES = Object\.freeze\(\{/);
+    assert.match(contractSource, /function normalizeSectionExperiments\(section, value\)/);
+    assert.match(contractSource, /next\.experiments = normalizeSectionExperiments\(normalizedSection, source\.experiments\);/);
 
     assert.match(guestbookSource, /const siteCacheKey = `homepage_prefetch_\$\{currentSite\}`;/);
     assert.match(guestbookSource, /sessionStorage\.setItem\(siteCacheKey, JSON\.stringify\(parsed\)\);/);
@@ -48,9 +78,8 @@ test('homepage section visibility runtime now derives homepage sections from hom
     const adminHomepageSource = fs.readFileSync(adminHomepagePath, 'utf8');
     const sectionVisibilitySource = fs.readFileSync(path.resolve(__dirname, '../js/section-visibility.js'), 'utf8');
 
-    assert.match(adminHomepageSource, /const VIS_TO_SECTION = \{ hero: 'hero', gallery: 'prompts', shop: 'shop', verify: 'verify', guestbook: 'guestbook', footer: 'footer' \};/);
     assert.match(adminHomepageSource, /async function saveHomepageSectionVisibility\(section, checked, site\)/);
-    assert.match(adminHomepageSource, /const result = await updateHomepageConfigRow\(\{/);
+    assert.match(adminHomepageSource, /const result = await saveHomepageDraftRow\(\{/);
     assert.match(adminHomepageSource, /is_visible: checked/);
     assert.doesNotMatch(adminHomepageSource, /rpc\('get_all_system_config'\)/);
     assert.doesNotMatch(adminHomepageSource, /rpc\('update_system_config'/);
@@ -59,6 +88,8 @@ test('homepage section visibility runtime now derives homepage sections from hom
     assert.match(sectionVisibilitySource, /\.rpc\('fn_get_homepage_config'/);
     assert.match(sectionVisibilitySource, /p_include_hidden: true/);
     assert.doesNotMatch(sectionVisibilitySource, /rpc\('get_all_system_config'\)/);
+    assert.match(sectionVisibilitySource, /ticker: 'ticker'/);
+    assert.match(sectionVisibilitySource, /normalized === 'gallery'/);
     assert.match(sectionVisibilitySource, /footer: 'footer'/);
 });
 
@@ -101,4 +132,36 @@ test('homepage public rpc migration supports hidden sections for visibility cons
     assert.match(rpcMigration, /p_include_hidden BOOLEAN DEFAULT false/);
     assert.match(rpcMigration, /AND \(p_include_hidden OR hc\.is_visible = true\)/);
     assert.match(rpcMigration, /CREATE OR REPLACE FUNCTION public\.fn_get_homepage_config/);
+});
+
+test('homepage P1 context handler and migration wire templates, schedules, analytics, and runtime overlay', () => {
+    const contextSource = fs.readFileSync(homepageContextHandlerPath, 'utf8');
+    const adminApiSource = fs.readFileSync(adminApiPath, 'utf8');
+    const migration = fs.readFileSync(homepageP1MigrationPath, 'utf8');
+
+    assert.match(adminApiSource, /const homepageContextHandler = require\('\.\.\/server\/api-handlers\/admin\/homepage\/context'\);/);
+    assert.match(adminApiSource, /'homepage\/context': homepageContextHandler/);
+
+    assert.match(contextSource, /HOMEPAGE_ANALYTICS_EVENT_NAMES = Object\.freeze\(\[/);
+    assert.match(contextSource, /'homepage_prompt_click'/);
+    assert.match(contextSource, /'homepage_verify_click'/);
+    assert.match(contextSource, /'homepage_ticker_click'/);
+    assert.match(contextSource, /'homepage_experiment_impression'/);
+    assert.match(contextSource, /action === 'save_template'/);
+    assert.match(contextSource, /action === 'apply_template'/);
+    assert.match(contextSource, /action === 'schedule_publish'/);
+    assert.match(contextSource, /action === 'cancel_schedule'/);
+    assert.match(contextSource, /action === 'save_experiment'/);
+    assert.match(contextSource, /action === 'apply_recommendation'/);
+    assert.match(contextSource, /action === 'apply_theme_pack'/);
+    assert.match(contextSource, /buildHomepageThemePackList\(site, templates = \[\]\)/);
+    assert.match(contextSource, /homepage_site_templates/);
+    assert.match(contextSource, /homepage_site_schedules/);
+
+    assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.homepage_site_templates/);
+    assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.homepage_site_schedules/);
+    assert.match(migration, /CREATE OR REPLACE FUNCTION public\.fn_get_homepage_config/);
+    assert.match(migration, /active_schedule AS \(/);
+    assert.match(migration, /jsonb_each\(COALESCE\(payload -> 'sections', '\{\}'::jsonb\)\)/);
+    assert.match(migration, /COALESCE\(\(ss\.section_payload ->> 'display_order'\)::INT, hc\.display_order\)/);
 });

@@ -407,26 +407,18 @@ test('runVerifyQueueBacklogSweep enqueues queue backlog alerts with stable dedup
     const supabase = createSupabaseStub(state);
     const runtime = createOpsRuntime();
 
-    const fetchImpl = async (input) => {
+    const fetchImpl = async (input, init = {}) => {
         const url = String(input || '');
-        if (url === 'https://verify.test/api/balance') {
-            return new Response(JSON.stringify({
-                balance: 32,
-                total_used: 324,
-                cost_per_job: 1,
-                name: 'primary-key'
-            }), {
-                status: 200,
-                headers: {
-                    'Content-Type': 'application/json'
-                }
+        if (url === 'https://verify.test/openapi') {
+            assert.equal(init.method, 'POST');
+            assert.deepEqual(JSON.parse(init.body), {
+                action: 'get_balance',
+                cdkey: 'verify-api-key'
             });
-        }
-
-        if (url === 'https://verify.test/api/queue') {
             return new Response(JSON.stringify({
-                queue_size: 18,
-                running_jobs: 4
+                remaining_uses: 32,
+                total_used: 324,
+                name: 'primary-key'
             }), {
                 status: 200,
                 headers: {
@@ -453,9 +445,12 @@ test('runVerifyQueueBacklogSweep enqueues queue backlog alerts with stable dedup
     assert.equal(first.deduped, 0);
     assert.equal(state.jobs.length, 1);
     assert.equal(state.jobs[0].alert_type, 'verify_queue_backlog');
-    assert.equal(state.jobs[0].payload.queue_size, 18);
+    assert.equal(state.jobs[0].payload.queue_size, 0);
+    assert.equal(state.jobs[0].payload.running_jobs, 0);
     assert.equal(state.jobs[0].payload.active_job_count, 8);
     assert.equal(state.jobs[0].payload.recent_failure_count, 4);
+    assert.equal(state.jobs[0].payload.queue_error, 'provider_queue_not_supported');
+    assert.match(state.jobs[0].content, /队列查询：provider_queue_not_supported/);
 
     const second = await runVerifyQueueBacklogSweep(supabase, {
         runtime,
@@ -507,26 +502,18 @@ test('runVerifyQueueBacklogSweep prefers ops alert runtime queue config over leg
         }
     });
 
-    const fetchImpl = async (input) => {
+    const fetchImpl = async (input, init = {}) => {
         const url = String(input || '');
-        if (url === 'https://verify.test/api/balance') {
-            return new Response(JSON.stringify({
-                balance: 50,
-                total_used: 324,
-                cost_per_job: 1,
-                name: 'primary-key'
-            }), {
-                status: 200,
-                headers: {
-                    'Content-Type': 'application/json'
-                }
+        if (url === 'https://verify.test/openapi') {
+            assert.equal(init.method, 'POST');
+            assert.deepEqual(JSON.parse(init.body), {
+                action: 'get_balance',
+                cdkey: 'verify-api-key'
             });
-        }
-
-        if (url === 'https://verify.test/api/queue') {
             return new Response(JSON.stringify({
-                queue_size: 18,
-                running_jobs: 0
+                remaining_uses: 50,
+                total_used: 324,
+                name: 'primary-key'
             }), {
                 status: 200,
                 headers: {
@@ -556,5 +543,6 @@ test('runVerifyQueueBacklogSweep prefers ops alert runtime queue config over leg
 
     assert.equal(result.backlog_count, 1);
     assert.equal(state.jobs.length, 1);
-    assert.match(state.jobs[0].content, /阈值 10 个/);
+    assert.match(state.jobs[0].content, /本地活跃任务 1 个（阈值 1 个）/);
+    assert.match(state.jobs[0].content, /最近 30 分钟失败 1 次（阈值 1 次）/);
 });

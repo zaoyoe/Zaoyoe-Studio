@@ -1611,12 +1611,12 @@
 
         if (typeof window.requestIdleCallback === 'function') {
             state.tabPrefetchMode = 'idle';
-            state.tabPrefetchHandle = window.requestIdleCallback(runPrefetch, { timeout: 1200 });
+            state.tabPrefetchHandle = window.requestIdleCallback(runPrefetch, { timeout: 2400 });
             return true;
         }
 
         state.tabPrefetchMode = 'timeout';
-        state.tabPrefetchHandle = window.setTimeout(runPrefetch, 280);
+        state.tabPrefetchHandle = window.setTimeout(runPrefetch, 600);
         return true;
     }
 

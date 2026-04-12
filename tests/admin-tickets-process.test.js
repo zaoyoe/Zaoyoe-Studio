@@ -37,6 +37,7 @@ function createState(overrides = {}) {
         user: { id: 'admin-processor-1', email: 'ops@example.com' },
         tickets: [],
         orders: [],
+        commentWorkflows: [],
         refundCalls: [],
         refundResult: null,
         chatMessages: [],
@@ -63,7 +64,12 @@ function createSupabaseStub(state) {
             };
 
             function applyFilters(rows) {
-                return rows.filter((row) => queryState.filters.every(({ column, value }) => row[column] === value));
+                return rows.filter((row) => queryState.filters.every((filter) => {
+                    if (filter.operator === 'in') {
+                        return (Array.isArray(filter.values) ? filter.values : []).includes(row[filter.column]);
+                    }
+                    return row[filter.column] === filter.value;
+                }));
             }
 
             function execute() {
@@ -78,8 +84,10 @@ function createSupabaseStub(state) {
                 if (queryState.mode === 'select') {
                     const sourceRows = table === 'shop_tickets'
                         ? state.tickets
-                        : table === 'shop_orders'
-                            ? state.orders
+                            : table === 'shop_orders'
+                                ? state.orders
+                            : table === 'admin_comment_workflows'
+                                ? state.commentWorkflows
                             : table === 'chat_messages'
                                 ? state.chatMessages
                             : table === 'ops_alert_cases'
@@ -150,16 +158,24 @@ function createSupabaseStub(state) {
 
                 if (queryState.mode === 'upsert') {
                     const payload = { ...(queryState.payload || {}) };
-                    const rows = table === 'shop_risk_cases' ? state.shopRiskCases : state.cases;
+                    const rows = table === 'shop_risk_cases'
+                        ? state.shopRiskCases
+                        : table === 'admin_comment_workflows'
+                            ? state.commentWorkflows
+                            : state.cases;
                     const existingIndex = rows.findIndex((row) => (
                         table === 'shop_risk_cases'
                             ? row.target_id === payload.target_id
+                            : table === 'admin_comment_workflows'
+                                ? row.site === payload.site
+                                    && row.entity_type === payload.entity_type
+                                    && row.entity_id === payload.entity_id
                             : row.category_key === payload.category_key && row.target_id === payload.target_id
                     ));
                     const nextRow = existingIndex >= 0
                         ? { ...rows[existingIndex], ...payload }
                         : {
-                            id: `${table === 'shop_risk_cases' ? 'legacy-case' : 'case'}-${rows.length + 1}`,
+                            id: `${table === 'shop_risk_cases' ? 'legacy-case' : table === 'admin_comment_workflows' ? 'workflow' : 'case'}-${rows.length + 1}`,
                             created_at: '2026-03-30T12:00:00.000Z',
                             ...payload
                         };
@@ -179,6 +195,10 @@ function createSupabaseStub(state) {
                 },
                 eq(column, value) {
                     queryState.filters.push({ column, value });
+                    return query;
+                },
+                in(column, values) {
+                    queryState.filters.push({ column, values, operator: 'in' });
                     return query;
                 },
                 update(payload) {
@@ -437,6 +457,76 @@ test('ticket process syncs the result back into the linked chat session when the
         assert.equal(state.notifications[0].category, 'ticket_result');
         assert.equal(state.auditLogs.length, 1);
         assert.deepEqual(state.auditLogs[0].details.linked_chat_session, payload.linkedChatSession);
+    });
+});
+
+test('ticket process syncs linked comment workflows when the ticket came from评论治理', async () => {
+    await withHandler({
+        tickets: [{
+            id: 'ticket-comment-1',
+            user_id: 'user-comment-1',
+            order_id: '',
+            status: 'PENDING',
+            description: [
+                '[评论管理转工单]',
+                '评论类型：画廊评论',
+                '评论视图：gallery',
+                '实体类型：prompt_comment',
+                '评论ID：comment_1',
+                'Prompt ID：prompt_1',
+                '上下文：Prompt One',
+                '站点：cn'
+            ].join('\n'),
+            created_at: '2026-03-30T10:00:00.000Z',
+            updated_at: '2026-03-30T10:00:00.000Z'
+        }],
+        commentWorkflows: [{
+            id: 'workflow-comment-1',
+            site: 'cn',
+            entity_type: 'prompt_comment',
+            entity_id: 'comment_1',
+            status: 'escalated',
+            priority: 'high',
+            assignee_id: 'admin-processor-1',
+            assignee_label: 'ops@example.com',
+            tags: ['ticketed'],
+            note_count: 0,
+            linked_ticket_count: 1,
+            linked_ticket_ids: ['ticket-comment-1'],
+            resolved_at: null,
+            metadata: {},
+            updated_at: '2026-03-30T10:00:00.000Z',
+            last_activity_at: '2026-03-30T10:00:00.000Z'
+        }]
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            headers: {},
+            body: {
+                ticketId: 'ticket-comment-1',
+                newStatus: 'RESOLVED',
+                adminReply: '评论问题已经处理完成'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.ticket.status, 'RESOLVED');
+        assert.deepEqual(payload.linkedCommentWorkflow, {
+            site: 'cn',
+            entity_type: 'prompt_comment',
+            entity_id: 'comment_1',
+            workflow_status: 'resolved',
+            linked_ticket_count: 1
+        });
+        assert.equal(state.commentWorkflows.length, 1);
+        assert.equal(state.commentWorkflows[0].status, 'resolved');
+        assert.ok(state.commentWorkflows[0].resolved_at);
+        assert.equal(state.auditLogs[0].details.linked_comment_workflow.workflow_status, 'resolved');
     });
 });
 

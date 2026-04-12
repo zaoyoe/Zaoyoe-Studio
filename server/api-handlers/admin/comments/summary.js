@@ -4,15 +4,28 @@ const {
 } = require('../../../../api/_lib/admin');
 const {
     applyCommentsSiteFilter,
-    normalizeCommentsSite
+    normalizeCommentsSite,
+    normalizeCommentsView
 } = require('./shared');
 const {
     isMissingCommentWorkflowSchemaError
 } = require('./_workflow');
+const {
+    fetchCommentsSummaryFromFeed,
+    isMissingAdminCommentsFeedError
+} = require('./_feed-view');
 
 function getQueryParams(req) {
     const url = new URL(req.url || '', 'http://localhost');
     return url.searchParams;
+}
+
+function normalizeCommentsSummaryView(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized || normalized === 'all') {
+        return 'all';
+    }
+    return normalizeCommentsView(normalized);
 }
 
 function isActiveBlock(row, now = new Date()) {
@@ -52,7 +65,8 @@ function getBlockedContentCount({
     guestbookMessages = [],
     guestbookComments = [],
     galleryComments = [],
-    blockRows = []
+    blockRows = [],
+    view = 'all'
 } = {}) {
     const now = new Date();
     const activeBlockRows = (Array.isArray(blockRows) ? blockRows : []).filter((row) => isActiveBlock(row, now));
@@ -74,16 +88,23 @@ function getBlockedContentCount({
         return scopes instanceof Set && (scopes.has('all') || scopes.has(scope));
     };
 
-    return (guestbookMessages || []).filter((row) => isBlockedForScope(row?.user_id, 'guestbook')).length
-        + (guestbookComments || []).filter((row) => isBlockedForScope(row?.user_id, 'guestbook')).length
-        + (galleryComments || []).filter((row) => isBlockedForScope(row?.user_id, 'gallery')).length;
+    const includeGuestbook = view === 'all' || view === 'guestbook';
+    const includeGallery = view === 'all' || view === 'gallery';
+
+    return (includeGuestbook
+        ? (guestbookMessages || []).filter((row) => isBlockedForScope(row?.user_id, 'guestbook')).length
+            + (guestbookComments || []).filter((row) => isBlockedForScope(row?.user_id, 'guestbook')).length
+        : 0)
+        + (includeGallery
+            ? (galleryComments || []).filter((row) => isBlockedForScope(row?.user_id, 'gallery')).length
+            : 0);
 }
 
 async function fetchOptionalWorkflowRows(supabase, site) {
     const { data, error } = await applyCommentsSiteFilter(
         supabase
             .from('admin_comment_workflows')
-            .select('status, priority, linked_ticket_count, tags'),
+            .select('entity_type, status, priority, linked_ticket_count, tags'),
         site
     );
 
@@ -97,6 +118,19 @@ async function fetchOptionalWorkflowRows(supabase, site) {
     return Array.isArray(data) ? data : [];
 }
 
+function matchesCommentsWorkflowView(row, view = 'all') {
+    if (view === 'all') {
+        return true;
+    }
+
+    const entityType = String(row?.entity_type || '').trim().toLowerCase();
+    if (view === 'guestbook') {
+        return entityType === 'guestbook_message' || entityType === 'guestbook_comment';
+    }
+
+    return entityType === 'prompt_comment';
+}
+
 module.exports = async (req, res) => {
     if (req.method !== 'GET') {
         res.setHeader('Allow', 'GET');
@@ -107,6 +141,23 @@ module.exports = async (req, res) => {
         const { supabase } = await requireAdmin(req, { permission: 'content.moderate' });
         const searchParams = getQueryParams(req);
         const site = normalizeCommentsSite(searchParams.get('site') || req.adminSite, 'all');
+        const view = normalizeCommentsSummaryView(searchParams.get('view'));
+
+        if (view === 'all') {
+            try {
+                const summary = await fetchCommentsSummaryFromFeed(supabase, site);
+                return sendJson(res, 200, {
+                    success: true,
+                    site,
+                    view,
+                    summary
+                });
+            } catch (fastPathError) {
+                if (!isMissingAdminCommentsFeedError(fastPathError)) {
+                    throw fastPathError;
+                }
+            }
+        }
 
         const now = Date.now();
         const todayStart = new Date();
@@ -147,35 +198,40 @@ module.exports = async (req, res) => {
         const guestbookCommentRows = guestbookComments || [];
         const galleryCommentRows = galleryComments || [];
 
-        const guestbookTopCommentCount = guestbookCommentRows.filter((row) => !row?.parent_id).length;
-        const guestbookReplyCount = guestbookCommentRows.filter((row) => row?.parent_id).length;
-        const galleryTopCommentCount = galleryCommentRows.filter((row) => !row?.parent_id).length;
-        const galleryReplyCount = galleryCommentRows.filter((row) => row?.parent_id).length;
+        const scopedGuestbookMessages = view === 'gallery' ? [] : guestbookMessageRows;
+        const scopedGuestbookComments = view === 'gallery' ? [] : guestbookCommentRows;
+        const scopedGalleryComments = view === 'guestbook' ? [] : galleryCommentRows;
+        const scopedWorkflowRows = workflowRows.filter((row) => matchesCommentsWorkflowView(row, view));
 
-        const totalMessages = guestbookMessageRows.length;
+        const guestbookTopCommentCount = scopedGuestbookComments.filter((row) => !row?.parent_id).length;
+        const guestbookReplyCount = scopedGuestbookComments.filter((row) => row?.parent_id).length;
+        const galleryTopCommentCount = scopedGalleryComments.filter((row) => !row?.parent_id).length;
+        const galleryReplyCount = scopedGalleryComments.filter((row) => row?.parent_id).length;
+
+        const totalMessages = scopedGuestbookMessages.length;
         const totalComments = guestbookTopCommentCount + galleryTopCommentCount;
         const totalReplies = guestbookReplyCount + galleryReplyCount;
         const totalFeedback = totalMessages + totalComments + totalReplies;
 
         const todayCount = countRowsWithinRange(
-            [...guestbookMessageRows, ...guestbookCommentRows, ...galleryCommentRows],
+            [...scopedGuestbookMessages, ...scopedGuestbookComments, ...scopedGalleryComments],
             todayStartMs,
             Number.POSITIVE_INFINITY
         );
 
         const activeUsersCount = new Set([
-            ...collectUniqueUsersWithinRange(guestbookMessageRows, weekStartMs),
-            ...collectUniqueUsersWithinRange(guestbookCommentRows, weekStartMs),
-            ...collectUniqueUsersWithinRange(galleryCommentRows, weekStartMs)
+            ...collectUniqueUsersWithinRange(scopedGuestbookMessages, weekStartMs),
+            ...collectUniqueUsersWithinRange(scopedGuestbookComments, weekStartMs),
+            ...collectUniqueUsersWithinRange(scopedGalleryComments, weekStartMs)
         ]).size;
 
         const thisWeekCount = countRowsWithinRange(
-            [...guestbookMessageRows, ...guestbookCommentRows, ...galleryCommentRows],
+            [...scopedGuestbookMessages, ...scopedGuestbookComments, ...scopedGalleryComments],
             weekStartMs,
             Number.POSITIVE_INFINITY
         );
         const prevWeekCount = countRowsWithinRange(
-            [...guestbookMessageRows, ...guestbookCommentRows, ...galleryCommentRows],
+            [...scopedGuestbookMessages, ...scopedGuestbookComments, ...scopedGalleryComments],
             twoWeeksAgoMs,
             weekStartMs
         );
@@ -183,20 +239,18 @@ module.exports = async (req, res) => {
             ? Math.round(((thisWeekCount - prevWeekCount) / prevWeekCount) * 100)
             : 0;
 
-        const workflowResolvedCount = workflowRows.filter((row) => String(row?.status || '').trim().toLowerCase() === 'resolved').length;
-        const workflowIgnoredCount = workflowRows.filter((row) => String(row?.status || '').trim().toLowerCase() === 'ignored').length;
-        const workflowEscalatedCount = workflowRows.filter((row) => {
-            const status = String(row?.status || '').trim().toLowerCase();
-            const linkedTicketCount = Number.parseInt(row?.linked_ticket_count, 10) || 0;
-            return status === 'escalated' || linkedTicketCount > 0;
-        }).length;
-        const workflowHighRiskCount = workflowRows.filter((row) => {
+        const workflowResolvedCount = scopedWorkflowRows.filter((row) => String(row?.status || '').trim().toLowerCase() === 'resolved').length;
+        const workflowIgnoredCount = scopedWorkflowRows.filter((row) => String(row?.status || '').trim().toLowerCase() === 'ignored').length;
+        const workflowEscalatedCount = scopedWorkflowRows.filter((row) => String(row?.status || '').trim().toLowerCase() === 'escalated').length;
+        const workflowHighRiskCount = scopedWorkflowRows.filter((row) => {
             const priority = String(row?.priority || '').trim().toLowerCase();
             const tags = Array.isArray(row?.tags) ? row.tags : [];
             return priority === 'high'
                 || tags.some((tag) => ['risk', 'high_risk', 'spam', 'abuse'].includes(String(tag || '').toLowerCase()));
         }).length;
 
+        // "未回复留言" 是一个跨页签队列入口，点击后会切回留言板，
+        // 所以它始终展示当前站点下的真实留言积压，而不是当前 view 内的子集。
         const guestbookReplyCounts = guestbookCommentRows.reduce((acc, row) => {
             const messageId = String(row?.message_id || '').trim();
             if (!messageId) {
@@ -208,10 +262,11 @@ module.exports = async (req, res) => {
         const guestbookUnrepliedCount = guestbookMessageRows.filter((row) => (guestbookReplyCounts[row.id] || 0) <= 0).length;
 
         const blockedUserContentCount = getBlockedContentCount({
-            guestbookMessages: guestbookMessageRows,
-            guestbookComments: guestbookCommentRows,
-            galleryComments: galleryCommentRows,
-            blockRows
+            guestbookMessages: scopedGuestbookMessages,
+            guestbookComments: scopedGuestbookComments,
+            galleryComments: scopedGalleryComments,
+            blockRows,
+            view
         });
 
         const openGovernanceCount = Math.max(
@@ -222,6 +277,7 @@ module.exports = async (req, res) => {
         return sendJson(res, 200, {
             success: true,
             site,
+            view,
             summary: {
                 totalCount: totalFeedback,
                 todayCount,
@@ -237,6 +293,7 @@ module.exports = async (req, res) => {
                 escalatedCount: workflowEscalatedCount,
                 resolvedCount: workflowResolvedCount,
                 queueCounts: {
+                    pending: openGovernanceCount,
                     guestbook_unreplied: guestbookUnrepliedCount,
                     high_risk: Math.max(workflowHighRiskCount, blockedUserContentCount),
                     blocked_user: blockedUserContentCount,

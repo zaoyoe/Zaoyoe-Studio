@@ -43,6 +43,32 @@ function roundNumber(value, digits = 2) {
     return Math.round(normalizeNumber(value, 0) * multiplier) / multiplier;
 }
 
+function normalizeVerifyApiBaseUrl(value) {
+    const normalized = String(value || '').trim().replace(/\/+$/, '');
+    if (!normalized) return '';
+    return /\/openapi$/i.test(normalized) ? normalized : `${normalized}/openapi`;
+}
+
+function buildVerifyApiEndpointCandidates(value) {
+    const configured = String(value || '').trim().replace(/\/+$/, '');
+    const primary = normalizeVerifyApiBaseUrl(configured);
+    const root = primary.replace(/\/openapi$/i, '');
+    const candidates = [];
+    const seen = new Set();
+    const addCandidate = (candidate) => {
+        const normalized = normalizeText(candidate).replace(/\/+$/, '');
+        if (!normalized || seen.has(normalized)) return;
+        seen.add(normalized);
+        candidates.push(normalized);
+    };
+
+    addCandidate(primary);
+    addCandidate(configured);
+    addCandidate(root);
+
+    return candidates;
+}
+
 function normalizeVerifyQuotaMonitorConfig(rawConfig = {}, env = process.env) {
     const source = rawConfig && typeof rawConfig === 'object' ? rawConfig : {};
 
@@ -120,6 +146,8 @@ function buildFetchOptions(timeoutMs) {
 
 async function fetchJson(url, {
     apiKey,
+    method = 'GET',
+    body = null,
     fetchImpl = global.fetch,
     timeoutMs = DEFAULT_VERIFY_QUOTA_MONITOR_CONFIG.request_timeout_ms
 } = {}) {
@@ -128,10 +156,11 @@ async function fetchJson(url, {
     }
 
     const response = await fetchImpl(url, {
-        method: 'GET',
+        method,
         headers: {
-            'X-API-Key': apiKey
+            'Content-Type': 'application/json'
         },
+        body: body ? JSON.stringify(body) : undefined,
         ...buildFetchOptions(timeoutMs)
     });
 
@@ -167,52 +196,92 @@ function buildErrorMessage(result, fallback) {
     );
 }
 
+function shouldTryNextVerifyEndpoint(result) {
+    const status = Number(result?.status || 0);
+    return status === 404 || status === 405;
+}
+
+function pickVerifyFailureAttempt(attempts = []) {
+    if (!Array.isArray(attempts) || !attempts.length) return null;
+    return attempts.find((attempt) => {
+        const status = Number(attempt?.result?.status || 0);
+        return status === 401 || status === 403 || (
+            status >= 200
+            && status < 300
+            && attempt?.result?.data?.success === false
+        );
+    }) || attempts[0];
+}
+
 async function fetchVerifyQuotaSnapshot(verifyConfig = {}, options = {}) {
-    const apiBaseUrl = String(verifyConfig.apiBaseUrl || verifyConfig.api_base_url || '').replace(/\/+$/, '');
+    const endpointCandidates = buildVerifyApiEndpointCandidates(verifyConfig.apiBaseUrl || verifyConfig.api_base_url || '');
+    const apiBaseUrl = endpointCandidates[0] || '';
     const apiKey = normalizeText(verifyConfig.apiKey || verifyConfig.api_key);
 
     if (!apiBaseUrl || !apiKey) {
         return {
             ok: false,
-            error: 'verify_api_not_configured'
+            error: 'verify_api_not_configured',
+            api_base_url: apiBaseUrl || null,
+            upstream_endpoint: apiBaseUrl || null,
+            attempted_endpoints: endpointCandidates
         };
     }
 
-    const balanceResult = await fetchJson(`${apiBaseUrl}/api/balance`, {
-        apiKey,
-        fetchImpl: options.fetchImpl,
-        timeoutMs: options.timeoutMs
-    });
+    const failedAttempts = [];
+    let balanceResult = null;
+    let successfulEndpoint = '';
 
-    if (!balanceResult.ok) {
-        return {
-            ok: false,
-            error: buildErrorMessage(balanceResult, `balance_http_${balanceResult.status || 0}`),
-            status: balanceResult.status,
-            balance_result: balanceResult
-        };
-    }
-
-    let queueResult = null;
-    let queueError = '';
-    try {
-        queueResult = await fetchJson(`${apiBaseUrl}/api/queue`, {
+    for (const endpoint of endpointCandidates) {
+        balanceResult = await fetchJson(endpoint, {
             apiKey,
+            method: 'POST',
+            body: {
+                action: 'get_balance',
+                cdkey: apiKey
+            },
             fetchImpl: options.fetchImpl,
             timeoutMs: options.timeoutMs
         });
-        if (!queueResult.ok) {
-            queueError = buildErrorMessage(queueResult, `queue_http_${queueResult.status || 0}`);
+
+        if (balanceResult.ok && balanceResult.data?.success !== false) {
+            successfulEndpoint = endpoint;
+            break;
         }
-    } catch (error) {
-        queueError = normalizeText(error?.message) || 'queue_request_failed';
+
+        failedAttempts.push({
+            endpoint,
+            result: balanceResult,
+            error: buildErrorMessage(balanceResult, `balance_http_${balanceResult.status || 0}`)
+        });
+
+        if (!shouldTryNextVerifyEndpoint(balanceResult)) {
+            break;
+        }
+    }
+
+    if (!successfulEndpoint) {
+        const failedAttempt = pickVerifyFailureAttempt(failedAttempts) || {
+            endpoint: apiBaseUrl,
+            result: balanceResult,
+            error: 'verify_request_failed'
+        };
+        return {
+            ok: false,
+            error: normalizeText(failedAttempt.error) || buildErrorMessage(failedAttempt.result, `balance_http_${failedAttempt.result?.status || 0}`),
+            status: Number(failedAttempt.result?.status || 0),
+            api_base_url: apiBaseUrl,
+            upstream_endpoint: normalizeText(failedAttempt.endpoint) || apiBaseUrl,
+            attempted_endpoints: endpointCandidates,
+            balance_result: failedAttempt.result || null
+        };
     }
 
     const balanceData = balanceResult.data || {};
-    const queueData = queueResult?.data || {};
-    const balance = roundNumber(pickNumeric(balanceData, ['balance', 'credits'], 0), 2);
+    const queueData = {};
+    const balance = roundNumber(pickNumeric(balanceData, ['remaining_uses', 'balance', 'credits'], 0), 2);
     const totalUsed = roundNumber(pickNumeric(balanceData, ['total_used', 'used', 'totalUsed'], 0), 2);
-    const costPerJob = Math.max(0.000001, roundNumber(pickNumeric(balanceData, ['cost_per_job', 'costPerJob'], 1), 4));
+    const costPerJob = 1;
     const remainingJobs = Math.max(0, Math.floor(balance / costPerJob));
     const queueSize = Math.max(0, Math.round(pickNumeric(queueData, ['queue_size', 'queued_jobs', 'pending_jobs', 'pending'], 0) || 0));
     const runningJobs = Math.max(0, Math.round(pickNumeric(queueData, ['running_jobs', 'processing_jobs', 'active_jobs', 'running'], 0) || 0));
@@ -220,6 +289,8 @@ async function fetchVerifyQuotaSnapshot(verifyConfig = {}, options = {}) {
     return {
         ok: true,
         api_base_url: apiBaseUrl,
+        upstream_endpoint: successfulEndpoint,
+        attempted_endpoints: endpointCandidates,
         key_name: normalizeText(balanceData.name || balanceData.key_name || balanceData.keyName),
         balance,
         credits: balance,
@@ -228,7 +299,7 @@ async function fetchVerifyQuotaSnapshot(verifyConfig = {}, options = {}) {
         remaining_jobs: remainingJobs,
         queue_size: queueSize,
         running_jobs: runningJobs,
-        queue_error: queueError || '',
+        queue_error: 'provider_queue_not_supported',
         checked_at: new Date(options.now || Date.now()).toISOString()
     };
 }

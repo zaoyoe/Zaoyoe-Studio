@@ -785,6 +785,29 @@ function normalizeJsonObject(value) {
         : {};
 }
 
+function isMissingTableAccessError(error, tableName = '') {
+    const normalizedTableName = normalizeText(tableName).toLowerCase();
+    const code = normalizeText(error?.code).toUpperCase();
+    const message = [
+        error?.message,
+        error?.details,
+        error?.hint
+    ].filter(Boolean).join(' ').toLowerCase();
+    if (!normalizedTableName || !message.includes(normalizedTableName)) {
+        return false;
+    }
+
+    return (
+        code === '42P01'
+        || code === 'PGRST205'
+        || message.includes('does not exist')
+        || message.includes('undefined table')
+        || message.includes('unexpected table access')
+        || message.includes('schema cache')
+        || message.includes('could not find the table')
+    );
+}
+
 function normalizeBoolean(value, fallback = false) {
     if (typeof value === 'boolean') return value;
     const normalized = normalizeText(value).toLowerCase();
@@ -831,6 +854,199 @@ function normalizeStringArray(value) {
     }
 
     return [];
+}
+
+function normalizeOpsAlertCaseCategoryKey(value, targetId = '') {
+    const normalized = normalizeText(value).toLowerCase();
+    if (normalized) {
+        return normalized;
+    }
+
+    if (normalizeText(targetId).toLowerCase().startsWith('shop_order_risk:')) {
+        return 'shop_risk';
+    }
+
+    return '';
+}
+
+function inferOpsAlertCaseCategoryKey(alertType = '', targetId = '') {
+    return normalizeOpsAlertCaseCategoryKey(ALERT_TYPE_MODULE_MAP[normalizeText(alertType).toLowerCase()] || '', targetId);
+}
+
+function shouldAutoReopenOpsAlertCase(alertType = '') {
+    const normalized = normalizeText(alertType).toLowerCase();
+    if (!normalized) {
+        return false;
+    }
+
+    return !normalized.endsWith('_summary') && !normalized.endsWith('_recovered');
+}
+
+function buildOpsAlertCaseMetadata(existingCase = {}, input = {}) {
+    const payload = normalizeJsonObject(input.payload);
+    const existingMetadata = normalizeJsonObject(existingCase.metadata);
+    const nextMetadata = {
+        ...existingMetadata,
+        ...normalizeJsonObject(payload.metadata)
+    };
+    const alertType = normalizeText(input.alertType || input.alert_type || existingCase.alert_type).toLowerCase();
+    const title = normalizeText(input.title || existingMetadata.title);
+    const referenceLabel = normalizeText(payload.reference_label || existingMetadata.reference_label);
+    const referenceValue = normalizeText(payload.reference_value || existingMetadata.reference_value);
+
+    if (alertType) {
+        nextMetadata.alert_type = alertType;
+    }
+    if (title) {
+        nextMetadata.title = title;
+    }
+    if (referenceLabel) {
+        nextMetadata.reference_label = referenceLabel;
+    }
+    if (referenceValue) {
+        nextMetadata.reference_value = referenceValue;
+    }
+
+    return nextMetadata;
+}
+
+async function reopenResolvedOpsAlertCaseForJob(supabase, input = {}, options = {}) {
+    if (!supabase?.from) {
+        return {
+            reopened: false,
+            reason: 'supabase_unavailable'
+        };
+    }
+
+    const alertType = normalizeText(input.alertType || input.alert_type).toLowerCase();
+    if (!shouldAutoReopenOpsAlertCase(alertType)) {
+        return {
+            reopened: false,
+            reason: 'alert_type_ignored'
+        };
+    }
+
+    const payload = normalizeJsonObject(input.payload);
+    const targetId = normalizeText(payload.target_id || input.target_id);
+    const categoryKey = inferOpsAlertCaseCategoryKey(alertType, targetId);
+    if (!categoryKey || !targetId) {
+        return {
+            reopened: false,
+            reason: 'missing_case_target'
+        };
+    }
+
+    let existingCase = null;
+    try {
+        const { data, error } = await supabase
+            .from('ops_alert_cases')
+            .select('*')
+            .eq('category_key', categoryKey)
+            .eq('target_id', targetId)
+            .maybeSingle();
+
+        if (error) {
+            throw error;
+        }
+
+        existingCase = data || null;
+    } catch (error) {
+        if (isMissingTableAccessError(error, 'ops_alert_cases')) {
+            return {
+                reopened: false,
+                reason: 'missing_case_table'
+            };
+        }
+        throw error;
+    }
+
+    if (!existingCase) {
+        return {
+            reopened: false,
+            reason: 'missing_case'
+        };
+    }
+
+    if (normalizeText(existingCase.status).toLowerCase() !== 'resolved') {
+        return {
+            reopened: false,
+            reason: 'case_not_resolved'
+        };
+    }
+
+    const nowIso = normalizeText(input.createdAt || input.created_at) || new Date(options.now || Date.now()).toISOString();
+    const metadata = buildOpsAlertCaseMetadata(existingCase, input);
+    const nextRecord = {
+        ...existingCase,
+        category_key: categoryKey,
+        target_id: targetId,
+        alert_type: alertType || normalizeText(existingCase.alert_type).toLowerCase() || null,
+        status: 'open',
+        resolution: null,
+        metadata,
+        last_action: 'reopened',
+        last_action_by: 'system:ops_alerts',
+        last_action_at: nowIso
+    };
+
+    try {
+        const { error } = await supabase
+            .from('ops_alert_cases')
+            .upsert(nextRecord, { onConflict: 'category_key,target_id' })
+            .select('*')
+            .single();
+
+        if (error) {
+            throw error;
+        }
+    } catch (error) {
+        if (isMissingTableAccessError(error, 'ops_alert_cases')) {
+            return {
+                reopened: false,
+                reason: 'missing_case_table'
+            };
+        }
+        throw error;
+    }
+
+    try {
+        const { error } = await supabase
+            .from('ops_alert_case_events')
+            .insert({
+                category_key: categoryKey,
+                target_id: targetId,
+                alert_type: nextRecord.alert_type,
+                action: 'reopen',
+                status: 'open',
+                owner_admin_id: normalizeText(nextRecord.owner_admin_id) || null,
+                owner_label: normalizeText(nextRecord.owner_label) || null,
+                actor_admin_id: 'system:ops_alerts',
+                actor_label: '系统告警',
+                note: '同目标出现新的站外告警，系统已自动重新打开该告警。',
+                resolution: null,
+                metadata: {
+                    ...metadata,
+                    trigger_alert_type: alertType || null,
+                    trigger_source: normalizeText(input.source) || null
+                },
+                created_at: nowIso
+            });
+
+        if (error) {
+            throw error;
+        }
+    } catch (error) {
+        if (!isMissingTableAccessError(error, 'ops_alert_case_events')) {
+            throw error;
+        }
+    }
+
+    return {
+        reopened: true,
+        reason: 'auto_reopened',
+        category_key: categoryKey,
+        target_id: targetId
+    };
 }
 
 function cloneCustomerChatQuickReplyTemplates(templates = DEFAULT_CUSTOMER_CHAT_QUICK_REPLY_TEMPLATES) {
@@ -3776,11 +3992,27 @@ async function enqueueOpsAlertJob(supabase, input = {}, options = {}) {
         throw error;
     }
 
+    let caseSync = null;
+    try {
+        caseSync = await reopenResolvedOpsAlertCaseForJob(supabase, {
+            ...input,
+            alertType,
+            alert_type: alertType,
+            createdAt: nowIso,
+            created_at: nowIso
+        }, {
+            now: dedupeReferenceDate
+        });
+    } catch (caseError) {
+        console.warn('[OpsAlerts] Failed to sync case state for queued alert:', caseError?.message || caseError);
+    }
+
     return {
         queued: true,
         dedupeKey,
         job: data || row,
-        channels
+        channels,
+        caseSync
     };
 }
 
@@ -4909,12 +5141,22 @@ function buildVerifyQuotaLowAlertText(job = {}) {
     return lines.filter(Boolean).join('\n');
 }
 
+function normalizeVerifyServiceRequestEndpoint(value) {
+    const normalized = normalizeText(value).replace(/\/+$/, '');
+    if (!normalized) {
+        return '';
+    }
+    return /\/openapi$/i.test(normalized) ? normalized : `${normalized}/openapi`;
+}
+
 function buildVerifyServiceDisabledAlertText(job = {}) {
     if (normalizeText(job.alert_type).toLowerCase() !== 'verify_service_disabled') {
         return '';
     }
 
     const payload = normalizeJsonObject(job.payload);
+    const upstreamEndpoint = normalizeText(payload.upstream_endpoint)
+        || normalizeVerifyServiceRequestEndpoint(payload.api_base_url);
     const lines = [
         `[验证服务告警][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '验证服务不可用'}`
     ];
@@ -4923,6 +5165,7 @@ function buildVerifyServiceDisabledAlertText(job = {}) {
     if (normalizeText(payload.service_status_label)) lines.push(`当前状态：${normalizeText(payload.service_status_label)}`);
     if (normalizeText(payload.key_name)) lines.push(`API Key：${normalizeText(payload.key_name)}`);
     if (normalizeText(payload.api_base_url)) lines.push(`API Base：${normalizeText(payload.api_base_url)}`);
+    if (upstreamEndpoint) lines.push(`请求地址：${upstreamEndpoint}`);
     if (normalizeText(payload.last_error)) lines.push(`最近错误：${normalizeText(payload.last_error)}`);
     if (Number.isFinite(responseStatus) && responseStatus > 0) lines.push(`响应状态：${responseStatus}`);
     if (normalizeText(payload.checked_at)) lines.push(`检查时间：${formatTimestamp(payload.checked_at)}`);
@@ -5897,6 +6140,71 @@ async function markOpsAlertJobRetry(supabase, job, failedChannels, errorMessage,
     }
 }
 
+async function markOpsAlertJobSuppressed(supabase, job, reason) {
+    const { error } = await supabase
+        .from('ops_alert_jobs')
+        .update({
+            status: 'suppressed',
+            remaining_channels: [],
+            last_error: normalizeText(reason).slice(0, 1000) || null,
+            updated_at: new Date().toISOString()
+        })
+        .eq('id', job.id);
+
+    if (error) {
+        throw error;
+    }
+}
+
+async function shouldSuppressResolvedOpsAlertJob(supabase, job = {}) {
+    const alertType = normalizeText(job.alert_type).toLowerCase();
+    if (alertType !== 'verify_service_disabled') {
+        return {
+            suppressed: false,
+            reason: 'alert_type_not_guarded'
+        };
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const targetId = normalizeText(payload.target_id);
+    const categoryKey = inferOpsAlertCaseCategoryKey(alertType, targetId);
+    if (!supabase?.from || !categoryKey || !targetId) {
+        return {
+            suppressed: false,
+            reason: 'missing_case_target'
+        };
+    }
+
+    try {
+        const { data, error } = await supabase
+            .from('ops_alert_cases')
+            .select('status,last_action,last_action_at,resolution')
+            .eq('category_key', categoryKey)
+            .eq('target_id', targetId)
+            .maybeSingle();
+
+        if (error) {
+            throw error;
+        }
+
+        if (normalizeText(data?.status).toLowerCase() === 'resolved') {
+            return {
+                suppressed: true,
+                reason: 'case_already_resolved'
+            };
+        }
+    } catch (error) {
+        if (!isMissingTableAccessError(error, 'ops_alert_cases')) {
+            throw error;
+        }
+    }
+
+    return {
+        suppressed: false,
+        reason: 'case_active_or_missing'
+    };
+}
+
 async function processOpsAlertJob(supabase, job, runtime, options = {}) {
     const remainingChannels = normalizeStringArray(
         Array.isArray(job.remaining_channels) && job.remaining_channels.length
@@ -5907,6 +6215,16 @@ async function processOpsAlertJob(supabase, job, runtime, options = {}) {
         await markOpsAlertJobDelivered(supabase, job);
         return {
             delivered: true,
+            remaining: []
+        };
+    }
+
+    const suppression = await shouldSuppressResolvedOpsAlertJob(supabase, job);
+    if (suppression?.suppressed) {
+        await markOpsAlertJobSuppressed(supabase, job, suppression.reason);
+        return {
+            delivered: false,
+            suppressed: true,
             remaining: []
         };
     }
@@ -5992,10 +6310,13 @@ async function sweepOpsAlertJobs(supabase, options = {}) {
     });
     let delivered = 0;
     let retried = 0;
+    let suppressed = 0;
 
     for (const job of claimedJobs) {
         const result = await processOpsAlertJob(supabase, job, runtime, options);
-        if (result.delivered) {
+        if (result.suppressed) {
+            suppressed += 1;
+        } else if (result.delivered) {
             delivered += 1;
         } else {
             retried += 1;
@@ -6005,7 +6326,8 @@ async function sweepOpsAlertJobs(supabase, options = {}) {
     return {
         claimed: claimedJobs.length,
         delivered,
-        retried
+        retried,
+        suppressed
     };
 }
 

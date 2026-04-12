@@ -9,11 +9,19 @@ const {
 } = require('../../../../api/_lib/shop/admin-refunds');
 const {
     parseLinkedOpsAlertContext,
-    parseLinkedChatSessionContext
+    parseLinkedChatSessionContext,
+    parseLinkedCommentContext
 } = require('../../../../js/admin-ticket-links');
 const {
     insertOpsAlertCaseEvents
 } = require('../settings/_ops-alert-case-events');
+const {
+    fetchCommentWorkflowRow,
+    upsertCommentWorkflowRow,
+    fetchTicketsByIds,
+    shapeCommentWorkflowRow,
+    isMissingCommentWorkflowSchemaError
+} = require('../comments/_workflow');
 const {
     sanitizeText,
     normalizeJsonObject,
@@ -81,6 +89,106 @@ function buildLinkedChatSessionMessage({ ticketId = '', newStatus = '', adminRep
     lines.push('如果还有其他问题，可以继续在这里留言。');
 
     return sanitizeText(lines.join('\n'), 2000);
+}
+
+function normalizeLinkedCommentEntityType(context = {}) {
+    const explicit = sanitizeText(context?.entity_type, 80).toLowerCase();
+    if (['prompt_comment', 'guestbook_comment', 'guestbook_message'].includes(explicit)) {
+        return explicit;
+    }
+    return context?.view === 'gallery' ? 'prompt_comment' : 'guestbook_comment';
+}
+
+function resolveLinkedCommentWorkflowStatus(ticketRows = [], fallbackTicketStatus = '') {
+    const rows = Array.isArray(ticketRows) ? ticketRows : [];
+    if (!rows.length) {
+        return String(fallbackTicketStatus || '').trim().toUpperCase() === 'REJECTED' ? 'ignored' : 'resolved';
+    }
+
+    const counts = rows.reduce((acc, row) => {
+        const status = normalizeTicketStatus(row?.status);
+        if (status === 'REJECTED') {
+            acc.rejected += 1;
+        } else if (status === 'RESOLVED') {
+            acc.resolved += 1;
+        } else {
+            acc.active += 1;
+        }
+        return acc;
+    }, { active: 0, resolved: 0, rejected: 0 });
+
+    if (counts.active > 0) {
+        return 'escalated';
+    }
+    if (counts.resolved <= 0 && counts.rejected > 0) {
+        return 'ignored';
+    }
+    return 'resolved';
+}
+
+async function syncLinkedCommentWorkflow({
+    supabase,
+    ticket = {},
+    ticketId = '',
+    newStatus = ''
+}) {
+    const linkedContext = parseLinkedCommentContext(ticket.description);
+    if (!linkedContext?.comment_id) {
+        return null;
+    }
+
+    const site = sanitizeText(linkedContext.site || 'all', 20).toLowerCase() || 'all';
+    const entityType = normalizeLinkedCommentEntityType(linkedContext);
+    const entityId = sanitizeText(linkedContext.comment_id, 160);
+    if (!entityType || !entityId) {
+        return null;
+    }
+
+    const workflowRow = await fetchCommentWorkflowRow(supabase, {
+        site,
+        entityType,
+        entityId
+    });
+    if (!workflowRow) {
+        return null;
+    }
+
+    const workflow = shapeCommentWorkflowRow(workflowRow);
+    const linkedTicketIds = Array.from(new Set([
+        ...(Array.isArray(workflow.linked_ticket_ids) ? workflow.linked_ticket_ids : []),
+        sanitizeText(ticketId, 160)
+    ].filter(Boolean)));
+    const linkedTickets = linkedTicketIds.length
+        ? await fetchTicketsByIds(supabase, linkedTicketIds)
+        : [];
+    const nextStatus = resolveLinkedCommentWorkflowStatus(linkedTickets, newStatus);
+    const nextResolvedAt = nextStatus === 'resolved' || nextStatus === 'ignored'
+        ? (workflow.resolved_at || new Date().toISOString())
+        : null;
+
+    await upsertCommentWorkflowRow(supabase, {
+        site,
+        entity_type: entityType,
+        entity_id: entityId,
+        status: nextStatus,
+        priority: workflow.priority,
+        assignee_id: workflow.assignee_id || null,
+        assignee_label: workflow.assignee_label || null,
+        tags: workflow.tags,
+        note_count: workflow.note_count,
+        linked_ticket_count: Math.max(workflow.linked_ticket_count || 0, linkedTicketIds.length),
+        linked_ticket_ids: linkedTicketIds,
+        metadata: workflow.metadata,
+        resolved_at: nextResolvedAt
+    });
+
+    return {
+        site,
+        entity_type: entityType,
+        entity_id: entityId,
+        workflow_status: nextStatus,
+        linked_ticket_count: linkedTicketIds.length
+    };
 }
 
 async function syncLinkedChatSessionConversation({
@@ -373,6 +481,22 @@ async function processTicketWithContext({
         console.warn('[AdminAPI] Failed to sync linked chat session:', chatSyncError.message || chatSyncError);
     }
 
+    let linkedCommentWorkflow = null;
+    try {
+        linkedCommentWorkflow = await syncLinkedCommentWorkflow({
+            supabase,
+            ticket: updatedTicket,
+            ticketId: normalizedTicketId,
+            newStatus: normalizedNewStatus
+        });
+    } catch (commentWorkflowSyncError) {
+        if (isMissingCommentWorkflowSchemaError(commentWorkflowSyncError)) {
+            console.warn('[AdminAPI] Comment workflow table is unavailable, skip ticket backfill');
+        } else {
+            console.warn('[AdminAPI] Failed to sync linked comment workflow:', commentWorkflowSyncError.message || commentWorkflowSyncError);
+        }
+    }
+
     if (normalizedInternalNote) {
         await writeAdminAuditLog({
             supabase,
@@ -415,8 +539,10 @@ async function processTicketWithContext({
                 : (normalizedDoRefund && refundAmount > 0 ? 'refunded' : 'not_requested'),
             linked_ops_alert_case: linkedOpsAlertCase,
             linked_chat_session: linkedChatSession,
+            linked_comment_workflow: linkedCommentWorkflow,
             synced_linked_ops_alert_case: Boolean(linkedOpsAlertCase),
             synced_linked_chat_session: Boolean(linkedChatSession),
+            synced_linked_comment_workflow: Boolean(linkedCommentWorkflow),
             source
         }
     });
@@ -427,7 +553,8 @@ async function processTicketWithContext({
         refundAmount,
         refundDuplicate,
         linkedOpsAlertCase,
-        linkedChatSession
+        linkedChatSession,
+        linkedCommentWorkflow
     };
 }
 

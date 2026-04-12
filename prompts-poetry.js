@@ -3573,6 +3573,10 @@ function findPromptByHomepageFeaturedItemId(featuredItemId = '') {
 }
 
 function resolveHomepageFeaturedBannerPrompt(config = null) {
+    if (config?.prompts?.enable_auto !== false) {
+        return null;
+    }
+
     const featuredItems = normalizeHomepageFeaturedBannerItems(config?.prompts?.featured_items);
     for (const item of featuredItems) {
         const prompt = findPromptByHomepageFeaturedItemId(item.id);

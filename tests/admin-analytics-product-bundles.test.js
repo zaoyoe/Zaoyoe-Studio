@@ -290,6 +290,41 @@ test('product summary bundle returns summary, trend, site comparison, category b
     });
 });
 
+test('product dashboard bundle returns shared summary, rank, and health payloads for product panels', async () => {
+    await withHandler('product-dashboard-bundle.js', {
+        tables: PRODUCT_TEST_TABLES
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+        await handler({
+            method: 'GET',
+            url: '/api/admin?route=analytics/product-dashboard-bundle&site=all&limit=2&startDate=2026-04-04T00:00:00.000Z&endDate=2026-04-05T23:59:59.999Z',
+            headers: {}
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.limit, 2);
+        assert.equal(payload.partial_failure_count, 0);
+
+        assert.equal(payload.segments.summary.ok, true);
+        assert.equal(payload.segments.summary.payload.order_count, 2);
+        assert.equal(payload.segments.productMatrix.ok, true);
+        assert.equal(Array.isArray(payload.segments.productMatrix.payload.items), true);
+        assert.equal(payload.segments.productMatrix.payload.items.length > 0, true);
+
+        assert.equal(payload.segments.gmvTop.ok, true);
+        assert.equal(payload.segments.gmvTop.payload[0].product_id, 'product-1');
+        assert.equal(payload.segments.highExposureLowConversion.ok, true);
+        assert.equal(payload.segments.highExposureLowConversion.payload[0].product_id, 'product-3');
+
+        assert.equal(payload.segments.lowStockProducts.ok, true);
+        assert.equal(payload.segments.lowStockProducts.payload[0].product_id, 'product-1');
+        assert.equal(payload.segments.deliveryRiskProducts.ok, true);
+        assert.equal(payload.segments.deliveryRiskProducts.payload[0].product_id, 'product-2');
+    });
+});
+
 test('product rank bundle returns core, risk, and content-driven product rankings', async () => {
     await withHandler('product-rank-bundle.js', {
         tables: PRODUCT_TEST_TABLES

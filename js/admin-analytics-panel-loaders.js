@@ -2108,23 +2108,18 @@ async function loadProductAlerts() {
     container.innerHTML = renderAnalyticsProductLoadingState('商品预警中心加载中...');
 
     try {
-        const [summaryBundle, healthBundle, rankBundle] = await Promise.all([
-            getAnalyticsProductSummaryBundle(),
-            getAnalyticsProductHealthBundle({ limit: 8 }),
-            getAnalyticsProductRankBundle({ limit: 6 })
-        ]);
-
-        const summary = getAnalyticsProductBundlePayloadOrThrow(summaryBundle, 'summary', 'Product summary unavailable') || {};
-        const productMatrix = getAnalyticsProductBundlePayloadOrThrow(summaryBundle, 'productMatrix', 'Product operating matrix unavailable') || {};
+        const bundle = await getAnalyticsProductDashboardBundle({ limit: 10 });
+        const summary = getAnalyticsProductBundlePayloadOrThrow(bundle, 'summary', 'Product summary unavailable') || {};
+        const productMatrix = getAnalyticsProductBundlePayloadOrThrow(bundle, 'productMatrix', 'Product operating matrix unavailable') || {};
         const healthPayloads = {
-            lowStockProducts: getAnalyticsProductBundlePayloadOrThrow(healthBundle, 'lowStockProducts', 'Low-stock product health unavailable') || [],
-            soldOutProducts: getAnalyticsProductBundlePayloadOrThrow(healthBundle, 'soldOutProducts', 'Sold-out product health unavailable') || [],
-            deliveryRiskProducts: getAnalyticsProductBundlePayloadOrThrow(healthBundle, 'deliveryRiskProducts', 'Delivery risk product health unavailable') || [],
-            refundRiskProducts: getAnalyticsProductBundlePayloadOrThrow(healthBundle, 'refundRiskProducts', 'Refund risk product health unavailable') || [],
-            inventoryTurnoverHints: getAnalyticsProductBundlePayloadOrThrow(healthBundle, 'inventoryTurnoverHints', 'Inventory turnover hints unavailable') || []
+            lowStockProducts: (getAnalyticsProductBundlePayloadOrThrow(bundle, 'lowStockProducts', 'Low-stock product health unavailable') || []).slice(0, 8),
+            soldOutProducts: (getAnalyticsProductBundlePayloadOrThrow(bundle, 'soldOutProducts', 'Sold-out product health unavailable') || []).slice(0, 8),
+            deliveryRiskProducts: (getAnalyticsProductBundlePayloadOrThrow(bundle, 'deliveryRiskProducts', 'Delivery risk product health unavailable') || []).slice(0, 8),
+            refundRiskProducts: (getAnalyticsProductBundlePayloadOrThrow(bundle, 'refundRiskProducts', 'Refund risk product health unavailable') || []).slice(0, 8),
+            inventoryTurnoverHints: (getAnalyticsProductBundlePayloadOrThrow(bundle, 'inventoryTurnoverHints', 'Inventory turnover hints unavailable') || []).slice(0, 8)
         };
         const rankPayloads = {
-            highExposureLowConversion: getAnalyticsProductBundlePayloadOrThrow(rankBundle, 'highExposureLowConversion', 'Product exposure-conversion rank unavailable') || []
+            highExposureLowConversion: (getAnalyticsProductBundlePayloadOrThrow(bundle, 'highExposureLowConversion', 'Product exposure-conversion rank unavailable') || []).slice(0, 6)
         };
 
         const hasSignal = Number(summary.active_product_count || 0) > 0
@@ -3583,7 +3578,7 @@ async function loadProductOverview() {
     container.innerHTML = renderAnalyticsProductLoadingState('商品总盘加载中...');
 
     try {
-        const bundle = await getAnalyticsProductSummaryBundle();
+        const bundle = await getAnalyticsProductDashboardBundle();
         const summary = getAnalyticsProductBundlePayloadOrThrow(bundle, 'summary', 'Product summary unavailable') || {};
         const trend = getAnalyticsProductBundlePayloadOrThrow(bundle, 'trend', 'Product trend unavailable') || [];
         const comparison = getAnalyticsProductBundlePayloadOrThrow(bundle, 'siteComparison', 'Product site comparison unavailable') || {};
@@ -3630,7 +3625,7 @@ async function loadProductRankings() {
     container.innerHTML = renderAnalyticsProductLoadingState('商品榜单加载中...');
 
     try {
-        const bundle = await getAnalyticsProductRankBundle({ limit: 10 });
+        const bundle = await getAnalyticsProductDashboardBundle({ limit: 10 });
         const payloads = {
             salesTop: getAnalyticsProductBundlePayloadOrThrow(bundle, 'salesTop', 'Product sales rank unavailable') || [],
             gmvTop: getAnalyticsProductBundlePayloadOrThrow(bundle, 'gmvTop', 'Product revenue rank unavailable') || [],
@@ -3711,7 +3706,7 @@ async function loadProductHealth() {
     container.innerHTML = renderAnalyticsProductLoadingState('库存与履约健康加载中...');
 
     try {
-        const bundle = await getAnalyticsProductHealthBundle({ limit: 10 });
+        const bundle = await getAnalyticsProductDashboardBundle({ limit: 10 });
         const payloads = {
             lowStockProducts: getAnalyticsProductBundlePayloadOrThrow(bundle, 'lowStockProducts', 'Low-stock product health unavailable') || [],
             soldOutProducts: getAnalyticsProductBundlePayloadOrThrow(bundle, 'soldOutProducts', 'Sold-out product health unavailable') || [],

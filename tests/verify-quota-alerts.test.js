@@ -193,26 +193,18 @@ test('runVerifyQuotaLowSweep enqueues low quota alerts with stable dedupe per se
     const supabase = createSupabaseStub(state);
     const runtime = createOpsRuntime();
 
-    const fetchImpl = async (input) => {
+    const fetchImpl = async (input, init = {}) => {
         const url = String(input || '');
-        if (url === 'https://verify.test/api/balance') {
-            return new Response(JSON.stringify({
-                balance: 11,
-                total_used: 324,
-                cost_per_job: 1,
-                name: 'primary-key'
-            }), {
-                status: 200,
-                headers: {
-                    'Content-Type': 'application/json'
-                }
+        if (url === 'https://verify.test/openapi') {
+            assert.equal(init.method, 'POST');
+            assert.deepEqual(JSON.parse(init.body), {
+                action: 'get_balance',
+                cdkey: 'verify-api-key'
             });
-        }
-
-        if (url === 'https://verify.test/api/queue') {
             return new Response(JSON.stringify({
-                queue_size: 7,
-                running_jobs: 2
+                remaining_uses: 11,
+                total_used: 324,
+                name: 'primary-key'
             }), {
                 status: 200,
                 headers: {
@@ -239,7 +231,9 @@ test('runVerifyQuotaLowSweep enqueues low quota alerts with stable dedupe per se
     assert.equal(state.jobs.length, 1);
     assert.equal(state.jobs[0].alert_type, 'verify_quota_low');
     assert.equal(state.jobs[0].payload.balance, 11);
-    assert.equal(state.jobs[0].payload.queue_size, 7);
+    assert.equal(state.jobs[0].payload.queue_size, 0);
+    assert.equal(state.jobs[0].payload.running_jobs, 0);
+    assert.equal(state.jobs[0].payload.queue_error, 'provider_queue_not_supported');
 
     const second = await runVerifyQuotaLowSweep(supabase, {
         runtime,
@@ -272,26 +266,18 @@ test('runVerifyQuotaLowSweep prefers ops alert runtime quota config over legacy 
         }
     });
 
-    const fetchImpl = async (input) => {
+    const fetchImpl = async (input, init = {}) => {
         const url = String(input || '');
-        if (url === 'https://verify.test/api/balance') {
-            return new Response(JSON.stringify({
-                balance: 28,
-                total_used: 324,
-                cost_per_job: 1,
-                name: 'primary-key'
-            }), {
-                status: 200,
-                headers: {
-                    'Content-Type': 'application/json'
-                }
+        if (url === 'https://verify.test/openapi') {
+            assert.equal(init.method, 'POST');
+            assert.deepEqual(JSON.parse(init.body), {
+                action: 'get_balance',
+                cdkey: 'verify-api-key'
             });
-        }
-
-        if (url === 'https://verify.test/api/queue') {
             return new Response(JSON.stringify({
-                queue_size: 0,
-                running_jobs: 0
+                remaining_uses: 28,
+                total_used: 324,
+                name: 'primary-key'
             }), {
                 status: 200,
                 headers: {

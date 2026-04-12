@@ -522,6 +522,44 @@
     gap: 8px;
 }
 
+#module-comments .comments-batch-actions-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+#module-comments .comments-batch-menu-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+#module-comments .comments-batch-menu-container[hidden],
+#module-comments .comments-selection-count[hidden],
+#module-comments[data-comments-select-mode="false"] .comments-batch-menu-container,
+#module-comments[data-comments-select-mode="false"] .comments-selection-count {
+    display: none !important;
+}
+
+#module-comments #commentsBatchMenuTrigger {
+    flex-shrink: 0;
+}
+
+#module-comments[data-comments-select-mode="true"] .comment-list-admin:not(.list-view) .item-checkbox-wrapper,
+#module-comments[data-comments-select-mode="true"] .comment-list-admin.list-view .item-checkbox-wrapper {
+    display: flex;
+    opacity: 1;
+    pointer-events: auto;
+}
+
+#module-comments:not([data-comments-select-mode="true"]) .comment-list-admin .item-checkbox-wrapper {
+    display: none;
+    opacity: 0;
+    pointer-events: none;
+}
+
 /* Search Pill */
 .search-pill {
     display: flex;
@@ -1146,6 +1184,13 @@
     /* Selected items sit higher */
 }
 
+.comment-admin-item.is-batch-pending,
+.comment-admin-item.is-batch-pending:hover {
+    transform: none;
+    border-color: rgba(96, 165, 250, 0.42);
+    box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.18), 0 18px 42px rgba(5, 10, 24, 0.22);
+}
+
 .comment-admin-item:hover {
     border-color: rgba(107, 158, 206, 0.38);
     background: var(--card-bg, rgba(255, 255, 255, 0.05));
@@ -1214,6 +1259,31 @@
 .item-avatar.item-avatar--image {
     overflow: hidden;
     color: transparent;
+}
+
+.item-avatar-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+.item-avatar.item-avatar--image .item-avatar-fallback {
+    display: none;
+}
+
+.item-avatar.item-avatar--image.item-avatar--fallback {
+    color: #fff;
+}
+
+.item-avatar.item-avatar--image.item-avatar--fallback .item-avatar-image {
+    display: none;
+}
+
+.item-avatar.item-avatar--image.item-avatar--fallback .item-avatar-fallback {
+    display: flex;
 }
 
 .item-avatar-image {
@@ -1955,9 +2025,12 @@
 .filter-tags-container {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
     gap: 8px;
     margin-bottom: 16px;
-    padding: 0 4px;
+    padding: 0 var(--comments-shell-inline-padding);
+    box-sizing: border-box;
     min-height: 0;
     transition: all 0.3s ease;
 }
@@ -2239,6 +2312,16 @@
     color: #fb923c;
 }
 
+.comment-context-pill--ticket-resolved {
+    background: rgba(34, 197, 94, 0.12);
+    color: #4ade80;
+}
+
+.comment-context-pill--ticket-history {
+    background: rgba(148, 163, 184, 0.12);
+    color: #cbd5e1;
+}
+
 .item-context-title {
     font-size: 0.76rem;
     color: var(--text-dim);
@@ -2278,6 +2361,18 @@
 
 .item-summary-risk {
     color: #fbbf24;
+}
+
+.item-summary-risk--normal {
+    color: #86efac;
+}
+
+.item-summary-risk--watch {
+    color: #fbbf24;
+}
+
+.item-summary-risk--blocked {
+    color: #fca5a5;
 }
 
 .action-detail {
@@ -2383,7 +2478,7 @@
 .comment-detail-drawer__header {
     display: flex;
     align-items: flex-start;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 16px;
     padding: 18px 20px 14px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
@@ -2537,6 +2632,22 @@
     font-weight: 700;
 }
 
+.comment-detail-drawer__hero-side--normal {
+    background: rgba(34, 197, 94, 0.08);
+}
+
+.comment-detail-drawer__hero-side--blocked {
+    background: rgba(239, 68, 68, 0.08);
+}
+
+.comment-detail-drawer__hero-side-value--normal {
+    color: #86efac;
+}
+
+.comment-detail-drawer__hero-side-value--blocked {
+    color: #fca5a5;
+}
+
 .comment-detail-drawer__action-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2561,6 +2672,7 @@
     background: rgba(255, 255, 255, 0.03);
     color: var(--text-secondary);
     cursor: pointer;
+    transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
 }
 
 .comment-detail-drawer__action-btn--primary {
@@ -2638,6 +2750,16 @@
     gap: 8px;
 }
 
+.comment-detail-drawer__section--workflow .comment-detail-tag-list {
+    margin-top: 16px;
+    row-gap: 10px;
+}
+
+.comment-detail-drawer__section--workflow .comment-detail-drawer__empty-inline {
+    display: block;
+    padding: 4px 0 2px;
+}
+
 .comment-status-pill,
 .comment-detail-drawer__minor-btn {
     min-height: 34px;
@@ -2646,6 +2768,7 @@
     background: rgba(255, 255, 255, 0.03);
     color: var(--text-secondary);
     cursor: pointer;
+    transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
 }
 
 .comment-status-pill.active,
@@ -2690,6 +2813,46 @@
     text-align: left;
     cursor: pointer;
     color: inherit;
+    transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+}
+
+.comment-detail-drawer :is(.comment-detail-drawer__action-btn, .comment-detail-drawer__minor-btn, .comment-status-pill, .comment-detail-ticket-item):not(:disabled):hover {
+    border-color: rgba(107, 158, 206, 0.38);
+    background: rgba(107, 158, 206, 0.12);
+    color: var(--text-primary);
+    box-shadow: 0 8px 20px rgba(2, 6, 23, 0.18);
+    transform: translateY(-1px);
+}
+
+.comment-detail-drawer :is(.comment-detail-drawer__action-btn, .comment-detail-drawer__minor-btn, .comment-status-pill, .comment-detail-ticket-item):focus-visible {
+    outline: none;
+    border-color: rgba(107, 158, 206, 0.42);
+    box-shadow: 0 0 0 1px rgba(107, 158, 206, 0.34), 0 0 0 4px rgba(107, 158, 206, 0.12);
+}
+
+.comment-detail-drawer :is(.comment-detail-drawer__action-btn, .comment-detail-drawer__minor-btn, .comment-status-pill):disabled {
+    opacity: 0.52;
+    cursor: wait;
+    transform: none;
+    box-shadow: none;
+}
+
+.comment-detail-drawer__workflow-feedback {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    padding: 9px 11px;
+    border-radius: 8px;
+    border: 1px solid rgba(107, 158, 206, 0.24);
+    background: rgba(107, 158, 206, 0.12);
+    color: #dbeafe;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.comment-detail-drawer__workflow-feedback[hidden] {
+    display: none;
 }
 
 .comment-detail-note-item__meta,

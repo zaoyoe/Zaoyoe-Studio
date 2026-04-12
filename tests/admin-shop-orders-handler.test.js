@@ -36,14 +36,23 @@ function parseOrFilters(expression = '') {
         .map((item) => item.trim())
         .filter(Boolean)
         .map((item) => {
-            const match = item.match(/^([^.]*)\.ilike\.%(.*)%$/i);
-            if (!match) {
-                return null;
+            const ilikeMatch = item.match(/^([^.]*)\.ilike\.%(.*)%$/i);
+            if (ilikeMatch) {
+                return {
+                    column: String(ilikeMatch[1] || '').trim(),
+                    operator: 'ilike',
+                    value: String(ilikeMatch[2] || '').replace(/\\([,()\\])/g, '$1').toLowerCase()
+                };
             }
-            return {
-                column: String(match[1] || '').trim(),
-                value: String(match[2] || '').replace(/\\([,()\\])/g, '$1').toLowerCase()
-            };
+            const eqMatch = item.match(/^([^.]*)\.eq\.(.*)$/i);
+            if (eqMatch) {
+                return {
+                    column: String(eqMatch[1] || '').trim(),
+                    operator: 'eq',
+                    value: String(eqMatch[2] || '').replace(/\\([,()\\])/g, '$1')
+                };
+            }
+            return null;
         })
         .filter(Boolean);
 }
@@ -73,6 +82,12 @@ function createQueryBuilder(state, table, rows = []) {
         range(from, to) {
             queryState.from = Number(from) || 0;
             queryState.to = Number(to) || 0;
+            return builder;
+        },
+        limit(limitValue) {
+            const limit = Math.max(0, Number(limitValue) || 0);
+            queryState.from = 0;
+            queryState.to = Math.max(0, limit - 1);
             return builder;
         },
         eq(column, value) {
@@ -109,7 +124,12 @@ function createQueryBuilder(state, table, rows = []) {
             const orFilters = parseOrFilters(queryState.orExpression);
             if (orFilters.length > 0) {
                 filteredRows = filteredRows.filter((row) => (
-                    orFilters.some((filter) => String(row?.[filter.column] || '').toLowerCase().includes(filter.value))
+                    orFilters.some((filter) => {
+                        if (filter.operator === 'eq') {
+                            return String(row?.[filter.column] || '') === filter.value;
+                        }
+                        return String(row?.[filter.column] || '').toLowerCase().includes(filter.value);
+                    })
                 ));
             }
 
@@ -311,10 +331,11 @@ test('shop orders handler resolves order content through exact order-item linkag
 });
 
 test('shop orders handler still resolves explicit SHOP_ORDER_ ids exactly', async () => {
+    const orderId = '11111111-1111-4111-8111-111111111111';
     await withShopOrdersHandler({
         shop_orders: [
             {
-                id: 'ord_exact',
+                id: orderId,
                 user_id: 'user_9',
                 product_id: 'prod-9',
                 inventory_id: 'inv_9',
@@ -332,7 +353,7 @@ test('shop orders handler still resolves explicit SHOP_ORDER_ ids exactly', asyn
         const req = {
             method: 'GET',
             headers: {},
-            url: '/api/admin?route=shop/orders&query=SHOP_ORDER_ord_exact'
+            url: `/api/admin?route=shop/orders&query=SHOP_ORDER_${orderId}`
         };
         const res = createMockResponse();
 
@@ -342,12 +363,62 @@ test('shop orders handler still resolves explicit SHOP_ORDER_ ids exactly', asyn
         assert.equal(res.statusCode, 200);
         assert.equal(payload.success, true);
         assert.equal(payload.rows.length, 1);
-        assert.equal(payload.rows[0]?.id, 'ord_exact');
+        assert.equal(payload.rows[0]?.id, orderId);
         assert.equal(
-            state.calls.some((entry) => entry.table === 'shop_orders' && entry.eqFilters.some(([column, value]) => column === 'id' && value === 'ord_exact')),
+            state.calls.some((entry) => entry.table === 'shop_orders' && entry.eqFilters.some(([column, value]) => column === 'id' && value === orderId)),
             true,
             'handler should keep exact order-id lookups for SHOP_ORDER_ queries'
         );
+    });
+});
+
+test('shop orders handler does not apply text operators to uuid columns for short numeric searches', async () => {
+    await withShopOrdersHandler({
+        shop_orders: [
+            {
+                id: '22222222-2222-4222-8222-222222222222',
+                user_id: '33333333-3333-4333-8333-333333333333',
+                product_id: '44444444-4444-4444-8444-444444444444',
+                inventory_id: null,
+                snapshot_product_name: '账号 7 天套餐',
+                created_at: '2026-04-09T08:00:00.000Z',
+                total_price: 70,
+                price_paid: 70
+            }
+        ],
+        profiles: [
+            {
+                id: '33333333-3333-4333-8333-333333333333',
+                username: 'seven',
+                avatar_url: null,
+                email: 'seven@example.com'
+            }
+        ],
+        shop_order_items: [],
+        shop_inventory: []
+    }, async ({ handler, state }) => {
+        const req = {
+            method: 'GET',
+            headers: {},
+            url: '/api/admin?route=shop/orders&query=7&page=1&pageSize=10'
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+        const orderSearchCall = state.calls.find((entry) => entry.table === 'shop_orders' && entry.orExpression.includes('snapshot_product_name.ilike.%7%'));
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.count, 1);
+        assert.equal(payload.rows[0]?.id, '22222222-2222-4222-8222-222222222222');
+        assert.ok(orderSearchCall, 'handler should still search product-facing text for short numeric queries');
+        assert.equal(orderSearchCall.orExpression.includes('id.ilike'), false);
+        assert.equal(orderSearchCall.orExpression.includes('product_id.ilike'), false);
+        assert.equal(orderSearchCall.orExpression.includes('user_id.ilike'), false);
+        assert.equal(orderSearchCall.orExpression.includes('id.eq.7'), false);
+        assert.equal(orderSearchCall.orExpression.includes('product_id.eq.7'), false);
+        assert.equal(orderSearchCall.orExpression.includes('user_id.eq.7'), false);
     });
 });
 
@@ -424,11 +495,12 @@ test('shop orders handler supports refund and delivery issue filters for analyti
 });
 
 test('shop orders handler falls back to profile search when query matches user email', async () => {
+    const userId = '55555555-5555-4555-8555-555555555555';
     await withShopOrdersHandler({
         shop_orders: [
             {
                 id: 'ord_email_1',
-                user_id: 'user_email_1',
+                user_id: userId,
                 product_id: 'prod_api',
                 inventory_id: null,
                 snapshot_product_name: 'Webhook Goods',
@@ -440,7 +512,7 @@ test('shop orders handler falls back to profile search when query matches user e
             }
         ],
         profiles: [
-            { id: 'user_email_1', username: 'ops-user', avatar_url: null, email: 'ops@example.com' }
+            { id: userId, username: 'ops-user', avatar_url: null, email: 'ops@example.com' }
         ],
         shop_order_items: [],
         shop_inventory: []
@@ -465,9 +537,41 @@ test('shop orders handler falls back to profile search when query matches user e
             'handler should search profiles when direct order search misses and user email is provided'
         );
         assert.equal(
-            state.calls.some((entry) => entry.table === 'shop_orders' && entry.inFilters.some(([column, values]) => column === 'user_id' && values.includes('user_email_1'))),
+            state.calls.some((entry) => entry.table === 'shop_orders' && entry.inFilters.some(([column, values]) => column === 'user_id' && values.includes(userId))),
             true,
             'handler should map profile ids back into the shop order query'
         );
+    });
+});
+
+test('shop orders handler ignores non-uuid profile ids when fallback profile search matches numeric queries', async () => {
+    await withShopOrdersHandler({
+        shop_orders: [],
+        profiles: [
+            { id: '7', username: 'user7', avatar_url: null, email: '7@example.com' }
+        ],
+        shop_order_items: [],
+        shop_inventory: []
+    }, async ({ handler, state }) => {
+        const req = {
+            method: 'GET',
+            headers: {},
+            url: '/api/admin?route=shop/orders&query=7&page=1&pageSize=10'
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+        const shopOrderUserLookup = state.calls.find((entry) => (
+            entry.table === 'shop_orders'
+            && entry.inFilters.some(([column]) => column === 'user_id')
+        ));
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.count, 0);
+        assert.equal(Array.isArray(payload.rows), true);
+        assert.equal(payload.rows.length, 0);
+        assert.equal(shopOrderUserLookup, undefined);
     });
 });

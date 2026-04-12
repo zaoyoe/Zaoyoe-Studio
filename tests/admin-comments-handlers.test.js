@@ -472,7 +472,140 @@ test('comments summary handler aggregates guestbook messages, guestbook replies,
         assert.equal(res.json().summary.totalMessages, 1);
         assert.equal(res.json().summary.totalComments, 2);
         assert.equal(res.json().summary.totalReplies, 0);
+        assert.equal(res.json().summary.openGovernanceCount, 3);
+        assert.equal(res.json().summary.queueCounts.pending, 3);
         assert.equal(res.json().site, 'cn');
+    });
+});
+
+test('comments summary handler scopes stats to the guestbook tab when view=guestbook', async () => {
+    const now = new Date().toISOString();
+
+    await withCommentsHandler('../server/api-handlers/admin/comments/summary.js', {
+        tables: {
+            guestbook_messages: [
+                { id: 'm1', site: 'cn', user_id: 'u1', created_at: now }
+            ],
+            guestbook_comments: [
+                { id: 'c1', site: 'cn', user_id: 'u2', message_id: 'm1', parent_id: null, created_at: now },
+                { id: 'c2', site: 'cn', user_id: 'u3', message_id: 'm1', parent_id: 'c1', created_at: now }
+            ],
+            prompt_comments: [
+                { id: 'g1', site: 'cn', user_id: 'u9', parent_id: null, created_at: now }
+            ],
+            blocked_users: [
+                { id: 'b1', user_id: 'u1', scope: 'guestbook', expires_at: null }
+            ],
+            admin_comment_workflows: [
+                {
+                    id: 'wf1',
+                    site: 'cn',
+                    entity_type: 'guestbook_message',
+                    entity_id: 'm1',
+                    status: 'escalated',
+                    priority: 'high',
+                    linked_ticket_count: 1,
+                    tags: ['risk']
+                },
+                {
+                    id: 'wf2',
+                    site: 'cn',
+                    entity_type: 'prompt_comment',
+                    entity_id: 'g1',
+                    status: 'escalated',
+                    priority: 'high',
+                    linked_ticket_count: 1,
+                    tags: ['risk']
+                }
+            ]
+        }
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/comments/summary?site=cn&view=guestbook',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().view, 'guestbook');
+        assert.equal(res.json().summary.totalCount, 3);
+        assert.equal(res.json().summary.totalMessages, 1);
+        assert.equal(res.json().summary.totalComments, 1);
+        assert.equal(res.json().summary.totalReplies, 1);
+        assert.equal(res.json().summary.openGovernanceCount, 3);
+        assert.equal(res.json().summary.queueCounts.pending, 3);
+        assert.equal(res.json().summary.queueCounts.guestbook_unreplied, 0);
+        assert.equal(res.json().summary.queueCounts.blocked_user, 1);
+        assert.equal(res.json().summary.queueCounts.escalated, 1);
+        assert.equal(res.json().summary.queueCounts.high_risk, 1);
+    });
+});
+
+test('comments summary handler scopes stats to the gallery tab when view=gallery', async () => {
+    const now = new Date().toISOString();
+
+    await withCommentsHandler('../server/api-handlers/admin/comments/summary.js', {
+        tables: {
+            guestbook_messages: [
+                { id: 'm1', site: 'cn', user_id: 'u1', created_at: now },
+                { id: 'm2', site: 'cn', user_id: 'u8', created_at: now }
+            ],
+            guestbook_comments: [
+                { id: 'c1', site: 'cn', user_id: 'u2', message_id: 'm1', parent_id: null, created_at: now }
+            ],
+            prompt_comments: [
+                { id: 'g1', site: 'cn', user_id: 'u9', parent_id: null, created_at: now },
+                { id: 'g2', site: 'cn', user_id: 'u9', parent_id: 'g1', created_at: now }
+            ],
+            blocked_users: [
+                { id: 'b1', user_id: 'u9', scope: 'gallery', expires_at: null }
+            ],
+            admin_comment_workflows: [
+                {
+                    id: 'wf1',
+                    site: 'cn',
+                    entity_type: 'guestbook_comment',
+                    entity_id: 'c1',
+                    status: 'escalated',
+                    priority: 'high',
+                    linked_ticket_count: 1,
+                    tags: ['risk']
+                },
+                {
+                    id: 'wf2',
+                    site: 'cn',
+                    entity_type: 'prompt_comment',
+                    entity_id: 'g1',
+                    status: 'escalated',
+                    priority: 'high',
+                    linked_ticket_count: 1,
+                    tags: ['risk']
+                }
+            ]
+        }
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/comments/summary?site=cn&view=gallery',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().view, 'gallery');
+        assert.equal(res.json().summary.totalCount, 2);
+        assert.equal(res.json().summary.totalMessages, 0);
+        assert.equal(res.json().summary.totalComments, 1);
+        assert.equal(res.json().summary.totalReplies, 1);
+        assert.equal(res.json().summary.openGovernanceCount, 2);
+        assert.equal(res.json().summary.queueCounts.pending, 2);
+        assert.equal(res.json().summary.queueCounts.guestbook_unreplied, 1);
+        assert.equal(res.json().summary.queueCounts.blocked_user, 2);
+        assert.equal(res.json().summary.queueCounts.escalated, 1);
+        assert.equal(res.json().summary.queueCounts.high_risk, 2);
     });
 });
 
@@ -585,6 +718,177 @@ test('comments list handler returns guestbook messages, replies, and like counts
         assert.equal(replyRow.user_block_state?.hasGlobalBlock, true);
         assert.equal(replyRow.user_block_state?.isGuestbookBlocked, true);
         assert.equal(state.fromCalls.includes('blocked_users'), true);
+    });
+});
+
+test('comments list handler returns blocked-user queue rows from direct block state for the active view', async () => {
+    await withCommentsHandler('../server/api-handlers/admin/comments/list.js', {
+        tables: {
+            guestbook_messages: [
+                {
+                    id: 'm1',
+                    site: 'cn',
+                    content: 'blocked message',
+                    user_id: 'u1',
+                    created_at: '2026-03-31T10:00:00.000Z',
+                    image_url: null,
+                    like_count: 0
+                },
+                {
+                    id: 'm2',
+                    site: 'cn',
+                    content: 'normal message',
+                    user_id: 'u2',
+                    created_at: '2026-03-31T09:00:00.000Z',
+                    image_url: null,
+                    like_count: 0
+                }
+            ],
+            profiles: [
+                { id: 'u1', username: 'alice', avatar_url: null, email: 'alice@example.com' },
+                { id: 'u2', username: 'bob', avatar_url: null, email: 'bob@example.com' }
+            ],
+            blocked_users: [
+                { user_id: 'u1', scope: 'guestbook', reason: 'spam', expires_at: null }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/comments/list?view=guestbook&site=cn&queue=blocked_user',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.deepEqual(res.json().comments.map((comment) => comment.id), ['m1']);
+        assert.equal(res.json().comments[0]?.user_block_state?.isGuestbookBlocked, true);
+        assert.equal(res.json().comments[0]?.user_summary?.risk_level, 'blocked');
+        assert.equal(state.fromCalls.includes('blocked_users'), true);
+    });
+});
+
+test('comments list handler scopes the pending queue to unresolved and non-ignored items', async () => {
+    await withCommentsHandler('../server/api-handlers/admin/comments/list.js', {
+        tables: {
+            guestbook_messages: [
+                {
+                    id: 'm1',
+                    site: 'cn',
+                    content: 'resolved row',
+                    user_id: 'u1',
+                    created_at: '2026-03-31T10:00:00.000Z'
+                },
+                {
+                    id: 'm2',
+                    site: 'cn',
+                    content: 'ignored row',
+                    user_id: 'u2',
+                    created_at: '2026-03-31T10:01:00.000Z'
+                },
+                {
+                    id: 'm3',
+                    site: 'cn',
+                    content: 'pending row',
+                    user_id: 'u3',
+                    created_at: '2026-03-31T10:02:00.000Z'
+                }
+            ],
+            admin_comment_workflows: [
+                {
+                    id: 'wf1',
+                    site: 'cn',
+                    entity_type: 'guestbook_message',
+                    entity_id: 'm1',
+                    status: 'resolved',
+                    priority: 'normal'
+                },
+                {
+                    id: 'wf2',
+                    site: 'cn',
+                    entity_type: 'guestbook_message',
+                    entity_id: 'm2',
+                    status: 'ignored',
+                    priority: 'normal'
+                }
+            ]
+        }
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/comments/list?view=guestbook&site=cn&queue=pending',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().comments.length, 1);
+        assert.equal(res.json().comments[0].id, 'm3');
+    });
+});
+
+test('comments list handler keeps resolved and ignored rows visible in the all queue', async () => {
+    await withCommentsHandler('../server/api-handlers/admin/comments/list.js', {
+        tables: {
+            guestbook_messages: [
+                {
+                    id: 'm1',
+                    site: 'cn',
+                    content: 'resolved row',
+                    user_id: 'u1',
+                    created_at: '2026-03-31T10:00:00.000Z'
+                },
+                {
+                    id: 'm2',
+                    site: 'cn',
+                    content: 'ignored row',
+                    user_id: 'u2',
+                    created_at: '2026-03-31T10:01:00.000Z'
+                },
+                {
+                    id: 'm3',
+                    site: 'cn',
+                    content: 'pending row',
+                    user_id: 'u3',
+                    created_at: '2026-03-31T10:02:00.000Z'
+                }
+            ],
+            admin_comment_workflows: [
+                {
+                    id: 'wf1',
+                    site: 'cn',
+                    entity_type: 'guestbook_message',
+                    entity_id: 'm1',
+                    status: 'resolved',
+                    priority: 'normal'
+                },
+                {
+                    id: 'wf2',
+                    site: 'cn',
+                    entity_type: 'guestbook_message',
+                    entity_id: 'm2',
+                    status: 'ignored',
+                    priority: 'normal'
+                }
+            ]
+        }
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/comments/list?view=guestbook&site=cn&queue=all',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().comments.length, 3);
+        assert.deepEqual(
+            res.json().comments.map((comment) => comment.id),
+            ['m3', 'm2', 'm1']
+        );
     });
 });
 
@@ -1001,6 +1305,68 @@ test('comments list handler attaches workflow state and user signals for V2 gove
         assert.equal(row.user_summary.active_ticket_count, 1);
         assert.equal(row.user_summary.order_count, 1);
         assert.equal(row.user_summary.payment_order_count, 1);
+    });
+});
+
+test('comments list handler excludes resolved ticketed comments from the escalated queue', async () => {
+    await withCommentsHandler('../server/api-handlers/admin/comments/list.js', {
+        tables: {
+            prompt_comments: [
+                {
+                    id: 'g-resolved-1',
+                    site: 'cn',
+                    prompt_id: 'p1',
+                    parent_id: null,
+                    content: 'ticket already handled',
+                    user_id: 'u3',
+                    created_at: '2026-04-01T11:00:00.000Z',
+                    image_url: null,
+                    is_pinned: false,
+                    is_featured: false
+                }
+            ],
+            profiles: [
+                { id: 'u3', username: 'carol', avatar_url: null, email: 'carol@example.com' },
+                { id: 'admin_9', username: 'ops', avatar_url: null, email: 'ops@example.com' }
+            ],
+            prompts: [
+                { id: 'p1', title: 'Prompt One', title_zh: '提示词一', title_en: 'Prompt One' }
+            ],
+            admin_comment_workflows: [
+                {
+                    id: 'wf_resolved_1',
+                    site: 'cn',
+                    entity_type: 'prompt_comment',
+                    entity_id: 'g-resolved-1',
+                    status: 'resolved',
+                    priority: 'normal',
+                    assignee_id: 'admin_9',
+                    assignee_label: '',
+                    tags: ['ticketed'],
+                    note_count: 1,
+                    linked_ticket_count: 1,
+                    linked_ticket_ids: ['ticket_resolved_1'],
+                    resolved_at: '2026-04-01T12:00:00.000Z',
+                    updated_at: '2026-04-01T12:00:00.000Z',
+                    last_activity_at: '2026-04-01T12:00:00.000Z',
+                    metadata: {}
+                }
+            ],
+            shop_tickets: [
+                { id: 'ticket_resolved_1', user_id: 'u3', status: 'RESOLVED', created_at: '2026-04-01T12:00:00.000Z' }
+            ]
+        }
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/comments/list?view=gallery&site=cn&queue=escalated',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().comments.length, 0);
     });
 });
 

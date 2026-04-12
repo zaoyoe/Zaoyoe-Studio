@@ -20,6 +20,10 @@ const {
     buildDefaultCommentWorkflow,
     fetchCommentWorkflowMap
 } = require('./_workflow');
+const {
+    isMissingAdminCommentsFeedError,
+    queryCommentsFeedPage
+} = require('./_feed-view');
 
 const EMPTY_COMMENT_USER_BLOCK_STATE = Object.freeze({
     blocks: [],
@@ -32,6 +36,7 @@ const EMPTY_COMMENT_USER_BLOCK_STATE = Object.freeze({
 const PROMPT_TITLE_SELECT_FIELDS = 'id, title, title_zh, title_en';
 const PROMPT_TITLE_LEGACY_SELECT_FIELDS = 'id, title';
 const SUPPORTED_COMMENTS_QUEUES = new Set([
+    'pending',
     'all',
     'guestbook_unreplied',
     'high_risk',
@@ -86,7 +91,10 @@ function normalizeCommentsSourceFilter(value) {
 
 function normalizeCommentsQueueFilter(value) {
     const normalized = sanitizeText(value, 80).toLowerCase();
-    return SUPPORTED_COMMENTS_QUEUES.has(normalized) ? normalized : 'all';
+    if (!normalized) {
+        return 'pending';
+    }
+    return SUPPORTED_COMMENTS_QUEUES.has(normalized) ? normalized : 'pending';
 }
 
 function normalizeCommentsBooleanFilter(value) {
@@ -155,8 +163,7 @@ function isCommentBlocked(comment) {
 
 function isCommentEscalated(comment) {
     const workflow = getCommentWorkflowState(comment);
-    return workflow.status === 'escalated'
-        || Math.max(0, Number(workflow.linked_ticket_count || 0)) > 0;
+    return workflow.status === 'escalated';
 }
 
 function isCommentHighRisk(comment) {
@@ -206,8 +213,10 @@ function matchesCommentSearchTerm(comment, rawSearchTerm, { pinnedOnly = false }
 
 function applyCommentQueueFilter(comment, queue = 'all') {
     const normalizedQueue = normalizeCommentsQueueFilter(queue);
-    if (normalizedQueue === 'all') {
-        return true;
+    if (normalizedQueue === 'pending') {
+        const workflow = getCommentWorkflowState(comment);
+        const status = String(workflow.status || '').trim().toLowerCase();
+        return status !== 'resolved' && status !== 'ignored';
     }
 
     if (normalizedQueue === 'guestbook_unreplied') {
@@ -780,6 +789,39 @@ module.exports = async (req, res) => {
         const filters = parseCommentsListFilters(searchParams);
         const page = normalizeCommentsPage(searchParams.get('page'));
         const pageSize = normalizeCommentsPageSize(searchParams.get('pageSize'));
+
+        const shouldBypassFeedFastPath = filters.queue === 'blocked_user';
+
+        if (!shouldBypassFeedFastPath) {
+            try {
+                const fastPath = await queryCommentsFeedPage(supabase, {
+                    view,
+                    site,
+                    dateFrom,
+                    dateTo,
+                    filters,
+                    page,
+                    pageSize
+                });
+                const commentsWithBlocks = await attachCommentUserBlockState(supabase, fastPath.comments);
+                const paginatedComments = await attachCommentUserSignals(supabase, commentsWithBlocks);
+
+                return sendJson(res, 200, {
+                    success: true,
+                    view,
+                    site,
+                    filters: {
+                        ...filters
+                    },
+                    comments: paginatedComments,
+                    pagination: fastPath.pagination
+                });
+            } catch (fastPathError) {
+                if (!isMissingAdminCommentsFeedError(fastPathError)) {
+                    throw fastPathError;
+                }
+            }
+        }
 
         const comments = view === 'gallery'
             ? await loadGalleryAdminComments(supabase, { site, dateFrom, dateTo })

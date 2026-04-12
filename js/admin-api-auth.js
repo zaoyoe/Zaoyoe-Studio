@@ -1,14 +1,24 @@
 (function initAdminApiAuth(globalScope) {
+    const ACCESS_TOKEN_CACHE_TTL_MS = 10000;
+    let cachedAccessToken = '';
+    let cachedAccessTokenExpiresAt = 0;
+    let inFlightAccessTokenPromise = null;
+
     async function resolveWithTimeout(factory, timeoutMs = 4000, fallback = null) {
+        let timeoutId = 0;
         try {
             return await Promise.race([
                 Promise.resolve().then(factory),
                 new Promise((resolve) => {
-                    globalScope.setTimeout(() => resolve(fallback), timeoutMs);
+                    timeoutId = globalScope.setTimeout(() => resolve(fallback), timeoutMs);
                 })
             ]);
         } catch (_) {
             return fallback;
+        } finally {
+            if (timeoutId && typeof globalScope.clearTimeout === 'function') {
+                globalScope.clearTimeout(timeoutId);
+            }
         }
     }
 
@@ -42,17 +52,72 @@
         return null;
     }
 
-    async function getAccessToken() {
-        const authClient = globalScope?.supabaseClient?.auth || globalScope?.supabase?.auth;
-        if (authClient?.getSession) {
-            const sessionResult = await resolveWithTimeout(() => authClient.getSession(), 4000, null);
-            const accessToken = String(sessionResult?.data?.session?.access_token || '').trim();
-            if (accessToken) {
-                return accessToken;
+    function rememberAccessToken(token = '', ttlMs = ACCESS_TOKEN_CACHE_TTL_MS) {
+        const normalizedToken = String(token || '').trim();
+        cachedAccessToken = normalizedToken;
+        cachedAccessTokenExpiresAt = normalizedToken
+            ? Date.now() + Math.max(500, Number(ttlMs) || ACCESS_TOKEN_CACHE_TTL_MS)
+            : 0;
+        return normalizedToken;
+    }
+
+    function getCachedAccessToken() {
+        if (!cachedAccessToken) {
+            return '';
+        }
+
+        if (Date.now() >= cachedAccessTokenExpiresAt) {
+            cachedAccessToken = '';
+            cachedAccessTokenExpiresAt = 0;
+            return '';
+        }
+
+        return cachedAccessToken;
+    }
+
+    function clearAccessTokenCache() {
+        cachedAccessToken = '';
+        cachedAccessTokenExpiresAt = 0;
+        inFlightAccessTokenPromise = null;
+    }
+
+    async function getAccessToken(options = {}) {
+        const forceRefresh = options?.force === true;
+        if (!forceRefresh) {
+            const cachedToken = getCachedAccessToken();
+            if (cachedToken) {
+                return cachedToken;
+            }
+
+            if (inFlightAccessTokenPromise) {
+                return inFlightAccessTokenPromise;
             }
         }
 
-        return String(readPersistedSession()?.access_token || '').trim();
+        const authClient = globalScope?.supabaseClient?.auth || globalScope?.supabase?.auth;
+        const tokenPromise = (async () => {
+            if (authClient?.getSession) {
+                const sessionResult = await resolveWithTimeout(() => authClient.getSession(), 4000, null);
+                const accessToken = rememberAccessToken(sessionResult?.data?.session?.access_token || '');
+                if (accessToken) {
+                    return accessToken;
+                }
+            }
+
+            return rememberAccessToken(readPersistedSession()?.access_token || '', 3000);
+        })();
+
+        if (!forceRefresh) {
+            inFlightAccessTokenPromise = tokenPromise;
+        }
+
+        try {
+            return await tokenPromise;
+        } finally {
+            if (!forceRefresh && inFlightAccessTokenPromise === tokenPromise) {
+                inFlightAccessTokenPromise = null;
+            }
+        }
     }
 
     async function buildRequestInit(init = {}) {
@@ -61,10 +126,12 @@
             ...init
         };
         const headers = new Headers(init?.headers || {});
-        const token = await getAccessToken();
+        if (!headers.has('Authorization')) {
+            const token = await getAccessToken();
 
-        if (token && !headers.has('Authorization')) {
-            headers.set('Authorization', `Bearer ${token}`);
+            if (token) {
+                headers.set('Authorization', `Bearer ${token}`);
+            }
         }
 
         nextInit.headers = headers;
@@ -78,6 +145,7 @@
     const api = {
         fetch: adminFetch,
         getAccessToken,
+        clearAccessTokenCache,
         buildRequestInit
     };
 

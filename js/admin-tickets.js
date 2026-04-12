@@ -4302,7 +4302,9 @@ const AdminTickets = {
             ? arguments[0]
             : {};
         const focus = this.safeText(options.focus).trim().toLowerCase();
-        const switched = window.switchModule?.('ops-alerts');
+        const switched = window.AdminShell?.activateModule
+            ? window.AdminShell.activateModule('ops-alerts', { reason: 'tickets-open-sla-settings' })
+            : window.switchModule?.('ops-alerts');
         if (switched === false) {
             this.notify('当前账号没有站外告警模块权限，无法打开提醒配置', 'warning');
             return false;
@@ -6077,6 +6079,18 @@ const AdminTickets = {
             };
         }
 
+        const structuredContext = this.parseLinkedTicketContext(ticket);
+        if (structuredContext?.source_type) {
+            return {
+                sourceType: structuredContext.source_type,
+                sourceLabel: structuredContext.source_label || (
+                    structuredContext.source_type === 'comment_workflow'
+                        ? '评论治理'
+                        : (structuredContext.source_type === 'chat_session' ? '客服会话' : '站内代办')
+                )
+            };
+        }
+
         if (this.parseLinkedChatSessionContext(ticket?.description)) {
             return {
                 sourceType: 'chat_session',
@@ -7033,6 +7047,14 @@ const AdminTickets = {
         return null;
     },
 
+    parseLinkedTicketContext: function (ticketOrDescription = '') {
+        const protocol = this.getTicketLinkProtocol();
+        if (protocol?.parseLinkedTicketContext) {
+            return protocol.parseLinkedTicketContext(ticketOrDescription);
+        }
+        return null;
+    },
+
     getOpsAlertWorkspaceActionForContext: function (context = {}) {
         if (typeof window.getOpsAlertWorkspaceAction !== 'function') {
             return null;
@@ -7075,9 +7097,16 @@ const AdminTickets = {
     },
 
     buildTicketWorkbenchEntry: function (ticket = {}, target = 'chat') {
-        const linkedChatContext = this.parseLinkedChatSessionContext(ticket.description);
-        const linkedCommentContext = this.parseLinkedCommentContext(ticket.description);
-        const linkedOpsAlertContext = this.parseLinkedOpsAlertContext(ticket.description);
+        const linkedStructuredContext = this.parseLinkedTicketContext(ticket);
+        const linkedChatContext = linkedStructuredContext?.source_type === 'chat_session'
+            ? linkedStructuredContext.context
+            : this.parseLinkedChatSessionContext(ticket.description);
+        const linkedCommentContext = linkedStructuredContext?.source_type === 'comment_workflow'
+            ? linkedStructuredContext.context
+            : this.parseLinkedCommentContext(ticket.description);
+        const linkedOpsAlertContext = linkedStructuredContext?.source_type === 'ops_alert'
+            ? linkedStructuredContext.context
+            : this.parseLinkedOpsAlertContext(ticket.description);
         const sourceAction = linkedOpsAlertContext ? this.getOpsAlertWorkspaceActionForContext(linkedOpsAlertContext) : null;
 
         if (typeof window.buildTicketWorkbenchEntry === 'function') {

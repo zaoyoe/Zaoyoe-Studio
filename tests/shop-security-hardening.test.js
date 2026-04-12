@@ -306,6 +306,7 @@ test('admin and storefront surfaces wire the purchase-policy controls through to
     const adminDiscountsSource = readRepoFile('admin-discounts.js');
     const shopClientSource = readRepoFile(path.join('js', 'shop-client.js'));
     const adminUsersSource = readRepoFile('admin-users.js');
+    const adminUsersManageHandlerSource = readRepoFile(path.join('server', 'api-handlers', 'admin', 'users', 'manage.js'));
 
     assert.match(
         adminStudioSource,
@@ -439,8 +440,13 @@ test('admin and storefront surfaces wire the purchase-policy controls through to
     );
     assert.match(
         adminUsersSource,
+        /postAdminUsersManage\('update_admin_permissions'/,
+        'saving user permissions should route the unlimited-purchase entitlement through the hardened admin api'
+    );
+    assert.match(
+        adminUsersManageHandlerSource,
         /\.from\('user_purchase_entitlements'\)\s*\.upsert/s,
-        'saving user permissions should persist the unlimited-purchase entitlement'
+        'the hardened admin users handler should persist the unlimited-purchase entitlement'
     );
     assert.match(
         adminUsersSource,

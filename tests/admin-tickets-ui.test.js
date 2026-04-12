@@ -2091,3 +2091,40 @@ test('admin tickets can route comment-linked tickets back to the comments worksp
     const actions = AdminTickets.buildWorkbenchActionDefinitions(ticket);
     assert.equal(actions.some((action) => action.target === 'source' && /评论治理/.test(action.title)), true);
 });
+
+test('admin tickets prefer structured linked context before parsing ticket descriptions', () => {
+    const { AdminTickets } = loadAdminTicketsRuntime({
+        ticketLinks: ticketLinksProtocol
+    });
+
+    const ticket = {
+        id: 'ticket-structured-comment-1',
+        status: 'PENDING',
+        linked_context: {
+            source_type: 'comment_workflow',
+            source_label: '评论治理',
+            context: {
+                view: 'gallery',
+                comment_id: 'comment_structured_1',
+                prompt_id: 'prompt_structured_1',
+                site: 'cn'
+            }
+        },
+        description: [
+            '[评论管理转工单]',
+            '评论视图：guestbook',
+            '评论ID：legacy_comment',
+            '留言主贴 ID：legacy_message'
+        ].join('\n')
+    };
+
+    const sourceMeta = AdminTickets.getTicketSourceMeta(ticket);
+    assert.equal(sourceMeta.sourceType, 'comment_workflow');
+    assert.equal(sourceMeta.sourceLabel, '评论治理');
+
+    const sourceEntry = AdminTickets.buildTicketWorkbenchEntry(ticket, 'source');
+    assert.equal(sourceEntry?.workspaceKey, 'comments');
+    assert.equal(sourceEntry?.context?.view, 'gallery');
+    assert.equal(sourceEntry?.context?.focusCommentId, 'comment_structured_1');
+    assert.equal(sourceEntry?.context?.promptId, 'prompt_structured_1');
+});

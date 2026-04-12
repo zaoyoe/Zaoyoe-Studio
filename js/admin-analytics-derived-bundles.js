@@ -20,6 +20,7 @@ const analyticsDerivedState = {
     visualPanelBundle: null,
     summaryPayloadBundle: null,
     summaryRowsBundle: null,
+    productDashboardBundle: null,
     productSummaryBundle: null,
     productRankBundle: null,
     productHealthBundle: null,
@@ -85,6 +86,7 @@ function resetAnalyticsDerivedContext(contextKey = getAnalyticsAIContextKey()) {
     analyticsDerivedState.visualPanelBundle = null;
     analyticsDerivedState.summaryPayloadBundle = null;
     analyticsDerivedState.summaryRowsBundle = null;
+    analyticsDerivedState.productDashboardBundle = null;
     analyticsDerivedState.productSummaryBundle = null;
     analyticsDerivedState.productRankBundle = null;
     analyticsDerivedState.productHealthBundle = null;
@@ -989,6 +991,21 @@ async function getAnalyticsProductSummaryBundle(options = {}) {
         async () => {
             const requestUrl = buildAnalyticsAdminRouteUrl(
                 'analytics/product-summary-bundle',
+                buildAnalyticsProductBundleQuery(options)
+            );
+            return fetchAnalyticsAdminJson(`${requestUrl.pathname}${requestUrl.search}`);
+        },
+        { contextKey, forceRefresh: options.forceRefresh }
+    );
+}
+
+async function getAnalyticsProductDashboardBundle(options = {}) {
+    const contextKey = options.contextKey || getAnalyticsAIContextKey();
+    return runAnalyticsDerivedRequest(
+        'productDashboardBundle',
+        async () => {
+            const requestUrl = buildAnalyticsAdminRouteUrl(
+                'analytics/product-dashboard-bundle',
                 buildAnalyticsProductBundleQuery(options)
             );
             return fetchAnalyticsAdminJson(`${requestUrl.pathname}${requestUrl.search}`);

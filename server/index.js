@@ -116,11 +116,16 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Upstream API base URL
-const DEFAULT_VERIFY_API_BASE_URL = 'https://a8yx0rez5w.localto.net';
+const DEFAULT_VERIFY_API_BASE_URL = 'https://aidone.lol';
 const VERIFY_API_BASE = process.env.VERIFY_API_BASE_URL || DEFAULT_VERIFY_API_BASE_URL;
 const HEALTHCHECK_UPSTREAM_TIMEOUT_MS = Math.max(1000, Number(process.env.HEALTHCHECK_UPSTREAM_TIMEOUT_MS || 5000));
 const ACTIVE_TRACKED_JOB_STATUSES = ['queued', 'running', 'processing', 'pending'];
 const TERMINAL_TRACKED_JOB_STATUSES = ['success', 'failed'];
+const DEFAULT_VERIFY_TASK_TYPE = 'extract';
+const VERIFY_TASK_UNIT_COSTS = Object.freeze({
+    extract: 0.5,
+    full: 1
+});
 const PENDING_JOB_SWEEP_INTERVAL_MS = Math.max(2000, Number(process.env.VERIFY_PENDING_SWEEP_INTERVAL_MS || 5000));
 const PENDING_JOB_SWEEP_BATCH_SIZE = Math.max(1, Number(process.env.VERIFY_PENDING_SWEEP_BATCH_SIZE || 20));
 const SHOP_DELIVERY_STRATEGY_CACHE_TTL_MS = Math.max(2000, Number(process.env.SHOP_DELIVERY_STRATEGY_CACHE_TTL_MS || 5000));
@@ -201,34 +206,38 @@ function getLocalHealthPayload() {
 }
 
 async function probeUpstreamHealth() {
-    const upstreamUrl = `${String(VERIFY_API_BASE).replace(/\/+$/, '')}/api/health`;
-
     try {
-        const upstream = await fetch(upstreamUrl, {
-            signal: AbortSignal.timeout(HEALTHCHECK_UPSTREAM_TIMEOUT_MS)
-        });
-        const rawBody = await upstream.text();
+        const config = await getVerifyConfig();
+        const upstreamUrl = normalizeVerifyApiBaseUrl(config.apiBaseUrl || VERIFY_API_BASE);
 
-        let payload = null;
-        if (rawBody) {
-            try {
-                payload = JSON.parse(rawBody);
-            } catch (parseError) {
-                payload = { raw: rawBody };
-            }
+        if (!upstreamUrl || !config.apiKey) {
+            return {
+                ok: false,
+                status: 503,
+                url: upstreamUrl || null,
+                payload: null,
+                error: 'verify_provider_not_configured'
+            };
         }
+
+        const upstream = await postVerifyProviderAction(config, {
+            action: 'get_balance',
+            cdkey: config.apiKey
+        }, {
+            timeoutMs: HEALTHCHECK_UPSTREAM_TIMEOUT_MS
+        });
 
         return {
             ok: upstream.ok,
-            status: upstream.status,
+            status: upstream.status || (upstream.ok ? 200 : 503),
             url: upstreamUrl,
-            payload
+            payload: upstream.payload
         };
     } catch (error) {
         return {
             ok: false,
             status: 503,
-            url: upstreamUrl,
+            url: normalizeVerifyApiBaseUrl(VERIFY_API_BASE),
             payload: null,
             error: error.message
         };
@@ -286,10 +295,29 @@ async function getVerifyConfig() {
         .single();
 
     const config = configData?.config_value || {};
+    const prices = getVerifyPriceMap(config);
+    const apiKeys = normalizeVerifyCredentialList([
+        ...(Array.isArray(config.verify_cdkeys) ? config.verify_cdkeys : []),
+        config.verify_cdkey,
+        config.verify_api_key,
+        process.env.VERIFY_CDKEYS,
+        process.env.VERIFY_CDKEY,
+        process.env.VERIFY_API_KEY,
+        process.env.VERIFY_API_TOKEN
+    ]);
+
     return {
-        pricePerVerify: Number(config.price_per_verify) || 10,
-        apiKey: String(config.verify_api_key || process.env.VERIFY_API_KEY || '').trim(),
-        apiBaseUrl: String(config.verify_api_base_url || process.env.VERIFY_API_BASE_URL || VERIFY_API_BASE).replace(/\/+$/, ''),
+        pricePerVerify: prices.extract,
+        pricePerVerifyExtract: prices.extract,
+        pricePerVerifyFull: prices.full,
+        apiKey: apiKeys[0] || '',
+        apiKeys,
+        keyCount: apiKeys.length,
+        apiBaseUrl: normalizeVerifyApiBaseUrl(
+            config.verify_api_base_url
+            || process.env.VERIFY_API_BASE_URL
+            || VERIFY_API_BASE
+        ),
         monitorConfig: config.verify_quota_monitor && typeof config.verify_quota_monitor === 'object'
             ? config.verify_quota_monitor
             : {},
@@ -517,6 +545,295 @@ function getApiErrorCode(payload) {
 function getApiErrorMessage(payload, fallback) {
     const detail = getApiErrorDetail(payload);
     return detail?.message || payload?.message || payload?.error || fallback;
+}
+
+function normalizeVerifyApiBaseUrl(value) {
+    const normalized = String(value || '').trim().replace(/\/+$/, '');
+    if (!normalized) return '';
+    return /\/openapi$/i.test(normalized) ? normalized : `${normalized}/openapi`;
+}
+
+function normalizeVerifyTaskType(value, fallback = DEFAULT_VERIFY_TASK_TYPE) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'full') return 'full';
+    if (normalized === 'extract') return 'extract';
+    return fallback;
+}
+
+function getVerifyPriceMap(config = {}) {
+    const legacyPrice = Math.max(1, Number(config.pricePerVerify || config.price_per_verify) || 10);
+    const extractPrice = Math.max(
+        1,
+        Number(config.pricePerVerifyExtract || config.price_per_verify_extract || legacyPrice) || legacyPrice
+    );
+    const fullFallback = Math.max(extractPrice, Math.round(extractPrice * 2));
+    const fullPrice = Math.max(
+        1,
+        Number(config.pricePerVerifyFull || config.price_per_verify_full || fullFallback) || fullFallback
+    );
+
+    return {
+        extract: extractPrice,
+        full: fullPrice
+    };
+}
+
+function getVerifyPriceForTaskType(config = {}, taskType = DEFAULT_VERIFY_TASK_TYPE) {
+    const prices = getVerifyPriceMap(config);
+    return normalizeVerifyTaskType(taskType) === 'full' ? prices.full : prices.extract;
+}
+
+function getVerifyUnitCost(taskType = DEFAULT_VERIFY_TASK_TYPE) {
+    return VERIFY_TASK_UNIT_COSTS[normalizeVerifyTaskType(taskType)] || VERIFY_TASK_UNIT_COSTS.extract;
+}
+
+function getVerifyRemainingTaskCount(remainingUses, taskType = DEFAULT_VERIFY_TASK_TYPE) {
+    const numericRemainingUses = Number(remainingUses);
+    const unitCost = getVerifyUnitCost(taskType);
+    if (!Number.isFinite(numericRemainingUses) || !Number.isFinite(unitCost) || unitCost <= 0) {
+        return 0;
+    }
+
+    return Math.max(0, Math.floor((numericRemainingUses + 1e-9) / unitCost));
+}
+
+function buildVerifyUsageSummary(remainingUses) {
+    const numericRemainingUses = Number(remainingUses);
+    const safeRemainingUses = Number.isFinite(numericRemainingUses)
+        ? Math.max(0, Math.round(numericRemainingUses * 100) / 100)
+        : 0;
+
+    return {
+        remaining_uses: safeRemainingUses,
+        extract_cost_per_job: getVerifyUnitCost('extract'),
+        full_cost_per_job: getVerifyUnitCost('full'),
+        remaining_extract_jobs: getVerifyRemainingTaskCount(safeRemainingUses, 'extract'),
+        remaining_full_jobs: getVerifyRemainingTaskCount(safeRemainingUses, 'full')
+    };
+}
+
+function normalizeVerifyCredentialList(value) {
+    const queue = Array.isArray(value) ? [...value] : [value];
+    const normalizedValues = [];
+    const seen = new Set();
+
+    while (queue.length) {
+        const current = queue.shift();
+        if (Array.isArray(current)) {
+            queue.unshift(...current);
+            continue;
+        }
+
+        String(current || '')
+            .split(/[\n,;]+/)
+            .map((entry) => String(entry || '').trim())
+            .filter(Boolean)
+            .forEach((entry) => {
+                if (seen.has(entry)) return;
+                seen.add(entry);
+                normalizedValues.push(entry);
+            });
+    }
+
+    return normalizedValues;
+}
+
+function maskVerifyCredential(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return '';
+    if (normalized.length <= 8) return normalized;
+    return `${normalized.slice(0, 4)}...${normalized.slice(-4)}`;
+}
+
+function buildVerifyCredentialFingerprint(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return '';
+    return crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 16);
+}
+
+function resolveVerifyApiKeyByFingerprint(config = {}, fingerprint = '') {
+    const normalizedFingerprint = String(fingerprint || '').trim();
+    if (!normalizedFingerprint) return '';
+
+    return normalizeVerifyCredentialList(config.apiKeys || config.apiKey)
+        .find((candidate) => buildVerifyCredentialFingerprint(candidate) === normalizedFingerprint) || '';
+}
+
+function normalizeVerifyUpstreamStatus(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized) return 'queued';
+    if (['success', 'completed', 'done', 'ok'].includes(normalized)) return 'success';
+    if (['failed', 'fail', 'error', 'timeout', 'cancelled', 'canceled'].includes(normalized)) return 'failed';
+    if (['running', 'processing', 'working', 'in_progress'].includes(normalized)) return 'running';
+    if (['queued', 'queueing', 'waiting', 'pending'].includes(normalized)) return 'queued';
+    return normalized;
+}
+
+function normalizeOptionalNumber(value) {
+    if (value === null || value === undefined || value === '') {
+        return null;
+    }
+
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function extractVerifyProviderPayload(payload) {
+    if (payload?.data && typeof payload.data === 'object' && !Array.isArray(payload.data)) {
+        return payload.data;
+    }
+
+    return payload && typeof payload === 'object' ? payload : {};
+}
+
+function normalizeVerifyJobPayload(payload = {}, fallback = {}) {
+    const source = extractVerifyProviderPayload(payload);
+    const offerUrl = String(source.offer_url || source.url || fallback.offer_url || fallback.url || '').trim();
+    const queuePositionValue = normalizeOptionalNumber(source.queue_position ?? fallback.queue_position);
+    const waitSecondsValue = normalizeOptionalNumber(source.estimated_wait_seconds ?? fallback.estimated_wait_seconds);
+    const elapsedSecondsValue = normalizeOptionalNumber(source.elapsed_seconds ?? fallback.elapsed_seconds);
+
+    return {
+        ...source,
+        job_id: String(source.job_id || source.task_id || fallback.job_id || fallback.task_id || '').trim(),
+        task_id: String(source.task_id || source.job_id || fallback.task_id || fallback.job_id || '').trim(),
+        status: normalizeVerifyUpstreamStatus(source.status || source.raw_status || fallback.status),
+        task_type: normalizeVerifyTaskType(source.task_type || fallback.task_type),
+        url: offerUrl,
+        offer_url: offerUrl,
+        has_offer_url: source.has_offer_url === true || fallback.has_offer_url === true || Boolean(offerUrl),
+        error: String(source.error_code || source.error || fallback.error || '').trim(),
+        message: String(source.message || fallback.message || '').trim(),
+        stage_label: String(source.stage_label || fallback.stage_label || '').trim(),
+        queue_position: queuePositionValue,
+        estimated_wait_seconds: waitSecondsValue,
+        elapsed_seconds: elapsedSecondsValue,
+        created_at: String(source.completed_at || source.created_at || fallback.created_at || '').trim() || null,
+        provider_key_fingerprint: String(source.provider_key_fingerprint || fallback.provider_key_fingerprint || '').trim(),
+        provider_key_name: String(source.provider_key_name || fallback.provider_key_name || '').trim()
+    };
+}
+
+function buildVerifyFetchOptions(timeoutMs = 0) {
+    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' && Number(timeoutMs) > 0) {
+        return {
+            signal: AbortSignal.timeout(Number(timeoutMs))
+        };
+    }
+
+    return {};
+}
+
+async function postVerifyProviderAction(config = {}, payload = {}, options = {}) {
+    const endpoint = normalizeVerifyApiBaseUrl(config.apiBaseUrl || config.api_base_url);
+    const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload),
+        ...buildVerifyFetchOptions(options.timeoutMs)
+    });
+    const responsePayload = await response.json().catch(() => ({}));
+
+    return {
+        ok: response.ok && responsePayload?.success !== false,
+        status: response.status,
+        endpoint,
+        payload: responsePayload
+    };
+}
+
+async function fetchVerifyQuotaStates(config = {}) {
+    const apiKeys = normalizeVerifyCredentialList(config.apiKeys || config.apiKey);
+    const snapshots = [];
+
+    for (const apiKey of apiKeys) {
+        const upstream = await postVerifyProviderAction(config, {
+            action: 'get_balance',
+            cdkey: apiKey
+        });
+
+        if (!upstream.ok) {
+            snapshots.push({
+                ok: false,
+                apiKey,
+                keyName: maskVerifyCredential(apiKey),
+                status: upstream.status || 502,
+                message: getApiErrorMessage(upstream.payload, '查询额度失败'),
+                code: getApiErrorCode(upstream.payload)
+            });
+            continue;
+        }
+
+        const apiData = extractVerifyProviderPayload(upstream.payload);
+        const remainingUses = Number(apiData.remaining_uses ?? apiData.balance ?? apiData.credits ?? 0);
+        const usageSummary = buildVerifyUsageSummary(remainingUses);
+        snapshots.push({
+            ok: true,
+            apiKey,
+            keyName: String(apiData.name || apiData.key_name || apiData.keyName || '').trim() || maskVerifyCredential(apiKey),
+            remainingUses: usageSummary.remaining_uses,
+            totalUsed: Number(apiData.total_used || 0),
+            usageSummary
+        });
+    }
+
+    return snapshots;
+}
+
+async function selectVerifyCredentialForTask(config = {}, requiredUses = 0) {
+    const apiKeys = normalizeVerifyCredentialList(config.apiKeys || config.apiKey);
+    if (apiKeys.length <= 1) {
+        const onlyKey = apiKeys[0] || '';
+        return {
+            selected: onlyKey
+                ? {
+                    ok: true,
+                    apiKey: onlyKey,
+                    keyName: maskVerifyCredential(onlyKey),
+                    remainingUses: null,
+                    totalUsed: null,
+                    usageSummary: null
+                }
+                : null,
+            snapshots: onlyKey
+                ? [{
+                    ok: true,
+                    apiKey: onlyKey,
+                    keyName: maskVerifyCredential(onlyKey),
+                    remainingUses: null,
+                    totalUsed: null,
+                    usageSummary: null
+                }]
+                : [],
+            healthySnapshots: onlyKey
+                ? [{
+                    ok: true,
+                    apiKey: onlyKey,
+                    keyName: maskVerifyCredential(onlyKey),
+                    remainingUses: null,
+                    totalUsed: null,
+                    usageSummary: null
+                }]
+                : [],
+            totalRemainingUses: onlyKey ? null : 0
+        };
+    }
+
+    const snapshots = await fetchVerifyQuotaStates(config);
+    const healthySnapshots = snapshots
+        .filter((snapshot) => snapshot.ok)
+        .sort((left, right) => Number(right.remainingUses || 0) - Number(left.remainingUses || 0));
+    const selected = healthySnapshots.find((snapshot) => Number(snapshot.remainingUses || 0) >= Number(requiredUses || 0)) || null;
+    const totalRemainingUses = healthySnapshots.reduce((sum, snapshot) => sum + Number(snapshot.remainingUses || 0), 0);
+
+    return {
+        selected,
+        snapshots,
+        healthySnapshots,
+        totalRemainingUses: Math.max(0, Math.round(totalRemainingUses * 100) / 100)
+    };
 }
 
 const LEGACY_AFDIAN_PRICE_TO_POINTS = {
@@ -1700,6 +2017,8 @@ async function tryFinalizeCustomRechargeFromQuote({
 
 function buildClientStatusMessage(job) {
     const status = String(job?.status || '').toLowerCase();
+    const taskType = normalizeVerifyTaskType(job?.task_type || job?.taskType);
+    const offerUrl = String(job?.offer_url || job?.url || '').trim();
 
     if (status === 'queued') {
         const queuePosition = Number(job?.queue_position);
@@ -1717,7 +2036,10 @@ function buildClientStatusMessage(job) {
     }
 
     if (status === 'success') {
-        return job?.url ? '链接获取成功' : '任务成功完成';
+        if (taskType === 'full') {
+            return String(job?.message || '').trim() || '绑卡流程完成';
+        }
+        return offerUrl ? '链接获取成功' : (String(job?.message || '').trim() || '提链任务完成');
     }
 
     if (status === 'failed') {
@@ -1763,12 +2085,20 @@ function buildTrackedJobPayload({ email, jobId, apiData = {}, status = '', point
     const queuePosition = Number(apiData?.queue_position);
     const estimatedWait = Number(apiData?.estimated_wait_seconds);
     const elapsedSeconds = Number(apiData?.elapsed_seconds);
+    const offerUrl = String(apiData?.offer_url || apiData?.url || '').trim();
+    const taskType = normalizeVerifyTaskType(apiData?.task_type);
 
     return {
         email: email || '',
         job_id: jobId || '',
-        url: apiData?.url || '',
+        url: offerUrl,
+        offer_url: offerUrl,
+        has_offer_url: apiData?.has_offer_url === true || Boolean(offerUrl),
+        task_type: taskType,
+        provider_key_fingerprint: String(apiData?.provider_key_fingerprint || '').trim(),
+        provider_key_name: String(apiData?.provider_key_name || '').trim(),
         error_code: apiData?.error || '',
+        message: apiData?.message || '',
         error_message: buildClientStatusMessage(apiData),
         stage_label: apiData?.stage_label || '',
         raw_status: apiData?.status || status || '',
@@ -1966,7 +2296,8 @@ async function findExistingJobDeduction(userId, jobId, site = 'cn') {
     }
 }
 
-async function deductPointsForJob(userId, jobId, amount, site = 'cn') {
+async function deductPointsForJob(userId, jobId, amount, site = 'cn', taskType = DEFAULT_VERIFY_TASK_TYPE) {
+    const normalizedTaskType = normalizeVerifyTaskType(taskType);
     const existingDeduction = await findExistingJobDeduction(userId, jobId, site);
     if (existingDeduction > 0) {
         return existingDeduction;
@@ -1976,7 +2307,9 @@ async function deductPointsForJob(userId, jobId, amount, site = 'cn') {
         supabase,
         userId,
         amount,
-        reason: 'Google One 链接获取服务',
+        reason: normalizedTaskType === 'full'
+            ? 'Google One 全流程包绑卡服务'
+            : 'Google One 试用链接提取服务',
         referenceId: jobId,
         site
     });
@@ -2004,7 +2337,13 @@ async function syncTrackedJobStatus({
     const lockKey = `${site}:${userId}:${jobId}`;
     return withJobSyncLock(lockKey, async () => {
         let existingRecord = await findTrackedJobLog(userId, jobId, site);
-        const upstreamStatus = String(apiData?.status || '').toLowerCase();
+        const existingPayload = parseHistoryMessage(existingRecord?.message) || {};
+        const normalizedApiData = normalizeVerifyJobPayload(apiData, {
+            job_id: jobId,
+            task_type: existingPayload.task_type || DEFAULT_VERIFY_TASK_TYPE
+        });
+        const upstreamStatus = String(normalizedApiData?.status || '').toLowerCase();
+        const taskType = normalizeVerifyTaskType(normalizedApiData?.task_type || existingPayload.task_type);
 
         if (!upstreamStatus) {
             return {
@@ -2021,7 +2360,7 @@ async function syncTrackedJobStatus({
                 email,
                 jobId,
                 status: upstreamStatus,
-                apiData,
+                apiData: normalizedApiData,
                 pointsDeducted: Number(existingRecord?.points_deducted) || 0
             });
 
@@ -2032,17 +2371,26 @@ async function syncTrackedJobStatus({
         }
 
         if (existingRecord && isTerminalTrackedStatus(existingRecord.status)) {
-            return {
-                pointsDeducted: Number(existingRecord.points_deducted) || 0,
-                record: existingRecord
-            };
+            const existingTerminalStatus = String(existingRecord.status || '').toLowerCase();
+            if (existingTerminalStatus === 'success' || upstreamStatus !== 'success') {
+                return {
+                    pointsDeducted: Number(existingRecord.points_deducted) || 0,
+                    record: existingRecord
+                };
+            }
         }
 
         let pointsDeducted = Number(existingRecord?.points_deducted) || 0;
         const runtimeConfig = config || await getVerifyConfig();
 
         if (upstreamStatus === 'success') {
-            pointsDeducted = await deductPointsForJob(userId, jobId, runtimeConfig.pricePerVerify, site);
+            pointsDeducted = await deductPointsForJob(
+                userId,
+                jobId,
+                getVerifyPriceForTaskType(runtimeConfig, taskType),
+                site,
+                taskType
+            );
         }
 
         existingRecord = await upsertTrackedJobLog({
@@ -2052,7 +2400,7 @@ async function syncTrackedJobStatus({
             email,
             jobId,
             status: upstreamStatus === 'success' ? 'success' : 'failed',
-            apiData,
+            apiData: normalizedApiData,
             pointsDeducted
         });
 
@@ -2060,39 +2408,105 @@ async function syncTrackedJobStatus({
     });
 }
 
-async function fetchUpstreamJobStatus(config, jobId) {
-    const apiRes = await fetch(`${config.apiBaseUrl}/api/jobs/${jobId}`, {
-        method: 'GET',
-        headers: {
-            'X-API-Key': config.apiKey
-        }
-    });
+async function fetchUpstreamJobStatus(config, jobId, options = {}) {
+    const candidateApiKeys = normalizeVerifyCredentialList([
+        options.apiKey,
+        config.apiKeys,
+        config.apiKey
+    ]);
 
-    const apiData = await apiRes.json().catch(() => ({}));
+    let lastError = null;
+    let lastNotFound = null;
 
-    if (!apiRes.ok) {
-        const errorCode = getApiErrorCode(apiData);
-        if (apiRes.status === 404 || errorCode === 'job_not_found') {
+    for (const apiKey of candidateApiKeys) {
+        const upstream = await postVerifyProviderAction(config, {
+            action: 'get_status',
+            cdkey: apiKey,
+            task_id: jobId
+        });
+
+        if (upstream.ok) {
             return {
                 ok: true,
-                data: {
+                data: normalizeVerifyJobPayload(upstream.payload, {
                     job_id: jobId,
-                    status: 'failed',
-                    error: errorCode || 'job_not_found',
-                    message: getApiErrorMessage(apiData, '任务不存在')
-                }
+                    task_type: options.taskType || DEFAULT_VERIFY_TASK_TYPE,
+                    provider_key_fingerprint: buildVerifyCredentialFingerprint(apiKey),
+                    provider_key_name: maskVerifyCredential(apiKey)
+                })
             };
         }
 
+        const errorCode = getApiErrorCode(upstream.payload);
+        const errorMessage = getApiErrorMessage(upstream.payload, '查询状态失败');
+        const currentError = {
+            status: upstream.status || 502,
+            code: errorCode,
+            message: errorMessage
+        };
+
+        if (
+            upstream.status === 404
+            || errorCode === 'job_not_found'
+            || /任务不存在|not found/i.test(errorMessage)
+        ) {
+            lastNotFound = currentError;
+            continue;
+        }
+
+        lastError = currentError;
+    }
+
+    if (lastError) {
         return {
             ok: false,
-            status: apiRes.status,
-            code: errorCode,
-            message: getApiErrorMessage(apiData, '查询状态失败')
+            status: lastError.status,
+            code: lastError.code,
+            message: lastError.message
         };
     }
 
-    return { ok: true, data: apiData };
+    const missingJobError = lastNotFound || {
+        status: 404,
+        code: 'job_not_found',
+        message: '任务不存在'
+    };
+
+    return {
+        ok: true,
+        data: normalizeVerifyJobPayload({
+            job_id: jobId,
+            status: 'failed',
+            error: missingJobError.code || 'job_not_found',
+            message: missingJobError.message || '任务不存在'
+        }, {
+            task_type: options.taskType || DEFAULT_VERIFY_TASK_TYPE
+        })
+    };
+}
+
+async function buildLocalVerifyQueueSnapshot(config = {}) {
+    const { data, error } = await supabase
+        .from('verification_logs')
+        .select('status')
+        .in('status', ACTIVE_TRACKED_JOB_STATUSES)
+        .limit(5000);
+
+    if (error) {
+        throw error;
+    }
+
+    const rows = Array.isArray(data) ? data : [];
+    const queueSize = rows.filter((row) => ['queued', 'pending'].includes(String(row?.status || '').trim().toLowerCase())).length;
+    const runningJobs = rows.filter((row) => ['running', 'processing'].includes(String(row?.status || '').trim().toLowerCase())).length;
+
+    return {
+        queue_size: queueSize,
+        running_jobs: runningJobs,
+        key_name: Number(config.keyCount || 0) > 1
+            ? `CDKey 池（${Number(config.keyCount || 0)}）`
+            : maskVerifyCredential(config.apiKey)
+    };
 }
 
 async function loadPendingTrackedJobs(limit = PENDING_JOB_SWEEP_BATCH_SIZE) {
@@ -3881,11 +4295,12 @@ app.post('/api/verify', async (req, res) => {
     const authenticatedUser = await requireAuthenticatedUser(req, res);
     if (!authenticatedUser) return;
 
-    const { email, password, totpSecret, totp_secret, priority, site } = req.body || {};
+    const { email, password, totpSecret, totp_secret, priority, site, taskType, task_type } = req.body || {};
     const normalizedEmail = String(email || '').trim().toLowerCase();
     const normalizedPassword = String(password || '');
     const normalizedTotpSecret = String(totpSecret || totp_secret || '').trim();
     const normalizedPriority = Number(priority) === 1 ? 1 : 0;
+    const normalizedTaskType = normalizeVerifyTaskType(taskType || task_type);
     const currentSite = resolveSecureRequestSite(req, site);
 
     if (!normalizedEmail || !normalizedPassword || !normalizedTotpSecret) {
@@ -3907,57 +4322,67 @@ app.post('/api/verify', async (req, res) => {
     try {
         const config = await getVerifyConfig();
 
-        if (!config.apiKey) {
+        if (!config.apiKeys?.length) {
             return res.status(500).json({
                 success: false,
-                message: 'Google One API Key 未配置',
+                message: 'Google One 服务商 CDKey 未配置',
                 code: 'api_key_missing'
             });
         }
 
-        const balanceCheck = await validateUserBalance(authenticatedUser.id, config.pricePerVerify, currentSite);
+        const priceForTask = getVerifyPriceForTaskType(config, normalizedTaskType);
+        const balanceCheck = await validateUserBalance(authenticatedUser.id, priceForTask, currentSite);
         if (!balanceCheck.valid) {
             return res.status(balanceCheck.status).json({ success: false, message: balanceCheck.error });
         }
 
-        console.log(`[Verify] Submitting Google One job: ${normalizedEmail}`);
+        const requiredUses = getVerifyUnitCost(normalizedTaskType);
+        const credentialSelection = await selectVerifyCredentialForTask(config, requiredUses);
+        const selectedCredential = credentialSelection.selected;
 
-        const apiRes = await fetch(`${config.apiBaseUrl}/api/jobs`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-API-Key': config.apiKey
-            },
-            body: JSON.stringify({
-                email: normalizedEmail,
-                password: normalizedPassword,
-                totp_secret: normalizedTotpSecret,
-                priority: normalizedPriority
-            })
-        });
-
-        const apiData = await apiRes.json().catch(() => ({}));
-
-        if (!apiRes.ok) {
-            console.error('[Verify] API error:', apiData);
-            return res.status(apiRes.status).json({
+        if (!selectedCredential?.apiKey) {
+            return res.status(400).json({
                 success: false,
-                message: getApiErrorMessage(apiData, '任务提交失败'),
-                code: getApiErrorCode(apiData)
+                message: '当前所有已激活 CDKey 余额都不足，请先补充卡密额度',
+                code: 'insufficient_balance'
             });
         }
 
-        const jobId = String(apiData.job_id || '').trim();
+        console.log(`[Verify] Submitting Google One ${normalizedTaskType} job: ${normalizedEmail}`);
+
+        const upstream = await postVerifyProviderAction(config, {
+            action: 'submit_task',
+            cdkey: selectedCredential.apiKey,
+            email: normalizedEmail,
+            password: normalizedPassword,
+            twofa: normalizedTotpSecret,
+            priority: normalizedPriority,
+            task_type: normalizedTaskType
+        });
+
+        if (!upstream.ok) {
+            console.error('[Verify] API error:', upstream.payload);
+            return res.status(upstream.status || 502).json({
+                success: false,
+                message: getApiErrorMessage(upstream.payload, '任务提交失败'),
+                code: getApiErrorCode(upstream.payload)
+            });
+        }
+
+        const apiData = normalizeVerifyJobPayload(upstream.payload, {
+            status: 'queued',
+            task_type: normalizedTaskType,
+            provider_key_fingerprint: buildVerifyCredentialFingerprint(selectedCredential.apiKey),
+            provider_key_name: selectedCredential.keyName || maskVerifyCredential(selectedCredential.apiKey)
+        });
+        const jobId = String(apiData.job_id || apiData.task_id || '').trim();
         if (jobId) {
             await syncTrackedJobStatus({
                 userId: authenticatedUser.id,
                 site: currentSite,
                 email: normalizedEmail,
                 jobId,
-                apiData: {
-                    ...apiData,
-                    status: apiData.status || 'queued'
-                },
+                apiData,
                 config
             });
         }
@@ -3967,10 +4392,11 @@ app.post('/api/verify', async (req, res) => {
             task_id: jobId,
             job_id: jobId,
             status: apiData.status || 'queued',
+            task_type: apiData.task_type || normalizedTaskType,
             queue_position: apiData.queue_position ?? -1,
             estimated_wait_seconds: apiData.estimated_wait_seconds ?? 0,
-            message: '任务已提交',
-            pricePerVerify: config.pricePerVerify
+            message: apiData.message || '任务已提交',
+            pricePerVerify: priceForTask
         });
 
     } catch (error) {
@@ -4006,11 +4432,15 @@ app.get('/api/verify/status/:taskId', async (req, res) => {
         const trackedPayload = parseHistoryMessage(trackedRecord.message) || {};
         const config = await getVerifyConfig();
 
-        if (!config.apiKey) {
+        if (!config.apiKeys?.length) {
             return res.status(500).json({ success: false, message: '验证服务未配置', code: 'api_key_missing' });
         }
 
-        const upstream = await fetchUpstreamJobStatus(config, taskId);
+        const preferredApiKey = resolveVerifyApiKeyByFingerprint(config, trackedPayload.provider_key_fingerprint);
+        const upstream = await fetchUpstreamJobStatus(config, taskId, {
+            apiKey: preferredApiKey,
+            taskType: trackedPayload.task_type || DEFAULT_VERIFY_TASK_TYPE
+        });
         if (!upstream.ok) {
             return res.status(upstream.status).json({
                 success: false,
@@ -4025,25 +4455,36 @@ app.get('/api/verify/status/:taskId', async (req, res) => {
             site: currentSite,
             email: String(trackedPayload.email || '').trim().toLowerCase(),
             jobId: taskId,
-            apiData,
+            apiData: normalizeVerifyJobPayload(apiData, {
+                task_type: trackedPayload.task_type || DEFAULT_VERIFY_TASK_TYPE,
+                provider_key_fingerprint: trackedPayload.provider_key_fingerprint,
+                provider_key_name: trackedPayload.provider_key_name
+            }),
             config
         });
         const pointsDeducted = Number(syncResult?.pointsDeducted) || 0;
+        const normalizedApiData = normalizeVerifyJobPayload(apiData, {
+            task_type: trackedPayload.task_type || DEFAULT_VERIFY_TASK_TYPE,
+            provider_key_fingerprint: trackedPayload.provider_key_fingerprint,
+            provider_key_name: trackedPayload.provider_key_name
+        });
 
         return res.json({
-            success: apiData.status === 'success',
-            job_id: apiData.job_id || taskId,
-            status: apiData.status,
-            stage: apiData.stage,
-            total_stages: apiData.total_stages,
-            stage_label: apiData.stage_label,
-            url: apiData.url || '',
-            error: apiData.error || '',
-            created_at: apiData.created_at,
-            elapsed_seconds: apiData.elapsed_seconds,
-            queue_position: apiData.queue_position,
-            estimated_wait_seconds: apiData.estimated_wait_seconds,
-            message: buildClientStatusMessage(apiData),
+            success: normalizedApiData.status === 'success',
+            job_id: normalizedApiData.job_id || taskId,
+            status: normalizedApiData.status,
+            stage: normalizedApiData.stage,
+            total_stages: normalizedApiData.total_stages,
+            stage_label: normalizedApiData.stage_label,
+            task_type: normalizedApiData.task_type,
+            has_offer_url: normalizedApiData.has_offer_url === true,
+            url: normalizedApiData.url || '',
+            error: normalizedApiData.error || '',
+            created_at: normalizedApiData.created_at,
+            elapsed_seconds: normalizedApiData.elapsed_seconds,
+            queue_position: normalizedApiData.queue_position,
+            estimated_wait_seconds: normalizedApiData.estimated_wait_seconds,
+            message: buildClientStatusMessage(normalizedApiData),
             pointsDeducted
         });
 
@@ -4066,32 +4507,68 @@ app.get('/api/quota', async (req, res) => {
     try {
         const config = await getVerifyConfig();
 
-        if (!config.apiKey) {
-            return res.status(500).json({ success: false, message: '验证服务未配置 API Key' });
+        if (!config.apiKeys?.length) {
+            return res.status(500).json({ success: false, message: '验证服务未配置 CDKey' });
         }
 
-        const apiRes = await fetch(`${config.apiBaseUrl}/api/balance`, {
-            method: 'GET',
-            headers: { 'X-API-Key': config.apiKey }
-        });
+        const snapshots = await fetchVerifyQuotaStates(config);
+        const healthySnapshots = snapshots.filter((snapshot) => snapshot.ok);
+        const firstError = snapshots.find((snapshot) => !snapshot.ok);
 
-        const apiData = await apiRes.json().catch(() => ({}));
-
-        if (!apiRes.ok) {
-            return res.status(apiRes.status).json({
+        if (!healthySnapshots.length) {
+            return res.status(firstError?.status || 502).json({
                 success: false,
-                message: getApiErrorMessage(apiData, '查询额度失败'),
-                code: getApiErrorCode(apiData)
+                message: firstError?.message || '查询额度失败',
+                code: firstError?.code || 'quota_unavailable'
             });
         }
 
+        const remainingUses = healthySnapshots.reduce((sum, snapshot) => sum + Number(snapshot.remainingUses || 0), 0);
+        const totalUsed = healthySnapshots.reduce((sum, snapshot) => sum + Number(snapshot.totalUsed || 0), 0);
+        const usageSummary = buildVerifyUsageSummary(remainingUses);
+        const keyStates = snapshots.map((snapshot) => {
+            const snapshotRemainingUses = Number(snapshot.remainingUses);
+            const safeRemainingUses = Number.isFinite(snapshotRemainingUses)
+                ? Math.max(0, Math.round(snapshotRemainingUses * 100) / 100)
+                : null;
+            const snapshotUsageSummary = safeRemainingUses != null
+                ? buildVerifyUsageSummary(safeRemainingUses)
+                : null;
+            const snapshotTotalUsed = Number(snapshot.totalUsed);
+
+            return {
+                api_key: String(snapshot.apiKey || '').trim(),
+                masked_key: maskVerifyCredential(snapshot.apiKey),
+                key_name: String(snapshot.keyName || maskVerifyCredential(snapshot.apiKey)).trim(),
+                ok: snapshot.ok === true,
+                status: Number.isFinite(Number(snapshot.status || 0)) ? Number(snapshot.status || 0) : null,
+                code: String(snapshot.code || '').trim() || null,
+                message: String(snapshot.message || '').trim(),
+                balance: safeRemainingUses,
+                credits: safeRemainingUses,
+                remaining_uses: safeRemainingUses,
+                remaining_extract_jobs: snapshotUsageSummary?.remaining_extract_jobs ?? null,
+                remaining_full_jobs: snapshotUsageSummary?.remaining_full_jobs ?? null,
+                total_used: Number.isFinite(snapshotTotalUsed) ? Math.max(0, snapshotTotalUsed) : null
+            };
+        });
         return res.json({
             success: true,
-            credits: Number(apiData.balance || 0),
-            balance: Number(apiData.balance || 0),
-            total_used: apiData.total_used || 0,
-            cost_per_job: apiData.cost_per_job || 1,
-            key_name: apiData.name || ''
+            credits: usageSummary.remaining_uses,
+            balance: usageSummary.remaining_uses,
+            remaining_uses: usageSummary.remaining_uses,
+            remaining_extract_jobs: usageSummary.remaining_extract_jobs,
+            remaining_full_jobs: usageSummary.remaining_full_jobs,
+            total_used: totalUsed,
+            cost_per_job: getVerifyUnitCost('full'),
+            extract_cost_per_job: usageSummary.extract_cost_per_job,
+            full_cost_per_job: usageSummary.full_cost_per_job,
+            key_name: Number(config.keyCount || 0) > 1
+                ? `CDKey 池（${healthySnapshots.length}/${config.keyCount}）`
+                : healthySnapshots[0]?.keyName || maskVerifyCredential(config.apiKey),
+            key_count: Number(config.keyCount || healthySnapshots.length || 0),
+            healthy_key_count: healthySnapshots.length,
+            key_states: keyStates
         });
 
     } catch (error) {
@@ -4113,26 +4590,19 @@ app.get('/api/queue', async (req, res) => {
     try {
         const config = await getVerifyConfig();
 
-        if (!config.apiKey) {
-            return res.status(500).json({ success: false, message: '验证服务未配置 API Key' });
+        if (!config.apiKeys?.length) {
+            return res.status(500).json({ success: false, message: '验证服务未配置 CDKey' });
         }
 
-        const apiRes = await fetch(`${config.apiBaseUrl}/api/queue`, {
-            method: 'GET',
-            headers: { 'X-API-Key': config.apiKey }
+        const queueSnapshot = await buildLocalVerifyQueueSnapshot(config);
+
+        return res.json({
+            success: true,
+            ...queueSnapshot,
+            key_name: queueSnapshot.key_name,
+            api_base_url: config.apiBaseUrl,
+            source: 'local_tracked_jobs'
         });
-
-        const apiData = await apiRes.json().catch(() => ({}));
-
-        if (!apiRes.ok) {
-            return res.status(apiRes.status).json({
-                success: false,
-                message: getApiErrorMessage(apiData, '查询队列失败'),
-                code: getApiErrorCode(apiData)
-            });
-        }
-
-        return res.json({ success: true, ...apiData });
 
     } catch (error) {
         console.error('[Verify] Queue check error:', error);

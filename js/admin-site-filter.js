@@ -192,17 +192,21 @@
             opt.classList.toggle('active', opt.textContent.trim() === SITE_LABELS[currentFilter].trim());
         });
 
-        // Dispatch custom event for modules to react
+        const changeDetail = {
+            site: currentFilter,
+            writableSite: getWritableSite(),
+            isAllSitesSelected: isAllSitesSelected()
+        };
+
+        // Dispatch custom event for modules that still subscribe directly.
         window.dispatchEvent(new CustomEvent('admin-site-changed', {
-            detail: {
-                site: currentFilter,
-                writableSite: getWritableSite(),
-                isAllSitesSelected: isAllSitesSelected()
-            }
+            detail: changeDetail
         }));
 
-        // Reload current module data
-        reloadCurrentModule();
+        // Prefer the P1 Admin Shell site-change bus; keep the legacy reload path as a safe fallback.
+        if (window.AdminShell?.handleSiteChange?.(changeDetail) !== true) {
+            reloadCurrentModule();
+        }
     }
 
     function reloadCurrentModule() {

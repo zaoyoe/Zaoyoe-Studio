@@ -39,6 +39,7 @@ function createQueryBuilder(executor) {
         order: null,
         limit: null,
         payload: null,
+        upsertOptions: null,
         single: false,
         maybeSingle: false
     };
@@ -82,6 +83,12 @@ function createQueryBuilder(executor) {
         update(payload) {
             state.mode = 'update';
             state.payload = payload;
+            return builder;
+        },
+        upsert(payload, options = {}) {
+            state.mode = 'upsert';
+            state.payload = payload;
+            state.upsertOptions = options;
             return builder;
         },
         single() {
@@ -145,6 +152,8 @@ function createSupabaseStub(state = {}) {
     const systemConfig = state.systemConfig || [];
     const jobs = state.jobs || [];
     const attempts = state.attempts || [];
+    const cases = state.cases || [];
+    const caseEvents = state.caseEvents || [];
 
     return {
         from(table) {
@@ -220,6 +229,67 @@ function createSupabaseStub(state = {}) {
                     });
                     return {
                         data: query.single ? attempts[attempts.length - 1] : payload,
+                        error: null
+                    };
+                }
+
+                if (table === 'ops_alert_cases' && query.mode === 'select') {
+                    let rows = applyFilters(cases, query.filters);
+                    rows = sortRows(rows, query.order);
+                    if (Number.isFinite(query.limit) && query.limit >= 0) {
+                        rows = rows.slice(0, query.limit);
+                    }
+                    const singleRow = rows[0] || null;
+                    const singleError = query.single && !query.maybeSingle && !singleRow && state.strictSingleNoRows
+                        ? { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' }
+                        : null;
+                    return {
+                        data: query.single ? singleRow : rows,
+                        error: singleError
+                    };
+                }
+
+                if (table === 'ops_alert_cases' && query.mode === 'upsert') {
+                    const payload = Array.isArray(query.payload) ? query.payload : [query.payload];
+                    const upserted = payload.map((row) => {
+                        const next = {
+                            created_at: row.created_at || new Date().toISOString(),
+                            updated_at: row.updated_at || new Date().toISOString(),
+                            ...row
+                        };
+                        const existingIndex = cases.findIndex((item) => (
+                            item.category_key === next.category_key
+                            && item.target_id === next.target_id
+                        ));
+                        if (existingIndex >= 0) {
+                            cases[existingIndex] = {
+                                ...cases[existingIndex],
+                                ...next
+                            };
+                            return cases[existingIndex];
+                        }
+                        cases.push(next);
+                        return next;
+                    });
+                    return {
+                        data: query.single ? upserted[0] : upserted,
+                        error: null
+                    };
+                }
+
+                if (table === 'ops_alert_case_events' && query.mode === 'insert') {
+                    const payload = Array.isArray(query.payload) ? query.payload : [query.payload];
+                    const inserted = payload.map((row, index) => {
+                        const next = {
+                            id: row.id || `case-event-${caseEvents.length + index + 1}`,
+                            created_at: row.created_at || new Date().toISOString(),
+                            ...row
+                        };
+                        caseEvents.push(next);
+                        return next;
+                    });
+                    return {
+                        data: query.single ? inserted[0] : inserted,
                         error: null
                     };
                 }
@@ -1779,6 +1849,7 @@ test('buildExternalAlertText renders verify service disabled details', () => {
             service_status_label: '服务不可用',
             key_name: 'primary-key',
             api_base_url: 'https://iqless.icu',
+            upstream_endpoint: 'https://iqless.icu/openapi',
             last_error: '上游验证服务返回 503',
             response_status: 503,
             checked_at: '2026-03-25T10:00:00.000Z',
@@ -1790,9 +1861,31 @@ test('buildExternalAlertText renders verify service disabled details', () => {
     assert.match(text, /当前状态：服务不可用/);
     assert.match(text, /API Key：primary-key/);
     assert.match(text, /API Base：https:\/\/iqless\.icu/);
+    assert.match(text, /请求地址：https:\/\/iqless\.icu\/openapi/);
     assert.match(text, /最近错误：上游验证服务返回 503/);
     assert.match(text, /响应状态：503/);
     assert.match(text, /处理入口：后台设置 -> 验证服务配置 -> API Key \/ 接口状态/);
+});
+
+test('buildExternalAlertText backfills verify service request endpoint for legacy payloads', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'verify_service_disabled',
+        severity: 'critical',
+        title: '验证服务不可用',
+        payload: {
+            service_status_label: '服务不可用',
+            key_name: 'legacy-key',
+            api_base_url: 'https://aidone.lol',
+            last_error: '<!doctype html><title>404 Not Found</title>',
+            response_status: 404,
+            checked_at: '2026-04-11T14:58:10.000Z',
+            entry_path: '后台设置 -> 验证服务配置 -> API Key / 接口状态'
+        }
+    });
+
+    assert.match(text, /API Base：https:\/\/aidone\.lol/);
+    assert.match(text, /请求地址：https:\/\/aidone\.lol\/openapi/);
+    assert.match(text, /响应状态：404/);
 });
 
 test('buildExternalAlertText renders verify failure spike details', () => {
@@ -2752,6 +2845,56 @@ test('enqueueOpsAlertJob can restrict delivery to selected channels', async () =
     assert.deepEqual(state.jobs[0].remaining_channels, ['feishu']);
 });
 
+test('enqueueOpsAlertJob auto-reopens a resolved case when the same target receives a new alert', async () => {
+    const state = {
+        jobs: [],
+        cases: [{
+            category_key: 'verify',
+            target_id: 'verify_service:https://aidone.lol',
+            alert_type: 'verify_service_disabled',
+            status: 'resolved',
+            owner_admin_id: 'zaoyoe@gmail.com',
+            owner_label: 'zaoyoe@gmail.com',
+            resolution: '已经后台修复',
+            metadata: {
+                title: '验证服务不可用'
+            },
+            last_action: 'resolved',
+            last_action_by: 'zaoyoe@gmail.com',
+            last_action_at: '2026-04-11T12:02:28.000Z',
+            updated_at: '2026-04-11T12:02:28.000Z'
+        }],
+        caseEvents: []
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createRuntimeConfig();
+
+    const result = await enqueueOpsAlertJob(supabase, {
+        alertType: 'verify_service_disabled',
+        severity: 'critical',
+        title: '验证服务不可用',
+        content: '验证服务当前不可用，新的验证请求将无法正常创建。',
+        payload: {
+            target_id: 'verify_service:https://aidone.lol',
+            api_base_url: 'https://aidone.lol',
+            response_status: 404
+        },
+        createdAt: '2026-04-11T19:57:32.000Z',
+        source: 'verify_service_monitor'
+    }, { runtime });
+
+    assert.equal(result.queued, true);
+    assert.equal(result.caseSync?.reopened, true);
+    assert.equal(state.jobs.length, 1);
+    assert.equal(state.cases.length, 1);
+    assert.equal(state.cases[0].status, 'open');
+    assert.equal(state.cases[0].last_action, 'reopened');
+    assert.equal(state.cases[0].resolution, null);
+    assert.equal(state.caseEvents.length, 1);
+    assert.equal(state.caseEvents[0].action, 'reopen');
+    assert.equal(state.caseEvents[0].status, 'open');
+});
+
 test('sweepOpsAlertJobs delivers queued alerts and records per-channel attempts', async () => {
     const state = {
         jobs: [
@@ -2805,6 +2948,61 @@ test('sweepOpsAlertJobs delivers queued alerts and records per-channel attempts'
     assert.equal(state.jobs[0].worker_name, 'test-worker');
     assert.equal(state.attempts.length, 2);
     assert.equal(state.attempts.every((item) => item.status === 'delivered'), true);
+});
+
+test('sweepOpsAlertJobs suppresses stale verify service alerts after the case is resolved', async () => {
+    const state = {
+        jobs: [
+            {
+                id: 'job-resolved-verify',
+                alert_type: 'verify_service_disabled',
+                severity: 'critical',
+                dedupe_key: 'dedupe-resolved-verify',
+                title: '验证服务不可用',
+                content: '验证服务当前不可用，新的验证请求将无法正常创建。',
+                payload: {
+                    target_id: 'verify_service:https://aidone.lol',
+                    api_base_url: 'https://aidone.lol',
+                    response_status: 404
+                },
+                channels: ['telegram', 'feishu'],
+                remaining_channels: ['telegram', 'feishu'],
+                status: 'pending',
+                attempt_count: 0,
+                max_attempts: 6,
+                next_retry_at: new Date(Date.now() - 1000).toISOString(),
+                created_at: new Date(Date.now() - 2000).toISOString()
+            }
+        ],
+        attempts: [],
+        cases: [{
+            category_key: 'verify',
+            target_id: 'verify_service:https://aidone.lol',
+            alert_type: 'verify_service_disabled',
+            status: 'resolved',
+            last_action: 'resolved',
+            resolution: '验证服务已恢复'
+        }]
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createRuntimeConfig();
+
+    const result = await sweepOpsAlertJobs(supabase, {
+        runtime,
+        fetchImpl: async () => {
+            throw new Error('stale verify alert should not be delivered');
+        }
+    });
+
+    assert.equal(result.claimed, 1);
+    assert.equal(result.delivered, 0);
+    assert.equal(result.retried, 0);
+    assert.equal(result.suppressed, 1);
+    assert.equal(state.jobs[0].status, 'suppressed');
+    assert.equal(state.jobs[0].last_error, 'case_already_resolved');
+    assert.deepEqual(state.jobs[0].remaining_channels, []);
+    assert.equal(state.jobs[0].attempt_count, 1);
+    assert.equal(state.attempts.length, 0);
 });
 
 test('sweepOpsAlertJobs keeps failed channels for retry without duplicating delivered channels', async () => {

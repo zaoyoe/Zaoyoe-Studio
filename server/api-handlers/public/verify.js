@@ -1,0 +1,341 @@
+const {
+    loadVerifyRuntimeConfig,
+    selectVerifyCredentialForTask
+} = require('../_verify-provider-runtime');
+const {
+    buildClientStatusMessage,
+    buildVerifyCredentialFingerprint,
+    fetchUpstreamJobStatus,
+    findTrackedJobLog,
+    getApiErrorCode,
+    getApiErrorMessage,
+    getVerifyPriceForTaskType,
+    normalizeVerifyJobPayload,
+    normalizeVerifyTaskType,
+    parseHistoryMessage,
+    postVerifyProviderAction,
+    resolveVerifyRequestSite,
+    resolveVerifyApiKeyByFingerprint,
+    syncTrackedJobStatus,
+    validateUserBalance
+} = require('../_verify-job-runtime');
+
+function createPublicVerifyHandlers({
+    admin,
+    verifyRuntime,
+    env = process.env,
+    fetchImpl = global.fetch
+} = {}) {
+    const {
+        getOptionalSupabaseAdmin,
+        parseJsonBody,
+        requireAuthenticatedUser,
+        sendJson
+    } = admin || {};
+    const runtime = verifyRuntime || {};
+    const runtimeLoadVerifyRuntimeConfig = runtime.loadVerifyRuntimeConfig || loadVerifyRuntimeConfig;
+    const runtimeSelectVerifyCredentialForTask = runtime.selectVerifyCredentialForTask || selectVerifyCredentialForTask;
+    const runtimeBuildClientStatusMessage = runtime.buildClientStatusMessage || buildClientStatusMessage;
+    const runtimeBuildVerifyCredentialFingerprint = runtime.buildVerifyCredentialFingerprint || buildVerifyCredentialFingerprint;
+    const runtimeFetchUpstreamJobStatus = runtime.fetchUpstreamJobStatus || fetchUpstreamJobStatus;
+    const runtimeFindTrackedJobLog = runtime.findTrackedJobLog || findTrackedJobLog;
+    const runtimeGetApiErrorCode = runtime.getApiErrorCode || getApiErrorCode;
+    const runtimeGetApiErrorMessage = runtime.getApiErrorMessage || getApiErrorMessage;
+    const runtimeGetVerifyPriceForTaskType = runtime.getVerifyPriceForTaskType || getVerifyPriceForTaskType;
+    const runtimeNormalizeVerifyJobPayload = runtime.normalizeVerifyJobPayload || normalizeVerifyJobPayload;
+    const runtimeNormalizeVerifyTaskType = runtime.normalizeVerifyTaskType || normalizeVerifyTaskType;
+    const runtimeParseHistoryMessage = runtime.parseHistoryMessage || parseHistoryMessage;
+    const runtimePostVerifyProviderAction = runtime.postVerifyProviderAction || postVerifyProviderAction;
+    const runtimeResolveVerifyRequestSite = runtime.resolveVerifyRequestSite || resolveVerifyRequestSite;
+    const runtimeResolveVerifyApiKeyByFingerprint = runtime.resolveVerifyApiKeyByFingerprint || resolveVerifyApiKeyByFingerprint;
+    const runtimeSyncTrackedJobStatus = runtime.syncTrackedJobStatus || syncTrackedJobStatus;
+    const runtimeValidateUserBalance = runtime.validateUserBalance || validateUserBalance;
+
+    async function resolveHandlerContext(req) {
+        if (typeof requireAuthenticatedUser !== 'function') {
+            const error = new Error('Verify service is unavailable');
+            error.statusCode = 503;
+            throw error;
+        }
+
+        const auth = await requireAuthenticatedUser(req);
+        const supabase = auth?.adminSupabase
+            || auth?.supabase
+            || (typeof getOptionalSupabaseAdmin === 'function' ? getOptionalSupabaseAdmin() : null);
+
+        if (!supabase?.from) {
+            const error = new Error('Verify service is unavailable');
+            error.statusCode = 503;
+            throw error;
+        }
+
+        return {
+            user: auth.user,
+            supabase
+        };
+    }
+
+    async function submitHandler(req, res) {
+        if (req.method !== 'POST') {
+            res.setHeader('Allow', 'POST');
+            return sendJson(res, 405, {
+                success: false,
+                message: 'Method not allowed'
+            });
+        }
+
+        const { user, supabase } = await resolveHandlerContext(req);
+        const body = typeof parseJsonBody === 'function'
+            ? await parseJsonBody(req)
+            : (req.body && typeof req.body === 'object' ? req.body : {});
+
+        const {
+            email,
+            password,
+            totpSecret,
+            totp_secret,
+            priority,
+            site,
+            taskType,
+            task_type
+        } = body || {};
+        const normalizedEmail = String(email || '').trim().toLowerCase();
+        const normalizedPassword = String(password || '');
+        const normalizedTotpSecret = String(totpSecret || totp_secret || '').trim();
+        const normalizedPriority = Number(priority) === 1 ? 1 : 0;
+        const normalizedTaskType = runtimeNormalizeVerifyTaskType(taskType || task_type);
+        const currentSite = runtimeResolveVerifyRequestSite(req, site);
+
+        if (!normalizedEmail || !normalizedPassword || !normalizedTotpSecret) {
+            return sendJson(res, 400, {
+                success: false,
+                message: '请提供邮箱、密码和 TOTP 密钥',
+                code: 'missing_fields'
+            });
+        }
+
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+            return sendJson(res, 400, {
+                success: false,
+                message: '邮箱格式无效',
+                code: 'invalid_email'
+            });
+        }
+
+        const config = await runtimeLoadVerifyRuntimeConfig(supabase, env);
+        if (!config.apiKey) {
+            return sendJson(res, 500, {
+                success: false,
+                message: 'Google One 服务商 CDKey 未配置',
+                code: 'api_key_missing'
+            });
+        }
+
+        const priceForTask = runtimeGetVerifyPriceForTaskType(config, normalizedTaskType);
+        const requiredUses = normalizedTaskType === 'full' ? 1 : 0.5;
+        const balanceCheck = await runtimeValidateUserBalance({
+            supabase,
+            userId: user.id,
+            requiredPoints: priceForTask,
+            site: currentSite
+        });
+
+        if (!balanceCheck.valid) {
+            return sendJson(res, balanceCheck.status, {
+                success: false,
+                message: balanceCheck.error
+            });
+        }
+
+        const credentialSelection = await runtimeSelectVerifyCredentialForTask(config, requiredUses, {
+            fetchImpl
+        });
+        const selectedCredential = credentialSelection?.selected || null;
+        if (!selectedCredential?.apiKey) {
+            return sendJson(res, 400, {
+                success: false,
+                message: '当前所有已激活 CDKey 余额都不足，请先补充卡密额度',
+                code: 'insufficient_balance'
+            });
+        }
+
+        const upstream = await runtimePostVerifyProviderAction(config, {
+            action: 'submit_task',
+            cdkey: selectedCredential.apiKey,
+            email: normalizedEmail,
+            password: normalizedPassword,
+            twofa: normalizedTotpSecret,
+            priority: normalizedPriority,
+            task_type: normalizedTaskType
+        }, {
+            fetchImpl
+        });
+
+        if (!upstream.ok) {
+            return sendJson(res, upstream.status || 502, {
+                success: false,
+                message: runtimeGetApiErrorMessage(upstream.payload, '任务提交失败'),
+                code: runtimeGetApiErrorCode(upstream.payload)
+            });
+        }
+
+        const apiData = runtimeNormalizeVerifyJobPayload(upstream.payload, {
+            status: 'queued',
+            task_type: normalizedTaskType,
+            provider_key_fingerprint: runtimeBuildVerifyCredentialFingerprint(selectedCredential.apiKey),
+            provider_key_name: selectedCredential.key_name || ''
+        });
+        const jobId = String(apiData.job_id || apiData.task_id || '').trim();
+
+        if (jobId) {
+            await runtimeSyncTrackedJobStatus({
+                supabase,
+                userId: user.id,
+                site: currentSite,
+                email: normalizedEmail,
+                jobId,
+                apiData,
+                config
+            });
+        }
+
+        return sendJson(res, 200, {
+            success: true,
+            task_id: jobId,
+            job_id: jobId,
+            status: apiData.status || 'queued',
+            task_type: apiData.task_type || normalizedTaskType,
+            queue_position: apiData.queue_position ?? -1,
+            estimated_wait_seconds: apiData.estimated_wait_seconds ?? 0,
+            message: apiData.message || '任务已提交',
+            pricePerVerify: priceForTask
+        });
+    }
+
+    async function statusHandler(req, res) {
+        if (req.method !== 'GET') {
+            res.setHeader('Allow', 'GET');
+            return sendJson(res, 405, {
+                success: false,
+                message: 'Method not allowed'
+            });
+        }
+
+        const { user, supabase } = await resolveHandlerContext(req);
+        const url = new URL(req.url || '', 'http://localhost');
+        const taskId = String(url.searchParams.get('taskId') || '').trim();
+        const currentSite = runtimeResolveVerifyRequestSite(req, url.searchParams.get('site') || '');
+
+        if (!taskId) {
+            return sendJson(res, 400, {
+                success: false,
+                message: '缺少任务编号',
+                code: 'job_not_found'
+            });
+        }
+
+        const trackedRecord = await runtimeFindTrackedJobLog({
+            supabase,
+            userId: user.id,
+            jobId: taskId,
+            site: currentSite
+        });
+
+        if (!trackedRecord) {
+            return sendJson(res, 404, {
+                success: false,
+                message: '任务不存在或无权访问',
+                code: 'job_not_found'
+            });
+        }
+
+        const trackedPayload = runtimeParseHistoryMessage(trackedRecord?.message) || {};
+        const config = await runtimeLoadVerifyRuntimeConfig(supabase, env);
+
+        if (!config.apiKey) {
+            return sendJson(res, 500, {
+                success: false,
+                message: '验证服务未配置',
+                code: 'api_key_missing'
+            });
+        }
+
+        const preferredApiKey = runtimeResolveVerifyApiKeyByFingerprint(config, trackedPayload.provider_key_fingerprint || '')
+            || config.apiKey;
+        const upstream = await runtimeFetchUpstreamJobStatus({
+            ...config,
+            apiKey: preferredApiKey
+        }, taskId, {
+            fetchImpl,
+            apiKey: preferredApiKey
+        });
+        if (!upstream.ok) {
+            return sendJson(res, upstream.status || 502, {
+                success: false,
+                message: upstream.message,
+                code: upstream.code
+            });
+        }
+
+        const normalizedApiData = runtimeNormalizeVerifyJobPayload(upstream.data, {
+            task_type: runtimeNormalizeVerifyTaskType(trackedPayload.task_type),
+            provider_key_fingerprint: trackedPayload.provider_key_fingerprint || '',
+            provider_key_name: trackedPayload.provider_key_name || ''
+        });
+        const syncResult = await runtimeSyncTrackedJobStatus({
+            supabase,
+            userId: user.id,
+            site: currentSite,
+            email: String(trackedPayload.email || '').trim().toLowerCase(),
+            jobId: taskId,
+            apiData: normalizedApiData,
+            config
+        });
+
+        return sendJson(res, 200, {
+            success: normalizedApiData.status === 'success',
+            job_id: normalizedApiData.job_id || taskId,
+            status: normalizedApiData.status,
+            stage: normalizedApiData.stage,
+            total_stages: normalizedApiData.total_stages,
+            stage_label: normalizedApiData.stage_label,
+            task_type: normalizedApiData.task_type,
+            has_offer_url: normalizedApiData.has_offer_url === true,
+            url: normalizedApiData.url || '',
+            error: normalizedApiData.error || '',
+            created_at: normalizedApiData.created_at,
+            elapsed_seconds: normalizedApiData.elapsed_seconds,
+            queue_position: normalizedApiData.queue_position,
+            estimated_wait_seconds: normalizedApiData.estimated_wait_seconds,
+            message: runtimeBuildClientStatusMessage(normalizedApiData),
+            pointsDeducted: Number(syncResult?.pointsDeducted) || 0
+        });
+    }
+
+    return {
+        status: async (req, res) => {
+            try {
+                return await statusHandler(req, res);
+            } catch (error) {
+                return sendJson(res, error.statusCode || 500, {
+                    success: false,
+                    message: error.message || 'Public verify status request failed'
+                });
+            }
+        },
+        submit: async (req, res) => {
+            try {
+                return await submitHandler(req, res);
+            } catch (error) {
+                return sendJson(res, error.statusCode || 500, {
+                    success: false,
+                    message: error.message || 'Public verify submit request failed'
+                });
+            }
+        }
+    };
+}
+
+module.exports = {
+    createPublicVerifyHandlers
+};

@@ -19,8 +19,8 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=20260409_GALLERY_P2_OPS_1">
-    <link rel="stylesheet" href="admin-sidebar.css?v=20260409_ADMIN_COMMENTS_FOOTER_ALIGN_4">
+    <link rel="stylesheet" href="admin-studio.css?v=20260411_OPS_ALERT_CASE_ACTION_FEEDBACK_1">
+    <link rel="stylesheet" href="admin-sidebar.css?v=20260410_ADMIN_COMMENTS_DRAWER_WORKFLOW_POLISH_2">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260402_ADMIN_CHAT_INPUT_UI_13">
 
 
@@ -30,7 +30,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
     <!-- Prevent flash of wrong theme -->
-    <link rel="stylesheet" href="css/admin-studio-page.css?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1">
+    <link rel="stylesheet" href="css/admin-studio-page.css?v=20260411_HOMEPAGE_TICKER_SPACING_1">
     <script src="./js/theme-preload.js"></script>
 
 </head>
@@ -652,7 +652,7 @@
             <!-- END GALLERY MODULE -->
 
             <!-- ========== COMMENTS MODULE ========== -->
-            <div id="module-comments" class="module-container">
+            <div id="module-comments" class="module-container" data-comments-select-mode="false">
                 <div class="module-content">
                     <!-- Comment Tabs -->
                     <nav class="admin-tabs">
@@ -683,9 +683,13 @@
                     </div>
 
                     <div class="comment-queue-bar" id="commentQueueBar" aria-label="评论治理队列">
-                        <button type="button" class="comment-queue-btn active" data-comments-action="select-queue" data-comments-queue="all">
-                            <span class="comment-queue-btn__label">全部治理</span>
+                        <button type="button" class="comment-queue-btn" data-comments-action="select-queue" data-comments-queue="all" title="全部：显示当前页签下的全部留言与评论">
+                            <span class="comment-queue-btn__label">全部</span>
                             <span class="comment-queue-btn__count" id="commentQueueCountAll">0</span>
+                        </button>
+                        <button type="button" class="comment-queue-btn active" data-comments-action="select-queue" data-comments-queue="pending" title="待处理：还未标记为已解决或已忽略的留言与评论">
+                            <span class="comment-queue-btn__label">待处理</span>
+                            <span class="comment-queue-btn__count" id="commentQueueCountPending">0</span>
                         </button>
                         <button type="button" class="comment-queue-btn" data-comments-action="select-queue" data-comments-queue="guestbook_unreplied">
                             <span class="comment-queue-btn__label">未回复留言</span>
@@ -789,6 +793,54 @@
                                         </div>
                                     </div>
                                 </div>
+
+                                <div class="batch-actions-wrapper comments-batch-actions-wrapper" id="commentsBatchActionsWrapper">
+                                    <button class="batch-btn" id="commentsSelectModeBtn" data-admin-action="comments-toggle-select-mode" title="选择模式" aria-pressed="false">
+                                        <i class="fas fa-check-square"></i>
+                                    </button>
+                                    <div class="batch-menu-container comments-batch-menu-container" id="commentsBatchMenuContainer" hidden>
+                                        <button class="batch-btn" id="commentsBatchMenuTrigger" data-admin-action="comments-toggle-batch-menu" title="批量处理" aria-expanded="false">
+                                            <i class="fas fa-ellipsis-h"></i>
+                                        </button>
+                                        <div class="batch-dropdown-menu" id="commentsBatchDropdownMenu">
+                                            <div class="batch-menu-item" data-admin-action="comments-batch-select-all">
+                                                <i class="fas fa-check-double"></i>
+                                                <span>全选当前页</span>
+                                            </div>
+                                            <div class="batch-menu-divider"></div>
+                                            <div class="batch-menu-item" data-admin-action="comments-batch-set-status" data-comments-batch-status="pending">
+                                                <i class="fas fa-list-check"></i>
+                                                <span>批量设为待处理</span>
+                                            </div>
+                                            <div class="batch-menu-item" data-admin-action="comments-batch-set-status" data-comments-batch-status="in_review">
+                                                <i class="fas fa-eye"></i>
+                                                <span>批量设为复核中</span>
+                                            </div>
+                                            <div class="batch-menu-item" data-admin-action="comments-batch-set-status" data-comments-batch-status="resolved">
+                                                <i class="fas fa-circle-check"></i>
+                                                <span>批量设为已解决</span>
+                                            </div>
+                                            <div class="batch-menu-item" data-admin-action="comments-batch-set-status" data-comments-batch-status="ignored">
+                                                <i class="fas fa-eye-slash"></i>
+                                                <span>批量设为已忽略</span>
+                                            </div>
+                                            <div class="batch-menu-divider"></div>
+                                            <div class="batch-menu-item" data-admin-action="comments-batch-assign-self">
+                                                <i class="fas fa-user-check"></i>
+                                                <span>批量指派给我</span>
+                                            </div>
+                                            <div class="batch-menu-divider"></div>
+                                            <div class="batch-menu-item" data-admin-action="comments-clear-selection">
+                                                <i class="fas fa-eraser"></i>
+                                                <span>清空选择</span>
+                                            </div>
+                                            <div class="batch-menu-item danger" data-admin-action="comments-batch-delete">
+                                                <i class="fas fa-trash-alt"></i>
+                                                <span>批量删除</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -806,16 +858,10 @@
                                 </button>
                             </div>
 
-                            <div class="divider-vertical"></div>
-
-                            <label class="select-checkbox-compact">
-                                <input type="checkbox" id="selectAllComments" data-admin-change-action="comments-toggle-select-all">
-                                <span id="selectionCount">0</span>
-                            </label>
-                            <button class="batch-delete-pill" id="batchDeleteBtn" disabled
-                                data-admin-action="comments-batch-delete">
-                                <i class="fas fa-trash"></i>
-                            </button>
+                            <div class="prompt-count comments-selection-count" id="commentsSelectionCountWrapper" hidden>
+                                <span class="select-count" id="selectionCount">已选 0 条</span>
+                                <span class="batch-action-feedback" id="commentsBatchActionFeedback" hidden></span>
+                            </div>
                         </div>
                     </div>
 
@@ -889,7 +935,7 @@
                                             <span>前往 `兑换码/套餐 -> 套餐目录` 统一维护名称、价格、赠送和启停状态；站点筛选只影响写操作语境，不会拆分两份套餐主数据。</span>
                                         </div>
                                         <button class="btn-secondary" type="button" data-admin-action="settings-open-points-catalog">
-                                            <i class="fas fa-arrow-right"></i> 前往套餐目录
+                                            套餐目录
                                         </button>
                                     </div>
                                     <div class="config-row">
@@ -5067,18 +5113,31 @@
                                     <div class="settings-google-one-card__head">
                                         <div>
                                             <h3><i class="fas fa-sliders-h"></i> 服务配置</h3>
-                                            <p class="settings-section__intro">先设置单次扣费、是否开启服务，以及当前 API 余额。</p>
+                                            <p class="settings-section__intro">分别设置提链与全流程包绑卡价格，并查看当前服务商额度。</p>
                                         </div>
                                     </div>
                                     <div class="config-item-row">
                                         <div class="config-label">
-                                            <span>每次验证价格</span>
-                                            <span class="config-hint">用户每次使用验证服务消耗的积分</span>
+                                            <span>提链价格</span>
+                                            <span class="config-hint">仅提取 Google One 链接，用户自行绑卡</span>
                                         </div>
                                         <div class="config-value">
                                             <div class="input-with-addon">
                                                 <input type="number" id="cfgVerifyPrice" class="config-input" value="10" min="1"
                                                     max="100" step="1" data-admin-change-action="settings-save-verify-config">
+                                                <span class="input-addon">积分/次</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="config-item-row">
+                                        <div class="config-label">
+                                            <span>全流程价格</span>
+                                            <span class="config-hint">服务商包绑卡完成订阅流程</span>
+                                        </div>
+                                        <div class="config-value">
+                                            <div class="input-with-addon">
+                                                <input type="number" id="cfgVerifyPriceFull" class="config-input" value="20" min="1"
+                                                    max="200" step="1" data-admin-change-action="settings-save-verify-config">
                                                 <span class="input-addon">积分/次</span>
                                             </div>
                                         </div>
@@ -5099,7 +5158,7 @@
                                     <div class="config-item-row">
                                         <div class="config-label">
                                             <span>API 余额</span>
-                                            <span class="config-hint">当前 API Key 的剩余额度</span>
+                                            <span class="config-hint">当前 CDKey 池的总剩余额度，提链 / 全流程会自动折算可用次数</span>
                                         </div>
                                         <div class="config-value admin-studio-inline-style-attr-22">
                                             <span id="cfgVerifyQuota"
@@ -5118,27 +5177,45 @@
                                     <div class="settings-google-one-card__head">
                                         <div>
                                             <h3><i class="fas fa-key"></i> 接入凭据</h3>
-                                            <p class="settings-section__intro">集中维护上游密钥和 Base URL，接口迁移时只需要改这里。</p>
+                                            <p class="settings-section__intro">集中维护 aidone 的 CDKey 与入口地址，后续切换只需要改这里。</p>
                                         </div>
                                     </div>
                                     <div class="config-item-row admin-studio-inline-style-attr-20">
                                         <div class="config-label">
-                                            <span>验证 API Key</span>
-                                            <span class="config-hint">上游 Google One 用户 API 的 ak_ 密钥</span>
+                                            <span>默认服务商 CDKey</span>
+                                            <span class="config-hint">兼容单 key 配置；批量模式下会自动取第一张作为默认 key</span>
                                         </div>
                                         <input type="password" id="cfgVerifyApiKey" class="config-input admin-studio-inline-style-attr-21"
-                                            placeholder="ak_XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" autocomplete="new-password" readonly
+                                            placeholder="请输入 aidone 提供的 CDKey" autocomplete="new-password" readonly
                                             data-admin-focus-action="settings-verify-api-key-unlock"
                                             data-admin-blur-action="settings-verify-api-key-lock"
                                             data-admin-change-action="settings-save-verify-config">
                                     </div>
+                                    <div class="config-item-row verify-key-pool-row">
+                                        <div class="config-label">
+                                            <span>批量 CDKey 池</span>
+                                            <span class="config-hint">每行一张已在 aidone 激活完成的 CDKey；系统会自动轮换并优先使用有余额的 key</span>
+                                        </div>
+                                        <div class="verify-key-pool-field">
+                                            <textarea id="cfgVerifyApiKeys" class="config-input verify-key-pool-input" rows="6"
+                                                placeholder="每行一个已激活 CDKey&#10;例如：&#10;SYS-38147DAAF78A&#10;SYS-92AF0C7712BD"
+                                                data-admin-change-action="settings-save-verify-config"></textarea>
+                                            <div class="verify-key-pool-actions">
+                                                <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost"
+                                                    data-admin-action="settings-clean-empty-verify-keys" disabled>
+                                                    清理 0 余额 CDKey
+                                                </button>
+                                                <span class="config-hint" id="cfgVerifyKeyPoolCleanupHint">先刷新 API 余额，再识别可清理的 0 余额 key。</span>
+                                            </div>
+                                        </div>
+                                    </div>
                                     <div class="config-item-row">
                                         <div class="config-label">
-                                            <span>验证 API Base URL</span>
-                                            <span class="config-hint">上游域名更新时在这里改，留空则回退到服务端默认值</span>
+                                            <span>服务商 Base URL</span>
+                                            <span class="config-hint">填写根域名即可，服务端会自动补成 `/openapi`</span>
                                         </div>
                                         <input type="url" id="cfgVerifyApiBase" class="config-input"
-                                            placeholder="https://a8yx0rez5w.localto.net"
+                                            placeholder="https://aidone.lol"
                                             inputmode="url"
                                             data-admin-change-action="settings-save-verify-config">
                                     </div>
@@ -7311,14 +7388,14 @@
                             <select id="orderRefundStatusFilter" class="config-input shop-orders-filter-select"
                                 data-shop-custom-select="true"
                                 data-shop-change="orders-filter-refund">
-                                <option value="all">全部退款状态</option>
+                                <option value="all">退款</option>
                                 <option value="refunded">仅已退款</option>
                                 <option value="none">仅正常订单</option>
                             </select>
                             <select id="orderDeliveryStatusFilter" class="config-input shop-orders-filter-select"
                                 data-shop-custom-select="true"
                                 data-shop-change="orders-filter-delivery">
-                                <option value="all">全部履约状态</option>
+                                <option value="all">履约</option>
                                 <option value="pending">待履约</option>
                                 <option value="processing">处理中</option>
                                 <option value="retry_waiting">待重试</option>
@@ -7881,6 +7958,10 @@
 
                 <!-- Homepage Tabs -->
                 <nav class="admin-tabs" id="homepageTabsNav">
+                    <button class="admin-tab" data-hp-section="overview"
+                        data-admin-action="homepage-switch-section">
+                        总览
+                    </button>
                     <button class="admin-tab active" data-hp-section="hero"
                         data-admin-action="homepage-switch-section">
                         Hero
@@ -7914,6 +7995,13 @@
                 <!-- Section Content (dynamically rendered by admin-homepage.js) -->
                 <div id="hp-section-content" class="admin-studio-inline-style-attr-3">
 
+                    <!-- ===== OVERVIEW Section ===== -->
+                    <div class="hp-section-view" data-hp-view="overview" hidden>
+                        <div class="module-content">
+                            <div id="hp-overview-shell-host"></div>
+                        </div>
+                    </div>
+
                     <!-- ===== HERO Section ===== -->
                     <div class="hp-section-view active" data-hp-view="hero">
                         <div class="module-content">
@@ -7939,7 +8027,24 @@
                                                 id="hp-hero-title" placeholder="早鸟工作室"></div>
                                         <div class="hp-field"><label>副标题</label><input type="text" class="config-input"
                                                 id="hp-hero-subtitle" placeholder="创意 · 效率 · 无限可能"></div>
+                                        <div class="hp-field hp-field-full"><label>自定义背景图 URL</label><input type="text" class="config-input"
+                                                id="hp-hero-custom-image" placeholder="https://... / /assets/..."></div>
+                                    </div>
+                                </div>
+                            </div>
 
+                            <div class="config-card">
+                                <div class="config-card-header" data-admin-action="homepage-toggle-config-card">
+                                    <div class="config-card-title"><i class="fas fa-grid-2"></i><span>Hero 入口编排</span></div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="config-inline-note">
+                                        <i class="fas fa-circle-info"></i>
+                                        <span>这里控制首屏横向入口卡片，可配置图标、文案、链接和目标模块，并支持按条启停。</span>
+                                    </div>
+                                    <div class="hp-list-editor" id="hp-hero-entries-list"></div>
+                                    <div class="hp-inline-actions">
+                                        <button type="button" class="btn-sm btn-secondary" data-homepage-action="add-hero-entry">新增入口</button>
                                     </div>
                                 </div>
                             </div>
@@ -7984,7 +8089,7 @@
                                         <div class="hp-field"><label>板块副标题</label><input type="text"
                                                 class="config-input" id="hp-prompts-subtitle"
                                                 placeholder="让创作更高效，让灵感更自由"></div>
-                                        <div class="hp-field"><label>最大展示数量</label><input type="number"
+                                        <div class="hp-field"><label>最大展示数量（自动聚合）</label><input type="number"
                                                 class="config-input" id="hp-prompts-max" min="1" max="50"
                                                 placeholder="6"></div>
                                         <div class="hp-field"><label>排序方式</label><select class="config-input"
@@ -8011,9 +8116,22 @@
                                 <div class="config-card-body">
                                     <div class="config-inline-note">
                                         <i class="fas fa-circle-info"></i>
-                                        <span>从 Gallery 可一键加入当前站点首页精选；这里展示已收录条目，关闭自动聚合后首页将按这份清单渲染。</span>
+                                        <span>从 Gallery 可一键加入当前站点首页精选；这里展示已收录条目，关闭自动聚合后首页将按这份清单完整渲染，不受“最大展示数量”限制。</span>
                                     </div>
                                     <div class="hp-featured-prompts" id="hp-prompts-featured-list"></div>
+                                </div>
+                            </div>
+
+                            <div class="config-card">
+                                <div class="config-card-header" data-admin-action="homepage-toggle-config-card">
+                                    <div class="config-card-title"><i class="fas fa-bolt"></i><span>候选池</span></div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="config-inline-note">
+                                        <i class="fas fa-circle-info"></i>
+                                        <span>这里展示来自 Gallery 的首页候选 Prompt，并附带最近 7 天表现，支持一键加入首页精选。</span>
+                                    </div>
+                                    <div class="hp-candidate-grid" id="hp-prompts-candidate-list"></div>
                                 </div>
                             </div>
 
@@ -8059,9 +8177,6 @@
                                                 data-shop-custom-select="true"
                                                 id="hp-shop-category">
                                                 <option value="all">全部分类</option>
-                                                <option value="prompt">提示词</option>
-                                                <option value="tool">工具</option>
-                                                <option value="resource">资源</option>
                                             </select></div>
                                         <div class="hp-field"><label>排序方式</label><select class="config-input"
                                                 data-shop-custom-select="true"
@@ -8076,9 +8191,31 @@
 
                             <div class="hp-auto-bar">
                                 <div class="hp-auto-left"><i class="fas fa-magic"></i><span>自动聚合</span><span
-                                        class="hp-auto-hint">— 自动从商城拉取热门商品</span></div>
+                                        class="hp-auto-hint">— 自动补足未人工置顶的商品，关闭后仅渲染人工精选</span></div>
                                 <div class="status-toggle" id="hp-shop-auto"
                                     data-admin-action="homepage-toggle-field" data-homepage-section="shop" data-homepage-field="enable_auto"></div>
+                            </div>
+
+                            <div class="config-card">
+                                <div class="config-card-header" data-admin-action="homepage-toggle-config-card">
+                                    <div class="config-card-title"><i class="fas fa-thumbtack"></i><span>人工精选商品</span></div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="config-inline-note">
+                                        <i class="fas fa-circle-info"></i>
+                                        <span>首页商城位采用“人工置顶 + 自动补足”混合模式。人工精选条目会固定排在前面。</span>
+                                    </div>
+                                    <div class="hp-list-editor" id="hp-shop-curated-list"></div>
+                                </div>
+                            </div>
+
+                            <div class="config-card">
+                                <div class="config-card-header" data-admin-action="homepage-toggle-config-card">
+                                    <div class="config-card-title"><i class="fas fa-store"></i><span>商城候选池</span></div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="hp-candidate-grid" id="hp-shop-product-list"></div>
+                                </div>
                             </div>
 
                             <div class="hp-save-bar">
@@ -8142,6 +8279,23 @@
                                                     class="admin-studio-inline-style-attr-154">逗号分隔</span></label><input
                                                 type="text" class="config-input" id="hp-verify-features"
                                                 placeholder="免费, 实时, 安全"></div>
+                                        <div class="hp-field"><label>主卖点 <span
+                                                    class="admin-studio-inline-style-attr-154">逗号分隔</span></label><input
+                                                type="text" class="config-input" id="hp-verify-value-props"
+                                                placeholder="秒级校验, 过程可见, 结果可追踪"></div>
+                                        <div class="hp-field"><label>支持模型 <span
+                                                    class="admin-studio-inline-style-attr-154">逗号分隔</span></label><input
+                                                type="text" class="config-input" id="hp-verify-supported-models"
+                                                placeholder="Gemini, Claude, OpenAI"></div>
+                                        <div class="hp-field"><label>CTA 文案</label><input type="text"
+                                                class="config-input" id="hp-verify-cta-text"
+                                                placeholder="立即验证"></div>
+                                        <div class="hp-field"><label>CTA 链接</label><input type="text"
+                                                class="config-input" id="hp-verify-cta-link"
+                                                placeholder="/verify.html?source=homepage_verify"></div>
+                                        <div class="hp-field hp-field-full"><label>风险提示</label><textarea
+                                                class="config-input hp-multiline-input" id="hp-verify-risk-notice"
+                                                placeholder="建议先使用测试账号完成校验，再切换正式账号。"></textarea></div>
                                     </div>
                                 </div>
                             </div>
@@ -8196,9 +8350,43 @@
 
                             <div class="hp-auto-bar">
                                 <div class="hp-auto-left"><i class="fas fa-magic"></i><span>自动聚合</span><span
-                                        class="hp-auto-hint">— 自动从留言板拉取最新留言</span></div>
+                                        class="hp-auto-hint">— 自动补足未精选留言，关闭后按精选和兜底卡片渲染</span></div>
                                 <div class="status-toggle" id="hp-guestbook-auto"
                                     data-admin-action="homepage-toggle-field" data-homepage-section="guestbook" data-homepage-field="enable_auto"></div>
+                            </div>
+
+                            <div class="config-card">
+                                <div class="config-card-header" data-admin-action="homepage-toggle-config-card">
+                                    <div class="config-card-title"><i class="fas fa-thumbtack"></i><span>首页精选留言</span></div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="hp-list-editor" id="hp-guestbook-featured-list"></div>
+                                </div>
+                            </div>
+
+                            <div class="config-card">
+                                <div class="config-card-header" data-admin-action="homepage-toggle-config-card">
+                                    <div class="config-card-title"><i class="fas fa-comments"></i><span>留言候选池</span></div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="hp-candidate-grid" id="hp-guestbook-candidate-list"></div>
+                                </div>
+                            </div>
+
+                            <div class="config-card">
+                                <div class="config-card-header" data-admin-action="homepage-toggle-config-card">
+                                    <div class="config-card-title"><i class="fas fa-life-ring"></i><span>兜底卡片</span></div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="config-inline-note">
+                                        <i class="fas fa-circle-info"></i>
+                                        <span>当精选留言被删除、隐藏或数量不足时，会自动回退到这里的兜底卡片。</span>
+                                    </div>
+                                    <div class="hp-list-editor" id="hp-guestbook-fallback-list"></div>
+                                    <div class="hp-inline-actions">
+                                        <button type="button" class="btn-sm btn-secondary" data-homepage-action="add-guestbook-fallback">新增兜底卡片</button>
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="hp-save-bar">
@@ -8259,6 +8447,33 @@
                                             <div class="status-toggle" id="hp-ticker-products"
                                                 data-admin-action="homepage-toggle-field" data-homepage-section="ticker" data-homepage-field="enable_products"></div>
                                             <span>包含商品</span>
+                                        </div>
+                                    </div>
+                                    <div class="hp-form-grid">
+                                        <div class="hp-field hp-field-full">
+                                            <label>Prompt Tags <span class="admin-studio-inline-style-attr-154">逗号或换行分隔</span></label>
+                                            <textarea class="config-input hp-multiline-input" id="hp-ticker-prompt-tags"
+                                                placeholder="3D Art, Photography, Creative"></textarea>
+                                        </div>
+                                        <div class="hp-field hp-field-full">
+                                            <label>商品分类 <span class="admin-studio-inline-style-attr-154">逗号或换行分隔</span></label>
+                                            <textarea class="config-input hp-multiline-input" id="hp-ticker-product-categories"
+                                                placeholder="prompt, tool, resource"></textarea>
+                                        </div>
+                                        <div class="hp-field hp-field-full">
+                                            <label>活动关键词 <span class="admin-studio-inline-style-attr-154">逗号或换行分隔</span></label>
+                                            <textarea class="config-input hp-multiline-input" id="hp-ticker-activity-keywords"
+                                                placeholder="新品上新, 春季活动, 社区精选"></textarea>
+                                        </div>
+                                        <div class="hp-field hp-field-full">
+                                            <label>上行自定义条目 <span class="admin-studio-inline-style-attr-154">逗号或换行分隔</span></label>
+                                            <textarea class="config-input hp-multiline-input" id="hp-ticker-custom-top"
+                                                placeholder="新品模板, 热门风格, 本周精选"></textarea>
+                                        </div>
+                                        <div class="hp-field hp-field-full">
+                                            <label>下行自定义条目 <span class="admin-studio-inline-style-attr-154">逗号或换行分隔</span></label>
+                                            <textarea class="config-input hp-multiline-input" id="hp-ticker-custom-bottom"
+                                                placeholder="工具包, 订阅卡, 活动专区"></textarea>
                                         </div>
                                     </div>
                                 </div>
@@ -10758,8 +10973,9 @@
     <!-- Chart.js for Analytics -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="js/admin-studio-bootstrap.js?v=20260407_ANALYTICS_CENTER_BOOTSTRAP_8"></script>
+    <script src="js/admin-shell.js?v=20260410_ADMIN_SHELL_P1_1"></script>
     <script src="js/ios-scroll-lock.js"></script>
-    <script src="admin-users.js?v=20260409_ADMIN_USERS_COMMENT_CONTEXT_9"></script>
+    <script src="admin-users.js?v=20260410_ADMIN_USERS_BAN_FIX_2"></script>
     <script src="admin-points.js?v=20260404_ADMIN_POINTS_ANALYTICS_CONTEXT_1"></script>
     <script src="admin-discounts.js?v=20260409_ADMIN_DISCOUNT_P1_ASSETS_ROI_1"></script>
     <script src="js/admin-growth-center.js?v=20260409_MARKETING_ASSET_CENTER_P2_1"></script>
@@ -10769,7 +10985,7 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh.js"></script>
     <script src="js/admin-api-auth.js?v=20260402_ADMIN_API_AUTH_5"></script>
     <script src="js/admin-ai.js"></script>
-    <script src="admin-comments.js?v=20260409_ADMIN_COMMENTS_FOOTER_ORDER_2"></script>
+    <script src="admin-comments.js?v=20260410_COMMENT_TICKET_BUSY_FEEDBACK_1"></script>
     <script src="js/admin-analytics-metric-context.js?v=20260405_ANALYTICS_METRIC_CONTEXT_HELPERS_6"></script>
     <script src="admin-analytics.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1"></script>
     <script src="js/admin-analytics-derived-bundles.js?v=20260405_ANALYTICS_DERIVED_BUNDLES_5"></script>
@@ -10787,16 +11003,17 @@
     <script src="js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9"></script>
     <script src="js/admin-payments.js?v=20260406_ADMIN_PAYMENTS_WORKBENCH_CONTEXT_11"></script>
     <script src="js/local-smoke-fixtures.js?v=20260404_LOCAL_SMOKE_FIXTURES_34"></script>
-    <script src="js/admin-workbench.js?v=20260409_ADMIN_WORKBENCH_COMMENT_SOURCE_2"></script>
-    <script src="js/admin-ticket-links.js?v=20260409_ADMIN_TICKET_LINK_PROTOCOL_2"></script>
-    <script src="admin-config.js?v=20260405_GENERAL_RUNTIME_REMOVAL_1"></script>
-    <script src="admin-homepage.js?v=20260409_HOMEPAGE_FEATURED_BATCH_1"></script>
+    <script src="js/admin-workbench.js?v=20260410_ADMIN_SHELL_CONTEXT_P1_1"></script>
+    <script src="js/admin-ticket-links.js?v=20260410_ADMIN_SHELL_CONTEXT_P1_1"></script>
+    <script src="admin-config.js?v=20260411_OPS_ALERT_CASE_ACTION_FEEDBACK_1"></script>
+    <script src="js/homepage-contract.js?v=20260411_HOMEPAGE_P2_EXPERIMENTS_1"></script>
+    <script src="admin-homepage.js?v=20260411_HOMEPAGE_THEME_PACK_PREVIEW_1"></script>
     <script src="js/admin-studio-translate.js?v=20260409_GALLERY_BATCH_LOCALIZE_7"></script>
-    <script src="js/admin-site-filter.js?v=20260409_GALLERY_WRITE_GUARDS_1"></script>
-    <script src="js/admin-tickets.js?v=20260409_ADMIN_TICKETS_COMMENT_SOURCE_12"></script>
+    <script src="js/admin-site-filter.js?v=20260410_ADMIN_SHELL_SITE_BUS_P1_1"></script>
+    <script src="js/admin-tickets.js?v=20260410_ADMIN_SHELL_CONTEXT_P1_1"></script>
     <script src="js/admin-access.js?v=20260403_ADMIN_ENTRY_WARMUP_1"></script>
-<script src="admin-studio.js?v=20260409_GALLERY_BATCH_LOCALIZE_18"></script>
-    <script src="js/admin-shop.js?v=20260406_ADMIN_SHOP_ANALYTICS_CONTEXT_12"></script>
+<script src="admin-studio.js?v=20260411_OPS_ALERT_CASE_ACTION_FEEDBACK_1"></script>
+    <script src="js/admin-shop.js?v=20260410_SHOP_ORDER_UUID_SEARCH_1"></script>
 </body>
 
 <!-- Admin Chat Script -->

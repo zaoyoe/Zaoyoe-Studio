@@ -243,6 +243,46 @@ test('points manage handler requires points.manage permission', async () => {
     });
 });
 
+test('users manage handler requires users.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/users/manage.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'POST', body: { action: 'grant_admin', userId: 'user_1' }, headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'users.manage' });
+    });
+});
+
+test('users blocks handler requires users.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/users/blocks.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', url: '/api/admin/users/blocks?userId=user_1', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'users.manage' });
+    });
+});
+
+test('system config handler requires settings.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/settings/system-config.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', url: '/api/admin/settings/system-config?domain=commerce', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'settings.manage' });
+    });
+});
+
+test('security locks handler requires settings.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/settings/security-locks.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', url: '/api/admin/settings/security-locks', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'settings.manage' });
+    });
+});
+
 test('prompts manage handler allows prompts.manage or content.moderate for reads', async () => {
     await withAdminHandler('../server/api-handlers/admin/prompts/manage.js', async ({ handler, state }) => {
         const res = createMockResponse();

@@ -1163,16 +1163,31 @@
 
         isVerifyServiceReason(reason = '') {
             const normalized = String(reason || '').trim().toLowerCase();
-            return normalized.includes('google one') && (
-                normalized.includes('链接获取服务') ||
-                normalized.includes('trial link') ||
-                normalized.includes('link service') ||
-                normalized.includes('verify service')
-            );
+            return normalized.includes('google one');
         },
 
-        getVerifyDisplayName() {
-            return window.i18n?.t('wallet.verifyOrderName') || 'Google One Pro 试用链接';
+        resolveVerifyTaskType(reason = '', payload = {}) {
+            const payloadTaskType = String(payload?.task_type || '').trim().toLowerCase();
+            if (payloadTaskType === 'full') return 'full';
+            if (payloadTaskType === 'extract') return 'extract';
+
+            const normalizedReason = String(reason || '').trim().toLowerCase();
+            if (normalizedReason.includes('绑卡') || normalizedReason.includes('full flow')) {
+                return 'full';
+            }
+            return 'extract';
+        },
+
+        getVerifyDisplayName(reason = '', payload = {}) {
+            return this.resolveVerifyTaskType(reason, payload) === 'full'
+                ? (window.i18n?.t('wallet.verifyOrderNameFull') || 'Google One 全流程包绑卡')
+                : (window.i18n?.t('wallet.verifyOrderName') || 'Google One Pro 试用链接');
+        },
+
+        getVerifyTaskTypeLabel(reason = '', payload = {}) {
+            return this.resolveVerifyTaskType(reason, payload) === 'full'
+                ? (window.i18n?.t('wallet.verifyServiceTypeFull') || 'Google One / 全流程包绑卡')
+                : (window.i18n?.t('wallet.verifyServiceTypeExtract') || 'Google One / 仅提链');
         },
 
         isShopLedgerReason(reason = '', referenceId = '') {
@@ -5994,7 +6009,7 @@
                         icon = '💡';
                     } else if (this.isVerifyServiceReason(entry.reason)) {
                         transactionType = 'verify';
-                        displayName = this.getVerifyDisplayName();
+                        displayName = this.getVerifyDisplayName(entry.reason);
                         icon = '🔑';
                     } else if (this.isShopLedgerReason(entry.reason, entry.reference_id)) {
                         transactionType = 'shop';
@@ -6778,8 +6793,15 @@
                     (this.looksLikeEmail(normalizedReferenceId) ? normalizedReferenceId : '') ||
                     '--'
                 ).trim() || '--';
+                const taskType = this.resolveVerifyTaskType(reason, payload);
+                const displayName = this.getVerifyDisplayName(reason, payload);
+                const serviceTypeText = this.getVerifyTaskTypeLabel(reason, payload);
                 const generatedLink = String(payload?.url || '').trim();
                 const errorMessage = String(payload?.error_message || '').trim();
+                const resultMessage = String(payload?.message || '').trim()
+                    || (taskType === 'full'
+                        ? (window.i18n?.t('wallet.verifyFullSuccess') || '包绑卡流程已完成')
+                        : (generatedLink ? (window.i18n?.t('wallet.generatedLink') || '生成链接') : (window.i18n?.t('wallet.linkUnavailable') || '暂未获取到链接')));
                 const orderTimeText = this.formatOrderDateTime(createdAt);
                 const completedTimeText = verifyLog?.created_at ? this.formatOrderDateTime(verifyLog.created_at) : '';
                 const shortOrderId = orderId ? `${orderId.substring(0, 8)}...${orderId.slice(-4)}` : '--';
@@ -6794,7 +6816,7 @@
                 modal.innerHTML = `
                     <div class="wallet-order-modal-header">
                         <div class="wallet-order-modal-title">
-                            ${this.renderWalletInlineIcon('fa-key', '#6b9ece')} ${window.i18n?.t('wallet.verifyDetails') || 'Google One 订单详情'}
+                            ${this.renderWalletInlineIcon('fa-key', '#6b9ece')} ${this.escapeHtml(displayName)}
                         </div>
                         <button class="wallet-order-close-btn js-wallet-order-close">
                             <i class="fas fa-times"></i>
@@ -6812,7 +6834,7 @@
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.productType') || '商品类型'}</span>
-                                <span class="detail-val ${this.getWalletToneClass('#6b9ece')}">${window.i18n?.t('wallet.verifyServiceType') || 'Google One'}</span>
+                                <span class="detail-val ${this.getWalletToneClass(taskType === 'full' ? '#f59e0b' : '#6b9ece')}">${this.escapeHtml(serviceTypeText)}</span>
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.googleAccount') || 'Google 账号'}</span>
@@ -6856,11 +6878,11 @@
                         </div>
                         ` : `
                         <div class="content-section">
-                            <div class="content-section-title">${window.i18n?.t('wallet.generatedLink') || '生成链接'}</div>
+                            <div class="content-section-title">${taskType === 'full' ? (window.i18n?.t('wallet.executionResult') || '执行结果') : (window.i18n?.t('wallet.generatedLink') || '生成链接')}</div>
                             <div class="content-card content-card--compact">
                                 <div class="item-content-box item-content-box--plain">
                                     <div class="item-text item-text--left ${errorMessage ? 'item-text--danger' : 'item-text--muted'}">
-                                        ${this.escapeHtml(errorMessage || (window.i18n?.t('wallet.linkUnavailable') || '暂未获取到链接'))}
+                                        ${this.escapeHtml(errorMessage || resultMessage)}
                                     </div>
                                 </div>
                             </div>

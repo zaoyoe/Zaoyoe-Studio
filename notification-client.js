@@ -363,7 +363,7 @@
             return true;
         }
         if (scope === 'user_personal') {
-            return false;
+            return Boolean(category);
         }
 
         const title = normalizeText(notification?.title);

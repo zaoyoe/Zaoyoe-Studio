@@ -1,94 +1,155 @@
 -- 增强版管理员退款函数 (V4)
--- 支持自定义退款后的库存状态 (Available, Frozen, Fault, Reserve) 和备注
+-- P2 hardening: keep this historical script aligned with the current
+-- site-aware, service-role-only refund flow so re-running it cannot reopen the
+-- browser-callable legacy RPC.
 
-DROP FUNCTION IF EXISTS fn_admin_refund_order(UUID, UUID);
+DROP FUNCTION IF EXISTS public.fn_admin_refund_order(UUID, UUID);
+DROP FUNCTION IF EXISTS public.fn_admin_refund_order(UUID, UUID, VARCHAR);
+DROP FUNCTION IF EXISTS public.fn_admin_refund_order(UUID, UUID, VARCHAR, TEXT);
 
-CREATE OR REPLACE FUNCTION fn_admin_refund_order(
-    p_order_id UUID, 
+CREATE OR REPLACE FUNCTION public.fn_admin_refund_order(
+    p_order_id UUID,
     p_admin_id UUID,
-    p_target_status VARCHAR DEFAULT 'frozen', -- 新增: 目标状态 (available, frozen, fault, reserve)
-    p_remark TEXT DEFAULT NULL                -- 新增: 备注原因
+    p_target_status VARCHAR DEFAULT 'frozen',
+    p_remark TEXT DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     v_order RECORD;
-    v_current_balance INT;
-    v_status_map JSONB := '{"available": "在售", "frozen": "冻结", "fault": "故障", "reserve": "保留"}';
+    v_status_map JSONB := '{"available":"在售","frozen":"冻结","fault":"故障","reserve":"保留"}'::JSONB;
+    v_site VARCHAR(10);
+    v_refund_reference TEXT;
+    v_refund_reason TEXT;
+    v_refund_amount NUMERIC(12,1);
+    v_recharge_result JSONB := '{}'::JSONB;
+    v_inventory_ids UUID[];
+    v_stock_count INT := 0;
 BEGIN
-    -- 权限检查
-    IF NOT public.is_admin() THEN
-        RETURN jsonb_build_object('success', false, 'message', '无权操作');
+    IF COALESCE(auth.role(), '') <> 'service_role' THEN
+        RAISE EXCEPTION 'Access denied';
     END IF;
 
-    -- 验证目标状态是否合法
-    IF NOT (v_status_map ? p_target_status) THEN
-         RETURN jsonb_build_object('success', false, 'message', '无效的目标状态');
+    IF p_order_id IS NULL THEN
+        RAISE EXCEPTION 'p_order_id is required';
     END IF;
 
-    SELECT * INTO v_order FROM shop_orders WHERE id = p_order_id;
-    
+    IF p_admin_id IS NULL THEN
+        RAISE EXCEPTION 'p_admin_id is required';
+    END IF;
+
+    IF NOT (v_status_map ? COALESCE(p_target_status, '')) THEN
+        RETURN jsonb_build_object('success', false, 'message', '无效的目标状态');
+    END IF;
+
+    SELECT
+        o.id,
+        o.user_id,
+        o.product_id,
+        o.inventory_id,
+        o.price_paid,
+        o.total_price,
+        o.snapshot_product_name,
+        o.refund_status,
+        o.delivery_status,
+        o.delivery_completed_at,
+        o.site
+    INTO v_order
+    FROM public.shop_orders o
+    WHERE o.id = p_order_id
+    FOR UPDATE;
+
     IF NOT FOUND THEN
         RETURN jsonb_build_object('success', false, 'message', '订单不存在');
     END IF;
-    
-    IF v_order.refund_status = 'refunded' THEN
-        RETURN jsonb_build_object('success', false, 'message', '该订单已退款');
+
+    v_site := COALESCE(NULLIF(BTRIM(v_order.site), ''), 'cn');
+    v_refund_reference := 'REFUND_' || p_order_id::TEXT;
+    v_refund_amount := GREATEST(COALESCE(v_order.price_paid, 0), 0);
+
+    IF COALESCE(v_order.refund_status, 'none') IN ('refunded', 'full_refund') THEN
+        RETURN jsonb_build_object(
+            'success', true,
+            'duplicate', true,
+            'site', v_site,
+            'message', '该订单已退款'
+        );
     END IF;
 
-    -- 1. 返还积分
-    UPDATE points_balance
-    SET paid_balance = paid_balance + v_order.price_paid,
-        updated_at = NOW()
-    WHERE user_id = v_order.user_id
-    RETURNING total_balance INTO v_current_balance;
+    IF v_refund_amount > 0 THEN
+        v_refund_reason := '订单退款: ' || COALESCE(NULLIF(BTRIM(v_order.snapshot_product_name), ''), '未知商品');
 
-    -- 2. 记账
-    INSERT INTO points_ledger (user_id, amount, reason, reference_id)
-    VALUES (
-        v_order.user_id, 
-        v_order.price_paid, 
-        '订单退款: ' || COALESCE(v_order.snapshot_product_name, '未知商品'),
-        'REFUND_' || p_order_id
-    );
+        SELECT public.fn_recharge_points(
+            v_order.user_id,
+            v_refund_amount,
+            0,
+            v_refund_reason,
+            v_refund_reference,
+            v_site
+        )
+        INTO v_recharge_result;
 
-    -- 3. 更新库存状态 (支持单品和多品)
-    -- 注意: 只有当目标状态为 'available' 时，我们才保留 buyer_id 为 NULL (即彻底释放)
-    -- 如果是 frozen/fault/reserve，通常也应清空 buyer_id，因为已经退款了。
-    -- 所以这里统一清空 buyer_id。
-    
-    -- 3.1 主表
-    IF v_order.inventory_id IS NOT NULL THEN
-        UPDATE shop_inventory
-        SET status = p_target_status,
-            remark = COALESCE(p_remark, remark), -- 如果有新备注则更新，否则保持原样(或覆盖? 假设覆盖)
-            buyer_id = NULL,
-            sold_at = NULL -- 如果重新上架，售出时间也应清空? 是的。
-        WHERE id = v_order.inventory_id;
+        IF COALESCE((v_recharge_result ->> 'success')::BOOLEAN, false) IS NOT TRUE THEN
+            RETURN jsonb_build_object(
+                'success', false,
+                'message', COALESCE(v_recharge_result ->> 'message', '退款积分返还失败'),
+                'site', v_site
+            );
+        END IF;
     END IF;
 
-    -- 3.2 子表 (多品订单)
-    BEGIN
-        UPDATE shop_inventory
+    SELECT ARRAY(
+        SELECT DISTINCT inventory_id
+        FROM (
+            SELECT v_order.inventory_id AS inventory_id
+            UNION ALL
+            SELECT soi.inventory_id
+            FROM public.shop_order_items soi
+            WHERE soi.order_id = p_order_id
+        ) inventory_rows
+        WHERE inventory_id IS NOT NULL
+    )
+    INTO v_inventory_ids;
+
+    IF COALESCE(array_length(v_inventory_ids, 1), 0) > 0 THEN
+        UPDATE public.shop_inventory
         SET status = p_target_status,
-            remark = COALESCE(p_remark, remark),
+            remark = COALESCE(NULLIF(BTRIM(p_remark), ''), remark),
             buyer_id = NULL,
             sold_at = NULL
-        WHERE id IN (
-            SELECT inventory_id FROM shop_order_items WHERE order_id = p_order_id
-        );
-    EXCEPTION WHEN undefined_table THEN
-        NULL;
-    END;
-    
-    -- 4. 标记订单
-    UPDATE shop_orders
-    SET refund_status = 'refunded'
+        WHERE id = ANY(v_inventory_ids);
+    END IF;
+
+    UPDATE public.shop_orders
+    SET refund_status = 'refunded',
+        delivery_status = 'refunded',
+        delivery_completed_at = COALESCE(delivery_completed_at, NOW()),
+        delivery_updated_at = NOW()
     WHERE id = p_order_id;
 
-    RETURN jsonb_build_object('success', true, 'message', '退款成功，库存已标记为: ' || (v_status_map ->> p_target_status));
+    SELECT COUNT(*)
+    INTO v_stock_count
+    FROM public.shop_inventory
+    WHERE product_id = v_order.product_id
+      AND status = 'available';
+
+    UPDATE public.shop_products
+    SET stock_count = v_stock_count
+    WHERE id = v_order.product_id;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'site', v_site,
+        'duplicate', false,
+        'message', '退款成功，库存已标记为: ' || (v_status_map ->> p_target_status)
+    );
 END;
 $$;
-GRANT EXECUTE ON FUNCTION fn_admin_refund_order TO authenticated;
+
+REVOKE ALL ON FUNCTION public.fn_admin_refund_order(UUID, UUID, VARCHAR, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.fn_admin_refund_order(UUID, UUID, VARCHAR, TEXT) FROM anon;
+REVOKE ALL ON FUNCTION public.fn_admin_refund_order(UUID, UUID, VARCHAR, TEXT) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_admin_refund_order(UUID, UUID, VARCHAR, TEXT) TO service_role;

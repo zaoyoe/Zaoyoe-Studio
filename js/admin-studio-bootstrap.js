@@ -1356,12 +1356,12 @@
 
         if (typeof window.requestIdleCallback === 'function') {
             window.__adminModulePrefetchMode = 'idle';
-            window.__adminModulePrefetchHandle = window.requestIdleCallback(runPrefetch, { timeout: 1200 });
+            window.__adminModulePrefetchHandle = window.requestIdleCallback(runPrefetch, { timeout: 2400 });
             return;
         }
 
         window.__adminModulePrefetchMode = 'timeout';
-        window.__adminModulePrefetchHandle = window.setTimeout(runPrefetch, 280);
+        window.__adminModulePrefetchHandle = window.setTimeout(runPrefetch, 600);
     }
 
     function switchModule(moduleName, options = {}) {

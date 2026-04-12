@@ -1,10 +1,14 @@
 const {
     requireAdmin,
-    sendJson
+    sendJson,
+    getOptionalSupabaseAdmin
 } = require('../../../../api/_lib/admin');
 const {
     buildVerifyMonitorProxyHeaders
 } = require('../../../../api/_lib/verify-monitor-internal-access');
+const {
+    buildLocalVerifyQueueSnapshot
+} = require('../../_verify-provider-runtime');
 
 const DEFAULT_VERIFY_SERVER_URL = 'https://zaoyoe-verify-server-production.up.railway.app';
 const VERIFY_MONITOR_PROXY_TIMEOUT_MS = 5000;
@@ -13,15 +17,23 @@ function getVerifyServerUrl() {
     return String(process.env.VERIFY_SERVER_URL || DEFAULT_VERIFY_SERVER_URL).trim().replace(/\/+$/, '');
 }
 
-function getForwardHeaders() {
+function getForwardHeaders(req) {
     const headers = buildVerifyMonitorProxyHeaders(process.env);
-    if (!headers) {
-        const error = new Error('验证运维内部凭证未配置');
-        error.statusCode = 500;
-        throw error;
+    if (headers) {
+        return headers;
     }
 
-    return headers;
+    const authorization = String(req?.headers?.authorization || '').trim();
+    if (authorization) {
+        return {
+            Accept: 'application/json',
+            Authorization: authorization
+        };
+    }
+
+    const error = new Error('验证运维内部凭证未配置，且当前管理员会话不可转发');
+    error.statusCode = 500;
+    throw error;
 }
 
 module.exports = async (req, res) => {
@@ -42,9 +54,19 @@ module.exports = async (req, res) => {
             : 0;
 
         try {
+            const supabase = typeof getOptionalSupabaseAdmin === 'function'
+                ? getOptionalSupabaseAdmin()
+                : null;
+            if (supabase) {
+                const localState = await buildLocalVerifyQueueSnapshot(supabase);
+                if (localState?.success) {
+                    return sendJson(res, 200, localState);
+                }
+            }
+
             const upstreamResponse = await fetch(`${getVerifyServerUrl()}/api/queue`, {
                 method: 'GET',
-                headers: getForwardHeaders(),
+                headers: getForwardHeaders(req),
                 signal: controller?.signal
             });
             const payload = await upstreamResponse.json().catch(() => ({}));
