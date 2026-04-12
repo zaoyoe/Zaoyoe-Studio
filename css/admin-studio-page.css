@@ -758,6 +758,7 @@ body.admin-access-pending,
                         .shop-table-skeleton-w-108 { width: 108px; }
                         .shop-table-skeleton-w-110 { width: 110px; }
                         .shop-table-skeleton-w-112 { width: 112px; }
+                        .shop-table-skeleton-w-116 { width: 116px; }
                         .shop-table-skeleton-w-118 { width: 118px; }
                         .shop-table-skeleton-w-124 { width: 124px; }
                         .shop-table-skeleton-w-126 { width: 126px; }
@@ -765,6 +766,30 @@ body.admin-access-pending,
                         .shop-table-skeleton-w-136 { width: 136px; }
                         .shop-table-skeleton-w-138 { width: 138px; }
                         .shop-table-skeleton-w-146 { width: 146px; }
+                        .shop-table-skeleton-w-148 { width: 148px; }
+                        .shop-table-skeleton-wp-24 { width: 24%; }
+                        .shop-table-skeleton-wp-28 { width: 28%; }
+                        .shop-table-skeleton-wp-30 { width: 30%; }
+                        .shop-table-skeleton-wp-32 { width: 32%; }
+                        .shop-table-skeleton-wp-34 { width: 34%; }
+                        .shop-table-skeleton-wp-36 { width: 36%; }
+                        .shop-table-skeleton-wp-40 { width: 40%; }
+                        .shop-table-skeleton-wp-42 { width: 42%; }
+                        .shop-table-skeleton-wp-44 { width: 44%; }
+                        .shop-table-skeleton-wp-46 { width: 46%; }
+                        .shop-table-skeleton-wp-56 { width: 56%; }
+                        .shop-table-skeleton-wp-58 { width: 58%; }
+                        .shop-table-skeleton-wp-62 { width: 62%; }
+                        .shop-table-skeleton-wp-64 { width: 64%; }
+                        .shop-table-skeleton-wp-66 { width: 66%; }
+                        .shop-table-skeleton-wp-68 { width: 68%; }
+                        .shop-table-skeleton-wp-72 { width: 72%; }
+                        .shop-table-skeleton-wp-74 { width: 74%; }
+                        .shop-table-skeleton-wp-76 { width: 76%; }
+                        .shop-table-skeleton-wp-78 { width: 78%; }
+                        .shop-table-skeleton-wp-80 { width: 80%; }
+                        .shop-table-skeleton-wp-86 { width: 86%; }
+                        .shop-table-skeleton-wp-92 { width: 92%; }
 
                         .shop-inventory-empty-cell--error {
                             padding: 30px;

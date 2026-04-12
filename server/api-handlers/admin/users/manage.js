@@ -7,6 +7,7 @@ const {
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
 const { notifyUsers } = require('../../../../api/_lib/admin-notifications');
+const { deductPointsForService } = require('../../../../api/_lib/payments/rpc');
 const {
     assertNoLockedTargets,
     buildAdminPermissionChangeDetails,
@@ -435,12 +436,13 @@ async function mutatePointsForUser(supabase, {
         }
         rpcResult = data || {};
     } else {
-        const { data, error } = await supabase.rpc('fn_deduct_points_admin_site', {
-            p_target_user_id: userId,
-            p_amount: Math.abs(amount),
-            p_reason: ledgerReason,
-            p_reference_id: referenceId,
-            p_site: site
+        const { data, error } = await deductPointsForService({
+            supabase,
+            userId,
+            amount: Math.abs(amount),
+            reason: ledgerReason,
+            referenceId,
+            site
         });
 
         if (error) {

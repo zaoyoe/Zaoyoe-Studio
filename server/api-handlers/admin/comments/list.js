@@ -211,7 +211,7 @@ function matchesCommentSearchTerm(comment, rawSearchTerm, { pinnedOnly = false }
     return fields.some((field) => sanitizeText(field, 400).toLowerCase().includes(searchTerm));
 }
 
-function applyCommentQueueFilter(comment, queue = 'pending') {
+function applyCommentQueueFilter(comment, queue = 'all') {
     const normalizedQueue = normalizeCommentsQueueFilter(queue);
     if (normalizedQueue === 'pending') {
         const workflow = getCommentWorkflowState(comment);

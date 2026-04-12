@@ -3731,7 +3731,20 @@ Example output format:
     },
 
     getShopSkeletonWidthClass: function (width, fallbackWidth = 88) {
-        const normalizedWidth = Math.max(1, Math.round(Number(width) || Number(fallbackWidth) || 88));
+        const normalizedRaw = String(width ?? fallbackWidth).trim().toLowerCase();
+        const percentMatch = normalizedRaw.match(/^(\d+(?:\.\d+)?)%$/);
+        if (percentMatch) {
+            const normalizedPercent = Math.max(1, Math.round(Number(percentMatch[1]) || Number(fallbackWidth) || 88));
+            return `shop-table-skeleton-wp-${normalizedPercent}`;
+        }
+
+        const pixelMatch = normalizedRaw.match(/^(\d+(?:\.\d+)?)px?$/);
+        const normalizedWidth = Math.max(
+            1,
+            Math.round(
+                Number(pixelMatch?.[1] || normalizedRaw) || Number(fallbackWidth) || 88
+            )
+        );
         return `shop-table-skeleton-w-${normalizedWidth}`;
     },
 
@@ -10354,31 +10367,31 @@ Example output format:
         const buildSectionTitleSkeleton = (width) => `
             <div class="shop-order-detail-loading__title-row">
                 <span class="shop-order-detail-loading__title-icon admin-skeleton-block"></span>
-                <span class="shop-order-detail-loading__title-text admin-skeleton-block admin-skeleton-block--title" style="width:${width}px"></span>
+                <span class="shop-order-detail-loading__title-text admin-skeleton-block admin-skeleton-block--title ${this.getShopSkeletonWidthClass(width, 112)}"></span>
             </div>
         `;
         const buildListRowSkeleton = ({ titleWidth, metaWidth, contentWidth, sideWidth, sideType = 'action' }) => `
             <div class="shop-order-detail-list-row shop-order-detail-loading__row">
                 <div class="shop-order-detail-list-row__main">
-                    <span class="admin-skeleton-block admin-skeleton-block--title" style="width:${titleWidth}"></span>
-                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${metaWidth}"></span>
-                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${contentWidth}"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--title ${this.getShopSkeletonWidthClass(titleWidth, 112)}"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--line ${this.getShopSkeletonWidthClass(metaWidth, 88)}"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--line ${this.getShopSkeletonWidthClass(contentWidth, 96)}"></span>
                 </div>
                 ${sideType === 'badge'
-                    ? `<span class="shop-order-detail-loading__row-badge admin-skeleton-block admin-skeleton-block--pill" style="width:${sideWidth}"></span>`
-                    : `<span class="shop-order-detail-loading__row-action admin-skeleton-block" style="width:${sideWidth}"></span>`}
+                    ? `<span class="shop-order-detail-loading__row-badge admin-skeleton-block admin-skeleton-block--pill ${this.getShopSkeletonWidthClass(sideWidth, 88)}"></span>`
+                    : `<span class="shop-order-detail-loading__row-action admin-skeleton-block ${this.getShopSkeletonWidthClass(sideWidth, 88)}"></span>`}
             </div>
         `;
         const buildStatSkeleton = (labelWidth, valueWidth) => `
             <div class="shop-order-detail-stat">
-                <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${labelWidth}"></span>
-                <span class="shop-order-detail-loading__stat-value admin-skeleton-block" style="width:${valueWidth}"></span>
+                <span class="admin-skeleton-block admin-skeleton-block--line ${this.getShopSkeletonWidthClass(labelWidth, 42)}"></span>
+                <span class="shop-order-detail-loading__stat-value admin-skeleton-block ${this.getShopSkeletonWidthClass(valueWidth, 72)}"></span>
             </div>
         `;
         const buildKvSkeleton = (labelWidth, valueWidth) => `
             <div>
-                <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${labelWidth}"></span>
-                <span class="shop-order-detail-loading__kv-value admin-skeleton-block" style="width:${valueWidth}"></span>
+                <span class="admin-skeleton-block admin-skeleton-block--line ${this.getShopSkeletonWidthClass(labelWidth, 42)}"></span>
+                <span class="shop-order-detail-loading__kv-value admin-skeleton-block ${this.getShopSkeletonWidthClass(valueWidth, 76)}"></span>
             </div>
         `;
 
@@ -10401,9 +10414,9 @@ Example output format:
                                 <div class="shop-order-detail-loading__user-main">
                                     <span class="shop-order-detail-loading__avatar admin-skeleton-block"></span>
                                     <div class="shop-order-detail-loading__user-copy">
-                                        <span class="admin-skeleton-block admin-skeleton-block--title" style="width:112px"></span>
-                                        <span class="admin-skeleton-block admin-skeleton-block--line" style="width:148px"></span>
-                                        <span class="admin-skeleton-block admin-skeleton-block--line" style="width:86%"></span>
+                                        <span class="admin-skeleton-block admin-skeleton-block--title ${this.getShopSkeletonWidthClass(112)}"></span>
+                                        <span class="admin-skeleton-block admin-skeleton-block--line ${this.getShopSkeletonWidthClass(148)}"></span>
+                                        <span class="admin-skeleton-block admin-skeleton-block--line ${this.getShopSkeletonWidthClass('86%')}"></span>
                                     </div>
                                 </div>
                             </div>
@@ -10411,9 +10424,9 @@ Example output format:
                             <div class="shop-order-detail-hero__meta shop-order-detail-loading__panel shop-order-detail-loading__panel--meta">
                                 <div class="shop-order-content-meta">订单号：<code class="shop-order-content-order-id">${safeOrderId}</code></div>
                                 <div class="shop-order-detail-hero__pills">
-                                    <span class="admin-skeleton-block admin-skeleton-block--pill" style="width:68px"></span>
-                                    <span class="admin-skeleton-block admin-skeleton-block--pill" style="width:74px"></span>
-                                    <span class="admin-skeleton-block admin-skeleton-block--pill" style="width:116px"></span>
+                                    <span class="admin-skeleton-block admin-skeleton-block--pill ${this.getShopSkeletonWidthClass(68)}"></span>
+                                    <span class="admin-skeleton-block admin-skeleton-block--pill ${this.getShopSkeletonWidthClass(74)}"></span>
+                                    <span class="admin-skeleton-block admin-skeleton-block--pill ${this.getShopSkeletonWidthClass(116)}"></span>
                                 </div>
                                 <div class="shop-order-detail-hero__stats">
                                     ${buildStatSkeleton('36%', '72%')}
@@ -10429,7 +10442,7 @@ Example output format:
                                 <div class="shop-order-detail-section__header">
                                     ${buildSectionTitleSkeleton(118)}
                                     <div class="shop-order-detail-inline-actions">
-                                        <span class="shop-order-detail-loading__action-btn admin-skeleton-block" style="width:112px"></span>
+                                        <span class="shop-order-detail-loading__action-btn admin-skeleton-block ${this.getShopSkeletonWidthClass(112)}"></span>
                                     </div>
                                 </div>
                                 <div class="shop-order-detail-list">
@@ -10438,12 +10451,12 @@ Example output format:
                                 </div>
                                 <div class="shop-order-content-box shop-order-detail-loading__content-box">
                                     <div class="shop-order-content-item shop-order-detail-loading__content-item">
-                                        <span class="admin-skeleton-block admin-skeleton-block--line" style="width:42%"></span>
-                                        <span class="shop-order-detail-loading__code-line admin-skeleton-block" style="width:92%"></span>
+                                        <span class="admin-skeleton-block admin-skeleton-block--line ${this.getShopSkeletonWidthClass('42%')}"></span>
+                                        <span class="shop-order-detail-loading__code-line admin-skeleton-block ${this.getShopSkeletonWidthClass('92%')}"></span>
                                     </div>
                                     <div class="shop-order-content-item shop-order-detail-loading__content-item">
-                                        <span class="admin-skeleton-block admin-skeleton-block--line" style="width:34%"></span>
-                                        <span class="shop-order-detail-loading__code-line admin-skeleton-block" style="width:78%"></span>
+                                        <span class="admin-skeleton-block admin-skeleton-block--line ${this.getShopSkeletonWidthClass('34%')}"></span>
+                                        <span class="shop-order-detail-loading__code-line admin-skeleton-block ${this.getShopSkeletonWidthClass('78%')}"></span>
                                     </div>
                                 </div>
                             </div>
@@ -10453,9 +10466,9 @@ Example output format:
                                     ${buildSectionTitleSkeleton(108)}
                                 </div>
                                 <div class="shop-order-detail-hero__pills">
-                                    <span class="admin-skeleton-block admin-skeleton-block--pill" style="width:82px"></span>
-                                    <span class="admin-skeleton-block admin-skeleton-block--pill" style="width:82px"></span>
-                                    <span class="admin-skeleton-block admin-skeleton-block--pill" style="width:96px"></span>
+                                    <span class="admin-skeleton-block admin-skeleton-block--pill ${this.getShopSkeletonWidthClass(82)}"></span>
+                                    <span class="admin-skeleton-block admin-skeleton-block--pill ${this.getShopSkeletonWidthClass(82)}"></span>
+                                    <span class="admin-skeleton-block admin-skeleton-block--pill ${this.getShopSkeletonWidthClass(96)}"></span>
                                 </div>
                                 <div class="shop-order-detail-kv">
                                     ${buildKvSkeleton('42%', '76%')}
@@ -10464,13 +10477,13 @@ Example output format:
                                     ${buildKvSkeleton('34%', '24%')}
                                 </div>
                                 <div class="shop-order-detail-loading__attempts">
-                                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:78%"></span>
-                                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:66%"></span>
-                                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:58%"></span>
+                                    <span class="admin-skeleton-block admin-skeleton-block--line ${this.getShopSkeletonWidthClass('78%')}"></span>
+                                    <span class="admin-skeleton-block admin-skeleton-block--line ${this.getShopSkeletonWidthClass('66%')}"></span>
+                                    <span class="admin-skeleton-block admin-skeleton-block--line ${this.getShopSkeletonWidthClass('58%')}"></span>
                                 </div>
                                 <div class="shop-order-detail-inline-actions">
-                                    <span class="shop-order-detail-loading__action-btn admin-skeleton-block" style="width:96px"></span>
-                                    <span class="shop-order-detail-loading__action-btn admin-skeleton-block" style="width:108px"></span>
+                                    <span class="shop-order-detail-loading__action-btn admin-skeleton-block ${this.getShopSkeletonWidthClass(96)}"></span>
+                                    <span class="shop-order-detail-loading__action-btn admin-skeleton-block ${this.getShopSkeletonWidthClass(108)}"></span>
                                 </div>
                             </div>
                         </div>
@@ -10480,8 +10493,8 @@ Example output format:
                                 <div class="shop-order-detail-section__header">
                                     ${buildSectionTitleSkeleton(94)}
                                     <div class="shop-order-detail-hero__pills">
-                                        <span class="admin-skeleton-block admin-skeleton-block--pill" style="width:72px"></span>
-                                        <span class="admin-skeleton-block admin-skeleton-block--pill" style="width:86px"></span>
+                                        <span class="admin-skeleton-block admin-skeleton-block--pill ${this.getShopSkeletonWidthClass(72)}"></span>
+                                        <span class="admin-skeleton-block admin-skeleton-block--pill ${this.getShopSkeletonWidthClass(86)}"></span>
                                     </div>
                                 </div>
                                 <div class="shop-order-detail-list">
@@ -10493,8 +10506,8 @@ Example output format:
                                 <div class="shop-order-detail-section__header">
                                     ${buildSectionTitleSkeleton(94)}
                                     <div class="shop-order-detail-hero__pills">
-                                        <span class="admin-skeleton-block admin-skeleton-block--pill" style="width:72px"></span>
-                                        <span class="admin-skeleton-block admin-skeleton-block--pill" style="width:86px"></span>
+                                        <span class="admin-skeleton-block admin-skeleton-block--pill ${this.getShopSkeletonWidthClass(72)}"></span>
+                                        <span class="admin-skeleton-block admin-skeleton-block--pill ${this.getShopSkeletonWidthClass(86)}"></span>
                                     </div>
                                 </div>
                                 <div class="shop-order-detail-list">

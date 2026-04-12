@@ -359,7 +359,8 @@ function destroyAnalyticsCharts() {
     geoChart = null;
 }
 
-async function reloadAnalyticsDashboard(options = {}) {
+async function reloadAnalyticsDashboard() {
+    const options = arguments[0] || {};
     const reason = String(options?.reason || '').trim().toLowerCase();
     const force = options?.force === true;
     const days = getAnalyticsRangeDays();
@@ -446,7 +447,8 @@ async function reloadAnalyticsDashboard(options = {}) {
     }
 }
 
-function teardownAnalyticsModule(options = {}) {
+function teardownAnalyticsModule() {
+    const options = arguments[0] || {};
     analyticsRuntime.moduleActive = false;
     stopAutoRefresh();
     teardownRealtimeSubscriptions();

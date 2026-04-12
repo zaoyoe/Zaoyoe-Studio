@@ -1451,7 +1451,7 @@ const FramerHome = {
       ...sanitizeTickerItems(config.custom_items_bottom)
     ];
     let tags = [...new Set(promptTagSeed)];
-    let productCategories = [...new Set(productCategorySeed)];
+    const productCategories = Array.from(new Set(productCategorySeed));
 
     if ((config.enable_auto !== false || tags.length === 0) && config.enable_prompts !== false) {
       const tagSet = new Set(tags);
@@ -1474,7 +1474,7 @@ const FramerHome = {
           categorySet.add(category);
         }
       });
-      productCategories = Array.from(categorySet).slice(0, 20);
+      productCategories.splice(0, productCategories.length, ...Array.from(categorySet).slice(0, 20));
     }
 
     return {

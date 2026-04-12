@@ -266,22 +266,22 @@
             : [];
         const curatedIds = new Set(curatedItems.map((item) => String(item?.id || '').trim()).filter(Boolean));
 
-        let filtered = window.SiteConfig?.filterProductsForCurrentSite
+        let filteredShopResult = window.SiteConfig?.filterProductsForCurrentSite
             ? window.SiteConfig.filterProductsForCurrentSite(allProducts)
             : allProducts;
 
         if (config.category && config.category !== 'all') {
-            filtered = filtered.filter((product) => product.category === config.category);
+            filteredShopResult = filteredShopResult.filter((product) => product.category === config.category);
         }
 
         const sortStrategy = String(config.sort || 'popular').trim();
         if (sortStrategy === 'latest') {
-            filtered = [...filtered].reverse();
+            filteredShopResult = [...filteredShopResult].reverse();
         } else if (sortStrategy === 'random') {
-            filtered = [...filtered].sort(() => Math.random() - 0.5);
+            filteredShopResult = [...filteredShopResult].sort(() => Math.random() - 0.5);
         }
 
-        const autoItems = filtered.filter((item) => !curatedIds.has(String(item?.id || '').trim()));
+        const autoItems = filteredShopResult.filter((item) => !curatedIds.has(String(item?.id || '').trim()));
         const maxItems = Number(config.max_items) || 6;
 
         if (config.enable_auto === false) {
@@ -375,6 +375,7 @@
             ...sanitizeTickerItems(config.product_categories),
             ...sanitizeTickerItems(config.custom_items_bottom)
         ];
+        const productCategories = Array.from(new Set(bottom));
 
         if ((config.enable_auto !== false || top.length === 0) && config.enable_prompts !== false) {
             const tagSet = new Set(top);
@@ -391,19 +392,20 @@
             top = [];
         }
 
-        if ((config.enable_auto !== false || bottom.length === 0) && config.enable_products !== false) {
-            bottom = Array.from(new Set(
-                shop
-                    .map((product) => String(product?.category || '').trim())
-                    .filter(Boolean)
-            )).slice(0, 20);
+        if ((config.enable_auto !== false || productCategories.length === 0) && config.enable_products !== false) {
+            const categorySet = new Set(productCategories);
+            shop
+                .map((product) => String(product?.category || '').trim())
+                .filter(Boolean)
+                .forEach((category) => categorySet.add(category));
+            productCategories.splice(0, productCategories.length, ...Array.from(categorySet).slice(0, 20));
         } else if (config.enable_products === false) {
-            bottom = [];
+            productCategories.splice(0, productCategories.length);
         }
 
         return {
             top,
-            bottom,
+            bottom: productCategories,
             speed: Number(config.speed) || 30,
             shopScrollSpeed: Number(config.shop_scroll_speed) || Number(config.speed) || 30,
             enable_prompts: config.enable_prompts !== false,
@@ -562,7 +564,11 @@
             const prompts = aggregatePrompts(config.prompts || {});
             const shop = aggregateShop(config.shop || {}, allProducts);
             const guestbook = aggregateGuestbook(config.guestbook || {}, guestbookMessages);
-            const ticker = buildTickerData(config.ticker || {}, promptPool, shop);
+            const ticker = {
+                ...buildTickerData(config.ticker || {}, promptPool, shop),
+                speed: config.ticker?.speed || 30,
+                shopScrollSpeed: config.ticker?.shop_scroll_speed || config.ticker?.speed || 30
+            };
             const cacheKind = promptPool.length > 0 ? 'complete' : 'partial';
             const currentSite = getCurrentSite();
 

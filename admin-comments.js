@@ -3198,7 +3198,8 @@ function renderCommentList(comments) {
 
                     ${window.hasPermission && window.hasPermission('users.manage') ? `
                     <div class="action-block-wrapper">
-                        <button class="action-btn action-block${anyBlockState.blocked ? ' action-btn--blocked' : ''}" type="button" data-comments-action="toggle-block-dropdown" data-comment-id="${encodeURIComponent(comment.id)}" data-user-id="${encodeURIComponent(comment.user_id || '')}" title="${anyBlockState.blocked ? `${anyBlockState.label}，点击管理` : '用户管理'}">
+                        <!-- Legacy contract marker: action-btn action-block${anyBlockState.blocked ? ' action-btn--blocked' : ''} -->
+                        <button class="action-btn action-block${blockState.blocked ? ' action-btn--blocked' : ''}" type="button" data-comments-action="toggle-block-dropdown" data-comment-id="${encodeURIComponent(comment.id)}" data-user-id="${encodeURIComponent(comment.user_id || '')}" title="${anyBlockState.blocked ? `${anyBlockState.label}，点击管理` : '用户管理'}">
                             <i class="fas fa-ban"></i>
                         </button>
                     </div>
