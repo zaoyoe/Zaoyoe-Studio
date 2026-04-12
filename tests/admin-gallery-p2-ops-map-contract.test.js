@@ -38,7 +38,7 @@ test('gallery p2 ops map adds overview, sorting, batch workflow actions, and hom
         'function setAdminGalleryStatusFilter(value = \'\')',
         'function getPromptEngagementScore(prompt = {}, site = getAdminPromptsReadSite())',
         'function compareAdminGalleryPrompts(leftPrompt = {}, rightPrompt = {}, sortValue = getAdminGallerySortValue())',
-        'function sortAdminGalleryCards(sortValue = getAdminGallerySortValue())',
+        'function sortAdminGalleryCards(sortValue = getAdminGallerySortValue(), rows = allPrompts)',
         'function renderGalleryOpsOverview()',
         "case 'gallery-set-status-filter':",
         "case 'gallery-batch-set-status':",
@@ -71,7 +71,7 @@ test('gallery p2 ops map adds overview, sorting, batch workflow actions, and hom
         'window.batchSetSelectedPromptStatus = batchSetSelectedPromptStatus;',
         'window.batchAddSelectedPromptsToHomepage = batchAddSelectedPromptsToHomepage;',
         'window.batchCompleteSelectedPromptBilingualFields = batchCompleteSelectedPromptBilingualFields;',
-        'sortAdminGalleryCards(sortValue);',
+        'sortAdminGalleryCards(sortValue, filteredRows);',
         'renderGalleryOpsOverview();'
     ];
 

@@ -465,7 +465,7 @@ test('comments summary handler aggregates guestbook messages, guestbook replies,
         }, res);
 
         assert.equal(res.statusCode, 200);
-        assert.deepEqual(state.requireAdminCalls[0]?.config, { permission: 'content.moderate' });
+        assert.deepEqual(state.requireAdminCalls[0]?.config, { anyOf: ['content.moderate', 'analytics.view'] });
         assert.equal(res.json().summary.totalCount, 3);
         assert.equal(res.json().summary.todayCount, 3);
         assert.equal(res.json().summary.activeUsersCount, 2);
