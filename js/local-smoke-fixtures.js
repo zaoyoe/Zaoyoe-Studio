@@ -4048,6 +4048,899 @@
         };
     }
 
+    function buildSmokeProductBundleSegment(payload, source = 'local_smoke_fixture') {
+        return {
+            ok: true,
+            statusCode: 200,
+            message: '',
+            source,
+            payload: deepClone(payload)
+        };
+    }
+
+    function decorateSmokeProductMetricRow(row = {}) {
+        const orderCount = Math.max(0, Number(row.order_count || 0));
+        const refundedOrderCount = Math.max(0, Number(row.refunded_order_count || 0));
+        const buyerCount = Math.max(0, Number(row.buyer_count || 0));
+        const viewUserCount = Math.max(0, Number(row.view_user_count || 0));
+        const detailViewUserCount = Math.max(0, Number(row.detail_view_user_count || 0));
+        const purchaseClickUserCount = Math.max(0, Number(row.purchase_click_user_count || 0));
+        const unitsSold = Math.max(orderCount, Number(row.units_sold || 0));
+        const gmvPoints = Math.max(0, Number(row.gmv_points || 0));
+        const deliverySuccessCount = Math.max(0, Number(row.delivery_success_count || 0));
+        const deliveryRiskCount = Math.max(0, Number(row.delivery_risk_count || 0));
+        const totalOrderCount = orderCount + refundedOrderCount;
+
+        return {
+            ...row,
+            units_sold: unitsSold,
+            avg_order_value: orderCount > 0 ? roundSmokeMetric(gmvPoints / orderCount, 2) : 0,
+            conversion_rate: viewUserCount > 0 ? roundSmokeMetric((buyerCount / viewUserCount) * 100, 2) : 0,
+            purchase_conversion_rate: viewUserCount > 0 ? roundSmokeMetric((buyerCount / viewUserCount) * 100, 2) : 0,
+            detail_to_intent_rate: detailViewUserCount > 0 ? roundSmokeMetric((purchaseClickUserCount / detailViewUserCount) * 100, 2) : 0,
+            intent_to_paid_rate: purchaseClickUserCount > 0 ? roundSmokeMetric((buyerCount / purchaseClickUserCount) * 100, 2) : 0,
+            refund_rate: totalOrderCount > 0 ? roundSmokeMetric((refundedOrderCount / totalOrderCount) * 100, 2) : 0,
+            delivery_success_rate: orderCount > 0 ? roundSmokeMetric((deliverySuccessCount / orderCount) * 100, 2) : 0,
+            delivery_risk_rate: orderCount > 0 ? roundSmokeMetric((deliveryRiskCount / orderCount) * 100, 2) : 0,
+            low_conversion_score: Math.max(0, Number(row.low_conversion_score || 0)),
+            bubble_size: Math.max(10, Number(row.bubble_size || Math.min(24, 8 + Math.round(gmvPoints / 180)))),
+            source_pages: Array.isArray(row.source_pages) ? row.source_pages : [],
+            source_channels: Array.isArray(row.source_channels) ? row.source_channels : [],
+            prompt_sources: Array.isArray(row.prompt_sources) ? row.prompt_sources : [],
+            related_prompt_ids: Array.isArray(row.related_prompt_ids) ? row.related_prompt_ids : [],
+            top_prompt_id: String(row.top_prompt_id || '').trim()
+        };
+    }
+
+    function buildSmokeProductFixtureRows() {
+        return [
+            decorateSmokeProductMetricRow({
+                product_id: 'shop-prod-cn-1',
+                product_name: 'CN 高级账号',
+                category: 'account',
+                delivery_type: 'KEY',
+                is_active: true,
+                stock_count: 1,
+                available_inventory_count: 1,
+                fault_inventory_count: 0,
+                view_count: 62,
+                view_user_count: 42,
+                card_click_count: 24,
+                card_click_user_count: 18,
+                detail_view_count: 36,
+                detail_view_user_count: 26,
+                purchase_click_count: 22,
+                purchase_click_user_count: 19,
+                buyer_count: 11,
+                order_count: 12,
+                refunded_order_count: 0,
+                units_sold: 14,
+                gmv_points: 2256,
+                delivery_success_count: 10,
+                delivery_risk_count: 1,
+                content_assisted_prompt_count: 2,
+                content_assisted_detail_view_count: 14,
+                content_assisted_purchase_click_count: 10,
+                content_assisted_purchase_success_count: 6,
+                content_assisted_gmv_points: 1128,
+                top_prompt_id: 'prompt-cn-landing',
+                low_conversion_score: 16,
+                bubble_size: 22,
+                quadrant_key: 'star',
+                quadrant_label: '明星商品',
+                tone: 'success',
+                source_pages: [
+                    { key: 'home', label: '首页', count: 24, user_count: 18 },
+                    { key: 'shop', label: '商城页', count: 10, user_count: 8 }
+                ],
+                source_channels: [
+                    { key: 'homepage', label: '首页导流', count: 24, user_count: 18 },
+                    { key: 'shop_storefront', label: '商城自然浏览', count: 10, user_count: 8 }
+                ],
+                prompt_sources: [
+                    { prompt_id: 'prompt-cn-landing', count: 12, user_count: 9, detail_view_count: 7, purchase_click_count: 5, purchase_success_count: 4, gmv_points: 752 },
+                    { prompt_id: 'prompt-cn-home', count: 8, user_count: 6, detail_view_count: 4, purchase_click_count: 3, purchase_success_count: 2, gmv_points: 376 }
+                ],
+                related_prompt_ids: ['prompt-cn-landing', 'prompt-cn-home']
+            }),
+            decorateSmokeProductMetricRow({
+                product_id: 'shop-prod-cn-2',
+                product_name: 'CN 月付会员',
+                category: 'account',
+                delivery_type: 'KEY',
+                is_active: true,
+                stock_count: 0,
+                available_inventory_count: 0,
+                fault_inventory_count: 0,
+                view_count: 56,
+                view_user_count: 34,
+                card_click_count: 21,
+                card_click_user_count: 16,
+                detail_view_count: 30,
+                detail_view_user_count: 22,
+                purchase_click_count: 18,
+                purchase_click_user_count: 14,
+                buyer_count: 5,
+                order_count: 6,
+                refunded_order_count: 2,
+                units_sold: 6,
+                gmv_points: 528,
+                delivery_success_count: 3,
+                delivery_risk_count: 2,
+                content_assisted_prompt_count: 1,
+                content_assisted_detail_view_count: 8,
+                content_assisted_purchase_click_count: 6,
+                content_assisted_purchase_success_count: 3,
+                content_assisted_gmv_points: 264,
+                top_prompt_id: 'prompt-membership-faq',
+                low_conversion_score: 42,
+                bubble_size: 16,
+                quadrant_key: 'steady',
+                quadrant_label: '稳定承接',
+                tone: 'accent',
+                source_pages: [
+                    { key: 'shop', label: '商城页', count: 18, user_count: 13 },
+                    { key: 'prompts', label: '提示词页', count: 8, user_count: 6 }
+                ],
+                source_channels: [
+                    { key: 'shop_storefront', label: '商城自然浏览', count: 18, user_count: 13 },
+                    { key: 'prompt_content', label: '提示词内容导流', count: 8, user_count: 6 }
+                ],
+                prompt_sources: [
+                    { prompt_id: 'prompt-membership-faq', count: 7, user_count: 5, detail_view_count: 4, purchase_click_count: 3, purchase_success_count: 2, gmv_points: 176 }
+                ],
+                related_prompt_ids: ['prompt-membership-faq']
+            }),
+            decorateSmokeProductMetricRow({
+                product_id: 'shop-prod-cn-3',
+                product_name: '兑换卡套餐',
+                category: 'cards',
+                delivery_type: 'KEY',
+                is_active: true,
+                stock_count: 1,
+                available_inventory_count: 1,
+                fault_inventory_count: 0,
+                view_count: 70,
+                view_user_count: 28,
+                card_click_count: 28,
+                card_click_user_count: 17,
+                detail_view_count: 30,
+                detail_view_user_count: 20,
+                purchase_click_count: 17,
+                purchase_click_user_count: 10,
+                buyer_count: 4,
+                order_count: 4,
+                refunded_order_count: 0,
+                units_sold: 4,
+                gmv_points: 224,
+                delivery_success_count: 4,
+                delivery_risk_count: 0,
+                content_assisted_prompt_count: 1,
+                content_assisted_detail_view_count: 5,
+                content_assisted_purchase_click_count: 3,
+                content_assisted_purchase_success_count: 1,
+                content_assisted_gmv_points: 56,
+                top_prompt_id: 'prompt-card-guide',
+                low_conversion_score: 88,
+                bubble_size: 18,
+                quadrant_key: 'conversion_gap',
+                quadrant_label: '高曝光低转化',
+                tone: 'warning',
+                source_pages: [
+                    { key: 'shop', label: '商城页', count: 22, user_count: 14 },
+                    { key: 'home', label: '首页', count: 10, user_count: 6 }
+                ],
+                source_channels: [
+                    { key: 'shop_storefront', label: '商城自然浏览', count: 22, user_count: 14 },
+                    { key: 'homepage', label: '首页导流', count: 10, user_count: 6 }
+                ],
+                prompt_sources: [
+                    { prompt_id: 'prompt-card-guide', count: 5, user_count: 4, detail_view_count: 3, purchase_click_count: 2, purchase_success_count: 1, gmv_points: 56 }
+                ],
+                related_prompt_ids: ['prompt-card-guide']
+            })
+        ];
+    }
+
+    function buildSmokeProductSummarySamples() {
+        return {
+            user_signal_samples: {
+                shop_view: [
+                    { user_id: 'smoke-viewer-1', event_count: 4 },
+                    { user_id: 'smoke-viewer-2', event_count: 3 }
+                ],
+                buyer: [
+                    { user_id: 'smoke-buyer-1', order_count: 3, gmv_points: 564 },
+                    { user_id: 'smoke-buyer-2', order_count: 2, gmv_points: 376 }
+                ]
+            },
+            buyer_snapshot: [
+                { user_id: 'smoke-buyer-1', order_count: 3, gmv_points: 564, refunded_order_count: 0, segment_labels: ['首单成交', '窗口复购'] },
+                { user_id: 'smoke-buyer-2', order_count: 2, gmv_points: 376, refunded_order_count: 0, segment_labels: ['首单成交'] },
+                { user_id: 'smoke-buyer-3', order_count: 1, gmv_points: 188, refunded_order_count: 1, segment_labels: ['退款风险'] }
+            ],
+            buyer_segment_summary: [
+                {
+                    key: 'first_order_buyers',
+                    label: '首单成交',
+                    count: 9,
+                    tone: 'success',
+                    note: '当前窗口首次完成支付的用户样本',
+                    sample_users: [{ user_id: 'smoke-buyer-1', order_count: 1, gmv_points: 188 }]
+                },
+                {
+                    key: 'repeat_buyers',
+                    label: '窗口复购',
+                    count: 4,
+                    tone: 'warning',
+                    note: '当前窗口完成两笔及以上支付',
+                    sample_users: [{ user_id: 'smoke-buyer-2', order_count: 2, gmv_points: 376 }]
+                },
+                {
+                    key: 'refund_risk_buyers',
+                    label: '退款风险',
+                    count: 2,
+                    tone: 'danger',
+                    note: '当前窗口出现退款订单的买家',
+                    sample_users: [{ user_id: 'smoke-buyer-3', order_count: 1, gmv_points: 88, refunded_order_count: 1 }]
+                }
+            ],
+            first_purchase_destinations: [
+                { product_id: 'shop-prod-cn-1', product_name: 'CN 高级账号', user_count: 5, is_current_product: false },
+                { product_id: 'shop-prod-cn-2', product_name: 'CN 月付会员', user_count: 3, is_current_product: false },
+                { product_id: 'shop-prod-cn-3', product_name: '兑换卡套餐', user_count: 2, is_current_product: false }
+            ],
+            post_purchase_destinations: [
+                { product_id: 'shop-prod-cn-3', product_name: '兑换卡套餐', user_count: 2, order_count: 3, gmv_points: 168, first_followup_at: '2026-03-30T12:20:00+08:00' }
+            ]
+        };
+    }
+
+    function buildSmokeProductSiteComparisonFixture(activeSite = 'all') {
+        const normalizedActiveSite = normalizeSmokeAnalyticsSite(activeSite);
+        return {
+            active_site: normalizedActiveSite,
+            snapshots: [
+                {
+                    site: 'cn',
+                    label: 'CN',
+                    summary: {
+                        gmv_points: 2136,
+                        order_count: 14,
+                        unique_buyer_count: 12,
+                        buyer_count: 12,
+                        purchase_conversion_rate: 17.91
+                    }
+                },
+                {
+                    site: 'intl',
+                    label: 'INTL',
+                    summary: {
+                        gmv_points: 872,
+                        order_count: 8,
+                        unique_buyer_count: 7,
+                        buyer_count: 7,
+                        purchase_conversion_rate: 13.21
+                    }
+                }
+            ]
+        };
+    }
+
+    function buildSmokeProductSummaryFixture(rows = []) {
+        const safeRows = Array.isArray(rows) ? rows : [];
+        const summarySamples = buildSmokeProductSummarySamples();
+        const totals = safeRows.reduce((accumulator, row) => {
+            accumulator.active_product_count += row?.is_active === false ? 0 : 1;
+            accumulator.selling_product_count += row?.is_active === false ? 0 : 1;
+            accumulator.unique_buyer_count += Number(row?.buyer_count || 0);
+            accumulator.units_sold += Number(row?.units_sold || 0);
+            accumulator.order_count += Number(row?.order_count || 0);
+            accumulator.refunded_order_count += Number(row?.refunded_order_count || 0);
+            accumulator.gmv_points += Number(row?.gmv_points || 0);
+            accumulator.view_user_count += Number(row?.view_user_count || 0);
+            accumulator.view_count += Number(row?.view_count || 0);
+            accumulator.detail_view_user_count += Number(row?.detail_view_user_count || 0);
+            accumulator.detail_view_count += Number(row?.detail_view_count || 0);
+            accumulator.purchase_click_user_count += Number(row?.purchase_click_user_count || 0);
+            accumulator.purchase_click_count += Number(row?.purchase_click_count || 0);
+            accumulator.card_click_user_count += Number(row?.card_click_user_count || 0);
+            accumulator.card_click_count += Number(row?.card_click_count || 0);
+            accumulator.delivery_success_count += Number(row?.delivery_success_count || 0);
+            return accumulator;
+        }, {
+            active_product_count: 0,
+            selling_product_count: 0,
+            unique_buyer_count: 0,
+            units_sold: 0,
+            order_count: 0,
+            refunded_order_count: 0,
+            gmv_points: 0,
+            view_user_count: 0,
+            view_count: 0,
+            detail_view_user_count: 0,
+            detail_view_count: 0,
+            purchase_click_user_count: 0,
+            purchase_click_count: 0,
+            card_click_user_count: 0,
+            card_click_count: 0,
+            delivery_success_count: 0
+        });
+        const topProduct = safeRows.slice().sort((left, right) => Number(right?.gmv_points || 0) - Number(left?.gmv_points || 0))[0] || null;
+        const refundBase = totals.order_count + totals.refunded_order_count;
+
+        return {
+            ...totals,
+            avg_order_value: totals.order_count > 0 ? roundSmokeMetric(totals.gmv_points / totals.order_count, 2) : 0,
+            purchase_conversion_rate: totals.view_user_count > 0
+                ? roundSmokeMetric((totals.unique_buyer_count / totals.view_user_count) * 100, 2)
+                : 0,
+            refund_rate: refundBase > 0
+                ? roundSmokeMetric((totals.refunded_order_count / refundBase) * 100, 2)
+                : 0,
+            delivery_success_rate: totals.order_count > 0
+                ? roundSmokeMetric((totals.delivery_success_count / totals.order_count) * 100, 2)
+                : 0,
+            delivery_risk_product_count: safeRows.filter((row) => Number(row?.delivery_risk_count || 0) > 0).length,
+            metric_basis: '商品经营口径',
+            top_product_name: String(topProduct?.product_name || '').trim() || 'CN 高级账号',
+            ...summarySamples
+        };
+    }
+
+    function buildSmokeProductTrendFixture() {
+        return [
+            { day: '2026-03-25', view_count: 20, order_count: 1, gmv_points: 188 },
+            { day: '2026-03-26', view_count: 22, order_count: 2, gmv_points: 264 },
+            { day: '2026-03-27', view_count: 24, order_count: 2, gmv_points: 320 },
+            { day: '2026-03-28', view_count: 27, order_count: 3, gmv_points: 388 },
+            { day: '2026-03-29', view_count: 29, order_count: 3, gmv_points: 476 },
+            { day: '2026-03-30', view_count: 31, order_count: 4, gmv_points: 552 },
+            { day: '2026-03-31', view_count: 35, order_count: 7, gmv_points: 792 }
+        ];
+    }
+
+    function buildSmokeProductCategoryBreakdownFixture(rows = []) {
+        const bucketMap = new Map();
+        const totalGmv = rows.reduce((sum, row) => sum + Number(row?.gmv_points || 0), 0);
+
+        rows.forEach((row) => {
+            const category = String(row?.category || 'other').trim() || 'other';
+            const bucket = bucketMap.get(category) || {
+                category,
+                gmv_points: 0,
+                product_count: 0,
+                active_product_count: 0,
+                view_user_count: 0,
+                buyer_count: 0
+            };
+            bucket.gmv_points += Number(row?.gmv_points || 0);
+            bucket.product_count += 1;
+            bucket.active_product_count += row?.is_active === false ? 0 : 1;
+            bucket.view_user_count += Number(row?.view_user_count || 0);
+            bucket.buyer_count += Number(row?.buyer_count || 0);
+            bucketMap.set(category, bucket);
+        });
+
+        const normalizedRows = Array.from(bucketMap.values())
+            .map((row) => ({
+                ...row,
+                conversion_rate: Number(row.view_user_count || 0) > 0
+                    ? roundSmokeMetric((Number(row.buyer_count || 0) / Number(row.view_user_count || 0)) * 100, 2)
+                    : 0,
+                gmv_share_rate: totalGmv > 0
+                    ? roundSmokeMetric((Number(row.gmv_points || 0) / totalGmv) * 100, 2)
+                    : 0
+            }))
+            .sort((left, right) => Number(right?.gmv_points || 0) - Number(left?.gmv_points || 0));
+
+        return {
+            total_category_count: normalizedRows.length,
+            rows: normalizedRows
+        };
+    }
+
+    function buildSmokeProductMatrixFixture(rows = []) {
+        const items = rows
+            .slice()
+            .sort((left, right) => Number(right?.gmv_points || 0) - Number(left?.gmv_points || 0))
+            .map((row) => ({
+                product_id: row.product_id,
+                product_name: row.product_name,
+                category: row.category,
+                view_user_count: row.view_user_count,
+                conversion_rate: row.conversion_rate,
+                gmv_points: row.gmv_points,
+                bubble_size: row.bubble_size,
+                stock_count: row.stock_count,
+                quadrant_key: row.quadrant_key,
+                quadrant_label: row.quadrant_label,
+                tone: row.tone,
+                low_conversion_score: row.low_conversion_score,
+                related_prompt_ids: row.related_prompt_ids
+            }));
+        const summaryMap = new Map();
+
+        items.forEach((item) => {
+            const key = String(item?.quadrant_key || 'neutral').trim() || 'neutral';
+            const bucket = summaryMap.get(key) || {
+                key,
+                label: item?.quadrant_label || '经营观察',
+                tone: item?.tone || 'neutral',
+                count: 0
+            };
+            bucket.count += 1;
+            summaryMap.set(key, bucket);
+        });
+
+        return {
+            benchmark: {
+                exposure_midpoint: 30,
+                conversion_midpoint: 15
+            },
+            quadrant_summary: Array.from(summaryMap.values()),
+            items
+        };
+    }
+
+    function buildSmokeProductRankPayloads(rows = [], limit = 10) {
+        const safeLimit = Math.max(1, Number(limit) || 10);
+        const sortByMetric = (metricKey) => rows
+            .slice()
+            .sort((left, right) => Number(right?.[metricKey] || 0) - Number(left?.[metricKey] || 0))
+            .slice(0, safeLimit);
+
+        return {
+            salesTop: sortByMetric('units_sold'),
+            gmvTop: sortByMetric('gmv_points'),
+            conversionTop: sortByMetric('conversion_rate'),
+            refundRateTop: rows
+                .filter((row) => Number(row?.refund_rate || 0) > 0)
+                .sort((left, right) => Number(right?.refund_rate || 0) - Number(left?.refund_rate || 0))
+                .slice(0, safeLimit),
+            deliveryRiskRateTop: rows
+                .filter((row) => Number(row?.delivery_risk_rate || 0) > 0)
+                .sort((left, right) => Number(right?.delivery_risk_rate || 0) - Number(left?.delivery_risk_rate || 0))
+                .slice(0, safeLimit),
+            contentDrivenTop: rows
+                .filter((row) => Number(row?.content_assisted_gmv_points || 0) > 0)
+                .sort((left, right) => Number(right?.content_assisted_gmv_points || 0) - Number(left?.content_assisted_gmv_points || 0))
+                .slice(0, safeLimit),
+            highExposureLowConversion: rows
+                .filter((row) => String(row?.quadrant_key || '').trim() === 'conversion_gap')
+                .sort((left, right) => Number(right?.low_conversion_score || 0) - Number(left?.low_conversion_score || 0))
+                .slice(0, safeLimit)
+        };
+    }
+
+    function buildSmokeProductHealthPayloads(rows = [], limit = 10) {
+        const safeLimit = Math.max(1, Number(limit) || 10);
+        return {
+            lowStockProducts: rows
+                .filter((row) => Number(row?.stock_count || 0) > 0 && Number(row?.stock_count || 0) <= 1)
+                .slice(0, safeLimit),
+            soldOutProducts: rows
+                .filter((row) => Number(row?.stock_count || 0) <= 0)
+                .slice(0, safeLimit),
+            deliveryRiskProducts: rows
+                .filter((row) => Number(row?.delivery_risk_count || 0) > 0)
+                .slice(0, safeLimit),
+            refundRiskProducts: rows
+                .filter((row) => Number(row?.refunded_order_count || 0) > 0)
+                .slice(0, safeLimit),
+            inventoryTurnoverHints: [
+                {
+                    product_id: 'shop-prod-cn-1',
+                    tone: 'warning',
+                    title: 'CN 高级账号 库存仅剩 1 份',
+                    summary: '最近 7 天浏览和支付都在抬升，建议补货后再继续放量。'
+                },
+                {
+                    product_id: 'shop-prod-cn-2',
+                    tone: 'danger',
+                    title: 'CN 月付会员 已售罄且仍有履约风险',
+                    summary: '先处理履约风险订单，再决定是否重新上架或补充库存。'
+                }
+            ].slice(0, safeLimit)
+        };
+    }
+
+    function buildSmokeProductFunnelSummary(rows = []) {
+        const detailUsers = rows.reduce((sum, row) => sum + Number(row?.detail_view_user_count || 0), 0);
+        const intentUsers = rows.reduce((sum, row) => sum + Number(row?.purchase_click_user_count || 0), 0);
+        const paidUsers = rows.reduce((sum, row) => sum + Number(row?.buyer_count || 0), 0);
+        const deliveredOrders = rows.reduce((sum, row) => sum + Number(row?.delivery_success_count || 0), 0);
+        const cardClickUsers = rows.reduce((sum, row) => sum + Number(row?.card_click_user_count || 0), 0);
+
+        return {
+            stages: [
+                { key: 'detail_view', label: '详情浏览', value: detailUsers, note: '进入商品详情的用户', basis_label: '真实事件', basis_type: 'real' },
+                { key: 'purchase_click', label: '购买意图', value: intentUsers, note: '点击购买按钮的用户', basis_label: '真实事件', basis_type: 'real' },
+                { key: 'paid', label: '支付成功', value: paidUsers, note: '形成支付的用户', basis_label: '订单汇总', basis_type: 'real' },
+                { key: 'delivered', label: '发货成功', value: deliveredOrders, note: '已完成交付的订单', basis_label: '履约状态', basis_type: 'real' }
+            ],
+            card_click_user_count: cardClickUsers,
+            detail_to_intent_rate: detailUsers > 0 ? roundSmokeMetric((intentUsers / detailUsers) * 100, 2) : 0,
+            intent_to_paid_rate: intentUsers > 0 ? roundSmokeMetric((paidUsers / intentUsers) * 100, 2) : 0
+        };
+    }
+
+    function buildSmokeProductFunnelSiteComparisonFixture(activeSite = 'all') {
+        return {
+            active_site: normalizeSmokeAnalyticsSite(activeSite),
+            snapshots: [
+                {
+                    site: 'cn',
+                    label: 'CN',
+                    summary: {
+                        stages: [
+                            { label: '详情浏览', value: 42 },
+                            { label: '购买意图', value: 28 },
+                            { label: '支付成功', value: 11 },
+                            { label: '发货成功', value: 9 }
+                        ]
+                    }
+                },
+                {
+                    site: 'intl',
+                    label: 'INTL',
+                    summary: {
+                        stages: [
+                            { label: '详情浏览', value: 26 },
+                            { label: '购买意图', value: 15 },
+                            { label: '支付成功', value: 9 },
+                            { label: '发货成功', value: 8 }
+                        ]
+                    }
+                }
+            ]
+        };
+    }
+
+    function buildSmokeProductDetailExtras(productId = '') {
+        const detailMap = {
+            'shop-prod-cn-1': {
+                site_snapshots: [
+                    { site: 'cn', label: 'CN', summary: { gmv_points: 1692, order_count: 9, buyer_count: 8, purchase_conversion_rate: 19.05 } },
+                    { site: 'intl', label: 'INTL', summary: { gmv_points: 564, order_count: 3, buyer_count: 3, purchase_conversion_rate: 13.64 } }
+                ],
+                buyer_snapshot: [
+                    { user_id: 'acct-user-1', order_count: 2, gmv_points: 376, segment_labels: ['首单成交', '窗口复购'] },
+                    { user_id: 'acct-user-2', order_count: 1, gmv_points: 188, segment_labels: ['首单成交'] }
+                ],
+                buyer_segment_summary: [
+                    { label: '本商品首购', count: 6, tone: 'success', note: '首次购买就落在这件商品', sample_users: [{ user_id: 'acct-user-1', order_count: 1, gmv_points: 188 }] },
+                    { label: '窗口复购', count: 2, tone: 'warning', note: '当前窗口完成了追加购买', sample_users: [{ user_id: 'acct-user-2', order_count: 2, gmv_points: 376 }] }
+                ],
+                first_purchase_destinations: [
+                    { product_id: 'shop-prod-cn-1', product_name: 'CN 高级账号', user_count: 6, is_current_product: true }
+                ],
+                cross_sell_destinations: [
+                    { product_id: 'shop-prod-cn-3', product_name: '兑换卡套餐', user_count: 2, order_count: 2, gmv_points: 112 }
+                ],
+                post_purchase_destinations: [
+                    { product_id: 'shop-prod-cn-3', product_name: '兑换卡套餐', user_count: 2, order_count: 2, gmv_points: 112, first_followup_at: '2026-03-30T16:20:00+08:00' }
+                ],
+                refund_breakdown: [],
+                delivery_breakdown: [
+                    { status: 'delivered', label: '已发货', count: 10, user_count: 9, tone: 'success', site_rows: [{ site: 'cn', label: 'CN', count: 7 }, { site: 'intl', label: 'INTL', count: 3 }], site_summary: 'CN 7 / INTL 3' },
+                    { status: 'processing', label: '处理中', count: 1, user_count: 1, tone: 'warning', site_rows: [{ site: 'cn', label: 'CN', count: 1 }], site_summary: 'CN 1' }
+                ],
+                trend: [
+                    { day: '2026-03-27', view_count: 6, order_count: 1, gmv_points: 188, delivery_success_count: 1 },
+                    { day: '2026-03-28', view_count: 7, order_count: 2, gmv_points: 376, delivery_success_count: 2 },
+                    { day: '2026-03-29', view_count: 8, order_count: 2, gmv_points: 376, delivery_success_count: 1 },
+                    { day: '2026-03-30', view_count: 9, order_count: 3, gmv_points: 564, delivery_success_count: 3 },
+                    { day: '2026-03-31', view_count: 10, order_count: 4, gmv_points: 752, delivery_success_count: 3 }
+                ],
+                recentOrders: [
+                    { order_id: 'SHOP-SMOKE-ACCT-003', user_id: 'acct-user-2', site: 'cn', quantity: 1, total_points: 188, delivery_status: 'delivered', refund_status: 'none' },
+                    { order_id: 'SHOP-SMOKE-ACCT-002', user_id: 'acct-user-1', site: 'intl', quantity: 1, total_points: 188, delivery_status: 'processing', refund_status: 'none' },
+                    { order_id: 'SHOP-SMOKE-ACCT-001', user_id: 'acct-user-1', site: 'cn', quantity: 2, total_points: 376, delivery_status: 'delivered', refund_status: 'none' }
+                ]
+            },
+            'shop-prod-cn-2': {
+                site_snapshots: [
+                    { site: 'cn', label: 'CN', summary: { gmv_points: 352, order_count: 4, buyer_count: 4, purchase_conversion_rate: 18.18 } },
+                    { site: 'intl', label: 'INTL', summary: { gmv_points: 176, order_count: 2, buyer_count: 1, purchase_conversion_rate: 8.33 } }
+                ],
+                buyer_snapshot: [
+                    { user_id: 'membership-user-1', order_count: 1, gmv_points: 88, segment_labels: ['首单成交'] },
+                    { user_id: 'membership-user-2', order_count: 1, gmv_points: 88, segment_labels: ['退款风险'] }
+                ],
+                buyer_segment_summary: [
+                    { label: '本商品首购', count: 3, tone: 'success', note: '首购集中在月付会员承接', sample_users: [{ user_id: 'membership-user-1', order_count: 1, gmv_points: 88 }] },
+                    { label: '退款风险', count: 2, tone: 'danger', note: '近期已有退款与售后回写', sample_users: [{ user_id: 'membership-user-2', order_count: 1, gmv_points: 88, refunded_order_count: 1 }] }
+                ],
+                first_purchase_destinations: [
+                    { product_id: 'shop-prod-cn-2', product_name: 'CN 月付会员', user_count: 3, is_current_product: true }
+                ],
+                cross_sell_destinations: [
+                    { product_id: 'shop-prod-cn-1', product_name: 'CN 高级账号', user_count: 1, order_count: 1, gmv_points: 188 }
+                ],
+                post_purchase_destinations: [
+                    { product_id: 'shop-prod-cn-1', product_name: 'CN 高级账号', user_count: 1, order_count: 1, gmv_points: 188, first_followup_at: '2026-03-31T09:40:00+08:00' }
+                ],
+                refund_breakdown: [
+                    { status: 'refunded', label: '已退款', count: 2, user_count: 2, tone: 'danger', site_rows: [{ site: 'cn', label: 'CN', count: 2 }], site_summary: 'CN 2' }
+                ],
+                delivery_breakdown: [
+                    { status: 'processing', label: '处理中', count: 2, user_count: 2, tone: 'warning', site_rows: [{ site: 'cn', label: 'CN', count: 1 }, { site: 'intl', label: 'INTL', count: 1 }], site_summary: 'CN 1 / INTL 1' },
+                    { status: 'delivered', label: '已发货', count: 3, user_count: 3, tone: 'success', site_rows: [{ site: 'cn', label: 'CN', count: 2 }, { site: 'intl', label: 'INTL', count: 1 }], site_summary: 'CN 2 / INTL 1' }
+                ],
+                trend: [
+                    { day: '2026-03-27', view_count: 5, order_count: 1, gmv_points: 88, delivery_success_count: 1 },
+                    { day: '2026-03-28', view_count: 6, order_count: 1, gmv_points: 88, delivery_success_count: 0 },
+                    { day: '2026-03-29', view_count: 6, order_count: 1, gmv_points: 88, delivery_success_count: 1 },
+                    { day: '2026-03-30', view_count: 7, order_count: 1, gmv_points: 88, delivery_success_count: 0 },
+                    { day: '2026-03-31', view_count: 10, order_count: 2, gmv_points: 176, delivery_success_count: 1 }
+                ],
+                recentOrders: [
+                    { order_id: 'SHOP-SMOKE-MEMBER-003', user_id: 'membership-user-2', site: 'cn', quantity: 1, total_points: 88, delivery_status: 'processing', refund_status: 'refunded' },
+                    { order_id: 'SHOP-SMOKE-MEMBER-002', user_id: 'membership-user-1', site: 'intl', quantity: 1, total_points: 88, delivery_status: 'delivered', refund_status: 'none' },
+                    { order_id: 'SHOP-SMOKE-MEMBER-001', user_id: 'membership-user-1', site: 'cn', quantity: 1, total_points: 88, delivery_status: 'processing', refund_status: 'none' }
+                ]
+            },
+            'shop-prod-cn-3': {
+                site_snapshots: [
+                    { site: 'cn', label: 'CN', summary: { gmv_points: 112, order_count: 2, buyer_count: 2, purchase_conversion_rate: 7.69 } },
+                    { site: 'intl', label: 'INTL', summary: { gmv_points: 112, order_count: 2, buyer_count: 2, purchase_conversion_rate: 11.11 } }
+                ],
+                buyer_snapshot: [
+                    { user_id: 'card-user-1', order_count: 1, gmv_points: 56, segment_labels: ['首单成交'] }
+                ],
+                buyer_segment_summary: [
+                    { label: '本商品首购', count: 2, tone: 'success', note: '这件商品更多承接首单试探购买', sample_users: [{ user_id: 'card-user-1', order_count: 1, gmv_points: 56 }] },
+                    { label: '继续观察', count: 4, tone: 'warning', note: '高曝光低转化，仍需继续优化承接', sample_users: [{ user_id: 'card-user-2', order_count: 0, gmv_points: 0 }] }
+                ],
+                first_purchase_destinations: [
+                    { product_id: 'shop-prod-cn-3', product_name: '兑换卡套餐', user_count: 2, is_current_product: true }
+                ],
+                cross_sell_destinations: [],
+                post_purchase_destinations: [],
+                refund_breakdown: [],
+                delivery_breakdown: [
+                    { status: 'delivered', label: '已发货', count: 4, user_count: 4, tone: 'success', site_rows: [{ site: 'cn', label: 'CN', count: 2 }, { site: 'intl', label: 'INTL', count: 2 }], site_summary: 'CN 2 / INTL 2' }
+                ],
+                trend: [
+                    { day: '2026-03-27', view_count: 8, order_count: 0, gmv_points: 0, delivery_success_count: 0 },
+                    { day: '2026-03-28', view_count: 9, order_count: 1, gmv_points: 56, delivery_success_count: 1 },
+                    { day: '2026-03-29', view_count: 10, order_count: 0, gmv_points: 0, delivery_success_count: 0 },
+                    { day: '2026-03-30', view_count: 11, order_count: 1, gmv_points: 56, delivery_success_count: 1 },
+                    { day: '2026-03-31', view_count: 12, order_count: 2, gmv_points: 112, delivery_success_count: 2 }
+                ],
+                recentOrders: [
+                    { order_id: 'SHOP-SMOKE-CARD-002', user_id: 'card-user-2', site: 'intl', quantity: 1, total_points: 56, delivery_status: 'delivered', refund_status: 'none' },
+                    { order_id: 'SHOP-SMOKE-CARD-001', user_id: 'card-user-1', site: 'cn', quantity: 1, total_points: 56, delivery_status: 'delivered', refund_status: 'none' }
+                ]
+            }
+        };
+
+        return detailMap[String(productId || '').trim()] || null;
+    }
+
+    function buildSmokeProductEventStageSummary(row = {}) {
+        return [
+            {
+                key: 'product_card_click',
+                label: '商品卡点击',
+                count: Number(row?.card_click_count || 0),
+                user_count: Number(row?.card_click_user_count || 0),
+                status: Number(row?.card_click_count || 0) > 0 ? 'ready' : 'collecting',
+                basis: 'product_card_click',
+                basis_label: '新版埋点'
+            },
+            {
+                key: 'product_detail_view',
+                label: '详情浏览',
+                count: Number(row?.detail_view_count || 0),
+                user_count: Number(row?.detail_view_user_count || 0),
+                status: Number(row?.detail_view_count || 0) > 0 ? 'ready' : 'collecting',
+                basis: 'product_detail_view',
+                basis_label: '新版埋点'
+            },
+            {
+                key: 'product_purchase_click',
+                label: '购买点击',
+                count: Number(row?.purchase_click_count || 0),
+                user_count: Number(row?.purchase_click_user_count || 0),
+                status: Number(row?.purchase_click_count || 0) > 0 ? 'ready' : 'collecting',
+                basis: 'product_purchase_click',
+                basis_label: '新版埋点'
+            },
+            {
+                key: 'product_purchase_success',
+                label: '支付成功',
+                count: Number(row?.buyer_count || 0),
+                user_count: Number(row?.buyer_count || 0),
+                status: Number(row?.buyer_count || 0) > 0 ? 'ready' : 'collecting',
+                basis: 'shop_purchase + product_purchase_success',
+                basis_label: '兼容汇总'
+            }
+        ];
+    }
+
+    function buildSmokeProductDashboardBundleFixture(options = {}) {
+        const site = normalizeSmokeAnalyticsSite(options.site);
+        const limit = Math.max(1, Number(options.limit) || 10);
+        const rows = buildSmokeProductFixtureRows();
+        const rankPayloads = buildSmokeProductRankPayloads(rows, limit);
+        const healthPayloads = buildSmokeProductHealthPayloads(rows, limit);
+
+        return {
+            success: true,
+            site,
+            generated_at: new Date(now.getTime() + 45 * 60 * 1000).toISOString(),
+            range: { days: clampSmokeAnalyticsDays(options.days, 7) },
+            limit,
+            partial_failure_count: 0,
+            segments: {
+                summary: buildSmokeProductBundleSegment(buildSmokeProductSummaryFixture(rows)),
+                trend: buildSmokeProductBundleSegment(buildSmokeProductTrendFixture()),
+                siteComparison: buildSmokeProductBundleSegment(buildSmokeProductSiteComparisonFixture(site)),
+                categoryBreakdown: buildSmokeProductBundleSegment(buildSmokeProductCategoryBreakdownFixture(rows)),
+                productMatrix: buildSmokeProductBundleSegment(buildSmokeProductMatrixFixture(rows)),
+                salesTop: buildSmokeProductBundleSegment(rankPayloads.salesTop),
+                gmvTop: buildSmokeProductBundleSegment(rankPayloads.gmvTop),
+                conversionTop: buildSmokeProductBundleSegment(rankPayloads.conversionTop),
+                refundRateTop: buildSmokeProductBundleSegment(rankPayloads.refundRateTop),
+                deliveryRiskRateTop: buildSmokeProductBundleSegment(rankPayloads.deliveryRiskRateTop),
+                contentDrivenTop: buildSmokeProductBundleSegment(rankPayloads.contentDrivenTop),
+                highExposureLowConversion: buildSmokeProductBundleSegment(rankPayloads.highExposureLowConversion),
+                lowStockProducts: buildSmokeProductBundleSegment(healthPayloads.lowStockProducts),
+                soldOutProducts: buildSmokeProductBundleSegment(healthPayloads.soldOutProducts),
+                deliveryRiskProducts: buildSmokeProductBundleSegment(healthPayloads.deliveryRiskProducts),
+                refundRiskProducts: buildSmokeProductBundleSegment(healthPayloads.refundRiskProducts),
+                inventoryTurnoverHints: buildSmokeProductBundleSegment(healthPayloads.inventoryTurnoverHints)
+            }
+        };
+    }
+
+    function buildSmokeProductSummaryBundleFixture(options = {}) {
+        const dashboard = buildSmokeProductDashboardBundleFixture(options);
+        return {
+            success: true,
+            site: dashboard.site,
+            generated_at: dashboard.generated_at,
+            range: dashboard.range,
+            partial_failure_count: 0,
+            segments: {
+                summary: dashboard.segments.summary,
+                trend: dashboard.segments.trend,
+                siteComparison: dashboard.segments.siteComparison,
+                categoryBreakdown: dashboard.segments.categoryBreakdown,
+                productMatrix: dashboard.segments.productMatrix
+            }
+        };
+    }
+
+    function buildSmokeProductRankBundleFixture(options = {}) {
+        const dashboard = buildSmokeProductDashboardBundleFixture(options);
+        return {
+            success: true,
+            site: dashboard.site,
+            generated_at: dashboard.generated_at,
+            range: dashboard.range,
+            limit: dashboard.limit,
+            partial_failure_count: 0,
+            segments: {
+                salesTop: dashboard.segments.salesTop,
+                gmvTop: dashboard.segments.gmvTop,
+                conversionTop: dashboard.segments.conversionTop,
+                refundRateTop: dashboard.segments.refundRateTop,
+                deliveryRiskRateTop: dashboard.segments.deliveryRiskRateTop,
+                contentDrivenTop: dashboard.segments.contentDrivenTop,
+                highExposureLowConversion: dashboard.segments.highExposureLowConversion
+            }
+        };
+    }
+
+    function buildSmokeProductHealthBundleFixture(options = {}) {
+        const dashboard = buildSmokeProductDashboardBundleFixture(options);
+        return {
+            success: true,
+            site: dashboard.site,
+            generated_at: dashboard.generated_at,
+            range: dashboard.range,
+            limit: dashboard.limit,
+            partial_failure_count: 0,
+            segments: {
+                lowStockProducts: dashboard.segments.lowStockProducts,
+                soldOutProducts: dashboard.segments.soldOutProducts,
+                deliveryRiskProducts: dashboard.segments.deliveryRiskProducts,
+                refundRiskProducts: dashboard.segments.refundRiskProducts,
+                inventoryTurnoverHints: dashboard.segments.inventoryTurnoverHints
+            }
+        };
+    }
+
+    function buildSmokeProductFunnelBundleFixture(options = {}) {
+        const site = normalizeSmokeAnalyticsSite(options.site);
+        const limit = Math.max(1, Number(options.limit) || 6);
+        const rows = buildSmokeProductFixtureRows();
+        const productRows = rows
+            .slice()
+            .sort((left, right) => Number(right?.detail_view_user_count || 0) - Number(left?.detail_view_user_count || 0))
+            .slice(0, limit)
+            .map((row) => ({
+                product_id: row.product_id,
+                product_name: row.product_name,
+                category: row.category,
+                detail_view_user_count: row.detail_view_user_count,
+                purchase_click_user_count: row.purchase_click_user_count,
+                buyer_count: row.buyer_count,
+                delivery_success_rate: row.delivery_success_rate,
+                intent_to_paid_rate: row.intent_to_paid_rate
+            }));
+
+        return {
+            success: true,
+            site,
+            generated_at: new Date(now.getTime() + 45 * 60 * 1000).toISOString(),
+            range: { days: clampSmokeAnalyticsDays(options.days, 7) },
+            limit,
+            partial_failure_count: 0,
+            segments: {
+                summary: buildSmokeProductBundleSegment(buildSmokeProductFunnelSummary(rows)),
+                siteComparison: buildSmokeProductBundleSegment(buildSmokeProductFunnelSiteComparisonFixture(site)),
+                productRows: buildSmokeProductBundleSegment(productRows)
+            }
+        };
+    }
+
+    function buildSmokeProductDetailBundleFixture(options = {}) {
+        const productId = String(options.productId || '').trim();
+        const recentOrderLimit = Math.max(1, Number(options.recentOrderLimit) || 6);
+        const row = buildSmokeProductFixtureRows().find((item) => item.product_id === productId) || null;
+        if (!row) {
+            return null;
+        }
+
+        const extras = buildSmokeProductDetailExtras(productId) || {};
+        const summary = {
+            ...row,
+            buyer_snapshot: Array.isArray(extras.buyer_snapshot) ? extras.buyer_snapshot : [],
+            buyer_segment_summary: Array.isArray(extras.buyer_segment_summary) ? extras.buyer_segment_summary : [],
+            first_purchase_destinations: Array.isArray(extras.first_purchase_destinations) ? extras.first_purchase_destinations : [],
+            cross_sell_destinations: Array.isArray(extras.cross_sell_destinations) ? extras.cross_sell_destinations : [],
+            post_purchase_destinations: Array.isArray(extras.post_purchase_destinations) ? extras.post_purchase_destinations : [],
+            refund_breakdown: Array.isArray(extras.refund_breakdown) ? extras.refund_breakdown : [],
+            delivery_breakdown: Array.isArray(extras.delivery_breakdown) ? extras.delivery_breakdown : [],
+            event_stage_summary: Array.isArray(extras.event_stage_summary) ? extras.event_stage_summary : buildSmokeProductEventStageSummary(row),
+            site_snapshots: Array.isArray(extras.site_snapshots) ? extras.site_snapshots : [],
+            top_source_page: deepClone(row.source_pages?.[0] || null),
+            top_source_channel: deepClone(row.source_channels?.[0] || null),
+            top_prompt_source: deepClone(row.prompt_sources?.[0] || null)
+        };
+        const funnelSummary = {
+            product_id: row.product_id,
+            stages: [
+                { key: 'detail_view', label: '详情浏览', value: row.detail_view_user_count, note: '进入单品详情的用户', basis_label: '真实事件', basis_type: 'real' },
+                { key: 'purchase_click', label: '购买意图', value: row.purchase_click_user_count, note: '点击购买按钮的用户', basis_label: '真实事件', basis_type: 'real' },
+                { key: 'paid', label: '支付成功', value: row.buyer_count, note: '完成支付的用户', basis_label: '订单汇总', basis_type: 'real' },
+                { key: 'delivered', label: '发货成功', value: row.delivery_success_count, note: '交付成功的订单', basis_label: '履约状态', basis_type: 'real' }
+            ],
+            card_click_user_count: row.card_click_user_count,
+            detail_to_intent_rate: row.detail_to_intent_rate,
+            intent_to_paid_rate: row.intent_to_paid_rate
+        };
+
+        return {
+            success: true,
+            site: normalizeSmokeAnalyticsSite(options.site),
+            product_id: productId,
+            generated_at: new Date(now.getTime() + 45 * 60 * 1000).toISOString(),
+            range: { days: clampSmokeAnalyticsDays(options.days, 7) },
+            recent_order_limit: recentOrderLimit,
+            segments: {
+                summary: buildSmokeProductBundleSegment(summary),
+                trend: buildSmokeProductBundleSegment(Array.isArray(extras.trend) ? extras.trend : []),
+                funnel: buildSmokeProductBundleSegment({ summary: funnelSummary }),
+                recentOrders: buildSmokeProductBundleSegment((Array.isArray(extras.recentOrders) ? extras.recentOrders : []).slice(0, recentOrderLimit))
+            }
+        };
+    }
+
     function buildSmokeAnalyticsPointsHealth(site = 'all') {
         const profile = getSmokeAnalyticsProfile(site);
         return {
@@ -5312,6 +6205,63 @@
                     partial_failure_count: 0,
                     summaries
                 });
+            }
+
+            if (adminRoute === 'analytics/product-dashboard-bundle') {
+                return createResponse(buildSmokeProductDashboardBundleFixture({
+                    site: url.searchParams.get('site') || 'all',
+                    days: url.searchParams.get('days') || 7,
+                    limit: url.searchParams.get('limit') || 10
+                }));
+            }
+
+            if (adminRoute === 'analytics/product-summary-bundle') {
+                return createResponse(buildSmokeProductSummaryBundleFixture({
+                    site: url.searchParams.get('site') || 'all',
+                    days: url.searchParams.get('days') || 7
+                }));
+            }
+
+            if (adminRoute === 'analytics/product-rank-bundle') {
+                return createResponse(buildSmokeProductRankBundleFixture({
+                    site: url.searchParams.get('site') || 'all',
+                    days: url.searchParams.get('days') || 7,
+                    limit: url.searchParams.get('limit') || 10
+                }));
+            }
+
+            if (adminRoute === 'analytics/product-health-bundle') {
+                return createResponse(buildSmokeProductHealthBundleFixture({
+                    site: url.searchParams.get('site') || 'all',
+                    days: url.searchParams.get('days') || 7,
+                    limit: url.searchParams.get('limit') || 10
+                }));
+            }
+
+            if (adminRoute === 'analytics/product-funnel-bundle') {
+                return createResponse(buildSmokeProductFunnelBundleFixture({
+                    site: url.searchParams.get('site') || 'all',
+                    days: url.searchParams.get('days') || 7,
+                    limit: url.searchParams.get('limit') || 6
+                }));
+            }
+
+            if (adminRoute === 'analytics/product-detail-bundle') {
+                const productDetailPayload = buildSmokeProductDetailBundleFixture({
+                    site: url.searchParams.get('site') || 'all',
+                    days: url.searchParams.get('days') || 7,
+                    productId: url.searchParams.get('productId') || '',
+                    recentOrderLimit: url.searchParams.get('recentOrderLimit') || 6
+                });
+
+                if (!productDetailPayload) {
+                    return createResponse({
+                        success: false,
+                        message: 'Product detail smoke fixture not found'
+                    }, 404);
+                }
+
+                return createResponse(productDetailPayload);
             }
 
             if (adminRoute === 'analytics/panel-support-bundle') {

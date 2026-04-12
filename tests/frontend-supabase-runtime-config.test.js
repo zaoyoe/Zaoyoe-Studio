@@ -1416,7 +1416,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['privacy.html', 'css/privacy-page.css?v=20260324_PRIVACY_STYLES_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
-        ['shop.html', 'css/shop-page.css?v=20260324_SHOP_RUNTIME_STYLE_1'],
+        ['shop.html', 'css/shop-page.css?v=20260412_SHOP_GRID_WIDTH_ALIGN_1'],
         ['admin-studio.html', 'css/admin-studio-page.css?v=20260411_HOMEPAGE_TICKER_SPACING_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
@@ -1505,7 +1505,7 @@ test('selected preview showcase pages no longer embed inline style attributes', 
 
 test('shop and archived index pages no longer embed inline style attributes', () => {
     const expectations = new Map([
-        ['shop.html', 'css/shop-page.css?v=20260324_SHOP_RUNTIME_STYLE_1'],
+        ['shop.html', 'css/shop-page.css?v=20260412_SHOP_GRID_WIDTH_ALIGN_1'],
         ['index_old.html', 'css/index-old.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1']
     ]);
     const inlineStyleAttributePattern = /\sstyle\s*=\s*["']/i;
@@ -1855,6 +1855,15 @@ test('shop client runtime renderers externalize product cards, purchase feedback
     const runtimeMarkers = [
         'buildShopStatusMessage: function (message',
         'setCssVariables: function (element, variables = {})',
+        'isShopImageSource: function (value) {',
+        'getOptimizedShopImageUrl: function (url, options = {}) {',
+        "const { format = 'avif' } = options;",
+        'warmShopCardLeadImages: function (products = []) {',
+        'setShopCardImageSource: function (cardImage, originalUrl) {',
+        'handleShopCardImageError: function (cardImage, originalUrl) {',
+        'const SHOP_GRID_EAGER_IMAGE_COUNT = 4;',
+        'const shouldLoadImageEagerly = index < SHOP_GRID_EAGER_IMAGE_COUNT;',
+        "productImage.loading = shouldLoadImageEagerly ? 'eager' : 'lazy';",
         'setDiscountMessage: function (message = \'\'',
         'buildDiscountAssetCardMarkup: function (item = {}, { selected = false, claimable = false } = {})',
         'renderPurchaseDiscountAssets: function ()',
@@ -1935,7 +1944,7 @@ test('shop storefront preserves the initial skeleton layout while first-load dat
         'js/shop-client.js should keep the server-rendered shop skeleton layout stable when the first request is still pending'
     );
     assert.equal(
-        shopHtmlSource.includes('js/shop-client.js?v=20260409_SHOP_DISCOUNT_ASSETS_P1_1'),
+        shopHtmlSource.includes('js/shop-client.js?v=20260412_SHOP_CARD_IMAGE_OPT_1'),
         true,
         'shop.html should reference the latest shop client runtime for the discount asset storefront flow'
     );
@@ -9490,9 +9499,6 @@ test('analytics product tab shell adds a dedicated product analytics surface and
         '仍异常',
         '最该复查的商品',
         'showPriorityProducts: true',
-        '排前原因',
-        '建议先做',
-        '验证方式',
         '验证已通过',
         '仍待验证',
         '最近一次验证依据',
@@ -9515,12 +9521,7 @@ test('analytics product tab shell adds a dedicated product analytics surface and
         'analytics-product-alert-card__digest',
         '本轮经营判断',
         'function buildAnalyticsProductAlertGuidance(item = {}, summary = {}) {',
-        'analytics-product-alert-card__guidance',
-        '就地经营建议',
-        '为什么重要',
         'function buildAnalyticsProductListGuidance(item = {}, options = {}) {',
-        'analytics-product-inline-guidance',
-        '经营建议',
         'function buildAnalyticsProductCategoryGuidance(row = {}, index = 0, payload = {}) {',
         '核心类目',
         '低转化类目',
@@ -9556,6 +9557,21 @@ test('analytics product tab shell adds a dedicated product analytics surface and
 
     for (const marker of productPanelMarkers) {
         assert.equal(panelLoaderSource.includes(marker), true, `js/admin-analytics-panel-loaders.js should contain ${marker}`);
+    }
+
+    const removedGuidanceMarkers = [
+        '排前原因',
+        '建议先做',
+        '验证方式',
+        'analytics-product-alert-card__guidance',
+        '就地经营建议',
+        '为什么重要',
+        'analytics-product-inline-guidance',
+        '经营建议'
+    ];
+
+    for (const marker of removedGuidanceMarkers) {
+        assert.equal(panelLoaderSource.includes(marker), false, `js/admin-analytics-panel-loaders.js should not contain ${marker}`);
     }
 
     assert.equal(workbenchSource.includes("case 'analytics-product':"), true, 'analytics workbench routing should accept analytics-product destinations');
@@ -9599,8 +9615,9 @@ test('analytics product tab shell adds a dedicated product analytics surface and
     assert.equal(shopSource.includes('订单承接链'), true, 'shop admin should label user-driven order drill-down summaries explicitly');
     assert.equal(shopSource.includes('退款相关订单'), true, 'shop admin should prioritize refund-related order issues inside the user commerce order flow');
     assert.equal(shopSource.includes('履约死信订单'), true, 'shop admin should prioritize dead-letter fulfillment orders inside the user commerce order flow');
-    assert.equal(shopSource.includes('为什么优先'), true, 'shop admin should explain why an order issue is prioritized');
-    assert.equal(shopSource.includes('验证方式'), true, 'shop admin should surface how to verify an order issue has been resolved');
+    assert.equal(shopSource.includes('为什么优先'), false, 'shop admin should no longer render why-priority guidance copy');
+    assert.equal(shopSource.includes('建议先做'), false, 'shop admin should no longer render next-action guidance copy');
+    assert.equal(shopSource.includes('验证方式'), false, 'shop admin should no longer render verification guidance copy');
     assert.equal(shopSource.includes("case 'order-user-flow-focus':"), true, 'shop admin should route order user-flow focus actions through delegated actions');
     assert.equal(shopSource.includes("case 'order-user-flow-open-destination':"), true, 'shop admin should route user-commerce priority actions to downstream payment and ticket destinations');
     assert.equal(shopSource.includes('看支付问题'), true, 'shop admin should provide a payment follow-up action from user-commerce order flow priorities');
@@ -9728,11 +9745,7 @@ test('analytics panel loaders externalize dashboard fetch-and-render layers out 
         'analytics-content-detail',
         'analytics-ops-cockpit__overview',
         'analytics-ops-cockpit__actions',
-        'analytics-ops-cockpit__guidance',
         'analytics-ops-cockpit__issue-grid',
-        '为什么优先',
-        '建议先做',
-        '验证方式',
         "destination: 'analytics-ops'",
         "destination: 'ops-alerts-health'",
         'buildAnalyticsContentCommerceIssueCards(detail = {})',
@@ -9778,6 +9791,17 @@ test('analytics panel loaders externalize dashboard fetch-and-render layers out 
 
     for (const marker of helperMarkers) {
         assert.equal(panelLoaderSource.includes(marker), true, `js/admin-analytics-panel-loaders.js should contain ${marker}`);
+    }
+
+    const removedOpsGuidanceMarkers = [
+        'analytics-ops-cockpit__guidance',
+        '为什么优先',
+        '建议先做',
+        '验证方式'
+    ];
+
+    for (const marker of removedOpsGuidanceMarkers) {
+        assert.equal(panelLoaderSource.includes(marker), false, `js/admin-analytics-panel-loaders.js should not contain ${marker}`);
     }
 
     assert.equal(adminStudioHtml.includes('id="userTrendPanel"'), true, 'admin-studio.html should expose a user trend panel mount');
@@ -9833,17 +9857,17 @@ test('analytics panel loaders externalize dashboard fetch-and-render layers out 
         'admin-analytics.js should leave a shell note for externalized panel fetchers'
     );
     assert.equal(
-        adminStudioHtml.includes('js/admin-analytics-panel-loaders.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1'),
+        adminStudioHtml.includes('js/admin-analytics-panel-loaders.js?v=20260412_PRODUCT_DETAIL_SWITCHER_2'),
         true,
         'admin-studio.html should load the analytics panel-loader helper'
     );
     assert.equal(
-        adminStudioHtml.indexOf('js/admin-analytics-runtime-controls.js?v=20260405_ANALYTICS_RUNTIME_CONTROLS_1') < adminStudioHtml.indexOf('js/admin-analytics-panel-loaders.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1'),
+        adminStudioHtml.indexOf('js/admin-analytics-runtime-controls.js?v=20260405_ANALYTICS_RUNTIME_CONTROLS_1') < adminStudioHtml.indexOf('js/admin-analytics-panel-loaders.js?v=20260412_PRODUCT_DETAIL_SWITCHER_2'),
         true,
         'admin-studio.html should load the panel-loader helper after the runtime-controls shell'
     );
     assert.equal(
-        adminStudioHtml.indexOf('js/admin-analytics-panel-loaders.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1') < adminStudioHtml.indexOf('js/admin-analytics-workbench.js?v=20260407_ANALYTICS_WORKBENCH_BUNDLE_13'),
+        adminStudioHtml.indexOf('js/admin-analytics-panel-loaders.js?v=20260412_PRODUCT_DETAIL_SWITCHER_2') < adminStudioHtml.indexOf('js/admin-analytics-workbench.js?v=20260407_ANALYTICS_WORKBENCH_BUNDLE_13'),
         true,
         'admin-studio.html should load the panel-loader helper before downstream analytics helpers'
     );
@@ -10530,8 +10554,8 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(indexSource.includes('./supabase-guestbook-functions.js?v=20260404_GUESTBOOK_PHASE3_EVENTS_1'), true, 'index.html should load the phase 3 guestbook runtime');
     assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260404_GUESTBOOK_PHASE3_EVENTS_1'), true, 'guestbook.html should load the phase 3 guestbook runtime');
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260404_GUESTBOOK_PHASE3_EVENTS_1'), true, 'index_old.html should load the phase 3 guestbook runtime');
-    assert.equal(shopSource.includes('js/shop-client.js?v=20260409_SHOP_DISCOUNT_ASSETS_P1_1'), true, 'shop.html should load the latest asset-aware shop runtime');
-    assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260409_SHOP_DISCOUNT_ASSETS_P1_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
+    assert.equal(shopSource.includes('js/shop-client.js?v=20260412_SHOP_CARD_IMAGE_OPT_1'), true, 'shop.html should load the latest asset-aware shop runtime');
+    assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260412_SHOP_CARD_IMAGE_OPT_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
     assert.equal(verifyPageSource.includes('js/components/WalletModal.js?v=20260405_WALLET_RUNTIME_TRACKING_1'), true, 'verify.html should load the latest tracking-aware wallet modal runtime');
 });
 
@@ -11797,6 +11821,18 @@ test('analytics user drill-down carries commerce context into the user detail mo
         assert.equal(adminUsersSource.includes(marker), true, `admin-users.js should contain ${marker}`);
     }
 
+    const removedUserGuidanceMarkers = [
+        '经营建议',
+        '为什么优先',
+        '为什么重要',
+        '建议先做',
+        '验证方式'
+    ];
+
+    for (const marker of removedUserGuidanceMarkers) {
+        assert.equal(adminUsersSource.includes(marker), false, `admin-users.js should not contain ${marker}`);
+    }
+
     assert.equal(
         adminUsersSource.includes("const pendingSelections = Object.entries(pendingBanState).map(([scope, state]) => ({"),
         true,
@@ -11815,10 +11851,10 @@ test('analytics user drill-down carries commerce context into the user detail mo
         assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
     }
 
-    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260411_OPS_ALERT_CASE_ACTION_FEEDBACK_1'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
+    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260412_PRODUCT_DETAIL_SWITCHER_2'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
     assert.equal(adminStudioHtml.includes('admin-users.js?v=20260410_ADMIN_USERS_BAN_FIX_2'), true, 'admin-studio.html should reference the latest admin users runtime version');
-    assert.equal(adminStudioHtml.includes('js/admin-analytics-panel-loaders.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1'), true, 'admin-studio.html should reference the latest analytics panel loader runtime version');
-    assert.equal(adminStudioHtml.includes('admin-studio.js?v=20260411_OPS_ALERT_CASE_ACTION_FEEDBACK_1'), true, 'admin-studio.html should reference the latest admin studio action routing version');
+    assert.equal(adminStudioHtml.includes('js/admin-analytics-panel-loaders.js?v=20260412_PRODUCT_DETAIL_SWITCHER_2'), true, 'admin-studio.html should reference the latest analytics panel loader runtime version');
+    assert.equal(adminStudioHtml.includes('admin-studio.js?v=20260412_PRODUCT_DETAIL_SWITCHER_2'), true, 'admin-studio.html should reference the latest admin studio action routing version');
     assert.equal(adminUsersSource.includes('const feedbackEntries = typeof window.getAnalyticsResolutionFeedbackEntries === \'function\''), true, 'admin-users.js should read analytics resolution feedback entries for commerce trace context');
     assert.equal(adminUsersSource.includes('users-commerce-trace__feedback'), true, 'admin-users.js should render a recent handling feedback block in commerce traces');
 });
@@ -11862,7 +11898,7 @@ test('user detail tabs surface product commerce trace when opened from analytics
         assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
     }
 
-    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260411_OPS_ALERT_CASE_ACTION_FEEDBACK_1'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
+    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260412_PRODUCT_DETAIL_SWITCHER_2'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
     assert.equal(adminStudioHtml.includes('admin-users.js?v=20260410_ADMIN_USERS_BAN_FIX_2'), true, 'admin-studio.html should reference the latest admin users runtime version');
 });
 
@@ -11962,6 +11998,8 @@ test('payments runtime renderers externalize tooltip, tab, and trend styling', (
         'function renderLoadingSkeletonForTab(tabId = state.activeTab) {',
         'function hasRenderedContentForTab(tabId = state.activeTab) {',
         'class="payments-table payments-table-skeleton" aria-hidden="true"',
+        'class="payments-refund-alert-item payments-refund-alert-item--skeleton" aria-hidden="true"',
+        'class="payments-trend-legend-skeleton" aria-hidden="true"',
         'function buildAnalyticsIssueSummaryState(data = {}, context = state.workbenchContext) {',
         'function buildAnalyticsPrioritySummaryState(data = state.summary, focus = resolveAnalyticsPriorityFocusKind(data), context = state.workbenchContext) {',
         'function buildShopOrdersReturnContext(context = state.workbenchContext) {',
@@ -11994,6 +12032,10 @@ test('payments runtime renderers externalize tooltip, tab, and trend styling', (
         '.payments-refund-alerts {',
         '.payments-refund-topic-card {',
         '.payments-trend-skeleton {',
+        '.payments-trend-skeleton-column {',
+        '.payments-trend-legend-skeleton {',
+        '.payments-refund-alert-item--skeleton .payments-refund-alert-item-top--skeleton {',
+        '.payments-refund-alert-hint--skeleton {',
         '.payments-kpi-card-skeleton .payments-kpi-main {',
         '.payments-cleanup-note--skeleton {',
         '.admin-workbench-context-note__chip--action {',
@@ -12413,6 +12455,11 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         '连续两次都在的工单超过 2 条后会在列内滚动',
         'shop.manage',
         "const adminRoute = url.pathname === '/api/admin'",
+        "if (adminRoute === 'analytics/product-dashboard-bundle') {",
+        "if (adminRoute === 'analytics/product-funnel-bundle') {",
+        "if (adminRoute === 'analytics/product-detail-bundle') {",
+        'function buildSmokeProductDashboardBundleFixture(options = {}) {',
+        'function buildSmokeProductDetailBundleFixture(options = {}) {',
         "if ((url.pathname === '/api/admin/shop/products' || adminRoute === 'shop/products') && method === 'GET') {",
         "if ((url.pathname === '/api/admin/shop/categories' || adminRoute === 'shop/categories') && method === 'GET') {",
         "if ((url.pathname === '/api/admin/shop/inventory' || adminRoute === 'shop/inventory') && method === 'GET') {",
@@ -12440,7 +12487,7 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
     }
 
     assert.equal(
-        adminStudioHtml.includes('js/local-smoke-fixtures.js?v=20260404_LOCAL_SMOKE_FIXTURES_34'),
+        adminStudioHtml.includes('js/local-smoke-fixtures.js?v=20260412_LOCAL_SMOKE_FIXTURES_PRODUCT_BUNDLES_35'),
         true,
         'admin-studio.html should load the local smoke fixtures entry'
     );
@@ -12450,7 +12497,7 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         'smoke-notifications.html should load the dedicated smoke harness stylesheet'
     );
     assert.equal(
-        smokeNotificationHtml.includes('js/local-smoke-fixtures.js?v=20260404_LOCAL_SMOKE_FIXTURES_34'),
+        smokeNotificationHtml.includes('js/local-smoke-fixtures.js?v=20260412_LOCAL_SMOKE_FIXTURES_PRODUCT_BUNDLES_35'),
         true,
         'smoke-notifications.html should load the local smoke fixtures entry'
     );

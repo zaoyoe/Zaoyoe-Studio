@@ -35,6 +35,7 @@ function createMockResponse() {
 function createState(overrides = {}) {
     return {
         user: { id: 'admin-user-1', email: 'admin@example.com' },
+        requireAdminCalls: [],
         jobs: [],
         attempts: [],
         runtime: {
@@ -155,7 +156,8 @@ function createSupabaseStub(state) {
 
 function createAdminModule(state) {
     return {
-        async requireAdmin() {
+        async requireAdmin(_req, options = {}) {
+            state.requireAdminCalls.push(options);
             return {
                 supabase: createSupabaseStub(state),
                 user: state.user
@@ -179,17 +181,20 @@ function createOpsAlertsModule(state) {
                 telegram_bot_token: {
                     configured: Boolean(secrets.telegram_bot_token),
                     source: secrets.telegram_bot_token_source || 'missing',
-                    updatedAt: secrets.telegram_bot_token_updated_at || null
+                    updatedAt: secrets.telegram_bot_token_updated_at || null,
+                    errorMessage: secrets.telegram_bot_token_error_message || ''
                 },
                 feishu_webhook_url: {
                     configured: Boolean(secrets.feishu_webhook_url),
                     source: secrets.feishu_webhook_url_source || 'missing',
-                    updatedAt: secrets.feishu_webhook_url_updated_at || null
+                    updatedAt: secrets.feishu_webhook_url_updated_at || null,
+                    errorMessage: secrets.feishu_webhook_url_error_message || ''
                 },
                 email_api_key: {
                     configured: Boolean(secrets.email_api_key),
                     source: secrets.email_api_key_source || 'missing',
-                    updatedAt: secrets.email_api_key_updated_at || null
+                    updatedAt: secrets.email_api_key_updated_at || null,
+                    errorMessage: secrets.email_api_key_error_message || ''
                 }
             };
         }
@@ -285,13 +290,17 @@ test('ops alert health handler summarizes recent channel delivery health', async
                 created_at: hoursAgo(4)
             }
         ]
-    }, async (handler) => {
+    }, async (handler, state) => {
         const response = createMockResponse();
         await handler({ method: 'GET', headers: {} }, response);
 
         assert.equal(response.statusCode, 200);
         const payload = response.json();
         assert.equal(payload.success, true);
+        assert.deepEqual(
+            state.requireAdminCalls[0],
+            { anyOf: ['ops_alerts.manage', 'analytics.view'] }
+        );
         assert.equal(payload.summary.total_job_count, 3);
         assert.equal(payload.summary.total_attempt_count, 3);
         assert.equal(payload.summary.delivered_count, 1);
@@ -347,6 +356,64 @@ test('ops alert health handler summarizes recent channel delivery health', async
         assert.equal(email.subject_prefix, '[Zaoyoe告警]');
         assert.equal(email.recent_deliveries.length, 1);
         assert.equal(email.recent_deliveries[0].title, '充值成功');
+    });
+});
+
+test('ops alert health handler keeps the panel readable when a stored secret cannot be decrypted', async () => {
+    await withHandler({
+        runtime: {
+            config: {
+                enabled: true,
+                channels: {
+                    telegram: {
+                        enabled: true,
+                        minimum_severity: 'warning',
+                        chat_ids: ['123456789']
+                    },
+                    feishu: {
+                        enabled: false,
+                        minimum_severity: 'warning'
+                    },
+                    email: {
+                        enabled: false,
+                        minimum_severity: 'warning',
+                        recipients: [],
+                        from_address: '',
+                        reply_to: '',
+                        subject_prefix: '[Zaoyoe告警]'
+                    }
+                }
+            },
+            secrets: {
+                telegram_bot_token: '',
+                telegram_bot_token_source: 'error',
+                telegram_bot_token_updated_at: '2026-03-26T01:00:00.000Z',
+                telegram_bot_token_error_message: 'Telegram Bot Token 无法解密，请检查 ADMIN_CONFIG_ENCRYPTION_KEY 是否与写入该密钥时一致，或重新保存该密钥。',
+                feishu_webhook_url: '',
+                feishu_webhook_url_source: 'missing',
+                feishu_webhook_url_updated_at: null,
+                feishu_webhook_url_error_message: '',
+                email_api_key: '',
+                email_api_key_source: 'missing',
+                email_api_key_updated_at: null,
+                email_api_key_error_message: ''
+            }
+        }
+    }, async (handler) => {
+        const response = createMockResponse();
+        await handler({ method: 'GET', headers: {} }, response);
+
+        assert.equal(response.statusCode, 200);
+        const payload = response.json();
+        assert.equal(payload.success, true);
+        assert.equal(payload.summary.config_issue_count, 1);
+        assert.equal(payload.summary.config_issues[0].includes('Telegram'), true);
+
+        const telegram = payload.channels.find((channel) => channel.key === 'telegram');
+        assert.equal(telegram.health_label, '密钥解密失败');
+        assert.equal(telegram.source, 'error');
+        assert.equal(telegram.errors[0].includes('ADMIN_CONFIG_ENCRYPTION_KEY'), true);
+        assert.equal(telegram.last_error.includes('ADMIN_CONFIG_ENCRYPTION_KEY'), true);
     });
 });
 

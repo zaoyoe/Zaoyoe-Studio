@@ -4053,6 +4053,7 @@ function getAdminWorkbenchOpsAlertHealthSourceLabel(source = '') {
     const normalizedSource = String(source || '').trim().toLowerCase();
     if (normalizedSource === 'stored') return '后台密钥仓';
     if (normalizedSource === 'environment') return '环境变量';
+    if (normalizedSource === 'error') return '密钥异常';
     return '未配置';
 }
 

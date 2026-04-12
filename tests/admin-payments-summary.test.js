@@ -94,10 +94,36 @@ function createSupabaseStub(state = {}) {
     const paymentQueryAttempts = state.paymentQueryAttempts || [];
     const paymentAnomalyCases = state.paymentAnomalyCases || [];
     const opsAlertJobs = state.opsAlertJobs || [];
+    state.rpcCalls = state.rpcCalls || [];
+    state.tableAccesses = state.tableAccesses || [];
 
     return {
+        async rpc(name, args = {}) {
+            state.rpcCalls.push({ name, args });
+
+            if (name === 'fn_admin_get_payment_overview_summary') {
+                return {
+                    data: state.overviewSummaryRpc || null,
+                    error: state.overviewSummaryRpcError || null
+                };
+            }
+
+            if (name === 'fn_admin_get_payment_finance_summary') {
+                return {
+                    data: state.financeSummaryRpc || null,
+                    error: state.financeSummaryRpcError || null
+                };
+            }
+
+            return {
+                data: null,
+                error: { message: `Unexpected rpc: ${name}`, code: '42883' }
+            };
+        },
         from(table) {
             return createQueryBuilder(async (query) => {
+                state.tableAccesses.push({ table, mode: query.mode });
+
                 if (table === 'payment_orders' && query.mode === 'select') {
                     let rows = applyFilters(paymentOrders, query.filters);
                     if (query.order) {
@@ -221,6 +247,7 @@ function createMockAdminModule(state = {}) {
             return {
                 supabase,
                 requestSupabase: supabase,
+                adminSupabase: supabase,
                 user: { id: 'admin-1', email: 'admin@example.com' }
             };
         },
@@ -472,6 +499,719 @@ test('payments overview summary exposes refund alerts for admin-studio visibilit
     });
 });
 
+test('payments overview view can use aggregated rpc payload instead of scanning overview tables', async () => {
+    const state = {
+        overviewSummaryRpc: {
+            overview: {
+                total_orders: 20,
+                paid_orders: 16,
+                redeemed_orders: 9,
+                claimed_orders: 15,
+                review_orders: 2,
+                failed_orders: 1,
+                total_amount: 320,
+                total_points: 16000,
+                paid_rate: 80,
+                claim_rate: 93.75
+            },
+            session_summary: {
+                total_sessions: 18,
+                matched_sessions: 16,
+                open_sessions: 2,
+                stale_sessions: 1,
+                failed_sessions: 1,
+                completed_unlinked_sessions: 0,
+                webhook_linked_sessions: 10,
+                fallback_linked_sessions: 4,
+                direct_linked_sessions: 2,
+                unmatched_orders: 1,
+                eligible_orders: 17,
+                matched_orders: 16,
+                match_rate: 88.89,
+                order_match_rate: 94.12,
+                anomaly_count: 2
+            },
+            query_summary: {
+                total_attempts: 9,
+                success_attempts: 7,
+                failed_attempts: 2,
+                success_rate: 77.78,
+                outcome_breakdown: [
+                    {
+                        outcome_code: 'query_exception',
+                        label: '查码接口异常',
+                        severity: 'critical',
+                        count: 2
+                    }
+                ]
+            },
+            anomaly_summary: {
+                review_orders: 2,
+                failed_orders: 1,
+                unclaimed_paid_orders: 1,
+                recent_event_anomalies: 3,
+                duplicate_webhook_orders: 1,
+                refund_failures: 1,
+                refund_reclaim_failures: 0,
+                refund_compensation_failures: 0,
+                query_failures: 2,
+                stale_checkout_sessions: 1,
+                failed_checkout_sessions: 1,
+                completed_unlinked_sessions: 0,
+                unmatched_session_orders: 1,
+                webhook_linked_sessions: 10,
+                fallback_linked_sessions: 4,
+                session_anomalies: 2,
+                open_cases: 1
+            },
+            provider_stats: [
+                {
+                    provider: 'hupijiao',
+                    total_orders: 20,
+                    paid_orders: 16,
+                    claimed_orders: 15,
+                    review_orders: 2,
+                    failed_orders: 1,
+                    total_amount: 320,
+                    total_points: 16000,
+                    eligible_orders: 17,
+                    matched_orders: 16,
+                    unmatched_orders: 1,
+                    session_total: 18,
+                    session_matched: 16,
+                    session_stale: 1,
+                    session_failed: 1,
+                    session_completed_unlinked: 0,
+                    webhook_links: 10,
+                    fallback_links: 4,
+                    direct_links: 2,
+                    webhook_total: 12,
+                    webhook_success: 9,
+                    webhook_failed: 3,
+                    webhook_4xx: 1,
+                    webhook_5xx: 1,
+                    query_total: 9,
+                    query_success: 7,
+                    query_failed: 2,
+                    query_4xx: 1,
+                    query_5xx: 1,
+                    paid_rate: 80,
+                    claim_rate: 93.75,
+                    session_match_rate: 88.89,
+                    order_match_rate: 94.12,
+                    webhook_success_rate: 75,
+                    query_success_rate: 77.78,
+                    auto_link_rate: 62.5,
+                    fallback_link_rate: 25
+                }
+            ],
+            trend_24h: [
+                {
+                    bucket: '2026-03-24T09:00:00.000Z',
+                    label: '03-24 09:00',
+                    total_events: 4,
+                    anomaly_events: 1,
+                    failed_events: 1
+                }
+            ],
+            refund_alert_topics: [
+                {
+                    key: 'refund_failures',
+                    label: '退款失败',
+                    severity: 'warning',
+                    description: '网关退款失败，但系统已自动补回积分，仍需复核通道响应和重复提交风险。',
+                    count: 1
+                }
+            ],
+            refund_alert_items: [
+                {
+                    type: 'event',
+                    id: 'event-rpc-1',
+                    provider: 'hupijiao',
+                    provider_order_no: 'HJ_RPC_1',
+                    status: 'admin_refund_failed',
+                    severity: 'warning',
+                    title: '退款失败已补回',
+                    message: 'gateway busy',
+                    created_at: '2026-03-24T10:10:00.000Z',
+                    topic_key: 'refund_failures',
+                    topic_label: '退款失败'
+                }
+            ]
+        },
+        paymentAnomalyCases: [
+            {
+                id: 'case-rpc-1',
+                target_type: 'event',
+                target_id: 'event-rpc-1',
+                status: 'handled',
+                note: 'rpc handled',
+                resolution: '已人工确认',
+                last_action: 'mark_handled',
+                last_action_at: '2026-03-24T10:15:00.000Z'
+            }
+        ]
+    };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'overview',
+                days: '30'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.overview.total_orders, 20);
+        assert.equal(payload.query_summary.failed_attempts, 2);
+        assert.equal(payload.session_summary.total_sessions, 18);
+        assert.equal(payload.provider_stats[0].provider, 'hupijiao');
+        assert.equal(payload.refund_alert_items[0].ops_status, 'handled');
+        assert.equal(Array.isArray(payload.trend_24h), true);
+        assert.equal(state.rpcCalls.some((call) => call.name === 'fn_admin_get_payment_overview_summary'), true);
+        assert.equal(
+            state.tableAccesses.some((entry) => ['payment_orders', 'payment_events', 'payment_query_attempts', 'payment_checkout_sessions'].includes(entry.table)),
+            false
+        );
+    });
+});
+
+test('payments finance view can use aggregated rpc payload instead of scanning finance tables', async () => {
+    const state = {
+        financeSummaryRpc: {
+            overview: {
+                total_orders: 12,
+                paid_orders: 9,
+                redeemed_orders: 4,
+                claimed_orders: 8,
+                review_orders: 2,
+                failed_orders: 1,
+                total_amount: 188,
+                total_points: 9400,
+                paid_rate: 75,
+                claim_rate: 88.89
+            },
+            anomaly_summary: {
+                review_orders: 2,
+                failed_orders: 1,
+                unclaimed_paid_orders: 1,
+                recent_event_anomalies: 0,
+                duplicate_webhook_orders: 0,
+                refund_failures: 0,
+                refund_reclaim_failures: 0,
+                refund_compensation_failures: 0,
+                query_failures: 0,
+                stale_checkout_sessions: 0,
+                failed_checkout_sessions: 0,
+                completed_unlinked_sessions: 0,
+                unmatched_session_orders: 0,
+                webhook_linked_sessions: 0,
+                fallback_linked_sessions: 0,
+                session_anomalies: 0,
+                open_cases: 0,
+                handled_cases: 0,
+                ignored_cases: 0,
+                retry_requested_cases: 0
+            },
+            provider_stats: [
+                {
+                    provider: 'hupijiao',
+                    total_orders: 12,
+                    paid_orders: 9,
+                    claimed_orders: 8,
+                    review_orders: 2,
+                    failed_orders: 1,
+                    total_amount: 188,
+                    total_points: 9400,
+                    paid_rate: 75,
+                    claim_rate: 88.89
+                }
+            ],
+            sitewide_summary: {
+                recharge_amount: 188,
+                recharge_points: 9400,
+                recharge_order_count: 9,
+                shop_points_spent: 2300,
+                shop_order_count: 6,
+                refunded_shop_points: 200,
+                refunded_shop_order_count: 1,
+                points_inflow: 9500,
+                points_outflow: 2600,
+                net_points_flow: 6900,
+                circulating_points: 32000,
+                paid_balance: 21000,
+                bonus_balance: 11000,
+                balance_account_count: 18,
+                mock_recharge_order_count: 2,
+                mock_recharge_points: 1200
+            },
+            points_breakdown: [
+                {
+                    key: 'recharge',
+                    label: '充值入账',
+                    inflow: 9400,
+                    outflow: 0,
+                    net: 9400
+                },
+                {
+                    key: 'shop_purchase',
+                    label: '商城消费',
+                    inflow: 0,
+                    outflow: 2300,
+                    net: -2300
+                }
+            ]
+        }
+    };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'finance',
+                days: '30'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.overview.total_orders, 12);
+        assert.equal(payload.sitewide_summary.recharge_amount, 188);
+        assert.equal(payload.points_breakdown.length, 2);
+        assert.equal(payload.provider_stats[0].provider, 'hupijiao');
+        assert.equal(payload.business_breakdown[2].metric, '2 笔');
+        assert.equal(state.rpcCalls.some((call) => call.name === 'fn_admin_get_payment_finance_summary'), true);
+        assert.equal(
+            state.tableAccesses.some((entry) => ['payment_orders', 'shop_orders', 'points_ledger', 'points_balance'].includes(entry.table)),
+            false
+        );
+    });
+});
+
+test('payments overview core scope skips heavy event and ops scans while returning first-paint metrics', async () => {
+    const now = new Date('2026-03-24T10:00:00.000Z').toISOString();
+    const state = {
+        paymentOrders: [
+            {
+                id: 'order-core-1',
+                provider: 'hupijiao',
+                provider_order_no: 'HJ_CORE_1',
+                package_name: '积分充值 1000 点',
+                paid_amount: 20,
+                expected_amount: 20,
+                points_amount: 1000,
+                status: 'paid',
+                user_id: 'user-core-1',
+                created_at: now,
+                paid_at: now,
+                claimed_at: now,
+                site: 'cn',
+                last_error: null,
+                sign_verified: true,
+                amount_verified: true,
+                provider_metadata: {
+                    checkout_session_id: 'session-core-1',
+                    checkout_session_status: 'completed',
+                    checkout_session_linked_by: 'webhook'
+                }
+            }
+        ],
+        checkoutSessions: [
+            {
+                id: 'session-core-1',
+                session_key: 'checkout_core_1',
+                provider: 'hupijiao',
+                user_id: 'user-core-1',
+                site: 'cn',
+                package_id: 'pkg-1',
+                package_name: '积分充值 1000 点',
+                requested_points: 1000,
+                bonus_points: 0,
+                granted_points: 1000,
+                expected_amount: 20,
+                status: 'completed',
+                checkout_url: 'https://example.com/pay',
+                query_mode: 'manual',
+                payment_order_id: 'order-core-1',
+                provider_metadata: {
+                    provider_order_no: 'HJ_CORE_1',
+                    linked_by: 'webhook'
+                },
+                error_message: null,
+                expires_at: null,
+                completed_at: now,
+                created_at: now,
+                updated_at: now
+            }
+        ],
+        paymentQueryAttempts: [
+            {
+                id: 'query-core-1',
+                provider: 'hupijiao',
+                site: 'cn',
+                order_no: 'HJ_CORE_1',
+                user_id: 'user-core-1',
+                payment_order_id: 'order-core-1',
+                checkout_session_id: 'session-core-1',
+                success: false,
+                response_status: 500,
+                outcome_code: 'query_exception',
+                message: 'network timeout',
+                created_at: now
+            }
+        ],
+        paymentEvents: [
+            {
+                id: 'event-core-1',
+                payment_order_id: 'order-core-1',
+                provider: 'hupijiao',
+                provider_order_no: 'HJ_CORE_1',
+                event_type: 'admin_refund',
+                signature_valid: true,
+                amount_valid: null,
+                processing_result: 'admin_refund_compensation_failed',
+                error_message: 'points compensation failed',
+                response_status: 500,
+                created_at: now
+            }
+        ],
+        opsAlertJobs: [
+            {
+                id: 'ops-core-1',
+                alert_type: 'payment_refund_ops',
+                severity: 'critical',
+                title: '支付退款积分回滚失败',
+                content: '站点：CN\n订单号：HJ_CORE_1',
+                payload: {
+                    provider: 'hupijiao',
+                    provider_order_no: 'HJ_CORE_1',
+                    site: 'cn'
+                },
+                channels: ['telegram'],
+                remaining_channels: ['telegram'],
+                status: 'dead_letter',
+                attempt_count: 6,
+                max_attempts: 6,
+                next_retry_at: null,
+                delivered_at: null,
+                last_error: 'telegram timeout',
+                created_at: now,
+                updated_at: now
+            }
+        ]
+    };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'overview',
+                days: '30',
+                scope: 'core'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.overview_scope, 'core');
+        assert.equal(payload.overview.total_orders, 1);
+        assert.equal(payload.session_summary.total_sessions, 1);
+        assert.equal(payload.query_summary.failed_attempts, 1);
+        assert.equal(payload.anomaly_summary.query_failures, 1);
+        assert.equal(payload.provider_stats, null);
+        assert.equal(payload.refund_alert_topics, null);
+        assert.equal(payload.refund_alert_items, null);
+        assert.equal(payload.ops_alert_summary, null);
+        assert.equal(payload.ops_alert_items, null);
+        assert.equal(state.rpcCalls.some((call) => call.name === 'fn_admin_get_payment_overview_summary'), false);
+        assert.equal(
+            state.tableAccesses.some((entry) => ['payment_events', 'ops_alert_jobs', 'payment_anomaly_cases'].includes(entry.table)),
+            false
+        );
+        assert.equal(
+            state.tableAccesses.some((entry) => ['payment_orders', 'payment_query_attempts', 'payment_checkout_sessions'].includes(entry.table)),
+            true
+        );
+        assert.equal(state.auditLogs.length, 0);
+    });
+});
+
+test('payments overview secondary scope returns trend and refund panels without reading ops alerts', async () => {
+    const state = {
+        overviewSummaryRpc: {
+            overview: {
+                total_orders: 20,
+                paid_orders: 16,
+                redeemed_orders: 9,
+                claimed_orders: 15,
+                review_orders: 2,
+                failed_orders: 1,
+                total_amount: 320,
+                total_points: 16000,
+                paid_rate: 80,
+                claim_rate: 93.75
+            },
+            session_summary: {
+                total_sessions: 18,
+                matched_sessions: 16,
+                open_sessions: 2,
+                stale_sessions: 1,
+                failed_sessions: 1,
+                completed_unlinked_sessions: 0,
+                webhook_linked_sessions: 10,
+                fallback_linked_sessions: 4,
+                direct_linked_sessions: 2,
+                unmatched_orders: 1,
+                eligible_orders: 17,
+                matched_orders: 16,
+                match_rate: 88.89,
+                order_match_rate: 94.12,
+                anomaly_count: 2
+            },
+            query_summary: {
+                total_attempts: 9,
+                success_attempts: 7,
+                failed_attempts: 2,
+                success_rate: 77.78,
+                outcome_breakdown: [
+                    {
+                        outcome_code: 'query_exception',
+                        label: '查码接口异常',
+                        severity: 'critical',
+                        count: 2
+                    }
+                ]
+            },
+            anomaly_summary: {
+                review_orders: 2,
+                failed_orders: 1,
+                unclaimed_paid_orders: 1,
+                recent_event_anomalies: 3,
+                duplicate_webhook_orders: 1,
+                refund_failures: 1,
+                refund_reclaim_failures: 0,
+                refund_compensation_failures: 0,
+                query_failures: 2,
+                stale_checkout_sessions: 1,
+                failed_checkout_sessions: 1,
+                completed_unlinked_sessions: 0,
+                unmatched_session_orders: 1,
+                webhook_linked_sessions: 10,
+                fallback_linked_sessions: 4,
+                session_anomalies: 2,
+                open_cases: 1
+            },
+            provider_stats: [
+                {
+                    provider: 'hupijiao',
+                    total_orders: 20,
+                    paid_orders: 16,
+                    claimed_orders: 15,
+                    review_orders: 2,
+                    failed_orders: 1,
+                    total_amount: 320,
+                    total_points: 16000,
+                    eligible_orders: 17,
+                    matched_orders: 16,
+                    unmatched_orders: 1,
+                    session_total: 18,
+                    session_matched: 16,
+                    session_stale: 1,
+                    session_failed: 1,
+                    session_completed_unlinked: 0,
+                    webhook_links: 10,
+                    fallback_links: 4,
+                    direct_links: 2,
+                    webhook_total: 12,
+                    webhook_success: 9,
+                    webhook_failed: 3,
+                    webhook_4xx: 1,
+                    webhook_5xx: 1,
+                    query_total: 9,
+                    query_success: 7,
+                    query_failed: 2,
+                    query_4xx: 1,
+                    query_5xx: 1,
+                    paid_rate: 80,
+                    claim_rate: 93.75,
+                    session_match_rate: 88.89,
+                    order_match_rate: 94.12,
+                    webhook_success_rate: 75,
+                    query_success_rate: 77.78,
+                    auto_link_rate: 62.5,
+                    fallback_link_rate: 25
+                }
+            ],
+            trend_24h: [
+                {
+                    bucket: '2026-03-24T09:00:00.000Z',
+                    label: '03-24 09:00',
+                    total_events: 4,
+                    anomaly_events: 1,
+                    failed_events: 1
+                }
+            ],
+            refund_alert_topics: [
+                {
+                    key: 'refund_failures',
+                    label: '退款失败',
+                    severity: 'warning',
+                    description: '网关退款失败，但系统已自动补回积分，仍需复核通道响应和重复提交风险。',
+                    count: 1
+                }
+            ],
+            refund_alert_items: [
+                {
+                    type: 'event',
+                    id: 'event-secondary-1',
+                    provider: 'hupijiao',
+                    provider_order_no: 'HJ_SECONDARY_1',
+                    status: 'admin_refund_failed',
+                    severity: 'warning',
+                    title: '退款失败已补回',
+                    message: 'gateway busy',
+                    created_at: '2026-03-24T10:10:00.000Z',
+                    topic_key: 'refund_failures',
+                    topic_label: '退款失败'
+                }
+            ]
+        },
+        paymentAnomalyCases: [
+            {
+                id: 'case-secondary-1',
+                target_type: 'event',
+                target_id: 'event-secondary-1',
+                status: 'handled',
+                note: 'secondary handled',
+                resolution: '已人工确认',
+                last_action: 'mark_handled',
+                last_action_at: '2026-03-24T10:15:00.000Z'
+            }
+        ],
+        opsAlertJobs: [
+            {
+                id: 'ops-secondary-1',
+                alert_type: 'payment_refund_ops',
+                severity: 'critical',
+                title: 'should not be queried',
+                content: 'noop',
+                payload: {},
+                channels: [],
+                remaining_channels: [],
+                status: 'dead_letter',
+                attempt_count: 1,
+                max_attempts: 1,
+                next_retry_at: null,
+                delivered_at: null,
+                last_error: 'noop',
+                created_at: '2026-03-24T10:00:00.000Z',
+                updated_at: '2026-03-24T10:00:00.000Z'
+            }
+        ]
+    };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'overview',
+                days: '30',
+                scope: 'secondary'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.overview_scope, 'secondary');
+        assert.equal(Array.isArray(payload.provider_stats), true);
+        assert.equal(Array.isArray(payload.trend_24h), true);
+        assert.equal(payload.refund_alert_items[0].ops_status, 'handled');
+        assert.equal(payload.ops_alert_summary, undefined);
+        assert.equal(payload.ops_alert_items, undefined);
+        assert.equal(state.rpcCalls.some((call) => call.name === 'fn_admin_get_payment_overview_summary'), true);
+        assert.equal(state.tableAccesses.some((entry) => entry.table === 'ops_alert_jobs'), false);
+        assert.equal(state.auditLogs.length, 0);
+    });
+});
+
+test('payments overview ops scope only reads ops alert health', async () => {
+    const state = {
+        opsAlertJobs: [
+            {
+                id: 'ops-scope-1',
+                alert_type: 'payment_refund_ops',
+                severity: 'critical',
+                title: '支付退款积分回滚失败',
+                content: '站点：CN\n订单号：HJ_OPS_1',
+                payload: {
+                    provider: 'hupijiao',
+                    provider_order_no: 'HJ_OPS_1',
+                    site: 'cn'
+                },
+                channels: ['telegram'],
+                remaining_channels: ['telegram'],
+                status: 'dead_letter',
+                attempt_count: 6,
+                max_attempts: 6,
+                next_retry_at: null,
+                delivered_at: null,
+                last_error: 'telegram timeout',
+                created_at: '2026-03-24T11:00:00.000Z',
+                updated_at: '2026-03-24T11:10:00.000Z'
+            }
+        ]
+    };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'overview',
+                days: '30',
+                scope: 'ops'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.overview_scope, 'ops');
+        assert.equal(payload.ops_alert_summary.dead_letter, 1);
+        assert.equal(payload.ops_alert_items.some((item) => item.provider_order_no === 'HJ_OPS_1'), true);
+        assert.equal(payload.provider_stats, undefined);
+        assert.equal(payload.trend_24h, undefined);
+        assert.equal(payload.refund_alert_items, undefined);
+        assert.equal(state.rpcCalls.some((call) => call.name === 'fn_admin_get_payment_overview_summary'), false);
+        assert.equal(
+            state.tableAccesses.some((entry) => ['payment_orders', 'payment_events', 'payment_query_attempts', 'payment_checkout_sessions', 'payment_anomaly_cases'].includes(entry.table)),
+            false
+        );
+        assert.equal(state.tableAccesses.some((entry) => entry.table === 'ops_alert_jobs'), true);
+        assert.equal(state.auditLogs.length, 0);
+    });
+});
+
 test('payments summary exposes outbound ops alert queue health and actionable dead-letter jobs', async () => {
     const state = {
         opsAlertJobs: [
@@ -569,6 +1309,31 @@ test('payments summary exposes outbound ops alert queue health and actionable de
     });
 });
 
+test('payments summary skips audit log writes for background prefetch requests', async () => {
+    const state = {
+        paymentOrders: []
+    };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'overview',
+                days: '30',
+                prefetch: '1'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(state.auditLogs.length, 0);
+    });
+});
+
 test('payments summary keeps ignored ops alert items visible even when queue has more than twelve records', async () => {
     const opsAlertJobs = [];
 
@@ -655,12 +1420,19 @@ test('payments runtime summary UI keeps refund anomaly indicators wired in sourc
     assert.match(source, /退款积分回滚失败/);
     assert.match(source, /payments-focus-exception-topic/);
     assert.match(source, /paymentsRefundAlertsPanel/);
-    assert.match(source, /paymentsOpsAlertHealthPanel/);
     assert.match(source, /paymentsOpsAlertQueuePanel/);
-    assert.match(source, /payments-focus-ops-alert-queue/);
     assert.match(source, /ops_alert_summary/);
     assert.match(source, /ops_alert_items/);
+    assert.match(source, /renderOverviewSecondarySkeletons/);
+    assert.match(source, /overview_scope/);
+    assert.match(source, /scope: 'secondary'/);
+    assert.match(source, /scope: 'ops'/);
+    assert.match(source, /Promise\.allSettled/);
+    assert.match(source, /首屏摘要已加载，正在并行补充趋势与专题/);
+    assert.match(source, /buildPaymentsRefundAlertItemSkeleton/);
+    assert.match(source, /buildPaymentsTrendLegendSkeleton/);
+    assert.match(source, /Array\.from\(\{ length: 24 \}, \(_, index\) =>/);
     assert.match(adminStudioSource, /payments-focus-ops-alert-queue/);
-    assert.match(adminStudioHtml, /paymentsOpsAlertHealthPanel/);
+    assert.doesNotMatch(adminStudioHtml, /paymentsOpsAlertHealthPanel/);
     assert.match(adminStudioHtml, /paymentsOpsAlertQueuePanel/);
 });

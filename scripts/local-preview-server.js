@@ -35,6 +35,7 @@ function shouldDisableLocalPreviewCache(filePath = '') {
 function getDefaultEnvFiles(repoRoot) {
     return [
         path.join(repoRoot, 'server/.env.staging'),
+        path.join(repoRoot, '.vercel/.env.production.local'),
         path.join(repoRoot, 'server/.env'),
         path.join(repoRoot, '.env'),
         path.join(repoRoot, '.env.local')
@@ -180,6 +181,80 @@ function loadFreshPublicApiHandler(repoRoot = path.resolve(__dirname, '..')) {
     return require(path.join(normalizedRepoRoot, 'api', 'public'));
 }
 
+function resolveLocalPreviewStandaloneApiRoute(rawUrl = '', mountPath = '') {
+    const normalizedMountPath = String(mountPath || '').trim().replace(/^\/+|\/+$/g, '');
+    const incomingUrl = new URL(String(rawUrl || '/'), 'http://127.0.0.1:8000');
+    const normalizedPathname = incomingUrl.pathname.replace(/^\/+|\/+$/g, '');
+
+    if (!normalizedMountPath) {
+        return '';
+    }
+
+    if (normalizedPathname === normalizedMountPath) {
+        return '';
+    }
+
+    if (!normalizedPathname.startsWith(`${normalizedMountPath}/`)) {
+        return '';
+    }
+
+    return normalizedPathname
+        .slice(normalizedMountPath.length + 1)
+        .replace(/^\/+|\/+$/g, '')
+        .toLowerCase();
+}
+
+function loadFreshStandaloneApiHandler(repoRoot = path.resolve(__dirname, '..'), rawUrl = '', options = {}) {
+    const normalizedRepoRoot = path.resolve(repoRoot);
+    const mountPath = String(options.mountPath || '').trim();
+    const baseDir = String(options.baseDir || '').trim();
+    const handlerRoute = resolveLocalPreviewStandaloneApiRoute(rawUrl, mountPath);
+
+    if (!baseDir || !handlerRoute) {
+        const error = new Error(`Local preview ${mountPath || 'standalone api'} route not found`);
+        error.statusCode = 404;
+        throw error;
+    }
+
+    const routeSegments = handlerRoute
+        .split('/')
+        .map((segment) => String(segment || '').trim())
+        .filter(Boolean);
+
+    if (!routeSegments.length || routeSegments.some((segment) => !/^[a-z0-9_-]+$/i.test(segment))) {
+        const error = new Error(`Local preview ${mountPath || 'standalone api'} route not found`);
+        error.statusCode = 404;
+        throw error;
+    }
+
+    const baseDirPath = path.join(normalizedRepoRoot, baseDir);
+    const handlerPath = path.join(baseDirPath, ...routeSegments);
+
+    clearRequireCacheByPrefixes([
+        path.join(normalizedRepoRoot, 'api'),
+        path.join(normalizedRepoRoot, 'server', 'api-handlers', 'public')
+    ]);
+
+    if (!fs.existsSync(`${handlerPath}.js`)) {
+        const error = new Error(`Local preview ${mountPath || 'standalone api'} route not found`);
+        error.statusCode = 404;
+        throw error;
+    }
+
+    return require(handlerPath);
+}
+
+function loadFreshShopApiHandler(repoRoot = path.resolve(__dirname, '..'), reqOrUrl = '') {
+    const rawUrl = typeof reqOrUrl === 'string'
+        ? reqOrUrl
+        : (reqOrUrl?.originalUrl || reqOrUrl?.url || '/api/shop');
+
+    return loadFreshStandaloneApiHandler(repoRoot, rawUrl, {
+        mountPath: '/api/shop',
+        baseDir: 'api/shop'
+    });
+}
+
 function applyPreviewEnvToProcess(envValues = {}) {
     Object.entries(envValues).forEach(([key, value]) => {
         if (value === undefined || value === null || value === '') {
@@ -242,6 +317,42 @@ function createSmokeResultStore(options = {}) {
             return nextRecord;
         }
     };
+}
+
+async function dispatchLocalPreviewApiRequest(req, res, options = {}) {
+    const {
+        kind = 'api',
+        buildHandlerUrl,
+        loadHandler,
+        repoRoot
+    } = options;
+
+    try {
+        req.url = typeof buildHandlerUrl === 'function'
+            ? buildHandlerUrl(req.originalUrl || req.url)
+            : (req.originalUrl || req.url);
+        const handler = typeof loadHandler === 'function'
+            ? loadHandler(repoRoot, req)
+            : null;
+
+        if (typeof handler !== 'function') {
+            throw new TypeError(`Local preview ${kind} handler is unavailable`);
+        }
+
+        await handler(req, res);
+    } catch (error) {
+        console.error(`[local-preview] ${kind} request failed:`, error);
+
+        if (res.headersSent || res.writableEnded) {
+            return;
+        }
+
+        setLocalPreviewNoStoreHeaders(res);
+        res.status(Number(error?.statusCode) || 500).json({
+            success: false,
+            message: error?.message || `Local preview ${kind} request failed`
+        });
+    }
 }
 
 function createLocalPreviewApp(options = {}) {
@@ -316,27 +427,55 @@ function createLocalPreviewApp(options = {}) {
     });
 
     app.all('/api/admin', async (req, res) => {
-        req.url = buildLocalPreviewAdminHandlerUrl(req.originalUrl || req.url);
-        const adminApiHandler = loadFreshAdminApiHandler(repoRoot);
-        return adminApiHandler(req, res);
+        await dispatchLocalPreviewApiRequest(req, res, {
+            kind: 'admin api',
+            buildHandlerUrl: buildLocalPreviewAdminHandlerUrl,
+            loadHandler: loadFreshAdminApiHandler,
+            repoRoot
+        });
     });
 
     app.all('/api/admin/*', async (req, res) => {
-        req.url = buildLocalPreviewAdminHandlerUrl(req.originalUrl || req.url);
-        const adminApiHandler = loadFreshAdminApiHandler(repoRoot);
-        return adminApiHandler(req, res);
+        await dispatchLocalPreviewApiRequest(req, res, {
+            kind: 'admin api',
+            buildHandlerUrl: buildLocalPreviewAdminHandlerUrl,
+            loadHandler: loadFreshAdminApiHandler,
+            repoRoot
+        });
     });
 
     app.all('/api/public', async (req, res) => {
-        req.url = buildLocalPreviewPublicHandlerUrl(req.originalUrl || req.url);
-        const publicApiHandler = loadFreshPublicApiHandler(repoRoot);
-        return publicApiHandler(req, res);
+        await dispatchLocalPreviewApiRequest(req, res, {
+            kind: 'public api',
+            buildHandlerUrl: buildLocalPreviewPublicHandlerUrl,
+            loadHandler: loadFreshPublicApiHandler,
+            repoRoot
+        });
     });
 
     app.all('/api/public/*', async (req, res) => {
-        req.url = buildLocalPreviewPublicHandlerUrl(req.originalUrl || req.url);
-        const publicApiHandler = loadFreshPublicApiHandler(repoRoot);
-        return publicApiHandler(req, res);
+        await dispatchLocalPreviewApiRequest(req, res, {
+            kind: 'public api',
+            buildHandlerUrl: buildLocalPreviewPublicHandlerUrl,
+            loadHandler: loadFreshPublicApiHandler,
+            repoRoot
+        });
+    });
+
+    app.all('/api/shop', async (req, res) => {
+        await dispatchLocalPreviewApiRequest(req, res, {
+            kind: 'shop api',
+            loadHandler: loadFreshShopApiHandler,
+            repoRoot
+        });
+    });
+
+    app.all('/api/shop/*', async (req, res) => {
+        await dispatchLocalPreviewApiRequest(req, res, {
+            kind: 'shop api',
+            loadHandler: loadFreshShopApiHandler,
+            repoRoot
+        });
     });
 
     app.use(express.static(repoRoot, {
@@ -393,9 +532,12 @@ module.exports = {
     getDefaultEnvFiles,
     loadFreshAdminApiHandler,
     loadFreshPublicApiHandler,
+    loadFreshShopApiHandler,
     loadPreviewEnv,
     resolveLocalPreviewListenHost,
+    resolveLocalPreviewStandaloneApiRoute,
     resolveLocalPreviewRuntimeScript,
     setLocalPreviewNoStoreHeaders,
-    shouldDisableLocalPreviewCache
+    shouldDisableLocalPreviewCache,
+    dispatchLocalPreviewApiRequest
 };

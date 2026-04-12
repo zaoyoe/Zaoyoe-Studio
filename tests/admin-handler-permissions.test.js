@@ -325,13 +325,23 @@ test('comments blocks handler requires users.manage permission', async () => {
     });
 });
 
-test('comments summary handler requires content.moderate permission', async () => {
+test('comments summary handler allows content.moderate or analytics.view permission', async () => {
     await withAdminHandler('../server/api-handlers/admin/comments/summary.js', async ({ handler, state }) => {
         const res = createMockResponse();
         await handler({ method: 'GET', headers: {} }, res);
 
         assert.equal(res.statusCode, 418);
-        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'content.moderate' });
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { anyOf: ['content.moderate', 'analytics.view'] });
+    });
+});
+
+test('payments summary handler allows payments.manage or analytics.view permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/payments/summary.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', query: {}, headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { anyOf: ['payments.manage', 'analytics.view'] });
     });
 });
 
@@ -385,13 +395,13 @@ test('tickets list handler requires tickets.manage permission', async () => {
     });
 });
 
-test('tickets metrics handler requires tickets.manage permission', async () => {
+test('tickets metrics handler allows tickets.manage or analytics.view permission', async () => {
     await withAdminHandler('../server/api-handlers/admin/tickets/metrics.js', async ({ handler, state }) => {
         const res = createMockResponse();
         await handler({ method: 'GET', headers: {} }, res);
 
         assert.equal(res.statusCode, 418);
-        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'tickets.manage' });
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { anyOf: ['tickets.manage', 'analytics.view'] });
     });
 });
 

@@ -2078,9 +2078,9 @@ body.mobile-menu-open .chat-widget-fab {
 
 #guestbook-section {
     --home-guestbook-scroll-progress: 0;
-    --home-guestbook-card-bg: #fffdf8;
-    --home-guestbook-card-border: rgba(20, 19, 17, 0.08);
-    --home-guestbook-card-text: rgba(20, 19, 17, 0.84);
+    --home-guestbook-card-bg: #182634;
+    --home-guestbook-card-border: rgba(255, 255, 255, 0.08);
+    --home-guestbook-card-text: rgba(241, 245, 249, 0.92);
     --home-guestbook-text: #f6f2eb;
     --home-guestbook-text-soft: rgba(246, 242, 235, 0.72);
     --home-guestbook-text-faint: rgba(246, 242, 235, 0.46);
@@ -2256,7 +2256,7 @@ body.mobile-menu-open .chat-widget-fab {
     color: var(--home-guestbook-card-text);
     box-shadow:
         0 16px 34px rgba(0, 0, 0, 0.16),
-        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
     opacity: calc(1 - ((1 - var(--card-fade-end, 0.58)) * var(--home-guestbook-scroll-progress, 0)));
     transform:
         translate3d(calc(var(--home-guestbook-scroll-progress, 0) * var(--card-fly-distance, 360px) * var(--card-fly-direction, 1)), 0, 0)
@@ -2280,7 +2280,7 @@ body.mobile-menu-open .chat-widget-fab {
 #guestbook-section .home-guestbook-card:hover {
     box-shadow:
         0 20px 42px rgba(0, 0, 0, 0.22),
-        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 #guestbook-section .home-guestbook-card__head {
@@ -2306,7 +2306,7 @@ body.mobile-menu-open .chat-widget-fab {
 #guestbook-section .home-guestbook-card__author {
     width: 100%;
     margin-top: 12px;
-    color: rgba(20, 19, 17, 0.5);
+    color: rgba(226, 232, 240, 0.68);
     font-size: 10px;
     font-weight: 600;
     line-height: 1.1;
@@ -2333,16 +2333,16 @@ body.mobile-menu-open .chat-widget-fab {
     align-self: center;
     padding: 5px 10px;
     border-radius: 999px;
-    background: rgba(20, 19, 17, 0.06);
-    color: rgba(20, 19, 17, 0.54);
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(226, 232, 240, 0.78);
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.04em;
 }
 
 #guestbook-section .home-guestbook-card--fallback .home-guestbook-card__reason {
-    background: rgba(107, 158, 206, 0.12);
-    color: rgba(26, 51, 83, 0.72);
+    background: rgba(255, 255, 255, 0.12);
+    color: rgba(241, 245, 249, 0.9);
 }
 
 #guestbook-section [data-card-side="left"] {

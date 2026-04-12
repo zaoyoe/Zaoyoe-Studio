@@ -271,23 +271,23 @@ async function fetchOpsAlertCaseEventsByTargets(supabase, targets = []) {
     const eventMap = new Map();
 
     try {
-        for (const [categoryKey, targetIds] of groupedTargets.entries()) {
-            const rows = await fetchPagedRows(() => supabase
+        const groupedRows = await Promise.all(
+            Array.from(groupedTargets.entries()).map(([categoryKey, targetIds]) => fetchPagedRows(() => supabase
                 .from('ops_alert_case_events')
                 .select(OPS_ALERT_CASE_EVENT_SELECT_FIELDS)
                 .in('category_key', [categoryKey])
                 .in('target_id', Array.from(new Set(targetIds)))
-                .order('created_at', { ascending: false }));
+                .order('created_at', { ascending: false })))
+        );
 
-            rows.forEach((row) => {
-                const eventRecord = buildOpsAlertCaseEventRecord(row);
-                const eventKey = buildOpsAlertCaseKey(eventRecord.category_key, eventRecord.target_id);
-                if (!eventMap.has(eventKey)) {
-                    eventMap.set(eventKey, []);
-                }
-                eventMap.get(eventKey).push(eventRecord);
-            });
-        }
+        groupedRows.flat().forEach((row) => {
+            const eventRecord = buildOpsAlertCaseEventRecord(row);
+            const eventKey = buildOpsAlertCaseKey(eventRecord.category_key, eventRecord.target_id);
+            if (!eventMap.has(eventKey)) {
+                eventMap.set(eventKey, []);
+            }
+            eventMap.get(eventKey).push(eventRecord);
+        });
     } catch (error) {
         if (!isMissingOpsAlertCaseEventsTableError(error)) {
             throw error;
@@ -372,31 +372,27 @@ async function fetchAssignableOpsAlertAdmins({ supabase, adminSupabase, currentU
     }
 
     const authUserMap = new Map();
-    if (adminSupabase?.auth?.admin?.listUsers) {
-        for (let page = 1; page <= 20; page += 1) {
-            const { data, error } = await adminSupabase.auth.admin.listUsers({
-                page,
-                perPage: 200
-            });
+    if (adminSupabase?.auth?.admin?.getUserById) {
+        const lookupIds = adminIds.filter((adminId) => {
+            const profile = profileMap.get(adminId) || {};
+            return !sanitizeText(profile.email, 255);
+        });
 
-            if (error) {
-                break;
-            }
+        await Promise.all(lookupIds.map(async (adminId) => {
+            try {
+                const { data, error } = await adminSupabase.auth.admin.getUserById(adminId);
+                if (error || !data?.user) {
+                    return;
+                }
 
-            const users = Array.isArray(data?.users) ? data.users : [];
-            users.forEach((user) => {
-                const id = sanitizeText(user?.id, 160);
-                if (!id || !adminRoleMap.has(id)) return;
-                authUserMap.set(id, {
-                    id,
-                    email: sanitizeText(user?.email, 255) || null
+                authUserMap.set(adminId, {
+                    id: adminId,
+                    email: sanitizeText(data.user.email, 255) || null
                 });
-            });
-
-            if (users.length < 200) {
-                break;
+            } catch (_) {
+                // Ignore auth lookup failures and fall back to profile labels.
             }
-        }
+        }));
     }
 
     return adminIds

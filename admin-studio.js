@@ -301,6 +301,142 @@ function renderAdminStudioEmptyMessage(container, text) {
     container.replaceChildren(createAdminStudioEmptyElement(text));
 }
 
+function setAdminGalleryLoadingChrome() {
+    const skeleton = document.getElementById('adminManageChromeSkeleton');
+    if (skeleton) {
+        skeleton.remove();
+    }
+}
+
+function getAdminGallerySkeletonCardProfile(index = 0) {
+    const profiles = [
+        {
+            badges: [92, 42, 42, 78],
+            title: [72, 48],
+            subtitle: [100, 78],
+            meta: [58, 38],
+            status: 68,
+            metrics: [[24, 70, 54], [24, 66, 48]],
+            note: 82,
+            actions: [70, 68, 78]
+        },
+        {
+            badges: [96, 40, 44, 72],
+            title: [66, 54],
+            subtitle: [92, 84],
+            meta: [62, 42],
+            status: 64,
+            metrics: [[24, 74, 50], [24, 64, 52]],
+            note: 76,
+            actions: [68, 66, 74]
+        },
+        {
+            badges: [88, 44, 42, 80],
+            title: [74, 52],
+            subtitle: [96, 72],
+            meta: [54, 40],
+            status: 72,
+            metrics: [[24, 68, 46], [24, 72, 54]],
+            note: 80,
+            actions: [72, 70, 82]
+        }
+    ];
+
+    return profiles[Math.abs(Number.parseInt(index, 10) || 0) % profiles.length];
+}
+
+function createAdminGallerySkeletonCard(index = 0) {
+    const profile = getAdminGallerySkeletonCardProfile(index);
+    const card = document.createElement('div');
+    card.className = 'admin-card admin-card--skeleton';
+    card.setAttribute('aria-hidden', 'true');
+    card.innerHTML = `
+        <div class="admin-card-media">
+            <div class="admin-card-media-skeleton"></div>
+            <div class="admin-card-badges admin-card-badges--overlay admin-card-badges--skeleton">
+                ${profile.badges.map((width) => `<span class="admin-skeleton-block admin-skeleton-block--pill" style="width:${width}px"></span>`).join('')}
+            </div>
+        </div>
+        <div class="admin-card-content">
+            <div class="admin-card-header">
+                <div class="admin-card-title admin-card-title--skeleton admin-card-skeleton-copy">
+                    <span class="admin-skeleton-block admin-skeleton-block--title" style="width:${profile.title[0]}%"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--title" style="width:${profile.title[1]}%"></span>
+                </div>
+                <span class="admin-card-status admin-card-status--skeleton">
+                    <span class="admin-skeleton-block admin-skeleton-block--pill" style="width:${profile.status}px"></span>
+                </span>
+            </div>
+            <div class="admin-card-subtitle admin-card-subtitle--skeleton admin-card-skeleton-copy">
+                <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${profile.subtitle[0]}%"></span>
+                <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${profile.subtitle[1]}%"></span>
+            </div>
+            <div class="admin-card-meta-row admin-card-meta-row--skeleton">
+                <div class="admin-card-language-summary">
+                    <span class="admin-skeleton-block admin-skeleton-block--tiny" style="width:${profile.meta[0]}%"></span>
+                </div>
+                <div class="admin-card-updated-at">
+                    <span class="admin-skeleton-block admin-skeleton-block--tiny" style="width:${profile.meta[1]}%"></span>
+                </div>
+            </div>
+            <div class="admin-card-site-metrics">
+                <div class="admin-card-site-metric admin-card-site-metric--skeleton">
+                    <span class="admin-skeleton-block admin-skeleton-block--tiny" style="width:${profile.metrics[0][0]}px"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${profile.metrics[0][1]}%"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--tiny" style="width:${profile.metrics[0][2]}%"></span>
+                </div>
+                <div class="admin-card-site-metric admin-card-site-metric--skeleton">
+                    <span class="admin-skeleton-block admin-skeleton-block--tiny" style="width:${profile.metrics[1][0]}px"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${profile.metrics[1][1]}%"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--tiny" style="width:${profile.metrics[1][2]}%"></span>
+                </div>
+            </div>
+            <div class="admin-card-ops-note admin-card-ops-note--skeleton admin-card-skeleton-copy admin-card-skeleton-copy--compact">
+                <span class="admin-skeleton-block admin-skeleton-block--tiny" style="width:${profile.note}%"></span>
+            </div>
+            <div class="admin-card-context-actions admin-card-context-actions--skeleton">
+                <button class="admin-card-context-btn admin-card-context-btn--skeleton" type="button" tabindex="-1">
+                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${profile.actions[0]}px"></span>
+                </button>
+                <button class="admin-card-context-btn admin-card-context-btn--skeleton" type="button" tabindex="-1">
+                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${profile.actions[1]}px"></span>
+                </button>
+                <button class="admin-card-context-btn admin-card-context-btn--primary admin-card-context-btn--skeleton admin-card-context-btn--skeleton-primary" type="button" tabindex="-1">
+                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${profile.actions[2]}px"></span>
+                </button>
+            </div>
+        </div>
+    `;
+    return card;
+}
+
+function renderAdminGalleryLoadingState(options = {}) {
+    const grid = document.getElementById('adminGrid');
+    const pagination = document.getElementById('adminGalleryPagination');
+    if (!grid) {
+        return false;
+    }
+
+    const preserveExisting = options?.preserveExisting === true;
+    if (preserveExisting && getAdminGalleryCards().length > 0) {
+        return false;
+    }
+
+    const skeletonCount = Math.min(
+        Math.max(Number.parseInt(options?.count, 10) || ADMIN_GALLERY_PAGE_SIZE, 4),
+        ADMIN_GALLERY_PAGE_SIZE
+    );
+    const fragment = document.createDocumentFragment();
+    for (let index = 0; index < skeletonCount; index += 1) {
+        fragment.appendChild(createAdminGallerySkeletonCard(index));
+    }
+    grid.replaceChildren(fragment);
+    if (pagination) {
+        pagination.innerHTML = '';
+    }
+    return true;
+}
+
 function syncAdminSearchCardVisibility(card, visible) {
     if (!card) return;
     card.classList.toggle('admin-card--hidden-by-search', !visible);
@@ -326,6 +462,10 @@ function sanitizeImageUrl(url) {
 
 function getOptimizedPromptCardImageUrl(url) {
     if (typeof url !== 'string' || !url.trim()) return '';
+    const options = arguments[1] && typeof arguments[1] === 'object'
+        ? arguments[1]
+        : {};
+    const { format = 'avif' } = options;
 
     const trimmed = url.trim();
 
@@ -343,6 +483,11 @@ function getOptimizedPromptCardImageUrl(url) {
             optimizedUrl.searchParams.set('width', '320');
             optimizedUrl.searchParams.set('height', '220');
             optimizedUrl.searchParams.set('quality', '80');
+            if (format) {
+                optimizedUrl.searchParams.set('format', format);
+            } else {
+                optimizedUrl.searchParams.delete('format');
+            }
             return optimizedUrl.toString();
         } catch (error) {
             console.warn('Failed to optimize prompt card image URL:', trimmed, error);
@@ -356,6 +501,77 @@ function sanitizePromptImageUrl(url) {
     const safeUrl = sanitizeImageUrl(url);
     if (!safeUrl) return '';
     return getOptimizedPromptCardImageUrl(safeUrl);
+}
+
+function buildAdminPromptCardImageCandidates(url, primarySrc = '') {
+    const originalSrc = sanitizeImageUrl(url);
+    if (!originalSrc) {
+        return {
+            originalSrc: '',
+            primarySrc: '',
+            transformFallbackSrc: ''
+        };
+    }
+
+    const resolvedPrimarySrc = primarySrc || getOptimizedPromptCardImageUrl(originalSrc);
+    const transformFallbackSrc = getOptimizedPromptCardImageUrl(originalSrc, { format: '' });
+
+    return {
+        originalSrc,
+        primarySrc: resolvedPrimarySrc,
+        transformFallbackSrc: transformFallbackSrc && transformFallbackSrc !== resolvedPrimarySrc
+            ? transformFallbackSrc
+            : ''
+    };
+}
+
+function setAdminPromptCardImagePriority(image, { eager = false } = {}) {
+    if (!(image instanceof HTMLImageElement)) return;
+
+    image.loading = eager ? 'eager' : 'lazy';
+    image.decoding = 'async';
+    image.setAttribute('fetchpriority', eager ? 'high' : 'auto');
+    if ('fetchPriority' in image) {
+        image.fetchPriority = eager ? 'high' : 'auto';
+    }
+}
+
+function markAdminPromptCardImageReady(card, image) {
+    if (card) {
+        card.classList.add('admin-card--image-loaded');
+    }
+    if (image) {
+        image.dataset.loadState = 'loaded';
+    }
+}
+
+function handleAdminPromptCardImageLoad(event) {
+    const image = event?.currentTarget;
+    if (!(image instanceof HTMLImageElement)) return;
+    markAdminPromptCardImageReady(image.closest('.admin-card'), image);
+}
+
+function handleAdminPromptCardImageError(event) {
+    const image = event?.currentTarget;
+    if (!(image instanceof HTMLImageElement)) return;
+
+    const transformFallbackSrc = String(image.dataset.transformFallbackSrc || '').trim();
+    const originalSrc = String(image.dataset.originalSrc || '').trim();
+
+    if (!image.dataset.fallbackStage && transformFallbackSrc && image.src !== transformFallbackSrc) {
+        image.dataset.fallbackStage = 'transform';
+        image.src = transformFallbackSrc;
+        return;
+    }
+
+    if (image.dataset.fallbackStage !== 'original' && originalSrc && image.src !== originalSrc) {
+        image.dataset.fallbackStage = 'original';
+        image.src = originalSrc;
+        return;
+    }
+
+    image.dataset.loadState = 'failed';
+    markAdminPromptCardImageReady(image.closest('.admin-card'), image);
 }
 
 function getAdminStudioSupabaseClient() {
@@ -532,7 +748,14 @@ async function fetchPromptBilingualVerificationRow(promptId = '') {
     return payload?.row && typeof payload.row === 'object' ? payload.row : null;
 }
 
+function getPromptRowsMissingBilingualIds(rows = []) {
+    return (Array.isArray(rows) ? rows : [])
+        .filter((row) => row && typeof row === 'object' && String(row.id || '').trim() && !promptHasAnyBilingualCopy(row))
+        .map((row) => String(row.id || '').trim());
+}
+
 async function fetchPromptBilingualVerificationRows(promptIds = []) {
+    const options = arguments[1] && typeof arguments[1] === 'object' ? arguments[1] : {};
     const normalizedIds = [...new Set(
         (Array.isArray(promptIds) ? promptIds : [promptIds])
             .map((id) => String(id || '').trim())
@@ -542,16 +765,30 @@ async function fetchPromptBilingualVerificationRows(promptIds = []) {
         return [];
     }
 
-    const payloads = await Promise.all(
-        normalizedIds.map((id) => fetchAdminPromptItem(id, {
-            site: getAdminPromptsReadSite(),
-            hydrateBilingual: false
-        }))
-    );
+    const site = options?.site || getAdminPromptsReadSite();
+    const requestedBatchSize = Number.parseInt(options?.batchSize, 10);
+    const batchSize = Number.isFinite(requestedBatchSize) && requestedBatchSize > 0
+        ? requestedBatchSize
+        : normalizedIds.length;
+    const rows = [];
 
-    return payloads
-        .map((payload) => payload?.row)
-        .filter((row) => row && typeof row === 'object');
+    for (let start = 0; start < normalizedIds.length; start += batchSize) {
+        const batch = normalizedIds.slice(start, start + batchSize);
+        const payloads = await Promise.all(
+            batch.map((id) => fetchAdminPromptItem(id, {
+                site,
+                hydrateBilingual: false
+            }))
+        );
+
+        rows.push(
+            ...payloads
+                .map((payload) => payload?.row)
+                .filter((row) => row && typeof row === 'object')
+        );
+    }
+
+    return rows;
 }
 
 function buildPromptBilingualPersistencePayload(attemptedPayload = {}) {
@@ -591,9 +828,7 @@ async function persistPromptBilingualFieldsViaSupabase(promptId = '', attemptedP
 
 async function hydratePromptRowsBilingualProjection(rows = []) {
     const safeRows = Array.isArray(rows) ? rows : [];
-    const candidateIds = safeRows
-        .filter((row) => row && typeof row === 'object' && String(row.id || '').trim() && !promptHasAnyBilingualCopy(row))
-        .map((row) => String(row.id || '').trim());
+    const candidateIds = getPromptRowsMissingBilingualIds(safeRows);
 
     if (!candidateIds.length) {
         return safeRows;
@@ -1856,6 +2091,19 @@ function bindAdminStudioDelegatedControls() {
             case 'analytics-apply-custom-range':
                 window.applyCustomRange?.();
                 break;
+            case 'analytics-toggle-product-detail-dropdown':
+                window.toggleAnalyticsProductDetailSelector?.();
+                break;
+            case 'analytics-select-product-detail-option':
+                window.changeAnalyticsProductDetailSelection?.(
+                    actionEl.dataset.analyticsProductId || '',
+                    {
+                        productName: actionEl.dataset.analyticsProductName || '',
+                        detailFocus: actionEl.dataset.analyticsDetailFocus || '',
+                        focusTargetId: actionEl.dataset.analyticsTargetId || ''
+                    }
+                );
+                break;
             case 'analytics-export-data':
                 window.exportAnalyticsData?.(actionEl.dataset.analyticsExportFormat);
                 break;
@@ -1926,6 +2174,21 @@ function bindAdminStudioDelegatedControls() {
                     actionEl.dataset.analyticsContext || ''
                 );
                 break;
+            case 'analytics-product-detail-focus-section': {
+                const detailFocus = Object.prototype.hasOwnProperty.call(actionEl.dataset, 'analyticsDetailFocus')
+                    ? actionEl.dataset.analyticsDetailFocus
+                    : undefined;
+                window.focusAnalyticsProductDetailSection?.(
+                    actionEl.dataset.analyticsTargetId || '',
+                    {
+                        detailFocus,
+                        productId: actionEl.dataset.analyticsProductId || '',
+                        productName: actionEl.dataset.analyticsProductName || '',
+                        block: 'start'
+                    }
+                );
+                break;
+            }
             case 'analytics-load-ai-prediction':
                 window.loadAIPrediction?.();
                 break;
@@ -3018,7 +3281,7 @@ const OPS_ALERTS_MODULE_VIEW_CARD_ASSIGNMENTS = Object.freeze([
     { configId: 'ops-alerts-verify-failure', bucket: 'monitors-side' },
     { configId: 'ops-alerts-shop-risk', bucket: 'monitors-side' },
     { configId: 'ops-alerts-workspace', bucket: 'workspace-main' },
-    { configId: 'ops-alerts-monitor', bucket: 'workspace-side' },
+    { configId: 'ops-alerts-monitor', bucket: 'workspace-main' },
     { configId: 'ops-alerts-health', bucket: 'health-main' }
 ]);
 
@@ -3076,6 +3339,8 @@ function switchView(viewName) {
     if (normalizedView === 'manage') {
         renderGallerySiteContextBanner();
         loadAdminPrompts({ allowCached: true });
+    } else {
+        setAdminGalleryLoadingChrome(false);
     }
 }
 
@@ -3183,11 +3448,13 @@ function updateAdminTabIndicator(activeTab) {
 // ========================================
 let allPrompts = []; // Cache all prompts for local search
 const ADMIN_GALLERY_PAGE_SIZE = 10;
+const ADMIN_GALLERY_EAGER_IMAGE_COUNT = 4;
 const adminGalleryPrefetchState = {
     site: '',
     loaded: false,
     promise: null
 };
+const ADMIN_GALLERY_BILINGUAL_BATCH_SIZE = 12;
 const adminGalleryLoadState = {
     site: '',
     loaded: false,
@@ -3200,7 +3467,8 @@ const adminGalleryViewState = {
     pageSize: ADMIN_GALLERY_PAGE_SIZE,
     searchQuery: '',
     searchMatchedIds: null,
-    sortValue: 'updated-desc'
+    sortValue: 'updated-desc',
+    filteredPromptIds: []
 };
 let pendingAdminGalleryFocusPromptId = '';
 
@@ -3243,6 +3511,11 @@ function markAdminGalleryPromptListStale(site = '') {
             adminGalleryLoadState.site = '';
         }
     }
+}
+
+function isCurrentAdminGalleryLoadRequest(site = getAdminPromptsReadSite(), requestId = adminGalleryLoadState.requestId) {
+    return adminGalleryLoadState.requestId === requestId
+        && adminGalleryLoadState.site === normalizeAdminGallerySite(site);
 }
 
 function setAdminGalleryFilterDropdownValue(dropdownId, value = '') {
@@ -3529,23 +3802,10 @@ function getAdminGallerySortValue() {
     return normalizeAdminGallerySortValue(inputValue);
 }
 
-function sortAdminGalleryCards(sortValue = getAdminGallerySortValue()) {
-    const grid = document.getElementById('adminGrid');
-    if (!grid) {
-        return;
-    }
-
-    const emptyMessage = grid.querySelector('.no-results-message');
-    const cards = getAdminGalleryCards().sort((leftCard, rightCard) => {
-        const leftPrompt = getAdminGalleryPromptById(leftCard.dataset.id || '');
-        const rightPrompt = getAdminGalleryPromptById(rightCard.dataset.id || '');
-        return compareAdminGalleryPrompts(leftPrompt, rightPrompt, sortValue);
-    });
-
-    cards.forEach((card) => grid.appendChild(card));
-    if (emptyMessage) {
-        grid.appendChild(emptyMessage);
-    }
+function sortAdminGalleryCards(sortValue = getAdminGallerySortValue(), rows = allPrompts) {
+    const safeRows = Array.isArray(rows) ? [...rows] : [];
+    safeRows.sort((leftPrompt, rightPrompt) => compareAdminGalleryPrompts(leftPrompt, rightPrompt, sortValue));
+    return safeRows;
 }
 
 function summarizeAdminGalleryOps(rows = allPrompts) {
@@ -3659,11 +3919,73 @@ function matchesAdminGalleryStatusFilter(prompt, statusValue = '') {
     return getPromptLifecycleState(prompt).key === normalizedValue;
 }
 
+function getAdminGalleryFilteredPrompts() {
+    const searchQuery = String(adminGalleryViewState.searchQuery || '').trim().toLowerCase();
+    const searchMatchedIds = adminGalleryViewState.searchMatchedIds instanceof Set
+        ? adminGalleryViewState.searchMatchedIds
+        : null;
+    const categoryValue = document.getElementById('categoryFilter')?.value || '';
+    const dateValue = document.getElementById('dateFilter')?.value || '';
+    const languageValue = document.getElementById('languageFilter')?.value || '';
+    const statusValue = document.getElementById('statusFilter')?.value || '';
+    const sortValue = normalizeAdminGallerySortValue(document.getElementById('sortFilter')?.value || adminGalleryViewState.sortValue);
+
+    adminGalleryViewState.sortValue = sortValue;
+
+    const filteredRows = (Array.isArray(allPrompts) ? allPrompts : []).filter((prompt) => {
+        if (!prompt) {
+            return false;
+        }
+
+        if (categoryValue) {
+            const tags = Array.isArray(prompt.tags) ? prompt.tags : [];
+            const hasMatchedTag = tags.some((tag) => String(tag || '').toLowerCase() === String(categoryValue).toLowerCase());
+            if (!hasMatchedTag) {
+                return false;
+            }
+        }
+
+        if (!matchesAdminGalleryDateFilter(prompt, dateValue)) {
+            return false;
+        }
+
+        if (!matchesAdminGalleryLanguageFilter(prompt, languageValue)) {
+            return false;
+        }
+
+        if (!matchesAdminGalleryStatusFilter(prompt, statusValue)) {
+            return false;
+        }
+
+        if (searchQuery && searchMatchedIds) {
+            return searchMatchedIds.has(String(prompt.id || ''));
+        }
+
+        return true;
+    });
+
+    return sortAdminGalleryCards(sortValue, filteredRows);
+}
+
 function focusAdminGalleryPromptCard(promptId = '', options = {}) {
     const normalizedPromptId = String(promptId || '').trim();
     if (!normalizedPromptId) {
         return false;
     }
+
+    if (options.resetFilters !== false) {
+        resetAdminGalleryManageFilters();
+    }
+
+    const filteredRows = getAdminGalleryFilteredPrompts();
+    const targetIndex = filteredRows.findIndex((prompt) => String(prompt?.id || '') === normalizedPromptId);
+    if (targetIndex >= 0) {
+        adminGalleryViewState.page = Math.floor(targetIndex / adminGalleryViewState.pageSize) + 1;
+    } else {
+        return false;
+    }
+
+    applyAdminGalleryFilters();
 
     const escapedPromptId = typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
         ? CSS.escape(normalizedPromptId)
@@ -3671,18 +3993,6 @@ function focusAdminGalleryPromptCard(promptId = '', options = {}) {
     const targetCard = document.querySelector(`#adminGrid .admin-card[data-id="${escapedPromptId}"]`);
     if (!targetCard) {
         return false;
-    }
-
-    if (options.resetFilters !== false) {
-        resetAdminGalleryManageFilters();
-        applyAdminGalleryFilters({ resetPage: true });
-    }
-
-    const visibleCards = getAdminGalleryCards().filter((card) => !card.classList.contains('admin-card--hidden-by-search'));
-    const targetIndex = visibleCards.findIndex((card) => String(card.dataset.id || '') === normalizedPromptId);
-    if (targetIndex >= 0) {
-        adminGalleryViewState.page = Math.floor(targetIndex / adminGalleryViewState.pageSize) + 1;
-        renderAdminGalleryPagination();
     }
 
     getAdminGalleryCards().forEach((card) => card.classList.remove('is-focused'));
@@ -3749,11 +4059,6 @@ async function renderLoadedAdminPromptRows(rows = [], { siteContext = getAdminPr
     HOT_TAGS_CACHE = null;
 
     if (safeRows.length > 0) {
-        const fragment = document.createDocumentFragment();
-        safeRows.forEach((prompt) => {
-            fragment.appendChild(renderAdminCard(prompt));
-        });
-        grid.replaceChildren(fragment);
         renderGalleryOpsOverview();
         setAdminGallerySortFilterValue(document.getElementById('sortFilter')?.value || adminGalleryViewState.sortValue);
         updateBatchButtonStates();
@@ -3787,8 +4092,46 @@ async function renderLoadedAdminPromptRows(rows = [], { siteContext = getAdminPr
         }
     }
 
+    setAdminGalleryLoadingChrome(false);
     markAdminGalleryPromptListLoaded(normalizedSite);
     return true;
+}
+
+async function warmAdminGalleryHomepageFeatureStateInBackground(homepageWarmPromise, { site = getAdminPromptsReadSite(), requestId = adminGalleryLoadState.requestId } = {}) {
+    try {
+        await homepageWarmPromise;
+        if (!isCurrentAdminGalleryLoadRequest(site, requestId)) {
+            return false;
+        }
+
+        return refreshAdminGalleryCardsFromCache();
+    } catch (error) {
+        console.warn('[Gallery] Failed to warm homepage featured state:', error);
+        return false;
+    }
+}
+
+async function backfillAdminGalleryBilingualProjectionInBackground(rows = [], { site = getAdminPromptsReadSite(), requestId = adminGalleryLoadState.requestId } = {}) {
+    const candidateIds = getPromptRowsMissingBilingualIds(rows);
+    if (!candidateIds.length) {
+        return false;
+    }
+
+    try {
+        const verificationRows = await fetchPromptBilingualVerificationRows(candidateIds, {
+            site,
+            batchSize: ADMIN_GALLERY_BILINGUAL_BATCH_SIZE
+        });
+        if (!verificationRows.length || !isCurrentAdminGalleryLoadRequest(site, requestId)) {
+            return false;
+        }
+
+        hydrateAdminGalleryPromptsLocally(verificationRows);
+        return true;
+    } catch (error) {
+        console.warn('[Gallery] Failed to backfill bilingual prompt projection:', error);
+        return false;
+    }
 }
 
 function prefetchGalleryModule() {
@@ -3842,6 +4185,48 @@ function getAdminGalleryCards() {
     return Array.from(document.querySelectorAll('#adminGrid .admin-card'));
 }
 
+function ensureAdminGalleryCardImageLoaded(card, { eager = false } = {}) {
+    if (!card) {
+        return false;
+    }
+
+    const image = card.querySelector('.admin-card-image');
+    if (!(image instanceof HTMLImageElement)) {
+        return false;
+    }
+
+    setAdminPromptCardImagePriority(image, { eager });
+
+    if (image.dataset.loadRequested === 'true') {
+        return true;
+    }
+
+    const primarySrc = String(image.dataset.primarySrc || '').trim();
+    if (!primarySrc) {
+        return false;
+    }
+
+    image.dataset.loadRequested = 'true';
+    image.src = primarySrc;
+    if (image.complete && image.naturalWidth > 0) {
+        markAdminPromptCardImageReady(card, image);
+    }
+    return true;
+}
+
+function syncAdminGalleryVisibleCardImages() {
+    const visibleCards = getAdminGalleryCards().filter((card) => (
+        !card.classList.contains('admin-card--hidden-by-search')
+        && !card.classList.contains('admin-card--hidden-by-pagination')
+    ));
+
+    visibleCards.forEach((card, index) => {
+        ensureAdminGalleryCardImageLoaded(card, {
+            eager: index < ADMIN_GALLERY_EAGER_IMAGE_COUNT
+        });
+    });
+}
+
 function syncAdminGalleryPaginationCardVisibility(card, visible) {
     if (!card) return;
     card.classList.toggle('admin-card--hidden-by-pagination', !visible);
@@ -3888,6 +4273,7 @@ function replaceAdminGalleryPromptCard(promptId = '') {
 
     const nextCard = renderAdminCard(prompt);
     existingCard.replaceWith(nextCard);
+    syncAdminGalleryVisibleCardImages();
     return true;
 }
 
@@ -3898,15 +4284,41 @@ function hydrateAdminGalleryPromptsLocally(rows = []) {
     }
 
     safeRows.forEach((row) => {
-        const mergedRow = upsertAdminGalleryPromptCacheRow(row);
-        if (mergedRow) {
-            replaceAdminGalleryPromptCard(mergedRow.id);
-        }
+        upsertAdminGalleryPromptCacheRow(row);
     });
 
+    SEARCH_INDEX = null;
+    HOT_TAGS_CACHE = null;
     renderGalleryOpsOverview();
-    applyAdminGalleryFilters();
     updateBatchButtonStates();
+
+    if (adminGalleryViewState.searchQuery) {
+        setupAdminSearch();
+        void filterBySearch(adminGalleryViewState.searchQuery);
+        return;
+    }
+
+    applyAdminGalleryFilters();
+}
+
+function refreshAdminGalleryCardsFromCache() {
+    if (!Array.isArray(allPrompts) || !allPrompts.length) {
+        return false;
+    }
+
+    SEARCH_INDEX = null;
+    HOT_TAGS_CACHE = null;
+    renderGalleryOpsOverview();
+    updateBatchButtonStates();
+
+    if (adminGalleryViewState.searchQuery) {
+        setupAdminSearch();
+        void filterBySearch(adminGalleryViewState.searchQuery);
+        return true;
+    }
+
+    applyAdminGalleryFilters();
+    return true;
 }
 
 async function resolveAdminGalleryPromptForHomepageAction(promptId = '', options = {}) {
@@ -3991,8 +4403,9 @@ function renderAdminGalleryPagination() {
         return;
     }
 
-    const filteredCards = getAdminGalleryCards().filter((card) => !card.classList.contains('admin-card--hidden-by-search'));
-    const totalItems = filteredCards.length;
+    const totalItems = Array.isArray(adminGalleryViewState.filteredPromptIds)
+        ? adminGalleryViewState.filteredPromptIds.length
+        : 0;
 
     if (totalItems <= 0) {
         container.innerHTML = '';
@@ -4006,17 +4419,7 @@ function renderAdminGalleryPagination() {
     );
     adminGalleryViewState.page = currentPage;
 
-    const pageStartIndex = (currentPage - 1) * adminGalleryViewState.pageSize;
-    const pageEndIndex = pageStartIndex + adminGalleryViewState.pageSize;
-
-    getAdminGalleryCards().forEach((card) => {
-        syncAdminGalleryPaginationCardVisibility(card, false);
-    });
-
-    filteredCards.forEach((card, index) => {
-        const isVisibleOnPage = index >= pageStartIndex && index < pageEndIndex;
-        syncAdminGalleryPaginationCardVisibility(card, isVisibleOnPage);
-    });
+    syncAdminGalleryVisibleCardImages();
 
     container.innerHTML = `
         <div class="pagination-shell comments-pagination-shell__inner">
@@ -4060,6 +4463,7 @@ function applyAdminGalleryFilters(options = {}) {
     }
 
     if (!Array.isArray(allPrompts) || allPrompts.length === 0) {
+        adminGalleryViewState.filteredPromptIds = [];
         renderAdminStudioEmptyMessage(grid, 'No prompts yet. Create your first one!');
         if (pagination) {
             pagination.innerHTML = '';
@@ -4068,93 +4472,48 @@ function applyAdminGalleryFilters(options = {}) {
     }
 
     const searchQuery = String(adminGalleryViewState.searchQuery || '').trim().toLowerCase();
-    const searchMatchedIds = adminGalleryViewState.searchMatchedIds instanceof Set
-        ? adminGalleryViewState.searchMatchedIds
-        : null;
     const categoryValue = document.getElementById('categoryFilter')?.value || '';
     const dateValue = document.getElementById('dateFilter')?.value || '';
     const languageValue = document.getElementById('languageFilter')?.value || '';
     const statusValue = document.getElementById('statusFilter')?.value || '';
-    const sortValue = normalizeAdminGallerySortValue(document.getElementById('sortFilter')?.value || adminGalleryViewState.sortValue);
-    adminGalleryViewState.sortValue = sortValue;
-
-    sortAdminGalleryCards(sortValue);
     renderGalleryOpsOverview();
+    const filteredRows = getAdminGalleryFilteredPrompts();
+    adminGalleryViewState.filteredPromptIds = filteredRows.map((prompt) => String(prompt?.id || ''));
 
-    let visibleCount = 0;
-
-    getAdminGalleryCards().forEach((card) => {
-        const cardId = String(card.dataset.id || '');
-        const prompt = getAdminGalleryPromptById(cardId);
-        if (!prompt) {
-            syncAdminSearchCardVisibility(card, false);
-            syncAdminGalleryPaginationCardVisibility(card, false);
-            return;
-        }
-
-        let visible = true;
-
-        if (categoryValue) {
-            const tags = Array.isArray(prompt.tags) ? prompt.tags : [];
-            visible = tags.some((tag) => String(tag || '').toLowerCase() === String(categoryValue).toLowerCase());
-        }
-
-        if (visible && !matchesAdminGalleryDateFilter(prompt, dateValue)) {
-            visible = false;
-        }
-
-        if (visible && !matchesAdminGalleryLanguageFilter(prompt, languageValue)) {
-            visible = false;
-        }
-
-        if (visible && !matchesAdminGalleryStatusFilter(prompt, statusValue)) {
-            visible = false;
-        }
-
-        if (visible && searchQuery && searchMatchedIds) {
-            visible = searchMatchedIds.has(cardId);
-        }
-
-        syncAdminSearchCardVisibility(card, visible);
-        if (!visible) {
-            syncAdminGalleryPaginationCardVisibility(card, false);
-            return;
-        }
-
-        visibleCount += 1;
-    });
-
-    const existingMsg = grid.querySelector('.no-results-message');
-    if (visibleCount === 0) {
-        getAdminGalleryCards().forEach((card) => {
-            syncAdminGalleryPaginationCardVisibility(card, false);
-        });
-
-        if (!existingMsg) {
-            const emptyText = searchQuery || categoryValue || dateValue || languageValue || statusValue
-                ? '没有找到匹配的提示词'
-                : 'No prompts yet. Create your first one!';
-            grid.appendChild(createAdminStudioEmptyElement(emptyText, 'no-results-message'));
-        } else if (!searchQuery && !categoryValue && !dateValue && !languageValue && !statusValue) {
-            existingMsg.textContent = 'No prompts yet. Create your first one!';
-        }
-
+    if (filteredRows.length === 0) {
+        const emptyText = searchQuery || categoryValue || dateValue || languageValue || statusValue
+            ? '没有找到匹配的提示词'
+            : 'No prompts yet. Create your first one!';
+        grid.replaceChildren(createAdminStudioEmptyElement(emptyText, 'no-results-message'));
         if (pagination) {
             pagination.innerHTML = '';
         }
         return;
     }
 
-    if (existingMsg) {
-        existingMsg.remove();
-    }
-
+    const totalPages = Math.max(1, Math.ceil(filteredRows.length / adminGalleryViewState.pageSize));
+    adminGalleryViewState.page = Math.min(
+        Math.max(1, normalizeAdminGalleryPage(adminGalleryViewState.page, 1)),
+        totalPages
+    );
+    const pageStartIndex = (adminGalleryViewState.page - 1) * adminGalleryViewState.pageSize;
+    const pageEndIndex = pageStartIndex + adminGalleryViewState.pageSize;
+    const pageRows = filteredRows.slice(pageStartIndex, pageEndIndex);
+    const fragment = document.createDocumentFragment();
+    pageRows.forEach((prompt) => {
+        const card = renderAdminCard(prompt);
+        const visible = true;
+        syncAdminSearchCardVisibility(card, visible);
+        syncAdminGalleryPaginationCardVisibility(card, visible);
+        fragment.appendChild(card);
+    });
+    grid.replaceChildren(fragment);
     renderAdminGalleryPagination();
 }
 
 function changeAdminGalleryPage(page) {
     adminGalleryViewState.page = normalizeAdminGalleryPage(page, adminGalleryViewState.page);
-    renderAdminGalleryPagination();
+    applyAdminGalleryFilters();
 }
 
 function prefetchSettingsModule() {
@@ -4307,6 +4666,7 @@ async function loadAdminPrompts(options = {}) {
     const site = normalizeAdminGallerySite(options?.site || getAdminPromptsReadSite());
     const force = options?.force === true;
     const allowCached = options?.allowCached === true;
+    const preferFastRender = options?.preferFastRender === true || allowCached;
     const resetPage = options?.resetPage !== false;
 
     if (!force && allowCached && hasFreshAdminGalleryPromptList(site)) {
@@ -4322,6 +4682,7 @@ async function loadAdminPrompts(options = {}) {
     }
 
     if (!force && allowCached && adminGalleryLoadState.promise && adminGalleryLoadState.site === site) {
+        renderAdminGalleryLoadingState({ preserveExisting: true });
         return adminGalleryLoadState.promise;
     }
 
@@ -4332,14 +4693,29 @@ async function loadAdminPrompts(options = {}) {
 
     const loadPromise = (async () => {
         try {
-            if (typeof window.HomepageAdmin?.ensureLoaded === 'function') {
+            renderAdminGalleryLoadingState({ preserveExisting: true });
+            let homepageWarmPromise = null;
+            if (preferFastRender) {
+                homepageWarmPromise = typeof window.HomepageAdmin?.ensureLoaded === 'function'
+                    ? Promise.resolve()
+                        .then(() => window.HomepageAdmin.ensureLoaded())
+                        .catch((homepageError) => {
+                            console.warn('[Gallery] Failed to warm homepage featured state:', homepageError);
+                            return false;
+                        })
+                    : null;
+            } else if (typeof window.HomepageAdmin?.ensureLoaded === 'function') {
                 try {
                     await window.HomepageAdmin.ensureLoaded();
                 } catch (homepageError) {
                     console.warn('[Gallery] Failed to warm homepage featured state:', homepageError);
                 }
             }
-            const payload = await fetchAdminPromptList({ site });
+
+            const payload = await fetchAdminPromptList({
+                site,
+                hydrateBilingual: !preferFastRender
+            });
             if (requestId !== adminGalleryLoadState.requestId) {
                 return {
                     rows: allPrompts,
@@ -4352,6 +4728,19 @@ async function loadAdminPrompts(options = {}) {
                 siteContext: payload.siteContext || site,
                 resetPage
             });
+
+            if (preferFastRender) {
+                if (homepageWarmPromise) {
+                    void warmAdminGalleryHomepageFeatureStateInBackground(homepageWarmPromise, {
+                        site: payload.siteContext || site,
+                        requestId
+                    });
+                }
+                void backfillAdminGalleryBilingualProjectionInBackground(payload.rows || [], {
+                    site: payload.siteContext || site,
+                    requestId
+                });
+            }
             return {
                 ...payload,
                 fromCache: false
@@ -4361,6 +4750,7 @@ async function loadAdminPrompts(options = {}) {
                 adminGalleryPrefetchState.loaded = false;
                 markAdminGalleryPromptListStale(site);
             }
+            setAdminGalleryLoadingChrome(false);
             console.error('Error loading prompts:', err);
             showToast(`Failed to load prompts: ${err.message || 'Unknown error'}`, 'error');
             throw err;
@@ -4424,12 +4814,25 @@ function renderAdminCard(prompt) {
     image.loading = 'lazy';
     image.decoding = 'async';
     image.referrerPolicy = 'no-referrer';
+    image.addEventListener('load', handleAdminPromptCardImageLoad);
+    image.addEventListener('error', handleAdminPromptCardImageError);
 
+    const rawImageUrl = Array.isArray(prompt.images) ? prompt.images[0] : '';
     const imageUrl = sanitizePromptImageUrl(Array.isArray(prompt.images) ? prompt.images[0] : '');
+    const imageCandidates = buildAdminPromptCardImageCandidates(rawImageUrl, imageUrl);
     if (imageUrl) {
-        image.src = imageUrl;
+        image.dataset.primarySrc = imageCandidates.primarySrc;
+        image.dataset.originalSrc = imageCandidates.originalSrc;
+        image.dataset.transformFallbackSrc = imageCandidates.transformFallbackSrc;
+        image.dataset.fallbackStage = '';
+        image.dataset.loadRequested = 'false';
     } else {
         image.removeAttribute('src');
+        image.removeAttribute('data-primary-src');
+        image.removeAttribute('data-original-src');
+        image.removeAttribute('data-transform-fallback-src');
+        image.removeAttribute('data-fallback-stage');
+        image.removeAttribute('data-load-requested');
     }
     media.appendChild(image);
 
@@ -4503,12 +4906,15 @@ function renderAdminCard(prompt) {
     metrics.appendChild(buildPromptSiteMetricElement('INTL', siteMetrics.intl, currentSite));
     content.appendChild(metrics);
 
+    const opsNote = document.createElement('div');
+    opsNote.className = 'admin-card-ops-note';
     if (opsSummary) {
-        const opsNote = document.createElement('div');
-        opsNote.className = 'admin-card-ops-note';
         opsNote.textContent = opsSummary;
-        content.appendChild(opsNote);
+    } else {
+        opsNote.classList.add('admin-card-ops-note--placeholder');
+        opsNote.innerHTML = '&nbsp;';
     }
+    content.appendChild(opsNote);
 
     const contextActions = document.createElement('div');
     contextActions.className = 'admin-card-context-actions';

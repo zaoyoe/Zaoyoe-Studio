@@ -1141,7 +1141,7 @@ async function adminTicketsMetricsHandler(req, res) {
     }
 
     try {
-        const { supabase } = await requireAdmin(req, { permission: 'tickets.manage' });
+        const { supabase } = await requireAdmin(req, { anyOf: ['tickets.manage', 'analytics.view'] });
         const nowDate = req?.now instanceof Date ? req.now : new Date();
         const params = getQueryParams(req);
         const overview = await loadTicketMetricsOverview({

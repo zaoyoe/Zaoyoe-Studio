@@ -11,9 +11,12 @@ const {
     clearRequireCacheByPrefixes,
     createSmokeResultStore,
     DEFAULT_LOCAL_PREVIEW_BODY_LIMIT,
+    getDefaultEnvFiles,
     loadFreshAdminApiHandler,
     loadFreshPublicApiHandler,
+    loadFreshShopApiHandler,
     resolveLocalPreviewListenHost,
+    resolveLocalPreviewStandaloneApiRoute,
     resolveLocalPreviewRuntimeScript,
     setLocalPreviewNoStoreHeaders,
     shouldDisableLocalPreviewCache
@@ -40,6 +43,19 @@ test('local preview server serves Supabase runtime config from local env files',
     assert.match(body, /__ZAOYOE_SUPABASE_CONFIG__/);
     assert.match(body, /https:\/\/local\.supabase\.co/);
     assert.match(body, /local-key/);
+});
+
+test('local preview server includes pulled vercel env ahead of generic local env files', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-preview-env-order-'));
+    const envFiles = getDefaultEnvFiles(tempRoot);
+
+    assert.deepEqual(envFiles, [
+        path.join(tempRoot, 'server/.env.staging'),
+        path.join(tempRoot, '.vercel/.env.production.local'),
+        path.join(tempRoot, 'server/.env'),
+        path.join(tempRoot, '.env'),
+        path.join(tempRoot, '.env.local')
+    ]);
 });
 
 test('local preview server returns executable fallback script when public config is missing', async () => {
@@ -76,6 +92,21 @@ test('local preview server preserves explicit public query routes for shared han
     const rewrittenUrl = buildLocalPreviewPublicHandlerUrl('/api/public?scope=config&route=notifications&site=intl');
 
     assert.equal(rewrittenUrl, '/api/public?scope=config&route=notifications&site=intl');
+});
+
+test('local preview server resolves standalone shop api routes from legacy endpoints', () => {
+    assert.equal(
+        resolveLocalPreviewStandaloneApiRoute('/api/shop/purchase?site=cn', '/api/shop'),
+        'purchase'
+    );
+    assert.equal(
+        resolveLocalPreviewStandaloneApiRoute('/api/shop/validate-discount', '/api/shop'),
+        'validate-discount'
+    );
+    assert.equal(
+        resolveLocalPreviewStandaloneApiRoute('/api/public/shop/purchase', '/api/shop'),
+        ''
+    );
 });
 
 test('local preview server reloads shared admin handler modules without requiring a restart', () => {
@@ -120,6 +151,25 @@ test('local preview server reloads shared public handler modules without requiri
 
     const secondLoad = loadFreshPublicApiHandler(tempRoot);
     assert.equal(secondLoad.version, 'v2');
+});
+
+test('local preview server reloads standalone shop handlers without requiring a restart', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-preview-shop-handler-'));
+    const tempShopHandlerDir = path.join(tempRoot, 'api/shop');
+    const tempShopHandler = path.join(tempShopHandlerDir, 'purchase.js');
+
+    fs.mkdirSync(tempShopHandlerDir, { recursive: true });
+    fs.writeFileSync(tempShopHandler, "module.exports = function handler() { return 'v1'; };\n");
+
+    const firstLoad = loadFreshShopApiHandler(tempRoot, '/api/shop/purchase');
+    assert.equal(typeof firstLoad, 'function');
+    assert.equal(firstLoad(), 'v1');
+
+    fs.writeFileSync(tempShopHandler, "module.exports = function handler() { return 'v2'; };\n");
+
+    const secondLoad = loadFreshShopApiHandler(tempRoot, '/api/shop/purchase');
+    assert.equal(typeof secondLoad, 'function');
+    assert.equal(secondLoad(), 'v2');
 });
 
 test('local preview server seeds process env from loaded preview values without clobbering existing vars', () => {

@@ -503,6 +503,33 @@ async function withOpsAlertsModuleWithoutSecretKeyMap(callback) {
     }
 }
 
+async function withOpsAlertsModuleWithSecretsMock(mockSecretsModule, callback) {
+    const modulePath = path.resolve(__dirname, '../api/_lib/ops-alerts.js');
+    const originalLoad = Module._load;
+
+    delete require.cache[modulePath];
+    Module._load = function patchedLoad(request, parent, isMain) {
+        if (request === './secrets') {
+            return mockSecretsModule;
+        }
+
+        return originalLoad.call(this, request, parent, isMain);
+    };
+
+    let moduleExports;
+    try {
+        moduleExports = require(modulePath);
+    } finally {
+        Module._load = originalLoad;
+    }
+
+    try {
+        return await callback(moduleExports);
+    } finally {
+        delete require.cache[modulePath];
+    }
+}
+
 test('enqueueOpsAlertJob dedupes repeated refund alerts inside the recent window', async () => {
     const state = { jobs: [] };
     const supabase = createSupabaseStub(state);
@@ -3090,6 +3117,38 @@ test('ops alerts runtime secret resolution falls back to default secret keys whe
         assert.equal(runtime.secrets.feishu_webhook_url_source, 'environment');
         assert.equal(runtime.secrets.email_api_key, 're_test_email_key');
         assert.equal(runtime.secrets.email_api_key_source, 'environment');
+    });
+});
+
+test('ops alerts runtime secret resolution degrades gracefully when a stored secret cannot be decrypted', async () => {
+    await withOpsAlertsModuleWithSecretsMock({
+        getStoredAdminSecret: async (_supabase, secretKey) => {
+            if (secretKey === 'ops_alert_telegram_bot_token') {
+                throw new Error('Unsupported state or unable to authenticate data');
+            }
+            return null;
+        }
+    }, async (opsAlertsModule) => {
+        const runtime = await opsAlertsModule.loadOpsAlertsRuntimeConfig({
+            from() {
+                return createQueryBuilder(async (query) => {
+                    if (query.mode === 'select') {
+                        return { data: [], error: null };
+                    }
+
+                    throw new Error(`Unexpected query mode: ${query.mode}`);
+                });
+            }
+        }, {});
+
+        assert.equal(runtime.secrets.telegram_bot_token, '');
+        assert.equal(runtime.secrets.telegram_bot_token_source, 'error');
+        assert.equal(
+            runtime.secrets.telegram_bot_token_error_message,
+            'Telegram Bot Token 无法解密，请检查 ADMIN_CONFIG_ENCRYPTION_KEY 是否与写入该密钥时一致，或重新保存该密钥。'
+        );
+        assert.equal(runtime.secrets.feishu_webhook_url_source, 'missing');
+        assert.equal(runtime.secrets.email_api_key_source, 'missing');
     });
 });
 

@@ -466,7 +466,10 @@ function buildVerifyMonitorWorkspaceSummary(items = []) {
 
 module.exports = async (req, res) => {
     try {
-        const { supabase } = await requireAdmin(req, { permission: 'settings.manage' });
+        const accessRequirement = String(req.method || '').toUpperCase() === 'GET'
+            ? { anyOf: ['settings.manage', 'analytics.view'] }
+            : { permission: 'settings.manage' };
+        const { supabase } = await requireAdmin(req, accessRequirement);
 
         if (req.method !== 'GET') {
             res.setHeader('Allow', 'GET');

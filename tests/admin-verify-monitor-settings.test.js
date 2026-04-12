@@ -35,6 +35,7 @@ function createMockResponse() {
 function createState(overrides = {}) {
     return {
         user: { id: 'admin-user-1', email: 'admin@example.com' },
+        requireAdminCalls: [],
         verificationLogs: [],
         opsAlertJobs: [],
         opsAlertCases: [],
@@ -126,7 +127,8 @@ function createSupabaseStub(state) {
 
 function createAdminModule(state) {
     return {
-        async requireAdmin() {
+        async requireAdmin(_req, options = {}) {
+            state.requireAdminCalls.push(options);
             return {
                 supabase: createSupabaseStub(state),
                 user: state.user
@@ -293,7 +295,7 @@ test('verify monitor settings handler returns recent tasks, recent failures, and
                 created_at: hoursAgo(0.8)
             }
         ]
-    }, async (handler) => {
+    }, async (handler, state) => {
         const req = { method: 'GET', headers: {} };
         const res = createMockResponse();
 
@@ -302,6 +304,10 @@ test('verify monitor settings handler returns recent tasks, recent failures, and
 
         assert.equal(res.statusCode, 200);
         assert.equal(payload.success, true);
+        assert.deepEqual(
+            state.requireAdminCalls[0],
+            { anyOf: ['settings.manage', 'analytics.view'] }
+        );
         assert.equal(payload.summary.active_task_count, 1);
         assert.equal(payload.summary.failure_task_count, 1);
         assert.equal(payload.summary.sample_size, 4);

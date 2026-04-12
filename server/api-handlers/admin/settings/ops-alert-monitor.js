@@ -253,25 +253,29 @@ async function fetchOpsAlertCasesByTargets(supabase, targets = []) {
     const caseMap = new Map();
 
     try {
-        for (const [categoryKey, targetIds] of groupedTargets.entries()) {
-            const { data, error } = await supabase
-                .from('ops_alert_cases')
-                .select(OPS_ALERT_CASES_SELECT_FIELDS)
-                .in('category_key', [categoryKey])
-                .in('target_id', Array.from(new Set(targetIds)));
+        const groupedRows = await Promise.all(
+            Array.from(groupedTargets.entries()).map(async ([categoryKey, targetIds]) => {
+                const { data, error } = await supabase
+                    .from('ops_alert_cases')
+                    .select(OPS_ALERT_CASES_SELECT_FIELDS)
+                    .in('category_key', [categoryKey])
+                    .in('target_id', Array.from(new Set(targetIds)));
 
-            if (error) {
-                throw error;
-            }
+                if (error) {
+                    throw error;
+                }
 
-            (Array.isArray(data) ? data : []).forEach((row) => {
-                const caseRecord = buildOpsAlertCaseRecord(row, categoryKey);
-                caseMap.set(
-                    buildOpsAlertCaseKey(caseRecord.category_key, caseRecord.target_id),
-                    caseRecord
-                );
-            });
-        }
+                return Array.isArray(data) ? data : [];
+            })
+        );
+
+        groupedRows.flat().forEach((row) => {
+            const caseRecord = buildOpsAlertCaseRecord(row, row?.category_key);
+            caseMap.set(
+                buildOpsAlertCaseKey(caseRecord.category_key, caseRecord.target_id),
+                caseRecord
+            );
+        });
 
         return caseMap;
     } catch (error) {
@@ -1499,23 +1503,28 @@ module.exports = async (req, res) => {
 
         const now = new Date();
         const sinceIso = new Date(now.getTime() - OPS_ALERT_MONITOR_LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
-        const runtime = await loadOpsAlertsRuntimeConfig(supabase);
-        const jobs = await fetchRecentOpsAlertJobs(supabase, sinceIso);
+        const [
+            runtime,
+            jobs,
+            assignableAdmins
+        ] = await Promise.all([
+            loadOpsAlertsRuntimeConfig(supabase),
+            fetchRecentOpsAlertJobs(supabase, sinceIso),
+            fetchAssignableOpsAlertAdmins({
+                supabase,
+                adminSupabase,
+                currentUserId: user.id
+            })
+        ]);
         const targets = jobs
             .map((job) => ({
                 category_key: getAlertCategoryKey(job.alert_type),
                 target_id: getAlertTargetId(job)
             }));
-        const opsAlertCasesByKey = await fetchOpsAlertCasesByTargets(
-            supabase,
-            targets
-        );
-        const caseEventsByKey = await fetchOpsAlertCaseEventsByTargets(supabase, targets);
-        const assignableAdmins = await fetchAssignableOpsAlertAdmins({
-            supabase,
-            adminSupabase,
-            currentUserId: user.id
-        });
+        const [opsAlertCasesByKey, caseEventsByKey] = await Promise.all([
+            fetchOpsAlertCasesByTargets(supabase, targets),
+            fetchOpsAlertCaseEventsByTargets(supabase, targets)
+        ]);
         const currentAdmin = assignableAdmins.find((item) => item.is_current) || null;
         const categories = ALERT_MONITOR_CATEGORIES.map((category) => buildCategorySnapshot(category, jobs, {
             shopRiskConfig: runtime?.config?.shop_order_risk || {},

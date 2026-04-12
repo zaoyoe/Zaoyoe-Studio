@@ -138,7 +138,7 @@ module.exports = async (req, res) => {
     }
 
     try {
-        const { supabase } = await requireAdmin(req, { permission: 'content.moderate' });
+        const { supabase } = await requireAdmin(req, { anyOf: ['content.moderate', 'analytics.view'] });
         const searchParams = getQueryParams(req);
         const site = normalizeCommentsSite(searchParams.get('site') || req.adminSite, 'all');
         const view = normalizeCommentsSummaryView(searchParams.get('view'));

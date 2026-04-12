@@ -103,6 +103,13 @@ function sendJson(res, status, payload) {
     res.end(JSON.stringify(payload));
 }
 
+function createAuthServiceUnavailableError(error, fallbackMessage = 'Authentication service unavailable') {
+    const normalizedError = new Error(error?.message || fallbackMessage);
+    normalizedError.statusCode = 503;
+    normalizedError.code = 'auth_service_unavailable';
+    return normalizedError;
+}
+
 function getBearerToken(req) {
     const authHeader = req.headers.authorization || req.headers.Authorization || '';
     if (typeof authHeader !== 'string' || !authHeader.startsWith('Bearer ')) {
@@ -203,47 +210,70 @@ async function getAuthenticatedUser(req) {
             return { token: '', user: null };
         }
 
-        const { data, error } = await adminSupabase.auth.admin.getUserById(cookiePayload.sub);
-        if (error || !data?.user) {
-            return { token: '', user: null, error };
-        }
+        try {
+            const { data, error } = await adminSupabase.auth.admin.getUserById(cookiePayload.sub);
+            if (error || !data?.user) {
+                return { token: '', user: null, error };
+            }
 
-        return {
-            token: '',
-            user: data.user,
-            viaAdminStudioCookie: true,
-            adminStudioPayload: cookiePayload
-        };
+            return {
+                token: '',
+                user: data.user,
+                viaAdminStudioCookie: true,
+                adminStudioPayload: cookiePayload
+            };
+        } catch (error) {
+            return {
+                token: '',
+                user: null,
+                error: createAuthServiceUnavailableError(error)
+            };
+        }
     }
 
     let requestError = null;
 
     if (hasSupabasePublicClientConfig()) {
         const requestClient = createSupabaseRequestClient(req);
-        const { data: requestData, error } = await requestClient.auth.getUser(token);
-        if (!error && requestData?.user) {
-            return { token, user: requestData.user };
+        try {
+            const { data: requestData, error } = await requestClient.auth.getUser(token);
+            if (!error && requestData?.user) {
+                return { token, user: requestData.user };
+            }
+            requestError = error;
+        } catch (error) {
+            requestError = createAuthServiceUnavailableError(error);
         }
-        requestError = error;
     }
 
     if (!getSupabaseServiceRoleKey()) {
         return { token, user: null, error: requestError };
     }
 
-    const { data: adminData, error: adminError } = await getSupabaseAdmin().auth.getUser(token);
-    if (adminError || !adminData?.user) {
-        return { token, user: null, error: adminError || requestError };
-    }
+    try {
+        const { data: adminData, error: adminError } = await getSupabaseAdmin().auth.getUser(token);
+        if (adminError || !adminData?.user) {
+            return { token, user: null, error: adminError || requestError };
+        }
 
-    return { token, user: adminData.user };
+        return { token, user: adminData.user };
+    } catch (error) {
+        return {
+            token,
+            user: null,
+            error: createAuthServiceUnavailableError(error)
+        };
+    }
 }
 
 async function requireAuthenticatedUser(req) {
     const { user, token, error } = await getAuthenticatedUser(req);
     if (!user) {
         const authError = new Error(error?.message || 'Unauthorized');
-        authError.statusCode = 401;
+        authError.statusCode = Number(error?.statusCode) || 401;
+        if (error?.code) {
+            authError.code = error.code;
+        }
         throw authError;
     }
 
@@ -401,7 +431,10 @@ async function requireAdmin(req, options = {}) {
     const { user, token, error } = await getAuthenticatedUser(req);
     if (!user) {
         const authError = new Error(error?.message || 'Unauthorized');
-        authError.statusCode = 401;
+        authError.statusCode = Number(error?.statusCode) || 401;
+        if (error?.code) {
+            authError.code = error.code;
+        }
         throw authError;
     }
 
