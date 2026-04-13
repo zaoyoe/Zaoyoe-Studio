@@ -704,10 +704,62 @@
             filter: brightness(1.1);
         }
 
-        /* Modal Confirm Button - Fast Response with Float */
-        /* Explicitly match global entrance duration (0.5s) AND add delay (0.35s) for staggered effect */
-        #confirmPurchaseBtn {
+        .shop-purchase-step-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 12px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            border: 1px solid rgba(147, 197, 253, 0.2);
+            background: rgba(96, 165, 250, 0.12);
+            color: #bfdbfe;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
+        .shop-purchase-stage-hint {
+            margin: 10px 0 0;
+            color: rgba(226, 232, 240, 0.78);
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .shop-purchase-actions {
+            display: flex;
+            align-items: stretch;
+            gap: 12px;
             width: 100%;
+        }
+
+        #purchaseBackBtn {
+            flex: 0 0 136px;
+            min-height: 44px;
+            padding: 10px 16px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.08);
+            color: rgba(255, 255, 255, 0.92);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow:
+                0 12px 24px rgba(15, 23, 42, 0.24),
+                inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        }
+
+        #purchaseBackBtn:hover {
+            transform: translateY(-2px);
+            background: rgba(255, 255, 255, 0.14);
+            box-shadow:
+                0 16px 30px rgba(15, 23, 42, 0.28),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        }
+
+        /* Modal Primary Buttons - Fast Response with Float */
+        /* Explicitly match global entrance duration (0.5s) AND add delay (0.35s) for staggered effect */
+        #nextPurchaseStepBtn,
+        #confirmPurchaseBtn {
+            flex: 1 1 auto;
             min-height: 44px;
             padding: 10px 16px;
             border-radius: 999px;
@@ -719,6 +771,7 @@
         }
 
         /* On hover, switch to fast transition for snappy response */
+        #nextPurchaseStepBtn:hover,
         #confirmPurchaseBtn:hover {
             transform: translateY(-2px);
             filter: brightness(1.08);
@@ -729,18 +782,80 @@
             transition: all 0.1s ease;
         }
 
-        #confirmPurchaseBtn:active {
+        #nextPurchaseStepBtn:active,
+        #confirmPurchaseBtn:active,
+        #purchaseBackBtn:active {
             transform: translateY(0);
             filter: brightness(0.95);
             transition: all 0.05s ease;
         }
 
+        #purchaseBackBtn i,
+        #nextPurchaseStepBtn i,
         #confirmPurchaseBtn i {
             font-size: 14px;
         }
 
+        #purchaseBackBtn span,
+        #nextPurchaseStepBtn span,
         #confirmPurchaseBtn span {
             font-size: 14px;
+        }
+
+        .shop-purchase-confirm-card {
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(15, 23, 42, 0.22)),
+                rgba(15, 23, 42, 0.28);
+            box-shadow:
+                0 20px 40px rgba(2, 6, 23, 0.22),
+                inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        }
+
+        .shop-purchase-confirm-card {
+            padding: 18px;
+        }
+
+        .shop-purchase-confirm-card__title {
+            font-size: 14px;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.94);
+            margin-bottom: 14px;
+        }
+
+        .shop-purchase-confirm-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .shop-purchase-confirm-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            color: rgba(226, 232, 240, 0.86);
+            font-size: 14px;
+        }
+
+        .shop-purchase-confirm-row strong {
+            color: #ffffff;
+            font-size: 14px;
+            font-weight: 700;
+            text-align: right;
+            word-break: break-word;
+        }
+
+        .shop-purchase-confirm-row--total {
+            margin-top: 6px;
+            padding-top: 14px;
+            border-top: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        .shop-purchase-confirm-row--total strong {
+            color: #86efac;
+            font-size: 16px;
         }
 
         #shopPurchaseModal .modal-content>.shop-purchase-stage,
@@ -790,12 +905,20 @@
             transition-delay: 0.36s !important;
         }
 
+        #shopPurchaseModal.active .shop-purchase-stage-review {
+            transition-delay: 0.31s !important;
+        }
+
         #shopPurchaseModal.active .shop-purchase-stage-notes {
             transition-delay: 0.46s !important;
         }
 
         #shopPurchaseModal.active .shop-purchase-stage-action {
             transition-delay: 0.6s !important;
+        }
+
+        #shopPurchaseModal[data-purchase-step="confirm"] .shop-purchase-stage-action {
+            margin-top: 18px;
         }
 
         #shopSuccessModal.active .shop-success-stage-icon {
@@ -1680,17 +1803,39 @@
                 color: inherit !important;
             }
 
+            .shop-purchase-actions {
+                flex-direction: column;
+            }
+
+            #shopPurchaseModal[data-purchase-step="confirm"] .shop-purchase-stage-action {
+                margin-top: 14px;
+            }
+
+            #purchaseBackBtn,
+            #nextPurchaseStepBtn,
             #confirmPurchaseBtn {
                 min-height: 38px;
                 padding: 8px 12px;
             }
 
+            #purchaseBackBtn i,
+            #nextPurchaseStepBtn i,
             #confirmPurchaseBtn i {
                 font-size: 12px;
             }
 
+            #purchaseBackBtn span,
+            #nextPurchaseStepBtn span,
             #confirmPurchaseBtn span {
                 font-size: 12px;
+            }
+
+            #purchaseBackBtn {
+                flex-basis: auto;
+            }
+
+            .shop-purchase-confirm-card {
+                padding: 16px;
             }
         }
 

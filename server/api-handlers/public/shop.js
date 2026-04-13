@@ -314,6 +314,27 @@ function createShopHandlers({
         };
     }
 
+    function normalizeGuidanceText(value) {
+        return typeof value === 'string' ? value.trim() : '';
+    }
+
+    function buildProductGuidancePayload(product = {}) {
+        const purchaseNotes = product?.show_purchase_notes
+            ? normalizeGuidanceText(product?.purchase_notes)
+            : '';
+        const usageInstructions = product?.show_usage_instructions
+            ? normalizeGuidanceText(product?.usage_instructions)
+            : '';
+
+        return {
+            product_id: String(product?.id || '').trim() || null,
+            purchase_notes: purchaseNotes,
+            usage_instructions: usageInstructions,
+            has_purchase_notes: purchaseNotes.length > 0,
+            has_usage_instructions: usageInstructions.length > 0
+        };
+    }
+
     function buildIdempotencyFingerprint({ userId, payload }) {
         return crypto
             .createHash('sha256')
@@ -473,6 +494,167 @@ function createShopHandlers({
         const error = new Error('商城购买服务未返回结果，请检查 fn_purchase_shop_item RPC 配置');
         error.statusCode = 502;
         throw error;
+    }
+
+    function normalizeOrderDetailId(body = {}) {
+        return String(
+            body?.orderId
+            || body?.order_id
+            || body?.id
+            || body?.order
+            || ''
+        ).trim();
+    }
+
+    function isUuid(value) {
+        return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim());
+    }
+
+    async function loadShopOrderDetail(dataSupabase, { orderId = '', userId = '' } = {}) {
+        const normalizedOrderId = String(orderId || '').trim();
+        const normalizedUserId = String(userId || '').trim();
+
+        const { data: order, error: orderError } = await dataSupabase
+            .from('shop_orders')
+            .select('id, user_id, product_id, inventory_id, snapshot_product_name, created_at, price_paid, total_price, discount_code, discount_amount, item_count')
+            .eq('id', normalizedOrderId)
+            .eq('user_id', normalizedUserId)
+            .single();
+
+        if (orderError || !order) {
+            const error = new Error(orderError?.message || '订单不存在或无权访问');
+            error.statusCode = orderError?.code === 'PGRST116' ? 404 : (orderError?.statusCode || 404);
+            throw error;
+        }
+
+        let orderItems = [];
+        try {
+            const { data, error } = await dataSupabase
+                .from('shop_order_items')
+                .select('id, inventory_id, snapshot_product_name, price_paid')
+                .eq('order_id', normalizedOrderId)
+                .order('id', { ascending: true });
+
+            if (error) throw error;
+            orderItems = Array.isArray(data) ? data : [];
+        } catch (error) {
+            if (!isMissingRelationError(error, 'shop_order_items')) {
+                throw error;
+            }
+        }
+
+        const inventoryIds = [...new Set(
+            [
+                ...orderItems.map((item) => String(item?.inventory_id || '').trim()).filter(Boolean),
+                String(order?.inventory_id || '').trim()
+            ].filter(Boolean)
+        )];
+
+        const inventoryContentMap = new Map();
+        if (inventoryIds.length) {
+            const { data: inventoryRows, error: inventoryError } = await dataSupabase
+                .from('shop_inventory')
+                .select('id, content')
+                .in('id', inventoryIds);
+
+            if (inventoryError) {
+                throw inventoryError;
+            }
+
+            for (const row of inventoryRows || []) {
+                const inventoryId = String(row?.id || '').trim();
+                if (!inventoryId) continue;
+                inventoryContentMap.set(inventoryId, String(row?.content || ''));
+            }
+        }
+
+        let usageInstructions = '';
+        const normalizedProductId = String(order?.product_id || '').trim();
+        if (isUuid(normalizedProductId)) {
+            const { data: productGuidanceRow, error: productGuidanceError } = await dataSupabase
+                .from('shop_products')
+                .select('show_usage_instructions, usage_instructions')
+                .eq('id', normalizedProductId)
+                .maybeSingle();
+
+            if (productGuidanceError) {
+                throw productGuidanceError;
+            }
+
+            usageInstructions = productGuidanceRow?.show_usage_instructions
+                ? normalizeGuidanceText(productGuidanceRow?.usage_instructions)
+                : '';
+        }
+
+        const items = orderItems.length
+            ? orderItems.map((item) => {
+                const inventoryId = String(item?.inventory_id || '').trim();
+                return {
+                    id: item?.id || null,
+                    inventory_id: inventoryId || null,
+                    name: item?.snapshot_product_name || order?.snapshot_product_name || '未知商品',
+                    content: inventoryId
+                        ? (inventoryContentMap.get(inventoryId) || '')
+                        : '',
+                    price: Number(item?.price_paid || 0) || 0
+                };
+            })
+            : [{
+                id: null,
+                inventory_id: String(order?.inventory_id || '').trim() || null,
+                name: order?.snapshot_product_name || '未知商品',
+                content: inventoryContentMap.get(String(order?.inventory_id || '').trim()) || '',
+                price: Number(order?.price_paid || 0) || 0
+            }];
+
+        return {
+            order: {
+                id: order.id,
+                created_at: order.created_at || null,
+                product_id: order.product_id || null,
+                inventory_id: order.inventory_id || null,
+                snapshot_product_name: order.snapshot_product_name || '',
+                price_paid: Number(order.price_paid || 0) || 0,
+                total_price: order.total_price == null ? null : (Number(order.total_price) || 0),
+                discount_code: order.discount_code || null,
+                discount_amount: Number(order.discount_amount || 0) || 0,
+                item_count: Math.max(1, Number(order.item_count || items.length || 1) || 1)
+            },
+            items,
+            guidance: {
+                usage_instructions: usageInstructions || null,
+                has_usage_instructions: usageInstructions.length > 0
+            }
+        };
+    }
+
+    async function loadProductGuidance(dataSupabase, { productId = '' } = {}) {
+        const normalizedProductId = String(productId || '').trim();
+        if (!isUuid(normalizedProductId)) {
+            const error = new Error('商品标识格式不正确');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        const { data, error } = await dataSupabase
+            .from('shop_products')
+            .select('id, is_active, show_purchase_notes, purchase_notes, show_usage_instructions, usage_instructions')
+            .eq('id', normalizedProductId)
+            .single();
+
+        if (error || !data) {
+            const notFoundError = new Error(error?.message || '商品不存在');
+            notFoundError.statusCode = error?.code === 'PGRST116' ? 404 : (error?.statusCode || 404);
+            throw notFoundError;
+        }
+
+        if (data.is_active === false) {
+            const inactiveError = new Error('商品未上架');
+            inactiveError.statusCode = 404;
+            throw inactiveError;
+        }
+
+        return buildProductGuidancePayload(data);
     }
 
     return {
@@ -821,6 +1003,130 @@ function createShopHandlers({
                 });
             }
         },
+        'order-detail': async function orderDetailHandler(req, res) {
+            if (req.method !== 'POST') {
+                res.setHeader('Allow', 'POST');
+                return sendJson(res, 405, {
+                    success: false,
+                    message: 'Method not allowed'
+                });
+            }
+
+            const adminSupabase = getOptionalSupabaseAdmin();
+            const clientIp = resolveClientIp(req, { env }) || 'unknown';
+            const ipRateLimit = await takeRateLimitToken({
+                supabase: adminSupabase,
+                key: `shop-order-detail:ip:${clientIp}`,
+                limit: Math.max(1, Number(env.SHOP_ORDER_DETAIL_RATE_LIMIT_MAX || 40)),
+                windowMs: Math.max(10_000, Number(env.SHOP_ORDER_DETAIL_RATE_LIMIT_WINDOW_MS || 60_000))
+            });
+            applyRateLimitHeaders(res, ipRateLimit);
+            if (!ipRateLimit.allowed) {
+                return sendJson(res, 429, {
+                    success: false,
+                    code: 'rate_limited',
+                    message: '订单详情请求过于频繁，请稍后重试',
+                    retry_after_seconds: ipRateLimit.retryAfterSeconds
+                });
+            }
+
+            try {
+                const { supabase, adminSupabase: requestAdminSupabase, user } = await requireAuthenticatedUser(req);
+                const body = await parseJsonBody(req);
+                const orderId = normalizeOrderDetailId(body);
+
+                if (!isUuid(orderId)) {
+                    return sendJson(res, 400, {
+                        success: false,
+                        message: '订单号格式不正确'
+                    });
+                }
+
+                const userRateLimit = await takeRateLimitToken({
+                    supabase: adminSupabase,
+                    key: `shop-order-detail:user:${user.id}`,
+                    limit: Math.max(1, Number(env.SHOP_ORDER_DETAIL_USER_RATE_LIMIT_MAX || 24)),
+                    windowMs: Math.max(10_000, Number(env.SHOP_ORDER_DETAIL_USER_RATE_LIMIT_WINDOW_MS || 60_000))
+                });
+                applyRateLimitHeaders(res, userRateLimit);
+                if (!userRateLimit.allowed) {
+                    return sendJson(res, 429, {
+                        success: false,
+                        code: 'rate_limited',
+                        message: '查看订单详情过于频繁，请稍后重试',
+                        retry_after_seconds: userRateLimit.retryAfterSeconds
+                    });
+                }
+
+                const data = await loadShopOrderDetail(requestAdminSupabase || supabase, {
+                    orderId,
+                    userId: user.id
+                });
+
+                return sendJson(res, 200, {
+                    success: true,
+                    data
+                });
+            } catch (error) {
+                return sendJson(res, error.statusCode || 500, {
+                    success: false,
+                    message: error.message || '加载订单详情失败'
+                });
+            }
+        },
+        'product-guidance': async function productGuidanceHandler(req, res) {
+            if (req.method !== 'POST') {
+                res.setHeader('Allow', 'POST');
+                return sendJson(res, 405, {
+                    success: false,
+                    message: 'Method not allowed'
+                });
+            }
+
+            const adminSupabase = getOptionalSupabaseAdmin();
+            const clientIp = resolveClientIp(req, { env }) || 'unknown';
+            const ipRateLimit = await takeRateLimitToken({
+                supabase: adminSupabase,
+                key: `shop-product-guidance:ip:${clientIp}`,
+                limit: Math.max(1, Number(env.SHOP_PRODUCT_GUIDANCE_RATE_LIMIT_MAX || 40)),
+                windowMs: Math.max(10_000, Number(env.SHOP_PRODUCT_GUIDANCE_RATE_LIMIT_WINDOW_MS || 60_000))
+            });
+            applyRateLimitHeaders(res, ipRateLimit);
+            if (!ipRateLimit.allowed) {
+                return sendJson(res, 429, {
+                    success: false,
+                    code: 'rate_limited',
+                    message: '商品说明请求过于频繁，请稍后重试',
+                    retry_after_seconds: ipRateLimit.retryAfterSeconds
+                });
+            }
+
+            try {
+                const body = await parseJsonBody(req);
+                const productId = String(body?.productId || body?.product_id || '').trim();
+                const dataSupabase = adminSupabase;
+                if (!dataSupabase) {
+                    return sendJson(res, 503, {
+                        success: false,
+                        message: '商品说明服务暂时不可用'
+                    });
+                }
+
+                const data = await loadProductGuidance(dataSupabase, {
+                    productId
+                });
+
+                return sendJson(res, 200, {
+                    success: true,
+                    data
+                });
+            } catch (error) {
+                return sendJson(res, error.statusCode || 500, {
+                    success: false,
+                    message: error.message || '加载商品说明失败'
+                });
+            }
+        },
         purchase: async function purchaseHandler(req, res) {
             if (req.method !== 'POST') {
                 res.setHeader('Allow', 'POST');
@@ -849,7 +1155,7 @@ function createShopHandlers({
             }
 
             try {
-                const { supabase, requestSupabase, user } = await requireAuthenticatedUser(req);
+                const { supabase, requestSupabase, adminSupabase: requestAdminSupabase, user } = await requireAuthenticatedUser(req);
                 const body = await parseJsonBody(req);
                 const payload = normalizePurchaseBody(body, req.headers || {});
 
@@ -919,6 +1225,16 @@ function createShopHandlers({
                 const responseData = responsePayload?.data && typeof responsePayload.data === 'object' && !Array.isArray(responsePayload.data)
                     ? responsePayload.data
                     : {};
+                let guidanceData = null;
+                if (!normalizeGuidanceText(responseData.usage_instructions)) {
+                    try {
+                        guidanceData = await loadProductGuidance(requestAdminSupabase || adminSupabase || supabase, {
+                            productId: payload.productId
+                        });
+                    } catch (guidanceError) {
+                        guidanceData = null;
+                    }
+                }
                 const pricingWaterfall = buildPricingWaterfall({
                     ...responseData,
                     discount_code: responseData.discount_code || payload.discountCode,
@@ -931,6 +1247,8 @@ function createShopHandlers({
                     ...responsePayload,
                     data: {
                         ...responseData,
+                        usage_instructions: normalizeGuidanceText(responseData.usage_instructions) || guidanceData?.usage_instructions || null,
+                        show_usage_instructions: responseData.show_usage_instructions ?? guidanceData?.has_usage_instructions ?? false,
                         pricing_waterfall: pricingWaterfall.rows,
                         stacking_policy: pricingWaterfall.stacking_policy
                     }

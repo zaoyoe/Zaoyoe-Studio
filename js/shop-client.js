@@ -188,8 +188,10 @@ function buildShopTrackingMetadata(baseMetadata = {}, sourceContext = {}) {
 }
 
 const SHOP_GRID_EAGER_IMAGE_COUNT = 4;
+const SHOP_PRODUCT_SKELETON_COUNT = 5;
 const SHOP_CARD_BREATHE_DURATION_MS = 5800;
 const SHOP_CARD_BREATHE_AMPLITUDE_PX = 6;
+const SHOP_PREFETCH_SCHEMA_VERSION = '20260413_PURCHASE_GUIDANCE_2';
 const shopCardImageWarmCache = new Set();
 
 const ShopClient = {
@@ -213,6 +215,7 @@ const ShopClient = {
     categoryProductsPromises: {},
     allProductsCache: null,
     allProductsPromise: null,
+    prefetchedShopRevalidationPromise: null,
     agentPricesCache: null,
     agentPricesPromise: null,
     currentUserPurchaseAccess: null,
@@ -225,7 +228,8 @@ const ShopClient = {
     backgroundPrefetchHandle: null,
     gridTransitionCleanupTimer: null,
     gridTransitionSequence: 0,
-    lastSkeletonCount: 6,
+    purchaseGuidanceRequestToken: 0,
+    lastSkeletonCount: SHOP_PRODUCT_SKELETON_COUNT,
     staticUiBindingsBound: false,
 
     getAccessToken: async function () {
@@ -358,6 +362,137 @@ const ShopClient = {
         return this.currentPurchase.quantity * this.currentPurchase.unitPrice;
     },
 
+    getPurchaseStageCopy: function (stage = 'configure') {
+        const isEn = (window.i18n?.getCurrentLanguage() || 'zh') === 'en';
+        if (stage === 'confirm') {
+            return {
+                badge: isEn ? 'STEP 2 / FINAL REVIEW' : 'STEP 2 / 最终确认',
+                title: isEn ? 'Final Confirmation' : '最终确认',
+                hint: isEn
+                    ? 'Review the summary once more before we submit and deliver the order.'
+                    : '提交前再核对一次商品、优惠和总价。',
+                nextLabel: isEn ? 'Confirm Order' : '确认订单',
+                backLabel: isEn ? 'Back to Edit' : '返回修改',
+                confirmLabel: isEn ? 'Confirm Purchase' : '确认并兑换'
+            };
+        }
+
+        return {
+            badge: isEn ? 'STEP 1 / CONFIGURE' : 'STEP 1 / 配置订单',
+            title: window.i18n?.t('shop.confirmRedeem') || (isEn ? 'Confirm Purchase' : '确认兑换'),
+            hint: isEn
+                ? 'Choose quantity and discount, then continue to final review.'
+                : '先确认数量、优惠和总价，再进入最终确认。',
+            nextLabel: isEn ? 'Confirm Order' : '确认订单',
+            backLabel: isEn ? 'Back to Edit' : '返回修改',
+            confirmLabel: isEn ? 'Confirm Purchase' : '确认并兑换'
+        };
+    },
+
+    renderPurchaseConfirmationStage: function () {
+        if (!this.currentPurchase) return;
+
+        const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
+        const isEn = currentLang === 'en';
+        const pointsLabel = window.i18n?.t('shop.points') || (isEn ? 'points' : '积分');
+        const discountLabel = isEn ? 'Discount' : '优惠';
+        const displayName = (currentLang === 'en' && this.currentPurchase.productNameEn)
+            ? this.currentPurchase.productNameEn
+            : this.currentPurchase.productName;
+        const quantity = Math.max(1, Number(this.currentPurchase.quantity) || 1);
+        const unitPrice = Math.max(0, Number(this.currentPurchase.unitPrice) || 0);
+        const subtotal = Math.max(0, Number(this.getCurrentPurchaseSubtotal?.() || 0) || 0);
+        const discountAmount = Math.max(0, Number(this.currentPurchase.discountAmount) || 0);
+        const finalTotal = Math.max(0, subtotal - discountAmount);
+        const discountCode = String(this.currentPurchase.discountCode || '').trim().toUpperCase();
+
+        const productNameEl = document.getElementById('purchaseConfirmProductName');
+        const quantityEl = document.getElementById('purchaseConfirmQuantity');
+        const unitPriceEl = document.getElementById('purchaseConfirmUnitPrice');
+        const subtotalEl = document.getElementById('purchaseConfirmSubtotal');
+        const discountRowEl = document.getElementById('purchaseConfirmDiscountRow');
+        const discountLabelEl = document.getElementById('purchaseConfirmDiscountLabel');
+        const discountAmountEl = document.getElementById('purchaseConfirmDiscountAmount');
+        const totalEl = document.getElementById('purchaseConfirmTotal');
+
+        if (productNameEl) productNameEl.textContent = displayName || '-';
+        if (quantityEl) quantityEl.textContent = String(quantity);
+        if (unitPriceEl) unitPriceEl.textContent = `${unitPrice} ${pointsLabel}`;
+        if (subtotalEl) subtotalEl.textContent = `${subtotal} ${pointsLabel}`;
+        if (totalEl) totalEl.textContent = `${finalTotal} ${pointsLabel}`;
+
+        if (discountRowEl) {
+            this.setElementHidden(discountRowEl, discountAmount <= 0);
+        }
+        if (discountLabelEl) {
+            discountLabelEl.textContent = discountCode ? `${discountLabel} ${discountCode}` : discountLabel;
+        }
+        if (discountAmountEl) {
+            discountAmountEl.textContent = `-${discountAmount} ${pointsLabel}`;
+        }
+    },
+
+    setPurchaseStage: function (stage = 'configure') {
+        if (!this.currentPurchase) return;
+
+        const nextStage = stage === 'confirm' ? 'confirm' : 'configure';
+        const modal = document.getElementById('shopPurchaseModal');
+        const stepBadge = document.getElementById('purchaseStepBadge');
+        const stageTitle = document.getElementById('purchaseStageTitle');
+        const stageHint = document.getElementById('purchaseStageHint');
+        const backBtn = document.getElementById('purchaseBackBtn');
+        const nextBtn = document.getElementById('nextPurchaseStepBtn');
+        const confirmBtn = document.getElementById('confirmPurchaseBtn');
+        const copy = this.getPurchaseStageCopy(nextStage);
+
+        this.currentPurchase.stage = nextStage;
+
+        if (modal) {
+            modal.dataset.purchaseStep = nextStage;
+        }
+
+        document.querySelectorAll('#shopPurchaseModal [data-purchase-step]').forEach((element) => {
+            if (!(element instanceof HTMLElement)) return;
+            const hasPurchaseNotes = Boolean(String(this.currentPurchase?.purchaseNotes || '').trim());
+            const isNotesStage = element.id === 'purchaseNotesBox' || element.id === 'purchaseConfirmNotesBox';
+            const shouldShow = element.dataset.purchaseStep === nextStage
+                && (!isNotesStage || hasPurchaseNotes);
+            this.setElementHidden(element, !shouldShow);
+        });
+
+        if (stepBadge) stepBadge.textContent = copy.badge;
+        if (stageTitle) stageTitle.textContent = copy.title;
+        if (stageHint) stageHint.textContent = copy.hint;
+
+        if (backBtn) {
+            backBtn.innerHTML = `<i class="fas fa-arrow-left"></i> <span>${this.escapeHtml(copy.backLabel)}</span>`;
+            this.setElementHidden(backBtn, nextStage !== 'confirm');
+            backBtn.disabled = false;
+        }
+
+        if (nextBtn) {
+            nextBtn.innerHTML = `<i class="fas fa-arrow-right"></i> <span>${this.escapeHtml(copy.nextLabel)}</span>`;
+            this.setElementHidden(nextBtn, nextStage !== 'configure');
+            nextBtn.disabled = false;
+        }
+
+        if (confirmBtn) {
+            confirmBtn.innerHTML = `<i class="fas fa-shopping-cart"></i> <span>${this.escapeHtml(copy.confirmLabel)}</span>`;
+            this.setElementHidden(confirmBtn, nextStage !== 'confirm');
+            confirmBtn.disabled = false;
+        }
+
+        if (nextStage === 'confirm') {
+            this.renderPurchaseConfirmationStage();
+        }
+    },
+
+    proceedPurchaseConfirmation: function () {
+        if (!this.currentPurchase) return;
+        this.renderPurchaseConfirmationStage();
+        this.setPurchaseStage('confirm');
+    },
+
     getDefaultStackingPolicy: function () {
         return {
             is_exclusive: true,
@@ -437,6 +572,7 @@ const ShopClient = {
             }
             : localState.stackingPolicy;
         this.renderPurchasePriceWaterfall();
+        this.renderPurchaseConfirmationStage();
         return {
             rows: this.currentPurchase.pricingWaterfall,
             stackingPolicy: this.currentPurchase.stackingPolicy
@@ -683,6 +819,106 @@ const ShopClient = {
         return payload;
     },
 
+    loadProductGuidance: async function (productId) {
+        const normalizedProductId = String(productId || '').trim();
+        if (!normalizedProductId) {
+            return {
+                loaded: false,
+                purchaseNotes: '',
+                usageInstructions: ''
+            };
+        }
+
+        const normalizeGuidancePayload = (data = {}) => ({
+            loaded: true,
+            purchaseNotes: typeof data?.purchase_notes === 'string'
+                ? data.purchase_notes.trim()
+                : '',
+            usageInstructions: typeof data?.usage_instructions === 'string'
+                ? data.usage_instructions.trim()
+                : ''
+        });
+
+        try {
+            const token = await this.getAccessToken().catch(() => '');
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+            if (token) {
+                headers.Authorization = `Bearer ${token}`;
+            }
+            const response = await fetch('/api/shop/product-guidance', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    productId: normalizedProductId,
+                    site: window.SiteConfig?.site || 'cn'
+                })
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (response.ok && payload?.success !== false) {
+                const data = payload?.data && typeof payload.data === 'object' && !Array.isArray(payload.data)
+                    ? payload.data
+                    : {};
+                return normalizeGuidancePayload(data);
+            }
+        } catch (error) {
+            console.warn('Failed to load product guidance from API route, falling back to direct query:', error);
+        }
+
+        try {
+            const client = window.supabaseClient || supabaseClient;
+            const { data, error } = await client
+                .from('shop_products')
+                .select('show_purchase_notes, purchase_notes, show_usage_instructions, usage_instructions')
+                .eq('id', normalizedProductId)
+                .eq('is_active', true)
+                .single();
+
+            if (error) {
+                throw error;
+            }
+
+            return normalizeGuidancePayload({
+                purchase_notes: data?.show_purchase_notes ? data?.purchase_notes : '',
+                usage_instructions: data?.show_usage_instructions ? data?.usage_instructions : ''
+            });
+        } catch (error) {
+            console.warn('Failed to load latest product guidance:', error);
+            return {
+                loaded: false,
+                purchaseNotes: '',
+                usageInstructions: ''
+            };
+        }
+    },
+
+    refreshCurrentPurchaseGuidance: async function (productId) {
+        const normalizedProductId = String(productId || '').trim();
+        if (!normalizedProductId) return;
+
+        const requestToken = this.purchaseGuidanceRequestToken + 1;
+        this.purchaseGuidanceRequestToken = requestToken;
+
+        const guidance = await this.loadProductGuidance(normalizedProductId);
+        if (!guidance.loaded) {
+            return;
+        }
+
+        if (requestToken !== this.purchaseGuidanceRequestToken) {
+            return;
+        }
+
+        if (!this.currentPurchase || String(this.currentPurchase.productId || '').trim() !== normalizedProductId) {
+            return;
+        }
+
+        this.currentPurchase.purchaseNotes = guidance.purchaseNotes || '';
+        this.currentPurchase.usageInstructions = guidance.usageInstructions || '';
+        this.renderPurchaseNotes();
+        this.setPurchaseStage(this.currentPurchase.stage || 'configure');
+    },
+
     applyDiscountPreviewState: function (preview = {}, { assetId = null, fallbackCode = '' } = {}) {
         this.currentPurchase.discountCode = String(preview.discount_code || fallbackCode || '').trim().toUpperCase() || null;
         this.currentPurchase.discountAssetId = assetId || null;
@@ -837,9 +1073,9 @@ const ShopClient = {
         return payload;
     },
 
-    purchaseWithServer: async function () {
-        const token = await this.getAccessToken();
-        if (!token) {
+    purchaseWithServer: async function (token = '') {
+        const accessToken = String(token || '').trim() || await this.getAccessToken();
+        if (!accessToken) {
             throw new Error(window.i18n?.t('shop.loginRequired') || '请先登录');
         }
 
@@ -851,7 +1087,7 @@ const ShopClient = {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`,
+                Authorization: `Bearer ${accessToken}`,
                 'X-Idempotency-Key': this.currentPurchase.idempotencyKey
             },
             body: JSON.stringify({
@@ -940,9 +1176,11 @@ const ShopClient = {
                         const prefetch = JSON.parse(prefetchRaw);
                         const age = Date.now() - prefetch.timestamp;
                         const currentSite = window.SiteConfig?.site || 'cn';
+                        const prefetchVersionMatches = prefetch?.version === SHOP_PREFETCH_SCHEMA_VERSION;
                         // Only use prefetch if it actually contains products, otherwise ignore (Safari empty state bug)
                         if (
                             age < 300000
+                            && prefetchVersionMatches
                             && prefetch.categories
                             && prefetch.products
                             && prefetch.products.length > 0
@@ -955,6 +1193,8 @@ const ShopClient = {
                             this.hydrateProductCaches(this.filterProductsForCurrentSite(prefetch.products));
                             usedPrefetch = true;
                             console.log(`⚡ Using prefetched shop data (${Math.round(age / 1000)}s old)`);
+                        } else if (!prefetchVersionMatches) {
+                            sessionStorage.removeItem('shop_prefetch');
                         }
                     }
                 } catch (e) { /* ignore */ }
@@ -965,6 +1205,9 @@ const ShopClient = {
 
                 // Clear prefetch references
                 this._prefetchedCategories = null;
+                if (usedPrefetch) {
+                    void this.revalidatePrefetchedShopData();
+                }
 
                 clearTimeout(fallbackTimer);
 
@@ -1042,6 +1285,8 @@ const ShopClient = {
                 target.dataset.maxPurchaseQuantity || '',
                 target.dataset.showPurchaseNotes === 'true',
                 target.dataset.purchaseNotes || '',
+                target.dataset.showUsageInstructions === 'true',
+                target.dataset.usageInstructions || '',
                 target.dataset.productCategory || '',
                 sourceContext
             );
@@ -1096,6 +1341,18 @@ const ShopClient = {
             if (claimDiscountTrigger) {
                 event.preventDefault?.();
                 void this.claimAndRefreshDiscountAsset(claimDiscountTrigger.dataset.discountId || '');
+                return;
+            }
+
+            if (event.target instanceof Element && event.target.closest('#purchaseBackBtn')) {
+                event.preventDefault?.();
+                this.setPurchaseStage('configure');
+                return;
+            }
+
+            if (event.target instanceof Element && event.target.closest('#nextPurchaseStepBtn')) {
+                event.preventDefault?.();
+                this.proceedPurchaseConfirmation();
                 return;
             }
 
@@ -1464,9 +1721,11 @@ const ShopClient = {
 
         try {
             sessionStorage.setItem('shop_prefetch', JSON.stringify({
+                version: SHOP_PREFETCH_SCHEMA_VERSION,
                 categories: this.availableCategories || [],
                 products: this.allProductsCache,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                site: window.SiteConfig?.site || 'cn'
             }));
         } catch (e) {
             console.warn('Failed to persist shop prefetch:', e);
@@ -1530,6 +1789,37 @@ const ShopClient = {
             window.requestAnimationFrame(() => {
                 callback();
             });
+        });
+    },
+
+    promptLoginForPurchase: function (message) {
+        const loginMessage = String(message || window.i18n?.t('shop.loginRequired') || '请先登录再进行兑换').trim();
+        if (!loginMessage) return;
+
+        if (typeof window.openLoginModalWithMessage === 'function') {
+            void window.openLoginModalWithMessage(loginMessage, {
+                viewId: 'login',
+                type: 'error'
+            }).catch((error) => {
+                console.warn('Failed to open login modal with message from shop card:', error);
+            });
+            return;
+        }
+
+        const openAuthModal = typeof window.openLoginModal === 'function'
+            ? () => window.openLoginModal('login')
+            : (typeof window.toggleLoginModal === 'function'
+                ? () => window.toggleLoginModal('login')
+                : null);
+
+        if (!openAuthModal) return;
+
+        Promise.resolve(openAuthModal()).then(() => {
+            this.runAfterNextPaint(() => {
+                window.showAuthMessage?.(loginMessage, 'error', 'login');
+            });
+        }).catch((error) => {
+            console.warn('Failed to open login modal from shop card:', error);
         });
     },
 
@@ -1702,6 +1992,8 @@ const ShopClient = {
             buyButton.dataset.maxPurchaseQuantity = String(maxPurchaseQuantity);
             buyButton.dataset.showPurchaseNotes = product.show_purchase_notes ? 'true' : 'false';
             buyButton.dataset.purchaseNotes = encodeURIComponent(product.purchase_notes || '');
+            buyButton.dataset.showUsageInstructions = product.show_usage_instructions ? 'true' : 'false';
+            buyButton.dataset.usageInstructions = encodeURIComponent(product.usage_instructions || '');
         }
 
         return el;
@@ -2072,7 +2364,10 @@ const ShopClient = {
 
         this.clearProductGridTransitionArtifacts(container);
         const existingSkeletonCount = this.getExistingProductSkeletonCount(container);
-        const requestedCount = Number.parseInt(count, 10) || existingSkeletonCount || this.lastSkeletonCount || 6;
+        const requestedCount = Number.parseInt(count, 10)
+            || existingSkeletonCount
+            || this.lastSkeletonCount
+            || SHOP_PRODUCT_SKELETON_COUNT;
         const safeCount = Math.min(Math.max(requestedCount, 3), 8);
         const currentSkeletonCount = existingSkeletonCount;
         const hasOnlySkeletonCards = existingSkeletonCount > 0
@@ -2237,15 +2532,48 @@ const ShopClient = {
         }
     },
 
+    revalidatePrefetchedShopData: async function () {
+        if (this.prefetchedShopRevalidationPromise) {
+            return this.prefetchedShopRevalidationPromise;
+        }
+
+        const request = new Promise((resolve) => {
+            const runRevalidation = async () => {
+                try {
+                    await this.loadCategoryFilters({ forceRefresh: true });
+                    await this.loadProducts({ forceRefresh: true });
+                } catch (error) {
+                    console.warn('Shop prefetch revalidation failed:', error);
+                } finally {
+                    this.prefetchedShopRevalidationPromise = null;
+                    resolve();
+                }
+            };
+
+            if (typeof window.requestIdleCallback === 'function') {
+                window.requestIdleCallback(() => {
+                    void runRevalidation();
+                }, { timeout: 1200 });
+            } else {
+                window.setTimeout(() => {
+                    void runRevalidation();
+                }, 180);
+            }
+        });
+
+        this.prefetchedShopRevalidationPromise = request;
+        return request;
+    },
+
     // Load categories from shop_categories table dynamically
-    loadCategoryFilters: async function () {
+    loadCategoryFilters: async function ({ forceRefresh = false } = {}) {
         const container = document.getElementById('shopCategoryFilters');
         if (!container) return;
 
         try {
             // Use prefetched data if available
             let categories;
-            if (this._prefetchedCategories) {
+            if (!forceRefresh && this._prefetchedCategories) {
                 categories = this._prefetchedCategories;
                 console.log('⚡ Using prefetched categories');
             } else {
@@ -2427,6 +2755,7 @@ const ShopClient = {
         availableDiscountAssets: [],
         claimableDiscounts: [],
         purchaseNotes: '',
+        usageInstructions: '',
         sourcePage: null,
         sourceChannel: null,
         sourcePromptId: null,
@@ -2769,38 +3098,35 @@ const ShopClient = {
 
     // ---- New Purchase Flow via Modal ----
 
-    buyProduct: async function (productId, productName, productNameEn, price, rulesStr, maxPurchaseQuantity = 99, showPurchaseNotes = false, purchaseNotesEncoded = '', productCategory = '', sourceContext = null) {
-        const rules = rulesStr ? JSON.parse(decodeURIComponent(rulesStr)) : [];
-        const purchaseNotes = showPurchaseNotes ? decodeURIComponent(purchaseNotesEncoded || '') : '';
-        const quantityCap = this.normalizePurchaseQuantityCap(maxPurchaseQuantity);
-        // 1. Open Modal immediately for instant feedback
-        this.openPurchaseModal(productId, productName, productNameEn, price, rules, quantityCap, purchaseNotes, {
-            category: productCategory,
-            sourceContext
-        });
+    syncPurchaseAccessAfterOpen: async function (productId, quantityCap) {
+        try {
+            const purchaseAccess = await this.loadCurrentUserPurchaseAccess();
+            if (this.currentPurchase?.productId !== productId) return;
 
-        // 2. Auth Check in background
-        const { data: { user } } = await supabaseClient.auth.getUser();
-        if (!user) {
-            this.closePurchaseModal();
-            alert(window.i18n?.t('shop.loginRequired') || '请先登录再进行兑换');
-            // Open login modal after user clicks OK on alert
-            if (typeof toggleLoginModal === 'function') {
-                toggleLoginModal();
-            }
-            return;
-        }
-
-        const purchaseAccess = await this.loadCurrentUserPurchaseAccess();
-        if (this.currentPurchase?.productId === productId) {
             this.currentPurchase.unlimitedPurchases = purchaseAccess.unlimitedShopPurchases === true;
-            this.setCurrentPurchaseQuantityCap(maxPurchaseQuantity, {
+            this.setCurrentPurchaseQuantityCap(quantityCap, {
                 unlimited: this.currentPurchase.unlimitedPurchases
             });
+        } catch (error) {
+            console.warn('Failed to sync purchase access after opening modal:', error);
         }
     },
 
-    openPurchaseModal: function (productId, productName, productNameEn, price, rules, maxPurchaseQuantity = 99, purchaseNotes = '', options = {}) {
+    buyProduct: async function (productId, productName, productNameEn, price, rulesStr, maxPurchaseQuantity = 99, showPurchaseNotes = false, purchaseNotesEncoded = '', showUsageInstructions = false, usageInstructionsEncoded = '', productCategory = '', sourceContext = null) {
+        const rules = rulesStr ? JSON.parse(decodeURIComponent(rulesStr)) : [];
+        let purchaseNotes = showPurchaseNotes ? decodeURIComponent(purchaseNotesEncoded || '') : '';
+        let usageInstructions = showUsageInstructions ? decodeURIComponent(usageInstructionsEncoded || '') : '';
+        const quantityCap = this.normalizePurchaseQuantityCap(maxPurchaseQuantity);
+
+        this.openPurchaseModal(productId, productName, productNameEn, price, rules, quantityCap, purchaseNotes, usageInstructions, {
+            category: productCategory,
+            sourceContext
+        });
+        void this.refreshCurrentPurchaseGuidance(productId);
+        void this.syncPurchaseAccessAfterOpen(productId, quantityCap);
+    },
+
+    openPurchaseModal: function (productId, productName, productNameEn, price, rules, maxPurchaseQuantity = 99, purchaseNotes = '', usageInstructions = '', options = {}) {
         const quantityCap = this.normalizePurchaseQuantityCap(maxPurchaseQuantity);
         const unlimitedPurchases = options?.unlimitedPurchases === true;
         const sourceContext = {
@@ -2827,7 +3153,9 @@ const ShopClient = {
             availableDiscountAssets: [],
             claimableDiscounts: [],
             discountPreviewRevision: 0,
+            stage: 'configure',
             purchaseNotes: typeof purchaseNotes === 'string' ? purchaseNotes.trim() : '',
+            usageInstructions: typeof usageInstructions === 'string' ? usageInstructions.trim() : '',
             sourcePage: normalizeShopTrackingText(sourceContext.sourcePage || '', 80) || null,
             sourceChannel: normalizeShopTrackingText(sourceContext.sourceChannel || '', 80) || null,
             sourcePromptId: normalizeShopTrackingText(sourceContext.sourcePromptId || '', 160) || null,
@@ -2865,17 +3193,11 @@ const ShopClient = {
             applyBtn.disabled = false;
         }
 
-        // Reset purchase button state (in case previous purchase left it disabled)
-        const btn = document.getElementById('confirmPurchaseBtn');
-        if (btn) {
-            const confirmText = window.i18n?.t('shop.confirmRedeem') || '确认兑换';
-            btn.innerHTML = `<i class="fas fa-shopping-cart"></i> <span>${confirmText}</span>`;
-            btn.disabled = false;
-        }
-
         const modal = document.getElementById('shopPurchaseModal');
         modal.classList.remove('active');
         this.renderPurchaseNotes();
+        this.renderPurchaseConfirmationStage();
+        this.setPurchaseStage('configure');
 
         // Flush the inactive layout first so newly revealed notes can join the stagger animation on first open.
         void modal.offsetHeight;
@@ -2897,7 +3219,8 @@ const ShopClient = {
                 category: String(options?.category || options?.productCategory || '').trim() || null,
                 unit_price: Number(price || 0) || null,
                 max_purchase_quantity: quantityCap,
-                has_purchase_notes: Boolean(purchaseNotes)
+                has_purchase_notes: Boolean(purchaseNotes),
+                has_usage_instructions: Boolean(usageInstructions)
             }, sourceContext)
         }, {
             eventType: 'engagement'
@@ -2913,7 +3236,8 @@ const ShopClient = {
                 category: String(options?.category || options?.productCategory || '').trim() || null,
                 unit_price: Number(price || 0) || null,
                 max_purchase_quantity: quantityCap,
-                has_purchase_notes: Boolean(purchaseNotes)
+                has_purchase_notes: Boolean(purchaseNotes),
+                has_usage_instructions: Boolean(usageInstructions)
             }, sourceContext)
         }, {
             eventType: 'engagement'
@@ -3043,12 +3367,22 @@ const ShopClient = {
     },
 
     confirmPurchase: async function () {
+        const token = await this.getAccessToken();
+        if (!token) {
+            this.promptLoginForPurchase(window.i18n?.t('shop.loginRequired') || '请先登录再进行兑换');
+            return;
+        }
+
         // Disable button
         const btn = document.getElementById('confirmPurchaseBtn');
+        const backBtn = document.getElementById('purchaseBackBtn');
         const originalText = btn.innerHTML;
         const processingText = window.i18n?.t('shop.processing') || '处理中...';
         btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>${processingText}</span>`;
         btn.disabled = true;
+        if (backBtn) {
+            backBtn.disabled = true;
+        }
 
         try {
             const subtotal = Number(this.getCurrentPurchaseSubtotal?.() || 0) || 0;
@@ -3081,7 +3415,7 @@ const ShopClient = {
                     : ''
             });
 
-            const data = await this.purchaseWithServer();
+            const data = await this.purchaseWithServer(token);
             const purchaseData = data.data;
             let allContents = [];
             if (purchaseData.content) {
@@ -3090,7 +3424,7 @@ const ShopClient = {
             }
             let lastOrderId = purchaseData.order_id;
             let remainingPoints = purchaseData.remaining_points;
-            let usageInstructions = purchaseData.usage_instructions || null;
+            let usageInstructions = purchaseData.usage_instructions || this.currentPurchase?.usageInstructions || null;
 
             // Success
             const finalContent = allContents.length > 0
@@ -3199,6 +3533,9 @@ const ShopClient = {
             // Re-enable button on error
             btn.innerHTML = originalText;
             btn.disabled = false;
+            if (backBtn) {
+                backBtn.disabled = false;
+            }
         }
     },
 
@@ -3300,6 +3637,10 @@ const ShopClient = {
         const modal = document.getElementById('shopPurchaseModal');
         const notesBox = document.getElementById('purchaseNotesBox');
         const notesContent = document.getElementById('purchaseNotesContent');
+        const notesTitle = document.getElementById('purchaseNotesTitle');
+        const confirmNotesBox = document.getElementById('purchaseConfirmNotesBox');
+        const confirmNotesContent = document.getElementById('purchaseConfirmNotesContent');
+        const confirmNotesTitle = document.getElementById('purchaseConfirmNotesTitle');
         const normalizedPurchaseNotes = typeof this.currentPurchase?.purchaseNotes === 'string'
             ? this.currentPurchase.purchaseNotes.trim()
             : '';
@@ -3314,12 +3655,35 @@ const ShopClient = {
         if (!notesBox || !notesContent) return;
 
         if (hasPurchaseNotes) {
-            notesContent.innerHTML = this.renderStoredRichText(normalizedPurchaseNotes);
+            const renderedNotes = this.renderStoredRichText(normalizedPurchaseNotes);
+            notesContent.innerHTML = renderedNotes;
+            if (notesTitle) {
+                notesTitle.textContent = window.i18n?.t('shop.purchaseNotes') || '注意事项';
+            }
+            if (confirmNotesContent) {
+                confirmNotesContent.innerHTML = renderedNotes;
+            }
+            if (confirmNotesTitle) {
+                confirmNotesTitle.textContent = window.i18n?.t('shop.purchaseNotes') || '注意事项';
+            }
             this.setElementHidden(notesBox, false);
+            this.setElementHidden(confirmNotesBox, false);
             this.bindPurchaseNotesWheelIsolation();
         } else {
             this.setElementHidden(notesBox, true);
             notesContent.innerHTML = '';
+            if (notesTitle) {
+                notesTitle.textContent = window.i18n?.t('shop.purchaseNotes') || '注意事项';
+            }
+            if (confirmNotesBox) {
+                this.setElementHidden(confirmNotesBox, true);
+            }
+            if (confirmNotesContent) {
+                confirmNotesContent.innerHTML = '';
+            }
+            if (confirmNotesTitle) {
+                confirmNotesTitle.textContent = window.i18n?.t('shop.purchaseNotes') || '注意事项';
+            }
         }
     },
 

@@ -1114,6 +1114,45 @@
         }
     }
 
+    async function openLoginModalWithMessage(message, options = {}) {
+        const normalizedMessage = String(message || '').trim();
+        const viewId = options?.viewId || sheetState.lastPrimaryView || 'login';
+        const type = options?.type === 'success' ? 'success' : 'error';
+        const overlay = document.getElementById('loginModal');
+
+        if (overlay?.classList.contains('active')) {
+            await setAuthView(viewId, { clearMessage: true });
+            if (normalizedMessage) {
+                showAuthMessage(normalizedMessage, type, viewId);
+            }
+            return;
+        }
+
+        await openLoginModal(viewId);
+
+        if (!normalizedMessage) {
+            return;
+        }
+
+        let attempts = 0;
+        const presentMessage = () => {
+            const { overlay: activeOverlay } = getSheetElements();
+            if (!activeOverlay?.classList.contains('active')) {
+                attempts += 1;
+                if (attempts < 8) {
+                    window.requestAnimationFrame(presentMessage);
+                }
+                return;
+            }
+
+            showAuthMessage(normalizedMessage, type, viewId);
+        };
+
+        window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(presentMessage);
+        });
+    }
+
     function closeLoginModal() {
         const { overlay, sheet } = getSheetElements();
         if (!overlay) return;
@@ -1437,6 +1476,7 @@
 
     function exposeAuthApi() {
         window.openLoginModal = openLoginModal;
+        window.openLoginModalWithMessage = openLoginModalWithMessage;
         window.closeLoginModal = closeLoginModal;
         window.toggleLoginModal = toggleLoginModal;
         window.switchAuthView = function (viewId) {
