@@ -1,6 +1,8 @@
 (function () {
     'use strict';
 
+    const SHOP_PREFETCH_SCHEMA_VERSION = '20260413_PURCHASE_GUIDANCE_2';
+
     document.addEventListener('DOMContentLoaded', () => {
         const checkAuth = setInterval(() => {
             const authBtn = document.getElementById('authBtn');
@@ -58,6 +60,7 @@
 
             if (filteredProducts.length > 0) {
                 sessionStorage.setItem('shop_prefetch', JSON.stringify({
+                    version: SHOP_PREFETCH_SCHEMA_VERSION,
                     categories: categoryResult.data || [],
                     products: filteredProducts,
                     timestamp: Date.now(),

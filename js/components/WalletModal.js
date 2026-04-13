@@ -6954,48 +6954,67 @@
 
             // 🚀 STEP 3: Load data in background
             try {
-                const [orderResult, orderItemsResult] = await Promise.all([
-                    supabase.from('shop_orders').select('*').eq('id', orderId).single(),
-                    supabase.from('shop_order_items').select(`
-                        id, snapshot_product_name, price_paid,
-                        shop_inventory ( content )
-                    `).eq('order_id', orderId)
-                ]);
+                const { data: { session } } = await window.supabaseClient.auth.getSession();
+                if (!session?.access_token) {
+                    detailOverlay.remove();
+                    this.showToast(window.i18n?.t('security.loginRequired') || '请先登录', 'error');
+                    return;
+                }
 
-                const { data: order, error } = orderResult;
-                const { data: orderItems, error: itemsError } = orderItemsResult;
+                const response = await fetch('/api/shop/order-detail', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${session.access_token}`
+                    },
+                    body: JSON.stringify({
+                        orderId
+                    })
+                });
+                const payload = await response.json().catch(() => ({}));
 
                 // Check if modal was closed while loading
                 if (!document.getElementById(`order-detail-${orderId}`)) return;
 
-                if (error) throw error;
+                if (!response.ok || payload?.success === false) {
+                    const error = new Error(payload?.message || (window.i18n?.t('wallet.orderDetailFailed') || '加载订单详情失败'));
+                    error.status = response.status;
+                    throw error;
+                }
+
+                const detail = payload?.data && typeof payload.data === 'object' ? payload.data : null;
+                const order = detail?.order && typeof detail.order === 'object' ? detail.order : null;
                 if (!order) {
                     detailOverlay.remove();
                     this.showToast(window.i18n?.t('wallet.orderNotFound') || '订单不存在', 'error');
                     return;
                 }
 
-                // Process items
-                let items = [];
-                if (orderItems && orderItems.length > 0) {
-                    items = orderItems.map(item => ({
-                        name: item.snapshot_product_name,
-                        content: item.shop_inventory?.content || (window.i18n?.t('wallet.contentLoadFailed') || '内容加载失败'),
-                        price: item.price_paid
-                    }));
-                } else if (order.inventory_id) {
-                    const { data: inventory } = await supabase
-                        .from('shop_inventory').select('content').eq('id', order.inventory_id).single();
-                    items.push({
-                        name: order.snapshot_product_name,
-                        content: inventory?.content || (window.i18n?.t('wallet.contentLoadFailed') || '内容加载失败'),
-                        price: order.price_paid
-                    });
-                }
+                const contentFallback = window.i18n?.t('wallet.contentLoadFailed') || '内容加载失败';
+                const items = Array.isArray(detail?.items)
+                    ? detail.items.map((item) => {
+                        const rawContent = String(item?.content || '');
+                        return {
+                            name: item?.name || order.snapshot_product_name || '',
+                            content: rawContent.trim() ? rawContent : contentFallback,
+                            price: Number(item?.price ?? 0) || 0
+                        };
+                    })
+                    : [];
 
-                const date = new Date(order.created_at);
-                const dateStr = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+                const dateStr = this.formatOrderDateTime(order.created_at);
                 const totalPrice = order.total_price != null ? order.total_price : order.price_paid;
+                const usageInstructions = typeof detail?.guidance?.usage_instructions === 'string'
+                    ? detail.guidance.usage_instructions.trim()
+                    : '';
+                const usageInstructionsMarkup = usageInstructions
+                    ? `
+                            <div class="content-section wallet-order-guidance-section">
+                                <div class="content-section-title">${window.i18n?.t('shop.usageInstructions') || '使用说明'}</div>
+                                <div class="wallet-order-guidance-content">${this.renderStoredWalletOrderRichText(usageInstructions)}</div>
+                            </div>
+                        `
+                    : '';
 
                 // Determine if items are short enough to display side-by-side
                 const isShortKeys = items.every(item => item.content.length <= 40 && !item.content.includes('\n'));
@@ -7015,8 +7034,10 @@
                 }).join('') + `</div>`;
 
                 // Format: product name once at top, then all content items
-                const productName = items.length > 0 ? items[0].name : '';
-                const allContentItems = items.map(i => i.content).join('\n');
+                const productName = items.length > 0 ? items[0].name : (order.snapshot_product_name || '');
+                const allContentItems = items.length > 0
+                    ? items.map(i => i.content).join('\n')
+                    : (window.i18n?.t('shop.noContent') || '（无内容）');
                 const allContent = productName ? `${productName}:\n${allContentItems}` : allContentItems;
                 const orderNumberLabel = window.i18n?.t('wallet.orderNumber') || '订单编号';
                 const orderTimeLabel = window.i18n?.t('wallet.orderTime') || '下单时间';
@@ -7080,6 +7101,7 @@
                                 <div class="content-section-title">${window.i18n?.t('wallet.purchaseContent') || '购买内容'} (${items.length}) <span class="product-dot product-dot--info" data-tooltip="${tooltipValue}"></span></div>
                                 ${contentHtml}
                             </div>
+                            ${usageInstructionsMarkup}
                         </div>
                     `;
 
@@ -7108,7 +7130,12 @@
                 if (document.getElementById(`order-detail-${orderId}`)) {
                     detailOverlay.remove();
                 }
-                this.showToast(window.i18n?.t('wallet.orderDetailFailed') || '加载订单详情失败', 'error');
+                this.showToast(
+                    err?.status === 404
+                        ? (window.i18n?.t('wallet.orderNotFound') || '订单不存在')
+                        : (window.i18n?.t('wallet.orderDetailFailed') || '加载订单详情失败'),
+                    'error'
+                );
             }
         },
 
@@ -7302,6 +7329,36 @@
                     padding: 0 !important;
                     max-width: none !important;
                 }
+                .wallet-order-guidance-section {
+                    margin-top: 14px !important;
+                    margin-bottom: 12px !important;
+                }
+                .wallet-order-guidance-content {
+                    background: rgba(255, 255, 255, 0.05) !important;
+                    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+                    border-radius: 14px !important;
+                    padding: 14px !important;
+                    color: rgba(255, 255, 255, 0.88) !important;
+                    font-size: 12px !important;
+                    line-height: 1.7 !important;
+                }
+                .wallet-order-guidance-content a {
+                    color: #93c5fd !important;
+                    text-decoration: underline !important;
+                }
+                .wallet-order-guidance-content ul,
+                .wallet-order-guidance-content ol {
+                    margin: 0 0 0 18px !important;
+                    padding: 0 !important;
+                }
+                .wallet-order-guidance-content p,
+                .wallet-order-guidance-content div {
+                    margin: 0 0 8px !important;
+                }
+                .wallet-order-guidance-content p:last-child,
+                .wallet-order-guidance-content div:last-child {
+                    margin-bottom: 0 !important;
+                }
                 .content-section-title {
                     font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.3);
                     margin-bottom: 8px; text-align: center;
@@ -7383,6 +7440,17 @@
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        },
+
+        renderStoredWalletOrderRichText(content) {
+            const normalized = typeof content === 'string' ? content.trim() : '';
+            if (!normalized) return '';
+
+            if (window.ShopClient && typeof window.ShopClient.renderStoredRichText === 'function') {
+                return window.ShopClient.renderStoredRichText(normalized);
+            }
+
+            return this.escapeHtml(normalized).replace(/\n/g, '<br>');
         },
 
         /**

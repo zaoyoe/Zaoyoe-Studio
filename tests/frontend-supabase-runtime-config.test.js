@@ -1345,7 +1345,7 @@ test('injected auth runtime centralizes dropdown, drag, and badge style state', 
             'auth entry pages should load the latest injected auth stylesheet'
         );
         assert.equal(
-            source.includes('inject-auth.js?v=20260330_AUTH_PERSONAL_MESSAGE_ENTRY_1'),
+            source.includes('inject-auth.js?v=20260413_AUTH_LOGIN_MESSAGE_HELPER_1'),
             true,
             'auth entry pages should load the latest injected auth runtime version'
         );
@@ -1944,7 +1944,7 @@ test('shop storefront preserves the initial skeleton layout while first-load dat
         'js/shop-client.js should keep the server-rendered shop skeleton layout stable when the first request is still pending'
     );
     assert.equal(
-        shopHtmlSource.includes('js/shop-client.js?v=20260412_SHOP_GRID_TRANSITIONS_15'),
+        shopHtmlSource.includes('js/shop-client.js?v=20260413_SHOP_PURCHASE_GUIDANCE_5'),
         true,
         'shop.html should reference the latest shop client runtime for the discount asset storefront flow'
     );
@@ -10549,9 +10549,9 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(indexSource.includes('./supabase-guestbook-functions.js?v=20260404_GUESTBOOK_PHASE3_EVENTS_1'), true, 'index.html should load the phase 3 guestbook runtime');
     assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260404_GUESTBOOK_PHASE3_EVENTS_1'), true, 'guestbook.html should load the phase 3 guestbook runtime');
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260404_GUESTBOOK_PHASE3_EVENTS_1'), true, 'index_old.html should load the phase 3 guestbook runtime');
-    assert.equal(shopSource.includes('js/shop-client.js?v=20260412_SHOP_GRID_TRANSITIONS_15'), true, 'shop.html should load the latest asset-aware shop runtime');
+    assert.equal(shopSource.includes('js/shop-client.js?v=20260413_SHOP_PURCHASE_GUIDANCE_5'), true, 'shop.html should load the latest asset-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260412_SHOP_CARD_IMAGE_OPT_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
-    assert.equal(verifyPageSource.includes('js/components/WalletModal.js?v=20260405_WALLET_RUNTIME_TRACKING_1'), true, 'verify.html should load the latest tracking-aware wallet modal runtime');
+    assert.equal(verifyPageSource.includes('js/components/WalletModal.js?v=20260413_WALLET_RUNTIME_TRACKING_2'), true, 'verify.html should load the latest tracking-aware wallet modal runtime');
 });
 
 test('analytics phase 3 prefers real event rpc v2 for ai summary and conversion funnel', () => {
