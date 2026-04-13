@@ -378,47 +378,135 @@ async function reloadAnalyticsDashboard() {
     const reloadPromise = (async () => {
         resetAnalyticsDerivedContext(contextKey);
 
-        const phases = [
-            [
-                updateOnlineUsers(),
-                loadOverviewStats(),
-                loadOverviewDutyBoard(),
-                loadOverviewOperatingNavigator(),
-                loadOverviewBusinessMix()
-            ],
-            [
-                loadUserTrendChart(days),
-                loadChannelChart(days),
-                loadGeoDistribution()
-            ],
-            [
-                loadContentTrendChart(days),
-                loadTopContent(days),
-                loadProductAlerts(),
-                loadProductOverview(),
-                loadProductRankings(),
-                loadProductFunnel(),
-                loadProductHealth(),
-                loadProductDetailPanel(),
-                loadOperationsCockpit(),
-                loadActivityHeatmap(days),
-                loadTopContributors(),
-                loadCommunityChart(days),
-                loadConversionFunnel(days),
-                loadRetentionCohort(cohortWeeks),
-                loadPointsFlow(days),
-                loadPointsStats(days),
-                loadPointsDistribution(),
-                loadPointsLeaderboard(),
-                loadRedemptionFunnel(days),
-                loadVerifyServiceSummary(),
-                loadGrowthSummary(),
-                loadEventFunnelPanels()
-            ]
-        ];
+        const activeTabId = String(
+            options?.activeTabId
+            || document.querySelector('#analyticsTabsNav .admin-tab.active')?.dataset?.tab
+            || ''
+        ).trim().toLowerCase() || 'overview';
+        const taskFactories = {
+            updateOnlineUsers: () => updateOnlineUsers(),
+            loadOverviewStats: () => loadOverviewStats(),
+            loadOverviewDutyBoard: () => loadOverviewDutyBoard(),
+            loadOverviewOperatingNavigator: () => loadOverviewOperatingNavigator(),
+            loadOverviewBusinessMix: () => loadOverviewBusinessMix(),
+            loadUserTrendChart: () => loadUserTrendChart(days),
+            loadChannelChart: () => loadChannelChart(days),
+            loadGeoDistribution: () => loadGeoDistribution(),
+            loadContentTrendChart: () => loadContentTrendChart(days),
+            loadTopContent: () => loadTopContent(days),
+            loadProductAlerts: () => loadProductAlerts(),
+            loadProductOverview: () => loadProductOverview(),
+            loadProductRankings: () => loadProductRankings(),
+            loadProductFunnel: () => loadProductFunnel(),
+            loadProductHealth: () => loadProductHealth(),
+            loadProductDetailPanel: () => loadProductDetailPanel(),
+            loadOperationsCockpit: () => loadOperationsCockpit(),
+            loadActivityHeatmap: () => loadActivityHeatmap(days),
+            loadTopContributors: () => loadTopContributors(),
+            loadCommunityChart: () => loadCommunityChart(days),
+            loadConversionFunnel: () => loadConversionFunnel(days),
+            loadRetentionCohort: () => loadRetentionCohort(cohortWeeks),
+            loadPointsFlow: () => loadPointsFlow(days),
+            loadPointsStats: () => loadPointsStats(days),
+            loadPointsDistribution: () => loadPointsDistribution(),
+            loadPointsLeaderboard: () => loadPointsLeaderboard(),
+            loadRedemptionFunnel: () => loadRedemptionFunnel(days),
+            loadVerifyServiceSummary: () => loadVerifyServiceSummary(),
+            loadGrowthSummary: () => loadGrowthSummary(),
+            loadEventFunnelPanels: () => loadEventFunnelPanels()
+        };
+        const phaseTaskIds = (() => {
+            switch (activeTabId) {
+                case 'product':
+                    return [
+                        ['updateOnlineUsers', 'loadProductAlerts', 'loadProductOverview', 'loadProductRankings', 'loadProductFunnel', 'loadProductHealth', 'loadProductDetailPanel'],
+                        ['loadOverviewOperatingNavigator', 'loadOperationsCockpit'],
+                        ['loadOverviewStats', 'loadOverviewDutyBoard', 'loadOverviewBusinessMix', 'loadUserTrendChart', 'loadChannelChart', 'loadGeoDistribution'],
+                        ['loadTopContent', 'loadContentTrendChart', 'loadActivityHeatmap', 'loadConversionFunnel'],
+                        ['loadGrowthSummary', 'loadTopContributors', 'loadCommunityChart', 'loadRetentionCohort'],
+                        ['loadPointsFlow', 'loadPointsStats', 'loadPointsDistribution', 'loadPointsLeaderboard', 'loadRedemptionFunnel'],
+                        ['loadVerifyServiceSummary', 'loadEventFunnelPanels']
+                    ];
+                case 'ops':
+                    return [
+                        ['updateOnlineUsers', 'loadOperationsCockpit'],
+                        ['loadOverviewOperatingNavigator', 'loadProductAlerts', 'loadProductOverview', 'loadProductRankings', 'loadProductFunnel', 'loadProductHealth'],
+                        ['loadOverviewStats', 'loadOverviewDutyBoard', 'loadOverviewBusinessMix', 'loadUserTrendChart', 'loadChannelChart', 'loadGeoDistribution'],
+                        ['loadTopContent', 'loadContentTrendChart', 'loadActivityHeatmap', 'loadConversionFunnel'],
+                        ['loadGrowthSummary', 'loadTopContributors', 'loadCommunityChart', 'loadRetentionCohort'],
+                        ['loadPointsFlow', 'loadPointsStats', 'loadPointsDistribution', 'loadPointsLeaderboard', 'loadRedemptionFunnel'],
+                        ['loadVerifyServiceSummary', 'loadEventFunnelPanels', 'loadProductDetailPanel']
+                    ];
+                case 'content':
+                    return [
+                        ['updateOnlineUsers', 'loadTopContent', 'loadContentTrendChart', 'loadActivityHeatmap', 'loadConversionFunnel'],
+                        ['loadOverviewOperatingNavigator'],
+                        ['loadOverviewStats', 'loadOverviewDutyBoard', 'loadOverviewBusinessMix', 'loadUserTrendChart', 'loadChannelChart', 'loadGeoDistribution'],
+                        ['loadProductAlerts', 'loadProductOverview', 'loadProductRankings', 'loadProductFunnel', 'loadProductHealth', 'loadProductDetailPanel'],
+                        ['loadGrowthSummary', 'loadTopContributors', 'loadCommunityChart', 'loadRetentionCohort'],
+                        ['loadOperationsCockpit', 'loadVerifyServiceSummary'],
+                        ['loadPointsFlow', 'loadPointsStats', 'loadPointsDistribution', 'loadPointsLeaderboard', 'loadRedemptionFunnel', 'loadEventFunnelPanels']
+                    ];
+                case 'growth':
+                    return [
+                        ['updateOnlineUsers', 'loadUserTrendChart', 'loadGrowthSummary', 'loadTopContributors', 'loadCommunityChart', 'loadRetentionCohort', 'loadEventFunnelPanels'],
+                        ['loadOverviewOperatingNavigator'],
+                        ['loadOverviewStats', 'loadOverviewDutyBoard', 'loadOverviewBusinessMix', 'loadChannelChart', 'loadGeoDistribution'],
+                        ['loadTopContent', 'loadContentTrendChart', 'loadActivityHeatmap', 'loadConversionFunnel'],
+                        ['loadProductAlerts', 'loadProductOverview', 'loadProductRankings', 'loadProductFunnel', 'loadProductHealth', 'loadProductDetailPanel'],
+                        ['loadOperationsCockpit', 'loadVerifyServiceSummary'],
+                        ['loadPointsFlow', 'loadPointsStats', 'loadPointsDistribution', 'loadPointsLeaderboard', 'loadRedemptionFunnel']
+                    ];
+                case 'monetization':
+                    return [
+                        ['updateOnlineUsers', 'loadPointsFlow', 'loadPointsStats', 'loadPointsDistribution', 'loadPointsLeaderboard', 'loadRedemptionFunnel', 'loadEventFunnelPanels'],
+                        ['loadOverviewOperatingNavigator'],
+                        ['loadOverviewStats', 'loadOverviewDutyBoard', 'loadOverviewBusinessMix', 'loadUserTrendChart', 'loadChannelChart', 'loadGeoDistribution'],
+                        ['loadTopContent', 'loadContentTrendChart', 'loadActivityHeatmap', 'loadConversionFunnel'],
+                        ['loadProductAlerts', 'loadProductOverview', 'loadProductRankings', 'loadProductFunnel', 'loadProductHealth', 'loadProductDetailPanel'],
+                        ['loadGrowthSummary', 'loadTopContributors', 'loadCommunityChart', 'loadRetentionCohort'],
+                        ['loadOperationsCockpit', 'loadVerifyServiceSummary']
+                    ];
+                case 'verify':
+                    return [
+                        ['updateOnlineUsers', 'loadVerifyServiceSummary', 'loadEventFunnelPanels'],
+                        ['loadOverviewOperatingNavigator', 'loadOperationsCockpit'],
+                        ['loadOverviewStats', 'loadOverviewDutyBoard', 'loadOverviewBusinessMix', 'loadUserTrendChart', 'loadChannelChart', 'loadGeoDistribution'],
+                        ['loadTopContent', 'loadContentTrendChart', 'loadActivityHeatmap', 'loadConversionFunnel'],
+                        ['loadProductAlerts', 'loadProductOverview', 'loadProductRankings', 'loadProductFunnel', 'loadProductHealth', 'loadProductDetailPanel'],
+                        ['loadGrowthSummary', 'loadTopContributors', 'loadCommunityChart', 'loadRetentionCohort'],
+                        ['loadPointsFlow', 'loadPointsStats', 'loadPointsDistribution', 'loadPointsLeaderboard', 'loadRedemptionFunnel']
+                    ];
+                case 'overview':
+                default:
+                    return [
+                        ['updateOnlineUsers', 'loadOverviewStats', 'loadOverviewDutyBoard', 'loadOverviewOperatingNavigator', 'loadOverviewBusinessMix'],
+                        ['loadUserTrendChart', 'loadChannelChart', 'loadGeoDistribution'],
+                        ['loadTopContent', 'loadContentTrendChart', 'loadActivityHeatmap', 'loadConversionFunnel'],
+                        ['loadProductAlerts', 'loadProductOverview', 'loadProductRankings', 'loadProductFunnel', 'loadProductHealth', 'loadProductDetailPanel'],
+                        ['loadOperationsCockpit', 'loadVerifyServiceSummary'],
+                        ['loadGrowthSummary', 'loadTopContributors', 'loadCommunityChart', 'loadRetentionCohort'],
+                        ['loadPointsFlow', 'loadPointsStats', 'loadPointsDistribution', 'loadPointsLeaderboard', 'loadRedemptionFunnel', 'loadEventFunnelPanels']
+                    ];
+            }
+        })();
+        const seenTaskIds = new Set();
+        const phases = phaseTaskIds
+            .map((taskIds) => taskIds
+                .filter((taskId) => Object.prototype.hasOwnProperty.call(taskFactories, taskId))
+                .filter((taskId) => {
+                    if (seenTaskIds.has(taskId)) {
+                        return false;
+                    }
+                    seenTaskIds.add(taskId);
+                    return true;
+                })
+                .map((taskId) => taskFactories[taskId]))
+            .filter((phase) => phase.length > 0);
 
         for (let index = 0; index < phases.length; index += 1) {
-            await Promise.allSettled(phases[index]);
+            const phasePromises = phases[index].map((runTask) => Promise.resolve().then(runTask));
+            await Promise.allSettled(phasePromises);
             updateLastUpdateTime();
             if (index < phases.length - 1) {
                 await waitForAnalyticsPaint(2);

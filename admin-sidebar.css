@@ -29,6 +29,11 @@
 
     /* Default (Light) */
     --sidebar-bg: #f8fafc;
+    --sidebar-surface-top: #f8fafc;
+    --sidebar-surface-bottom: #f8fafc;
+    --sidebar-surface-highlight: rgba(255, 255, 255, 0);
+    --sidebar-surface-base: #f8fafc;
+    --sidebar-surface-overlay: rgba(255, 255, 255, 0);
     --sidebar-border: rgba(0, 0, 0, 0.06);
     --sidebar-text: #64748b;
     --sidebar-text-active: #6b9ece;
@@ -51,20 +56,29 @@
 
 /* Dark Mode Overrides */
 [data-theme="dark"] .admin-sidebar {
-    --sidebar-bg: #0f172a;
-    /* Starry background */
-    --sidebar-border: rgba(255, 255, 255, 0.06);
-    --sidebar-text: #8b9cc7;
-    --sidebar-text-hover: #e2e8f0;
-    --sidebar-accent: #6b9ece;
-    --sidebar-accent-bg: rgba(107, 158, 206, 0.15);
-    --sidebar-item-hover: rgba(255, 255, 255, 0.06);
+    --sidebar-bg: #182634;
+    --sidebar-surface-top: #182634;
+    --sidebar-surface-bottom: #182634;
+    --sidebar-surface-highlight: rgba(255, 255, 255, 0);
+    --sidebar-surface-base: #182634;
+    --sidebar-surface-overlay: rgba(255, 255, 255, 0);
+    --sidebar-border: rgba(255, 255, 255, 0.04);
+    --sidebar-text: rgba(255, 255, 255, 0.82);
+    --sidebar-text-hover: #ffffff;
+    --sidebar-accent: #ffffff;
+    --sidebar-accent-bg: rgba(255, 255, 255, 0.09);
+    --sidebar-item-hover: rgba(255, 255, 255, 0.05);
 }
 
 /* Redundant Light Mode Block - ensuring consistent blue */
 [data-theme="light"] .admin-sidebar,
 :root:not([data-theme="dark"]) .admin-sidebar {
     --sidebar-bg: #f8fafc;
+    --sidebar-surface-top: #f8fafc;
+    --sidebar-surface-bottom: #f8fafc;
+    --sidebar-surface-highlight: rgba(255, 255, 255, 0);
+    --sidebar-surface-base: #f8fafc;
+    --sidebar-surface-overlay: rgba(255, 255, 255, 0);
     --sidebar-border: rgba(0, 0, 0, 0.08);
     --sidebar-text: #64748b;
     --sidebar-text-hover: #1e293b;
@@ -88,6 +102,8 @@
     width: 56px;
     background: var(--sidebar-bg);
     border-right: 1px solid var(--sidebar-border);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
     display: flex;
     flex-direction: column;
     z-index: 1000;
@@ -168,6 +184,7 @@
 .sidebar-item.active {
     background: var(--sidebar-accent-bg);
     color: var(--sidebar-accent);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
 }
 
 .sidebar-item.active::before {
@@ -226,6 +243,7 @@
 /* Sidebar Footer (Settings) */
 .sidebar-footer {
     padding: 12px 8px;
+    background: var(--sidebar-bg);
     border-top: 1px solid var(--sidebar-border);
     flex-shrink: 0;
 }

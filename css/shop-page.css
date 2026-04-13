@@ -1,5 +1,41 @@
 /* shop.html inline style block 1 (from line 41) */
 /* Theme Variables (Copied from Prompts Poetry) */
+        @property --shop-card-enter-y {
+            syntax: '<length>';
+            inherits: false;
+            initial-value: 0px;
+        }
+
+        @property --shop-card-enter-scale {
+            syntax: '<number>';
+            inherits: false;
+            initial-value: 1;
+        }
+
+        @property --shop-card-breathe-y {
+            syntax: '<length>';
+            inherits: false;
+            initial-value: 0px;
+        }
+
+        @property --shop-card-shift-x {
+            syntax: '<length>';
+            inherits: false;
+            initial-value: 0px;
+        }
+
+        @property --shop-card-shift-y {
+            syntax: '<length>';
+            inherits: false;
+            initial-value: 0px;
+        }
+
+        @property --shop-card-hover-y {
+            syntax: '<length>';
+            inherits: false;
+            initial-value: 0px;
+        }
+
         :root {
             /* Light Mode Defaults */
             --bg-color: #ffffff;
@@ -65,13 +101,26 @@
 
         /* Shop Card Styles (Prompt Card Style) */
         .shop-card {
+            --shop-card-enter-y: 0px;
+            --shop-card-enter-scale: 1;
+            --shop-card-breathe-y: 0px;
+            --shop-card-shift-x: 0px;
+            --shop-card-shift-y: 0px;
+            --shop-card-hover-y: 0px;
             position: relative;
             border-radius: 16px;
             overflow: hidden;
             background: var(--card-bg);
             border: 1px solid var(--card-border);
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
-            transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            transform: translate3d(var(--shop-card-shift-x),
+                    calc(var(--shop-card-shift-y) + var(--shop-card-enter-y) + var(--shop-card-breathe-y) + var(--shop-card-hover-y)),
+                    0) scale(var(--shop-card-enter-scale));
+            transition:
+                box-shadow 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                border-color 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                background 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                --shop-card-hover-y 0.42s cubic-bezier(0.22, 1, 0.36, 1);
             padding: 0;
             /* Remove padding for cover image */
             display: flex;
@@ -81,7 +130,7 @@
         }
 
         .shop-card:hover {
-            transform: translateY(-4px);
+            --shop-card-hover-y: -4px;
             box-shadow: 0 12px 30px rgba(93, 159, 216, 0.2);
             /* Starry blue glow shadow on hover */
             border-color: #5d9fd8;
@@ -128,7 +177,25 @@
         }
 
         .shop-card-icon--cover {
-            font-size: 3rem;
+            font-size: 5rem;
+            line-height: 1;
+        }
+
+        .shop-cover-icon-svg {
+            width: 104px;
+            height: 104px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(188, 199, 214, 0.96);
+            filter: drop-shadow(0 4px 18px rgba(15, 23, 42, 0.12));
+            flex: 0 0 auto;
+        }
+
+        .shop-cover-icon-svg svg {
+            width: 100%;
+            height: 100%;
+            display: block;
         }
 
         .shop-card-icon--fallback {
@@ -581,9 +648,9 @@
 
         /* Shop Specific Styles */
         .shop-main {
-            max-width: 1200px;
+            max-width: 1600px;
             margin: 120px auto 40px;
-            padding: 0 40px;
+            padding: 0 5vw;
         }
 
         .shop-header {
@@ -1034,8 +1101,112 @@
 
         .shop-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
             gap: 24px;
+            position: relative;
+        }
+
+        .shop-grid-transition-layer {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .shop-card-filter-motion-lock {
+            will-change: transform, opacity;
+        }
+
+        .shop-card-filter-hidden {
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+
+        .shop-card-filter-moving {
+            z-index: 2;
+            transition:
+                box-shadow 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                border-color 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                background 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                --shop-card-hover-y 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+                --shop-card-shift-x 0.96s cubic-bezier(0.18, 0.88, 0.24, 1) var(--shop-card-filter-delay, 0ms),
+                --shop-card-shift-y 0.96s cubic-bezier(0.18, 0.88, 0.24, 1) var(--shop-card-filter-delay, 0ms);
+        }
+
+        .shop-card-filter-enter {
+            z-index: 2;
+            opacity: 0;
+            --shop-card-enter-y: 24px;
+            --shop-card-enter-scale: 0.992;
+            --shop-card-enter-opacity-duration: 0.42s;
+            --shop-card-enter-duration: 0.58s;
+            --shop-card-enter-ease: cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .shop-card-filter-enter--initial {
+            --shop-card-enter-y: 58px;
+            --shop-card-enter-scale: 0.976;
+            --shop-card-enter-opacity-duration: 0.84s;
+            --shop-card-enter-duration: 1.42s;
+            --shop-card-enter-ease: cubic-bezier(0.18, 0.9, 0.2, 1);
+            animation-play-state: paused;
+        }
+
+        .shop-card-filter-enter.is-visible {
+            opacity: 1;
+            transition:
+                opacity var(--shop-card-enter-opacity-duration) ease-out var(--shop-card-filter-delay, 0ms),
+                --shop-card-enter-y var(--shop-card-enter-duration) var(--shop-card-enter-ease) var(--shop-card-filter-delay, 0ms),
+                --shop-card-enter-scale var(--shop-card-enter-duration) var(--shop-card-enter-ease) var(--shop-card-filter-delay, 0ms);
+            --shop-card-enter-y: 0px;
+            --shop-card-enter-scale: 1;
+        }
+
+        .shop-card-filter-exit {
+            opacity: 1;
+            --shop-card-enter-y: 0px;
+            --shop-card-enter-scale: 1;
+        }
+
+        .shop-card-filter-exit.is-leaving {
+            opacity: 0;
+            --shop-card-enter-y: 18px;
+            --shop-card-enter-scale: 0.988;
+            transition:
+                opacity 0.36s ease-in var(--shop-card-filter-delay, 0ms),
+                --shop-card-enter-y 0.46s cubic-bezier(0.4, 0, 0.2, 1) var(--shop-card-filter-delay, 0ms),
+                --shop-card-enter-scale 0.46s cubic-bezier(0.4, 0, 0.2, 1) var(--shop-card-filter-delay, 0ms);
+        }
+
+        .shop-card-transition-clone {
+            position: absolute;
+            margin: 0 !important;
+            pointer-events: none;
+            z-index: 1;
+            opacity: 1;
+            animation: none !important;
+            will-change: transform, opacity;
+            backface-visibility: hidden;
+            transform: translate3d(0, 0, 0) scale(1);
+            transition:
+                opacity 0.34s ease-in var(--shop-card-filter-delay, 0ms),
+                transform 0.44s cubic-bezier(0.4, 0, 0.2, 1) var(--shop-card-filter-delay, 0ms);
+        }
+
+        .shop-card-transition-clone--moving {
+            z-index: 3;
+            transition:
+                transform 0.82s cubic-bezier(0.2, 0.72, 0.24, 1) var(--shop-card-filter-delay, 0ms),
+                opacity 0.18s ease-in var(--shop-card-filter-delay, 0ms);
+        }
+
+        .shop-card-transition-clone--exit {
+            z-index: 1;
+        }
+
+        .shop-card-transition-clone.is-exiting {
+            opacity: 0;
+            transform: translate3d(0, 18px, 0) scale(0.988);
         }
 
         .shop-grid.is-empty {
@@ -1737,16 +1908,16 @@
 
             0%,
             100% {
-                transform: translateY(0);
+                --shop-card-breathe-y: 0px;
             }
 
             50% {
-                transform: translateY(-6px);
+                --shop-card-breathe-y: -6px;
             }
         }
 
         .shop-card.breathing {
-            animation: breathe 4s ease-in-out infinite;
+            animation: breathe 5.8s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
             animation-delay: var(--breathe-delay, 0s);
             will-change: transform;
         }
@@ -1765,7 +1936,7 @@
         }
 
         .shop-card.flash-sale-card {
-            animation: breathe 4s ease-in-out infinite, flashSaleBreathe 2s ease-in-out infinite;
+            animation: breathe 5.8s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite, flashSaleBreathe 2.4s ease-in-out infinite;
             border-color: rgba(239, 68, 68, 0.3);
         }
 
@@ -1854,6 +2025,24 @@
             animation-play-state: paused;
         }
 
+        @media (prefers-reduced-motion: reduce) {
+            .shop-card-filter-enter,
+            .shop-card-filter-exit,
+            .shop-card-filter-moving,
+            .shop-card-transition-clone {
+                transition: none !important;
+                opacity: 1 !important;
+                --shop-card-enter-y: 0px !important;
+                --shop-card-enter-scale: 1 !important;
+                --shop-card-shift-x: 0px !important;
+                --shop-card-shift-y: 0px !important;
+            }
+
+            .shop-card-filter-hidden {
+                opacity: 1 !important;
+            }
+        }
+
         /* Skeleton Loading Styles */
         @keyframes shimmer {
             0% {
@@ -1926,23 +2115,24 @@
             flex-direction: column;
             min-height: 332px;
             background: linear-gradient(180deg,
-                    rgba(11, 18, 32, 0.94) 0%,
-                    rgba(15, 23, 42, 0.82) 100%);
-            border: 1px solid rgba(148, 163, 184, 0.16);
+                    rgba(19, 26, 40, 0.98) 0%,
+                    rgba(22, 31, 47, 0.94) 100%);
+            border: 1px solid rgba(148, 163, 184, 0.14);
             box-shadow:
-                0 18px 36px rgba(2, 6, 23, 0.28),
+                0 16px 32px rgba(2, 6, 23, 0.24),
                 inset 0 1px 0 rgba(255, 255, 255, 0.04);
             backdrop-filter: blur(14px);
             -webkit-backdrop-filter: blur(14px);
         }
 
-        .skeleton-image {
-            width: 100%;
+        .skeleton-image-shell {
+            position: relative;
             height: 160px;
-        }
-
-        body.shop-page .skeleton-image {
-            border-radius: 0;
+            overflow: hidden;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+            background:
+                linear-gradient(180deg, rgba(78, 61, 125, 0.96), rgba(74, 58, 120, 0.92)),
+                radial-gradient(circle at 50% 38%, rgba(255, 255, 255, 0.08), transparent 34%);
         }
 
         .skeleton-content {
@@ -1953,43 +2143,45 @@
             display: flex;
             flex: 1;
             flex-direction: column;
+            gap: 10px;
         }
 
         .skeleton-title {
             height: 20px;
-            width: 70%;
-            margin-bottom: 12px;
+            width: 68%;
+            border-radius: 10px;
         }
 
         .skeleton-desc {
             height: 14px;
             width: 90%;
-            margin-bottom: 8px;
         }
 
-        .skeleton-desc-short {
-            height: 14px;
-            width: 60%;
-            margin-bottom: 20px;
+        .skeleton-desc--short {
+            width: 62%;
+            margin-bottom: 10px;
         }
 
         .skeleton-footer {
             display: flex;
             justify-content: space-between;
-            align-items: center;
+            align-items: flex-end;
+            gap: 16px;
             margin-top: auto;
-            padding-top: 20px;
+            padding-top: 18px;
         }
 
-        .skeleton-price {
-            height: 24px;
-            width: 80px;
+        .skeleton-price-value {
+            width: 34px;
+            height: 26px;
+            border-radius: 10px;
         }
 
         .skeleton-btn {
+            width: 92px;
             height: 36px;
-            width: 70px;
-            border-radius: 24px;
+            border-radius: 999px;
+            flex: 0 0 auto;
         }
 
 

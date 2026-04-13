@@ -187,6 +187,11 @@ function buildShopTrackingMetadata(baseMetadata = {}, sourceContext = {}) {
     return metadata;
 }
 
+const SHOP_GRID_EAGER_IMAGE_COUNT = 4;
+const SHOP_CARD_BREATHE_DURATION_MS = 5800;
+const SHOP_CARD_BREATHE_AMPLITUDE_PX = 6;
+const shopCardImageWarmCache = new Set();
+
 const ShopClient = {
     currentAgentId: null,
     currentAgentName: null,
@@ -218,6 +223,8 @@ const ShopClient = {
     productsCacheEpoch: 0,
     backgroundPrefetchScheduled: false,
     backgroundPrefetchHandle: null,
+    gridTransitionCleanupTimer: null,
+    gridTransitionSequence: 0,
     lastSkeletonCount: 6,
     staticUiBindingsBound: false,
 
@@ -1201,6 +1208,148 @@ const ShopClient = {
         }
     },
 
+    isShopImageSource: function (value) {
+        const trimmed = String(value || '').trim();
+        return trimmed.startsWith('http://')
+            || trimmed.startsWith('https://')
+            || trimmed.startsWith('/')
+            || trimmed.startsWith('data:image/');
+    },
+
+    getShopCardWaveOffsetMs: function (productId = '') {
+        const input = String(productId || '');
+        let hash = 0;
+        for (let index = 0; index < input.length; index += 1) {
+            hash = ((hash * 33) + input.charCodeAt(index)) >>> 0;
+        }
+        return (hash % 29) * 173;
+    },
+
+    getShopCardBreatheDelay: function (productId = '', timeMs = performance.now()) {
+        const phaseMs = (timeMs + this.getShopCardWaveOffsetMs(productId)) % SHOP_CARD_BREATHE_DURATION_MS;
+        return `-${(phaseMs / 1000).toFixed(3)}s`;
+    },
+
+    getShopCardWaveOffsetY: function (productId = '', timeMs = performance.now()) {
+        const phaseMs = (timeMs + this.getShopCardWaveOffsetMs(productId)) % SHOP_CARD_BREATHE_DURATION_MS;
+        const progress = phaseMs / SHOP_CARD_BREATHE_DURATION_MS;
+        return -0.5 * SHOP_CARD_BREATHE_AMPLITUDE_PX * (1 - Math.cos(progress * Math.PI * 2));
+    },
+
+    renderShopCoverIconMarkup: function (iconClass = '', safeIconClass = '') {
+        const normalizedIconClass = String(iconClass || '').trim().toLowerCase();
+        if (!normalizedIconClass) {
+            return '<i class="fas fa-box shop-card-icon shop-card-icon--fallback" aria-hidden="true"></i>';
+        }
+
+        if (normalizedIconClass.includes('fa-bag-shopping') || normalizedIconClass.includes('fa-shopping-bag')) {
+            return `
+                <span class="shop-cover-icon-svg" aria-hidden="true">
+                    <svg viewBox="0 0 64 64" focusable="false">
+                        <path fill="currentColor" d="M20 24v-3c0-6.627 5.373-12 12-12s12 5.373 12 12v3h3a5 5 0 0 1 5 5v19c0 5.523-4.477 10-10 10H19c-5.523 0-10-4.477-10-10V29a5 5 0 0 1 5-5h6zm6 0h12v-3a6 6 0 1 0-12 0v3z"/>
+                    </svg>
+                </span>
+            `;
+        }
+
+        return `<i class="${safeIconClass} shop-card-icon shop-card-icon--cover" aria-hidden="true"></i>`;
+    },
+
+    getOptimizedShopImageUrl: function (url, options = {}) {
+        const trimmed = String(url || '').trim();
+        if (!trimmed) return '';
+
+        const { format = 'avif' } = options;
+
+        if (trimmed.startsWith('data:image/') || trimmed.startsWith('/')) {
+            return trimmed;
+        }
+
+        if (trimmed.includes('cdn.zaoyoe.com/prompts/') && !trimmed.includes('/thumb/')) {
+            return trimmed.replace('/prompts/', '/prompts/thumb/');
+        }
+
+        if (
+            trimmed.includes('supabase.co/storage/v1/object/public/')
+            || trimmed.includes('supabase.co/storage/v1/render/image/public/')
+        ) {
+            try {
+                const optimizedUrl = new URL(trimmed);
+                if (optimizedUrl.pathname.includes('/storage/v1/object/public/')) {
+                    optimizedUrl.pathname = optimizedUrl.pathname.replace(
+                        '/storage/v1/object/public/',
+                        '/storage/v1/render/image/public/'
+                    );
+                }
+                optimizedUrl.searchParams.set('width', '480');
+                optimizedUrl.searchParams.set('height', '320');
+                optimizedUrl.searchParams.set('quality', '80');
+                if (format) {
+                    optimizedUrl.searchParams.set('format', format);
+                } else {
+                    optimizedUrl.searchParams.delete('format');
+                }
+                return optimizedUrl.toString();
+            } catch (error) {
+                console.warn('Failed to build shop image transform URL:', error);
+            }
+        }
+
+        return trimmed;
+    },
+
+    warmShopCardLeadImages: function (products = []) {
+        const leadProducts = (Array.isArray(products) ? products : [])
+            .filter((product) => this.isShopImageSource(product?.icon_url))
+            .slice(0, SHOP_GRID_EAGER_IMAGE_COUNT);
+
+        leadProducts.forEach((product) => {
+            const optimizedUrl = this.getOptimizedShopImageUrl(product?.icon_url);
+            if (!optimizedUrl || optimizedUrl.startsWith('data:') || shopCardImageWarmCache.has(optimizedUrl)) {
+                return;
+            }
+            if (optimizedUrl.includes('supabase.co/storage/v1/render/image/public/')) return;
+
+            shopCardImageWarmCache.add(optimizedUrl);
+            const warmImage = new Image();
+            warmImage.decoding = 'async';
+            if ('fetchPriority' in warmImage) {
+                warmImage.fetchPriority = 'high';
+            }
+            warmImage.src = optimizedUrl;
+        });
+    },
+
+    setShopCardImageSource: function (cardImage, originalUrl) {
+        if (!(cardImage instanceof HTMLImageElement) || !originalUrl) return;
+
+        const primaryUrl = this.getOptimizedShopImageUrl(originalUrl);
+        const transformFallbackUrl = this.getOptimizedShopImageUrl(originalUrl, { format: '' });
+
+        cardImage.dataset.originalSrc = originalUrl;
+        cardImage.dataset.transformFallbackSrc = transformFallbackUrl !== primaryUrl ? transformFallbackUrl : '';
+        cardImage.dataset.fallbackStage = '';
+        cardImage.src = primaryUrl;
+    },
+
+    handleShopCardImageError: function (cardImage, originalUrl) {
+        if (!(cardImage instanceof HTMLImageElement)) return;
+
+        const transformFallbackSrc = cardImage.dataset.transformFallbackSrc;
+        const fallbackOriginalSrc = cardImage.dataset.originalSrc || originalUrl;
+
+        if (!cardImage.dataset.fallbackStage && transformFallbackSrc && cardImage.src !== transformFallbackSrc) {
+            cardImage.dataset.fallbackStage = 'transform';
+            cardImage.src = transformFallbackSrc;
+            return;
+        }
+
+        if (cardImage.dataset.fallbackStage !== 'original' && fallbackOriginalSrc && cardImage.src !== fallbackOriginalSrc) {
+            cardImage.dataset.fallbackStage = 'original';
+            cardImage.src = fallbackOriginalSrc;
+        }
+    },
+
     setDiscountMessage: function (message = '', { variant = 'error', html = false } = {}) {
         const msgBox = document.getElementById('discountMessage');
         if (!msgBox) return;
@@ -1268,6 +1417,9 @@ const ShopClient = {
     currentCategory: 'all',
 
     filterCategory: function (category, btn) {
+        if (category === this.currentCategory && btn?.classList.contains('active')) {
+            return;
+        }
         this.currentCategory = category;
         const currentCards = document.querySelectorAll('#userShopGrid .shop-card').length;
         if (currentCards > 0) {
@@ -1368,15 +1520,557 @@ const ShopClient = {
         }
     },
 
+    prefersReducedMotion: function () {
+        return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    },
+
+    runAfterNextPaint: function (callback) {
+        if (typeof callback !== 'function') return;
+        window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
+                callback();
+            });
+        });
+    },
+
+    clearProductGridTransitionArtifacts: function (container = document.getElementById('userShopGrid')) {
+        if (this.gridTransitionCleanupTimer) {
+            clearTimeout(this.gridTransitionCleanupTimer);
+            this.gridTransitionCleanupTimer = null;
+        }
+
+        if (!container) return;
+
+        container.querySelectorAll('.shop-grid-transition-layer').forEach(layer => layer.remove());
+        container.querySelectorAll('.shop-card-filter-enter, .shop-card-filter-exit, .shop-card-filter-moving, .shop-card-filter-hidden').forEach(card => {
+            card.classList.remove(
+                'shop-card-filter-enter',
+                'shop-card-filter-enter--initial',
+                'shop-card-filter-exit',
+                'shop-card-filter-moving',
+                'shop-card-filter-hidden',
+                'shop-card-filter-motion-lock',
+                'is-visible',
+                'is-leaving'
+            );
+            card.style.transition = '';
+            card.style.transform = '';
+            card.style.opacity = '';
+            this.setCssVariables(card, {
+                '--shop-card-filter-delay': null,
+                '--shop-card-shift-x': null,
+                '--shop-card-shift-y': null
+            });
+        });
+    },
+
+    buildEmptyStateElement: function () {
+        const emptyState = document.createElement('div');
+        emptyState.className = 'shop-empty-state';
+        emptyState.innerHTML = `
+            <div class="shop-empty-icon">
+                <i class="fas fa-box-open" aria-hidden="true"></i>
+            </div>
+            <h3 class="shop-empty-title" data-i18n="shop.noProducts">${window.i18n?.t('shop.noProducts') || '暂无商品上架'}</h3>
+        `;
+        return emptyState;
+    },
+
+    buildProductCardElement: function (product, agentPrices = {}, index = 0, { waveTimeMs = performance.now() } = {}) {
+        if (!product) return null;
+
+        let currentPrice = this.getProductPriceForCurrentSite(product);
+        if (currentPrice == null) {
+            return null;
+        }
+
+        const productId = String(product.id || '').trim();
+        if (!productId) {
+            return null;
+        }
+
+        const el = document.createElement('div');
+        el.className = 'shop-card user-product-card breathing';
+        el.dataset.productId = productId;
+        el.dataset.productCategory = String(product.category || '');
+        this.setCssVariables(el, {
+            '--breathe-delay': this.getShopCardBreatheDelay(productId, waveTimeMs),
+            '--shop-card-filter-delay': null
+        });
+
+        const safeIconClass = this.escapeAttribute(product.icon_url || '');
+        const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
+        const displayName = (currentLang === 'en' && product.name_en) ? product.name_en : product.name;
+        const displayDesc = (currentLang === 'en' && product.description_en)
+            ? product.description_en
+            : (product.description || (window.i18n?.t('shop.noDescription') || '暂无描述'));
+        const safeCardImageAlt = this.escapeAttribute(displayName || (window.i18n?.t('shop.productImage') || '商品封面'));
+        const safeIconUrl = this.escapeAttribute(product.icon_url || '');
+        const hasCoverImage = this.isShopImageSource(product.icon_url);
+        const shouldLoadImageEagerly = index < SHOP_GRID_EAGER_IMAGE_COUNT;
+        const iconHtml = product.icon_url?.startsWith('fa')
+            ? `<i class="${safeIconClass} shop-card-icon shop-card-icon--font" aria-hidden="true"></i>`
+            : (hasCoverImage
+                ? `<img src="${safeIconUrl}" width="40" class="shop-card-thumb" alt="${safeCardImageAlt}" loading="lazy" decoding="async">`
+                : '<i class="fas fa-box shop-card-icon shop-card-icon--fallback" aria-hidden="true"></i>');
+
+        const stockCount = product.stock_count || 0;
+        const noStock = stockCount <= 0;
+        const buyBtnText = noStock
+            ? (window.i18n?.t('shop.outOfStock') || '售罄')
+            : (window.i18n?.t('shop.redeem') || '兑换');
+        const stockLabel = noStock
+            ? (window.i18n?.t('shop.noStock') || '无货')
+            : `${window.i18n?.t('shop.stock') || '库存'}: ${stockCount}`;
+        const buyBtnClass = noStock ? 'shop-btn-disabled' : 'shop-btn-primary';
+
+        const coverIconMarkup = product.icon_url?.startsWith('fa')
+            ? this.renderShopCoverIconMarkup(product.icon_url, safeIconClass)
+            : iconHtml;
+        const displayHtml = hasCoverImage
+            ? `<img class="shop-card-image-cover" alt="${safeCardImageAlt}" width="480" height="320">`
+            : `<div class="shop-icon-wrapper">${coverIconMarkup}</div>`;
+        const qtyRulesStr = product.quantity_rules ? encodeURIComponent(JSON.stringify(product.quantity_rules)) : '';
+        const maxPurchaseQuantity = this.normalizePurchaseQuantityCap(product.max_purchase_quantity);
+
+        let originalPriceHtml = '';
+        let flashSaleBadge = '';
+        let flashShadowClass = '';
+        let agentBadgeHtml = '';
+
+        if (this.currentAgentId && agentPrices[product.id] && agentPrices[product.id] > currentPrice) {
+            originalPriceHtml = `<span class="shop-card-original-price">${currentPrice}</span>`;
+            currentPrice = agentPrices[product.id];
+            agentBadgeHtml = `<div class="shop-agent-badge">${window.i18n?.t('shop.exclusiveBuff') || '专属加持'}</div>`;
+        }
+
+        const now = new Date();
+        if (product.flash_sale_price != null && product.flash_sale_end && new Date(product.flash_sale_end) > now && agentBadgeHtml === '') {
+            originalPriceHtml = `<span class="shop-card-original-price">${currentPrice}</span>`;
+            currentPrice = product.flash_sale_price;
+            flashSaleBadge = `<div class="flash-sale-badge flash-badge-glass" data-endtime="${product.flash_sale_end}"><i class="fas fa-bolt"></i> <span class="countdown-timer">${window.i18n?.t('shop.calculating') || '计算中...'}</span></div>`;
+            flashShadowClass = 'flash-sale-card';
+        }
+
+        el.className = `shop-card user-product-card breathing ${flashShadowClass}`;
+        el.innerHTML = `
+            <div class="shop-card-image">
+                ${flashSaleBadge}
+                ${displayHtml}
+                ${agentBadgeHtml}
+                <div class="shop-stock-badge shop-stock-badge--floating ${noStock ? 'out-of-stock' : 'in-stock'}">
+                    ${stockLabel}
+                </div>
+            </div>
+
+            <div class="shop-content-padding">
+                <h3 class="shop-card-title">${this.escapeHtml(displayName)}</h3>
+                <p class="shop-card-desc">${this.escapeHtml(displayDesc)}</p>
+
+                <div class="shop-card-footer">
+                    <div class="shop-card-price">${originalPriceHtml}${window.SiteConfig?.formatPrice(currentPrice) || currentPrice} <span data-i18n="shop.points">${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}</span></div>
+                    <button type="button" ${noStock ? 'disabled' : ''} class="shop-buy-btn ${buyBtnClass}">
+                        ${buyBtnText}
+                    </button>
+                </div>
+            </div>
+        `;
+
+        const productImage = hasCoverImage ? el.querySelector('.shop-card-image-cover') : null;
+        if (productImage) {
+            productImage.loading = shouldLoadImageEagerly ? 'eager' : 'lazy';
+            productImage.decoding = 'async';
+            productImage.setAttribute('fetchpriority', shouldLoadImageEagerly ? 'high' : 'auto');
+            if ('fetchPriority' in productImage) {
+                productImage.fetchPriority = shouldLoadImageEagerly ? 'high' : 'auto';
+            }
+            productImage.addEventListener('error', () => {
+                this.handleShopCardImageError(productImage, product.icon_url);
+            });
+            this.setShopCardImageSource(productImage, product.icon_url);
+        }
+
+        const buyButton = el.querySelector('.shop-buy-btn');
+        if (buyButton) {
+            buyButton.dataset.shopAction = 'buy-product';
+            buyButton.dataset.productId = productId;
+            buyButton.dataset.productName = encodeURIComponent(product.name || '');
+            buyButton.dataset.productNameEn = encodeURIComponent(product.name_en || '');
+            buyButton.dataset.unitPrice = String(currentPrice);
+            buyButton.dataset.productCategory = String(product.category || '');
+            buyButton.dataset.qtyRules = qtyRulesStr;
+            buyButton.dataset.maxPurchaseQuantity = String(maxPurchaseQuantity);
+            buyButton.dataset.showPurchaseNotes = product.show_purchase_notes ? 'true' : 'false';
+            buyButton.dataset.purchaseNotes = encodeURIComponent(product.purchase_notes || '');
+        }
+
+        return el;
+    },
+
+    buildProductCardElements: function (products, agentPrices = {}) {
+        const renderedCards = [];
+        const waveTimeMs = performance.now();
+        (Array.isArray(products) ? products : []).forEach(product => {
+            const card = this.buildProductCardElement(product, agentPrices, renderedCards.length, { waveTimeMs });
+            if (card) {
+                renderedCards.push(card);
+            }
+        });
+        return renderedCards;
+    },
+
+    transitionProductGrid: function (container, cardElements = [], { empty = false } = {}) {
+        if (!container) return;
+
+        this.clearProductGridTransitionArtifacts(container);
+        const existingCards = Array.from(container.querySelectorAll('.shop-card[data-product-id]'));
+        const hadSkeletonCards = container.querySelectorAll('.skeleton-card').length > 0;
+        const shouldAnimate = !this.prefersReducedMotion() && (existingCards.length > 0 || (!empty && cardElements.length > 0));
+        const transitionId = ++this.gridTransitionSequence;
+        const transitionStartTimeMs = performance.now();
+        const previousCardState = new Map(
+            existingCards
+                .map(card => {
+                    const productId = String(card.dataset.productId || '').trim();
+                    if (!productId) return null;
+                    return [productId, {
+                        left: card.offsetLeft,
+                        top: card.offsetTop,
+                        width: card.offsetWidth,
+                        height: card.offsetHeight,
+                        waveOffsetY: this.getShopCardWaveOffsetY(productId, transitionStartTimeMs),
+                        card
+                    }];
+                })
+                .filter(Boolean)
+        );
+        const previousIds = new Set(
+            existingCards
+                .map(card => String(card.dataset.productId || '').trim())
+                .filter(Boolean)
+        );
+        const nextIds = new Set(
+            cardElements
+                .map(card => String(card.dataset.productId || '').trim())
+                .filter(Boolean)
+        );
+
+        if (!shouldAnimate) {
+            container.innerHTML = '';
+            if (empty) {
+                container.classList.add('is-empty');
+                container.appendChild(this.buildEmptyStateElement());
+            } else {
+                container.classList.remove('is-empty');
+                cardElements.forEach(card => container.appendChild(card));
+            }
+            return;
+        }
+
+        const cleanupAnimatedCards = ({ movingCards = [], enteringCards = [], overlay = null } = {}) => {
+            movingCards.forEach(({ card, clone }) => {
+                card?.classList.remove('shop-card-filter-hidden', 'shop-card-filter-moving', 'shop-card-filter-motion-lock');
+                card && (card.style.transition = '');
+                card && (card.style.transform = '');
+                card && (card.style.opacity = '');
+                card && this.setCssVariables(card, {
+                    '--shop-card-filter-delay': null,
+                    '--shop-card-shift-x': null,
+                    '--shop-card-shift-y': null
+                });
+                clone?.remove();
+            });
+
+            enteringCards.forEach(card => {
+                card.classList.remove('shop-card-filter-enter', 'shop-card-filter-enter--initial', 'shop-card-filter-motion-lock', 'is-visible');
+                card.style.transition = '';
+                card.style.transform = '';
+                card.style.opacity = '';
+                this.setCssVariables(card, {
+                    '--shop-card-filter-delay': null,
+                    '--shop-card-shift-x': null,
+                    '--shop-card-shift-y': null
+                });
+            });
+
+            const overlays = Array.isArray(overlay) ? overlay : [overlay].filter(Boolean);
+            overlays.forEach(layer => layer?.remove());
+        };
+
+        const scheduleCleanup = (durationMs, payload = {}) => {
+            if (durationMs <= 0) {
+                cleanupAnimatedCards(payload);
+                return;
+            }
+
+            this.gridTransitionCleanupTimer = window.setTimeout(() => {
+                if (transitionId !== this.gridTransitionSequence) return;
+                cleanupAnimatedCards(payload);
+                this.gridTransitionCleanupTimer = null;
+            }, durationMs);
+        };
+
+        const createExitOverlay = (cards, blockedPositionKeys = new Set()) => {
+            if (!cards.length) {
+                return { overlay: null, cleanupDurationMs: 0 };
+            }
+
+            const overlay = document.createElement('div');
+            overlay.className = 'shop-grid-transition-layer';
+            overlay.setAttribute('aria-hidden', 'true');
+
+            cards.forEach((card, exitIndex) => {
+                const productId = String(card.dataset.productId || '').trim();
+                const previousState = previousCardState.get(productId);
+                if (!previousState) return;
+                const previousSlotKey = `${Math.round(previousState.left)}:${Math.round(previousState.top)}`;
+                if (blockedPositionKeys.has(previousSlotKey)) {
+                    return;
+                }
+
+                const clone = card.cloneNode(true);
+                clone.classList.remove(
+                    'shop-card-filter-enter',
+                    'shop-card-filter-exit',
+                    'shop-card-filter-moving',
+                    'shop-card-filter-hidden',
+                    'shop-card-filter-motion-lock',
+                    'breathing',
+                    'is-visible',
+                    'is-leaving'
+                );
+                clone.classList.add('shop-card-transition-clone', 'shop-card-transition-clone--exit');
+                clone.style.width = `${previousState.width}px`;
+                clone.style.height = `${previousState.height}px`;
+                clone.style.left = `${previousState.left}px`;
+                clone.style.top = `${previousState.top}px`;
+                this.setCssVariables(clone, {
+                    '--shop-card-filter-delay': `${exitIndex * 56}ms`
+                });
+                overlay.appendChild(clone);
+            });
+
+            return {
+                overlay: overlay.childElementCount > 0 ? overlay : null,
+                cleanupDurationMs: overlay.childElementCount > 0
+                    ? 460 + Math.max(0, overlay.childElementCount - 1) * 56
+                    : 0
+            };
+        };
+
+        const renderNextState = ({ enterDelayBase = 0 } = {}) => {
+            if (transitionId !== this.gridTransitionSequence) return;
+
+            container.innerHTML = '';
+            if (empty) {
+                container.classList.add('is-empty');
+                container.appendChild(this.buildEmptyStateElement());
+                return {
+                    movingCards: [],
+                    enteringCards: [],
+                    cleanupDurationMs: 0,
+                    overlay: []
+                };
+            }
+
+            container.classList.remove('is-empty');
+            cardElements.forEach(card => container.appendChild(card));
+
+            const movingCards = [];
+            const moveOverlay = document.createElement('div');
+            moveOverlay.className = 'shop-grid-transition-layer';
+            moveOverlay.setAttribute('aria-hidden', 'true');
+            let moveOrder = 0;
+            cardElements.forEach(card => {
+                const productId = String(card.dataset.productId || '').trim();
+                const previousState = previousCardState.get(productId);
+                if (!previousState) return;
+
+                const moveX = card.offsetLeft - previousState.left;
+                const moveY = card.offsetTop - previousState.top;
+                if (Math.abs(moveX) < 1 && Math.abs(moveY) < 1) return;
+
+                const clone = previousState.card.cloneNode(true);
+                clone.classList.remove(
+                    'shop-card-filter-enter',
+                    'shop-card-filter-exit',
+                    'shop-card-filter-moving',
+                    'shop-card-filter-hidden',
+                    'shop-card-filter-motion-lock',
+                    'breathing',
+                    'is-visible',
+                    'is-leaving'
+                );
+                clone.classList.add('shop-card-transition-clone', 'shop-card-transition-clone--moving');
+                clone.style.width = `${previousState.width}px`;
+                clone.style.height = `${previousState.height}px`;
+                clone.style.left = `${previousState.left}px`;
+                clone.style.top = `${previousState.top}px`;
+                clone.style.transform = `translate3d(0px, ${previousState.waveOffsetY}px, 0) scale(1)`;
+                this.setCssVariables(clone, {
+                    '--shop-card-filter-delay': `${moveOrder * 18}ms`
+                });
+                moveOverlay.appendChild(clone);
+
+                card.classList.add('shop-card-filter-hidden', 'shop-card-filter-motion-lock');
+                movingCards.push({ card, clone, productId, moveX, moveY });
+                moveOrder += 1;
+            });
+            const moveOverlayNode = moveOverlay.childElementCount > 0 ? moveOverlay : null;
+            if (moveOverlayNode) {
+                container.appendChild(moveOverlayNode);
+            }
+
+            const isInitialEntrance = previousIds.size === 0 && hadSkeletonCards;
+            const enterDelayStepMs = isInitialEntrance ? 136 : 38;
+            const enterDurationBaseMs = isInitialEntrance ? 1540 : 620;
+            const effectiveEnterDelayBase = enterDelayBase;
+            let enterOrder = 0;
+            cardElements.forEach(card => {
+                const productId = String(card.dataset.productId || '').trim();
+                if (previousIds.has(productId)) {
+                    return;
+                }
+
+                card.classList.add('shop-card-filter-enter', 'shop-card-filter-motion-lock');
+                if (isInitialEntrance) {
+                    card.classList.add('shop-card-filter-enter--initial');
+                }
+                this.setCssVariables(card, {
+                    '--shop-card-filter-delay': `${effectiveEnterDelayBase + (enterOrder * enterDelayStepMs)}ms`
+                });
+                enterOrder += 1;
+            });
+
+            const enteringCards = Array.from(container.querySelectorAll('.shop-card-filter-enter'));
+            if (movingCards.length === 0 && enteringCards.length === 0) {
+                return {
+                    movingCards,
+                    enteringCards,
+                    cleanupDurationMs: 0,
+                    overlay: moveOverlayNode ? [moveOverlayNode] : []
+                };
+            }
+
+            const moveDurationMs = movingCards.length > 0
+                ? 860 + Math.max(0, movingCards.length - 1) * 12
+                : 0;
+            const enterDurationMs = enteringCards.length > 0
+                ? effectiveEnterDelayBase + enterDurationBaseMs + Math.max(0, enteringCards.length - 1) * enterDelayStepMs
+                : 0;
+            const cleanupDurationMs = Math.max(moveDurationMs, enterDurationMs);
+            const revealTimeMs = transitionStartTimeMs + cleanupDurationMs;
+
+            movingCards.forEach((entry) => {
+                entry.targetShiftY = entry.moveY + this.getShopCardWaveOffsetY(entry.productId, revealTimeMs);
+            });
+
+            void container.offsetWidth;
+            if (transitionId === this.gridTransitionSequence) {
+                movingCards.forEach(({ clone, moveX, targetShiftY = 0 }) => {
+                    if (!clone) return;
+                    clone.style.transform = `translate3d(${moveX}px, ${targetShiftY}px, 0) scale(1)`;
+                });
+                enteringCards.forEach(card => card.classList.add('is-visible'));
+            }
+
+            return {
+                movingCards,
+                enteringCards,
+                cleanupDurationMs,
+                overlay: moveOverlayNode ? [moveOverlayNode] : []
+            };
+        };
+
+        const exitingCards = existingCards.filter(card => {
+            const productId = String(card.dataset.productId || '').trim();
+            return productId && !nextIds.has(productId);
+        });
+        const persistentCount = existingCards.length - exitingCards.length;
+
+        if (exitingCards.length === 0) {
+            const payload = renderNextState() || {};
+            scheduleCleanup(payload.cleanupDurationMs || 0, payload);
+            return;
+        }
+
+        if (!empty && persistentCount > 0) {
+            const payload = renderNextState({ enterDelayBase: 0 }) || {};
+            const blockedPositionKeys = new Set(
+                Array.from(container.querySelectorAll('.shop-card[data-product-id]')).map(card =>
+                    `${Math.round(card.offsetLeft)}:${Math.round(card.offsetTop)}`
+                )
+            );
+            const exitOverlayPayload = createExitOverlay(exitingCards, blockedPositionKeys);
+            if (exitOverlayPayload.overlay) {
+                container.appendChild(exitOverlayPayload.overlay);
+                void exitOverlayPayload.overlay.offsetWidth;
+                if (transitionId === this.gridTransitionSequence) {
+                    Array.from(exitOverlayPayload.overlay.children).forEach(clone => {
+                        clone.classList.add('is-exiting');
+                    });
+                }
+            }
+
+            scheduleCleanup(
+                Math.max(payload.cleanupDurationMs || 0, exitOverlayPayload.cleanupDurationMs || 0),
+                {
+                    ...payload,
+                    overlay: [...(payload.overlay || []), exitOverlayPayload.overlay].filter(Boolean)
+                }
+            );
+            return;
+        }
+
+        exitingCards.forEach((card, exitIndex) => {
+            card.classList.add('shop-card-filter-exit', 'shop-card-filter-motion-lock');
+            this.setCssVariables(card, {
+                '--shop-card-filter-delay': `${exitIndex * 56}ms`
+            });
+        });
+
+        void container.offsetWidth;
+        if (transitionId === this.gridTransitionSequence) {
+            exitingCards.forEach(card => card.classList.add('is-leaving'));
+        }
+
+        const exitDurationMs = 500 + Math.max(0, exitingCards.length - 1) * 56;
+        this.gridTransitionCleanupTimer = window.setTimeout(() => {
+            if (transitionId !== this.gridTransitionSequence) return;
+            this.gridTransitionCleanupTimer = null;
+            const payload = renderNextState() || {};
+            scheduleCleanup(payload.cleanupDurationMs || 0, payload);
+        }, exitDurationMs);
+    },
+
     getExistingProductSkeletonCount: function (container = document.getElementById('userShopGrid')) {
         if (!container) return 0;
         return container.querySelectorAll('.skeleton-card').length;
+    },
+
+    buildProductSkeletonCardMarkup: function () {
+        return `
+            <div class="skeleton-card" aria-hidden="true">
+                <div class="skeleton-image-shell">
+                </div>
+                <div class="skeleton-content">
+                    <div class="skeleton skeleton-title"></div>
+                    <div class="skeleton skeleton-desc"></div>
+                    <div class="skeleton skeleton-desc skeleton-desc--short"></div>
+                    <div class="skeleton-footer">
+                        <div class="skeleton skeleton-price-value"></div>
+                        <div class="skeleton skeleton-btn"></div>
+                    </div>
+                </div>
+            </div>
+        `;
     },
 
     renderProductSkeletons: function (count) {
         const container = document.getElementById('userShopGrid');
         if (!container) return;
 
+        this.clearProductGridTransitionArtifacts(container);
         const existingSkeletonCount = this.getExistingProductSkeletonCount(container);
         const requestedCount = Number.parseInt(count, 10) || existingSkeletonCount || this.lastSkeletonCount || 6;
         const safeCount = Math.min(Math.max(requestedCount, 3), 8);
@@ -1392,35 +2086,17 @@ const ShopClient = {
             return;
         }
 
-        container.innerHTML = Array.from({ length: safeCount }, () => `
-            <div class="skeleton-card">
-                <div class="skeleton skeleton-image"></div>
-                <div class="skeleton-content">
-                    <div class="skeleton skeleton-title"></div>
-                    <div class="skeleton skeleton-desc"></div>
-                    <div class="skeleton skeleton-desc-short"></div>
-                    <div class="skeleton-footer">
-                        <div class="skeleton skeleton-price"></div>
-                        <div class="skeleton skeleton-btn"></div>
-                    </div>
-                </div>
-            </div>
-        `).join('');
+        container.innerHTML = Array.from({ length: safeCount }, () => this.buildProductSkeletonCardMarkup()).join('');
     },
 
     renderEmptyState: function () {
         const container = document.getElementById('userShopGrid');
         if (!container) return;
 
+        this.clearProductGridTransitionArtifacts(container);
         container.classList.add('is-empty');
-        container.innerHTML = `
-            <div class="shop-empty-state">
-                <div class="shop-empty-icon">
-                    <i class="fas fa-box-open" aria-hidden="true"></i>
-                </div>
-                <h3 class="shop-empty-title" data-i18n="shop.noProducts">${window.i18n?.t('shop.noProducts') || '暂无商品上架'}</h3>
-            </div>
-        `;
+        container.innerHTML = '';
+        container.appendChild(this.buildEmptyStateElement());
     },
 
     fetchProductsFromServer: async function (category = 'all') {
@@ -1636,12 +2312,13 @@ const ShopClient = {
         const requestCategory = this.currentCategory;
         const requestToken = ++this.productsRequestToken;
         const hasCachedProducts = !forceRefresh && this.hasCategoryProductsCache(requestCategory);
+        const hasRenderedCards = container.querySelectorAll('.shop-card[data-product-id]').length > 0;
 
         if (forceRefresh) {
             this.invalidateProductCaches();
         }
 
-        if (!hasCachedProducts) {
+        if (!hasCachedProducts && !hasRenderedCards) {
             this.renderProductSkeletons();
         }
 
@@ -1659,132 +2336,27 @@ const ShopClient = {
 
             if (requestToken !== this.productsRequestToken) return;
 
-            container.classList.remove('is-empty');
-            container.innerHTML = '';
             if (!data || data.length === 0) {
-                this.renderEmptyState();
+                this.transitionProductGrid(container, [], { empty: true });
                 this.scheduleBackgroundProductPrefetch();
                 return;
             }
 
-            data.forEach((p, index) => {
-                const el = document.createElement('div');
-                el.className = 'shop-card user-product-card breathing';
-                // Randomize breathing delay for wave effect (-4s to 0s)
-                const delay = -(Math.random() * 4).toFixed(2);
-                this.setCssVariables(el, { '--breathe-delay': `${delay}s` });
-                // Styles moved to CSS (shop.html or style.css)
+            this.warmShopCardLeadImages(data);
+            const renderedCards = this.buildProductCardElements(data, agentPrices);
+            if (renderedCards.length === 0) {
+                this.transitionProductGrid(container, [], { empty: true });
+                this.scheduleBackgroundProductPrefetch();
+                return;
+            }
 
-                const safeIconUrl = this.escapeAttribute(p.icon_url || '');
-                const safeIconClass = this.escapeAttribute(p.icon_url || '');
-                const iconHtml = p.icon_url?.startsWith('fa')
-                    ? `<i class="${safeIconClass} shop-card-icon shop-card-icon--font" aria-hidden="true"></i>`
-                    : (p.icon_url ? `<img src="${safeIconUrl}" width="40" class="shop-card-thumb" alt="">` : '<i class="fas fa-box shop-card-icon shop-card-icon--fallback" aria-hidden="true"></i>');
-
-                const stockCount = p.stock_count || 0;
-                const noStock = stockCount <= 0;
-                const buyBtnText = noStock
-                    ? (window.i18n?.t('shop.outOfStock') || '售罄')
-                    : (window.i18n?.t('shop.redeem') || '兑换');
-                const stockLabel = noStock
-                    ? (window.i18n?.t('shop.noStock') || '无货')
-                    : `${window.i18n?.t('shop.stock') || '库存'}: ${stockCount}`;
-
-                // Use class for button style
-                const buyBtnClass = noStock ? 'shop-btn-disabled' : 'shop-btn-primary';
-
-                // Cover Image Logic
-                const displayHtml = p.icon_url?.startsWith('http')
-                    ? `<img src="${safeIconUrl}" class="shop-card-image-cover" alt="">`
-                    : `<div class="shop-icon-wrapper">${p.icon_url?.startsWith('fa')
-                        ? `<i class="${safeIconClass} shop-card-icon shop-card-icon--cover" aria-hidden="true"></i>`
-                        : iconHtml}</div>`;
-
-                // Select language-appropriate content
-                const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
-                const displayName = (currentLang === 'en' && p.name_en) ? p.name_en : p.name;
-                const displayDesc = (currentLang === 'en' && p.description_en)
-                    ? p.description_en
-                    : (p.description || (window.i18n?.t('shop.noDescription') || '暂无描述'));
-                const qtyRulesStr = p.quantity_rules ? encodeURIComponent(JSON.stringify(p.quantity_rules)) : '';
-                const maxPurchaseQuantity = this.normalizePurchaseQuantityCap(p.max_purchase_quantity);
-
-                // Flash Sale Logic
-                const nowTime = new Date();
-                const flashEnd = p.flash_sale_end ? new Date(p.flash_sale_end) : null;
-                let isFlashSale = flashEnd && flashEnd > nowTime && p.flash_sale_price != null;
-
-                let currentPrice = this.getProductPriceForCurrentSite(p);
-                if (currentPrice == null) {
-                    return;
-                }
-                let originalPriceHtml = '';
-                let flashSaleBadge = '';
-                let flashShadowClass = '';
-                let agentBadgeHtml = '';
-
-                // Agent override highest priority if > base price
-                if (this.currentAgentId && agentPrices[p.id] && agentPrices[p.id] > currentPrice) {
-                    originalPriceHtml = `<span class="shop-card-original-price">${currentPrice}</span>`;
-                    currentPrice = agentPrices[p.id];
-                    agentBadgeHtml = `<div class="shop-agent-badge">${window.i18n?.t('shop.exclusiveBuff') || '专属加持'}</div>`;
-                }
-
-                // Check flash sale (only if no agent custom price overriding it)
-                const now = new Date();
-                if (p.flash_sale_price != null && p.flash_sale_end && new Date(p.flash_sale_end) > now && agentBadgeHtml === '') {
-                    isFlashSale = true;
-                    originalPriceHtml = `<span class="shop-card-original-price">${currentPrice}</span>`;
-                    currentPrice = p.flash_sale_price;
-                    flashSaleBadge = `<div class="flash-sale-badge flash-badge-glass" data-endtime="${p.flash_sale_end}"><i class="fas fa-bolt"></i> <span class="countdown-timer">${window.i18n?.t('shop.calculating') || '计算中...'}</span></div>`;
-                    flashShadowClass = 'flash-sale-card';
-                }
-
-                el.className = `shop-card user-product-card breathing ${flashShadowClass}`;
-
-                el.innerHTML = `
-                    <div class="shop-card-image">
-                        ${flashSaleBadge}
-                        ${displayHtml}
-                        ${agentBadgeHtml}
-                        <div class="shop-stock-badge shop-stock-badge--floating ${noStock ? 'out-of-stock' : 'in-stock'}">
-                            ${stockLabel}
-                        </div>
-                    </div>
-                    
-                    <div class="shop-content-padding">
-                        <h3 class="shop-card-title">${this.escapeHtml(displayName)}</h3>
-                        <p class="shop-card-desc">${this.escapeHtml(displayDesc)}</p>
-                        
-                        <div class="shop-card-footer">
-                            <div class="shop-card-price">${originalPriceHtml}${window.SiteConfig?.formatPrice(currentPrice) || currentPrice} <span data-i18n="shop.points">${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}</span></div>
-                            <button type="button" ${noStock ? 'disabled' : ''} class="shop-buy-btn ${buyBtnClass}">
-                                ${buyBtnText}
-                            </button>
-                        </div>
-                    </div>
-                `;
-                const buyButton = el.querySelector('.shop-buy-btn');
-                if (buyButton) {
-                    buyButton.dataset.shopAction = 'buy-product';
-                    buyButton.dataset.productId = String(p.id || '');
-                    buyButton.dataset.productName = encodeURIComponent(p.name || '');
-                    buyButton.dataset.productNameEn = encodeURIComponent(p.name_en || '');
-                    buyButton.dataset.unitPrice = String(currentPrice);
-                    buyButton.dataset.productCategory = String(p.category || '');
-                    buyButton.dataset.qtyRules = qtyRulesStr;
-                    buyButton.dataset.maxPurchaseQuantity = String(maxPurchaseQuantity);
-                    buyButton.dataset.showPurchaseNotes = p.show_purchase_notes ? 'true' : 'false';
-                    buyButton.dataset.purchaseNotes = encodeURIComponent(p.purchase_notes || '');
-                }
-                container.appendChild(el);
-            });
-
-            this.lastSkeletonCount = Math.min(Math.max(data.length, 3), 8);
+            this.transitionProductGrid(container, renderedCards);
+            this.lastSkeletonCount = Math.min(Math.max(renderedCards.length, 3), 8);
             this.scheduleBackgroundProductPrefetch();
 
         } catch (err) {
             if (requestToken !== this.productsRequestToken) return;
+            this.clearProductGridTransitionArtifacts(container);
             container.classList.remove('is-empty');
             container.innerHTML = this.buildShopStatusMessage(
                 `${window.i18n?.t('common.error') || '加载失败'}: ${err.message || ''}`,
@@ -1802,6 +2374,9 @@ const ShopClient = {
         this.flashSaleInterval = setInterval(() => {
             let activeFlashSales = 0;
             document.querySelectorAll('.flash-sale-badge').forEach(badge => {
+                if (badge.closest('.shop-grid-transition-layer')) {
+                    return;
+                }
                 const endTime = new Date(badge.dataset.endtime).getTime();
                 const now = Date.now();
                 if (now >= endTime) {
@@ -2606,7 +3181,14 @@ const ShopClient = {
             } else {
                 // For other errors, show toast in the purchase modal
                 if (window.WalletModal && window.WalletModal.showToast) {
-                    window.WalletModal.showToast(`❌ ${window.i18n?.t('shop.redeemFailed') || '兑换失败'}: ${errMsg}`, 'error');
+                    const redeemFailedLabel = window.i18n?.t('shop.redeemFailed') || '兑换失败';
+                    const normalizedErrMsg = String(errMsg || '').trim();
+                    const toastMessage = !normalizedErrMsg || normalizedErrMsg === redeemFailedLabel
+                        ? `❌ ${redeemFailedLabel}`
+                        : (normalizedErrMsg.startsWith(`${redeemFailedLabel}:`)
+                            ? `❌ ${normalizedErrMsg}`
+                            : `❌ ${redeemFailedLabel}: ${normalizedErrMsg}`);
+                    window.WalletModal.showToast(toastMessage, 'error');
                 }
             }
 

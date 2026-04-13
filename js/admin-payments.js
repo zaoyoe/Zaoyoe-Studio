@@ -16,6 +16,9 @@
         cleanupPreview: null,
         requestToken: 0,
         viewCache: {},
+        overviewStage: 'idle',
+        overviewSecondaryLoaded: false,
+        overviewOpsLoaded: false,
         lastSyncedAt: null,
         autoRefreshEnabled: true,
         autoRefreshIntervalMs: 5 * 60 * 1000,
@@ -1536,7 +1539,7 @@
         }
 
         const run = async () => {
-            const query = buildSummaryQuery(normalizedTab);
+            const query = buildSummaryQuery(normalizedTab, { prefetch: !force });
             const payload = await fetchAdminJson(`/api/admin/payments/summary?${query.toString()}`);
 
             if (cacheKey !== getCurrentCacheKey()) {
@@ -1548,17 +1551,6 @@
                 ...payload
             };
             state.viewCache[normalizedTab] = cacheKey;
-
-            if (normalizedTab === 'ops' && !state.cleanupPreview) {
-                try {
-                    await loadCleanupPreview({ silent: true });
-                } catch (cleanupError) {
-                    console.warn('[AdminPayments] Failed to prefetch cleanup preview:', cleanupError);
-                    if (state.activeTab === 'ops') {
-                        renderCleanupPreviewFallback(getFriendlyErrorMessage(cleanupError, '测试数据扫描失败，但不影响支付对账查看。'));
-                    }
-                }
-            }
 
             return true;
         };
@@ -1577,9 +1569,19 @@
         return state.tabPrefetchPromise;
     }
 
+    function getAutoPrefetchTabs(activeTab = state.activeTab) {
+        const normalizedTab = String(activeTab || state.activeTab || 'overview').trim().toLowerCase() || 'overview';
+        if (normalizedTab === 'finance') {
+            return PAYMENTS_PREFETCH_TABS.filter((tabId) => tabId !== normalizedTab);
+        }
+
+        // `finance` 视图会触发积分流水与余额汇总，自动预热它会明显放大页面首开成本。
+        return PAYMENTS_PREFETCH_TABS.filter((tabId) => tabId !== normalizedTab && tabId !== 'finance');
+    }
+
     function scheduleTabPrefetch(activeTab = state.activeTab) {
         const normalizedTab = String(activeTab || state.activeTab || 'overview').trim().toLowerCase() || 'overview';
-        const siblingTabs = PAYMENTS_PREFETCH_TABS.filter((tabId) => tabId !== normalizedTab);
+        const siblingTabs = getAutoPrefetchTabs(normalizedTab);
         const scheduledCacheKey = getCurrentCacheKey();
 
         clearTabPrefetch();
@@ -1805,10 +1807,16 @@
         return window.AdminSiteFilter?.getSiteParam?.() || null;
     }
 
-    function buildSummaryQuery(view = state.activeTab) {
+    function buildSummaryQuery(view = state.activeTab, options = {}) {
         const query = new URLSearchParams({
             view: String(view || state.activeTab || 'overview')
         });
+        if (options.prefetch === true) {
+            query.set('prefetch', '1');
+        }
+        if (options.scope) {
+            query.set('scope', String(options.scope).trim().toLowerCase());
+        }
         const site = getSiteParam();
         if (site) {
             query.set('site', site);
@@ -1826,6 +1834,47 @@
 
         query.set('days', String(state.days));
         return query;
+    }
+
+    function isOverviewCorePayload(data = state.summary) {
+        return state.activeTab === 'overview'
+            && String(data?.overview_scope || '').trim().toLowerCase() === 'core';
+    }
+
+    function syncOverviewStage() {
+        if (state.activeTab !== 'overview') {
+            state.overviewStage = 'idle';
+            return;
+        }
+
+        if (state.overviewSecondaryLoaded && state.overviewOpsLoaded) {
+            state.overviewStage = 'full';
+            return;
+        }
+
+        if (state.overviewSecondaryLoaded || state.overviewOpsLoaded) {
+            state.overviewStage = 'partial';
+            return;
+        }
+
+        state.overviewStage = 'core';
+    }
+
+    function updateOverviewLoadingMeta() {
+        if (state.activeTab !== 'overview') return;
+        if (state.overviewStage === 'full') return;
+
+        if (state.overviewSecondaryLoaded && !state.overviewOpsLoaded) {
+            setToolbarMeta('趋势与退款专题已加载，正在补充联动摘要…', 'info');
+            return;
+        }
+
+        if (!state.overviewSecondaryLoaded && state.overviewOpsLoaded) {
+            setToolbarMeta('联动摘要已同步，正在补充趋势与退款专题…', 'info');
+            return;
+        }
+
+        setToolbarMeta('首屏摘要已加载，正在并行补充趋势与专题…', 'info');
     }
 
     function isPaymentsModuleActive() {
@@ -1924,6 +1973,7 @@
         const target = document.getElementById('paymentsToolbarHighlights');
         if (!target) return;
 
+        const isCoreOverview = isOverviewCorePayload(data);
         const overview = data?.overview || {};
         const anomaly = data?.anomaly_summary || {};
         const sitewide = data?.sitewide_summary || {};
@@ -1951,11 +2001,16 @@
                 <i class="fas fa-circle-check"></i>
                 <span>成功率 ${escapeHtml(formatPercent(overview.paid_rate))}</span>
             </div>
-            <div class="payments-highlight-pill ${anomalyCount > 0 ? 'warning' : ''}">
+            <div class="payments-highlight-pill ${!isCoreOverview && anomalyCount > 0 ? 'warning' : ''}">
                 <i class="fas fa-triangle-exclamation"></i>
-                <span>异常 ${escapeHtml(formatNumber(anomalyCount))}</span>
+                <span>${isCoreOverview ? '异常补充中' : `异常 ${escapeHtml(formatNumber(anomalyCount))}`}</span>
             </div>
-            ${refundIssueCount > 0 ? `
+            ${isCoreOverview ? `
+                <div class="payments-highlight-pill">
+                    <i class="fas fa-rotate-left"></i>
+                    <span>退款补充中</span>
+                </div>
+            ` : refundIssueCount > 0 ? `
                 <div class="payments-highlight-pill warning">
                     <i class="fas fa-rotate-left"></i>
                     <span>退款异常 ${escapeHtml(formatNumber(refundIssueCount))}</span>
@@ -1970,6 +2025,11 @@
 
     function updateOverviewBanner(data) {
         if (state.activeTab !== 'overview') {
+            clearAccessState();
+            return;
+        }
+
+        if (isOverviewCorePayload(data)) {
             clearAccessState();
             return;
         }
@@ -2153,11 +2213,11 @@
                     </div>
                     ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-80')}
                     <div class="payments-provider-extra payments-skeleton-inline">
-                        ${buildPaymentsSkeletonPills(3)}
+                        ${buildPaymentsSkeletonPills(4)}
                     </div>
                 </div>
                 <div class="payments-provider-badges payments-skeleton-inline">
-                    ${buildPaymentsSkeletonPills(2)}
+                    ${buildPaymentsSkeletonPills(3)}
                 </div>
             </div>
         `;
@@ -2229,32 +2289,70 @@
         `;
     }
 
+    function buildPaymentsRefundAlertItemSkeleton() {
+        return `
+            <div class="payments-refund-alert-item payments-refund-alert-item--skeleton" aria-hidden="true">
+                <div class="payments-refund-alert-item-top payments-refund-alert-item-top--skeleton">
+                    <div class="payments-refund-alert-item-copy payments-refund-alert-item-copy--skeleton">
+                        ${buildPaymentsSkeletonBlock('title', 'admin-skeleton-w-50')}
+                        ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-full')}
+                    </div>
+                    ${buildPaymentsSkeletonBlock('pill', 'admin-skeleton-w-chip-sm')}
+                </div>
+                <div class="payments-refund-alert-item-meta payments-refund-alert-item-meta--skeleton">
+                    <span><small>${buildPaymentsSkeletonBlock('tiny', 'admin-skeleton-w-20')}</small><strong>${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-40')}</strong></span>
+                    <span><small>${buildPaymentsSkeletonBlock('tiny', 'admin-skeleton-w-20')}</small><strong>${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-30')}</strong></span>
+                    <span><small>${buildPaymentsSkeletonBlock('tiny', 'admin-skeleton-w-20')}</small><strong>${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-30')}</strong></span>
+                </div>
+                <div class="payments-anomaly-ops payments-anomaly-ops--skeleton">
+                    ${buildPaymentsSkeletonBlock('pill', 'admin-skeleton-w-chip-sm')}
+                    ${buildPaymentsSkeletonBlock('pill', 'admin-skeleton-w-chip-md')}
+                </div>
+                <div class="payments-refund-alert-hint payments-refund-alert-hint--skeleton">
+                    ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-full')}
+                    ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-80')}
+                </div>
+            </div>
+        `;
+    }
+
     function buildPaymentsRefundSkeletonTopic() {
         return `
             <article class="payments-refund-topic-card payments-skeleton-card" aria-hidden="true">
                 <div class="payments-refund-topic-head">
-                    <div class="payments-refund-topic-copy payments-skeleton-stack">
-                        ${buildPaymentsSkeletonBlock('title', 'admin-skeleton-w-40')}
-                        ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-70')}
+                    <div class="payments-refund-topic-copy payments-refund-topic-copy--skeleton">
+                        <div class="payments-refund-topic-title payments-refund-topic-title--skeleton">
+                            <span class="admin-skeleton-block payments-skeleton-inline-icon"></span>
+                            ${buildPaymentsSkeletonBlock('title', 'admin-skeleton-w-40')}
+                        </div>
+                        <div class="payments-refund-topic-description payments-refund-topic-description--skeleton">
+                            ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-full')}
+                            ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-70')}
+                        </div>
                     </div>
                     <div class="payments-provider-badges payments-skeleton-inline">
                         ${buildPaymentsSkeletonPills(2)}
                     </div>
                 </div>
                 <div class="payments-refund-alert-stream">
-                    ${Array.from({ length: 2 }, () => `
-                        <div class="payments-refund-alert-item payments-skeleton-card">
-                            <div class="payments-skeleton-stack">
-                                ${buildPaymentsSkeletonBlock('title', 'admin-skeleton-w-50')}
-                                ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-full')}
-                            </div>
-                            <div class="payments-refund-alert-item-meta payments-skeleton-inline">
-                                ${buildPaymentsSkeletonPills(3)}
-                            </div>
-                        </div>
-                    `).join('')}
+                    ${Array.from({ length: 2 }, () => buildPaymentsRefundAlertItemSkeleton()).join('')}
                 </div>
             </article>
+        `;
+    }
+
+    function buildPaymentsTrendLegendSkeleton() {
+        const widths = ['admin-skeleton-w-30', 'admin-skeleton-w-40', 'admin-skeleton-w-30'];
+
+        return `
+            <div class="payments-trend-legend-skeleton" aria-hidden="true">
+                ${widths.map((widthClass) => `
+                    <span class="payments-trend-legend-skeleton-item">
+                        <span class="admin-skeleton-block payments-skeleton-inline-icon payments-skeleton-inline-icon--tiny"></span>
+                        ${buildPaymentsSkeletonBlock('line', widthClass)}
+                    </span>
+                `).join('')}
+            </div>
         `;
     }
 
@@ -2264,14 +2362,21 @@
             'payments-trend-skeleton-bar--md',
             'payments-trend-skeleton-bar--lg',
             'payments-trend-skeleton-bar--xl',
+            'payments-trend-skeleton-bar--lg',
             'payments-trend-skeleton-bar--md',
+            'payments-trend-skeleton-bar--sm',
             'payments-trend-skeleton-bar--lg'
         ];
 
         return `
             <div class="payments-trend-skeleton" aria-hidden="true">
-                ${Array.from({ length: 12 }, (_, index) => `
-                    <span class="admin-skeleton-block payments-trend-skeleton-bar ${barClasses[index % barClasses.length]}"></span>
+                ${Array.from({ length: 24 }, (_, index) => `
+                    <div class="payments-trend-skeleton-column">
+                        <span class="admin-skeleton-block payments-trend-skeleton-bar ${barClasses[index % barClasses.length]}"></span>
+                        ${index % 4 === 0 || index === 23
+                            ? buildPaymentsSkeletonBlock('line', index === 23 ? 'admin-skeleton-w-30' : 'admin-skeleton-w-20', 'payments-trend-skeleton-label')
+                            : '<span class="payments-trend-skeleton-label payments-trend-skeleton-label--empty" aria-hidden="true"></span>'}
+                    </div>
                 `).join('')}
             </div>
         `;
@@ -2370,6 +2475,71 @@
         `).join('');
     }
 
+    function renderOverviewSecondarySkeletons() {
+        const refundPanel = document.getElementById('paymentsRefundAlertsPanel');
+        const refundMeta = document.getElementById('paymentsRefundAlertsMeta');
+        const refundTarget = document.getElementById('paymentsRefundAlerts');
+        const providerStats = document.getElementById('paymentsProviderStats');
+        const trendChart = document.getElementById('paymentsTrendChart');
+        const trendLegend = document.getElementById('paymentsTrendLegend');
+
+        if (refundPanel && refundMeta && refundTarget) {
+            refundPanel.hidden = true;
+            refundMeta.textContent = '';
+            refundTarget.innerHTML = '';
+        }
+        if (providerStats) {
+            providerStats.innerHTML = Array.from({ length: 3 }, () => buildPaymentsProviderRowSkeleton()).join('');
+        }
+        if (trendChart) {
+            trendChart.innerHTML = buildPaymentsTrendSkeleton();
+        }
+        if (trendLegend) {
+            trendLegend.innerHTML = buildPaymentsTrendLegendSkeleton();
+        }
+    }
+
+    function applyOverviewSecondaryPayload(payload, requestToken) {
+        if (requestToken !== state.requestToken) {
+            return false;
+        }
+
+        state.summary = {
+            ...(state.summary || {}),
+            ...payload
+        };
+        state.overviewSecondaryLoaded = true;
+        syncOverviewStage();
+
+        const data = state.summary;
+        updateToolbarHighlights(data);
+        renderOverviewCards(data);
+        renderRefundAlerts(data);
+        renderProviderStats(data);
+        renderTrend(data);
+        updateOverviewBanner(data);
+        renderAnalyticsIssueSummary(data, state.workbenchContext);
+        updateOverviewLoadingMeta();
+        return true;
+    }
+
+    function applyOverviewOpsPayload(payload, requestToken) {
+        if (requestToken !== state.requestToken) {
+            return false;
+        }
+
+        state.summary = {
+            ...(state.summary || {}),
+            ...payload
+        };
+        state.overviewOpsLoaded = true;
+        syncOverviewStage();
+
+        renderAnalyticsIssueSummary(state.summary, state.workbenchContext);
+        updateOverviewLoadingMeta();
+        return true;
+    }
+
     function hasRenderedContentForTab(tabId = state.activeTab) {
         const normalizedTab = String(tabId || state.activeTab || 'overview').trim().toLowerCase() || 'overview';
 
@@ -2395,7 +2565,6 @@
             document.getElementById('paymentsOverviewGrid')?.childElementCount
             || document.getElementById('paymentsProviderStats')?.childElementCount
             || document.getElementById('paymentsTrendChart')?.childElementCount
-            || document.getElementById('paymentsOpsAlertHealth')?.childElementCount
             || document.getElementById('paymentsRefundAlerts')?.childElementCount
         );
     }
@@ -2455,41 +2624,11 @@
         }
 
         const overviewGrid = document.getElementById('paymentsOverviewGrid');
-        const refundPanel = document.getElementById('paymentsRefundAlertsPanel');
-        const refundMeta = document.getElementById('paymentsRefundAlertsMeta');
-        const refundTarget = document.getElementById('paymentsRefundAlerts');
-        const providerStats = document.getElementById('paymentsProviderStats');
-        const trendChart = document.getElementById('paymentsTrendChart');
-        const trendLegend = document.getElementById('paymentsTrendLegend');
-        const opsAlertHealthPanel = document.getElementById('paymentsOpsAlertHealthPanel');
-        const opsAlertHealthMeta = document.getElementById('paymentsOpsAlertHealthMeta');
-        const opsAlertHealth = document.getElementById('paymentsOpsAlertHealth');
 
         if (overviewGrid) {
             overviewGrid.innerHTML = buildPaymentsKpiSkeletonCards(10);
         }
-        if (refundPanel && refundMeta && refundTarget) {
-            refundPanel.hidden = false;
-            refundMeta.textContent = '正在加载退款售后告警...';
-            refundTarget.innerHTML = `<div class="payments-refund-alerts">${Array.from({ length: 2 }, () => buildPaymentsRefundSkeletonTopic()).join('')}</div>`;
-        }
-        if (providerStats) {
-            providerStats.innerHTML = Array.from({ length: 3 }, () => buildPaymentsProviderRowSkeleton()).join('');
-        }
-        if (trendChart) {
-            trendChart.innerHTML = buildPaymentsTrendSkeleton();
-        }
-        if (trendLegend) {
-            trendLegend.innerHTML = buildPaymentsSkeletonPills(3);
-        }
-        if (opsAlertHealthPanel && opsAlertHealthMeta && opsAlertHealth) {
-            opsAlertHealthPanel.hidden = false;
-            opsAlertHealthMeta.textContent = '正在加载站外告警投递...';
-            opsAlertHealth.innerHTML = `
-                ${buildPaymentsProviderRowSkeleton()}
-                <div class="payments-anomaly-items">${Array.from({ length: 2 }, () => buildPaymentsAnomalySkeleton()).join('')}</div>
-            `;
-        }
+        renderOverviewSecondarySkeletons();
     }
 
     function renderMetricCards(target, cards) {
@@ -2520,6 +2659,7 @@
         const querySummary = data?.query_summary || {};
         const target = document.getElementById('paymentsOverviewGrid');
         if (!target) return;
+        const isCoreOverview = isOverviewCorePayload(data);
         const refundIssueCount = Number(anomaly.refund_failures || 0)
             + Number(anomaly.refund_reclaim_failures || 0)
             + Number(anomaly.refund_compensation_failures || 0);
@@ -2575,19 +2715,25 @@
             },
             {
                 icon: 'fas fa-wave-square',
-                label: '异常回调',
-                value: formatNumber(Number(anomaly.recent_event_anomalies || 0) + Number(anomaly.session_anomalies || 0)),
-                help: `${formatNumber(anomaly.duplicate_webhook_orders)} 个订单出现重复回调 · 会话异常 ${formatNumber(anomaly.session_anomalies)}`,
-                tone: 'warning'
+                label: isCoreOverview ? '异常回调补充中' : '异常回调',
+                value: isCoreOverview ? '补充中' : formatNumber(Number(anomaly.recent_event_anomalies || 0) + Number(anomaly.session_anomalies || 0)),
+                help: isCoreOverview
+                    ? '正在补充 webhook 异常、重复回调和趋势统计。'
+                    : `${formatNumber(anomaly.duplicate_webhook_orders)} 个订单出现重复回调 · 会话异常 ${formatNumber(anomaly.session_anomalies)}`,
+                tone: isCoreOverview ? 'info' : 'warning'
             },
             {
                 icon: 'fas fa-rotate-left',
-                label: '退款异常',
-                value: formatNumber(refundIssueCount),
-                help: `退款失败 ${formatNumber(anomaly.refund_failures)} · 扣回失败 ${formatNumber(anomaly.refund_reclaim_failures)} · 回滚失败 ${formatNumber(anomaly.refund_compensation_failures)}`,
-                tone: Number(anomaly.refund_compensation_failures || 0) > 0 || Number(anomaly.refund_reclaim_failures || 0) > 0
+                label: isCoreOverview ? '退款异常补充中' : '退款异常',
+                value: isCoreOverview ? '补充中' : formatNumber(refundIssueCount),
+                help: isCoreOverview
+                    ? '正在补充退款失败、积分扣回失败和积分回滚失败统计。'
+                    : `退款失败 ${formatNumber(anomaly.refund_failures)} · 扣回失败 ${formatNumber(anomaly.refund_reclaim_failures)} · 回滚失败 ${formatNumber(anomaly.refund_compensation_failures)}`,
+                tone: isCoreOverview
+                    ? 'info'
+                    : (Number(anomaly.refund_compensation_failures || 0) > 0 || Number(anomaly.refund_reclaim_failures || 0) > 0
                     ? 'critical'
-                    : (refundIssueCount > 0 ? 'warning' : 'info')
+                    : (refundIssueCount > 0 ? 'warning' : 'info'))
             },
             {
                 icon: 'fas fa-magnifying-glass-chart',
@@ -2681,92 +2827,6 @@
                 </article>
             `;
         }).join('');
-    }
-
-    function renderOpsAlertHealth(data) {
-        const panel = document.getElementById('paymentsOpsAlertHealthPanel');
-        const target = document.getElementById('paymentsOpsAlertHealth');
-        const meta = document.getElementById('paymentsOpsAlertHealthMeta');
-        if (!panel || !target || !meta) return;
-
-        const summary = data?.ops_alert_summary || {};
-        const items = Array.isArray(data?.ops_alert_items) ? data.ops_alert_items : [];
-        const total = Number(summary.total || 0);
-        const actionable = Number(summary.actionable_count || 0);
-        const deadLetter = Number(summary.dead_letter || 0);
-
-        if (!total && !actionable) {
-            panel.hidden = true;
-            target.innerHTML = '';
-            meta.textContent = '';
-            return;
-        }
-
-        panel.hidden = false;
-        meta.textContent = deadLetter > 0
-            ? `当前有 ${formatNumber(deadLetter)} 条站外告警进入死信队列，需要人工决定是否重试。`
-            : actionable > 0
-                ? `当前还有 ${formatNumber(actionable)} 条站外告警需要继续跟进，已处理记录已收起。`
-                : `当前范围内共有 ${formatNumber(total)} 条站外告警投递记录，已处理记录已收起。`;
-
-        const highlights = items
-            .filter((item) => isActiveOpsAlertStatus(item.queue_status))
-            .slice(0, 3);
-        const settledCount = Number(summary.handled || 0) + Number(summary.ignored || 0);
-        target.innerHTML = `
-            <div class="payments-provider-row">
-                <div class="payments-provider-copy">
-                    <div class="payments-provider-name"><i class="fas fa-paper-plane"></i>投递状态总览</div>
-                    <div class="payments-provider-meta">
-                        已送达 ${escapeHtml(formatNumber(summary.delivered || 0))} ·
-                        等待重试 ${escapeHtml(formatNumber(summary.retry || 0))} ·
-                        发送中 ${escapeHtml(formatNumber(summary.processing || 0))} ·
-                        死信 ${escapeHtml(formatNumber(summary.dead_letter || 0))}
-                    </div>
-                    <div class="payments-provider-extra">
-                        <span>待发送 ${escapeHtml(formatNumber(summary.pending || 0))}</span>
-                        <span>已处理 ${escapeHtml(formatNumber(summary.handled || 0))}</span>
-                        <span>已忽略 ${escapeHtml(formatNumber(summary.ignored || 0))}</span>
-                        <span>最近死信 ${escapeHtml(formatDateTime(summary.latest_dead_letter_at))}</span>
-                    </div>
-                </div>
-                <div class="payments-provider-badges">
-                    ${deadLetter > 0 ? `<span class="payments-mini-badge danger">${escapeHtml(formatNumber(deadLetter))} 死信</span>` : ''}
-                    ${Number(summary.retry || 0) > 0 ? `<span class="payments-mini-badge warning">${escapeHtml(formatNumber(summary.retry || 0))} 重试中</span>` : ''}
-                    <button
-                        type="button"
-                        class="payments-anomaly-action-btn request_retry"
-                        data-admin-action="payments-focus-ops-alert-queue"
-                    >
-                        查看队列
-                    </button>
-                </div>
-            </div>
-            ${highlights.length ? `
-                <div class="payments-anomaly-items">
-                    ${highlights.map((item) => `
-                        <div class="payments-anomaly-item severity-${escapeHtml(item.severity || 'warning')}">
-                            <div class="payments-anomaly-top">
-                                <div class="payments-anomaly-copy">
-                                    <div class="payments-anomaly-title">${escapeHtml(item.title || '站外告警')}</div>
-                                    <div class="payments-anomaly-message">${escapeHtml(item.message || '')}</div>
-                                </div>
-                                <span class="payments-anomaly-severity">${escapeHtml(getAnomalyOpsStatusLabel(item.queue_status))}</span>
-                            </div>
-                            <div class="payments-anomaly-meta">
-                                <span><small>通道</small><strong>${escapeHtml((Array.isArray(item.channels) ? item.channels : []).map(getOpsAlertChannelLabel).join(' / ') || '未配置')}</strong></span>
-                                <span><small>订单号</small><strong>${escapeHtml(item.provider_order_no || '—')}</strong></span>
-                                <span><small>时间</small><strong>${escapeHtml(formatDateTime(item.created_at))}</strong></span>
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-            ` : `
-                <div class="payments-empty-state compact">
-                    当前没有需要人工跟进的站外告警任务${settledCount > 0 ? `，${escapeHtml(formatNumber(settledCount))} 条已处理记录已收起，可在异常运维里按需展开。` : '。'}
-                </div>
-            `}
-        `;
     }
 
     function renderOpsAlertQueue(data) {
@@ -3351,9 +3411,20 @@
 
     function rerenderCurrentView() {
         if (!state.summary) return;
+        if (state.activeTab === 'overview' && state.overviewStage !== 'full') {
+            renderOverviewCards(state.summary);
+            updateOverviewBanner(state.summary);
+            if (state.overviewSecondaryLoaded) {
+                renderRefundAlerts(state.summary);
+                renderProviderStats(state.summary);
+                renderTrend(state.summary);
+            }
+            return;
+        }
+
         renderRefundAlerts(state.summary);
-        renderOpsAlertHealth(state.summary);
         renderOverviewCards(state.summary);
+        renderProviderStats(state.summary);
         renderSitewideSummary(state.summary);
         renderBusinessBreakdown(state.summary);
         renderPointsBreakdown(state.summary);
@@ -3477,6 +3548,53 @@
     }
 
     async function loadSummary(requestToken) {
+        if (state.activeTab === 'overview') {
+            state.overviewStage = 'loading';
+            state.overviewSecondaryLoaded = false;
+            state.overviewOpsLoaded = false;
+            renderOverviewSecondarySkeletons();
+
+            const coreQuery = buildSummaryQuery('overview', { scope: 'core' });
+            const corePayload = await fetchAdminJson(`/api/admin/payments/summary?${coreQuery.toString()}`);
+            if (requestToken !== state.requestToken) {
+                return false;
+            }
+
+            state.summary = {
+                ...(state.summary || {}),
+                ...corePayload
+            };
+
+            const coreData = state.summary;
+            syncOverviewStage();
+            updateToolbarHighlights(coreData);
+            renderOverviewCards(coreData);
+            updateOverviewBanner(coreData);
+            updateOverviewLoadingMeta();
+
+            const [secondaryResult, opsResult] = await Promise.allSettled([
+                fetchAdminJson(`/api/admin/payments/summary?${buildSummaryQuery('overview', { scope: 'secondary' }).toString()}`)
+                    .then((payload) => applyOverviewSecondaryPayload(payload, requestToken)),
+                fetchAdminJson(`/api/admin/payments/summary?${buildSummaryQuery('overview', { scope: 'ops' }).toString()}`)
+                    .then((payload) => applyOverviewOpsPayload(payload, requestToken))
+            ]);
+
+            if (requestToken !== state.requestToken) {
+                return false;
+            }
+
+            const failedResult = [secondaryResult, opsResult].find((result) => result.status === 'rejected');
+            if (failedResult?.reason) {
+                throw failedResult.reason;
+            }
+
+            syncOverviewStage();
+            state.viewCache[state.activeTab] = getCurrentCacheKey();
+            updateLastSynced(new Date());
+            scheduleTabPrefetch(state.activeTab);
+            return true;
+        }
+
         const query = buildSummaryQuery(state.activeTab);
         const payload = await fetchAdminJson(`/api/admin/payments/summary?${query.toString()}`);
         if (requestToken !== state.requestToken) {
@@ -3492,7 +3610,6 @@
         state.viewCache[state.activeTab] = getCurrentCacheKey();
         updateToolbarHighlights(data);
         renderRefundAlerts(data);
-        renderOpsAlertHealth(data);
         renderOverviewCards(data);
         renderProviderStats(data);
         renderSitewideSummary(data);
@@ -3707,8 +3824,21 @@
             }
 
             if (state.summary) {
-                renderAccessState(getFriendlyErrorMessage(error, '支付数据刷新失败，当前展示的是上一次成功结果。'), 'warning', { preserveBody: true });
-                const fallbackTime = state.lastSyncedAt ? `上次成功 ${formatToolbarTime(state.lastSyncedAt)}` : '刚刚刷新失败';
+                const isOverviewPartialFailure = state.activeTab === 'overview'
+                    && ['core', 'partial'].includes(String(state.overviewStage || '').trim().toLowerCase());
+                renderAccessState(
+                    getFriendlyErrorMessage(
+                        error,
+                        isOverviewPartialFailure
+                            ? '支付总览首屏已加载，但部分趋势或告警刷新失败，请稍后重试。'
+                            : '支付数据刷新失败，当前展示的是上一次成功结果。'
+                    ),
+                    'warning',
+                    { preserveBody: true }
+                );
+                const fallbackTime = isOverviewPartialFailure
+                    ? '首屏已加载，部分详情刷新失败'
+                    : (state.lastSyncedAt ? `上次成功 ${formatToolbarTime(state.lastSyncedAt)}` : '刚刚刷新失败');
                 setToolbarMeta(fallbackTime, 'warning');
                 return;
             }

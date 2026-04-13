@@ -8,8 +8,8 @@ const {
 } = require('../../../../api/_lib/ops-alerts');
 
 const OPS_ALERT_HEALTH_LOOKBACK_HOURS = 72;
-const OPS_ALERT_HEALTH_PAGE_SIZE = 200;
-const OPS_ALERT_HEALTH_MAX_PAGES = 5;
+const OPS_ALERT_HEALTH_PAGE_SIZE = 1000;
+const OPS_ALERT_HEALTH_MAX_PAGES = 1;
 const OPS_ALERT_HEALTH_TREND_BUCKET_HOURS = 6;
 const OPS_ALERT_HEALTH_CHANNELS = Object.freeze([
     { key: 'telegram', label: 'Telegram' },
@@ -373,7 +373,8 @@ function buildRecentTrendBuckets(jobs = [], attempts = [], now = new Date()) {
 
 function buildChannelStatus(channelKey, config = {}, secretStatus = {}, jobs = [], attempts = []) {
     const enabled = config.enabled === true;
-    const configured = secretStatus.configured === true;
+    const secretError = normalizeText(secretStatus.errorMessage || secretStatus.error_message, 500);
+    const configured = secretStatus.configured === true && !secretError;
     const hasDestinations = channelKey === 'telegram'
         ? normalizeChannelList(config.chat_ids).length > 0
         : (channelKey === 'email'
@@ -396,11 +397,15 @@ function buildChannelStatus(channelKey, config = {}, secretStatus = {}, jobs = [
     const lastError = recentErrors[0]?.message
         || jobs.find((job) => normalizeText(job.last_error, 400))?.last_error
         || '';
+    const errors = secretError ? [secretError] : [];
 
     let tone = 'neutral';
     let healthLabel = '未启用';
 
-    if (enabled && ready) {
+    if (secretError) {
+        tone = enabled ? 'danger' : 'warning';
+        healthLabel = '密钥解密失败';
+    } else if (enabled && ready) {
         if (deadLetterCount > 0) {
             tone = 'danger';
             healthLabel = '存在死信';
@@ -423,7 +428,7 @@ function buildChannelStatus(channelKey, config = {}, secretStatus = {}, jobs = [
         key: channelKey,
         enabled,
         configured,
-        source: normalizeText(secretStatus.source, 40) || 'missing',
+        source: normalizeText(secretStatus.source, 40) || (secretError ? 'error' : 'missing'),
         updated_at: secretStatus.updatedAt || null,
         minimum_severity: minimumSeverity,
         recipient_summary: buildChannelRecipientSummary(channelKey, config),
@@ -438,7 +443,9 @@ function buildChannelStatus(channelKey, config = {}, secretStatus = {}, jobs = [
         delivery_rate: deliveryRate,
         last_attempt_at: normalizeText(lastAttemptAt, 80) || null,
         last_failure_at: normalizeText(lastFailureAt, 80) || null,
-        last_error: normalizeText(lastError, 500) || '',
+        last_error: secretError || normalizeText(lastError, 500) || '',
+        errors,
+        secret_error: secretError,
         recent_errors: recentErrors,
         recent_deliveries: recentDeliveries,
         recipient_preview: channelKey === 'email' ? buildEmailRecipientPreview(config) : '',
@@ -450,7 +457,10 @@ function buildChannelStatus(channelKey, config = {}, secretStatus = {}, jobs = [
 
 module.exports = async (req, res) => {
     try {
-        const { supabase } = await requireAdmin(req, { permission: 'ops_alerts.manage' });
+        const accessRequirement = String(req.method || '').toUpperCase() === 'GET'
+            ? { anyOf: ['ops_alerts.manage', 'analytics.view'] }
+            : { permission: 'ops_alerts.manage' };
+        const { supabase } = await requireAdmin(req, accessRequirement);
 
         if (req.method !== 'GET') {
             res.setHeader('Allow', 'GET');
@@ -492,6 +502,9 @@ module.exports = async (req, res) => {
         const recentDeliveries = buildRecentDeliveryEntries(jobs, attempts, 5);
         const recentErrors = buildRecentErrorEntries(channels, 5);
         const recentTrendBuckets = buildRecentTrendBuckets(jobs, attempts, now);
+        const configIssues = channels
+            .filter((channel) => normalizeText(channel.secret_error, 500))
+            .map((channel) => `${normalizeText(channel.label, 80) || normalizeText(channel.key, 40) || '通道'}：${normalizeText(channel.secret_error, 500)}`);
         const summary = {
             lookback_hours: OPS_ALERT_HEALTH_LOOKBACK_HOURS,
             trend_bucket_hours: OPS_ALERT_HEALTH_TREND_BUCKET_HOURS,
@@ -501,6 +514,8 @@ module.exports = async (req, res) => {
             failed_count: channels.reduce((sum, channel) => sum + Number(channel.failed_count || 0), 0),
             dead_letter_count: channels.reduce((sum, channel) => sum + Number(channel.dead_letter_count || 0), 0),
             enabled_channel_count: channels.filter((channel) => channel.enabled).length,
+            config_issue_count: configIssues.length,
+            config_issues: configIssues,
             recent_deliveries: recentDeliveries,
             recent_trend_buckets: recentTrendBuckets,
             recent_delivery_types: buildRecentDeliveryTypeStats(recentDeliveries, 5),

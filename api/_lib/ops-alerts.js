@@ -3220,24 +3220,73 @@ async function loadStoredSystemConfig(supabase, configKey) {
     return data[0]?.config_value || null;
 }
 
+function getOpsAlertSecretDisplayLabel(secretKey = '', envName = '') {
+    const normalizedSecretKey = normalizeText(secretKey, 120).toLowerCase();
+    if (normalizedSecretKey === 'ops_alert_telegram_bot_token') {
+        return 'Telegram Bot Token';
+    }
+    if (normalizedSecretKey === 'ops_alert_feishu_webhook_url') {
+        return '飞书 Webhook';
+    }
+    if (normalizedSecretKey === 'ops_alert_email_api_key') {
+        return '邮件 API Key';
+    }
+
+    const normalizedEnvName = normalizeText(envName, 120).toUpperCase();
+    if (normalizedEnvName === 'OPS_ALERTS_TELEGRAM_BOT_TOKEN') {
+        return 'Telegram Bot Token';
+    }
+    if (normalizedEnvName === 'OPS_ALERTS_FEISHU_WEBHOOK_URL') {
+        return '飞书 Webhook';
+    }
+    if (normalizedEnvName === 'OPS_ALERTS_EMAIL_API_KEY') {
+        return '邮件 API Key';
+    }
+
+    return '告警通道密钥';
+}
+
+function buildOpsAlertSecretLoadErrorMessage(error, secretKey = '', envName = '') {
+    const rawMessage = normalizeText(error?.message, 400);
+    const secretLabel = getOpsAlertSecretDisplayLabel(secretKey, envName);
+
+    if (!rawMessage) {
+        return `${secretLabel} 读取失败，请检查后台密钥仓配置。`;
+    }
+
+    if (rawMessage === 'Unsupported state or unable to authenticate data') {
+        return `${secretLabel} 无法解密，请检查 ADMIN_CONFIG_ENCRYPTION_KEY 是否与写入该密钥时一致，或重新保存该密钥。`;
+    }
+
+    return rawMessage;
+}
+
 async function loadSecretValue(supabase, secretKey, envName, env = process.env) {
     const envValue = normalizeText(env?.[envName]);
     let storedSecret = null;
+    let errorMessage = '';
 
     try {
         if (supabase?.from) {
             storedSecret = await getStoredAdminSecret(supabase, secretKey);
         }
     } catch (error) {
-        if (!envValue) {
-            throw error;
+        if (envValue) {
+            console.warn(`[OpsAlerts] Failed to load stored secret ${secretKey}, falling back to ${envName}:`, error?.message || error);
+        } else {
+            errorMessage = buildOpsAlertSecretLoadErrorMessage(error, secretKey, envName);
         }
     }
 
     return {
         value: normalizeText(storedSecret?.value) || envValue,
-        source: storedSecret?.value ? 'stored' : (envValue ? 'environment' : 'missing'),
-        updatedAt: storedSecret?.updated_at || null
+        source: storedSecret?.value
+            ? 'stored'
+            : (envValue
+                ? 'environment'
+                : (errorMessage ? 'error' : 'missing')),
+        updatedAt: storedSecret?.updated_at || null,
+        errorMessage
     };
 }
 
@@ -3266,12 +3315,15 @@ async function resolveOpsAlertSecrets(supabase, env = process.env) {
         telegram_bot_token: telegram.value,
         telegram_bot_token_source: telegram.source,
         telegram_bot_token_updated_at: telegram.updatedAt,
+        telegram_bot_token_error_message: telegram.errorMessage,
         feishu_webhook_url: feishu.value,
         feishu_webhook_url_source: feishu.source,
         feishu_webhook_url_updated_at: feishu.updatedAt,
+        feishu_webhook_url_error_message: feishu.errorMessage,
         email_api_key: email.value,
         email_api_key_source: email.source,
-        email_api_key_updated_at: email.updatedAt
+        email_api_key_updated_at: email.updatedAt,
+        email_api_key_error_message: email.errorMessage
     };
 }
 
@@ -3292,17 +3344,20 @@ function buildOpsAlertSecretStatus(runtime = {}) {
         telegram_bot_token: {
             configured: Boolean(normalizeText(secrets.telegram_bot_token)),
             source: normalizeText(secrets.telegram_bot_token_source) || 'missing',
-            updatedAt: secrets.telegram_bot_token_updated_at || null
+            updatedAt: secrets.telegram_bot_token_updated_at || null,
+            errorMessage: normalizeText(secrets.telegram_bot_token_error_message, 500)
         },
         feishu_webhook_url: {
             configured: Boolean(normalizeText(secrets.feishu_webhook_url)),
             source: normalizeText(secrets.feishu_webhook_url_source) || 'missing',
-            updatedAt: secrets.feishu_webhook_url_updated_at || null
+            updatedAt: secrets.feishu_webhook_url_updated_at || null,
+            errorMessage: normalizeText(secrets.feishu_webhook_url_error_message, 500)
         },
         email_api_key: {
             configured: Boolean(normalizeText(secrets.email_api_key)),
             source: normalizeText(secrets.email_api_key_source) || 'missing',
-            updatedAt: secrets.email_api_key_updated_at || null
+            updatedAt: secrets.email_api_key_updated_at || null,
+            errorMessage: normalizeText(secrets.email_api_key_error_message, 500)
         }
     };
 }

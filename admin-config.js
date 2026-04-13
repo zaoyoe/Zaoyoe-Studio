@@ -358,8 +358,8 @@ const OPS_ALERT_MONITOR_CARD_CONFIG_IDS = Object.freeze([
     'ops-alerts-verify-failure',
     'ops-alerts-shop-risk'
 ]);
-const OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS = 8000;
-const OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS = 8000;
+const OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS = 25000;
+const OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS = 20000;
 const VERIFY_MONITOR_FETCH_TIMEOUT_MS = 8000;
 const ADMIN_CONFIG_RICH_TEXT_COLOR_SWATCH_CLASS_MAP = Object.freeze({
     '#ffffff': 'color-swatch--white',
@@ -11077,10 +11077,73 @@ function getOpsAlertMonitorViewFilters() {
     };
 }
 
+function getOpsAlertMonitorCategoryLayoutPriority(category = {}) {
+    const normalizedCategory = category && typeof category === 'object' && !Array.isArray(category) ? category : {};
+    const key = String(normalizedCategory.key || '').trim().toLowerCase();
+    const visibleCount = Array.isArray(normalizedCategory.visible_items)
+        ? normalizedCategory.visible_items.length
+        : (Array.isArray(normalizedCategory.items) ? normalizedCategory.items.length : 0);
+    const activeCount = getOpsAlertMonitorDisplayActiveCount(normalizedCategory);
+    const criticalCount = getOpsAlertMonitorDisplayCriticalCount(normalizedCategory);
+    const hiddenCount = Math.max(0, Number(normalizedCategory.hidden_item_count || 0));
+    const latestState = String(normalizedCategory.latest_state || '').trim().toLowerCase();
+    const basePriorityMap = {
+        inventory: 70,
+        verify: 66,
+        security: 62,
+        payments: 58,
+        tickets: 54,
+        fulfillment: 50,
+        shop_risk: 46
+    };
+
+    return {
+        hasVisibleItems: visibleCount > 0 ? 1 : 0,
+        visibleCount,
+        activeCount,
+        criticalCount,
+        hiddenCount,
+        isRecoveredOnly: activeCount === 0 && latestState === 'recovered' ? 1 : 0,
+        basePriority: Number(basePriorityMap[key] || 0)
+    };
+}
+
+function sortOpsAlertMonitorPreparedCategories(categories = []) {
+    return (Array.isArray(categories) ? [...categories] : []).sort((left, right) => {
+        const leftPriority = getOpsAlertMonitorCategoryLayoutPriority(left);
+        const rightPriority = getOpsAlertMonitorCategoryLayoutPriority(right);
+
+        const hasVisibleDelta = rightPriority.hasVisibleItems - leftPriority.hasVisibleItems;
+        if (hasVisibleDelta !== 0) return hasVisibleDelta;
+
+        const visibleDelta = rightPriority.visibleCount - leftPriority.visibleCount;
+        if (visibleDelta !== 0) return visibleDelta;
+
+        const criticalDelta = rightPriority.criticalCount - leftPriority.criticalCount;
+        if (criticalDelta !== 0) return criticalDelta;
+
+        const activeDelta = rightPriority.activeCount - leftPriority.activeCount;
+        if (activeDelta !== 0) return activeDelta;
+
+        const hiddenDelta = rightPriority.hiddenCount - leftPriority.hiddenCount;
+        if (hiddenDelta !== 0) return hiddenDelta;
+
+        const recoveredDelta = leftPriority.isRecoveredOnly - rightPriority.isRecoveredOnly;
+        if (recoveredDelta !== 0) return recoveredDelta;
+
+        const basePriorityDelta = rightPriority.basePriority - leftPriority.basePriority;
+        if (basePriorityDelta !== 0) return basePriorityDelta;
+
+        return String(left?.label || left?.key || '').localeCompare(String(right?.label || right?.key || ''), 'zh-CN');
+    });
+}
+
 function getOpsAlertMonitorPreparedCategories(filters = getOpsAlertMonitorViewFilters()) {
-    return (Array.isArray(opsAlertMonitorState?.categories) ? opsAlertMonitorState.categories : [])
+    return sortOpsAlertMonitorPreparedCategories(
+        (Array.isArray(opsAlertMonitorState?.categories) ? opsAlertMonitorState.categories : [])
         .map((category) => buildOpsAlertMonitorCategoryView(category, filters))
-        .filter(Boolean);
+        .filter(Boolean)
+    );
 }
 
 function syncOpsAlertMonitorFilterToolbar(filters = getOpsAlertMonitorViewFilters(), toolbarState = null) {

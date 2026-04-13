@@ -6719,20 +6719,6 @@ Example output format:
                                     <span>命中订单 ${this.escapeHtml(String(item.count || 0))}</span>
                                     <span>用户 ${this.escapeHtml(userLabel)}</span>
                                 </div>
-                                <div class="admin-workbench-priority-item__guidance">
-                                    <div class="admin-workbench-priority-item__guidance-item">
-                                        <span>为什么优先</span>
-                                        <p>${this.escapeHtml(item.whyImportant || '')}</p>
-                                    </div>
-                                    <div class="admin-workbench-priority-item__guidance-item">
-                                        <span>建议先做</span>
-                                        <p>${this.escapeHtml(item.nextAction || item.recommendation || '')}</p>
-                                    </div>
-                                    <div class="admin-workbench-priority-item__guidance-item">
-                                        <span>验证方式</span>
-                                        <p>${this.escapeHtml(item.verification || '处理后回看这位用户的订单、支付和售后信号是否开始回落。')}</p>
-                                    </div>
-                                </div>
                                 <div class="admin-workbench-priority-item__actions">
                                     ${userReturnAttrs ? `
                                         <button
@@ -6913,20 +6899,6 @@ Example output format:
                     ${chips.map((item) => `
                         <span class="admin-workbench-context-note__chip">${this.escapeHtml(item.label)} · ${this.escapeHtml(item.value)}</span>
                     `).join('')}
-                </div>
-                <div class="admin-workbench-priority-item__guidance shop-order-issue-guidance">
-                    <div class="admin-workbench-priority-item__guidance-item">
-                        <span>为什么优先</span>
-                        <p>${this.escapeHtml(guidanceState?.whyImportant || '当前订单列表已经聚焦到关键问题样本，适合优先处理。')}</p>
-                    </div>
-                    <div class="admin-workbench-priority-item__guidance-item">
-                        <span>建议先做</span>
-                        <p>${this.escapeHtml(guidanceState?.nextAction || '先核对当前问题类型，再决定优先回看支付、履约还是售后。')}</p>
-                    </div>
-                    <div class="admin-workbench-priority-item__guidance-item">
-                        <span>验证方式</span>
-                        <p>${this.escapeHtml(guidanceState?.verification || '处理后回看当前问题订单是否开始减少，并确认用户商品承接链开始回落。')}</p>
-                    </div>
                 </div>
                 <div class="admin-workbench-priority-item__actions shop-order-issue-actions">
                     ${userReturnAttrs ? `

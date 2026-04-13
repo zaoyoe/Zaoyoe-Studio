@@ -85,6 +85,11 @@ function cloneRow(row) {
     return JSON.parse(JSON.stringify(row));
 }
 
+function offsetIso(baseTime, { days = 0, hours = 0, minutes = 0 } = {}) {
+    const totalMinutes = (((days * 24) + hours) * 60) + minutes;
+    return new Date(baseTime + totalMinutes * 60 * 1000).toISOString();
+}
+
 function applyFilters(rows, filters = []) {
     return rows.filter((row) => filters.every((filter) => {
         if (filter.op === 'eq') {
@@ -206,6 +211,16 @@ async function withDiscountsDetailHandler(initialState, callback) {
 }
 
 test('discount detail handler returns recent usage, users, and risk timeline for a coupon', async () => {
+    const baseTime = Date.now();
+    const discountCreatedAt = offsetIso(baseTime, { days: -12 });
+    const asset1AssignedAt = offsetIso(baseTime, { days: -2, hours: -2 });
+    const asset2AssignedAt = offsetIso(baseTime, { days: -2, hours: -1, minutes: -30 });
+    const order2CreatedAt = offsetIso(baseTime, { days: -2, hours: -1 });
+    const order1CreatedAt = offsetIso(baseTime, { days: -2 });
+    const alertCreatedAt = offsetIso(baseTime, { days: -2, hours: 1 });
+    const caseUpdatedAt = offsetIso(baseTime, { days: -2, hours: 1, minutes: 2 });
+    const auditCreatedAt = offsetIso(baseTime, { days: -2, hours: 1, minutes: 5 });
+
     await withDiscountsDetailHandler({
         discountRows: [
             {
@@ -219,7 +234,7 @@ test('discount detail handler returns recent usage, users, and risk timeline for
                 allow_zero_total: false,
                 scope_type: 'product',
                 scope_product_id: 'prod_1',
-                created_at: '2026-04-01T08:00:00.000Z',
+                created_at: discountCreatedAt,
                 is_active: true,
                 used_count: 3,
                 starts_at: null,
@@ -237,7 +252,7 @@ test('discount detail handler returns recent usage, users, and risk timeline for
                 id: 'order_1',
                 discount_code: 'FLASH0',
                 user_id: 'user_1',
-                created_at: '2026-04-05T09:00:00.000Z',
+                created_at: order1CreatedAt,
                 price_paid: 0,
                 total_price: 99,
                 site: 'cn',
@@ -250,7 +265,7 @@ test('discount detail handler returns recent usage, users, and risk timeline for
                 id: 'order_2',
                 discount_code: 'FLASH0',
                 user_id: 'user_2',
-                created_at: '2026-04-05T08:00:00.000Z',
+                created_at: order2CreatedAt,
                 price_paid: 50,
                 total_price: 99,
                 site: 'cn',
@@ -271,9 +286,9 @@ test('discount detail handler returns recent usage, users, and risk timeline for
                 discount_id: 'discount_cn',
                 user_id: 'user_1',
                 asset_status: 'used',
-                assigned_at: '2026-04-05T07:00:00.000Z',
-                claimed_at: '2026-04-05T07:00:00.000Z',
-                consumed_at: '2026-04-05T09:00:00.000Z',
+                assigned_at: asset1AssignedAt,
+                claimed_at: asset1AssignedAt,
+                consumed_at: order1CreatedAt,
                 source_channel: 'vip_recall',
                 audience_segment: 'vip'
             },
@@ -282,8 +297,8 @@ test('discount detail handler returns recent usage, users, and risk timeline for
                 discount_id: 'discount_cn',
                 user_id: 'user_2',
                 asset_status: 'available',
-                assigned_at: '2026-04-05T07:30:00.000Z',
-                claimed_at: '2026-04-05T07:30:00.000Z',
+                assigned_at: asset2AssignedAt,
+                claimed_at: asset2AssignedAt,
                 source_channel: 'cs_compensation',
                 audience_segment: 'appeasement'
             }
@@ -299,7 +314,7 @@ test('discount detail handler returns recent usage, users, and risk timeline for
                 source_channel: 'vip_recall',
                 event_source: 'shop_claim_center',
                 audience_segment: 'vip',
-                created_at: '2026-04-05T07:00:00.000Z'
+                created_at: asset1AssignedAt
             },
             {
                 id: 'evt_apply_1',
@@ -311,7 +326,7 @@ test('discount detail handler returns recent usage, users, and risk timeline for
                 source_channel: 'vip_recall',
                 event_source: 'shop_apply_discount',
                 audience_segment: 'vip',
-                created_at: '2026-04-05T08:59:00.000Z'
+                created_at: offsetIso(baseTime, { days: -2, hours: -1, minutes: -1 })
             }
         ],
         opsAlertJobs: [
@@ -331,7 +346,7 @@ test('discount detail handler returns recent usage, users, and risk timeline for
                     auto_response_status: 'applied',
                     auto_response_summary: '系统已自动停用优惠码 FLASH0，请继续复核最近命中订单与关联账号。'
                 },
-                created_at: '2026-04-05T10:00:00.000Z'
+                created_at: alertCreatedAt
             }
         ],
         opsAlertCases: [
@@ -346,8 +361,8 @@ test('discount detail handler returns recent usage, users, and risk timeline for
                 resolution: null,
                 metadata: {},
                 last_action: 'claimed',
-                last_action_at: '2026-04-05T10:02:00.000Z',
-                updated_at: '2026-04-05T10:02:00.000Z'
+                last_action_at: caseUpdatedAt,
+                updated_at: caseUpdatedAt
             }
         ],
         opsAlertCaseEvents: [
@@ -365,7 +380,7 @@ test('discount detail handler returns recent usage, users, and risk timeline for
                 note: '已接手排查',
                 resolution: null,
                 metadata: {},
-                created_at: '2026-04-05T10:02:00.000Z'
+                created_at: caseUpdatedAt
             }
         ],
         auditLogsView: [
@@ -382,7 +397,7 @@ test('discount detail handler returns recent usage, users, and risk timeline for
                     resolve_case_requested: true,
                     operation_source: 'risk_restore_modal'
                 },
-                created_at: '2026-04-05T10:05:00.000Z',
+                created_at: auditCreatedAt,
                 admin_id: 'admin_1',
                 admin_email: 'ops@example.com'
             }

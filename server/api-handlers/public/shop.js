@@ -330,6 +330,151 @@ function createShopHandlers({
             .digest('hex');
     }
 
+    function isMissingRpcCapabilityError(error) {
+        const normalizedCode = String(error?.code || '').trim().toUpperCase();
+        const normalizedMessage = [
+            error?.message,
+            error?.details,
+            error?.hint
+        ].filter(Boolean).join(' ').trim().toLowerCase();
+
+        return normalizedCode === '42883'
+            || normalizedCode === 'PGRST202'
+            || normalizedMessage.includes('could not find the function')
+            || normalizedMessage.includes('schema cache')
+            || (normalizedMessage.includes('function') && normalizedMessage.includes('does not exist'));
+    }
+
+    function isAmbiguousRpcOverloadError(error, functionName = '') {
+        const normalizedCode = String(error?.code || '').trim().toUpperCase();
+        const normalizedMessage = [
+            error?.message,
+            error?.details,
+            error?.hint
+        ].filter(Boolean).join(' ').trim().toLowerCase();
+        const normalizedFunctionName = String(functionName || '').trim().toLowerCase();
+
+        if (normalizedCode === '42725') {
+            return true;
+        }
+
+        return normalizedMessage.includes('is not unique')
+            && (!normalizedFunctionName || normalizedMessage.includes(normalizedFunctionName));
+    }
+
+    function canFallbackToLegacyPurchaseRpc(error) {
+        return isMissingRpcCapabilityError(error)
+            || isAmbiguousRpcOverloadError(error, 'fn_purchase_shop_item');
+    }
+
+    function getRpcSingleRow(data) {
+        if (Array.isArray(data)) {
+            return data[0] || null;
+        }
+        return data || null;
+    }
+
+    function buildPurchaseRpcParams(payload = {}, userId = '', options = {}) {
+        const params = {
+            p_product_id: payload.productId,
+            p_user_id: userId,
+            p_site: payload.site,
+            p_quantity: payload.quantity,
+            p_discount_code: payload.discountCode,
+            p_agent_id: payload.agentId
+        };
+
+        if (options.includeDiscountAssetId !== false) {
+            params.p_discount_asset_id = payload.discountAssetId;
+        }
+
+        return params;
+    }
+
+    async function executePurchaseRpc({
+        payload,
+        userId,
+        requestSupabase,
+        adminSupabase,
+        fallbackSupabase
+    }) {
+        const primaryClient = requestSupabase || fallbackSupabase || adminSupabase;
+        if (!primaryClient?.rpc) {
+            const error = new Error('商城购买服务暂时不可用');
+            error.statusCode = 503;
+            throw error;
+        }
+
+        const primaryParams = buildPurchaseRpcParams(payload, userId, {
+            includeDiscountAssetId: true
+        });
+        const canFallbackToLegacyRpc = !payload.discountAssetId;
+        let lastError = null;
+
+        try {
+            const { data, error } = await primaryClient.rpc('fn_purchase_shop_item', primaryParams);
+            if (error) {
+                throw error;
+            }
+
+            const primaryPayload = getRpcSingleRow(data);
+            if (primaryPayload) {
+                return primaryPayload;
+            }
+        } catch (error) {
+            lastError = error;
+            if (!canFallbackToLegacyRpc || !canFallbackToLegacyPurchaseRpc(error)) {
+                throw error;
+            }
+        }
+
+        if (!canFallbackToLegacyRpc) {
+            const error = new Error('商城购买服务未返回结果，请稍后重试');
+            error.statusCode = 502;
+            throw error;
+        }
+
+        const legacyParams = buildPurchaseRpcParams(payload, userId, {
+            includeDiscountAssetId: false
+        });
+        const legacyClients = [];
+        for (const client of [requestSupabase, adminSupabase, fallbackSupabase]) {
+            if (client?.rpc && !legacyClients.includes(client)) {
+                legacyClients.push(client);
+            }
+        }
+
+        for (const client of legacyClients) {
+            try {
+                const { data, error } = await client.rpc('fn_purchase_shop_item', legacyParams);
+                if (error) {
+                    throw error;
+                }
+
+                const legacyPayload = getRpcSingleRow(data);
+                if (legacyPayload) {
+                    return legacyPayload;
+                }
+            } catch (error) {
+                lastError = error;
+            }
+        }
+
+        if (isMissingRpcCapabilityError(lastError)) {
+            const error = new Error('商城购买接口版本不兼容，请检查 fn_purchase_shop_item 迁移和 schema cache');
+            error.statusCode = 502;
+            throw error;
+        }
+
+        if (lastError) {
+            throw lastError;
+        }
+
+        const error = new Error('商城购买服务未返回结果，请检查 fn_purchase_shop_item RPC 配置');
+        error.statusCode = 502;
+        throw error;
+    }
+
     return {
         'available-discounts': async function availableDiscountsHandler(req, res) {
             if (req.method !== 'POST') {
@@ -757,25 +902,17 @@ function createShopHandlers({
                     });
                 }
 
-                const { data, error } = await (requestSupabase || supabase).rpc('fn_purchase_shop_item', {
-                    p_product_id: payload.productId,
-                    p_user_id: user.id,
-                    p_site: payload.site,
-                    p_quantity: payload.quantity,
-                    p_discount_code: payload.discountCode,
-                    p_discount_asset_id: payload.discountAssetId,
-                    p_agent_id: payload.agentId
+                const responsePayload = await executePurchaseRpc({
+                    payload,
+                    userId: user.id,
+                    requestSupabase,
+                    adminSupabase,
+                    fallbackSupabase: supabase
                 });
-
-                if (error) {
-                    throw error;
-                }
-
-                const responsePayload = Array.isArray(data) ? data[0] : data;
                 if (!responsePayload || responsePayload.success === false) {
                     return sendJson(res, 400, responsePayload || {
                         success: false,
-                        message: '兑换失败'
+                        message: '商城购买服务未返回结果，请检查 fn_purchase_shop_item RPC 配置'
                     });
                 }
 

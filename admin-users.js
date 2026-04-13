@@ -4961,8 +4961,6 @@ function buildUserAnalyticsContextBlock(context = currentModalData?.analyticsCon
             </div>
             ${normalizedContext.summary ? `<p class="user-analytics-context__summary">${escapeHtml(normalizedContext.summary)}</p>` : ''}
             ${chips ? `<div class="user-analytics-context__chips">${chips}</div>` : ''}
-            ${normalizedContext.actionLabel ? `<div class="user-analytics-context__row"><strong>建议先做</strong><span>${escapeHtml(normalizedContext.actionLabel)}</span></div>` : ''}
-            ${normalizedContext.verificationMethod ? `<div class="user-analytics-context__row"><strong>验证方式</strong><span>${escapeHtml(normalizedContext.verificationMethod)}</span></div>` : ''}
             ${(hasDestination || shopOrdersActionAttrs || ticketsActionAttrs) ? `
                 <div class="user-analytics-context__actions">
                     ${hasDestination ? `

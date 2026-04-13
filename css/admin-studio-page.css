@@ -7015,6 +7015,44 @@ body.admin-access-pending,
                         box-shadow: var(--admin-studio-list-press-shadow);
                     }
 
+#paymentsOrdersTable .payments-table {
+                        table-layout: auto;
+                        min-width: 960px;
+                    }
+
+#paymentsOrdersTable .payments-table th:nth-child(1),
+#paymentsOrdersTable .payments-table td:nth-child(1) {
+                        width: 220px;
+                    }
+
+#paymentsOrdersTable .payments-table th:nth-child(2),
+#paymentsOrdersTable .payments-table td:nth-child(2) {
+                        width: 168px;
+                    }
+
+#paymentsOrdersTable .payments-table td:nth-child(1),
+#paymentsOrdersTable .payments-table td:nth-child(2) {
+                        line-height: 1.45;
+                        overflow-wrap: anywhere;
+                        word-break: break-word;
+                    }
+
+#paymentsOrdersTable .payments-order-no {
+                        display: block;
+                        max-width: 100%;
+                        white-space: normal;
+                        line-height: 1.45;
+                        overflow-wrap: anywhere;
+                        word-break: break-all;
+                    }
+
+#paymentsOrdersTable .payments-order-provider {
+                        max-width: 100%;
+                        line-height: 1.4;
+                        overflow-wrap: anywhere;
+                        word-break: break-word;
+                    }
+
 :is(
                         #module-users .users-table tbody tr.user-row:not(.selected):hover,
                         #module-discounts .users-table.discounts-table tbody tr:hover,
@@ -9364,16 +9402,16 @@ body {
     --admin-studio-user-modal-bg: linear-gradient(135deg, #1b2029 0%, #11151c 100%);
     --admin-studio-user-modal-panel-bg: rgba(255, 255, 255, 0.015);
     --admin-studio-user-modal-panel-strong-bg: rgba(8, 10, 14, 0.28);
-    --admin-studio-user-modal-header-bg: rgba(0, 0, 0, 0.2);
+    --admin-studio-user-modal-header-bg: #182634;
     --admin-studio-user-modal-border: rgba(255, 255, 255, 0.08);
     --admin-studio-user-modal-divider: rgba(255, 255, 255, 0.06);
     --admin-studio-user-modal-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-    --admin-studio-card-header-bg: var(--admin-studio-list-header-bg, #27354b);
+    --admin-studio-card-header-bg: #182634;
     --admin-studio-card-header-text: rgba(241, 245, 249, 0.92);
     --admin-studio-card-header-muted: rgba(203, 213, 225, 0.74);
     --admin-studio-card-header-divider: rgba(255, 255, 255, 0.08);
     --admin-studio-card-bg-solid: rgba(20, 24, 32, 0.96);
-    --admin-studio-subcard-header-bg: rgba(255, 255, 255, 0.035);
+    --admin-studio-subcard-header-bg: #182634;
     --admin-studio-subcard-header-text: rgba(226, 232, 240, 0.94);
     --admin-studio-subcard-header-muted: rgba(148, 163, 184, 0.76);
     --admin-studio-subcard-header-divider: rgba(255, 255, 255, 0.06);
@@ -12730,7 +12768,7 @@ body {
     align-items: center;
     justify-content: flex-start;
     gap: 16px;
-    background: var(--admin-studio-list-header-bg);
+    background: #182634;
     border-bottom: 1px solid rgba(164, 179, 204, 0.14);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
@@ -13146,7 +13184,7 @@ body {
     margin: -22px -22px 20px;
     padding: 18px 24px;
     align-items: center;
-    background: var(--admin-studio-list-header-bg);
+    background: #182634;
     border-bottom: 1px solid rgba(164, 179, 204, 0.14);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }

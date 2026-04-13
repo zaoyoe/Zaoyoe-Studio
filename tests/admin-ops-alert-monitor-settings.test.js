@@ -220,6 +220,15 @@ function createAdminModule(state) {
                 adminSupabase: {
                     auth: {
                         admin: {
+                            async getUserById(userId) {
+                                const user = (state.authUsers || []).find((item) => item.id === userId) || null;
+                                return {
+                                    data: {
+                                        user
+                                    },
+                                    error: null
+                                };
+                            },
                             async listUsers() {
                                 return {
                                     data: {
@@ -496,6 +505,84 @@ test('ops alert monitor handler summarizes payment, ticket, inventory, fulfillme
         assert.equal(payload.summary.shift_report.totals.active_backlog_count, 7);
         assert.equal(payload.summary.shift_report.totals.active_pending_count, 7);
         assert.equal(payload.summary.shift_report.totals.active_claimed_count, 0);
+    });
+});
+
+test('ops alert monitor handler can build assignable admins without scanning auth user pages', async () => {
+    await withHandler({
+        authUsers: [
+            {
+                id: 'admin-user-1',
+                email: 'admin@example.com'
+            },
+            {
+                id: 'admin-user-2',
+                email: 'ops@example.com'
+            }
+        ]
+    }, async (handler, state) => {
+        let listUsersCallCount = 0;
+        const originalLoad = Module._load;
+        const handlerPath = path.resolve(__dirname, '../server/api-handlers/admin/settings/ops-alert-monitor.js');
+
+        delete require.cache[handlerPath];
+        Module._load = function patchedLoad(request, parent, isMain) {
+            if (request === '../../../../api/_lib/admin') {
+                return {
+                    async requireAdmin() {
+                        return {
+                            supabase: createSupabaseStub(state),
+                            adminSupabase: {
+                                auth: {
+                                    admin: {
+                                        async getUserById(userId) {
+                                            const user = (state.authUsers || []).find((item) => item.id === userId) || null;
+                                            return {
+                                                data: { user },
+                                                error: null
+                                            };
+                                        },
+                                        async listUsers() {
+                                            listUsersCallCount += 1;
+                                            return {
+                                                data: { users: state.authUsers || [] },
+                                                error: null
+                                            };
+                                        }
+                                    }
+                                }
+                            },
+                            user: state.user
+                        };
+                    },
+                    sendJson(res, status, payload) {
+                        res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+                        res.end(JSON.stringify(payload));
+                    }
+                };
+            }
+            if (request === '../../../../api/_lib/ops-alerts') {
+                return createOpsAlertsModule(state);
+            }
+            return originalLoad(request, parent, isMain);
+        };
+
+        try {
+            const isolatedHandler = require(handlerPath);
+            const req = { method: 'GET', headers: {} };
+            const res = createMockResponse();
+
+            await isolatedHandler(req, res);
+            const payload = res.json();
+
+            assert.equal(res.statusCode, 200);
+            assert.equal(payload.success, true);
+            assert.equal(listUsersCallCount, 0);
+            assert.equal(payload.assignable_admins.length, 2);
+        } finally {
+            Module._load = originalLoad;
+            delete require.cache[handlerPath];
+        }
     });
 });
 

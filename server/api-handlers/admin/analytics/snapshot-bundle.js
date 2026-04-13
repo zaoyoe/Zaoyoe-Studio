@@ -92,6 +92,7 @@ async function invokeNestedAdminHandler(handler, req, {
     const response = createMemoryResponse();
     const nestedReq = {
         ...req,
+        headers: req?.headers || {},
         method: 'GET',
         url: buildNestedAdminUrl(route, searchParams),
         adminRoute: String(route || '').trim(),

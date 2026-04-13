@@ -260,7 +260,7 @@ function buildAnalyticsResolutionPriorityVerificationStatus(row = {}, alertItem 
             key: 'passed',
             label: '验证已通过',
             tone: 'success',
-            summary: `${productName} 当前已经不在商品预警主列表里，可按验证方式做一次回看确认后结束本轮跟进。`
+            summary: `${productName} 当前已经不在商品预警主列表里，可做一次回看确认后结束本轮跟进。`
         };
     }
 
@@ -269,7 +269,7 @@ function buildAnalyticsResolutionPriorityVerificationStatus(row = {}, alertItem 
             key: 'pending',
             label: '仍待验证',
             tone: 'warning',
-            summary: `${productName} 最近处理结果已回落到待复查，但还需要按验证方式确认问题没有再次反弹。`
+            summary: `${productName} 最近处理结果已回落到待复查，但还需要再做一次回看，确认问题没有再次反弹。`
         };
     }
 
@@ -279,7 +279,7 @@ function buildAnalyticsResolutionPriorityVerificationStatus(row = {}, alertItem 
         tone: abnormalCount > 0 || latestStatusKey === 'abnormal' ? 'danger' : 'warning',
         summary: hasActiveAlert
             ? `${productName} 当前仍命中商品预警，说明这轮问题还没有真正收口。`
-            : `${productName} 最近处理结果还没有稳定回落，建议继续按验证方式复查。`
+            : `${productName} 最近处理结果还没有稳定回落，建议继续回看近期信号。`
     };
 }
 
@@ -308,7 +308,7 @@ function buildAnalyticsResolutionPriorityEvidence(row = {}, alertItem = {}, late
     }
 
     const productName = String(row?.productName || alertItem?.productName || latestEntry?.productName || '').trim() || '该商品';
-    return `${productName} 最近仍有需要继续确认的处理回写，建议按验证方式回看最新经营信号。`;
+    return `${productName} 最近仍有需要继续确认的处理回写，建议回看最新经营信号。`;
 }
 
 function buildAnalyticsResolutionPriorityTimeline(row = {}, alertItem = {}, latestEntry = {}, verificationState = {}) {
@@ -501,7 +501,7 @@ function renderAnalyticsResolutionPriorityProducts(entries = [], alertItems = []
                             </div>
                             <div class="analytics-writeback-priority__verification analytics-writeback-priority__verification--${escapeHtml(verificationState.tone || 'warning')}">
                                 <span class="analytics-status-chip analytics-status-chip--${escapeHtml(verificationState.tone || 'warning')}">${escapeHtml(verificationState.label || '仍待验证')}</span>
-                                <p>${escapeHtml(verificationState.summary || '请按下方验证方式继续复查。')}</p>
+                                <p>${escapeHtml(verificationState.summary || '请继续回看当前信号。')}</p>
                             </div>
                             <div class="analytics-writeback-priority__evidence">
                                 <span>最近一次验证依据</span>
@@ -515,20 +515,6 @@ function renderAnalyticsResolutionPriorityProducts(entries = [], alertItems = []
                                         <p>${escapeHtml(item?.summary || '')}</p>
                                     </div>
                                 `).join('')}
-                            </div>
-                            <div class="analytics-writeback-priority__checklist">
-                                <div class="analytics-writeback-priority__check">
-                                    <span>排前原因</span>
-                                    <p>${escapeHtml(rankReason)}</p>
-                                </div>
-                                <div class="analytics-writeback-priority__check">
-                                    <span>建议先做</span>
-                                    <p>${escapeHtml(recommendedAction)}</p>
-                                </div>
-                                <div class="analytics-writeback-priority__check">
-                                    <span>验证方式</span>
-                                    <p>${escapeHtml(verificationMethod)}</p>
-                                </div>
                             </div>
                             <div class="analytics-writeback-priority__actions">
                                 ${primaryAction
@@ -636,7 +622,7 @@ function buildAnalyticsProductAlertDigest(item = {}, summary = {}) {
     } else if (hasReview || String(item?.tone || '').trim().toLowerCase() === 'warning') {
         tone = 'warning';
         label = '待复查';
-        summaryText = `${productName || '该商品'} 最近问题已经回落，但还需要按验证方式继续复查是否会反弹。`;
+        summaryText = `${productName || '该商品'} 最近问题已经回落，但还需要继续复查是否会反弹。`;
     }
 
     const evidenceItems = [
@@ -748,30 +734,7 @@ function buildAnalyticsProductListGuidance(item = {}, options = {}) {
 }
 
 function renderAnalyticsProductInlineGuidance(guidance = {}) {
-    if (!guidance || typeof guidance !== 'object') {
-        return '';
-    }
-
-    return `
-        <div class="analytics-product-inline-guidance analytics-product-inline-guidance--${escapeHtml(guidance.statusTone || 'accent')}">
-            <div class="analytics-product-inline-guidance__head">
-                <span>经营建议</span>
-                <span class="analytics-status-chip analytics-status-chip--${escapeHtml(guidance.statusTone || 'accent')}">${escapeHtml(guidance.statusLabel || '经营观察')}</span>
-            </div>
-            <div class="analytics-product-inline-guidance__item">
-                <span>为什么重要</span>
-                <p>${escapeHtml(guidance.reason || '')}</p>
-            </div>
-            <div class="analytics-product-inline-guidance__item">
-                <span>建议先做</span>
-                <p>${escapeHtml(guidance.recommendation || '')}</p>
-            </div>
-            <div class="analytics-product-inline-guidance__item">
-                <span>验证方式</span>
-                <p>${escapeHtml(guidance.verification || '')}</p>
-            </div>
-        </div>
-    `;
+    return '';
 }
 
 function renderAnalyticsProductConclusionHistory(options = {}) {
@@ -783,9 +746,13 @@ function renderAnalyticsProductConclusionHistory(options = {}) {
     const limit = Math.max(1, Number(options?.limit || 6) || 6);
     const statusSummary = buildAnalyticsResolutionFeedbackStatusSummary(entries);
     const rows = entries.slice(0, limit);
+    const layoutClass = [
+        'analytics-product-detail-card',
+        options.layout === 'wide' ? 'analytics-product-detail-card--wide' : 'analytics-product-detail-card--feature'
+    ].filter(Boolean).join(' ');
 
     return `
-        <section class="analytics-product-detail-card analytics-product-detail-card--wide" id="productConclusionHistorySection">
+        <section class="${layoutClass}" id="productConclusionHistorySection">
             <div class="analytics-product-detail-card__head">
                 <strong>历史复查结论</strong>
                 <span>最近 ${escapeHtml(formatNumber(rows.length))} 条回写</span>
@@ -816,6 +783,81 @@ function renderAnalyticsProductConclusionHistory(options = {}) {
                 `).join('')}
             </div>
         </section>
+    `;
+}
+
+function renderAnalyticsProductDetailSection(options = {}) {
+    const content = String(options.content || '').trim();
+    if (!content) {
+        return '';
+    }
+
+    const sectionId = String(options.id || '').trim();
+    const eyebrow = String(options.eyebrow || '').trim();
+    const title = String(options.title || '').trim() || '详情分区';
+    const summary = String(options.summary || '').trim();
+    const meta = String(options.meta || '').trim();
+    const sectionClasses = ['analytics-product-detail-section', String(options.sectionClass || '').trim()].filter(Boolean).join(' ');
+    const gridClasses = ['analytics-product-detail-grid', String(options.gridClass || '').trim()].filter(Boolean).join(' ');
+
+    return `
+        <section class="${sectionClasses}"${sectionId ? ` id="${escapeHtml(sectionId)}"` : ''}>
+            <div class="analytics-product-detail-section__head">
+                <div class="analytics-product-detail-section__copy">
+                    ${eyebrow ? `<div class="analytics-product-detail-section__eyebrow">${escapeHtml(eyebrow)}</div>` : ''}
+                    <strong>${escapeHtml(title)}</strong>
+                    ${summary ? `<p>${escapeHtml(summary)}</p>` : ''}
+                </div>
+                ${meta ? `<span class="analytics-product-detail-section__meta">${escapeHtml(meta)}</span>` : ''}
+            </div>
+            <div class="${gridClasses}">
+                ${content}
+            </div>
+        </section>
+    `;
+}
+
+function renderAnalyticsProductDetailNavigator(items = [], options = {}) {
+    const safeItems = Array.isArray(items) ? items.filter((item) => item && typeof item === 'object') : [];
+    if (!safeItems.length) {
+        return '';
+    }
+
+    const activeTargetId = String(options.activeTargetId || '').trim();
+    const productId = String(options.productId || '').trim();
+    const productName = String(options.productName || '').trim();
+
+    return `
+        <div class="analytics-product-detail-nav" aria-label="单品详情分区导航">
+            ${safeItems.map((item) => {
+                const targetId = String(item.targetId || '').trim();
+                const hasDetailFocus = Object.prototype.hasOwnProperty.call(item, 'detailFocus');
+                const detailFocus = hasDetailFocus ? String(item.detailFocus || '').trim() : '';
+                const isActive = Boolean(activeTargetId) && activeTargetId === targetId;
+                return `
+                    <button
+                        type="button"
+                        class="analytics-product-detail-nav__button${isActive ? ' is-active' : ''}"
+                        data-admin-action="analytics-product-detail-focus-section"
+                        data-analytics-target-id="${escapeHtml(targetId)}"
+                        ${hasDetailFocus ? `data-analytics-detail-focus="${escapeHtml(detailFocus)}"` : ''}
+                        data-analytics-product-id="${escapeHtml(productId)}"
+                        data-analytics-product-name="${escapeHtml(productName)}"
+                        data-analytics-product-detail-nav-target="${escapeHtml(targetId)}"
+                        aria-pressed="${isActive ? 'true' : 'false'}"
+                    >
+                        <span class="analytics-product-detail-nav__icon">
+                            <i class="${escapeHtml(item.icon || 'fas fa-compass-drafting')}"></i>
+                        </span>
+                        <span class="analytics-product-detail-nav__copy">
+                            <span class="analytics-product-detail-nav__label">${escapeHtml(item.label || '详情分区')}</span>
+                            <span class="analytics-product-detail-nav__summary">${escapeHtml(item.summary || '')}</span>
+                        </span>
+                        ${item.metric ? `<span class="analytics-product-detail-nav__metric">${escapeHtml(item.metric)}</span>` : ''}
+                    </button>
+                `;
+            }).join('')}
+        </div>
     `;
 }
 
@@ -1257,11 +1299,430 @@ function getActiveAnalyticsProductDetailFocusTargetId() {
     return String(getAnalyticsProductDetailFocusState().focusTargetId || '').trim();
 }
 
+function getAnalyticsProductDetailSelectorState() {
+    if (!globalThis.__analyticsProductDetailSelectorState || typeof globalThis.__analyticsProductDetailSelectorState !== 'object') {
+        globalThis.__analyticsProductDetailSelectorState = {
+            products: new Map()
+        };
+    }
+
+    const state = globalThis.__analyticsProductDetailSelectorState;
+    if (!(state.products instanceof Map)) {
+        state.products = new Map();
+    }
+    return state;
+}
+
+function normalizeAnalyticsProductDetailCandidate(candidate = {}) {
+    const productId = String(candidate?.product_id || candidate?.productId || '').trim();
+    const productName = String(candidate?.product_name || candidate?.productName || '').trim();
+    if (!productId) {
+        return null;
+    }
+
+    return {
+        productId,
+        productName: productName || productId
+    };
+}
+
+function getAnalyticsProductDetailCandidates(options = {}) {
+    const activeProductId = String(options.activeProductId || activeAnalyticsProductId || '').trim();
+    const activeProductName = String(options.activeProductName || activeAnalyticsProductName || activeProductId).trim();
+    const limit = Math.max(1, Number(options.limit) || 40);
+    const rows = Array.from(getAnalyticsProductDetailSelectorState().products.values()).reverse();
+
+    if (activeProductId && !rows.some((item) => item.productId === activeProductId)) {
+        rows.unshift({
+            productId: activeProductId,
+            productName: activeProductName || activeProductId
+        });
+    }
+
+    return rows.slice(0, limit);
+}
+
+function getAnalyticsProductDetailCandidateById(productId = '') {
+    const normalizedProductId = String(productId || '').trim();
+    if (!normalizedProductId) {
+        return null;
+    }
+
+    const candidate = getAnalyticsProductDetailSelectorState().products.get(normalizedProductId);
+    if (candidate) {
+        return candidate;
+    }
+
+    if (normalizedProductId === String(activeAnalyticsProductId || '').trim()) {
+        return {
+            productId: normalizedProductId,
+            productName: String(activeAnalyticsProductName || normalizedProductId).trim() || normalizedProductId
+        };
+    }
+
+    return null;
+}
+
+function resolveAnalyticsProductDetailSelectorLabel(candidates = [], activeProductId = '', activeProductName = '') {
+    const normalizedActiveProductId = String(activeProductId || activeAnalyticsProductId || '').trim();
+    const normalizedActiveProductName = String(activeProductName || activeAnalyticsProductName || normalizedActiveProductId).trim();
+    const matchedCandidate = (Array.isArray(candidates) ? candidates : []).find((candidate) => candidate.productId === normalizedActiveProductId);
+    return matchedCandidate?.productName || normalizedActiveProductName || normalizedActiveProductId || '选择商品';
+}
+
+function buildAnalyticsProductDetailSelectorOptionsMarkup(candidates = [], options = {}) {
+    const normalizedActiveProductId = String(options.activeProductId || activeAnalyticsProductId || '').trim();
+    const detailFocus = String(options.detailFocus || getActiveAnalyticsProductDetailFocus() || '').trim();
+    const focusTargetId = String(options.focusTargetId || getActiveAnalyticsProductDetailFocusTargetId() || '').trim() || 'productDetailSectionOperating';
+    return (Array.isArray(candidates) ? candidates : []).map((candidate) => {
+        const isSelected = candidate.productId === normalizedActiveProductId;
+        return `
+            <button
+                type="button"
+                class="analytics-product-detail__selector-option${isSelected ? ' is-selected' : ''}"
+                data-admin-action="analytics-select-product-detail-option"
+                data-analytics-product-id="${escapeHtml(candidate.productId || '')}"
+                data-analytics-product-name="${escapeHtml(candidate.productName || candidate.productId || '未命名商品')}"
+                data-analytics-detail-focus="${escapeHtml(detailFocus)}"
+                data-analytics-target-id="${escapeHtml(focusTargetId)}"
+                role="option"
+                aria-selected="${isSelected ? 'true' : 'false'}"
+            >
+                <span class="analytics-product-detail__selector-option-name">${escapeHtml(candidate.productName || candidate.productId || '未命名商品')}</span>
+                <span class="analytics-product-detail__selector-option-id">${escapeHtml(candidate.productId || '')}</span>
+            </button>
+        `;
+    }).join('');
+}
+
+function buildAnalyticsProductDetailSelectorMetaText(candidates = []) {
+    const count = Array.isArray(candidates) ? candidates.length : 0;
+    if (count <= 0) {
+        return '当前还没有可切换的商品';
+    }
+    if (count === 1) {
+        return '当前仅收录 1 个已加载商品';
+    }
+    return `已收录 ${formatNumber(count)} 个已加载商品，可直接切换`;
+}
+
+function refreshAnalyticsProductDetailSelectorState(options = {}) {
+    const dropdown = document.querySelector('[data-analytics-product-detail-dropdown]');
+    if (!(dropdown instanceof HTMLElement)) {
+        return false;
+    }
+
+    const activeProductId = String(options.activeProductId || activeAnalyticsProductId || dropdown.dataset.activeProductId || '').trim();
+    const activeProductName = String(options.activeProductName || activeAnalyticsProductName || activeProductId).trim();
+    const detailFocus = Object.prototype.hasOwnProperty.call(options || {}, 'detailFocus')
+        ? String(options.detailFocus || '').trim()
+        : String(dropdown.dataset.analyticsDetailFocus || getActiveAnalyticsProductDetailFocus() || '').trim();
+    const focusTargetId = String(
+        Object.prototype.hasOwnProperty.call(options || {}, 'focusTargetId')
+            ? options.focusTargetId
+            : (dropdown.dataset.analyticsTargetId || getActiveAnalyticsProductDetailFocusTargetId() || '')
+    ).trim() || 'productDetailSectionOperating';
+    const candidates = getAnalyticsProductDetailCandidates({
+        activeProductId,
+        activeProductName
+    });
+    const trigger = dropdown.querySelector('[data-admin-action="analytics-toggle-product-detail-dropdown"]');
+    const valueNode = dropdown.querySelector('[data-analytics-product-detail-selector-value]');
+    const menu = dropdown.querySelector('[data-analytics-product-detail-selector-menu]');
+    const isDisabled = candidates.length <= 1;
+
+    dropdown.dataset.analyticsDetailFocus = detailFocus;
+    dropdown.dataset.analyticsTargetId = focusTargetId;
+    dropdown.dataset.activeProductId = activeProductId;
+    dropdown.classList.toggle('is-disabled', isDisabled);
+    dropdown.classList.remove('is-open');
+
+    if (trigger instanceof HTMLElement) {
+        trigger.setAttribute('aria-expanded', 'false');
+        if ('disabled' in trigger) {
+            trigger.disabled = isDisabled;
+        }
+    }
+
+    if (valueNode) {
+        valueNode.textContent = resolveAnalyticsProductDetailSelectorLabel(candidates, activeProductId, activeProductName);
+    }
+
+    if (menu) {
+        menu.innerHTML = buildAnalyticsProductDetailSelectorOptionsMarkup(candidates, {
+            activeProductId,
+            detailFocus,
+            focusTargetId
+        });
+    }
+
+    const metaNode = document.querySelector('[data-analytics-product-detail-selector-meta]');
+    if (metaNode) {
+        metaNode.textContent = buildAnalyticsProductDetailSelectorMetaText(candidates);
+    }
+
+    return true;
+}
+
+window.refreshAnalyticsProductDetailSelectorState = refreshAnalyticsProductDetailSelectorState;
+
+function closeAnalyticsProductDetailSelector() {
+    const dropdown = document.querySelector('[data-analytics-product-detail-dropdown]');
+    if (!(dropdown instanceof HTMLElement)) {
+        return false;
+    }
+
+    dropdown.classList.remove('is-open');
+    const trigger = dropdown.querySelector('[data-admin-action="analytics-toggle-product-detail-dropdown"]');
+    if (trigger instanceof HTMLElement) {
+        trigger.setAttribute('aria-expanded', 'false');
+    }
+    return true;
+}
+
+window.closeAnalyticsProductDetailSelector = closeAnalyticsProductDetailSelector;
+
+function toggleAnalyticsProductDetailSelector(forceOpen) {
+    const dropdown = document.querySelector('[data-analytics-product-detail-dropdown]');
+    if (!(dropdown instanceof HTMLElement) || dropdown.classList.contains('is-disabled')) {
+        return false;
+    }
+
+    const nextOpen = typeof forceOpen === 'boolean'
+        ? forceOpen
+        : !dropdown.classList.contains('is-open');
+    dropdown.classList.toggle('is-open', nextOpen);
+    const trigger = dropdown.querySelector('[data-admin-action="analytics-toggle-product-detail-dropdown"]');
+    if (trigger instanceof HTMLElement) {
+        trigger.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
+    }
+    return nextOpen;
+}
+
+window.toggleAnalyticsProductDetailSelector = toggleAnalyticsProductDetailSelector;
+
+function registerAnalyticsProductDetailCandidates(candidates = [], options = {}) {
+    const rows = Array.isArray(candidates) ? candidates : [];
+    if (rows.length === 0) {
+        return getAnalyticsProductDetailCandidates(options);
+    }
+
+    const state = getAnalyticsProductDetailSelectorState();
+    let didChange = false;
+    for (const row of rows) {
+        const normalizedCandidate = normalizeAnalyticsProductDetailCandidate(row);
+        if (!normalizedCandidate) {
+            continue;
+        }
+
+        const previous = state.products.get(normalizedCandidate.productId) || null;
+        state.products.delete(normalizedCandidate.productId);
+        state.products.set(normalizedCandidate.productId, {
+            productId: normalizedCandidate.productId,
+            productName: normalizedCandidate.productName || previous?.productName || normalizedCandidate.productId
+        });
+        didChange = true;
+    }
+
+    while (state.products.size > 40) {
+        const oldestKey = state.products.keys().next().value;
+        if (!oldestKey) {
+            break;
+        }
+        state.products.delete(oldestKey);
+    }
+
+    if (didChange) {
+        refreshAnalyticsProductDetailSelectorState({
+            activeProductId: options.activeProductId,
+            activeProductName: options.activeProductName,
+            detailFocus: options.detailFocus,
+            focusTargetId: options.focusTargetId
+        });
+    }
+
+    return getAnalyticsProductDetailCandidates(options);
+}
+
+function renderAnalyticsProductDetailSelector(options = {}) {
+    const activeProductId = String(options.productId || activeAnalyticsProductId || '').trim();
+    const activeProductName = String(options.productName || activeAnalyticsProductName || activeProductId).trim();
+    const detailFocus = String(options.detailFocus || getActiveAnalyticsProductDetailFocus() || '').trim();
+    const focusTargetId = String(options.focusTargetId || getActiveAnalyticsProductDetailFocusTargetId() || '').trim() || 'productDetailSectionOperating';
+    const candidates = getAnalyticsProductDetailCandidates({
+        activeProductId,
+        activeProductName
+    });
+    const selectedLabel = resolveAnalyticsProductDetailSelectorLabel(candidates, activeProductId, activeProductName);
+    const isDisabled = candidates.length <= 1;
+
+    return `
+        <div class="analytics-product-detail__selector">
+            <div class="analytics-product-detail__selector-label">切换单品</div>
+            <div
+                class="analytics-product-detail__dropdown${isDisabled ? ' is-disabled' : ''}"
+                data-analytics-product-detail-dropdown
+                data-analytics-detail-focus="${escapeHtml(detailFocus)}"
+                data-analytics-target-id="${escapeHtml(focusTargetId)}"
+                data-active-product-id="${escapeHtml(activeProductId)}"
+            >
+                <button
+                    type="button"
+                    class="analytics-product-detail__selector-trigger"
+                    data-admin-action="analytics-toggle-product-detail-dropdown"
+                    aria-haspopup="listbox"
+                    aria-expanded="false"
+                    ${isDisabled ? 'disabled' : ''}
+                >
+                    <span class="analytics-product-detail__selector-trigger-main">
+                        <span class="analytics-product-detail__selector-icon"><i class="fas fa-cubes" aria-hidden="true"></i></span>
+                        <span class="analytics-product-detail__selector-value" data-analytics-product-detail-selector-value>${escapeHtml(selectedLabel)}</span>
+                    </span>
+                    <i class="fas fa-chevron-down analytics-product-detail__selector-arrow" aria-hidden="true"></i>
+                </button>
+                <div class="analytics-product-detail__selector-menu" data-analytics-product-detail-selector-menu role="listbox" aria-label="切换单品">
+                    ${buildAnalyticsProductDetailSelectorOptionsMarkup(candidates, {
+                        activeProductId,
+                        detailFocus,
+                        focusTargetId
+                    })}
+                </div>
+            </div>
+            <div class="analytics-product-detail__selector-meta" data-analytics-product-detail-selector-meta>
+                ${escapeHtml(buildAnalyticsProductDetailSelectorMetaText(candidates))}
+            </div>
+        </div>
+    `;
+}
+
+function refreshAnalyticsProductDetailNavigatorState(activeTargetId = '') {
+    const normalizedTargetId = String(activeTargetId || getActiveAnalyticsProductDetailFocusTargetId() || '').trim();
+    document.querySelectorAll('[data-analytics-product-detail-nav-target]').forEach((node) => {
+        const isActive = Boolean(normalizedTargetId) && node.dataset.analyticsProductDetailNavTarget === normalizedTargetId;
+        node.classList.toggle('is-active', isActive);
+        node.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+}
+
+window.refreshAnalyticsProductDetailNavigatorState = refreshAnalyticsProductDetailNavigatorState;
+
+function focusAnalyticsProductDetailSection(sectionId = '', options = {}) {
+    const normalizedSectionId = String(sectionId || '').trim();
+    if (!normalizedSectionId) {
+        return false;
+    }
+
+    const hasDetailFocus = Object.prototype.hasOwnProperty.call(options || {}, 'detailFocus');
+    const nextDetailFocus = hasDetailFocus
+        ? String(options.detailFocus || '').trim()
+        : getActiveAnalyticsProductDetailFocus();
+    const nextProductId = String(options.productId || activeAnalyticsProductId || '').trim();
+    const nextProductName = String(options.productName || activeAnalyticsProductName || nextProductId).trim();
+
+    activeAnalyticsProductId = nextProductId || activeAnalyticsProductId;
+    activeAnalyticsProductName = nextProductName || activeAnalyticsProductName;
+    setActiveAnalyticsProductDetailFocus(nextDetailFocus, normalizedSectionId);
+    refreshAnalyticsProductDetailNavigatorState(normalizedSectionId);
+
+    if (typeof syncAnalyticsRouteState === 'function' && nextProductId) {
+        const nextRouteState = {
+            view: 'product',
+            sectionId: normalizedSectionId,
+            productId: nextProductId
+        };
+        if (hasDetailFocus) {
+            nextRouteState.detailFocus = nextDetailFocus;
+        }
+        syncAnalyticsRouteState(nextRouteState);
+    }
+
+    const meta = document.getElementById('productDetailMeta');
+    if (meta) {
+        const focusConfig = getAnalyticsProductDetailFocusConfig(nextDetailFocus);
+        meta.textContent = `${activeAnalyticsProductName || nextProductId || '当前商品'} · 经营与运维双视角${focusConfig ? ` · ${focusConfig.title}` : ''}`;
+    }
+
+    refreshAnalyticsProductDetailSelectorState({
+        activeProductId: nextProductId,
+        activeProductName: nextProductName,
+        detailFocus: nextDetailFocus,
+        focusTargetId: normalizedSectionId
+    });
+
+    if (typeof focusAnalyticsDestinationTarget === 'function') {
+        return focusAnalyticsDestinationTarget(normalizedSectionId, {
+            block: options.block || 'start'
+        });
+    }
+
+    return false;
+}
+
+window.focusAnalyticsProductDetailSection = focusAnalyticsProductDetailSection;
+
+function changeAnalyticsProductDetailSelection(productId = '', options = {}) {
+    const normalizedProductId = String(productId || '').trim();
+    if (!normalizedProductId) {
+        return false;
+    }
+
+    closeAnalyticsProductDetailSelector();
+
+    const candidate = getAnalyticsProductDetailCandidateById(normalizedProductId);
+    const productName = String(options.productName || candidate?.productName || activeAnalyticsProductName || normalizedProductId).trim();
+    const detailFocus = Object.prototype.hasOwnProperty.call(options || {}, 'detailFocus')
+        ? String(options.detailFocus || '').trim()
+        : getActiveAnalyticsProductDetailFocus();
+    const focusTargetId = String(options.focusTargetId || getActiveAnalyticsProductDetailFocusTargetId() || '').trim() || 'productDetailSectionOperating';
+
+    if (normalizedProductId === String(activeAnalyticsProductId || '').trim()) {
+        refreshAnalyticsProductDetailSelectorState({
+            activeProductId: normalizedProductId,
+            activeProductName: productName,
+            detailFocus,
+            focusTargetId
+        });
+        return true;
+    }
+
+    return openAnalyticsProductDetail(normalizedProductId, {
+        productName,
+        detailFocus,
+        focusTargetId,
+        focus: false
+    });
+}
+
+window.changeAnalyticsProductDetailSelection = changeAnalyticsProductDetailSelection;
+
+document.addEventListener('click', (event) => {
+    const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+    if (target?.closest?.('[data-analytics-product-detail-dropdown]')) {
+        return;
+    }
+    closeAnalyticsProductDetailSelector();
+});
+
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+        closeAnalyticsProductDetailSelector();
+    }
+});
+
 function resetAnalyticsProductDetailRuntime(options = {}) {
     activeAnalyticsProductId = '';
     activeAnalyticsProductName = '';
     analyticsProductDetailRequestId += 1;
     setActiveAnalyticsProductDetailFocus('', '');
+    getAnalyticsProductDetailSelectorState().products.clear();
+    closeAnalyticsProductDetailSelector();
+    refreshAnalyticsProductDetailNavigatorState('');
+    refreshAnalyticsProductDetailSelectorState({
+        activeProductId: '',
+        activeProductName: '',
+        detailFocus: '',
+        focusTargetId: ''
+    });
 
     if (options.resetPanel === false) {
         return;
@@ -1749,26 +2210,6 @@ function renderAnalyticsProductAlerts(alertItems = [], summary = {}) {
                                         : ''}
                                 </div>`
                                 : ''}
-                            ${guidance
-                                ? `<div class="analytics-product-alert-card__guidance">
-                                    <div class="analytics-product-alert-card__guidance-head">
-                                        <span>就地经营建议</span>
-                                        <span class="analytics-status-chip analytics-status-chip--${escapeHtml(guidance.statusTone || 'warning')}">${escapeHtml(guidance.statusLabel || '仍待验证')}</span>
-                                    </div>
-                                    <div class="analytics-product-alert-card__guidance-item">
-                                        <span>为什么重要</span>
-                                        <p>${escapeHtml(guidance.reason || '')}</p>
-                                    </div>
-                                    <div class="analytics-product-alert-card__guidance-item">
-                                        <span>建议先做</span>
-                                        <p>${escapeHtml(guidance.recommendation || '')}</p>
-                                    </div>
-                                    <div class="analytics-product-alert-card__guidance-item">
-                                        <span>验证方式</span>
-                                        <p>${escapeHtml(guidance.verification || '')}</p>
-                                    </div>
-                                </div>`
-                                : ''}
                             ${renderAnalyticsProductAlertActions(item.actions)}
                         </article>
                     `;
@@ -2136,6 +2577,7 @@ async function loadProductAlerts() {
         }
 
         const alertItems = buildAnalyticsProductAlertItems({ summary, productMatrix, healthPayloads, rankPayloads });
+        registerAnalyticsProductDetailCandidates(alertItems);
         container.innerHTML = renderAnalyticsProductAlerts(alertItems, summary);
         if (meta) {
             meta.textContent = alertItems.length > 0
@@ -2789,6 +3231,8 @@ function renderAnalyticsProductHealth(payloads = {}) {
 }
 
 function maybePrimeAnalyticsProductDetail(rows = []) {
+    registerAnalyticsProductDetailCandidates(rows);
+
     if (String(activeAnalyticsProductId || '').trim()) {
         return;
     }
@@ -3254,13 +3698,380 @@ function renderAnalyticsProductDetailPanel(payload = {}, options = {}) {
     const conclusionHistoryMarkup = renderAnalyticsProductConclusionHistory({
         productId: summary.product_id || options.productId || '',
         productName: summary.product_name || options.productName || '',
-        limit: 6
+        limit: 6,
+        layout: 'feature'
     });
+    const productId = String(summary.product_id || options.productId || '').trim();
+    const productName = String(summary.product_name || options.productName || '').trim();
     const contentFocusTokens = [
         summary.top_source_page ? renderAnalyticsProductStaticToken(summary.top_source_page) : '',
         summary.top_source_channel ? renderAnalyticsProductStaticToken(summary.top_source_channel) : '',
         summary.top_prompt_source ? renderAnalyticsProductPromptSourceChip(summary.top_prompt_source) : ''
     ].filter(Boolean);
+    const detailSectionItems = [
+        {
+            key: 'operating',
+            label: '经营概览',
+            summary: '漏斗、站点、来源与带货拆解',
+            metric: `Prompt ${formatNumber(promptIds.length)}`,
+            icon: 'fas fa-chart-line',
+            targetId: 'productDetailSectionOperating'
+        },
+        {
+            key: 'risk',
+            label: '风险与履约',
+            summary: '退款、履约、复查与采集状态',
+            metric: `风险 ${formatNumber(summary.delivery_risk_count || 0)}`,
+            icon: 'fas fa-triangle-exclamation',
+            targetId: 'productDetailSectionRisk'
+        },
+        {
+            key: 'user',
+            label: '用户承接',
+            summary: '买家样本、分层与后续去向',
+            metric: `买家 ${formatNumber(summary.buyer_count || buyerSnapshot.length || 0)}`,
+            icon: 'fas fa-user-group',
+            targetId: 'productDetailSectionUsers'
+        },
+        {
+            key: 'trend',
+            label: '趋势与订单',
+            summary: '近窗波动、Prompt 明细与近期订单',
+            metric: `订单 ${formatNumber(recentOrders.length)}`,
+            icon: 'fas fa-wave-square',
+            targetId: 'productDetailSectionTrend'
+        }
+    ];
+    const activeDetailSectionId = detailSectionItems.some((item) => item.targetId === String(options.focusTargetId || '').trim())
+        ? String(options.focusTargetId || '').trim()
+        : detailSectionItems[0].targetId;
+    const detailNavigatorMarkup = renderAnalyticsProductDetailNavigator(detailSectionItems, {
+        activeTargetId: activeDetailSectionId,
+        productId,
+        productName
+    });
+    const detailSelectorMarkup = renderAnalyticsProductDetailSelector({
+        productId,
+        productName,
+        detailFocus,
+        focusTargetId: activeDetailSectionId
+    });
+    const funnelCard = `
+        <section class="analytics-product-detail-card analytics-product-detail-card--feature">
+            <div class="analytics-product-detail-card__head">
+                <strong>单品漏斗</strong>
+                <span>真实口径</span>
+            </div>
+            <div class="analytics-product-funnel-stage-list analytics-product-funnel-stage-list--compact">
+                ${(Array.isArray(funnelSummary.stages) ? funnelSummary.stages : []).map((stage, index, rows) => (
+                    renderAnalyticsProductFunnelStage(stage, Math.max(0, Number(rows[0]?.value || 0)))
+                )).join('') || renderHintState('fas fa-filter-circle-dollar', '当前窗口暂无单品漏斗数据')}
+            </div>
+        </section>
+    `;
+    const siteBreakdownCard = `
+        <section class="analytics-product-detail-card">
+            <div class="analytics-product-detail-card__head">
+                <strong>站点拆分</strong>
+                <span>CN / INTL</span>
+            </div>
+            <div class="analytics-product-site-grid analytics-product-site-grid--detail">
+                ${siteSnapshots.map((snapshot) => `
+                    <article class="analytics-product-site-card">
+                        <div class="analytics-product-site-card__top">
+                            <strong>${escapeHtml(snapshot.label || snapshot.site || '站点')}</strong>
+                        </div>
+                        <div class="analytics-product-site-card__metrics">
+                            <span>GMV ${formatNumber(snapshot.summary?.gmv_points || 0)}</span>
+                            <span>订单 ${formatNumber(snapshot.summary?.order_count || 0)}</span>
+                            <span>买家 ${formatNumber(snapshot.summary?.buyer_count || 0)}</span>
+                            <span>转化 ${formatPercent(snapshot.summary?.purchase_conversion_rate || 0)}</span>
+                        </div>
+                    </article>
+                `).join('') || renderHintState('fas fa-diagram-project', '暂无站点拆分')}
+            </div>
+        </section>
+    `;
+    const relatedPromptCard = `
+        <section class="analytics-product-detail-card">
+            <div class="analytics-product-detail-card__head">
+                <strong>相关 Prompt</strong>
+                <span>${formatNumber(promptIds.length)} 个</span>
+            </div>
+            <div class="analytics-product-token-list">
+                ${promptIds.length > 0
+                    ? promptIds.map((promptId) => renderAnalyticsProductPromptChip(promptId)).join('')
+                    : renderHintState('fas fa-wand-magic-sparkles', '当前窗口暂无关联 Prompt')}
+            </div>
+        </section>
+    `;
+    const sourceAttributionCard = `
+        <section class="analytics-product-detail-card analytics-product-detail-card--feature">
+            <div class="analytics-product-detail-card__head">
+                <strong>来源归因</strong>
+                <span>${formatNumber(sourcePages.length + sourceChannels.length + promptSources.length)} 组</span>
+            </div>
+            <div class="analytics-product-detail-subsection">
+                <div class="analytics-product-detail-subsection__label">来源页面</div>
+                <div class="analytics-product-token-list">
+                    ${sourcePages.length > 0
+                        ? sourcePages.map((item) => renderAnalyticsProductStaticToken(item)).join('')
+                        : renderHintState('fas fa-map-signs', '当前窗口暂无来源页面样本')}
+                </div>
+            </div>
+            <div class="analytics-product-detail-subsection">
+                <div class="analytics-product-detail-subsection__label">来源渠道</div>
+                <div class="analytics-product-token-list">
+                    ${sourceChannels.length > 0
+                        ? sourceChannels.map((item) => renderAnalyticsProductStaticToken(item)).join('')
+                        : renderHintState('fas fa-route', '当前窗口暂无来源渠道样本')}
+                </div>
+            </div>
+            <div class="analytics-product-detail-subsection">
+                <div class="analytics-product-detail-subsection__label">来源 Prompt</div>
+                <div class="analytics-product-token-list">
+                    ${promptSources.length > 0
+                        ? promptSources.map((item) => renderAnalyticsProductPromptSourceChip(item)).join('')
+                        : renderHintState('fas fa-wand-magic-sparkles', '当前窗口暂无来源 Prompt')}
+                </div>
+            </div>
+        </section>
+    `;
+    const contentBreakdownCard = `
+        <section class="analytics-product-detail-card analytics-product-detail-card--feature" id="productContentBreakdownSection">
+            <div class="analytics-product-detail-card__head">
+                <strong>内容带货拆解</strong>
+                <span>来源 / Prompt / GMV</span>
+            </div>
+            <div class="analytics-product-metric-grid analytics-product-metric-grid--detail">
+                ${renderAnalyticsProductMetricCard('来源 Prompt', formatNumber(summary.content_assisted_prompt_count || 0), `主 Prompt ${summary.top_prompt_id || '—'}`, 'default')}
+                ${renderAnalyticsProductMetricCard('详情触达', formatNumber(summary.content_assisted_detail_view_count || 0), `购买意图 ${formatNumber(summary.content_assisted_purchase_click_count || 0)}`, 'accent')}
+                ${renderAnalyticsProductMetricCard('归因支付', formatNumber(summary.content_assisted_purchase_success_count || 0), `归因 GMV ${formatNumber(summary.content_assisted_gmv_points || 0)}`, 'success')}
+            </div>
+            <div class="analytics-product-detail-subsection">
+                <div class="analytics-product-detail-subsection__label">关键来源</div>
+                <div class="analytics-product-token-list">
+                    ${contentFocusTokens.length > 0
+                        ? contentFocusTokens.join('')
+                        : renderHintState('fas fa-wand-magic-sparkles', '当前窗口暂无内容带货来源样本')}
+                </div>
+            </div>
+        </section>
+    `;
+    const riskBreakdownCard = `
+        <section class="analytics-product-detail-card analytics-product-detail-card--wide" id="productRiskBreakdownSection">
+            <div class="analytics-product-detail-card__head">
+                <strong>售后与履约拆解</strong>
+                <span>退款 / 履约状态</span>
+            </div>
+            <div class="analytics-product-detail-subsection">
+                <div class="analytics-product-detail-subsection__label">退款状态</div>
+                <div class="analytics-product-event-list">
+                    ${refundBreakdown.length > 0
+                        ? refundBreakdown.map((item) => renderAnalyticsProductStatusBreakdownRow(item, {
+                            kind: 'refund',
+                            summary
+                        })).join('')
+                        : renderHintState('fas fa-rotate-left', '当前窗口暂无退款样本')}
+                </div>
+            </div>
+            <div class="analytics-product-detail-subsection">
+                <div class="analytics-product-detail-subsection__label">履约状态</div>
+                <div class="analytics-product-event-list">
+                    ${deliveryBreakdown.length > 0
+                        ? deliveryBreakdown.map((item) => renderAnalyticsProductStatusBreakdownRow(item, {
+                            kind: 'delivery',
+                            summary
+                        })).join('')
+                        : renderHintState('fas fa-truck-fast', '当前窗口暂无履约状态样本')}
+                </div>
+            </div>
+        </section>
+    `;
+    const eventStageCard = `
+        <section class="analytics-product-detail-card">
+            <div class="analytics-product-detail-card__head">
+                <strong>事件采集状态</strong>
+                <span>${formatNumber(eventStageSummary.length)} 段</span>
+            </div>
+            <div class="analytics-product-event-list">
+                ${eventStageSummary.length > 0
+                    ? eventStageSummary.map((stage) => renderAnalyticsProductEventStageRow(stage)).join('')
+                    : renderHintState('fas fa-wave-square', '当前窗口暂无商品事件采集摘要')}
+            </div>
+        </section>
+    `;
+    const buyerCard = `
+        <section class="analytics-product-detail-card analytics-product-detail-card--feature">
+            <div class="analytics-product-detail-card__head">
+                <strong>购买用户</strong>
+                <span>${formatNumber(buyerSnapshot.length)} 个样本</span>
+            </div>
+            <div class="analytics-product-token-list">
+                ${buyerSnapshot.length > 0
+                    ? buyerSnapshot.map((buyer) => renderAnalyticsProductBuyerChip(buyer, {
+                        sourceLabel: '商品详情 / 购买用户',
+                        summary: '该用户来自当前单品的成交样本，适合继续回看单品成交、退款和履约承接是否稳定。',
+                        productId: String(summary.product_id || options.productId || '').trim(),
+                        productName: String(summary.product_name || options.productName || '').trim(),
+                        destination: 'analytics-product-detail',
+                        destinationContext: {
+                            productId: String(summary.product_id || options.productId || '').trim(),
+                            productName: String(summary.product_name || options.productName || '').trim(),
+                            focusTargetId: 'productDetailPanelSection'
+                        },
+                        actionLabel: '回到单品详情',
+                        verificationMethod: '回到单品详情，继续查看成交、退款和履约拆解，确认这位用户对应的经营信号是否已经收口。'
+                    })).join('')
+                    : renderHintState('fas fa-user-group', '当前窗口暂无购买用户样本')}
+            </div>
+        </section>
+    `;
+    const buyerSegmentCard = `
+        <section class="analytics-product-detail-card">
+            <div class="analytics-product-detail-card__head">
+                <strong>购买用户分层</strong>
+                <span>当前窗口</span>
+            </div>
+            <div class="analytics-product-metric-grid analytics-product-metric-grid--detail">
+                ${buyerSegmentSummary.length > 0
+                    ? buyerSegmentSummary.map((item) => (
+                        renderAnalyticsProductMetricCard(item.label || '用户分层', formatNumber(item.count || 0), item.note || '', item.tone || 'default')
+                    )).join('')
+                    : renderHintState('fas fa-people-arrows', '当前窗口暂无购买用户分层样本')}
+            </div>
+        </section>
+    `;
+    const userDestinationCard = `
+        <section class="analytics-product-detail-card analytics-product-detail-card--wide">
+            <div class="analytics-product-detail-card__head">
+                <strong>用户去向</strong>
+                <span>首单入口 / 跨商品复购</span>
+            </div>
+            <div class="analytics-product-detail-subsection">
+                <div class="analytics-product-detail-subsection__label">首单入口分布</div>
+                <div class="analytics-product-destination-list">
+                    ${firstPurchaseDestinations.length > 0
+                        ? firstPurchaseDestinations.map((row) => renderAnalyticsProductDestinationRow(row, { mode: 'first-purchase' })).join('')
+                        : renderHintState('fas fa-compass', '当前窗口暂无首单入口样本')}
+                </div>
+            </div>
+            <div class="analytics-product-detail-subsection">
+                <div class="analytics-product-detail-subsection__label">跨商品复购去向</div>
+                <div class="analytics-product-destination-list">
+                    ${crossSellDestinations.length > 0
+                        ? crossSellDestinations.map((row) => renderAnalyticsProductDestinationRow(row, { mode: 'cross-sell' })).join('')
+                        : renderHintState('fas fa-arrows-left-right-to-line', '当前窗口暂无跨商品复购样本')}
+                </div>
+            </div>
+            <div class="analytics-product-detail-subsection">
+                <div class="analytics-product-detail-subsection__label">后续复购商品</div>
+                <div class="analytics-product-destination-list">
+                    ${postPurchaseDestinations.length > 0
+                        ? postPurchaseDestinations.map((row) => renderAnalyticsProductDestinationRow(row, { mode: 'post-purchase' })).join('')
+                        : renderHintState('fas fa-timeline', '当前窗口暂无后续复购样本')}
+                </div>
+            </div>
+        </section>
+    `;
+    const promptAttributionCard = `
+        <section class="analytics-product-detail-card">
+            <div class="analytics-product-detail-card__head">
+                <strong>来源 Prompt 归因明细</strong>
+                <span>${formatNumber(promptSources.length)} 条</span>
+            </div>
+            <div class="analytics-product-prompt-list">
+                ${promptSources.length > 0
+                    ? promptSources.map((item) => renderAnalyticsProductPromptAttributionRow(item)).join('')
+                    : renderHintState('fas fa-wand-magic-sparkles', '当前窗口暂无来源 Prompt 归因明细')}
+            </div>
+        </section>
+    `;
+    const trendCard = `
+        <section class="analytics-product-detail-card analytics-product-detail-card--feature">
+            <div class="analytics-product-detail-card__head">
+                <strong>近窗趋势</strong>
+                <span>最近 ${formatNumber(trendRows.length)} 天</span>
+            </div>
+            <div class="analytics-product-trend-list">
+                ${trendRows.length > 0
+                    ? trendRows.map((row) => `
+                        <div class="analytics-product-trend-row">
+                            <span>${escapeHtml(formatDate(row.day))}</span>
+                            <span>浏览 ${formatNumber(row.view_count || 0)}</span>
+                            <span>订单 ${formatNumber(row.order_count || 0)}</span>
+                            <span>GMV ${formatNumber(row.gmv_points || 0)}</span>
+                            <span>发货 ${formatNumber(row.delivery_success_count || 0)}</span>
+                        </div>
+                    `).join('')
+                    : renderHintState('fas fa-chart-line', '当前窗口暂无单品趋势数据')}
+            </div>
+        </section>
+    `;
+    const recentOrdersCard = `
+        <section class="analytics-product-detail-card analytics-product-detail-card--wide">
+            <div class="analytics-product-detail-card__head">
+                <strong>近期订单</strong>
+                <span>${formatNumber(recentOrders.length)} 笔</span>
+            </div>
+            <div class="analytics-product-order-list">
+                ${recentOrders.length > 0
+                    ? recentOrders.map((order) => renderAnalyticsProductOrderRow(order, {
+                        sourceLabel: '商品详情 / 最近订单',
+                        summary: '该用户来自当前单品的最近订单样本，适合结合订单、履约和售后继续判断这次成交是否稳定。',
+                        productId: String(summary.product_id || options.productId || '').trim(),
+                        productName: String(summary.product_name || options.productName || '').trim(),
+                        destination: 'analytics-product-detail',
+                        destinationContext: {
+                            productId: String(summary.product_id || options.productId || '').trim(),
+                            productName: String(summary.product_name || options.productName || '').trim(),
+                            focusTargetId: 'productDetailPanelSection'
+                        },
+                        actionLabel: '回到单品详情',
+                        verificationMethod: '回到单品详情，对照最近订单、退款和履约状态，确认该用户对应的订单是否已经顺利承接。'
+                    })).join('')
+                    : renderHintState('fas fa-receipt', '当前窗口暂无近期订单')}
+            </div>
+        </section>
+    `;
+    const detailSectionsMarkup = [
+        renderAnalyticsProductDetailSection({
+            id: 'productDetailSectionOperating',
+            sectionClass: 'analytics-nav-focus-target',
+            eyebrow: '经营',
+            title: '经营概览',
+            summary: '先看单品漏斗、站点结构、来源归因和内容带货，快速判断这件商品当前处在哪一段经营承接里。',
+            meta: `站点 ${formatNumber(siteSnapshots.length)} · Prompt ${formatNumber(promptIds.length)}`,
+            content: [funnelCard, siteBreakdownCard, contentBreakdownCard, sourceAttributionCard, relatedPromptCard].join('')
+        }),
+        renderAnalyticsProductDetailSection({
+            id: 'productDetailSectionRisk',
+            sectionClass: 'analytics-nav-focus-target',
+            eyebrow: '风险',
+            title: '风险与履约',
+            summary: '把退款、履约、回写结论和事件采集放在同一段，方便确认问题究竟已经收口，还是仍停在处理中。',
+            meta: `退款率 ${formatPercent(summary.refund_rate || 0)} · 履约风险 ${formatNumber(summary.delivery_risk_count || 0)}`,
+            content: [riskBreakdownCard, conclusionHistoryMarkup, eventStageCard].join('')
+        }),
+        renderAnalyticsProductDetailSection({
+            id: 'productDetailSectionUsers',
+            sectionClass: 'analytics-nav-focus-target',
+            eyebrow: '用户',
+            title: '用户承接',
+            summary: '从成交样本、用户分层到后续去向，判断这件商品带来的到底是一次性成交，还是能继续沉淀用户价值。',
+            meta: `买家 ${formatNumber(summary.buyer_count || buyerSnapshot.length || 0)} · 去向 ${formatNumber(firstPurchaseDestinations.length + crossSellDestinations.length + postPurchaseDestinations.length)}`,
+            content: [buyerCard, buyerSegmentCard, userDestinationCard].join('')
+        }),
+        renderAnalyticsProductDetailSection({
+            id: 'productDetailSectionTrend',
+            sectionClass: 'analytics-nav-focus-target',
+            eyebrow: '趋势',
+            title: '趋势与订单',
+            summary: '回看近窗波动、来源 Prompt 明细和最新订单承接，判断这件商品的成交节奏是否还在持续。',
+            meta: `趋势 ${formatNumber(trendRows.length)} 天 · 订单 ${formatNumber(recentOrders.length)}`,
+            content: [trendCard, promptAttributionCard, recentOrdersCard].join('')
+        })
+    ].join('');
 
     return `
         <div class="analytics-product-detail">
@@ -3269,6 +4080,7 @@ function renderAnalyticsProductDetailPanel(payload = {}, options = {}) {
                     <div class="analytics-product-shell__eyebrow">单品详情</div>
                     <h4>${escapeHtml(summary.product_name || '未命名商品')}</h4>
                     <p>${escapeHtml(summary.category || '未分类')} · ${escapeHtml(summary.delivery_type || 'KEY')} · ${summary.is_active === false ? '已停用' : '在售中'}</p>
+                    ${detailSelectorMarkup}
                 </div>
                 <div class="analytics-product-actions">
                     <button type="button" class="btn-sm btn-secondary" ${buildAnalyticsProductDestinationAttrs('shop-products', { tab: 'products', productId: summary.product_id })}>
@@ -3299,273 +4111,10 @@ function renderAnalyticsProductDetailPanel(payload = {}, options = {}) {
                 ${renderAnalyticsProductMetricCard('库存可用', formatNumber(summary.available_inventory_count || 0), `故障库存 ${formatNumber(summary.fault_inventory_count || 0)}`, 'default')}
             </div>
 
-            <div class="analytics-product-detail-grid">
-                <section class="analytics-product-detail-card">
-                    <div class="analytics-product-detail-card__head">
-                        <strong>单品漏斗</strong>
-                        <span>真实口径</span>
-                    </div>
-                    <div class="analytics-product-funnel-stage-list analytics-product-funnel-stage-list--compact">
-                        ${(Array.isArray(funnelSummary.stages) ? funnelSummary.stages : []).map((stage, index, rows) => (
-                            renderAnalyticsProductFunnelStage(stage, Math.max(0, Number(rows[0]?.value || 0)))
-                        )).join('') || renderHintState('fas fa-filter-circle-dollar', '当前窗口暂无单品漏斗数据')}
-                    </div>
-                </section>
+            ${detailNavigatorMarkup}
 
-                <section class="analytics-product-detail-card">
-                    <div class="analytics-product-detail-card__head">
-                        <strong>站点拆分</strong>
-                        <span>CN / INTL</span>
-                    </div>
-                    <div class="analytics-product-site-grid analytics-product-site-grid--detail">
-                        ${siteSnapshots.map((snapshot) => `
-                            <article class="analytics-product-site-card">
-                                <div class="analytics-product-site-card__top">
-                                    <strong>${escapeHtml(snapshot.label || snapshot.site || '站点')}</strong>
-                                </div>
-                                <div class="analytics-product-site-card__metrics">
-                                    <span>GMV ${formatNumber(snapshot.summary?.gmv_points || 0)}</span>
-                                    <span>订单 ${formatNumber(snapshot.summary?.order_count || 0)}</span>
-                                    <span>买家 ${formatNumber(snapshot.summary?.buyer_count || 0)}</span>
-                                    <span>转化 ${formatPercent(snapshot.summary?.purchase_conversion_rate || 0)}</span>
-                                </div>
-                            </article>
-                        `).join('') || renderHintState('fas fa-diagram-project', '暂无站点拆分')}
-                    </div>
-                </section>
-
-                <section class="analytics-product-detail-card analytics-product-detail-card--wide" id="productRiskBreakdownSection">
-                    <div class="analytics-product-detail-card__head">
-                        <strong>售后与履约拆解</strong>
-                        <span>退款 / 履约状态</span>
-                    </div>
-                    <div class="analytics-product-detail-subsection">
-                        <div class="analytics-product-detail-subsection__label">退款状态</div>
-                        <div class="analytics-product-event-list">
-                            ${refundBreakdown.length > 0
-                                ? refundBreakdown.map((item) => renderAnalyticsProductStatusBreakdownRow(item, {
-                                    kind: 'refund',
-                                    summary
-                                })).join('')
-                                : renderHintState('fas fa-rotate-left', '当前窗口暂无退款样本')}
-                        </div>
-                    </div>
-                    <div class="analytics-product-detail-subsection">
-                        <div class="analytics-product-detail-subsection__label">履约状态</div>
-                        <div class="analytics-product-event-list">
-                            ${deliveryBreakdown.length > 0
-                                ? deliveryBreakdown.map((item) => renderAnalyticsProductStatusBreakdownRow(item, {
-                                    kind: 'delivery',
-                                    summary
-                                })).join('')
-                                : renderHintState('fas fa-truck-fast', '当前窗口暂无履约状态样本')}
-                        </div>
-                    </div>
-                </section>
-
-                ${conclusionHistoryMarkup}
-
-                <section class="analytics-product-detail-card">
-                    <div class="analytics-product-detail-card__head">
-                        <strong>相关 Prompt</strong>
-                        <span>${formatNumber(promptIds.length)} 个</span>
-                    </div>
-                    <div class="analytics-product-token-list">
-                        ${promptIds.length > 0
-                            ? promptIds.map((promptId) => renderAnalyticsProductPromptChip(promptId)).join('')
-                            : renderHintState('fas fa-wand-magic-sparkles', '当前窗口暂无关联 Prompt')}
-                    </div>
-                </section>
-
-                <section class="analytics-product-detail-card">
-                    <div class="analytics-product-detail-card__head">
-                        <strong>来源归因</strong>
-                        <span>${formatNumber(sourcePages.length + sourceChannels.length + promptSources.length)} 组</span>
-                    </div>
-                    <div class="analytics-product-detail-subsection">
-                        <div class="analytics-product-detail-subsection__label">来源页面</div>
-                        <div class="analytics-product-token-list">
-                            ${sourcePages.length > 0
-                                ? sourcePages.map((item) => renderAnalyticsProductStaticToken(item)).join('')
-                                : renderHintState('fas fa-map-signs', '当前窗口暂无来源页面样本')}
-                        </div>
-                    </div>
-                    <div class="analytics-product-detail-subsection">
-                        <div class="analytics-product-detail-subsection__label">来源渠道</div>
-                        <div class="analytics-product-token-list">
-                            ${sourceChannels.length > 0
-                                ? sourceChannels.map((item) => renderAnalyticsProductStaticToken(item)).join('')
-                                : renderHintState('fas fa-route', '当前窗口暂无来源渠道样本')}
-                        </div>
-                    </div>
-                    <div class="analytics-product-detail-subsection">
-                        <div class="analytics-product-detail-subsection__label">来源 Prompt</div>
-                        <div class="analytics-product-token-list">
-                            ${promptSources.length > 0
-                                ? promptSources.map((item) => renderAnalyticsProductPromptSourceChip(item)).join('')
-                                : renderHintState('fas fa-wand-magic-sparkles', '当前窗口暂无来源 Prompt')}
-                        </div>
-                    </div>
-                </section>
-
-                <section class="analytics-product-detail-card analytics-product-detail-card--wide" id="productContentBreakdownSection">
-                    <div class="analytics-product-detail-card__head">
-                        <strong>内容带货拆解</strong>
-                        <span>来源 / Prompt / GMV</span>
-                    </div>
-                    <div class="analytics-product-metric-grid analytics-product-metric-grid--detail">
-                        ${renderAnalyticsProductMetricCard('来源 Prompt', formatNumber(summary.content_assisted_prompt_count || 0), `主 Prompt ${summary.top_prompt_id || '—'}`, 'default')}
-                        ${renderAnalyticsProductMetricCard('详情触达', formatNumber(summary.content_assisted_detail_view_count || 0), `购买意图 ${formatNumber(summary.content_assisted_purchase_click_count || 0)}`, 'accent')}
-                        ${renderAnalyticsProductMetricCard('归因支付', formatNumber(summary.content_assisted_purchase_success_count || 0), `归因 GMV ${formatNumber(summary.content_assisted_gmv_points || 0)}`, 'success')}
-                    </div>
-                    <div class="analytics-product-detail-subsection">
-                        <div class="analytics-product-detail-subsection__label">关键来源</div>
-                        <div class="analytics-product-token-list">
-                            ${contentFocusTokens.length > 0
-                                ? contentFocusTokens.join('')
-                                : renderHintState('fas fa-wand-magic-sparkles', '当前窗口暂无内容带货来源样本')}
-                        </div>
-                    </div>
-                </section>
-
-                <section class="analytics-product-detail-card">
-                    <div class="analytics-product-detail-card__head">
-                        <strong>事件采集状态</strong>
-                        <span>${formatNumber(eventStageSummary.length)} 段</span>
-                    </div>
-                    <div class="analytics-product-event-list">
-                        ${eventStageSummary.length > 0
-                            ? eventStageSummary.map((stage) => renderAnalyticsProductEventStageRow(stage)).join('')
-                            : renderHintState('fas fa-wave-square', '当前窗口暂无商品事件采集摘要')}
-                    </div>
-                </section>
-
-                <section class="analytics-product-detail-card">
-                    <div class="analytics-product-detail-card__head">
-                        <strong>购买用户</strong>
-                        <span>${formatNumber(buyerSnapshot.length)} 个样本</span>
-                    </div>
-                    <div class="analytics-product-token-list">
-                        ${buyerSnapshot.length > 0
-                            ? buyerSnapshot.map((buyer) => renderAnalyticsProductBuyerChip(buyer, {
-                                sourceLabel: '商品详情 / 购买用户',
-                                summary: '该用户来自当前单品的成交样本，适合继续回看单品成交、退款和履约承接是否稳定。',
-                                productId: String(summary.product_id || options.productId || '').trim(),
-                                productName: String(summary.product_name || options.productName || '').trim(),
-                                destination: 'analytics-product-detail',
-                                destinationContext: {
-                                    productId: String(summary.product_id || options.productId || '').trim(),
-                                    productName: String(summary.product_name || options.productName || '').trim(),
-                                    focusTargetId: 'productDetailPanelSection'
-                                },
-                                actionLabel: '回到单品详情',
-                                verificationMethod: '回到单品详情，继续查看成交、退款和履约拆解，确认这位用户对应的经营信号是否已经收口。'
-                            })).join('')
-                            : renderHintState('fas fa-user-group', '当前窗口暂无购买用户样本')}
-                    </div>
-                </section>
-
-                <section class="analytics-product-detail-card">
-                    <div class="analytics-product-detail-card__head">
-                        <strong>购买用户分层</strong>
-                        <span>当前窗口</span>
-                    </div>
-                    <div class="analytics-product-metric-grid analytics-product-metric-grid--detail">
-                        ${buyerSegmentSummary.length > 0
-                            ? buyerSegmentSummary.map((item) => (
-                                renderAnalyticsProductMetricCard(item.label || '用户分层', formatNumber(item.count || 0), item.note || '', item.tone || 'default')
-                            )).join('')
-                            : renderHintState('fas fa-people-arrows', '当前窗口暂无购买用户分层样本')}
-                    </div>
-                </section>
-
-                <section class="analytics-product-detail-card analytics-product-detail-card--wide">
-                    <div class="analytics-product-detail-card__head">
-                        <strong>用户去向</strong>
-                        <span>首单入口 / 跨商品复购</span>
-                    </div>
-                    <div class="analytics-product-detail-subsection">
-                        <div class="analytics-product-detail-subsection__label">首单入口分布</div>
-                        <div class="analytics-product-destination-list">
-                            ${firstPurchaseDestinations.length > 0
-                                ? firstPurchaseDestinations.map((row) => renderAnalyticsProductDestinationRow(row, { mode: 'first-purchase' })).join('')
-                                : renderHintState('fas fa-compass', '当前窗口暂无首单入口样本')}
-                        </div>
-                    </div>
-                    <div class="analytics-product-detail-subsection">
-                        <div class="analytics-product-detail-subsection__label">跨商品复购去向</div>
-                        <div class="analytics-product-destination-list">
-                            ${crossSellDestinations.length > 0
-                                ? crossSellDestinations.map((row) => renderAnalyticsProductDestinationRow(row, { mode: 'cross-sell' })).join('')
-                                : renderHintState('fas fa-arrows-left-right-to-line', '当前窗口暂无跨商品复购样本')}
-                        </div>
-                    </div>
-                    <div class="analytics-product-detail-subsection">
-                        <div class="analytics-product-detail-subsection__label">后续复购商品</div>
-                        <div class="analytics-product-destination-list">
-                            ${postPurchaseDestinations.length > 0
-                                ? postPurchaseDestinations.map((row) => renderAnalyticsProductDestinationRow(row, { mode: 'post-purchase' })).join('')
-                                : renderHintState('fas fa-timeline', '当前窗口暂无后续复购样本')}
-                        </div>
-                    </div>
-                </section>
-
-                <section class="analytics-product-detail-card analytics-product-detail-card--wide">
-                    <div class="analytics-product-detail-card__head">
-                        <strong>来源 Prompt 归因明细</strong>
-                        <span>${formatNumber(promptSources.length)} 条</span>
-                    </div>
-                    <div class="analytics-product-prompt-list">
-                        ${promptSources.length > 0
-                            ? promptSources.map((item) => renderAnalyticsProductPromptAttributionRow(item)).join('')
-                            : renderHintState('fas fa-wand-magic-sparkles', '当前窗口暂无来源 Prompt 归因明细')}
-                    </div>
-                </section>
-
-                <section class="analytics-product-detail-card analytics-product-detail-card--wide">
-                    <div class="analytics-product-detail-card__head">
-                        <strong>近窗趋势</strong>
-                        <span>最近 ${formatNumber(trendRows.length)} 天</span>
-                    </div>
-                    <div class="analytics-product-trend-list">
-                        ${trendRows.length > 0
-                            ? trendRows.map((row) => `
-                                <div class="analytics-product-trend-row">
-                                    <span>${escapeHtml(formatDate(row.day))}</span>
-                                    <span>浏览 ${formatNumber(row.view_count || 0)}</span>
-                                    <span>订单 ${formatNumber(row.order_count || 0)}</span>
-                                    <span>GMV ${formatNumber(row.gmv_points || 0)}</span>
-                                    <span>发货 ${formatNumber(row.delivery_success_count || 0)}</span>
-                                </div>
-                            `).join('')
-                            : renderHintState('fas fa-chart-line', '当前窗口暂无单品趋势数据')}
-                    </div>
-                </section>
-
-                <section class="analytics-product-detail-card analytics-product-detail-card--wide">
-                    <div class="analytics-product-detail-card__head">
-                        <strong>近期订单</strong>
-                        <span>${formatNumber(recentOrders.length)} 笔</span>
-                    </div>
-                    <div class="analytics-product-order-list">
-                        ${recentOrders.length > 0
-                            ? recentOrders.map((order) => renderAnalyticsProductOrderRow(order, {
-                                sourceLabel: '商品详情 / 最近订单',
-                                summary: '该用户来自当前单品的最近订单样本，适合结合订单、履约和售后继续判断这次成交是否稳定。',
-                                productId: String(summary.product_id || options.productId || '').trim(),
-                                productName: String(summary.product_name || options.productName || '').trim(),
-                                destination: 'analytics-product-detail',
-                                destinationContext: {
-                                    productId: String(summary.product_id || options.productId || '').trim(),
-                                    productName: String(summary.product_name || options.productName || '').trim(),
-                                    focusTargetId: 'productDetailPanelSection'
-                                },
-                                actionLabel: '回到单品详情',
-                                verificationMethod: '回到单品详情，对照最近订单、退款和履约状态，确认该用户对应的订单是否已经顺利承接。'
-                            })).join('')
-                            : renderHintState('fas fa-receipt', '当前窗口暂无近期订单')}
-                    </div>
-                </section>
+            <div class="analytics-product-detail-sections">
+                ${detailSectionsMarkup}
             </div>
         </div>
     `;
@@ -3746,6 +4295,17 @@ function openAnalyticsProductDetail(productId = '', options = {}) {
 
     activeAnalyticsProductId = normalizedProductId;
     activeAnalyticsProductName = String(options.productName || activeAnalyticsProductName || '').trim();
+    registerAnalyticsProductDetailCandidates([
+        {
+            productId: normalizedProductId,
+            productName: activeAnalyticsProductName || normalizedProductId
+        }
+    ], {
+        activeProductId: normalizedProductId,
+        activeProductName: activeAnalyticsProductName || normalizedProductId,
+        detailFocus: options.detailFocus,
+        focusTargetId: options.focusTargetId
+    });
     setActiveAnalyticsProductDetailFocus(options.detailFocus, options.focusTargetId);
 
     if (options.syncRoute !== false && typeof syncAnalyticsRouteState === 'function') {
@@ -3821,6 +4381,17 @@ async function loadProductDetailPanel(options = {}) {
         activeAnalyticsProductId = String(summary.product_id || productId).trim();
         activeAnalyticsProductName = String(summary.product_name || activeAnalyticsProductName || productId).trim();
         setActiveAnalyticsProductDetailFocus(detailFocus, focusTargetId);
+        registerAnalyticsProductDetailCandidates([
+            {
+                productId: activeAnalyticsProductId,
+                productName: activeAnalyticsProductName
+            }
+        ], {
+            activeProductId: activeAnalyticsProductId,
+            activeProductName: activeAnalyticsProductName,
+            detailFocus,
+            focusTargetId
+        });
 
         if (!hasSignal) {
             container.innerHTML = renderHintState('fas fa-cube', '当前窗口暂无该商品详情数据');
@@ -3828,7 +4399,21 @@ async function loadProductDetailPanel(options = {}) {
             return;
         }
 
-        container.innerHTML = renderAnalyticsProductDetailPanel(payload, { detailFocus });
+        container.innerHTML = renderAnalyticsProductDetailPanel(payload, {
+            detailFocus,
+            focusTargetId,
+            productId: activeAnalyticsProductId,
+            productName: activeAnalyticsProductName
+        });
+        refreshAnalyticsProductDetailNavigatorState(
+            focusTargetId || 'productDetailSectionOperating'
+        );
+        refreshAnalyticsProductDetailSelectorState({
+            activeProductId: activeAnalyticsProductId,
+            activeProductName: activeAnalyticsProductName,
+            detailFocus,
+            focusTargetId: focusTargetId || 'productDetailSectionOperating'
+        });
         if (meta) {
             const focusConfig = getAnalyticsProductDetailFocusConfig(detailFocus, summary);
             meta.textContent = `${activeAnalyticsProductName || productId} · 经营与运维双视角${focusConfig ? ` · ${focusConfig.title}` : ''}`;
@@ -6384,66 +6969,111 @@ async function loadOverviewOperatingNavigator() {
     }
 
     try {
-        const [
-            summaryWindowResult,
-            productSummaryBundleResult,
-            productRankBundleResult,
-            productHealthBundleResult,
-            operationsHealthSnapshotResult,
-            verifySummaryResult,
-            topContentResult
-        ] = await Promise.allSettled([
-            getAnalyticsSummaryWindowData(),
-            getAnalyticsProductSummaryBundle(),
-            getAnalyticsProductRankBundle(),
-            getAnalyticsProductHealthBundle(),
-            getOperationsHealthSnapshotData(),
-            getVerifyServiceSummaryData(),
-            fetchTopContentData(10)
-        ]);
+        const requestState = {
+            summaryWindowData: null,
+            productDashboardBundle: null,
+            operationsHealthSnapshot: null,
+            verifyServiceSummary: null,
+            topContentRows: null
+        };
+        const requestStatus = {
+            summaryWindowData: 'pending',
+            productDashboardBundle: 'pending',
+            operationsHealthSnapshot: 'pending',
+            verifyServiceSummary: 'pending',
+            topContentRows: 'pending'
+        };
 
-        const cards = buildAnalyticsOverviewNavigatorCards({
-            summaryWindowData: summaryWindowResult.status === 'fulfilled' ? summaryWindowResult.value : {},
-            productSummaryBundle: productSummaryBundleResult.status === 'fulfilled' ? productSummaryBundleResult.value : null,
-            productRankBundle: productRankBundleResult.status === 'fulfilled' ? productRankBundleResult.value : null,
-            productHealthBundle: productHealthBundleResult.status === 'fulfilled' ? productHealthBundleResult.value : null,
-            operationsHealthSnapshot: operationsHealthSnapshotResult.status === 'fulfilled' ? operationsHealthSnapshotResult.value : null,
-            verifyServiceSummary: verifySummaryResult.status === 'fulfilled' ? verifySummaryResult.value : null,
-            topContentRows: topContentResult.status === 'fulfilled' ? topContentResult.value : []
-        });
-        setAnalyticsSectionNavigatorCardsState(cards);
+        const renderCards = (forceFallback = false) => {
+            const cards = buildAnalyticsOverviewNavigatorCards({
+                summaryWindowData: requestState.summaryWindowData || {},
+                productSummaryBundle: requestState.productDashboardBundle,
+                productRankBundle: requestState.productDashboardBundle,
+                productHealthBundle: requestState.productDashboardBundle,
+                operationsHealthSnapshot: requestState.operationsHealthSnapshot,
+                verifyServiceSummary: requestState.verifyServiceSummary,
+                topContentRows: Array.isArray(requestState.topContentRows) ? requestState.topContentRows : null
+            });
 
-        if (!cards.length) {
-            if (container) {
-                container.innerHTML = renderHintState('fas fa-compass-drafting', '当前窗口暂无经营导航数据');
+            if (!cards.length) {
+                if (!forceFallback) {
+                    return false;
+                }
+
+                const hasAnySuccess = Object.values(requestStatus).some((status) => status === 'fulfilled');
+                if (container) {
+                    container.innerHTML = renderHintState(
+                        'fas fa-compass-drafting',
+                        hasAnySuccess ? '当前窗口暂无经营导航数据' : '经营导航加载失败',
+                        hasAnySuccess ? '' : 'error'
+                    );
+                }
+                if (shellContainer) {
+                    shellContainer.innerHTML = renderHintState(
+                        'fas fa-layer-group',
+                        hasAnySuccess ? '当前窗口暂无经营分析中心数据' : '经营分析中心加载失败',
+                        hasAnySuccess ? '' : 'error'
+                    );
+                }
+                if (shellMeta) {
+                    shellMeta.textContent = hasAnySuccess ? '当前窗口暂无经营中心信号' : '经营分析中心加载失败';
+                }
+                if (meta) {
+                    meta.textContent = hasAnySuccess ? '当前窗口暂无经营导航信号' : '经营导航加载失败';
+                }
+                if (focusWorkspace) {
+                    if (hasAnySuccess) {
+                        renderAnalyticsOperatingFocusWorkspace([]);
+                    } else {
+                        focusWorkspace.innerHTML = renderHintState('fas fa-location-crosshairs', '当前经营视角加载失败', 'error');
+                    }
+                }
+                if (focusMeta) {
+                    focusMeta.textContent = hasAnySuccess ? '当前窗口暂无经营视角信号' : '当前经营视角加载失败';
+                }
+                return false;
             }
+
+            setAnalyticsSectionNavigatorCardsState(cards);
             if (shellContainer) {
-                shellContainer.innerHTML = renderHintState('fas fa-layer-group', '当前窗口暂无经营分析中心数据');
+                renderAnalyticsBusinessCenterShell(cards);
             }
-            if (shellMeta) {
-                shellMeta.textContent = '当前窗口暂无经营中心信号';
+            if (container) {
+                container.innerHTML = renderAnalyticsOverviewNavigator(cards);
             }
             if (meta) {
-                meta.textContent = '当前窗口暂无经营导航信号';
+                meta.textContent = buildAnalyticsOverviewNavigatorMeta(cards);
             }
             if (focusWorkspace) {
-                renderAnalyticsOperatingFocusWorkspace([]);
+                renderAnalyticsOperatingFocusWorkspace(cards);
             }
-            return;
-        }
+            if (focusMeta) {
+                focusMeta.textContent = '随当前分栏自动更新';
+            }
+            return true;
+        };
 
-        if (shellContainer) {
-            renderAnalyticsBusinessCenterShell(cards);
-        }
-        if (container) {
-            container.innerHTML = renderAnalyticsOverviewNavigator(cards);
-        }
-        if (meta) {
-            meta.textContent = buildAnalyticsOverviewNavigatorMeta(cards);
-        }
-        if (focusWorkspace) {
-            renderAnalyticsOperatingFocusWorkspace(cards);
-        }
+        const requests = [
+            ['summaryWindowData', getAnalyticsSummaryWindowData()],
+            ['productDashboardBundle', getAnalyticsProductDashboardBundle()],
+            ['operationsHealthSnapshot', getOperationsHealthSnapshotData()],
+            ['verifyServiceSummary', getVerifyServiceSummaryData()],
+            ['topContentRows', fetchTopContentData(10)]
+        ];
+
+        await Promise.allSettled(requests.map(([key, promise]) => Promise.resolve(promise)
+            .then((value) => {
+                requestState[key] = value;
+                requestStatus[key] = 'fulfilled';
+                renderCards(false);
+                return value;
+            })
+            .catch((error) => {
+                requestStatus[key] = 'rejected';
+                return Promise.reject(error);
+            })));
+
+        renderCards(true);
     } catch (err) {
         console.error('[Analytics] Failed to load overview operating navigator:', err);
         if (container) {
@@ -7218,20 +7848,6 @@ function renderAnalyticsUserValueConclusionDigest(entries = [], summary = {}) {
                 ${Array.isArray(digest.evidenceItems)
                     ? digest.evidenceItems.map((item) => `<span class="analytics-product-matrix-chip analytics-product-matrix-chip--${escapeHtml(digest.tone || 'warning')}">${escapeHtml(item)}</span>`).join('')
                     : ''}
-            </div>
-            <div class="analytics-product-inline-guidance analytics-product-inline-guidance--${escapeHtml(digest.tone || 'warning')}">
-                <div class="analytics-product-inline-guidance__head">
-                    <span>经营建议</span>
-                    <span class="analytics-status-chip analytics-status-chip--${escapeHtml(digest.tone || 'warning')}">${escapeHtml(digest.label || '待复查')}</span>
-                </div>
-                <div class="analytics-product-inline-guidance__item">
-                    <span>建议先做</span>
-                    <p>${escapeHtml(digest.guidance || '')}</p>
-                </div>
-                <div class="analytics-product-inline-guidance__item">
-                    <span>验证方式</span>
-                    <p>${escapeHtml(Number(summary?.refundRiskBuyers || 0) > 0 ? '处理后回到用户价值驾驶舱，确认退款风险样本是否减少，同时观察复购和跨商品购买有没有恢复。' : '处理后回到用户价值驾驶舱，确认复购、跨商品购买和高价值样本是否继续增加，且没有新的退款风险样本抬头。')}</p>
-                </div>
             </div>
         </section>
     `;
@@ -8629,7 +9245,7 @@ function buildAnalyticsContentCommerceConclusionDigest(entries = [], detail = {}
     } else if (Number(statusSummary.review || 0) > 0 || activeIssues.length > 0) {
         tone = 'warning';
         label = '待复查';
-        summary = `${promptLabel} 当前已经形成带货链路，但仍存在待复查的支付、退款或履约问题，适合继续按验证方式回看。`;
+        summary = `${promptLabel} 当前已经形成带货链路，但仍存在待复查的支付、退款或履约问题，适合继续回看相关信号。`;
     } else if (purchaseSuccessCount > 0) {
         tone = 'success';
         label = '带货生效';
@@ -8714,7 +9330,7 @@ function buildAnalyticsContentCommerceConclusionRecord(entries = [], detail = {}
         statusLabel: verificationState.label,
         title: verificationState.key === 'passed' ? '本轮复查已通过' : '本轮仍待复查',
         summary: verificationState.summary,
-        evidence: evidence || `${promptLabel} 最近已有处理回写，建议继续按验证方式回看带货链路是否已经稳定。`,
+        evidence: evidence || `${promptLabel} 最近已有处理回写，建议继续回看带货链路是否已经稳定。`,
         verificationMethod
     };
 }
@@ -9265,16 +9881,6 @@ function renderAnalyticsContentCommerceIssueCard(issue = {}, detail = {}) {
                 </div>
             </div>
             <p class="analytics-content-detail-issue-card__reason">${escapeHtml(issue?.reason || '')}</p>
-            <div class="analytics-content-detail-issue-card__guidance">
-                <div>
-                    <span>建议先做</span>
-                    <strong>${escapeHtml(issue?.recommendation || '继续观察')}</strong>
-                </div>
-                <div>
-                    <span>验证方式</span>
-                    <strong>${escapeHtml(issue?.verification || '回看带货链路后续信号')}</strong>
-                </div>
-            </div>
             ${actions.length > 0
                 ? `<div class="analytics-content-detail-issue-card__actions">
                         ${actions.map((action) => `
@@ -10820,7 +11426,7 @@ function buildAnalyticsOpsFeedbackVerificationStatus(row = {}) {
             key: 'passed',
             label: '验证已通过',
             tone: 'success',
-            summary: `${entityLabel} 当前已经回落到平稳中，可按验证方式做一次回看后结束本轮跟进。`
+            summary: `${entityLabel} 当前已经回落到平稳中，可做一次回看后结束本轮跟进。`
         };
     }
 
@@ -10829,7 +11435,7 @@ function buildAnalyticsOpsFeedbackVerificationStatus(row = {}) {
             key: 'pending',
             label: '仍待验证',
             tone: 'warning',
-            summary: `${entityLabel} 最近处理结果已经回落，但仍需要按验证方式再做一次复查确认。`
+            summary: `${entityLabel} 最近处理结果已经回落，但仍需要再做一次复查确认。`
         };
     }
 
@@ -10873,7 +11479,7 @@ function buildAnalyticsOpsFeedbackEvidence(row = {}, verificationState = null) {
     }
 
     const entityLabel = String(row?.label || row?.entityName || '该问题').trim() || '该问题';
-    return `${entityLabel} 最近仍有需要继续确认的处理回写，建议按验证方式回看最新运营信号。`;
+    return `${entityLabel} 最近仍有需要继续确认的处理回写，建议回看最新运营信号。`;
 }
 
 function buildAnalyticsOpsFeedbackTimeline(row = {}, verificationState = null) {
@@ -10918,7 +11524,7 @@ function buildAnalyticsOpsConclusionRecords(entries = [], entityStates = {}, opt
                 statusLabel: verificationState.label,
                 title: verificationState.key === 'passed' ? '本轮复查已通过' : '本轮仍待复查',
                 summary: verificationState.key === 'passed'
-                    ? `${row.label} 最近一轮处理已基本收口，当前更适合按验证方式做一次回看确认。`
+                    ? `${row.label} 最近一轮处理已基本收口，当前更适合做一次回看确认。`
                     : `${row.label} 当前仍需要继续复查，建议先按推荐动作回到对应处理页继续核对。`,
                 evidence: buildAnalyticsOpsFeedbackEvidence(row, verificationState),
                 verificationMethod: String(row?.verify || '').trim() || '回到运营保障驾驶舱，确认对应问题卡是否已经回落。',
@@ -11066,9 +11672,6 @@ function renderAnalyticsOpsFeedbackSummary(feedback = {}) {
                                     </div>
                                 </div>
                                 <p class="analytics-ops-cockpit__issue-copy"><span>当前判断</span>${escapeHtml(row.summary || '')}</p>
-                                <p class="analytics-ops-cockpit__issue-copy"><span>为什么优先</span>${escapeHtml(row.reason || '')}</p>
-                                <p class="analytics-ops-cockpit__issue-copy"><span>建议先做</span>${escapeHtml(row.nextStep || '')}</p>
-                                <p class="analytics-ops-cockpit__issue-copy"><span>验证方式</span>${escapeHtml(row.verify || '')}</p>
                                 ${renderAnalyticsOpsCockpitActionRow(row.actions)}
                             </article>
                         `).join('')}
@@ -11108,7 +11711,7 @@ function renderAnalyticsOpsEntityFeedbackDigest(digest = null) {
     const verificationState = digest?.verificationState || {
         tone: digest?.tone || 'warning',
         label: digest?.label || '仍待验证',
-        summary: digest?.summary || '请按验证方式继续复查。'
+        summary: digest?.summary || '请继续回看当前信号。'
     };
     const timeline = Array.isArray(digest?.timeline) ? digest.timeline : [];
     return `
@@ -11120,7 +11723,7 @@ function renderAnalyticsOpsEntityFeedbackDigest(digest = null) {
             <p>${escapeHtml(digest.summary || '')}</p>
             <div class="analytics-writeback-priority__verification analytics-writeback-priority__verification--${escapeHtml(verificationState.tone || 'warning')}">
                 <span class="analytics-status-chip analytics-status-chip--${escapeHtml(verificationState.tone || 'warning')}">${escapeHtml(verificationState.label || '仍待验证')}</span>
-                <p>${escapeHtml(verificationState.summary || '请按验证方式继续复查。')}</p>
+                <p>${escapeHtml(verificationState.summary || '请继续回看当前信号。')}</p>
             </div>
             <div class="analytics-writeback-priority__evidence">
                 <span>最近一次验证依据</span>
@@ -11146,39 +11749,7 @@ function renderAnalyticsOpsEntityFeedbackDigest(digest = null) {
 }
 
 function renderAnalyticsOpsCockpitGuidance(guidance = null) {
-    if (!guidance || typeof guidance !== 'object') {
-        return '';
-    }
-
-    const reason = String(guidance.reason || '').trim();
-    const nextStep = String(guidance.nextStep || '').trim();
-    const verify = String(guidance.verify || '').trim();
-    if (!reason && !nextStep && !verify) {
-        return '';
-    }
-
-    return `
-        <div class="analytics-ops-cockpit__guidance analytics-ops-cockpit__guidance--${escapeHtml(guidance.tone || 'neutral')}">
-            ${reason ? `
-                <div class="analytics-ops-cockpit__guidance-item">
-                    <span>为什么优先</span>
-                    <p>${escapeHtml(reason)}</p>
-                </div>
-            ` : ''}
-            ${nextStep ? `
-                <div class="analytics-ops-cockpit__guidance-item">
-                    <span>建议先做</span>
-                    <p>${escapeHtml(nextStep)}</p>
-                </div>
-            ` : ''}
-            ${verify ? `
-                <div class="analytics-ops-cockpit__guidance-item">
-                    <span>验证方式</span>
-                    <p>${escapeHtml(verify)}</p>
-                </div>
-            ` : ''}
-        </div>
-    `;
+    return '';
 }
 
 function renderAnalyticsOpsCockpitIssueGrid(items = []) {
@@ -11198,9 +11769,6 @@ function renderAnalyticsOpsCockpitIssueGrid(items = []) {
                         </div>
                         ${item.metric ? `<span class="analytics-ops-cockpit__issue-metric">${escapeHtml(item.metric)}</span>` : ''}
                     </div>
-                    ${item.reason ? `<p class="analytics-ops-cockpit__issue-copy"><span>为什么优先</span>${escapeHtml(item.reason)}</p>` : ''}
-                    ${item.nextStep ? `<p class="analytics-ops-cockpit__issue-copy"><span>建议先做</span>${escapeHtml(item.nextStep)}</p>` : ''}
-                    ${item.verify ? `<p class="analytics-ops-cockpit__issue-copy"><span>验证方式</span>${escapeHtml(item.verify)}</p>` : ''}
                     ${renderAnalyticsOpsCockpitActionRow(item.actions)}
                 </article>
             `).join('')}
@@ -11429,6 +11997,8 @@ function buildAnalyticsOpsCockpitOverviewState({
     const alertSummary = opsAlertHealth?.summary && typeof opsAlertHealth.summary === 'object'
         ? opsAlertHealth.summary
         : {};
+    const verifyUnavailableMessage = String(verifySummary?.unavailableMessage || '').trim();
+    const alertsUnavailableMessage = String(opsAlertHealth?.unavailableMessage || '').trim();
 
     const paymentAlerts = normalizeAnalyticsCountValue(opsMetrics.paymentAlertTotal);
     const paymentDeadLetters = normalizeAnalyticsCountValue(opsMetrics.paymentDeadLetterCount);
@@ -11445,7 +12015,7 @@ function buildAnalyticsOpsCockpitOverviewState({
     const enabledChannelCount = normalizeAnalyticsCountValue(alertSummary.enabled_channel_count);
     const attemptCount = normalizeAnalyticsCountValue(alertSummary.total_attempt_count);
     const deliveredCount = normalizeAnalyticsCountValue(alertSummary.delivered_count);
-    const deliveryRate = attemptCount > 0 ? roundNumber((deliveredCount / attemptCount) * 100, 2) : 0;
+    const deliveryRate = attemptCount > 0 ? (roundTo((deliveredCount / attemptCount) * 100, 2) || 0) : 0;
 
     let tone = 'success';
     let statusLabel = '平稳中';
@@ -11469,6 +12039,20 @@ function buildAnalyticsOpsCockpitOverviewState({
         summary = `当前活跃验证 ${formatNumber(verifyActive)}、低库存商品 ${formatNumber(lowStockCount)}、退款 ${formatNumber(refundedOrderCount)} 单，可继续沿验证、库存和售后链路复核。`;
     }
 
+    const unavailableNotes = [
+        verifyUnavailableMessage ? '验证服务数据暂未返回' : '',
+        alertsUnavailableMessage ? '站外告警数据暂未返回' : ''
+    ].filter(Boolean);
+    if (unavailableNotes.length > 0) {
+        if (tone === 'success') {
+            tone = 'accent';
+        }
+        if (statusLabel === '平稳中') {
+            statusLabel = '部分可用';
+        }
+        summary = [summary, unavailableNotes.join('；')].filter(Boolean).join(' ');
+    }
+
     return {
         tone,
         statusLabel,
@@ -11485,8 +12069,18 @@ function buildAnalyticsOpsCockpitOverviewState({
             { label: '支付告警', value: formatNumber(paymentAlerts), tone: paymentDeadLetters > 0 ? 'danger' : (paymentAlerts > 0 ? 'warning' : 'neutral'), meta: `死信 ${formatNumber(paymentDeadLetters)}` },
             { label: '待处理工单', value: formatNumber(ticketPending), tone: ticketCritical > 0 ? 'danger' : (ticketPending > 0 ? 'warning' : 'neutral'), meta: `critical ${formatNumber(ticketCritical)}` },
             { label: '履约风险', value: formatNumber(deliveryRiskCount), tone: deliveryRiskCount > 0 ? 'warning' : 'neutral', meta: `退款 ${formatNumber(refundedOrderCount)}` },
-            { label: '验证失败', value: formatNumber(verifyFailed), tone: verifyFailed > 0 ? 'warning' : 'neutral', meta: `活跃 ${formatNumber(verifyActive)}` },
-            { label: '告警通道', value: formatNumber(enabledChannelCount), tone: alertDeadLetterCount > 0 || alertFailedCount > 0 ? 'warning' : 'success', meta: attemptCount > 0 ? `送达 ${formatPercent(deliveryRate)}` : '暂无投递' }
+            {
+                label: '验证失败',
+                value: verifyUnavailableMessage ? '—' : formatNumber(verifyFailed),
+                tone: verifyUnavailableMessage ? 'neutral' : (verifyFailed > 0 ? 'warning' : 'neutral'),
+                meta: verifyUnavailableMessage ? '暂未返回' : `活跃 ${formatNumber(verifyActive)}`
+            },
+            {
+                label: '告警通道',
+                value: alertsUnavailableMessage ? '—' : formatNumber(enabledChannelCount),
+                tone: alertsUnavailableMessage ? 'neutral' : (alertDeadLetterCount > 0 || alertFailedCount > 0 ? 'warning' : 'success'),
+                meta: alertsUnavailableMessage ? '暂未返回' : (attemptCount > 0 ? `送达 ${formatPercent(deliveryRate)}` : '暂无投递')
+            }
         ],
         samples: [
             paymentDeadLetters > 0 ? `支付死信 ${formatNumber(paymentDeadLetters)} 条` : '',
@@ -11754,6 +12348,43 @@ function buildAnalyticsOpsFulfillmentState(productSummary = {}, productHealthPay
 }
 
 function buildAnalyticsOpsVerifyState(summary = null) {
+    const unavailableMessage = String(summary?.unavailableMessage || '').trim();
+    if (unavailableMessage) {
+        return {
+            tone: 'neutral',
+            statusLabel: '暂不可用',
+            eyebrow: '验证服务',
+            title: '验证服务数据暂不可用',
+            summary: unavailableMessage,
+            guidance: {
+                tone: 'neutral',
+                reason: '当前没有成功拉取到验证服务摘要，所以这张卡先不做经营判断。',
+                nextStep: '可以稍后刷新，或直接打开 Verify Monitor 查看最新任务和失败样本。',
+                verify: '刷新后确认验证失败、活跃任务和完成率重新显示。'
+            },
+            stats: [
+                { label: '验证请求', value: '—', tone: 'neutral' },
+                { label: '完成率', value: '—', tone: 'neutral' },
+                { label: '失败', value: '—', tone: 'neutral' },
+                { label: '活跃', value: '—', tone: 'neutral' }
+            ],
+            samples: [],
+            emptySampleMessage: '当前未取到验证服务摘要样本。',
+            actions: [
+                {
+                    label: '看验证服务',
+                    destination: 'analytics-verify',
+                    icon: 'fas fa-shield-halved',
+                    context: buildAnalyticsOpsDestinationContext('verify', '验证服务', {
+                        sectionId: 'verifyStatusList',
+                        focusTargetId: 'verifyStatusList'
+                    })
+                },
+                { label: '打开 Verify Monitor', destination: 'verify-monitor', icon: 'fas fa-wave-square' }
+            ]
+        };
+    }
+
     const metrics = summary?.metrics && typeof summary.metrics === 'object'
         ? summary.metrics
         : {};
@@ -11817,6 +12448,49 @@ function buildAnalyticsOpsVerifyState(summary = null) {
 }
 
 function buildAnalyticsOpsAlertsState(opsAlertHealth = {}) {
+    const unavailableMessage = String(opsAlertHealth?.unavailableMessage || '').trim();
+    if (unavailableMessage) {
+        return {
+            tone: 'neutral',
+            statusLabel: '暂不可用',
+            eyebrow: '站外告警',
+            title: '站外告警数据暂不可用',
+            summary: unavailableMessage,
+            guidance: {
+                tone: 'neutral',
+                reason: '当前没有成功拉取到站外告警健康数据，所以这张卡先不做投递健康判断。',
+                nextStep: '可以稍后刷新，或直接进入告警健康和工作区查看当前通道状态。',
+                verify: '刷新后确认投递健康、通道状态和最近异常重新显示。'
+            },
+            stats: [
+                { label: '已启用通道', value: '—', tone: 'neutral' },
+                { label: '近窗投递', value: '—', tone: 'neutral' },
+                { label: '失败', value: '—', tone: 'neutral' },
+                { label: '死信', value: '—', tone: 'neutral', meta: '暂未返回' }
+            ],
+            samples: [],
+            emptySampleMessage: '当前未取到站外告警通道样本。',
+            actions: [
+                {
+                    label: '看告警健康',
+                    destination: 'ops-alerts-health',
+                    icon: 'fas fa-heart-pulse',
+                    context: buildAnalyticsOpsDestinationContext('alerts', '告警健康', {
+                        view: 'health'
+                    })
+                },
+                {
+                    label: '看告警工作区',
+                    destination: 'ops-alerts-workspace',
+                    icon: 'fas fa-bell',
+                    context: buildAnalyticsOpsDestinationContext('alerts', '告警工作区', {
+                        view: 'workspace'
+                    })
+                }
+            ]
+        };
+    }
+
     const summary = opsAlertHealth?.summary && typeof opsAlertHealth.summary === 'object'
         ? opsAlertHealth.summary
         : {};
@@ -11826,16 +12500,32 @@ function buildAnalyticsOpsAlertsState(opsAlertHealth = {}) {
     const failedCount = normalizeAnalyticsCountValue(summary.failed_count);
     const deadLetterCount = normalizeAnalyticsCountValue(summary.dead_letter_count);
     const enabledChannelCount = normalizeAnalyticsCountValue(summary.enabled_channel_count);
-    const deliveryRate = totalAttempts > 0 ? roundNumber((deliveredCount / totalAttempts) * 100, 2) : 0;
+    const configIssueCount = normalizeAnalyticsCountValue(summary.config_issue_count);
+    const deliveryRate = totalAttempts > 0 ? (roundTo((deliveredCount / totalAttempts) * 100, 2) || 0) : 0;
+    const hasConfigIssues = configIssueCount > 0 || channels.some((channel) => Array.isArray(channel?.errors) && channel.errors.some(Boolean));
 
-    const tone = deadLetterCount > 0 ? 'danger' : (failedCount > 0 ? 'warning' : (enabledChannelCount > 0 ? 'success' : 'neutral'));
-    const statusLabel = deadLetterCount > 0 ? '待处理' : (failedCount > 0 ? '待复核' : (enabledChannelCount > 0 ? '平稳中' : '未配置'));
+    const tone = deadLetterCount > 0
+        ? 'danger'
+        : (failedCount > 0
+            ? 'warning'
+            : (hasConfigIssues ? 'warning' : (enabledChannelCount > 0 ? 'success' : 'neutral')));
+    const statusLabel = deadLetterCount > 0
+        ? '待处理'
+        : (failedCount > 0
+            ? '待复核'
+            : (hasConfigIssues ? '配置异常' : (enabledChannelCount > 0 ? '平稳中' : '未配置')));
     const title = deadLetterCount > 0
         ? '站外告警当前仍有死信和失败投递'
-        : (failedCount > 0 ? '站外告警通道仍需继续复核' : (enabledChannelCount > 0 ? '站外告警通道当前平稳' : '站外告警通道尚未完全配置'));
-    const summaryText = totalAttempts > 0
-        ? `最近窗口共记录 ${formatNumber(totalAttempts)} 次投递，送达 ${formatNumber(deliveredCount)}，失败 ${formatNumber(failedCount)}，死信 ${formatNumber(deadLetterCount)}。`
-        : '最近窗口暂无站外告警投递记录，可继续观察通道健康和配置状态。';
+        : (failedCount > 0
+            ? '站外告警通道仍需继续复核'
+            : (hasConfigIssues
+                ? '站外告警通道存在密钥或配置异常'
+                : (enabledChannelCount > 0 ? '站外告警通道当前平稳' : '站外告警通道尚未完全配置')));
+    const summaryText = hasConfigIssues
+        ? `当前发现 ${formatNumber(configIssueCount || channels.filter((channel) => Array.isArray(channel?.errors) && channel.errors.some(Boolean)).length)} 条通道配置异常，建议先修复密钥后再看投递健康。`
+        : (totalAttempts > 0
+            ? `最近窗口共记录 ${formatNumber(totalAttempts)} 次投递，送达 ${formatNumber(deliveredCount)}，失败 ${formatNumber(failedCount)}，死信 ${formatNumber(deadLetterCount)}。`
+            : '最近窗口暂无站外告警投递记录，可继续观察通道健康和配置状态。');
 
     return {
         tone,
@@ -11847,13 +12537,19 @@ function buildAnalyticsOpsAlertsState(opsAlertHealth = {}) {
             tone,
             reason: deadLetterCount > 0
                 ? '站外告警死信意味着异常通知本身可能失效，需要先恢复发现问题的能力。'
-                : (failedCount > 0 ? '告警失败会削弱问题发现链路，建议尽快确认是否是通道或配置问题。': '当前告警通道更适合按健康巡检频率继续观察。'),
+                : (failedCount > 0
+                    ? '告警失败会削弱问题发现链路，建议尽快确认是否是通道或配置问题。'
+                    : (hasConfigIssues ? '当前至少有一条通道密钥或配置异常，系统还不能稳定完成对外告警。': '当前告警通道更适合按健康巡检频率继续观察。')),
             nextStep: deadLetterCount > 0
                 ? '先看告警健康和工作区，优先处理死信与失败最多的通道。'
-                : (failedCount > 0 ? '先看告警健康和通道状态，再确认失败是否集中在单个告警或单个通道。': '保持告警通道巡检即可。'),
+                : (failedCount > 0
+                    ? '先看告警健康和通道状态，再确认失败是否集中在单个告警或单个通道。'
+                    : (hasConfigIssues ? '先进入告警健康，确认是哪条通道的密钥解密失败或配置不完整。': '保持告警通道巡检即可。')),
             verify: deadLetterCount > 0
                 ? '死信和失败下降，送达率回升。'
-                : (failedCount > 0 ? '失败样本减少，通道状态恢复平稳。': '投递送达率维持稳定。')
+                : (failedCount > 0
+                    ? '失败样本减少，通道状态恢复平稳。'
+                    : (hasConfigIssues ? '错误通道恢复为已配置状态，健康卡不再提示密钥异常。': '投递送达率维持稳定。'))
         },
         stats: [
             { label: '已启用通道', value: formatNumber(enabledChannelCount), tone: enabledChannelCount > 0 ? 'success' : 'neutral' },
@@ -11949,108 +12645,439 @@ async function loadOperationsCockpit() {
     if (verifyMeta) verifyMeta.textContent = '失败 / 活跃 / 队列';
     if (alertsMeta) alertsMeta.textContent = '投递健康 / 通道状态 / 最近异常';
 
-    const [operationsResult, verifyResult, productSummaryBundleResult, productHealthBundleResult, opsAlertHealthResult] = await Promise.allSettled([
-        getOperationsHealthSnapshotData(),
-        getVerifyServiceSummaryData(),
-        getAnalyticsProductSummaryBundle(),
-        getAnalyticsProductHealthBundle(),
-        getAnalyticsOpsAlertHealthData()
-    ]);
+    const requestState = {
+        operationsHealthSnapshot: null,
+        verifySummary: null,
+        productSummary: {},
+        productHealthPayloads: {},
+        opsAlertHealth: null
+    };
+    const requestStatus = {
+        operationsHealthSnapshot: 'pending',
+        verifySummary: 'pending',
+        productDashboardBundle: 'pending',
+        opsAlertHealth: 'pending'
+    };
+    const opsFeedbackEntries = getAnalyticsResolutionFeedbackEntriesForOps({ limit: 12 });
+    const buildVerifySummaryUnavailableState = (message = '') => ({
+        metrics: {},
+        statusItems: [],
+        recentItems: [],
+        focusItems: [],
+        recommendations: [],
+        unavailableMessage: String(message || '验证服务摘要暂不可用，请稍后刷新或直接进入 Verify Monitor。').trim()
+            || '验证服务摘要暂不可用，请稍后刷新或直接进入 Verify Monitor。'
+    });
+    const buildOpsAlertHealthUnavailableState = (message = '') => {
+        const fallbackFactory = typeof window.getAdminWorkbenchDefaultOpsAlertHealthState === 'function'
+            ? window.getAdminWorkbenchDefaultOpsAlertHealthState
+            : null;
+        const fallbackState = fallbackFactory ? fallbackFactory() : {
+            status: 'error',
+            fetched_at: '',
+            summary: {
+                lookback_hours: 72,
+                total_job_count: 0,
+                total_attempt_count: 0,
+                delivered_count: 0,
+                failed_count: 0,
+                dead_letter_count: 0,
+                enabled_channel_count: 0
+            },
+            channels: [],
+            message: ''
+        };
 
-    const operationsHealthSnapshot = operationsResult.status === 'fulfilled' ? operationsResult.value : null;
-    const verifySummary = verifyResult.status === 'fulfilled' ? verifyResult.value : null;
-    const productSummaryBundle = productSummaryBundleResult.status === 'fulfilled' ? productSummaryBundleResult.value : null;
-    const productHealthBundle = productHealthBundleResult.status === 'fulfilled' ? productHealthBundleResult.value : null;
-    const opsAlertHealth = opsAlertHealthResult.status === 'fulfilled' ? opsAlertHealthResult.value : null;
+        return {
+            ...fallbackState,
+            status: 'error',
+            unavailable: true,
+            unavailableMessage: String(message || '站外告警健康暂不可用，请稍后刷新或直接进入告警健康页。').trim()
+                || '站外告警健康暂不可用，请稍后刷新或直接进入告警健康页。'
+        };
+    };
+    const attachOpsFeedbackDigestSafely = (state, entityType = '') => {
+        if (!state || typeof state !== 'object') {
+            return state;
+        }
 
-    let productSummary = {};
-    if (productSummaryBundle) {
+        try {
+            state.feedbackDigest = buildAnalyticsOpsEntityFeedbackDigest(opsFeedbackEntries, entityType, state);
+        } catch (error) {
+            console.error(`[Analytics] Ops cockpit ${entityType || 'unknown'} feedback digest failed:`, error);
+            state.feedbackDigest = null;
+        }
+
+        return state;
+    };
+    const getOpsCockpitFailedParts = () => {
+        const parts = [];
+        if (requestStatus.operationsHealthSnapshot === 'rejected') {
+            parts.push('支付/工单');
+        }
+        if (requestStatus.productDashboardBundle === 'rejected') {
+            parts.push('履约');
+        }
+        if (requestStatus.verifySummary === 'rejected') {
+            parts.push('验证');
+        }
+        if (requestStatus.opsAlertHealth === 'rejected') {
+            parts.push('告警');
+        }
+        return parts;
+    };
+    const renderVerifyUnavailableCard = (message = '') => {
+        const verifyState = attachOpsFeedbackDigestSafely(
+            buildAnalyticsOpsVerifyState(buildVerifySummaryUnavailableState(message)),
+            'verify'
+        );
+        if (verifyContainer) {
+            verifyContainer.innerHTML = renderAnalyticsOpsCockpitCard(verifyState, {
+                iconClass: 'fas fa-shield-halved',
+                errorMessage: '验证服务加载失败'
+            });
+        }
+        if (verifyMeta) {
+            verifyMeta.textContent = '数据暂不可用';
+        }
+    };
+    const renderAlertsUnavailableCard = (message = '') => {
+        const alertsState = attachOpsFeedbackDigestSafely(
+            buildAnalyticsOpsAlertsState(buildOpsAlertHealthUnavailableState(message)),
+            'alerts'
+        );
+        if (alertsContainer) {
+            alertsContainer.innerHTML = renderAnalyticsOpsCockpitCard(alertsState, {
+                iconClass: 'fas fa-tower-broadcast',
+                errorMessage: '站外告警加载失败'
+            });
+        }
+        if (alertsMeta) {
+            alertsMeta.textContent = '数据暂不可用';
+        }
+    };
+
+    const updateOverviewLoadingMeta = () => {
+        if (!overviewMeta) {
+            return;
+        }
+
+        const loadedParts = [];
+        if (requestStatus.operationsHealthSnapshot === 'fulfilled') {
+            loadedParts.push('支付/工单');
+        }
+        if (requestStatus.productDashboardBundle === 'fulfilled') {
+            loadedParts.push('履约');
+        }
+        if (requestStatus.verifySummary === 'fulfilled') {
+            loadedParts.push('验证');
+        }
+        if (requestStatus.opsAlertHealth === 'fulfilled') {
+            loadedParts.push('告警');
+        }
+
+        overviewMeta.textContent = loadedParts.length > 0
+            ? `已加载 ${loadedParts.join(' / ')} · 总览汇总中`
+            : '支付 / 工单 / 履约 / 验证 / 告警';
+    };
+
+    const readProductDashboardBundle = (bundle = null) => {
+        let productSummary = {};
+        let productHealthPayloads = {};
+
+        if (!bundle) {
+            return { productSummary, productHealthPayloads };
+        }
+
         try {
             productSummary = getAnalyticsProductBundlePayloadOrThrow(
-                productSummaryBundle,
+                bundle,
                 'summary',
                 'Product summary unavailable'
             ) || {};
         } catch (error) {
             console.warn('[Analytics] Failed to read product summary for ops cockpit:', error);
         }
-    }
 
-    let productHealthPayloads = {};
-    if (productHealthBundle) {
         try {
             productHealthPayloads = {
-                lowStockProducts: getAnalyticsProductBundlePayloadOrThrow(productHealthBundle, 'lowStockProducts', 'Low-stock product health unavailable') || [],
-                soldOutProducts: getAnalyticsProductBundlePayloadOrThrow(productHealthBundle, 'soldOutProducts', 'Sold-out product health unavailable') || [],
-                deliveryRiskProducts: getAnalyticsProductBundlePayloadOrThrow(productHealthBundle, 'deliveryRiskProducts', 'Delivery risk product health unavailable') || [],
-                refundRiskProducts: getAnalyticsProductBundlePayloadOrThrow(productHealthBundle, 'refundRiskProducts', 'Refund risk product health unavailable') || [],
-                inventoryTurnoverHints: getAnalyticsProductBundlePayloadOrThrow(productHealthBundle, 'inventoryTurnoverHints', 'Inventory turnover hints unavailable') || []
+                lowStockProducts: getAnalyticsProductBundlePayloadOrThrow(bundle, 'lowStockProducts', 'Low-stock product health unavailable') || [],
+                soldOutProducts: getAnalyticsProductBundlePayloadOrThrow(bundle, 'soldOutProducts', 'Sold-out product health unavailable') || [],
+                deliveryRiskProducts: getAnalyticsProductBundlePayloadOrThrow(bundle, 'deliveryRiskProducts', 'Delivery risk product health unavailable') || [],
+                refundRiskProducts: getAnalyticsProductBundlePayloadOrThrow(bundle, 'refundRiskProducts', 'Refund risk product health unavailable') || [],
+                inventoryTurnoverHints: getAnalyticsProductBundlePayloadOrThrow(bundle, 'inventoryTurnoverHints', 'Inventory turnover hints unavailable') || []
             };
         } catch (error) {
             console.warn('[Analytics] Failed to read product health payloads for ops cockpit:', error);
         }
-    }
 
-    const hasAnySource = Boolean(
-        operationsHealthSnapshot
-        || verifySummary
-        || productSummaryBundle
-        || productHealthBundle
-        || opsAlertHealth
-    );
-
-    if (!hasAnySource) {
-        const errorMarkup = renderHintState('fas fa-shield-halved', '运营保障驾驶舱加载失败', 'error');
-        if (overviewContainer) overviewContainer.innerHTML = errorMarkup;
-        if (paymentsContainer) paymentsContainer.innerHTML = renderHintState('fas fa-credit-card', '支付问题加载失败', 'error');
-        if (ticketsContainer) ticketsContainer.innerHTML = renderHintState('fas fa-headset', '售后工单加载失败', 'error');
-        if (fulfillmentContainer) fulfillmentContainer.innerHTML = renderHintState('fas fa-truck-fast', '履约处理加载失败', 'error');
-        if (verifyContainer) verifyContainer.innerHTML = renderHintState('fas fa-shield-halved', '验证服务加载失败', 'error');
-        if (alertsContainer) alertsContainer.innerHTML = renderHintState('fas fa-tower-broadcast', '站外告警加载失败', 'error');
-        return;
-    }
-
-    const overviewState = buildAnalyticsOpsCockpitOverviewState({
-        operationsHealthSnapshot,
-        verifySummary,
-        productSummary,
-        productHealthPayloads,
-        opsAlertHealth
-    });
-    const paymentsState = buildAnalyticsOpsPaymentsState(operationsHealthSnapshot);
-    const ticketsState = buildAnalyticsOpsTicketsState(operationsHealthSnapshot);
-    const fulfillmentState = buildAnalyticsOpsFulfillmentState(productSummary, productHealthPayloads);
-    const verifyState = buildAnalyticsOpsVerifyState(verifySummary);
-    const alertsState = buildAnalyticsOpsAlertsState(opsAlertHealth);
-    const opsFeedbackEntries = getAnalyticsResolutionFeedbackEntriesForOps({ limit: 12 });
-    const opsFeedbackEntityStates = {
-        payments: paymentsState,
-        tickets: ticketsState,
-        fulfillment: fulfillmentState,
-        verify: verifyState,
-        alerts: alertsState
+        return { productSummary, productHealthPayloads };
     };
 
-    overviewState.feedback = buildAnalyticsOpsFeedbackOverviewState(opsFeedbackEntries, opsFeedbackEntityStates);
-    paymentsState.feedbackDigest = buildAnalyticsOpsEntityFeedbackDigest(opsFeedbackEntries, 'payments', paymentsState);
-    ticketsState.feedbackDigest = buildAnalyticsOpsEntityFeedbackDigest(opsFeedbackEntries, 'tickets', ticketsState);
-    fulfillmentState.feedbackDigest = buildAnalyticsOpsEntityFeedbackDigest(opsFeedbackEntries, 'fulfillment', fulfillmentState);
-    verifyState.feedbackDigest = buildAnalyticsOpsEntityFeedbackDigest(opsFeedbackEntries, 'verify', verifyState);
-    alertsState.feedbackDigest = buildAnalyticsOpsEntityFeedbackDigest(opsFeedbackEntries, 'alerts', alertsState);
+    const renderEntityCards = (forceFallback = false) => {
+        if (requestStatus.operationsHealthSnapshot === 'fulfilled') {
+            const paymentsState = attachOpsFeedbackDigestSafely(
+                buildAnalyticsOpsPaymentsState(requestState.operationsHealthSnapshot),
+                'payments'
+            );
+            const ticketsState = attachOpsFeedbackDigestSafely(
+                buildAnalyticsOpsTicketsState(requestState.operationsHealthSnapshot),
+                'tickets'
+            );
 
-    if (overviewContainer) overviewContainer.innerHTML = renderAnalyticsOpsCockpitOverview(overviewState);
-    if (paymentsContainer) paymentsContainer.innerHTML = renderAnalyticsOpsCockpitCard(paymentsState, { iconClass: 'fas fa-credit-card', errorMessage: '支付问题加载失败' });
-    if (ticketsContainer) ticketsContainer.innerHTML = renderAnalyticsOpsCockpitCard(ticketsState, { iconClass: 'fas fa-headset', errorMessage: '售后工单加载失败' });
-    if (fulfillmentContainer) fulfillmentContainer.innerHTML = renderAnalyticsOpsCockpitCard(fulfillmentState, { iconClass: 'fas fa-truck-fast', errorMessage: '履约处理加载失败' });
-    if (verifyContainer) verifyContainer.innerHTML = renderAnalyticsOpsCockpitCard(verifyState, { iconClass: 'fas fa-shield-halved', errorMessage: '验证服务加载失败' });
-    if (alertsContainer) alertsContainer.innerHTML = renderAnalyticsOpsCockpitCard(alertsState, { iconClass: 'fas fa-tower-broadcast', errorMessage: '站外告警加载失败' });
+            try {
+                if (paymentsContainer) {
+                    paymentsContainer.innerHTML = renderAnalyticsOpsCockpitCard(paymentsState, { iconClass: 'fas fa-credit-card', errorMessage: '支付问题加载失败' });
+                }
+            } catch (error) {
+                console.error('[Analytics] Failed to render ops cockpit payments card:', error);
+                if (paymentsContainer) {
+                    paymentsContainer.innerHTML = renderHintState('fas fa-credit-card', '支付问题数据暂不可用', 'neutral');
+                }
+            }
+            try {
+                if (ticketsContainer) {
+                    ticketsContainer.innerHTML = renderAnalyticsOpsCockpitCard(ticketsState, { iconClass: 'fas fa-headset', errorMessage: '售后工单加载失败' });
+                }
+            } catch (error) {
+                console.error('[Analytics] Failed to render ops cockpit tickets card:', error);
+                if (ticketsContainer) {
+                    ticketsContainer.innerHTML = renderHintState('fas fa-headset', '售后工单数据暂不可用', 'neutral');
+                }
+            }
+            if (paymentsMeta) {
+                paymentsMeta.textContent = `告警 ${formatNumber(requestState.operationsHealthSnapshot?.metrics?.paymentAlertTotal || 0)} / 死信 ${formatNumber(requestState.operationsHealthSnapshot?.metrics?.paymentDeadLetterCount || 0)} / 重试 ${formatNumber(requestState.operationsHealthSnapshot?.metrics?.paymentRetryCount || 0)}`;
+            }
+            if (ticketsMeta) {
+                ticketsMeta.textContent = `待处理 ${formatNumber(requestState.operationsHealthSnapshot?.metrics?.ticketPendingCount || 0)} / 超时 ${formatNumber(requestState.operationsHealthSnapshot?.metrics?.ticketOverdueCount || 0)} / critical ${formatNumber(requestState.operationsHealthSnapshot?.metrics?.ticketCriticalOverdueCount || 0)}`;
+            }
+        } else if (forceFallback && requestStatus.operationsHealthSnapshot === 'rejected') {
+            if (paymentsContainer) paymentsContainer.innerHTML = renderHintState('fas fa-credit-card', '支付问题加载失败', 'error');
+            if (ticketsContainer) ticketsContainer.innerHTML = renderHintState('fas fa-headset', '售后工单加载失败', 'error');
+        }
 
-    if (overviewMeta) overviewMeta.textContent = `${overviewState.statusLabel} · 支付 ${formatNumber(overviewState?.stats?.[0]?.value || 0)} / 工单 ${formatNumber(operationsHealthSnapshot?.metrics?.ticketPendingCount || 0)}`;
-    if (paymentsMeta) paymentsMeta.textContent = `告警 ${formatNumber(operationsHealthSnapshot?.metrics?.paymentAlertTotal || 0)} / 死信 ${formatNumber(operationsHealthSnapshot?.metrics?.paymentDeadLetterCount || 0)} / 重试 ${formatNumber(operationsHealthSnapshot?.metrics?.paymentRetryCount || 0)}`;
-    if (ticketsMeta) ticketsMeta.textContent = `待处理 ${formatNumber(operationsHealthSnapshot?.metrics?.ticketPendingCount || 0)} / 超时 ${formatNumber(operationsHealthSnapshot?.metrics?.ticketOverdueCount || 0)} / critical ${formatNumber(operationsHealthSnapshot?.metrics?.ticketCriticalOverdueCount || 0)}`;
-    if (fulfillmentMeta) fulfillmentMeta.textContent = `低库存 ${formatNumber((productHealthPayloads.lowStockProducts || []).length)} / 售罄 ${formatNumber((productHealthPayloads.soldOutProducts || []).length)} / 履约风险 ${formatNumber(productSummary.delivery_risk_count || 0)}`;
-    if (verifyMeta) verifyMeta.textContent = `失败 ${formatNumber(verifySummary?.metrics?.failedCount || 0)} / 活跃 ${formatNumber(verifySummary?.metrics?.activeCount || 0)} / 完成率 ${formatPercent(verifySummary?.metrics?.successRate || 0)}`;
-    if (alertsMeta) alertsMeta.textContent = `通道 ${formatNumber(opsAlertHealth?.summary?.enabled_channel_count || 0)} / 失败 ${formatNumber(opsAlertHealth?.summary?.failed_count || 0)} / 死信 ${formatNumber(opsAlertHealth?.summary?.dead_letter_count || 0)}`;
+        if (requestStatus.productDashboardBundle === 'fulfilled') {
+            const fulfillmentState = attachOpsFeedbackDigestSafely(
+                buildAnalyticsOpsFulfillmentState(requestState.productSummary, requestState.productHealthPayloads),
+                'fulfillment'
+            );
+            try {
+                if (fulfillmentContainer) {
+                    fulfillmentContainer.innerHTML = renderAnalyticsOpsCockpitCard(fulfillmentState, { iconClass: 'fas fa-truck-fast', errorMessage: '履约处理加载失败' });
+                }
+            } catch (error) {
+                console.error('[Analytics] Failed to render ops cockpit fulfillment card:', error);
+                if (fulfillmentContainer) {
+                    fulfillmentContainer.innerHTML = renderHintState('fas fa-truck-fast', '履约处理数据暂不可用', 'neutral');
+                }
+            }
+            if (fulfillmentMeta) {
+                fulfillmentMeta.textContent = `低库存 ${formatNumber((requestState.productHealthPayloads.lowStockProducts || []).length)} / 售罄 ${formatNumber((requestState.productHealthPayloads.soldOutProducts || []).length)} / 履约风险 ${formatNumber(requestState.productSummary.delivery_risk_count || 0)}`;
+            }
+        } else if (forceFallback && requestStatus.productDashboardBundle === 'rejected') {
+            if (fulfillmentContainer) fulfillmentContainer.innerHTML = renderHintState('fas fa-truck-fast', '履约处理加载失败', 'error');
+        }
+
+        if (requestStatus.verifySummary === 'fulfilled') {
+            const verifyState = attachOpsFeedbackDigestSafely(
+                buildAnalyticsOpsVerifyState(requestState.verifySummary),
+                'verify'
+            );
+            try {
+                if (verifyContainer) {
+                    verifyContainer.innerHTML = renderAnalyticsOpsCockpitCard(verifyState, { iconClass: 'fas fa-shield-halved', errorMessage: '验证服务加载失败' });
+                }
+            } catch (error) {
+                console.error('[Analytics] Failed to render ops cockpit verify card:', error);
+                renderVerifyUnavailableCard(error?.message || '验证服务摘要暂不可用，请稍后刷新或直接进入 Verify Monitor。');
+            }
+            if (verifyMeta) {
+                verifyMeta.textContent = requestState.verifySummary?.unavailableMessage
+                    ? '数据暂不可用'
+                    : `失败 ${formatNumber(requestState.verifySummary?.metrics?.failedCount || 0)} / 活跃 ${formatNumber(requestState.verifySummary?.metrics?.activeCount || 0)} / 完成率 ${formatPercent(requestState.verifySummary?.metrics?.successRate || 0)}`;
+            }
+        } else if (forceFallback && requestStatus.verifySummary === 'rejected') {
+            renderVerifyUnavailableCard('验证服务摘要暂不可用，请稍后刷新或直接进入 Verify Monitor。');
+        }
+
+        if (requestStatus.opsAlertHealth === 'fulfilled') {
+            const alertsState = attachOpsFeedbackDigestSafely(
+                buildAnalyticsOpsAlertsState(requestState.opsAlertHealth),
+                'alerts'
+            );
+            try {
+                if (alertsContainer) {
+                    alertsContainer.innerHTML = renderAnalyticsOpsCockpitCard(alertsState, { iconClass: 'fas fa-tower-broadcast', errorMessage: '站外告警加载失败' });
+                }
+            } catch (error) {
+                console.error('[Analytics] Failed to render ops cockpit alerts card:', error);
+                renderAlertsUnavailableCard(error?.message || '站外告警健康暂不可用，请稍后刷新或直接进入告警健康页。');
+            }
+            if (alertsMeta) {
+                alertsMeta.textContent = requestState.opsAlertHealth?.unavailableMessage
+                    ? '数据暂不可用'
+                    : `通道 ${formatNumber(requestState.opsAlertHealth?.summary?.enabled_channel_count || 0)} / 失败 ${formatNumber(requestState.opsAlertHealth?.summary?.failed_count || 0)} / 死信 ${formatNumber(requestState.opsAlertHealth?.summary?.dead_letter_count || 0)}`;
+            }
+        } else if (forceFallback && requestStatus.opsAlertHealth === 'rejected') {
+            renderAlertsUnavailableCard('站外告警健康暂不可用，请稍后刷新或直接进入告警健康页。');
+        }
+    };
+
+    const renderOverview = (forceFallback = false) => {
+        const hasAnySource = Object.values(requestStatus).some((status) => status === 'fulfilled');
+        const allReady = Object.values(requestStatus).every((status) => status !== 'pending');
+        const failedParts = getOpsCockpitFailedParts();
+
+        if (!hasAnySource && !forceFallback) {
+            return;
+        }
+
+        if (!allReady && !forceFallback) {
+            updateOverviewLoadingMeta();
+            return;
+        }
+
+        if (!hasAnySource) {
+            if (overviewContainer) overviewContainer.innerHTML = renderHintState('fas fa-shield-halved', '运营保障驾驶舱加载失败', 'error');
+            if (overviewMeta) overviewMeta.textContent = '运营保障驾驶舱加载失败';
+            return;
+        }
+
+        let overviewState = null;
+        try {
+            overviewState = buildAnalyticsOpsCockpitOverviewState({
+                operationsHealthSnapshot: requestState.operationsHealthSnapshot,
+                verifySummary: requestState.verifySummary,
+                productSummary: requestState.productSummary,
+                productHealthPayloads: requestState.productHealthPayloads,
+                opsAlertHealth: requestState.opsAlertHealth
+            });
+        } catch (error) {
+            console.error('[Analytics] Failed to build ops cockpit overview state:', error);
+            if (overviewContainer) {
+                overviewContainer.innerHTML = renderHintState('fas fa-satellite-dish', '运营保障总览数据暂不可用', 'neutral');
+            }
+            if (overviewMeta) {
+                overviewMeta.textContent = '总览暂不可用，请以下方分块为准';
+            }
+            return;
+        }
+
+        if (Array.isArray(overviewState?.stats)) {
+            if (requestStatus.operationsHealthSnapshot === 'rejected') {
+                overviewState.stats[0] = { label: '支付告警', value: '—', tone: 'neutral', meta: '暂未返回' };
+                overviewState.stats[1] = { label: '待处理工单', value: '—', tone: 'neutral', meta: '暂未返回' };
+            }
+            if (requestStatus.productDashboardBundle === 'rejected') {
+                overviewState.stats[2] = { label: '履约风险', value: '—', tone: 'neutral', meta: '暂未返回' };
+            }
+            if (requestStatus.verifySummary === 'rejected') {
+                overviewState.stats[3] = { label: '验证失败', value: '—', tone: 'neutral', meta: '暂未返回' };
+            }
+            if (requestStatus.opsAlertHealth === 'rejected') {
+                overviewState.stats[4] = { label: '告警通道', value: '—', tone: 'neutral', meta: '暂未返回' };
+            }
+        }
+
+        if (failedParts.length > 0) {
+            if (overviewState.tone === 'success') {
+                overviewState.tone = 'accent';
+            }
+            if (overviewState.statusLabel === '平稳中') {
+                overviewState.statusLabel = '部分可用';
+            }
+            overviewState.summary = [
+                String(overviewState.summary || '').trim(),
+                `以下分块暂未返回：${failedParts.join(' / ')}。`
+            ].filter(Boolean).join(' ');
+        }
+
+        const opsFeedbackEntityStates = {
+            payments: buildAnalyticsOpsPaymentsState(requestState.operationsHealthSnapshot),
+            tickets: buildAnalyticsOpsTicketsState(requestState.operationsHealthSnapshot),
+            fulfillment: buildAnalyticsOpsFulfillmentState(requestState.productSummary, requestState.productHealthPayloads),
+            verify: buildAnalyticsOpsVerifyState(requestState.verifySummary),
+            alerts: buildAnalyticsOpsAlertsState(requestState.opsAlertHealth)
+        };
+        try {
+            overviewState.feedback = buildAnalyticsOpsFeedbackOverviewState(opsFeedbackEntries, opsFeedbackEntityStates);
+        } catch (error) {
+            console.error('[Analytics] Failed to build ops cockpit feedback overview state:', error);
+            overviewState.feedback = null;
+        }
+
+        if (overviewContainer) {
+            overviewContainer.innerHTML = renderAnalyticsOpsCockpitOverview(overviewState);
+        }
+        if (overviewMeta) {
+            const unavailableParts = [
+                requestStatus.operationsHealthSnapshot === 'rejected' ? '支付/工单' : '',
+                requestStatus.productDashboardBundle === 'rejected' ? '履约' : '',
+                (requestStatus.verifySummary === 'rejected' || requestState.verifySummary?.unavailableMessage) ? '验证' : '',
+                (requestStatus.opsAlertHealth === 'rejected' || requestState.opsAlertHealth?.unavailableMessage) ? '告警' : ''
+            ].filter(Boolean);
+            overviewMeta.textContent = unavailableParts.length > 0
+                ? `${overviewState.statusLabel} · 支付 ${formatNumber(overviewState?.stats?.[0]?.value || 0)} / 工单 ${formatNumber(requestState.operationsHealthSnapshot?.metrics?.ticketPendingCount || 0)} · ${unavailableParts.join('/')}暂未返回`
+                : `${overviewState.statusLabel} · 支付 ${formatNumber(overviewState?.stats?.[0]?.value || 0)} / 工单 ${formatNumber(requestState.operationsHealthSnapshot?.metrics?.ticketPendingCount || 0)}`;
+        }
+    };
+
+    const requests = [
+        ['operationsHealthSnapshot', getOperationsHealthSnapshotData()],
+        ['verifySummary', (async () => {
+            try {
+                return await getVerifyServiceSummaryData();
+            } catch (error) {
+                console.warn('[Analytics] Ops cockpit verify summary unavailable, falling back:', error);
+                try {
+                    if (typeof buildVerifyServiceSummaryFallback === 'function') {
+                        const [snapshot, summaryWindow] = await Promise.all([
+                            getAnalyticsVerifyMonitorSnapshotData({ forceRefresh: true }).catch(() => null),
+                            loadAnalyticsSummaryWindowFallbackData({ forceRefresh: true }).catch(() => ({}))
+                        ]);
+                        return buildVerifyServiceSummaryFallback({
+                            snapshot,
+                            summaryWindow: summaryWindow || {}
+                        });
+                    }
+                } catch (fallbackError) {
+                    console.warn('[Analytics] Ops cockpit verify summary fallback failed:', fallbackError);
+                }
+                return buildVerifySummaryUnavailableState(error?.message || '验证服务摘要暂不可用，请稍后刷新或直接进入 Verify Monitor。');
+            }
+        })()],
+        ['productDashboardBundle', getAnalyticsProductDashboardBundle()],
+        ['opsAlertHealth', (async () => {
+            try {
+                return await getAnalyticsOpsAlertHealthData();
+            } catch (error) {
+                console.warn('[Analytics] Ops cockpit ops-alert health unavailable, using neutral fallback:', error);
+                return buildOpsAlertHealthUnavailableState(error?.message || '站外告警健康暂不可用，请稍后刷新或直接进入告警健康页。');
+            }
+        })()]
+    ];
+
+    await Promise.allSettled(requests.map(([key, promise]) => Promise.resolve(promise)
+        .then((value) => {
+            if (key === 'productDashboardBundle') {
+                const { productSummary, productHealthPayloads } = readProductDashboardBundle(value);
+                requestState.productSummary = productSummary;
+                requestState.productHealthPayloads = productHealthPayloads;
+            } else {
+                requestState[key] = value;
+            }
+            requestStatus[key] = 'fulfilled';
+            renderEntityCards(false);
+            renderOverview(false);
+            return value;
+        })
+        .catch((error) => {
+            requestStatus[key] = 'rejected';
+            return Promise.reject(error);
+        })));
+
+    renderEntityCards(true);
+    renderOverview(true);
 }
 
 function enrichAnalyticsGrowthSummaryWithProductSignals(summary = {}, productSummary = {}) {

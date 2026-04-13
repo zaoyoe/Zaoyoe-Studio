@@ -93,6 +93,12 @@ const TREND_FAILED_EVENT_RESULTS = new Set([
     'admin_refund_reclaim_failed',
     'admin_refund_compensation_failed'
 ]);
+const SUMMARY_PAGE_SIZES = Object.freeze({
+    default: 1000,
+    heavy: 5000,
+    anomalyCases: 2000,
+    opsAlertJobs: 5000
+});
 
 function getIsoDaysAgo(days) {
     const date = new Date();
@@ -780,6 +786,112 @@ function isMissingColumnError(error) {
         || (message.includes('column') && message.includes('does not exist'));
 }
 
+function isMissingFunctionError(error) {
+    const message = String(error?.message || '').toLowerCase();
+    return error?.code === '42883'
+        || (message.includes('function') && message.includes('does not exist'));
+}
+
+function normalizeJsonArray(value) {
+    return Array.isArray(value) ? value : [];
+}
+
+function normalizeFinanceAggregatePayload(payload) {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        return null;
+    }
+
+    const overview = normalizeJsonObject(payload.overview);
+    const anomalySummary = normalizeJsonObject(payload.anomaly_summary);
+    const sitewideSummary = normalizeJsonObject(payload.sitewide_summary);
+    const providerStats = normalizeJsonArray(payload.provider_stats)
+        .filter((item) => item && typeof item === 'object' && !Array.isArray(item));
+    const pointsBreakdown = normalizeJsonArray(payload.points_breakdown)
+        .filter((item) => item && typeof item === 'object' && !Array.isArray(item));
+
+    return {
+        overview,
+        anomaly_summary: anomalySummary,
+        provider_stats: providerStats,
+        sitewide_summary: sitewideSummary,
+        points_breakdown: pointsBreakdown
+    };
+}
+
+function normalizeOverviewAggregatePayload(payload) {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        return null;
+    }
+
+    return {
+        overview: normalizeJsonObject(payload.overview),
+        session_summary: normalizeJsonObject(payload.session_summary),
+        query_summary: {
+            ...normalizeJsonObject(payload.query_summary),
+            outcome_breakdown: normalizeJsonArray(payload?.query_summary?.outcome_breakdown)
+        },
+        anomaly_summary: normalizeJsonObject(payload.anomaly_summary),
+        provider_stats: normalizeJsonArray(payload.provider_stats)
+            .filter((item) => item && typeof item === 'object' && !Array.isArray(item)),
+        trend_24h: normalizeJsonArray(payload.trend_24h),
+        refund_alert_topics: normalizeJsonArray(payload.refund_alert_topics)
+            .filter((item) => item && typeof item === 'object' && !Array.isArray(item)),
+        refund_alert_items: normalizeJsonArray(payload.refund_alert_items)
+            .filter((item) => item && typeof item === 'object' && !Array.isArray(item))
+    };
+}
+
+async function fetchPaymentFinanceAggregate(client, sinceIso, untilIso, site) {
+    if (!client?.rpc) {
+        return null;
+    }
+
+    try {
+        const { data, error } = await client.rpc('fn_admin_get_payment_finance_summary', {
+            p_start_at: sinceIso,
+            p_end_at: untilIso || null,
+            p_site: site || null
+        });
+
+        if (error) {
+            throw error;
+        }
+
+        return normalizeFinanceAggregatePayload(data);
+    } catch (error) {
+        if (!isMissingFunctionError(error)) {
+            console.warn('[AdminPayments] Failed to fetch finance aggregate RPC:', error.message || error);
+        }
+        return null;
+    }
+}
+
+async function fetchPaymentOverviewAggregate(client, sinceIso, untilIso, trendSinceIso, site) {
+    if (!client?.rpc) {
+        return null;
+    }
+
+    try {
+        const { data, error } = await client.rpc('fn_admin_get_payment_overview_summary', {
+            p_start_at: sinceIso,
+            p_end_at: untilIso || null,
+            p_trend_start_at: trendSinceIso || null,
+            p_site: site || null
+        });
+
+        if (error) {
+            throw error;
+        }
+
+        return normalizeOverviewAggregatePayload(data);
+    } catch (error) {
+        if (!isMissingFunctionError(error)) {
+            console.warn('[AdminPayments] Failed to fetch overview aggregate RPC:', error.message || error);
+        }
+        return null;
+    }
+}
+
 function isSuccessOrder(order) {
     return ['paid', 'redeemed'].includes(String(order?.status || '').trim());
 }
@@ -860,11 +972,35 @@ async function fetchPagedRows(buildQuery, pageSize = 1000, maxPages = 50) {
     return rows;
 }
 
-async function fetchPaymentOrders(client, sinceIso, untilIso, site) {
+function buildPaymentOrderSelect(view = 'overview') {
+    const fields = [
+        'id',
+        'provider',
+        'provider_order_no',
+        'paid_amount',
+        'expected_amount',
+        'points_amount',
+        'status',
+        'user_id',
+        'created_at',
+        'paid_at',
+        'claimed_at',
+        'site',
+        'provider_metadata'
+    ];
+
+    if (view === 'ops') {
+        fields.push('package_name', 'last_error');
+    }
+
+    return fields.join(', ');
+}
+
+async function fetchPaymentOrders(client, sinceIso, untilIso, site, view = 'overview') {
     return fetchPagedRows(() => {
         let query = client
             .from('payment_orders')
-            .select('id, provider, provider_order_no, package_name, paid_amount, expected_amount, points_amount, status, user_id, created_at, paid_at, claimed_at, site, last_error, sign_verified, amount_verified, provider_metadata')
+            .select(buildPaymentOrderSelect(view))
             .gte('created_at', sinceIso)
             .order('created_at', { ascending: false });
 
@@ -876,7 +1012,7 @@ async function fetchPaymentOrders(client, sinceIso, untilIso, site) {
         }
 
         return query;
-    });
+    }, SUMMARY_PAGE_SIZES.heavy, 50);
 }
 
 async function fetchCheckoutSessions(client, sinceIso, untilIso, site) {
@@ -897,7 +1033,7 @@ async function fetchCheckoutSessions(client, sinceIso, untilIso, site) {
             }
 
             return query;
-        });
+        }, SUMMARY_PAGE_SIZES.heavy, 50);
     } catch (error) {
         if (isMissingColumnError(error)) {
             return [];
@@ -906,12 +1042,37 @@ async function fetchCheckoutSessions(client, sinceIso, untilIso, site) {
     }
 }
 
-async function fetchOpsAlertJobs(client, sinceIso, untilIso) {
+function buildOpsAlertJobSelect(view = 'overview') {
+    const fields = [
+        'id',
+        'severity',
+        'title',
+        'payload',
+        'channels',
+        'remaining_channels',
+        'status',
+        'attempt_count',
+        'max_attempts',
+        'next_retry_at',
+        'delivered_at',
+        'last_error',
+        'created_at',
+        'updated_at'
+    ];
+
+    if (view === 'ops') {
+        fields.push('alert_type', 'content', 'last_attempt_at', 'worker_name');
+    }
+
+    return fields.join(', ');
+}
+
+async function fetchOpsAlertJobs(client, sinceIso, untilIso, view = 'overview') {
     try {
         return await fetchPagedRows(() => {
             let query = client
                 .from('ops_alert_jobs')
-                .select('id, alert_type, severity, title, content, payload, channels, remaining_channels, status, attempt_count, max_attempts, next_retry_at, last_attempt_at, delivered_at, last_error, worker_name, created_at, updated_at')
+                .select(buildOpsAlertJobSelect(view))
                 .gte('created_at', sinceIso)
                 .order('created_at', { ascending: false });
 
@@ -920,7 +1081,7 @@ async function fetchOpsAlertJobs(client, sinceIso, untilIso) {
             }
 
             return query;
-        }, 200, 10);
+        }, SUMMARY_PAGE_SIZES.opsAlertJobs, 20);
     } catch (error) {
         if (isMissingColumnError(error)) {
             return [];
@@ -931,21 +1092,22 @@ async function fetchOpsAlertJobs(client, sinceIso, untilIso) {
 
 async function fetchAnomalyCasesByTargets(client, anomalies) {
     const groupedIds = {
-        order: [],
-        event: [],
-        session: []
+        order: new Set(),
+        event: new Set(),
+        session: new Set()
     };
 
     (anomalies || []).forEach((item) => {
         const type = String(item?.type || '').trim().toLowerCase();
         const id = String(item?.id || '').trim();
         if (!id || !Object.prototype.hasOwnProperty.call(groupedIds, type)) return;
-        groupedIds[type].push(id);
+        groupedIds[type].add(id);
     });
 
     const results = [];
 
-    for (const [targetType, targetIds] of Object.entries(groupedIds)) {
+    for (const [targetType, idSet] of Object.entries(groupedIds)) {
+        const targetIds = Array.from(idSet);
         if (!targetIds.length) continue;
 
         try {
@@ -954,7 +1116,7 @@ async function fetchAnomalyCasesByTargets(client, anomalies) {
                 .select('id, target_type, target_id, status, note, resolution, last_action, last_action_at')
                 .eq('target_type', targetType)
                 .in('target_id', targetIds)
-                .order('updated_at', { ascending: false }));
+                .order('updated_at', { ascending: false }), SUMMARY_PAGE_SIZES.anomalyCases, 10);
 
             results.push(...rows);
         } catch (error) {
@@ -981,7 +1143,7 @@ async function fetchPaymentEvents(client, sinceIso, untilIso) {
         }
 
         return query;
-    });
+    }, SUMMARY_PAGE_SIZES.heavy, 50);
 }
 
 async function fetchPaymentQueryAttempts(client, sinceIso, untilIso, site) {
@@ -1001,7 +1163,7 @@ async function fetchPaymentQueryAttempts(client, sinceIso, untilIso, site) {
             }
 
             return query;
-        });
+        }, SUMMARY_PAGE_SIZES.heavy, 50);
     } catch (error) {
         if (isMissingColumnError(error)) {
             return [];
@@ -1228,7 +1390,7 @@ async function fetchShopOrders(client, sinceIso, untilIso, site) {
                 }
 
                 return query;
-            });
+            }, SUMMARY_PAGE_SIZES.heavy, 50);
 
             if (site && !variant.hasSite && site !== 'cn') {
                 return [];
@@ -1281,7 +1443,7 @@ async function fetchPointsLedger(client, sinceIso, untilIso, site) {
                 }
 
                 return query;
-            });
+            }, SUMMARY_PAGE_SIZES.heavy, 50);
 
             if (site && !variant.hasSite && site !== 'cn') {
                 return [];
@@ -1330,7 +1492,7 @@ async function fetchPointsBalances(client, site) {
                 }
 
                 return query;
-            });
+            }, SUMMARY_PAGE_SIZES.heavy, 50);
 
             if (site && !variant.hasSite && site !== 'cn') {
                 return [];
@@ -1650,6 +1812,58 @@ function buildBusinessBreakdown({ paymentOrders, shopOrders, balanceRows, sitewi
     ];
 }
 
+function buildBusinessBreakdownFromFinanceSummary({ overview, sitewideSummary }) {
+    const normalizedOverview = normalizeJsonObject(overview);
+    const summary = normalizeJsonObject(sitewideSummary);
+    const rechargeAmount = normalizeNumber(summary.recharge_amount, 0);
+    const rechargePoints = roundNumber(summary.recharge_points, 1);
+    const rechargeOrderCount = normalizeNumber(summary.recharge_order_count, 0);
+    const totalOrderCount = normalizeNumber(normalizedOverview.total_orders, 0);
+    const shopOrderCount = normalizeNumber(summary.shop_order_count, 0);
+    const refundedShopOrderCount = normalizeNumber(summary.refunded_shop_order_count, 0);
+    const refundedShopPoints = roundNumber(summary.refunded_shop_points, 1);
+    const shopPointsSpent = roundNumber(summary.shop_points_spent, 1);
+    const mockRechargeOrderCount = normalizeNumber(summary.mock_recharge_order_count, 0);
+    const mockRechargePoints = roundNumber(summary.mock_recharge_points, 1);
+    const balanceAccountCount = normalizeNumber(summary.balance_account_count, 0);
+    const circulatingPoints = roundNumber(summary.circulating_points, 1);
+    const paidBalance = roundNumber(summary.paid_balance, 1);
+    const bonusBalance = roundNumber(summary.bonus_balance, 1);
+
+    return [
+        {
+            title: '充值收入',
+            description: `近期开出的支付订单 ${totalOrderCount.toLocaleString('zh-CN')} 笔，成功 ${rechargeOrderCount.toLocaleString('zh-CN')} 笔。`,
+            metric: `¥${rechargeAmount.toLocaleString('zh-CN', { minimumFractionDigits: rechargeAmount % 1 ? 2 : 0, maximumFractionDigits: 2 })}`,
+            meta: `${rechargePoints.toLocaleString('zh-CN')} 已入账`,
+            help: '统计标准支付订单的成功入账金额和对应到账点数。'
+        },
+        {
+            title: '商城消费',
+            description: `商城已消费 ${shopOrderCount.toLocaleString('zh-CN')} 笔，退款 ${refundedShopOrderCount.toLocaleString('zh-CN')} 笔。`,
+            metric: shopPointsSpent.toLocaleString('zh-CN'),
+            meta: refundedShopPoints > 0
+                ? `已退款 ${refundedShopPoints.toLocaleString('zh-CN')}`
+                : '当前无退款冲销',
+            help: '统计商城订单消耗的点数，不含已退款冲销部分。'
+        },
+        {
+            title: '模拟支付',
+            description: '用于临时直到账的充值记录，也会进入标准支付订单。',
+            metric: `${mockRechargeOrderCount.toLocaleString('zh-CN')} 笔`,
+            meta: `${mockRechargePoints.toLocaleString('zh-CN')} 已入账`,
+            help: '用于统计当前启用的模拟充值通道，方便和真实支付分开核对。'
+        },
+        {
+            title: '当前积分存量',
+            description: `活跃余额分布在 ${balanceAccountCount.toLocaleString('zh-CN')} 个用户/站点账户中。`,
+            metric: circulatingPoints.toLocaleString('zh-CN'),
+            meta: `付费 ${paidBalance.toLocaleString('zh-CN')} · 奖励 ${bonusBalance.toLocaleString('zh-CN')}`,
+            help: '展示当前仍在用户账户中流通的总余额，以及付费与奖励余额的拆分。'
+        }
+    ];
+}
+
 module.exports = async function handler(req, res) {
     if (!['GET'].includes(req.method)) {
         res.setHeader('Allow', 'GET');
@@ -1657,25 +1871,51 @@ module.exports = async function handler(req, res) {
     }
 
     try {
-        const { supabase, requestSupabase, user } = await requireAdmin(req, { permission: 'payments.manage' });
+        const {
+            supabase,
+            requestSupabase,
+            adminSupabase,
+            user
+        } = await requireAdmin(req, { anyOf: ['payments.manage', 'analytics.view'] });
         const scopedClient = supabase || requestSupabase;
         const site = typeof req.query?.site === 'string' && req.query.site.trim() ? req.query.site.trim() : null;
         const view = ['overview', 'finance', 'ops'].includes(String(req.query?.view || '').trim())
             ? String(req.query.view).trim()
             : 'overview';
+        const requestedScope = String(req.query?.scope || '').trim().toLowerCase();
+        const summaryScope = view === 'overview' && ['core', 'secondary', 'ops'].includes(requestedScope)
+            ? requestedScope
+            : 'full';
+        const isOverviewCoreScope = view === 'overview' && summaryScope === 'core';
+        const isOverviewSecondaryScope = view === 'overview' && summaryScope === 'secondary';
+        const isOverviewOpsScope = view === 'overview' && summaryScope === 'ops';
+        const isOverviewPartialScope = view === 'overview' && summaryScope !== 'full';
+        const needsOverviewPrimaryData = view !== 'overview' || !isOverviewOpsScope;
+        const needsOverviewSecondaryData = view === 'overview' && (summaryScope === 'secondary' || summaryScope === 'full');
+        const needsOverviewOpsData = view === 'overview' && (summaryScope === 'ops' || summaryScope === 'full');
         const days = Number.parseInt(req.query?.days, 10);
         const normalizedDays = Number.isFinite(days) && days > 0 ? Math.min(days, 365) : 30;
         const customStartIso = parseIsoQueryDate(req.query?.startDate);
         const customEndIso = parseIsoQueryDate(req.query?.endDate);
+        const isPrefetchRequest = ['1', 'true'].includes(String(req.query?.prefetch || '').trim().toLowerCase());
         const hasCustomRange = Boolean(customStartIso && customEndIso && new Date(customStartIso).getTime() <= new Date(customEndIso).getTime());
         const sinceIso = hasCustomRange ? customStartIso : getIsoDaysAgo(normalizedDays);
         const untilIso = hasCustomRange ? customEndIso : null;
         const trendSinceIso = hasCustomRange ? customStartIso : getIsoHoursAgo(24);
-        const needsEvents = view === 'overview' || view === 'ops';
-        const needsSessions = view === 'overview' || view === 'ops';
-        const needsQueries = view === 'overview' || view === 'ops';
+        const needsOrders = view === 'finance' || view === 'ops' || (view === 'overview' && !isOverviewOpsScope);
+        const needsEvents = view === 'ops' || needsOverviewSecondaryData;
+        const needsSessions = view === 'ops' || (view === 'overview' && !isOverviewOpsScope);
+        const needsQueries = view === 'ops' || (view === 'overview' && !isOverviewOpsScope);
         const needsFinance = view === 'finance';
-        const needsOpsAlerts = view === 'overview' || view === 'ops';
+        const needsOpsAlerts = view === 'ops' || needsOverviewOpsData;
+        const overviewAggregate = needsOverviewSecondaryData
+            ? await fetchPaymentOverviewAggregate(adminSupabase || null, sinceIso, untilIso, trendSinceIso, site)
+            : null;
+        const useOverviewAggregate = needsOverviewSecondaryData && Boolean(overviewAggregate);
+        const financeAggregate = needsFinance
+            ? await fetchPaymentFinanceAggregate(adminSupabase || null, sinceIso, untilIso, site)
+            : null;
+        const useFinanceAggregate = needsFinance && Boolean(financeAggregate);
 
         const [
             orderRows,
@@ -1687,14 +1927,16 @@ module.exports = async function handler(req, res) {
             pointsLedgerRows,
             pointsBalanceRows
         ] = await Promise.all([
-            fetchPaymentOrders(scopedClient, sinceIso, untilIso, site),
-            needsEvents ? fetchPaymentEvents(scopedClient, sinceIso, untilIso) : Promise.resolve([]),
-            needsQueries ? fetchPaymentQueryAttempts(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
-            needsSessions ? fetchCheckoutSessions(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
-            needsOpsAlerts ? fetchOpsAlertJobs(scopedClient, sinceIso, untilIso) : Promise.resolve([]),
-            needsFinance ? fetchShopOrders(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
-            needsFinance ? fetchPointsLedger(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
-            needsFinance ? fetchPointsBalances(scopedClient, site) : Promise.resolve([])
+            !needsOrders || useFinanceAggregate || useOverviewAggregate
+                ? Promise.resolve([])
+                : fetchPaymentOrders(scopedClient, sinceIso, untilIso, site, view),
+            needsEvents && !useOverviewAggregate ? fetchPaymentEvents(scopedClient, sinceIso, untilIso) : Promise.resolve([]),
+            needsQueries && !useOverviewAggregate ? fetchPaymentQueryAttempts(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
+            needsSessions && !useOverviewAggregate ? fetchCheckoutSessions(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
+            needsOpsAlerts ? fetchOpsAlertJobs(scopedClient, sinceIso, untilIso, view) : Promise.resolve([]),
+            needsFinance && !useFinanceAggregate ? fetchShopOrders(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
+            needsFinance && !useFinanceAggregate ? fetchPointsLedger(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
+            needsFinance && !useFinanceAggregate ? fetchPointsBalances(scopedClient, site) : Promise.resolve([])
         ]);
 
         const checkoutSessions = needsSessions
@@ -1705,24 +1947,52 @@ module.exports = async function handler(req, res) {
         const opsAlertJobs = needsOpsAlerts
             ? (rawOpsAlertJobs || []).filter((job) => matchesOpsAlertJobSite(job, site))
             : [];
-        const querySummary = needsQueries ? buildQuerySummary(queryRows || []) : undefined;
-        const overview = buildOverview(visibleOrders || []);
-        const sessionSummary = needsSessions
-            ? buildSessionSummary(checkoutSessions || [], visibleOrders || [])
+        const querySummary = needsOverviewPrimaryData
+            ? (
+                useOverviewAggregate
+                    ? {
+                        ...normalizeJsonObject(overviewAggregate?.query_summary),
+                        outcome_breakdown: normalizeJsonArray(overviewAggregate?.query_summary?.outcome_breakdown)
+                    }
+                    : (needsQueries ? buildQuerySummary(queryRows || []) : undefined)
+            )
+            : undefined;
+        const overview = needsOverviewPrimaryData
+            ? (
+                useFinanceAggregate
+                    ? normalizeJsonObject(financeAggregate?.overview)
+                    : useOverviewAggregate
+                        ? normalizeJsonObject(overviewAggregate?.overview)
+                        : buildOverview(visibleOrders || [])
+            )
+            : undefined;
+        const sessionSummary = needsOverviewPrimaryData && needsSessions
+            ? (
+                useOverviewAggregate
+                    ? normalizeJsonObject(overviewAggregate?.session_summary)
+                    : buildSessionSummary(checkoutSessions || [], visibleOrders || [])
+            )
             : undefined;
         const opsAlertSummary = needsOpsAlerts ? buildOpsAlertSummary(opsAlertJobs) : undefined;
         const opsAlertItems = needsOpsAlerts ? buildOpsAlertQueueItems(opsAlertJobs) : [];
-
-        const siteOrderIds = new Set((visibleOrders || []).map((order) => order.id).filter(Boolean));
-        const siteOrderNumbers = new Set((visibleOrders || []).map((order) => order.provider_order_no).filter(Boolean));
-        const scopedEvents = (eventRows || []).filter((event) => {
-            if (!site) return true;
-            return (
-                (event.payment_order_id && siteOrderIds.has(event.payment_order_id))
-                || (event.provider_order_no && siteOrderNumbers.has(event.provider_order_no))
-            );
-        });
-        const scopedTrendEvents = scopedEvents.filter((event) => new Date(event.created_at).getTime() >= new Date(trendSinceIso).getTime());
+        const siteOrderIds = useOverviewAggregate
+            ? new Set()
+            : new Set((visibleOrders || []).map((order) => order.id).filter(Boolean));
+        const siteOrderNumbers = useOverviewAggregate
+            ? new Set()
+            : new Set((visibleOrders || []).map((order) => order.provider_order_no).filter(Boolean));
+        const scopedEvents = useOverviewAggregate
+            ? []
+            : (eventRows || []).filter((event) => {
+                if (!site) return true;
+                return (
+                    (event.payment_order_id && siteOrderIds.has(event.payment_order_id))
+                    || (event.provider_order_no && siteOrderNumbers.has(event.provider_order_no))
+                );
+            });
+        const scopedTrendEvents = useOverviewAggregate
+            ? []
+            : scopedEvents.filter((event) => new Date(event.created_at).getTime() >= new Date(trendSinceIso).getTime());
 
         const recentOrders = view === 'ops'
             ? (visibleOrders || [])
@@ -1751,10 +2021,14 @@ module.exports = async function handler(req, res) {
         const refundCompensationFailures = scopedEvents.filter((event) => String(event.processing_result || '').trim() === 'admin_refund_compensation_failed').length;
 
         const recentEventAnomalies = needsEvents
-            ? scopedEvents
-                .filter(isEventAnomaly)
-                .slice(0, 24)
-                .map(buildEventAnomaly)
+            ? (
+                useOverviewAggregate
+                    ? []
+                    : scopedEvents
+                        .filter(isEventAnomaly)
+                        .slice(0, 24)
+                        .map(buildEventAnomaly)
+            )
             : [];
         const recentSessionAnomalies = view === 'ops'
             ? (checkoutSessions || [])
@@ -1763,7 +2037,14 @@ module.exports = async function handler(req, res) {
                 .slice(0, 24)
             : [];
         const refundAlertSummary = needsEvents
-            ? buildRefundExceptionTopics(scopedEvents || [])
+            ? (
+                useOverviewAggregate
+                    ? {
+                        topics: normalizeJsonArray(overviewAggregate?.refund_alert_topics),
+                        items: normalizeJsonArray(overviewAggregate?.refund_alert_items)
+                    }
+                    : buildRefundExceptionTopics(scopedEvents || [])
+            )
             : { topics: [], items: [] };
         const exceptionTopics = view === 'ops'
             ? buildExceptionTopics({
@@ -1810,59 +2091,111 @@ module.exports = async function handler(req, res) {
             ? recentAnomalies.length
             : recentOrderAnomalies.length + recentEventAnomalies.length + recentSessionAnomalies.length;
 
-        const anomalySummary = {
-            review_orders: Number(overview.review_orders || 0),
-            failed_orders: Number(overview.failed_orders || 0),
-            unclaimed_paid_orders: (visibleOrders || []).filter((order) => order.status === 'paid' && !order.user_id).length,
-            recent_event_anomalies: recentEventAnomalies.length,
-            duplicate_webhook_orders: duplicateWebhookOrders,
-            refund_failures: refundGatewayFailures,
-            refund_reclaim_failures: refundReclaimFailures,
-            refund_compensation_failures: refundCompensationFailures,
-            query_failures: Number(querySummary?.failed_attempts || 0),
-            stale_checkout_sessions: Number(sessionSummary?.stale_sessions || 0),
-            failed_checkout_sessions: Number(sessionSummary?.failed_sessions || 0),
-            completed_unlinked_sessions: Number(sessionSummary?.completed_unlinked_sessions || 0),
-            unmatched_session_orders: Number(sessionSummary?.unmatched_orders || 0),
-            webhook_linked_sessions: Number(sessionSummary?.webhook_linked_sessions || 0),
-            fallback_linked_sessions: Number(sessionSummary?.fallback_linked_sessions || 0),
-            session_anomalies: Number(sessionSummary?.anomaly_count || 0),
-            open_cases: openAnomalyCount,
-            handled_cases: handledCaseCount,
-            ignored_cases: ignoredCaseCount,
-            retry_requested_cases: retryRequestedCaseCount
-        };
+        const anomalySummary = needsOverviewPrimaryData
+            ? (
+                useFinanceAggregate
+                    ? normalizeJsonObject(financeAggregate?.anomaly_summary)
+                    : useOverviewAggregate
+                        ? {
+                            ...normalizeJsonObject(overviewAggregate?.anomaly_summary),
+                            open_cases: Number(normalizeJsonObject(overviewAggregate?.anomaly_summary).open_cases || (refundAlertSummary.items || []).length || 0),
+                            handled_cases: handledCaseCount,
+                            ignored_cases: ignoredCaseCount,
+                            retry_requested_cases: retryRequestedCaseCount
+                        }
+                        : {
+                            review_orders: Number(overview.review_orders || 0),
+                            failed_orders: Number(overview.failed_orders || 0),
+                            unclaimed_paid_orders: (visibleOrders || []).filter((order) => order.status === 'paid' && !order.user_id).length,
+                            recent_event_anomalies: recentEventAnomalies.length,
+                            duplicate_webhook_orders: duplicateWebhookOrders,
+                            refund_failures: refundGatewayFailures,
+                            refund_reclaim_failures: refundReclaimFailures,
+                            refund_compensation_failures: refundCompensationFailures,
+                            query_failures: Number(querySummary?.failed_attempts || 0),
+                            stale_checkout_sessions: Number(sessionSummary?.stale_sessions || 0),
+                            failed_checkout_sessions: Number(sessionSummary?.failed_sessions || 0),
+                            completed_unlinked_sessions: Number(sessionSummary?.completed_unlinked_sessions || 0),
+                            unmatched_session_orders: Number(sessionSummary?.unmatched_orders || 0),
+                            webhook_linked_sessions: Number(sessionSummary?.webhook_linked_sessions || 0),
+                            fallback_linked_sessions: Number(sessionSummary?.fallback_linked_sessions || 0),
+                            session_anomalies: Number(sessionSummary?.anomaly_count || 0),
+                            open_cases: openAnomalyCount,
+                            handled_cases: handledCaseCount,
+                            ignored_cases: ignoredCaseCount,
+                            retry_requested_cases: retryRequestedCaseCount
+                        }
+            )
+            : undefined;
 
-        const provider_stats = buildProviderStats(visibleOrders || [], checkoutSessions || [], scopedEvents || [], queryRows || []);
-        const trend_24h = view === 'overview' ? buildTrend24h(scopedTrendEvents) : undefined;
+        const provider_stats = isOverviewCoreScope
+            ? null
+            : isOverviewOpsScope
+                ? undefined
+            : useFinanceAggregate
+            ? normalizeJsonArray(financeAggregate?.provider_stats)
+            : useOverviewAggregate
+                ? normalizeJsonArray(overviewAggregate?.provider_stats)
+                : buildProviderStats(visibleOrders || [], checkoutSessions || [], scopedEvents || [], queryRows || []);
+        const trend_24h = isOverviewCoreScope
+            ? null
+            : isOverviewOpsScope
+                ? undefined
+            : view === 'overview'
+            ? (
+                useOverviewAggregate
+                    ? normalizeJsonArray(overviewAggregate?.trend_24h)
+                    : buildTrend24h(scopedTrendEvents)
+            )
+            : undefined;
         const sitewide_summary = needsFinance
-            ? buildFinanceSummary(visibleOrders || [], shopOrders || [], pointsLedgerRows || [], pointsBalanceRows || [])
+            ? (
+                useFinanceAggregate
+                    ? normalizeJsonObject(financeAggregate?.sitewide_summary)
+                    : buildFinanceSummary(visibleOrders || [], shopOrders || [], pointsLedgerRows || [], pointsBalanceRows || [])
+            )
             : undefined;
-        const points_breakdown = needsFinance ? buildPointsBreakdown(pointsLedgerRows || []) : undefined;
+        const points_breakdown = needsFinance
+            ? (
+                useFinanceAggregate
+                    ? normalizeJsonArray(financeAggregate?.points_breakdown)
+                    : buildPointsBreakdown(pointsLedgerRows || [])
+            )
+            : undefined;
         const business_breakdown = needsFinance
-            ? buildBusinessBreakdown({
-                paymentOrders: visibleOrders || [],
-                shopOrders: shopOrders || [],
-                balanceRows: pointsBalanceRows || [],
-                sitewideSummary: sitewide_summary
-            })
+            ? (
+                useFinanceAggregate
+                    ? buildBusinessBreakdownFromFinanceSummary({
+                        overview,
+                        sitewideSummary: sitewide_summary
+                    })
+                    : buildBusinessBreakdown({
+                        paymentOrders: visibleOrders || [],
+                        shopOrders: shopOrders || [],
+                        balanceRows: pointsBalanceRows || [],
+                        sitewideSummary: sitewide_summary
+                    })
+            )
             : undefined;
 
-        await writeAdminAuditLog({
-            supabase: requestSupabase || scopedClient,
-            adminId: user.id,
-            actionType: 'payments.summary.view',
-            details: {
-                site,
-                days: normalizedDays,
-                startDate: hasCustomRange ? customStartIso : null,
-                endDate: hasCustomRange ? customEndIso : null,
-                view
-            }
-        });
+        if (!isPrefetchRequest && !(view === 'overview' && isOverviewPartialScope)) {
+            await writeAdminAuditLog({
+                supabase: requestSupabase || scopedClient,
+                adminId: user.id,
+                actionType: 'payments.summary.view',
+                details: {
+                    site,
+                    days: normalizedDays,
+                    startDate: hasCustomRange ? customStartIso : null,
+                    endDate: hasCustomRange ? customEndIso : null,
+                    view
+                }
+            });
+        }
 
         return sendJson(res, 200, {
             success: true,
+            overview_scope: view === 'overview' ? summaryScope : undefined,
             overview,
             session_summary: sessionSummary,
             query_summary: querySummary,
@@ -1872,10 +2205,10 @@ module.exports = async function handler(req, res) {
             sitewide_summary,
             points_breakdown,
             business_breakdown,
-            refund_alert_topics: needsEvents ? refundAlertTopics : undefined,
-            refund_alert_items: needsEvents ? enrichedRefundAlertItems : undefined,
-            ops_alert_summary: needsOpsAlerts ? opsAlertSummary : undefined,
-            ops_alert_items: needsOpsAlerts ? opsAlertItems : undefined,
+            refund_alert_topics: needsEvents ? refundAlertTopics : (isOverviewCoreScope ? null : undefined),
+            refund_alert_items: needsEvents ? enrichedRefundAlertItems : (isOverviewCoreScope ? null : undefined),
+            ops_alert_summary: needsOpsAlerts ? opsAlertSummary : (isOverviewCoreScope ? null : undefined),
+            ops_alert_items: needsOpsAlerts ? opsAlertItems : (isOverviewCoreScope ? null : undefined),
             exception_topics: exceptionTopics.topics || [],
             exception_topic_items: enrichedExceptionTopicItems,
             recent_anomalies: recentAnomalies,

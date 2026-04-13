@@ -80,6 +80,11 @@ function cloneRow(row) {
     return JSON.parse(JSON.stringify(row));
 }
 
+function offsetIso(baseTime, { days = 0, hours = 0, minutes = 0 } = {}) {
+    const totalMinutes = (((days * 24) + hours) * 60) + minutes;
+    return new Date(baseTime + totalMinutes * 60 * 1000).toISOString();
+}
+
 function applyFilters(rows, filters = []) {
     return rows.filter((row) => filters.every((filter) => {
         if (filter.op === 'eq') {
@@ -197,13 +202,25 @@ async function withDiscountsListHandler(initialState, callback) {
 }
 
 test('discounts list handler returns site-specific and global discount codes in site view', async () => {
+    const baseTime = Date.now();
+    const orderPrevUser1At = offsetIso(baseTime, { days: -23 });
+    const orderPrevUser2At = offsetIso(baseTime, { days: -22 });
+    const orderPrevUser3At = offsetIso(baseTime, { days: -21, hours: -1 });
+    const orderGlobalCnAt = offsetIso(baseTime, { days: -4, hours: -2 });
+    const orderGlobalIntlAt = offsetIso(baseTime, { days: -4, hours: -1 });
+    const orderCnOlderAt = offsetIso(baseTime, { days: -2, hours: -1 });
+    const orderCnLatestAt = offsetIso(baseTime, { days: -2 });
+    const alertCreatedAt = offsetIso(baseTime, { days: -2, hours: 1 });
+    const caseUpdatedAt = offsetIso(baseTime, { days: -2, hours: 1, minutes: 3 });
+    const assetAssignedAt = offsetIso(baseTime, { days: -2, hours: -2 });
+
     await withDiscountsListHandler({
         discountRows: [
             {
                 id: 'discount_cn',
                 code: 'CNSITE',
                 applicable_site: 'cn',
-                created_at: '2026-04-03T10:00:00.000Z',
+                created_at: offsetIso(baseTime, { days: -9 }),
                 is_active: true,
                 starts_at: null,
                 expires_at: null,
@@ -217,7 +234,7 @@ test('discounts list handler returns site-specific and global discount codes in 
                 id: 'discount_global',
                 code: 'ALLSITE',
                 applicable_site: null,
-                created_at: '2026-04-03T09:00:00.000Z',
+                created_at: offsetIso(baseTime, { days: -9, hours: -1 }),
                 is_active: true,
                 starts_at: '2099-01-01T00:00:00.000Z',
                 expires_at: null,
@@ -231,7 +248,7 @@ test('discounts list handler returns site-specific and global discount codes in 
                 id: 'discount_intl',
                 code: 'INTLSITE',
                 applicable_site: 'intl',
-                created_at: '2026-04-03T08:00:00.000Z',
+                created_at: offsetIso(baseTime, { days: -9, hours: -2 }),
                 is_active: false,
                 starts_at: null,
                 expires_at: null,
@@ -247,7 +264,7 @@ test('discounts list handler returns site-specific and global discount codes in 
                 id: 'order_prev_user_1',
                 discount_code: null,
                 user_id: 'user_1',
-                created_at: '2026-03-20T08:00:00.000Z',
+                created_at: orderPrevUser1At,
                 price_paid: 45,
                 total_price: 45,
                 site: 'cn',
@@ -259,7 +276,7 @@ test('discounts list handler returns site-specific and global discount codes in 
                 id: 'order_prev_user_2',
                 discount_code: null,
                 user_id: 'user_2',
-                created_at: '2026-03-21T08:00:00.000Z',
+                created_at: orderPrevUser2At,
                 price_paid: 65,
                 total_price: 65,
                 site: 'cn',
@@ -271,7 +288,7 @@ test('discounts list handler returns site-specific and global discount codes in 
                 id: 'order_prev_user_3',
                 discount_code: null,
                 user_id: 'user_3',
-                created_at: '2026-03-22T07:00:00.000Z',
+                created_at: orderPrevUser3At,
                 price_paid: 80,
                 total_price: 80,
                 site: 'cn',
@@ -282,7 +299,7 @@ test('discounts list handler returns site-specific and global discount codes in 
             {
                 discount_code: 'CNSITE',
                 user_id: 'user_1',
-                created_at: '2026-04-05T08:00:00.000Z',
+                created_at: orderCnOlderAt,
                 price_paid: 0,
                 total_price: 99,
                 site: 'cn',
@@ -291,7 +308,7 @@ test('discounts list handler returns site-specific and global discount codes in 
             {
                 discount_code: 'CNSITE',
                 user_id: 'user_2',
-                created_at: '2026-04-05T09:00:00.000Z',
+                created_at: orderCnLatestAt,
                 price_paid: 66,
                 total_price: 99,
                 site: 'cn',
@@ -302,7 +319,7 @@ test('discounts list handler returns site-specific and global discount codes in 
             {
                 discount_code: 'ALLSITE',
                 user_id: 'user_3',
-                created_at: '2026-04-04T07:00:00.000Z',
+                created_at: orderGlobalCnAt,
                 price_paid: 80,
                 total_price: 100,
                 site: 'cn',
@@ -313,7 +330,7 @@ test('discounts list handler returns site-specific and global discount codes in 
             {
                 discount_code: 'ALLSITE',
                 user_id: 'user_9',
-                created_at: '2026-04-04T08:00:00.000Z',
+                created_at: orderGlobalIntlAt,
                 price_paid: 70,
                 total_price: 100,
                 site: 'intl',
@@ -337,7 +354,7 @@ test('discounts list handler returns site-specific and global discount codes in 
                     auto_response_status: 'applied',
                     auto_response_summary: '系统已自动停用优惠码 CNSITE，请继续复核最近命中订单与关联账号。'
                 },
-                created_at: '2026-04-05T10:00:00.000Z'
+                created_at: alertCreatedAt
             }
         ],
         opsAlertCases: [
@@ -352,8 +369,8 @@ test('discounts list handler returns site-specific and global discount codes in 
                 resolution: null,
                 metadata: {},
                 last_action: 'claimed',
-                last_action_at: '2026-04-05T10:03:00.000Z',
-                updated_at: '2026-04-05T10:03:00.000Z'
+                last_action_at: caseUpdatedAt,
+                updated_at: caseUpdatedAt
             }
         ],
         opsAlertCaseEvents: [
@@ -371,7 +388,7 @@ test('discounts list handler returns site-specific and global discount codes in 
                 note: '已接手排查',
                 resolution: null,
                 metadata: {},
-                created_at: '2026-04-05T10:03:00.000Z'
+                created_at: caseUpdatedAt
             }
         ],
         assetRows: [
@@ -380,8 +397,8 @@ test('discounts list handler returns site-specific and global discount codes in 
                 discount_id: 'discount_cn',
                 user_id: 'user_1',
                 asset_status: 'available',
-                assigned_at: '2026-04-05T07:00:00.000Z',
-                claimed_at: '2026-04-05T07:00:00.000Z'
+                assigned_at: assetAssignedAt,
+                claimed_at: assetAssignedAt
             }
         ]
     }, async ({ handler, state }) => {
@@ -416,7 +433,7 @@ test('discounts list handler returns site-specific and global discount codes in 
             recent_refund_count: 1,
             recent_distinct_user_count: 2,
             recent_zero_total_count: 1,
-            last_used_at: '2026-04-05T09:00:00.000Z',
+            last_used_at: orderCnLatestAt,
             top_product_names: ['CN Product'],
             recent_discount_cost_gross: 33,
             recent_discount_cost_net: 0,
@@ -440,7 +457,7 @@ test('discounts list handler returns site-specific and global discount codes in 
             recent_refund_count: 0,
             recent_distinct_user_count: 1,
             recent_zero_total_count: 0,
-            last_used_at: '2026-04-04T07:00:00.000Z',
+            last_used_at: orderGlobalCnAt,
             top_product_names: ['Global Product'],
             recent_discount_cost_gross: 20,
             recent_discount_cost_net: 20,
