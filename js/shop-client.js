@@ -3650,6 +3650,7 @@ const ShopClient = {
 
         if (!noStock) {
             this.applyShopPurchaseDataset(el, purchaseDataset);
+            el.dataset.maxPurchaseQuantity = String(maxPurchaseQuantity);
         }
 
         const productImage = hasCoverImage ? el.querySelector('.shop-card-image-cover') : null;
@@ -3669,6 +3670,7 @@ const ShopClient = {
         const cartTriggerButton = el.querySelector('.shop-card-cart-trigger[data-shop-action="add-product-to-cart"]');
         if (cartTriggerButton && !noStock) {
             this.applyShopPurchaseDataset(cartTriggerButton, purchaseDataset);
+            cartTriggerButton.dataset.maxPurchaseQuantity = String(maxPurchaseQuantity);
         }
         return el;
     },
