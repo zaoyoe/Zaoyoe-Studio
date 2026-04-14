@@ -222,6 +222,12 @@ const ShopClient = {
     currentUserPurchaseAccessPromise: null,
     currentUserPurchaseAccessUserId: null,
     availableCategories: [],
+    cartItems: new Map(),
+    cartSnapshots: {},
+    cartItemDisclosureState: {},
+    cartOpen: false,
+    cartCheckoutProcessing: false,
+    cartBackdropCloseGuardUntil: 0,
     productsRequestToken: 0,
     productsCacheEpoch: 0,
     backgroundPrefetchScheduled: false,
@@ -229,6 +235,7 @@ const ShopClient = {
     gridTransitionCleanupTimer: null,
     gridTransitionSequence: 0,
     purchaseGuidanceRequestToken: 0,
+    cartAnchorFeedbackTimer: null,
     lastSkeletonCount: SHOP_PRODUCT_SKELETON_COUNT,
     staticUiBindingsBound: false,
 
@@ -358,6 +365,1154 @@ const ShopClient = {
         return rawValue == null ? null : Number(rawValue);
     },
 
+    getCurrentLanguage: function () {
+        return window.i18n?.getCurrentLanguage() || 'zh';
+    },
+
+    isEnglishShopLocale: function () {
+        return this.getCurrentLanguage() === 'en';
+    },
+
+    getLocalizedProductName: function (product) {
+        if (!product) return '';
+        const isEn = this.isEnglishShopLocale();
+        return (isEn && product.name_en) ? product.name_en : (product.name || '');
+    },
+
+    getLocalizedProductDescription: function (product) {
+        if (!product) return '';
+        const isEn = this.isEnglishShopLocale();
+        return (isEn && product.description_en)
+            ? product.description_en
+            : (product.description || (window.i18n?.t('shop.noDescription') || '暂无描述'));
+    },
+
+    formatShopPoints: function (value) {
+        const numericValue = Number(value || 0) || 0;
+        const formattedValue = window.SiteConfig?.formatPrice
+            ? window.SiteConfig.formatPrice(numericValue)
+            : String(numericValue);
+        return `${formattedValue} ${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}`;
+    },
+
+    resolveProductPricing: function (product, agentPrices = {}) {
+        const basePrice = this.getProductPriceForCurrentSite(product);
+        if (basePrice == null) {
+            return {
+                currentPrice: null,
+                originalPrice: null,
+                hasAgentPrice: false,
+                hasFlashSale: false
+            };
+        }
+
+        let currentPrice = Number(basePrice);
+        let originalPrice = null;
+        let hasAgentPrice = false;
+        let hasFlashSale = false;
+
+        if (this.currentAgentId && agentPrices?.[product?.id] && Number(agentPrices[product.id]) > currentPrice) {
+            originalPrice = currentPrice;
+            currentPrice = Number(agentPrices[product.id]);
+            hasAgentPrice = true;
+        }
+
+        const now = Date.now();
+        if (product?.flash_sale_price != null && product?.flash_sale_end && Date.parse(product.flash_sale_end) > now && !hasAgentPrice) {
+            originalPrice = currentPrice;
+            currentPrice = Number(product.flash_sale_price);
+            hasFlashSale = true;
+        }
+
+        return {
+            currentPrice,
+            originalPrice,
+            hasAgentPrice,
+            hasFlashSale
+        };
+    },
+
+    getCartStorageKey: function () {
+        return `shop_cart_v1:${window.SiteConfig?.site || 'cn'}`;
+    },
+
+    getCartCopy: function () {
+        if (this.isEnglishShopLocale()) {
+            return {
+                anchorHint: 'Open cart',
+                anchorEmptyTitle: 'Cart is empty',
+                anchorEmptyBody: 'Add a few items, then review them together.',
+                drawerEyebrow: 'Floating Cart',
+                drawerTitle: 'Cart',
+                drawerBody: 'Keep browsing, then checkout together.',
+                emptyTitle: 'Your cart is empty',
+                emptyBody: 'Add a few items from the product cards, then review quantity and total points here.',
+                summaryItems: 'Items selected',
+                summaryTotal: 'Estimated total',
+                summaryNotes: 'Products with notes',
+                summaryUsage: 'Products with instructions',
+                continueLabel: 'Keep browsing',
+                checkoutLabel: 'Checkout',
+                addLabel: 'Add to cart',
+                addMoreLabel: 'Add 1 more',
+                inCartLabel: 'In cart',
+                notesPill: 'Notes',
+                usagePill: 'Instructions',
+                removeLabel: 'Remove',
+                cartTitle: 'Cart',
+                checkoutReviewEyebrow: 'Cart Review',
+                checkoutReviewTitle: 'Final review',
+                checkoutReviewHint: 'We will submit the current cart items one by one. Coupon stacking is not available in cart checkout yet.',
+                checkoutReviewNotice: 'Cart checkout currently reuses the existing order flow item by item, so coupon stacking is unavailable in this pass.',
+                checkoutReviewCount: 'Item count',
+                checkoutReviewTotal: 'Total points',
+                checkoutReviewNotes: 'Products with notes',
+                checkoutReviewUsage: 'Products with instructions',
+                checkoutReviewBack: 'Back to cart',
+                checkoutReviewConfirm: 'Confirm and redeem',
+                cartEmptyToast: 'Add a few items first to preview the cart.',
+                addedToast: 'Added to cart',
+                removedToast: 'Removed from cart',
+                cartCheckoutLabel: 'Cart checkout',
+                partialWarningPrefix: 'Some items were redeemed, but checkout did not finish:',
+                singleCheckoutHint: 'Single-item checkout keeps the existing discount and review flow.'
+            };
+        }
+
+        return {
+            anchorHint: '点开购物车',
+            anchorEmptyTitle: '购物车为空',
+            anchorEmptyBody: '先加入几件，再统一看看数量和总积分。',
+            drawerEyebrow: 'Floating Cart',
+            drawerTitle: '购物车',
+            drawerBody: '先继续逛商品，再统一结算。',
+            emptyTitle: '购物车还是空的',
+            emptyBody: '先从商品卡片里加入几件，再回来统一看数量和总积分。',
+            summaryItems: '已选商品',
+            summaryTotal: '预计合计',
+            summaryNotes: '含注意事项商品',
+            summaryUsage: '结算后附使用说明',
+            continueLabel: '继续逛逛',
+            checkoutLabel: '结算',
+            addLabel: '加入购物车',
+            addMoreLabel: '再加 1 件',
+            inCartLabel: '已加购',
+            notesPill: '注意事项',
+            usagePill: '使用说明',
+            removeLabel: '移除',
+            cartTitle: '购物车',
+            checkoutReviewEyebrow: 'Cart Review',
+            checkoutReviewTitle: '统一确认',
+            checkoutReviewHint: '购物车会按当前顺序逐个兑换，这一版暂不叠加优惠码。',
+            checkoutReviewNotice: '统一结算会沿用现有下单链路逐个提交，暂不叠加优惠码。',
+            checkoutReviewCount: '商品总数',
+            checkoutReviewTotal: '合计积分',
+            checkoutReviewNotes: '含注意事项商品',
+            checkoutReviewUsage: '结算后附使用说明',
+            checkoutReviewBack: '返回购物车',
+            checkoutReviewConfirm: '确认并兑换',
+            cartEmptyToast: '先从商品卡片里加购几件，再回来统一看。',
+            addedToast: '已加入购物车',
+            removedToast: '已从购物车移除',
+            cartCheckoutLabel: '购物车结算',
+            partialWarningPrefix: '已有部分商品兑换成功，但本次结算未全部完成：',
+            singleCheckoutHint: '单商品结算会继续沿用当前的优惠码和最终确认链路。'
+        };
+    },
+
+    showShopToast: function (message, variant = 'success') {
+        const normalizedMessage = String(message || '').trim();
+        if (!normalizedMessage) return;
+
+        if (window.WalletModal?.showToast) {
+            window.WalletModal.showToast(normalizedMessage, variant);
+            return;
+        }
+
+        console.info(`[ShopToast:${variant}]`, normalizedMessage);
+    },
+
+    getCachedProductById: function (productId) {
+        const normalizedId = String(productId || '').trim();
+        if (!normalizedId) return null;
+
+        if (Array.isArray(this.allProductsCache)) {
+            const match = this.allProductsCache.find((product) => String(product?.id || '').trim() === normalizedId);
+            if (match) return match;
+        }
+
+        const categoryLists = Object.values(this.categoryProductsCache || {});
+        for (const list of categoryLists) {
+            if (!Array.isArray(list)) continue;
+            const match = list.find((product) => String(product?.id || '').trim() === normalizedId);
+            if (match) return match;
+        }
+
+        return this.cartSnapshots?.[normalizedId] || null;
+    },
+
+    buildCartProductSnapshot: function (product, options = {}) {
+        if (!product) return null;
+
+        const resolvedUnitPrice = options.unitPrice ?? this.resolveProductPricing(product, this.agentPricesCache || {}).currentPrice;
+        return {
+            id: String(product.id || '').trim(),
+            name: product.name || '',
+            name_en: product.name_en || '',
+            description: product.description || '',
+            description_en: product.description_en || '',
+            icon_url: product.icon_url || '',
+            category: product.category || '',
+            stock_count: Number(product.stock_count || 0) || 0,
+            max_purchase_quantity: this.normalizePurchaseQuantityCap(product.max_purchase_quantity),
+            quantity_rules: Array.isArray(product.quantity_rules) ? product.quantity_rules : [],
+            show_purchase_notes: product.show_purchase_notes === true,
+            purchase_notes: product.purchase_notes || '',
+            show_usage_instructions: product.show_usage_instructions === true,
+            usage_instructions: product.usage_instructions || '',
+            flash_sale_price: product.flash_sale_price ?? null,
+            flash_sale_end: product.flash_sale_end || null,
+            resolved_unit_price: resolvedUnitPrice == null ? null : Number(resolvedUnitPrice)
+        };
+    },
+
+    updateCartSnapshot: function (productId, product, options = {}) {
+        const normalizedId = String(productId || '').trim();
+        if (!normalizedId) return;
+        const snapshot = this.buildCartProductSnapshot(product, options);
+        if (!snapshot) return;
+        this.cartSnapshots[normalizedId] = snapshot;
+    },
+
+    getCartQuantityCap: function (product) {
+        const normalizedCap = this.normalizePurchaseQuantityCap(product?.max_purchase_quantity);
+        const stockCount = Number(product?.stock_count ?? product?.stockCount ?? 0);
+        if (Number.isFinite(stockCount) && stockCount > 0) {
+            return Math.max(1, Math.min(normalizedCap, Math.trunc(stockCount)));
+        }
+        return normalizedCap;
+    },
+
+    getPurchaseQuantityCapForProduct: function (product, fallbackMaxQuantity = null) {
+        const stockCount = Number(product?.stock_count ?? product?.stockCount ?? 0);
+        if (Number.isFinite(stockCount) && stockCount > 0) {
+            return Math.max(1, Math.min(99, Math.trunc(stockCount)));
+        }
+
+        if (fallbackMaxQuantity != null && String(fallbackMaxQuantity).trim() !== '') {
+            return this.normalizePurchaseQuantityCap(fallbackMaxQuantity);
+        }
+
+        return this.normalizePurchaseQuantityCap(product?.max_purchase_quantity);
+    },
+
+    restoreCartState: function () {
+        try {
+            const rawPayload = sessionStorage.getItem(this.getCartStorageKey());
+            if (!rawPayload) {
+                this.cartItems = new Map();
+                this.cartSnapshots = {};
+                return;
+            }
+
+            const parsed = JSON.parse(rawPayload);
+            const nextItems = new Map();
+            const storedItems = Array.isArray(parsed?.items) ? parsed.items : [];
+            storedItems.forEach((entry) => {
+                const [id, quantity] = Array.isArray(entry) ? entry : [];
+                const normalizedId = String(id || '').trim();
+                const normalizedQuantity = Number(quantity || 0);
+                if (!normalizedId || !Number.isFinite(normalizedQuantity) || normalizedQuantity < 1) return;
+                nextItems.set(normalizedId, Math.trunc(normalizedQuantity));
+            });
+
+            this.cartItems = nextItems;
+            this.cartSnapshots = parsed?.snapshots && typeof parsed.snapshots === 'object'
+                ? parsed.snapshots
+                : {};
+            this.sanitizeCartState({ persist: false });
+        } catch (error) {
+            console.warn('Failed to restore cart state:', error);
+            this.cartItems = new Map();
+            this.cartSnapshots = {};
+        }
+    },
+
+    persistCartState: function () {
+        try {
+            sessionStorage.setItem(this.getCartStorageKey(), JSON.stringify({
+                items: Array.from(this.cartItems.entries()),
+                snapshots: this.cartSnapshots
+            }));
+        } catch (error) {
+            console.warn('Failed to persist cart state:', error);
+        }
+    },
+
+    sanitizeCartState: function ({ persist = true } = {}) {
+        const nextItems = new Map();
+        const nextSnapshots = {};
+
+        this.cartItems.forEach((quantity, rawProductId) => {
+            const productId = String(rawProductId || '').trim();
+            if (!productId) return;
+
+            const liveProduct = this.getCachedProductById(productId);
+            const product = liveProduct || this.cartSnapshots?.[productId];
+            if (!product) return;
+
+            const quantityCap = this.getCartQuantityCap(product);
+            const normalizedQuantity = Math.max(0, Math.min(quantityCap, Math.trunc(Number(quantity || 0) || 0)));
+            if (normalizedQuantity < 1) return;
+
+            nextItems.set(productId, normalizedQuantity);
+            nextSnapshots[productId] = liveProduct
+                ? (this.buildCartProductSnapshot(liveProduct) || this.cartSnapshots?.[productId] || product)
+                : (this.cartSnapshots?.[productId] || product);
+        });
+
+        this.cartItems = nextItems;
+        this.cartSnapshots = nextSnapshots;
+        this.cartItemDisclosureState = Object.fromEntries(
+            Object.entries(this.cartItemDisclosureState || {}).filter(([productId]) => nextItems.has(productId))
+        );
+        if (this.cartItems.size === 0) {
+            this.cartOpen = false;
+        }
+
+        if (persist) {
+            this.persistCartState();
+        }
+    },
+
+    getCartQuantity: function (productId) {
+        const quantity = this.cartItems.get(String(productId || '').trim());
+        return Number(quantity || 0) || 0;
+    },
+
+    getCartEntries: function () {
+        const entries = [];
+        const agentPrices = this.agentPricesCache || {};
+
+        this.cartItems.forEach((quantity, rawProductId) => {
+            const productId = String(rawProductId || '').trim();
+            if (!productId) return;
+
+            const liveProduct = this.getCachedProductById(productId);
+            const product = liveProduct || this.cartSnapshots?.[productId];
+            if (!product) return;
+
+            if (liveProduct) {
+                this.updateCartSnapshot(productId, liveProduct);
+            }
+
+            const pricing = this.resolveProductPricing(product, agentPrices);
+            const unitPrice = pricing.currentPrice == null
+                ? Number(product?.resolved_unit_price || 0) || 0
+                : Number(pricing.currentPrice || 0) || 0;
+            const hasPurchaseNotes = product.show_purchase_notes === true && String(product.purchase_notes || '').trim().length > 0;
+            const hasUsageInstructions = product.show_usage_instructions === true && String(product.usage_instructions || '').trim().length > 0;
+
+            entries.push({
+                productId,
+                product,
+                quantity,
+                unitPrice,
+                subtotal: unitPrice * quantity,
+                quantityCap: this.getCartQuantityCap(product),
+                displayName: this.getLocalizedProductName(product),
+                displayDescription: this.getLocalizedProductDescription(product),
+                hasPurchaseNotes,
+                hasUsageInstructions
+            });
+        });
+
+        return entries;
+    },
+
+    getCartSummary: function (entries = this.getCartEntries()) {
+        return entries.reduce((summary, entry) => {
+            summary.uniqueCount += 1;
+            summary.itemCount += Number(entry.quantity || 0) || 0;
+            summary.totalPoints += Number(entry.subtotal || 0) || 0;
+            summary.notesCount += entry.hasPurchaseNotes ? 1 : 0;
+            summary.usageCount += entry.hasUsageInstructions ? 1 : 0;
+            return summary;
+        }, {
+            uniqueCount: 0,
+            itemCount: 0,
+            totalPoints: 0,
+            notesCount: 0,
+            usageCount: 0
+        });
+    },
+
+    formatCartCount: function (count, { includeProductWord = false } = {}) {
+        const safeCount = Math.max(0, Number(count || 0) || 0);
+        if (this.isEnglishShopLocale()) {
+            if (includeProductWord) {
+                return `${safeCount} ${safeCount === 1 ? 'item' : 'items'}`;
+            }
+            return `${safeCount} ${safeCount === 1 ? 'item' : 'items'}`;
+        }
+
+        return includeProductWord ? `${safeCount} 件商品` : `${safeCount} 件`;
+    },
+
+    formatCartMetaCount: function (count) {
+        const safeCount = Math.max(0, Number(count || 0) || 0);
+        if (this.isEnglishShopLocale()) {
+            return `${safeCount} ${safeCount === 1 ? 'item' : 'items'}`;
+        }
+        return `${safeCount} 个`;
+    },
+
+    getCartItemDisclosureState: function (productId) {
+        const normalizedId = String(productId || '').trim();
+        const state = normalizedId ? this.cartItemDisclosureState?.[normalizedId] : null;
+        return {
+            notes: Boolean(state?.notes),
+            usage: Boolean(state?.usage)
+        };
+    },
+
+    buildCartItemDisclosureDomId: function (productId, kind) {
+        const normalizedId = String(productId || '').trim().replace(/[^A-Za-z0-9_-]+/g, '-');
+        const normalizedKind = String(kind || '').trim().replace(/[^A-Za-z0-9_-]+/g, '-');
+        return `shop-cart-disclosure-${normalizedKind || 'panel'}-${normalizedId || 'item'}`;
+    },
+
+    applyShopPurchaseDataset: function (element, payload = {}) {
+        if (!(element instanceof HTMLElement) || !payload) return;
+
+        element.dataset.productId = String(payload.productId || '');
+        element.dataset.productName = encodeURIComponent(payload.productName || '');
+        element.dataset.productNameEn = encodeURIComponent(payload.productNameEn || '');
+        element.dataset.unitPrice = String(payload.unitPrice || 0);
+        element.dataset.productCategory = String(payload.productCategory || '');
+        element.dataset.qtyRules = payload.qtyRules || '';
+        element.dataset.maxPurchaseQuantity = String(payload.maxPurchaseQuantity || '');
+        element.dataset.showPurchaseNotes = payload.showPurchaseNotes ? 'true' : 'false';
+        element.dataset.purchaseNotes = encodeURIComponent(payload.purchaseNotes || '');
+        element.dataset.showUsageInstructions = payload.showUsageInstructions ? 'true' : 'false';
+        element.dataset.usageInstructions = encodeURIComponent(payload.usageInstructions || '');
+    },
+
+    getShopPurchasePayloadFromDataset: function (dataset = {}) {
+        return {
+            productId: String(dataset.productId || '').trim(),
+            productName: decodeURIComponent(dataset.productName || ''),
+            productNameEn: decodeURIComponent(dataset.productNameEn || ''),
+            unitPrice: Number(dataset.unitPrice || 0),
+            qtyRules: dataset.qtyRules || '',
+            maxPurchaseQuantity: dataset.maxPurchaseQuantity || '',
+            showPurchaseNotes: dataset.showPurchaseNotes === 'true',
+            purchaseNotes: dataset.purchaseNotes || '',
+            showUsageInstructions: dataset.showUsageInstructions === 'true',
+            usageInstructions: dataset.usageInstructions || '',
+            productCategory: dataset.productCategory || ''
+        };
+    },
+
+    openProductPurchaseFromDataset: function (dataset = {}, sourceContext = resolveShopSourceContext()) {
+        const payload = this.getShopPurchasePayloadFromDataset(dataset);
+        if (!payload.productId) return;
+
+        trackShopAnalyticsEvent('product_card_click', {
+            entityId: payload.productId || null,
+            eventValue: payload.unitPrice || null,
+            metadata: buildShopTrackingMetadata({
+                product_id: payload.productId || null,
+                product_name: payload.productName || '',
+                product_name_en: payload.productNameEn || '',
+                category: String(payload.productCategory || '').trim() || null,
+                unit_price: payload.unitPrice || null
+            }, sourceContext)
+        }, {
+            eventType: 'engagement'
+        });
+
+        void this.buyProduct(
+            payload.productId,
+            payload.productName,
+            payload.productNameEn,
+            payload.unitPrice,
+            payload.qtyRules,
+            payload.maxPurchaseQuantity,
+            payload.showPurchaseNotes,
+            payload.purchaseNotes,
+            payload.showUsageInstructions,
+            payload.usageInstructions,
+            payload.productCategory,
+            sourceContext
+        );
+    },
+
+    trackProductAddToCartFromDataset: function (dataset = {}, addedQuantity = 0, sourceContext = resolveShopSourceContext()) {
+        const payload = this.getShopPurchasePayloadFromDataset(dataset);
+        if (!payload.productId || addedQuantity < 1) return;
+
+        trackShopAnalyticsEvent('product_add_to_cart', {
+            entityId: payload.productId,
+            eventValue: addedQuantity,
+            metadata: buildShopTrackingMetadata({
+                product_id: payload.productId,
+                product_name: payload.productName || null,
+                product_name_en: payload.productNameEn || null,
+                category: String(payload.productCategory || '').trim() || null,
+                quantity: addedQuantity,
+                unit_price: payload.unitPrice || null
+            }, sourceContext)
+        }, {
+            eventType: 'engagement'
+        });
+    },
+
+    toggleCartItemDisclosure: function (productId, kind) {
+        const normalizedId = String(productId || '').trim();
+        const normalizedKind = kind === 'notes' || kind === 'usage' ? kind : '';
+        if (!normalizedId || !normalizedKind) return;
+
+        const currentState = this.getCartItemDisclosureState(normalizedId);
+        const nextState = {
+            ...currentState,
+            [normalizedKind]: !currentState[normalizedKind]
+        };
+
+        if (!nextState.notes && !nextState.usage) {
+            delete this.cartItemDisclosureState[normalizedId];
+        } else {
+            this.cartItemDisclosureState[normalizedId] = nextState;
+        }
+
+        this.renderCart();
+    },
+
+    setCartOpen: function (open) {
+        const wasOpen = this.cartOpen === true;
+        this.cartOpen = Boolean(open) && this.cartItems.size > 0;
+        if (!this.cartOpen) {
+            this.cartBackdropCloseGuardUntil = 0;
+        }
+        document.body.dataset.shopCartOpen = String(this.cartOpen);
+        const anchor = document.getElementById('shopCartAnchor');
+        const drawer = document.getElementById('shopCartDrawer');
+        const drawerBody = drawer?.querySelector('.shop-cart-drawer__body');
+        if (anchor) {
+            anchor.setAttribute('aria-expanded', String(this.cartOpen));
+            const shouldDisableAnchor = this.cartOpen || this.cartItems.size === 0;
+            anchor.hidden = shouldDisableAnchor;
+            anchor.disabled = shouldDisableAnchor;
+            anchor.setAttribute('aria-hidden', String(shouldDisableAnchor));
+            anchor.style.pointerEvents = shouldDisableAnchor ? 'none' : '';
+            anchor.style.opacity = shouldDisableAnchor ? '0' : '';
+            anchor.style.visibility = shouldDisableAnchor ? 'hidden' : '';
+        }
+        if (drawer) {
+            drawer.setAttribute('aria-hidden', String(!this.cartOpen));
+        }
+        if (this.cartOpen && !wasOpen) {
+            if (drawerBody) drawerBody.scrollTop = 0;
+            if (drawer) drawer.scrollTop = 0;
+            window.requestAnimationFrame(() => {
+                if (drawerBody) drawerBody.scrollTop = 0;
+                if (drawer) drawer.scrollTop = 0;
+            });
+        }
+    },
+
+    toggleCart: function () {
+        if (this.cartCheckoutProcessing) {
+            return;
+        }
+        if (this.cartItems.size === 0) {
+            this.showShopToast(this.getCartCopy().cartEmptyToast, 'error');
+            return;
+        }
+        this.setCartOpen(!this.cartOpen);
+        this.renderCart();
+    },
+
+    closeCart: function () {
+        if (this.cartCheckoutProcessing) {
+            return;
+        }
+        this.setCartOpen(false);
+        this.renderCart();
+    },
+
+    guardCartBackdropClose: function (durationMs = 240) {
+        const safeDuration = Math.max(0, Math.trunc(Number(durationMs || 0) || 0));
+        this.cartBackdropCloseGuardUntil = Date.now() + safeDuration;
+    },
+
+    shouldIgnoreCartBackdropClose: function () {
+        return Number(this.cartBackdropCloseGuardUntil || 0) > Date.now();
+    },
+
+    buildCartIconMarkup: function (product, { imageClass = 'shop-cart-item__thumb', iconClass = 'shop-cart-item__icon' } = {}) {
+        const safeIconSource = this.escapeAttribute(product?.icon_url || '');
+        const safeAlt = this.escapeAttribute(this.getLocalizedProductName(product) || (window.i18n?.t('shop.productImage') || '商品封面'));
+
+        if (product?.icon_url?.startsWith('fa')) {
+            return `<div class="${iconClass}" aria-hidden="true"><i class="${safeIconSource}"></i></div>`;
+        }
+
+        if (this.isShopImageSource(product?.icon_url)) {
+            return `<img src="${safeIconSource}" class="${imageClass}" alt="${safeAlt}" loading="lazy" decoding="async">`;
+        }
+
+        return `<div class="${iconClass}" aria-hidden="true"><i class="fas fa-box"></i></div>`;
+    },
+
+    buildCartItemMarkup: function (entry) {
+        const copy = this.getCartCopy();
+        const noteText = entry.hasPurchaseNotes ? String(entry.product?.purchase_notes || '').trim() : '';
+        const usageText = entry.hasUsageInstructions ? String(entry.product?.usage_instructions || '').trim() : '';
+        const disclosureState = this.getCartItemDisclosureState(entry.productId);
+        const hasOpenDisclosure = disclosureState.notes || disclosureState.usage;
+        const isCartBusy = this.cartCheckoutProcessing === true;
+        const notePanelId = noteText ? this.buildCartItemDisclosureDomId(entry.productId, 'notes') : '';
+        const usagePanelId = usageText ? this.buildCartItemDisclosureDomId(entry.productId, 'usage') : '';
+        const quantityValue = Math.max(1, Number(entry.quantity || 1) || 1);
+        const canDecrease = quantityValue > 1;
+        const canIncrease = quantityValue < Math.max(1, Number(entry.quantityCap || 1) || 1);
+        const stockCount = Number(entry.product?.stock_count || 0) || 0;
+        const stockLabel = `${window.i18n?.t('shop.stock') || '库存'}: ${Math.max(0, stockCount)}`;
+
+        return `
+            <article class="shop-cart-item shop-cart-item--${entry.hasPurchaseNotes ? 'notice' : 'default'}" data-product-id="${this.escapeAttribute(entry.productId)}">
+                <div class="shop-cart-item__top">
+                    <div class="shop-cart-item__heading">
+                        ${this.buildCartIconMarkup(entry.product)}
+                        <div class="shop-cart-item__copy">
+                            <button
+                                type="button"
+                                class="shop-cart-item__title shop-cart-item__title-btn"
+                                data-shop-cart-action="open-product"
+                                data-product-id="${this.escapeAttribute(entry.productId)}"
+                                ${isCartBusy ? 'disabled' : ''}
+                            >${this.escapeHtml(entry.displayName)}</button>
+                            <div class="shop-cart-item__subtitle">${this.escapeHtml(entry.displayDescription)}</div>
+                        </div>
+                    </div>
+
+                    <button
+                        type="button"
+                        class="shop-cart-item__remove"
+                        aria-label="${this.escapeAttribute(copy.removeLabel)}"
+                        data-shop-cart-action="remove"
+                        data-product-id="${this.escapeAttribute(entry.productId)}"
+                        ${isCartBusy ? 'disabled' : ''}
+                    ><span class="shop-cart-item__remove-icon" aria-hidden="true"></span></button>
+                </div>
+
+                <div class="shop-cart-item__meta">
+                    <span class="shop-cart-item__pill shop-cart-item__pill--stock">${this.escapeHtml(stockLabel)}</span>
+                    ${noteText ? `
+                        <button
+                            type="button"
+                            class="shop-cart-item__pill shop-cart-item__pill--toggle shop-cart-item__pill--notice${disclosureState.notes ? ' is-active' : ''}"
+                            data-shop-cart-action="toggle-notes"
+                            data-product-id="${this.escapeAttribute(entry.productId)}"
+                            aria-expanded="${disclosureState.notes ? 'true' : 'false'}"
+                            aria-controls="${this.escapeAttribute(notePanelId)}"
+                            ${isCartBusy ? 'disabled' : ''}
+                        >${this.escapeHtml(copy.notesPill)}</button>
+                    ` : ''}
+                    ${usageText ? `
+                        <button
+                            type="button"
+                            class="shop-cart-item__pill shop-cart-item__pill--toggle shop-cart-item__pill--usage${disclosureState.usage ? ' is-active' : ''}"
+                            data-shop-cart-action="toggle-usage"
+                            data-product-id="${this.escapeAttribute(entry.productId)}"
+                            aria-expanded="${disclosureState.usage ? 'true' : 'false'}"
+                            aria-controls="${this.escapeAttribute(usagePanelId)}"
+                            ${isCartBusy ? 'disabled' : ''}
+                        >${this.escapeHtml(copy.usagePill)}</button>
+                    ` : ''}
+                </div>
+
+                ${((noteText || usageText) && hasOpenDisclosure) ? `
+                    <div class="shop-cart-item__disclosures">
+                        ${noteText ? `
+                            <section
+                                id="${this.escapeAttribute(notePanelId)}"
+                                class="shop-cart-item__panel shop-cart-item__panel--notice"
+                                ${disclosureState.notes ? '' : 'hidden'}
+                            >${this.renderStoredRichText(noteText)}</section>
+                        ` : ''}
+                        ${usageText ? `
+                            <section
+                                id="${this.escapeAttribute(usagePanelId)}"
+                                class="shop-cart-item__panel shop-cart-item__panel--usage"
+                                ${disclosureState.usage ? '' : 'hidden'}
+                            >${this.renderStoredRichText(usageText)}</section>
+                        ` : ''}
+                    </div>
+                ` : ''}
+
+                <div class="shop-cart-item__footer">
+                    <div class="shop-cart-item__price">
+                        <strong>${this.escapeHtml(this.formatShopPoints(entry.subtotal))}</strong>
+                        <span>${this.escapeHtml(this.formatShopPoints(entry.unitPrice))} × ${quantityValue}</span>
+                    </div>
+
+                    <div class="shop-cart-item__quantity">
+                        <button
+                            type="button"
+                            class="shop-cart-item__qty-btn"
+                            data-shop-cart-action="decrease"
+                            data-product-id="${this.escapeAttribute(entry.productId)}"
+                            ${canDecrease && !isCartBusy ? '' : 'disabled'}
+                        >−</button>
+                        <span class="shop-cart-item__qty-value">${quantityValue}</span>
+                        <button
+                            type="button"
+                            class="shop-cart-item__qty-btn"
+                            data-shop-cart-action="increase"
+                            data-product-id="${this.escapeAttribute(entry.productId)}"
+                            ${canIncrease && !isCartBusy ? '' : 'disabled'}
+                        >+</button>
+                    </div>
+                </div>
+            </article>
+        `;
+    },
+
+    buildCartCheckoutItemMarkup: function (entry) {
+        const copy = this.getCartCopy();
+        return `
+            <article class="shop-cart-checkout__item">
+                <div class="shop-cart-checkout__item-head">
+                    <div class="shop-cart-checkout__item-title">${this.escapeHtml(entry.displayName)}</div>
+                    <strong>${this.escapeHtml(this.formatShopPoints(entry.subtotal))}</strong>
+                </div>
+                <div class="shop-cart-checkout__item-meta">
+                    <span>${this.escapeHtml(this.formatShopPoints(entry.unitPrice))} × ${entry.quantity}</span>
+                    ${entry.hasPurchaseNotes ? `<span class="shop-cart-checkout__item-pill shop-cart-checkout__item-pill--notice">${this.escapeHtml(copy.notesPill)}</span>` : ''}
+                    ${entry.hasUsageInstructions ? `<span class="shop-cart-checkout__item-pill shop-cart-checkout__item-pill--usage">${this.escapeHtml(copy.usagePill)}</span>` : ''}
+                </div>
+            </article>
+        `;
+    },
+
+    syncRenderedProductCardsWithCart: function () {
+        document.querySelectorAll('#userShopGrid .shop-card[data-product-id]').forEach((card) => {
+            const productId = String(card.dataset.productId || '').trim();
+            if (!productId) return;
+
+            const quantity = this.getCartQuantity(productId);
+            card.classList.toggle('shop-card--in-cart', quantity > 0);
+        });
+    },
+
+    renderCart: function () {
+        this.sanitizeCartState();
+
+        const entries = this.getCartEntries();
+        const summary = this.getCartSummary(entries);
+        const copy = this.getCartCopy();
+        const anchor = document.getElementById('shopCartAnchor');
+        const anchorCount = document.getElementById('shopCartAnchorCount');
+        const anchorTotal = document.getElementById('shopCartAnchorTotal');
+        const anchorHint = document.getElementById('shopCartAnchorHint');
+        const drawerEyebrow = document.getElementById('shopCartDrawerEyebrow');
+        const drawerTitle = document.getElementById('shopCartDrawerTitle');
+        const drawerBody = document.getElementById('shopCartDrawerBody');
+        const emptyTitle = document.getElementById('shopCartEmptyTitle');
+        const emptyBody = document.getElementById('shopCartEmptyBody');
+        const list = document.getElementById('shopCartList');
+        const emptyState = document.getElementById('shopCartEmptyState');
+        const summaryCount = document.getElementById('shopCartSummaryCount');
+        const summaryTotal = document.getElementById('shopCartSummaryTotal');
+        const summaryNotes = document.getElementById('shopCartSummaryNotes');
+        const summaryUsage = document.getElementById('shopCartSummaryUsage');
+        const summaryItemsLabel = document.getElementById('shopCartSummaryItemsLabel');
+        const summaryTotalLabel = document.getElementById('shopCartSummaryTotalLabel');
+        const summaryNotesLabel = document.getElementById('shopCartSummaryNotesLabel');
+        const summaryUsageLabel = document.getElementById('shopCartSummaryUsageLabel');
+        const continueBtn = document.getElementById('shopCartContinueBtn');
+        const checkoutBtn = document.getElementById('shopCartCheckoutBtn');
+
+        if (drawerEyebrow) drawerEyebrow.textContent = copy.drawerEyebrow;
+        if (drawerTitle) drawerTitle.textContent = copy.drawerTitle;
+        if (drawerBody) drawerBody.textContent = copy.drawerBody;
+        if (emptyTitle) emptyTitle.textContent = copy.emptyTitle;
+        if (emptyBody) emptyBody.textContent = copy.emptyBody;
+        if (summaryItemsLabel) summaryItemsLabel.textContent = copy.summaryItems;
+        if (summaryTotalLabel) summaryTotalLabel.textContent = copy.summaryTotal;
+        if (summaryNotesLabel) summaryNotesLabel.textContent = copy.summaryNotes;
+        if (summaryUsageLabel) summaryUsageLabel.textContent = copy.summaryUsage;
+        if (continueBtn) {
+            continueBtn.textContent = copy.continueLabel;
+            continueBtn.disabled = this.cartCheckoutProcessing;
+        }
+        if (checkoutBtn) {
+            checkoutBtn.innerHTML = this.cartCheckoutProcessing
+                ? `<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span>${this.escapeHtml(window.i18n?.t('shop.processing') || '处理中...')}</span>`
+                : this.escapeHtml(copy.checkoutLabel);
+        }
+
+        if (anchor) {
+            const shouldHideAnchor = entries.length === 0 || this.cartOpen;
+            anchor.hidden = shouldHideAnchor;
+            anchor.disabled = shouldHideAnchor;
+            anchor.setAttribute('aria-hidden', String(shouldHideAnchor));
+            anchor.style.pointerEvents = shouldHideAnchor ? 'none' : '';
+            anchor.style.opacity = shouldHideAnchor ? '0' : '';
+            anchor.style.visibility = shouldHideAnchor ? 'hidden' : '';
+        }
+        if (anchorCount) {
+            anchorCount.textContent = summary.itemCount > 0 ? this.formatCartCount(summary.itemCount, { includeProductWord: true }) : copy.anchorEmptyTitle;
+        }
+        if (anchorTotal) {
+            const hasAnchorItems = summary.itemCount > 0;
+            anchorTotal.textContent = hasAnchorItems ? this.formatShopPoints(summary.totalPoints) : '';
+            this.setElementHidden(anchorTotal, !hasAnchorItems);
+        }
+        if (anchorHint) {
+            const hasAnchorItems = summary.itemCount > 0;
+            anchorHint.textContent = hasAnchorItems ? copy.anchorHint : '';
+            this.setElementHidden(anchorHint, !hasAnchorItems);
+        }
+
+        if (list) {
+            list.innerHTML = entries.map((entry) => this.buildCartItemMarkup(entry)).join('');
+            this.setElementHidden(list, entries.length === 0);
+            list.setAttribute('aria-hidden', String(entries.length === 0));
+        }
+        if (emptyState) {
+            this.setElementHidden(emptyState, entries.length !== 0);
+            emptyState.setAttribute('aria-hidden', String(entries.length !== 0));
+        }
+
+        if (summaryCount) summaryCount.textContent = this.formatCartCount(summary.itemCount);
+        if (summaryTotal) summaryTotal.textContent = this.formatShopPoints(summary.totalPoints);
+        if (summaryNotes) summaryNotes.textContent = this.formatCartMetaCount(summary.notesCount);
+        if (summaryUsage) summaryUsage.textContent = this.formatCartMetaCount(summary.usageCount);
+
+        if (checkoutBtn) {
+            checkoutBtn.disabled = entries.length === 0 || this.cartCheckoutProcessing;
+        }
+
+        this.setCartOpen(this.cartOpen);
+        this.syncRenderedProductCardsWithCart();
+        this.renderCartCheckoutModal();
+    },
+
+    renderCartCheckoutModal: function () {
+        const copy = this.getCartCopy();
+        const entries = this.getCartEntries();
+        const summary = this.getCartSummary(entries);
+        const list = document.getElementById('shopCartCheckoutList');
+        const eyebrow = document.getElementById('shopCartCheckoutEyebrow');
+        const title = document.getElementById('shopCartCheckoutTitle');
+        const hint = document.getElementById('shopCartCheckoutHint');
+        const notice = document.getElementById('shopCartCheckoutNotice');
+        const countLabel = document.getElementById('shopCartCheckoutCountLabel');
+        const totalLabel = document.getElementById('shopCartCheckoutTotalLabel');
+        const notesLabel = document.getElementById('shopCartCheckoutNotesLabel');
+        const usageLabel = document.getElementById('shopCartCheckoutUsageLabel');
+        const countValue = document.getElementById('shopCartCheckoutCount');
+        const totalValue = document.getElementById('shopCartCheckoutTotal');
+        const notesValue = document.getElementById('shopCartCheckoutNotes');
+        const usageValue = document.getElementById('shopCartCheckoutUsage');
+        const backBtn = document.getElementById('shopCartCheckoutBackBtn');
+        const confirmBtn = document.getElementById('shopCartCheckoutConfirmBtn');
+
+        if (eyebrow) eyebrow.textContent = copy.checkoutReviewEyebrow;
+        if (title) title.textContent = copy.checkoutReviewTitle;
+        if (hint) hint.textContent = copy.checkoutReviewHint;
+        if (notice) notice.textContent = copy.checkoutReviewNotice;
+        if (countLabel) countLabel.textContent = copy.checkoutReviewCount;
+        if (totalLabel) totalLabel.textContent = copy.checkoutReviewTotal;
+        if (notesLabel) notesLabel.textContent = copy.checkoutReviewNotes;
+        if (usageLabel) usageLabel.textContent = copy.checkoutReviewUsage;
+        if (countValue) countValue.textContent = this.formatCartCount(summary.itemCount);
+        if (totalValue) totalValue.textContent = this.formatShopPoints(summary.totalPoints);
+        if (notesValue) notesValue.textContent = this.formatCartMetaCount(summary.notesCount);
+        if (usageValue) usageValue.textContent = this.formatCartMetaCount(summary.usageCount);
+        if (backBtn) backBtn.textContent = copy.checkoutReviewBack;
+        if (confirmBtn) {
+            confirmBtn.innerHTML = this.cartCheckoutProcessing
+                ? `<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span>${this.escapeHtml(window.i18n?.t('shop.processing') || '处理中...')}</span>`
+                : this.escapeHtml(copy.checkoutReviewConfirm);
+            confirmBtn.disabled = this.cartCheckoutProcessing || entries.length === 0;
+        }
+
+        if (list) {
+            list.innerHTML = entries.map((entry) => this.buildCartCheckoutItemMarkup(entry)).join('');
+        }
+    },
+
+    captureCartItemPositions: function ({ excludeProductId = '' } = {}) {
+        const positions = new Map();
+        const normalizedExcludedId = String(excludeProductId || '').trim();
+        document.querySelectorAll('#shopCartList .shop-cart-item[data-product-id]').forEach((item) => {
+            const productId = String(item.dataset.productId || '').trim();
+            if (!productId || productId === normalizedExcludedId) {
+                return;
+            }
+
+            positions.set(productId, item.getBoundingClientRect().top);
+        });
+        return positions;
+    },
+
+    animateCartListReflow: function (previousPositions = new Map()) {
+        if (!(previousPositions instanceof Map) || previousPositions.size === 0) {
+            return;
+        }
+
+        if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
+            return;
+        }
+
+        window.requestAnimationFrame(() => {
+            document.querySelectorAll('#shopCartList .shop-cart-item[data-product-id]').forEach((item) => {
+                const productId = String(item.dataset.productId || '').trim();
+                const previousTop = previousPositions.get(productId);
+                if (typeof previousTop !== 'number') {
+                    return;
+                }
+
+                const currentTop = item.getBoundingClientRect().top;
+                const deltaY = previousTop - currentTop;
+                if (Math.abs(deltaY) < 1) {
+                    return;
+                }
+
+                item.style.transition = 'none';
+                item.style.transform = `translateY(${deltaY}px)`;
+                item.style.willChange = 'transform';
+                void item.offsetWidth;
+                item.style.transition = 'transform 320ms cubic-bezier(0.22, 1, 0.36, 1)';
+                item.style.transform = 'translateY(0)';
+                window.setTimeout(() => {
+                    item.style.removeProperty('transition');
+                    item.style.removeProperty('transform');
+                    item.style.removeProperty('will-change');
+                }, 340);
+            });
+        });
+    },
+
+    playCartAnchorAddFeedback: function () {
+        const anchor = document.getElementById('shopCartAnchor');
+        if (!anchor || anchor.hidden) {
+            return;
+        }
+
+        if (this.cartAnchorFeedbackTimer) {
+            window.clearTimeout(this.cartAnchorFeedbackTimer);
+            this.cartAnchorFeedbackTimer = null;
+        }
+
+        anchor.classList.remove('is-feedback');
+        void anchor.offsetWidth;
+        anchor.classList.add('is-feedback');
+
+        this.cartAnchorFeedbackTimer = window.setTimeout(() => {
+            anchor.classList.remove('is-feedback');
+            this.cartAnchorFeedbackTimer = null;
+        }, 720);
+    },
+
+    addProductToCart: function (productId, quantity = 1) {
+        const normalizedId = String(productId || '').trim();
+        if (!normalizedId) return 0;
+
+        const liveProduct = this.getCachedProductById(normalizedId);
+        const product = liveProduct || this.cartSnapshots?.[normalizedId];
+        if (!product) return 0;
+
+        const quantityCap = this.getCartQuantityCap(product);
+        const currentQuantity = this.getCartQuantity(normalizedId);
+        const nextQuantity = Math.min(quantityCap, currentQuantity + Math.max(1, Math.trunc(Number(quantity || 1) || 1)));
+        const addedQuantity = Math.max(0, nextQuantity - currentQuantity);
+
+        if (addedQuantity < 1) {
+            this.showShopToast(this.isEnglishShopLocale() ? 'Reached the current cart limit.' : '已经达到当前可加购上限。', 'error');
+            return 0;
+        }
+
+        this.cartItems.set(normalizedId, nextQuantity);
+        this.updateCartSnapshot(normalizedId, product);
+        this.renderCart();
+        this.playCartAnchorAddFeedback();
+        this.showShopToast(`${this.getCartCopy().addedToast}：${this.getLocalizedProductName(product)}`, 'success');
+        return addedQuantity;
+    },
+
+    addCurrentPurchaseToCart: function () {
+        const productId = String(this.currentPurchase?.productId || '').trim();
+        if (!productId) return;
+
+        const quantity = Math.max(1, Math.trunc(Number(this.currentPurchase?.quantity || 1) || 1));
+        const addedQuantity = this.addProductToCart(productId, quantity);
+        if (addedQuantity < 1) return;
+
+        trackShopAnalyticsEvent('product_add_to_cart', {
+            entityId: productId,
+            eventValue: addedQuantity,
+            metadata: buildShopTrackingMetadata({
+                product_id: productId,
+                product_name: this.currentPurchase?.productName || null,
+                product_name_en: this.currentPurchase?.productNameEn || null,
+                category: this.currentPurchase?.productCategory || null,
+                quantity: addedQuantity,
+                unit_price: Number(this.currentPurchase?.unitPrice || 0) || null
+            }, {
+                sourcePage: this.currentPurchase?.sourcePage || null,
+                sourceChannel: this.currentPurchase?.sourceChannel || null,
+                sourcePromptId: this.currentPurchase?.sourcePromptId || null
+            })
+        }, {
+            eventType: 'engagement'
+        });
+
+        this.closePurchaseModal();
+    },
+
+    updateCartQuantity: function (productId, nextQuantity) {
+        const normalizedId = String(productId || '').trim();
+        if (!normalizedId) return;
+
+        const product = this.getCachedProductById(normalizedId);
+        if (!product) {
+            this.removeCartItem(normalizedId);
+            return;
+        }
+
+        const quantityCap = this.getCartQuantityCap(product);
+        const normalizedQuantity = Math.max(0, Math.min(quantityCap, Math.trunc(Number(nextQuantity || 0) || 0)));
+
+        if (normalizedQuantity < 1) {
+            this.removeCartItem(normalizedId);
+            return;
+        }
+
+        this.cartItems.set(normalizedId, normalizedQuantity);
+        this.updateCartSnapshot(normalizedId, product);
+        this.renderCart();
+    },
+
+    removeCartItem: function (productId) {
+        const normalizedId = String(productId || '').trim();
+        if (!normalizedId) return;
+
+        const product = this.getCachedProductById(normalizedId) || this.cartSnapshots?.[normalizedId];
+        this.cartItems.delete(normalizedId);
+        delete this.cartSnapshots[normalizedId];
+        this.renderCart();
+        if (product) {
+            this.showShopToast(`${this.getCartCopy().removedToast}：${this.getLocalizedProductName(product)}`, 'success');
+        }
+    },
+
+    removeCartItemWithAnimation: function (productId) {
+        const normalizedId = String(productId || '').trim();
+        if (!normalizedId) return;
+
+        const targetItem = Array.from(document.querySelectorAll('#shopCartList .shop-cart-item[data-product-id]'))
+            .find((item) => String(item.dataset.productId || '').trim() === normalizedId);
+
+        if (!targetItem || targetItem.classList.contains('is-removing') || window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
+            this.removeCartItem(normalizedId);
+            return;
+        }
+
+        const previousPositions = this.captureCartItemPositions({ excludeProductId: normalizedId });
+        targetItem.classList.add('is-removing');
+
+        window.setTimeout(() => {
+            this.removeCartItem(normalizedId);
+            this.animateCartListReflow(previousPositions);
+        }, 290);
+    },
+
+    consumePurchasedCartQuantity: function (productId, purchasedQuantity) {
+        const normalizedId = String(productId || '').trim();
+        if (!normalizedId) return;
+
+        const currentQuantity = this.getCartQuantity(normalizedId);
+        const nextQuantity = currentQuantity - Math.max(1, Math.trunc(Number(purchasedQuantity || 0) || 0));
+        if (nextQuantity < 1) {
+            this.cartItems.delete(normalizedId);
+            delete this.cartSnapshots[normalizedId];
+        } else {
+            this.cartItems.set(normalizedId, nextQuantity);
+        }
+        this.renderCart();
+    },
+
+    openCartCheckoutModal: function () {
+        const entries = this.getCartEntries();
+        if (!entries.length) {
+            this.showShopToast(this.getCartCopy().cartEmptyToast, 'error');
+            return;
+        }
+
+        if (entries.length === 1) {
+            this.openPurchaseModalFromCartEntry(entries[0]);
+            return;
+        }
+
+        const modal = document.getElementById('shopCartCheckoutModal');
+        if (!modal) return;
+
+        this.renderCartCheckoutModal();
+        modal.classList.add('active');
+        if (window.iOSScrollLock) {
+            window.iOSScrollLock.lockLight(modal);
+        }
+    },
+
+    closeCartCheckoutModal: function () {
+        const modal = document.getElementById('shopCartCheckoutModal');
+        if (!modal) return;
+
+        modal.classList.remove('active');
+        this.cartCheckoutProcessing = false;
+        this.renderCartCheckoutModal();
+        this.renderCart();
+        if (window.iOSScrollLock) {
+            window.iOSScrollLock.unlock();
+        }
+    },
+
+    openPurchaseModalFromCartEntry: function (entry) {
+        if (!entry) return;
+        const sourceContext = {
+            ...resolveShopSourceContext(),
+            sourceChannel: 'shop_cart'
+        };
+        const purchaseQuantityCap = this.getPurchaseQuantityCapForProduct(entry.product, entry.quantityCap);
+
+        this.closeCart();
+        this.openPurchaseModal(
+            entry.productId,
+            entry.product?.name || entry.displayName,
+            entry.product?.name_en || '',
+            entry.unitPrice,
+            Array.isArray(entry.product?.quantity_rules) ? entry.product.quantity_rules : [],
+            purchaseQuantityCap,
+            entry.hasPurchaseNotes ? (entry.product?.purchase_notes || '') : '',
+            entry.hasUsageInstructions ? (entry.product?.usage_instructions || '') : '',
+            {
+                category: entry.product?.category || '',
+                sourceContext,
+                initialQuantity: entry.quantity,
+                cartOrigin: {
+                    productId: entry.productId
+                }
+            }
+        );
+        void this.refreshCurrentPurchaseGuidance(entry.productId);
+        void this.syncPurchaseAccessAfterOpen(entry.productId, purchaseQuantityCap);
+    },
+
     getCurrentPurchaseSubtotal: function () {
         return this.currentPurchase.quantity * this.currentPurchase.unitPrice;
     },
@@ -366,11 +1521,7 @@ const ShopClient = {
         const isEn = (window.i18n?.getCurrentLanguage() || 'zh') === 'en';
         if (stage === 'confirm') {
             return {
-                badge: isEn ? 'STEP 2 / FINAL REVIEW' : 'STEP 2 / 最终确认',
                 title: isEn ? 'Final Confirmation' : '最终确认',
-                hint: isEn
-                    ? 'Review the summary once more before we submit and deliver the order.'
-                    : '提交前再核对一次商品、优惠和总价。',
                 nextLabel: isEn ? 'Confirm Order' : '确认订单',
                 backLabel: isEn ? 'Back to Edit' : '返回修改',
                 confirmLabel: isEn ? 'Confirm Purchase' : '确认并兑换'
@@ -378,11 +1529,7 @@ const ShopClient = {
         }
 
         return {
-            badge: isEn ? 'STEP 1 / CONFIGURE' : 'STEP 1 / 配置订单',
             title: window.i18n?.t('shop.confirmRedeem') || (isEn ? 'Confirm Purchase' : '确认兑换'),
-            hint: isEn
-                ? 'Choose quantity and discount, then continue to final review.'
-                : '先确认数量、优惠和总价，再进入最终确认。',
             nextLabel: isEn ? 'Confirm Order' : '确认订单',
             backLabel: isEn ? 'Back to Edit' : '返回修改',
             confirmLabel: isEn ? 'Confirm Purchase' : '确认并兑换'
@@ -437,10 +1584,9 @@ const ShopClient = {
 
         const nextStage = stage === 'confirm' ? 'confirm' : 'configure';
         const modal = document.getElementById('shopPurchaseModal');
-        const stepBadge = document.getElementById('purchaseStepBadge');
         const stageTitle = document.getElementById('purchaseStageTitle');
-        const stageHint = document.getElementById('purchaseStageHint');
         const backBtn = document.getElementById('purchaseBackBtn');
+        const addToCartBtn = document.getElementById('purchaseAddToCartBtn');
         const nextBtn = document.getElementById('nextPurchaseStepBtn');
         const confirmBtn = document.getElementById('confirmPurchaseBtn');
         const copy = this.getPurchaseStageCopy(nextStage);
@@ -454,20 +1600,24 @@ const ShopClient = {
         document.querySelectorAll('#shopPurchaseModal [data-purchase-step]').forEach((element) => {
             if (!(element instanceof HTMLElement)) return;
             const hasPurchaseNotes = Boolean(String(this.currentPurchase?.purchaseNotes || '').trim());
-            const isNotesStage = element.id === 'purchaseNotesBox' || element.id === 'purchaseConfirmNotesBox';
+            const isNotesStage = element.id === 'purchaseNotesBox';
             const shouldShow = element.dataset.purchaseStep === nextStage
                 && (!isNotesStage || hasPurchaseNotes);
             this.setElementHidden(element, !shouldShow);
         });
 
-        if (stepBadge) stepBadge.textContent = copy.badge;
         if (stageTitle) stageTitle.textContent = copy.title;
-        if (stageHint) stageHint.textContent = copy.hint;
 
         if (backBtn) {
             backBtn.innerHTML = `<i class="fas fa-arrow-left"></i> <span>${this.escapeHtml(copy.backLabel)}</span>`;
             this.setElementHidden(backBtn, nextStage !== 'confirm');
             backBtn.disabled = false;
+        }
+
+        if (addToCartBtn) {
+            addToCartBtn.innerHTML = `<i class="fas fa-basket-shopping"></i> <span>${this.escapeHtml(this.getCartCopy().addLabel)}</span>`;
+            this.setElementHidden(addToCartBtn, nextStage !== 'configure' || Boolean(this.currentPurchase?.cartOrigin?.productId));
+            addToCartBtn.disabled = false;
         }
 
         if (nextBtn) {
@@ -1083,21 +2233,44 @@ const ShopClient = {
             this.currentPurchase.idempotencyKey = this.createPurchaseIdempotencyKey();
         }
 
+        return this.requestPurchasePayloadWithServer({
+            productId: this.currentPurchase.productId,
+            quantity: this.currentPurchase.quantity,
+            discountCode: this.currentPurchase.discountCode,
+            discountAssetId: this.currentPurchase.discountAssetId,
+            agentId: this.currentAgentId,
+            site: window.SiteConfig?.site || 'cn',
+            idempotencyKey: this.currentPurchase.idempotencyKey
+        }, accessToken);
+    },
+
+    requestPurchasePayloadWithServer: async function (purchasePayload = {}, token = '') {
+        const accessToken = String(token || '').trim() || await this.getAccessToken();
+        if (!accessToken) {
+            throw new Error(window.i18n?.t('shop.loginRequired') || '请先登录');
+        }
+
+        const idempotencyKey = String(
+            purchasePayload?.idempotencyKey
+            || purchasePayload?.idempotency_key
+            || this.createPurchaseIdempotencyKey()
+        ).trim();
+
         const response = await fetch('/api/shop/purchase', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${accessToken}`,
-                'X-Idempotency-Key': this.currentPurchase.idempotencyKey
+                'X-Idempotency-Key': idempotencyKey
             },
             body: JSON.stringify({
-                productId: this.currentPurchase.productId,
-                quantity: this.currentPurchase.quantity,
-                discountCode: this.currentPurchase.discountCode,
-                discountAssetId: this.currentPurchase.discountAssetId,
-                agentId: this.currentAgentId,
-                site: window.SiteConfig?.site || 'cn',
-                idempotencyKey: this.currentPurchase.idempotencyKey
+                productId: purchasePayload.productId,
+                quantity: purchasePayload.quantity,
+                discountCode: purchasePayload.discountCode || null,
+                discountAssetId: purchasePayload.discountAssetId || null,
+                agentId: purchasePayload.agentId || null,
+                site: purchasePayload.site || (window.SiteConfig?.site || 'cn'),
+                idempotencyKey
             })
         });
 
@@ -1115,6 +2288,8 @@ const ShopClient = {
     init: async function () {
         console.log('🛍️ Shop Client Initialized');
         this.bindStaticUiHandlers();
+        this.restoreCartState();
+        this.renderCart();
 
         // Read URL parameters
         const urlParams = new URLSearchParams(window.location.search);
@@ -1237,6 +2412,8 @@ const ShopClient = {
             console.log('🌐 Language changed, reloading shop content...');
             this.loadCategoryFilters();
             this.loadProducts();
+            this.renderCart();
+            this.renderCartCheckoutModal();
         });
     },
 
@@ -1257,53 +2434,136 @@ const ShopClient = {
         const shopGrid = document.getElementById('userShopGrid');
         shopGrid?.addEventListener('click', (event) => {
             const target = event.target instanceof Element
-                ? event.target.closest('.shop-buy-btn[data-shop-action="buy-product"]')
+                ? event.target.closest('[data-shop-action]')
                 : null;
             if (!target || target.disabled) return;
 
             event.preventDefault?.();
+            const action = target.dataset.shopAction || '';
             const sourceContext = resolveShopSourceContext();
-            trackShopAnalyticsEvent('product_card_click', {
-                entityId: String(target.dataset.productId || '').trim() || null,
-                eventValue: Number(target.dataset.unitPrice || 0) || null,
-                metadata: buildShopTrackingMetadata({
-                    product_id: String(target.dataset.productId || '').trim() || null,
-                    product_name: decodeURIComponent(target.dataset.productName || ''),
-                    product_name_en: decodeURIComponent(target.dataset.productNameEn || ''),
-                    category: String(target.dataset.productCategory || '').trim() || null,
-                    unit_price: Number(target.dataset.unitPrice || 0) || null
-                }, sourceContext)
-            }, {
-                eventType: 'engagement'
-            });
-            void this.buyProduct(
-                target.dataset.productId || '',
-                decodeURIComponent(target.dataset.productName || ''),
-                decodeURIComponent(target.dataset.productNameEn || ''),
-                Number(target.dataset.unitPrice || 0),
-                target.dataset.qtyRules || '',
-                target.dataset.maxPurchaseQuantity || '',
-                target.dataset.showPurchaseNotes === 'true',
-                target.dataset.purchaseNotes || '',
-                target.dataset.showUsageInstructions === 'true',
-                target.dataset.usageInstructions || '',
-                target.dataset.productCategory || '',
-                sourceContext
-            );
+
+            if (action === 'add-product-to-cart') {
+                const addedQuantity = this.addProductToCart(target.dataset.productId || '', 1);
+                if (addedQuantity > 0) {
+                    this.trackProductAddToCartFromDataset(target.dataset, addedQuantity, sourceContext);
+                }
+                return;
+            }
+
+            if (action !== 'buy-product') {
+                return;
+            }
+
+            this.openProductPurchaseFromDataset(target.dataset, sourceContext);
+        });
+
+        shopGrid?.addEventListener('keydown', (event) => {
+            if (event.defaultPrevented || (event.key !== 'Enter' && event.key !== ' ')) return;
+
+            const target = event.target instanceof HTMLElement && event.target.matches('.shop-card[data-shop-action="buy-product"]')
+                ? event.target
+                : null;
+            if (!target) return;
+
+            event.preventDefault();
+            this.openProductPurchaseFromDataset(target.dataset, resolveShopSourceContext());
+        });
+
+        document.getElementById('shopCartAnchor')?.addEventListener('click', (event) => {
+            event.preventDefault?.();
+            this.guardCartBackdropClose(180);
+            this.toggleCart();
+        });
+
+        document.getElementById('shopCartBackdrop')?.addEventListener('click', (event) => {
+            event.preventDefault?.();
+            if (this.shouldIgnoreCartBackdropClose()) {
+                return;
+            }
+            this.closeCart();
+        });
+
+        document.getElementById('shopCartDrawer')?.addEventListener('pointerdown', () => {
+            this.guardCartBackdropClose(260);
+        });
+
+        document.getElementById('shopCartDrawer')?.addEventListener('click', (event) => {
+            const target = event.target instanceof Element
+                ? event.target.closest('[data-shop-cart-action]')
+                : null;
+            if (!target) return;
+
+            event.preventDefault?.();
+            event.stopPropagation?.();
+            const action = target.dataset.shopCartAction || '';
+            const productId = target.dataset.productId || '';
+            this.guardCartBackdropClose(action === 'checkout' ? 900 : 320);
+
+            if (action === 'close' || action === 'continue') {
+                this.closeCart();
+                return;
+            }
+
+            if (action === 'checkout') {
+                void this.confirmCartCheckout();
+                return;
+            }
+
+            if (action === 'open-product') {
+                const entry = this.getCartEntries().find((cartEntry) => String(cartEntry?.productId || '').trim() === String(productId || '').trim());
+                if (entry) {
+                    this.openPurchaseModalFromCartEntry(entry);
+                }
+                return;
+            }
+
+            if (action === 'increase') {
+                this.updateCartQuantity(productId, this.getCartQuantity(productId) + 1);
+                return;
+            }
+
+            if (action === 'toggle-notes') {
+                this.toggleCartItemDisclosure(productId, 'notes');
+                return;
+            }
+
+            if (action === 'toggle-usage') {
+                this.toggleCartItemDisclosure(productId, 'usage');
+                return;
+            }
+
+            if (action === 'decrease') {
+                this.updateCartQuantity(productId, this.getCartQuantity(productId) - 1);
+                return;
+            }
+
+            if (action === 'remove') {
+                this.removeCartItemWithAnimation(productId);
+            }
+        });
+
+        const cartCheckoutModal = document.getElementById('shopCartCheckoutModal');
+        cartCheckoutModal?.addEventListener('click', (event) => {
+            if (event.target === cartCheckoutModal) {
+                this.closeCartCheckoutModal();
+                return;
+            }
+
+            if (event.target instanceof Element && event.target.closest('#shopCartCheckoutBackBtn')) {
+                event.preventDefault?.();
+                this.closeCartCheckoutModal();
+                return;
+            }
+
+            if (event.target instanceof Element && event.target.closest('#shopCartCheckoutConfirmBtn')) {
+                event.preventDefault?.();
+                void this.confirmCartCheckout();
+            }
         });
 
         const purchaseModal = document.getElementById('shopPurchaseModal');
         purchaseModal?.addEventListener('click', (event) => {
             if (event.target === purchaseModal) {
-                this.closePurchaseModal();
-                return;
-            }
-
-            const closeTrigger = event.target instanceof Element
-                ? event.target.closest('#shopPurchaseModalCloseBtn')
-                : null;
-            if (closeTrigger) {
-                event.preventDefault?.();
                 this.closePurchaseModal();
                 return;
             }
@@ -1350,6 +2610,12 @@ const ShopClient = {
                 return;
             }
 
+            if (event.target instanceof Element && event.target.closest('#purchaseAddToCartBtn')) {
+                event.preventDefault?.();
+                this.addCurrentPurchaseToCart();
+                return;
+            }
+
             if (event.target instanceof Element && event.target.closest('#nextPurchaseStepBtn')) {
                 event.preventDefault?.();
                 this.proceedPurchaseConfirmation();
@@ -1359,13 +2625,6 @@ const ShopClient = {
             if (event.target instanceof Element && event.target.closest('#confirmPurchaseBtn')) {
                 event.preventDefault?.();
                 void this.confirmPurchase();
-            }
-        });
-
-        document.getElementById('shopPurchaseModalCloseBtn')?.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                this.closePurchaseModal();
             }
         });
 
@@ -1380,6 +2639,20 @@ const ShopClient = {
             event.target.value = event.target.value.toUpperCase();
             if (this.currentPurchase.discountCode && event.target.value.trim() !== this.currentPurchase.discountCode) {
                 this.resetDiscountState();
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape') return;
+
+            const cartCheckoutModalEl = document.getElementById('shopCartCheckoutModal');
+            if (cartCheckoutModalEl?.classList.contains('active')) {
+                this.closeCartCheckoutModal();
+                return;
+            }
+
+            if (this.cartOpen) {
+                this.closeCart();
             }
         });
 
@@ -1405,6 +2678,42 @@ const ShopClient = {
             if (event.target instanceof Element && event.target.closest('#expandContentBtn')) {
                 event.preventDefault?.();
                 this.toggleExpandContent();
+                return;
+            }
+
+            const successItemCopyBtn = event.target instanceof Element
+                ? event.target.closest('[data-shop-success-action="copy-item"]')
+                : null;
+            if (successItemCopyBtn) {
+                event.preventDefault?.();
+                void this.copySuccessCardContent(successItemCopyBtn.dataset.shopCopyContent || '');
+                return;
+            }
+
+            const successOrderCopyBtn = event.target instanceof Element
+                ? event.target.closest('[data-shop-success-action="copy-order-id"]')
+                : null;
+            if (successOrderCopyBtn) {
+                event.preventDefault?.();
+                void this.copySuccessCardContent(successOrderCopyBtn.dataset.shopCopyContent || '');
+                return;
+            }
+
+            const successPanelToggle = event.target instanceof Element
+                ? event.target.closest('[data-shop-success-action="toggle-usage"], [data-shop-success-action="toggle-notes"]')
+                : null;
+            if (successPanelToggle) {
+                event.preventDefault?.();
+                this.toggleSuccessItemDisclosure(successPanelToggle);
+                return;
+            }
+
+            const successItemToggle = event.target instanceof Element
+                ? event.target.closest('[data-shop-success-action="toggle-item-content"]')
+                : null;
+            if (successItemToggle) {
+                event.preventDefault?.();
+                this.toggleSuccessItemContent(successItemToggle);
                 return;
             }
 
@@ -1655,6 +2964,90 @@ const ShopClient = {
         return '<div id="shopSuccessToast" class="shop-success-toast" aria-live="polite"></div>';
     },
 
+    parseSuccessWarning: function (warning = '') {
+        const normalizedWarning = String(warning || '').trim();
+        if (!normalizedWarning) return null;
+
+        const checkoutCopy = this.getCartCopy?.() || {};
+        const partialPrefix = String(checkoutCopy.partialWarningPrefix || '').trim();
+        const normalizedPrefix = partialPrefix.replace(/[：:]\s*$/, '');
+
+        if (normalizedPrefix && normalizedWarning.startsWith(normalizedPrefix)) {
+            const remainder = normalizedWarning
+                .slice(normalizedPrefix.length)
+                .replace(/^[：:\s]+/, '')
+                .trim();
+            const segments = remainder
+                .split(/[：:]/)
+                .map((segment) => String(segment || '').trim())
+                .filter(Boolean);
+            const productName = segments.length >= 2 ? segments.shift() : '';
+            const reason = segments.join('：').trim() || remainder;
+
+            return {
+                eyebrow: window.i18n?.t('shop.specialTip') || '特别提示',
+                title: /余额不足|insufficient/i.test(reason) ? '积分不足' : '结算未完成',
+                summary: normalizedPrefix,
+                productName,
+                reason,
+                raw: normalizedWarning
+            };
+        }
+
+        return {
+            eyebrow: window.i18n?.t('shop.specialTip') || '特别提示',
+            title: window.i18n?.t('shop.specialTip') || '特别提示',
+            summary: normalizedWarning,
+            productName: '',
+            reason: '',
+            raw: normalizedWarning
+        };
+    },
+
+    buildSuccessWarningMarkup: function (warning = '') {
+        const parsedWarning = this.parseSuccessWarning(warning);
+        if (!parsedWarning) return '';
+
+        const summaryText = String(parsedWarning.summary || parsedWarning.raw || '').trim();
+        const productName = String(parsedWarning.productName || '').trim();
+        const reason = String(parsedWarning.reason || '').trim();
+        const chips = [];
+
+        if (productName) {
+            chips.push(`
+                <span class="shop-success-warning__chip shop-success-warning__chip--product">
+                    <i class="fas fa-box" aria-hidden="true"></i>
+                    <span>${this.escapeHtml(productName)}</span>
+                </span>
+            `);
+        }
+
+        if (reason) {
+            chips.push(`
+                <span class="shop-success-warning__chip shop-success-warning__chip--reason">
+                    <i class="fas fa-wallet" aria-hidden="true"></i>
+                    <span>${this.escapeHtml(reason)}</span>
+                </span>
+            `);
+        }
+
+        return `
+            <div class="shop-success-warning">
+                <div class="shop-success-warning__icon" aria-hidden="true">
+                    <i class="fas fa-exclamation"></i>
+                </div>
+                <div class="shop-success-warning__content">
+                    <div class="shop-success-warning__header">
+                        <span class="shop-success-warning__eyebrow">${this.escapeHtml(parsedWarning.eyebrow || '特别提示')}</span>
+                        <strong class="shop-success-warning__title">${this.escapeHtml(parsedWarning.title || '特别提示')}</strong>
+                    </div>
+                    ${summaryText ? `<p class="shop-success-warning__summary">${this.escapeHtml(summaryText)}</p>` : ''}
+                    ${chips.length ? `<div class="shop-success-warning__chips">${chips.join('')}</div>` : ''}
+                </div>
+            </div>
+        `;
+    },
+
     buildExpandContentToggleMarkup: function (hiddenCount, expanded = false) {
         const safeHiddenCount = Number(hiddenCount || 0);
         const label = expanded
@@ -1669,6 +3062,263 @@ const ShopClient = {
                         <i class="fas ${icon} shop-expand-toggle-icon" aria-hidden="true"></i>
                     </span>
                 </div>`;
+    },
+
+    buildSuccessModalItemPayload: function ({
+        productId = '',
+        displayName = '',
+        orderId = '',
+        createdAt = '',
+        quantity = 1,
+        content = '',
+        contentSegments = null,
+        purchaseNotes = '',
+        usageInstructions = '',
+        product = null
+    } = {}) {
+        const normalizedProductId = String(productId || product?.id || '').trim();
+        const resolvedProduct = product || this.getCachedProductById(normalizedProductId) || null;
+        const productSnapshot = resolvedProduct
+            ? (this.buildCartProductSnapshot(resolvedProduct) || resolvedProduct)
+            : null;
+        const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
+        const fallbackDisplayName = productSnapshot
+            ? (currentLang === 'en'
+                ? (productSnapshot.name_en || productSnapshot.name || '')
+                : (productSnapshot.name || productSnapshot.name_en || ''))
+            : (currentLang === 'en'
+                ? (this.currentPurchase?.productNameEn || this.currentPurchase?.productName || '')
+                : (this.currentPurchase?.productName || this.currentPurchase?.productNameEn || ''));
+        const normalizedDisplayName = String(displayName || fallbackDisplayName || window.i18n?.t('shop.unknownProduct') || '商品').trim();
+        const normalizedContentSegments = Array.isArray(contentSegments)
+            ? contentSegments.map((segment) => String(segment || '').trim()).filter(Boolean)
+            : String(content || '')
+                .trim()
+                .split(/\n----\n/)
+                .map((segment) => String(segment || '').trim())
+                .filter(Boolean);
+        const resolvedPurchaseNotes = productSnapshot?.show_purchase_notes === true
+            ? String(productSnapshot.purchase_notes || '').trim()
+            : '';
+        const fallbackPurchaseNotes = String(this.currentPurchase?.productId || '').trim() === normalizedProductId
+            ? String(this.currentPurchase?.purchaseNotes || '').trim()
+            : '';
+
+        return {
+            productId: normalizedProductId,
+            displayName: normalizedDisplayName,
+            orderId: String(orderId || '').trim(),
+            createdAt: String(createdAt || '').trim(),
+            quantity: Math.max(1, Number(quantity || 0) || 1),
+            contentSegments: normalizedContentSegments,
+            purchaseNotes: String(purchaseNotes || resolvedPurchaseNotes || fallbackPurchaseNotes).trim(),
+            usageInstructions: String(usageInstructions || '').trim(),
+            product: productSnapshot || null
+        };
+    },
+
+    formatSuccessOrderTimestamp: function (timestamp) {
+        const normalizedTimestamp = String(timestamp || '').trim();
+        if (!normalizedTimestamp) return '';
+
+        const parsed = new Date(normalizedTimestamp);
+        if (Number.isNaN(parsed.getTime())) {
+            return normalizedTimestamp;
+        }
+
+        return new Intl.DateTimeFormat('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        }).format(parsed);
+    },
+
+    buildSuccessContentCardMarkup: function (text) {
+        const normalizedText = String(text || '').trim();
+        if (!normalizedText) return '';
+
+        const encodedText = encodeURIComponent(normalizedText);
+        const isCompact = normalizedText.length <= 48 && !/\n/.test(normalizedText);
+        const safeHtml = this.escapeHtml(normalizedText).replace(/\n/g, '<br>');
+
+        return `
+            <div
+                class="content-card content-card--shop-copy shop-success-item__content-card"
+                data-shop-copy-content="${encodedText}"
+                title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}"
+            >
+                <div class="item-content-box item-content-box--plain">
+                    <div class="item-text${isCompact ? ' item-text--centered' : ''}">${safeHtml}</div>
+                </div>
+            </div>`;
+    },
+
+    buildSuccessItemMarkup: function (item = {}, index = 0) {
+        const normalizedItem = this.buildSuccessModalItemPayload(item);
+        const purchaseNotesText = String(normalizedItem.purchaseNotes || '').trim();
+        const usageText = String(normalizedItem.usageInstructions || '').trim();
+        const contentSegments = normalizedItem.contentSegments.length
+            ? normalizedItem.contentSegments
+            : [window.i18n?.t('shop.noContent') || '（无内容）'];
+        const contentPanelId = `shop-success-content-panel-${index}`;
+        const notesPanelId = `shop-success-notes-panel-${index}`;
+        const usagePanelId = `shop-success-usage-panel-${index}`;
+        const quantityLabel = normalizedItem.quantity > 1 ? `数量 ${normalizedItem.quantity}` : '';
+        const encodedItemContent = encodeURIComponent(contentSegments.join('\n'));
+        const fullOrderId = String(normalizedItem.orderId || '').trim();
+        const formattedCreatedAt = this.formatSuccessOrderTimestamp(normalizedItem.createdAt);
+        const actionTagsMarkup = (purchaseNotesText || usageText)
+            ? `
+                <div class="shop-success-item__action-tags">
+                    ${purchaseNotesText ? `
+                        <button
+                            type="button"
+                            class="shop-success-item__tag shop-success-item__tag--notice"
+                            data-shop-success-action="toggle-notes"
+                            aria-expanded="false"
+                            aria-controls="${this.escapeAttribute(notesPanelId)}"
+                        ><span class="shop-success-item__tag-label">注意事项</span></button>
+                    ` : ''}
+                    ${usageText ? `
+                        <button
+                            type="button"
+                            class="shop-success-item__tag shop-success-item__tag--usage"
+                            data-shop-success-action="toggle-usage"
+                            aria-expanded="false"
+                            aria-controls="${this.escapeAttribute(usagePanelId)}"
+                        ><span class="shop-success-item__tag-label">使用说明</span></button>
+                    ` : ''}
+                </div>
+            `
+            : '';
+        const iconMarkup = normalizedItem.product
+            ? this.buildCartIconMarkup(normalizedItem.product, {
+                imageClass: 'shop-success-item__thumb',
+                iconClass: 'shop-success-item__icon'
+            })
+            : '<div class="shop-success-item__icon" aria-hidden="true"><i class="fas fa-box"></i></div>';
+
+        return `
+            <article class="shop-success-item" data-success-item-index="${index}">
+                <div
+                    class="shop-success-item__surface"
+                    data-shop-success-action="toggle-item-content"
+                    aria-expanded="false"
+                    aria-controls="${this.escapeAttribute(contentPanelId)}"
+                >
+                    <div class="shop-success-item__header">
+                        <div class="shop-success-item__heading">
+                            ${iconMarkup}
+                            <div class="shop-success-item__copy">
+                                <div class="shop-success-item__title-row">
+                                    <h3 class="shop-success-item__title">${this.escapeHtml(normalizedItem.displayName)}</h3>
+                                </div>
+                                ${(fullOrderId || quantityLabel) ? `
+                                    <div class="shop-success-item__footer-meta">
+                                        ${fullOrderId ? `
+                                            <div class="shop-success-item__submeta">
+                                                <button
+                                                    type="button"
+                                                    class="shop-success-item__order-id"
+                                                    data-shop-success-action="copy-order-id"
+                                                    data-shop-copy-content="${encodeURIComponent(fullOrderId)}"
+                                                    aria-label="复制订单号 ${this.escapeAttribute(fullOrderId)}"
+                                                    title="点击复制订单号"
+                                                >
+                                                    <span class="shop-success-item__submeta-label">订单号</span>
+                                                    <span class="shop-success-item__submeta-value">${this.escapeHtml(fullOrderId)}</span>
+                                                </button>
+                                            </div>
+                                        ` : ''}
+                                        ${quantityLabel ? `
+                                            <div class="shop-success-item__meta shop-success-item__meta--inline">
+                                                <span class="shop-success-item__tag shop-success-item__tag--quantity">${this.escapeHtml(quantityLabel)}</span>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
+
+                        <div class="shop-success-item__actions">
+                            <div class="shop-success-item__toolbar">
+                                ${actionTagsMarkup}
+                                <button
+                                    type="button"
+                                    class="shop-success-item__copy-btn"
+                                    data-shop-success-action="copy-item"
+                                    data-shop-copy-content="${encodedItemContent}"
+                                    aria-label="复制该商品卡密"
+                                    title="复制该商品卡密"
+                                >
+                                    <i class="fas fa-copy" aria-hidden="true"></i>
+                                </button>
+                            </div>
+                            ${formattedCreatedAt ? `<div class="shop-success-item__time">下单于 ${this.escapeHtml(formattedCreatedAt)}</div>` : ''}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="shop-success-item__body">
+                    <div class="shop-success-item__disclosures">
+                        <section
+                            id="${this.escapeAttribute(contentPanelId)}"
+                            class="shop-cart-item__panel shop-success-item__content-panel"
+                            hidden
+                        >
+                            <div class="shop-success-item__content-grid">
+                                ${contentSegments.map((segment) => this.buildSuccessContentCardMarkup(segment)).join('')}
+                            </div>
+                        </section>
+                        ${purchaseNotesText ? `
+                            <section
+                                id="${this.escapeAttribute(notesPanelId)}"
+                                class="shop-cart-item__panel shop-cart-item__panel--notice shop-success-item__notes-panel"
+                                hidden
+                            >${this.renderStoredRichText(purchaseNotesText)}</section>
+                        ` : ''}
+                        ${usageText ? `
+                            <section
+                                id="${this.escapeAttribute(usagePanelId)}"
+                                class="shop-cart-item__panel shop-cart-item__panel--usage shop-success-item__usage-panel"
+                                hidden
+                            >${this.renderStoredRichText(usageText)}</section>
+                        ` : ''}
+                    </div>
+                </div>
+            </article>`;
+    },
+
+    toggleSuccessItemContent: function (toggleSurface) {
+        const surface = toggleSurface instanceof Element
+            ? toggleSurface.closest('[data-shop-success-action="toggle-item-content"]')
+            : null;
+        const item = surface?.closest('.shop-success-item') || null;
+        const panel = item?.querySelector('.shop-success-item__content-panel') || null;
+        if (!surface || !item || !panel) return;
+
+        const nextExpanded = panel.hidden;
+        panel.hidden = !nextExpanded;
+        surface.setAttribute('aria-expanded', nextExpanded ? 'true' : 'false');
+        item.classList.toggle('is-content-expanded', nextExpanded);
+    },
+
+    toggleSuccessItemDisclosure: function (toggleButton) {
+        if (!(toggleButton instanceof Element)) return;
+
+        const panelId = String(toggleButton.getAttribute('aria-controls') || '').trim();
+        if (!panelId) return;
+
+        const panel = document.getElementById(panelId);
+        if (!panel) return;
+
+        const nextExpanded = toggleButton.getAttribute('aria-expanded') !== 'true';
+        toggleButton.setAttribute('aria-expanded', nextExpanded ? 'true' : 'false');
+        toggleButton.classList.toggle('is-active', nextExpanded);
+        panel.hidden = !nextExpanded;
     },
 
     currentCategory: 'all',
@@ -1869,7 +3519,8 @@ const ShopClient = {
     buildProductCardElement: function (product, agentPrices = {}, index = 0, { waveTimeMs = performance.now() } = {}) {
         if (!product) return null;
 
-        let currentPrice = this.getProductPriceForCurrentSite(product);
+        const pricing = this.resolveProductPricing(product, agentPrices);
+        let currentPrice = pricing.currentPrice;
         if (currentPrice == null) {
             return null;
         }
@@ -1879,8 +3530,10 @@ const ShopClient = {
             return null;
         }
 
+        const cartQuantity = this.getCartQuantity(productId);
+
         const el = document.createElement('div');
-        el.className = 'shop-card user-product-card breathing';
+        el.className = `shop-card user-product-card breathing ${cartQuantity > 0 ? 'shop-card--in-cart' : ''}`;
         el.dataset.productId = productId;
         el.dataset.productCategory = String(product.category || '');
         this.setCssVariables(el, {
@@ -1906,13 +3559,27 @@ const ShopClient = {
 
         const stockCount = product.stock_count || 0;
         const noStock = stockCount <= 0;
-        const buyBtnText = noStock
-            ? (window.i18n?.t('shop.outOfStock') || '售罄')
-            : (window.i18n?.t('shop.redeem') || '兑换');
         const stockLabel = noStock
             ? (window.i18n?.t('shop.noStock') || '无货')
             : `${window.i18n?.t('shop.stock') || '库存'}: ${stockCount}`;
-        const buyBtnClass = noStock ? 'shop-btn-disabled' : 'shop-btn-primary';
+        const cartTriggerAriaLabel = noStock
+            ? (window.i18n?.t('shop.outOfStock') || '售罄')
+            : this.getCartCopy().addLabel;
+        const qtyRulesStr = product.quantity_rules ? encodeURIComponent(JSON.stringify(product.quantity_rules)) : '';
+        const maxPurchaseQuantity = this.getPurchaseQuantityCapForProduct(product, product.max_purchase_quantity);
+        const purchaseDataset = {
+            productId,
+            productName: product.name || '',
+            productNameEn: product.name_en || '',
+            unitPrice: currentPrice,
+            productCategory: String(product.category || ''),
+            qtyRules: qtyRulesStr,
+            maxPurchaseQuantity: String(maxPurchaseQuantity),
+            showPurchaseNotes: product.show_purchase_notes === true,
+            purchaseNotes: product.purchase_notes || '',
+            showUsageInstructions: product.show_usage_instructions === true,
+            usageInstructions: product.usage_instructions || ''
+        };
 
         const coverIconMarkup = product.icon_url?.startsWith('fa')
             ? this.renderShopCoverIconMarkup(product.icon_url, safeIconClass)
@@ -1920,29 +3587,32 @@ const ShopClient = {
         const displayHtml = hasCoverImage
             ? `<img class="shop-card-image-cover" alt="${safeCardImageAlt}" width="480" height="320">`
             : `<div class="shop-icon-wrapper">${coverIconMarkup}</div>`;
-        const qtyRulesStr = product.quantity_rules ? encodeURIComponent(JSON.stringify(product.quantity_rules)) : '';
-        const maxPurchaseQuantity = this.normalizePurchaseQuantityCap(product.max_purchase_quantity);
 
         let originalPriceHtml = '';
         let flashSaleBadge = '';
         let flashShadowClass = '';
         let agentBadgeHtml = '';
 
-        if (this.currentAgentId && agentPrices[product.id] && agentPrices[product.id] > currentPrice) {
-            originalPriceHtml = `<span class="shop-card-original-price">${currentPrice}</span>`;
-            currentPrice = agentPrices[product.id];
+        if (pricing.originalPrice != null && pricing.hasAgentPrice) {
+            originalPriceHtml = `<span class="shop-card-original-price">${pricing.originalPrice}</span>`;
             agentBadgeHtml = `<div class="shop-agent-badge">${window.i18n?.t('shop.exclusiveBuff') || '专属加持'}</div>`;
         }
 
-        const now = new Date();
-        if (product.flash_sale_price != null && product.flash_sale_end && new Date(product.flash_sale_end) > now && agentBadgeHtml === '') {
-            originalPriceHtml = `<span class="shop-card-original-price">${currentPrice}</span>`;
-            currentPrice = product.flash_sale_price;
+        if (pricing.originalPrice != null && pricing.hasFlashSale && agentBadgeHtml === '') {
+            originalPriceHtml = `<span class="shop-card-original-price">${pricing.originalPrice}</span>`;
             flashSaleBadge = `<div class="flash-sale-badge flash-badge-glass" data-endtime="${product.flash_sale_end}"><i class="fas fa-bolt"></i> <span class="countdown-timer">${window.i18n?.t('shop.calculating') || '计算中...'}</span></div>`;
             flashShadowClass = 'flash-sale-card';
         }
 
-        el.className = `shop-card user-product-card breathing ${flashShadowClass}`;
+        el.className = `shop-card user-product-card breathing ${flashShadowClass} ${cartQuantity > 0 ? 'shop-card--in-cart' : ''}`.trim();
+        if (!noStock) {
+            el.classList.add('shop-card--interactive');
+            el.dataset.shopAction = 'buy-product';
+            el.setAttribute('role', 'button');
+            el.setAttribute('tabindex', '0');
+        } else {
+            el.setAttribute('aria-disabled', 'true');
+        }
         el.innerHTML = `
             <div class="shop-card-image">
                 ${flashSaleBadge}
@@ -1959,12 +3629,28 @@ const ShopClient = {
 
                 <div class="shop-card-footer">
                     <div class="shop-card-price">${originalPriceHtml}${window.SiteConfig?.formatPrice(currentPrice) || currentPrice} <span data-i18n="shop.points">${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}</span></div>
-                    <button type="button" ${noStock ? 'disabled' : ''} class="shop-buy-btn ${buyBtnClass}">
-                        ${buyBtnText}
-                    </button>
+                    <div class="shop-card-actions">
+                        <button
+                            type="button"
+                            ${noStock ? 'disabled' : ''}
+                            class="shop-card-cart-trigger${noStock ? ' is-disabled' : ''}"
+                            data-shop-action="add-product-to-cart"
+                            aria-label="${this.escapeAttribute(cartTriggerAriaLabel)}"
+                        >
+                            <span class="shop-card-cart-trigger__shell" aria-hidden="true">
+                                <svg viewBox="0 0 576 512" focusable="false" class="shop-card-cart-trigger__icon">
+                                    <path fill="currentColor" d="M0 24C0 10.7 10.7 0 24 0l45.5 0c22.2 0 41.5 15.2 46.7 36.8L122 64 552 64c15.4 0 29.9 7.4 38.9 19.9s11.3 28.7 6.2 43.1l-55.2 160c-7.1 20.6-26.5 34.5-48.3 34.5l-277.1 0c-22.2 0-41.5-15.2-46.7-36.8L124.2 96 24 96C10.7 96 0 85.3 0 72L0 24zM128 416a48 48 0 1 1 96 0 48 48 0 1 1 -96 0zm336 48a48 48 0 1 1 0-96 48 48 0 1 1 0 96z"/>
+                                </svg>
+                            </span>
+                        </button>
+                    </div>
                 </div>
             </div>
         `;
+
+        if (!noStock) {
+            this.applyShopPurchaseDataset(el, purchaseDataset);
+        }
 
         const productImage = hasCoverImage ? el.querySelector('.shop-card-image-cover') : null;
         if (productImage) {
@@ -1980,22 +3666,10 @@ const ShopClient = {
             this.setShopCardImageSource(productImage, product.icon_url);
         }
 
-        const buyButton = el.querySelector('.shop-buy-btn');
-        if (buyButton) {
-            buyButton.dataset.shopAction = 'buy-product';
-            buyButton.dataset.productId = productId;
-            buyButton.dataset.productName = encodeURIComponent(product.name || '');
-            buyButton.dataset.productNameEn = encodeURIComponent(product.name_en || '');
-            buyButton.dataset.unitPrice = String(currentPrice);
-            buyButton.dataset.productCategory = String(product.category || '');
-            buyButton.dataset.qtyRules = qtyRulesStr;
-            buyButton.dataset.maxPurchaseQuantity = String(maxPurchaseQuantity);
-            buyButton.dataset.showPurchaseNotes = product.show_purchase_notes ? 'true' : 'false';
-            buyButton.dataset.purchaseNotes = encodeURIComponent(product.purchase_notes || '');
-            buyButton.dataset.showUsageInstructions = product.show_usage_instructions ? 'true' : 'false';
-            buyButton.dataset.usageInstructions = encodeURIComponent(product.usage_instructions || '');
+        const cartTriggerButton = el.querySelector('.shop-card-cart-trigger[data-shop-action="add-product-to-cart"]');
+        if (cartTriggerButton && !noStock) {
+            this.applyShopPurchaseDataset(cartTriggerButton, purchaseDataset);
         }
-
         return el;
     },
 
@@ -2666,6 +4340,7 @@ const ShopClient = {
 
             if (!data || data.length === 0) {
                 this.transitionProductGrid(container, [], { empty: true });
+                this.renderCart();
                 this.scheduleBackgroundProductPrefetch();
                 return;
             }
@@ -2674,12 +4349,14 @@ const ShopClient = {
             const renderedCards = this.buildProductCardElements(data, agentPrices);
             if (renderedCards.length === 0) {
                 this.transitionProductGrid(container, [], { empty: true });
+                this.renderCart();
                 this.scheduleBackgroundProductPrefetch();
                 return;
             }
 
             this.transitionProductGrid(container, renderedCards);
             this.lastSkeletonCount = Math.min(Math.max(renderedCards.length, 3), 8);
+            this.renderCart();
             this.scheduleBackgroundProductPrefetch();
 
         } catch (err) {
@@ -2690,6 +4367,7 @@ const ShopClient = {
                 `${window.i18n?.t('common.error') || '加载失败'}: ${err.message || ''}`,
                 { variant: 'error', fullSpan: true }
             );
+            this.renderCart();
         }
 
         this.startFlashSaleTimer();
@@ -2744,6 +4422,7 @@ const ShopClient = {
         unitPrice: 0,
         quantity: 1,
         orderId: null,
+        createdAt: null,
         rules: [],
         discountCode: null,
         discountAssetId: null,
@@ -2759,6 +4438,7 @@ const ShopClient = {
         sourcePage: null,
         sourceChannel: null,
         sourcePromptId: null,
+        cartOrigin: null,
         configuredMaxQuantity: 99,
         unlimitedPurchases: false,
         maxQuantity: 99,
@@ -3116,7 +4796,8 @@ const ShopClient = {
         const rules = rulesStr ? JSON.parse(decodeURIComponent(rulesStr)) : [];
         let purchaseNotes = showPurchaseNotes ? decodeURIComponent(purchaseNotesEncoded || '') : '';
         let usageInstructions = showUsageInstructions ? decodeURIComponent(usageInstructionsEncoded || '') : '';
-        const quantityCap = this.normalizePurchaseQuantityCap(maxPurchaseQuantity);
+        const liveProduct = this.getCachedProductById(productId);
+        const quantityCap = this.getPurchaseQuantityCapForProduct(liveProduct, maxPurchaseQuantity);
 
         this.openPurchaseModal(productId, productName, productNameEn, price, rules, quantityCap, purchaseNotes, usageInstructions, {
             category: productCategory,
@@ -3129,6 +4810,7 @@ const ShopClient = {
     openPurchaseModal: function (productId, productName, productNameEn, price, rules, maxPurchaseQuantity = 99, purchaseNotes = '', usageInstructions = '', options = {}) {
         const quantityCap = this.normalizePurchaseQuantityCap(maxPurchaseQuantity);
         const unlimitedPurchases = options?.unlimitedPurchases === true;
+        const initialQuantity = Math.max(1, Math.min(quantityCap, Math.trunc(Number(options?.initialQuantity || 1) || 1)));
         const sourceContext = {
             ...resolveShopSourceContext(),
             ...(options?.sourceContext && typeof options.sourceContext === 'object' ? options.sourceContext : {})
@@ -3140,8 +4822,9 @@ const ShopClient = {
             productCategory: String(options?.category || options?.productCategory || '').trim() || null,
             basePrice: price,
             unitPrice: price,
-            quantity: 1,
+            quantity: initialQuantity,
             orderId: null,
+            createdAt: null,
             rules: rules,
             discountCode: null,
             discountAssetId: null,
@@ -3159,6 +4842,11 @@ const ShopClient = {
             sourcePage: normalizeShopTrackingText(sourceContext.sourcePage || '', 80) || null,
             sourceChannel: normalizeShopTrackingText(sourceContext.sourceChannel || '', 80) || null,
             sourcePromptId: normalizeShopTrackingText(sourceContext.sourcePromptId || '', 160) || null,
+            cartOrigin: options?.cartOrigin && typeof options.cartOrigin === 'object'
+                ? {
+                    productId: String(options.cartOrigin.productId || productId || '').trim() || null
+                }
+                : null,
             configuredMaxQuantity: quantityCap,
             unlimitedPurchases,
             maxQuantity: unlimitedPurchases ? null : quantityCap,
@@ -3172,10 +4860,10 @@ const ShopClient = {
         const displayName = (currentLang === 'en' && productNameEn) ? productNameEn : productName;
         this.renderModalProductName(displayName);
         document.getElementById('modalUnitPrice').textContent = price;
-        document.getElementById('modalTotalPrice').textContent = price;
+        document.getElementById('modalTotalPrice').textContent = price * initialQuantity;
         const quantityInput = document.getElementById('purchaseQuantity');
         if (quantityInput) {
-            quantityInput.value = 1;
+            quantityInput.value = initialQuantity;
         }
         this.setCurrentPurchaseQuantityCap(quantityCap, { unlimited: unlimitedPurchases });
 
@@ -3187,7 +4875,7 @@ const ShopClient = {
         this.currentPurchase.availableDiscountAssets = [];
         this.currentPurchase.claimableDiscounts = [];
         this.renderPurchaseDiscountAssets();
-        this.syncPricingWaterfall();
+        this.updatePriceForQuantity(initialQuantity);
         if (applyBtn) {
             applyBtn.innerHTML = window.i18n?.t('shop.verify') || '验证';
             applyBtn.disabled = false;
@@ -3366,6 +5054,184 @@ const ShopClient = {
         this.updatePriceForQuantity(val);
     },
 
+    buildCartSuccessPayload: function (results = []) {
+        const contentSegments = [];
+        const usageSegments = [];
+        const orderIds = [];
+        const items = [];
+        let remainingPoints = null;
+
+        results.forEach(({ entry, response }) => {
+            const responseData = response?.data && typeof response.data === 'object' ? response.data : {};
+            const displayName = entry?.displayName || this.getLocalizedProductName(entry?.product) || (window.i18n?.t('shop.unknownProduct') || '商品');
+            const rawContent = String(responseData.content || '').trim();
+            const rawUsageInstructions = String(responseData.usage_instructions || entry?.product?.usage_instructions || '').trim();
+            const orderId = String(responseData.order_id || '').trim();
+
+            if (orderId) {
+                orderIds.push(orderId);
+            }
+            if (responseData.remaining_points != null) {
+                remainingPoints = responseData.remaining_points;
+            }
+
+            items.push(this.buildSuccessModalItemPayload({
+                productId: entry?.productId,
+                displayName,
+                orderId,
+                createdAt: String(responseData.created_at || '').trim() || new Date().toISOString(),
+                quantity: Number(entry?.quantity || 0) || 1,
+                content: rawContent,
+                purchaseNotes: entry?.product?.show_purchase_notes === true ? (entry?.product?.purchase_notes || '') : '',
+                usageInstructions: rawUsageInstructions,
+                product: entry?.product || null
+            }));
+
+            if (rawContent) {
+                rawContent
+                    .split(/\n----\n/)
+                    .map((segment) => String(segment || '').trim())
+                    .filter(Boolean)
+                    .forEach((segment) => {
+                        contentSegments.push(`【${displayName}】\n${segment}`);
+                    });
+            }
+
+            if (rawUsageInstructions) {
+                const safeTitle = this.escapeHtml(displayName);
+                const safeBody = this.looksLikeRichTextHtml(rawUsageInstructions)
+                    ? this.sanitizeRichTextHtml(rawUsageInstructions)
+                    : this.linkifyText(this.escapeHtml(rawUsageInstructions)).replace(/\n/g, '<br>');
+                usageSegments.push(`<div><strong>${safeTitle}</strong></div><div>${safeBody}</div>`);
+            }
+        });
+
+        return {
+            content: contentSegments.join('\n----\n') || (window.i18n?.t('shop.noContent') || '（无内容）'),
+            usageInstructions: usageSegments.join('<br><br>'),
+            orderIds,
+            remainingPoints,
+            items
+        };
+    },
+
+    confirmCartCheckout: async function () {
+        if (this.cartCheckoutProcessing) return;
+
+        const entries = this.getCartEntries();
+        if (!entries.length) {
+            this.showShopToast(this.getCartCopy().cartEmptyToast, 'error');
+            this.closeCartCheckoutModal();
+            return;
+        }
+
+        this.cartCheckoutProcessing = true;
+        this.renderCartCheckoutModal();
+        this.renderCart();
+
+        const token = await this.getAccessToken();
+        if (!token) {
+            this.cartCheckoutProcessing = false;
+            this.renderCartCheckoutModal();
+            this.renderCart();
+            this.promptLoginForPurchase(window.i18n?.t('shop.loginRequired') || '请先登录再进行兑换');
+            return;
+        }
+
+        const checkoutCopy = this.getCartCopy();
+        const successes = [];
+        let checkoutError = null;
+        let failedEntry = null;
+
+        try {
+            for (const entry of entries) {
+                const response = await this.requestPurchasePayloadWithServer({
+                    productId: entry.productId,
+                    quantity: entry.quantity,
+                    discountCode: null,
+                    discountAssetId: null,
+                    agentId: this.currentAgentId,
+                    site: window.SiteConfig?.site || 'cn',
+                    idempotencyKey: this.createPurchaseIdempotencyKey()
+                }, token);
+
+                successes.push({ entry, response });
+            }
+        } catch (error) {
+            checkoutError = error;
+            failedEntry = entries[successes.length] || null;
+        }
+
+        if (successes.length > 0) {
+            successes.forEach(({ entry }) => {
+                const normalizedId = String(entry.productId || '').trim();
+                const nextQuantity = this.getCartQuantity(normalizedId) - Math.max(1, Number(entry.quantity || 0) || 1);
+                if (nextQuantity < 1) {
+                    this.cartItems.delete(normalizedId);
+                    delete this.cartSnapshots[normalizedId];
+                } else {
+                    this.cartItems.set(normalizedId, nextQuantity);
+                }
+            });
+
+            const successPayload = this.buildCartSuccessPayload(successes);
+            const warningMessage = checkoutError
+                ? `${checkoutCopy.partialWarningPrefix}${failedEntry ? ` ${failedEntry.displayName}：` : ' '}${checkoutError.message || ''}`.trim()
+                : null;
+            const refreshProductsPromise = this.loadProducts({ forceRefresh: true }).catch((error) => {
+                console.warn('Failed to refresh shop products after cart checkout:', error);
+            });
+            const latestCreatedAt = successPayload.items.reduce((latest, item) => {
+                const candidate = String(item?.createdAt || '').trim();
+                return candidate || latest;
+            }, '');
+
+            this.currentPurchase = {
+                ...this.currentPurchase,
+                productId: null,
+                productName: checkoutCopy.cartCheckoutLabel,
+                productNameEn: 'Cart checkout',
+                orderId: successPayload.orderIds.join(', '),
+                createdAt: latestCreatedAt || new Date().toISOString(),
+                quantity: successes.reduce((total, item) => total + (Number(item.entry?.quantity || 0) || 0), 0),
+                purchaseNotes: '',
+                usageInstructions: successPayload.usageInstructions || '',
+                cartOrigin: null
+            };
+
+            this.closeCartCheckoutModal();
+            this.setCartOpen(false);
+            this.renderCart();
+            this.showSuccessModal(successPayload.content, warningMessage, successPayload.usageInstructions, successPayload.items);
+
+            if (window.updateUserPointsUI && successPayload.remainingPoints != null) {
+                window.updateUserPointsUI(successPayload.remainingPoints);
+                if (window.checkAuthState) window.checkAuthState();
+            }
+            await refreshProductsPromise;
+            return;
+        }
+
+        this.cartCheckoutProcessing = false;
+        this.renderCartCheckoutModal();
+        this.renderCart();
+
+        const errorMessage = checkoutError?.message || (window.i18n?.t('shop.redeemFailed') || '兑换失败');
+        if (errorMessage.includes('积分') || errorMessage.includes('余额') || errorMessage.includes('nsufficient') || errorMessage.includes('balance')) {
+            this.closeCartCheckoutModal();
+            this.showShopToast(window.i18n?.t('shop.insufficientPoints') || '积分不足，请先充值', 'error');
+            if (window.WalletModal?.open) {
+                setTimeout(() => window.WalletModal.open('recharge', {
+                    entry: 'shop_cart_insufficient_points',
+                    sourceModule: 'shop_client'
+                }), 300);
+            }
+            return;
+        }
+
+        this.showShopToast(`❌ ${errorMessage}`, 'error');
+    },
+
     confirmPurchase: async function () {
         const token = await this.getAccessToken();
         if (!token) {
@@ -3423,6 +5289,7 @@ const ShopClient = {
                 allContents = purchaseData.content.split('\n----\n');
             }
             let lastOrderId = purchaseData.order_id;
+            let createdAt = String(purchaseData.created_at || '').trim() || new Date().toISOString();
             let remainingPoints = purchaseData.remaining_points;
             let usageInstructions = purchaseData.usage_instructions || this.currentPurchase?.usageInstructions || null;
 
@@ -3430,9 +5297,12 @@ const ShopClient = {
             const finalContent = allContents.length > 0
                 ? allContents.join('\n----\n')
                 : (window.i18n?.t('shop.noContent') || '（无内容）');
+            const cartOriginProductId = String(this.currentPurchase?.cartOrigin?.productId || '').trim();
+            const cartPurchasedQuantity = Math.max(1, Number(this.currentPurchase?.quantity || 0) || 1);
 
             // Store order ID for export
             this.currentPurchase.orderId = lastOrderId;
+            this.currentPurchase.createdAt = createdAt;
             this.currentPurchase.idempotencyKey = null;
 
             const totalPointsSpent = Math.max(
@@ -3483,9 +5353,36 @@ const ShopClient = {
 
             // Handle Results
             this.closePurchaseModal();
+            if (cartOriginProductId) {
+                const remainingCartQuantity = this.getCartQuantity(cartOriginProductId) - cartPurchasedQuantity;
+                if (remainingCartQuantity < 1) {
+                    this.cartItems.delete(cartOriginProductId);
+                    delete this.cartSnapshots[cartOriginProductId];
+                } else {
+                    this.cartItems.set(cartOriginProductId, remainingCartQuantity);
+                }
+                this.renderCart();
+            }
             await this.loadProducts({ forceRefresh: true }); // Always refresh stock first
 
-            this.showSuccessModal(finalContent, null, usageInstructions);
+            const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
+            const successItems = [
+                this.buildSuccessModalItemPayload({
+                    productId: this.currentPurchase?.productId,
+                    displayName: currentLang === 'en'
+                        ? (this.currentPurchase?.productNameEn || this.currentPurchase?.productName || '')
+                        : (this.currentPurchase?.productName || this.currentPurchase?.productNameEn || ''),
+                    orderId: lastOrderId,
+                    createdAt,
+                    quantity: Number(this.currentPurchase?.quantity || 0) || 1,
+                    content: finalContent,
+                    purchaseNotes: this.currentPurchase?.purchaseNotes || '',
+                    usageInstructions,
+                    product: this.getCachedProductById(this.currentPurchase?.productId)
+                })
+            ];
+
+            this.showSuccessModal(finalContent, null, usageInstructions, successItems);
 
             // Update Points UI
             if (window.updateUserPointsUI && remainingPoints != null) {
@@ -3638,9 +5535,6 @@ const ShopClient = {
         const notesBox = document.getElementById('purchaseNotesBox');
         const notesContent = document.getElementById('purchaseNotesContent');
         const notesTitle = document.getElementById('purchaseNotesTitle');
-        const confirmNotesBox = document.getElementById('purchaseConfirmNotesBox');
-        const confirmNotesContent = document.getElementById('purchaseConfirmNotesContent');
-        const confirmNotesTitle = document.getElementById('purchaseConfirmNotesTitle');
         const normalizedPurchaseNotes = typeof this.currentPurchase?.purchaseNotes === 'string'
             ? this.currentPurchase.purchaseNotes.trim()
             : '';
@@ -3660,29 +5554,13 @@ const ShopClient = {
             if (notesTitle) {
                 notesTitle.textContent = window.i18n?.t('shop.purchaseNotes') || '注意事项';
             }
-            if (confirmNotesContent) {
-                confirmNotesContent.innerHTML = renderedNotes;
-            }
-            if (confirmNotesTitle) {
-                confirmNotesTitle.textContent = window.i18n?.t('shop.purchaseNotes') || '注意事项';
-            }
             this.setElementHidden(notesBox, false);
-            this.setElementHidden(confirmNotesBox, false);
             this.bindPurchaseNotesWheelIsolation();
         } else {
             this.setElementHidden(notesBox, true);
             notesContent.innerHTML = '';
             if (notesTitle) {
                 notesTitle.textContent = window.i18n?.t('shop.purchaseNotes') || '注意事项';
-            }
-            if (confirmNotesBox) {
-                this.setElementHidden(confirmNotesBox, true);
-            }
-            if (confirmNotesContent) {
-                confirmNotesContent.innerHTML = '';
-            }
-            if (confirmNotesTitle) {
-                confirmNotesTitle.textContent = window.i18n?.t('shop.purchaseNotes') || '注意事项';
             }
         }
     },
@@ -3738,27 +5616,60 @@ const ShopClient = {
         this.clearSuccessUsageWheelIsolation();
 
         const modal = document.getElementById('shopSuccessModal');
-        const usageCard = modal?.querySelector('.shop-success-usage-card');
-        if (!modal || !usageCard || !modal.classList.contains('has-usage-instructions')) return;
+        if (!modal) return;
 
-        const cleanup = this.bindContainedWheelIsolation(usageCard);
-        if (cleanup) {
-            this.successUsageWheelCleanup = cleanup;
+        const usageCards = Array.from(
+            modal.querySelectorAll('.shop-success-item__content-panel, .shop-success-item__notes-panel, .shop-success-item__usage-panel, .shop-success-usage-card')
+        );
+        const cleanups = usageCards
+            .map((card) => this.bindContainedWheelIsolation(card))
+            .filter((cleanup) => typeof cleanup === 'function');
+
+        if (cleanups.length > 0) {
+            this.successUsageWheelCleanup = () => {
+                cleanups.forEach((cleanup) => {
+                    try {
+                        cleanup();
+                    } catch (error) {
+                        console.warn('Failed to cleanup success usage wheel isolation:', error);
+                    }
+                });
+            };
         }
     },
 
-    showSuccessModal: function (content, warning, usageInstructions) {
+    showSuccessModal: function (content, warning, usageInstructions, successItems = []) {
         this.injectPremiumStyles();
         const modal = document.getElementById('shopSuccessModal');
         const contentBox = document.getElementById('purchasedContent');
         const warningBox = document.getElementById('purchasedWarning');
         const warningText = document.getElementById('purchasedWarningText');
-        const parentBox = contentBox.parentElement;
+        const summaryCount = document.getElementById('shopSuccessSummaryCount');
+        const parentBox = contentBox?.parentElement || null;
         const scrollArea = modal?.querySelector('.shop-success-scroll');
         const normalizedUsageInstructions = typeof usageInstructions === 'string'
             ? usageInstructions.trim()
             : '';
-        const hasUsageInstructions = normalizedUsageInstructions.length > 0;
+        const normalizedItems = Array.isArray(successItems) && successItems.length > 0
+            ? successItems.map((item) => this.buildSuccessModalItemPayload(item))
+            : [
+                this.buildSuccessModalItemPayload({
+                    productId: this.currentPurchase?.productId,
+                    displayName: this.currentPurchase?.productName,
+                    orderId: this.currentPurchase?.orderId,
+                    createdAt: this.currentPurchase?.createdAt,
+                    quantity: Number(this.currentPurchase?.quantity || 0) || 1,
+                    content,
+                    purchaseNotes: this.currentPurchase?.purchaseNotes || '',
+                    usageInstructions: normalizedUsageInstructions,
+                    product: this.getCachedProductById(this.currentPurchase?.productId)
+                })
+            ];
+        const hasUsageInstructions = normalizedItems.some((item) => {
+            const usageText = String(item?.usageInstructions || '').trim();
+            const noteText = String(item?.purchaseNotes || '').trim();
+            return usageText.length > 0 || noteText.length > 0;
+        });
 
         this.clearSuccessUsageWheelIsolation();
 
@@ -3766,8 +5677,6 @@ const ShopClient = {
             modal.classList.toggle('has-usage-instructions', hasUsageInstructions);
         }
 
-        // Reset parent box styles to be cleaner (remove padding if we want cards to flush, but padding is fine)
-        // Ensure parent box is transparent to let cards stand out
         if (parentBox) {
             parentBox.classList.remove('glass-box');
             parentBox.classList.add('shop-success-content-shell--plain');
@@ -3777,82 +5686,53 @@ const ShopClient = {
             if (scrollArea) scrollArea.scrollTop = 0;
             if (parentBox) parentBox.scrollTop = 0;
 
-            // Split content by separator (----) to get individual items
-            const items = content.split(/\n----\n/);
-            const totalItems = items.length;
-            // Get product name based on current language
-            const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
-            const productName = (currentLang === 'en' && this.currentPurchase?.productNameEn)
-                ? this.currentPurchase.productNameEn
-                : (this.currentPurchase?.productName || '商品内容');
-
-            // Store original content for copying (before adding UI elements)
             contentBox.dataset.originalContent = content;
-
-            // Update the header dot with product name tooltip
-            const productNameDot = document.getElementById('productNameDot');
-            if (productNameDot) {
-                productNameDot.setAttribute('data-tooltip', productName);
-            }
-
-            const isShortKeys = items.every(t => t.length <= 40 && !t.includes('\n'));
-
-            const createCardMsg = (text, hidden = false) => {
-                const encodedText = encodeURIComponent(text);
-                return `
-                <div class="content-card content-card--shop-copy" ${hidden ? 'data-expandable-item="1" hidden' : ''} data-shop-copy-content="${encodedText}" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">
-                    <div class="item-content-box item-content-box--plain">
-                        <div class="item-text item-text--centered">${this.escapeHtml(text)}</div>
-                    </div>
-                </div>`;
-            };
+            contentBox.dataset.successItems = encodeURIComponent(JSON.stringify(
+                normalizedItems.map((item) => ({
+                    displayName: item.displayName,
+                    orderId: item.orderId,
+                    createdAt: item.createdAt,
+                    quantity: item.quantity,
+                    contentSegments: item.contentSegments
+                }))
+            ));
 
             contentBox.classList.add('shop-success-content');
-            const toastEl = this.buildSuccessToastMarkup();
-            const gridClass = items.length > 1 && isShortKeys
-                ? 'shop-success-content-grid shop-success-content-grid--double'
-                : 'shop-success-content-grid shop-success-content-grid--stacked';
+            contentBox.innerHTML = `
+                <div class="shop-success-list">
+                    ${normalizedItems.map((item, index) => this.buildSuccessItemMarkup(item, index)).join('')}
+                </div>
+                ${this.buildSuccessToastMarkup()}
+            `;
 
-            if (totalItems <= 2) {
-                // 2 or fewer items: show directly in grid
-                contentBox.innerHTML = `<div class="${gridClass}">${items.map(item => createCardMsg(item)).join('')}</div>${toastEl}`;
-            } else {
-                // More than 2 items: show first 2, collapse rest
-                const visibleHTML = items.slice(0, 2).map(item => createCardMsg(item)).join('');
-                const hiddenHTML = items.slice(2).map(item => createCardMsg(item, true)).join('');
-                const hiddenCount = totalItems - 2;
-                const expandBtn = this.buildExpandContentToggleMarkup(hiddenCount, false);
-
-                contentBox.innerHTML = `<div id="expandedContentGrid" class="${gridClass}">${visibleHTML}${hiddenHTML}</div>${expandBtn}${toastEl}`;
+            if (summaryCount) {
+                summaryCount.textContent = `${normalizedItems.length} 个商品`;
             }
 
-            // Handle Warning
             if (warning && warningBox && warningText) {
-                warningText.textContent = warning;
+                warningText.innerHTML = this.buildSuccessWarningMarkup(warning);
                 this.setElementHidden(warningBox, false);
             } else if (warningBox) {
+                if (warningText) {
+                    warningText.innerHTML = '';
+                }
                 this.setElementHidden(warningBox, true);
+            }
+
+            const uiBox = document.getElementById('usageInstructionsBox');
+            const uiContent = document.getElementById('usageInstructionsContent');
+            if (uiBox) {
+                this.setElementHidden(uiBox, true);
+            }
+            if (uiContent) {
+                uiContent.innerHTML = '';
             }
 
             setTimeout(() => {
                 modal.classList.add('active');
-                // Lock background scroll on mobile Safari
                 if (window.iOSScrollLock) window.iOSScrollLock.lockLight(modal);
-            }, 50);
-        }
-
-        // Handle Usage Instructions
-        const uiBox = document.getElementById('usageInstructionsBox');
-        const uiContent = document.getElementById('usageInstructionsContent');
-        if (uiBox && uiContent) {
-            if (hasUsageInstructions) {
-                uiContent.innerHTML = this.renderStoredRichText(normalizedUsageInstructions);
-                this.setElementHidden(uiBox, false);
                 this.bindSuccessUsageWheelIsolation();
-            } else {
-                this.setElementHidden(uiBox, true);
-                uiContent.innerHTML = '';
-            }
+            }, 50);
         }
     },
 
@@ -4119,21 +5999,53 @@ const ShopClient = {
     exportContent: function () {
         const contentBox = document.getElementById('purchasedContent');
         const content = contentBox.dataset.originalContent || contentBox.textContent;
+        const serializedItems = String(contentBox.dataset.successItems || '').trim();
         const productName = this.currentPurchase?.productName || (window.i18n?.t('shop.unknownProduct') || '商品');
         const orderId = this.currentPurchase?.orderId || '';
-        const timestamp = new Date().toLocaleString('zh-CN');
+        const timestamp = this.formatSuccessOrderTimestamp(this.currentPurchase?.createdAt) || new Date().toLocaleString('zh-CN');
+        let exportItems = [];
 
-        // Parse items
-        const items = content.split(/\n----\n/);
+        if (serializedItems) {
+            try {
+                const parsedItems = JSON.parse(decodeURIComponent(serializedItems));
+                if (Array.isArray(parsedItems)) {
+                    exportItems = parsedItems;
+                }
+            } catch (error) {
+                console.warn('Failed to parse shop success export items:', error);
+            }
+        }
+
+        if (!exportItems.length) {
+            exportItems = [{
+                displayName: productName,
+                orderId,
+                createdAt: this.currentPurchase?.createdAt || '',
+                contentSegments: String(content || '')
+                    .split(/\n----\n/)
+                    .map((item) => String(item || '').trim())
+                    .filter(Boolean)
+            }];
+        }
 
         // Build CSV content with BOM for Excel Chinese support
         const BOM = '\uFEFF';
         let csv = BOM + `${window.i18n?.t('shop.csvOrderId') || '订单号'},${window.i18n?.t('shop.csvIndex') || '序号'},${window.i18n?.t('shop.csvProductName') || '商品名称'},${window.i18n?.t('shop.csvAccountInfo') || '账号信息'},${window.i18n?.t('shop.csvRedeemTime') || '兑换时间'}\n`;
+        let rowIndex = 1;
 
-        items.forEach((item, index) => {
-            // Escape quotes and wrap in quotes for CSV
-            const escapedItem = item.replace(/"/g, '""');
-            csv += `"${orderId}", ${index + 1}, "${productName}", "${escapedItem}", "${timestamp}"\n`;
+        exportItems.forEach((item) => {
+            const itemName = String(item?.displayName || productName || '').trim() || productName;
+            const itemOrderId = String(item?.orderId || orderId || '').trim();
+            const itemTimestamp = this.formatSuccessOrderTimestamp(item?.createdAt) || timestamp;
+            const itemSegments = Array.isArray(item?.contentSegments) && item.contentSegments.length > 0
+                ? item.contentSegments
+                : [String(item?.content || '').trim()].filter(Boolean);
+
+            itemSegments.forEach((segment) => {
+                const escapedItem = String(segment || '').replace(/"/g, '""');
+                csv += `"${itemOrderId}", ${rowIndex}, "${itemName}", "${escapedItem}", "${itemTimestamp}"\n`;
+                rowIndex += 1;
+            });
         });
 
         // Create and download file

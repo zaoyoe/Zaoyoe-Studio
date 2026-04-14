@@ -2969,18 +2969,33 @@ function initPointsDropdowns() {
         const hiddenInput = dropdown.querySelector('input[type="hidden"]');
         const displayText = dropdown.querySelector('.select-text');
 
-        // Toggle dropdown on click
-        display.addEventListener('click', (e) => {
-            e.stopPropagation();
-            // Close all other dropdowns
-            dropdowns.forEach(d => {
-                if (d !== dropdown) d.classList.remove('open');
+        if (!display || !options || !hiddenInput || !displayText) {
+            return;
+        }
+
+        if (display.dataset.pointsDropdownBound !== '1') {
+            display.dataset.pointsDropdownBound = '1';
+
+            // Toggle dropdown on click
+            display.addEventListener('click', (e) => {
+                e.stopPropagation();
+                // Close all other dropdowns
+                document.querySelectorAll('#module-points .points-select.open').forEach(openDropdown => {
+                    if (openDropdown !== dropdown) {
+                        openDropdown.classList.remove('open');
+                    }
+                });
+                dropdown.classList.toggle('open');
             });
-            dropdown.classList.toggle('open');
-        });
+        }
 
         // Handle option selection
         options.querySelectorAll('.select-option').forEach(option => {
+            if (option.dataset.pointsDropdownOptionBound === '1') {
+                return;
+            }
+
+            option.dataset.pointsDropdownOptionBound = '1';
             option.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const value = option.dataset.value;
@@ -3013,11 +3028,6 @@ function initPointsDropdowns() {
                 renderPointsGeneratePreview();
             });
         });
-    });
-
-    // Close dropdowns when clicking outside
-    document.addEventListener('click', () => {
-        dropdowns.forEach(d => d.classList.remove('open'));
     });
 }
 

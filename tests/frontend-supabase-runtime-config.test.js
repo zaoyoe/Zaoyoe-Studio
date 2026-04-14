@@ -288,6 +288,38 @@ test('vercel config disables automatic preview deployments for codex work branch
     assert.equal(vercelConfig.git?.deploymentEnabled?.['codex/*'], false);
 });
 
+test('vercel public redirects send gongyi and status entry paths to dedicated subdomains before the apex www redirect', () => {
+    const vercelConfig = readVercelConfig();
+    const redirects = Array.isArray(vercelConfig.redirects) ? vercelConfig.redirects : [];
+    const gongyiRedirect = redirects.find((entry) => entry?.source === '/gongyi');
+    const gongyiHtmlRedirect = redirects.find((entry) => entry?.source === '/gongyi.html');
+    const statusRedirect = redirects.find((entry) => entry?.source === '/status');
+    const statusHtmlRedirect = redirects.find((entry) => entry?.source === '/status.html');
+    const hostCanonicalRedirectIndex = redirects.findIndex((entry) => entry?.source === '/:path*');
+    const gongyiRedirectIndex = redirects.findIndex((entry) => entry?.source === '/gongyi');
+    const statusRedirectIndex = redirects.findIndex((entry) => entry?.source === '/status');
+
+    assert.ok(gongyiRedirect, 'vercel.json should redirect /gongyi to the dedicated community subdomain');
+    assert.equal(gongyiRedirect.destination, 'https://gongyi.zaoyoe.com');
+    assert.equal(gongyiRedirect.permanent, false);
+
+    assert.ok(gongyiHtmlRedirect, 'vercel.json should redirect /gongyi.html to the dedicated community subdomain');
+    assert.equal(gongyiHtmlRedirect.destination, 'https://gongyi.zaoyoe.com');
+    assert.equal(gongyiHtmlRedirect.permanent, false);
+
+    assert.ok(statusRedirect, 'vercel.json should redirect /status to the dedicated status subdomain');
+    assert.equal(statusRedirect.destination, 'https://status.zaoyoe.com');
+    assert.equal(statusRedirect.permanent, false);
+
+    assert.ok(statusHtmlRedirect, 'vercel.json should redirect /status.html to the dedicated status subdomain');
+    assert.equal(statusHtmlRedirect.destination, 'https://status.zaoyoe.com');
+    assert.equal(statusHtmlRedirect.permanent, false);
+
+    assert.ok(hostCanonicalRedirectIndex >= 0, 'vercel.json should keep the apex to www canonical redirect');
+    assert.ok(gongyiRedirectIndex >= 0 && gongyiRedirectIndex < hostCanonicalRedirectIndex, '/gongyi should redirect before the apex-to-www canonical redirect');
+    assert.ok(statusRedirectIndex >= 0 && statusRedirectIndex < hostCanonicalRedirectIndex, '/status should redirect before the apex-to-www canonical redirect');
+});
+
 test('vercel admin rewrite supports nested admin settings routes', () => {
     const vercelConfig = readVercelConfig();
     const rewrites = Array.isArray(vercelConfig.rewrites) ? vercelConfig.rewrites : [];
@@ -1416,7 +1448,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['privacy.html', 'css/privacy-page.css?v=20260324_PRIVACY_STYLES_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
-        ['shop.html', 'css/shop-page.css?v=20260412_SHOP_GRID_TRANSITIONS_15'],
+        ['shop.html', 'css/shop-page.css?v=20260414_SHOP_SUCCESS_MODAL_51'],
         ['admin-studio.html', 'css/admin-studio-page.css?v=20260412_HEADER_BARS_OPAQUE_182634_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
@@ -1505,7 +1537,7 @@ test('selected preview showcase pages no longer embed inline style attributes', 
 
 test('shop and archived index pages no longer embed inline style attributes', () => {
     const expectations = new Map([
-        ['shop.html', 'css/shop-page.css?v=20260412_SHOP_GRID_TRANSITIONS_15'],
+        ['shop.html', 'css/shop-page.css?v=20260414_SHOP_SUCCESS_MODAL_51'],
         ['index_old.html', 'css/index-old.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1']
     ]);
     const inlineStyleAttributePattern = /\sstyle\s*=\s*["']/i;
@@ -1944,9 +1976,9 @@ test('shop storefront preserves the initial skeleton layout while first-load dat
         'js/shop-client.js should keep the server-rendered shop skeleton layout stable when the first request is still pending'
     );
     assert.equal(
-        shopHtmlSource.includes('js/shop-client.js?v=20260413_SHOP_PURCHASE_GUIDANCE_5'),
+        shopHtmlSource.includes('js/shop-client.js?v=20260414_SHOP_SUCCESS_MODAL_51'),
         true,
-        'shop.html should reference the latest shop client runtime for the discount asset storefront flow'
+        'shop.html should reference the latest shop client runtime for the cart-enabled storefront flow'
     );
 });
 
@@ -2078,8 +2110,8 @@ test('framer home runtime renderers externalize homepage section visibility, tem
             'home-nav entry pages should load the latest framer_home stylesheet version'
         );
         assert.equal(
-            source.includes('js/framer_home.js?v=20260411_HOMEPAGE_P2_EXPERIMENTS_1')
-                || source.includes('./js/framer_home.js?v=20260411_HOMEPAGE_P2_EXPERIMENTS_1'),
+            source.includes('js/framer_home.js?v=20260414_GONGYI_NAV_ICON_1')
+                || source.includes('./js/framer_home.js?v=20260414_GONGYI_NAV_ICON_1'),
             true,
             'home-nav entry pages should load the latest framer_home script version'
         );
@@ -10498,7 +10530,7 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
         'metadata.source_page = normalizedSourcePage;',
         'metadata.source_channel = normalizedSourceChannel;',
         'metadata.source_prompt_id = normalizedSourcePromptId;',
-        'buyButton.dataset.productCategory = String(product.category || \'\');'
+        'element.dataset.productCategory = String(payload.productCategory || \'\');'
     ];
 
     for (const marker of shopMarkers) {
@@ -10549,7 +10581,7 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(indexSource.includes('./supabase-guestbook-functions.js?v=20260404_GUESTBOOK_PHASE3_EVENTS_1'), true, 'index.html should load the phase 3 guestbook runtime');
     assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260404_GUESTBOOK_PHASE3_EVENTS_1'), true, 'guestbook.html should load the phase 3 guestbook runtime');
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260404_GUESTBOOK_PHASE3_EVENTS_1'), true, 'index_old.html should load the phase 3 guestbook runtime');
-    assert.equal(shopSource.includes('js/shop-client.js?v=20260413_SHOP_PURCHASE_GUIDANCE_5'), true, 'shop.html should load the latest asset-aware shop runtime');
+    assert.equal(shopSource.includes('js/shop-client.js?v=20260414_SHOP_SUCCESS_MODAL_51'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260412_SHOP_CARD_IMAGE_OPT_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
     assert.equal(verifyPageSource.includes('js/components/WalletModal.js?v=20260413_WALLET_RUNTIME_TRACKING_2'), true, 'verify.html should load the latest tracking-aware wallet modal runtime');
 });

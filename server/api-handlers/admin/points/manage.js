@@ -1,3 +1,4 @@
+const crypto = require('node:crypto');
 const {
     parseJsonBody,
     requireAdmin,
@@ -38,6 +39,13 @@ const CODE_SELECT_FIELDS = [
     'revoked_by',
     'revoked_at',
     'revoke_reason'
+].join(', ');
+
+const PACKAGE_GENERATE_SELECT_FIELDS = [
+    'id',
+    'name',
+    'points_amount',
+    'bonus_points'
 ].join(', ');
 
 function normalizeString(value, fallback = '') {
@@ -106,6 +114,13 @@ function getPointsRequestRpcClient({ requestSupabase, supabase, token = '' } = {
     return supabase;
 }
 
+function shouldFallbackToServiceMutation(error) {
+    const message = String(error?.message || '').trim().toLowerCase();
+    return message.includes('unauthorized')
+        || message.includes('admin only')
+        || message.includes('access denied');
+}
+
 async function revokePointsCodeViaRpc({
     requestSupabase,
     supabase,
@@ -130,10 +145,24 @@ async function revokePointsCodeViaRpc({
 }
 
 function shouldFallbackToServiceRevoke(error) {
+    return shouldFallbackToServiceMutation(error);
+}
+
+function shouldFallbackToServiceGenerate(error) {
+    return shouldFallbackToServiceMutation(error);
+}
+
+function buildGeneratedRedemptionCode() {
+    const raw = crypto.randomBytes(6).toString('hex').toUpperCase();
+    return `ZY-${raw.slice(0, 4)}-${raw.slice(4, 8)}-${raw.slice(8, 12)}`;
+}
+
+function isUniqueViolation(error) {
+    const code = String(error?.code || '').trim();
     const message = String(error?.message || '').trim().toLowerCase();
-    return message.includes('unauthorized')
-        || message.includes('admin only')
-        || message.includes('access denied');
+    return code === '23505'
+        || message.includes('duplicate key')
+        || (message.includes('unique') && message.includes('code'));
 }
 
 async function revokePointsCodeViaService({
@@ -339,7 +368,143 @@ async function loadCodeByValue(supabase, site, code) {
     return data;
 }
 
-async function runGenerateCodesAction({ supabase, user, site, body }) {
+async function loadPackageForGeneration(supabase, packageId) {
+    const normalizedId = normalizeString(packageId);
+    if (!normalizedId) {
+        const error = new Error('package_id is required');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const { data, error } = await supabase
+        .from('points_packages')
+        .select(PACKAGE_GENERATE_SELECT_FIELDS)
+        .eq('id', normalizedId)
+        .single();
+
+    if (error) {
+        if (error.code === 'PGRST116') {
+            const notFoundError = new Error('Package not found');
+            notFoundError.statusCode = 404;
+            throw notFoundError;
+        }
+        throw error;
+    }
+
+    return data;
+}
+
+function extractGeneratedCodes(data) {
+    return (Array.isArray(data) ? data : [])
+        .map((row) => normalizeString(row?.code || row))
+        .filter(Boolean);
+}
+
+async function generateCodesViaService({
+    supabase,
+    user,
+    site,
+    batchName,
+    count,
+    channel,
+    expiresAt,
+    packageId = '',
+    customPointsAmount = null
+} = {}) {
+    const batchId = crypto.randomUUID();
+    const normalizedPackageId = normalizeString(packageId);
+    const hasCustomPoints = Number.isFinite(Number(customPointsAmount)) && Number(customPointsAmount) > 0;
+    let resolvedPointsAmount = Math.max(0, Math.round(Number(customPointsAmount) || 0));
+
+    if (!hasCustomPoints) {
+        const packageRow = await loadPackageForGeneration(supabase, normalizedPackageId);
+        resolvedPointsAmount = Math.max(
+            0,
+            Math.round(Number(packageRow?.points_amount) || 0) + Math.round(Number(packageRow?.bonus_points) || 0)
+        );
+
+        if (resolvedPointsAmount <= 0) {
+            const error = new Error('Selected package has no points configured');
+            error.statusCode = 400;
+            throw error;
+        }
+    }
+
+    const { error: batchInsertError } = await supabase
+        .from('redemption_batches')
+        .insert({
+            id: batchId,
+            name: batchName,
+            site,
+            package_id: hasCustomPoints ? null : normalizedPackageId,
+            channel,
+            total_count: count,
+            used_count: 0,
+            expires_at: expiresAt,
+            custom_points_amount: hasCustomPoints ? resolvedPointsAmount : null,
+            created_by: user?.id || null
+        });
+
+    if (batchInsertError) {
+        throw batchInsertError;
+    }
+
+    const codes = [];
+
+    try {
+        for (let index = 0; index < count; index += 1) {
+            let inserted = false;
+
+            for (let attempt = 0; attempt < 8; attempt += 1) {
+                const generatedCode = buildGeneratedRedemptionCode();
+                const { error: codeInsertError } = await supabase
+                    .from('redemption_codes')
+                    .insert({
+                        id: crypto.randomUUID(),
+                        code: generatedCode,
+                        site,
+                        batch_id: batchId,
+                        package_id: hasCustomPoints ? null : normalizedPackageId,
+                        points_amount: resolvedPointsAmount,
+                        status: 'pending',
+                        expires_at: expiresAt
+                    });
+
+                if (!codeInsertError) {
+                    codes.push(generatedCode);
+                    inserted = true;
+                    break;
+                }
+
+                if (!isUniqueViolation(codeInsertError)) {
+                    throw codeInsertError;
+                }
+            }
+
+            if (!inserted) {
+                const error = new Error('Failed to generate a unique redemption code');
+                error.statusCode = 500;
+                throw error;
+            }
+        }
+    } catch (error) {
+        await supabase
+            .from('redemption_codes')
+            .delete()
+            .eq('batch_id', batchId)
+            .eq('site', site);
+        await supabase
+            .from('redemption_batches')
+            .delete()
+            .eq('id', batchId)
+            .eq('site', site);
+        throw error;
+    }
+
+    return codes;
+}
+
+async function runGenerateCodesAction({ supabase, requestSupabase, token, user, site, body }) {
     const batchName = normalizeString(body.batch_name || body.batchName);
     if (!batchName) {
         const error = new Error('batch_name is required');
@@ -353,6 +518,8 @@ async function runGenerateCodesAction({ supabase, user, site, body }) {
     const packageId = normalizeString(body.package_id || body.packageId);
     const customPointsAmountRaw = body.custom_points_amount ?? body.customPointsAmount;
     const hasCustomPoints = customPointsAmountRaw !== undefined && customPointsAmountRaw !== null && customPointsAmountRaw !== '';
+    const rpcClient = getPointsRequestRpcClient({ requestSupabase, supabase, token });
+    let customPointsAmount = null;
 
     let rpcName = 'fn_generate_codes';
     let rpcArgs = {
@@ -365,7 +532,7 @@ async function runGenerateCodesAction({ supabase, user, site, body }) {
     };
 
     if (hasCustomPoints) {
-        const customPointsAmount = normalizePositiveInteger(customPointsAmountRaw, 'custom_points_amount', {
+        customPointsAmount = normalizePositiveInteger(customPointsAmountRaw, 'custom_points_amount', {
             max: 100000
         });
         rpcName = 'fn_generate_custom_codes';
@@ -383,12 +550,29 @@ async function runGenerateCodesAction({ supabase, user, site, body }) {
         throw error;
     }
 
-    const { data, error } = await supabase.rpc(rpcName, rpcArgs);
-    if (error) throw error;
+    let codes = [];
 
-    const codes = (Array.isArray(data) ? data : [])
-        .map((row) => normalizeString(row?.code || row))
-        .filter(Boolean);
+    try {
+        const { data, error } = await rpcClient.rpc(rpcName, rpcArgs);
+        if (error) throw error;
+        codes = extractGeneratedCodes(data);
+    } catch (error) {
+        if (!shouldFallbackToServiceGenerate(error)) {
+            throw error;
+        }
+
+        codes = await generateCodesViaService({
+            supabase,
+            user,
+            site,
+            batchName,
+            count,
+            channel,
+            expiresAt,
+            packageId,
+            customPointsAmount
+        });
+    }
 
     await writeAdminAuditLog({
         supabase,
@@ -399,7 +583,7 @@ async function runGenerateCodesAction({ supabase, user, site, body }) {
         details: {
             batch_name: batchName,
             package_id: packageId || null,
-            custom_points_amount: hasCustomPoints ? Number(customPointsAmountRaw) : null,
+            custom_points_amount: hasCustomPoints ? customPointsAmount : null,
             channel,
             count: codes.length || count
         }
@@ -800,7 +984,7 @@ module.exports = async (req, res) => {
         let payload;
         switch (action) {
             case 'generate_codes':
-                payload = await runGenerateCodesAction({ supabase, user, site, body });
+                payload = await runGenerateCodesAction({ supabase, requestSupabase, token, user, site, body });
                 break;
             case 'update_batch':
                 payload = await runUpdateBatchAction({ supabase, user, site, body });

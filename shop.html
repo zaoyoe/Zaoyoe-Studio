@@ -35,10 +35,10 @@
     <link rel="stylesheet" href="capsule-styles.css?v=20260302_G_AUTH">
     <link rel="stylesheet" href="style.css?v=20260316_PROFILE_MODAL_DESKTOP_LAYOUT_64">
     <!-- Unified Navigation CSS -->
-    <link rel="stylesheet" href="css/framer_home.css?v=20260411_HOMEPAGE_P1_RUNTIME_1">
+    <link rel="stylesheet" href="css/framer_home.css?v=20260414_GONGYI_NAV_ICON_3">
     <link rel="stylesheet" href="css/section-visibility.css?v=20260324_SECTION_VISIBILITY_RUNTIME_STYLE_1">
     <!-- Prevent flash of wrong theme -->
-    <link rel="stylesheet" href="css/shop-page.css?v=20260412_SHOP_GRID_TRANSITIONS_15">
+    <link rel="stylesheet" href="css/shop-page.css?v=20260414_SHOP_SUCCESS_MODAL_51">
     <script src="./js/theme-preload.js"></script>
     <script src="./js/homepage-contract.js?v=20260411_HOMEPAGE_P2_EXPERIMENTS_1"></script>
 
@@ -74,6 +74,7 @@
             <!-- Desktop Menu -->
             <div class="nav-menu">
                 <a href="/prompts.html" class="nav-trigger" data-dropdown="prompts" data-i18n="nav.prompts">提示词</a>
+                <a href="https://gongyi.zaoyoe.com" data-i18n="nav.gongyi">公益站</a>
                 <a href="/shop.html" class="nav-trigger active" data-dropdown="shop" data-i18n="nav.shop">商城</a>
                 <a href="/verify.html" data-i18n="nav.verify">验证</a>
                 <a href="/guestbook.html" data-i18n="nav.guestbook">留言板</a>
@@ -104,6 +105,9 @@
                 </div>
             </div>
             <div class="mobile-menu-item">
+                <a href="https://gongyi.zaoyoe.com" class="mobile-menu-link" data-i18n="nav.gongyi">公益站</a>
+            </div>
+            <div class="mobile-menu-item">
                 <button class="mobile-menu-trigger" data-submenu="shop-mobile">
                     <span data-i18n="nav.shop">商城</span>
                     <i class="fas fa-chevron-down"></i>
@@ -125,6 +129,7 @@
                     <i class="fas fa-chevron-down"></i>
                 </button>
                 <div class="mobile-submenu" id="support-mobile">
+                    <a href="https://status.zaoyoe.com" class="mobile-menu-link" data-i18n="nav.status">状态页</a>
                     <a href="https://t.me/zaoyoe" target="_blank" rel="noopener noreferrer"
                         class="mobile-menu-link">TG</a>
                     <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" rel="noopener noreferrer"
@@ -222,25 +227,76 @@
                     </div>
                 </div>
             </div>
+
+            <button id="shopCartAnchor" class="shop-cart-anchor" type="button" aria-controls="shopCartDrawer" aria-expanded="false" hidden>
+                <span class="shop-cart-anchor__pulse" aria-hidden="true"></span>
+                <span class="shop-cart-anchor__icon" aria-hidden="true">
+                    <i class="fas fa-basket-shopping"></i>
+                </span>
+                <span class="shop-cart-anchor__copy">
+                    <strong id="shopCartAnchorCount">购物车</strong>
+                    <span id="shopCartAnchorTotal" hidden></span>
+                </span>
+                <span id="shopCartAnchorHint" class="shop-cart-anchor__hint" hidden></span>
+            </button>
+
+            <button
+                id="shopCartBackdrop"
+                class="shop-cart-backdrop"
+                type="button"
+                aria-label="关闭购物车"
+                data-shop-cart-action="close"
+            ></button>
+
+            <aside id="shopCartDrawer" class="shop-cart-drawer" aria-label="购物车抽屉">
+                <header class="shop-cart-drawer__header">
+                    <div class="shop-cart-drawer__title" aria-hidden="true"></div>
+                </header>
+
+                <div class="shop-cart-drawer__body">
+                    <div id="shopCartList" class="shop-cart-list" aria-live="polite"></div>
+
+                    <div id="shopCartEmptyState" class="shop-cart-empty" hidden>
+                        <div class="shop-cart-empty__icon">
+                            <i class="fas fa-bag-shopping" aria-hidden="true"></i>
+                        </div>
+                        <h4 id="shopCartEmptyTitle">购物车还是空的</h4>
+                        <p id="shopCartEmptyBody">先从商品卡片里加入几件，再回来统一看数量和总积分。</p>
+                    </div>
+                </div>
+
+                <footer class="shop-cart-drawer__footer">
+                    <div class="shop-cart-summary">
+                        <div class="shop-cart-summary__row">
+                            <span id="shopCartSummaryItemsLabel">已选商品</span>
+                            <strong id="shopCartSummaryCount">0 件</strong>
+                        </div>
+                        <div class="shop-cart-summary__row">
+                            <span id="shopCartSummaryTotalLabel">预计合计</span>
+                            <strong id="shopCartSummaryTotal">0 积分</strong>
+                        </div>
+                    </div>
+
+                    <div class="shop-cart-actions">
+                        <button id="shopCartContinueBtn" type="button" class="shop-btn shop-cart-btn shop-cart-btn--ghost" data-shop-cart-action="continue">
+                            继续逛逛
+                        </button>
+                        <button id="shopCartCheckoutBtn" type="button" class="shop-btn shop-cart-btn shop-cart-btn--primary" data-shop-cart-action="checkout">
+                            结算
+                        </button>
+                    </div>
+                </footer>
+            </aside>
         </div>
 
         <!-- Purchase Confirmation Modal (Quantity) -->
         <div class="modal-overlay" id="shopPurchaseModal">
             <div class="modal-content premium-modal">
-                <!-- Close Button -->
-                <div class="mac-controls">
-                    <div id="shopPurchaseModalCloseBtn" class="mac-dot red" role="button" tabindex="0" aria-label="Close purchase modal">
-                        <i class="fas fa-times"></i>
-                    </div>
-                </div>
-
                 <div class="shop-purchase-stage shop-purchase-stage-header shop-inline-style-attr-5">
-                    <div id="purchaseStepBadge" class="shop-purchase-step-badge">STEP 1 / 配置订单</div>
                     <h3 id="purchaseStageTitle" class="card-title shop-inline-style-attr-6"
                         data-i18n="shop.confirmRedeem">
                         确认兑换</h3>
                     <p id="modalProductName" class="shop-inline-style-attr-7">Product Name</p>
-                    <p id="purchaseStageHint" class="shop-purchase-stage-hint">请先确认数量、优惠和总价，再进入最终确认。</p>
                 </div>
 
                 <!-- Quantity Selector -->
@@ -331,19 +387,12 @@
                     </div>
                 </div>
 
-                <div id="purchaseConfirmNotesBox" class="shop-purchase-stage shop-purchase-stage-notes shop-purchase-stage-review-notes shop-inline-style-attr-21" data-purchase-step="confirm" hidden>
-                    <div class="shop-inline-style-attr-22">
-                        <i class="fas fa-triangle-exclamation shop-inline-style-attr-23"></i>
-                        <span id="purchaseConfirmNotesTitle">注意事项</span>
-                    </div>
-                    <div id="purchaseConfirmNotesCard" class="glass-box shop-success-usage-card">
-                        <div id="purchaseConfirmNotesContent" class="shop-inline-style-attr-24"></div>
-                    </div>
-                </div>
-
                 <!-- Actions -->
                 <div class="shop-purchase-stage shop-purchase-stage-action shop-inline-style-attr-25" data-purchase-step="configure">
                     <div class="shop-purchase-actions shop-purchase-actions--single">
+                        <button id="purchaseAddToCartBtn" type="button" class="shop-btn shop-btn-secondary shop-add-cart-btn">
+                            <i class="fas fa-basket-shopping"></i> <span>加入购物车</span>
+                        </button>
                         <button id="nextPurchaseStepBtn" type="button" class="shop-btn shop-btn-primary">
                             <i class="fas fa-arrow-right"></i> <span>确认订单</span>
                         </button>
@@ -363,23 +412,70 @@
             </div>
         </div>
 
+        <div class="modal-overlay" id="shopCartCheckoutModal">
+            <div class="modal-content premium-modal shop-cart-checkout-modal">
+                <div class="shop-cart-checkout__header">
+                    <div class="shop-cart-checkout__eyebrow" id="shopCartCheckoutEyebrow">Cart Review</div>
+                    <h3 id="shopCartCheckoutTitle" class="card-title">统一确认</h3>
+                    <p id="shopCartCheckoutHint" class="shop-cart-checkout__hint">购物车会按当前顺序逐个兑换，这一版暂不叠加优惠码。</p>
+                </div>
+
+                <div id="shopCartCheckoutList" class="shop-cart-checkout__list" aria-live="polite"></div>
+
+                <div class="shop-cart-checkout__summary">
+                    <div class="shop-cart-checkout__summary-row">
+                        <span id="shopCartCheckoutCountLabel">商品总数</span>
+                        <strong id="shopCartCheckoutCount">0 件</strong>
+                    </div>
+                    <div class="shop-cart-checkout__summary-row">
+                        <span id="shopCartCheckoutTotalLabel">合计积分</span>
+                        <strong id="shopCartCheckoutTotal">0 积分</strong>
+                    </div>
+                    <div class="shop-cart-checkout__summary-row">
+                        <span id="shopCartCheckoutNotesLabel">含注意事项商品</span>
+                        <strong id="shopCartCheckoutNotes">0 个</strong>
+                    </div>
+                    <div class="shop-cart-checkout__summary-row">
+                        <span id="shopCartCheckoutUsageLabel">结算后附使用说明</span>
+                        <strong id="shopCartCheckoutUsage">0 条</strong>
+                    </div>
+                </div>
+
+                <div id="shopCartCheckoutNotice" class="shop-cart-checkout__notice">
+                    统一结算会沿用现有下单链路逐个提交，暂不叠加优惠码。
+                </div>
+
+                <div class="shop-cart-checkout__actions">
+                    <button id="shopCartCheckoutBackBtn" type="button" class="shop-btn shop-cart-btn shop-cart-btn--ghost">
+                        返回购物车
+                    </button>
+                    <button id="shopCartCheckoutConfirmBtn" type="button" class="shop-btn shop-cart-btn shop-cart-btn--primary">
+                        确认并兑换
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Success Modal (Re-used structure) -->
         <div class="modal-overlay shop-inline-style-attr-26" id="shopSuccessModal">
             <div class="modal-content premium-modal shop-success-modal">
-                <div class="shop-success-stage shop-success-stage-icon shop-inline-style-attr-27"
-                   >
-                    <i class="fas fa-check shop-inline-style-attr-28"></i>
-                </div>
                 <h2 class="card-title shop-success-stage shop-success-stage-title" data-i18n="shop.redeemSuccess">兑换成功!</h2>
 
                 <div class="shop-success-scroll">
-                    <!-- Product content header with tooltip dot (outside overflow container) -->
-                    <div class="shop-success-scroll-stage shop-success-scroll-stage-meta shop-inline-style-attr-29"
-                       >
-                        <span data-i18n="shop.productContent">商品内容:</span>
-                        <span id="productNameDot" class="product-name-dot" data-tooltip="">
-                            <i class="fas fa-circle shop-inline-style-attr-30"></i>
-                        </span>
+                    <div class="shop-success-scroll-stage shop-success-scroll-stage-meta shop-success-summary-bar">
+                        <div class="shop-success-summary-bar__copy">
+                            <span class="shop-success-summary-bar__label">兑换清单</span>
+                            <strong id="shopSuccessSummaryCount" class="shop-success-summary-bar__count">1 个商品</strong>
+                        </div>
+
+                        <div class="shop-success-actions shop-success-summary-bar__actions shop-success-stage shop-success-stage-actions">
+                            <button id="copyContentBtn" type="button" class="shop-btn shop-btn-primary shop-inline-style-attr-42">
+                                <i class="fas fa-copy"></i> <span>复制全部</span>
+                            </button>
+                            <button id="exportContentBtn" type="button" class="shop-btn shop-btn-secondary shop-inline-style-attr-42">
+                                <i class="fas fa-download"></i> <span>导出全部</span>
+                            </button>
+                        </div>
                     </div>
 
                     <div class="glass-box shop-success-content-shell shop-success-scroll-stage shop-success-scroll-stage-content shop-inline-style-attr-31"
@@ -390,43 +486,13 @@
                         </div>
                     </div>
 
-                    <!-- Usage Instructions Box (Conditionally shown) -->
-                    <div id="usageInstructionsBox" class="shop-success-scroll-stage shop-success-scroll-stage-usage shop-inline-style-attr-33">
-                        <div
-                            class="shop-inline-style-attr-34">
-                            <i class="fas fa-info-circle shop-inline-style-attr-35"></i>
-                            <span data-i18n="shop.usageInstructions">使用说明</span>
-                        </div>
-                        <div class="glass-box shop-success-usage-card">
-                            <div id="usageInstructionsContent"
-                                class="shop-inline-style-attr-36">
-                            </div>
-                        </div>
-                    </div>
-
                     <!-- Warning Box (Initially Hidden) -->
                     <div id="purchasedWarning" class="glass-box shop-success-scroll-stage shop-success-scroll-stage-warning shop-inline-style-attr-37"
                        >
-                        <div class="shop-inline-style-attr-38">
-                            <i class="fas fa-exclamation-triangle shop-inline-style-attr-39"></i>
-                            <div class="shop-inline-style-attr-40">
-                                <div data-i18n="shop.specialTip" class="shop-inline-style-attr-41">特别提示</div>
-                                <div id="purchasedWarningText"></div>
-                            </div>
-                        </div>
+                        <div id="purchasedWarningText" class="shop-success-warning__mount"></div>
                     </div>
                 </div>
 
-                <div class="shop-success-actions shop-success-stage shop-success-stage-actions">
-                    <button id="copyContentBtn" type="button" class="shop-btn shop-btn-primary shop-inline-style-attr-42"
-                       >
-                        <i class="fas fa-copy"></i> <span data-i18n="common.copy">复制</span>
-                    </button>
-                    <button id="exportContentBtn" type="button"
-                        class="shop-btn shop-btn-secondary shop-inline-style-attr-42">
-                        <i class="fas fa-download"></i> <span data-i18n="common.export">导出</span>
-                    </button>
-                </div>
             </div>
         </div>
     </main>
@@ -454,7 +520,7 @@
     <script src="js/i18n.js?v=1" defer></script>
     <script src="js/ios-scroll-lock.js?v=20260324_IOS_SCROLL_LOCK_RUNTIME_STYLE_2" defer></script>
     <script src="inject-auth.js?v=20260413_AUTH_LOGIN_MESSAGE_HELPER_1" defer></script>
-    <script src="js/framer_home.js?v=20260411_HOMEPAGE_P2_EXPERIMENTS_1" defer></script>
+    <script src="js/framer_home.js?v=20260414_GONGYI_NAV_ICON_1" defer></script>
     <link rel="stylesheet" href="css/notification-client.css?v=20260331_NOTIFICATION_FILTER_MEMORY_1">
     <script src="notification-client.js?v=20260410_NOTIFICATION_ADMIN_PERSONAL_FIX_1" defer></script>
 
@@ -464,7 +530,7 @@
     <script src="js/components/WalletModal.js?v=20260413_WALLET_RUNTIME_TRACKING_2" defer></script>
 
     <!-- Shop Logic -->
-    <script src="js/shop-client.js?v=20260413_SHOP_PURCHASE_GUIDANCE_5" defer></script>
+    <script src="js/shop-client.js?v=20260414_SHOP_SUCCESS_MODAL_51" defer></script>
 
     <!-- Background Animations -->
     <script src="starry-sky.js"></script>

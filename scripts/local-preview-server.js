@@ -255,6 +255,17 @@ function loadFreshShopApiHandler(repoRoot = path.resolve(__dirname, '..'), reqOr
     });
 }
 
+function loadFreshPaymentsApiHandler(repoRoot = path.resolve(__dirname, '..'), reqOrUrl = '') {
+    const rawUrl = typeof reqOrUrl === 'string'
+        ? reqOrUrl
+        : (reqOrUrl?.originalUrl || reqOrUrl?.url || '/api/payments');
+
+    return loadFreshStandaloneApiHandler(repoRoot, rawUrl, {
+        mountPath: '/api/payments',
+        baseDir: 'api/payments'
+    });
+}
+
 function applyPreviewEnvToProcess(envValues = {}) {
     Object.entries(envValues).forEach(([key, value]) => {
         if (value === undefined || value === null || value === '') {
@@ -478,6 +489,22 @@ function createLocalPreviewApp(options = {}) {
         });
     });
 
+    app.all('/api/payments', async (req, res) => {
+        await dispatchLocalPreviewApiRequest(req, res, {
+            kind: 'payments api',
+            loadHandler: loadFreshPaymentsApiHandler,
+            repoRoot
+        });
+    });
+
+    app.all('/api/payments/*', async (req, res) => {
+        await dispatchLocalPreviewApiRequest(req, res, {
+            kind: 'payments api',
+            loadHandler: loadFreshPaymentsApiHandler,
+            repoRoot
+        });
+    });
+
     app.use(express.static(repoRoot, {
         extensions: ['html'],
         etag: false,
@@ -531,6 +558,7 @@ module.exports = {
     DEFAULT_LOCAL_PREVIEW_BODY_LIMIT,
     getDefaultEnvFiles,
     loadFreshAdminApiHandler,
+    loadFreshPaymentsApiHandler,
     loadFreshPublicApiHandler,
     loadFreshShopApiHandler,
     loadPreviewEnv,

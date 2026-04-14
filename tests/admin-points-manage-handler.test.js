@@ -168,11 +168,39 @@ function createSupabaseDouble(state, options = {}) {
         };
     }
 
+    function buildInsertQuery(table, payload) {
+        return {
+            then(resolve, reject) {
+                try {
+                    const rows = getTable(table);
+                    const items = Array.isArray(payload) ? payload : [payload];
+                    state.tables[table] = [
+                        ...rows,
+                        ...items.map((item) => clone(item))
+                    ];
+                    resolve({
+                        data: Array.isArray(payload) ? clone(items) : clone(items[0]),
+                        error: null
+                    });
+                } catch (error) {
+                    if (typeof reject === 'function') {
+                        reject(error);
+                        return;
+                    }
+                    throw error;
+                }
+            }
+        };
+    }
+
     return {
         from(table) {
             return {
                 select() {
                     return buildSelectQuery(table, []);
+                },
+                insert(payload) {
+                    return buildInsertQuery(table, payload);
                 },
                 update(payload) {
                     return buildUpdateQuery(table, payload, []);
@@ -186,6 +214,12 @@ function createSupabaseDouble(state, options = {}) {
             state.rpcCalls.push({ client: clientLabel, fn, args: clone(args) });
 
             if (fn === 'fn_generate_codes') {
+                if (clientLabel === 'admin' && options?.failGenerateOnAdminClient) {
+                    return {
+                        data: null,
+                        error: { message: 'Unauthorized: Admin only' }
+                    };
+                }
                 return {
                     data: [{ code: 'ZY-CN-1001' }, { code: 'ZY-CN-1002' }],
                     error: null
@@ -193,6 +227,12 @@ function createSupabaseDouble(state, options = {}) {
             }
 
             if (fn === 'fn_generate_custom_codes') {
+                if (clientLabel === 'admin' && options?.failGenerateOnAdminClient) {
+                    return {
+                        data: null,
+                        error: { message: 'Unauthorized: Admin only' }
+                    };
+                }
                 return {
                     data: [{ code: 'ZY-CUSTOM-1001' }],
                     error: null
@@ -252,6 +292,7 @@ async function withPointsManageHandler(options, callback) {
                     state.requireAdminCalls.push({ req, config });
                     const adminSupabase = createSupabaseDouble(state, {
                         label: 'admin',
+                        failGenerateOnAdminClient: Boolean(options?.failGenerateOnAdminClient),
                         failRevokeOnAdminClient: Boolean(options?.failRevokeOnAdminClient)
                     });
                     const requestSupabase = createSupabaseDouble(state, {
@@ -320,6 +361,80 @@ test('points manage handler generates package codes through the site-aware RPC',
         assert.deepEqual(res.json().codes, ['ZY-CN-1001', 'ZY-CN-1002']);
         assert.equal(state.auditEntries[0]?.actionType, 'batch.generate');
         assert.equal(state.auditEntries[0]?.site, 'cn');
+    });
+});
+
+test('points manage handler uses request-scoped client for generate RPC when admin service client would be rejected', async () => {
+    await withPointsManageHandler({
+        withRequestSupabase: true,
+        failGenerateOnAdminClient: true,
+        tables: {
+            points_packages: [
+                { id: 'pkg-starter', name: 'Starter', points_amount: 10, bonus_points: 0 }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'generate_codes',
+                site: 'cn',
+                batch_name: '四月活动',
+                package_id: 'pkg-starter',
+                count: 2,
+                channel: 'manual'
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().success, true);
+        assert.equal(state.rpcCalls.some((call) => call.client === 'request' && call.fn === 'fn_generate_codes'), true);
+        assert.equal(state.rpcCalls.some((call) => call.client === 'admin' && call.fn === 'fn_generate_codes'), false);
+        assert.deepEqual(res.json().codes, ['ZY-CN-1001', 'ZY-CN-1002']);
+    });
+});
+
+test('points manage handler falls back to service generate flow when admin RPC is rejected', async () => {
+    await withPointsManageHandler({
+        failGenerateOnAdminClient: true,
+        tables: {
+            points_packages: [
+                { id: 'pkg-starter', name: 'Starter', points_amount: 10, bonus_points: 5 }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'generate_codes',
+                site: 'cn',
+                batch_name: '四月活动',
+                package_id: 'pkg-starter',
+                count: 2,
+                channel: 'manual'
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(state.rpcCalls.some((call) => call.client === 'admin' && call.fn === 'fn_generate_codes'), true);
+        assert.equal(state.tables.redemption_batches.length, 1);
+        assert.equal(state.tables.redemption_codes.length, 2);
+        assert.equal(state.tables.redemption_batches[0]?.package_id, 'pkg-starter');
+        assert.equal(state.tables.redemption_batches[0]?.site, 'cn');
+        assert.equal(state.tables.redemption_batches[0]?.total_count, 2);
+        assert.equal(state.tables.redemption_codes.every((row) => row.site === 'cn' && row.package_id === 'pkg-starter'), true);
+        assert.equal(state.tables.redemption_codes.every((row) => row.points_amount === 15), true);
+        assert.equal(payload.codes.length, 2);
+        assert.equal(payload.codes.every((code) => /^ZY-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}$/.test(code)), true);
+        assert.equal(state.auditEntries[0]?.actionType, 'batch.generate');
     });
 });
 

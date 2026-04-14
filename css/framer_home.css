@@ -1002,6 +1002,18 @@ body.mobile-menu-open .chat-widget-fab {
     color: var(--accent-blue);
 }
 
+.entry-card-ui>i.home-entry-card-icon--gongyi {
+    width: 46.55px;
+    height: 40px;
+    display: block;
+    font-size: 0;
+    line-height: 0;
+    background-color: currentColor;
+    -webkit-mask: url('/assets/gongyi-entry-icon.svg') center / 100% 100% no-repeat;
+    mask: url('/assets/gongyi-entry-icon.svg') center / 100% 100% no-repeat;
+    filter: drop-shadow(0 0 10px rgba(94, 216, 248, 0.18));
+}
+
 .entry-card-ui>span {
     display: block;
     font-size: 14px;

@@ -801,10 +801,49 @@ const HomepageAdmin = (() => {
     function getHomepageDefaultHeroEntries() {
         return [
             { id: 'prompts', text: '提示词', text_en: 'Prompts', icon: 'fa-wand-magic-sparkles', color: '#f472b6', link: '/prompts.html', section: 'prompts' },
+            { id: 'gongyi', text: '公益站', text_en: 'Community Access', icon: 'home-entry-card-icon--gongyi', color: '#5ed8f8', link: 'https://gongyi.zaoyoe.com', section: 'gongyi' },
             { id: 'shop', text: '商城', text_en: 'Shop', icon: 'fa-store', color: '#4ade80', link: '/shop.html', section: 'shop' },
             { id: 'verify', text: '验证', text_en: 'Verify', icon: 'fa-shield-check', color: '#60a5fa', link: '/verify.html?source=homepage_verify', section: 'verify' },
             { id: 'guestbook', text: '留言板', text_en: 'Guestbook', icon: 'fa-comment-dots', color: '#f59e0b', link: '#', action: 'openGuestbookModal', section: 'guestbook' }
         ];
+    }
+
+    function isHomepageGongyiHeroEntry(item) {
+        const normalizedId = String(item?.id || '').trim().toLowerCase();
+        const normalizedSection = String(item?.section || '').trim().toLowerCase();
+        const normalizedLink = String(item?.link || '').trim().toLowerCase();
+        return normalizedId === 'gongyi' || normalizedSection === 'gongyi' || normalizedLink.includes('gongyi.zaoyoe.com');
+    }
+
+    function withHomepageRequiredHeroEntries(items = []) {
+        const sourceItems = Array.isArray(items) ? items.map((item) => ({ ...item })) : [];
+        const defaultGongyiEntry = getHomepageDefaultHeroEntries().find((item) => item.id === 'gongyi');
+        const existingGongyi = sourceItems.find((item) => isHomepageGongyiHeroEntry(item));
+        const nextItems = sourceItems.filter((item) => !isHomepageGongyiHeroEntry(item));
+        const normalizedGongyiEntry = {
+            ...defaultGongyiEntry,
+            ...(existingGongyi || {}),
+            id: 'gongyi',
+            text: String(existingGongyi?.text || defaultGongyiEntry?.text || '').trim() || defaultGongyiEntry.text,
+            text_en: String(existingGongyi?.text_en || defaultGongyiEntry?.text_en || '').trim() || defaultGongyiEntry.text_en,
+            link: String(existingGongyi?.link || defaultGongyiEntry?.link || '').trim() || defaultGongyiEntry.link,
+            icon: String(existingGongyi?.icon || defaultGongyiEntry?.icon || '').trim() || defaultGongyiEntry.icon,
+            color: String(existingGongyi?.color || defaultGongyiEntry?.color || '').trim() || defaultGongyiEntry.color,
+            section: String(existingGongyi?.section || defaultGongyiEntry?.section || '').trim() || defaultGongyiEntry.section
+        };
+
+        delete normalizedGongyiEntry.enabled;
+
+        const shopIndex = nextItems.findIndex((item) => {
+            const normalizedId = String(item?.id || '').trim().toLowerCase();
+            const normalizedSection = String(item?.section || '').trim().toLowerCase();
+            const normalizedLink = String(item?.link || '').trim().toLowerCase();
+            return normalizedId === 'shop' || normalizedSection === 'shop' || normalizedLink.includes('/shop.html');
+        });
+        const insertionIndex = shopIndex >= 0 ? shopIndex : Math.min(1, nextItems.length);
+        nextItems.splice(insertionIndex, 0, normalizedGongyiEntry);
+
+        return nextItems.slice(0, 8);
     }
 
     function getHomepageCurrentSectionContent(section) {
@@ -2391,12 +2430,12 @@ const HomepageAdmin = (() => {
         if (!container) return;
 
         const content = getHomepageCurrentSectionContent('hero');
-        const items = Array.isArray(content.entries) && content.entries.length
+        const items = withHomepageRequiredHeroEntries(Array.isArray(content.entries) && content.entries.length
             ? content.entries
-            : getHomepageDefaultHeroEntries();
+            : getHomepageDefaultHeroEntries());
 
         container.innerHTML = items.map((item, index) => `
-            <article class="hp-list-card" data-hero-entry-index="${escapeHomepageHtml(String(index))}">
+            <article class="hp-list-card" data-hero-entry-index="${escapeHomepageHtml(String(index))}" data-hero-entry-id="${escapeHomepageHtml(String(item.id || item.section || item.link || `entry_${index + 1}`))}">
                 <div class="hp-list-card__head">
                     <strong>入口 #${escapeHomepageHtml(String(index + 1))}</strong>
                     <div class="hp-list-card__actions">
@@ -2426,7 +2465,7 @@ const HomepageAdmin = (() => {
         if (!container) return;
         replaceHomepageSectionContent('hero', (content) => {
             const nextEntries = Array.from(container.querySelectorAll('[data-hero-entry-index]')).map((row, index) => ({
-                id: String(content.entries?.[index]?.id || content.entries?.[index]?.section || content.entries?.[index]?.link || `entry_${index + 1}`).trim(),
+                id: String(row.dataset.heroEntryId || content.entries?.[index]?.id || content.entries?.[index]?.section || content.entries?.[index]?.link || `entry_${index + 1}`).trim(),
                 text: row.querySelector('[data-hero-entry-field="text"]')?.value?.trim() || '',
                 text_en: row.querySelector('[data-hero-entry-field="text_en"]')?.value?.trim() || '',
                 icon: row.querySelector('[data-hero-entry-field="icon"]')?.value?.trim() || '',
@@ -2436,7 +2475,7 @@ const HomepageAdmin = (() => {
                 action: row.querySelector('[data-hero-entry-field="action"]')?.value?.trim() || '',
                 enabled: row.querySelector('[data-hero-entry-field="enabled"]')?.checked !== false
             })).filter((item) => item.text || item.link || item.action);
-            content.entries = nextEntries;
+            content.entries = withHomepageRequiredHeroEntries(nextEntries);
             return content;
         });
     }

@@ -51,6 +51,8 @@ test('points module exposes package catalog view in admin studio shell', () => {
     assert.equal(bootstrapSource.includes("label: '兑换码与套餐'"), true, 'admin-studio-bootstrap.js should relabel the points permission group');
     assert.equal(bootstrapSource.includes("label: '兑换码/套餐'"), true, 'admin-studio-bootstrap.js should relabel the points module entry');
     assert.equal(adminStudioSource.includes("case 'settings-open-points-catalog':"), true, 'admin-studio.js should route settings shortcut into the points catalog');
+    assert.equal(adminStudioSource.includes("document.querySelectorAll('.custom-select:not(.points-select)')"), true, 'admin-studio.js should exclude points dropdowns from the generic custom-select initializer');
+    assert.equal(adminStudioSource.includes("dropdown.classList.contains('points-select')"), true, 'admin-studio.js should guard setupCustomDropdown against points-specific selects');
 });
 
 test('points runtime loads package catalog through dedicated admin handler and exposes package editor workflow', () => {

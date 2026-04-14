@@ -33,6 +33,8 @@
         "shop": "Shop",
         "verify": "Verify",
         "guestbook": "Guestbook",
+        "gongyi": "Community Access",
+        "status": "Status",
         "gallery": "Gallery",
         "settings": "Settings",
         "notification": "Notifications",
@@ -50,6 +52,7 @@
         "entries": {
             "prompts": "Prompts",
             "shop": "Shop",
+            "gongyi": "Community Access",
             "verify": "Verify",
             "guestbook": "Guestbook"
         },
@@ -663,11 +666,13 @@
             "prompts": "Prompt Gallery",
             "shop": "Resource Store",
             "verify": "API Verification",
-            "guestbook": "Guestbook"
+            "guestbook": "Guestbook",
+            "gongyi": "Community Access"
         },
         "resources": {
             "title": "Resources",
             "sponsor": "Sponsor Us",
+            "status": "Status",
             "privacy": "Privacy Policy",
             "community": "Community Group"
         },
