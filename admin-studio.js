@@ -6063,18 +6063,22 @@ document.addEventListener('click', (e) => {
 // ========================================
 function initCustomDropdown() {
     // Initialize all custom dropdowns on the page
-    document.querySelectorAll('.custom-select').forEach(dropdown => {
+    document.querySelectorAll('.custom-select:not(.points-select)').forEach(dropdown => {
         setupCustomDropdown(dropdown);
     });
 }
 
 function setupCustomDropdown(dropdown, onChange) {
+    if (!(dropdown instanceof HTMLElement) || dropdown.classList.contains('points-select')) return;
+
     const display = dropdown.querySelector('.select-display');
     const options = dropdown.querySelectorAll('.select-option');
     const hiddenInput = dropdown.querySelector('input[type="hidden"]');
     const displayText = dropdown.querySelector('.select-text');
 
     if (!display || !hiddenInput) return;
+    if (display.dataset.adminDropdownBound === '1') return;
+    display.dataset.adminDropdownBound = '1';
 
     // Toggle dropdown
     display.addEventListener('click', (e) => {

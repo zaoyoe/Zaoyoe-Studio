@@ -1,0 +1,103 @@
+:root {
+    color-scheme: light;
+    --redirect-text: #1f1a13;
+    --redirect-muted: #6c6254;
+    --redirect-card-bg: rgba(255, 252, 246, 0.82);
+    --redirect-card-border: rgba(94, 72, 39, 0.14);
+    --redirect-accent: #8b5e34;
+    --redirect-accent-strong: #714622;
+    --redirect-page-bg: radial-gradient(circle at top, #f6efe4 0%, #efe5d5 38%, #e4d6c0 100%);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body.redirect-page {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    font-family: "Outfit", "Inter", sans-serif;
+    background: var(--redirect-page-bg);
+    color: var(--redirect-text);
+}
+
+.redirect-page--status {
+    --redirect-text: #172117;
+    --redirect-muted: #526154;
+    --redirect-card-bg: rgba(252, 255, 252, 0.84);
+    --redirect-card-border: rgba(44, 92, 55, 0.15);
+    --redirect-accent: #2f7241;
+    --redirect-accent-strong: #245b33;
+    --redirect-page-bg: radial-gradient(circle at top, #edf4ee 0%, #dbe9dd 40%, #c9ddcc 100%);
+}
+
+.redirect-page__card {
+    width: min(100%, 560px);
+    padding: 32px 28px;
+    border-radius: 24px;
+    background: var(--redirect-card-bg);
+    border: 1px solid var(--redirect-card-border);
+    box-shadow: 0 20px 60px rgba(70, 48, 18, 0.12);
+    backdrop-filter: blur(16px);
+}
+
+.redirect-page--status .redirect-page__card {
+    box-shadow: 0 20px 60px rgba(26, 61, 33, 0.12);
+}
+
+.redirect-page__eyebrow {
+    margin: 0 0 10px;
+    font-size: 13px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--redirect-accent);
+}
+
+.redirect-page__title {
+    margin: 0 0 12px;
+    font-size: clamp(30px, 5vw, 42px);
+    line-height: 1.05;
+}
+
+.redirect-page__body {
+    margin: 0;
+    color: var(--redirect-muted);
+    font-size: 16px;
+    line-height: 1.7;
+}
+
+.redirect-page__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 24px;
+}
+
+.redirect-page__button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 46px;
+    padding: 0 18px;
+    border-radius: 999px;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.redirect-page__button--primary {
+    background: var(--redirect-accent);
+    color: #fffdf8;
+}
+
+.redirect-page__button--primary:hover {
+    background: var(--redirect-accent-strong);
+}
+
+.redirect-page__button--secondary {
+    border: 1px solid var(--redirect-card-border);
+    color: var(--redirect-text);
+    background: rgba(255, 255, 255, 0.56);
+}

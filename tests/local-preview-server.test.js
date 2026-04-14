@@ -13,6 +13,7 @@ const {
     DEFAULT_LOCAL_PREVIEW_BODY_LIMIT,
     getDefaultEnvFiles,
     loadFreshAdminApiHandler,
+    loadFreshPaymentsApiHandler,
     loadFreshPublicApiHandler,
     loadFreshShopApiHandler,
     resolveLocalPreviewListenHost,
@@ -109,6 +110,21 @@ test('local preview server resolves standalone shop api routes from legacy endpo
     );
 });
 
+test('local preview server resolves standalone payments api routes from legacy endpoints', () => {
+    assert.equal(
+        resolveLocalPreviewStandaloneApiRoute('/api/payments/create?site=cn', '/api/payments'),
+        'create'
+    );
+    assert.equal(
+        resolveLocalPreviewStandaloneApiRoute('/api/payments/mock/complete?session=demo', '/api/payments'),
+        'mock/complete'
+    );
+    assert.equal(
+        resolveLocalPreviewStandaloneApiRoute('/api/public/payments/create', '/api/payments'),
+        ''
+    );
+});
+
 test('local preview server reloads shared admin handler modules without requiring a restart', () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-preview-admin-handler-'));
     const tempApiDir = path.join(tempRoot, 'api');
@@ -168,6 +184,25 @@ test('local preview server reloads standalone shop handlers without requiring a 
     fs.writeFileSync(tempShopHandler, "module.exports = function handler() { return 'v2'; };\n");
 
     const secondLoad = loadFreshShopApiHandler(tempRoot, '/api/shop/purchase');
+    assert.equal(typeof secondLoad, 'function');
+    assert.equal(secondLoad(), 'v2');
+});
+
+test('local preview server reloads standalone payments handlers without requiring a restart', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-preview-payments-handler-'));
+    const tempPaymentsHandlerDir = path.join(tempRoot, 'api/payments/mock');
+    const tempPaymentsHandler = path.join(tempPaymentsHandlerDir, 'complete.js');
+
+    fs.mkdirSync(tempPaymentsHandlerDir, { recursive: true });
+    fs.writeFileSync(tempPaymentsHandler, "module.exports = function handler() { return 'v1'; };\n");
+
+    const firstLoad = loadFreshPaymentsApiHandler(tempRoot, '/api/payments/mock/complete');
+    assert.equal(typeof firstLoad, 'function');
+    assert.equal(firstLoad(), 'v1');
+
+    fs.writeFileSync(tempPaymentsHandler, "module.exports = function handler() { return 'v2'; };\n");
+
+    const secondLoad = loadFreshPaymentsApiHandler(tempRoot, '/api/payments/mock/complete');
     assert.equal(typeof secondLoad, 'function');
     assert.equal(secondLoad(), 'v2');
 });

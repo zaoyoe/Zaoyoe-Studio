@@ -1,0 +1,61 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const REPO_ROOT = path.resolve(__dirname, '..');
+const PAGE_PATHS = [
+    'index.html',
+    'prompts.html',
+    'shop.html',
+    'verify.html',
+    'guestbook.html'
+];
+
+function readRepoFile(relativePath) {
+    return fs.readFileSync(path.join(REPO_ROOT, relativePath), 'utf8');
+}
+
+function extractSupportMobileBlock(source) {
+    const match = source.match(/<div class="mobile-submenu" id="support-mobile">([\s\S]*?)<\/div>/);
+    return match ? match[1] : '';
+}
+
+test('primary pages place gongyi nav between prompts and shop', () => {
+    PAGE_PATHS.forEach((relativePath) => {
+        const source = readRepoFile(relativePath);
+        const promptsIndex = source.indexOf('href="/prompts.html"');
+        const gongyiIndex = source.indexOf('href="https://gongyi.zaoyoe.com"');
+        const shopIndex = source.indexOf('href="/shop.html"');
+
+        assert.ok(promptsIndex >= 0, `${relativePath} should include the prompts nav link`);
+        assert.ok(gongyiIndex >= 0, `${relativePath} should include the gongyi nav link`);
+        assert.ok(shopIndex >= 0, `${relativePath} should include the shop nav link`);
+        assert.ok(promptsIndex < gongyiIndex && gongyiIndex < shopIndex, `${relativePath} should place gongyi after prompts and before shop`);
+    });
+});
+
+test('support mobile submenu keeps status but no longer nests gongyi', () => {
+    PAGE_PATHS.forEach((relativePath) => {
+        const supportBlock = extractSupportMobileBlock(readRepoFile(relativePath));
+        assert.ok(supportBlock.includes('https://status.zaoyoe.com'), `${relativePath} support submenu should keep the status link`);
+        assert.equal(supportBlock.includes('https://gongyi.zaoyoe.com'), false, `${relativePath} support submenu should not keep the gongyi link`);
+    });
+});
+
+test('homepage defaults keep gongyi hero entry directly before shop', () => {
+    const runtimeSource = readRepoFile('js/framer_home.js');
+    const adminSource = readRepoFile('admin-homepage.js');
+
+    const runtimeGongyiIndex = runtimeSource.indexOf("{ id: 'gongyi'");
+    const runtimeShopIndex = runtimeSource.indexOf("{ id: 'shop'");
+    const runtimeVerifyIndex = runtimeSource.indexOf("{ id: 'verify'");
+    assert.ok(runtimeShopIndex >= 0 && runtimeGongyiIndex >= 0 && runtimeVerifyIndex >= 0, 'runtime hero defaults should include shop, gongyi, and verify');
+    assert.ok(runtimeGongyiIndex < runtimeShopIndex && runtimeShopIndex < runtimeVerifyIndex, 'runtime hero defaults should place gongyi before shop and shop before verify');
+
+    const adminGongyiIndex = adminSource.indexOf("{ id: 'gongyi'");
+    const adminShopIndex = adminSource.indexOf("{ id: 'shop'");
+    const adminVerifyIndex = adminSource.indexOf("{ id: 'verify'");
+    assert.ok(adminShopIndex >= 0 && adminGongyiIndex >= 0 && adminVerifyIndex >= 0, 'admin hero defaults should include shop, gongyi, and verify');
+    assert.ok(adminGongyiIndex < adminShopIndex && adminShopIndex < adminVerifyIndex, 'admin hero defaults should place gongyi before shop and shop before verify');
+});

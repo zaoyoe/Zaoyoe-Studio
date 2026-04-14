@@ -1822,10 +1822,6 @@
                 <div class="wallet-backdrop" aria-hidden="true"></div>
                 <div class="wallet-viewport">
                     <div class="wallet-modal">
-                        <div class="wallet-processing-banner" id="wallet-recharge-progress" aria-live="polite" aria-hidden="true">
-                            <span class="wallet-processing-spinner" aria-hidden="true"></span>
-                            <span id="wallet-recharge-progress-text">正在处理支付请求...</span>
-                        </div>
                         <div class="wallet-header">
                             <h2>💰 ${window.i18n?.t('wallet.title') || '我的钱包'}</h2>
                         </div>
@@ -4751,8 +4747,6 @@
 
         setRechargeActionPendingState(state = null) {
             const overlay = document.getElementById('wallet-modal-overlay');
-            const progressBanner = document.getElementById('wallet-recharge-progress');
-            const progressText = document.getElementById('wallet-recharge-progress-text');
             const packageItems = Array.from(document.querySelectorAll('#wallet-packages .package-item[data-wallet-action="buy-package"]'));
             const customInput = document.getElementById('wallet-custom-recharge-input');
             const customButton = document.getElementById('wallet-custom-recharge-btn');
@@ -4761,14 +4755,6 @@
             this.pendingRechargeAction = isPending ? { ...state } : null;
 
             overlay?.classList.toggle('loading', isPending);
-            if (progressBanner) {
-                progressBanner.setAttribute('aria-hidden', isPending ? 'false' : 'true');
-            }
-            if (progressText) {
-                progressText.textContent = isPending
-                    ? (state.message || '正在处理支付请求...')
-                    : '正在处理支付请求...';
-            }
 
             packageItems.forEach((item) => {
                 const priceEl = item.querySelector('[data-wallet-package-price]');

@@ -20985,6 +20985,10 @@ input:checked+.toggle-slider:before {
     width: 100%;
 }
 
+#module-points .points-select.open {
+    z-index: 120;
+}
+
 #module-points .points-select .select-display {
     display: flex;
     align-items: center;
@@ -21039,6 +21043,10 @@ input:checked+.toggle-slider:before {
     visibility: hidden;
     transform: translateY(-8px);
     transition: all 0.2s ease;
+}
+
+#points-view-generate .glass-panel {
+    overflow: visible;
 }
 
 #module-points .points-select.open .select-options {

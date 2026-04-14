@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>购物车模块预览</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="./css/shop-cart-module-preview.css?v=20260413_CART_MODULE_PREVIEW_9">
+</head>
+<body data-layout-mode="desktop" data-cart-variant="drawer" data-cart-open="false">
+  <header class="preview-toolbar">
+    <div class="preview-toolbar__copy">
+      <div class="preview-toolbar__eyebrow">Cart Module Preview</div>
+      <h1>购物车模块预览</h1>
+      <p id="previewModeNote">桌面端用悬浮入口加右侧抽屉，移动端自动收束成底部结算条加 Bottom Sheet，全程不做独立整页。</p>
+    </div>
+
+    <div class="preview-toolbar__actions" aria-label="预览控制">
+      <button class="preview-mode-btn is-active" type="button" data-layout-mode-target="desktop">桌面视图</button>
+      <button class="preview-mode-btn" type="button" data-layout-mode-target="mobile">移动视图</button>
+      <button class="preview-ghost-btn" type="button" data-preview-action="seed">重置示例</button>
+    </div>
+  </header>
+
+  <main class="preview-main">
+    <section class="preview-stage" aria-label="购物车模块画布">
+      <div class="preview-stage__glow preview-stage__glow--amber"></div>
+      <div class="preview-stage__glow preview-stage__glow--teal"></div>
+
+      <div class="preview-shell">
+        <section class="storefront">
+          <div class="storefront__masthead">
+            <div class="storefront__eyebrow">Storefront Layer</div>
+            <div class="storefront__title-row">
+              <div>
+                <h2>资源商城</h2>
+                <p>先继续逛商品，再把加购、改数量、统一结算都收在一个模块里。</p>
+              </div>
+
+              <div class="storefront__meta">
+                <span class="storefront__meta-chip">不新开整页</span>
+                <span class="storefront__meta-chip">继续浏览不中断</span>
+                <span class="storefront__meta-chip">移动端自动降级</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="concept-strip" aria-label="方案定位">
+            <article class="concept-card concept-card--active" role="button" tabindex="0" aria-pressed="true" data-cart-variant-target="drawer">
+              <div class="concept-card__badge">推荐</div>
+              <h3>悬浮入口 + 抽屉</h3>
+              <p>把购物车做成页面边缘的次主角，只有在用户需要时才展开，不抢商品卡片的主舞台。</p>
+            </article>
+
+            <article class="concept-card" role="button" tabindex="0" aria-pressed="false" data-cart-variant-target="bar">
+              <div class="concept-card__badge concept-card__badge--muted">备选</div>
+              <h3>底部结算条</h3>
+              <p>移动端把入口压缩成一条 sticky 结算条，点开后再用 Bottom Sheet 承接明细和改数量。</p>
+            </article>
+
+            <article class="concept-card" role="button" tabindex="0" aria-pressed="false" data-cart-variant-target="tray">
+              <div class="concept-card__badge concept-card__badge--muted">备选</div>
+              <h3>筛选区托盘</h3>
+              <p>如果以后不想要悬浮入口，也可以把它折叠进筛选区下面，做成一个页面内托盘。</p>
+            </article>
+          </div>
+
+          <section id="filterTray" class="filter-tray" hidden aria-label="筛选区托盘预览">
+            <div class="filter-tray__head">
+              <div>
+                <div class="filter-tray__eyebrow">Inline Tray</div>
+                <h3 id="filterTrayTitle">筛选区托盘</h3>
+                <p id="filterTrayBody">把购物车嵌在筛选区下方，作为页面内托盘存在，不新增悬浮元素。</p>
+              </div>
+
+              <button id="filterTrayToggle" class="filter-tray__toggle" type="button" data-preview-action="toggle-cart">
+                收起托盘
+              </button>
+            </div>
+
+            <div class="filter-tray__summary">
+              <span id="filterTrayCount" class="filter-tray__chip">0 件商品</span>
+              <span id="filterTrayTotal" class="filter-tray__chip">0 积分</span>
+              <span id="filterTrayNotice" class="filter-tray__chip">0 个注意事项</span>
+            </div>
+
+            <div id="filterTrayDetails" class="filter-tray__details">
+              <div id="filterTrayList" class="filter-tray__list" aria-live="polite"></div>
+
+              <div class="filter-tray__actions">
+                <button class="cart-btn cart-btn--ghost" type="button" data-preview-action="continue">
+                  继续逛逛
+                </button>
+                <button id="filterTrayCheckoutBtn" class="cart-btn cart-btn--primary" type="button" data-preview-action="checkout">
+                  去结算
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <div class="storefront__section-head">
+            <div>
+              <div class="storefront__section-kicker">Mock Inventory</div>
+              <h3>商品卡片照常浏览，购物车只做承接</h3>
+            </div>
+            <p>卡片保留“立即兑换”，新增“加入购物车”，用户不必在单商品确认弹窗和多商品结算之间二选一。</p>
+          </div>
+
+          <div id="productGrid" class="product-grid" aria-live="polite"></div>
+        </section>
+
+        <button id="cartAnchor" class="cart-anchor" type="button" aria-controls="cartDrawer" aria-expanded="true">
+          <span class="cart-anchor__pulse" aria-hidden="true"></span>
+          <span class="cart-anchor__icon" aria-hidden="true">
+            <i class="fas fa-basket-shopping"></i>
+          </span>
+          <span class="cart-anchor__copy">
+            <strong id="cartAnchorCount">2 件商品</strong>
+            <span id="cartAnchorTotal">合计 96 积分</span>
+          </span>
+          <span id="cartAnchorHint" class="cart-anchor__hint">点开购物车</span>
+        </button>
+
+        <button id="mobileCartBar" class="mobile-cart-bar" type="button" aria-controls="cartDrawer" aria-expanded="false">
+          <span class="mobile-cart-bar__copy">
+            <strong id="mobileCartCount">2 件已选</strong>
+            <span id="mobileCartTotal">96 积分</span>
+          </span>
+          <span id="mobileCartCta" class="mobile-cart-bar__cta">查看明细</span>
+        </button>
+
+        <button
+          id="cartBackdrop"
+          class="cart-backdrop"
+          type="button"
+          data-preview-action="toggle-cart"
+          aria-label="关闭购物车抽屉"
+          aria-hidden="true"
+          tabindex="-1"
+        ></button>
+
+        <aside id="cartDrawer" class="cart-drawer" aria-label="购物车抽屉">
+          <header class="cart-drawer__header">
+            <div>
+              <div id="cartDrawerEyebrow" class="cart-drawer__eyebrow">Cart Layer</div>
+              <h3 id="cartModuleTitle">购物车</h3>
+              <p id="cartModuleBody">先做模块，不做整页。</p>
+            </div>
+
+            <button class="cart-drawer__collapse" type="button" data-preview-action="toggle-cart" aria-label="收起购物车">
+              <i class="fas fa-chevron-right" aria-hidden="true"></i>
+            </button>
+          </header>
+
+          <div class="cart-drawer__body">
+            <div id="cartList" class="cart-list" aria-live="polite"></div>
+
+            <div id="cartEmptyState" class="cart-empty" hidden>
+              <div class="cart-empty__icon"><i class="fas fa-bag-shopping" aria-hidden="true"></i></div>
+              <h4>购物车暂时是空的</h4>
+              <p>这版模块的重点是让用户先逛，再决定要不要统一结算，而不是一上来跳独立页面。</p>
+            </div>
+          </div>
+
+          <footer class="cart-drawer__footer">
+            <div class="cart-summary">
+              <div class="cart-summary__row">
+                <span>已选商品</span>
+                <strong id="cartSummaryCount">0 件</strong>
+              </div>
+              <div class="cart-summary__row">
+                <span>预计合计</span>
+                <strong id="cartSummaryTotal">0 积分</strong>
+              </div>
+              <div class="cart-summary__row">
+                <span>含注意事项商品</span>
+                <strong id="cartSummaryNotice">0 个</strong>
+              </div>
+              <div class="cart-summary__row">
+                <span>结算后附使用说明</span>
+                <strong id="cartSummaryUsage">0 条</strong>
+              </div>
+            </div>
+
+            <div class="cart-drawer__actions">
+              <button class="cart-btn cart-btn--ghost" type="button" data-preview-action="continue">
+                继续逛逛
+              </button>
+              <button id="checkoutBtn" class="cart-btn cart-btn--primary" type="button" data-preview-action="checkout">
+                去结算
+              </button>
+            </div>
+          </footer>
+        </aside>
+
+        <div id="checkoutHint" class="checkout-hint" hidden>
+          <div class="checkout-hint__eyebrow">Checkout Transition</div>
+          <strong id="checkoutHintTitle">这里接统一确认层</strong>
+          <p id="checkoutHintBody">结算时仍然停留在当前页，只是叠一层统一确认，不把用户送去新的购物车整页。</p>
+        </div>
+
+        <div id="previewToast" class="preview-toast" hidden aria-live="polite"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="./js/shop-cart-module-preview.js?v=20260413_CART_MODULE_PREVIEW_9"></script>
+</body>
+</html>

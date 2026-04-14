@@ -800,6 +800,64 @@ function isMissingDatabaseCapabilityError(error) {
         || message.includes('schema cache');
 }
 
+function shouldFallbackToAdminPaymentClient(error) {
+    const code = String(error?.code || '').trim().toUpperCase();
+    const message = [
+        error?.message,
+        error?.details,
+        error?.hint
+    ].filter(Boolean).join(' ').trim().toLowerCase();
+
+    return code === '401'
+        || code === '403'
+        || code === '42501'
+        || code === 'PGRST301'
+        || message.includes('permission denied')
+        || message.includes('row-level security')
+        || message.includes('unauthorized')
+        || message.includes('auth session')
+        || message.includes('jwt')
+        || message.includes('invalid claim')
+        || message.includes('not allowed');
+}
+
+async function runPaymentOperationWithAdminFallback({
+    operationLabel = 'payment operation',
+    primaryClient = null,
+    adminClient = null,
+    operation
+} = {}) {
+    if (typeof operation !== 'function') {
+        throw new TypeError(`${operationLabel} requires an operation callback`);
+    }
+
+    try {
+        return {
+            client: primaryClient,
+            result: await operation(primaryClient)
+        };
+    } catch (error) {
+        const canFallback = adminClient
+            && primaryClient
+            && adminClient !== primaryClient
+            && shouldFallbackToAdminPaymentClient(error);
+
+        if (!canFallback) {
+            throw error;
+        }
+
+        console.warn(
+            `[Payments] ${operationLabel} failed for request-scoped client, retrying with admin client:`,
+            error.message
+        );
+
+        return {
+            client: adminClient,
+            result: await operation(adminClient)
+        };
+    }
+}
+
 function getRpcSingleRow(data) {
     if (Array.isArray(data)) {
         return data[0] || null;
@@ -2036,12 +2094,30 @@ async function createPaymentRequest({
     env = process.env,
     requestHost = ''
 }) {
-    const paymentWriteSupabase = supabase;
+    let paymentWriteSupabase = supabase;
     const paymentRuntimeSupabase = adminSupabase || supabase;
+    const paymentWriteAdminFallback = adminSupabase && adminSupabase !== supabase
+        ? adminSupabase
+        : null;
     const site = requireSupportedSite(body.site);
     const requestedProviderKey = String(body.provider_key || '').trim().toLowerCase();
     const packageId = body.package_id ? String(body.package_id).trim() : '';
     const isCustomRecharge = !packageId;
+
+    const runPaymentWriteOperation = async (operationLabel, operation) => {
+        const { client, result } = await runPaymentOperationWithAdminFallback({
+            operationLabel,
+            primaryClient: paymentWriteSupabase,
+            adminClient: paymentWriteAdminFallback,
+            operation
+        });
+
+        if (client) {
+            paymentWriteSupabase = client;
+        }
+
+        return result;
+    };
 
     const { paymentChannels, rechargeOptions } = await loadStoredPaymentConfigs(paymentRuntimeSupabase, {
         origin: env.APP_BASE_URL,
@@ -2069,7 +2145,10 @@ async function createPaymentRequest({
     let customQuote = null;
 
     if (packageId) {
-        const pkg = await loadPointsPackage(supabase, packageId);
+        const pkg = await runPaymentWriteOperation(
+            'load payment package',
+            (client) => loadPointsPackage(client, packageId)
+        );
         packageName = pkg.name;
         paidPoints = pkg.paidPoints;
         bonusPoints = pkg.bonusPoints;
@@ -2097,21 +2176,24 @@ async function createPaymentRequest({
         throw new Error('充值积分必须大于 0');
     }
 
-    const checkoutSession = await createCheckoutSession({
-        supabase: paymentWriteSupabase,
-        user,
-        providerKey,
-        site,
-        packageId,
-        packageName,
-        paidPoints,
-        bonusPoints,
-        grantedPoints,
-        paidAmount,
-        body,
-        isCustomRecharge,
-        customQuote
-    });
+    const checkoutSession = await runPaymentWriteOperation(
+        'create payment checkout session',
+        (client) => createCheckoutSession({
+            supabase: client,
+            user,
+            providerKey,
+            site,
+            packageId,
+            packageName,
+            paidPoints,
+            bonusPoints,
+            grantedPoints,
+            paidAmount,
+            body,
+            isCustomRecharge,
+            customQuote
+        })
+    );
 
     if (providerKey === 'mock') {
         return completeMockPayment({
@@ -2157,49 +2239,58 @@ async function createPaymentRequest({
         });
 
         if (!checkoutContext?.supported) {
-            await updateCheckoutSession(paymentWriteSupabase, checkoutSession.id, {
-                status: 'failed',
-                error_message: checkoutContext?.message || `${adapter.label || '当前支付通道'}暂未完成接入`,
-                provider_metadata: {
-                    ...checkoutSession.provider_metadata,
-                    adapter_supported: false
-                }
-            });
+            await runPaymentWriteOperation(
+                'mark unsupported payment checkout session failed',
+                (client) => updateCheckoutSession(client, checkoutSession.id, {
+                    status: 'failed',
+                    error_message: checkoutContext?.message || `${adapter.label || '当前支付通道'}暂未完成接入`,
+                    provider_metadata: {
+                        ...checkoutSession.provider_metadata,
+                        adapter_supported: false
+                    }
+                })
+            );
             throw new Error(checkoutContext?.message || `${adapter.label || '当前支付通道'}暂未完成接入`);
         }
 
-        const updatedSession = await updateCheckoutSession(paymentWriteSupabase, checkoutSession.id, {
-            status: 'redirect_ready',
-            checkout_url: checkoutContext.checkoutUrl || null,
-            query_mode: checkoutContext.queryMode || null,
-            provider_metadata: {
-                ...checkoutSession.provider_metadata,
-                display_name: checkoutContext.displayName || adapter.label || '当前支付通道',
-                action: checkoutContext.action || 'redirect',
-                provider_order_no: checkoutContext.providerOrderNo || null,
-                summary: checkoutContext.summary || {},
-                ...(checkoutContext.providerMetadata && typeof checkoutContext.providerMetadata === 'object'
-                    ? checkoutContext.providerMetadata
-                    : {})
-            },
-            error_message: null
-        });
+        const updatedSession = await runPaymentWriteOperation(
+            'update payment checkout session',
+            (client) => updateCheckoutSession(client, checkoutSession.id, {
+                status: 'redirect_ready',
+                checkout_url: checkoutContext.checkoutUrl || null,
+                query_mode: checkoutContext.queryMode || null,
+                provider_metadata: {
+                    ...checkoutSession.provider_metadata,
+                    display_name: checkoutContext.displayName || adapter.label || '当前支付通道',
+                    action: checkoutContext.action || 'redirect',
+                    provider_order_no: checkoutContext.providerOrderNo || null,
+                    summary: checkoutContext.summary || {},
+                    ...(checkoutContext.providerMetadata && typeof checkoutContext.providerMetadata === 'object'
+                        ? checkoutContext.providerMetadata
+                        : {})
+                },
+                error_message: null
+            })
+        );
         let pendingPaymentOrder = null;
 
         if (providerKey !== 'mock') {
             try {
-                pendingPaymentOrder = await createPendingPaymentOrderForCheckoutSession({
-                    supabase: paymentWriteSupabase,
-                    checkoutSession: updatedSession || checkoutSession,
-                    user,
-                    providerKey,
-                    providerOrderNo: checkoutContext.providerOrderNo || '',
-                    site,
-                    packageId,
-                    packageName,
-                    paidAmount,
-                    grantedPoints
-                });
+                pendingPaymentOrder = await runPaymentWriteOperation(
+                    'create pending payment order',
+                    (client) => createPendingPaymentOrderForCheckoutSession({
+                        supabase: client,
+                        checkoutSession: updatedSession || checkoutSession,
+                        user,
+                        providerKey,
+                        providerOrderNo: checkoutContext.providerOrderNo || '',
+                        site,
+                        packageId,
+                        packageName,
+                        paidAmount,
+                        grantedPoints
+                    })
+                );
             } catch (pendingOrderError) {
                 console.warn('[Payments] Failed to precreate payment order from checkout session:', pendingOrderError.message);
             }
@@ -2271,14 +2362,24 @@ async function createPaymentRequest({
                 : null
         };
     } catch (error) {
-        await updateCheckoutSession(paymentWriteSupabase, checkoutSession.id, {
-            status: 'failed',
-            error_message: error.message || 'Failed to create checkout session',
-            provider_metadata: {
-                ...checkoutSession.provider_metadata,
-                failed_at: new Date().toISOString()
-            }
-        });
+        try {
+            await runPaymentWriteOperation(
+                'mark payment checkout session failed',
+                (client) => updateCheckoutSession(client, checkoutSession.id, {
+                    status: 'failed',
+                    error_message: error.message || 'Failed to create checkout session',
+                    provider_metadata: {
+                        ...checkoutSession.provider_metadata,
+                        failed_at: new Date().toISOString()
+                    }
+                })
+            );
+        } catch (checkoutSessionUpdateError) {
+            console.warn(
+                '[Payments] Failed to mark payment checkout session as failed:',
+                checkoutSessionUpdateError.message
+            );
+        }
 
         throw error;
     }

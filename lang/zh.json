@@ -33,6 +33,8 @@
         "shop": "商城",
         "verify": "验证",
         "guestbook": "留言板",
+        "gongyi": "公益站",
+        "status": "状态页",
         "gallery": "图库",
         "settings": "设置",
         "notification": "通知中心",
@@ -50,6 +52,7 @@
         "entries": {
             "prompts": "提示词",
             "shop": "商城",
+            "gongyi": "公益站",
             "verify": "验证",
             "guestbook": "留言板"
         },
@@ -663,11 +666,13 @@
             "prompts": "提示词图库",
             "shop": "资源商城",
             "verify": "API 验证",
-            "guestbook": "留言板"
+            "guestbook": "留言板",
+            "gongyi": "公益站"
         },
         "resources": {
             "title": "资源",
             "sponsor": "赞助支持",
+            "status": "状态页",
             "privacy": "隐私政策",
             "community": "交流群组"
         },

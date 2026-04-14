@@ -1032,16 +1032,55 @@ const FramerHome = {
   buildDefaultHeroEntries() {
     return [
       { id: 'prompts', icon: 'fa-wand-magic-sparkles', text: window.i18n?.t('home.entries.prompts') || '提示词', link: '/prompts.html', color: '#f472b6', section: 'prompts' },
+      { id: 'gongyi', icon: 'home-entry-card-icon--gongyi', text: window.i18n?.t('home.entries.gongyi') || '公益站', link: 'https://gongyi.zaoyoe.com', color: '#5ed8f8', section: 'gongyi' },
       { id: 'shop', icon: 'fa-store', text: window.i18n?.t('home.entries.shop') || '商城', link: '/shop.html', color: '#4ade80', section: 'shop' },
       { id: 'verify', icon: 'fa-robot', text: window.i18n?.t('home.entries.verify') || '验证', link: '/verify.html', color: '#667eea', section: 'verify' },
       { id: 'guestbook', icon: 'fa-comment-dots', text: window.i18n?.t('home.entries.guestbook') || '留言板', link: '#', color: '#f59e0b', action: 'openGuestbookModal', section: 'guestbook' }
     ];
   },
 
+  isGongyiHeroEntry(item) {
+    const normalizedId = String(item?.id || '').trim().toLowerCase();
+    const normalizedSection = String(item?.section || '').trim().toLowerCase();
+    const normalizedLink = String(item?.link || '').trim().toLowerCase();
+    return normalizedId === 'gongyi' || normalizedSection === 'gongyi' || normalizedLink.includes('gongyi.zaoyoe.com');
+  },
+
+  ensureGongyiHeroEntry(entries = []) {
+    const sourceEntries = Array.isArray(entries) ? entries.map((item) => ({ ...item })) : [];
+    const defaultEntry = this.buildDefaultHeroEntries().find((item) => item.id === 'gongyi');
+    const existingGongyi = sourceEntries.find((item) => this.isGongyiHeroEntry(item));
+    const nextEntries = sourceEntries.filter((item) => !this.isGongyiHeroEntry(item));
+    const normalizedGongyi = {
+      ...defaultEntry,
+      ...(existingGongyi || {}),
+      id: 'gongyi',
+      text: String(existingGongyi?.text || defaultEntry?.text || '').trim() || defaultEntry.text,
+      link: String(existingGongyi?.link || defaultEntry?.link || '').trim() || defaultEntry.link,
+      icon: String(existingGongyi?.icon || defaultEntry?.icon || '').trim() || defaultEntry.icon,
+      color: String(existingGongyi?.color || defaultEntry?.color || '').trim() || defaultEntry.color,
+      section: String(existingGongyi?.section || defaultEntry?.section || '').trim() || defaultEntry.section
+    };
+
+    delete normalizedGongyi.enabled;
+
+    const shopIndex = nextEntries.findIndex((item) => {
+      const normalizedId = String(item?.id || '').trim().toLowerCase();
+      const normalizedSection = String(item?.section || '').trim().toLowerCase();
+      const normalizedLink = String(item?.link || '').trim().toLowerCase();
+      return normalizedId === 'shop' || normalizedSection === 'shop' || normalizedLink.includes('/shop.html');
+    });
+    const insertionIndex = shopIndex >= 0 ? shopIndex : Math.min(1, nextEntries.length);
+    nextEntries.splice(insertionIndex, 0, normalizedGongyi);
+
+    return nextEntries.slice(0, 8);
+  },
+
   buildHeroData(config) {
     const configuredEntries = Array.isArray(config?.entries) && config.entries.length > 0
       ? config.entries
       : this.buildDefaultHeroEntries();
+    const normalizedEntries = this.ensureGongyiHeroEntry(configuredEntries);
     const experimentTitle = this.getSectionExperimentValue('hero', config, 'title', '');
     const experimentSubtitle = this.getSectionExperimentValue('hero', config, 'subtitle', '');
 
@@ -1050,7 +1089,7 @@ const FramerHome = {
       title: experimentTitle || this.getLocalizedField(config, 'title') || window.i18n?.t('home.hero.title') || '早鸟',
       subtitle: experimentSubtitle || this.getLocalizedField(config, 'subtitle') || window.i18n?.t('home.hero.subtitle') || '创意 · 效率 · 无限可能',
       customImage: config.custom_image || null,
-      entries: configuredEntries
+      entries: normalizedEntries
         .filter((item) => item?.enabled !== false)
         .map((item, index) => ({
           id: String(item?.id || item?.section || item?.action || item?.link || `hero_entry_${index + 1}`).trim(),
@@ -1747,6 +1786,7 @@ const FramerHome = {
       support: {
         type: 'custom',
         render: () => `
+          <a href="https://status.zaoyoe.com"><span data-i18n="nav.status">状态页</span></a>
           <a href="https://t.me/zaoyoe" target="_blank">TG</a>
           <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank"><span data-i18n="nav.tgGroup">TG群组</span></a>
         `

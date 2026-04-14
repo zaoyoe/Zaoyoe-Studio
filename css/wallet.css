@@ -164,35 +164,6 @@ body.wallet-modal-lock {
     opacity: 1;
 }
 
-.wallet-processing-banner {
-    position: absolute;
-    top: 16px;
-    right: 20px;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    border-radius: 999px;
-    background: rgba(17, 24, 39, 0.88);
-    border: 1px solid rgba(251, 191, 36, 0.22);
-    color: rgba(255, 255, 255, 0.92);
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.2px;
-    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
-    opacity: 0;
-    transform: translateY(-6px);
-    transition: opacity 0.2s ease, transform 0.2s ease;
-    pointer-events: none;
-    z-index: 3;
-}
-
-.wallet-overlay.loading .wallet-processing-banner {
-    opacity: 1;
-    transform: translateY(0);
-}
-
-.wallet-processing-spinner,
 .wallet-pending-spinner {
     width: 14px;
     height: 14px;

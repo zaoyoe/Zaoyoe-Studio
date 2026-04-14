@@ -12,6 +12,26 @@
     },
     "redirects": [
         {
+            "source": "/gongyi",
+            "destination": "https://gongyi.zaoyoe.com",
+            "permanent": false
+        },
+        {
+            "source": "/gongyi.html",
+            "destination": "https://gongyi.zaoyoe.com",
+            "permanent": false
+        },
+        {
+            "source": "/status",
+            "destination": "https://status.zaoyoe.com",
+            "permanent": false
+        },
+        {
+            "source": "/status.html",
+            "destination": "https://status.zaoyoe.com",
+            "permanent": false
+        },
+        {
             "source": "/:path*",
             "has": [
                 {
