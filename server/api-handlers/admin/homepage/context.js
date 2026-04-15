@@ -24,6 +24,7 @@ const HOMEPAGE_ANALYTICS_EVENT_NAMES = Object.freeze([
     'homepage_entry_click',
     'homepage_prompt_click',
     'homepage_shop_click',
+    'homepage_gongyi_click',
     'homepage_verify_impression',
     'homepage_verify_click',
     'homepage_guestbook_click',
@@ -35,6 +36,8 @@ const HOMEPAGE_ANALYTICS_EVENT_NAMES = Object.freeze([
     'guestbook_post'
 ]);
 const HOMEPAGE_THEME_TEMPLATE_TYPES = new Set(['theme_pack', 'new-arrival', 'campaign', 'intl-launch', 'community']);
+const HOMEPAGE_SECTION_KEYS = Object.freeze(['hero', 'prompts', 'shop', 'gongyi', 'verify', 'guestbook', 'ticker']);
+const HOMEPAGE_THEME_PACK_SECTION_KEYS = Object.freeze(['hero', 'prompts', 'shop', 'verify', 'guestbook', 'ticker']);
 const HOMEPAGE_EXPERIMENT_FIELD_LABELS = Object.freeze({
     hero: Object.freeze({
         title: 'Hero 标题',
@@ -100,9 +103,11 @@ async function loadPublishedHomepageRows(supabase, site) {
         throw error;
     }
 
-    return Array.isArray(data)
+    const rows = Array.isArray(data)
         ? data.map((row) => buildHomepageRowRecord(row)).filter((row) => row.section)
         : [];
+
+    return buildHomepageRowsFromSectionMap(site, {}, rows);
 }
 
 async function loadHomepageDraft(supabase, site) {
@@ -394,14 +399,10 @@ function buildEmptyModuleAnalytics() {
 
 function buildEmptyHomepageAnalyticsPayload() {
     return {
-        sections: {
-            hero: buildEmptyModuleAnalytics(),
-            prompts: buildEmptyModuleAnalytics(),
-            shop: buildEmptyModuleAnalytics(),
-            verify: buildEmptyModuleAnalytics(),
-            guestbook: buildEmptyModuleAnalytics(),
-            ticker: buildEmptyModuleAnalytics()
-        },
+        sections: HOMEPAGE_SECTION_KEYS.reduce((accumulator, section) => {
+            accumulator[section] = buildEmptyModuleAnalytics();
+            return accumulator;
+        }, {}),
         items: {
             hero_entries: [],
             prompts: [],
@@ -508,6 +509,9 @@ async function fetchHomepageAnalytics(supabase, site) {
                     case 'homepage_shop_click':
                         incrementHomepageModuleMetric(analytics, 'shop', 'clicks', windowKey);
                         incrementHomepageItemMetric(itemMap, 'shop', entityId, sanitizeText(metadata.title, 160), 'clicks', windowKey);
+                        break;
+                    case 'homepage_gongyi_click':
+                        incrementHomepageModuleMetric(analytics, 'gongyi', 'clicks', windowKey);
                         break;
                     case 'homepage_verify_impression':
                         incrementHomepageModuleMetric(analytics, 'verify', 'impressions', windowKey);
@@ -1397,7 +1401,7 @@ function buildBuiltinHomepageThemePacks(site) {
             source: 'builtin',
             name: copy('节日活动主题包', 'Festival Campaign Pack'),
             description: copy('统一 Hero、精选文案和跑马灯，适合节日活动或平台节点运营。', 'Unify hero copy, featured modules, and ticker for seasonal campaigns.'),
-            section_keys: ['hero', 'prompts', 'shop', 'verify', 'guestbook', 'ticker'],
+            section_keys: HOMEPAGE_THEME_PACK_SECTION_KEYS,
             sections: {
                 hero: {
                     title: copy('节日创作季', 'Seasonal Creative Sprint'),
@@ -1439,7 +1443,7 @@ function buildBuiltinHomepageThemePacks(site) {
             source: 'builtin',
             name: copy('新品发布主题包', 'New Release Launch Pack'),
             description: copy('强化新品上新节奏，适合新资源、新能力发布。', 'Focus the homepage on new launches and newly shipped capabilities.'),
-            section_keys: ['hero', 'prompts', 'shop', 'verify', 'guestbook', 'ticker'],
+            section_keys: HOMEPAGE_THEME_PACK_SECTION_KEYS,
             sections: {
                 hero: {
                     title: copy('本周上新', 'New This Week'),
@@ -1474,7 +1478,7 @@ function buildBuiltinHomepageThemePacks(site) {
             source: 'builtin',
             name: copy('国际站专题包', 'International Spotlight Pack'),
             description: copy('适合国际站专题页、英文投放或海外用户导流。', 'Optimize the homepage for international traffic and English-first positioning.'),
-            section_keys: ['hero', 'prompts', 'shop', 'verify', 'guestbook', 'ticker'],
+            section_keys: HOMEPAGE_THEME_PACK_SECTION_KEYS,
             sections: {
                 hero: {
                     title: copy('国际站专题', 'Global Spotlight'),
@@ -1512,7 +1516,7 @@ function buildBuiltinHomepageThemePacks(site) {
             source: 'builtin',
             name: copy('社区活动主题包', 'Community Event Pack'),
             description: copy('强化留言板、精选案例和社区感，适合互动活动或用户征集。', 'Lean into community momentum, submissions, and user interaction.'),
-            section_keys: ['hero', 'prompts', 'shop', 'verify', 'guestbook', 'ticker'],
+            section_keys: HOMEPAGE_THEME_PACK_SECTION_KEYS,
             sections: {
                 hero: {
                     title: copy('社区共创进行中', 'Community Build-in-Public'),
@@ -1658,7 +1662,7 @@ function normalizeHomepageSelectedSections(value, fallback = []) {
     const input = Array.isArray(value) ? value : parseDelimitedExperimentIds(value);
     const sections = input
         .map((item) => sanitizeText(item, 80))
-        .filter((item) => ['hero', 'prompts', 'shop', 'verify', 'guestbook', 'ticker'].includes(item));
+        .filter((item) => HOMEPAGE_SECTION_KEYS.includes(item));
     return sections.length ? sections : fallback;
 }
 

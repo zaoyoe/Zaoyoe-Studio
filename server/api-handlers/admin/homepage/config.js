@@ -50,9 +50,15 @@ async function loadPublishedHomepageRows(supabase, site) {
         throw error;
     }
 
-    return Array.isArray(data)
+    const rows = Array.isArray(data)
         ? data.map((row) => buildHomepageRowRecord(row)).filter((row) => row.section)
         : [];
+
+    if (site === 'all') {
+        return rows;
+    }
+
+    return buildHomepageRowsFromSectionMap(site, {}, rows);
 }
 
 async function loadHomepageDraft(supabase, site) {
@@ -682,7 +688,7 @@ module.exports = async (req, res) => {
             }
 
             const draft = await loadHomepageDraft(supabase, site);
-            const mergedRows = draft ? mergeHomepageDraftRows(publishedRows, draft.sections) : publishedRows;
+            const mergedRows = draft ? mergeHomepageDraftRows(publishedRows, draft.sections) : buildHomepageRowsFromSectionMap(site, {}, publishedRows);
             const releases = await loadHomepageReleases(supabase, site, 5);
             const health = await buildHomepageHealth(supabase, mergedRows);
 

@@ -2403,6 +2403,30 @@ body.prompts-page .prompts-skeleton-block {
     }
 }
 
+@keyframes promptCardSkeletonSweep {
+    0% {
+        transform: translate3d(-160%, 0, 0) skewX(-18deg);
+        opacity: 0;
+    }
+
+    14% {
+        opacity: 0.14;
+    }
+
+    46% {
+        opacity: 0.74;
+    }
+
+    72% {
+        opacity: 0.2;
+    }
+
+    100% {
+        transform: translate3d(160%, 0, 0) skewX(-18deg);
+        opacity: 0;
+    }
+}
+
 body.prompts-page .gallery-container .skeleton {
     position: relative;
     overflow: hidden;
@@ -2436,8 +2460,47 @@ body.prompts-page .prompt-card-media-skeleton {
     inset: 0;
     z-index: 3;
     overflow: hidden;
+    isolation: isolate;
     pointer-events: none;
     transition: opacity 0.32s ease, visibility 0.32s ease;
+}
+
+body.prompts-page .prompt-card-media-skeleton .prompts-skeleton-block {
+    animation: none;
+    background:
+        linear-gradient(180deg,
+            rgba(255, 255, 255, 0.05) 0%,
+            rgba(255, 255, 255, 0.025) 100%),
+        linear-gradient(180deg,
+            rgba(15, 23, 42, 0.84) 0%,
+            rgba(15, 23, 42, 0.68) 100%);
+    background-size: 100% 100%, 100% 100%;
+}
+
+body.prompts-page .prompt-card-skeleton-image {
+    background:
+        linear-gradient(180deg, rgba(40, 59, 95, 0.88), rgba(21, 29, 43, 0.96)),
+        radial-gradient(circle at 50% 28%, rgba(255, 255, 255, 0.08), transparent 36%);
+}
+
+body.prompts-page .prompt-card-media-skeleton::after {
+    content: '';
+    position: absolute;
+    inset: -8% -42%;
+    pointer-events: none;
+    background: linear-gradient(104deg,
+            transparent 30%,
+            rgba(255, 255, 255, 0.014) 40%,
+            rgba(255, 255, 255, 0.075) 46%,
+            rgba(255, 255, 255, 0.2) 50%,
+            rgba(255, 255, 255, 0.075) 54%,
+            rgba(255, 255, 255, 0.014) 60%,
+            transparent 70%);
+    transform: translate3d(-160%, 0, 0) skewX(-18deg);
+    opacity: 0;
+    will-change: transform, opacity;
+    animation: promptCardSkeletonSweep 1.72s cubic-bezier(0.38, 0, 0.22, 1) infinite;
+    z-index: 4;
 }
 
 body.prompts-page .prompt-card-skeleton-topbar {
@@ -2516,6 +2579,18 @@ body.prompts-page .prompt-card-skeleton-dot {
     border-radius: 999px;
 }
 
+body.prompts-page .gallery-container .prompt-card:nth-child(2n) .prompt-card-media-skeleton::after {
+    animation-delay: -0.24s;
+}
+
+body.prompts-page .gallery-container .prompt-card:nth-child(3n) .prompt-card-media-skeleton::after {
+    animation-delay: -0.52s;
+}
+
+body.prompts-page .gallery-container .prompt-card:nth-child(4n) .prompt-card-media-skeleton::after {
+    animation-delay: -0.8s;
+}
+
 body.prompts-page .prompt-card--loading .card-fav-btn {
     opacity: 0;
     pointer-events: none;
@@ -2547,6 +2622,42 @@ body.prompts-page .prompt-card--loading .card-fav-btn {
             rgba(255, 255, 255, 0.92) 0%,
             rgba(255, 255, 255, 0.55) 58%,
             transparent 100%);
+}
+
+[data-theme="light"] body.prompts-page .prompt-card-media-skeleton .prompts-skeleton-block {
+    background:
+        linear-gradient(180deg,
+            rgba(255, 255, 255, 0.92) 0%,
+            rgba(241, 245, 249, 0.98) 100%),
+        linear-gradient(180deg,
+            rgba(226, 232, 240, 0.88) 0%,
+            rgba(203, 213, 225, 0.92) 100%);
+    background-size: 100% 100%, 100% 100%;
+}
+
+[data-theme="light"] body.prompts-page .prompt-card-skeleton-image {
+    background:
+        linear-gradient(180deg, rgba(226, 232, 240, 0.96), rgba(203, 213, 225, 0.9)),
+        radial-gradient(circle at 50% 28%, rgba(255, 255, 255, 0.42), transparent 36%);
+}
+
+[data-theme="light"] body.prompts-page .prompt-card-media-skeleton::after {
+    background: linear-gradient(104deg,
+            transparent 30%,
+            rgba(255, 255, 255, 0.02) 40%,
+            rgba(255, 255, 255, 0.08) 46%,
+            rgba(255, 255, 255, 0.24) 50%,
+            rgba(255, 255, 255, 0.08) 54%,
+            rgba(255, 255, 255, 0.02) 60%,
+            transparent 70%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body.prompts-page .prompt-card-media-skeleton::after {
+        animation: none;
+        opacity: 0.12;
+        transform: none;
+    }
 }
 
 [data-theme="light"] body.prompts-page .prompts-skeleton-block,

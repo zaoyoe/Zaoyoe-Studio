@@ -7973,6 +7973,9 @@
                     <button class="admin-tab" data-hp-section="shop" data-admin-action="homepage-switch-section">
                         商城
                     </button>
+                    <button class="admin-tab" data-hp-section="gongyi" data-admin-action="homepage-switch-section">
+                        公益站
+                    </button>
                     <button class="admin-tab" data-hp-section="verify" data-admin-action="homepage-switch-section">
                         验证
                     </button>
@@ -8231,6 +8234,111 @@
                     </div>
 
                     <!-- ===== VERIFY Section ===== -->
+                    <div class="hp-section-view" data-hp-view="gongyi">
+                        <div class="module-content">
+                            <div class="hp-control-bar">
+                                <div class="hp-ctrl-item"><label>显示区块</label>
+                                    <div class="status-toggle" id="hp-gongyi-visible"
+                                        data-admin-action="homepage-toggle-visible" data-homepage-section="gongyi"></div>
+                                </div>
+                                <div class="hp-ctrl-item"><label>排序</label><input type="number" class="config-input"
+                                        id="hp-gongyi-order" min="0" max="99"></div>
+                            </div>
+
+                            <div class="config-card">
+                                <div class="config-card-header" data-admin-action="homepage-toggle-config-card">
+                                    <div class="config-card-title"><i class="fas fa-edit"></i><span>内容配置</span></div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="hp-form-grid">
+                                        <div class="hp-field"><label>品牌名</label><input type="text" class="config-input"
+                                                id="hp-gongyi-brand-name" placeholder="Zaoyoe"></div>
+                                        <div class="hp-field hp-field-full"><label>品牌副标题</label><input type="text"
+                                                class="config-input" id="hp-gongyi-brand-subtitle"
+                                                placeholder="Subscription to API Conversion Platform"></div>
+                                        <div class="hp-field"><label>CTA 文案</label><input type="text"
+                                                class="config-input" id="hp-gongyi-cta-text"
+                                                placeholder="进入控制台"></div>
+                                        <div class="hp-field"><label>CTA 链接</label><input type="text"
+                                                class="config-input" id="hp-gongyi-cta-link"
+                                                placeholder="https://gongyi.zaoyoe.com"></div>
+                                        <div class="hp-field hp-field-full"><label>能力标签 <span
+                                                    class="admin-studio-inline-style-attr-154">逗号分隔</span></label><input
+                                                type="text" class="config-input" id="hp-gongyi-highlights"
+                                                placeholder="订阅转 API, 会话保持, 按量计费"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="config-card">
+                                <div class="config-card-header" data-admin-action="homepage-toggle-config-card">
+                                    <div class="config-card-title"><i class="fas fa-layer-group"></i><span>卖点卡片</span></div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="config-inline-note">
+                                        <i class="fas fa-circle-info"></i>
+                                        <span>这里对应公益站区块里 3 张卖点卡片的标题和描述，前台会沿用固定视觉风格渲染。</span>
+                                    </div>
+                                    <div class="hp-form-grid">
+                                        <div class="hp-field"><label>卡片 1 标题</label><input type="text" class="config-input"
+                                                id="hp-gongyi-feature-1-title" placeholder="一键接入"></div>
+                                        <div class="hp-field hp-field-full"><label>卡片 1 描述</label><textarea
+                                                class="config-input hp-multiline-input" id="hp-gongyi-feature-1-description"
+                                                placeholder="获取一个 API 密钥，即可调用所有已接入的 AI 模型，无需分别申请。"></textarea></div>
+                                        <div class="hp-field"><label>卡片 2 标题</label><input type="text" class="config-input"
+                                                id="hp-gongyi-feature-2-title" placeholder="稳定可靠"></div>
+                                        <div class="hp-field hp-field-full"><label>卡片 2 描述</label><textarea
+                                                class="config-input hp-multiline-input" id="hp-gongyi-feature-2-description"
+                                                placeholder="智能调度多个上游账号，自动切换和负载均衡，告别频繁报错。"></textarea></div>
+                                        <div class="hp-field"><label>卡片 3 标题</label><input type="text" class="config-input"
+                                                id="hp-gongyi-feature-3-title" placeholder="用多少付多少"></div>
+                                        <div class="hp-field hp-field-full"><label>卡片 3 描述</label><textarea
+                                                class="config-input hp-multiline-input" id="hp-gongyi-feature-3-description"
+                                                placeholder="按实际使用量计费，支持设置额度上限，团队用量一目了然。"></textarea></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="config-card">
+                                <div class="config-card-header" data-admin-action="homepage-toggle-config-card">
+                                    <div class="config-card-title"><i class="fas fa-microchip"></i><span>模型模块</span></div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="hp-auto-bar">
+                                        <div class="hp-auto-left"><i class="fas fa-eye"></i><span>显示“已支持的 AI 模型”模块</span></div>
+                                        <div class="status-toggle" id="hp-gongyi-models-visible"
+                                            data-admin-action="homepage-toggle-field" data-homepage-section="gongyi" data-homepage-field="show_model_section"></div>
+                                    </div>
+                                    <div class="config-inline-note">
+                                        <i class="fas fa-circle-info"></i>
+                                        <span>这里可以逐个控制模型胶囊是否显示，并支持调整顺序与文案。</span>
+                                    </div>
+                                    <div class="hp-list-editor" id="hp-gongyi-model-list"></div>
+                                    <div class="hp-inline-actions">
+                                        <button type="button" class="btn-sm btn-secondary" data-homepage-action="add-gongyi-model">新增模型胶囊</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="hp-auto-bar">
+                                <div class="hp-auto-left"><i class="fas fa-magic"></i><span>自动聚合</span></div>
+                                <div class="status-toggle" id="hp-gongyi-auto"
+                                    data-admin-action="homepage-toggle-field" data-homepage-section="gongyi" data-homepage-field="enable_auto"></div>
+                            </div>
+
+                            <div class="hp-save-bar">
+                                <span id="hp-gongyi-updated"
+                                    class="admin-studio-inline-style-attr-147"></span>
+                                <div class="admin-studio-inline-style-attr-148">
+
+                                    <button class="btn-sm btn-primary" data-admin-action="homepage-save-section" data-homepage-section="gongyi"><i
+                                            class="fas fa-save"></i> 保存修改</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ===== VERIFY Section ===== -->
                     <div class="hp-section-view" data-hp-view="verify">
                         <div class="module-content">
                             <div class="hp-control-bar">
@@ -8253,8 +8361,19 @@
                                         <div class="hp-field"><label>板块副标题</label><input type="text"
                                                 class="config-input" id="hp-verify-subtitle"
                                                 placeholder="快速验证您的 API 密钥"></div>
+                                        <div class="hp-field"><label>主页展示方式</label><select class="config-input"
+                                                id="hp-verify-preview-mode">
+                                                <option value="dynamic">动态验证演示</option>
+                                                <option value="image">静态截图</option>
+                                            </select></div>
+                                        <div class="hp-field"><label>演示标题</label><input type="text"
+                                                class="config-input" id="hp-verify-demo-title"
+                                                placeholder="Google One"></div>
+                                        <div class="hp-field hp-field-full"><label>演示副标题</label><input type="text"
+                                                class="config-input" id="hp-verify-demo-subtitle"
+                                                placeholder="获取 1年 pro 权限的试用链接"></div>
                                         <div class="hp-field hp-field-full">
-                                            <label>预览截图</label>
+                                            <label>静态预览截图 <span class="admin-studio-inline-style-attr-154">选择静态截图时使用</span></label>
                                             <input type="hidden" id="hp-verify-screenshot" value="">
                                             <div class="hp-upload-zone" id="hp-verify-upload-zone"
                                                 data-admin-action="homepage-upload-screenshot"
@@ -8287,6 +8406,24 @@
                                                     class="admin-studio-inline-style-attr-154">逗号分隔</span></label><input
                                                 type="text" class="config-input" id="hp-verify-supported-models"
                                                 placeholder="Gemini, Claude, OpenAI"></div>
+                                        <div class="hp-field"><label>演示账号邮箱</label><input type="text"
+                                                class="config-input" id="hp-verify-demo-email"
+                                                placeholder="preview.account@gmail.com"></div>
+                                        <div class="hp-field"><label>演示 2FA 密钥</label><input type="text"
+                                                class="config-input" id="hp-verify-demo-totp"
+                                                placeholder="3r6cu37xch4ej6d5"></div>
+                                        <div class="hp-field hp-field-full"><label>成功后提取链接</label><input
+                                                type="text" class="config-input" id="hp-verify-demo-success-link"
+                                                placeholder="https://services.sheerid.com/verify/zaoyoe-demo?verificationId=GO-8K21"></div>
+                                        <div class="hp-field"><label>演示额度</label><input type="text"
+                                                class="config-input" id="hp-verify-demo-quota"
+                                                placeholder="0.5 提 / 全 1"></div>
+                                        <div class="hp-field"><label>演示余额</label><input type="text"
+                                                class="config-input" id="hp-verify-demo-balance"
+                                                placeholder="7.6"></div>
+                                        <div class="hp-field"><label>演示消耗积分</label><input type="number"
+                                                class="config-input" id="hp-verify-demo-cost-points"
+                                                min="1" max="999" placeholder="10"></div>
                                         <div class="hp-field"><label>CTA 文案</label><input type="text"
                                                 class="config-input" id="hp-verify-cta-text"
                                                 placeholder="立即验证"></div>
@@ -10997,8 +11134,8 @@
     <script src="js/admin-workbench.js?v=20260410_ADMIN_SHELL_CONTEXT_P1_1"></script>
     <script src="js/admin-ticket-links.js?v=20260410_ADMIN_SHELL_CONTEXT_P1_1"></script>
     <script src="admin-config.js?v=20260412_OPS_ALERT_MONITOR_ORDER_1"></script>
-    <script src="js/homepage-contract.js?v=20260411_HOMEPAGE_P2_EXPERIMENTS_1"></script>
-    <script src="admin-homepage.js?v=20260411_HOMEPAGE_THEME_PACK_PREVIEW_1"></script>
+    <script src="js/homepage-contract.js?v=20260415_HOME_VERIFY_DEMO_1"></script>
+    <script src="admin-homepage.js?v=20260415_HOME_VERIFY_DEMO_1"></script>
     <script src="js/admin-studio-translate.js?v=20260409_GALLERY_BATCH_LOCALIZE_7"></script>
     <script src="js/admin-site-filter.js?v=20260410_ADMIN_SHELL_SITE_BUS_P1_1"></script>
     <script src="js/admin-tickets.js?v=20260410_ADMIN_SHELL_CONTEXT_P1_1"></script>

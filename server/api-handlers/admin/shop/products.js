@@ -74,7 +74,7 @@ function getSelectClause(fieldsMode) {
     }
 
     if (fieldsMode === 'import') {
-        return 'id, name, category, sort_order, is_active';
+        return 'id, name, category, sort_order, stock_count, is_active';
     }
 
     return '*';

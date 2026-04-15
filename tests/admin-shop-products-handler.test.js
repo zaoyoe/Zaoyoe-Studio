@@ -195,6 +195,41 @@ test('shop products handler loads a single product by id', async () => {
     });
 });
 
+test('shop products handler includes stock_count for import tree payloads', async () => {
+    await withShopProductsHandler({
+        queryResults: {
+            shop_products: [
+                {
+                    data: [{ id: 'prod_import_1', name: 'Import Product', stock_count: 12, is_active: true }],
+                    error: null
+                }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const req = {
+            method: 'GET',
+            headers: {},
+            url: '/api/admin/shop/products?fields=import&order=sort_order_asc'
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.rows[0]?.stock_count, 12);
+        assert.deepEqual(state.queryCalls[0], {
+            table: 'shop_products',
+            operations: [
+                { method: 'select', args: ['id, name, category, sort_order, stock_count, is_active'] },
+                { method: 'order', args: ['sort_order', { ascending: true }] }
+            ],
+            mode: 'order'
+        });
+    });
+});
+
 test('shop products handler rejects non-GET methods', async () => {
     await withShopProductsHandler({}, async ({ handler }) => {
         const req = { method: 'POST', headers: {} };

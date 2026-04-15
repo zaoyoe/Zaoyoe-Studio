@@ -31,18 +31,19 @@ const HomepageAdmin = (() => {
         hero: { icon: 'fas fa-image', label: 'Hero 横幅' },
         prompts: { icon: 'fas fa-palette', label: '提示词图库' },
         shop: { icon: 'fas fa-store', label: '资源商城' },
+        gongyi: { icon: 'fas fa-hand-holding-heart', label: '公益站' },
         verify: { icon: 'fas fa-shield-alt', label: 'API 验证' },
         guestbook: { icon: 'fas fa-comment-dots', label: '留言板' },
         ticker: { icon: 'fas fa-wave-square', label: '底部跑马灯' }
     };
-    const VIS_TO_SECTION = { hero: 'hero', prompts: 'prompts', gallery: 'prompts', shop: 'shop', verify: 'verify', guestbook: 'guestbook', ticker: 'ticker' };
+    const VIS_TO_SECTION = { hero: 'hero', prompts: 'prompts', gallery: 'prompts', shop: 'shop', gongyi: 'gongyi', verify: 'verify', guestbook: 'guestbook', ticker: 'ticker' };
     const HOMEPAGE_ADMIN_HIDDEN_CLASS = 'admin-studio-inline-style-attr-3';
     const HOMEPAGE_ADMIN_PREVIEW_HIDDEN_CLASS = 'admin-studio-inline-style-attr-149';
     const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
     const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
     const HOMEPAGE_MANAGED_SECTIONS = Array.isArray(HomepageContract?.MANAGED_SECTION_ORDER)
         ? [...HomepageContract.MANAGED_SECTION_ORDER]
-        : ['hero', 'prompts', 'shop', 'verify', 'guestbook', 'ticker'];
+        : ['hero', 'prompts', 'shop', 'gongyi', 'verify', 'guestbook', 'ticker'];
     const HOMEPAGE_OVERVIEW_SECTION = 'overview';
     const HOMEPAGE_DEFAULT_SECTION = HOMEPAGE_MANAGED_SECTIONS[0] || 'hero';
     const HOMEPAGE_TAB_SECTIONS = Object.freeze([HOMEPAGE_OVERVIEW_SECTION, ...HOMEPAGE_MANAGED_SECTIONS]);
@@ -615,11 +616,19 @@ const HomepageAdmin = (() => {
                     { label: '副标题', value: formatHomepageSummaryValue(content.section_subtitle) },
                     { label: '分类', value: formatHomepageSummaryValue(content.category, '全部分类') }
                 ];
+            case 'gongyi':
+                return [
+                    { label: '品牌名', value: formatHomepageSummaryValue(content.brand_name) },
+                    { label: 'CTA', value: formatHomepageSummaryValue(content.cta_text) },
+                    { label: '模型模块', value: content.show_model_section === false ? '已隐藏' : '显示中' },
+                    { label: '模型胶囊', value: formatHomepageSummaryValue(normalizeHomepageGongyiModelItems(content.model_items).filter((item) => item.enabled !== false).length, '0') }
+                ];
             case 'verify':
                 return [
                     { label: '标题', value: formatHomepageSummaryValue(content.section_title) },
                     { label: '副标题', value: formatHomepageSummaryValue(content.section_subtitle) },
-                    { label: '截图', value: content.screenshot_path ? '已配置' : '未配置' }
+                    { label: '展示', value: content.preview_mode === 'image' ? '静态截图' : '动态演示' },
+                    { label: '截图', value: content.preview_mode === 'image' ? (content.screenshot_path ? '已配置' : '未配置') : '备用' }
                 ];
             case 'guestbook':
                 return [
@@ -702,14 +711,10 @@ const HomepageAdmin = (() => {
             interactions_30d: 0
         };
         return {
-            sections: {
-                hero: { ...emptyModule },
-                prompts: { ...emptyModule },
-                shop: { ...emptyModule },
-                verify: { ...emptyModule },
-                guestbook: { ...emptyModule },
-                ticker: { ...emptyModule }
-            }
+            sections: HOMEPAGE_MANAGED_SECTIONS.reduce((accumulator, section) => {
+                accumulator[section] = { ...emptyModule };
+                return accumulator;
+            }, {})
         };
     }
 
@@ -788,6 +793,7 @@ const HomepageAdmin = (() => {
                 || item?.title_en
                 || item?.name
                 || item?.name_en
+                || item?.label
                 || item?.username
                 || item?.author
                 || item?.content
@@ -844,6 +850,49 @@ const HomepageAdmin = (() => {
         nextItems.splice(insertionIndex, 0, normalizedGongyiEntry);
 
         return nextItems.slice(0, 8);
+    }
+
+    function getHomepageDefaultGongyiModelItems() {
+        const defaults = buildEmptyHomepageSectionContent('gongyi')?.model_items;
+        return Array.isArray(defaults) ? defaults.map((item, index) => ({
+            id: String(item?.id || `model_${index + 1}`).trim(),
+            label: String(item?.label || item?.name || item?.title || '').trim(),
+            enabled: item?.enabled !== false
+        })).filter((item) => item.label) : [];
+    }
+
+    function normalizeHomepageGongyiModelItems(value) {
+        return (Array.isArray(value) ? value : [])
+            .map((item, index) => {
+                if (typeof item === 'string') {
+                    const label = String(item || '').trim();
+                    if (!label) {
+                        return null;
+                    }
+                    return {
+                        id: `model_${index + 1}`,
+                        label,
+                        enabled: true
+                    };
+                }
+
+                if (!item || typeof item !== 'object') {
+                    return null;
+                }
+
+                const label = String(item.label || item.name || item.title || '').trim();
+                if (!label) {
+                    return null;
+                }
+
+                return {
+                    id: String(item.id || `model_${index + 1}`).trim(),
+                    label,
+                    enabled: item.enabled !== false
+                };
+            })
+            .filter(Boolean)
+            .slice(0, 8);
     }
 
     function getHomepageCurrentSectionContent(section) {
@@ -1719,7 +1768,7 @@ const HomepageAdmin = (() => {
         const latestRelease = releases[0] || null;
         const rollbackTarget = releases[1] || releases[0] || null;
         const healthItems = [...(health.errors || []), ...(health.warnings || [])].slice(0, 6);
-        const analyticsRows = ['hero', 'prompts', 'shop', 'verify', 'guestbook', 'ticker']
+        const analyticsRows = HOMEPAGE_MANAGED_SECTIONS
             .map((sectionKey) => ({
                 key: sectionKey,
                 metrics: analytics?.sections?.[sectionKey] || {}
@@ -2480,6 +2529,79 @@ const HomepageAdmin = (() => {
         });
     }
 
+    function renderHomepageGongyiModelList() {
+        const container = document.getElementById('hp-gongyi-model-list');
+        if (!container) return;
+
+        const content = getHomepageCurrentSectionContent('gongyi');
+        const items = normalizeHomepageGongyiModelItems(Array.isArray(content.model_items) && content.model_items.length
+            ? content.model_items
+            : getHomepageDefaultGongyiModelItems());
+
+        container.innerHTML = items.map((item, index) => `
+            <article class="hp-list-card" data-gongyi-model-index="${escapeHomepageHtml(String(index))}" data-gongyi-model-id="${escapeHomepageHtml(String(item.id || `model_${index + 1}`))}">
+                <div class="hp-list-card__head">
+                    <strong>模型胶囊 #${escapeHomepageHtml(String(index + 1))}</strong>
+                    <div class="hp-list-card__actions">
+                        <button type="button" class="hp-chip-btn" data-homepage-action="move-gongyi-model" data-homepage-index="${escapeHomepageHtml(String(index))}" data-homepage-direction="up" ${index === 0 ? 'disabled' : ''}>上移</button>
+                        <button type="button" class="hp-chip-btn" data-homepage-action="move-gongyi-model" data-homepage-index="${escapeHomepageHtml(String(index))}" data-homepage-direction="down" ${index === items.length - 1 ? 'disabled' : ''}>下移</button>
+                        <button type="button" class="hp-chip-btn hp-chip-btn--danger" data-homepage-action="remove-gongyi-model" data-homepage-index="${escapeHomepageHtml(String(index))}">移除</button>
+                    </div>
+                </div>
+                <div class="hp-inline-checkbox">
+                    <label><input type="checkbox" data-gongyi-model-field="enabled" ${item.enabled !== false ? 'checked' : ''}> 显示该胶囊</label>
+                </div>
+                <div class="hp-form-grid hp-form-grid--compact">
+                    <div class="hp-field hp-field-full"><label>模型名称</label><input type="text" class="config-input" data-gongyi-model-field="label" value="${escapeHomepageHtml(item.label || '')}" placeholder="Claude"></div>
+                </div>
+            </article>
+        `).join('');
+    }
+
+    function syncHomepageGongyiModelListFromDom() {
+        const container = document.getElementById('hp-gongyi-model-list');
+        if (!container) return;
+
+        replaceHomepageSectionContent('gongyi', (content) => {
+            content.model_items = Array.from(container.querySelectorAll('[data-gongyi-model-index]')).map((row, index) => ({
+                id: String(row.dataset.gongyiModelId || content.model_items?.[index]?.id || `model_${index + 1}`).trim(),
+                label: row.querySelector('[data-gongyi-model-field="label"]')?.value?.trim() || '',
+                enabled: row.querySelector('[data-gongyi-model-field="enabled"]')?.checked !== false
+            })).filter((item) => item.label);
+            return content;
+        });
+    }
+
+    function addHomepageGongyiModel() {
+        syncHomepageGongyiModelListFromDom();
+        replaceHomepageSectionContent('gongyi', (content) => {
+            const sourceItems = normalizeHomepageGongyiModelItems(content.model_items);
+            const defaultItem = getHomepageDefaultGongyiModelItems().find((item) => !sourceItems.some((entry) => entry.id === item.id || entry.label === item.label))
+                || { id: `model_${sourceItems.length + 1}`, label: `模型 ${sourceItems.length + 1}`, enabled: true };
+            content.model_items = [...sourceItems, { ...defaultItem }];
+            return content;
+        });
+        renderHomepageGongyiModelList();
+    }
+
+    function moveHomepageGongyiModel(index, direction) {
+        syncHomepageGongyiModelListFromDom();
+        replaceHomepageSectionContent('gongyi', (content) => {
+            content.model_items = moveHomepageListItem(normalizeHomepageGongyiModelItems(content.model_items), index, direction);
+            return content;
+        });
+        renderHomepageGongyiModelList();
+    }
+
+    function removeHomepageGongyiModel(index) {
+        syncHomepageGongyiModelListFromDom();
+        replaceHomepageSectionContent('gongyi', (content) => {
+            content.model_items = normalizeHomepageGongyiModelItems(content.model_items).filter((_, itemIndex) => itemIndex !== Number(index));
+            return content;
+        });
+        renderHomepageGongyiModelList();
+    }
+
     function renderHomepagePromptCandidateList() {
         const container = document.getElementById('hp-prompts-candidate-list');
         if (!container) return;
@@ -2805,13 +2927,38 @@ const HomepageAdmin = (() => {
                 renderHomepageShopProductList();
                 break;
 
+            case 'gongyi':
+                setInputValue('hp-gongyi-brand-name', content.brand_name);
+                setInputValue('hp-gongyi-brand-subtitle', content.brand_subtitle);
+                setInputValue('hp-gongyi-cta-text', content.cta_text);
+                setInputValue('hp-gongyi-cta-link', content.cta_link);
+                setInputValue('hp-gongyi-highlights', (content.highlight_items || []).join(', '));
+                setInputValue('hp-gongyi-feature-1-title', content.feature_1_title);
+                setInputValue('hp-gongyi-feature-1-description', content.feature_1_description);
+                setInputValue('hp-gongyi-feature-2-title', content.feature_2_title);
+                setInputValue('hp-gongyi-feature-2-description', content.feature_2_description);
+                setInputValue('hp-gongyi-feature-3-title', content.feature_3_title);
+                setInputValue('hp-gongyi-feature-3-description', content.feature_3_description);
+                setToggle('hp-gongyi-models-visible', content.show_model_section !== false);
+                renderHomepageGongyiModelList();
+                break;
+
             case 'verify':
                 setInputValue('hp-verify-title', content.section_title);
                 setInputValue('hp-verify-subtitle', content.section_subtitle);
+                setSelectValue('hp-verify-preview-mode', content.preview_mode || 'dynamic');
+                setInputValue('hp-verify-demo-title', content.demo_title);
+                setInputValue('hp-verify-demo-subtitle', content.demo_subtitle);
                 setInputValue('hp-verify-screenshot', content.screenshot_path);
                 setInputValue('hp-verify-features', (content.features || []).join(', '));
                 setInputValue('hp-verify-value-props', (content.value_props || []).join(', '));
                 setInputValue('hp-verify-supported-models', (content.supported_models || []).join(', '));
+                setInputValue('hp-verify-demo-email', content.demo_email);
+                setInputValue('hp-verify-demo-totp', content.demo_totp);
+                setInputValue('hp-verify-demo-success-link', content.demo_success_link);
+                setInputValue('hp-verify-demo-quota', content.demo_quota);
+                setInputValue('hp-verify-demo-balance', content.demo_balance);
+                setInputValue('hp-verify-demo-cost-points', content.demo_cost_points);
                 setInputValue('hp-verify-cta-text', content.cta_text);
                 setInputValue('hp-verify-cta-link', content.cta_link);
                 setInputValue('hp-verify-risk-notice', content.risk_notice);
@@ -3271,6 +3418,8 @@ const HomepageAdmin = (() => {
             syncHomepageHeroEntriesFromDom();
         } else if (section === 'shop') {
             syncHomepageShopCuratedFromDom();
+        } else if (section === 'gongyi') {
+            syncHomepageGongyiModelListFromDom();
         } else if (section === 'guestbook') {
             syncHomepageGuestbookFeaturedFromDom();
             syncHomepageGuestbookFallbackFromDom();
@@ -3307,13 +3456,40 @@ const HomepageAdmin = (() => {
                 await autoTranslatePair(content, 'section_subtitle');
                 break;
 
+            case 'gongyi':
+                content.brand_name = getInputValue('hp-gongyi-brand-name');
+                content.brand_subtitle = getInputValue('hp-gongyi-brand-subtitle');
+                content.cta_text = getInputValue('hp-gongyi-cta-text');
+                content.cta_link = getInputValue('hp-gongyi-cta-link');
+                content.highlight_items = parseHomepageDelimitedList(getInputValue('hp-gongyi-highlights'));
+                content.feature_1_title = getInputValue('hp-gongyi-feature-1-title');
+                content.feature_1_description = getInputValue('hp-gongyi-feature-1-description');
+                content.feature_2_title = getInputValue('hp-gongyi-feature-2-title');
+                content.feature_2_description = getInputValue('hp-gongyi-feature-2-description');
+                content.feature_3_title = getInputValue('hp-gongyi-feature-3-title');
+                content.feature_3_description = getInputValue('hp-gongyi-feature-3-description');
+                content.show_model_section = getToggleState('hp-gongyi-models-visible');
+                content.model_items = normalizeHomepageGongyiModelItems(content.model_items);
+                await autoTranslatePair(content, 'brand_subtitle');
+                await autoTranslatePair(content, 'cta_text');
+                break;
+
             case 'verify':
                 content.section_title = getInputValue('hp-verify-title');
                 content.section_subtitle = getInputValue('hp-verify-subtitle');
+                content.preview_mode = getSelectValue('hp-verify-preview-mode') === 'image' ? 'image' : 'dynamic';
+                content.demo_title = getInputValue('hp-verify-demo-title');
+                content.demo_subtitle = getInputValue('hp-verify-demo-subtitle');
                 content.screenshot_path = getInputValue('hp-verify-screenshot');
                 content.features = parseHomepageDelimitedList(getInputValue('hp-verify-features'));
                 content.value_props = parseHomepageDelimitedList(getInputValue('hp-verify-value-props'));
                 content.supported_models = parseHomepageDelimitedList(getInputValue('hp-verify-supported-models'));
+                content.demo_email = getInputValue('hp-verify-demo-email');
+                content.demo_totp = getInputValue('hp-verify-demo-totp');
+                content.demo_success_link = getInputValue('hp-verify-demo-success-link');
+                content.demo_quota = getInputValue('hp-verify-demo-quota');
+                content.demo_balance = getInputValue('hp-verify-demo-balance');
+                content.demo_cost_points = parseInt(getInputValue('hp-verify-demo-cost-points'), 10) || 10;
                 content.cta_text = getInputValue('hp-verify-cta-text');
                 content.cta_link = getInputValue('hp-verify-cta-link');
                 content.risk_notice = getInputValue('hp-verify-risk-notice');
@@ -3814,6 +3990,7 @@ const HomepageAdmin = (() => {
         if (isHomepageAggregateMode()) return;
         const mapping = {
             'enable_auto': `hp-${section}-auto`,
+            'show_model_section': 'hp-gongyi-models-visible',
             'enable_prompts': `hp-${section}-prompts`,
             'enable_products': `hp-${section}-products`
         };
@@ -4096,14 +4273,7 @@ const HomepageAdmin = (() => {
     }
 
     function renderHomepageAggregateVisibilityToggles() {
-        const sectionMap = {
-            hero: 'hero',
-            prompts: 'prompts',
-            shop: 'shop',
-            verify: 'verify',
-            guestbook: 'guestbook',
-            ticker: 'ticker'
-        };
+        const sectionMap = Object.fromEntries(HOMEPAGE_MANAGED_SECTIONS.map((section) => [section, section]));
 
         Object.entries(sectionMap).forEach(([hpSection, visSection]) => {
             const view = document.querySelector(`.hp-section-view[data-hp-view="${hpSection}"]`);
@@ -4150,14 +4320,7 @@ const HomepageAdmin = (() => {
         }
 
         // Map: homepage section → visibility section
-        const sectionMap = {
-            hero: 'hero',
-            prompts: 'prompts',
-            shop: 'shop',
-            verify: 'verify',
-            guestbook: 'guestbook',
-            ticker: 'ticker'
-        };
+        const sectionMap = Object.fromEntries(HOMEPAGE_MANAGED_SECTIONS.map((section) => [section, section]));
 
         Object.entries(sectionMap).forEach(([hpSection, visSection]) => {
             const view = document.querySelector(`.hp-section-view[data-hp-view="${hpSection}"]`);
@@ -4213,7 +4376,7 @@ const HomepageAdmin = (() => {
             return;
         }
 
-        ['hero', 'prompts', 'shop', 'verify', 'guestbook', 'ticker'].forEach((section) => {
+        HOMEPAGE_MANAGED_SECTIONS.forEach((section) => {
             const view = document.querySelector(`.hp-section-view[data-hp-view="${section}"]`);
             const moduleContent = view?.querySelector('.module-content');
             if (!moduleContent) return;
@@ -4394,6 +4557,15 @@ const HomepageAdmin = (() => {
                         break;
                     case 'remove-hero-entry':
                         removeHomepageHeroEntry(actionEl.dataset.homepageIndex);
+                        break;
+                    case 'add-gongyi-model':
+                        addHomepageGongyiModel();
+                        break;
+                    case 'move-gongyi-model':
+                        moveHomepageGongyiModel(actionEl.dataset.homepageIndex, actionEl.dataset.homepageDirection);
+                        break;
+                    case 'remove-gongyi-model':
+                        removeHomepageGongyiModel(actionEl.dataset.homepageIndex);
                         break;
                     case 'add-prompt-candidate':
                         void addHomepagePromptCandidate(actionEl.dataset.homepagePromptId).catch((error) => {

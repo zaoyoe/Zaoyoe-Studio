@@ -432,6 +432,168 @@ const ShopClient = {
         };
     },
 
+    buildProductCardPurchaseDataset: function (product, unitPrice) {
+        const productId = String(product?.id || '').trim();
+        const maxPurchaseQuantity = this.getPurchaseQuantityCapForProduct(product, product?.max_purchase_quantity);
+        const qtyRulesStr = product?.quantity_rules ? encodeURIComponent(JSON.stringify(product.quantity_rules)) : '';
+
+        return {
+            productId,
+            productName: product?.name || '',
+            productNameEn: product?.name_en || '',
+            unitPrice,
+            productCategory: String(product?.category || ''),
+            qtyRules: qtyRulesStr,
+            maxPurchaseQuantity: String(maxPurchaseQuantity),
+            showPurchaseNotes: product?.show_purchase_notes === true,
+            purchaseNotes: product?.purchase_notes || '',
+            showUsageInstructions: product?.show_usage_instructions === true,
+            usageInstructions: product?.usage_instructions || ''
+        };
+    },
+
+    buildProductCardPricingState: function (product, agentPrices = {}) {
+        const pricing = this.resolveProductPricing(product, agentPrices);
+        const currentPrice = pricing.currentPrice;
+        if (currentPrice == null) {
+            return null;
+        }
+
+        let originalPriceHtml = '';
+        let flashSaleBadgeHtml = '';
+        let flashShadowClass = '';
+        let agentBadgeHtml = '';
+
+        if (pricing.originalPrice != null && pricing.hasAgentPrice) {
+            originalPriceHtml = `<span class="shop-card-original-price">${pricing.originalPrice}</span>`;
+            agentBadgeHtml = `<div class="shop-agent-badge" data-shop-card-agent-badge="true">${window.i18n?.t('shop.exclusiveBuff') || '专属加持'}</div>`;
+        }
+
+        if (pricing.originalPrice != null && pricing.hasFlashSale && !agentBadgeHtml) {
+            originalPriceHtml = `<span class="shop-card-original-price">${pricing.originalPrice}</span>`;
+            flashSaleBadgeHtml = `<div class="flash-sale-badge flash-badge-glass" data-shop-card-flash-badge="true" data-endtime="${product.flash_sale_end}"><i class="fas fa-bolt"></i> <span class="countdown-timer">${window.i18n?.t('shop.calculating') || '计算中...'}</span></div>`;
+            flashShadowClass = 'flash-sale-card';
+        }
+
+        return {
+            currentPrice,
+            priceHtml: `${originalPriceHtml}${window.SiteConfig?.formatPrice(currentPrice) || currentPrice} <span data-i18n="shop.points">${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}</span>`,
+            flashSaleBadgeHtml,
+            flashShadowClass,
+            agentBadgeHtml
+        };
+    },
+
+    syncCurrentPurchasePricingFromCatalog: function () {
+        if (!this.currentPurchase?.productId) return;
+
+        const liveProduct = this.getCachedProductById(this.currentPurchase.productId);
+        if (!liveProduct) return;
+
+        const pricingState = this.buildProductCardPricingState(liveProduct, this.agentPricesCache || {});
+        if (!pricingState) return;
+
+        const nextBasePrice = Number(pricingState.currentPrice || 0);
+        const currentBasePrice = Number(this.currentPurchase.basePrice || 0);
+        if (!Number.isFinite(nextBasePrice) || nextBasePrice === currentBasePrice) {
+            return;
+        }
+
+        this.currentPurchase.basePrice = nextBasePrice;
+        this.updatePriceForQuantity(Math.max(1, Number(this.currentPurchase.quantity || 1) || 1));
+        this.renderPurchaseConfirmationStage();
+    },
+
+    syncProductCardPricing: function (card, product, agentPrices = {}) {
+        if (!(card instanceof HTMLElement) || !product) return;
+
+        const pricingState = this.buildProductCardPricingState(product, agentPrices);
+        if (!pricingState) return;
+
+        const priceEl = card.querySelector('.shop-card-price');
+        if (priceEl) {
+            priceEl.innerHTML = pricingState.priceHtml;
+        }
+
+        card.classList.toggle('flash-sale-card', Boolean(pricingState.flashShadowClass));
+
+        const imageShell = card.querySelector('.shop-card-image');
+        if (imageShell instanceof HTMLElement) {
+            const existingFlashBadge = imageShell.querySelector('[data-shop-card-flash-badge="true"]');
+            if (pricingState.flashSaleBadgeHtml) {
+                if (existingFlashBadge) {
+                    existingFlashBadge.outerHTML = pricingState.flashSaleBadgeHtml;
+                } else {
+                    imageShell.insertAdjacentHTML('afterbegin', pricingState.flashSaleBadgeHtml);
+                }
+            } else {
+                existingFlashBadge?.remove();
+            }
+
+            const existingAgentBadge = imageShell.querySelector('[data-shop-card-agent-badge="true"]');
+            if (pricingState.agentBadgeHtml) {
+                if (existingAgentBadge) {
+                    existingAgentBadge.outerHTML = pricingState.agentBadgeHtml;
+                } else {
+                    const stockBadge = imageShell.querySelector('.shop-stock-badge--floating');
+                    if (stockBadge instanceof HTMLElement) {
+                        stockBadge.insertAdjacentHTML('beforebegin', pricingState.agentBadgeHtml);
+                    } else {
+                        imageShell.insertAdjacentHTML('beforeend', pricingState.agentBadgeHtml);
+                    }
+                }
+            } else {
+                existingAgentBadge?.remove();
+            }
+        }
+
+        const purchaseDataset = this.buildProductCardPurchaseDataset(product, pricingState.currentPrice);
+        const maxPurchaseQuantity = String(purchaseDataset.maxPurchaseQuantity || '');
+        if (card.dataset.shopAction === 'buy-product') {
+            this.applyShopPurchaseDataset(card, purchaseDataset);
+            card.dataset.maxPurchaseQuantity = maxPurchaseQuantity;
+        }
+
+        const cartTriggerButton = card.querySelector('.shop-card-cart-trigger[data-shop-action="add-product-to-cart"]');
+        if (cartTriggerButton instanceof HTMLElement) {
+            this.applyShopPurchaseDataset(cartTriggerButton, purchaseDataset);
+            cartTriggerButton.dataset.maxPurchaseQuantity = maxPurchaseQuantity;
+        }
+
+        const productId = String(product.id || '').trim();
+        if (productId) {
+            this.updateCartSnapshot(productId, product, { unitPrice: pricingState.currentPrice });
+        }
+    },
+
+    refreshVisibleProductCardPricing: function (agentPrices = this.agentPricesCache || {}) {
+        document.querySelectorAll('#userShopGrid .shop-card[data-product-id]').forEach((card) => {
+            const productId = String(card instanceof HTMLElement ? (card.dataset.productId || '') : '').trim();
+            if (!productId) return;
+
+            const product = this.getCachedProductById(productId);
+            if (!product) return;
+
+            this.syncProductCardPricing(card, product, agentPrices);
+        });
+
+        this.cartItems.forEach((_quantity, rawProductId) => {
+            const productId = String(rawProductId || '').trim();
+            if (!productId) return;
+
+            const product = this.getCachedProductById(productId);
+            if (!product) return;
+
+            const pricingState = this.buildProductCardPricingState(product, agentPrices);
+            if (!pricingState) return;
+
+            this.updateCartSnapshot(productId, product, { unitPrice: pricingState.currentPrice });
+        });
+
+        this.syncCurrentPurchasePricingFromCatalog();
+        this.renderCart();
+    },
+
     getCartStorageKey: function () {
         return `shop_cart_v1:${window.SiteConfig?.site || 'cn'}`;
     },
@@ -2310,6 +2472,8 @@ const ShopClient = {
                     if (heroTitle) {
                         heroTitle.innerHTML = `<span class="shop-inline-store-title-icon"><i class="fas fa-store" aria-hidden="true"></i></span>${this.escapeHtml(this.currentAgentName)} ${window.i18n?.t('shop.agentStore') || '的专属福利商店'}`;
                     }
+
+                    void this.ensureAgentPricesReadyInBackground();
                 }
             } catch (err) {
                 console.warn('Agent lookup failed:', err);
@@ -2374,9 +2538,11 @@ const ShopClient = {
                     }
                 } catch (e) { /* ignore */ }
 
-                // Load category filters first, then products
-                await this.loadCategoryFilters();
-                await this.loadProducts();
+                // Load category filters and products in parallel to avoid serial first-paint delays
+                await Promise.all([
+                    this.loadCategoryFilters(),
+                    this.loadProducts()
+                ]);
 
                 // Clear prefetch references
                 this._prefetchedCategories = null;
@@ -2874,7 +3040,6 @@ const ShopClient = {
             if (!optimizedUrl || optimizedUrl.startsWith('data:') || shopCardImageWarmCache.has(optimizedUrl)) {
                 return;
             }
-            if (optimizedUrl.includes('supabase.co/storage/v1/render/image/public/')) return;
 
             shopCardImageWarmCache.add(optimizedUrl);
             const warmImage = new Image();
@@ -3519,11 +3684,11 @@ const ShopClient = {
     buildProductCardElement: function (product, agentPrices = {}, index = 0, { waveTimeMs = performance.now() } = {}) {
         if (!product) return null;
 
-        const pricing = this.resolveProductPricing(product, agentPrices);
-        let currentPrice = pricing.currentPrice;
-        if (currentPrice == null) {
+        const pricingState = this.buildProductCardPricingState(product, agentPrices);
+        if (!pricingState) {
             return null;
         }
+        const currentPrice = pricingState.currentPrice;
 
         const productId = String(product.id || '').trim();
         if (!productId) {
@@ -3565,21 +3730,8 @@ const ShopClient = {
         const cartTriggerAriaLabel = noStock
             ? (window.i18n?.t('shop.outOfStock') || '售罄')
             : this.getCartCopy().addLabel;
-        const qtyRulesStr = product.quantity_rules ? encodeURIComponent(JSON.stringify(product.quantity_rules)) : '';
         const maxPurchaseQuantity = this.getPurchaseQuantityCapForProduct(product, product.max_purchase_quantity);
-        const purchaseDataset = {
-            productId,
-            productName: product.name || '',
-            productNameEn: product.name_en || '',
-            unitPrice: currentPrice,
-            productCategory: String(product.category || ''),
-            qtyRules: qtyRulesStr,
-            maxPurchaseQuantity: String(maxPurchaseQuantity),
-            showPurchaseNotes: product.show_purchase_notes === true,
-            purchaseNotes: product.purchase_notes || '',
-            showUsageInstructions: product.show_usage_instructions === true,
-            usageInstructions: product.usage_instructions || ''
-        };
+        const purchaseDataset = this.buildProductCardPurchaseDataset(product, currentPrice);
 
         const coverIconMarkup = product.icon_url?.startsWith('fa')
             ? this.renderShopCoverIconMarkup(product.icon_url, safeIconClass)
@@ -3587,24 +3739,7 @@ const ShopClient = {
         const displayHtml = hasCoverImage
             ? `<img class="shop-card-image-cover" alt="${safeCardImageAlt}" width="480" height="320">`
             : `<div class="shop-icon-wrapper">${coverIconMarkup}</div>`;
-
-        let originalPriceHtml = '';
-        let flashSaleBadge = '';
-        let flashShadowClass = '';
-        let agentBadgeHtml = '';
-
-        if (pricing.originalPrice != null && pricing.hasAgentPrice) {
-            originalPriceHtml = `<span class="shop-card-original-price">${pricing.originalPrice}</span>`;
-            agentBadgeHtml = `<div class="shop-agent-badge">${window.i18n?.t('shop.exclusiveBuff') || '专属加持'}</div>`;
-        }
-
-        if (pricing.originalPrice != null && pricing.hasFlashSale && agentBadgeHtml === '') {
-            originalPriceHtml = `<span class="shop-card-original-price">${pricing.originalPrice}</span>`;
-            flashSaleBadge = `<div class="flash-sale-badge flash-badge-glass" data-endtime="${product.flash_sale_end}"><i class="fas fa-bolt"></i> <span class="countdown-timer">${window.i18n?.t('shop.calculating') || '计算中...'}</span></div>`;
-            flashShadowClass = 'flash-sale-card';
-        }
-
-        el.className = `shop-card user-product-card breathing ${flashShadowClass} ${cartQuantity > 0 ? 'shop-card--in-cart' : ''}`.trim();
+        el.className = `shop-card user-product-card breathing ${pricingState.flashShadowClass} ${cartQuantity > 0 ? 'shop-card--in-cart' : ''}`.trim();
         if (!noStock) {
             el.classList.add('shop-card--interactive');
             el.dataset.shopAction = 'buy-product';
@@ -3615,9 +3750,9 @@ const ShopClient = {
         }
         el.innerHTML = `
             <div class="shop-card-image">
-                ${flashSaleBadge}
+                ${pricingState.flashSaleBadgeHtml}
                 ${displayHtml}
-                ${agentBadgeHtml}
+                ${pricingState.agentBadgeHtml}
                 <div class="shop-stock-badge shop-stock-badge--floating ${noStock ? 'out-of-stock' : 'in-stock'}">
                     ${stockLabel}
                 </div>
@@ -3628,7 +3763,7 @@ const ShopClient = {
                 <p class="shop-card-desc">${this.escapeHtml(displayDesc)}</p>
 
                 <div class="shop-card-footer">
-                    <div class="shop-card-price">${originalPriceHtml}${window.SiteConfig?.formatPrice(currentPrice) || currentPrice} <span data-i18n="shop.points">${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}</span></div>
+                    <div class="shop-card-price">${pricingState.priceHtml}</div>
                     <div class="shop-card-actions">
                         <button
                             type="button"
@@ -4177,6 +4312,27 @@ const ShopClient = {
         return request;
     },
 
+    ensureAgentPricesReadyInBackground: function () {
+        if (!this.currentAgentId) {
+            return Promise.resolve({});
+        }
+
+        if (this.agentPricesCache) {
+            this.refreshVisibleProductCardPricing(this.agentPricesCache);
+            return Promise.resolve(this.agentPricesCache);
+        }
+
+        return this.getAgentPrices()
+            .then((agentPrices) => {
+                this.refreshVisibleProductCardPricing(agentPrices);
+                return agentPrices;
+            })
+            .catch((error) => {
+                console.warn('Background agent prices load failed:', error);
+                return {};
+            });
+    },
+
     prefetchAllProductsInBackground: async function () {
         if (Array.isArray(this.allProductsCache) || this.allProductsPromise) return;
 
@@ -4247,18 +4403,19 @@ const ShopClient = {
         if (!container) return;
 
         try {
-            // Use prefetched data if available
-            let categories;
-            if (!forceRefresh && this._prefetchedCategories) {
-                categories = this._prefetchedCategories;
-                console.log('⚡ Using prefetched categories');
-            } else {
-                const { data, error } = await supabaseClient
-                    .from('shop_categories')
-                    .select('*')
-                    .order('sort_order');
-                console.log('🛍️ Shop categories from DB:', { data, error });
-                categories = (error || !data || data.length === 0) ? null : data;
+            let categories = null;
+            const { data, error } = await supabaseClient
+                .from('shop_categories')
+                .select('*')
+                .order('sort_order');
+            console.log('🛍️ Shop categories from DB:', { data, error });
+            if (!error && Array.isArray(data) && data.length > 0) {
+                categories = data;
+            } else if (!forceRefresh && Array.isArray(this._prefetchedCategories) && this._prefetchedCategories.length > 0) {
+                categories = [...this._prefetchedCategories].sort((a, b) => (
+                    Number(a?.sort_order || 0) - Number(b?.sort_order || 0)
+                ));
+                console.log('⚡ Falling back to prefetched categories');
             }
 
             // Fallback to defaults if empty
@@ -4333,10 +4490,12 @@ const ShopClient = {
         }
 
         try {
-            const [data, agentPrices] = await Promise.all([
-                this.getProductsForCategory(requestCategory, { forceRefresh }),
-                this.getAgentPrices()
-            ]);
+            if (this.currentAgentId && !this.agentPricesCache) {
+                void this.ensureAgentPricesReadyInBackground();
+            }
+
+            const data = await this.getProductsForCategory(requestCategory, { forceRefresh });
+            const agentPrices = this.agentPricesCache || {};
 
             if (requestToken !== this.productsRequestToken) return;
 

@@ -11852,6 +11852,7 @@ Example output format:
     // Import View Functions
     categoryData: [], // Dynamic category data from database
     contextMenuCategory: null, // Currently selected category for context menu
+    activeImportTreeDrag: null,
 
     // Load categories from database
     loadCategories: async function ({ force = false } = {}) {
@@ -12037,6 +12038,25 @@ Example output format:
         this.filterImportList(category);
     },
 
+    clearImportTreeDropIndicators: function (container = document.getElementById('importProductTree')) {
+        container?.querySelectorAll('.drop-indicator, .tree-category-drop-indicator').forEach((indicator) => indicator.remove());
+    },
+
+    getCategoryDragAfterElement: function (container, y) {
+        const draggableCategories = [...container.querySelectorAll('.tree-category:not(.tree-category--dragging):not(.recycle-bin-category)')];
+
+        return draggableCategories.reduce((closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offset = y - box.top - box.height / 2;
+
+            if (offset < 0 && offset > closest.offset) {
+                return { offset, element: child };
+            }
+
+            return closest;
+        }, { offset: Number.NEGATIVE_INFINITY }).element;
+    },
+
     // Render Import List from Cache
     renderImportList: function () {
         const treeContainer = document.getElementById('importProductTree');
@@ -12050,6 +12070,8 @@ Example output format:
         });
 
         treeContainer.innerHTML = '';
+        this.clearImportTreeDropIndicators(treeContainer);
+        this.activeImportTreeDrag = null;
 
         // Initialize ALL categories from categoryData first (including empty ones)
         const categories = {};
@@ -12089,6 +12111,41 @@ Example output format:
             return;
         }
 
+        treeContainer.ondragover = (e) => {
+            if (this.activeImportTreeDrag?.type !== 'category') {
+                return;
+            }
+
+            e.preventDefault();
+            this.clearImportTreeDropIndicators(treeContainer);
+
+            const indicator = document.createElement('div');
+            indicator.className = 'tree-category-drop-indicator';
+            const afterCategory = this.getCategoryDragAfterElement(treeContainer, e.clientY);
+            const recycleBin = treeContainer.querySelector('.recycle-bin-category');
+
+            if (afterCategory) {
+                treeContainer.insertBefore(indicator, afterCategory);
+            } else if (recycleBin) {
+                treeContainer.insertBefore(indicator, recycleBin);
+            } else {
+                treeContainer.appendChild(indicator);
+            }
+        };
+
+        treeContainer.ondrop = (e) => {
+            if (this.activeImportTreeDrag?.type !== 'category') {
+                return;
+            }
+
+            e.preventDefault();
+            const draggingCategory = this.activeImportTreeDrag?.categoryKey || '';
+            const beforeCategory = this.getCategoryDragAfterElement(treeContainer, e.clientY)?.dataset?.category || null;
+            this.clearImportTreeDropIndicators(treeContainer);
+            this.activeImportTreeDrag = null;
+            this.reorderCategory(draggingCategory, beforeCategory);
+        };
+
         sortedKeys.forEach((catKey, index) => {
             const cat = categories[catKey];
             const catDiv = document.createElement('div');
@@ -12104,16 +12161,45 @@ Example output format:
 
             // Get dynamic color for this category
             const folderColor = this.getCategoryColor(catKey);
+            const safeCategoryName = this.escapeHtml(cat.name);
 
             header.innerHTML = `
+                <button type="button" class="tree-category-handle" title="拖动调整分类顺序" aria-label="拖动调整分类顺序">
+                    <i class="fas fa-grip-vertical" aria-hidden="true"></i>
+                </button>
                 <i class="fas fa-chevron-right tree-chevron"></i>
                 <i class="fas fa-folder tree-folder-icon ${this.buildCategoryColorClass(folderColor)}"></i>
-                <span class="tree-category-name">${cat.name}</span>
+                <span class="tree-category-name">${safeCategoryName}</span>
                 <span class="tree-category-count">${cat.products.length}</span>
             `;
             header.onclick = (e) => {
                 if (!e.defaultPrevented) this.toggleTreeCategory(catDiv);
             };
+
+            const categoryHandle = header.querySelector('.tree-category-handle');
+            if (categoryHandle) {
+                categoryHandle.draggable = true;
+                categoryHandle.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                });
+                categoryHandle.ondragstart = (e) => {
+                    e.stopPropagation();
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('application/x-shop-category', catKey);
+                    e.dataTransfer.setData('text/plain', catKey);
+                    this.activeImportTreeDrag = {
+                        type: 'category',
+                        categoryKey: catKey
+                    };
+                    catDiv.classList.add('tree-category--dragging');
+                };
+                categoryHandle.ondragend = () => {
+                    catDiv.classList.remove('tree-category--dragging');
+                    this.activeImportTreeDrag = null;
+                    this.clearImportTreeDropIndicators(treeContainer);
+                };
+            }
 
             // Right-click context menu
             header.oncontextmenu = (e) => this.showCategoryContextMenu(e, catKey);
@@ -12175,6 +12261,9 @@ Example output format:
 
             // Drop zone events
             header.ondragover = (e) => {
+                if (this.activeImportTreeDrag?.type !== 'product') {
+                    return;
+                }
                 e.preventDefault();
                 header.classList.add('drag-over');
             };
@@ -12182,6 +12271,9 @@ Example output format:
                 header.classList.remove('drag-over');
             };
             header.ondrop = (e) => {
+                if (this.activeImportTreeDrag?.type !== 'product') {
+                    return;
+                }
                 e.preventDefault();
                 header.classList.remove('drag-over');
                 const productId = e.dataTransfer.getData('text/plain');
@@ -12196,6 +12288,9 @@ Example output format:
 
             // Make children container a drop zone for reordering
             children.ondragover = (e) => {
+                if (this.activeImportTreeDrag?.type !== 'product') {
+                    return;
+                }
                 e.preventDefault();
                 const draggingItem = treeContainer.querySelector('.tree-product-item.dragging');
                 if (!draggingItem) return;
@@ -12226,6 +12321,9 @@ Example output format:
             };
 
             children.ondrop = (e) => {
+                if (this.activeImportTreeDrag?.type !== 'product') {
+                    return;
+                }
                 e.preventDefault();
                 e.stopPropagation();
 
@@ -12253,22 +12351,31 @@ Example output format:
                 // Drag events
                 item.ondragstart = (e) => {
                     e.dataTransfer.setData('text/plain', p.id);
+                    e.dataTransfer.setData('application/x-shop-product', p.id);
                     e.dataTransfer.effectAllowed = 'move';
+                    this.activeImportTreeDrag = {
+                        type: 'product',
+                        productId: p.id
+                    };
                     item.classList.add('dragging');
                     setTimeout(() => item.classList.add('tree-product-item--drag-dim'), 0);
                 };
                 item.ondragend = () => {
                     item.classList.remove('dragging');
                     item.classList.remove('tree-product-item--drag-dim');
+                    this.activeImportTreeDrag = null;
                     // Clean up any remaining indicators
-                    document.querySelectorAll('.drop-indicator').forEach(i => i.remove());
+                    this.clearImportTreeDropIndicators(treeContainer);
                 };
 
+                const stockCount = Math.max(0, Number(p.stock_count || 0) || 0);
+                const safeProductName = this.escapeHtml(p.name || '未命名商品');
                 item.onclick = () => this.selectImportProduct(p.id, p.name);
                 item.innerHTML = `
                     <i class="fas fa-grip-vertical tree-drag-handle"></i>
                     <i class="fas fa-file-alt tree-product-icon"></i>
-                    <span class="tree-product-name">${p.name}</span>
+                    <span class="tree-product-stock${stockCount > 0 ? '' : ' tree-product-stock--empty'}">${stockCount}</span>
+                    <span class="tree-product-name">${safeProductName}</span>
                 `;
                 children.appendChild(item);
             });
@@ -12305,10 +12412,13 @@ Example output format:
                 item.className = 'tree-product-item deleted-product tree-product-item--deleted';
                 item.dataset.id = p.id;
                 item.dataset.name = p.name;
+                const stockCount = Math.max(0, Number(p.stock_count || 0) || 0);
+                const safeProductName = this.escapeHtml(p.name || '未命名商品');
                 item.onclick = () => this.selectImportProduct(p.id, p.name);
                 item.innerHTML = `
                     <i class="fas fa-file-alt tree-product-icon tree-product-icon--danger"></i>
-                    <span class="tree-product-name">${p.name}</span>
+                    <span class="tree-product-stock${stockCount > 0 ? '' : ' tree-product-stock--empty'}">${stockCount}</span>
+                    <span class="tree-product-name">${safeProductName}</span>
                 `;
                 recycleBinChildren.appendChild(item);
             });
@@ -12333,6 +12443,63 @@ Example output format:
                 return closest;
             }
         }, { offset: Number.NEGATIVE_INFINITY }).element;
+    },
+
+    reorderCategory: async function (categoryKey, beforeCategoryKey = null) {
+        const movingCategory = this.categoryData.find((entry) => entry.name === categoryKey || entry.id === categoryKey);
+        if (!movingCategory?.id) return;
+        if (!this.requireWritableSite({ label: '调整分类排序' })) {
+            return;
+        }
+
+        const orderedCategories = [...this.categoryData]
+            .sort((a, b) => Number(a?.sort_order || 0) - Number(b?.sort_order || 0));
+        const reorderedCategories = orderedCategories.filter((entry) => String(entry.id) !== String(movingCategory.id));
+
+        let insertIndex = reorderedCategories.length;
+        if (beforeCategoryKey) {
+            const beforeIndex = reorderedCategories.findIndex((entry) => (
+                entry.name === beforeCategoryKey || entry.id === beforeCategoryKey
+            ));
+            if (beforeIndex !== -1) {
+                insertIndex = beforeIndex;
+            }
+        }
+
+        reorderedCategories.splice(insertIndex, 0, movingCategory);
+
+        const assignments = reorderedCategories.map((entry, idx) => ({
+            id: entry.id,
+            sortOrder: (idx + 1) * 10
+        }));
+        const changedAssignments = assignments.filter((assignment) => {
+            const currentCategory = this.categoryData.find((entry) => String(entry.id) === String(assignment.id));
+            return Number(currentCategory?.sort_order || 0) !== assignment.sortOrder;
+        });
+
+        if (!changedAssignments.length) {
+            return;
+        }
+
+        try {
+            const result = await this.callAdminMutation('reorder_categories', {
+                assignments: changedAssignments
+            });
+            const updatedCategories = Array.isArray(result?.categories) ? result.categories : [];
+            const updatedMap = new Map(updatedCategories.map((entry) => [String(entry.id), entry]));
+
+            this.categoryData = this.categoryData.map((entry) => (
+                updatedMap.has(String(entry.id))
+                    ? { ...entry, ...updatedMap.get(String(entry.id)) }
+                    : entry
+            )).sort((a, b) => Number(a?.sort_order || 0) - Number(b?.sort_order || 0));
+
+            await this.renderProductCategoryFilters();
+            this.renderImportList();
+        } catch (e) {
+            console.error('Failed to reorder categories:', e);
+            alert('分类排序失败: ' + e.message);
+        }
     },
 
     // Reorder product within or across categories
