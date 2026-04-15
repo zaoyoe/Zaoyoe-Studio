@@ -59,3 +59,17 @@ test('homepage defaults keep gongyi hero entry directly before shop', () => {
     assert.ok(adminShopIndex >= 0 && adminGongyiIndex >= 0 && adminVerifyIndex >= 0, 'admin hero defaults should include shop, gongyi, and verify');
     assert.ok(adminGongyiIndex < adminShopIndex && adminShopIndex < adminVerifyIndex, 'admin hero defaults should place gongyi before shop and shop before verify');
 });
+
+test('homepage inserts gongyi section between shop and verify, and admin exposes gongyi editor', () => {
+    const homepageSource = readRepoFile('index.html');
+    const adminStudioSource = readRepoFile('admin-studio.html');
+
+    const shopSectionIndex = homepageSource.indexOf('id="shop-section"');
+    const gongyiSectionIndex = homepageSource.indexOf('id="gongyi-section"');
+    const verifySectionIndex = homepageSource.indexOf('id="verify-section"');
+
+    assert.ok(shopSectionIndex >= 0 && gongyiSectionIndex >= 0 && verifySectionIndex >= 0, 'homepage should include shop, gongyi, and verify sections');
+    assert.ok(shopSectionIndex < gongyiSectionIndex && gongyiSectionIndex < verifySectionIndex, 'homepage should place gongyi between shop and verify');
+    assert.ok(adminStudioSource.includes('data-hp-section="gongyi"'), 'admin studio should expose a gongyi homepage tab');
+    assert.ok(adminStudioSource.includes('data-hp-view="gongyi"'), 'admin studio should expose a gongyi homepage panel');
+});

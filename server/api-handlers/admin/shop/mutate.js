@@ -398,6 +398,25 @@ async function tryRpcCategoryDelete(supabase, categoryId, fallbackName = 'other'
     return data && typeof data === 'object' ? data : {};
 }
 
+async function tryRpcCategoryReorder(supabase, assignments = []) {
+    if (!supabase || typeof supabase.rpc !== 'function') {
+        return null;
+    }
+
+    const { data, error } = await supabase.rpc('fn_admin_shop_reorder_categories', {
+        p_assignments: assignments
+    });
+
+    if (error) {
+        if (isMissingRpcFunctionError(error, 'fn_admin_shop_reorder_categories')) {
+            return null;
+        }
+        throw error;
+    }
+
+    return data && typeof data === 'object' ? data : {};
+}
+
 async function tryRpcProductReorder(supabase, assignments = []) {
     if (!supabase || typeof supabase.rpc !== 'function') {
         return null;
@@ -883,6 +902,111 @@ module.exports = async (req, res) => {
                 success: true,
                 deleted: true,
                 fallbackCategory: fallbackCategory.name
+            });
+        }
+
+        if (action === 'reorder_categories') {
+            const assignments = (Array.isArray(body.assignments) ? body.assignments : [])
+                .map((entry) => ({
+                    id: normalizeText(entry?.id || entry?.categoryId, 160),
+                    sort_order: normalizeNonNegativeInteger(entry?.sortOrder ?? entry?.sort_order)
+                }))
+                .filter((entry) => entry.id || entry.sort_order !== null);
+
+            if (!assignments.length) {
+                return sendJson(res, 400, {
+                    success: false,
+                    message: 'assignments is required'
+                });
+            }
+
+            if (assignments.some((entry) => !entry.id || entry.sort_order === null)) {
+                return sendJson(res, 400, {
+                    success: false,
+                    message: 'Each assignment requires id and non-negative sortOrder'
+                });
+            }
+
+            const categoryIds = normalizeStringArray(assignments.map((entry) => entry.id), 160);
+            const uniqueAssignments = categoryIds.map((categoryId) => (
+                assignments.find((entry) => entry.id === categoryId)
+            )).filter(Boolean);
+
+            const { data: categoryRows, error: categoryError } = await supabase
+                .from('shop_categories')
+                .select('id, name, color, sort_order')
+                .in('id', categoryIds);
+
+            if (categoryError) {
+                return sendJson(res, 400, { success: false, message: categoryError.message });
+            }
+
+            if (!categoryRows?.length) {
+                return sendJson(res, 404, { success: false, message: '分类不存在' });
+            }
+
+            const existingMap = new Map((categoryRows || []).map((row) => [String(row.id), row]));
+            const missingIds = categoryIds.filter((categoryId) => !existingMap.has(categoryId));
+            if (missingIds.length) {
+                return sendJson(res, 404, {
+                    success: false,
+                    message: `分类不存在: ${missingIds.join(', ')}`
+                });
+            }
+
+            const rpcResult = await tryRpcCategoryReorder(supabase, uniqueAssignments);
+
+            if (rpcResult?.success === false) {
+                return sendJson(res, 400, {
+                    success: false,
+                    message: normalizeText(rpcResult.message, 500) || '分类排序更新失败'
+                });
+            }
+
+            if (!rpcResult) {
+                for (const assignment of uniqueAssignments) {
+                    const { error: updateError } = await supabase
+                        .from('shop_categories')
+                        .update({
+                            sort_order: assignment.sort_order
+                        })
+                        .eq('id', assignment.id);
+
+                    if (updateError) {
+                        return sendJson(res, 400, { success: false, message: updateError.message });
+                    }
+                }
+            }
+
+            const categories = uniqueAssignments.map((assignment) => {
+                const existingRow = existingMap.get(assignment.id) || {};
+                return {
+                    ...existingRow,
+                    sort_order: assignment.sort_order
+                };
+            });
+
+            await writeAdminAuditLog({
+                supabase,
+                adminId: user.id,
+                module: 'shop',
+                site: writableSite,
+                actionType: 'shop.category.reorder',
+                details: {
+                    count: categories.length,
+                    category_ids: categories.map((row) => row.id),
+                    changes: categories.map((row) => ({
+                        id: row.id,
+                        name: row.name,
+                        sort_order: row.sort_order
+                    }))
+                }
+            });
+
+            return sendJson(res, 200, {
+                success: true,
+                updated: categories.length,
+                categories
             });
         }
 

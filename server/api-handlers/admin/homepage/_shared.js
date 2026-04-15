@@ -1,5 +1,5 @@
 const HOMEPAGE_SITE_VALUES = Object.freeze(['cn', 'intl']);
-const HOMEPAGE_SECTION_ORDER = Object.freeze(['hero', 'prompts', 'shop', 'verify', 'guestbook', 'ticker']);
+const HOMEPAGE_SECTION_ORDER = Object.freeze(['hero', 'prompts', 'shop', 'gongyi', 'verify', 'guestbook', 'ticker']);
 const HOMEPAGE_SECTION_SET = new Set(HOMEPAGE_SECTION_ORDER);
 const HOMEPAGE_EDITOR_SCHEMA_VERSION = 'p2_v1';
 const HOMEPAGE_SORT_VALUES = new Set(['popular', 'latest', 'random']);
@@ -325,6 +325,45 @@ function normalizeHomepageGuestbookFallbackItems(value) {
         .slice(0, 8);
 }
 
+function normalizeHomepageGongyiModelItems(value) {
+    return sanitizeArray(value)
+        .map((item, index) => {
+            if (typeof item === 'string') {
+                const label = sanitizeText(item, '', 48);
+                if (!label) {
+                    return null;
+                }
+
+                return {
+                    id: `model_${index + 1}`,
+                    label,
+                    enabled: true
+                };
+            }
+
+            if (!item || typeof item !== 'object') {
+                return null;
+            }
+
+            const label = sanitizeText(item.label || item.name || item.title, '', 48);
+            if (!label) {
+                return null;
+            }
+
+            const normalized = {
+                id: sanitizeText(item.id, '', 160) || `model_${index + 1}`,
+                label,
+                enabled: sanitizeBoolean(item.enabled, true)
+            };
+
+            if (normalized.enabled !== false) delete normalized.enabled;
+
+            return normalized;
+        })
+        .filter(Boolean)
+        .slice(0, 8);
+}
+
 function cloneNormalizedHomepageExperimentValue(value, valueType) {
     if (valueType === 'text') {
         return sanitizeText(value, '', 600);
@@ -441,11 +480,36 @@ function buildEmptyHomepageSectionContent(section) {
                 experiments: [],
                 custom_items: []
             };
+        case 'gongyi':
+            return {
+                enable_auto: false,
+                section_tag: '公益站',
+                brand_name: 'Zaoyoe',
+                brand_subtitle: 'Subscription to API Conversion Platform',
+                cta_text: '进入控制台',
+                cta_link: 'https://gongyi.zaoyoe.com',
+                highlight_items: ['订阅转 API', '会话保持', '按量计费'],
+                feature_1_title: '一键接入',
+                feature_1_description: '获取一个 API 密钥，即可调用所有已接入的 AI 模型，无需分别申请。',
+                feature_2_title: '稳定可靠',
+                feature_2_description: '智能调度多个上游账号，自动切换和负载均衡，告别频繁报错。',
+                feature_3_title: '用多少付多少',
+                feature_3_description: '按实际使用量计费，支持设置额度上限，团队用量一目了然。',
+                show_model_section: true,
+                model_items: [
+                    { id: 'claude', label: 'Claude' },
+                    { id: 'gpt', label: 'GPT' },
+                    { id: 'gemini', label: 'Gemini' },
+                    { id: 'antigravity', label: 'Antigravity' },
+                    { id: 'more', label: '更多' }
+                ]
+            };
         case 'verify':
             return {
                 enable_auto: false,
                 section_title: '',
                 section_subtitle: '',
+                preview_mode: 'dynamic',
                 screenshot_path: '',
                 features: [],
                 value_props: [],
@@ -453,7 +517,15 @@ function buildEmptyHomepageSectionContent(section) {
                 cta_text: '',
                 experiments: [],
                 cta_link: '',
-                risk_notice: ''
+                risk_notice: '',
+                demo_title: 'Google One',
+                demo_subtitle: '获取 1年 pro 权限的试用链接',
+                demo_email: 'preview.account@gmail.com',
+                demo_totp: '3r6cu37xch4ej6d5',
+                demo_success_link: 'https://services.sheerid.com/verify/zaoyoe-demo?verificationId=GO-8K21',
+                demo_quota: '0.5 提 / 全 1',
+                demo_balance: '7.6',
+                demo_cost_points: 10
             };
         case 'guestbook':
             return {
@@ -533,10 +605,54 @@ function normalizeHomepageContent(section, content = {}) {
             if (!next.experiments.length) delete next.experiments;
             if (!next.custom_items.length) delete next.custom_items;
             return next;
+        case 'gongyi':
+            next.enable_auto = sanitizeBoolean(source.enable_auto, false);
+            next.section_tag = Object.prototype.hasOwnProperty.call(source, 'section_tag') ? sanitizeText(source.section_tag, '', 40) : next.section_tag;
+            next.brand_name = Object.prototype.hasOwnProperty.call(source, 'brand_name') ? sanitizeText(source.brand_name, '', 80) : next.brand_name;
+            next.brand_subtitle = Object.prototype.hasOwnProperty.call(source, 'brand_subtitle') ? sanitizeText(source.brand_subtitle, '', 240) : next.brand_subtitle;
+            next.cta_text = Object.prototype.hasOwnProperty.call(source, 'cta_text') ? sanitizeText(source.cta_text, '', 48) : next.cta_text;
+            next.cta_link = Object.prototype.hasOwnProperty.call(source, 'cta_link') ? sanitizeUrl(source.cta_link, '', 1024) : next.cta_link;
+            next.highlight_items = Object.prototype.hasOwnProperty.call(source, 'highlight_items')
+                ? normalizeStringList(source.highlight_items, { maxItems: 6, maxLength: 48 })
+                : next.highlight_items;
+            next.feature_1_title = Object.prototype.hasOwnProperty.call(source, 'feature_1_title') ? sanitizeText(source.feature_1_title, '', 80) : next.feature_1_title;
+            next.feature_1_description = Object.prototype.hasOwnProperty.call(source, 'feature_1_description') ? sanitizeText(source.feature_1_description, '', 240) : next.feature_1_description;
+            next.feature_2_title = Object.prototype.hasOwnProperty.call(source, 'feature_2_title') ? sanitizeText(source.feature_2_title, '', 80) : next.feature_2_title;
+            next.feature_2_description = Object.prototype.hasOwnProperty.call(source, 'feature_2_description') ? sanitizeText(source.feature_2_description, '', 240) : next.feature_2_description;
+            next.feature_3_title = Object.prototype.hasOwnProperty.call(source, 'feature_3_title') ? sanitizeText(source.feature_3_title, '', 80) : next.feature_3_title;
+            next.feature_3_description = Object.prototype.hasOwnProperty.call(source, 'feature_3_description') ? sanitizeText(source.feature_3_description, '', 240) : next.feature_3_description;
+            next.show_model_section = sanitizeBoolean(source.show_model_section, next.show_model_section !== false);
+            next.model_items = Object.prototype.hasOwnProperty.call(source, 'model_items')
+                ? normalizeHomepageGongyiModelItems(source.model_items)
+                : next.model_items;
+            normalizeTranslatedPair(next, 'section_tag', 40);
+            normalizeTranslatedPair(next, 'brand_subtitle', 240);
+            normalizeTranslatedPair(next, 'cta_text', 48);
+            normalizeTranslatedPair(next, 'feature_1_title', 80);
+            normalizeTranslatedPair(next, 'feature_1_description', 240);
+            normalizeTranslatedPair(next, 'feature_2_title', 80);
+            normalizeTranslatedPair(next, 'feature_2_description', 240);
+            normalizeTranslatedPair(next, 'feature_3_title', 80);
+            normalizeTranslatedPair(next, 'feature_3_description', 240);
+            if (!next.section_tag) delete next.section_tag;
+            if (!next.brand_name) delete next.brand_name;
+            if (!next.brand_subtitle) delete next.brand_subtitle;
+            if (!next.cta_text) delete next.cta_text;
+            if (!next.cta_link) delete next.cta_link;
+            if (!next.highlight_items.length) delete next.highlight_items;
+            if (!next.feature_1_title) delete next.feature_1_title;
+            if (!next.feature_1_description) delete next.feature_1_description;
+            if (!next.feature_2_title) delete next.feature_2_title;
+            if (!next.feature_2_description) delete next.feature_2_description;
+            if (!next.feature_3_title) delete next.feature_3_title;
+            if (!next.feature_3_description) delete next.feature_3_description;
+            if (!next.model_items.length) delete next.model_items;
+            return next;
         case 'verify':
             next.enable_auto = sanitizeBoolean(source.enable_auto, false);
             next.section_title = sanitizeText(source.section_title, '', 120);
             next.section_subtitle = sanitizeText(source.section_subtitle, '', 240);
+            next.preview_mode = sanitizeText(source.preview_mode, next.preview_mode, 20) === 'image' ? 'image' : 'dynamic';
             next.screenshot_path = sanitizeUrl(source.screenshot_path, '', 400000);
             next.features = normalizeStringList(source.features, { maxItems: 8, maxLength: 60 });
             next.value_props = normalizeStringList(source.value_props, { maxItems: 8, maxLength: 80 });
@@ -545,6 +661,14 @@ function normalizeHomepageContent(section, content = {}) {
             next.experiments = normalizeHomepageSectionExperiments(normalizedSection, source.experiments);
             next.cta_link = sanitizeUrl(source.cta_link, '', 1024);
             next.risk_notice = sanitizeText(source.risk_notice, '', 240);
+            next.demo_title = Object.prototype.hasOwnProperty.call(source, 'demo_title') ? sanitizeText(source.demo_title, '', 80) : next.demo_title;
+            next.demo_subtitle = Object.prototype.hasOwnProperty.call(source, 'demo_subtitle') ? sanitizeText(source.demo_subtitle, '', 160) : next.demo_subtitle;
+            next.demo_email = Object.prototype.hasOwnProperty.call(source, 'demo_email') ? sanitizeText(source.demo_email, '', 120) : next.demo_email;
+            next.demo_totp = Object.prototype.hasOwnProperty.call(source, 'demo_totp') ? sanitizeText(source.demo_totp, '', 80) : next.demo_totp;
+            next.demo_success_link = Object.prototype.hasOwnProperty.call(source, 'demo_success_link') ? sanitizeUrl(source.demo_success_link, '', 1024) : next.demo_success_link;
+            next.demo_quota = Object.prototype.hasOwnProperty.call(source, 'demo_quota') ? sanitizeText(source.demo_quota, '', 48) : next.demo_quota;
+            next.demo_balance = Object.prototype.hasOwnProperty.call(source, 'demo_balance') ? sanitizeText(source.demo_balance, '', 48) : next.demo_balance;
+            next.demo_cost_points = sanitizeInteger(source.demo_cost_points, { fallback: next.demo_cost_points, min: 1, max: 999 });
             normalizeTranslatedPair(next, 'section_title', 120);
             normalizeTranslatedPair(next, 'section_subtitle', 240);
             if (!next.experiments.length) delete next.experiments;
@@ -555,6 +679,13 @@ function normalizeHomepageContent(section, content = {}) {
             if (!next.cta_text) delete next.cta_text;
             if (!next.cta_link) delete next.cta_link;
             if (!next.risk_notice) delete next.risk_notice;
+            if (!next.demo_title) delete next.demo_title;
+            if (!next.demo_subtitle) delete next.demo_subtitle;
+            if (!next.demo_email) delete next.demo_email;
+            if (!next.demo_totp) delete next.demo_totp;
+            if (!next.demo_success_link) delete next.demo_success_link;
+            if (!next.demo_quota) delete next.demo_quota;
+            if (!next.demo_balance) delete next.demo_balance;
             return next;
         case 'guestbook':
             next.enable_auto = sanitizeBoolean(source.enable_auto, true);
@@ -740,9 +871,23 @@ function validateHomepageRow(section, row = {}, options = {}) {
             }
             break;
         }
+        case 'gongyi':
+            if (!content.brand_name) warnings.push('公益站品牌名为空');
+            if (!content.brand_subtitle) warnings.push('公益站副标题为空');
+            if (!content.cta_text || !content.cta_link) warnings.push('公益站 CTA 文案或链接未配置完整');
+            if (!Array.isArray(content.highlight_items) || !content.highlight_items.length) {
+                warnings.push('公益站能力标签为空');
+            }
+            if (!content.feature_1_title && !content.feature_2_title && !content.feature_3_title) {
+                warnings.push('公益站卖点卡片标题为空');
+            }
+            if (content.show_model_section !== false && (!Array.isArray(content.model_items) || !content.model_items.some((item) => item?.enabled !== false))) {
+                warnings.push('公益站模型标签为空');
+            }
+            break;
         case 'verify':
             if (!content.section_title) warnings.push('Verify 标题为空');
-            if (!content.screenshot_path) warnings.push('Verify 预览截图为空');
+            if (content.preview_mode === 'image' && !content.screenshot_path) warnings.push('Verify 预览截图为空');
             if (content.screenshot_path && /^data:image\//.test(content.screenshot_path) && content.screenshot_path.length > 350000) {
                 warnings.push('Verify 预览截图为较大的 base64 数据，建议迁移到资源存储');
             }

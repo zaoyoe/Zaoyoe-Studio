@@ -52,6 +52,10 @@ test('homepage admin runtime and studio shell expose P1 orchestration controls',
     assert.match(runtimeSource, /function renderHomepageGuestbookFallbackList\(\)/);
     assert.match(runtimeSource, /const HOMEPAGE_EXPERIMENT_SLOT_DEFS = Object\.freeze\(/);
     assert.match(runtimeSource, /function renderHomepageExperimentComposer\(\)/);
+    assert.match(runtimeSource, /gongyi: \{ icon: 'fas fa-hand-holding-heart', label: '公益站' \}/);
+    assert.match(runtimeSource, /case 'gongyi':/);
+    assert.match(runtimeSource, /show_model_section/);
+    assert.match(runtimeSource, /add-gongyi-model/);
     assert.match(runtimeSource, /function saveHomepageExperimentForCurrentSite\(\)/);
     assert.match(runtimeSource, /function applyHomepageExperimentWinnerForCurrentSite\(experimentId = ''\)/);
     assert.match(runtimeSource, /function applyHomepageRecommendationForCurrentSite\(recommendationId = ''\)/);
@@ -80,6 +84,12 @@ test('homepage admin runtime and studio shell expose P1 orchestration controls',
     assert.match(htmlSource, /id="hp-prompts-candidate-list"/);
     assert.match(htmlSource, /id="hp-shop-curated-list"/);
     assert.match(htmlSource, /id="hp-shop-product-list"/);
+    assert.match(htmlSource, /data-hp-section="gongyi"/);
+    assert.match(htmlSource, /data-hp-view="gongyi"/);
+    assert.match(htmlSource, /id="hp-gongyi-brand-name"/);
+    assert.match(htmlSource, /id="hp-gongyi-feature-1-title"/);
+    assert.match(htmlSource, /id="hp-gongyi-models-visible"/);
+    assert.match(htmlSource, /id="hp-gongyi-model-list"/);
     assert.match(htmlSource, /id="hp-guestbook-featured-list"/);
     assert.match(htmlSource, /id="hp-guestbook-candidate-list"/);
     assert.match(htmlSource, /id="hp-guestbook-fallback-list"/);

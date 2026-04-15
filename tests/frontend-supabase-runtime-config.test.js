@@ -2034,7 +2034,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'function setHomeSectionVisibility(section, visible)',
         'function getHomeLoopPixelsPerSecond(speedValue)',
         'function getHomeLoopDurationSeconds(cycleWidth, speedValue)',
-        "const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260411_HOMEPAGE_P2_EXPERIMENTS_1';",
+        "const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260415_HOME_VERIFY_DEMO_1';",
         'schemaVersion: HOMEPAGE_PREFETCH_SCHEMA_VERSION',
         "element.classList.toggle('home-hover-lift-active', isHovered)",
         'function getHomepageActiveExperimentPayloads() {',
@@ -2110,8 +2110,8 @@ test('framer home runtime renderers externalize homepage section visibility, tem
             'home-nav entry pages should load the latest framer_home stylesheet version'
         );
         assert.equal(
-            source.includes('js/framer_home.js?v=20260414_GONGYI_NAV_ICON_1')
-                || source.includes('./js/framer_home.js?v=20260414_GONGYI_NAV_ICON_1'),
+            source.includes('js/framer_home.js?v=20260415_HOME_VERIFY_DEMO_1')
+                || source.includes('./js/framer_home.js?v=20260415_HOME_VERIFY_DEMO_1'),
             true,
             'home-nav entry pages should load the latest framer_home script version'
         );
@@ -2145,14 +2145,14 @@ test('homepage subpages load the latest prefetch-home runtime script version', (
 
     for (const source of subpageSources) {
         assert.equal(
-            source.includes('./js/prefetch-home.js?v=20260411_HOMEPAGE_P2_EXPERIMENTS_1'),
+            source.includes('./js/prefetch-home.js?v=20260415_HOME_VERIFY_DEMO_1'),
             true,
             'subpages should load the latest prefetch-home script version'
         );
     }
 
     assert.equal(
-        prefetchSource.includes("const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260411_HOMEPAGE_P2_EXPERIMENTS_1';"),
+        prefetchSource.includes("const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260415_HOME_VERIFY_DEMO_1';"),
         true,
         'js/prefetch-home.js should version homepage prefetch payloads after the homepage P2 runtime changes'
     );
@@ -7137,7 +7137,7 @@ test('homepage admin runtime renderers externalize retry, visibility, tab indica
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-homepage.js?v=20260411_HOMEPAGE_THEME_PACK_PREVIEW_1'),
+        adminStudioSource.includes('admin-homepage.js?v=20260415_HOME_VERIFY_DEMO_1'),
         true,
         'admin-studio.html should load the latest homepage admin script version'
     );

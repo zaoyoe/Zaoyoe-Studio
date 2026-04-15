@@ -6,7 +6,7 @@
  *   SectionVisibility.isVisible('shop')     → true/false
  *   SectionVisibility.applySectionVisibility() → 立即应用可见性
  * 
- * 支持分栏：hero, prompts(兼容 gallery), shop, verify, guestbook, ticker, footer
+ * 支持分栏：hero, prompts(兼容 gallery), shop, gongyi, verify, guestbook, ticker, footer
  * 按站点独立配置：cn / intl
  */
 (function () {
@@ -16,12 +16,13 @@
     const CACHE_KEY_PREFIX = 'zaoyoe_section_vis_';
     const SECTIONS = Array.isArray(Contract?.VISIBILITY_SECTION_ORDER)
         ? [...Contract.VISIBILITY_SECTION_ORDER]
-        : ['hero', 'prompts', 'shop', 'verify', 'guestbook', 'ticker', 'footer'];
+        : ['hero', 'prompts', 'shop', 'gongyi', 'verify', 'guestbook', 'ticker', 'footer'];
     const HIDDEN_CLASS = 'section-visibility-hidden';
     const HOMEPAGE_SECTION_MAP = {
         hero: 'hero',
         prompts: 'prompts',
         shop: 'shop',
+        gongyi: 'gongyi',
         verify: 'verify',
         guestbook: 'guestbook',
         ticker: 'ticker',
@@ -49,6 +50,12 @@
             navDesktop: 'a.nav-trigger[href="/shop.html"]',
             navMobile: null,
             footer: 'a[href="/shop.html"]'
+        },
+        gongyi: {
+            sections: ['#gongyi-section'],
+            navDesktop: 'a[href="https://gongyi.zaoyoe.com"]',
+            navMobile: null,
+            footer: 'a[href="https://gongyi.zaoyoe.com"]'
         },
         verify: {
             sections: ['#verify-section'],

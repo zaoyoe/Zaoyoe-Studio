@@ -474,3 +474,47 @@ test('shop mutate handler reorders products within and across categories', async
         assert.deepEqual(state.auditCalls[0]?.details.product_ids, ['prod_2', 'prod_1', 'prod_3']);
     });
 });
+
+test('shop mutate handler reorders categories for storefront tabs', async () => {
+    await withShopMutateHandler({
+        productRows: [],
+        categoryRows: [
+            { id: 'cat_1', name: 'cards', color: '#6b9ece', sort_order: 10 },
+            { id: 'cat_2', name: 'keys', color: '#f4b400', sort_order: 20 },
+            { id: 'cat_3', name: 'tools', color: '#9aa0a6', sort_order: 30 }
+        ]
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'reorder_categories',
+                site: 'cn',
+                assignments: [
+                    { id: 'cat_3', sortOrder: 10 },
+                    { id: 'cat_1', sortOrder: 20 },
+                    { id: 'cat_2', sortOrder: 30 }
+                ]
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().success, true);
+        assert.equal(res.json().updated, 3);
+        assert.deepEqual(
+            state.categoryRows.map((row) => ({
+                id: row.id,
+                sort_order: row.sort_order
+            })),
+            [
+                { id: 'cat_1', sort_order: 20 },
+                { id: 'cat_2', sort_order: 30 },
+                { id: 'cat_3', sort_order: 10 }
+            ]
+        );
+        assert.equal(state.auditCalls[0]?.actionType, 'shop.category.reorder');
+        assert.deepEqual(state.auditCalls[0]?.details.category_ids, ['cat_3', 'cat_1', 'cat_2']);
+    });
+});

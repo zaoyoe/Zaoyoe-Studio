@@ -11,7 +11,7 @@
     const Contract = window.HomepageContract || null;
     const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
     const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
-    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260411_HOMEPAGE_P2_EXPERIMENTS_1';
+    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260415_HOME_VERIFY_DEMO_1';
     const HOMEPAGE_GUESTBOOK_CARD_LIMIT = 6;
 
     // Only run on sub-pages (not homepage)
@@ -420,6 +420,7 @@
             ? config.entries
             : [
                 { id: 'prompts', icon: 'fa-wand-magic-sparkles', text: window.i18n?.t('home.entries.prompts') || '提示词', link: '/prompts.html', color: '#f472b6', section: 'prompts' },
+                { id: 'gongyi', icon: 'home-entry-card-icon--gongyi', text: window.i18n?.t('home.entries.gongyi') || '公益站', link: 'https://gongyi.zaoyoe.com', color: '#5ed8f8', section: 'gongyi' },
                 { id: 'shop', icon: 'fa-store', text: window.i18n?.t('home.entries.shop') || '商城', link: '/shop.html', color: '#4ade80', section: 'shop' },
                 { id: 'verify', icon: 'fa-robot', text: window.i18n?.t('home.entries.verify') || '验证', link: '/verify.html', color: '#667eea', section: 'verify' },
                 { id: 'guestbook', icon: 'fa-comment-dots', text: window.i18n?.t('home.entries.guestbook') || '留言板', link: '#', color: '#f59e0b', action: 'openGuestbookModal', section: 'guestbook' }
@@ -443,6 +444,64 @@
         };
     }
 
+    function buildGongyiData(config = {}) {
+        const defaultCards = [
+            { title: '一键接入', description: '获取一个 API 密钥，即可调用所有已接入的 AI 模型，无需分别申请。' },
+            { title: '稳定可靠', description: '智能调度多个上游账号，自动切换和负载均衡，告别频繁报错。' },
+            { title: '用多少付多少', description: '按实际使用量计费，支持设置额度上限，团队用量一目了然。' }
+        ];
+        const defaultModels = [
+            { id: 'claude', label: 'Claude' },
+            { id: 'gpt', label: 'GPT' },
+            { id: 'gemini', label: 'Gemini' },
+            { id: 'antigravity', label: 'Antigravity' },
+            { id: 'more', label: '更多' }
+        ];
+        const sourceModels = Array.isArray(config.model_items) && config.model_items.length > 0
+            ? config.model_items
+            : defaultModels;
+        const visibleModelItems = sourceModels
+            .map((item, index) => {
+                if (typeof item === 'string') {
+                    const label = String(item || '').trim();
+                    return label ? { id: `model_${index + 1}`, label, enabled: true } : null;
+                }
+                if (!item || typeof item !== 'object') {
+                    return null;
+                }
+                const label = String(item.label || item.name || item.title || '').trim();
+                if (!label) {
+                    return null;
+                }
+                return {
+                    id: String(item.id || `model_${index + 1}`).trim(),
+                    label,
+                    enabled: item.enabled !== false
+                };
+            })
+            .filter(Boolean)
+            .filter((item) => item.enabled !== false);
+
+        return {
+            brandName: String(config.brand_name || '').trim() || 'Zaoyoe',
+            brandSubtitle: getLocalizedField(config, 'brand_subtitle') || 'Subscription to API Conversion Platform',
+            ctaText: getLocalizedField(config, 'cta_text') || '进入控制台',
+            ctaLink: String(config.cta_link || '').trim() || 'https://gongyi.zaoyoe.com',
+            highlights: Array.isArray(config.highlight_items) && config.highlight_items.length > 0
+                ? config.highlight_items
+                : ['订阅转 API', '会话保持', '按量计费'],
+            featureCards: defaultCards.map((card, index) => {
+                const baseKey = `feature_${index + 1}`;
+                return {
+                    title: getLocalizedField(config, `${baseKey}_title`) || card.title,
+                    description: getLocalizedField(config, `${baseKey}_description`) || card.description
+                };
+            }),
+            showModelSection: config.show_model_section !== false && visibleModelItems.length > 0,
+            modelItems: visibleModelItems
+        };
+    }
+
     function buildVerifyData(config = {}) {
         const experimentCtaText = getSectionExperimentValue('verify', config, 'cta_text', '');
         const defaultValueProps = [
@@ -451,6 +510,7 @@
             window.i18n?.t('home.verify.valueProps.safe') || '结果可追踪'
         ];
         const defaultModels = ['Gemini', 'Claude', 'OpenAI'];
+        const demoCostPoints = Number.parseInt(config.demo_cost_points, 10);
         return {
             title: getLocalizedField(config, 'section_title') || 'Gemini 验证',
             subtitle: getLocalizedField(config, 'section_subtitle') || '快速验证您的 API 密钥',
@@ -466,7 +526,18 @@
             ctaText: String(experimentCtaText || config.cta_text || '').trim() || (window.i18n?.t('home.verify.cta') || '立即验证'),
             riskNotice: String(config.risk_notice || '').trim() || (window.i18n?.t('home.verify.riskNotice') || '建议先使用测试账号完成校验，再切换正式账号。'),
             link: String(config.cta_link || '').trim() || '/verify.html?source=homepage_verify',
-            screenshot: config.screenshot_path || '/assets/verify-preview.png'
+            screenshot: config.screenshot_path || '/assets/verify-preview.png',
+            previewMode: String(config.preview_mode || 'dynamic').trim() === 'image' ? 'image' : 'dynamic',
+            demo: {
+                title: String(config.demo_title || '').trim() || 'Google One',
+                subtitle: String(config.demo_subtitle || '').trim() || '获取 1年 pro 权限的试用链接',
+                email: String(config.demo_email || '').trim() || 'preview.account@gmail.com',
+                totp: String(config.demo_totp || '').trim() || '3r6cu37xch4ej6d5',
+                successLink: String(config.demo_success_link || '').trim() || 'https://services.sheerid.com/verify/zaoyoe-demo?verificationId=GO-8K21',
+                quota: String(config.demo_quota || '').trim() || '0.5 提 / 全 1',
+                balance: String(config.demo_balance || '').trim() || '7.6',
+                costPoints: Number.isFinite(demoCostPoints) && demoCostPoints > 0 ? demoCostPoints : 10
+            }
         };
     }
 
@@ -539,7 +610,7 @@
             const rows = await loadHomepageConfigRows(getCurrentSite());
             const config = Contract?.buildConfigMap?.(rows) || {};
             const sectionRows = Contract?.mapRowsBySection?.(rows) || {};
-            const sectionOrder = Contract?.sortSectionsByDisplayOrder?.(rows) || ['hero', 'prompts', 'shop', 'verify', 'guestbook', 'ticker'];
+            const sectionOrder = Contract?.sortSectionsByDisplayOrder?.(rows) || ['hero', 'prompts', 'shop', 'gongyi', 'verify', 'guestbook', 'ticker'];
             const promptPool = getPromptPool();
 
             const [shopResult, guestbookResult] = await Promise.all([
@@ -577,6 +648,7 @@
                     hero: buildHeroData(config.hero || {}),
                     prompts,
                     shop,
+                    gongyi: buildGongyiData(config.gongyi || {}),
                     verify: buildVerifyData(config.verify || {}),
                     guestbook,
                     ticker,

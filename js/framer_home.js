@@ -41,11 +41,11 @@ const HOME_GUESTBOOK_PARTICLE_SEED = 20260409;
 const HOME_GUESTBOOK_PARTICLE_RESET_SEED = 9090909;
 const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
 const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
-const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260411_HOMEPAGE_P2_EXPERIMENTS_1';
+const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260415_HOME_VERIFY_DEMO_1';
 const HomepageContract = window.HomepageContract || null;
 const HOME_DEFAULT_SECTION_ORDER = Array.isArray(HomepageContract?.MANAGED_SECTION_ORDER)
   ? [...HomepageContract.MANAGED_SECTION_ORDER]
-  : ['hero', 'prompts', 'shop', 'verify', 'guestbook', 'ticker'];
+  : ['hero', 'prompts', 'shop', 'gongyi', 'verify', 'guestbook', 'ticker'];
 
 function getHomepageRuntimeSite() {
   return HomepageContract?.normalizeSite?.(window.SiteConfig?.site) || (window.SiteConfig?.site === 'intl' ? 'intl' : 'cn');
@@ -200,6 +200,8 @@ function resolveHomepageExperimentSectionsForEvent(eventName = '', payload = {})
       return ['prompts'];
     case 'homepage_shop_click':
       return ['shop'];
+    case 'homepage_gongyi_click':
+      return ['gongyi'];
     case 'homepage_verify_click':
       return ['verify'];
     case 'homepage_guestbook_click':
@@ -652,6 +654,8 @@ const FramerHome = {
   cachedData: null,
   config: null,
   guestbookRuntime: null,
+  gongyiTerminalRuntime: null,
+  verifyDemoRuntime: null,
   sectionExperimentAssignments: {},
   activeExperiments: [],
 
@@ -930,8 +934,10 @@ const FramerHome = {
             this.resolveSectionExperiments('hero', this.config.hero || {});
             this.resolveSectionExperiments('prompts', this.config.prompts || {});
             this.resolveSectionExperiments('shop', this.config.shop || {});
+            this.resolveSectionExperiments('gongyi', this.config.gongyi || {});
             this.resolveSectionExperiments('verify', this.config.verify || {});
             this.resolveSectionExperiments('guestbook', this.config.guestbook || {});
+            this.cachedData.gongyi = this.cachedData.gongyi || this.buildGongyiData(this.config.gongyi || {});
             this.cachedData.ticker = await this.buildTickerData(this.config.ticker || {});
             this.writeHeroTextCache(this.cachedData.hero);
             console.log(`⚡ Using prefetched homepage data (${Math.round(age / 1000)}s old)`);
@@ -963,6 +969,7 @@ const FramerHome = {
         hero: this.buildHeroData(this.config.hero || {}),
         prompts,
         shop,
+        gongyi: this.buildGongyiData(this.config.gongyi || {}),
         verify: this.buildVerifyData(this.config.verify || {}),
         guestbook,
         shopCategories
@@ -1294,6 +1301,80 @@ const FramerHome = {
     }
   },
 
+  buildGongyiData(config = {}) {
+    const defaultHighlights = ['订阅转 API', '会话保持', '按量计费'];
+    const defaultCards = [
+      {
+        title: '一键接入',
+        description: '获取一个 API 密钥，即可调用所有已接入的 AI 模型，无需分别申请。',
+        icon: 'fa-server',
+        accent: 'blue'
+      },
+      {
+        title: '稳定可靠',
+        description: '智能调度多个上游账号，自动切换和负载均衡，告别频繁报错。',
+        icon: 'fa-users',
+        accent: 'mint'
+      },
+      {
+        title: '用多少付多少',
+        description: '按实际使用量计费，支持设置额度上限，团队用量一目了然。',
+        icon: 'fa-tv',
+        accent: 'violet'
+      }
+    ];
+    const defaultModels = [
+      { id: 'claude', label: 'Claude' },
+      { id: 'gpt', label: 'GPT' },
+      { id: 'gemini', label: 'Gemini' },
+      { id: 'antigravity', label: 'Antigravity' },
+      { id: 'more', label: '更多' }
+    ];
+    const sourceModels = Array.isArray(config.model_items) && config.model_items.length > 0
+      ? config.model_items
+      : defaultModels;
+    const modelItems = sourceModels
+      .map((item, index) => {
+        if (typeof item === 'string') {
+          const label = String(item || '').trim();
+          return label ? { id: `model_${index + 1}`, label, enabled: true } : null;
+        }
+        if (!item || typeof item !== 'object') {
+          return null;
+        }
+        const label = String(item.label || item.name || item.title || '').trim();
+        if (!label) {
+          return null;
+        }
+        return {
+          id: String(item.id || `model_${index + 1}`).trim(),
+          label,
+          enabled: item.enabled !== false
+        };
+      })
+      .filter(Boolean);
+    const visibleModelItems = modelItems.filter((item) => item.enabled !== false);
+
+    return {
+      brandName: String(config.brand_name || '').trim() || 'Zaoyoe',
+      brandSubtitle: this.getLocalizedField(config, 'brand_subtitle') || 'Subscription to API Conversion Platform',
+      ctaText: this.getLocalizedField(config, 'cta_text') || '进入控制台',
+      ctaLink: String(config.cta_link || '').trim() || 'https://gongyi.zaoyoe.com',
+      highlights: Array.isArray(config.highlight_items) && config.highlight_items.length > 0 ? config.highlight_items : defaultHighlights,
+      featureCards: defaultCards.map((card, index) => {
+        const baseKey = `feature_${index + 1}`;
+        return {
+          title: this.getLocalizedField(config, `${baseKey}_title`) || card.title,
+          description: this.getLocalizedField(config, `${baseKey}_description`) || card.description,
+          icon: card.icon,
+          accent: card.accent
+        };
+      }),
+      showModelSection: config.show_model_section !== false && visibleModelItems.length > 0,
+      modelItems: visibleModelItems
+    };
+  },
+
   /**
    * Get optimized image URL by using pre-generated thumbnails
    * Thumbnails are stored at: /prompts/thumb/xxx.webp
@@ -1344,16 +1425,28 @@ const FramerHome = {
     ];
 
     const experimentCtaText = this.getSectionExperimentValue('verify', config, 'cta_text', '');
+    const demoCostPoints = Number.parseInt(config.demo_cost_points, 10);
     return {
       title: this.getLocalizedField(config, 'section_title') || window.i18n?.t('home.verify.title') || 'Gemini 验证',
       subtitle: this.getLocalizedField(config, 'section_subtitle') || window.i18n?.t('home.verify.subtitle') || '快速验证您的 API 密钥，实时返回结果',
       screenshot: config.screenshot_path || '/assets/verify-preview.png',
+      previewMode: String(config.preview_mode || 'dynamic').trim() === 'image' ? 'image' : 'dynamic',
       features: (config.features && config.features.length > 0) ? config.features : defaultFeatures,
       valueProps: (config.value_props && config.value_props.length > 0) ? config.value_props : defaultValueProps,
       supportedModels: (config.supported_models && config.supported_models.length > 0) ? config.supported_models : defaultModels,
       ctaText: String(experimentCtaText || config.cta_text || '').trim() || (window.i18n?.t('home.verify.cta') || '立即验证'),
       riskNotice: String(config.risk_notice || '').trim() || (window.i18n?.t('home.verify.riskNotice') || '建议先使用测试账号完成校验，再切换正式账号。'),
-      link: String(config.cta_link || '').trim() || '/verify.html?source=homepage_verify'
+      link: String(config.cta_link || '').trim() || '/verify.html?source=homepage_verify',
+      demo: {
+        title: String(config.demo_title || '').trim() || 'Google One',
+        subtitle: String(config.demo_subtitle || '').trim() || '获取 1年 pro 权限的试用链接',
+        email: String(config.demo_email || '').trim() || 'preview.account@gmail.com',
+        totp: String(config.demo_totp || '').trim() || '3r6cu37xch4ej6d5',
+        successLink: String(config.demo_success_link || '').trim() || 'https://services.sheerid.com/verify/zaoyoe-demo?verificationId=GO-8K21',
+        quota: String(config.demo_quota || '').trim() || '0.5 提 / 全 1',
+        balance: String(config.demo_balance || '').trim() || '7.6',
+        costPoints: Number.isFinite(demoCostPoints) && demoCostPoints > 0 ? demoCostPoints : 10
+      }
     };
   },
 
@@ -1537,6 +1630,7 @@ const FramerHome = {
       hero: { enable_auto: true },
       prompts: { enable_auto: true, max_items: 24, sort: 'popular', section_title: 'AI 提示词工作室', section_subtitle: '让创作更高效，让灵感更自由' },
       shop: { enable_auto: true, max_items: 8, section_title: '精选资源商城', section_subtitle: '优质资源，助力成长' },
+      gongyi: { enable_auto: false, section_tag: '公益站', brand_name: 'Zaoyoe', brand_subtitle: 'Subscription to API Conversion Platform', cta_text: '进入控制台', cta_link: 'https://gongyi.zaoyoe.com' },
       verify: { enable_auto: true, section_title: 'Gemini 验证', section_subtitle: '快速验证您的 API 密钥' },
       guestbook: { enable_auto: true, max_items: 6, section_title: '留言板', section_subtitle: '用户的声音' },
       ticker: { enable_auto: true, speed: 30 }
@@ -1549,6 +1643,7 @@ const FramerHome = {
       hero: this.buildHeroData(this.config.hero),
       prompts: promptPool.slice(0, 6),
       shop: [],
+      gongyi: this.buildGongyiData(this.config.gongyi),
       verify: this.buildVerifyData(this.config.verify),
       guestbook: [],
       ticker: {
@@ -1588,6 +1683,7 @@ const FramerHome = {
       hero: document.getElementById('hero-section'),
       prompts: document.getElementById('prompts-section'),
       shop: document.getElementById('shop-section'),
+      gongyi: document.getElementById('gongyi-section'),
       verify: document.getElementById('verify-section'),
       guestbook: document.getElementById('guestbook-section'),
       ticker: document.getElementById('ticker-section')
@@ -1616,6 +1712,7 @@ const FramerHome = {
       hero: () => this.renderHero(),
       prompts: () => this.renderPrompts(),
       shop: () => this.renderShop(),
+      gongyi: () => this.renderGongyi(),
       verify: () => this.renderVerify(),
       guestbook: () => this.renderGuestbook(),
       ticker: () => this.renderTicker()
@@ -1624,6 +1721,7 @@ const FramerHome = {
       hero: 'hero-section',
       prompts: 'prompts-section',
       shop: 'shop-section',
+      gongyi: 'gongyi-section',
       verify: 'verify-section',
       guestbook: 'guestbook-section',
       ticker: 'ticker-section'
@@ -1635,6 +1733,12 @@ const FramerHome = {
 
       if (sectionKey === 'guestbook' && !isVisible) {
         this.destroyGuestbookExperience();
+      }
+      if (sectionKey === 'gongyi' && !isVisible) {
+        this.destroyGongyiTerminalTyping();
+      }
+      if (sectionKey === 'verify' && !isVisible) {
+        this.destroyVerifyDemo();
       }
 
       if (!sectionEl || typeof renderers[sectionKey] !== 'function') {
@@ -2314,6 +2418,577 @@ const FramerHome = {
     observeHomepageSectionImpression(section, 'shop');
   },
 
+  renderGongyi() {
+    const data = this.cachedData.gongyi || this.buildGongyiData(this.config.gongyi || {});
+    const section = document.getElementById('gongyi-section');
+    if (!section) {
+      return;
+    }
+    this.destroyGongyiTerminalTyping();
+    setHomeSectionVisibility(section, true);
+
+    const accentByIndex = ['orange', 'green', 'blue', 'pink', 'slate'];
+    section.innerHTML = `
+      <div class="gongyi-shell ${data.showModelSection ? '' : 'gongyi-shell--no-models'} fade-in-up">
+        <div class="gongyi-hero">
+          <div class="gongyi-copy">
+            <h2 class="gongyi-brand">${escapeHomeHtml(data.brandName || 'Zaoyoe')}</h2>
+            <p class="gongyi-brand-subtitle">${escapeHomeHtml(data.brandSubtitle || 'Subscription to API Conversion Platform')}</p>
+            <div class="gongyi-actions">
+              <a href="${escapeHomeHtml(data.ctaLink || 'https://gongyi.zaoyoe.com')}" class="btn btn-primary gongyi-cta" data-home-gongyi-cta="1" target="_blank" rel="noopener noreferrer">
+                ${escapeHomeHtml(data.ctaText || '进入控制台')}
+              </a>
+            </div>
+          </div>
+
+          <div class="gongyi-terminal-wrap">
+            <div class="gongyi-terminal-window">
+              <div class="gongyi-terminal-head">
+                <span class="gongyi-terminal-dot gongyi-terminal-dot--red"></span>
+                <span class="gongyi-terminal-dot gongyi-terminal-dot--yellow"></span>
+                <span class="gongyi-terminal-dot gongyi-terminal-dot--green"></span>
+                <span class="gongyi-terminal-title">terminal</span>
+              </div>
+              <div class="gongyi-terminal-body">
+                <div class="gongyi-terminal-line gongyi-terminal-line--command" data-gongyi-terminal-line="1" data-gongyi-typing-steps="27">$ curl -X POST /v1/messages</div>
+                <div class="gongyi-terminal-line gongyi-terminal-line--muted" data-gongyi-terminal-line="1" data-gongyi-typing-steps="24"># Routing to upstream...</div>
+                <div class="gongyi-terminal-line gongyi-terminal-line--success" data-gongyi-terminal-line="1" data-gongyi-typing-steps="31">200 OK { "content": "Hello!" }</div>
+                <div class="gongyi-terminal-line gongyi-terminal-line--command gongyi-terminal-prompt" data-gongyi-terminal-line="1" data-gongyi-typing-steps="2">$ <span class="gongyi-terminal-caret"></span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="gongyi-highlights">
+          ${(Array.isArray(data.highlights) ? data.highlights : []).map((item) => `
+            <span class="gongyi-highlight-chip">${escapeHomeHtml(item)}</span>
+          `).join('')}
+        </div>
+
+        <div class="gongyi-features">
+          ${(Array.isArray(data.featureCards) ? data.featureCards : []).map((card) => `
+            <article class="gongyi-feature-card" data-home-hover-lift="1">
+              <div class="gongyi-feature-icon gongyi-feature-icon--${escapeHomeHtml(card.accent || 'blue')}">
+                <i class="fas ${escapeHomeHtml(card.icon || 'fa-star')}"></i>
+              </div>
+              <h3>${escapeHomeHtml(card.title || '')}</h3>
+              <p>${escapeHomeHtml(card.description || '')}</p>
+            </article>
+          `).join('')}
+        </div>
+
+        ${data.showModelSection ? `
+        <div class="gongyi-models">
+          <h3 class="gongyi-models-title">已支持的 AI 模型</h3>
+          <p class="gongyi-models-subtitle">一个 API，多种选择</p>
+          <div class="gongyi-model-chip-list">
+            ${(Array.isArray(data.modelItems) ? data.modelItems : []).map((item, index) => {
+              const normalized = String(item?.label || '').trim();
+              const isMuted = /更多|more/i.test(normalized);
+              return `
+                <div class="gongyi-model-chip ${isMuted ? 'is-muted' : ''}">
+                  <span class="gongyi-model-chip__icon gongyi-model-chip__icon--${accentByIndex[index % accentByIndex.length]}">${escapeHomeHtml((normalized[0] || '+').toUpperCase())}</span>
+                  <span class="gongyi-model-chip__label">${escapeHomeHtml(normalized)}</span>
+                  <span class="gongyi-model-chip__status">${isMuted ? '即将推出' : '已支持'}</span>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+        ` : ''}
+      </div>
+    `;
+
+    section.querySelector('[data-home-gongyi-cta="1"]')?.addEventListener('click', () => {
+      trackHomepageAnalyticsEvent('homepage_gongyi_click', {
+        entityType: 'homepage_section',
+        entityId: 'gongyi_cta',
+        metadata: {
+          section: 'gongyi',
+          title: data.brandName || ''
+        }
+      });
+    });
+    bindHoverLiftTargets(section);
+    this.initGongyiTerminalTyping(section);
+    observeHomepageSectionImpression(section, 'gongyi');
+  },
+
+  destroyGongyiTerminalTyping() {
+    const runtime = this.gongyiTerminalRuntime;
+    if (!runtime) {
+      return;
+    }
+
+    runtime.cancelled = true;
+    (runtime.timers || []).forEach((timer) => window.clearTimeout(timer));
+    this.gongyiTerminalRuntime = null;
+  },
+
+  initGongyiTerminalTyping(section) {
+    const lines = Array.from(section?.querySelectorAll?.('[data-gongyi-terminal-line="1"]') || []);
+    if (!lines.length) {
+      return;
+    }
+
+    const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    if (prefersReducedMotion) {
+      lines.forEach((line) => {
+        line.classList.add('is-typed');
+      });
+      return;
+    }
+
+    const runtime = {
+      cancelled: false,
+      timers: []
+    };
+    this.gongyiTerminalRuntime = runtime;
+
+    const randomBetween = (min, max) => min + Math.random() * (max - min);
+
+    const scheduleTimer = (callback, delayMs) => {
+      const timer = window.setTimeout(callback, delayMs);
+      runtime.timers.push(timer);
+      return timer;
+    };
+
+    const runCycle = () => {
+      if (runtime.cancelled || !document.documentElement.contains(section)) {
+        runtime.cancelled = true;
+        return;
+      }
+
+      runtime.timers = [];
+      lines.forEach((line) => {
+        line.classList.remove('is-typing', 'is-typed');
+        line.style.removeProperty('--gongyi-typing-duration');
+        line.style.removeProperty('--gongyi-typing-steps');
+      });
+
+      // Restart CSS animations reliably after class removal.
+      void section.offsetWidth;
+
+      let cursorSeconds = 0;
+      lines.forEach((line, index) => {
+        const steps = Math.max(2, Number(line.dataset.gongyiTypingSteps || line.textContent.length) || 24);
+        const duration = randomBetween(0.82, 1.28) + (steps > 26 ? randomBetween(0.08, 0.28) : 0);
+        const linePause = randomBetween(0.18, 0.54);
+        const startDelayMs = Math.round(cursorSeconds * 1000);
+
+        line.style.setProperty('--gongyi-typing-steps', String(steps));
+        line.style.setProperty('--gongyi-typing-duration', `${duration.toFixed(2)}s`);
+
+        scheduleTimer(() => {
+          if (runtime.cancelled) {
+            return;
+          }
+          line.classList.add('is-typing');
+          scheduleTimer(() => {
+            line.classList.add('is-typed');
+          }, Math.round(duration * 1000) + 80);
+        }, startDelayMs);
+
+        cursorSeconds += duration + linePause + (index === 0 ? randomBetween(0.08, 0.22) : 0);
+      });
+
+      const cyclePauseMs = Math.round(randomBetween(1700, 3400));
+      scheduleTimer(runCycle, Math.round(cursorSeconds * 1000) + cyclePauseMs);
+    };
+
+    runCycle();
+  },
+
+  renderVerifyLiveDemo(demo = {}) {
+    const costPoints = Number.isFinite(Number(demo.costPoints)) && Number(demo.costPoints) > 0
+      ? Number(demo.costPoints)
+      : 10;
+    const title = escapeHomeHtml(demo.title || 'Google One');
+    const subtitle = escapeHomeHtml(demo.subtitle || '获取 1年 pro 权限的试用链接');
+    const email = escapeHomeHtml(demo.email || 'preview.account@gmail.com');
+    const totp = escapeHomeHtml(demo.totp || '3r6cu37xch4ej6d5');
+    const successLink = escapeHomeHtml(demo.successLink || 'https://services.sheerid.com/verify/zaoyoe-demo?verificationId=GO-8K21');
+    const quota = escapeHomeHtml(demo.quota || '0.5 提 / 全 1');
+    const balance = escapeHomeHtml(demo.balance || '7.6');
+
+    return `
+      <article class="verify-widget home-verify-live-card ring-idle" data-home-verify-widget="1" data-phase="draft">
+        <div class="verify-widget-topline" aria-hidden="true">
+          <div class="verify-orbit-trail"></div>
+        </div>
+
+        <div class="verify-widget-header">
+          <div class="verify-widget-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path fill-rule="evenodd" clip-rule="evenodd" d="M15.5 4C12.4624 4 10 6.46243 10 9.5C10 10.751 10.4173 11.9039 11.129 12.835L4.56066 19.4033C4.24647 19.7175 4.24647 20.227 4.56066 20.5412L5.45879 21.4393C5.77298 21.7535 6.28248 21.7535 6.59667 21.4393L8.5 19.536L10.4033 21.4393C10.7175 21.7535 11.227 21.7535 11.5412 21.4393L12.4393 20.5412C12.7535 20.227 12.7535 19.7175 12.4393 19.4033L11.536 17.5L12.835 16.129C13.7547 16.708 14.739 17 15.5 17C18.5376 17 21 14.5376 21 11.5C21 8.46243 18.5376 4 15.5 4ZM17 9C17.5523 9 18 8.55228 18 8C18 7.44772 17.5523 7 17 7C16.4477 7 16 7.44772 16 8C16 8.55228 16.4477 9 17 9Z" fill="white"/>
+            </svg>
+          </div>
+          <div class="verify-widget-title">
+            <h3>${title}</h3>
+            <p>${subtitle}</p>
+          </div>
+          <div class="verify-header-right">
+            <div class="verify-api-quota verify-api-quota--warning" title="API 剩余额度">
+              <i class="fas fa-gem" aria-hidden="true"></i>
+              <span data-home-verify-quota>${quota}</span>
+            </div>
+            <div class="verify-balance" title="我的钱包">
+              <i class="fas fa-coins" aria-hidden="true"></i>
+              <span data-home-verify-balance>${balance}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="verify-form-shell">
+          <div class="verify-input-area verify-form-main">
+            <label class="verify-form-field">
+              <span class="verify-field-label">Gmail 地址 <em>*</em></span>
+              <input class="verify-input" data-home-verify-email type="text" readonly placeholder="your.account@gmail.com">
+            </label>
+
+            <div class="home-verify-field-grid">
+              <label class="verify-form-field">
+                <span class="verify-field-label">账号密码 <em>*</em></span>
+                <span class="verify-password-shell">
+                  <input class="verify-input" data-home-verify-password type="text" readonly placeholder="密码">
+                  <button class="verify-password-toggle" type="button" tabindex="-1" aria-label="显示密码">
+                    <i class="fas fa-eye" aria-hidden="true"></i>
+                  </button>
+                </span>
+              </label>
+
+              <label class="verify-form-field">
+                <span class="verify-field-label">2FA 密钥（Base32） <em>*</em></span>
+                <input class="verify-input" data-home-verify-totp type="text" readonly placeholder="${totp}">
+              </label>
+            </div>
+
+            <div class="verify-form-field">
+              <span class="verify-field-label">业务模式</span>
+              <div class="verify-mode-selector">
+                <label class="verify-mode-option">
+                  <input type="radio" name="homeVerifyTaskType" value="extract" checked tabindex="-1">
+                  <span class="verify-mode-option__body">
+                    <span class="verify-mode-option__title">仅提链</span>
+                    <span class="verify-mode-option__meta">${costPoints} 积分 · 只拿可用订阅链接</span>
+                  </span>
+                </label>
+                <label class="verify-mode-option verify-mode-option--accent">
+                  <input type="radio" name="homeVerifyTaskType" value="full" tabindex="-1">
+                  <span class="verify-mode-option__body">
+                    <span class="verify-mode-option__title">全流程包绑卡</span>
+                    <span class="verify-mode-option__meta">${costPoints * 2} 积分 · 完成 Google One 订阅流程</span>
+                  </span>
+                </label>
+              </div>
+              <div class="verify-mode-note">提链模式成功后，请自行打开链接完成绑卡订阅；没有卡可前往商城购卡。</div>
+            </div>
+
+            <div class="verify-form-meta">
+              <label class="verify-priority-pill">
+                <input type="checkbox" tabindex="-1">
+                <span>高优先级任务</span>
+              </label>
+              <div class="verify-price-info verify-form-price">
+                <i class="fas fa-coins" aria-hidden="true"></i>
+                本次提交消耗 <span class="price" data-home-verify-cost>${costPoints}</span> 积分
+              </div>
+            </div>
+
+            <div class="verify-form-actions">
+              <button class="verify-reset-btn" type="button" tabindex="-1">
+                <i class="fas fa-rotate-left" aria-hidden="true"></i>
+                清空
+              </button>
+              <button class="verify-submit-btn" data-home-verify-submit type="button" tabindex="-1">
+                <span class="spinner" aria-hidden="true"></span>
+                <i class="fas fa-paper-plane" data-home-verify-submit-icon aria-hidden="true"></i>
+                <span data-home-verify-submit-label>提交提链任务</span>
+              </button>
+            </div>
+
+            <div class="verify-batch-results" data-home-verify-results>
+              <div class="verify-batch-results-header">
+                <div class="verify-batch-results-title">
+                  <i class="fas fa-list-check" aria-hidden="true"></i>
+                  任务状态
+                </div>
+                <div class="verify-batch-progress">
+                  进度: <span class="current" data-home-verify-current>0</span>/<span class="total">1</span>
+                </div>
+              </div>
+              <div>
+                <div class="verify-result-item info" data-home-verify-result-item>
+                  <div class="verify-result-item-content">
+                    <div class="verify-result-item-id">#1: <span data-home-verify-result-email>${email}</span></div>
+                    <div class="verify-result-item-message">
+                      <span data-home-verify-message>等待提交任务</span>
+                      <div class="verify-result-link-row" data-home-verify-link-row hidden>
+                        <a class="verify-result-link" href="${successLink}" target="_blank" rel="noopener noreferrer" data-home-verify-link>${successLink}</a>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="verify-batch-summary" data-home-verify-summary hidden>
+                <div class="verify-batch-stat success">成功: <span data-home-verify-success-count>0</span></div>
+                <div class="verify-batch-stat error">失败: <span>0</span></div>
+                <div class="verify-batch-stat total">总计: <span>1</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+    `;
+  },
+
+  destroyVerifyDemo() {
+    const runtime = this.verifyDemoRuntime;
+    if (!runtime) {
+      return;
+    }
+
+    runtime.cancelled = true;
+    (runtime.timers || []).forEach((timer) => window.clearTimeout(timer));
+    this.verifyDemoRuntime = null;
+  },
+
+  initVerifyDemo(section, data) {
+    const widget = section?.querySelector?.('[data-home-verify-widget="1"]');
+    if (!widget) {
+      return;
+    }
+
+    const demo = data?.demo || {};
+    const emailValue = String(demo.email || '').trim() || 'preview.account@gmail.com';
+    const totpValue = String(demo.totp || '').trim() || '3r6cu37xch4ej6d5';
+    const successLinkValue = String(demo.successLink || '').trim() || 'https://services.sheerid.com/verify/zaoyoe-demo?verificationId=GO-8K21';
+    const fields = {
+      email: widget.querySelector('[data-home-verify-email]'),
+      password: widget.querySelector('[data-home-verify-password]'),
+      totp: widget.querySelector('[data-home-verify-totp]'),
+      submit: widget.querySelector('[data-home-verify-submit]'),
+      submitIcon: widget.querySelector('[data-home-verify-submit-icon]'),
+      submitLabel: widget.querySelector('[data-home-verify-submit-label]'),
+      results: widget.querySelector('[data-home-verify-results]'),
+      summary: widget.querySelector('[data-home-verify-summary]'),
+      progressCurrent: widget.querySelector('[data-home-verify-current]'),
+      resultItem: widget.querySelector('[data-home-verify-result-item]'),
+      message: widget.querySelector('[data-home-verify-message]'),
+      linkRow: widget.querySelector('[data-home-verify-link-row]'),
+      link: widget.querySelector('[data-home-verify-link]'),
+      successCount: widget.querySelector('[data-home-verify-success-count]')
+    };
+
+    const phases = [
+      {
+        phase: 'draft',
+        ring: 'ring-idle',
+        progress: '0%',
+        progressVisible: 0,
+        duration: 1000,
+        email: '',
+        password: '',
+        totp: '',
+        activeField: '',
+        resultsOpen: false,
+        resultClass: 'info',
+        current: '0',
+        message: '等待提交任务',
+        linkVisible: false,
+        summaryVisible: false,
+        success: '0',
+        icon: 'fa-paper-plane',
+        submit: '提交提链任务',
+        disabled: false
+      },
+      {
+        phase: 'armed',
+        ring: 'ring-armed',
+        progress: '16%',
+        progressVisible: 1,
+        duration: 1250,
+        email: emailValue,
+        password: '••••••••••••',
+        totp: totpValue,
+        activeField: 'totp',
+        resultsOpen: false,
+        resultClass: 'info',
+        current: '0',
+        message: '账号信息已就绪，等待提交',
+        linkVisible: false,
+        summaryVisible: false,
+        success: '0',
+        icon: 'fa-paper-plane',
+        submit: '提交提链任务',
+        disabled: false
+      },
+      {
+        phase: 'submit',
+        ring: 'ring-running',
+        progress: '32%',
+        progressVisible: 1,
+        duration: 1350,
+        email: emailValue,
+        password: '••••••••••••',
+        totp: totpValue,
+        activeField: '',
+        resultsOpen: true,
+        resultClass: 'processing',
+        current: '0',
+        message: '任务已提交，正在扣减额度并创建任务 #GO-8K21',
+        linkVisible: false,
+        summaryVisible: false,
+        success: '0',
+        icon: '',
+        submit: '提交中',
+        disabled: true
+      },
+      {
+        phase: 'queued',
+        ring: 'ring-running',
+        progress: '54%',
+        progressVisible: 1,
+        duration: 1450,
+        email: emailValue,
+        password: '••••••••••••',
+        totp: totpValue,
+        activeField: '',
+        resultsOpen: true,
+        resultClass: 'processing',
+        current: '0',
+        message: '预检查通过，正在分配可用浏览器节点',
+        linkVisible: false,
+        summaryVisible: false,
+        success: '0',
+        icon: '',
+        submit: '验证中',
+        disabled: true
+      },
+      {
+        phase: 'running',
+        ring: 'ring-running',
+        progress: '82%',
+        progressVisible: 1,
+        duration: 1750,
+        email: emailValue,
+        password: '••••••••••••',
+        totp: totpValue,
+        activeField: '',
+        resultsOpen: true,
+        resultClass: 'processing',
+        current: '0',
+        message: '正在登录 Google 并提取 Google One 试用入口',
+        linkVisible: false,
+        summaryVisible: false,
+        success: '0',
+        icon: '',
+        submit: '验证中',
+        disabled: true
+      },
+      {
+        phase: 'success',
+        ring: 'ring-success success-pulse',
+        progress: '100%',
+        progressVisible: 1,
+        duration: 2600,
+        email: emailValue,
+        password: '••••••••••••',
+        totp: totpValue,
+        activeField: '',
+        resultsOpen: true,
+        resultClass: 'success',
+        current: '1',
+        message: '链接获取成功',
+        linkVisible: true,
+        summaryVisible: true,
+        success: '1',
+        icon: 'fa-paper-plane',
+        submit: '提交提链任务',
+        disabled: false
+      }
+    ];
+
+    const runtime = {
+      cancelled: false,
+      timers: []
+    };
+    this.verifyDemoRuntime = runtime;
+
+    const scheduleTimer = (callback, delayMs) => {
+      const timer = window.setTimeout(callback, delayMs);
+      runtime.timers.push(timer);
+      return timer;
+    };
+
+    const setActiveField = (activeField) => {
+      fields.email?.classList.toggle('is-active', activeField === 'email');
+      fields.password?.classList.toggle('is-active', activeField === 'password');
+      fields.totp?.classList.toggle('is-active', activeField === 'totp');
+    };
+
+    const applyPhase = (phase) => {
+      if (runtime.cancelled) {
+        return;
+      }
+
+      widget.dataset.phase = phase.phase;
+      widget.className = `verify-widget home-verify-live-card ${phase.ring}`;
+      widget.style.setProperty('--verify-progress', phase.progress);
+      widget.style.setProperty('--verify-progress-opacity', String(phase.progressVisible));
+
+      if (fields.email) fields.email.value = phase.email;
+      if (fields.password) fields.password.value = phase.password;
+      if (fields.totp) fields.totp.value = phase.totp;
+      setActiveField(phase.activeField);
+
+      fields.results?.classList.toggle('show', phase.resultsOpen);
+      if (fields.summary) fields.summary.hidden = !phase.summaryVisible;
+      if (fields.successCount) fields.successCount.textContent = phase.success;
+      if (fields.progressCurrent) fields.progressCurrent.textContent = phase.current;
+      if (fields.resultItem) fields.resultItem.className = `verify-result-item ${phase.resultClass}`;
+      if (fields.message) fields.message.textContent = phase.message;
+      if (fields.linkRow) fields.linkRow.hidden = !phase.linkVisible;
+      if (fields.link) {
+        fields.link.href = successLinkValue;
+        fields.link.textContent = successLinkValue;
+      }
+      if (fields.submit) fields.submit.disabled = phase.disabled;
+      if (fields.submitIcon) {
+        fields.submitIcon.className = phase.icon ? `fas ${phase.icon}` : 'fas fa-paper-plane';
+        fields.submitIcon.hidden = !phase.icon;
+      }
+      if (fields.submitLabel) fields.submitLabel.textContent = phase.submit;
+    };
+
+    const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    if (prefersReducedMotion) {
+      applyPhase(phases[phases.length - 1]);
+      return;
+    }
+
+    let index = 0;
+    const randomBetween = (min, max) => min + Math.random() * (max - min);
+    const scheduleNext = () => {
+      if (runtime.cancelled || !document.documentElement.contains(widget)) {
+        runtime.cancelled = true;
+        return;
+      }
+
+      const current = phases[index];
+      const jitter = Math.round(randomBetween(-120, 220));
+      const successPause = index === phases.length - 1 ? Math.round(randomBetween(1200, 2400)) : 0;
+      scheduleTimer(() => {
+        index = (index + 1) % phases.length;
+        applyPhase(phases[index]);
+        scheduleNext();
+      }, Math.max(480, current.duration + jitter + successPause));
+    };
+
+    applyPhase(phases[index]);
+    scheduleNext();
+  },
+
   /**
    * Render Gemini Verify section
    */
@@ -2323,10 +2998,16 @@ const FramerHome = {
     if (!section || !data) {
       return;
     }
+    this.destroyVerifyDemo();
     setHomeSectionVisibility(section, true);
 
+    const isDynamicPreview = data.previewMode !== 'image';
+    const previewMarkup = isDynamicPreview
+      ? this.renderVerifyLiveDemo(data.demo)
+      : `<img src="${escapeHomeHtml(data.screenshot || '/assets/verify-preview.png')}" alt="Gemini Verify" class="verify-screenshot">`;
+
     section.innerHTML = `
-      <div class="verify-grid fade-in-up">
+      <div class="verify-grid ${isDynamicPreview ? 'verify-grid--dynamic' : ''} fade-in-up">
         <div class="verify-copy">
           <h2 class="section-title">${escapeHomeHtml(data.title || window.i18n?.t('home.verify.title') || 'Gemini 验证')}</h2>
           <p class="section-subtitle">${escapeHomeHtml(data.subtitle || window.i18n?.t('home.verify.subtitle') || '快速验证您的 API 密钥，实时返回结果')}</p>
@@ -2361,8 +3042,8 @@ const FramerHome = {
         </div>
         
         <div class="verify-3d-container">
-          <div class="verify-card-3d">
-            <img src="${escapeHomeHtml(data.screenshot || '/assets/verify-preview.png')}" alt="Gemini Verify" class="verify-screenshot">
+          <div class="verify-card-3d ${isDynamicPreview ? 'verify-card-3d--dynamic' : ''}">
+            ${previewMarkup}
             <div class="verify-card-shine"></div>
           </div>
         </div>
@@ -2384,6 +3065,9 @@ const FramerHome = {
 
     // Initialize 3D interaction
     this.initVerifyAnimation();
+    if (isDynamicPreview) {
+      this.initVerifyDemo(section, data);
+    }
   },
 
   /**
@@ -2394,6 +3078,14 @@ const FramerHome = {
   initVerifyAnimation() {
     const card = document.querySelector('.verify-card-3d');
     if (!card) return;
+
+    const isDynamicMobileCard = card.classList.contains('verify-card-3d--dynamic')
+      && window.matchMedia?.('(max-width: 900px)')?.matches;
+    if (isDynamicMobileCard) {
+      card.classList.add('visible');
+      setHomeRuntimeStyle(card, { transform: null });
+      return;
+    }
 
     // 1. Entrance Observer
     const observer = new IntersectionObserver((entries) => {

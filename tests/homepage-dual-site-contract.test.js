@@ -27,7 +27,7 @@ test('homepage admin runtime prefers site rows and invalidates site-specific cac
     assert.match(source, /action: 'save_draft'/);
     assert.match(source, /action: 'publish'/);
     assert.match(source, /action: 'rollback'/);
-    assert.match(source, /const VIS_TO_SECTION = \{ hero: 'hero', prompts: 'prompts', gallery: 'prompts', shop: 'shop', verify: 'verify', guestbook: 'guestbook', ticker: 'ticker' \};/);
+    assert.match(source, /const VIS_TO_SECTION = \{ hero: 'hero', prompts: 'prompts', gallery: 'prompts', shop: 'shop', gongyi: 'gongyi', verify: 'verify', guestbook: 'guestbook', ticker: 'ticker' \};/);
     assert.doesNotMatch(source, /filter === 'all' \? 'cn' : filter/);
     assert.doesNotMatch(source, /zaoyoe_\$\{cacheSite\}_cache_v1_homepage_config/);
 });
@@ -46,6 +46,7 @@ test('homepage frontend runtime reads and writes site-specific prefetch payloads
     assert.match(framerSource, /this\.findFeaturedPromptRecord\(promptPool, item\) \|\| this\.buildFeaturedPromptFallback\(item\)/);
     assert.match(framerSource, /const columnCount = Math\.min\(5, Math\.max\(1, prompts\.length \|\| 1\)\);/);
     assert.match(framerSource, /class="masonry-container" data-columns="\$\{columnCount\}"/);
+    assert.match(framerSource, /this\.buildGongyiData\(this\.config\.gongyi \|\| \{\}\)/);
     assert.doesNotMatch(framerSource, /config\.featured_items\?\.length > 0\) \{\s+return config\.featured_items[\s\S]*\.slice\(0, config\.max_items \|\| 24\);/);
     assert.match(framerSource, /sv\.isVisible\('prompts'\)/);
     assert.doesNotMatch(framerSource, /sv\.isVisible\('gallery'\)/);
@@ -58,13 +59,14 @@ test('homepage frontend runtime reads and writes site-specific prefetch payloads
     assert.match(prefetchSource, /findFeaturedPromptRecord\(promptPool, item\) \|\| buildFeaturedPromptFallback\(item\)/);
     assert.match(prefetchSource, /getSectionExperimentValue\('prompts', config, 'featured_items', null\)/);
     assert.doesNotMatch(prefetchSource, /config\.featured_items\.length > 0\) \{\s+return config\.featured_items[\s\S]*\.slice\(0, Number\(config\.max_items\) \|\| 24\);/);
+    assert.match(prefetchSource, /gongyi: buildGongyiData\(config\.gongyi \|\| \{\}\)/);
     assert.match(prefetchSource, /config\.verify \|\| \{\}/);
     assert.match(prefetchSource, /screenshot: config\.screenshot_path \|\| '\/assets\/verify-preview\.png'/);
     assert.doesNotMatch(prefetchSource, /sessionStorage\.getItem\(HOMEPAGE_PREFETCH_CACHE_KEY\)/);
 
     assert.match(contractSource, /global\.HomepageContract = \{/);
     assert.match(contractSource, /gallery: 'prompts'/);
-    assert.match(contractSource, /MANAGED_SECTION_ORDER = Object\.freeze\(\['hero', 'prompts', 'shop', 'verify', 'guestbook', 'ticker'\]\)/);
+    assert.match(contractSource, /MANAGED_SECTION_ORDER = Object\.freeze\(\['hero', 'prompts', 'shop', 'gongyi', 'verify', 'guestbook', 'ticker'\]\)/);
     assert.match(contractSource, /EXPERIMENT_FIELD_RULES = Object\.freeze\(\{/);
     assert.match(contractSource, /function normalizeSectionExperiments\(section, value\)/);
     assert.match(contractSource, /next\.experiments = normalizeSectionExperiments\(normalizedSection, source\.experiments\);/);
@@ -88,6 +90,7 @@ test('homepage section visibility runtime now derives homepage sections from hom
     assert.match(sectionVisibilitySource, /\.rpc\('fn_get_homepage_config'/);
     assert.match(sectionVisibilitySource, /p_include_hidden: true/);
     assert.doesNotMatch(sectionVisibilitySource, /rpc\('get_all_system_config'\)/);
+    assert.match(sectionVisibilitySource, /gongyi: 'gongyi'/);
     assert.match(sectionVisibilitySource, /ticker: 'ticker'/);
     assert.match(sectionVisibilitySource, /normalized === 'gallery'/);
     assert.match(sectionVisibilitySource, /footer: 'footer'/);
@@ -144,6 +147,7 @@ test('homepage P1 context handler and migration wire templates, schedules, analy
 
     assert.match(contextSource, /HOMEPAGE_ANALYTICS_EVENT_NAMES = Object\.freeze\(\[/);
     assert.match(contextSource, /'homepage_prompt_click'/);
+    assert.match(contextSource, /'homepage_gongyi_click'/);
     assert.match(contextSource, /'homepage_verify_click'/);
     assert.match(contextSource, /'homepage_ticker_click'/);
     assert.match(contextSource, /'homepage_experiment_impression'/);

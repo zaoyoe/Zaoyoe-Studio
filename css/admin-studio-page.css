@@ -2924,6 +2924,36 @@ body.admin-access-pending,
                             position: relative;
                         }
 
+                        .tree-category--dragging {
+                            opacity: 0.42;
+                        }
+
+                        .tree-category-handle {
+                            width: 24px;
+                            height: 24px;
+                            margin-right: 4px;
+                            border: none;
+                            border-radius: 6px;
+                            background: transparent;
+                            color: rgba(255, 255, 255, 0.24);
+                            cursor: grab;
+                            display: inline-flex;
+                            align-items: center;
+                            justify-content: center;
+                            flex-shrink: 0;
+                            padding: 0;
+                            transition: color 0.15s ease, background 0.15s ease;
+                        }
+
+                        .tree-category-handle:hover {
+                            color: rgba(255, 255, 255, 0.6);
+                            background: rgba(255, 255, 255, 0.05);
+                        }
+
+                        .tree-category-handle:active {
+                            cursor: grabbing;
+                        }
+
                         .tree-category-header:hover {
                             background: rgba(255, 255, 255, 0.05);
                         }
@@ -2960,6 +2990,7 @@ body.admin-access-pending,
 
                         .tree-category-name {
                             flex: 1;
+                            min-width: 0;
                             font-size: 16px;
                             font-weight: 500;
                             color: rgba(255, 255, 255, 0.85);
@@ -3020,12 +3051,40 @@ body.admin-access-pending,
                             margin-right: 10px;
                         }
 
+                        .tree-product-stock {
+                            flex-shrink: 0;
+                            min-width: 30px;
+                            padding: 2px 8px;
+                            margin-right: 8px;
+                            border-radius: 999px;
+                            border: 1px solid rgba(107, 158, 206, 0.24);
+                            background: rgba(107, 158, 206, 0.16);
+                            color: #a9d6fb;
+                            font-size: 12px;
+                            font-weight: 700;
+                            line-height: 1.2;
+                            text-align: center;
+                        }
+
+                        .tree-product-stock--empty {
+                            background: rgba(239, 68, 68, 0.12);
+                            border-color: rgba(239, 68, 68, 0.2);
+                            color: #fda4af;
+                        }
+
                         .tree-product-item.selected .tree-product-icon {
                             color: #6b9ece;
                         }
 
+                        .tree-product-item.selected .tree-product-stock {
+                            background: rgba(107, 158, 206, 0.24);
+                            border-color: rgba(123, 184, 235, 0.28);
+                            color: #d8efff;
+                        }
+
                         .tree-product-name {
                             flex: 1;
+                            min-width: 0;
                             font-size: 15px;
                             color: rgba(255, 255, 255, 0.7);
                             white-space: nowrap;
@@ -3141,6 +3200,14 @@ body.admin-access-pending,
                             height: 2px;
                             background: #6b9ece;
                             margin: 2px 0;
+                        }
+
+                        .tree-category-drop-indicator {
+                            height: 3px;
+                            margin: 4px 10px;
+                            border-radius: 999px;
+                            background: linear-gradient(90deg, rgba(107, 158, 206, 0.28), #6b9ece, rgba(107, 158, 206, 0.28));
+                            box-shadow: 0 0 0 1px rgba(107, 158, 206, 0.16);
                         }
 
                         /* Sidebar Header with Add Button */
