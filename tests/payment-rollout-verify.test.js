@@ -32,6 +32,20 @@ test('buildVerificationSummary marks high-severity payment anomalies as blocking
     const summary = buildVerificationSummary({
         envFile: '/tmp/server.env',
         projectHost: 'demo.supabase.co',
+        rpcReadiness: {
+            capabilities: {
+                shop_multi_discount_purchase: {
+                    key: 'shop_multi_discount_purchase',
+                    rpc_name: 'fn_purchase_shop_item_with_discounts',
+                    label: '商城多券叠加购买 RPC',
+                    migration: '20260416_enable_multi_discount_shop_stacking.sql',
+                    available: false,
+                    probe: {
+                        message: 'Could not find the function public.fn_purchase_shop_item_with_discounts'
+                    }
+                }
+            }
+        },
         siteSummary: {
             payment_checkout_sessions: {
                 total: 2,
@@ -56,6 +70,7 @@ test('buildVerificationSummary marks high-severity payment anomalies as blocking
     assert.equal(summary.ok, false);
     assert.equal(summary.findings.some((finding) => finding.key === 'site_anomalies_payment_orders'), true);
     assert.equal(summary.findings.some((finding) => finding.key === 'premature_redemption_codes'), true);
+    assert.equal(summary.findings.some((finding) => finding.key === 'missing_rpc_shop_multi_discount_purchase'), true);
     assert.equal(summary.findings.some((finding) => finding.key === 'recent_custom_code_batches'), true);
 });
 
@@ -65,6 +80,17 @@ test('formatHuman renders a readable PASS report', () => {
         project_host: 'demo.supabase.co',
         env_file: '/tmp/server.env',
         verified_at: '2026-03-22T00:00:00.000Z',
+        rpc_capabilities: {
+            admin_refund_reclaim: {
+                key: 'admin_refund_reclaim',
+                rpc_name: 'fn_deduct_points_admin_site_with_breakdown',
+                migration: '20260324_add_admin_refund_reclaim_rpc.sql',
+                available: true,
+                probe: {
+                    message: 'target_user_id is required'
+                }
+            }
+        },
         site_summary: {
             payment_checkout_sessions: {
                 total: 0,
@@ -88,6 +114,8 @@ test('formatHuman renders a readable PASS report', () => {
     });
 
     assert.match(output, /Payment Rollout Verification/);
+    assert.match(output, /rpc_capabilities/);
+    assert.match(output, /admin_refund_reclaim.available: yes/);
     assert.match(output, /result: PASS/);
     assert.match(output, /findings: none/);
 });

@@ -192,6 +192,10 @@ const SHOP_PRODUCT_SKELETON_COUNT = 5;
 const SHOP_CARD_BREATHE_DURATION_MS = 5800;
 const SHOP_CARD_BREATHE_AMPLITUDE_PX = 6;
 const SHOP_PREFETCH_SCHEMA_VERSION = '20260413_PURCHASE_GUIDANCE_2';
+const SHOP_PURCHASE_PREFILL_SCHEMA_VERSION = '20260415_SHOP_PURCHASE_PREFILL_1';
+const SHOP_PURCHASE_PREFILL_STORAGE_KEY = 'shop_purchase_prefill';
+const SHOP_DISCOUNT_ASSETS_CACHE_TTL_MS = 2 * 60 * 1000;
+const SHOP_DISCOUNT_ASSETS_PREFETCH_LIMIT = 4;
 const shopCardImageWarmCache = new Set();
 
 const ShopClient = {
@@ -234,15 +238,46 @@ const ShopClient = {
     backgroundPrefetchHandle: null,
     gridTransitionCleanupTimer: null,
     gridTransitionSequence: 0,
+    gridTransitionActiveUntil: 0,
     purchaseGuidanceRequestToken: 0,
     cartAnchorFeedbackTimer: null,
     lastSkeletonCount: SHOP_PRODUCT_SKELETON_COUNT,
     staticUiBindingsBound: false,
+    pendingProductSpotlight: null,
+    productSpotlightTimer: null,
+    discountAssetsCache: new Map(),
+    discountAssetsRequestCache: new Map(),
+    discountAssetsPrefetchHandle: null,
+    discountAssetsCacheUserKey: null,
 
     getAccessToken: async function () {
         const client = window.supabaseClient || supabaseClient;
         const { data: { session } = {} } = await client.auth.getSession();
+        const nextDiscountAssetsCacheUserKey = String(session?.user?.id || '').trim() || 'guest';
+        if (this.discountAssetsCacheUserKey && this.discountAssetsCacheUserKey !== nextDiscountAssetsCacheUserKey) {
+            this.clearDiscountAssetsCache();
+        }
+        this.discountAssetsCacheUserKey = nextDiscountAssetsCacheUserKey;
         return session?.access_token || '';
+    },
+
+    clearDiscountAssetsCache: function () {
+        if (this.discountAssetsCache instanceof Map) {
+            this.discountAssetsCache.clear();
+        } else {
+            this.discountAssetsCache = new Map();
+        }
+
+        if (this.discountAssetsRequestCache instanceof Map) {
+            this.discountAssetsRequestCache.clear();
+        } else {
+            this.discountAssetsRequestCache = new Map();
+        }
+
+        if (this.discountAssetsPrefetchHandle) {
+            clearTimeout(this.discountAssetsPrefetchHandle);
+            this.discountAssetsPrefetchHandle = null;
+        }
     },
 
     loadCurrentUserPurchaseAccess: async function ({ forceRefresh = false } = {}) {
@@ -253,6 +288,10 @@ const ShopClient = {
             this.currentUserPurchaseAccess = null;
             this.currentUserPurchaseAccessPromise = null;
             this.currentUserPurchaseAccessUserId = null;
+            if (this.discountAssetsCacheUserKey && this.discountAssetsCacheUserKey !== 'guest') {
+                this.clearDiscountAssetsCache();
+            }
+            this.discountAssetsCacheUserKey = 'guest';
             return { unlimitedShopPurchases: false };
         }
 
@@ -260,6 +299,10 @@ const ShopClient = {
             this.currentUserPurchaseAccess = null;
             this.currentUserPurchaseAccessPromise = null;
             this.currentUserPurchaseAccessUserId = user.id;
+            if (this.discountAssetsCacheUserKey && this.discountAssetsCacheUserKey !== user.id) {
+                this.clearDiscountAssetsCache();
+            }
+            this.discountAssetsCacheUserKey = user.id;
         }
 
         if (!forceRefresh && this.currentUserPurchaseAccess) {
@@ -389,10 +432,741 @@ const ShopClient = {
 
     formatShopPoints: function (value) {
         const numericValue = Number(value || 0) || 0;
-        const formattedValue = window.SiteConfig?.formatPrice
-            ? window.SiteConfig.formatPrice(numericValue)
-            : String(numericValue);
+        const formattedValue = this.formatShopPointValue(numericValue);
         return `${formattedValue} ${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}`;
+    },
+
+    formatShopPointValue: function (value, { maximumFractionDigits = 2 } = {}) {
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue)) {
+            return '--';
+        }
+
+        const safeDigits = Math.max(0, Math.min(4, Number(maximumFractionDigits) || 0));
+        const rounded = Number(numericValue.toFixed(safeDigits));
+        if (Number.isInteger(rounded)) {
+            return String(rounded);
+        }
+
+        return rounded
+            .toFixed(safeDigits)
+            .replace(/(\.\d*?[1-9])0+$/, '$1')
+            .replace(/\.0+$/, '');
+    },
+
+    getDiscountBenefitLabel: function (item = {}) {
+        const explicitLabel = String(
+            item?.benefit_label
+            || item?.benefitLabel
+            || item?.preview?.benefit_label
+            || ''
+        ).trim();
+        if (explicitLabel) {
+            return explicitLabel;
+        }
+
+        const discountType = String(
+            item?.discount_type
+            || item?.discountType
+            || item?.preview?.discount_type
+            || ''
+        ).trim().toLowerCase();
+        const discountValue = Number(
+            item?.discount_value
+            ?? item?.discountValue
+            ?? item?.preview?.discount_value
+        );
+
+        if (!discountType || !Number.isFinite(discountValue) || discountValue <= 0) {
+            return '';
+        }
+
+        if (discountType === 'percent') {
+            const folded = discountValue / 10;
+            const display = Number.isInteger(folded)
+                ? String(folded)
+                : folded.toFixed(1).replace(/\.0$/, '');
+            return `${display}折`;
+        }
+
+        if (discountType === 'fixed') {
+            return `立减 ${this.formatShopPointValue(discountValue)} ${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}`;
+        }
+
+        return '';
+    },
+
+    getDiscountPrecisePreviewTotal: function (item = {}) {
+        const preview = item?.preview && typeof item.preview === 'object' && !Array.isArray(item.preview)
+            ? item.preview
+            : {};
+        const discountType = String(
+            item?.discount_type
+            || item?.discountType
+            || preview?.discount_type
+            || ''
+        ).trim().toLowerCase();
+        const discountValue = Number(
+            item?.discount_value
+            ?? item?.discountValue
+            ?? preview?.discount_value
+        );
+        const rawSubtotal = Number(preview?.subtotal);
+        const subtotal = Number.isFinite(rawSubtotal)
+            ? Math.max(0, rawSubtotal)
+            : Math.max(0, Number(this.getCurrentPurchaseSubtotal?.() || 0) || 0);
+
+        if (discountType !== 'percent' || !Number.isFinite(discountValue) || discountValue <= 0 || subtotal <= 0) {
+            return null;
+        }
+
+        return Number((subtotal * (discountValue / 100)).toFixed(2));
+    },
+
+    getCurrentPurchasePricingSummary: function () {
+        const subtotal = Math.max(0, Number(this.getCurrentPurchaseSubtotal?.() || 0) || 0);
+        const rawFinalTotal = Number(this.currentPurchase?.discountFinalTotal);
+        let finalTotal = Number.isFinite(rawFinalTotal)
+            ? Math.max(0, Math.min(subtotal, rawFinalTotal))
+            : null;
+        let discountAmount = Number(this.currentPurchase?.discountAmount);
+
+        if (finalTotal != null) {
+            discountAmount = Math.max(0, Number((subtotal - finalTotal).toFixed(2)));
+        } else {
+            discountAmount = Number.isFinite(discountAmount)
+                ? Math.max(0, Math.min(subtotal, discountAmount))
+                : 0;
+            finalTotal = Math.max(0, Number((subtotal - discountAmount).toFixed(2)));
+        }
+
+        return {
+            subtotal,
+            discountAmount,
+            finalTotal
+        };
+    },
+
+    resolveCartDiscountPricing: function (discount = null, subtotal = 0) {
+        const normalizedSubtotal = Math.max(0, Number(subtotal || 0) || 0);
+        if (!discount || normalizedSubtotal <= 0) {
+            return {
+                discountAmount: 0,
+                finalTotal: normalizedSubtotal
+            };
+        }
+
+        const discountType = String(discount.discountType || '').trim().toLowerCase();
+        const discountValue = Number(discount.discountValue);
+        if (discountType && Number.isFinite(discountValue) && discountValue > 0) {
+            return this.calculateDiscountPricingForConfig(normalizedSubtotal, { discountType, discountValue });
+        }
+
+        const storedDiscountAmount = Number(discount.discountAmount);
+        const storedFinalTotal = Number(discount.finalTotal);
+        const finalTotal = Number.isFinite(storedFinalTotal)
+            ? Math.max(0, Math.min(normalizedSubtotal, Number(storedFinalTotal.toFixed(2))))
+            : null;
+        const discountAmount = Number.isFinite(storedDiscountAmount)
+            ? Math.max(0, Math.min(normalizedSubtotal, Number(storedDiscountAmount.toFixed(2))))
+            : null;
+
+        if (finalTotal != null || discountAmount != null) {
+            const resolvedFinalTotal = finalTotal != null
+                ? finalTotal
+                : Math.max(0, Number((normalizedSubtotal - discountAmount).toFixed(2)));
+            const resolvedDiscountAmount = discountAmount != null
+                ? discountAmount
+                : Math.max(0, Number((normalizedSubtotal - finalTotal).toFixed(2)));
+
+            return {
+                discountAmount: resolvedDiscountAmount,
+                finalTotal: resolvedFinalTotal
+            };
+        }
+
+        return {
+            discountAmount: 0,
+            finalTotal: normalizedSubtotal
+        };
+    },
+
+    normalizePurchaseDiscountSelectionSnapshot: function (selection = null, options = {}) {
+        if (!selection || typeof selection !== 'object' || Array.isArray(selection)) {
+            return null;
+        }
+
+        const allowIdentityOnly = options.allowIdentityOnly === true;
+        const code = String(
+            selection.code
+            || selection.discountCode
+            || selection.discount_code
+            || ''
+        ).trim().toUpperCase();
+        const assetId = String(
+            selection.assetId
+            || selection.asset_id
+            || selection.discountAssetId
+            || selection.discount_asset_id
+            || ''
+        ).trim();
+        const discountType = String(
+            selection.discountType
+            || selection.discount_type
+            || ''
+        ).trim().toLowerCase();
+        const discountValue = Number(
+            selection.discountValue
+            ?? selection.discount_value
+        );
+        const hasPricingConfig = Boolean(discountType) && Number.isFinite(discountValue) && discountValue > 0;
+
+        if ((!code && !assetId) || (!allowIdentityOnly && !hasPricingConfig)) {
+            return null;
+        }
+
+        const benefitLabel = String(
+            selection.benefitLabel
+            || selection.benefit_label
+            || (hasPricingConfig
+                ? this.getDiscountBenefitLabel({
+                    discount_type: discountType,
+                    discount_value: discountValue
+                })
+                : '')
+            || code
+        ).trim();
+        const discountAmount = Number(
+            selection.discountAmount
+            ?? selection.discount_amount
+        );
+        const finalTotalAfterApply = Number(
+            selection.finalTotalAfterApply
+            ?? selection.final_total_after_apply
+            ?? selection.finalTotal
+            ?? selection.final_total
+        );
+
+        return {
+            code: code || null,
+            assetId: assetId || null,
+            discountId: String(selection.discountId || selection.discount_id || '').trim() || null,
+            discountType: hasPricingConfig ? discountType : null,
+            discountValue: hasPricingConfig ? discountValue : null,
+            benefitLabel: benefitLabel || null,
+            discountAmount: Number.isFinite(discountAmount) ? Math.max(0, Number(discountAmount.toFixed(2))) : 0,
+            finalTotalAfterApply: Number.isFinite(finalTotalAfterApply) ? Math.max(0, Number(finalTotalAfterApply.toFixed(2))) : null,
+            isExclusive: selection.is_exclusive !== false,
+            stackPriority: Math.max(1, Number.parseInt(selection.stack_priority, 10) || 100),
+            pricingApplyStage: String(selection.pricing_apply_stage || '').trim().toLowerCase() || 'order_discount',
+            distributionMode: String(selection.distribution_mode || '').trim().toLowerCase() || null
+        };
+    },
+
+    normalizePurchaseDiscountSelectionSnapshots: function (selections = [], options = {}) {
+        const normalizedSelections = (Array.isArray(selections) ? selections : [])
+            .map((selection) => this.normalizePurchaseDiscountSelectionSnapshot(selection, options))
+            .filter(Boolean);
+        const dedupedSelections = [];
+        const seenSelectionKeys = new Set();
+        normalizedSelections.forEach((selection) => {
+            const selectionKey = selection.assetId
+                ? `asset:${selection.assetId}`
+                : `code:${selection.code || ''}`;
+            if (!selectionKey || seenSelectionKeys.has(selectionKey)) {
+                return;
+            }
+            seenSelectionKeys.add(selectionKey);
+            dedupedSelections.push(selection);
+        });
+        return dedupedSelections;
+    },
+
+    buildDiscountSelectionSummarySnapshot: function (selections = [], options = {}) {
+        const normalizedSelections = this.normalizePurchaseDiscountSelectionSnapshots(selections, options);
+        if (!normalizedSelections.length) {
+            return null;
+        }
+
+        const subtotalCandidate = Number(
+            options.subtotal
+            ?? options.sub_total
+        );
+        const subtotal = Number.isFinite(subtotalCandidate)
+            ? Math.max(0, Number(subtotalCandidate.toFixed(2)))
+            : null;
+        const storedDiscountAmount = Number(options.discountAmount ?? options.discount_amount);
+        const storedFinalTotal = Number(options.finalTotal ?? options.final_total);
+        const totalDiscountAmount = Number.isFinite(storedDiscountAmount)
+            ? Math.max(0, Number(storedDiscountAmount.toFixed(2)))
+            : Number(
+                normalizedSelections.reduce((sum, selection) => sum + Math.max(0, Number(selection.discountAmount || 0) || 0), 0).toFixed(2)
+            );
+        const finalTotal = Number.isFinite(storedFinalTotal)
+            ? Math.max(0, Number(storedFinalTotal.toFixed(2)))
+            : (Number.isFinite(normalizedSelections[normalizedSelections.length - 1]?.finalTotalAfterApply)
+                ? Math.max(0, Number(normalizedSelections[normalizedSelections.length - 1].finalTotalAfterApply.toFixed(2)))
+                : subtotal);
+        const joinedCode = normalizedSelections
+            .map((selection) => selection.code)
+            .filter(Boolean)
+            .join(' + ');
+        const firstSelection = normalizedSelections[0];
+
+        return {
+            code: normalizedSelections.length === 1
+                ? (firstSelection.code || null)
+                : (joinedCode || null),
+            assetId: normalizedSelections.length === 1
+                ? (firstSelection.assetId || null)
+                : null,
+            discountType: normalizedSelections.length === 1
+                ? firstSelection.discountType
+                : null,
+            discountValue: normalizedSelections.length === 1
+                ? firstSelection.discountValue
+                : null,
+            benefitLabel: normalizedSelections.length === 1
+                ? (firstSelection.benefitLabel || null)
+                : `已叠加 ${normalizedSelections.length} 张券`,
+            quantity: Math.max(
+                1,
+                Math.trunc(Number(
+                    options.quantity
+                    ?? 1
+                ) || 1)
+            ),
+            subtotal: Number.isFinite(subtotal) ? subtotal : null,
+            discountAmount: totalDiscountAmount,
+            finalTotal: Number.isFinite(finalTotal) ? finalTotal : subtotal,
+            selections: normalizedSelections,
+            selectedCount: normalizedSelections.length
+        };
+    },
+
+    normalizeCartDiscountSnapshot: function (discount = null, options = {}) {
+        if (!discount || typeof discount !== 'object' || Array.isArray(discount)) {
+            return null;
+        }
+
+        const selectionSummary = this.buildDiscountSelectionSummarySnapshot(
+            discount.selections
+            || discount.discountSelections
+            || discount.discount_selections
+            || discount.applied_discounts,
+            {
+                quantity: options.quantity ?? discount.quantity ?? 1,
+                subtotal: options.subtotal ?? discount.subtotal ?? discount.preview?.subtotal,
+                discountAmount: discount.discountAmount ?? discount.discount_amount,
+                finalTotal: discount.finalTotal ?? discount.final_total
+            }
+        );
+        if (selectionSummary) {
+            return selectionSummary;
+        }
+
+        const code = String(
+            discount.code
+            || discount.discountCode
+            || discount.discount_code
+            || ''
+        ).trim().toUpperCase();
+        const assetId = String(
+            discount.assetId
+            || discount.asset_id
+            || discount.discountAssetId
+            || ''
+        ).trim();
+        const discountType = String(
+            discount.discountType
+            || discount.discount_type
+            || ''
+        ).trim().toLowerCase();
+        const discountValue = Number(
+            discount.discountValue
+            ?? discount.discount_value
+        );
+
+        if ((!code && !assetId) || !discountType || !Number.isFinite(discountValue) || discountValue <= 0) {
+            return null;
+        }
+
+        const quantity = Math.max(
+            1,
+            Math.trunc(Number(
+                options.quantity
+                ?? discount.quantity
+                ?? 1
+            ) || 1)
+        );
+        const subtotalCandidate = Number(
+            options.subtotal
+            ?? discount.subtotal
+            ?? discount.preview?.subtotal
+        );
+        const subtotal = Number.isFinite(subtotalCandidate)
+            ? Math.max(0, Number(subtotalCandidate.toFixed(2)))
+            : null;
+        const pricing = Number.isFinite(subtotal)
+            ? this.calculateDiscountPricingForConfig(subtotal, { discountType, discountValue })
+            : null;
+        const storedDiscountAmount = Number(
+            discount.discountAmount
+            ?? discount.discount_amount
+            ?? discount.preview?.discount_amount
+        );
+        const storedFinalTotal = Number(
+            discount.finalTotal
+            ?? discount.final_total
+            ?? discount.preview?.final_total
+        );
+        const discountAmount = Number.isFinite(pricing?.discountAmount)
+            ? pricing.discountAmount
+            : (Number.isFinite(storedDiscountAmount) ? Math.max(0, Number(storedDiscountAmount.toFixed(2))) : 0);
+        const finalTotal = Number.isFinite(pricing?.finalTotal)
+            ? pricing.finalTotal
+            : (Number.isFinite(storedFinalTotal) ? Math.max(0, Number(storedFinalTotal.toFixed(2))) : subtotal);
+        const benefitLabel = String(
+            discount.benefitLabel
+            || discount.benefit_label
+            || discount.preview?.benefit_label
+            || this.getDiscountBenefitLabel({
+                discount_type: discountType,
+                discount_value: discountValue
+            })
+            || code
+        ).trim();
+
+        return {
+            code: code || null,
+            assetId: assetId || null,
+            discountType,
+            discountValue,
+            benefitLabel: benefitLabel || null,
+            quantity,
+            subtotal: Number.isFinite(subtotal) ? subtotal : null,
+            discountAmount: Number.isFinite(discountAmount) ? Number(discountAmount.toFixed(2)) : 0,
+            finalTotal: Number.isFinite(finalTotal) ? Number(finalTotal.toFixed(2)) : subtotal,
+            selections: [{
+                code: code || null,
+                assetId: assetId || null,
+                discountType,
+                discountValue,
+                benefitLabel: benefitLabel || null,
+                discountAmount: Number.isFinite(discountAmount) ? Number(discountAmount.toFixed(2)) : 0,
+                finalTotalAfterApply: Number.isFinite(finalTotal) ? Number(finalTotal.toFixed(2)) : subtotal
+            }],
+            selectedCount: 1
+        };
+    },
+
+    buildCurrentPurchaseCartDiscountSnapshot: function () {
+        const selectedDiscounts = this.normalizePurchaseDiscountSelectionSnapshots(this.currentPurchase?.selectedDiscounts || []);
+        if (!selectedDiscounts.length) {
+            return null;
+        }
+
+        const { subtotal, discountAmount, finalTotal } = this.getCurrentPurchasePricingSummary();
+        if (!(discountAmount > 0) || !(finalTotal < subtotal)) {
+            return null;
+        }
+
+        return this.buildDiscountSelectionSummarySnapshot(selectedDiscounts, {
+            quantity: this.currentPurchase?.quantity || 1,
+            subtotal,
+            discountAmount,
+            finalTotal
+        });
+    },
+
+    buildPurchasePrefillFromCartDiscountSnapshot: function (discount = null, options = {}) {
+        const normalizedDiscount = this.normalizeCartDiscountSnapshot(discount, options);
+        const productId = String(options.productId || this.currentPurchase?.productId || '').trim();
+        if (!normalizedDiscount || !productId) {
+            return null;
+        }
+
+        const category = String(options.category || this.currentPurchase?.productCategory || '').trim() || null;
+        return {
+            version: SHOP_PURCHASE_PREFILL_SCHEMA_VERSION,
+            timestamp: Date.now(),
+            site: window.SiteConfig?.site || 'cn',
+            productId,
+            category,
+            ownedDiscounts: (normalizedDiscount.selections || []).map((selection) => ({
+                asset_id: selection.assetId || null,
+                code: selection.code || '',
+                benefit_label: selection.benefitLabel || '',
+                discount_type: selection.discountType,
+                discount_value: selection.discountValue,
+                available: true,
+                preview: {
+                    discount_code: selection.code || '',
+                    discount_type: selection.discountType,
+                    discount_value: selection.discountValue,
+                    benefit_label: selection.benefitLabel || '',
+                    subtotal: normalizedDiscount.subtotal,
+                    discount_amount: selection.discountAmount,
+                    final_total: selection.finalTotalAfterApply
+                }
+            })),
+            claimableDiscounts: []
+        };
+    },
+
+    consumePurchasePrefillForProduct: function (productId = '') {
+        const normalizedProductId = String(productId || '').trim();
+        if (!normalizedProductId || typeof sessionStorage === 'undefined') {
+            return null;
+        }
+
+        try {
+            const raw = sessionStorage.getItem(SHOP_PURCHASE_PREFILL_STORAGE_KEY);
+            if (!raw) {
+                return null;
+            }
+
+            const payload = JSON.parse(raw);
+            const currentSite = window.SiteConfig?.site || 'cn';
+            const ageMs = Math.max(0, Date.now() - Number(payload?.timestamp || 0));
+            const versionMatches = payload?.version === SHOP_PURCHASE_PREFILL_SCHEMA_VERSION;
+            const siteMatches = !payload?.site || payload.site === currentSite;
+            const productMatches = String(payload?.productId || '').trim() === normalizedProductId;
+
+            if (!versionMatches || !siteMatches || !productMatches || ageMs > 5 * 60 * 1000) {
+                sessionStorage.removeItem(SHOP_PURCHASE_PREFILL_STORAGE_KEY);
+                return null;
+            }
+
+            sessionStorage.removeItem(SHOP_PURCHASE_PREFILL_STORAGE_KEY);
+            return payload;
+        } catch (error) {
+            console.warn('Failed to consume purchase prefill payload:', error);
+            try {
+                sessionStorage.removeItem(SHOP_PURCHASE_PREFILL_STORAGE_KEY);
+            } catch (_error) {
+                // ignore
+            }
+            return null;
+        }
+    },
+
+    cloneDiscountAssetsPayload: function (payload = {}) {
+        const normalizedPayload = {
+            owned_discounts: Array.isArray(payload?.owned_discounts) ? payload.owned_discounts : [],
+            claimable_discounts: Array.isArray(payload?.claimable_discounts) ? payload.claimable_discounts : []
+        };
+
+        try {
+            return JSON.parse(JSON.stringify(normalizedPayload));
+        } catch (error) {
+            console.warn('Failed to clone discount assets payload:', error);
+            return normalizedPayload;
+        }
+    },
+
+    buildDiscountAssetsCacheKey: function ({ productId = '', quantity = 1, agentId = null, site = '', userKey = '' } = {}) {
+        const normalizedProductId = String(productId || '').trim();
+        if (!normalizedProductId) {
+            return '';
+        }
+
+        const normalizedQuantity = Math.max(1, Math.trunc(Number(quantity || 1) || 1));
+        const normalizedAgentId = String(agentId || 'public').trim() || 'public';
+        const normalizedSite = String(site || window.SiteConfig?.site || 'cn').trim() || 'cn';
+        const normalizedUserKey = String(userKey || this.discountAssetsCacheUserKey || 'guest').trim() || 'guest';
+
+        return [
+            normalizedSite,
+            normalizedAgentId,
+            normalizedUserKey,
+            normalizedProductId,
+            normalizedQuantity
+        ].join('::');
+    },
+
+    readDiscountAssetsCache: function (cacheKey = '') {
+        const normalizedCacheKey = String(cacheKey || '').trim();
+        if (!normalizedCacheKey || !(this.discountAssetsCache instanceof Map)) {
+            return null;
+        }
+
+        const cachedEntry = this.discountAssetsCache.get(normalizedCacheKey);
+        if (!cachedEntry) {
+            return null;
+        }
+
+        const ageMs = Math.max(0, Date.now() - Number(cachedEntry.timestamp || 0));
+        if (ageMs > SHOP_DISCOUNT_ASSETS_CACHE_TTL_MS) {
+            this.discountAssetsCache.delete(normalizedCacheKey);
+            return null;
+        }
+
+        return this.cloneDiscountAssetsPayload(cachedEntry.payload || {});
+    },
+
+    writeDiscountAssetsCache: function (cacheKey = '', payload = {}) {
+        const normalizedCacheKey = String(cacheKey || '').trim();
+        if (!normalizedCacheKey) {
+            return;
+        }
+
+        if (!(this.discountAssetsCache instanceof Map)) {
+            this.discountAssetsCache = new Map();
+        }
+
+        this.discountAssetsCache.set(normalizedCacheKey, {
+            timestamp: Date.now(),
+            payload: this.cloneDiscountAssetsPayload(payload)
+        });
+    },
+
+    requestAvailableDiscountAssets: async function ({ productId = '', quantity = 1, agentId = null, site = '', preferCache = false, allowPending = true } = {}) {
+        const normalizedProductId = String(productId || '').trim();
+        if (!normalizedProductId) {
+            return {
+                owned_discounts: [],
+                claimable_discounts: []
+            };
+        }
+
+        const token = await this.getAccessToken();
+        const normalizedUserKey = String(this.discountAssetsCacheUserKey || 'guest').trim() || 'guest';
+        const cacheKey = this.buildDiscountAssetsCacheKey({
+            productId: normalizedProductId,
+            quantity,
+            agentId,
+            site,
+            userKey: normalizedUserKey
+        });
+
+        if (preferCache) {
+            const cachedPayload = this.readDiscountAssetsCache(cacheKey);
+            if (cachedPayload) {
+                return cachedPayload;
+            }
+        }
+
+        if (allowPending && this.discountAssetsRequestCache instanceof Map && this.discountAssetsRequestCache.has(cacheKey)) {
+            const pendingPayload = await this.discountAssetsRequestCache.get(cacheKey);
+            return this.cloneDiscountAssetsPayload(pendingPayload);
+        }
+
+        const request = (async () => {
+            if (!token) {
+                const emptyPayload = {
+                    owned_discounts: [],
+                    claimable_discounts: []
+                };
+                if ((this.discountAssetsCacheUserKey || 'guest') === normalizedUserKey) {
+                    this.writeDiscountAssetsCache(cacheKey, emptyPayload);
+                }
+                return emptyPayload;
+            }
+
+            let response;
+            try {
+                response = await fetch('/api/shop/available-discounts', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        productId: normalizedProductId,
+                        quantity: Math.max(1, Math.trunc(Number(quantity || 1) || 1)),
+                        agentId: agentId ?? this.currentAgentId,
+                        site: site || window.SiteConfig?.site || 'cn'
+                    })
+                });
+            } catch (error) {
+                throw this.normalizeShopRequestError(error, {
+                    fallbackMessage: '卡券列表连接失败，请刷新页面后重试'
+                });
+            }
+
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.success === false) {
+                throw new Error(payload?.message || '加载优惠券失败');
+            }
+
+            const normalizedPayload = {
+                owned_discounts: Array.isArray(payload?.owned_discounts) ? payload.owned_discounts : [],
+                claimable_discounts: Array.isArray(payload?.claimable_discounts) ? payload.claimable_discounts : []
+            };
+
+            if ((this.discountAssetsCacheUserKey || 'guest') === normalizedUserKey) {
+                this.writeDiscountAssetsCache(cacheKey, normalizedPayload);
+            }
+
+            return normalizedPayload;
+        })()
+            .finally(() => {
+                if (this.discountAssetsRequestCache instanceof Map) {
+                    this.discountAssetsRequestCache.delete(cacheKey);
+                }
+            });
+
+        if (!(this.discountAssetsRequestCache instanceof Map)) {
+            this.discountAssetsRequestCache = new Map();
+        }
+        this.discountAssetsRequestCache.set(cacheKey, request);
+
+        const payload = await request;
+        return this.cloneDiscountAssetsPayload(payload);
+    },
+
+    prefetchDiscountAssetsForProduct: async function ({ productId = '', quantity = 1, agentId = null, site = '' } = {}) {
+        const normalizedProductId = String(productId || '').trim();
+        if (!normalizedProductId) {
+            return;
+        }
+
+        try {
+            await this.requestAvailableDiscountAssets({
+                productId: normalizedProductId,
+                quantity,
+                agentId: agentId ?? this.currentAgentId,
+                site: site || window.SiteConfig?.site || 'cn',
+                preferCache: true,
+                allowPending: true
+            });
+        } catch (error) {
+            console.debug('Background discount assets prefetch failed:', error?.message || error);
+        }
+    },
+
+    scheduleVisibleDiscountAssetsPrefetch: function (products = []) {
+        if (this.discountAssetsPrefetchHandle) {
+            clearTimeout(this.discountAssetsPrefetchHandle);
+            this.discountAssetsPrefetchHandle = null;
+        }
+
+        const prefetchProducts = Array.isArray(products)
+            ? products
+                .filter((product) => String(product?.id || '').trim())
+                .slice(0, SHOP_DISCOUNT_ASSETS_PREFETCH_LIMIT)
+            : [];
+
+        if (!prefetchProducts.length) {
+            return;
+        }
+
+        const runPrefetch = () => {
+            this.discountAssetsPrefetchHandle = null;
+            prefetchProducts.forEach((product, index) => {
+                window.setTimeout(() => {
+                    void this.prefetchDiscountAssetsForProduct({
+                        productId: String(product?.id || '').trim(),
+                        quantity: 1,
+                        agentId: this.currentAgentId,
+                        site: window.SiteConfig?.site || 'cn'
+                    });
+                }, index * 40);
+            });
+        };
+
+        this.discountAssetsPrefetchHandle = window.setTimeout(runPrefetch, 24);
     },
 
     resolveProductPricing: function (product, agentPrices = {}) {
@@ -463,21 +1237,25 @@ const ShopClient = {
         let flashSaleBadgeHtml = '';
         let flashShadowClass = '';
         let agentBadgeHtml = '';
+        const formattedCurrentPrice = this.formatShopPointValue(currentPrice);
+        const formattedOriginalPrice = pricing.originalPrice != null
+            ? this.formatShopPointValue(pricing.originalPrice)
+            : '';
 
         if (pricing.originalPrice != null && pricing.hasAgentPrice) {
-            originalPriceHtml = `<span class="shop-card-original-price">${pricing.originalPrice}</span>`;
+            originalPriceHtml = `<span class="shop-card-original-price">${formattedOriginalPrice}</span>`;
             agentBadgeHtml = `<div class="shop-agent-badge" data-shop-card-agent-badge="true">${window.i18n?.t('shop.exclusiveBuff') || '专属加持'}</div>`;
         }
 
         if (pricing.originalPrice != null && pricing.hasFlashSale && !agentBadgeHtml) {
-            originalPriceHtml = `<span class="shop-card-original-price">${pricing.originalPrice}</span>`;
+            originalPriceHtml = `<span class="shop-card-original-price">${formattedOriginalPrice}</span>`;
             flashSaleBadgeHtml = `<div class="flash-sale-badge flash-badge-glass" data-shop-card-flash-badge="true" data-endtime="${product.flash_sale_end}"><i class="fas fa-bolt"></i> <span class="countdown-timer">${window.i18n?.t('shop.calculating') || '计算中...'}</span></div>`;
             flashShadowClass = 'flash-sale-card';
         }
 
         return {
             currentPrice,
-            priceHtml: `${originalPriceHtml}${window.SiteConfig?.formatPrice(currentPrice) || currentPrice} <span data-i18n="shop.points">${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}</span>`,
+            priceHtml: `${originalPriceHtml}${formattedCurrentPrice} <span data-i18n="shop.points">${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}</span>`,
             flashSaleBadgeHtml,
             flashShadowClass,
             agentBadgeHtml
@@ -624,8 +1402,8 @@ const ShopClient = {
                 cartTitle: 'Cart',
                 checkoutReviewEyebrow: 'Cart Review',
                 checkoutReviewTitle: 'Final review',
-                checkoutReviewHint: 'We will submit the current cart items one by one. Coupon stacking is not available in cart checkout yet.',
-                checkoutReviewNotice: 'Cart checkout currently reuses the existing order flow item by item, so coupon stacking is unavailable in this pass.',
+                checkoutReviewHint: 'We will submit the current cart items one by one. Any coupon already attached to an item will stay with that item.',
+                checkoutReviewNotice: 'Cart checkout reuses the existing order flow item by item. Kept coupons will follow their original item, but cart checkout still does not recombine or stack coupons.',
                 checkoutReviewCount: 'Item count',
                 checkoutReviewTotal: 'Total points',
                 checkoutReviewNotes: 'Products with notes',
@@ -637,7 +1415,7 @@ const ShopClient = {
                 removedToast: 'Removed from cart',
                 cartCheckoutLabel: 'Cart checkout',
                 partialWarningPrefix: 'Some items were redeemed, but checkout did not finish:',
-                singleCheckoutHint: 'Single-item checkout keeps the existing discount and review flow.'
+                singleCheckoutHint: 'Single-item checkout now confirms directly in the purchase sheet while keeping the existing discount flow.'
             };
         }
 
@@ -665,8 +1443,8 @@ const ShopClient = {
             cartTitle: '购物车',
             checkoutReviewEyebrow: 'Cart Review',
             checkoutReviewTitle: '统一确认',
-            checkoutReviewHint: '购物车会按当前顺序逐个兑换，这一版暂不叠加优惠码。',
-            checkoutReviewNotice: '统一结算会沿用现有下单链路逐个提交，暂不叠加优惠码。',
+            checkoutReviewHint: '购物车会按当前顺序逐个兑换，已经挂在商品上的优惠券会继续跟着该商品提交。',
+            checkoutReviewNotice: '统一结算会沿用现有下单链路逐个提交。已选优惠会保留到对应商品上，但购物车里仍不支持重新组合或叠加优惠券。',
             checkoutReviewCount: '商品总数',
             checkoutReviewTotal: '合计积分',
             checkoutReviewNotes: '含注意事项商品',
@@ -678,7 +1456,7 @@ const ShopClient = {
             removedToast: '已从购物车移除',
             cartCheckoutLabel: '购物车结算',
             partialWarningPrefix: '已有部分商品兑换成功，但本次结算未全部完成：',
-            singleCheckoutHint: '单商品结算会继续沿用当前的优惠码和最终确认链路。'
+            singleCheckoutHint: '单商品结算现在会在当前面板直接确认，同时保留现有优惠码链路。'
         };
     },
 
@@ -717,6 +1495,13 @@ const ShopClient = {
         if (!product) return null;
 
         const resolvedUnitPrice = options.unitPrice ?? this.resolveProductPricing(product, this.agentPricesCache || {}).currentPrice;
+        const existingSnapshot = options?.existingSnapshot && typeof options.existingSnapshot === 'object' && !Array.isArray(options.existingSnapshot)
+            ? options.existingSnapshot
+            : null;
+        const normalizedAppliedDiscount = Object.prototype.hasOwnProperty.call(options, 'appliedDiscount')
+            ? this.normalizeCartDiscountSnapshot(options.appliedDiscount)
+            : this.normalizeCartDiscountSnapshot(existingSnapshot?.applied_discount || product?.applied_discount || null);
+
         return {
             id: String(product.id || '').trim(),
             name: product.name || '',
@@ -734,14 +1519,18 @@ const ShopClient = {
             usage_instructions: product.usage_instructions || '',
             flash_sale_price: product.flash_sale_price ?? null,
             flash_sale_end: product.flash_sale_end || null,
-            resolved_unit_price: resolvedUnitPrice == null ? null : Number(resolvedUnitPrice)
+            resolved_unit_price: resolvedUnitPrice == null ? null : Number(resolvedUnitPrice),
+            applied_discount: normalizedAppliedDiscount
         };
     },
 
     updateCartSnapshot: function (productId, product, options = {}) {
         const normalizedId = String(productId || '').trim();
         if (!normalizedId) return;
-        const snapshot = this.buildCartProductSnapshot(product, options);
+        const snapshot = this.buildCartProductSnapshot(product, {
+            ...options,
+            existingSnapshot: this.cartSnapshots?.[normalizedId] || null
+        });
         if (!snapshot) return;
         this.cartSnapshots[normalizedId] = snapshot;
     },
@@ -829,7 +1618,11 @@ const ShopClient = {
 
             nextItems.set(productId, normalizedQuantity);
             nextSnapshots[productId] = liveProduct
-                ? (this.buildCartProductSnapshot(liveProduct) || this.cartSnapshots?.[productId] || product)
+                ? (
+                    this.buildCartProductSnapshot(liveProduct, {
+                        existingSnapshot: this.cartSnapshots?.[productId] || null
+                    }) || this.cartSnapshots?.[productId] || product
+                )
                 : (this.cartSnapshots?.[productId] || product);
         });
 
@@ -872,6 +1665,30 @@ const ShopClient = {
             const unitPrice = pricing.currentPrice == null
                 ? Number(product?.resolved_unit_price || 0) || 0
                 : Number(pricing.currentPrice || 0) || 0;
+            const subtotal = Number((unitPrice * quantity).toFixed(2));
+            const rawAppliedDiscount = this.normalizeCartDiscountSnapshot(
+                product?.applied_discount || this.cartSnapshots?.[productId]?.applied_discount || null,
+                { quantity, subtotal }
+            );
+            const shouldApplyDiscount = Boolean(rawAppliedDiscount);
+            const discountPricing = shouldApplyDiscount
+                ? this.resolveCartDiscountPricing(rawAppliedDiscount, subtotal)
+                : null;
+            const discountAmount = Number.isFinite(discountPricing?.discountAmount)
+                ? discountPricing.discountAmount
+                : 0;
+            const finalTotal = Number.isFinite(discountPricing?.finalTotal)
+                ? discountPricing.finalTotal
+                : subtotal;
+            const appliedDiscount = shouldApplyDiscount && discountAmount > 0
+                ? {
+                    ...rawAppliedDiscount,
+                    subtotal,
+                    quantity,
+                    discountAmount,
+                    finalTotal
+                }
+                : null;
             const hasPurchaseNotes = product.show_purchase_notes === true && String(product.purchase_notes || '').trim().length > 0;
             const hasUsageInstructions = product.show_usage_instructions === true && String(product.usage_instructions || '').trim().length > 0;
 
@@ -880,7 +1697,11 @@ const ShopClient = {
                 product,
                 quantity,
                 unitPrice,
-                subtotal: unitPrice * quantity,
+                subtotal,
+                discountAmount,
+                finalTotal,
+                totalPoints: appliedDiscount ? finalTotal : subtotal,
+                appliedDiscount,
                 quantityCap: this.getCartQuantityCap(product),
                 displayName: this.getLocalizedProductName(product),
                 displayDescription: this.getLocalizedProductDescription(product),
@@ -896,7 +1717,7 @@ const ShopClient = {
         return entries.reduce((summary, entry) => {
             summary.uniqueCount += 1;
             summary.itemCount += Number(entry.quantity || 0) || 0;
-            summary.totalPoints += Number(entry.subtotal || 0) || 0;
+            summary.totalPoints += Number((entry.totalPoints ?? entry.finalTotal ?? entry.subtotal ?? 0)) || 0;
             summary.notesCount += entry.hasPurchaseNotes ? 1 : 0;
             summary.usageCount += entry.hasUsageInstructions ? 1 : 0;
             return summary;
@@ -934,7 +1755,8 @@ const ShopClient = {
         const state = normalizedId ? this.cartItemDisclosureState?.[normalizedId] : null;
         return {
             notes: Boolean(state?.notes),
-            usage: Boolean(state?.usage)
+            usage: Boolean(state?.usage),
+            discounts: Boolean(state?.discounts)
         };
     },
 
@@ -942,6 +1764,64 @@ const ShopClient = {
         const normalizedId = String(productId || '').trim().replace(/[^A-Za-z0-9_-]+/g, '-');
         const normalizedKind = String(kind || '').trim().replace(/[^A-Za-z0-9_-]+/g, '-');
         return `shop-cart-disclosure-${normalizedKind || 'panel'}-${normalizedId || 'item'}`;
+    },
+
+    buildCartDiscountDisclosureMarkup: function (entry, options = {}) {
+        const selections = Array.isArray(entry?.appliedDiscount?.selections)
+            ? entry.appliedDiscount.selections
+            : [];
+        if (selections.length < 2) {
+            return '';
+        }
+
+        const isEn = this.isEnglishShopLocale();
+        const panelId = String(options.panelId || '').trim();
+        const headingLabel = isEn ? 'Applied coupons' : '已用优惠券';
+        const headingHint = isEn
+            ? `${selections.length} coupons are attached to this item.`
+            : `这件商品当前使用了 ${selections.length} 张券`;
+        const rows = selections.map((selection, index) => {
+            const title = String(
+                selection?.benefitLabel
+                || selection?.code
+                || (isEn ? `Coupon ${index + 1}` : `优惠券 ${index + 1}`)
+            ).trim();
+            const couponCode = String(selection?.code || '').trim();
+            const metaParts = [];
+            if (couponCode && title.toUpperCase() !== couponCode.toUpperCase()) {
+                metaParts.push(couponCode);
+            }
+            const discountAmount = Number(selection?.discountAmount);
+            const amountLabel = Number.isFinite(discountAmount) && discountAmount > 0
+                ? `-${this.formatShopPoints(discountAmount)}`
+                : '';
+
+            return `
+                <div class="shop-cart-item__discount-row">
+                    <div class="shop-cart-item__discount-copy">
+                        <div class="shop-cart-item__discount-title">${this.escapeHtml(title)}</div>
+                        ${metaParts.length ? `<div class="shop-cart-item__discount-meta">${this.escapeHtml(metaParts.join(' · '))}</div>` : ''}
+                    </div>
+                    ${amountLabel ? `<span class="shop-cart-item__discount-amount">${this.escapeHtml(amountLabel)}</span>` : ''}
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <section
+                id="${this.escapeAttribute(panelId)}"
+                class="shop-cart-item__panel shop-cart-item__panel--discounts"
+                ${options.isOpen ? '' : 'hidden'}
+            >
+                <div class="shop-cart-item__discount-stack">
+                    <div class="shop-cart-item__discount-stack-head">
+                        <span class="shop-cart-item__discount-stack-title">${this.escapeHtml(headingLabel)}</span>
+                        <span class="shop-cart-item__discount-stack-hint">${this.escapeHtml(headingHint)}</span>
+                    </div>
+                    <div class="shop-cart-item__discount-list">${rows}</div>
+                </div>
+            </section>
+        `;
     },
 
     applyShopPurchaseDataset: function (element, payload = {}) {
@@ -976,23 +1856,25 @@ const ShopClient = {
         };
     },
 
-    openProductPurchaseFromDataset: function (dataset = {}, sourceContext = resolveShopSourceContext()) {
+    openProductPurchaseFromDataset: function (dataset = {}, sourceContext = resolveShopSourceContext(), options = {}) {
         const payload = this.getShopPurchasePayloadFromDataset(dataset);
         if (!payload.productId) return;
 
-        trackShopAnalyticsEvent('product_card_click', {
-            entityId: payload.productId || null,
-            eventValue: payload.unitPrice || null,
-            metadata: buildShopTrackingMetadata({
-                product_id: payload.productId || null,
-                product_name: payload.productName || '',
-                product_name_en: payload.productNameEn || '',
-                category: String(payload.productCategory || '').trim() || null,
-                unit_price: payload.unitPrice || null
-            }, sourceContext)
-        }, {
-            eventType: 'engagement'
-        });
+        if (options.trackClick !== false) {
+            trackShopAnalyticsEvent('product_card_click', {
+                entityId: payload.productId || null,
+                eventValue: payload.unitPrice || null,
+                metadata: buildShopTrackingMetadata({
+                    product_id: payload.productId || null,
+                    product_name: payload.productName || '',
+                    product_name_en: payload.productNameEn || '',
+                    category: String(payload.productCategory || '').trim() || null,
+                    unit_price: payload.unitPrice || null
+                }, sourceContext)
+            }, {
+                eventType: 'engagement'
+            });
+        }
 
         void this.buyProduct(
             payload.productId,
@@ -1032,7 +1914,7 @@ const ShopClient = {
 
     toggleCartItemDisclosure: function (productId, kind) {
         const normalizedId = String(productId || '').trim();
-        const normalizedKind = kind === 'notes' || kind === 'usage' ? kind : '';
+        const normalizedKind = kind === 'notes' || kind === 'usage' || kind === 'discounts' ? kind : '';
         if (!normalizedId || !normalizedKind) return;
 
         const currentState = this.getCartItemDisclosureState(normalizedId);
@@ -1041,7 +1923,7 @@ const ShopClient = {
             [normalizedKind]: !currentState[normalizedKind]
         };
 
-        if (!nextState.notes && !nextState.usage) {
+        if (!nextState.notes && !nextState.usage && !nextState.discounts) {
             delete this.cartItemDisclosureState[normalizedId];
         } else {
             this.cartItemDisclosureState[normalizedId] = nextState;
@@ -1129,10 +2011,10 @@ const ShopClient = {
 
     buildCartItemMarkup: function (entry) {
         const copy = this.getCartCopy();
+        const isEn = this.isEnglishShopLocale();
         const noteText = entry.hasPurchaseNotes ? String(entry.product?.purchase_notes || '').trim() : '';
         const usageText = entry.hasUsageInstructions ? String(entry.product?.usage_instructions || '').trim() : '';
         const disclosureState = this.getCartItemDisclosureState(entry.productId);
-        const hasOpenDisclosure = disclosureState.notes || disclosureState.usage;
         const isCartBusy = this.cartCheckoutProcessing === true;
         const notePanelId = noteText ? this.buildCartItemDisclosureDomId(entry.productId, 'notes') : '';
         const usagePanelId = usageText ? this.buildCartItemDisclosureDomId(entry.productId, 'usage') : '';
@@ -1141,6 +2023,25 @@ const ShopClient = {
         const canIncrease = quantityValue < Math.max(1, Number(entry.quantityCap || 1) || 1);
         const stockCount = Number(entry.product?.stock_count || 0) || 0;
         const stockLabel = `${window.i18n?.t('shop.stock') || '库存'}: ${Math.max(0, stockCount)}`;
+        const hasAppliedDiscount = entry.appliedDiscount && Number(entry.discountAmount || 0) > 0;
+        const discountSelections = hasAppliedDiscount && Array.isArray(entry.appliedDiscount?.selections)
+            ? entry.appliedDiscount.selections
+            : [];
+        const hasStackedDiscountDetails = discountSelections.length > 1;
+        const discountPanelId = hasStackedDiscountDetails ? this.buildCartItemDisclosureDomId(entry.productId, 'discounts') : '';
+        const hasOpenDisclosure = disclosureState.notes || disclosureState.usage || disclosureState.discounts;
+        const payableTotal = Number((entry.totalPoints ?? entry.finalTotal ?? entry.subtotal ?? 0)) || 0;
+        const priceMetaParts = [`${this.formatShopPoints(entry.unitPrice)} × ${quantityValue}`];
+        if (hasAppliedDiscount && entry.appliedDiscount?.benefitLabel) {
+            priceMetaParts.push(entry.appliedDiscount.benefitLabel);
+        }
+        const discountNote = hasAppliedDiscount
+            ? `${isEn ? 'Saved ' : '已优惠 '}${this.formatShopPoints(entry.discountAmount)}`
+            : '';
+        const discountPillLabel = String(
+            entry.appliedDiscount?.benefitLabel
+            || (isEn ? 'Coupon kept' : '优惠已保留')
+        ).trim();
 
         return `
             <article class="shop-cart-item shop-cart-item--${entry.hasPurchaseNotes ? 'notice' : 'default'}" data-product-id="${this.escapeAttribute(entry.productId)}">
@@ -1171,6 +2072,17 @@ const ShopClient = {
 
                 <div class="shop-cart-item__meta">
                     <span class="shop-cart-item__pill shop-cart-item__pill--stock">${this.escapeHtml(stockLabel)}</span>
+                    ${hasAppliedDiscount ? (hasStackedDiscountDetails ? `
+                        <button
+                            type="button"
+                            class="shop-cart-item__pill shop-cart-item__pill--toggle shop-cart-item__pill--discount${disclosureState.discounts ? ' is-active' : ''}"
+                            data-shop-cart-action="toggle-discounts"
+                            data-product-id="${this.escapeAttribute(entry.productId)}"
+                            aria-expanded="${disclosureState.discounts ? 'true' : 'false'}"
+                            aria-controls="${this.escapeAttribute(discountPanelId)}"
+                            ${isCartBusy ? 'disabled' : ''}
+                        >${this.escapeHtml(discountPillLabel)}</button>
+                    ` : `<span class="shop-cart-item__pill shop-cart-item__pill--discount">${this.escapeHtml(discountPillLabel)}</span>`) : ''}
                     ${noteText ? `
                         <button
                             type="button"
@@ -1195,8 +2107,12 @@ const ShopClient = {
                     ` : ''}
                 </div>
 
-                ${((noteText || usageText) && hasOpenDisclosure) ? `
+                ${((noteText || usageText || hasStackedDiscountDetails) && hasOpenDisclosure) ? `
                     <div class="shop-cart-item__disclosures">
+                        ${hasStackedDiscountDetails ? this.buildCartDiscountDisclosureMarkup(entry, {
+                            panelId: discountPanelId,
+                            isOpen: disclosureState.discounts
+                        }) : ''}
                         ${noteText ? `
                             <section
                                 id="${this.escapeAttribute(notePanelId)}"
@@ -1216,8 +2132,9 @@ const ShopClient = {
 
                 <div class="shop-cart-item__footer">
                     <div class="shop-cart-item__price">
-                        <strong>${this.escapeHtml(this.formatShopPoints(entry.subtotal))}</strong>
-                        <span>${this.escapeHtml(this.formatShopPoints(entry.unitPrice))} × ${quantityValue}</span>
+                        <strong>${this.escapeHtml(this.formatShopPoints(payableTotal))}</strong>
+                        <span>${this.escapeHtml(priceMetaParts.join(' · '))}</span>
+                        ${discountNote ? `<span class="shop-cart-item__discount-note">${this.escapeHtml(discountNote)}</span>` : ''}
                     </div>
 
                     <div class="shop-cart-item__quantity">
@@ -1244,16 +2161,25 @@ const ShopClient = {
 
     buildCartCheckoutItemMarkup: function (entry) {
         const copy = this.getCartCopy();
+        const isEn = this.isEnglishShopLocale();
+        const hasAppliedDiscount = entry.appliedDiscount && Number(entry.discountAmount || 0) > 0;
+        const payableTotal = Number((entry.totalPoints ?? entry.finalTotal ?? entry.subtotal ?? 0)) || 0;
+        const metaLead = `${this.formatShopPoints(entry.unitPrice)} × ${entry.quantity}`;
+        const discountNote = hasAppliedDiscount
+            ? `${isEn ? 'Saved ' : '已优惠 '}${this.formatShopPoints(entry.discountAmount)}`
+            : '';
         return `
             <article class="shop-cart-checkout__item">
                 <div class="shop-cart-checkout__item-head">
                     <div class="shop-cart-checkout__item-title">${this.escapeHtml(entry.displayName)}</div>
-                    <strong>${this.escapeHtml(this.formatShopPoints(entry.subtotal))}</strong>
+                    <strong>${this.escapeHtml(this.formatShopPoints(payableTotal))}</strong>
                 </div>
                 <div class="shop-cart-checkout__item-meta">
-                    <span>${this.escapeHtml(this.formatShopPoints(entry.unitPrice))} × ${entry.quantity}</span>
+                    <span>${this.escapeHtml(metaLead)}</span>
+                    ${hasAppliedDiscount && entry.appliedDiscount?.benefitLabel ? `<span class="shop-cart-checkout__item-pill shop-cart-checkout__item-pill--discount">${this.escapeHtml(entry.appliedDiscount.benefitLabel)}</span>` : ''}
                     ${entry.hasPurchaseNotes ? `<span class="shop-cart-checkout__item-pill shop-cart-checkout__item-pill--notice">${this.escapeHtml(copy.notesPill)}</span>` : ''}
                     ${entry.hasUsageInstructions ? `<span class="shop-cart-checkout__item-pill shop-cart-checkout__item-pill--usage">${this.escapeHtml(copy.usagePill)}</span>` : ''}
+                    ${discountNote ? `<span class="shop-cart-checkout__discount-note">${this.escapeHtml(discountNote)}</span>` : ''}
                 </div>
             </article>
         `;
@@ -1481,7 +2407,7 @@ const ShopClient = {
         }, 720);
     },
 
-    addProductToCart: function (productId, quantity = 1) {
+    addProductToCart: function (productId, quantity = 1, options = {}) {
         const normalizedId = String(productId || '').trim();
         if (!normalizedId) return 0;
 
@@ -1499,8 +2425,12 @@ const ShopClient = {
             return 0;
         }
 
+        const appliedDiscount = Object.prototype.hasOwnProperty.call(options, 'appliedDiscount')
+            ? this.normalizeCartDiscountSnapshot(options.appliedDiscount, { quantity: nextQuantity })
+            : this.normalizeCartDiscountSnapshot(this.cartSnapshots?.[normalizedId]?.applied_discount || null, { quantity: nextQuantity });
+
         this.cartItems.set(normalizedId, nextQuantity);
-        this.updateCartSnapshot(normalizedId, product);
+        this.updateCartSnapshot(normalizedId, product, { appliedDiscount });
         this.renderCart();
         this.playCartAnchorAddFeedback();
         this.showShopToast(`${this.getCartCopy().addedToast}：${this.getLocalizedProductName(product)}`, 'success');
@@ -1512,7 +2442,9 @@ const ShopClient = {
         if (!productId) return;
 
         const quantity = Math.max(1, Math.trunc(Number(this.currentPurchase?.quantity || 1) || 1));
-        const addedQuantity = this.addProductToCart(productId, quantity);
+        const addedQuantity = this.addProductToCart(productId, quantity, {
+            appliedDiscount: this.buildCurrentPurchaseCartDiscountSnapshot()
+        });
         if (addedQuantity < 1) return;
 
         trackShopAnalyticsEvent('product_add_to_cart', {
@@ -1556,7 +2488,10 @@ const ShopClient = {
         }
 
         this.cartItems.set(normalizedId, normalizedQuantity);
-        this.updateCartSnapshot(normalizedId, product);
+        const appliedDiscount = this.normalizeCartDiscountSnapshot(this.cartSnapshots?.[normalizedId]?.applied_discount || null, {
+            quantity: normalizedQuantity
+        });
+        this.updateCartSnapshot(normalizedId, product, { appliedDiscount });
         this.renderCart();
     },
 
@@ -1653,6 +2588,12 @@ const ShopClient = {
         const purchaseQuantityCap = this.getPurchaseQuantityCapForProduct(entry.product, entry.quantityCap);
 
         this.closeCart();
+        void this.prefetchDiscountAssetsForProduct({
+            productId: entry.productId,
+            quantity: entry.quantity,
+            agentId: this.currentAgentId,
+            site: window.SiteConfig?.site || 'cn'
+        });
         this.openPurchaseModal(
             entry.productId,
             entry.product?.name || entry.displayName,
@@ -1666,6 +2607,7 @@ const ShopClient = {
                 category: entry.product?.category || '',
                 sourceContext,
                 initialQuantity: entry.quantity,
+                appliedDiscount: entry.appliedDiscount || null,
                 cartOrigin: {
                     productId: entry.productId
                 }
@@ -1681,20 +2623,11 @@ const ShopClient = {
 
     getPurchaseStageCopy: function (stage = 'configure') {
         const isEn = (window.i18n?.getCurrentLanguage() || 'zh') === 'en';
-        if (stage === 'confirm') {
-            return {
-                title: isEn ? 'Final Confirmation' : '最终确认',
-                nextLabel: isEn ? 'Confirm Order' : '确认订单',
-                backLabel: isEn ? 'Back to Edit' : '返回修改',
-                confirmLabel: isEn ? 'Confirm Purchase' : '确认并兑换'
-            };
-        }
-
         return {
             title: window.i18n?.t('shop.confirmRedeem') || (isEn ? 'Confirm Purchase' : '确认兑换'),
-            nextLabel: isEn ? 'Confirm Order' : '确认订单',
+            nextLabel: isEn ? 'Redeem' : '兑换',
             backLabel: isEn ? 'Back to Edit' : '返回修改',
-            confirmLabel: isEn ? 'Confirm Purchase' : '确认并兑换'
+            confirmLabel: isEn ? 'Redeem' : '兑换'
         };
     },
 
@@ -1710,10 +2643,10 @@ const ShopClient = {
             : this.currentPurchase.productName;
         const quantity = Math.max(1, Number(this.currentPurchase.quantity) || 1);
         const unitPrice = Math.max(0, Number(this.currentPurchase.unitPrice) || 0);
-        const subtotal = Math.max(0, Number(this.getCurrentPurchaseSubtotal?.() || 0) || 0);
-        const discountAmount = Math.max(0, Number(this.currentPurchase.discountAmount) || 0);
-        const finalTotal = Math.max(0, subtotal - discountAmount);
-        const discountCode = String(this.currentPurchase.discountCode || '').trim().toUpperCase();
+        const { subtotal, discountAmount, finalTotal } = this.getCurrentPurchasePricingSummary();
+        const selectedDiscountCodes = this.getCurrentPurchaseSelectedDiscountCodes();
+        const discountCode = selectedDiscountCodes.join(' + ');
+        const discountBenefitLabel = String(this.currentPurchase.discountBenefitLabel || '').trim();
 
         const productNameEl = document.getElementById('purchaseConfirmProductName');
         const quantityEl = document.getElementById('purchaseConfirmQuantity');
@@ -1726,25 +2659,27 @@ const ShopClient = {
 
         if (productNameEl) productNameEl.textContent = displayName || '-';
         if (quantityEl) quantityEl.textContent = String(quantity);
-        if (unitPriceEl) unitPriceEl.textContent = `${unitPrice} ${pointsLabel}`;
-        if (subtotalEl) subtotalEl.textContent = `${subtotal} ${pointsLabel}`;
-        if (totalEl) totalEl.textContent = `${finalTotal} ${pointsLabel}`;
+        if (unitPriceEl) unitPriceEl.textContent = `${this.formatShopPointValue(unitPrice)} ${pointsLabel}`;
+        if (subtotalEl) subtotalEl.textContent = `${this.formatShopPointValue(subtotal)} ${pointsLabel}`;
+        if (totalEl) totalEl.textContent = `${this.formatShopPointValue(finalTotal)} ${pointsLabel}`;
 
         if (discountRowEl) {
             this.setElementHidden(discountRowEl, discountAmount <= 0);
         }
         if (discountLabelEl) {
-            discountLabelEl.textContent = discountCode ? `${discountLabel} ${discountCode}` : discountLabel;
+            discountLabelEl.textContent = discountCode
+                ? `${discountLabel}${selectedDiscountCodes.length > 1 ? `（${selectedDiscountCodes.length} 张）` : ''} ${discountCode}${discountBenefitLabel ? ` · ${discountBenefitLabel}` : ''}`
+                : discountLabel;
         }
         if (discountAmountEl) {
-            discountAmountEl.textContent = `-${discountAmount} ${pointsLabel}`;
+            discountAmountEl.textContent = `-${this.formatShopPointValue(discountAmount)} ${pointsLabel}`;
         }
     },
 
     setPurchaseStage: function (stage = 'configure') {
         if (!this.currentPurchase) return;
 
-        const nextStage = stage === 'confirm' ? 'confirm' : 'configure';
+        const nextStage = 'configure';
         const modal = document.getElementById('shopPurchaseModal');
         const stageTitle = document.getElementById('purchaseStageTitle');
         const backBtn = document.getElementById('purchaseBackBtn');
@@ -1783,7 +2718,7 @@ const ShopClient = {
         }
 
         if (nextBtn) {
-            nextBtn.innerHTML = `<i class="fas fa-arrow-right"></i> <span>${this.escapeHtml(copy.nextLabel)}</span>`;
+            nextBtn.innerHTML = `<span>${this.escapeHtml(copy.nextLabel)}</span>`;
             this.setElementHidden(nextBtn, nextStage !== 'configure');
             nextBtn.disabled = false;
         }
@@ -1794,15 +2729,11 @@ const ShopClient = {
             confirmBtn.disabled = false;
         }
 
-        if (nextStage === 'confirm') {
-            this.renderPurchaseConfirmationStage();
-        }
     },
 
     proceedPurchaseConfirmation: function () {
         if (!this.currentPurchase) return;
-        this.renderPurchaseConfirmationStage();
-        this.setPurchaseStage('confirm');
+        void this.confirmPurchase();
     },
 
     getDefaultStackingPolicy: function () {
@@ -1812,17 +2743,19 @@ const ShopClient = {
             pricing_apply_stage: 'order_discount',
             exclusivity_label: '排他券',
             apply_stage_label: '订单优惠阶段',
-            summary: '当前仅支持单券结算，优惠会在订单优惠阶段直接抵扣。'
+            summary: '优惠会按价格瀑布顺序结算；排他券单独生效，可并行权益会继续向下叠加。'
         };
     },
 
     buildLocalPricingWaterfall: function () {
-        const subtotal = this.getCurrentPurchaseSubtotal();
-        const discountAmount = Math.max(0, Number(this.currentPurchase.discountAmount) || 0);
-        const finalTotal = Math.max(0, subtotal - discountAmount);
+        const { subtotal, discountAmount, finalTotal } = this.getCurrentPurchasePricingSummary();
         const unitPrice = Math.max(0, Number(this.currentPurchase.unitPrice) || 0);
         const quantity = Math.max(1, Number(this.currentPurchase.quantity) || 1);
-        const code = String(this.currentPurchase.discountCode || '').trim().toUpperCase();
+        const selectedDiscounts = this.getCurrentPurchaseSelectedDiscounts();
+        const discountCodes = selectedDiscounts
+            .map((selection) => selection.code)
+            .filter(Boolean);
+        const code = discountCodes.join(' + ');
         const stackingPolicy = this.currentPurchase.stackingPolicy && typeof this.currentPurchase.stackingPolicy === 'object'
             ? {
                 ...this.getDefaultStackingPolicy(),
@@ -1850,7 +2783,9 @@ const ShopClient = {
         if (discountAmount > 0) {
             rows.push({
                 key: 'discount',
-                label: code ? `优惠券 ${code}` : '优惠券抵扣',
+                label: selectedDiscounts.length > 1
+                    ? `已叠加 ${selectedDiscounts.length} 张卡券`
+                    : (code ? `优惠券 ${code}` : '优惠券抵扣'),
                 amount: discountAmount,
                 display_amount: -discountAmount,
                 detail: `${stackingPolicy.apply_stage_label || '订单优惠阶段'} · ${stackingPolicy.exclusivity_label || '排他券'} · 优先级 ${stackingPolicy.stack_priority || 100}`,
@@ -1862,7 +2797,9 @@ const ShopClient = {
             key: 'total',
             label: '实付积分',
             amount: finalTotal,
-            detail: discountAmount > 0 ? '已包含优惠抵扣' : '未使用优惠',
+            detail: discountAmount > 0
+                ? (selectedDiscounts.length > 1 ? `已包含 ${selectedDiscounts.length} 张卡券抵扣` : '已包含优惠抵扣')
+                : '未使用优惠',
             tone: 'total'
         });
 
@@ -1924,6 +2861,7 @@ const ShopClient = {
                         const rawAmount = Number(row?.display_amount ?? row?.amount);
                         const amount = Number.isFinite(rawAmount) ? rawAmount : 0;
                         const prefix = amount > 0 && tone !== 'total' ? '+' : '';
+                        const displayAmount = `${prefix}${this.formatShopPointValue(amount)}`;
 
                         return `
                             <div class="shop-price-waterfall__row shop-price-waterfall__row--${this.escapeHtml(tone)}">
@@ -1931,40 +2869,71 @@ const ShopClient = {
                                     <strong>${this.escapeHtml(row?.label || '价格项')}</strong>
                                     ${row?.detail ? `<span>${this.escapeHtml(row.detail)}</span>` : ''}
                                 </div>
-                                <div class="shop-price-waterfall__row-value">${this.escapeHtml(`${prefix}${amount}`)}</div>
+                                <div class="shop-price-waterfall__row-value">${this.escapeHtml(displayAmount)}</div>
                             </div>
                         `;
                     }).join('')}
                 </div>
-                <div class="shop-price-waterfall__footer">${this.escapeHtml(stackingPolicy.summary || '当前仅支持单券结算。')}</div>
+                <div class="shop-price-waterfall__footer">${this.escapeHtml(stackingPolicy.summary || '当前按价格瀑布顺序结算。')}</div>
             </div>
         `;
     },
 
-    calculateDiscountAmount: function (subtotal) {
+    calculateDiscountPricingForConfig: function (subtotal, { discountType = '', discountValue = null } = {}) {
+        const normalizedSubtotal = Math.max(0, Number(subtotal || 0) || 0);
+        const normalizedDiscountType = String(discountType || '').trim().toLowerCase();
+        const normalizedDiscountValue = Number(discountValue);
+        if (!normalizedDiscountType || !Number.isFinite(normalizedDiscountValue) || normalizedDiscountValue <= 0) {
+            return {
+                discountAmount: 0,
+                finalTotal: normalizedSubtotal
+            };
+        }
+
+        if (normalizedDiscountType === 'percent') {
+            const finalTotal = Math.max(
+                0,
+                Math.min(normalizedSubtotal, Number(((normalizedSubtotal * normalizedDiscountValue) / 100).toFixed(2)))
+            );
+
+            return {
+                discountAmount: Math.max(0, Number((normalizedSubtotal - finalTotal).toFixed(2))),
+                finalTotal
+            };
+        }
+
+        if (normalizedDiscountType === 'fixed') {
+            const discountAmount = Math.min(normalizedSubtotal, normalizedDiscountValue);
+            return {
+                discountAmount,
+                finalTotal: Math.max(0, Number((normalizedSubtotal - discountAmount).toFixed(2)))
+            };
+        }
+
+        return {
+            discountAmount: 0,
+            finalTotal: normalizedSubtotal
+        };
+    },
+
+    calculateDiscountPricing: function (subtotal) {
         const discountType = this.currentPurchase.discountType;
         const discountValue = Number(this.currentPurchase.discountValue);
         if (!discountType || !Number.isFinite(discountValue) || discountValue <= 0) {
-            return 0;
+            return {
+                discountAmount: 0,
+                finalTotal: Math.max(0, subtotal)
+            };
         }
-
-        if (discountType === 'percent') {
-            return Math.max(0, subtotal - Math.floor(subtotal * (discountValue / 100)));
-        }
-
-        if (discountType === 'fixed') {
-            return Math.min(subtotal, discountValue);
-        }
-
-        return 0;
+        return this.calculateDiscountPricingForConfig(subtotal, { discountType, discountValue });
     },
 
     syncDiscountedTotal: function () {
         const subtotal = this.getCurrentPurchaseSubtotal();
-        const discountAmount = this.calculateDiscountAmount(subtotal);
-        const finalTotal = Math.max(0, subtotal - discountAmount);
+        const { discountAmount, finalTotal } = this.calculateDiscountPricing(subtotal);
         this.currentPurchase.discountAmount = discountAmount;
-        document.getElementById('modalTotalPrice').textContent = finalTotal;
+        this.currentPurchase.discountFinalTotal = finalTotal;
+        document.getElementById('modalTotalPrice').textContent = this.formatShopPointValue(finalTotal);
         this.syncPricingWaterfall();
         return {
             subtotal,
@@ -1973,22 +2942,96 @@ const ShopClient = {
         };
     },
 
-    setDiscountAppliedMessage: function (discountAmount) {
+    getCurrentPurchaseSelectedDiscounts: function () {
+        return this.normalizePurchaseDiscountSelectionSnapshots(this.currentPurchase?.selectedDiscounts || []);
+    },
+
+    getCurrentPurchaseSelectedDiscountCodes: function () {
+        return this.getCurrentPurchaseSelectedDiscounts()
+            .map((selection) => selection.code)
+            .filter(Boolean);
+    },
+
+    buildCurrentPurchaseDiscountBenefitLabel: function (selectedDiscounts = null) {
+        const normalizedSelections = Array.isArray(selectedDiscounts)
+            ? this.normalizePurchaseDiscountSelectionSnapshots(selectedDiscounts)
+            : this.getCurrentPurchaseSelectedDiscounts();
+        if (!normalizedSelections.length) {
+            return '';
+        }
+        if (normalizedSelections.length === 1) {
+            return normalizedSelections[0].benefitLabel || normalizedSelections[0].code || '';
+        }
+        return `已叠加 ${normalizedSelections.length} 张券`;
+    },
+
+    syncCurrentPurchaseDiscountSelectionState: function (selectedDiscounts = null) {
+        const normalizedSelections = Array.isArray(selectedDiscounts)
+            ? this.normalizePurchaseDiscountSelectionSnapshots(selectedDiscounts)
+            : this.getCurrentPurchaseSelectedDiscounts();
+        this.currentPurchase.selectedDiscounts = normalizedSelections;
+        this.currentPurchase.appliedDiscounts = normalizedSelections;
+
+        const firstSelection = normalizedSelections[0] || null;
+        this.currentPurchase.discountCode = normalizedSelections.length === 1
+            ? (firstSelection?.code || null)
+            : (normalizedSelections.map((selection) => selection.code).filter(Boolean).join(' + ') || null);
+        this.currentPurchase.discountAssetId = normalizedSelections.length === 1
+            ? (firstSelection?.assetId || null)
+            : null;
+        this.currentPurchase.discountType = normalizedSelections.length === 1
+            ? (firstSelection?.discountType || null)
+            : null;
+        this.currentPurchase.discountValue = normalizedSelections.length === 1
+            ? (firstSelection?.discountValue ?? null)
+            : null;
+        this.currentPurchase.discountBenefitLabel = this.buildCurrentPurchaseDiscountBenefitLabel(normalizedSelections);
+        return normalizedSelections;
+    },
+
+    serializeDiscountSelectionsForRequest: function (selectedDiscounts = null, options = {}) {
+        const normalizedSelections = Array.isArray(selectedDiscounts)
+            ? this.normalizePurchaseDiscountSelectionSnapshots(selectedDiscounts, {
+                allowIdentityOnly: options.allowIdentityOnly === true
+            })
+            : this.getCurrentPurchaseSelectedDiscounts();
+        return normalizedSelections.map((selection) => ({
+            code: selection.code || null,
+            assetId: selection.assetId || null
+        }));
+    },
+
+    setDiscountAppliedMessage: function ({ discountAmount = 0, finalTotal = null, benefitLabel = '', selectionCount = 0 } = {}) {
+        const pointsLabel = window.i18n?.t('shop.points') || '积分';
+        const normalizedDiscountAmount = Number(discountAmount);
+        const normalizedFinalTotal = Number(finalTotal);
+        const normalizedSelectionCount = Math.max(0, Number(selectionCount || 0) || 0);
+        const normalizedBenefitLabel = String(benefitLabel || '').trim()
+            || (normalizedSelectionCount > 1 ? `已叠加 ${normalizedSelectionCount} 张券` : '');
+        const messageText = normalizedBenefitLabel && Number.isFinite(normalizedFinalTotal)
+            ? `已应用 ${normalizedBenefitLabel}，当前实付 ${this.formatShopPointValue(normalizedFinalTotal)} ${pointsLabel}${Number.isFinite(normalizedDiscountAmount) && normalizedDiscountAmount > 0 ? `，已优惠 ${this.formatShopPointValue(normalizedDiscountAmount)} ${pointsLabel}` : ''}`
+            : normalizedBenefitLabel
+                ? `已应用 ${normalizedBenefitLabel}${Number.isFinite(normalizedDiscountAmount) && normalizedDiscountAmount > 0 ? `，已优惠 ${this.formatShopPointValue(normalizedDiscountAmount)} ${pointsLabel}` : ''}`
+                : `${window.i18n?.t('shop.discountApplied') || '已抵扣'} ${this.formatShopPointValue(normalizedDiscountAmount)} ${pointsLabel}`;
         this.setDiscountMessage(
-            `<i class="fas fa-check-circle" aria-hidden="true"></i><span>${window.i18n?.t('shop.discountApplied') || '已抵扣'} ${discountAmount} ${window.i18n?.t('shop.points') || '积分'}</span>`,
+            `<i class="fas fa-check-circle" aria-hidden="true"></i><span>${this.escapeHtml(messageText)}</span>`,
             { variant: 'success', html: true }
         );
     },
 
     resetDiscountState: function ({ clearMessage = true } = {}) {
+        this.currentPurchase.selectedDiscounts = [];
+        this.currentPurchase.appliedDiscounts = [];
         this.currentPurchase.discountCode = null;
         this.currentPurchase.discountAssetId = null;
         this.currentPurchase.discountType = null;
         this.currentPurchase.discountValue = null;
+        this.currentPurchase.discountBenefitLabel = '';
         this.currentPurchase.discountAmount = 0;
+        this.currentPurchase.discountFinalTotal = null;
         this.currentPurchase.pricingWaterfall = [];
         this.currentPurchase.stackingPolicy = this.getDefaultStackingPolicy();
-        document.getElementById('modalTotalPrice').textContent = this.getCurrentPurchaseSubtotal();
+        document.getElementById('modalTotalPrice').textContent = this.formatShopPointValue(this.getCurrentPurchaseSubtotal());
         this.syncPricingWaterfall();
         if (clearMessage) {
             this.setDiscountMessage('');
@@ -1996,68 +3039,522 @@ const ShopClient = {
         this.renderPurchaseDiscountAssets();
     },
 
-    buildDiscountAssetCardMarkup: function (item = {}, { selected = false, claimable = false } = {}) {
-        const label = claimable
-            ? (item.can_claim ? '立即领取' : '已达上限')
-            : (item.available ? (selected ? '已选中' : '直接使用') : '当前不可用');
-        const metaParts = [];
-        if (item.preview?.discount_amount > 0) {
-            metaParts.push(`预计优惠 ${item.preview.discount_amount}`);
+    formatDiscountSourceLabel: function (item = {}) {
+        const explicitLabel = String(item?.source_label || '').trim();
+        if (explicitLabel) {
+            return explicitLabel;
         }
-        if (item.preview?.final_total >= 0) {
-            metaParts.push(`实付 ${item.preview.final_total}`);
+
+        const sourceChannel = String(item?.source_channel || '').trim().toLowerCase();
+        const distributionMode = String(item?.distribution_mode || '').trim().toLowerCase();
+
+        if (sourceChannel.includes('wallet') || sourceChannel.includes('recharge')) return '充值赠券';
+        if (sourceChannel.includes('checkin')) return '签到奖励';
+        if (sourceChannel.includes('affiliate') || sourceChannel.includes('invite')) return '推广奖励';
+        if (sourceChannel.includes('claim')) return '公开领取';
+        if (sourceChannel.includes('manual') || sourceChannel.includes('admin')) return '后台发放';
+        if (sourceChannel.includes('shop_wallet')) return '卡包跳转';
+        if (distributionMode === 'public_claim') return '公开领取';
+        if (distributionMode === 'user_assigned') return '定向发放';
+        if (distributionMode === 'general_code') return '暗码兑换';
+        return '';
+    },
+
+    formatDiscountStackingLabel: function (item = {}) {
+        return item?.is_exclusive === false ? '可叠加' : '排他券';
+    },
+
+    formatDiscountStackingSummary: function (item = {}) {
+        const explicitSummary = String(item?.stacking_summary || '').trim();
+        if (explicitSummary) {
+            return explicitSummary;
         }
-        if (item.claim_expires_at) {
-            metaParts.push(`领取至 ${new Date(item.claim_expires_at).toLocaleString()}`);
-        } else if (item.expires_at) {
-            metaParts.push(`有效至 ${new Date(item.expires_at).toLocaleString()}`);
+        return item?.is_exclusive === false
+            ? '可与其它优惠券叠加'
+            : '不可与其它优惠券叠加';
+    },
+
+    getDiscountStackingBadgeClassName: function (item = {}) {
+        return item?.is_exclusive === false
+            ? 'shop-discount-asset-card__stacking shop-discount-asset-card__stacking--stackable'
+            : 'shop-discount-asset-card__stacking shop-discount-asset-card__stacking--exclusive';
+    },
+
+    normalizeShopRequestError: function (error = null, { fallbackMessage = '优惠服务连接失败，请刷新后重试' } = {}) {
+        const rawMessage = String(error?.message || error || '').trim();
+        const normalizedMessage = rawMessage.toLowerCase();
+
+        if (String(error?.name || '').trim() === 'AbortError') {
+            return new Error('请求已中断，请稍后重试');
         }
-        if (item.source_channel) {
-            metaParts.push(`渠道 ${item.source_channel}`);
+
+        if (
+            normalizedMessage === 'typeerror: fetch failed'
+            || normalizedMessage === 'fetch failed'
+            || normalizedMessage === 'failed to fetch'
+            || normalizedMessage.includes('networkerror')
+            || normalizedMessage.includes('load failed')
+            || normalizedMessage.includes('network request failed')
+        ) {
+            return new Error(fallbackMessage);
+        }
+
+        if (error instanceof Error) {
+            return error;
+        }
+
+        return new Error(rawMessage || fallbackMessage);
+    },
+
+    collectKnownShopProducts: function () {
+        const productMap = new Map();
+        const addProduct = (product = null) => {
+            const productId = String(product?.id || '').trim();
+            if (!productId || productMap.has(productId)) {
+                return;
+            }
+            productMap.set(productId, product);
+        };
+
+        (Array.isArray(this.allProductsCache) ? this.allProductsCache : []).forEach(addProduct);
+        Object.values(this.categoryProductsCache || {}).forEach((list) => {
+            (Array.isArray(list) ? list : []).forEach(addProduct);
+        });
+
+        const currentProductId = String(this.currentPurchase?.productId || '').trim();
+        if (currentProductId) {
+            addProduct(this.getCachedProductById(currentProductId));
+        }
+
+        return Array.from(productMap.values());
+    },
+
+    getDiscountTargetProducts: function (item = {}) {
+        const currentProductId = String(this.currentPurchase?.productId || '').trim();
+        const scopeType = String(item?.scope_type || '').trim().toLowerCase();
+        const targetProducts = [];
+        const seenProductIds = new Set();
+
+        const pushProduct = (productId = '', fallbackName = '') => {
+            const normalizedProductId = String(productId || '').trim();
+            if (!normalizedProductId || normalizedProductId === currentProductId || seenProductIds.has(normalizedProductId)) {
+                return;
+            }
+
+            const cachedProduct = this.getCachedProductById(normalizedProductId);
+            if (cachedProduct?.is_active === false) {
+                return;
+            }
+
+            const label = String(
+                cachedProduct?.name
+                || cachedProduct?.name_en
+                || fallbackName
+                || ''
+            ).trim() || '指定商品';
+
+            seenProductIds.add(normalizedProductId);
+            targetProducts.push({
+                id: normalizedProductId,
+                label
+            });
+        };
+
+        if (scopeType === 'product') {
+            const scopeProduct = item?.scope_product && typeof item.scope_product === 'object'
+                ? item.scope_product
+                : null;
+            pushProduct(
+                scopeProduct?.id || item?.scope_product_id,
+                scopeProduct?.display_name || scopeProduct?.name || scopeProduct?.name_en || '指定商品'
+            );
+            return targetProducts;
+        }
+
+        if (scopeType === 'category') {
+            const scopeCategory = String(item?.scope_category || '').trim();
+            if (!scopeCategory) {
+                return targetProducts;
+            }
+
+            this.collectKnownShopProducts()
+                .filter((product) => (
+                    String(product?.category || '').trim() === scopeCategory
+                    && product?.is_active !== false
+                ))
+                .slice(0, 4)
+                .forEach((product) => {
+                    pushProduct(product?.id, product?.name || product?.name_en || scopeCategory);
+                });
+        }
+
+        return targetProducts;
+    },
+
+    formatDiscountExpiryLabel: function (item = {}, { includePrefix = true, preferClaimWindow = false } = {}) {
+        const isEn = this.isEnglishShopLocale();
+        const rawValue = String(
+            (preferClaimWindow
+                ? (item?.claim_expires_at || item?.effective_expires_at || item?.expires_at)
+                : (item?.effective_expires_at || item?.expires_at || item?.claim_expires_at))
+            || ''
+        ).trim();
+
+        if (!rawValue) {
+            return isEn ? 'No expiry' : '长期有效';
+        }
+
+        const parsedDate = new Date(rawValue);
+        const formattedValue = Number.isNaN(parsedDate.getTime())
+            ? rawValue
+            : parsedDate.toLocaleString(isEn ? 'en-US' : 'zh-CN', {
+                year: 'numeric',
+                month: 'numeric',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+
+        if (!includePrefix) {
+            return formattedValue;
+        }
+
+        return `${isEn ? 'Valid until' : '有效至'} ${formattedValue}`;
+    },
+
+    formatDiscountUnavailableReason: function (item = {}, { short = false } = {}) {
+        const rawMessage = String(item?.message || '').trim();
+        if (!rawMessage || /^(?:当前不可用|请稍后再试)$/u.test(rawMessage)) {
+            return '';
+        }
+
+        if (/不允许全额抵扣/u.test(rawMessage)) {
+            return short
+                ? '抵后会变成 0，不支持全额抵扣'
+                : '当前价格会被抵到 0，这张券不支持全额抵扣';
+        }
+
+        if (/暂无可优惠金额/u.test(rawMessage)) {
+            return short
+                ? '当前商品没有可优惠金额'
+                : '当前商品没有可优惠金额，暂时无法使用这张券';
+        }
+
+        if (/不能与其他卡券叠加/u.test(rawMessage)) {
+            return short
+                ? '需要单独使用，不能叠加'
+                : '这张券需要单独使用，不能与其他卡券叠加';
+        }
+
+        return rawMessage.replace(/^指定商品当前不可用[:：]?\s*/u, '');
+    },
+
+    buildDiscountTargetProductsMarkup: function (item = {}, targetProducts = null) {
+        const normalizedTargetProducts = Array.isArray(targetProducts)
+            ? targetProducts
+            : this.getDiscountTargetProducts(item);
+        const scopeLabel = String(item?.scope_label || '').trim();
+
+        if (!normalizedTargetProducts.length && (!scopeLabel || scopeLabel === '全场可用')) {
+            return '';
+        }
+
+        if (!normalizedTargetProducts.length) {
+            return `
+                <div class="shop-discount-asset-card__targets shop-discount-asset-card__targets--static">
+                    <span class="shop-discount-asset-card__targets-label">适用范围</span>
+                    <div class="shop-discount-asset-card__scope">${this.escapeHtml(scopeLabel)}</div>
+                </div>
+            `;
         }
 
         return `
-            <button type="button"
-                class="shop-discount-asset-card${selected ? ' is-selected' : ''}${item.available === false && !claimable ? ' is-disabled' : ''}"
+            <div class="shop-discount-asset-card__targets">
+                <div class="shop-discount-asset-card__targets-head">
+                    <span class="shop-discount-asset-card__targets-label">可用商品</span>
+                    <span class="shop-discount-asset-card__targets-count">${this.escapeHtml(String(normalizedTargetProducts.length))}</span>
+                </div>
+                <div class="shop-discount-asset-card__targets-list">
+                    ${normalizedTargetProducts.map((product) => `
+                        <button
+                            type="button"
+                            class="shop-discount-asset-card__target-link"
+                            data-shop-discount-action="jump-product"
+                            data-target-product-id="${this.escapeAttribute(product.id)}"
+                        >
+                            <span class="shop-discount-asset-card__target-name">${this.escapeHtml(product.label)}</span>
+                            <span class="shop-discount-asset-card__target-action">查看商品</span>
+                        </button>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    },
+
+    buildDiscountAssetCardMarkup: function (item = {}, { selected = false, claimable = false, claimPending = false } = {}) {
+        const targetProducts = !claimable && item.available === false
+            ? this.getDiscountTargetProducts(item)
+            : [];
+        const targetProductsMarkup = !claimable && item.available === false
+            ? this.buildDiscountTargetProductsMarkup(item, targetProducts)
+            : '';
+        const hasProductTargets = targetProducts.length > 0;
+        const isUnavailableCard = !claimable && item.available === false;
+        const isCollapsibleUnavailableCard = isUnavailableCard && hasProductTargets;
+        const expiryLabel = this.formatDiscountExpiryLabel(item, { includePrefix: true });
+        const label = claimable
+            ? (claimPending ? '领取中' : (item.can_claim ? '立即领取' : '已达上限'))
+            : (item.available
+                ? (selected ? '已选中' : '点击使用')
+                : expiryLabel);
+        const benefitLabel = this.getDiscountBenefitLabel(item);
+        const stackingLabel = this.formatDiscountStackingLabel(item);
+        const stackingSummary = this.formatDiscountStackingSummary(item);
+        const precisePreviewTotal = this.getDiscountPrecisePreviewTotal(item);
+        const previewDiscountAmount = Number(item?.preview?.discount_amount);
+        const previewFinalTotal = Number(item?.preview?.final_total);
+        const effectiveFinalTotal = Number.isFinite(previewFinalTotal) ? previewFinalTotal : precisePreviewTotal;
+        const unavailableSummaryReason = isUnavailableCard
+            ? this.formatDiscountUnavailableReason(item, { short: isCollapsibleUnavailableCard })
+            : '';
+        const unavailableDetailReason = isUnavailableCard
+            ? this.formatDiscountUnavailableReason(item, { short: false })
+            : '';
+        const metaParts = [];
+        if (!isUnavailableCard) {
+            if (Number.isFinite(effectiveFinalTotal) && effectiveFinalTotal >= 0) {
+                metaParts.push(`${Number.isFinite(previewFinalTotal) ? '实付' : '折后'} ${this.formatShopPointValue(effectiveFinalTotal)}`);
+            }
+            if (Number.isFinite(previewDiscountAmount) && previewDiscountAmount > 0) {
+                metaParts.push(`已优惠 ${this.formatShopPointValue(previewDiscountAmount)}`);
+            }
+        }
+        if (isUnavailableCard) {
+            metaParts.push(`有效期 ${this.formatDiscountExpiryLabel(item, { includePrefix: false })}`);
+        } else if (item.claim_expires_at) {
+            metaParts.push(`领取至 ${new Date(item.claim_expires_at).toLocaleString()}`);
+        } else if (item.expires_at || item.effective_expires_at) {
+            metaParts.push(this.formatDiscountExpiryLabel(item, { includePrefix: true }));
+        }
+        const sourceLabel = this.formatDiscountSourceLabel(item);
+        if (sourceLabel) {
+            metaParts.push(sourceLabel);
+        }
+        if (stackingSummary) {
+            metaParts.push(stackingSummary);
+        }
+        const rawHint = String(item.message || '').trim();
+        const hintText = isUnavailableCard ? unavailableDetailReason : rawHint;
+        const shouldRenderHint = hintText && !/^(?:优惠码可用|当前可用)$/u.test(hintText);
+        const isInteractiveCard = claimable || item.available !== false;
+        const cardTag = isInteractiveCard ? 'button' : 'div';
+        const cardClassName = `shop-discount-asset-card${selected ? ' is-selected' : ''}${item.available === false && !claimable ? ' is-disabled' : ''}${hasProductTargets ? ' has-product-targets' : ''}`;
+        const interactiveAttrs = isInteractiveCard
+            ? `
+                type="button"
                 data-shop-discount-action="${claimable ? 'claim' : 'apply'}"
                 data-discount-asset-id="${this.escapeHtml(item.asset_id || '')}"
                 data-discount-id="${this.escapeHtml(item.discount_id || '')}"
                 data-discount-code="${this.escapeHtml(item.code || '')}"
-                ${claimable ? (!item.can_claim ? 'disabled' : '') : (!item.available ? 'disabled' : '')}>
-                <div class="shop-discount-asset-card__top">
+                ${claimPending ? 'aria-busy="true"' : ''}
+                ${claimable ? (!item.can_claim ? 'disabled' : '') : (!item.available ? 'disabled' : '')}
+            `
+            : 'role="group"';
+        const topMarkup = `
+            <div class="shop-discount-asset-card__top">
+                <div class="shop-discount-asset-card__identity">
                     <strong>${this.escapeHtml(item.code || '优惠券')}</strong>
-                    <span class="shop-discount-asset-card__cta">${this.escapeHtml(label)}</span>
+                    ${benefitLabel ? `<span class="shop-discount-asset-card__benefit">${this.escapeHtml(benefitLabel)}</span>` : ''}
+                    ${stackingLabel ? `<span class="${this.getDiscountStackingBadgeClassName(item)}">${this.escapeHtml(stackingLabel)}</span>` : ''}
                 </div>
-                <div class="shop-discount-asset-card__meta">${this.escapeHtml(metaParts.join(' · ') || item.message || '可在当前商品结算时使用')}</div>
-                ${item.message ? `<div class="shop-discount-asset-card__hint">${this.escapeHtml(item.message)}</div>` : ''}
-            </button>
+                ${isCollapsibleUnavailableCard
+                    ? `
+                        <span class="shop-discount-asset-card__disclosure">
+                            <span class="shop-discount-asset-card__chevron" aria-hidden="true"></span>
+                        </span>
+                    `
+                    : `<span class="shop-discount-asset-card__cta${isUnavailableCard ? ' shop-discount-asset-card__cta--expiry' : ''}">${this.escapeHtml(label)}</span>`}
+            </div>
         `;
+        const summaryReasonMarkup = isCollapsibleUnavailableCard && unavailableSummaryReason
+            ? `<div class="shop-discount-asset-card__summary-reason">${this.escapeHtml(unavailableSummaryReason)}</div>`
+            : '';
+        const metaMarkup = `<div class="shop-discount-asset-card__meta">${this.escapeHtml(metaParts.join(' · ') || hintText || '可在当前商品结算时使用')}</div>`;
+        const hintMarkup = shouldRenderHint ? `<div class="shop-discount-asset-card__hint">${this.escapeHtml(hintText)}</div>` : '';
+
+        if (isCollapsibleUnavailableCard) {
+            return `
+                <details class="${cardClassName} shop-discount-asset-card--collapsible">
+                    <summary class="shop-discount-asset-card__summary">
+                        ${topMarkup}
+                        ${summaryReasonMarkup}
+                    </summary>
+                    <div class="shop-discount-asset-card__fold">
+                        <div class="shop-discount-asset-card__fold-inner">
+                            ${metaMarkup}
+                            ${hintMarkup}
+                            ${targetProductsMarkup}
+                        </div>
+                    </div>
+                </details>
+            `;
+        }
+
+        return `
+            <${cardTag}
+                class="${cardClassName}"
+                ${interactiveAttrs}>
+                ${topMarkup}
+                ${metaMarkup}
+                ${hintMarkup}
+                ${targetProductsMarkup}
+            </${cardTag}>
+        `;
+    },
+
+    toggleDiscountAssetAccordion: function (detailsEl) {
+        const details = detailsEl instanceof HTMLElement ? detailsEl : null;
+        const summary = details?.querySelector('.shop-discount-asset-card__summary');
+        const fold = details?.querySelector('.shop-discount-asset-card__fold');
+        const inner = details?.querySelector('.shop-discount-asset-card__fold-inner');
+        if (!details || !summary || !fold || !inner) {
+            return;
+        }
+
+        if (details.dataset.animating === '1') {
+            return;
+        }
+
+        const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+        const isOpening = !details.open;
+        if (prefersReducedMotion) {
+            details.open = isOpening;
+            return;
+        }
+
+        const durationMs = 280;
+        const easing = 'cubic-bezier(0.22, 1, 0.36, 1)';
+        const collapsedHeight = Math.max(0, Math.round(summary.offsetHeight || 0));
+        const expandedHeight = (() => {
+            if (!details.open) {
+                details.open = true;
+            }
+            return Math.max(collapsedHeight, Math.round(summary.offsetHeight + fold.scrollHeight));
+        })();
+        const startHeight = isOpening ? collapsedHeight : Math.max(collapsedHeight, Math.round(details.offsetHeight || expandedHeight));
+        const endHeight = isOpening ? expandedHeight : collapsedHeight;
+        let cleanedUp = false;
+
+        const cleanup = ({ closeAfter = false } = {}) => {
+            if (cleanedUp) {
+                return;
+            }
+            cleanedUp = true;
+            if (closeAfter) {
+                details.open = false;
+            }
+            delete details.dataset.animating;
+            details.classList.remove('is-animating', 'is-collapsing');
+            details.style.removeProperty('height');
+            details.style.removeProperty('overflow');
+            details.style.removeProperty('transition');
+            fold.style.removeProperty('opacity');
+            fold.style.removeProperty('transition');
+            inner.style.removeProperty('transform');
+            inner.style.removeProperty('transition');
+        };
+
+        const finish = () => cleanup({ closeAfter: !isOpening });
+        const handleTransitionEnd = (event) => {
+            if (event.target !== details || event.propertyName !== 'height') {
+                return;
+            }
+            details.removeEventListener('transitionend', handleTransitionEnd);
+            finish();
+        };
+
+        details.dataset.animating = '1';
+        details.classList.add('is-animating');
+        details.classList.toggle('is-collapsing', !isOpening);
+        details.style.height = `${startHeight}px`;
+        details.style.overflow = 'hidden';
+        details.style.transition = `height ${durationMs}ms ${easing}`;
+        fold.style.transition = `opacity ${Math.max(160, durationMs - 60)}ms ease`;
+        inner.style.transition = `transform ${durationMs}ms ${easing}`;
+        fold.style.opacity = isOpening ? '0' : '1';
+        inner.style.transform = isOpening ? 'translateY(-8px)' : 'translateY(0)';
+
+        void details.offsetHeight;
+        details.addEventListener('transitionend', handleTransitionEnd);
+
+        window.requestAnimationFrame(() => {
+            if (isOpening) {
+                fold.style.opacity = '1';
+                inner.style.transform = 'translateY(0)';
+            } else {
+                fold.style.opacity = '0';
+                inner.style.transform = 'translateY(-8px)';
+            }
+            details.style.height = `${endHeight}px`;
+        });
+
+        window.setTimeout(() => {
+            details.removeEventListener('transitionend', handleTransitionEnd);
+            finish();
+        }, durationMs + 120);
     },
 
     renderPurchaseDiscountAssets: function () {
         const container = document.getElementById('purchaseDiscountAssetsPanel');
         if (!container) return;
 
+        const selectedAssetIds = new Set(
+            this.getCurrentPurchaseSelectedDiscounts()
+                .map((selection) => String(selection.assetId || '').trim())
+                .filter(Boolean)
+        );
+        const pendingClaimDiscountIds = this.pendingClaimDiscountIds instanceof Set
+            ? this.pendingClaimDiscountIds
+            : new Set();
         const ownedItems = Array.isArray(this.currentPurchase.availableDiscountAssets)
             ? this.currentPurchase.availableDiscountAssets
             : [];
+        const currentlyAvailableItems = ownedItems.filter((item) => item?.available !== false);
+        const currentlyUnavailableItems = ownedItems.filter((item) => item?.available === false);
         const claimableItems = Array.isArray(this.currentPurchase.claimableDiscounts)
             ? this.currentPurchase.claimableDiscounts
             : [];
+        const discountAssetsLoading = this.currentPurchase?.discountAssetsLoading === true;
+        const shouldWaitForLiveAvailableItems = discountAssetsLoading
+            && !currentlyAvailableItems.length
+            && !claimableItems.length
+            && currentlyUnavailableItems.length > 0;
 
-        if (!ownedItems.length && !claimableItems.length) {
-            container.innerHTML = '<div class="shop-discount-assets-empty">当前没有可直接选择的卡券，仍可继续输入暗码。</div>';
+        if ((!ownedItems.length && !claimableItems.length) || shouldWaitForLiveAvailableItems) {
+            container.innerHTML = discountAssetsLoading
+                ? '<div class="shop-discount-assets-empty">正在同步当前商品可用卡券...</div>'
+                : '<div class="shop-discount-assets-empty">当前没有可直接选择的卡券，仍可继续输入暗码。</div>';
             return;
         }
 
         container.innerHTML = `
             <div class="shop-discount-assets-shell">
-                ${ownedItems.length ? `
+                ${currentlyAvailableItems.length ? `
                     <div class="shop-discount-assets-group">
-                        <div class="shop-discount-assets-group__title">我的可用优惠</div>
+                        <div class="shop-discount-assets-group__title">当前商品可用</div>
                         <div class="shop-discount-assets-grid">
-                            ${ownedItems.map((item) => this.buildDiscountAssetCardMarkup(item, {
-                                selected: this.currentPurchase.discountAssetId && item.asset_id === this.currentPurchase.discountAssetId
+                            ${currentlyAvailableItems.map((item) => this.buildDiscountAssetCardMarkup(item, {
+                                selected: selectedAssetIds.has(String(item?.asset_id || '').trim())
+                            })).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+                ${currentlyUnavailableItems.length ? `
+                    <div class="shop-discount-assets-group">
+                        <div class="shop-discount-assets-group__title">当前商品不可用</div>
+                        <div class="shop-discount-assets-grid">
+                            ${currentlyUnavailableItems.map((item) => this.buildDiscountAssetCardMarkup(item, {
+                                selected: selectedAssetIds.has(String(item?.asset_id || '').trim())
                             })).join('')}
                         </div>
                     </div>
@@ -2066,7 +3563,10 @@ const ShopClient = {
                     <div class="shop-discount-assets-group">
                         <div class="shop-discount-assets-group__title">可领取优惠</div>
                         <div class="shop-discount-assets-grid">
-                            ${claimableItems.map((item) => this.buildDiscountAssetCardMarkup(item, { claimable: true })).join('')}
+                            ${claimableItems.map((item) => this.buildDiscountAssetCardMarkup(item, {
+                                claimable: true,
+                                claimPending: pendingClaimDiscountIds.has(String(item?.discount_id || '').trim())
+                            })).join('')}
                         </div>
                     </div>
                 ` : ''}
@@ -2074,35 +3574,35 @@ const ShopClient = {
         `;
     },
 
+    jumpToDiscountTargetProduct: async function (productId, options = {}) {
+        const normalizedProductId = String(productId || '').trim();
+        if (!normalizedProductId) {
+            return;
+        }
+
+        this.pendingProductSpotlight = {
+            productId: normalizedProductId,
+            autoOpen: options.autoOpen !== false,
+            sourceContext: {
+                sourcePage: 'purchase_modal',
+                sourceChannel: 'discount_asset_target_product',
+                sourcePromptId: null
+            }
+        };
+
+        this.closePurchaseModal();
+        await this.fulfillPendingProductSpotlight();
+    },
+
     loadAvailableDiscountAssetsWithServer: async function () {
-        const token = await this.getAccessToken();
-        if (!token) {
-            return {
-                owned_discounts: [],
-                claimable_discounts: []
-            };
-        }
-
-        const response = await fetch('/api/shop/available-discounts', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`
-            },
-            body: JSON.stringify({
-                productId: this.currentPurchase.productId,
-                quantity: this.currentPurchase.quantity,
-                agentId: this.currentAgentId,
-                site: window.SiteConfig?.site || 'cn'
-            })
+        return this.requestAvailableDiscountAssets({
+            productId: this.currentPurchase?.productId,
+            quantity: this.currentPurchase?.quantity,
+            agentId: this.currentAgentId,
+            site: window.SiteConfig?.site || 'cn',
+            preferCache: false,
+            allowPending: true
         });
-
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || payload?.success === false) {
-            throw new Error(payload?.message || '加载优惠券失败');
-        }
-
-        return payload;
     },
 
     claimDiscountWithServer: async function (discountId) {
@@ -2111,17 +3611,24 @@ const ShopClient = {
             throw new Error(window.i18n?.t('shop.loginRequired') || '请先登录');
         }
 
-        const response = await fetch('/api/shop/claim-discount', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`
-            },
-            body: JSON.stringify({
-                discountId,
-                site: window.SiteConfig?.site || 'cn'
-            })
-        });
+        let response;
+        try {
+            response = await fetch('/api/shop/claim-discount', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    discountId,
+                    site: window.SiteConfig?.site || 'cn'
+                })
+            });
+        } catch (error) {
+            throw this.normalizeShopRequestError(error, {
+                fallbackMessage: '领取卡券请求失败，请稍后重试'
+            });
+        }
 
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload?.success === false) {
@@ -2231,11 +3738,21 @@ const ShopClient = {
         this.setPurchaseStage(this.currentPurchase.stage || 'configure');
     },
 
-    applyDiscountPreviewState: function (preview = {}, { assetId = null, fallbackCode = '' } = {}) {
-        this.currentPurchase.discountCode = String(preview.discount_code || fallbackCode || '').trim().toUpperCase() || null;
-        this.currentPurchase.discountAssetId = assetId || null;
-        this.currentPurchase.discountType = preview.discount_type || null;
-        this.currentPurchase.discountValue = preview.discount_value ?? null;
+    applyDiscountPreviewState: function (preview = {}, { selectionSnapshot = null, assetId = null, fallbackCode = '' } = {}) {
+        const previewSelections = this.normalizePurchaseDiscountSelectionSnapshots(
+            preview?.applied_discounts && Array.isArray(preview.applied_discounts) && preview.applied_discounts.length
+                ? preview.applied_discounts
+                : (selectionSnapshot && Array.isArray(selectionSnapshot) && selectionSnapshot.length
+                    ? selectionSnapshot
+                    : [{
+                        code: preview.discount_code || fallbackCode || '',
+                        assetId: assetId || preview.discount_asset_id || null,
+                        discountType: preview.discount_type,
+                        discountValue: preview.discount_value,
+                        benefitLabel: preview.benefit_label || this.getDiscountBenefitLabel(preview)
+                    }])
+        );
+        this.syncCurrentPurchaseDiscountSelectionState(previewSelections);
         this.currentPurchase.stackingPolicy = preview?.stacking_policy && typeof preview.stacking_policy === 'object'
             ? {
                 ...this.getDefaultStackingPolicy(),
@@ -2244,46 +3761,65 @@ const ShopClient = {
             : this.getDefaultStackingPolicy();
         const codeInput = document.getElementById('purchaseDiscountCode');
         if (codeInput) {
-            codeInput.value = this.currentPurchase.discountCode || '';
+            const codeOnlySelection = previewSelections.find((selection) => !selection.assetId) || null;
+            codeInput.value = codeOnlySelection?.code || '';
         }
-        const { discountAmount } = this.syncDiscountedTotal();
+        const previewFinalTotal = Number(preview?.final_total);
+        const previewDiscountAmount = Number(preview?.discount_amount);
+        let discountAmount;
+        let finalTotal;
+
+        if (Number.isFinite(previewFinalTotal) && previewFinalTotal >= 0) {
+            finalTotal = Math.max(0, previewFinalTotal);
+            discountAmount = Number.isFinite(previewDiscountAmount)
+                ? Math.max(0, previewDiscountAmount)
+                : Math.max(0, Number((this.getCurrentPurchaseSubtotal() - finalTotal).toFixed(2)));
+            this.currentPurchase.discountAmount = discountAmount;
+            this.currentPurchase.discountFinalTotal = finalTotal;
+            document.getElementById('modalTotalPrice').textContent = this.formatShopPointValue(finalTotal);
+        } else {
+            ({ discountAmount, finalTotal } = this.syncDiscountedTotal());
+        }
+
         this.syncPricingWaterfall({
             rows: Array.isArray(preview?.pricing_waterfall) ? preview.pricing_waterfall : null,
             stackingPolicy: preview?.stacking_policy || null
         });
-        this.setDiscountAppliedMessage(discountAmount);
+        this.renderPurchaseConfirmationStage();
+        this.setDiscountAppliedMessage({
+            discountAmount,
+            finalTotal,
+            benefitLabel: this.currentPurchase.discountBenefitLabel,
+            selectionCount: previewSelections.length
+        });
         this.renderPurchaseDiscountAssets();
     },
 
     refreshAppliedDiscountPreview: async function ({ silent = true } = {}) {
-        const currentCode = String(this.currentPurchase.discountCode || '').trim();
-        if (!currentCode) {
+        const selectedDiscounts = this.getCurrentPurchaseSelectedDiscounts();
+        if (!selectedDiscounts.length) {
             return;
         }
 
         const revision = Math.max(0, Number(this.currentPurchase.discountPreviewRevision || 0)) + 1;
         this.currentPurchase.discountPreviewRevision = revision;
-        const discountAssetId = this.currentPurchase.discountAssetId || null;
 
         try {
-            const validationPayload = await this.validateDiscountWithServer(currentCode, {
-                discountAssetId
-            });
+            const validationPayload = await this.validateDiscountSelectionsWithServer(selectedDiscounts);
 
             if (this.currentPurchase.discountPreviewRevision !== revision) {
                 return;
             }
 
             this.applyDiscountPreviewState(validationPayload?.data || {}, {
-                assetId: discountAssetId,
-                fallbackCode: currentCode
+                selectionSnapshot: selectedDiscounts
             });
         } catch (error) {
             if (this.currentPurchase.discountPreviewRevision !== revision) {
                 return;
             }
 
-            const fallbackMessage = discountAssetId
+            const fallbackMessage = selectedDiscounts.some((selection) => selection.assetId)
                 ? '已选卡券在当前数量下不可用，已取消使用'
                 : '优惠码在当前数量下不可用，已取消使用';
             this.resetDiscountState({ clearMessage: false });
@@ -2295,19 +3831,83 @@ const ShopClient = {
     },
 
     refreshPurchaseDiscountAssets: async function ({ silent = false } = {}) {
+        if (!this.currentPurchase) {
+            return;
+        }
+
+        const hasPrefilledItems = (Array.isArray(this.currentPurchase.availableDiscountAssets) && this.currentPurchase.availableDiscountAssets.length > 0)
+            || (Array.isArray(this.currentPurchase.claimableDiscounts) && this.currentPurchase.claimableDiscounts.length > 0);
+        if (!hasPrefilledItems) {
+            this.currentPurchase.discountAssetsLoading = true;
+            this.renderPurchaseDiscountAssets();
+        }
+
         try {
             const payload = await this.loadAvailableDiscountAssetsWithServer();
             this.currentPurchase.availableDiscountAssets = Array.isArray(payload?.owned_discounts) ? payload.owned_discounts : [];
             this.currentPurchase.claimableDiscounts = Array.isArray(payload?.claimable_discounts) ? payload.claimable_discounts : [];
+            this.currentPurchase.discountAssetsLoading = false;
             this.renderPurchaseDiscountAssets();
         } catch (error) {
             this.currentPurchase.availableDiscountAssets = [];
             this.currentPurchase.claimableDiscounts = [];
+            this.currentPurchase.discountAssetsLoading = false;
             this.renderPurchaseDiscountAssets();
             if (!silent) {
                 this.setDiscountMessage(error.message || '优惠券列表加载失败', { variant: 'error' });
             }
         }
+    },
+
+    isExclusiveDiscountStackingConflict: function (error = null) {
+        const normalizedMessage = String(error?.message || error || '').trim();
+        return /为排他券/u.test(normalizedMessage) && /不能与其他卡券叠加/u.test(normalizedMessage);
+    },
+
+    buildExclusiveReplacementMessage: function ({ conflictMessage = '', replacementCode = '' } = {}) {
+        const normalizedConflictMessage = String(conflictMessage || '').trim().replace(/[。.!！]+$/u, '');
+        const normalizedReplacementCode = String(replacementCode || '').trim().toUpperCase() || '当前券';
+        return `${normalizedConflictMessage || '所选卡券为排他券，不能与其他卡券叠加'}。已改为仅应用你刚选择的优惠券 ${normalizedReplacementCode}。`;
+    },
+
+    applyExclusiveReplacementSelection: async function (selection = {}, { conflictMessage = '' } = {}) {
+        const replacementSelection = {
+            assetId: String(
+                selection?.assetId
+                || selection?.asset_id
+                || selection?.discountAssetId
+                || selection?.discount_asset_id
+                || ''
+            ).trim() || null,
+            code: String(
+                selection?.code
+                || selection?.discountCode
+                || selection?.discount_code
+                || ''
+            ).trim().toUpperCase() || null
+        };
+
+        if (!replacementSelection.assetId && !replacementSelection.code) {
+            throw new Error('缺少要应用的卡券');
+        }
+
+        const validationPayload = await this.validateDiscountSelectionsWithServer([replacementSelection], {
+            discountCode: replacementSelection.code || null,
+            discountAssetId: replacementSelection.assetId || null
+        });
+
+        this.applyDiscountPreviewState(validationPayload?.data || {}, {
+            selectionSnapshot: [replacementSelection],
+            assetId: replacementSelection.assetId || null,
+            fallbackCode: replacementSelection.code || ''
+        });
+        this.setDiscountMessage(
+            `<i class="fas fa-exclamation-circle" aria-hidden="true"></i><span>${this.escapeHtml(this.buildExclusiveReplacementMessage({
+                conflictMessage,
+                replacementCode: replacementSelection.code || replacementSelection.assetId || '当前券'
+            }))}</span>`,
+            { variant: 'warning', html: true }
+        );
     },
 
     applyOwnedDiscountAsset: async function (assetId, discountCode) {
@@ -2317,16 +3917,40 @@ const ShopClient = {
             applyBtn.disabled = true;
         }
 
+        const currentSelections = this.getCurrentPurchaseSelectedDiscounts();
+        const isSelected = currentSelections.some((selection) => String(selection.assetId || '').trim() === String(assetId || '').trim());
+        const nextSelections = isSelected
+            ? currentSelections.filter((selection) => String(selection.assetId || '').trim() !== String(assetId || '').trim())
+            : [...currentSelections, {
+                assetId: String(assetId || '').trim() || null,
+                code: String(discountCode || '').trim().toUpperCase() || null
+            }];
+
         try {
-            const validationPayload = await this.validateDiscountWithServer(discountCode, {
-                discountAssetId: assetId
-            });
+            if (!nextSelections.length) {
+                this.resetDiscountState({ clearMessage: false });
+                this.setDiscountMessage('');
+                return;
+            }
+
+            const validationPayload = await this.validateDiscountSelectionsWithServer(nextSelections);
             this.applyDiscountPreviewState(validationPayload?.data || {}, {
-                assetId,
-                fallbackCode: discountCode
+                selectionSnapshot: nextSelections
             });
         } catch (error) {
-            this.resetDiscountState({ clearMessage: false });
+            if (!isSelected && currentSelections.length && this.isExclusiveDiscountStackingConflict(error)) {
+                try {
+                    await this.applyExclusiveReplacementSelection({
+                        assetId: String(assetId || '').trim() || null,
+                        code: String(discountCode || '').trim().toUpperCase() || null
+                    }, {
+                        conflictMessage: error?.message || ''
+                    });
+                    return;
+                } catch (replacementError) {
+                    error = replacementError;
+                }
+            }
             this.setDiscountMessage(
                 `<i class="fas fa-times-circle" aria-hidden="true"></i><span>${this.escapeHtml(error.message || '当前卡券不可用')}</span>`,
                 { variant: 'error', html: true }
@@ -2340,11 +3964,33 @@ const ShopClient = {
     },
 
     claimAndRefreshDiscountAsset: async function (discountId) {
-        try {
-            await this.claimDiscountWithServer(discountId);
-            await this.refreshPurchaseDiscountAssets({ silent: true });
+        const normalizedDiscountId = String(discountId || '').trim();
+        if (!normalizedDiscountId) {
+            return;
+        }
+
+        if (!(this.pendingClaimDiscountIds instanceof Set)) {
+            this.pendingClaimDiscountIds = new Set();
+        }
+        if (this.pendingClaimDiscountIds.has(normalizedDiscountId)) {
             this.setDiscountMessage(
-                `<i class="fas fa-check-circle" aria-hidden="true"></i><span>领取成功，已加入你的卡券包</span>`,
+                `<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span>正在为你领取这张券，请稍候</span>`,
+                { variant: 'info', html: true }
+            );
+            return;
+        }
+
+        this.pendingClaimDiscountIds.add(normalizedDiscountId);
+        this.renderPurchaseDiscountAssets();
+        try {
+            const payload = await this.claimDiscountWithServer(normalizedDiscountId);
+            await this.refreshPurchaseDiscountAssets({ silent: true });
+            const claimMessage = String(payload?.message || '').trim()
+                || (payload?.already_claimed
+                    ? '你已领取过该券，可直接使用'
+                    : '领取成功，已加入你的卡券包');
+            this.setDiscountMessage(
+                `<i class="fas fa-check-circle" aria-hidden="true"></i><span>${this.escapeHtml(claimMessage)}</span>`,
                 { variant: 'success', html: true }
             );
         } catch (error) {
@@ -2352,30 +3998,46 @@ const ShopClient = {
                 `<i class="fas fa-times-circle" aria-hidden="true"></i><span>${this.escapeHtml(error.message || '领取失败')}</span>`,
                 { variant: 'error', html: true }
             );
+        } finally {
+            this.pendingClaimDiscountIds.delete(normalizedDiscountId);
+            this.renderPurchaseDiscountAssets();
         }
     },
 
-    validateDiscountWithServer: async function (discountCode, options = {}) {
+    validateDiscountSelectionsWithServer: async function (discountSelections = [], options = {}) {
         const token = await this.getAccessToken();
         if (!token) {
             throw new Error(window.i18n?.t('shop.loginRequired') || '请先登录');
         }
 
-        const response = await fetch('/api/shop/validate-discount', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`
-            },
-            body: JSON.stringify({
-                productId: this.currentPurchase.productId,
-                quantity: this.currentPurchase.quantity,
-                discountCode,
-                discountAssetId: options.discountAssetId || this.currentPurchase.discountAssetId || null,
-                agentId: this.currentAgentId,
-                site: window.SiteConfig?.site || 'cn'
-            })
+        const normalizedSelections = this.serializeDiscountSelectionsForRequest(discountSelections, {
+            allowIdentityOnly: true
         });
+        const primarySelection = normalizedSelections[0] || null;
+
+        let response;
+        try {
+            response = await fetch('/api/shop/validate-discount', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    productId: this.currentPurchase.productId,
+                    quantity: this.currentPurchase.quantity,
+                    discountCode: primarySelection?.code || options.discountCode || null,
+                    discountAssetId: primarySelection?.assetId || options.discountAssetId || null,
+                    discountSelections: normalizedSelections,
+                    agentId: this.currentAgentId,
+                    site: window.SiteConfig?.site || 'cn'
+                })
+            });
+        } catch (error) {
+            throw this.normalizeShopRequestError(error, {
+                fallbackMessage: '优惠验证连接失败，请刷新页面后重试'
+            });
+        }
 
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload?.success === false) {
@@ -2383,6 +4045,16 @@ const ShopClient = {
         }
 
         return payload;
+    },
+
+    validateDiscountWithServer: async function (discountCode, options = {}) {
+        return this.validateDiscountSelectionsWithServer([{
+            code: discountCode,
+            assetId: options.discountAssetId || this.currentPurchase.discountAssetId || null
+        }], {
+            discountCode,
+            discountAssetId: options.discountAssetId || this.currentPurchase.discountAssetId || null
+        });
     },
 
     purchaseWithServer: async function (token = '') {
@@ -2400,6 +4072,7 @@ const ShopClient = {
             quantity: this.currentPurchase.quantity,
             discountCode: this.currentPurchase.discountCode,
             discountAssetId: this.currentPurchase.discountAssetId,
+            discountSelections: this.serializeDiscountSelectionsForRequest(),
             agentId: this.currentAgentId,
             site: window.SiteConfig?.site || 'cn',
             idempotencyKey: this.currentPurchase.idempotencyKey
@@ -2418,23 +4091,31 @@ const ShopClient = {
             || this.createPurchaseIdempotencyKey()
         ).trim();
 
-        const response = await fetch('/api/shop/purchase', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${accessToken}`,
-                'X-Idempotency-Key': idempotencyKey
-            },
-            body: JSON.stringify({
-                productId: purchasePayload.productId,
-                quantity: purchasePayload.quantity,
-                discountCode: purchasePayload.discountCode || null,
-                discountAssetId: purchasePayload.discountAssetId || null,
-                agentId: purchasePayload.agentId || null,
-                site: purchasePayload.site || (window.SiteConfig?.site || 'cn'),
-                idempotencyKey
-            })
-        });
+        let response;
+        try {
+            response = await fetch('/api/shop/purchase', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${accessToken}`,
+                    'X-Idempotency-Key': idempotencyKey
+                },
+                body: JSON.stringify({
+                    productId: purchasePayload.productId,
+                    quantity: purchasePayload.quantity,
+                    discountCode: purchasePayload.discountCode || null,
+                    discountAssetId: purchasePayload.discountAssetId || null,
+                    discountSelections: Array.isArray(purchasePayload.discountSelections) ? purchasePayload.discountSelections : [],
+                    agentId: purchasePayload.agentId || null,
+                    site: purchasePayload.site || (window.SiteConfig?.site || 'cn'),
+                    idempotencyKey
+                })
+            });
+        } catch (error) {
+            throw this.normalizeShopRequestError(error, {
+                fallbackMessage: '兑换请求发送失败，请稍后重试'
+            });
+        }
 
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload?.success === false) {
@@ -2486,17 +4167,36 @@ const ShopClient = {
             console.log(`🛍️ URL category parameter found: ${categoryParam}`);
         }
 
+        const productSpotlightId = String(urlParams.get('productId') || urlParams.get('product_id') || '').trim();
+        if (productSpotlightId) {
+            this.pendingProductSpotlight = {
+                productId: productSpotlightId,
+                autoOpen: true,
+                expandedSearch: false,
+                sourceContext: {
+                    sourcePage: 'wallet',
+                    sourceChannel: 'wallet_discount_asset',
+                    sourcePromptId: null
+                }
+            };
+        }
+
         // Check if we are on the shop page (by checking for the grid container)
         const container = document.getElementById('userShopGrid');
         const filtersContainer = document.getElementById('shopCategoryFilters');
 
         if (container) {
-            // Fallback timeout - show error after 5 seconds if loading fails
+            // Slow-load hint: keep the request alive, but avoid showing a false failure state
             const fallbackTimer = setTimeout(() => {
-                console.warn('🛍️ Shop loading timeout');
+                const hasRenderedProducts = container.querySelectorAll('.shop-card[data-product-id]').length > 0;
+                if (hasRenderedProducts) return;
+
+                console.warn('🛍️ Shop loading is taking longer than expected');
                 container.innerHTML = this.buildShopStatusMessage(
-                    window.i18n?.t('common.error') || '加载超时，请刷新重试',
-                    { variant: 'error', fullSpan: true }
+                    window.i18n?.isEnglish?.()
+                        ? 'Still loading, this may take a little longer...'
+                        : '正在继续加载，请稍候...',
+                    { variant: 'muted', fullSpan: true, iconClass: 'fas fa-spinner fa-spin' }
                 );
             }, 5000);
 
@@ -2549,6 +4249,8 @@ const ShopClient = {
                 if (usedPrefetch) {
                     void this.revalidatePrefetchedShopData();
                 }
+
+                await this.fulfillPendingProductSpotlight();
 
                 clearTimeout(fallbackTimer);
 
@@ -2698,6 +4400,11 @@ const ShopClient = {
                 return;
             }
 
+            if (action === 'toggle-discounts') {
+                this.toggleCartItemDisclosure(productId, 'discounts');
+                return;
+            }
+
             if (action === 'decrease') {
                 this.updateCartQuantity(productId, this.getCartQuantity(productId) - 1);
                 return;
@@ -2749,6 +4456,17 @@ const ShopClient = {
                 return;
             }
 
+            const discountAccordionSummary = event.target instanceof Element
+                ? event.target.closest('.shop-discount-asset-card__summary')
+                : null;
+            if (discountAccordionSummary) {
+                event.preventDefault?.();
+                this.toggleDiscountAssetAccordion(
+                    discountAccordionSummary.closest('.shop-discount-asset-card--collapsible')
+                );
+                return;
+            }
+
             const discountAssetTrigger = event.target instanceof Element
                 ? event.target.closest('[data-shop-discount-action="apply"]')
                 : null;
@@ -2770,6 +4488,15 @@ const ShopClient = {
                 return;
             }
 
+            const jumpProductTrigger = event.target instanceof Element
+                ? event.target.closest('[data-shop-discount-action="jump-product"]')
+                : null;
+            if (jumpProductTrigger) {
+                event.preventDefault?.();
+                void this.jumpToDiscountTargetProduct(jumpProductTrigger.dataset.targetProductId || '');
+                return;
+            }
+
             if (event.target instanceof Element && event.target.closest('#purchaseBackBtn')) {
                 event.preventDefault?.();
                 this.setPurchaseStage('configure');
@@ -2784,7 +4511,7 @@ const ShopClient = {
 
             if (event.target instanceof Element && event.target.closest('#nextPurchaseStepBtn')) {
                 event.preventDefault?.();
-                this.proceedPurchaseConfirmation();
+                void this.confirmPurchase();
                 return;
             }
 
@@ -2803,8 +4530,16 @@ const ShopClient = {
         document.getElementById('purchaseDiscountCode')?.addEventListener('input', (event) => {
             if (!(event.target instanceof HTMLInputElement)) return;
             event.target.value = event.target.value.toUpperCase();
-            if (this.currentPurchase.discountCode && event.target.value.trim() !== this.currentPurchase.discountCode) {
-                this.resetDiscountState();
+            const currentSelections = this.getCurrentPurchaseSelectedDiscounts();
+            const codeOnlySelections = currentSelections.filter((selection) => !selection.assetId);
+            if (codeOnlySelections.length && !codeOnlySelections.some((selection) => selection.code === event.target.value.trim().toUpperCase())) {
+                const retainedSelections = currentSelections.filter((selection) => selection.assetId);
+                if (retainedSelections.length) {
+                    this.syncCurrentPurchaseDiscountSelectionState(retainedSelections);
+                    void this.refreshAppliedDiscountPreview({ silent: true });
+                } else {
+                    this.resetDiscountState();
+                }
             }
         });
 
@@ -3587,6 +5322,11 @@ const ShopClient = {
             this.backgroundPrefetchHandle = null;
         }
 
+        if (this.discountAssetsPrefetchHandle) {
+            clearTimeout(this.discountAssetsPrefetchHandle);
+            this.discountAssetsPrefetchHandle = null;
+        }
+
         try {
             sessionStorage.removeItem('shop_prefetch');
         } catch (e) {
@@ -3598,6 +5338,17 @@ const ShopClient = {
         return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
     },
 
+    waitForGridTransitionIdle: function ({ maxWaitMs = 3200, extraBufferMs = 48 } = {}) {
+        const remainingMs = Math.ceil(this.gridTransitionActiveUntil - performance.now());
+        if (remainingMs <= 0) {
+            return Promise.resolve();
+        }
+
+        return new Promise((resolve) => {
+            window.setTimeout(resolve, Math.min(maxWaitMs, Math.max(0, remainingMs + extraBufferMs)));
+        });
+    },
+
     runAfterNextPaint: function (callback) {
         if (typeof callback !== 'function') return;
         window.requestAnimationFrame(() => {
@@ -3605,6 +5356,111 @@ const ShopClient = {
                 callback();
             });
         });
+    },
+
+    updateCategoryFilterButtons: function () {
+        document.querySelectorAll('#shopCategoryFilters .filter-tab[data-shop-category]').forEach((tab) => {
+            tab.classList.toggle('active', String(tab.dataset.shopCategory || '') === String(this.currentCategory || 'all'));
+        });
+    },
+
+    findRenderedProductCard: function (productId) {
+        const normalizedId = String(productId || '').trim();
+        if (!normalizedId) return null;
+
+        return Array.from(document.querySelectorAll('#userShopGrid .shop-card[data-product-id]'))
+            .find((card) => String(card.dataset.productId || '').trim() === normalizedId) || null;
+    },
+
+    clearProductSpotlight: function () {
+        if (this.productSpotlightTimer) {
+            clearTimeout(this.productSpotlightTimer);
+            this.productSpotlightTimer = null;
+        }
+
+        document.querySelectorAll('#userShopGrid .shop-card--spotlight').forEach((card) => {
+            card.classList.remove('shop-card--spotlight');
+        });
+    },
+
+    spotlightProductCard: function (card) {
+        if (!(card instanceof Element)) return;
+
+        this.clearProductSpotlight();
+        card.classList.add('shop-card--spotlight');
+        this.productSpotlightTimer = window.setTimeout(() => {
+            card.classList.remove('shop-card--spotlight');
+            this.productSpotlightTimer = null;
+        }, 2600);
+    },
+
+    clearPendingProductSpotlightUrl: function () {
+        try {
+            const url = new URL(window.location.href);
+            const hadProductParam = url.searchParams.has('productId') || url.searchParams.has('product_id');
+            if (!hadProductParam) return;
+
+            url.searchParams.delete('productId');
+            url.searchParams.delete('product_id');
+            window.history.replaceState(window.history.state, document.title, `${url.pathname}${url.search}${url.hash}`);
+        } catch (error) {
+            console.warn('Failed to clear shop product spotlight params:', error);
+        }
+    },
+
+    fulfillPendingProductSpotlight: async function () {
+        const pending = this.pendingProductSpotlight;
+        const normalizedProductId = String(pending?.productId || '').trim();
+        if (!normalizedProductId) {
+            return;
+        }
+
+        const card = this.findRenderedProductCard(normalizedProductId);
+        if (card) {
+            this.pendingProductSpotlight = null;
+            this.clearPendingProductSpotlightUrl();
+            this.runAfterNextPaint(() => {
+                try {
+                    card.scrollIntoView({
+                        behavior: this.prefersReducedMotion() ? 'auto' : 'smooth',
+                        block: 'center'
+                    });
+                } catch (_error) {
+                    card.scrollIntoView();
+                }
+                this.spotlightProductCard(card);
+            });
+
+            if (pending.autoOpen && String(this.currentPurchase?.productId || '').trim() !== normalizedProductId) {
+                this.runAfterNextPaint(() => {
+                    this.openProductPurchaseFromDataset(
+                        card.dataset,
+                        pending.sourceContext || {
+                            sourcePage: 'wallet',
+                            sourceChannel: 'wallet_discount_asset',
+                            sourcePromptId: null
+                        },
+                        { trackClick: false }
+                    );
+                });
+            }
+            return;
+        }
+
+        if (!pending.expandedSearch && this.currentCategory !== 'all') {
+            this.pendingProductSpotlight = {
+                ...pending,
+                expandedSearch: true
+            };
+            this.currentCategory = 'all';
+            this.updateCategoryFilterButtons();
+            await this.loadProducts();
+            return;
+        }
+
+        this.pendingProductSpotlight = null;
+        this.clearPendingProductSpotlightUrl();
+        this.showShopToast('这张卡券对应的商品当前暂不可见，请先浏览商城其他商品。', 'error');
     },
 
     promptLoginForPurchase: function (message) {
@@ -3643,6 +5499,7 @@ const ShopClient = {
             clearTimeout(this.gridTransitionCleanupTimer);
             this.gridTransitionCleanupTimer = null;
         }
+        this.gridTransitionActiveUntil = 0;
 
         if (!container) return;
 
@@ -3807,6 +5664,20 @@ const ShopClient = {
             this.applyShopPurchaseDataset(cartTriggerButton, purchaseDataset);
             cartTriggerButton.dataset.maxPurchaseQuantity = String(maxPurchaseQuantity);
         }
+
+        if (!noStock) {
+            const prefetchProductDiscounts = () => {
+                void this.prefetchDiscountAssetsForProduct({
+                    productId,
+                    quantity: 1,
+                    agentId: this.currentAgentId,
+                    site: window.SiteConfig?.site || 'cn'
+                });
+            };
+            el.addEventListener('pointerenter', prefetchProductDiscounts, { passive: true });
+            el.addEventListener('focus', prefetchProductDiscounts);
+        }
+
         return el;
     },
 
@@ -3859,6 +5730,7 @@ const ShopClient = {
         );
 
         if (!shouldAnimate) {
+            this.gridTransitionActiveUntil = 0;
             container.innerHTML = '';
             if (empty) {
                 container.classList.add('is-empty');
@@ -3898,12 +5770,23 @@ const ShopClient = {
 
             const overlays = Array.isArray(overlay) ? overlay : [overlay].filter(Boolean);
             overlays.forEach(layer => layer?.remove());
+
+            if (transitionId === this.gridTransitionSequence) {
+                this.gridTransitionActiveUntil = 0;
+            }
         };
 
         const scheduleCleanup = (durationMs, payload = {}) => {
             if (durationMs <= 0) {
+                if (transitionId === this.gridTransitionSequence) {
+                    this.gridTransitionActiveUntil = 0;
+                }
                 cleanupAnimatedCards(payload);
                 return;
+            }
+
+            if (transitionId === this.gridTransitionSequence) {
+                this.gridTransitionActiveUntil = Math.max(this.gridTransitionActiveUntil, performance.now() + durationMs);
             }
 
             this.gridTransitionCleanupTimer = window.setTimeout(() => {
@@ -4138,6 +6021,9 @@ const ShopClient = {
         }
 
         const exitDurationMs = 500 + Math.max(0, exitingCards.length - 1) * 56;
+        if (transitionId === this.gridTransitionSequence) {
+            this.gridTransitionActiveUntil = Math.max(this.gridTransitionActiveUntil, performance.now() + exitDurationMs);
+        }
         this.gridTransitionCleanupTimer = window.setTimeout(() => {
             if (transitionId !== this.gridTransitionSequence) return;
             this.gridTransitionCleanupTimer = null;
@@ -4373,6 +6259,8 @@ const ShopClient = {
             const runRevalidation = async () => {
                 try {
                     await this.loadCategoryFilters({ forceRefresh: true });
+                    // Avoid cutting off the first-paint entrance animation when prefetched data is already visible.
+                    await this.waitForGridTransitionIdle();
                     await this.loadProducts({ forceRefresh: true });
                 } catch (error) {
                     console.warn('Shop prefetch revalidation failed:', error);
@@ -4403,8 +6291,9 @@ const ShopClient = {
         if (!container) return;
 
         try {
+            const client = window.supabaseClient || supabaseClient;
             let categories = null;
-            const { data, error } = await supabaseClient
+            const { data, error } = await client
                 .from('shop_categories')
                 .select('*')
                 .order('sort_order');
@@ -4503,6 +6392,7 @@ const ShopClient = {
                 this.transitionProductGrid(container, [], { empty: true });
                 this.renderCart();
                 this.scheduleBackgroundProductPrefetch();
+                void this.fulfillPendingProductSpotlight();
                 return;
             }
 
@@ -4512,13 +6402,16 @@ const ShopClient = {
                 this.transitionProductGrid(container, [], { empty: true });
                 this.renderCart();
                 this.scheduleBackgroundProductPrefetch();
+                void this.fulfillPendingProductSpotlight();
                 return;
             }
 
             this.transitionProductGrid(container, renderedCards);
             this.lastSkeletonCount = Math.min(Math.max(renderedCards.length, 3), 8);
+            this.scheduleVisibleDiscountAssetsPrefetch(data);
             this.renderCart();
             this.scheduleBackgroundProductPrefetch();
+            void this.fulfillPendingProductSpotlight();
 
         } catch (err) {
             if (requestToken !== this.productsRequestToken) return;
@@ -4585,15 +6478,20 @@ const ShopClient = {
         orderId: null,
         createdAt: null,
         rules: [],
+        selectedDiscounts: [],
+        appliedDiscounts: [],
         discountCode: null,
         discountAssetId: null,
         discountType: null,
         discountValue: null,
+        discountBenefitLabel: '',
         discountAmount: 0,
+        discountFinalTotal: null,
         pricingWaterfall: [],
         stackingPolicy: null,
         availableDiscountAssets: [],
         claimableDiscounts: [],
+        discountAssetsLoading: false,
         purchaseNotes: '',
         usageInstructions: '',
         sourcePage: null,
@@ -4960,6 +6858,12 @@ const ShopClient = {
         const liveProduct = this.getCachedProductById(productId);
         const quantityCap = this.getPurchaseQuantityCapForProduct(liveProduct, maxPurchaseQuantity);
 
+        void this.prefetchDiscountAssetsForProduct({
+            productId,
+            quantity: 1,
+            agentId: this.currentAgentId,
+            site: window.SiteConfig?.site || 'cn'
+        });
         this.openPurchaseModal(productId, productName, productNameEn, price, rules, quantityCap, purchaseNotes, usageInstructions, {
             category: productCategory,
             sourceContext
@@ -4972,6 +6876,58 @@ const ShopClient = {
         const quantityCap = this.normalizePurchaseQuantityCap(maxPurchaseQuantity);
         const unlimitedPurchases = options?.unlimitedPurchases === true;
         const initialQuantity = Math.max(1, Math.min(quantityCap, Math.trunc(Number(options?.initialQuantity || 1) || 1)));
+        void this.prefetchDiscountAssetsForProduct({
+            productId,
+            quantity: initialQuantity,
+            agentId: this.currentAgentId,
+            site: window.SiteConfig?.site || 'cn'
+        });
+        const storedPurchasePrefill = this.consumePurchasePrefillForProduct(productId);
+        const cachedDiscountAssetsPayload = this.readDiscountAssetsCache(this.buildDiscountAssetsCacheKey({
+            productId,
+            quantity: initialQuantity,
+            agentId: this.currentAgentId,
+            site: window.SiteConfig?.site || 'cn'
+        }));
+        const runtimeCartDiscount = this.normalizeCartDiscountSnapshot(options?.appliedDiscount || null, {
+            quantity: initialQuantity,
+            subtotal: Number(price || 0) * initialQuantity
+        });
+        const runtimePurchasePrefill = this.buildPurchasePrefillFromCartDiscountSnapshot(runtimeCartDiscount, {
+            productId,
+            category: String(options?.category || options?.productCategory || '').trim() || null
+        });
+        const prefilledOwnedDiscounts = [
+            ...(Array.isArray(runtimePurchasePrefill?.ownedDiscounts) ? runtimePurchasePrefill.ownedDiscounts : []),
+            ...(Array.isArray(storedPurchasePrefill?.ownedDiscounts) ? storedPurchasePrefill.ownedDiscounts : []),
+            ...(Array.isArray(cachedDiscountAssetsPayload?.owned_discounts) ? cachedDiscountAssetsPayload.owned_discounts : [])
+        ].filter((item, index, list) => {
+            const currentKey = [
+                String(item?.asset_id || '').trim(),
+                String(item?.code || '').trim().toUpperCase()
+            ].join('::');
+            return list.findIndex((candidate) => [
+                String(candidate?.asset_id || '').trim(),
+                String(candidate?.code || '').trim().toUpperCase()
+            ].join('::') === currentKey) === index;
+        });
+        const prefilledClaimableDiscounts = [
+            ...(Array.isArray(runtimePurchasePrefill?.claimableDiscounts) ? runtimePurchasePrefill.claimableDiscounts : []),
+            ...(Array.isArray(storedPurchasePrefill?.claimableDiscounts) ? storedPurchasePrefill.claimableDiscounts : []),
+            ...(Array.isArray(cachedDiscountAssetsPayload?.claimable_discounts) ? cachedDiscountAssetsPayload.claimable_discounts : [])
+        ].filter((item, index, list) => {
+            const currentKey = [
+                String(item?.discount_id || '').trim(),
+                String(item?.code || '').trim().toUpperCase()
+            ].join('::');
+            return list.findIndex((candidate) => [
+                String(candidate?.discount_id || '').trim(),
+                String(candidate?.code || '').trim().toUpperCase()
+            ].join('::') === currentKey) === index;
+        });
+        const hasImmediateVisibleDiscountData = Boolean(cachedDiscountAssetsPayload)
+            || prefilledOwnedDiscounts.some((item) => item?.available !== false)
+            || prefilledClaimableDiscounts.length > 0;
         const sourceContext = {
             ...resolveShopSourceContext(),
             ...(options?.sourceContext && typeof options.sourceContext === 'object' ? options.sourceContext : {})
@@ -4987,15 +6943,20 @@ const ShopClient = {
             orderId: null,
             createdAt: null,
             rules: rules,
+            selectedDiscounts: [],
+            appliedDiscounts: [],
             discountCode: null,
             discountAssetId: null,
             discountType: null,
             discountValue: null,
+            discountBenefitLabel: '',
             discountAmount: 0,
+            discountFinalTotal: null,
             pricingWaterfall: [],
             stackingPolicy: this.getDefaultStackingPolicy(),
-            availableDiscountAssets: [],
-            claimableDiscounts: [],
+            availableDiscountAssets: prefilledOwnedDiscounts,
+            claimableDiscounts: prefilledClaimableDiscounts,
+            discountAssetsLoading: !hasImmediateVisibleDiscountData,
             discountPreviewRevision: 0,
             stage: 'configure',
             purchaseNotes: typeof purchaseNotes === 'string' ? purchaseNotes.trim() : '',
@@ -5013,6 +6974,7 @@ const ShopClient = {
             maxQuantity: unlimitedPurchases ? null : quantityCap,
             idempotencyKey: this.createPurchaseIdempotencyKey()
         };
+        this.pendingClaimDiscountIds = new Set();
         this.purchaseModalBaseScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
         this.purchaseModalOwnsFullScrollLock = false;
 
@@ -5021,7 +6983,7 @@ const ShopClient = {
         const displayName = (currentLang === 'en' && productNameEn) ? productNameEn : productName;
         this.renderModalProductName(displayName);
         document.getElementById('modalUnitPrice').textContent = price;
-        document.getElementById('modalTotalPrice').textContent = price * initialQuantity;
+        document.getElementById('modalTotalPrice').textContent = this.formatShopPointValue(price * initialQuantity);
         const quantityInput = document.getElementById('purchaseQuantity');
         if (quantityInput) {
             quantityInput.value = initialQuantity;
@@ -5033,10 +6995,32 @@ const ShopClient = {
         const applyBtn = document.getElementById('applyDiscountBtn');
         if (discountInput) discountInput.value = '';
         this.setDiscountMessage('');
-        this.currentPurchase.availableDiscountAssets = [];
-        this.currentPurchase.claimableDiscounts = [];
         this.renderPurchaseDiscountAssets();
         this.updatePriceForQuantity(initialQuantity);
+        if (runtimeCartDiscount) {
+            this.applyDiscountPreviewState({
+                discount_code: runtimeCartDiscount.code || '',
+                discount_type: runtimeCartDiscount.discountType,
+                discount_value: runtimeCartDiscount.discountValue,
+                benefit_label: runtimeCartDiscount.benefitLabel || '',
+                subtotal: runtimeCartDiscount.subtotal,
+                discount_amount: runtimeCartDiscount.discountAmount,
+                final_total: runtimeCartDiscount.finalTotal,
+                applied_discounts: Array.isArray(runtimeCartDiscount.selections)
+                    ? runtimeCartDiscount.selections.map((selection) => ({
+                        discount_code: selection.code || '',
+                        discount_asset_id: selection.assetId || null,
+                        discount_type: selection.discountType,
+                        discount_value: selection.discountValue,
+                        benefit_label: selection.benefitLabel || '',
+                        discount_amount: selection.discountAmount,
+                        final_total_after_apply: selection.finalTotalAfterApply
+                    }))
+                    : []
+            }, {
+                selectionSnapshot: runtimeCartDiscount.selections || []
+            });
+        }
         if (applyBtn) {
             applyBtn.innerHTML = window.i18n?.t('shop.verify') || '验证';
             applyBtn.disabled = false;
@@ -5057,6 +7041,9 @@ const ShopClient = {
         if (window.iOSScrollLock) window.iOSScrollLock.lockLight(modal);
         this.attachPurchaseModalKeyboardDock();
         void this.refreshPurchaseDiscountAssets({ silent: true });
+        if (runtimeCartDiscount) {
+            void this.refreshAppliedDiscountPreview({ silent: true });
+        }
 
         trackShopAnalyticsEvent('shop_view', {
             entityId: String(productId || '').trim() || null,
@@ -5129,8 +7116,10 @@ const ShopClient = {
 
         let total = qty * unitPrice;
 
-        if (this.currentPurchase.discountCode && this.currentPurchase.discountType) {
-            document.getElementById('modalTotalPrice').textContent = total;
+        if (this.getCurrentPurchaseSelectedDiscounts().length) {
+            this.currentPurchase.discountAmount = 0;
+            this.currentPurchase.discountFinalTotal = null;
+            document.getElementById('modalTotalPrice').textContent = this.formatShopPointValue(total);
             this.setDiscountMessage(
                 '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span>正在重算当前优惠...</span>',
                 { variant: 'info', html: true }
@@ -5138,7 +7127,7 @@ const ShopClient = {
             this.syncPricingWaterfall();
             void this.refreshAppliedDiscountPreview({ silent: true });
         } else {
-            document.getElementById('modalTotalPrice').textContent = total;
+            document.getElementById('modalTotalPrice').textContent = this.formatShopPointValue(total);
             this.syncPricingWaterfall();
         }
 
@@ -5151,12 +7140,19 @@ const ShopClient = {
         const codeInputElem = document.getElementById('purchaseDiscountCode');
         const codeInput = codeInputElem ? codeInputElem.value.trim() : '';
         const applyBtn = document.getElementById('applyDiscountBtn');
+        const currentSelections = this.getCurrentPurchaseSelectedDiscounts();
+        const assetSelections = currentSelections.filter((selection) => selection.assetId);
 
         if (!codeInput) {
             if (!silent) {
                 this.setDiscountMessage(window.i18n?.t('shop.enterDiscountCode') || '请输入优惠码', { variant: 'error' });
             }
-            this.resetDiscountState({ clearMessage: false });
+            if (assetSelections.length) {
+                this.syncCurrentPurchaseDiscountSelectionState(assetSelections);
+                void this.refreshAppliedDiscountPreview({ silent: true });
+            } else {
+                this.resetDiscountState({ clearMessage: false });
+            }
             return;
         }
 
@@ -5166,21 +7162,38 @@ const ShopClient = {
         }
 
         try {
-            this.currentPurchase.discountAssetId = null;
-            const validationPayload = await this.validateDiscountWithServer(codeInput);
+            const nextSelections = [
+                ...assetSelections,
+                {
+                    code: codeInput
+                }
+            ];
+            const validationPayload = await this.validateDiscountSelectionsWithServer(nextSelections, {
+                discountCode: codeInput
+            });
             this.applyDiscountPreviewState(validationPayload?.data || {}, {
-                assetId: null,
-                fallbackCode: codeInput
+                selectionSnapshot: nextSelections
             });
 
         } catch (err) {
+            if (assetSelections.length && this.isExclusiveDiscountStackingConflict(err)) {
+                try {
+                    await this.applyExclusiveReplacementSelection({
+                        code: codeInput
+                    }, {
+                        conflictMessage: err?.message || ''
+                    });
+                    return;
+                } catch (replacementError) {
+                    err = replacementError;
+                }
+            }
             if (!silent) {
                 this.setDiscountMessage(
                     `<i class="fas fa-times-circle" aria-hidden="true"></i><span>${this.escapeHtml(err.message || (window.i18n?.t('shop.verifyFailed') || '验证失败'))}</span>`,
                     { variant: 'error', html: true }
                 );
             }
-            this.resetDiscountState({ clearMessage: false });
         } finally {
             if (applyBtn && !silent) {
                 applyBtn.innerHTML = window.i18n?.t('shop.verify') || '验证';
@@ -5309,8 +7322,14 @@ const ShopClient = {
                 const response = await this.requestPurchasePayloadWithServer({
                     productId: entry.productId,
                     quantity: entry.quantity,
-                    discountCode: null,
-                    discountAssetId: null,
+                    discountCode: entry.appliedDiscount?.code || null,
+                    discountAssetId: entry.appliedDiscount?.assetId || null,
+                    discountSelections: Array.isArray(entry.appliedDiscount?.selections)
+                        ? entry.appliedDiscount.selections.map((selection) => ({
+                            code: selection.code || null,
+                            assetId: selection.assetId || null
+                        }))
+                        : [],
                     agentId: this.currentAgentId,
                     site: window.SiteConfig?.site || 'cn',
                     idempotencyKey: this.createPurchaseIdempotencyKey()
@@ -5355,6 +7374,8 @@ const ShopClient = {
                 orderId: successPayload.orderIds.join(', '),
                 createdAt: latestCreatedAt || new Date().toISOString(),
                 quantity: successes.reduce((total, item) => total + (Number(item.entry?.quantity || 0) || 0), 0),
+                selectedDiscounts: [],
+                appliedDiscounts: [],
                 purchaseNotes: '',
                 usageInstructions: successPayload.usageInstructions || '',
                 cartOrigin: null
@@ -5401,8 +7422,11 @@ const ShopClient = {
         }
 
         // Disable button
-        const btn = document.getElementById('confirmPurchaseBtn');
+        const btn = document.getElementById('confirmPurchaseBtn') || document.getElementById('nextPurchaseStepBtn');
         const backBtn = document.getElementById('purchaseBackBtn');
+        if (!btn) {
+            return;
+        }
         const originalText = btn.innerHTML;
         const processingText = window.i18n?.t('shop.processing') || '处理中...';
         btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>${processingText}</span>`;
@@ -5412,9 +7436,8 @@ const ShopClient = {
         }
 
         try {
-            const subtotal = Number(this.getCurrentPurchaseSubtotal?.() || 0) || 0;
-            const discountAmount = Number(this.currentPurchase?.discountAmount || 0) || 0;
-            const tentativeTotalPoints = Math.max(0, subtotal - discountAmount) || null;
+            const { subtotal, discountAmount, finalTotal } = this.getCurrentPurchasePricingSummary();
+            const tentativeTotalPoints = finalTotal || null;
             const purchaseSourceContext = {
                 sourcePage: this.currentPurchase?.sourcePage || null,
                 sourceChannel: this.currentPurchase?.sourceChannel || null,
@@ -6100,7 +8123,7 @@ const ShopClient = {
                             <span class="shop-order-history-name">${this.escapeHtml(order.shop_products?.name || (window.i18n?.t('shop.unknownProduct') || '未知商品'))}</span>
                         </div>
                         <div class="shop-order-history-meta">
-                            ${date} · <span class="shop-order-history-points">-${order.price_paid} ${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}</span>
+                            ${date} · <span class="shop-order-history-points">-${this.formatShopPointValue(order.price_paid)} ${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}</span>
                         </div>
                     </div>
                     <button type="button" data-shop-order-id="${order.id}" data-shop-order-content="${encodeURIComponent(order.content_delivered || '')}"

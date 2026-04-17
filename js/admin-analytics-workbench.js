@@ -839,7 +839,7 @@ function openAnalyticsDestination(destination = '', context = null) {
         }
         case 'analytics-product-detail': {
             const showProductDetail = () => {
-                switchAnalyticsTab('product');
+                switchAnalyticsTab('product-detail');
                 scheduleAnalyticsNavigationStep(() => {
                     const opened = window.openAnalyticsProductDetail?.(normalizedContext.productId, {
                         productName: normalizedContext.productName || '',
@@ -854,7 +854,7 @@ function openAnalyticsDestination(destination = '', context = null) {
             };
 
             if (!isAnalyticsModuleVisible()) {
-                const switched = window.switchModule?.('commerce-center', { analyticsTab: 'product' });
+                const switched = window.switchModule?.('commerce-center', { analyticsTab: 'product-detail' });
                 if (switched === false) return false;
                 scheduleAnalyticsNavigationStep(showProductDetail, 120);
             } else {

@@ -138,6 +138,51 @@ test('public payment config does not auto-promote hupijiao from partial gateway 
     assert.equal('merchant_id' in result.paymentChannels.providers.hupijiao, false);
 });
 
+test('public payment config keeps provider-driven manual order query fields for legacy claim flows', () => {
+    const result = buildPublicPaymentConfig(
+        {
+            active_provider: 'afdian',
+            providers: {
+                mock: {
+                    enabled: false,
+                    display_name: '模拟支付'
+                },
+                afdian: {
+                    enabled: true,
+                    display_name: '爱发电',
+                    checkout_url: 'https://afdian.com/a/zaoyoe',
+                    order_query_enabled: true,
+                    order_query_title: '订单号认领',
+                    order_query_hint: '完成支付后，可在这里输入订单号查询兑换结果。',
+                    order_query_placeholder: '输入支付平台订单号'
+                },
+                hupijiao: {
+                    enabled: true,
+                    display_name: '虎皮椒',
+                    checkout_url: '',
+                    gateway_url: 'https://api.xunhupay.com/payment/do.html',
+                    merchant_id: 'appid-demo'
+                }
+            }
+        },
+        {
+            custom_amount_enabled: true,
+            mock_payment_enabled: false
+        },
+        {
+            mock_payment: {
+                allowed: false,
+                reason: 'production_like_runtime'
+            }
+        }
+    );
+
+    assert.equal(result.paymentChannels.providers.afdian.order_query_enabled, true);
+    assert.equal(result.paymentChannels.providers.afdian.order_query_title, '订单号认领');
+    assert.equal(result.paymentChannels.providers.afdian.order_query_hint, '完成支付后，可在这里输入订单号查询兑换结果。');
+    assert.equal(result.paymentChannels.providers.afdian.order_query_placeholder, '输入支付平台订单号');
+});
+
 test('public payment runtime strips operational override metadata and env hints', () => {
     const runtime = buildPublicPaymentRuntime({
         mock_payment: {

@@ -803,8 +803,7 @@ module.exports = async (req, res) => {
                     page,
                     pageSize
                 });
-                const commentsWithBlocks = await attachCommentUserBlockState(supabase, fastPath.comments);
-                const paginatedComments = await attachCommentUserSignals(supabase, commentsWithBlocks);
+                const paginatedComments = await attachCommentUserSignals(supabase, fastPath.comments);
 
                 return sendJson(res, 200, {
                     success: true,

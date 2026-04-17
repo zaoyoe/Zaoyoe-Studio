@@ -96,7 +96,10 @@ function applyFilters(rows, filters = []) {
 function createSupabaseStub(state) {
     state.discountRows = Array.isArray(state.discountRows) ? state.discountRows : [];
     state.profileRows = Array.isArray(state.profileRows) ? state.profileRows : [];
+    state.userTagRows = Array.isArray(state.userTagRows) ? state.userTagRows : [];
     state.assetRows = Array.isArray(state.assetRows) ? state.assetRows : [];
+    state.authUsers = Array.isArray(state.authUsers) ? state.authUsers : [];
+    state.notifications = Array.isArray(state.notifications) ? state.notifications : [];
     state.insertSeq = state.insertSeq || 1;
 
     return {
@@ -105,6 +108,7 @@ function createSupabaseStub(state) {
                 let rows;
                 if (table === 'discount_codes') rows = state.discountRows.slice().map(cloneRow);
                 else if (table === 'profiles') rows = state.profileRows.slice().map(cloneRow);
+                else if (table === 'user_tags') rows = state.userTagRows.slice().map(cloneRow);
                 else if (table === 'discount_user_assets') rows = state.assetRows.slice().map(cloneRow);
                 else throw new Error(`Unexpected table request: ${table}`);
 
@@ -155,6 +159,22 @@ async function withDiscountAssetsHandler(initialState, callback) {
     Module._load = function patchedLoad(request, parent, isMain) {
         if (request === '../../../../api/_lib/admin') {
             return {
+                getSupabaseAdmin() {
+                    return {
+                        auth: {
+                            admin: {
+                                async listUsers({ page = 1, perPage = 200 } = {}) {
+                                    const start = Math.max(0, (page - 1) * perPage);
+                                    const users = state.authUsers.slice(start, start + perPage).map(cloneRow);
+                                    return {
+                                        data: { users },
+                                        error: null
+                                    };
+                                }
+                            }
+                        }
+                    };
+                },
                 requireWritableAdminSite: adminLib.requireWritableAdminSite,
                 async requireAdmin(req, options = {}) {
                     state.requireAdminCalls.push({ req, options });
@@ -172,6 +192,20 @@ async function withDiscountAssetsHandler(initialState, callback) {
                 },
                 async writeAdminAuditLog(entry) {
                     state.auditCalls.push(entry);
+                }
+            };
+        }
+
+        if (request === '../../../../api/_lib/admin-notifications') {
+            return {
+                async notifyUsers(_supabase, payload = {}) {
+                    state.notifications.push(cloneRow(payload));
+                    const userIds = Array.isArray(payload.userIds) ? payload.userIds.filter(Boolean) : [];
+                    return {
+                        recipients: userIds.length,
+                        created: userIds.length,
+                        skipped: 0
+                    };
                 }
             };
         }
@@ -239,6 +273,147 @@ test('discount assets handler assigns coupon assets to resolved recipients and s
         assert.equal(payload.unresolved_count, 1);
         assert.equal(state.assetRows.length, 2);
         assert.equal(state.auditCalls.length, 1);
+        assert.equal(state.notifications.length, 1);
+        assert.deepEqual(state.notifications[0]?.userIds, ['user_1']);
+        assert.equal(state.notifications[0]?.title, '优惠券已到账');
+        assert.match(state.notifications[0]?.content || '', /我的钱包 > 卡券/);
+        assert.match(state.notifications[0]?.content || '', /点击使用/);
         assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'discounts.manage' });
+    });
+});
+
+test('discount assets handler resolves recipients by email when profiles expose email', async () => {
+    await withDiscountAssetsHandler({
+        discountRows: [
+            {
+                id: 'discount_2',
+                code: 'MAILVIP',
+                applicable_site: 'cn',
+                distribution_mode: 'user_assigned',
+                expires_at: '2026-12-31T23:59:00.000Z'
+            }
+        ],
+        profileRows: [
+            { id: 'user_9', username: 'carol', email: 'carol@example.com' }
+        ],
+        assetRows: []
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'assign',
+                site: 'cn',
+                discount_id: 'discount_2',
+                recipients: 'carol@example.com',
+                source_channel: 'vip_recall',
+                audience_segment: 'vip'
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.assigned_count, 1);
+        assert.equal(payload.unresolved_count, 0);
+        assert.equal(state.assetRows[0]?.user_id, 'user_9');
+    });
+});
+
+test('discount assets handler falls back to auth users when profiles do not expose email', async () => {
+    await withDiscountAssetsHandler({
+        discountRows: [
+            {
+                id: 'discount_2b',
+                code: 'AUTHMAIL',
+                applicable_site: 'cn',
+                distribution_mode: 'user_assigned',
+                expires_at: '2026-12-31T23:59:00.000Z'
+            }
+        ],
+        profileRows: [],
+        authUsers: [
+            { id: 'user_auth_1', email: 'zaoyoe@gmail.com', user_metadata: { username: 'zaoyoe' } }
+        ],
+        assetRows: []
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'assign',
+                site: 'cn',
+                discount_id: 'discount_2b',
+                recipients: 'zaoyoe@gmail.com',
+                source_channel: 'vip_recall',
+                audience_segment: 'vip'
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.assigned_count, 1);
+        assert.equal(payload.unresolved_count, 0);
+        assert.equal(state.assetRows[0]?.user_id, 'user_auth_1');
+    });
+});
+
+test('discount assets handler resolves recipients by user tags from user management', async () => {
+    await withDiscountAssetsHandler({
+        discountRows: [
+            {
+                id: 'discount_3',
+                code: 'TAGDROP',
+                applicable_site: 'cn',
+                distribution_mode: 'user_assigned',
+                expires_at: '2026-12-31T23:59:00.000Z'
+            }
+        ],
+        profileRows: [
+            { id: 'user_11', username: 'zaoyoe' },
+            { id: 'user_12', username: 'ruihua' },
+            { id: 'user_13', username: 'plain_user' }
+        ],
+        userTagRows: [
+            { user_id: 'user_11', tag: '创作者' },
+            { user_id: 'user_12', tag: '创作者' },
+            { user_id: 'user_12', tag: '关注' }
+        ],
+        assetRows: [
+            {
+                id: 'asset_existing_tag',
+                discount_id: 'discount_3',
+                user_id: 'user_12',
+                asset_status: 'available'
+            }
+        ]
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'assign',
+                site: 'cn',
+                discount_id: 'discount_3',
+                recipient_tags: '创作者,不存在的标签',
+                source_channel: 'creator_campaign',
+                audience_segment: 'creator'
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.assigned_count, 1);
+        assert.equal(payload.skipped_count, 1);
+        assert.equal(payload.unresolved_count, 1);
+        assert.deepEqual(payload.recipient_tags, ['创作者', '不存在的标签']);
+        assert.deepEqual(payload.unresolved_tags, ['不存在的标签']);
+        assert.equal(state.assetRows.length, 2);
+        assert.equal(state.assetRows[1]?.user_id, 'user_11');
     });
 });

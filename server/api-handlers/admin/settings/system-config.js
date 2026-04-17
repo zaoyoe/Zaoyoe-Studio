@@ -14,7 +14,8 @@ const SYSTEM_CONFIG_DOMAIN_KEY_MAP = Object.freeze({
         'unlock_pricing',
         'recharge_options',
         'channels',
-        'payment_channels'
+        'payment_channels',
+        'discount_trigger_rules'
     ],
     affiliate: [
         'affiliate_program',

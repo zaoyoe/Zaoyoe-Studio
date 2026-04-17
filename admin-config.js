@@ -7,6 +7,7 @@
 let systemConfigCache = {};
 let paymentChannelSecretStatus = getDefaultPaymentChannelSecretStatus();
 let paymentChannelRuntimeState = getDefaultPaymentChannelRuntimeState();
+let discountTriggerSettingsState = getDefaultDiscountTriggerSettingsState();
 let opsAlertSecretStatus = getDefaultOpsAlertSecretStatus();
 let opsAlertHealthState = getDefaultOpsAlertHealthState();
 let opsAlertMonitorState = getDefaultOpsAlertMonitorState();
@@ -28,6 +29,7 @@ let paymentChannelAccordionState = {
     afdian: false,
     hupijiao: false
 };
+let discountTriggerRuleDraftCounter = 0;
 const ADMIN_CONFIG_TOGGLE_PULSE_CLASS = 'status-toggle--pulse';
 const ADMIN_CONFIG_SAVE_VISIBLE_CLASS = 'visible';
 const ADMIN_CONFIG_VERIFY_QUOTA_TONE_CLASSES = [
@@ -3288,36 +3290,663 @@ function normalizePaymentChannelRuntimeState(raw) {
 
 function getDefaultPaymentChannelsConfig() {
     const rechargeOptions = normalizeRechargeOptionsConfig(systemConfigCache['recharge_options']);
-    const activeProvider = rechargeOptions.mock_payment_enabled ? 'mock' : 'afdian';
+    const resolvePreferredEnabledProviderKey = (providers = {}, fallback = 'afdian') => {
+        const candidateKeys = ['hupijiao', 'afdian', ...Object.keys(providers || {})];
+        const seen = new Set();
+
+        for (const providerKey of candidateKeys) {
+            const normalizedKey = String(providerKey || '').trim().toLowerCase();
+            if (!normalizedKey || normalizedKey === 'mock' || seen.has(normalizedKey)) {
+                continue;
+            }
+            seen.add(normalizedKey);
+            const provider = providers?.[normalizedKey];
+            if (provider?.enabled === true && String(provider.checkout_url || '').trim()) {
+                return normalizedKey;
+            }
+        }
+
+        for (const providerKey of candidateKeys) {
+            const normalizedKey = String(providerKey || '').trim().toLowerCase();
+            if (!normalizedKey || normalizedKey === 'mock' || seen.has(`enabled:${normalizedKey}`)) {
+                continue;
+            }
+            seen.add(`enabled:${normalizedKey}`);
+            const provider = providers?.[normalizedKey];
+            if (provider?.enabled === true) {
+                return normalizedKey;
+            }
+        }
+
+        return ['mock', 'afdian', 'hupijiao'].includes(fallback) ? fallback : 'afdian';
+    };
+
+    const providers = {
+        mock: {
+            enabled: true,
+            display_name: '模拟支付',
+            description: '仅建议在正式支付接入前短期使用，开启后将直接到账积分。'
+        },
+        afdian: {
+            enabled: true,
+            display_name: '爱发电',
+            checkout_url: 'https://afdian.com/a/zaoyoe',
+            package_hint: '请在爱发电完成支付后，返回钱包输入订单号领取兑换码。',
+            custom_amount_hint: '钱包会先生成本次应付金额，请按报价完成支付后返回输入订单号领取兑换码。',
+            order_query_enabled: true,
+            order_query_title: '订单号认领',
+            order_query_hint: '完成支付后，可在这里输入订单号查询兑换结果。',
+            order_query_placeholder: '输入支付平台订单号'
+        },
+        hupijiao: {
+            enabled: false,
+            display_name: '虎皮椒',
+            checkout_url: '',
+            gateway_url: '',
+            merchant_id: '',
+            return_url: 'https://www.zaoyoe.com',
+            notify_url: '',
+            package_hint: '虎皮椒通道已启用，正式回调与自动发货接入后即可完整使用。',
+            custom_amount_hint: '虎皮椒通道已启用。自定义金额订单能力接入后，这里会直接拉起真实支付。',
+            order_query_enabled: false,
+            order_query_title: '',
+            order_query_hint: '',
+            order_query_placeholder: ''
+        }
+    };
+    const activeProvider = rechargeOptions.mock_payment_enabled
+        ? 'mock'
+        : resolvePreferredEnabledProviderKey(providers, 'afdian');
 
     return {
         active_provider: activeProvider,
-        providers: {
-            mock: {
-                enabled: true,
-                display_name: '模拟支付',
-                description: '仅建议在正式支付接入前短期使用，开启后将直接到账积分。'
-            },
-            afdian: {
-                enabled: true,
-                display_name: '爱发电',
-                checkout_url: 'https://afdian.com/a/zaoyoe',
-                package_hint: '请在爱发电完成支付后，返回钱包输入订单号领取兑换码。',
-                custom_amount_hint: '钱包会先生成本次应付金额，请按报价完成支付后返回输入订单号领取兑换码。'
-            },
-            hupijiao: {
-                enabled: false,
-                display_name: '虎皮椒',
-                checkout_url: '',
-                gateway_url: '',
-                merchant_id: '',
-                return_url: 'https://www.zaoyoe.com',
-                notify_url: '',
-                package_hint: '虎皮椒通道已启用，正式回调与自动发货接入后即可完整使用。',
-                custom_amount_hint: '虎皮椒通道已启用。自定义金额订单能力接入后，这里会直接拉起真实支付。'
-            }
+        providers
+    };
+}
+
+function getDefaultDiscountTriggerRulesConfig() {
+    return {
+        recharge: {
+            enabled: false,
+            rules: []
+        },
+        checkin: {
+            enabled: false,
+            rules: []
+        },
+        affiliate: {
+            enabled: false,
+            rules: []
         }
     };
+}
+
+function getDefaultDiscountTriggerSettingsState() {
+    return {
+        draft: getDefaultDiscountTriggerRulesConfig(),
+        optionRows: [],
+        optionsLoaded: false,
+        optionsLoading: false,
+        optionsError: '',
+        saving: false
+    };
+}
+
+function normalizeDiscountTriggerBoolean(value, fallback = false) {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized) return fallback;
+    if (['true', '1', 'yes', 'y', 'on'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'n', 'off'].includes(normalized)) return false;
+    return fallback;
+}
+
+function normalizeDiscountTriggerRuleSite(value, fallback = 'all') {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized || normalized === 'global') {
+        return fallback;
+    }
+    return ['all', 'cn', 'intl'].includes(normalized) ? normalized : fallback;
+}
+
+function normalizeDiscountTriggerRuleKey(value, fallbackIndex = 0) {
+    const normalized = String(value || '')
+        .trim()
+        .replace(/[^\w:-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 120);
+
+    return normalized || `recharge_rule_${Math.max(1, Number(fallbackIndex) + 1)}`;
+}
+
+function createDiscountTriggerRechargeRuleDraft(overrides = {}) {
+    discountTriggerRuleDraftCounter += 1;
+
+    return normalizeDiscountTriggerRechargeRule({
+        rule_key: `recharge_rule_draft_${Date.now()}_${discountTriggerRuleDraftCounter}`,
+        enabled: true,
+        site: 'all',
+        min_paid_amount: 0,
+        min_paid_points: 0,
+        min_total_points: 0,
+        first_recharge_only: false,
+        allow_duplicate_available_asset: false,
+        max_grants_per_user: 1,
+        source_channel: 'wallet_recharge',
+        audience_segment: 'recharge_user',
+        campaign_tag: 'recharge_boost',
+        ...(overrides && typeof overrides === 'object' && !Array.isArray(overrides) ? overrides : {})
+    }, {
+        fallbackIndex: discountTriggerRuleDraftCounter,
+        allowEmptyDiscount: true
+    });
+}
+
+function createDiscountTriggerCheckinRuleDraft(overrides = {}) {
+    discountTriggerRuleDraftCounter += 1;
+
+    return normalizeDiscountTriggerCheckinRule({
+        rule_key: `checkin_rule_draft_${Date.now()}_${discountTriggerRuleDraftCounter}`,
+        enabled: true,
+        site: 'all',
+        min_points_reward: 0,
+        min_streak_days: 0,
+        min_bonus_reward: 0,
+        allow_duplicate_available_asset: false,
+        max_grants_per_user: 1,
+        source_channel: 'checkin_reward',
+        audience_segment: 'checkin_user',
+        campaign_tag: 'checkin_boost',
+        ...(overrides && typeof overrides === 'object' && !Array.isArray(overrides) ? overrides : {})
+    }, {
+        fallbackIndex: discountTriggerRuleDraftCounter,
+        allowEmptyDiscount: true
+    });
+}
+
+function createDiscountTriggerAffiliateRuleDraft(overrides = {}) {
+    discountTriggerRuleDraftCounter += 1;
+
+    return normalizeDiscountTriggerAffiliateRule({
+        rule_key: `affiliate_rule_draft_${Date.now()}_${discountTriggerRuleDraftCounter}`,
+        enabled: true,
+        site: 'all',
+        reward_type: 'any',
+        min_reward_points: 0,
+        allow_duplicate_available_asset: false,
+        max_grants_per_user: 1,
+        source_channel: 'affiliate_reward',
+        audience_segment: 'affiliate_inviter',
+        campaign_tag: 'affiliate_boost',
+        ...(overrides && typeof overrides === 'object' && !Array.isArray(overrides) ? overrides : {})
+    }, {
+        fallbackIndex: discountTriggerRuleDraftCounter,
+        allowEmptyDiscount: true
+    });
+}
+
+function normalizeDiscountTriggerRechargeRule(raw, options = {}) {
+    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const fallbackIndex = Math.max(0, Number(options.fallbackIndex) || 0);
+    const allowEmptyDiscount = options.allowEmptyDiscount === true;
+    const discountId = String(source.discount_id || source.discountId || '').trim().slice(0, 160);
+    if (!discountId && !allowEmptyDiscount) {
+        return null;
+    }
+
+    const firstRechargeOnly = normalizeDiscountTriggerBoolean(
+        source.first_recharge_only ?? source.firstRechargeOnly,
+        false
+    );
+
+    return {
+        rule_key: normalizeDiscountTriggerRuleKey(source.rule_key || source.ruleKey, fallbackIndex),
+        discount_id: discountId,
+        enabled: normalizeDiscountTriggerBoolean(source.enabled, true),
+        site: normalizeDiscountTriggerRuleSite(source.site || source.applicable_site, 'all'),
+        min_paid_amount: Math.max(0, toDecimal(source.min_paid_amount ?? source.minPaidAmount, 0)),
+        min_paid_points: Math.max(0, toWholeNumber(source.min_paid_points ?? source.minPaidPoints, 0)),
+        min_total_points: Math.max(0, toWholeNumber(source.min_total_points ?? source.minTotalPoints, 0)),
+        first_recharge_only: firstRechargeOnly,
+        allow_duplicate_available_asset: normalizeDiscountTriggerBoolean(
+            source.allow_duplicate_available_asset ?? source.allowDuplicateAvailableAsset,
+            false
+        ),
+        max_grants_per_user: Math.max(0, toWholeNumber(source.max_grants_per_user ?? source.maxGrantsPerUser, 1)),
+        source_channel: String(source.source_channel || source.sourceChannel || 'wallet_recharge').trim().toLowerCase() || 'wallet_recharge',
+        audience_segment: String(source.audience_segment || source.audienceSegment || '').trim().toLowerCase()
+            || (firstRechargeOnly ? 'first_recharge' : 'recharge_user'),
+        campaign_tag: String(source.campaign_tag || source.campaignTag || 'recharge_boost').trim().toLowerCase() || 'recharge_boost'
+    };
+}
+
+function normalizeDiscountTriggerCheckinRule(raw, options = {}) {
+    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const fallbackIndex = Math.max(0, Number(options.fallbackIndex) || 0);
+    const allowEmptyDiscount = options.allowEmptyDiscount === true;
+    const discountId = String(source.discount_id || source.discountId || '').trim().slice(0, 160);
+    if (!discountId && !allowEmptyDiscount) {
+        return null;
+    }
+
+    const minStreakDays = Math.max(0, toWholeNumber(source.min_streak_days ?? source.minStreakDays, 0));
+    return {
+        rule_key: normalizeDiscountTriggerRuleKey(source.rule_key || source.ruleKey, fallbackIndex),
+        discount_id: discountId,
+        enabled: normalizeDiscountTriggerBoolean(source.enabled, true),
+        site: normalizeDiscountTriggerRuleSite(source.site || source.applicable_site, 'all'),
+        min_points_reward: Math.max(0, toDecimal(source.min_points_reward ?? source.minPointsReward, 0)),
+        min_streak_days: minStreakDays,
+        min_bonus_reward: Math.max(0, toDecimal(source.min_bonus_reward ?? source.minBonusReward, 0)),
+        allow_duplicate_available_asset: normalizeDiscountTriggerBoolean(
+            source.allow_duplicate_available_asset ?? source.allowDuplicateAvailableAsset,
+            false
+        ),
+        max_grants_per_user: Math.max(0, toWholeNumber(source.max_grants_per_user ?? source.maxGrantsPerUser, 1)),
+        source_channel: String(source.source_channel || source.sourceChannel || 'checkin_reward').trim().toLowerCase() || 'checkin_reward',
+        audience_segment: String(source.audience_segment || source.audienceSegment || '').trim().toLowerCase()
+            || (minStreakDays >= 7 ? 'high_streak_user' : 'checkin_user'),
+        campaign_tag: String(source.campaign_tag || source.campaignTag || 'checkin_boost').trim().toLowerCase() || 'checkin_boost'
+    };
+}
+
+function normalizeDiscountTriggerAffiliateRewardType(value, fallback = 'any') {
+    const normalized = String(value || '').trim().toLowerCase();
+    return ['any', 'commission', 'registration_reward', 'activation_reward'].includes(normalized)
+        ? normalized
+        : fallback;
+}
+
+function normalizeDiscountTriggerAffiliateRule(raw, options = {}) {
+    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const fallbackIndex = Math.max(0, Number(options.fallbackIndex) || 0);
+    const allowEmptyDiscount = options.allowEmptyDiscount === true;
+    const discountId = String(source.discount_id || source.discountId || '').trim().slice(0, 160);
+    if (!discountId && !allowEmptyDiscount) {
+        return null;
+    }
+
+    const rewardType = normalizeDiscountTriggerAffiliateRewardType(source.reward_type || source.rewardType, 'any');
+    return {
+        rule_key: normalizeDiscountTriggerRuleKey(source.rule_key || source.ruleKey, fallbackIndex),
+        discount_id: discountId,
+        enabled: normalizeDiscountTriggerBoolean(source.enabled, true),
+        site: normalizeDiscountTriggerRuleSite(source.site || source.applicable_site, 'all'),
+        reward_type: rewardType,
+        min_reward_points: Math.max(0, toDecimal(source.min_reward_points ?? source.minRewardPoints, 0)),
+        allow_duplicate_available_asset: normalizeDiscountTriggerBoolean(
+            source.allow_duplicate_available_asset ?? source.allowDuplicateAvailableAsset,
+            false
+        ),
+        max_grants_per_user: Math.max(0, toWholeNumber(source.max_grants_per_user ?? source.maxGrantsPerUser, 1)),
+        source_channel: String(source.source_channel || source.sourceChannel || '').trim().toLowerCase()
+            || (rewardType === 'commission' ? 'affiliate_commission' : 'affiliate_reward'),
+        audience_segment: String(source.audience_segment || source.audienceSegment || '').trim().toLowerCase()
+            || (rewardType === 'commission' ? 'affiliate_commission_inviter' : 'affiliate_inviter'),
+        campaign_tag: String(source.campaign_tag || source.campaignTag || 'affiliate_boost').trim().toLowerCase() || 'affiliate_boost'
+    };
+}
+
+function normalizeDiscountTriggerRulesConfig(raw, options = {}) {
+    const defaults = getDefaultDiscountTriggerRulesConfig();
+    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const rechargeSource = source.recharge && typeof source.recharge === 'object' && !Array.isArray(source.recharge)
+        ? source.recharge
+        : {};
+    const checkinSource = source.checkin && typeof source.checkin === 'object' && !Array.isArray(source.checkin)
+        ? source.checkin
+        : {};
+    const affiliateSource = source.affiliate && typeof source.affiliate === 'object' && !Array.isArray(source.affiliate)
+        ? source.affiliate
+        : {};
+    const rawRechargeRules = Array.isArray(rechargeSource.rules)
+        ? rechargeSource.rules
+        : (Array.isArray(source.recharge_rules) ? source.recharge_rules : []);
+    const rawCheckinRules = Array.isArray(checkinSource.rules)
+        ? checkinSource.rules
+        : (Array.isArray(source.checkin_rules) ? source.checkin_rules : []);
+    const rawAffiliateRules = Array.isArray(affiliateSource.rules)
+        ? affiliateSource.rules
+        : (Array.isArray(source.affiliate_rules) ? source.affiliate_rules : []);
+    const allowEmptyDiscounts = options.allowEmptyDiscounts === true;
+
+    return {
+        recharge: {
+            enabled: normalizeDiscountTriggerBoolean(rechargeSource.enabled, defaults.recharge.enabled),
+            rules: rawRechargeRules
+                .map((rule, index) => normalizeDiscountTriggerRechargeRule(rule, {
+                    fallbackIndex: index,
+                    allowEmptyDiscount: allowEmptyDiscounts
+                }))
+                .filter(Boolean)
+                .slice(0, 20)
+        },
+        checkin: {
+            enabled: normalizeDiscountTriggerBoolean(checkinSource.enabled, defaults.checkin.enabled),
+            rules: rawCheckinRules
+                .map((rule, index) => normalizeDiscountTriggerCheckinRule(rule, {
+                    fallbackIndex: index,
+                    allowEmptyDiscount: allowEmptyDiscounts
+                }))
+                .filter(Boolean)
+                .slice(0, 20)
+        },
+        affiliate: {
+            enabled: normalizeDiscountTriggerBoolean(affiliateSource.enabled, defaults.affiliate.enabled),
+            rules: rawAffiliateRules
+                .map((rule, index) => normalizeDiscountTriggerAffiliateRule(rule, {
+                    fallbackIndex: index,
+                    allowEmptyDiscount: allowEmptyDiscounts
+                }))
+                .filter(Boolean)
+                .slice(0, 20)
+        }
+    };
+}
+
+function getDiscountTriggerSectionMeta(sectionKey) {
+    switch (sectionKey) {
+        case 'checkin':
+            return {
+                key: 'checkin',
+                label: '签到发券',
+                actionLabel: '签到',
+                summaryId: 'discountTriggerCheckinSummary',
+                toggleId: 'discountTriggerCheckinEnabledToggle',
+                addButtonId: 'discountTriggerAddCheckinRuleBtn',
+                listId: 'discountTriggerCheckinRuleList',
+                enabledSummary: '签到成功后会按规则尝试发券。',
+                disabledSummary: '签到自动发券当前处于关闭状态。',
+                emptyState: '还没有签到发券规则。建议先从“签到基础奖励 / 连签天数 / 加赠积分”里选一条最容易跑通的触发条件。',
+                createDraft: createDiscountTriggerCheckinRuleDraft,
+                normalizeRule: normalizeDiscountTriggerCheckinRule
+            };
+        case 'affiliate':
+            return {
+                key: 'affiliate',
+                label: '推广发券',
+                actionLabel: '推广奖励',
+                summaryId: 'discountTriggerAffiliateSummary',
+                toggleId: 'discountTriggerAffiliateEnabledToggle',
+                addButtonId: 'discountTriggerAddAffiliateRuleBtn',
+                listId: 'discountTriggerAffiliateRuleList',
+                enabledSummary: '推广奖励到账后会按规则尝试发券。',
+                disabledSummary: '推广自动发券当前处于关闭状态。',
+                emptyState: '还没有推广发券规则。建议先从“返佣到账 / 注册奖励 / 激活奖励”里挑一类奖励做试点。',
+                createDraft: createDiscountTriggerAffiliateRuleDraft,
+                normalizeRule: normalizeDiscountTriggerAffiliateRule
+            };
+        case 'recharge':
+        default:
+            return {
+                key: 'recharge',
+                label: '充值发券',
+                actionLabel: '充值到账',
+                summaryId: 'discountTriggerRechargeSummary',
+                toggleId: 'discountTriggerRechargeEnabledToggle',
+                addButtonId: 'discountTriggerAddRechargeRuleBtn',
+                listId: 'discountTriggerRechargeRuleList',
+                enabledSummary: '充值到账后会按规则尝试发券。',
+                disabledSummary: '充值自动发券当前处于关闭状态。',
+                emptyState: '还没有充值发券规则。建议先配置一张到账型卡券，再用“实付金额 / 实付积分 / 到账积分 / 是否首充”把触发条件收紧。',
+                createDraft: createDiscountTriggerRechargeRuleDraft,
+                normalizeRule: normalizeDiscountTriggerRechargeRule
+            };
+    }
+}
+
+function getDiscountTriggerSectionKeys() {
+    return ['recharge', 'checkin', 'affiliate'];
+}
+
+function createDiscountTriggerPresetRule(sectionKey, presetId) {
+    const normalizedSection = String(sectionKey || '').trim().toLowerCase();
+    const normalizedPreset = String(presetId || '').trim().toLowerCase();
+
+    if (normalizedSection === 'checkin') {
+        if (normalizedPreset === 'streak_7') {
+            return createDiscountTriggerCheckinRuleDraft({
+                min_streak_days: 7,
+                audience_segment: 'high_streak_user',
+                campaign_tag: 'checkin_streak_7'
+            });
+        }
+        if (normalizedPreset === 'bonus_reward') {
+            return createDiscountTriggerCheckinRuleDraft({
+                min_bonus_reward: 5,
+                audience_segment: 'checkin_bonus_user',
+                campaign_tag: 'checkin_bonus_reward'
+            });
+        }
+        return createDiscountTriggerCheckinRuleDraft({
+            campaign_tag: 'checkin_daily_bonus'
+        });
+    }
+
+    if (normalizedSection === 'affiliate') {
+        if (normalizedPreset === 'registration_reward') {
+            return createDiscountTriggerAffiliateRuleDraft({
+                reward_type: 'registration_reward',
+                source_channel: 'affiliate_reward',
+                audience_segment: 'affiliate_inviter',
+                campaign_tag: 'affiliate_registration_bonus'
+            });
+        }
+        if (normalizedPreset === 'activation_reward') {
+            return createDiscountTriggerAffiliateRuleDraft({
+                reward_type: 'activation_reward',
+                source_channel: 'affiliate_reward',
+                audience_segment: 'affiliate_inviter',
+                campaign_tag: 'affiliate_activation_bonus'
+            });
+        }
+        return createDiscountTriggerAffiliateRuleDraft({
+            reward_type: 'commission',
+            source_channel: 'affiliate_commission',
+            audience_segment: 'affiliate_commission_inviter',
+            campaign_tag: 'affiliate_commission_bonus'
+        });
+    }
+
+    if (normalizedPreset === 'paid_100') {
+        return createDiscountTriggerRechargeRuleDraft({
+            min_paid_amount: 100,
+            audience_segment: 'recharge_high_value',
+            campaign_tag: 'recharge_paid_100_bonus'
+        });
+    }
+    if (normalizedPreset === 'credit_500') {
+        return createDiscountTriggerRechargeRuleDraft({
+            min_total_points: 500,
+            audience_segment: 'recharge_large_credit',
+            campaign_tag: 'recharge_credit_500_bonus'
+        });
+    }
+    return createDiscountTriggerRechargeRuleDraft({
+        first_recharge_only: true,
+        audience_segment: 'first_recharge',
+        campaign_tag: 'first_recharge_bonus'
+    });
+}
+
+function matchesDiscountTriggerOptionSite(optionSite = 'all', targetSite = 'all') {
+    const normalizedOptionSite = normalizeDiscountTriggerRuleSite(optionSite, 'all');
+    const normalizedTargetSite = normalizeDiscountTriggerRuleSite(targetSite, 'all');
+    return normalizedTargetSite === 'all'
+        || normalizedOptionSite === 'all'
+        || normalizedOptionSite === normalizedTargetSite;
+}
+
+function getDiscountTriggerPresetValueDirection(sectionKey, presetId) {
+    const normalizedSection = String(sectionKey || '').trim().toLowerCase();
+    const normalizedPreset = String(presetId || '').trim().toLowerCase();
+
+    if (normalizedSection === 'checkin') {
+        return ['streak_7', 'bonus_reward'].includes(normalizedPreset) ? 'desc' : 'asc';
+    }
+    if (normalizedSection === 'affiliate') {
+        return normalizedPreset === 'registration_reward' ? 'asc' : 'desc';
+    }
+    return ['paid_100', 'credit_500'].includes(normalizedPreset) ? 'desc' : 'asc';
+}
+
+function rankDiscountTriggerPresetCandidateOptions(rows = [], sectionKey, presetId) {
+    const direction = getDiscountTriggerPresetValueDirection(sectionKey, presetId);
+    return [...(Array.isArray(rows) ? rows : [])].sort((left, right) => {
+        const leftLifecycle = String(left?.lifecycle_summary?.key || left?.lifecycle_status || '').trim().toLowerCase();
+        const rightLifecycle = String(right?.lifecycle_summary?.key || right?.lifecycle_status || '').trim().toLowerCase();
+        const lifecycleRank = (value) => {
+            if (value === 'active') return 0;
+            if (value === 'scheduled') return 1;
+            return 2;
+        };
+        const lifecycleDelta = lifecycleRank(leftLifecycle) - lifecycleRank(rightLifecycle);
+        if (lifecycleDelta !== 0) {
+            return lifecycleDelta;
+        }
+
+        const leftSiteRank = normalizeDiscountTriggerRuleSite(left?.applicable_site, 'all') === 'all' ? 0 : 1;
+        const rightSiteRank = normalizeDiscountTriggerRuleSite(right?.applicable_site, 'all') === 'all' ? 0 : 1;
+        if (leftSiteRank !== rightSiteRank) {
+            return leftSiteRank - rightSiteRank;
+        }
+
+        const leftValue = Number(left?.discount_value) || 0;
+        const rightValue = Number(right?.discount_value) || 0;
+        if (leftValue !== rightValue) {
+            return direction === 'desc' ? (rightValue - leftValue) : (leftValue - rightValue);
+        }
+
+        return String(left?.code || '').localeCompare(String(right?.code || ''));
+    });
+}
+
+function getDiscountTriggerPresetAutoSelectedOption(sectionKey, presetId, targetSite = 'all') {
+    const optionRows = Array.isArray(discountTriggerSettingsState.optionRows) ? discountTriggerSettingsState.optionRows : [];
+    const compatibleRows = rankDiscountTriggerPresetCandidateOptions(
+        optionRows.filter((row) => matchesDiscountTriggerOptionSite(row?.applicable_site, targetSite)),
+        sectionKey,
+        presetId
+    );
+
+    return compatibleRows.find((row) => {
+        const lifecycleKey = String(row?.lifecycle_summary?.key || row?.lifecycle_status || '').trim().toLowerCase();
+        return ['active', 'scheduled'].includes(lifecycleKey);
+    }) || null;
+}
+
+function getDiscountTriggerPresetRecommendation(sectionKey, presetId) {
+    if (discountTriggerSettingsState.optionsLoading) {
+        return {
+            tone: 'muted',
+            text: '正在匹配可用卡券'
+        };
+    }
+
+    if (discountTriggerSettingsState.optionsError) {
+        return {
+            tone: 'warning',
+            text: '卡券候选加载失败，先确认可选券列表'
+        };
+    }
+
+    const optionRows = Array.isArray(discountTriggerSettingsState.optionRows) ? discountTriggerSettingsState.optionRows : [];
+    if (!optionRows.length) {
+        return {
+            tone: 'warning',
+            text: '当前没有到账型卡券可搭配'
+        };
+    }
+
+    const compatibleRows = rankDiscountTriggerPresetCandidateOptions(
+        optionRows.filter((row) => matchesDiscountTriggerOptionSite(row?.applicable_site, 'all')),
+        sectionKey,
+        presetId
+    );
+
+    if (!compatibleRows.length) {
+        return {
+            tone: 'warning',
+            text: '当前没有适合这条模板的卡券候选'
+        };
+    }
+
+    const liveRows = compatibleRows.filter((row) => {
+        const lifecycleKey = String(row?.lifecycle_summary?.key || row?.lifecycle_status || '').trim().toLowerCase();
+        return ['active', 'scheduled'].includes(lifecycleKey);
+    });
+    const displayRows = (liveRows.length ? liveRows : compatibleRows).slice(0, 2);
+    const codeLabels = displayRows
+        .map((row) => String(row?.code || '').trim().toUpperCase())
+        .filter(Boolean);
+    const codeText = codeLabels.join(' / ');
+    const autoSelectedOption = getDiscountTriggerPresetAutoSelectedOption(sectionKey, presetId, 'all');
+    const autoSelectedCode = String(autoSelectedOption?.code || '').trim().toUpperCase();
+
+    if (liveRows.length) {
+        return {
+            tone: 'success',
+            text: codeText
+                ? `推荐候选：${codeText}${autoSelectedCode ? ` · 将自动预选 ${autoSelectedCode}` : ''}${liveRows.length > displayRows.length ? ` 等 ${liveRows.length} 张` : ''}`
+                : `当前有 ${liveRows.length} 张可直接搭配的卡券`
+        };
+    }
+
+    return {
+        tone: 'warning',
+        text: codeText
+            ? `候选 ${codeText}，需先确认状态后再使用`
+            : '当前卡券都需要先确认状态后再使用'
+    };
+}
+
+function applyDiscountTriggerPresetAutoSelection(rule = null, sectionKey, presetId) {
+    if (!rule || typeof rule !== 'object') {
+        return rule;
+    }
+
+    const recommendedOption = getDiscountTriggerPresetAutoSelectedOption(sectionKey, presetId, rule.site || 'all');
+    if (!recommendedOption?.id) {
+        return rule;
+    }
+
+    const nextRule = {
+        ...rule,
+        discount_id: String(recommendedOption.id || '').trim()
+    };
+    const recommendedSite = normalizeDiscountTriggerRuleSite(recommendedOption?.applicable_site, 'all');
+    if (recommendedSite !== 'all') {
+        nextRule.site = recommendedSite;
+    }
+
+    return nextRule;
+}
+
+function applyDiscountTriggerPresetRecommendations() {
+    getDiscountTriggerSectionKeys().forEach((sectionKey) => {
+        const sectionRoot = document.querySelector(`.discount-trigger-section[data-trigger-section="${sectionKey}"]`);
+        if (!(sectionRoot instanceof HTMLElement)) {
+            return;
+        }
+
+        sectionRoot.querySelectorAll('[data-discount-trigger-preset]').forEach((buttonEl) => {
+            if (!(buttonEl instanceof HTMLButtonElement)) {
+                return;
+            }
+
+            const presetId = buttonEl.getAttribute('data-discount-trigger-preset') || '';
+            const recommendationEl = buttonEl.querySelector('[data-discount-trigger-preset-role="recommendation"]');
+            if (!(recommendationEl instanceof HTMLElement)) {
+                return;
+            }
+
+            const recommendation = getDiscountTriggerPresetRecommendation(sectionKey, presetId);
+            recommendationEl.textContent = recommendation.text;
+            buttonEl.dataset.presetTone = recommendation.tone;
+        });
+    });
 }
 
 function getDefaultAnalyticsPreferencesConfig() {
@@ -3362,56 +3991,6 @@ function normalizeIntegrationsConfig(raw) {
         wechat_login_enabled: source.wechat_login_enabled === true,
         supabase_realtime_enabled: source.supabase_realtime_enabled !== false,
         ai_service: aiService
-    };
-}
-
-function getDefaultSeoConfig() {
-    return {
-        site_title: '我的提示词画廊',
-        site_description: '精选AI生成图片提示词，一键复制使用...',
-        site_keywords: 'AI图片, 提示词, Midjourney, Stable Diffusion'
-    };
-}
-
-function normalizeSeoConfig(raw) {
-    const defaults = getDefaultSeoConfig();
-    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
-
-    return {
-        site_title: typeof source.site_title === 'string' && source.site_title.trim()
-            ? source.site_title.trim()
-            : defaults.site_title,
-        site_description: typeof source.site_description === 'string' && source.site_description.trim()
-            ? source.site_description.trim()
-            : defaults.site_description,
-        site_keywords: typeof source.site_keywords === 'string' && source.site_keywords.trim()
-            ? source.site_keywords.trim()
-            : defaults.site_keywords
-    };
-}
-
-function getDefaultPerformanceConfig() {
-    return {
-        lazy_load_enabled: true,
-        image_quality: 85,
-        cache_duration_seconds: 86400
-    };
-}
-
-function normalizePerformanceConfig(raw) {
-    const defaults = getDefaultPerformanceConfig();
-    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
-    const imageQuality = parseInt(source.image_quality, 10);
-    const cacheDuration = parseInt(source.cache_duration_seconds, 10);
-
-    return {
-        lazy_load_enabled: source.lazy_load_enabled !== false,
-        image_quality: Number.isFinite(imageQuality)
-            ? Math.min(100, Math.max(60, imageQuality))
-            : defaults.image_quality,
-        cache_duration_seconds: Number.isFinite(cacheDuration) && cacheDuration > 0
-            ? cacheDuration
-            : defaults.cache_duration_seconds
     };
 }
 
@@ -3897,11 +4476,41 @@ function normalizePaymentChannelsConfig(raw) {
     const sourceProviders = source.providers && typeof source.providers === 'object' && !Array.isArray(source.providers)
         ? source.providers
         : {};
+    const resolvePreferredEnabledProviderKey = (providers = {}, fallback = defaults.active_provider) => {
+        const candidateKeys = ['hupijiao', 'afdian', ...Object.keys(providers || {})];
+        const seen = new Set();
+
+        for (const providerKey of candidateKeys) {
+            const normalizedKey = String(providerKey || '').trim().toLowerCase();
+            if (!normalizedKey || normalizedKey === 'mock' || seen.has(normalizedKey)) {
+                continue;
+            }
+            seen.add(normalizedKey);
+            const provider = providers?.[normalizedKey];
+            if (provider?.enabled === true && String(provider.checkout_url || '').trim()) {
+                return normalizedKey;
+            }
+        }
+
+        for (const providerKey of candidateKeys) {
+            const normalizedKey = String(providerKey || '').trim().toLowerCase();
+            if (!normalizedKey || normalizedKey === 'mock' || seen.has(`enabled:${normalizedKey}`)) {
+                continue;
+            }
+            seen.add(`enabled:${normalizedKey}`);
+            const provider = providers?.[normalizedKey];
+            if (provider?.enabled === true) {
+                return normalizedKey;
+            }
+        }
+
+        return ['mock', 'afdian', 'hupijiao'].includes(fallback) ? fallback : defaults.active_provider;
+    };
 
     const normalized = {
         active_provider: ['mock', 'afdian', 'hupijiao'].includes(source.active_provider)
             ? source.active_provider
-            : defaults.active_provider,
+            : resolvePreferredEnabledProviderKey(sourceProviders, defaults.active_provider),
         providers: {
             mock: {
                 enabled: sourceProviders.mock?.enabled !== undefined
@@ -3917,7 +4526,13 @@ function normalizePaymentChannelsConfig(raw) {
                 display_name: String(sourceProviders.afdian?.display_name || defaults.providers.afdian.display_name).trim() || defaults.providers.afdian.display_name,
                 checkout_url: String(sourceProviders.afdian?.checkout_url || defaults.providers.afdian.checkout_url).trim() || defaults.providers.afdian.checkout_url,
                 package_hint: String(sourceProviders.afdian?.package_hint || defaults.providers.afdian.package_hint).trim() || defaults.providers.afdian.package_hint,
-                custom_amount_hint: String(sourceProviders.afdian?.custom_amount_hint || defaults.providers.afdian.custom_amount_hint).trim() || defaults.providers.afdian.custom_amount_hint
+                custom_amount_hint: String(sourceProviders.afdian?.custom_amount_hint || defaults.providers.afdian.custom_amount_hint).trim() || defaults.providers.afdian.custom_amount_hint,
+                order_query_enabled: sourceProviders.afdian?.order_query_enabled !== undefined
+                    ? (sourceProviders.afdian.order_query_enabled === true || String(sourceProviders.afdian.order_query_enabled) === 'true')
+                    : defaults.providers.afdian.order_query_enabled,
+                order_query_title: String(sourceProviders.afdian?.order_query_title || defaults.providers.afdian.order_query_title).trim() || defaults.providers.afdian.order_query_title,
+                order_query_hint: String(sourceProviders.afdian?.order_query_hint || defaults.providers.afdian.order_query_hint).trim() || defaults.providers.afdian.order_query_hint,
+                order_query_placeholder: String(sourceProviders.afdian?.order_query_placeholder || defaults.providers.afdian.order_query_placeholder).trim() || defaults.providers.afdian.order_query_placeholder
             },
             hupijiao: {
                 enabled: sourceProviders.hupijiao?.enabled === true || String(sourceProviders.hupijiao?.enabled) === 'true',
@@ -3928,7 +4543,11 @@ function normalizePaymentChannelsConfig(raw) {
                 return_url: String(sourceProviders.hupijiao?.return_url || defaults.providers.hupijiao.return_url).trim() || defaults.providers.hupijiao.return_url,
                 notify_url: String(sourceProviders.hupijiao?.notify_url || defaults.providers.hupijiao.notify_url).trim(),
                 package_hint: String(sourceProviders.hupijiao?.package_hint || defaults.providers.hupijiao.package_hint).trim() || defaults.providers.hupijiao.package_hint,
-                custom_amount_hint: String(sourceProviders.hupijiao?.custom_amount_hint || defaults.providers.hupijiao.custom_amount_hint).trim() || defaults.providers.hupijiao.custom_amount_hint
+                custom_amount_hint: String(sourceProviders.hupijiao?.custom_amount_hint || defaults.providers.hupijiao.custom_amount_hint).trim() || defaults.providers.hupijiao.custom_amount_hint,
+                order_query_enabled: sourceProviders.hupijiao?.order_query_enabled === true || String(sourceProviders.hupijiao?.order_query_enabled) === 'true',
+                order_query_title: String(sourceProviders.hupijiao?.order_query_title || defaults.providers.hupijiao.order_query_title).trim(),
+                order_query_hint: String(sourceProviders.hupijiao?.order_query_hint || defaults.providers.hupijiao.order_query_hint).trim(),
+                order_query_placeholder: String(sourceProviders.hupijiao?.order_query_placeholder || defaults.providers.hupijiao.order_query_placeholder).trim()
             }
         }
     };
@@ -5125,11 +5744,36 @@ function normalizeAffiliatePosterConfig(raw) {
 // INIT & LOAD
 // ============================================
 
+let configEventListenersBound = false;
+let settingsModuleInitPromise = null;
+
+async function initSettingsModule(options = {}) {
+    const shouldBindListeners = options.bindListeners === true || !configEventListenersBound;
+    if (settingsModuleInitPromise) {
+        return settingsModuleInitPromise;
+    }
+
+    settingsModuleInitPromise = (async () => {
+        await loadAllSystemConfig();
+        await loadDiscountTriggerDiscountOptions();
+
+        if (shouldBindListeners) {
+            setupConfigEventListeners();
+            configEventListenersBound = true;
+        }
+    })();
+
+    try {
+        return await settingsModuleInitPromise;
+    } finally {
+        settingsModuleInitPromise = null;
+    }
+}
+
 async function initSystemConfig() {
     console.log('[Config] Initializing system config...');
     try {
-        await loadAllSystemConfig();
-        setupConfigEventListeners();
+        await initSettingsModule({ bindListeners: true });
         console.log('[Config] Initialized successfully');
     } catch (err) {
         console.error('[Config] Init error:', err);
@@ -5185,6 +5829,8 @@ async function loadAllSystemConfig() {
         renderUnlockPricingConfig();
         renderPackagesConfig();
         renderPaymentChannelsConfig();
+        hydrateDiscountTriggerSettingsDraft({ force: true });
+        renderDiscountTriggerSettings();
         renderOpsAlertSettings();
         renderOpsAlertHealthPanel();
         renderOpsAlertMonitorPanel();
@@ -5195,10 +5841,10 @@ async function loadAllSystemConfig() {
         renderNotificationsConfig();
         renderModerationConfig();
         renderGalleryConfig();
-        renderCommentRulesConfig();
         renderVerifyConfig();
         loadAffiliateSettings();
         loadPaymentChannelSettings();
+        void loadDiscountTriggerDiscountOptions();
         loadOpsAlertSettings();
         loadOpsAlertHealth();
         loadOpsAlertMonitor();
@@ -5448,7 +6094,7 @@ function applyPaymentChannelOverview(config) {
             : (hasMockOverrideCleanupNotice
                 ? mockRuntime.cleanup_message
                 : (config.providers.mock.description || '直接到账，适合短期过渡验证。')),
-        afdian: `${config.providers.afdian.package_hint || '支付后输入订单号领取兑换码'} · ${paymentChannelSecretStatus?.afdian_token?.configured ? 'Token 已配置' : 'Token 待配置'}`,
+        afdian: `历史手工认领通道 · ${paymentChannelSecretStatus?.afdian_token?.configured ? 'Token 已配置' : 'Token 待配置'}`,
         hupijiao: `${config.providers.hupijiao.merchant_id ? `商户号 ${config.providers.hupijiao.merchant_id}` : '商户号待填写'} · ${(paymentChannelSecretStatus?.hupijiao_api_key?.configured && paymentChannelSecretStatus?.hupijiao_secret_key?.configured) ? '密钥已配置' : '密钥待配置'}`
     };
 
@@ -5528,6 +6174,1138 @@ function renderPaymentChannelsConfig() {
     Object.entries(paymentChannelAccordionState).forEach(([providerKey, expanded]) => {
         setPaymentProviderPanelExpanded(providerKey, expanded);
     });
+}
+
+function hydrateDiscountTriggerSettingsDraft(options = {}) {
+    const shouldForce = options.force === true;
+    if (shouldForce || !hasDiscountTriggerUnsavedChanges(discountTriggerSettingsState.draft)) {
+        discountTriggerSettingsState.draft = normalizeDiscountTriggerRulesConfig(
+            systemConfigCache['discount_trigger_rules'],
+            { allowEmptyDiscounts: true }
+        );
+        return discountTriggerSettingsState.draft;
+    }
+
+    discountTriggerSettingsState.draft = normalizeDiscountTriggerRulesConfig(
+        discountTriggerSettingsState.draft,
+        { allowEmptyDiscounts: true }
+    );
+    return discountTriggerSettingsState.draft;
+}
+
+function formatDiscountTriggerSiteLabel(value) {
+    const normalized = normalizeDiscountTriggerRuleSite(value, 'all');
+    if (normalized === 'cn') return 'CN';
+    if (normalized === 'intl') return 'INTL';
+    return '全站';
+}
+
+function formatDiscountTriggerLifecycleLabel(row = {}) {
+    const lifecycle = row?.lifecycle_summary && typeof row.lifecycle_summary === 'object'
+        ? row.lifecycle_summary
+        : null;
+    if (lifecycle?.label) {
+        return String(lifecycle.label).trim();
+    }
+
+    const normalized = String(row?.lifecycle_status || '').trim().toLowerCase();
+    if (normalized === 'scheduled') return '待生效';
+    if (normalized === 'paused_risk') return '风险暂停';
+    if (normalized === 'paused_manual') return '手动暂停';
+    if (normalized === 'expired') return '已过期';
+    if (normalized === 'archived') return '已归档';
+    return '生效中';
+}
+
+function formatDiscountTriggerBenefitLabel(row = {}) {
+    const value = Number(row?.discount_value);
+    if (String(row?.discount_type || '').trim().toLowerCase() === 'percent') {
+        const folded = Number.isFinite(value) && value > 0 ? value / 10 : 0;
+        const foldedLabel = Number.isInteger(folded) ? String(folded) : folded.toFixed(1).replace(/\.0$/, '');
+        return `${foldedLabel || '0'}折`;
+    }
+
+    const amount = Number.isFinite(value) ? String(value).replace(/\.0$/, '') : '0';
+    return `立减 ${amount} 积分`;
+}
+
+function buildDiscountTriggerRechargeOptionLabel(row = {}) {
+    const code = String(row?.code || '').trim().toUpperCase() || '未命名卡券';
+    return `${code} · ${formatDiscountTriggerBenefitLabel(row)} · ${formatDiscountTriggerSiteLabel(row?.applicable_site)} · ${formatDiscountTriggerLifecycleLabel(row)}`;
+}
+
+function findDiscountTriggerDiscountOption(discountId = '') {
+    const normalizedId = String(discountId || '').trim();
+    if (!normalizedId) {
+        return null;
+    }
+
+    return (Array.isArray(discountTriggerSettingsState.optionRows) ? discountTriggerSettingsState.optionRows : [])
+        .find((row) => String(row?.id || '').trim() === normalizedId) || null;
+}
+
+function getSavedDiscountTriggerConfigSnapshot() {
+    return normalizeDiscountTriggerRulesConfig(systemConfigCache['discount_trigger_rules'], { allowEmptyDiscounts: true });
+}
+
+function hasDiscountTriggerUnsavedChanges(config = null) {
+    const savedSnapshot = JSON.stringify(getSavedDiscountTriggerConfigSnapshot());
+    const draftSnapshot = JSON.stringify(
+        normalizeDiscountTriggerRulesConfig(config || discountTriggerSettingsState.draft, { allowEmptyDiscounts: true })
+    );
+    return savedSnapshot !== draftSnapshot;
+}
+
+function getDiscountTriggerRuleWarning(rule = {}, option = null) {
+    if (!rule.discount_id) {
+        return '请选择要发放的到账型卡券。';
+    }
+
+    if (!option) {
+        return '当前卡券不存在、已删除，或不再是到账型卡券，请重新选择。';
+    }
+
+    const lifecycleKey = String(option?.lifecycle_summary?.key || option?.lifecycle_status || '').trim().toLowerCase();
+    if (!['active', 'scheduled'].includes(lifecycleKey)) {
+        return `当前卡券状态为“${formatDiscountTriggerLifecycleLabel(option)}”，命中时后端会跳过发放。`;
+    }
+
+    const optionSite = normalizeDiscountTriggerRuleSite(option?.applicable_site, 'all');
+    const ruleSite = normalizeDiscountTriggerRuleSite(rule.site, 'all');
+    if (ruleSite === 'all' && optionSite !== 'all') {
+        return `当前卡券仅支持 ${formatDiscountTriggerSiteLabel(optionSite)}，建议把规则站点也改成 ${formatDiscountTriggerSiteLabel(optionSite)}。`;
+    }
+    if (ruleSite !== 'all' && optionSite !== 'all' && ruleSite !== optionSite) {
+        return `规则站点为 ${formatDiscountTriggerSiteLabel(ruleSite)}，但当前卡券仅支持 ${formatDiscountTriggerSiteLabel(optionSite)}。`;
+    }
+
+    return '';
+}
+
+function formatDiscountTriggerAffiliateRewardTypeLabel(value) {
+    const normalized = normalizeDiscountTriggerAffiliateRewardType(value, 'any');
+    if (normalized === 'commission') return '仅返佣到账';
+    if (normalized === 'registration_reward') return '仅注册奖励';
+    if (normalized === 'activation_reward') return '仅激活奖励';
+    return '任意推广奖励';
+}
+
+function getDiscountTriggerRuleHint(rule = {}, option = null, sectionKey = 'recharge') {
+    const parts = [];
+    if (option) {
+        parts.push(buildDiscountTriggerRechargeOptionLabel(option));
+    } else if (rule.discount_id) {
+        parts.push(`卡券 ID: ${rule.discount_id}`);
+    }
+
+    if (sectionKey === 'checkin') {
+        if (rule.min_points_reward > 0) {
+            parts.push(`签到基础奖励 >= ${String(rule.min_points_reward).replace(/\.0$/, '')} 积分`);
+        }
+        if (rule.min_streak_days > 0) {
+            parts.push(`连续签到 >= ${rule.min_streak_days} 天`);
+        }
+        if (rule.min_bonus_reward > 0) {
+            parts.push(`加赠积分 >= ${String(rule.min_bonus_reward).replace(/\.0$/, '')} 积分`);
+        }
+        if (
+            !(rule.min_points_reward > 0)
+            && !(rule.min_streak_days > 0)
+            && !(rule.min_bonus_reward > 0)
+        ) {
+            parts.push('任意成功签到');
+        }
+    } else if (sectionKey === 'affiliate') {
+        parts.push(formatDiscountTriggerAffiliateRewardTypeLabel(rule.reward_type));
+        if (rule.min_reward_points > 0) {
+            parts.push(`奖励积分 >= ${String(rule.min_reward_points).replace(/\.0$/, '')} 积分`);
+        }
+    } else {
+        if (rule.min_paid_amount > 0) {
+            parts.push(`实付金额 >= ${String(rule.min_paid_amount).replace(/\.0$/, '')} 元`);
+        }
+        if (rule.min_paid_points > 0) {
+            parts.push(`实付积分 >= ${rule.min_paid_points}`);
+        }
+        if (rule.min_total_points > 0) {
+            parts.push(`到账积分 >= ${rule.min_total_points}`);
+        }
+        if (rule.first_recharge_only) {
+            parts.push('仅首充用户');
+        }
+    }
+    parts.push(rule.max_grants_per_user > 0 ? `单用户最多 ${rule.max_grants_per_user} 张` : '单用户不限张数');
+
+    return parts.join(' · ');
+}
+
+function sanitizeDiscountTriggerDropdownToken(value = '') {
+    return String(value || '').trim().replace(/[^a-zA-Z0-9_-]+/g, '_') || 'item';
+}
+
+function getDiscountTriggerDropdownTone(row = {}) {
+    const lifecycle = String(row?.lifecycle_status || '').trim().toLowerCase();
+    if (lifecycle === 'paused_risk' || lifecycle === 'paused_manual' || lifecycle === 'expired' || lifecycle === 'archived') {
+        return 'warning';
+    }
+    if (lifecycle === 'scheduled') {
+        return 'muted';
+    }
+    return 'success';
+}
+
+function buildDiscountTriggerDiscountDropdownOptions(selectedDiscountId = '') {
+    const options = [];
+    const selectedOption = findDiscountTriggerDiscountOption(selectedDiscountId);
+
+    if (selectedDiscountId && !selectedOption) {
+        options.push({
+            value: selectedDiscountId,
+            label: '当前卡券不可用',
+            meta: '这张卡券已不在当前候选列表里，请重新选择',
+            selectLabel: '当前卡券不可用，请重新选择',
+            tone: 'warning'
+        });
+    }
+
+    if (discountTriggerSettingsState.optionsLoading) {
+        options.push({
+            value: '',
+            label: '正在加载到账型卡券...',
+            meta: '候选列表同步完成后会自动刷新',
+            selectLabel: '正在加载到账型卡券...',
+            tone: 'muted'
+        });
+    } else if (!Array.isArray(discountTriggerSettingsState.optionRows) || !discountTriggerSettingsState.optionRows.length) {
+        options.push({
+            value: '',
+            label: '暂无可选到账型卡券',
+            meta: '先确认是否已有用户可领取的到账型卡券',
+            selectLabel: '暂无可选到账型卡券',
+            tone: 'muted'
+        });
+    } else {
+        options.push({
+            value: '',
+            label: '选择到账型卡券',
+            meta: '保存前需要为这条规则指定一张到账型卡券',
+            selectLabel: '请选择到账型卡券',
+            tone: 'muted'
+        });
+    }
+
+    return options.concat(
+        (Array.isArray(discountTriggerSettingsState.optionRows) ? discountTriggerSettingsState.optionRows : [])
+            .map((row) => ({
+                value: String(row?.id || '').trim(),
+                label: `${String(row?.code || '').trim().toUpperCase() || '未命名卡券'} · ${formatDiscountTriggerBenefitLabel(row)}`,
+                meta: `${formatDiscountTriggerSiteLabel(row?.applicable_site)} · ${formatDiscountTriggerLifecycleLabel(row)}`,
+                selectLabel: buildDiscountTriggerRechargeOptionLabel(row),
+                tone: getDiscountTriggerDropdownTone(row)
+            }))
+    );
+}
+
+function getDiscountTriggerSiteDropdownOptions() {
+    return [
+        {
+            value: 'all',
+            label: '全站',
+            meta: 'CN 与 INTL 的命中事件都会触发',
+            selectLabel: '全站'
+        },
+        {
+            value: 'cn',
+            label: 'CN',
+            meta: '仅 CN 站点的命中事件会触发',
+            selectLabel: 'CN'
+        },
+        {
+            value: 'intl',
+            label: 'INTL',
+            meta: '仅 INTL 站点的命中事件会触发',
+            selectLabel: 'INTL'
+        }
+    ];
+}
+
+function getDiscountTriggerAffiliateRewardTypeDropdownOptions() {
+    return [
+        {
+            value: 'any',
+            label: '任意推广奖励',
+            meta: '返佣到账、注册奖励和激活奖励都会命中',
+            selectLabel: '任意推广奖励'
+        },
+        {
+            value: 'commission',
+            label: '返佣到账',
+            meta: '只在返佣到账时发券',
+            selectLabel: '返佣到账'
+        },
+        {
+            value: 'registration_reward',
+            label: '注册奖励',
+            meta: '只在注册奖励到账时发券',
+            selectLabel: '注册奖励'
+        },
+        {
+            value: 'activation_reward',
+            label: '激活奖励',
+            meta: '只在激活奖励到账时发券',
+            selectLabel: '激活奖励'
+        }
+    ];
+}
+
+function getDiscountTriggerDropdownSelectedOption(options = [], selectedValue = '') {
+    const normalizedValue = String(selectedValue || '');
+    return options.find((option) => String(option?.value || '') === normalizedValue) || options[0] || {
+        value: '',
+        label: '请选择'
+    };
+}
+
+function buildDiscountTriggerSelectOptionsMarkup(selectedDiscountId = '') {
+    const options = buildDiscountTriggerDiscountDropdownOptions(selectedDiscountId);
+    const selectedOption = getDiscountTriggerDropdownSelectedOption(options, selectedDiscountId);
+    return options.map((option) => (
+        `<option value="${escapeConfigHtml(option.value || '')}"${String(option.value || '') === String(selectedOption.value || '') ? ' selected' : ''}>${escapeConfigHtml(option.selectLabel || option.label || '')}</option>`
+    )).join('');
+}
+
+function buildDiscountTriggerCustomSelectFieldMarkup({
+    ruleKey = '',
+    field = '',
+    label = '',
+    selectedValue = '',
+    options = [],
+    wide = false,
+    compact = false,
+    hideTriggerMeta = false,
+    hideOptionMeta = false,
+    fieldClassName = '',
+    dropdownClassName = ''
+} = {}) {
+    const selectId = `discountTriggerSelect_${sanitizeDiscountTriggerDropdownToken(ruleKey)}_${sanitizeDiscountTriggerDropdownToken(field)}`;
+    const dropdownId = `discountTriggerDropdown_${sanitizeDiscountTriggerDropdownToken(ruleKey)}_${sanitizeDiscountTriggerDropdownToken(field)}`;
+    const selectedOption = getDiscountTriggerDropdownSelectedOption(options, selectedValue);
+    const fieldClasses = ['discount-trigger-rule-field'];
+    if (wide) {
+        fieldClasses.push('discount-trigger-rule-field--wide');
+    }
+    if (compact) {
+        fieldClasses.push('discount-trigger-rule-field--compact');
+    }
+    if (fieldClassName) {
+        fieldClasses.push(fieldClassName);
+    }
+    const dropdownClasses = ['custom-dropdown', 'discount-trigger-dropdown'];
+    if (compact) {
+        dropdownClasses.push('discount-trigger-dropdown--compact');
+    }
+    if (dropdownClassName) {
+        dropdownClasses.push(dropdownClassName);
+    }
+    const selectMarkup = options.map((option) => (
+        `<option value="${escapeConfigHtml(option.value || '')}"${String(option.value || '') === String(selectedOption.value || '') ? ' selected' : ''}>${escapeConfigHtml(option.selectLabel || option.label || '')}</option>`
+    )).join('');
+    const dropdownOptionsMarkup = options.map((option) => `
+        <button
+            type="button"
+            class="dropdown-option${String(option.value || '') === String(selectedOption.value || '') ? ' selected' : ''}"
+            data-tone="${escapeConfigHtml(option.tone || '')}"
+            data-value="${escapeConfigHtml(option.value || '')}"
+            data-admin-action="settings-select-dropdown-option"
+            data-dropdown-id="${escapeConfigHtml(dropdownId)}"
+            data-option-value="${escapeConfigHtml(option.value || '')}"
+            data-option-label="${escapeConfigHtml(option.label || '')}"
+            data-option-meta="${escapeConfigHtml(option.meta || '')}"
+        >
+            <span class="discount-trigger-dropdown__option-copy">
+                <strong class="discount-trigger-dropdown__option-title">${escapeConfigHtml(option.label || '')}</strong>
+                ${!hideOptionMeta && option.meta ? `<small class="discount-trigger-dropdown__option-meta">${escapeConfigHtml(option.meta)}</small>` : ''}
+            </span>
+        </button>
+    `).join('');
+
+    return `
+        <label class="${escapeConfigHtml(fieldClasses.join(' '))}">
+            <span>${escapeConfigHtml(label)}</span>
+            <div class="discount-trigger-dropdown-shell">
+                <select class="config-input discount-trigger-native-select" id="${escapeConfigHtml(selectId)}" data-field="${escapeConfigHtml(field)}">
+                    ${selectMarkup}
+                </select>
+                <div class="${escapeConfigHtml(dropdownClasses.join(' '))}" id="${escapeConfigHtml(dropdownId)}" data-sync-select-id="${escapeConfigHtml(selectId)}">
+                    <button class="dropdown-trigger" type="button" data-admin-action="settings-toggle-custom-dropdown" data-dropdown-id="${escapeConfigHtml(dropdownId)}" aria-haspopup="listbox" aria-expanded="false">
+                        <span class="discount-trigger-dropdown__trigger-copy">
+                            <span class="dropdown-value">${escapeConfigHtml(selectedOption.label || '')}</span>
+                            ${hideTriggerMeta ? '' : `<small class="discount-trigger-dropdown__trigger-meta" data-dropdown-role="meta"${selectedOption.meta ? '' : ' hidden'}>${escapeConfigHtml(selectedOption.meta || '')}</small>`}
+                        </span>
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div class="dropdown-menu" role="listbox">
+                        ${dropdownOptionsMarkup}
+                    </div>
+                </div>
+            </div>
+        </label>
+    `;
+}
+
+function buildDiscountTriggerDiscountFieldMarkup(rule = {}) {
+    return buildDiscountTriggerCustomSelectFieldMarkup({
+        ruleKey: rule.rule_key,
+        field: 'discount_id',
+        label: '到账型卡券',
+        selectedValue: String(rule.discount_id || '').trim(),
+        options: buildDiscountTriggerDiscountDropdownOptions(rule.discount_id),
+        wide: true
+    });
+}
+
+function buildDiscountTriggerSiteFieldMarkup(rule = {}) {
+    return buildDiscountTriggerCustomSelectFieldMarkup({
+        ruleKey: rule.rule_key,
+        field: 'site',
+        label: '命中站点',
+        selectedValue: normalizeDiscountTriggerRuleSite(rule.site, 'all'),
+        options: getDiscountTriggerSiteDropdownOptions(),
+        compact: true,
+        hideTriggerMeta: true,
+        hideOptionMeta: true,
+        fieldClassName: 'discount-trigger-rule-field--site',
+        dropdownClassName: 'discount-trigger-dropdown--site'
+    });
+}
+
+function buildDiscountTriggerAffiliateRewardTypeFieldMarkup(rule = {}) {
+    return buildDiscountTriggerCustomSelectFieldMarkup({
+        ruleKey: rule.rule_key,
+        field: 'reward_type',
+        label: '奖励类型',
+        selectedValue: normalizeDiscountTriggerAffiliateRewardType(rule.reward_type, 'any'),
+        options: getDiscountTriggerAffiliateRewardTypeDropdownOptions()
+    });
+}
+
+function getDiscountTriggerRuleTitleText(rule = {}, option = null) {
+    return option
+        ? `${String(option.code || '').trim().toUpperCase()} · ${formatDiscountTriggerBenefitLabel(option)}`
+        : (rule.discount_id ? '已选卡券待校验' : '待选择卡券');
+}
+
+function renderDiscountTriggerRechargeRuleCard(rule, index) {
+    const option = findDiscountTriggerDiscountOption(rule.discount_id);
+    const warningText = getDiscountTriggerRuleWarning(rule, option);
+    const hintText = getDiscountTriggerRuleHint(rule, option, 'recharge');
+    const titleText = getDiscountTriggerRuleTitleText(rule, option);
+
+    return `
+        <article class="discount-trigger-rule-card" data-rule-key="${escapeConfigHtml(rule.rule_key)}">
+            <div class="discount-trigger-rule-card__head">
+                <div class="discount-trigger-rule-card__title">
+                    <strong>规则 ${index + 1}</strong>
+                    <span>${escapeConfigHtml(titleText)}</span>
+                </div>
+                <button type="button" class="btn-add-config btn-add-config--compact discount-trigger-remove-btn" data-discount-trigger-action="remove-rule">
+                    删除
+                </button>
+            </div>
+
+            <div class="discount-trigger-rule-grid">
+                ${buildDiscountTriggerDiscountFieldMarkup(rule)}
+
+                ${buildDiscountTriggerSiteFieldMarkup(rule)}
+
+                <label class="discount-trigger-rule-field">
+                    <span>实付金额门槛（元）</span>
+                    <input type="number" class="config-input" data-field="min_paid_amount" min="0" step="0.01" value="${escapeConfigHtml(String(rule.min_paid_amount || 0))}">
+                </label>
+
+                <label class="discount-trigger-rule-field">
+                    <span>实付积分门槛</span>
+                    <input type="number" class="config-input" data-field="min_paid_points" min="0" step="1" value="${escapeConfigHtml(String(rule.min_paid_points || 0))}">
+                </label>
+
+                <label class="discount-trigger-rule-field">
+                    <span>到账积分门槛</span>
+                    <input type="number" class="config-input" data-field="min_total_points" min="0" step="1" value="${escapeConfigHtml(String(rule.min_total_points || 0))}">
+                </label>
+
+                <label class="discount-trigger-rule-field">
+                    <span>单用户发券上限</span>
+                    <input type="number" class="config-input" data-field="max_grants_per_user" min="0" step="1" value="${escapeConfigHtml(String(rule.max_grants_per_user || 0))}">
+                </label>
+            </div>
+
+            <div class="discount-trigger-rule-toggles">
+                <label class="discount-trigger-check">
+                    <input type="checkbox" data-field="enabled" ${rule.enabled ? 'checked' : ''}>
+                    <span>启用此规则</span>
+                </label>
+                <label class="discount-trigger-check">
+                    <input type="checkbox" data-field="first_recharge_only" ${rule.first_recharge_only ? 'checked' : ''}>
+                    <span>仅首充用户命中</span>
+                </label>
+                <label class="discount-trigger-check">
+                    <input type="checkbox" data-field="allow_duplicate_available_asset" ${rule.allow_duplicate_available_asset ? 'checked' : ''}>
+                    <span>允许已有可用卡券时重复发放</span>
+                </label>
+            </div>
+
+            <div class="discount-trigger-rule-card__hint">${escapeConfigHtml(hintText)}</div>
+            ${warningText ? `<div class="discount-trigger-rule-card__warning">${escapeConfigHtml(warningText)}</div>` : ''}
+        </article>
+    `;
+}
+
+function renderDiscountTriggerCheckinRuleCard(rule, index) {
+    const option = findDiscountTriggerDiscountOption(rule.discount_id);
+    const warningText = getDiscountTriggerRuleWarning(rule, option);
+    const hintText = getDiscountTriggerRuleHint(rule, option, 'checkin');
+    const titleText = getDiscountTriggerRuleTitleText(rule, option);
+
+    return `
+        <article class="discount-trigger-rule-card" data-rule-key="${escapeConfigHtml(rule.rule_key)}">
+            <div class="discount-trigger-rule-card__head">
+                <div class="discount-trigger-rule-card__title">
+                    <strong>规则 ${index + 1}</strong>
+                    <span>${escapeConfigHtml(titleText)}</span>
+                </div>
+                <button type="button" class="btn-add-config btn-add-config--compact discount-trigger-remove-btn" data-discount-trigger-action="remove-rule">
+                    删除
+                </button>
+            </div>
+
+            <div class="discount-trigger-rule-grid">
+                ${buildDiscountTriggerDiscountFieldMarkup(rule)}
+
+                ${buildDiscountTriggerSiteFieldMarkup(rule)}
+
+                <label class="discount-trigger-rule-field">
+                    <span>签到基础奖励门槛</span>
+                    <input type="number" class="config-input" data-field="min_points_reward" min="0" step="0.01" value="${escapeConfigHtml(String(rule.min_points_reward || 0))}">
+                </label>
+
+                <label class="discount-trigger-rule-field">
+                    <span>连续签到门槛（天）</span>
+                    <input type="number" class="config-input" data-field="min_streak_days" min="0" step="1" value="${escapeConfigHtml(String(rule.min_streak_days || 0))}">
+                </label>
+
+                <label class="discount-trigger-rule-field">
+                    <span>加赠积分门槛</span>
+                    <input type="number" class="config-input" data-field="min_bonus_reward" min="0" step="0.01" value="${escapeConfigHtml(String(rule.min_bonus_reward || 0))}">
+                </label>
+
+                <label class="discount-trigger-rule-field">
+                    <span>单用户发券上限</span>
+                    <input type="number" class="config-input" data-field="max_grants_per_user" min="0" step="1" value="${escapeConfigHtml(String(rule.max_grants_per_user || 0))}">
+                </label>
+            </div>
+
+            <div class="discount-trigger-rule-toggles">
+                <label class="discount-trigger-check">
+                    <input type="checkbox" data-field="enabled" ${rule.enabled ? 'checked' : ''}>
+                    <span>启用此规则</span>
+                </label>
+                <label class="discount-trigger-check">
+                    <input type="checkbox" data-field="allow_duplicate_available_asset" ${rule.allow_duplicate_available_asset ? 'checked' : ''}>
+                    <span>允许已有可用卡券时重复发放</span>
+                </label>
+            </div>
+
+            <div class="discount-trigger-rule-card__hint">${escapeConfigHtml(hintText)}</div>
+            ${warningText ? `<div class="discount-trigger-rule-card__warning">${escapeConfigHtml(warningText)}</div>` : ''}
+        </article>
+    `;
+}
+
+function renderDiscountTriggerAffiliateRuleCard(rule, index) {
+    const option = findDiscountTriggerDiscountOption(rule.discount_id);
+    const warningText = getDiscountTriggerRuleWarning(rule, option);
+    const hintText = getDiscountTriggerRuleHint(rule, option, 'affiliate');
+    const titleText = getDiscountTriggerRuleTitleText(rule, option);
+
+    return `
+        <article class="discount-trigger-rule-card" data-rule-key="${escapeConfigHtml(rule.rule_key)}">
+            <div class="discount-trigger-rule-card__head">
+                <div class="discount-trigger-rule-card__title">
+                    <strong>规则 ${index + 1}</strong>
+                    <span>${escapeConfigHtml(titleText)}</span>
+                </div>
+                <button type="button" class="btn-add-config btn-add-config--compact discount-trigger-remove-btn" data-discount-trigger-action="remove-rule">
+                    删除
+                </button>
+            </div>
+
+            <div class="discount-trigger-rule-grid">
+                ${buildDiscountTriggerDiscountFieldMarkup(rule)}
+
+                ${buildDiscountTriggerSiteFieldMarkup(rule)}
+
+                ${buildDiscountTriggerAffiliateRewardTypeFieldMarkup(rule)}
+
+                <label class="discount-trigger-rule-field">
+                    <span>奖励积分门槛</span>
+                    <input type="number" class="config-input" data-field="min_reward_points" min="0" step="0.01" value="${escapeConfigHtml(String(rule.min_reward_points || 0))}">
+                </label>
+
+                <label class="discount-trigger-rule-field">
+                    <span>单用户发券上限</span>
+                    <input type="number" class="config-input" data-field="max_grants_per_user" min="0" step="1" value="${escapeConfigHtml(String(rule.max_grants_per_user || 0))}">
+                </label>
+            </div>
+
+            <div class="discount-trigger-rule-toggles">
+                <label class="discount-trigger-check">
+                    <input type="checkbox" data-field="enabled" ${rule.enabled ? 'checked' : ''}>
+                    <span>启用此规则</span>
+                </label>
+                <label class="discount-trigger-check">
+                    <input type="checkbox" data-field="allow_duplicate_available_asset" ${rule.allow_duplicate_available_asset ? 'checked' : ''}>
+                    <span>允许已有可用卡券时重复发放</span>
+                </label>
+            </div>
+
+            <div class="discount-trigger-rule-card__hint">${escapeConfigHtml(hintText)}</div>
+            ${warningText ? `<div class="discount-trigger-rule-card__warning">${escapeConfigHtml(warningText)}</div>` : ''}
+        </article>
+    `;
+}
+
+function applyDiscountTriggerSettingsSummary(config = null) {
+    const normalizedConfig = normalizeDiscountTriggerRulesConfig(
+        config || discountTriggerSettingsState.draft,
+        { allowEmptyDiscounts: true }
+    );
+    getDiscountTriggerSectionKeys().forEach((sectionKey) => {
+        const meta = getDiscountTriggerSectionMeta(sectionKey);
+        const sectionConfig = normalizedConfig[sectionKey] || getDefaultDiscountTriggerRulesConfig()[sectionKey];
+        const totalCount = Array.isArray(sectionConfig.rules) ? sectionConfig.rules.length : 0;
+        const enabledCount = sectionConfig.rules.filter((rule) => rule.enabled).length;
+        const incompleteCount = sectionConfig.rules.filter((rule) => !String(rule.discount_id || '').trim()).length;
+        const sectionRoot = document.querySelector(`.discount-trigger-section[data-trigger-section="${sectionKey}"]`);
+        const contentEl = sectionRoot?.querySelector('.discount-trigger-section__content');
+
+        const toggleEl = document.getElementById(meta.toggleId);
+        if (toggleEl) {
+            toggleEl.classList.toggle('active', sectionConfig.enabled);
+            toggleEl.setAttribute('aria-checked', sectionConfig.enabled ? 'true' : 'false');
+        }
+
+        if (sectionRoot instanceof HTMLElement) {
+            sectionRoot.classList.toggle('is-expanded', sectionConfig.enabled);
+            sectionRoot.classList.toggle('is-collapsed', !sectionConfig.enabled);
+            sectionRoot.classList.toggle('is-empty', totalCount === 0);
+            sectionRoot.dataset.sectionEnabled = sectionConfig.enabled ? 'true' : 'false';
+        }
+        if (contentEl instanceof HTMLElement) {
+            contentEl.setAttribute('aria-hidden', sectionConfig.enabled ? 'false' : 'true');
+        }
+
+        const summaryEl = document.getElementById(meta.summaryId);
+        if (!summaryEl) {
+            return;
+        }
+
+        if (!totalCount) {
+            summaryEl.textContent = '当前未配置规则。';
+            return;
+        }
+
+        const summaryParts = [];
+        summaryParts.push(sectionConfig.enabled ? meta.enabledSummary : meta.disabledSummary);
+        summaryParts.push(`共 ${totalCount} 条规则，${enabledCount} 条启用`);
+        if (incompleteCount > 0) {
+            summaryParts.push(`${incompleteCount} 条待补充卡券`);
+        }
+        if (discountTriggerSettingsState.optionsLoading) {
+            summaryParts.push('正在同步可选卡券');
+        } else if (discountTriggerSettingsState.optionsError) {
+            summaryParts.push('可选卡券加载失败');
+        }
+
+        summaryEl.textContent = `${summaryParts.join('，')}。`;
+    });
+}
+
+function updateDiscountTriggerSettingsIndicators(config = null) {
+    const normalizedConfig = normalizeDiscountTriggerRulesConfig(
+        config || discountTriggerSettingsState.draft,
+        { allowEmptyDiscounts: true }
+    );
+    const dirty = hasDiscountTriggerUnsavedChanges(normalizedConfig);
+    const totalRules = getDiscountTriggerSectionKeys().reduce((sum, sectionKey) => (
+        sum + (normalizedConfig[sectionKey]?.rules?.length || 0)
+    ), 0);
+    const hasIncompleteRule = getDiscountTriggerSectionKeys().some((sectionKey) => (
+        normalizedConfig[sectionKey]?.rules?.some((rule) => !String(rule.discount_id || '').trim())
+    ));
+    const activeSections = getDiscountTriggerSectionKeys().filter((sectionKey) => (
+        normalizedConfig[sectionKey]?.enabled && (normalizedConfig[sectionKey]?.rules?.length || 0) > 0
+    ));
+    const saveRow = document.querySelector('.discount-trigger-save-row');
+    const statusEl = document.getElementById('discountTriggerRechargeStatusText');
+    const saveButton = document.getElementById('discountTriggerRechargeSaveBtn');
+
+    if (saveRow) {
+        saveRow.classList.toggle('is-dirty', dirty);
+        saveRow.classList.toggle('is-saving', discountTriggerSettingsState.saving);
+        saveRow.classList.toggle('is-clean', !dirty && !discountTriggerSettingsState.saving);
+    }
+
+    if (saveButton) {
+        saveButton.disabled = discountTriggerSettingsState.saving;
+    }
+
+    getDiscountTriggerSectionKeys().forEach((sectionKey) => {
+        const addButton = document.getElementById(getDiscountTriggerSectionMeta(sectionKey).addButtonId);
+        if (addButton) {
+            addButton.disabled = discountTriggerSettingsState.saving;
+        }
+
+        const sectionRoot = document.querySelector(`.discount-trigger-section[data-trigger-section="${sectionKey}"]`);
+        if (sectionRoot instanceof HTMLElement) {
+            sectionRoot.querySelectorAll('[data-discount-trigger-preset]').forEach((buttonEl) => {
+                if (buttonEl instanceof HTMLButtonElement) {
+                    buttonEl.disabled = discountTriggerSettingsState.saving;
+                }
+            });
+        }
+    });
+
+    if (!statusEl) {
+        return;
+    }
+
+    if (discountTriggerSettingsState.saving) {
+        statusEl.textContent = '正在保存卡券联动规则。';
+        return;
+    }
+
+    if (hasIncompleteRule) {
+        statusEl.textContent = '至少有一条规则还没选卡券，保存前需要补齐。';
+        return;
+    }
+
+    if (discountTriggerSettingsState.optionsLoading) {
+        statusEl.textContent = '正在加载可选到账型卡券。';
+        return;
+    }
+
+    if (discountTriggerSettingsState.optionsError) {
+        statusEl.textContent = `可选卡券加载失败：${discountTriggerSettingsState.optionsError}`;
+        return;
+    }
+
+    if (dirty) {
+        statusEl.textContent = '当前页里的改动还没保存，保存后会立即影响后续充值、签到和推广奖励发券。';
+        return;
+    }
+
+    if (!totalRules) {
+        statusEl.textContent = '当前还没配置卡券联动规则。';
+        return;
+    }
+
+    if (!activeSections.length) {
+        statusEl.textContent = '当前规则已保存，但充值、签到、推广三条卡券联动都处于关闭状态。';
+        return;
+    }
+
+    const activeLabels = activeSections.map((sectionKey) => getDiscountTriggerSectionMeta(sectionKey).actionLabel);
+    statusEl.textContent = `当前配置已保存，后续${activeLabels.join('、')}命中规则时会自动发券。`;
+}
+
+function renderDiscountTriggerRuleSection(sectionKey, sectionConfig) {
+    const meta = getDiscountTriggerSectionMeta(sectionKey);
+    const listEl = document.getElementById(meta.listId);
+    if (!listEl) {
+        return;
+    }
+
+    if (!sectionConfig.rules.length) {
+        listEl.innerHTML = `
+            <div class="discount-trigger-rule-empty">
+                ${escapeConfigHtml(meta.emptyState)}
+            </div>
+        `;
+        return;
+    }
+
+    const renderer = sectionKey === 'checkin'
+        ? renderDiscountTriggerCheckinRuleCard
+        : (sectionKey === 'affiliate' ? renderDiscountTriggerAffiliateRuleCard : renderDiscountTriggerRechargeRuleCard);
+
+    listEl.innerHTML = sectionConfig.rules.map((rule, index) => renderer(rule, index)).join('');
+
+    listEl.querySelectorAll('[data-field="discount_id"]').forEach((selectEl, index) => {
+        selectEl.value = sectionConfig.rules[index]?.discount_id || '';
+    });
+    listEl.querySelectorAll('[data-field="site"]').forEach((selectEl, index) => {
+        selectEl.value = normalizeDiscountTriggerRuleSite(sectionConfig.rules[index]?.site, 'all');
+    });
+    if (sectionKey === 'affiliate') {
+        listEl.querySelectorAll('[data-field="reward_type"]').forEach((selectEl, index) => {
+            selectEl.value = normalizeDiscountTriggerAffiliateRewardType(sectionConfig.rules[index]?.reward_type, 'any');
+        });
+    }
+}
+
+function renderDiscountTriggerSettings() {
+    const normalizedConfig = normalizeDiscountTriggerRulesConfig(
+        discountTriggerSettingsState.draft,
+        { allowEmptyDiscounts: true }
+    );
+
+    discountTriggerSettingsState.draft = normalizedConfig;
+    applyDiscountTriggerSettingsSummary(normalizedConfig);
+    updateDiscountTriggerSettingsIndicators(normalizedConfig);
+
+    getDiscountTriggerSectionKeys().forEach((sectionKey) => {
+        renderDiscountTriggerRuleSection(
+            sectionKey,
+            normalizedConfig[sectionKey] || getDefaultDiscountTriggerRulesConfig()[sectionKey]
+        );
+    });
+    applyDiscountTriggerPresetRecommendations();
+}
+
+function refreshDiscountTriggerRuleCards(config = null) {
+    const normalizedConfig = normalizeDiscountTriggerRulesConfig(
+        config || discountTriggerSettingsState.draft,
+        { allowEmptyDiscounts: true }
+    );
+    getDiscountTriggerSectionKeys().forEach((sectionKey) => {
+        const listSelector = `#${getDiscountTriggerSectionMeta(sectionKey).listId} [data-rule-key]`;
+        const ruleCards = Array.from(document.querySelectorAll(listSelector));
+
+        ruleCards.forEach((card, index) => {
+            const rule = normalizedConfig[sectionKey]?.rules?.[index];
+            if (!rule) {
+                return;
+            }
+
+            const option = findDiscountTriggerDiscountOption(rule.discount_id);
+            const titleSpan = card.querySelector('.discount-trigger-rule-card__title span');
+            const hintEl = card.querySelector('.discount-trigger-rule-card__hint');
+            const warningText = getDiscountTriggerRuleWarning(rule, option);
+            const hintText = getDiscountTriggerRuleHint(rule, option, sectionKey);
+            const nextTitle = getDiscountTriggerRuleTitleText(rule, option);
+
+            if (titleSpan) {
+                titleSpan.textContent = nextTitle;
+            }
+            if (hintEl) {
+                hintEl.textContent = hintText;
+            }
+
+            let warningEl = card.querySelector('.discount-trigger-rule-card__warning');
+            if (warningText) {
+                if (!warningEl) {
+                    warningEl = document.createElement('div');
+                    warningEl.className = 'discount-trigger-rule-card__warning';
+                    card.appendChild(warningEl);
+                }
+                warningEl.textContent = warningText;
+            } else if (warningEl) {
+                warningEl.remove();
+            }
+        });
+    });
+}
+
+function collectDiscountTriggerRuleFromCard(sectionKey, card, index, currentRule, allowEmptyRules) {
+    const baseRule = {
+        rule_key: card.getAttribute('data-rule-key') || currentRule?.rule_key,
+        discount_id: card.querySelector('[data-field="discount_id"]')?.value || '',
+        site: card.querySelector('[data-field="site"]')?.value || 'all',
+        max_grants_per_user: card.querySelector('[data-field="max_grants_per_user"]')?.value || 0,
+        enabled: card.querySelector('[data-field="enabled"]')?.checked,
+        allow_duplicate_available_asset: card.querySelector('[data-field="allow_duplicate_available_asset"]')?.checked,
+        source_channel: currentRule?.source_channel || '',
+        audience_segment: currentRule?.audience_segment || '',
+        campaign_tag: currentRule?.campaign_tag || ''
+    };
+
+    if (sectionKey === 'checkin') {
+        return normalizeDiscountTriggerCheckinRule({
+            ...baseRule,
+            min_points_reward: card.querySelector('[data-field="min_points_reward"]')?.value || 0,
+            min_streak_days: card.querySelector('[data-field="min_streak_days"]')?.value || 0,
+            min_bonus_reward: card.querySelector('[data-field="min_bonus_reward"]')?.value || 0
+        }, {
+            fallbackIndex: index,
+            allowEmptyDiscount: allowEmptyRules
+        });
+    }
+
+    if (sectionKey === 'affiliate') {
+        return normalizeDiscountTriggerAffiliateRule({
+            ...baseRule,
+            reward_type: card.querySelector('[data-field="reward_type"]')?.value || 'any',
+            min_reward_points: card.querySelector('[data-field="min_reward_points"]')?.value || 0
+        }, {
+            fallbackIndex: index,
+            allowEmptyDiscount: allowEmptyRules
+        });
+    }
+
+    return normalizeDiscountTriggerRechargeRule({
+        ...baseRule,
+        min_paid_amount: card.querySelector('[data-field="min_paid_amount"]')?.value || 0,
+        min_paid_points: card.querySelector('[data-field="min_paid_points"]')?.value || 0,
+        min_total_points: card.querySelector('[data-field="min_total_points"]')?.value || 0,
+        first_recharge_only: card.querySelector('[data-field="first_recharge_only"]')?.checked
+    }, {
+        fallbackIndex: index,
+        allowEmptyDiscount: allowEmptyRules
+    });
+}
+
+function collectDiscountTriggerSettingsFromForm(options = {}) {
+    const allowEmptyRules = options.allowEmptyRules !== false;
+    const currentConfig = normalizeDiscountTriggerRulesConfig(
+        discountTriggerSettingsState.draft,
+        { allowEmptyDiscounts: true }
+    );
+    const config = {};
+
+    getDiscountTriggerSectionKeys().forEach((sectionKey) => {
+        const meta = getDiscountTriggerSectionMeta(sectionKey);
+        const sectionConfig = currentConfig[sectionKey] || getDefaultDiscountTriggerRulesConfig()[sectionKey];
+        const toggleEl = document.getElementById(meta.toggleId);
+        const listEl = document.getElementById(meta.listId);
+        const ruleCards = Array.from(listEl?.querySelectorAll('[data-rule-key]') || []);
+
+        config[sectionKey] = {
+            enabled: toggleEl?.classList.contains('active') ?? sectionConfig.enabled,
+            rules: ruleCards.map((card, index) => collectDiscountTriggerRuleFromCard(
+                sectionKey,
+                card,
+                index,
+                sectionConfig.rules[index],
+                allowEmptyRules
+            )).filter(Boolean)
+        };
+    });
+
+    const normalizedConfig = normalizeDiscountTriggerRulesConfig(config, { allowEmptyDiscounts: allowEmptyRules });
+    if (options.syncState !== false) {
+        discountTriggerSettingsState.draft = normalizedConfig;
+    }
+    return normalizedConfig;
+}
+
+function markDiscountTriggerSettingsDirty() {
+    const nextConfig = collectDiscountTriggerSettingsFromForm({
+        allowEmptyRules: true,
+        syncState: true
+    });
+    refreshDiscountTriggerRuleCards(nextConfig);
+    applyDiscountTriggerSettingsSummary(nextConfig);
+    updateDiscountTriggerSettingsIndicators(nextConfig);
+    return nextConfig;
+}
+
+async function loadDiscountTriggerDiscountOptions(force = false) {
+    if (loadDiscountTriggerDiscountOptions._loadingPromise && !force) {
+        return loadDiscountTriggerDiscountOptions._loadingPromise;
+    }
+
+    loadDiscountTriggerDiscountOptions._loadingPromise = (async () => {
+        discountTriggerSettingsState.optionsLoading = true;
+        discountTriggerSettingsState.optionsError = '';
+        renderDiscountTriggerSettings();
+
+        try {
+            const response = await (window.AdminApi?.fetch || fetch)('/api/admin/settings/discount-trigger-options?site=all', {
+                method: 'GET',
+                credentials: 'include',
+                headers: await getAdminConfigApiHeaders()
+            });
+            const payload = await parseAdminConfigApiResponse(response);
+
+            discountTriggerSettingsState.optionRows = Array.isArray(payload?.rows) ? payload.rows : [];
+            discountTriggerSettingsState.optionsLoaded = true;
+            discountTriggerSettingsState.optionsError = '';
+            renderDiscountTriggerSettings();
+            return payload;
+        } catch (error) {
+            console.warn('[Config] Discount trigger options load failed:', error.message);
+            discountTriggerSettingsState.optionRows = [];
+            discountTriggerSettingsState.optionsLoaded = false;
+            discountTriggerSettingsState.optionsError = error.message || '加载失败';
+            renderDiscountTriggerSettings();
+            return null;
+        } finally {
+            discountTriggerSettingsState.optionsLoading = false;
+            renderDiscountTriggerSettings();
+        }
+    })();
+
+    try {
+        return await loadDiscountTriggerDiscountOptions._loadingPromise;
+    } finally {
+        loadDiscountTriggerDiscountOptions._loadingPromise = null;
+    }
+}
+
+async function saveDiscountTriggerSettings(options = {}) {
+    if (discountTriggerSettingsState.saving) {
+        return false;
+    }
+
+    const draftConfig = collectDiscountTriggerSettingsFromForm({
+        allowEmptyRules: true,
+        syncState: true
+    });
+    const hasIncompleteRule = getDiscountTriggerSectionKeys().some((sectionKey) => (
+        draftConfig[sectionKey]?.rules?.some((rule) => !String(rule.discount_id || '').trim())
+    ));
+    if (hasIncompleteRule) {
+        updateDiscountTriggerSettingsIndicators(draftConfig);
+        showToast('请先为每条规则选择到账型卡券', 'warning');
+        return false;
+    }
+
+    const normalizedConfig = normalizeDiscountTriggerRulesConfig(draftConfig);
+    discountTriggerSettingsState.saving = true;
+    updateDiscountTriggerSettingsIndicators(normalizedConfig);
+
+    try {
+        const success = await saveConfig('discount_trigger_rules', normalizedConfig);
+        if (!success) {
+            return false;
+        }
+
+        discountTriggerSettingsState.draft = normalizeDiscountTriggerRulesConfig(normalizedConfig, { allowEmptyDiscounts: true });
+        systemConfigCache['discount_trigger_rules'] = normalizedConfig;
+        renderDiscountTriggerSettings();
+        showConfigSavedToast(options.successMessage || '卡券联动规则已保存');
+        return true;
+    } finally {
+        discountTriggerSettingsState.saving = false;
+        updateDiscountTriggerSettingsIndicators(discountTriggerSettingsState.draft);
+    }
+}
+
+function setupDiscountTriggerSettingsEventListeners() {
+    getDiscountTriggerSectionKeys().forEach((sectionKey) => {
+        const meta = getDiscountTriggerSectionMeta(sectionKey);
+        const toggleEl = document.getElementById(meta.toggleId);
+        if (toggleEl && toggleEl.dataset.configBound !== '1') {
+            toggleEl.dataset.configBound = '1';
+            toggleEl.addEventListener('click', () => {
+                toggleEl.classList.toggle('active');
+                pulseAdminConfigToggle(toggleEl);
+                markDiscountTriggerSettingsDirty();
+            });
+        }
+
+        const addButton = document.getElementById(meta.addButtonId);
+        if (addButton && addButton.dataset.configBound !== '1') {
+            addButton.dataset.configBound = '1';
+            addButton.addEventListener('click', () => {
+                const nextConfig = collectDiscountTriggerSettingsFromForm({
+                    allowEmptyRules: true,
+                    syncState: true
+                });
+                nextConfig[sectionKey].rules.push(meta.createDraft());
+                discountTriggerSettingsState.draft = normalizeDiscountTriggerRulesConfig(nextConfig, { allowEmptyDiscounts: true });
+                renderDiscountTriggerSettings();
+            });
+        }
+
+        const sectionRoot = document.querySelector(`.discount-trigger-section[data-trigger-section="${sectionKey}"]`);
+        if (sectionRoot instanceof HTMLElement && sectionRoot.dataset.presetBound !== '1') {
+            sectionRoot.dataset.presetBound = '1';
+            sectionRoot.querySelectorAll('[data-discount-trigger-preset]').forEach((buttonEl) => {
+                if (!(buttonEl instanceof HTMLButtonElement) || buttonEl.dataset.configBound === '1') {
+                    return;
+                }
+                buttonEl.dataset.configBound = '1';
+                buttonEl.addEventListener('click', () => {
+                    const presetId = buttonEl.getAttribute('data-discount-trigger-preset') || '';
+                    const presetRule = applyDiscountTriggerPresetAutoSelection(
+                        createDiscountTriggerPresetRule(sectionKey, presetId),
+                        sectionKey,
+                        presetId
+                    );
+                    if (!presetRule) {
+                        return;
+                    }
+
+                    const nextConfig = collectDiscountTriggerSettingsFromForm({
+                        allowEmptyRules: true,
+                        syncState: true
+                    });
+                    nextConfig[sectionKey].enabled = true;
+                    nextConfig[sectionKey].rules.push(presetRule);
+                    discountTriggerSettingsState.draft = normalizeDiscountTriggerRulesConfig(nextConfig, { allowEmptyDiscounts: true });
+                    renderDiscountTriggerSettings();
+                });
+            });
+        }
+
+        const ruleList = document.getElementById(meta.listId);
+        if (ruleList && ruleList.dataset.configBound !== '1') {
+            ruleList.dataset.configBound = '1';
+
+            const handleDraftFieldChange = () => {
+                markDiscountTriggerSettingsDirty();
+            };
+
+            ruleList.addEventListener('input', (event) => {
+                const target = event.target;
+                if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) {
+                    return;
+                }
+                handleDraftFieldChange();
+            });
+
+            ruleList.addEventListener('change', (event) => {
+                const target = event.target;
+                if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) {
+                    return;
+                }
+                handleDraftFieldChange();
+            });
+
+            ruleList.addEventListener('click', (event) => {
+                const actionEl = event.target instanceof Element
+                    ? event.target.closest('[data-discount-trigger-action]')
+                    : null;
+                if (!actionEl) {
+                    return;
+                }
+
+                const action = actionEl.getAttribute('data-discount-trigger-action');
+                if (action !== 'remove-rule') {
+                    return;
+                }
+
+                const ruleCard = actionEl.closest('[data-rule-key]');
+                const ruleKey = ruleCard?.getAttribute('data-rule-key') || '';
+                const nextConfig = collectDiscountTriggerSettingsFromForm({
+                    allowEmptyRules: true,
+                    syncState: true
+                });
+                nextConfig[sectionKey].rules = nextConfig[sectionKey].rules.filter((rule) => rule.rule_key !== ruleKey);
+                discountTriggerSettingsState.draft = normalizeDiscountTriggerRulesConfig(nextConfig, { allowEmptyDiscounts: true });
+                renderDiscountTriggerSettings();
+            });
+        }
+    });
+
+    const saveButton = document.getElementById('discountTriggerRechargeSaveBtn');
+    if (saveButton && saveButton.dataset.configBound !== '1') {
+        saveButton.dataset.configBound = '1';
+        saveButton.addEventListener('click', async () => {
+            await saveDiscountTriggerSettings();
+        });
+    }
 }
 
 function applyOpsAlertOverview(config) {
@@ -14725,10 +16503,12 @@ function setupConfigEventListeners() {
 
     // Setup moderation event listeners
     setupModerationEventListeners();
+
+    setupDiscountTriggerSettingsEventListeners();
 }
 
 function setupGeneralSettingsEventListeners() {
-    const bindToggle = (elementId, configKey, field) => {
+    const bindIntegrationToggle = (elementId, field) => {
         const element = document.getElementById(elementId);
         if (!element || element.dataset.configBound === '1') {
             return;
@@ -14736,42 +16516,15 @@ function setupGeneralSettingsEventListeners() {
 
         element.dataset.configBound = '1';
         element.addEventListener('change', async (event) => {
-            const config = configKey === 'integrations'
-                ? normalizeIntegrationsConfig(systemConfigCache[configKey])
-                : normalizePerformanceConfig(systemConfigCache[configKey]);
-
+            const config = normalizeIntegrationsConfig(systemConfigCache.integrations);
             config[field] = event.target.checked;
-            await saveConfig(configKey, config);
+            await saveConfig('integrations', config);
         });
     };
 
-    bindToggle('cfgGoogleLogin', 'integrations', 'google_login_enabled');
-    bindToggle('cfgWechatLogin', 'integrations', 'wechat_login_enabled');
-    bindToggle('cfgSupabaseRealtime', 'integrations', 'supabase_realtime_enabled');
-    bindToggle('cfgLazyLoad', 'performance', 'lazy_load_enabled');
-
-    const imageQualityInput = document.getElementById('cfgImageQuality');
-    if (imageQualityInput && imageQualityInput.dataset.configBound !== '1') {
-        imageQualityInput.dataset.configBound = '1';
-
-        imageQualityInput.addEventListener('input', (event) => {
-            const output = document.getElementById('cfgImageQualityValue');
-            if (output) output.textContent = `${event.target.value}%`;
-        });
-
-        imageQualityInput.addEventListener('change', (event) => {
-            const normalizedValue = Math.min(100, Math.max(60, parseInt(event.target.value, 10) || 85));
-            event.target.value = normalizedValue;
-            const output = document.getElementById('cfgImageQualityValue');
-            if (output) output.textContent = `${normalizedValue}%`;
-
-            debouncedSave('performance.image_quality', async () => {
-                const config = normalizePerformanceConfig(systemConfigCache['performance']);
-                config.image_quality = normalizedValue;
-                await saveConfig('performance', config);
-            }, 150);
-        });
-    }
+    bindIntegrationToggle('cfgGoogleLogin', 'google_login_enabled');
+    bindIntegrationToggle('cfgWechatLogin', 'wechat_login_enabled');
+    bindIntegrationToggle('cfgSupabaseRealtime', 'supabase_realtime_enabled');
 }
 
 // Toggle card collapse
@@ -14821,11 +16574,13 @@ function collectPaymentChannelsConfigFromForm() {
         active_provider: activeProvider,
         providers: {
             mock: {
+                ...currentConfig.providers.mock,
                 enabled: document.getElementById('paymentProviderMockToggle')?.classList.contains('active') ?? currentConfig.providers.mock.enabled,
                 display_name: document.getElementById('paymentProviderMockDisplayName')?.value?.trim() || currentConfig.providers.mock.display_name,
                 description: document.getElementById('paymentProviderMockDescription')?.value?.trim() || currentConfig.providers.mock.description
             },
             afdian: {
+                ...currentConfig.providers.afdian,
                 enabled: document.getElementById('paymentProviderAfdianToggle')?.classList.contains('active') ?? currentConfig.providers.afdian.enabled,
                 display_name: document.getElementById('paymentProviderAfdianDisplayName')?.value?.trim() || currentConfig.providers.afdian.display_name,
                 checkout_url: document.getElementById('paymentProviderAfdianCheckoutUrl')?.value?.trim() || currentConfig.providers.afdian.checkout_url,
@@ -14833,6 +16588,7 @@ function collectPaymentChannelsConfigFromForm() {
                 custom_amount_hint: document.getElementById('paymentProviderAfdianCustomHint')?.value?.trim() || currentConfig.providers.afdian.custom_amount_hint
             },
             hupijiao: {
+                ...currentConfig.providers.hupijiao,
                 enabled: document.getElementById('paymentProviderHupijiaoToggle')?.classList.contains('active') ?? currentConfig.providers.hupijiao.enabled,
                 display_name: document.getElementById('paymentProviderHupijiaoDisplayName')?.value?.trim() || currentConfig.providers.hupijiao.display_name,
                 checkout_url: document.getElementById('paymentProviderHupijiaoCheckoutUrl')?.value?.trim() || currentConfig.providers.hupijiao.checkout_url,
@@ -14933,7 +16689,7 @@ async function togglePaymentProviderEnabled(providerKey) {
 
     const activeSelect = document.getElementById('paymentChannelActiveSelect');
     if (!nextValue && activeSelect?.value === providerKey) {
-        const fallback = ['mock', 'afdian', 'hupijiao'].find((key) => key !== providerKey && document.getElementById(toggleMap[key])?.classList.contains('active'));
+        const fallback = ['mock', 'hupijiao', 'afdian'].find((key) => key !== providerKey && document.getElementById(toggleMap[key])?.classList.contains('active'));
         if (fallback) {
             activeSelect.value = fallback;
         } else {
@@ -14953,10 +16709,10 @@ async function toggleMockPaymentStatus() {
         currentConfig.active_provider = 'mock';
         currentConfig.providers.mock.enabled = true;
     } else if (currentConfig.active_provider === 'mock') {
-        currentConfig.active_provider = currentConfig.providers.afdian.enabled ? 'afdian' : 'hupijiao';
+        const fallbackProvider = ['hupijiao', 'afdian'].find((providerKey) => currentConfig.providers[providerKey]?.enabled);
+        currentConfig.active_provider = fallbackProvider || 'afdian';
         if (!currentConfig.providers[currentConfig.active_provider]?.enabled) {
-            currentConfig.providers.afdian.enabled = true;
-            currentConfig.active_provider = 'afdian';
+            currentConfig.providers[currentConfig.active_provider].enabled = true;
         }
     }
 
@@ -18983,8 +20739,7 @@ document.addEventListener('click', (e) => {
 function renderModerationConfig() {
     const config = systemConfigCache['moderation'] || {
         auto_filter: false,
-        sensitive_words: [],
-        ai_content_detection: false
+        sensitive_words: []
     };
 
     // Auto filter toggle
@@ -18997,10 +20752,6 @@ function renderModerationConfig() {
         const words = config.sensitive_words || [];
         sensitiveWords.value = words.join('\n');
     }
-
-    // AI content detection toggle
-    const aiDetection = document.getElementById('cfgAiContentDetection');
-    if (aiDetection) aiDetection.checked = config.ai_content_detection || false;
 }
 
 function renderGalleryConfig() {
@@ -19017,26 +20768,6 @@ function renderGalleryConfig() {
     const sortValue = document.getElementById('defaultSortValue');
     const sortLabels = { newest: '最新', popular: '最热', random: '随机' };
     if (sortValue) sortValue.textContent = sortLabels[config.default_sort] || '最新';
-}
-
-function renderCommentRulesConfig() {
-    const config = systemConfigCache['comments'] || {
-        allow_anonymous: false,
-        max_comment_length: 500,
-        max_nesting_level: 3
-    };
-
-    // Allow anonymous toggle
-    const allowAnonymous = document.getElementById('cfgAllowAnonymous');
-    if (allowAnonymous) allowAnonymous.checked = config.allow_anonymous || false;
-
-    // Max comment length
-    const maxLength = document.getElementById('cfgMaxCommentLength');
-    if (maxLength) maxLength.value = config.max_comment_length || 500;
-
-    // Max nesting level
-    const maxNesting = document.getElementById('cfgMaxNestingLevel');
-    if (maxNesting) maxNesting.value = config.max_nesting_level || 3;
 }
 
 // ============================================
@@ -19121,13 +20852,9 @@ function applyCustomDropdownValue(dropdownId, value, label) {
 function renderGeneralSettingsConfig() {
     const analyticsConfig = normalizeAnalyticsPreferencesConfig(systemConfigCache['analytics_preferences']);
     const integrationsConfig = normalizeIntegrationsConfig(systemConfigCache['integrations']);
-    const seoConfig = normalizeSeoConfig(systemConfigCache['seo']);
-    const performanceConfig = normalizePerformanceConfig(systemConfigCache['performance']);
 
     systemConfigCache['analytics_preferences'] = analyticsConfig;
     systemConfigCache['integrations'] = integrationsConfig;
-    systemConfigCache['seo'] = seoConfig;
-    systemConfigCache['performance'] = performanceConfig;
 
     applyCustomDropdownValue(
         'refreshIntervalDropdown',
@@ -19152,30 +20879,6 @@ function renderGeneralSettingsConfig() {
 
     window.ADMIN_AI_SERVICE = integrationsConfig.ai_service;
     window.AdminAI?.setPreferredService?.(integrationsConfig.ai_service);
-
-    const siteTitleInput = document.getElementById('cfgSiteTitle');
-    if (siteTitleInput) siteTitleInput.value = seoConfig.site_title;
-
-    const siteDescriptionInput = document.getElementById('cfgSiteDescription');
-    if (siteDescriptionInput) siteDescriptionInput.value = seoConfig.site_description;
-
-    const siteKeywordsInput = document.getElementById('cfgSiteKeywords');
-    if (siteKeywordsInput) siteKeywordsInput.value = seoConfig.site_keywords;
-
-    const lazyLoadToggle = document.getElementById('cfgLazyLoad');
-    if (lazyLoadToggle) lazyLoadToggle.checked = performanceConfig.lazy_load_enabled;
-
-    const imageQualityInput = document.getElementById('cfgImageQuality');
-    if (imageQualityInput) imageQualityInput.value = performanceConfig.image_quality;
-
-    const imageQualityValue = document.getElementById('cfgImageQualityValue');
-    if (imageQualityValue) imageQualityValue.textContent = `${performanceConfig.image_quality}%`;
-
-    applyCustomDropdownValue(
-        'cacheDurationDropdown',
-        performanceConfig.cache_duration_seconds,
-        CACHE_DURATION_LABELS[performanceConfig.cache_duration_seconds] || CACHE_DURATION_LABELS[86400]
-    );
 
     window.checkApiKey?.();
 }
@@ -19324,20 +21027,6 @@ function showStandaloneSaveIndicator(elementId, text = '✓ 已保存') {
     showAdminConfigSaveIndicator(indicator, text, 1500);
 }
 
-async function saveSeoSettings() {
-    const defaults = getDefaultSeoConfig();
-    const config = {
-        site_title: document.getElementById('cfgSiteTitle')?.value.trim() || defaults.site_title,
-        site_description: document.getElementById('cfgSiteDescription')?.value.trim() || defaults.site_description,
-        site_keywords: document.getElementById('cfgSiteKeywords')?.value.trim() || defaults.site_keywords
-    };
-
-    if (await saveConfig('seo', config)) {
-        renderGeneralSettingsConfig();
-        showStandaloneSaveIndicator('seoSaveIndicator');
-    }
-}
-
 function downloadExportBlob(blob, filename) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -19374,284 +21063,6 @@ function convertRowsToCsv(rows) {
     ];
 
     return lines.join('\n');
-}
-
-async function fetchAllSupabaseRows(buildQuery, pageSize = 1000) {
-    const rows = [];
-    let from = 0;
-
-    while (true) {
-        const { data, error } = await buildQuery().range(from, from + pageSize - 1);
-        if (error) throw error;
-
-        rows.push(...(data || []));
-
-        if (!data || data.length < pageSize) {
-            break;
-        }
-
-        from += pageSize;
-    }
-
-    return rows;
-}
-
-function toUniqueExportIds(values = []) {
-    return Array.from(new Set(
-        (values || [])
-            .map((value) => String(value || '').trim())
-            .filter(Boolean)
-    ));
-}
-
-async function fetchSupabaseRowsByIds(table, idField, ids, selectFields, { siteScoped = false } = {}) {
-    const normalizedIds = toUniqueExportIds(ids);
-    if (!normalizedIds.length) {
-        return [];
-    }
-
-    const results = [];
-    const chunkSize = 200;
-
-    for (let index = 0; index < normalizedIds.length; index += chunkSize) {
-        const chunk = normalizedIds.slice(index, index + chunkSize);
-        let query = window.supabaseClient
-            .from(table)
-            .select(selectFields)
-            .in(idField, chunk);
-
-        if (siteScoped) {
-            query = window.AdminSiteFilter?.applySiteFilter?.(query) || query;
-        }
-
-        const { data, error } = await query;
-        if (error) throw error;
-        results.push(...(data || []));
-    }
-
-    return results;
-}
-
-async function fetchUsersExportRows() {
-    let profiles = [];
-    const { data: rpcData, error: rpcError } = await window.supabaseClient.rpc('get_admin_users');
-
-    if (!rpcError && Array.isArray(rpcData)) {
-        profiles = rpcData;
-    } else {
-        const { data: profileData, error: profileError } = await window.supabaseClient
-            .from('profiles')
-            .select('id, username, email, avatar_url, created_at, updated_at');
-
-        if (profileError) throw profileError;
-        profiles = profileData || [];
-    }
-
-    let balanceQuery = window.supabaseClient
-        .from('points_balance')
-        .select('user_id, total_balance');
-    balanceQuery = window.AdminSiteFilter?.applySiteFilter?.(balanceQuery) || balanceQuery;
-
-    const [{ data: pointsData, error: pointsError }, { data: rolesData, error: rolesError }] = await Promise.all([
-        balanceQuery,
-        window.supabaseClient.from('admin_roles').select('user_id, role_name, expires_at')
-    ]);
-
-    if (pointsError) throw pointsError;
-    if (rolesError) throw rolesError;
-
-    const siteFilter = window.AdminSiteFilter?.getSiteParam?.();
-    if (siteFilter) {
-        const [loginResult, commentResult, messageResult] = await Promise.all([
-            window.supabaseClient.from('user_login_history').select('user_id').eq('site', siteFilter),
-            window.supabaseClient.from('prompt_comments').select('user_id').eq('site', siteFilter).not('user_id', 'is', null),
-            window.supabaseClient.from('guestbook_messages').select('user_id').eq('site', siteFilter).not('user_id', 'is', null)
-        ]);
-
-        const activeUserIds = new Set();
-        (loginResult.data || []).forEach((row) => activeUserIds.add(row.user_id));
-        (commentResult.data || []).forEach((row) => activeUserIds.add(row.user_id));
-        (messageResult.data || []).forEach((row) => activeUserIds.add(row.user_id));
-        (pointsData || []).forEach((row) => activeUserIds.add(row.user_id));
-
-        profiles = profiles.filter((profile) => activeUserIds.has(profile.out_id || profile.id));
-    }
-
-    const pointsMap = new Map((pointsData || []).map((row) => [row.user_id, row.total_balance || 0]));
-    const rolesMap = new Map(
-        (rolesData || [])
-            .filter((row) => !row.expires_at || new Date(row.expires_at) > new Date())
-            .map((row) => [row.user_id, row.role_name || 'admin'])
-    );
-
-    return profiles.map((profile) => {
-        const id = profile.out_id || profile.id;
-        const email = profile.out_email || profile.email || '';
-        const username = profile.out_username || profile.username || '';
-        const avatarUrl = profile.out_avatar_url || profile.avatar_url || '';
-        const lastActiveAt = profile.out_last_active_at || profile.out_last_sign_in_at || profile.last_sign_in_at || '';
-        const createdAt = profile.out_created_at || profile.created_at || '';
-
-        return {
-            id,
-            username,
-            email,
-            avatar_url: avatarUrl,
-            current_points: pointsMap.get(id) || 0,
-            admin_role: rolesMap.get(id) || '',
-            last_active_at: lastActiveAt,
-            created_at: createdAt
-        };
-    });
-}
-
-async function fetchCommentsExportRows() {
-    const [guestbookRows, galleryRows] = await Promise.all([
-        fetchAllSupabaseRows(() => {
-            let query = window.supabaseClient
-                .from('guestbook_messages')
-                .select(`
-                    id,
-                    content,
-                    user_id,
-                    created_at,
-                    image_url,
-                    like_count,
-                    site
-                `)
-                .order('created_at', { ascending: false });
-            query = window.AdminSiteFilter?.applySiteFilter?.(query) || query;
-            return query;
-        }),
-        fetchAllSupabaseRows(() => {
-            let query = window.supabaseClient
-                .from('prompt_comments')
-                .select(`
-                    id,
-                    content,
-                    user_id,
-                    created_at,
-                    image_url,
-                    parent_id,
-                    prompt_id,
-                    is_pinned,
-                    is_featured,
-                    site
-                `)
-                .order('created_at', { ascending: false });
-            query = window.AdminSiteFilter?.applySiteFilter?.(query) || query;
-            return query;
-        })
-    ]);
-
-    const guestbookUserIds = toUniqueExportIds((guestbookRows || []).map((row) => row.user_id));
-    const galleryUserIds = toUniqueExportIds((galleryRows || []).map((row) => row.user_id));
-    const promptIds = toUniqueExportIds((galleryRows || []).map((row) => row.prompt_id));
-    const galleryCommentIds = toUniqueExportIds((galleryRows || []).map((row) => row.id));
-
-    const [guestbookProfiles, galleryProfiles, prompts, commentLikes] = await Promise.all([
-        fetchSupabaseRowsByIds('profiles', 'id', guestbookUserIds, 'id, username, avatar_url, email'),
-        fetchSupabaseRowsByIds('profiles', 'id', galleryUserIds, 'id, username, avatar_url, email'),
-        fetchSupabaseRowsByIds('prompts', 'id', promptIds, 'id, title'),
-        fetchSupabaseRowsByIds('comment_likes', 'comment_id', galleryCommentIds, 'comment_id', { siteScoped: true })
-    ]);
-
-    const guestbookProfilesMap = new Map(guestbookProfiles.map((row) => [row.id, row]));
-    const galleryProfilesMap = new Map(galleryProfiles.map((row) => [row.id, row]));
-    const promptMap = new Map(prompts.map((row) => [row.id, row]));
-    const commentLikesMap = (commentLikes || []).reduce((acc, row) => {
-        const key = String(row?.comment_id || '').trim();
-        if (!key) return acc;
-        acc[key] = (acc[key] || 0) + 1;
-        return acc;
-    }, {});
-
-    return [
-        ...(guestbookRows || []).map((row) => ({
-            id: row.id,
-            type: 'guestbook',
-            site: row.site || '',
-            author: guestbookProfilesMap.get(row.user_id)?.username || '未知用户',
-            email: guestbookProfilesMap.get(row.user_id)?.email || '',
-            content: row.content || '',
-            likes: row.like_count || 0,
-            user_id: row.user_id || '',
-            prompt_title: '',
-            parent_id: '',
-            image_url: row.image_url || '',
-            created_at: row.created_at
-        })),
-        ...(galleryRows || []).map((row) => ({
-            id: row.id,
-            type: 'gallery',
-            site: row.site || '',
-            author: galleryProfilesMap.get(row.user_id)?.username || '未知用户',
-            email: galleryProfilesMap.get(row.user_id)?.email || '',
-            content: row.content || '',
-            likes: commentLikesMap[row.id] || 0,
-            user_id: row.user_id || '',
-            prompt_title: promptMap.get(row.prompt_id)?.title || '',
-            parent_id: row.parent_id || '',
-            image_url: row.image_url || '',
-            is_pinned: row.is_pinned === true,
-            is_featured: row.is_featured === true,
-            created_at: row.created_at
-        }))
-    ].sort((left, right) => String(right.created_at || '').localeCompare(String(left.created_at || '')));
-}
-
-async function fetchPointsExportRows() {
-    return fetchAllSupabaseRows(() => {
-        let query = window.supabaseClient
-            .from('points_ledger')
-            .select('*')
-            .order('created_at', { ascending: false });
-        query = window.AdminSiteFilter?.applySiteFilter?.(query) || query;
-        return query;
-    });
-}
-
-async function exportSettingsData(dataset, format = 'json') {
-    const normalizedDataset = String(dataset || '').trim();
-    const normalizedFormat = String(format || 'json').trim().toLowerCase();
-
-    const loaders = {
-        users: fetchUsersExportRows,
-        comments: fetchCommentsExportRows,
-        points: fetchPointsExportRows
-    };
-
-    const loadRows = loaders[normalizedDataset];
-    if (!loadRows) {
-        throw new Error(`不支持的导出类型: ${normalizedDataset}`);
-    }
-
-    try {
-        const rows = await loadRows();
-        if (!Array.isArray(rows) || rows.length === 0) {
-            window.showToast?.('暂无可导出的数据', 'info');
-            return;
-        }
-
-        const timestamp = new Date().toISOString().slice(0, 10);
-        if (normalizedFormat === 'csv') {
-            const csv = convertRowsToCsv(rows);
-            downloadExportBlob(
-                new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' }),
-                `${normalizedDataset}_export_${timestamp}.csv`
-            );
-        } else {
-            downloadExportBlob(
-                new Blob([JSON.stringify(rows, null, 2)], { type: 'application/json' }),
-                `${normalizedDataset}_export_${timestamp}.json`
-            );
-        }
-
-        window.showToast?.(`已导出 ${rows.length} 条${normalizedDataset === 'users' ? '用户' : (normalizedDataset === 'comments' ? '评论' : '积分')}数据`, 'success');
-    } catch (err) {
-        console.error('Export settings data failed:', err);
-        window.showToast?.(`导出失败: ${err.message}`, 'error');
-    }
 }
 
 async function checkVerifyQuota() {
@@ -20178,21 +21589,8 @@ function setupModerationEventListeners() {
         });
     }
 
-    // AI content detection toggle
-    const aiDetection = document.getElementById('cfgAiContentDetection');
-    if (aiDetection) {
-        aiDetection.addEventListener('change', async (e) => {
-            const config = systemConfigCache['moderation'] || {};
-            config.ai_content_detection = e.target.checked;
-            await saveConfig('moderation', config);
-        });
-    }
-
     // Gallery settings
     setupGalleryEventListeners();
-
-    // Comment rules
-    setupCommentRulesEventListeners();
 }
 
 // ============================================
@@ -20213,11 +21611,58 @@ function setupGalleryEventListeners() {
 }
 
 // Override dropdown selection to save gallery settings
+const originalToggleCustomDropdown = window.toggleCustomDropdown;
+window.toggleCustomDropdown = function (dropdownId) {
+    if (
+        typeof dropdownId === 'string'
+        && dropdownId.includes('discountTriggerDropdown_')
+        && dropdownId.endsWith('_discount_id')
+        && !discountTriggerSettingsState.optionsLoading
+        && (!Array.isArray(discountTriggerSettingsState.optionRows) || !discountTriggerSettingsState.optionRows.length)
+    ) {
+        void loadDiscountTriggerDiscountOptions(true);
+    }
+
+    if (typeof originalToggleCustomDropdown === 'function') {
+        originalToggleCustomDropdown(dropdownId);
+    }
+
+    document.querySelectorAll('.custom-dropdown').forEach((dropdown) => {
+        const trigger = dropdown.querySelector('.dropdown-trigger');
+        if (trigger instanceof HTMLElement) {
+            trigger.setAttribute('aria-expanded', dropdown.classList.contains('open') ? 'true' : 'false');
+        }
+    });
+};
+
 const originalSelectDropdownOption = window.selectDropdownOption;
 window.selectDropdownOption = function (dropdownId, value, displayText) {
     // Call original
     if (typeof originalSelectDropdownOption === 'function') {
         originalSelectDropdownOption(dropdownId, value, displayText);
+    }
+
+    const dropdown = document.getElementById(dropdownId);
+    if (dropdown instanceof HTMLElement) {
+        const trigger = dropdown.querySelector('.dropdown-trigger');
+        const syncSelectId = String(dropdown.dataset.syncSelectId || '').trim();
+        const syncSelect = syncSelectId ? document.getElementById(syncSelectId) : null;
+        if (syncSelect instanceof HTMLSelectElement) {
+            syncSelect.value = value;
+            syncSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        const selectedOption = Array.from(dropdown.querySelectorAll('.dropdown-option'))
+            .find((option) => String(option.getAttribute('data-value') || '') === String(value || ''));
+        const metaEl = dropdown.querySelector('[data-dropdown-role="meta"]');
+        if (metaEl instanceof HTMLElement) {
+            const nextMeta = String(selectedOption?.getAttribute('data-option-meta') || '').trim();
+            metaEl.textContent = nextMeta;
+            metaEl.hidden = !nextMeta;
+        }
+        if (trigger instanceof HTMLElement) {
+            trigger.setAttribute('aria-expanded', 'false');
+        }
     }
 
     // Handle gallery dropdowns
@@ -20240,62 +21685,8 @@ window.selectDropdownOption = function (dropdownId, value, displayText) {
         window.ADMIN_AI_SERVICE = config.ai_service;
         window.AdminAI?.setPreferredService?.(config.ai_service, { refresh: true });
         window.checkApiKey?.();
-    } else if (dropdownId === 'cacheDurationDropdown') {
-        const config = normalizePerformanceConfig(systemConfigCache['performance']);
-        config.cache_duration_seconds = parseInt(value, 10) || getDefaultPerformanceConfig().cache_duration_seconds;
-        saveConfig('performance', config);
     }
 };
-
-// ============================================
-// COMMENT RULES
-// ============================================
-
-function loadCommentRules(config) {
-    // Allow anonymous toggle
-    const allowAnonymous = document.getElementById('cfgAllowAnonymous');
-    if (allowAnonymous) allowAnonymous.checked = config.allow_anonymous || false;
-
-    // Max comment length
-    const maxLength = document.getElementById('cfgMaxCommentLength');
-    if (maxLength) maxLength.value = config.max_comment_length || 500;
-
-    // Max nesting level
-    const maxNesting = document.getElementById('cfgMaxNestingLevel');
-    if (maxNesting) maxNesting.value = config.max_nesting_level || 3;
-}
-
-function setupCommentRulesEventListeners() {
-    // Allow anonymous toggle
-    const allowAnonymous = document.getElementById('cfgAllowAnonymous');
-    if (allowAnonymous) {
-        allowAnonymous.addEventListener('change', async (e) => {
-            const config = systemConfigCache['comments'] || {};
-            config.allow_anonymous = e.target.checked;
-            await saveConfig('comments', config);
-        });
-    }
-
-    // Max comment length
-    const maxLength = document.getElementById('cfgMaxCommentLength');
-    if (maxLength) {
-        maxLength.addEventListener('change', async (e) => {
-            const config = systemConfigCache['comments'] || {};
-            config.max_comment_length = parseInt(e.target.value) || 500;
-            await saveConfig('comments', config);
-        });
-    }
-
-    // Max nesting level
-    const maxNesting = document.getElementById('cfgMaxNestingLevel');
-    if (maxNesting) {
-        maxNesting.addEventListener('change', async (e) => {
-            const config = systemConfigCache['comments'] || {};
-            config.max_nesting_level = parseInt(e.target.value) || 3;
-            await saveConfig('comments', config);
-        });
-    }
-}
 
 // ============================================
 // DECORATION SYSTEM
@@ -20496,6 +21887,7 @@ function restorePageSelector(pages) {
 // EXPORTS
 // ============================================
 
+window.initSettingsModule = initSettingsModule;
 window.initSystemConfig = initSystemConfig;
 window.toggleConfigCard = toggleConfigCard;
 window.toggleCustomRechargeEntryStatus = toggleCustomRechargeEntryStatus;
@@ -20650,8 +22042,6 @@ window.addChannel = addChannel;
 window.saveIpBlacklist = saveIpBlacklist;
 window.saveAnnouncement = saveAnnouncement;
 window.saveSensitiveWords = saveSensitiveWords;
-window.saveSeoSettings = saveSeoSettings;
-window.exportSettingsData = exportSettingsData;
 window.toggleDecoration = toggleDecoration;
 window.selectDecoration = selectDecoration;
 window.togglePageTarget = togglePageTarget;

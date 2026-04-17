@@ -27,7 +27,7 @@ function getAnalyticsScopeConfigForTab(tabId = '', options = {}) {
         ? window.getAdminAnalyticsSidebarModuleIdForTab(normalizedTabId, { preferredModuleId })
         : (normalizedTabId === 'overview' || normalizedTabId === 'growth' || normalizedTabId === 'content'
             ? 'growth-center'
-            : (normalizedTabId === 'product' || normalizedTabId === 'ops' || normalizedTabId === 'monetization' || normalizedTabId === 'verify'
+            : (normalizedTabId === 'product' || normalizedTabId === 'product-detail' || normalizedTabId === 'ops' || normalizedTabId === 'monetization' || normalizedTabId === 'verify'
                 ? 'commerce-center'
                 : 'growth-center'));
 
@@ -45,7 +45,7 @@ function getAnalyticsScopeConfigForTab(tabId = '', options = {}) {
                 scopeId: 'commerce-center',
                 primaryLabel: '商品经营',
                 supportLabel: '经营支撑',
-                primaryTabs: ['product', 'ops'],
+                primaryTabs: ['product', 'product-detail', 'ops'],
                 supportTabs: ['monetization', 'verify']
             };
         default:
@@ -97,6 +97,30 @@ function syncAnalyticsTabScope(tabId = '', options = {}) {
     return config;
 }
 
+function setAnalyticsChromeSectionHidden(bodyId = '', hidden = false) {
+    const body = document.getElementById(bodyId);
+    const section = body?.closest?.('section') || body;
+    if (!section) {
+        return false;
+    }
+
+    if (typeof setAnalyticsVisibility === 'function') {
+        setAnalyticsVisibility(section, hidden);
+    } else {
+        section.hidden = hidden;
+    }
+    section.setAttribute('aria-hidden', hidden ? 'true' : 'false');
+    return true;
+}
+
+function syncAnalyticsChromeVisibility(tabId = '') {
+    const normalizedTabId = String(tabId || 'overview').trim().toLowerCase() || 'overview';
+    const hideGlobalChrome = normalizedTabId === 'product-detail';
+
+    setAnalyticsChromeSectionHidden('analyticsBusinessCenterShell', hideGlobalChrome);
+    setAnalyticsChromeSectionHidden('analyticsOperatingFocusWorkspace', hideGlobalChrome);
+}
+
 function canReuseRecentAnalyticsDashboard(reason = '') {
     const normalizedReason = String(reason || '').trim().toLowerCase();
     if (normalizedReason !== 're-enter') {
@@ -125,6 +149,9 @@ async function initAnalyticsModule() {
     const initialView = String(routeState?.view || '').trim().toLowerCase();
     if (initialView && typeof switchAnalyticsTab === 'function') {
         switchAnalyticsTab(initialView, { syncRoute: false, sectionId: routeState?.sectionId || '' });
+    }
+    if (initialView === 'product-detail' && routeState?.productId) {
+        window.primeAnalyticsProductDetailFromRouteState?.(routeState);
     }
 
     initAnalyticsTabIndicator();
@@ -265,6 +292,12 @@ function switchAnalyticsTab(tabId, options = {}) {
     const nav = document.getElementById('analyticsTabsNav');
     if (!nav) return;
     const normalizedTabId = String(tabId || 'overview').trim().toLowerCase() || 'overview';
+    const previousActiveTabId = String(nav.querySelector('.admin-tab.active')?.dataset?.tab || '').trim().toLowerCase();
+    if (normalizedTabId === 'product-detail') {
+        window.primeAnalyticsProductDetailSkeletonOnEntry?.({
+            sectionId: String(options.sectionId || '').trim()
+        });
+    }
     const preferredModuleId = getActiveAnalyticsSidebarModuleId();
     const scopeConfig = syncAnalyticsTabScope(normalizedTabId, { preferredModuleId }) || getAnalyticsScopeConfigForTab(normalizedTabId, { preferredModuleId });
     const primaryTabs = new Set(scopeConfig.primaryTabs || []);
@@ -301,7 +334,10 @@ function switchAnalyticsTab(tabId, options = {}) {
     const activeContent = document.getElementById(`analytics-tab-${normalizedTabId}`);
     if (activeContent) {
         activeContent.classList.add('active');
+        syncAnalyticsChromeVisibility(normalizedTabId);
         window.dispatchEvent(new Event('resize'));
+    } else {
+        syncAnalyticsChromeVisibility(normalizedTabId);
     }
 
     if (options.syncRoute !== false && typeof window.syncAnalyticsRouteState === 'function') {
@@ -309,6 +345,23 @@ function switchAnalyticsTab(tabId, options = {}) {
             view: normalizedTabId,
             sectionId: String(options.sectionId || '').trim()
         });
+    }
+
+    if (normalizedTabId === 'product-detail' && options.ensureProductDetailLoad !== false) {
+        const ensureResult = window.ensureAnalyticsProductDetailTabReady?.({
+            sectionId: String(options.sectionId || '').trim(),
+            focus: false,
+            syncRoute: true
+        });
+
+        if (!ensureResult && typeof window.reloadAnalyticsDashboard === 'function') {
+            const shouldForceReload = previousActiveTabId !== 'product-detail';
+            void window.reloadAnalyticsDashboard({
+                reason: 'product-detail-tab-focus',
+                activeTabId: 'product-detail',
+                force: shouldForceReload
+            });
+        }
     }
 
     window.renderAnalyticsBusinessCenterShell?.();
@@ -323,6 +376,7 @@ function initAnalyticsTabIndicator() {
 
     const activeTabId = nav.querySelector('.admin-tab.active')?.dataset?.tab || 'overview';
     syncAnalyticsTabScope(activeTabId, { preferredModuleId: getActiveAnalyticsSidebarModuleId() });
+    syncAnalyticsChromeVisibility(activeTabId);
     const activeTab = nav.querySelector('.admin-tab.active');
     if (activeTab) {
         window.updateAdminTabIndicator(activeTab);
@@ -419,7 +473,18 @@ async function reloadAnalyticsDashboard() {
             switch (activeTabId) {
                 case 'product':
                     return [
-                        ['updateOnlineUsers', 'loadProductAlerts', 'loadProductOverview', 'loadProductRankings', 'loadProductFunnel', 'loadProductHealth', 'loadProductDetailPanel'],
+                        ['updateOnlineUsers', 'loadProductAlerts', 'loadProductOverview', 'loadProductRankings', 'loadProductFunnel', 'loadProductHealth'],
+                        ['loadProductDetailPanel', 'loadOverviewOperatingNavigator', 'loadOperationsCockpit'],
+                        ['loadOverviewStats', 'loadOverviewDutyBoard', 'loadOverviewBusinessMix', 'loadUserTrendChart', 'loadChannelChart', 'loadGeoDistribution'],
+                        ['loadTopContent', 'loadContentTrendChart', 'loadActivityHeatmap', 'loadConversionFunnel'],
+                        ['loadGrowthSummary', 'loadTopContributors', 'loadCommunityChart', 'loadRetentionCohort'],
+                        ['loadPointsFlow', 'loadPointsStats', 'loadPointsDistribution', 'loadPointsLeaderboard', 'loadRedemptionFunnel'],
+                        ['loadVerifyServiceSummary', 'loadEventFunnelPanels']
+                    ];
+                case 'product-detail':
+                    return [
+                        ['loadProductDetailPanel'],
+                        ['updateOnlineUsers', 'loadProductAlerts', 'loadProductOverview', 'loadProductRankings', 'loadProductFunnel', 'loadProductHealth'],
                         ['loadOverviewOperatingNavigator', 'loadOperationsCockpit'],
                         ['loadOverviewStats', 'loadOverviewDutyBoard', 'loadOverviewBusinessMix', 'loadUserTrendChart', 'loadChannelChart', 'loadGeoDistribution'],
                         ['loadTopContent', 'loadContentTrendChart', 'loadActivityHeatmap', 'loadConversionFunnel'],
@@ -511,6 +576,12 @@ async function reloadAnalyticsDashboard() {
             if (index < phases.length - 1) {
                 await waitForAnalyticsPaint(2);
             }
+        }
+
+        if (activeTabId === 'product-detail') {
+            window.settleAnalyticsProductDetailPendingState?.({
+                activeTabId
+            });
         }
 
         updateLastUpdateTime();

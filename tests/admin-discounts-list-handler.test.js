@@ -113,10 +113,23 @@ function createSupabaseStub(state) {
     state.opsAlertJobs = Array.isArray(state.opsAlertJobs) ? state.opsAlertJobs : [];
     state.opsAlertCases = Array.isArray(state.opsAlertCases) ? state.opsAlertCases : [];
     state.opsAlertCaseEvents = Array.isArray(state.opsAlertCaseEvents) ? state.opsAlertCaseEvents : [];
+    state.queryCalls = Array.isArray(state.queryCalls) ? state.queryCalls : [];
 
     return {
         from(table) {
             return createQueryBuilder((query) => {
+                state.queryCalls.push({
+                    table,
+                    filters: Array.isArray(query.filters)
+                        ? query.filters.map((filter) => ({
+                            ...filter,
+                            values: Array.isArray(filter.values) ? filter.values.slice() : undefined
+                        }))
+                        : [],
+                    range: query.range ? { ...query.range } : null,
+                    order: query.order ? { ...query.order } : null
+                });
+
                 let rows;
                 if (table === 'discount_codes') {
                     rows = state.discountRows.slice().map((row) => cloneRow(row));
@@ -468,6 +481,54 @@ test('discounts list handler returns site-specific and global discount codes in 
         assert.equal(payload.rows[1].lifecycle_summary.key, 'scheduled');
         assert.equal(payload.rows[1].risk_summary.has_recent_alert, false);
         assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'discounts.manage' });
+    });
+});
+
+test('discounts list handler batches large in-filter lookups to avoid oversized admin queries', async () => {
+    const baseTime = Date.now();
+    const discountRows = Array.from({ length: 125 }, (_, index) => ({
+        id: `discount_${index + 1}`,
+        code: `BULK${String(index + 1).padStart(3, '0')}`,
+        applicable_site: 'cn',
+        created_at: offsetIso(baseTime, { minutes: -index }),
+        is_active: true,
+        starts_at: null,
+        expires_at: null,
+        lifecycle_status: 'active',
+        status_reason: 'manual_active',
+        recovery_strategy: 'manual_only',
+        observation_window_hours: 24,
+        used_count: 0
+    }));
+
+    await withDiscountsListHandler({ discountRows }, async ({ handler, state }) => {
+        const req = {
+            method: 'GET',
+            url: '/api/admin/discounts/list?site=cn',
+            headers: {}
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+
+        assert.equal(res.statusCode, 200, 'handler should still succeed for large discount sets');
+
+        const shopOrderCalls = state.queryCalls.filter((call) => call.table === 'shop_orders');
+        const assetCalls = state.queryCalls.filter((call) => call.table === 'discount_user_assets');
+        const caseCalls = state.queryCalls.filter((call) => call.table === 'ops_alert_cases');
+        const caseEventCalls = state.queryCalls.filter((call) => call.table === 'ops_alert_case_events');
+
+        assert.equal(shopOrderCalls.length >= 3, true, 'recent and historical order lookups should batch large IN filters');
+        assert.equal(assetCalls.length >= 3, true, 'discount asset lookups should batch large IN filters');
+        assert.equal(caseCalls.length >= 3, true, 'ops alert case lookups should batch large target sets');
+        assert.equal(caseEventCalls.length >= 3, true, 'ops alert case event lookups should batch large target sets');
+
+        for (const call of [...shopOrderCalls, ...assetCalls, ...caseCalls, ...caseEventCalls]) {
+            const inFilter = call.filters.find((filter) => filter.op === 'in' && Array.isArray(filter.values) && filter.values.length > 1);
+            if (inFilter) {
+                assert.equal(inFilter.values.length <= 50, true, `${call.table} should keep IN filters within the chunk size`);
+            }
+        }
     });
 });
 

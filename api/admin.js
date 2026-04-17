@@ -51,6 +51,7 @@ const paymentsCleanupHandler = require('../server/api-handlers/admin/payments/cl
 const paymentsShopRefundHandler = require('../server/api-handlers/admin/payments/shop-refund');
 const paymentsSummaryHandler = require('../server/api-handlers/admin/payments/summary');
 const settingsCodexConfigHandler = require('../server/api-handlers/admin/settings/codex-config');
+const settingsDiscountTriggerOptionsHandler = require('../server/api-handlers/admin/settings/discount-trigger-options');
 const settingsGeminiKeyHandler = require('../server/api-handlers/admin/settings/gemini-key');
 const settingsAdminAuditMonitorHandler = require('../server/api-handlers/admin/settings/admin-audit-monitor');
 const settingsOpsAlertHealthHandler = require('../server/api-handlers/admin/settings/ops-alert-health');
@@ -113,6 +114,7 @@ const ROUTE_HANDLERS = {
     'access/session': accessSessionHandler,
     'settings/admin-audit-monitor': settingsAdminAuditMonitorHandler,
     'settings/codex-config': settingsCodexConfigHandler,
+    'settings/discount-trigger-options': settingsDiscountTriggerOptionsHandler,
     'settings/gemini-key': settingsGeminiKeyHandler,
     'settings/ops-alert-health': settingsOpsAlertHealthHandler,
     'settings/ops-alerts': settingsOpsAlertsHandler,

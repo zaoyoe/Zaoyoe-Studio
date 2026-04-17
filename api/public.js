@@ -19,11 +19,15 @@ const {
     createShopHandlers
 } = require('../server/api-handlers/public/shop');
 const {
+    createWalletHandlers
+} = require('../server/api-handlers/public/wallet');
+const {
     createPublicConfigHandlers
 } = require('../server/api-handlers/public/config');
 const {
     createPublicVerifyHandlers
 } = require('../server/api-handlers/public/verify');
+const walletCheckinHandler = require('./wallet/checkin');
 
 const runtimeSupabaseConfigHandler = createRuntimeSupabaseConfigHandler({
     buildSupabaseRuntimeScript,
@@ -48,6 +52,10 @@ const shopHandlers = createShopHandlers({
     discountAssets,
     discountPricing,
     env: process.env
+});
+const walletHandlers = createWalletHandlers({
+    admin,
+    site
 });
 const publicConfigHandlers = createPublicConfigHandlers({
     admin
@@ -74,6 +82,10 @@ const ROUTE_HANDLERS = {
     },
     shop: {
         ...shopHandlers
+    },
+    wallet: {
+        ...walletHandlers,
+        checkin: walletCheckinHandler
     }
 };
 

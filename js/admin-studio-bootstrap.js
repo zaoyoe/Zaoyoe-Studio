@@ -487,6 +487,7 @@
             case 'content':
                 return 'growth-center';
             case 'product':
+            case 'product-detail':
             case 'ops':
             case 'monetization':
             case 'verify':

@@ -1,10 +1,14 @@
 const {
+    getSupabaseAdmin,
     parseJsonBody,
     requireAdmin,
     requireWritableAdminSite,
     sendJson,
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
+const {
+    notifyUsers
+} = require('../../../../api/_lib/admin-notifications');
 const {
     DISCOUNT_SELECT_FIELDS,
     normalizeText,
@@ -52,6 +56,58 @@ function normalizeRecipientTokens(value) {
     return [...new Set(rawValues.map((item) => normalizeText(item, 255)).filter(Boolean))];
 }
 
+function normalizeTagTokens(value) {
+    const rawValues = Array.isArray(value)
+        ? value
+        : String(value || '').split(/[\n,;]+/);
+
+    return [...new Set(rawValues.map((item) => normalizeText(item, 120)).filter(Boolean))];
+}
+
+function formatDiscountBenefitLabel(discount = {}) {
+    const discountType = normalizeText(discount?.discount_type, 20).toLowerCase();
+    const discountValue = Number(discount?.discount_value);
+
+    if (discountType === 'percent') {
+        const folded = discountValue / 10;
+        if (Number.isFinite(folded) && folded > 0) {
+            const display = Number.isInteger(folded)
+                ? String(folded)
+                : folded.toFixed(1).replace(/\.0$/, '');
+            return `${display}折`;
+        }
+        return '折扣券';
+    }
+
+    if (discountType === 'fixed') {
+        return Number.isFinite(discountValue) && discountValue > 0
+            ? `立减 ${discountValue} 积分`
+            : '立减券';
+    }
+
+    return normalizeText(discount?.code, 80) || '优惠券';
+}
+
+function formatDiscountExpiryLine(discount = {}) {
+    const expiresAt = normalizeOptionalIsoDate(discount?.expires_at);
+    return expiresAt ? `有效期至 ${expiresAt}` : '长期有效';
+}
+
+function buildDiscountAssignedNotification(discount = {}) {
+    const benefitLabel = formatDiscountBenefitLabel(discount);
+    const code = normalizeText(discount?.code, 80);
+    const expiryLine = formatDiscountExpiryLine(discount);
+
+    return {
+        title: '优惠券已到账',
+        content: `${benefitLabel}${code ? `（${code}）` : ''} 已发放到你的钱包卡券。\n${expiryLine}。\n请前往“我的钱包 > 卡券”查看，并在下单时点击使用。`,
+        type: 'success',
+        scope: 'user_personal',
+        category: 'discount_notice',
+        dedupeWindowMinutes: 0
+    };
+}
+
 async function fetchProfilesByField(supabase, field, values = []) {
     const normalizedValues = [...new Set((Array.isArray(values) ? values : []).map((item) => normalizeText(item, 255)).filter(Boolean))];
     if (!normalizedValues.length) {
@@ -78,7 +134,54 @@ async function fetchProfilesByField(supabase, field, values = []) {
     return Array.isArray(data) ? data : [];
 }
 
-async function resolveRecipientProfiles(supabase, tokens = []) {
+async function fetchAuthUsersByEmail(adminSupabase, values = []) {
+    const normalizedEmails = [...new Set((Array.isArray(values) ? values : [])
+        .map((item) => normalizeText(item, 255).toLowerCase())
+        .filter(Boolean))];
+    if (!normalizedEmails.length || !adminSupabase?.auth?.admin?.listUsers) {
+        return [];
+    }
+
+    const matchedUsers = new Map();
+    let page = 1;
+    const perPage = 200;
+
+    while (true) {
+        const { data, error } = await adminSupabase.auth.admin.listUsers({ page, perPage });
+        if (error) {
+            throw error;
+        }
+
+        const users = Array.isArray(data?.users) ? data.users : [];
+        users.forEach((user) => {
+            const email = normalizeText(user?.email, 255).toLowerCase();
+            const userId = normalizeText(user?.id, 160);
+            if (!email || !userId || !normalizedEmails.includes(email)) {
+                return;
+            }
+
+            matchedUsers.set(userId, {
+                id: userId,
+                username: normalizeText(user?.user_metadata?.username, 120)
+                    || normalizeText(user?.user_metadata?.user_name, 120)
+                    || null,
+                display_name: normalizeText(user?.user_metadata?.display_name, 120)
+                    || normalizeText(user?.user_metadata?.full_name, 120)
+                    || null,
+                email: email || null
+            });
+        });
+
+        if (users.length < perPage || matchedUsers.size >= normalizedEmails.length) {
+            break;
+        }
+        page += 1;
+    }
+
+    return Array.from(matchedUsers.values());
+}
+
+async function resolveRecipientProfiles(supabase, tokens = [], adminSupabase = null) {
     const values = normalizeRecipientTokens(tokens);
     if (!values.length) {
         return {
@@ -103,8 +206,19 @@ async function resolveRecipientProfiles(supabase, tokens = []) {
         emailRows = [];
     }
 
+    let authEmailRows = [];
+    const matchedProfileEmailSet = new Set(emailRows.map((row) => normalizeText(row?.email, 255).toLowerCase()).filter(Boolean));
+    const unresolvedEmailTokens = emailTokens.filter((value) => !matchedProfileEmailSet.has(normalizeText(value, 255).toLowerCase()));
+    if (unresolvedEmailTokens.length) {
+        try {
+            authEmailRows = await fetchAuthUsersByEmail(adminSupabase, unresolvedEmailTokens);
+        } catch (_) {
+            authEmailRows = [];
+        }
+    }
+
     const profileMap = new Map();
-    [...rows, ...emailRows].forEach((row) => {
+    [...rows, ...emailRows, ...authEmailRows].forEach((row) => {
         const id = normalizeText(row?.id, 160);
         if (!id) return;
         profileMap.set(id, row);
@@ -123,6 +237,37 @@ async function resolveRecipientProfiles(supabase, tokens = []) {
     return {
         profiles: Array.from(profileMap.values()),
         unresolved: values.filter((value) => !matchedTokens.has(value))
+    };
+}
+
+async function resolveProfilesByTags(supabase, tags = []) {
+    const normalizedTags = normalizeTagTokens(tags);
+    if (!normalizedTags.length) {
+        return {
+            profiles: [],
+            matchedTags: [],
+            unresolvedTags: []
+        };
+    }
+
+    const { data, error } = await supabase
+        .from('user_tags')
+        .select('user_id, tag')
+        .in('tag', normalizedTags);
+
+    if (error) {
+        throw error;
+    }
+
+    const rows = Array.isArray(data) ? data : [];
+    const matchedTags = [...new Set(rows.map((row) => normalizeText(row?.tag, 120)).filter(Boolean))];
+    const userIds = [...new Set(rows.map((row) => normalizeText(row?.user_id, 160)).filter(Boolean))];
+    const profiles = await fetchProfilesByField(supabase, 'id', userIds);
+
+    return {
+        profiles,
+        matchedTags,
+        unresolvedTags: normalizedTags.filter((tag) => !matchedTags.includes(tag))
     };
 }
 
@@ -156,6 +301,12 @@ module.exports = async function adminDiscountAssetsHandler(req, res) {
 
     try {
         const { supabase, user } = await requireAdmin(req, { permission: 'discounts.manage' });
+        let adminSupabase = null;
+        try {
+            adminSupabase = getSupabaseAdmin();
+        } catch (_) {
+            adminSupabase = null;
+        }
         const body = await parseJsonBody(req);
         const action = normalizeText(body.action, 40).toLowerCase();
         const writableSite = requireWritableAdminSite(body.site || req.adminSite, {
@@ -180,10 +331,27 @@ module.exports = async function adminDiscountAssetsHandler(req, res) {
         const discount = await loadDiscountById(supabase, discountId);
         assertWritableSiteAccessForDiscount(discount, writableSite);
 
-        const { profiles, unresolved } = await resolveRecipientProfiles(
+        const directResult = await resolveRecipientProfiles(
             supabase,
-            body.user_ids || body.userIds || body.recipients || body.recipient_tokens
+            body.user_ids || body.userIds || body.recipients || body.recipient_tokens,
+            adminSupabase
         );
+        const tagResult = await resolveProfilesByTags(
+            supabase,
+            body.recipient_tags || body.recipientTags || body.user_tags || body.userTags
+        );
+        const profileMap = new Map();
+        [...directResult.profiles, ...tagResult.profiles].forEach((profile) => {
+            const userId = normalizeText(profile?.id, 160);
+            if (!userId) return;
+            profileMap.set(userId, profile);
+        });
+        const profiles = Array.from(profileMap.values());
+        const unresolved = [
+            ...directResult.unresolved,
+            ...tagResult.unresolvedTags.map((tag) => `tag:${tag}`)
+        ];
+
         if (!profiles.length) {
             return sendJson(res, 400, {
                 success: false,
@@ -257,6 +425,24 @@ module.exports = async function adminDiscountAssetsHandler(req, res) {
             insertedRows = Array.isArray(data) ? data : [];
         }
 
+        let assignmentNotification = {
+            recipients: 0,
+            created: 0,
+            skipped: 0
+        };
+        let assignmentNotificationWarning = null;
+        if (insertedRows.length) {
+            try {
+                assignmentNotification = await notifyUsers(supabase, {
+                    userIds: insertedRows.map((row) => normalizeText(row?.user_id, 160)).filter(Boolean),
+                    ...buildDiscountAssignedNotification(discount)
+                });
+            } catch (notificationError) {
+                assignmentNotificationWarning = normalizeText(notificationError?.message, 240) || '发券通知发送失败';
+                console.warn('[AdminAPI] Failed to notify assigned discount recipients:', assignmentNotificationWarning);
+            }
+        }
+
         await writeAdminAuditLog({
             supabase,
             adminId: user.id,
@@ -273,6 +459,11 @@ module.exports = async function adminDiscountAssetsHandler(req, res) {
                 assigned_count: insertedRows.length,
                 skipped_count: skippedProfiles.length,
                 unresolved_count: unresolved.length,
+                assignment_notification_created: Number(assignmentNotification?.created || 0),
+                assignment_notification_skipped: Number(assignmentNotification?.skipped || 0),
+                assignment_notification_warning: assignmentNotificationWarning,
+                recipient_tags: normalizeTagTokens(body.recipient_tags || body.recipientTags || body.user_tags || body.userTags),
+                unresolved_tag_tokens: tagResult.unresolvedTags,
                 recipient_user_ids: insertedRows.map((row) => normalizeText(row?.user_id, 160)).filter(Boolean),
                 unresolved_tokens: unresolved
             }
@@ -285,6 +476,11 @@ module.exports = async function adminDiscountAssetsHandler(req, res) {
             assigned_count: insertedRows.length,
             skipped_count: skippedProfiles.length,
             unresolved_count: unresolved.length,
+            assignment_notification_created: Number(assignmentNotification?.created || 0),
+            assignment_notification_skipped: Number(assignmentNotification?.skipped || 0),
+            assignment_notification_warning: assignmentNotificationWarning,
+            recipient_tags: normalizeTagTokens(body.recipient_tags || body.recipientTags || body.user_tags || body.userTags),
+            unresolved_tags: tagResult.unresolvedTags,
             assigned: insertedRows,
             skipped: skippedProfiles,
             unresolved

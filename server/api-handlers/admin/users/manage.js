@@ -78,6 +78,328 @@ function normalizeExpiresAt(value) {
     return parsed.toISOString();
 }
 
+function requireAssetId(body = {}) {
+    const assetId = sanitizeText(body.assetId || body.asset_id, 160);
+    if (!assetId) {
+        const error = new Error('assetId is required');
+        error.statusCode = 400;
+        throw error;
+    }
+    return assetId;
+}
+
+function normalizeDiscountAssetStatus(value) {
+    return sanitizeText(value, 40).toLowerCase() || 'available';
+}
+
+function normalizeDiscountApplicableSite(value) {
+    const normalized = sanitizeText(value, 20).toLowerCase();
+    if (!normalized || normalized === 'all' || normalized === 'global') {
+        return '';
+    }
+    return normalized;
+}
+
+function isMissingDiscountEventsRelationError(error) {
+    const message = sanitizeText(error?.message, 240).toLowerCase();
+    return message.includes('discount_event_logs') && (
+        message.includes('does not exist')
+        || message.includes('not exist')
+        || message.includes('undefined table')
+    );
+}
+
+function isMissingAdminAuditLogsRelationError(error) {
+    const message = sanitizeText(error?.message, 240).toLowerCase();
+    return message.includes('admin_audit_logs') && (
+        message.includes('does not exist')
+        || message.includes('not exist')
+        || message.includes('undefined table')
+    );
+}
+
+function formatDiscountBenefitLabel(discount = {}) {
+    const discountType = sanitizeText(discount?.discount_type, 20).toLowerCase();
+    const discountValue = Number(discount?.discount_value);
+
+    if (discountType === 'percent') {
+        const folded = discountValue / 10;
+        if (Number.isFinite(folded) && folded > 0) {
+            const display = Number.isInteger(folded)
+                ? String(folded)
+                : folded.toFixed(1).replace(/\.0$/, '');
+            return `${display}折`;
+        }
+        return '折扣券';
+    }
+
+    if (discountType === 'fixed') {
+        return Number.isFinite(discountValue) && discountValue > 0
+            ? `立减 ${discountValue} 积分`
+            : '立减券';
+    }
+
+    return sanitizeText(discount?.code, 80) || '优惠券';
+}
+
+function formatDiscountAssetStatusLabel(status = '') {
+    const normalized = normalizeDiscountAssetStatus(status);
+    if (normalized === 'used') return '已使用';
+    if (normalized === 'expired') return '已失效';
+    if (normalized === 'revoked') return '已撤销';
+    return '可使用';
+}
+
+function assetMatchesAdminSite(asset = {}, site = 'all') {
+    const normalizedSite = normalizeDiscountApplicableSite(site);
+    if (!normalizedSite) {
+        return true;
+    }
+
+    const applicableSite = normalizeDiscountApplicableSite(asset?.applicable_site);
+    return !applicableSite || applicableSite === normalizedSite;
+}
+
+function buildDiscountAssetPayload(asset = {}, discount = {}, removalMeta = null, adminRemovalMeta = null) {
+    const assetStatus = normalizeDiscountAssetStatus(asset?.asset_status);
+    const expiresAt = sanitizeText(asset?.expires_at, 80) || sanitizeText(discount?.expires_at, 80) || null;
+    const normalizedRemovalEventType = sanitizeText(removalMeta?.event_type, 40).toLowerCase();
+    const restoredAtMs = new Date(sanitizeText(asset?.restored_at, 80) || 0).getTime() || 0;
+    const walletRemovalAtMs = new Date(sanitizeText(removalMeta?.created_at, 80) || 0).getTime() || 0;
+    const adminRemovalAtMs = new Date(sanitizeText(adminRemovalMeta?.created_at, 80) || 0).getTime() || 0;
+    const hasWalletRemoval = normalizedRemovalEventType === 'wallet_remove'
+        && walletRemovalAtMs > 0
+        && walletRemovalAtMs >= restoredAtMs;
+    const hasAdminRemoval = adminRemovalAtMs > 0 && adminRemovalAtMs >= restoredAtMs;
+    const removalOrigin = assetStatus === 'revoked'
+        ? (hasWalletRemoval ? 'user' : hasAdminRemoval ? 'admin' : 'user')
+        : null;
+    const removalOriginLabel = removalOrigin === 'user'
+        ? '用户删除'
+        : removalOrigin === 'admin'
+            ? '后台删除'
+            : null;
+
+    return {
+        id: sanitizeText(asset?.id, 160) || null,
+        user_id: sanitizeText(asset?.user_id, 160) || null,
+        discount_id: sanitizeText(asset?.discount_id, 160) || null,
+        code: sanitizeText(discount?.code, 80) || null,
+        benefit_label: formatDiscountBenefitLabel(discount),
+        applicable_site: normalizeDiscountApplicableSite(discount?.applicable_site) || '',
+        discount_type: sanitizeText(discount?.discount_type, 40).toLowerCase() || null,
+        discount_value: Number.isFinite(Number(discount?.discount_value)) ? Number(discount.discount_value) : null,
+        distribution_mode: sanitizeText(discount?.distribution_mode, 40).toLowerCase() || null,
+        pricing_apply_stage: sanitizeText(discount?.pricing_apply_stage, 40).toLowerCase() || null,
+        is_exclusive: discount?.is_exclusive === false ? false : true,
+        stack_priority: Number.isFinite(Number(discount?.stack_priority)) ? Number(discount.stack_priority) : null,
+        asset_status: assetStatus,
+        assigned_at: sanitizeText(asset?.assigned_at, 80) || null,
+        claimed_at: sanitizeText(asset?.claimed_at, 80) || null,
+        consumed_at: sanitizeText(asset?.consumed_at, 80) || null,
+        expires_at: expiresAt,
+        restored_at: sanitizeText(asset?.restored_at, 80) || null,
+        source_type: sanitizeText(asset?.source_type, 80).toLowerCase() || null,
+        source_channel: sanitizeText(asset?.source_channel, 80).toLowerCase() || null,
+        audience_segment: sanitizeText(asset?.audience_segment, 80).toLowerCase() || null,
+        source_batch_id: sanitizeText(asset?.source_batch_id, 120) || null,
+        last_order_id: sanitizeText(asset?.last_order_id, 160) || null,
+        removal_origin: removalOrigin,
+        removal_origin_label: removalOriginLabel,
+        removal_recorded_at: sanitizeText(removalMeta?.created_at, 80)
+            || sanitizeText(adminRemovalMeta?.created_at, 80)
+            || (assetStatus === 'revoked' ? sanitizeText(asset?.updated_at, 80) || null : null),
+        created_at: sanitizeText(asset?.created_at, 80)
+            || sanitizeText(asset?.assigned_at, 80)
+            || sanitizeText(asset?.claimed_at, 80)
+            || sanitizeText(asset?.updated_at, 80)
+            || null,
+        updated_at: sanitizeText(asset?.updated_at, 80) || null,
+        can_remove: assetStatus === 'available'
+    };
+}
+
+async function loadDiscountRowsByIds(supabase, discountIds = []) {
+    const ids = [...new Set((Array.isArray(discountIds) ? discountIds : [])
+        .map((value) => sanitizeText(value, 160))
+        .filter(Boolean))];
+    if (!ids.length) {
+        return new Map();
+    }
+
+    const { data, error } = await supabase
+        .from('discount_codes')
+        .select('id, code, applicable_site, discount_type, discount_value, distribution_mode, pricing_apply_stage, is_exclusive, stack_priority, expires_at')
+        .in('id', ids);
+
+    if (error) {
+        throw error;
+    }
+
+    return new Map((Array.isArray(data) ? data : []).map((row) => [sanitizeText(row?.id, 160), row]));
+}
+
+async function loadUserDiscountAssetRows(supabase, userId = '') {
+    const normalizedUserId = sanitizeText(userId, 160);
+    if (!normalizedUserId) {
+        return [];
+    }
+
+    const { data, error } = await supabase
+        .from('discount_user_assets')
+        .select('id, discount_id, user_id, asset_status, assigned_at, claimed_at, consumed_at, expires_at, restored_at, source_type, source_channel, audience_segment, source_batch_id, last_order_id, created_at, updated_at')
+        .eq('user_id', normalizedUserId)
+        .order('assigned_at', { ascending: false });
+
+    if (error) {
+        throw error;
+    }
+
+    return Array.isArray(data) ? data : [];
+}
+
+async function loadSingleUserDiscountAsset(supabase, { userId = '', assetId = '' } = {}) {
+    const normalizedUserId = sanitizeText(userId, 160);
+    const normalizedAssetId = sanitizeText(assetId, 160);
+    if (!normalizedUserId || !normalizedAssetId) {
+        return null;
+    }
+
+    const { data, error } = await supabase
+        .from('discount_user_assets')
+        .select('id, discount_id, user_id, asset_status, assigned_at, claimed_at, consumed_at, expires_at, restored_at, source_type, source_channel, audience_segment, source_batch_id, last_order_id, created_at, updated_at')
+        .eq('id', normalizedAssetId)
+        .eq('user_id', normalizedUserId)
+        .maybeSingle();
+
+    if (error) {
+        throw error;
+    }
+
+    return data || null;
+}
+
+async function loadDiscountAssetRemovalMetaMap(supabase, assetRows = []) {
+    const revokedAssetIds = [...new Set((Array.isArray(assetRows) ? assetRows : [])
+        .filter((asset) => normalizeDiscountAssetStatus(asset?.asset_status) === 'revoked')
+        .map((asset) => sanitizeText(asset?.id, 160))
+        .filter(Boolean))];
+
+    if (!revokedAssetIds.length) {
+        return new Map();
+    }
+
+    try {
+        const { data, error } = await supabase
+            .from('discount_event_logs')
+            .select('discount_asset_id, event_type, event_source, created_at')
+            .in('discount_asset_id', revokedAssetIds);
+
+        if (error) {
+            throw error;
+        }
+
+        const rows = (Array.isArray(data) ? data : [])
+            .filter((row) => sanitizeText(row?.event_type, 40).toLowerCase() === 'wallet_remove')
+            .sort((left, right) => new Date(right?.created_at || 0).getTime() - new Date(left?.created_at || 0).getTime());
+
+        const result = new Map();
+        rows.forEach((row) => {
+            const assetId = sanitizeText(row?.discount_asset_id, 160);
+            if (assetId && !result.has(assetId)) {
+                result.set(assetId, row);
+            }
+        });
+        return result;
+    } catch (error) {
+        if (isMissingDiscountEventsRelationError(error)) {
+            return new Map();
+        }
+        throw error;
+    }
+}
+
+async function loadAdminDiscountAssetRemovalMap(supabase, assetRows = []) {
+    const revokedAssets = (Array.isArray(assetRows) ? assetRows : [])
+        .filter((asset) => normalizeDiscountAssetStatus(asset?.asset_status) === 'revoked');
+    const targetUserIds = [...new Set(revokedAssets.map((asset) => sanitizeText(asset?.user_id, 160)).filter(Boolean))];
+
+    if (!targetUserIds.length) {
+        return new Map();
+    }
+
+    try {
+        const { data, error } = await supabase
+            .from('admin_audit_logs')
+            .select('target_user_id, action_type, details, created_at')
+            .in('target_user_id', targetUserIds)
+            .eq('action_type', 'remove_user_discount_asset');
+
+        if (error) {
+            throw error;
+        }
+
+        const rows = (Array.isArray(data) ? data : [])
+            .slice()
+            .sort((left, right) => new Date(right?.created_at || 0).getTime() - new Date(left?.created_at || 0).getTime());
+        const result = new Map();
+
+        rows.forEach((row) => {
+            const details = row?.details && typeof row.details === 'object' && !Array.isArray(row.details)
+                ? row.details
+                : {};
+            const assetId = sanitizeText(details?.asset_id, 160);
+            if (assetId && !result.has(assetId)) {
+                result.set(assetId, row);
+            }
+        });
+
+        return result;
+    } catch (error) {
+        if (isMissingAdminAuditLogsRelationError(error)) {
+            return new Map();
+        }
+        throw error;
+    }
+}
+
+async function resolveDiscountAssetPayloads(supabase, assetRows = []) {
+    const [discountMap, removalMetaMap, adminRemovalMetaMap] = await Promise.all([
+        loadDiscountRowsByIds(supabase, assetRows.map((row) => row?.discount_id)),
+        loadDiscountAssetRemovalMetaMap(supabase, assetRows),
+        loadAdminDiscountAssetRemovalMap(supabase, assetRows)
+    ]);
+    return (Array.isArray(assetRows) ? assetRows : []).map((asset) => (
+        buildDiscountAssetPayload(
+            asset,
+            discountMap.get(sanitizeText(asset?.discount_id, 160)) || {},
+            removalMetaMap.get(sanitizeText(asset?.id, 160)) || null,
+            adminRemovalMetaMap.get(sanitizeText(asset?.id, 160)) || null
+        )
+    ));
+}
+
+function sortDiscountAssetPayloads(rows = []) {
+    const statusRank = new Map([
+        ['available', 0],
+        ['used', 1],
+        ['expired', 2],
+        ['revoked', 3]
+    ]);
+
+    return [...rows].sort((left, right) => {
+        const leftRank = statusRank.get(normalizeDiscountAssetStatus(left?.asset_status)) ?? 9;
+        const rightRank = statusRank.get(normalizeDiscountAssetStatus(right?.asset_status)) ?? 9;
+        if (leftRank !== rightRank) {
+            return leftRank - rightRank;
+        }
+
+        const rightTime = new Date(right?.assigned_at || right?.created_at || 0).getTime();
+        const leftTime = new Date(left?.assigned_at || left?.created_at || 0).getTime();
+        return rightTime - leftTime;
+    });
+}
+
 async function syncUnlimitedPurchaseEntitlement(supabase, {
     userId,
     enabled,
@@ -894,6 +1216,207 @@ async function handleSendNotification({ supabase, user, body, site }) {
     return result;
 }
 
+async function handleListDiscountAssets({ supabase, body, site }) {
+    const userId = requireSingleUserId(body);
+    const assetRows = await loadUserDiscountAssetRows(supabase, userId);
+    const assets = sortDiscountAssetPayloads(
+        (await resolveDiscountAssetPayloads(supabase, assetRows))
+            .filter((asset) => assetMatchesAdminSite(asset, site))
+    );
+
+    return {
+        userId,
+        assets
+    };
+}
+
+async function handleRevokeDiscountAsset({ supabase, user, body, site }) {
+    const userId = requireSingleUserId(body);
+    const assetId = requireAssetId(body);
+
+    const assetRow = await loadSingleUserDiscountAsset(supabase, { userId, assetId });
+    if (!assetRow) {
+        const error = new Error('未找到该用户优惠券');
+        error.statusCode = 404;
+        throw error;
+    }
+
+    const [asset] = await resolveDiscountAssetPayloads(supabase, [assetRow]);
+    if (!asset) {
+        const error = new Error('未找到该用户优惠券');
+        error.statusCode = 404;
+        throw error;
+    }
+
+    if (!assetMatchesAdminSite(asset, site)) {
+        const error = new Error('当前站点下不可删除这张优惠券');
+        error.statusCode = 409;
+        throw error;
+    }
+
+    const previousStatus = normalizeDiscountAssetStatus(asset.asset_status);
+    if (previousStatus === 'revoked') {
+        const error = new Error('这张优惠券已删除');
+        error.statusCode = 409;
+        throw error;
+    }
+    if (previousStatus !== 'available') {
+        const error = new Error(`${formatDiscountAssetStatusLabel(previousStatus)}优惠券不支持删除`);
+        error.statusCode = 409;
+        throw error;
+    }
+
+    const updatedAt = new Date().toISOString();
+    const { error } = await supabase
+        .from('discount_user_assets')
+        .update({
+            asset_status: 'revoked',
+            updated_at: updatedAt
+        })
+        .eq('id', assetId)
+        .eq('user_id', userId);
+
+    if (error) {
+        throw error;
+    }
+
+    const updatedAsset = {
+        ...asset,
+        asset_status: 'revoked',
+        updated_at: updatedAt,
+        can_remove: false,
+        removal_origin: 'admin',
+        removal_origin_label: '后台删除',
+        removal_recorded_at: updatedAt
+    };
+
+    await writeAdminAuditLog({
+        supabase,
+        adminId: user.id,
+        targetUserId: userId,
+        module: 'users',
+        site,
+        actionType: 'remove_user_discount_asset',
+        details: {
+            asset_id: updatedAsset.id,
+            discount_id: updatedAsset.discount_id,
+            code: updatedAsset.code,
+            benefit_label: updatedAsset.benefit_label,
+            applicable_site: updatedAsset.applicable_site || 'global',
+            asset_status_before: previousStatus,
+            asset_status_after: 'revoked',
+            assigned_at: updatedAsset.assigned_at,
+            claimed_at: updatedAsset.claimed_at,
+            expires_at: updatedAsset.expires_at,
+            source_type: updatedAsset.source_type,
+            source_channel: updatedAsset.source_channel,
+            audience_segment: updatedAsset.audience_segment,
+            source_batch_id: updatedAsset.source_batch_id,
+            last_order_id: updatedAsset.last_order_id
+        }
+    });
+
+    return {
+        userId,
+        asset: updatedAsset
+    };
+}
+
+async function handleRestoreDiscountAsset({ supabase, user, body, site }) {
+    const userId = requireSingleUserId(body);
+    const assetId = requireAssetId(body);
+
+    const assetRow = await loadSingleUserDiscountAsset(supabase, { userId, assetId });
+    if (!assetRow) {
+        const error = new Error('未找到该用户优惠券');
+        error.statusCode = 404;
+        throw error;
+    }
+
+    const [asset] = await resolveDiscountAssetPayloads(supabase, [assetRow]);
+    if (!asset) {
+        const error = new Error('未找到该用户优惠券');
+        error.statusCode = 404;
+        throw error;
+    }
+
+    if (!assetMatchesAdminSite(asset, site)) {
+        const error = new Error('当前站点下不可恢复这张优惠券');
+        error.statusCode = 409;
+        throw error;
+    }
+
+    const previousStatus = normalizeDiscountAssetStatus(asset.asset_status);
+    if (previousStatus === 'available') {
+        const error = new Error('这张优惠券当前已可使用');
+        error.statusCode = 409;
+        throw error;
+    }
+    if (previousStatus !== 'revoked') {
+        const error = new Error(`${formatDiscountAssetStatusLabel(previousStatus)}优惠券不支持恢复`);
+        error.statusCode = 409;
+        throw error;
+    }
+
+    const restoredAt = new Date().toISOString();
+    const { error } = await supabase
+        .from('discount_user_assets')
+        .update({
+            asset_status: 'available',
+            restored_at: restoredAt,
+            updated_at: restoredAt
+        })
+        .eq('id', assetId)
+        .eq('user_id', userId);
+
+    if (error) {
+        throw error;
+    }
+
+    const restoredAsset = {
+        ...asset,
+        asset_status: 'available',
+        restored_at: restoredAt,
+        updated_at: restoredAt,
+        can_remove: true,
+        removal_origin: null,
+        removal_origin_label: null,
+        removal_recorded_at: null
+    };
+
+    await writeAdminAuditLog({
+        supabase,
+        adminId: user.id,
+        targetUserId: userId,
+        module: 'users',
+        site,
+        actionType: 'restore_user_discount_asset',
+        details: {
+            asset_id: restoredAsset.id,
+            discount_id: restoredAsset.discount_id,
+            code: restoredAsset.code,
+            benefit_label: restoredAsset.benefit_label,
+            applicable_site: restoredAsset.applicable_site || 'global',
+            asset_status_before: previousStatus,
+            asset_status_after: 'available',
+            assigned_at: restoredAsset.assigned_at,
+            claimed_at: restoredAsset.claimed_at,
+            expires_at: restoredAsset.expires_at,
+            restored_at: restoredAt,
+            source_type: restoredAsset.source_type,
+            source_channel: restoredAsset.source_channel,
+            audience_segment: restoredAsset.audience_segment,
+            source_batch_id: restoredAsset.source_batch_id,
+            last_order_id: restoredAsset.last_order_id
+        }
+    });
+
+    return {
+        userId,
+        asset: restoredAsset
+    };
+}
+
 module.exports = async (req, res) => {
     if (req.method !== 'POST') {
         res.setHeader('Allow', 'POST');
@@ -946,6 +1469,15 @@ module.exports = async (req, res) => {
             break;
         case 'send_notification':
             payload = await handleSendNotification({ supabase, user, body, site });
+            break;
+        case 'list_discount_assets':
+            payload = await handleListDiscountAssets({ supabase, user, body, site });
+            break;
+        case 'revoke_discount_asset':
+            payload = await handleRevokeDiscountAsset({ supabase, user, body, site });
+            break;
+        case 'restore_discount_asset':
+            payload = await handleRestoreDiscountAsset({ supabase, user, body, site });
             break;
         default: {
             const error = new Error('Unsupported users manage action');

@@ -66,6 +66,8 @@ class FakeQuery {
         this.orderField = '';
         this.orderAscending = true;
         this.limitCount = null;
+        this.rangeStart = null;
+        this.rangeEnd = null;
         this.selectOptions = {};
         this.payload = null;
         this.upsertConflictFields = [];
@@ -136,6 +138,12 @@ class FakeQuery {
 
     limit(count) {
         this.limitCount = count;
+        return this;
+    }
+
+    range(start, end) {
+        this.rangeStart = Number.isFinite(Number(start)) ? Number(start) : null;
+        this.rangeEnd = Number.isFinite(Number(end)) ? Number(end) : null;
         return this;
     }
 
@@ -315,7 +323,23 @@ class FakeQuery {
     }
 
     async exec() {
+        if (this.table === 'admin_comments_feed' && !Object.prototype.hasOwnProperty.call(this.state.tables, this.table)) {
+            return {
+                data: null,
+                error: {
+                    message: 'admin_comments_feed unavailable'
+                }
+            };
+        }
+
         const matchedRows = this.applyFilters(this.getRows());
+        let selectedRows = matchedRows;
+
+        if (this.rangeStart !== null || this.rangeEnd !== null) {
+            const start = Math.max(0, this.rangeStart || 0);
+            const end = this.rangeEnd == null ? matchedRows.length - 1 : Math.max(start, this.rangeEnd);
+            selectedRows = matchedRows.slice(start, end + 1);
+        }
 
         if (this.mode === 'insert') {
             return {
@@ -354,7 +378,8 @@ class FakeQuery {
         }
 
         return {
-            data: deepClone(matchedRows),
+            data: deepClone(selectedRows),
+            count: this.selectOptions?.count === 'exact' ? matchedRows.length : undefined,
             error: null
         };
     }
@@ -395,6 +420,10 @@ async function withCommentsHandler(relativePath, options, callback) {
         auditCalls: [],
         rowCounter: 0
     };
+
+    if (Object.prototype.hasOwnProperty.call(options?.tables || {}, 'admin_comments_feed')) {
+        state.tables.admin_comments_feed = deepClone(options.tables.admin_comments_feed || []);
+    }
 
     delete require.cache[handlerPath];
     Module._load = function patchedLoad(request, parent, isMain) {
@@ -1062,6 +1091,96 @@ test('comments list handler paginates guestbook moderation results without legac
         assert.equal(res.json().pagination.totalPages, 3);
         assert.equal(res.json().comments[0]?.id, 'm21');
         assert.equal(res.json().comments.at(-1)?.id, 'm40');
+    });
+});
+
+test('comments list handler reuses feed block state on the fast path without re-querying blocked users', async () => {
+    await withCommentsHandler('../server/api-handlers/admin/comments/list.js', {
+        tables: {
+            admin_comments_feed: [
+                {
+                    id: 'g1',
+                    site: 'cn',
+                    type: 'gallery',
+                    entity_type: 'prompt_comment',
+                    entity_label: '画廊评论',
+                    record_type: 'comment',
+                    level: 'top',
+                    thread_depth: 0,
+                    content: 'fast path gallery comment',
+                    author: 'alice',
+                    email: 'alice@example.com',
+                    avatar: null,
+                    created_at: '2026-03-31T11:00:00.000Z',
+                    context: 'p1',
+                    context_title: 'Prompt One',
+                    context_type_label: 'Prompt',
+                    prompt_title: 'Prompt One',
+                    like_count: 2,
+                    likes: 2,
+                    user_id: 'u1',
+                    parent_id: null,
+                    message_id: null,
+                    prompt_id: 'p1',
+                    thread_root_id: 'g1',
+                    thread_root_type: 'prompt_comment',
+                    parent_snippet: '',
+                    parent_author: '',
+                    root_snippet: 'fast path gallery comment',
+                    image_url: null,
+                    has_image: false,
+                    is_pinned: false,
+                    is_featured: false,
+                    reply_count: 0,
+                    has_global_block: false,
+                    is_guestbook_blocked: false,
+                    is_gallery_blocked: true,
+                    is_points_usage_blocked: false,
+                    block_scopes: ['gallery'],
+                    workflow_status: 'pending',
+                    workflow_priority: 'normal',
+                    workflow_assignee_id: '',
+                    workflow_assignee_label: '',
+                    workflow_tags: [],
+                    workflow_note_count: 0,
+                    workflow_linked_ticket_count: 0,
+                    workflow_linked_ticket_ids: [],
+                    workflow_resolved_at: null,
+                    workflow_updated_at: null,
+                    workflow_last_activity_at: null,
+                    workflow_metadata: {},
+                    search_document: 'fast path gallery comment prompt one',
+                    is_blocked: true,
+                    is_escalated: false,
+                    is_high_risk: true
+                }
+            ],
+            prompt_comments: [
+                {
+                    id: 'g1',
+                    site: 'cn',
+                    prompt_id: 'p1',
+                    parent_id: null,
+                    content: 'fast path gallery comment',
+                    user_id: 'u1',
+                    created_at: '2026-03-31T11:00:00.000Z'
+                }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/comments/list?view=gallery&site=cn&queue=all&page=1&pageSize=15',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().comments.length, 1);
+        assert.equal(res.json().comments[0]?.user_block_state?.isGalleryBlocked, true);
+        assert.equal(state.fromCalls.includes('admin_comments_feed'), true);
+        assert.equal(state.fromCalls.includes('blocked_users'), false);
     });
 });
 

@@ -212,8 +212,8 @@ test('shop purchase uses the request-scoped client and normalized payload', asyn
             stack_priority: 12,
             pricing_apply_stage: 'catalog_price',
             apply_stage_label: '目录价阶段',
-            exclusivity_label: '可并行',
-            summary: '当前预留并行权益优先级，按 目录价阶段 与优先级 12 参与结算。'
+            exclusivity_label: '可并行权益',
+            summary: '这张券可与其它可并行权益叠加，在 目录价阶段 按优先级 12 参与结算。'
         });
         assert.equal(Array.isArray(payload.data.pricing_waterfall), true);
         assert.equal(payload.data.pricing_waterfall.length, 4);
@@ -334,6 +334,137 @@ test('shop purchase forwards discount asset id to the purchase rpc', async () =>
     }, {
         resolveClientIp() {
             return '203.0.113.77';
+        },
+        takeRateLimitToken() {
+            return {
+                allowed: true,
+                limit: 10,
+                remaining: 9,
+                resetAt: Date.now() + 60_000,
+                retryAfterSeconds: 60
+            };
+        },
+        applyRateLimitHeaders() {}
+    });
+});
+
+test('shop purchase routes multiple selected coupons through the multi-discount rpc', async () => {
+    const rpcCalls = [];
+
+    await withShopPurchaseHandler({
+        async requireAuthenticatedUser() {
+            return {
+                user: {
+                    id: 'user-stack',
+                    email: 'member@example.com'
+                },
+                requestSupabase: {
+                    rpc(name, params) {
+                        rpcCalls.push({ name, params });
+                        if (name !== 'fn_purchase_shop_item_with_discounts') {
+                            return Promise.resolve({
+                                data: null,
+                                error: {
+                                    message: `Unexpected RPC ${name}`
+                                }
+                            });
+                        }
+
+                        return Promise.resolve({
+                            data: {
+                                success: true,
+                                data: {
+                                    order_id: 'order-stack-1',
+                                    remaining_points: 44,
+                                    content: 'KEY-STACK-001',
+                                    discount_code: 'WELCOME10 + WALLET5',
+                                    discount_codes: ['WELCOME10', 'WALLET5'],
+                                    subtotal: 120,
+                                    discount_amount: 15,
+                                    final_total: 105,
+                                    applied_discounts: [
+                                        {
+                                            code: 'WELCOME10',
+                                            discount_type: 'fixed',
+                                            discount_value: 10,
+                                            discount_amount: 10,
+                                            final_total_after_apply: 110,
+                                            is_exclusive: false,
+                                            stack_priority: 8,
+                                            pricing_apply_stage: 'catalog_price'
+                                        },
+                                        {
+                                            code: 'WALLET5',
+                                            discount_asset_id: 'asset-stack-2',
+                                            discount_type: 'fixed',
+                                            discount_value: 5,
+                                            discount_amount: 5,
+                                            final_total_after_apply: 105,
+                                            is_exclusive: false,
+                                            stack_priority: 16,
+                                            pricing_apply_stage: 'order_discount'
+                                        }
+                                    ]
+                                }
+                            },
+                            error: null
+                        });
+                    }
+                },
+                supabase: null
+            };
+        },
+        sendJson(res, status, payload) {
+            res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify(payload));
+        }
+    }, async (handler) => {
+        const req = {
+            method: 'POST',
+            headers: {
+                'x-forwarded-for': '203.0.113.88'
+            },
+            body: {
+                productId: 'product-stack-1',
+                quantity: 1,
+                site: 'cn',
+                discountSelections: [
+                    { code: ' welcome10 ' },
+                    { code: ' wallet5 ', assetId: ' asset-stack-2 ' }
+                ],
+                idempotencyKey: 'stack-submit-1'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(rpcCalls.length, 1);
+        assert.deepEqual(rpcCalls[0], {
+            name: 'fn_purchase_shop_item_with_discounts',
+            params: {
+                p_product_id: 'product-stack-1',
+                p_user_id: 'user-stack',
+                p_site: 'cn',
+                p_quantity: 1,
+                p_discount_inputs: [
+                    { discount_code: 'WELCOME10', discount_asset_id: null },
+                    { discount_code: 'WALLET5', discount_asset_id: 'asset-stack-2' }
+                ],
+                p_agent_id: null
+            }
+        });
+        assert.equal(payload.data.benefit_label, '已叠加 2 张卡券');
+        assert.equal(payload.data.discount_amount, 15);
+        assert.equal(payload.data.final_total, 105);
+        assert.equal(payload.data.pricing_waterfall.length, 5);
+        assert.equal(payload.data.stacking_policy.exclusivity_label, '已叠加 2 张');
+    }, {
+        resolveClientIp() {
+            return '203.0.113.88';
         },
         takeRateLimitToken() {
             return {

@@ -250,6 +250,18 @@ async function fetchPagedRows(buildQuery, pageSize = 1000, maxPages = 10) {
     return rows;
 }
 
+function chunkValues(values = [], chunkSize = 50) {
+    const normalizedValues = Array.isArray(values) ? values : [];
+    const normalizedChunkSize = Math.max(1, Number(chunkSize) || 50);
+    const chunks = [];
+
+    for (let index = 0; index < normalizedValues.length; index += normalizedChunkSize) {
+        chunks.push(normalizedValues.slice(index, index + normalizedChunkSize));
+    }
+
+    return chunks;
+}
+
 async function fetchOpsAlertCaseEventsByTargets(supabase, targets = []) {
     const normalizedTargets = Array.from(new Map(
         normalizeOpsAlertCaseTargetItems(targets)
@@ -272,12 +284,15 @@ async function fetchOpsAlertCaseEventsByTargets(supabase, targets = []) {
 
     try {
         const groupedRows = await Promise.all(
-            Array.from(groupedTargets.entries()).map(([categoryKey, targetIds]) => fetchPagedRows(() => supabase
-                .from('ops_alert_case_events')
-                .select(OPS_ALERT_CASE_EVENT_SELECT_FIELDS)
-                .in('category_key', [categoryKey])
-                .in('target_id', Array.from(new Set(targetIds)))
-                .order('created_at', { ascending: false })))
+            Array.from(groupedTargets.entries()).flatMap(([categoryKey, targetIds]) => {
+                const uniqueTargetIds = Array.from(new Set(targetIds));
+                return chunkValues(uniqueTargetIds).map((targetChunk) => fetchPagedRows(() => supabase
+                    .from('ops_alert_case_events')
+                    .select(OPS_ALERT_CASE_EVENT_SELECT_FIELDS)
+                    .in('category_key', [categoryKey])
+                    .in('target_id', targetChunk)
+                    .order('created_at', { ascending: false })));
+            })
         );
 
         groupedRows.flat().forEach((row) => {

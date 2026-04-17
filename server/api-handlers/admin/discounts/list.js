@@ -24,6 +24,7 @@ const {
 
 const RECENT_USAGE_WINDOW_DAYS = 30;
 const RISK_ALERT_LOOKBACK_HOURS = 7 * 24;
+const POSTGREST_IN_FILTER_CHUNK_SIZE = 50;
 
 function getSearchParams(req) {
     const url = new URL(req.url || '', 'http://localhost');
@@ -46,6 +47,18 @@ function normalizePayload(value) {
     return value && typeof value === 'object' && !Array.isArray(value)
         ? value
         : {};
+}
+
+function chunkValues(values = [], chunkSize = POSTGREST_IN_FILTER_CHUNK_SIZE) {
+    const normalizedValues = Array.isArray(values) ? values : [];
+    const normalizedChunkSize = Math.max(1, Number(chunkSize) || POSTGREST_IN_FILTER_CHUNK_SIZE);
+    const chunks = [];
+
+    for (let index = 0; index < normalizedValues.length; index += normalizedChunkSize) {
+        chunks.push(normalizedValues.slice(index, index + normalizedChunkSize));
+    }
+
+    return chunks;
 }
 
 function getRecentUsageWindowStart(now = new Date()) {
@@ -93,20 +106,26 @@ async function loadRecentDiscountOrders(supabase, codes = [], site = 'all') {
         return [];
     }
 
-    let query = supabase
-        .from('shop_orders')
-        .select('discount_code, user_id, created_at, price_paid, total_price, site, snapshot_product_name, refund_status, discount_amount')
-        .in('discount_code', normalizedCodes)
-        .gte('created_at', getRecentUsageWindowStart())
-        .order('created_at', { ascending: false });
+    const rows = [];
+    for (const codeChunk of chunkValues(normalizedCodes)) {
+        let query = supabase
+            .from('shop_orders')
+            .select('discount_code, user_id, created_at, price_paid, total_price, site, snapshot_product_name, refund_status, discount_amount')
+            .in('discount_code', codeChunk)
+            .gte('created_at', getRecentUsageWindowStart())
+            .order('created_at', { ascending: false });
 
-    if (site !== 'all') {
-        query = query.eq('site', site);
+        if (site !== 'all') {
+            query = query.eq('site', site);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+        rows.push(...(Array.isArray(data) ? data : []));
     }
 
-    const { data, error } = await query;
-    if (error) throw error;
-    return Array.isArray(data) ? data : [];
+    rows.sort((left, right) => Date.parse(right?.created_at || '') - Date.parse(left?.created_at || ''));
+    return rows;
 }
 
 async function loadHistoricalOrdersForUsers(supabase, userIds = [], site = 'all') {
@@ -115,19 +134,25 @@ async function loadHistoricalOrdersForUsers(supabase, userIds = [], site = 'all'
         return [];
     }
 
-    let query = supabase
-        .from('shop_orders')
-        .select('id, user_id, created_at, refund_status, site')
-        .in('user_id', ids)
-        .order('created_at', { ascending: true });
+    const rows = [];
+    for (const userChunk of chunkValues(ids)) {
+        let query = supabase
+            .from('shop_orders')
+            .select('id, user_id, created_at, refund_status, site')
+            .in('user_id', userChunk)
+            .order('created_at', { ascending: true });
 
-    if (site !== 'all') {
-        query = query.eq('site', site);
+        if (site !== 'all') {
+            query = query.eq('site', site);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+        rows.push(...(Array.isArray(data) ? data : []));
     }
 
-    const { data, error } = await query;
-    if (error) throw error;
-    return Array.isArray(data) ? data : [];
+    rows.sort((left, right) => Date.parse(left?.created_at || '') - Date.parse(right?.created_at || ''));
+    return rows;
 }
 
 function buildFirstNetOrderTimestampByUser(historicalOrders = []) {
@@ -243,13 +268,18 @@ async function loadDiscountAssetRows(supabase, discountIds = []) {
     }
 
     try {
-        const { data, error } = await supabase
-            .from('discount_user_assets')
-            .select('id, discount_id, user_id, asset_status, assigned_at, claimed_at, consumed_at, restored_at, source_channel, audience_segment')
-            .in('discount_id', ids);
+        const rows = [];
+        for (const idChunk of chunkValues(ids)) {
+            const { data, error } = await supabase
+                .from('discount_user_assets')
+                .select('id, discount_id, user_id, asset_status, assigned_at, claimed_at, consumed_at, restored_at, source_channel, audience_segment')
+                .in('discount_id', idChunk);
 
-        if (error) throw error;
-        return Array.isArray(data) ? data : [];
+            if (error) throw error;
+            rows.push(...(Array.isArray(data) ? data : []));
+        }
+
+        return rows;
     } catch (error) {
         if (isMissingTableAccessError(error, 'discount_user_assets')) {
             return [];

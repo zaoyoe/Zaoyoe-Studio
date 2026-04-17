@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260324_WALLET_RUNTIME_STYLE_HELPERS_1';
+    const walletCssHref = 'css/wallet.css?v=20260416_WALLET_DISCOUNT_STACKING_2';
     const existingWalletCss = document.getElementById('wallet-modal-css');
     if (existingWalletCss) {
         existingWalletCss.href = walletCssHref;
@@ -943,6 +943,14 @@
         affiliatePosterConfig: null,
         checkinConfig: null,
         rechargeOptionsConfig: null,
+        discountAssetsData: null,
+        discountAssetsLoaded: false,
+        discountAssetsLoading: false,
+        discountAssetsLoadError: '',
+        discountAssetsActiveTab: 'available',
+        discountAssetsSummaryFilter: 'available',
+        discountAssetsExpandedKey: '',
+        discountAssetsRemovingId: '',
 
         escapeAttribute(text) {
             return String(text ?? '')
@@ -1065,6 +1073,62 @@
                     break;
                 case 'generate-affiliate-poster':
                     this.generateAffiliatePoster();
+                    break;
+                case 'select-discount-assets-summary-filter':
+                    this.discountAssetsSummaryFilter = actionEl.dataset.walletSummaryFilter || 'available';
+                    this.discountAssetsExpandedKey = '';
+                    this.renderDiscountAssetsView();
+                    break;
+                case 'select-discount-assets-tab':
+                    this.discountAssetsActiveTab = actionEl.dataset.walletTabId || 'available';
+                    this.discountAssetsSummaryFilter = this.discountAssetsActiveTab === 'inactive' ? 'expiring' : 'available';
+                    this.discountAssetsExpandedKey = '';
+                    this.renderDiscountAssetsView();
+                    break;
+                case 'toggle-discount-asset-card': {
+                    const assetKey = actionEl.dataset.walletAssetKey || '';
+                    this.discountAssetsExpandedKey = this.discountAssetsExpandedKey === assetKey ? '' : assetKey;
+                    this.renderDiscountAssetsView();
+                    break;
+                }
+                case 'remove-discount-asset':
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this.removeDiscountAsset(this.decodeActionValue(actionEl.dataset.walletDiscountAssetId));
+                    break;
+                case 'refresh-discount-assets':
+                    this.loadDiscountAssets(true).catch((error) => {
+                        console.error('[WalletModal] Refresh discount assets failed:', error);
+                    });
+                    break;
+                case 'open-discount-assets-shop':
+                    this.close();
+                    window.location.href = '/shop.html';
+                    break;
+                case 'open-discount-assets-product': {
+                    const assetId = this.decodeActionValue(actionEl.dataset.walletDiscountAssetId);
+                    const productId = this.decodeActionValue(actionEl.dataset.walletProductId);
+                    const productCategory = this.decodeActionValue(actionEl.dataset.walletProductCategory);
+                    const availableAssets = this.getDiscountAssetsListByTab('available');
+                    const matchedAsset = availableAssets.find((asset) => String(asset?.asset_id || asset?.id || '').trim() === String(assetId || '').trim()) || null;
+                    const prefill = this.buildShopPurchasePrefillFromAsset(matchedAsset, {
+                        productId,
+                        productCategory
+                    });
+                    this.persistShopPurchasePrefill(prefill);
+                    const query = new URLSearchParams();
+                    if (productId) {
+                        query.set('productId', productId);
+                    }
+                    if (productCategory) {
+                        query.set('category', productCategory);
+                    }
+                    this.close();
+                    window.location.href = query.toString() ? `/shop.html?${query.toString()}` : '/shop.html';
+                    break;
+                }
+                case 'jump-discount-assets-orders':
+                    this.switchView('orders');
                     break;
                 case 'toggle-affiliate-member-details':
                     this.toggleAffiliateMemberDetails({ currentTarget: actionEl, target: event.target });
@@ -1305,16 +1369,65 @@
 
         normalizePointValue(value, fallback = 0) {
             const parsed = Number(value);
-            return Number.isFinite(parsed) ? Math.round(parsed * 10) / 10 : fallback;
+            return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : fallback;
         },
 
         formatPoints(value) {
             const normalized = this.normalizePointValue(value, 0);
             const hasDecimal = Math.abs(normalized % 1) > 0.0001;
             return normalized.toLocaleString(undefined, {
-                minimumFractionDigits: hasDecimal ? 1 : 0,
-                maximumFractionDigits: 1
+                minimumFractionDigits: hasDecimal ? (Math.abs(normalized * 10 - Math.round(normalized * 10)) > 0.0001 ? 2 : 1) : 0,
+                maximumFractionDigits: 2
             });
+        },
+
+        formatWalletSiteLabel(site = '') {
+            const normalized = String(site || '').trim().toLowerCase();
+            if (normalized === 'intl') return 'INTL';
+            return 'CN';
+        },
+
+        renderBalanceContext(balance = {}) {
+            const contextEl = document.getElementById('wallet-balance-context');
+            if (!contextEl) return;
+
+            const currentSite = String(balance?.site || window.SiteConfig?.site || 'cn').trim().toLowerCase() || 'cn';
+            const currentSiteLabel = this.formatWalletSiteLabel(currentSite);
+            const totalBalance = this.normalizePointValue(balance?.total_balance, 0);
+            const otherSiteBalances = Array.isArray(balance?.other_site_balances)
+                ? balance.other_site_balances.filter((item) => this.normalizePointValue(item?.total_balance, 0) > 0)
+                : [];
+
+            let message = '';
+            let tone = 'info';
+
+            if (balance?._load_failed) {
+                message = balance?.error_message || '钱包余额加载失败，请刷新重试。';
+                tone = 'error';
+            } else if (otherSiteBalances.length > 0 && totalBalance <= 0) {
+                const otherSummary = otherSiteBalances
+                    .map((item) => `${this.formatWalletSiteLabel(item.site)} ${this.formatPoints(item.total_balance)}`)
+                    .join('，');
+                message = `当前显示 ${currentSiteLabel} 站点余额为 0；其它站点仍有余额：${otherSummary}。后台如果看的是其它站点或全站汇总，会和这里不同。`;
+                tone = 'warning';
+            } else if (otherSiteBalances.length > 0) {
+                const otherSummary = otherSiteBalances
+                    .map((item) => `${this.formatWalletSiteLabel(item.site)} ${this.formatPoints(item.total_balance)}`)
+                    .join('，');
+                message = `当前显示 ${currentSiteLabel} 站点余额；其它站点余额：${otherSummary}。`;
+                tone = 'info';
+            }
+
+            if (!message) {
+                contextEl.hidden = true;
+                contextEl.textContent = '';
+                contextEl.className = 'balance-site-context';
+                return;
+            }
+
+            contextEl.hidden = false;
+            contextEl.textContent = message;
+            contextEl.className = `balance-site-context balance-site-context--${tone}`;
         },
 
         looksLikeEmail(value = '') {
@@ -1465,171 +1578,38 @@
             const {
                 orderId = '',
                 referenceId = '',
-                userId = '',
                 site = 'cn',
                 createdAt = '',
                 pointsPaid = 0,
                 reason = ''
             } = options;
 
-            if (!userId) return null;
+            const pointsService = window.PointsService;
+            if (!pointsService?.getWalletVerifyLog) return null;
 
             const emailCandidates = this.extractEmailCandidates(referenceId, reason);
-            const cacheKey = `${site}:${userId}:${referenceId || orderId || createdAt || 'verify'}:${emailCandidates.join('|')}`;
+            const cacheKey = `${site}:${referenceId || orderId || createdAt || 'verify'}:${emailCandidates.join('|')}`;
             if (this.verifyLogCache[cacheKey]) {
                 return this.verifyLogCache[cacheKey];
             }
 
-            let matchedRecord = null;
-
             try {
-                if (referenceId) {
-                    const exactResult = await supabase
-                        .from('verification_logs')
-                        .select('verification_id, status, message, points_deducted, created_at')
-                        .eq('user_id', userId)
-                        .eq('site', site)
-                        .eq('verification_id', referenceId)
-                        .order('created_at', { ascending: false })
-                        .limit(1);
+                const matchedRecord = await pointsService.getWalletVerifyLog({
+                    orderId,
+                    referenceId,
+                    site,
+                    createdAt,
+                    pointsPaid,
+                    reason
+                });
+                if (!matchedRecord) return null;
 
-                    if (exactResult.error) {
-                        console.warn('[WalletModal] Verify log exact lookup failed:', exactResult.error);
-                    } else if (exactResult.data?.length) {
-                        matchedRecord = exactResult.data[0];
-                    }
-                }
-
-                if (!matchedRecord) {
-                    let exactEmailRows = [];
-
-                    if (emailCandidates.length) {
-                        const emailResult = await supabase
-                            .from('verification_logs')
-                            .select('verification_id, status, message, points_deducted, created_at')
-                            .eq('user_id', userId)
-                            .eq('site', site)
-                            .in('verification_id', emailCandidates)
-                            .order('created_at', { ascending: false })
-                            .limit(20);
-
-                        if (emailResult.error) {
-                            console.warn('[WalletModal] Verify log email lookup failed:', emailResult.error);
-                        } else {
-                            exactEmailRows = emailResult.data || [];
-                        }
-                    }
-
-                    let fallbackResult = null;
-                    const ledgerTime = createdAt ? new Date(createdAt).getTime() : 0;
-
-                    if (ledgerTime) {
-                        const from = new Date(ledgerTime - (24 * 60 * 60 * 1000)).toISOString();
-                        const to = new Date(ledgerTime + (24 * 60 * 60 * 1000)).toISOString();
-                        fallbackResult = await supabase
-                            .from('verification_logs')
-                            .select('verification_id, status, message, points_deducted, created_at')
-                            .eq('user_id', userId)
-                            .eq('site', site)
-                            .gte('created_at', from)
-                            .lte('created_at', to)
-                            .order('created_at', { ascending: false })
-                            .limit(120);
-                    }
-
-                    if (!fallbackResult || fallbackResult.error || !(fallbackResult.data || []).length) {
-                        fallbackResult = await supabase
-                            .from('verification_logs')
-                            .select('verification_id, status, message, points_deducted, created_at')
-                            .eq('user_id', userId)
-                            .eq('site', site)
-                            .order('created_at', { ascending: false })
-                            .limit(120);
-                    }
-
-                    if (fallbackResult.error) {
-                        console.warn('[WalletModal] Verify log fallback lookup failed:', fallbackResult.error);
-                    } else {
-                        const targetAmount = Math.abs(Number(pointsPaid) || 0);
-                        const candidateRows = [...exactEmailRows, ...(fallbackResult.data || [])]
-                            .filter((row, index, rows) => rows.findIndex((item) => (
-                                item.verification_id === row.verification_id &&
-                                item.created_at === row.created_at &&
-                                item.status === row.status
-                            )) === index);
-
-                        const scoredMatches = candidateRows.map((row) => {
-                            const payload = this.parseVerifyLogMessage(row.message);
-                            const fallbackEmail = this.looksLikeEmail(row.verification_id) ? String(row.verification_id || '').trim().toLowerCase() : '';
-                            const fallbackJobId = !fallbackEmail ? String(row.verification_id || '').trim() : '';
-                            const rowEmail = String(payload?.email || fallbackEmail || '').trim().toLowerCase();
-                            const rowJobId = String(payload?.job_id || fallbackJobId || '').trim();
-                            const rowUrl = String(payload?.url || this.extractFirstUrl(row.message) || '').trim();
-
-                            if (referenceId && rowJobId && rowJobId === referenceId) {
-                                return { row, score: 1_000_000 };
-                            }
-
-                            const rowAmount = Math.abs(Number(row.points_deducted) || 0);
-                            const rowTime = row.created_at ? new Date(row.created_at).getTime() : 0;
-                            const diffMs = ledgerTime && rowTime ? Math.abs(rowTime - ledgerTime) : Number.MAX_SAFE_INTEGER;
-                            const diffMinutes = Number.isFinite(diffMs) ? diffMs / 60000 : Number.MAX_SAFE_INTEGER;
-
-                            let score = 0;
-
-                            if (emailCandidates.length && rowEmail && emailCandidates.includes(rowEmail)) score += 340;
-                            if (rowUrl) score += 120;
-                            if (String(row.status || '').toLowerCase() === 'success') score += 80;
-                            if (targetAmount > 0 && rowAmount === targetAmount) score += 220;
-                            if (targetAmount > 0 && rowAmount > 0 && Math.abs(rowAmount - targetAmount) <= 1) score += 40;
-
-                            if (Number.isFinite(diffMinutes)) {
-                                if (diffMinutes <= 1) score += 320;
-                                else if (diffMinutes <= 3) score += 240;
-                                else if (diffMinutes <= 10) score += 180;
-                                else if (diffMinutes <= 30) score += 120;
-                                else if (diffMinutes <= 120) score += 60;
-                                else if (diffMinutes <= 1440) score += 20;
-                            }
-
-                            if (score <= 0) return null;
-
-                            return {
-                                row,
-                                payload,
-                                score,
-                                diffMs
-                            };
-                        }).filter(Boolean);
-
-                        scoredMatches.sort((a, b) => {
-                            if (b.score !== a.score) return b.score - a.score;
-                            return a.diffMs - b.diffMs;
-                        });
-
-                        matchedRecord = scoredMatches[0]?.row || null;
-                    }
-                }
+                this.verifyLogCache[cacheKey] = matchedRecord;
+                return matchedRecord;
             } catch (err) {
                 console.warn('[WalletModal] Verify log query exception:', err);
+                return null;
             }
-
-            if (!matchedRecord) return null;
-
-            const parsedPayload = this.parseVerifyLogMessage(matchedRecord.message) || {};
-            const fallbackEmail = this.looksLikeEmail(matchedRecord.verification_id) ? String(matchedRecord.verification_id || '').trim().toLowerCase() : '';
-            const fallbackJobId = !fallbackEmail ? String(matchedRecord.verification_id || '').trim() : '';
-            const normalized = {
-                ...matchedRecord,
-                payload: {
-                    ...parsedPayload,
-                    email: parsedPayload.email || fallbackEmail || '',
-                    job_id: parsedPayload.job_id || fallbackJobId || '',
-                    url: parsedPayload.url || this.extractFirstUrl(matchedRecord.message) || ''
-                }
-            };
-            this.verifyLogCache[cacheKey] = normalized;
-            return normalized;
         },
 
         /**
@@ -1640,33 +1620,21 @@
             if (this._prefetched || this.ordersLoaded) return;
             this._prefetched = true;
 
-            // Fire and forget - load orders data silently
-            supabase.auth.getSession().then(({ data: { session } }) => {
-                if (!session?.user) return;
-                const user = session.user;
-                const site = window.SiteConfig?.site || 'cn';
+            const pointsService = window.PointsService;
+            if (!pointsService?.getWalletTransactions) {
+                return;
+            }
 
-                // Pre-fetch orders + ledger in parallel
-                Promise.all([
-                    supabase.from('shop_orders')
-                        .select('id, total_price, item_count, status, created_at, snapshot_product_name, shop_order_items (id, snapshot_product_name)')
-                        .eq('user_id', user.id)
-                        .eq('site', site)
-                        .order('created_at', { ascending: false })
-                        .limit(100),
-                    supabase.from('points_ledger')
-                        .select('id, amount, reason, reference_id, created_at')
-                        .eq('user_id', user.id)
-                        .eq('site', site)
-                        .order('created_at', { ascending: false })
-                        .limit(100)
-                ]).then(([shopResult, ledgerResult]) => {
-                    this._prefetchedShopOrders = shopResult.data || [];
-                    this._prefetchedLedger = ledgerResult.data || [];
-                    console.log('[WalletModal] ✅ Data prefetched in background');
-                }).catch(err => {
-                    console.warn('[WalletModal] Prefetch failed (non-critical):', err);
-                });
+            pointsService.getWalletTransactions({
+                site: window.SiteConfig?.site || 'cn',
+                limit: 100
+            }).then((result) => {
+                this._prefetchedShopOrders = result.shopOrders || [];
+                this._prefetchedLedger = result.ledgerEntries || [];
+                this._prefetchedPromptTitles = result.promptTitles || {};
+                console.log('[WalletModal] ✅ Data prefetched in background');
+            }).catch(err => {
+                console.warn('[WalletModal] Prefetch failed (non-critical):', err);
             });
         },
 
@@ -1708,6 +1676,7 @@
             this.orderRequestId += 1;
             this.resetOrderSearchState();
             this.resetAffiliateState();
+            this.resetDiscountAssetsState();
 
             if (isWalletModalIOSMode()) {
                 freezeWalletModalPage();
@@ -1717,6 +1686,7 @@
             this.render();
             this.resetOrderFilters();
             this.syncOrderSearchUi();
+            this.renderDiscountAssetsView();
             const ordersContainer = document.getElementById('wallet-orders');
             if (ordersContainer) {
                 ordersContainer.innerHTML = `<div class="loading-text">${window.i18n?.t('common.loading') || '加载中...'}</div>`;
@@ -1758,7 +1728,7 @@
             // Initialize indicator position and switch to requested view immediately
             setTimeout(() => {
                 this.updateIndicatorPosition();
-                if (initialView) this.switchView(initialView);
+                this.switchView(normalizedInitialView);
             }, 50);
         },
 
@@ -1790,6 +1760,7 @@
             this.orderRequestId += 1;
             this.resetOrderSearchState();
             this.resetAffiliateState();
+            this.resetDiscountAssetsState();
             this._prefetched = false; // Allow prefetch on next dropdown open
             console.log('[WalletModal] Closed');
         },
@@ -1834,6 +1805,11 @@
                                     <span class="menu-icon">💳</span>
                                     <span class="menu-text">${window.i18n?.t('wallet.balance') || '余额'}</span>
                                 </div>
+                                <div class="wallet-menu-item" data-view="cards"${this.buildDataAttributes({ 'wallet-action': 'switch-view', 'wallet-view-id': 'cards' })}>
+                                    <span class="menu-icon">${this.renderWalletInlineIcon('fa-ticket-alt', '#f472b6', 'wallet-inline-icon--compact')}</span>
+                                    <span class="menu-text">${window.i18n?.t('wallet.cards') || '卡券'}</span>
+                                    <span class="wallet-menu-badge" id="wallet-menu-cards-badge" hidden>0</span>
+                                </div>
                                 <div class="wallet-menu-item" data-view="recharge"${this.buildDataAttributes({ 'wallet-action': 'switch-view', 'wallet-view-id': 'recharge' })}>
                                     <span class="menu-icon">${this.renderWalletInlineIcon('fa-bolt', '#fbbf24', 'wallet-inline-icon--compact')}</span>
                                     <span class="menu-text">${window.i18n?.t('wallet.recharge') || '充值'}</span>
@@ -1863,6 +1839,7 @@
                                     <div class="card-left">
                                         <label>${window.i18n?.t('wallet.currentPoints') || '当前可用积分'}</label>
                                         <div class="balance-amount" id="wallet-total">--</div>
+                                        <div class="balance-site-context" id="wallet-balance-context" hidden></div>
                                     </div>
                                     <div class="card-right">
                                         <div class="balance-detail-row">
@@ -1891,6 +1868,8 @@
                                     </div>
                                 </div>
                             </div>
+
+                            ${this.renderDiscountAssetsViewShell()}
                             
                             <!-- Recharge View -->
                             <div class="wallet-view" id="view-recharge">
@@ -1921,7 +1900,7 @@
                                     <div class="custom-recharge-meta" id="wallet-custom-recharge-meta">该入口由管理员在后台控制显示，会按服务端定价规则生成本次应付金额。</div>
                                 </div>
                                 
-                                <!-- Afdian Code Query Section -->
+                                <!-- Payment Order Query Section -->
                                 <div class="afdian-section" id="wallet-order-query-section">
                                     <div class="afdian-header">
                                         <span class="afdian-icon" aria-hidden="true">
@@ -1936,13 +1915,13 @@
                                                 <path d="M9.08 7.34c-.86 0-1.62.4-2.13 1.03-.18.23-.52.27-.75.08-.23-.19-.27-.53-.08-.76.72-.9 1.81-1.43 2.96-1.43.3 0 .54.24.54.54s-.24.54-.54.54Z" fill="rgba(255,255,255,0.72)"/>
                                             </svg>
                                         </span>
-                                        <span id="wallet-order-query-title">${window.i18n?.t('wallet.afdianQuery') || '爱发电订单查询'}</span>
+                                        <span id="wallet-order-query-title">${window.i18n?.t('wallet.paymentOrderQuery') || window.i18n?.t('wallet.afdianQuery') || '支付订单查询'}</span>
                                     </div>
-                                    <p class="afdian-hint" id="wallet-order-query-hint">${window.i18n?.t('wallet.afdianHint') || '在爱发电支付后，输入订单号获取兑换码'}</p>
+                                    <p class="afdian-hint" id="wallet-order-query-hint">${window.i18n?.t('wallet.paymentOrderQueryHint') || window.i18n?.t('wallet.afdianHint') || '完成支付后，可在这里输入订单号查询结果。'}</p>
                                     <div class="afdian-input-row">
                                         <input type="text" 
                                                id="afdian-order-input" 
-                                               placeholder="${window.i18n?.t('wallet.afdianOrderNo') || '爱发电订单号'}"
+                                               placeholder="${window.i18n?.t('wallet.paymentOrderNo') || window.i18n?.t('wallet.afdianOrderNo') || '输入支付平台订单号'}"
                                                autocomplete="off"
                                                ${this.buildDataAttributes({ 'wallet-enter-action': 'query-afdian-code' })} />
                                         <button class="afdian-query-btn"${this.buildDataAttributes({ 'wallet-action': 'query-afdian-code' })}>${window.i18n?.t('wallet.query') || '查询'}</button>
@@ -2188,6 +2167,15 @@
                 this.loadCheckinData();
             }
 
+            if (viewId === 'cards') {
+                this.renderDiscountAssetsView();
+                if (!this.discountAssetsLoaded && !this.discountAssetsLoading) {
+                    this.loadDiscountAssets().catch((error) => {
+                        console.error('[WalletModal] Initial discount assets load failed:', error);
+                    });
+                }
+            }
+
             if (this.isOpen) {
                 scheduleWalletModalLayout({ settled: true });
                 requestWalletRechargeScrollCueUpdate();
@@ -2225,6 +2213,642 @@
             this.affiliateStats = null;
             this.affiliatePosterConfig = null;
             this.affiliateProfile = null;
+        },
+
+        getDefaultDiscountAssetsData() {
+            return {
+                summary: {
+                    total_count: 0,
+                    available_count: 0,
+                    used_count: 0,
+                    inactive_count: 0,
+                    expiring_soon_count: 0,
+                    saved_amount_total: 0
+                },
+                available_assets: [],
+                used_assets: [],
+                inactive_assets: []
+            };
+        },
+
+        resetDiscountAssetsState() {
+            this.discountAssetsData = this.getDefaultDiscountAssetsData();
+            this.discountAssetsLoaded = false;
+            this.discountAssetsLoading = false;
+            this.discountAssetsLoadError = '';
+            this.discountAssetsActiveTab = 'available';
+            this.discountAssetsSummaryFilter = 'available';
+            this.discountAssetsExpandedKey = '';
+            this.discountAssetsRemovingId = '';
+        },
+
+        getDiscountAssetKey(asset = {}, tabId = this.discountAssetsActiveTab) {
+            const directKey = String(asset.asset_id || asset.id || '').trim();
+            if (directKey) {
+                return directKey;
+            }
+            return [
+                tabId || 'available',
+                String(asset.code || '').trim() || 'card',
+                String(asset.benefit_label || '').trim() || 'benefit',
+                String(asset.effective_expires_at || asset.consumed_at || '').trim() || 'na'
+            ].join(':');
+        },
+
+        renderDiscountAssetsViewShell() {
+            return `
+                <div class="wallet-view" id="view-cards">
+                    <div class="wallet-discount-assets-shell">
+                        <div class="wallet-discount-assets-head">
+                            <div>
+                                <h3 class="view-title">${this.renderWalletInlineIcon('fa-ticket-alt', '#f472b6', 'wallet-inline-icon--title')}${window.i18n?.t('wallet.cards') || '卡券'}</h3>
+                                <p class="wallet-discount-assets-subtitle">这里展示已经到账、后续下单时可直接选择使用的优惠券。</p>
+                            </div>
+                            <button type="button" class="wallet-discount-assets-refresh"${this.buildDataAttributes({ 'wallet-action': 'refresh-discount-assets' })}>刷新</button>
+                        </div>
+                        <div class="wallet-discount-assets-body" id="wallet-discount-assets">
+                            <div class="loading-text">卡券信息准备中...</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        },
+
+        updateDiscountAssetsMenuBadge() {
+            const badgeEl = document.getElementById('wallet-menu-cards-badge');
+            if (!badgeEl) {
+                return;
+            }
+
+            const availableCount = Math.max(0, Number(this.discountAssetsData?.summary?.available_count || 0) || 0);
+            badgeEl.textContent = availableCount > 99 ? '99+' : String(availableCount);
+            badgeEl.hidden = availableCount <= 0;
+        },
+
+        getDiscountAssetsListByTab(tabId = this.discountAssetsActiveTab) {
+            const data = this.discountAssetsData || this.getDefaultDiscountAssetsData();
+            if (tabId === 'used') {
+                return Array.isArray(data.used_assets) ? data.used_assets : [];
+            }
+            if (tabId === 'inactive') {
+                return Array.isArray(data.inactive_assets) ? data.inactive_assets : [];
+            }
+            return Array.isArray(data.available_assets) ? data.available_assets : [];
+        },
+
+        getDiscountAssetsEmptyState(tabId = this.discountAssetsActiveTab) {
+            if (tabId === 'used') {
+                return {
+                    title: '还没有使用过卡券',
+                    copy: '后续在商城下单并用券后，会在这里留下使用记录。',
+                    action: 'jump-discount-assets-orders',
+                    actionLabel: window.i18n?.t('wallet.records') || '记录'
+                };
+            }
+            if (tabId === 'inactive') {
+                return {
+                    title: '当前没有失效卡券',
+                    copy: '过期、停用或暂未生效的卡券会在这里统一展示。',
+                    action: 'open-discount-assets-shop',
+                    actionLabel: '去商城'
+                };
+            }
+            return {
+                title: '当前没有可用卡券',
+                copy: '你可以继续去商城下单，或等待签到、推广、充值等活动发券。',
+                action: 'open-discount-assets-shop',
+                actionLabel: '去商城'
+            };
+        },
+
+        getDiscountAssetPrimaryAction(asset = {}, tabId = this.discountAssetsActiveTab) {
+            const scopeProduct = asset?.scope_product && typeof asset.scope_product === 'object'
+                ? asset.scope_product
+                : null;
+            const hasActiveScopedProduct = tabId === 'available'
+                && scopeProduct?.id
+                && scopeProduct?.is_active !== false
+                && scopeProduct?.is_missing !== true;
+
+            if (tabId === 'used') {
+                return {
+                    action: 'jump-discount-assets-orders',
+                    label: window.i18n?.t('wallet.records') || '记录',
+                    attrs: this.buildDataAttributes({ 'wallet-action': 'jump-discount-assets-orders' })
+                };
+            }
+
+            if (hasActiveScopedProduct) {
+                return {
+                    action: 'open-discount-assets-product',
+                    label: '查看商品',
+                    attrs: this.buildDataAttributes({
+                        'wallet-action': 'open-discount-assets-product',
+                        'wallet-discount-asset-id': this.encodeActionValue(asset.asset_id || asset.id || ''),
+                        'wallet-product-id': this.encodeActionValue(scopeProduct.id),
+                        'wallet-product-category': this.encodeActionValue(scopeProduct.category || '')
+                    })
+                };
+            }
+
+            return {
+                action: 'open-discount-assets-shop',
+                label: '去商城',
+                attrs: this.buildDataAttributes({ 'wallet-action': 'open-discount-assets-shop' })
+            };
+        },
+
+        buildShopPurchasePrefillFromAsset(asset = {}, { productId = '', productCategory = '' } = {}) {
+            const normalizedProductId = String(productId || asset?.scope_product?.id || asset?.scope_product_id || '').trim();
+            if (!normalizedProductId) {
+                return null;
+            }
+
+            const preview = asset?.scoped_product_preview && typeof asset.scoped_product_preview === 'object' && !Array.isArray(asset.scoped_product_preview)
+                ? {
+                    ...asset.scoped_product_preview
+                }
+                : null;
+
+            return {
+                version: '20260415_SHOP_PURCHASE_PREFILL_1',
+                timestamp: Date.now(),
+                site: window.SiteConfig?.site || 'cn',
+                productId: normalizedProductId,
+                category: String(productCategory || asset?.scope_product?.category || '').trim() || null,
+                ownedDiscounts: [{
+                    asset_id: asset.asset_id || asset.id || null,
+                    discount_id: asset.discount_id || null,
+                    code: asset.code || '',
+                    benefit_label: asset.benefit_label || '',
+                    discount_type: asset.discount_type || null,
+                    discount_value: asset.discount_value ?? null,
+                    distribution_mode: asset.distribution_mode || 'user_assigned',
+                    is_exclusive: asset.is_exclusive !== false,
+                    stacking_label: asset.stacking_label || null,
+                    stacking_summary: asset.stacking_summary || null,
+                    source_channel: asset.source_channel || null,
+                    expires_at: asset.expires_at || asset.effective_expires_at || null,
+                    available: asset.status_group === 'available'
+                        && asset.status_tone !== 'inactive'
+                        && asset.scoped_product_available !== false,
+                    message: String(asset.scoped_product_message || asset.status_detail || '').trim(),
+                    preview
+                }],
+                claimableDiscounts: []
+            };
+        },
+
+        persistShopPurchasePrefill(prefill = null) {
+            if (!prefill || typeof sessionStorage === 'undefined') {
+                return;
+            }
+
+            try {
+                sessionStorage.setItem('shop_purchase_prefill', JSON.stringify(prefill));
+            } catch (error) {
+                console.warn('[WalletModal] Failed to persist shop purchase prefill:', error);
+            }
+        },
+
+        renderDiscountAssetBenefitMarkup(label) {
+            const rawLabel = String(label || '').trim() || '卡券';
+            const discountMatch = rawLabel.match(/^(\d+(?:\.\d+)?)(?:\s*)(折)$/);
+            const fixedMatch = rawLabel.match(/^立减\s*(\d+(?:\.\d+)?)\s*(积分)$/);
+
+            if (fixedMatch) {
+                const [, value, unit] = fixedMatch;
+                return `
+                    <span class="wallet-discount-assets-card-benefit-side wallet-discount-assets-card-benefit-side--fixed">
+                        <span class="wallet-discount-assets-card-benefit-prefix">立减</span>
+                        <span class="wallet-discount-assets-card-benefit-value wallet-discount-assets-card-benefit-value--fixed">${this.escapeHtml(value)}</span>
+                        <span class="wallet-discount-assets-card-benefit-unit wallet-discount-assets-card-benefit-unit--fixed">${this.escapeHtml(unit)}</span>
+                    </span>
+                `;
+            }
+
+            if (!discountMatch) {
+                return `<span class="wallet-discount-assets-card-benefit-side wallet-discount-assets-card-benefit-side--plain">${this.escapeHtml(rawLabel)}</span>`;
+            }
+
+            const [, value, unit] = discountMatch;
+            return `
+                <span class="wallet-discount-assets-card-benefit-side wallet-discount-assets-card-benefit-side--discount">
+                    <span class="wallet-discount-assets-card-benefit-value">${this.escapeHtml(value)}</span>
+                    <span class="wallet-discount-assets-card-benefit-unit">${this.escapeHtml(unit)}</span>
+                </span>
+            `;
+        },
+
+        formatDiscountAssetStackingLabel(asset = {}) {
+            const explicitLabel = String(asset.stacking_label || '').trim();
+            if (explicitLabel === '可并行权益') {
+                return '可叠加';
+            }
+            if (explicitLabel) {
+                return explicitLabel;
+            }
+            return asset?.is_exclusive === false ? '可叠加' : '排他券';
+        },
+
+        formatDiscountAssetStackingSummary(asset = {}) {
+            const explicitSummary = String(asset.stacking_summary || '').trim();
+            if (explicitSummary) {
+                return explicitSummary;
+            }
+            return asset?.is_exclusive === false
+                ? '可与其它优惠券叠加'
+                : '不可与其它优惠券叠加';
+        },
+
+        renderDiscountAssetCard(asset = {}, tabId = this.discountAssetsActiveTab) {
+            const assetKey = this.getDiscountAssetKey(asset, tabId);
+            const isExpanded = this.discountAssetsExpandedKey === assetKey;
+            const assetId = String(asset.asset_id || asset.id || '').trim();
+            const isRemovingAsset = assetId && this.discountAssetsRemovingId === assetId;
+            const benefitMarkup = this.renderDiscountAssetBenefitMarkup(asset.benefit_label || asset.code || '卡券');
+            const codeLabel = this.escapeHtml(asset.code || '--');
+            const scopeLabel = this.escapeHtml(asset.scope_label || '全场可用');
+            const stackingLabel = this.escapeHtml(this.formatDiscountAssetStackingLabel(asset));
+            const stackingSummary = this.escapeHtml(this.formatDiscountAssetStackingSummary(asset));
+            const stackingChipClass = asset?.is_exclusive === false
+                ? 'wallet-discount-assets-card-chip wallet-discount-assets-card-chip--stackable'
+                : 'wallet-discount-assets-card-chip wallet-discount-assets-card-chip--exclusive';
+            const sourceLabel = this.escapeHtml(asset.source_label || '卡券资产');
+            const rawStatusLabel = String(asset.status_label || '可用').trim() || '可用';
+            const statusLabel = this.escapeHtml(rawStatusLabel);
+            const rawStatusDetail = String(asset.status_detail || '当前下单可直接使用').trim() || '当前下单可直接使用';
+            const statusDetail = this.escapeHtml(rawStatusDetail);
+            const expiryText = asset.effective_expires_at
+                ? this.escapeHtml(this.formatOrderDateTime(asset.effective_expires_at))
+                : '长期有效';
+            const campaignTag = asset.campaign_tag
+                ? `<span class="wallet-discount-assets-tag">${this.escapeHtml(asset.campaign_tag)}</span>`
+                : '';
+            const scopeProduct = asset?.scope_product && typeof asset.scope_product === 'object'
+                ? asset.scope_product
+                : null;
+            const scopeProductName = scopeProduct?.display_name || scopeProduct?.name || scopeProduct?.name_en || '';
+            const scopeProductLabel = asset.scope_type === 'product'
+                ? this.escapeHtml(scopeProductName
+                    ? (scopeProduct?.is_active === false ? `${scopeProductName}（暂不可见）` : scopeProductName)
+                    : '该商品当前暂不可见')
+                : '';
+            const relatedOrder = asset.related_order || null;
+            const relatedOrderMarkup = relatedOrder
+                ? `
+                    <div class="wallet-discount-assets-card-line wallet-discount-assets-card-line--wide">
+                        <span>关联订单</span>
+                        <strong>${this.escapeHtml(relatedOrder.snapshot_product_name || '商城订单')}${Number(relatedOrder.discount_amount || 0) > 0 ? ` · 节省 ${this.formatPoints(relatedOrder.discount_amount)} 积分` : ''}</strong>
+                    </div>
+                `
+                : '';
+            const normalizedStatusTone = String(asset.status_tone || '').trim();
+            const statusClass = normalizedStatusTone === 'used'
+                ? 'wallet-discount-assets-status--used'
+                : normalizedStatusTone === 'inactive'
+                    ? 'wallet-discount-assets-status--inactive'
+                : tabId === 'used'
+                        ? 'wallet-discount-assets-status--used'
+                        : tabId === 'inactive'
+                            ? 'wallet-discount-assets-status--inactive'
+                            : 'wallet-discount-assets-status--available';
+            const showStatusBadge = rawStatusLabel !== '可用';
+            const primaryAction = this.getDiscountAssetPrimaryAction(asset, tabId);
+            const scopeProductMarkup = asset.scope_type === 'product'
+                ? `
+                    <div class="wallet-discount-assets-card-line wallet-discount-assets-card-line--wide wallet-discount-assets-card-line--scope">
+                        <div class="wallet-discount-assets-card-line-content">
+                            <span>适用商品</span>
+                            <strong>${scopeProductLabel}</strong>
+                        </div>
+                    </div>
+                `
+                : '';
+            const shouldHideEstimatedPayHint = /打开指定商品后(?:预计)?实付/.test(rawStatusDetail);
+            const shouldRenderStatusNote = !shouldHideEstimatedPayHint && statusDetail;
+            const primaryActionMarkup = `<button type="button" class="wallet-discount-assets-card-action"${primaryAction.attrs}>${primaryAction.label}</button>`;
+            const canRemove = tabId !== 'used'
+                && tabId !== 'inactive'
+                && asset?.can_remove !== false
+                && assetId;
+            const removeActionMarkup = canRemove
+                ? `
+                    <button
+                        type="button"
+                        class="wallet-discount-assets-card-action wallet-discount-assets-card-action--danger${isRemovingAsset ? ' is-busy' : ''}"
+                        ${this.buildDataAttributes({
+                            'wallet-action': 'remove-discount-asset',
+                            'wallet-discount-asset-id': this.encodeActionValue(assetId)
+                        })}
+                        ${isRemovingAsset ? 'disabled' : ''}
+                    >
+                        ${isRemovingAsset ? '删除中...' : '删除'}
+                    </button>
+                `
+                : '';
+            const actionButtonsMarkup = (primaryActionMarkup || removeActionMarkup)
+                ? `
+                    <div class="wallet-discount-assets-card-actions">
+                        ${primaryActionMarkup}
+                        ${removeActionMarkup}
+                    </div>
+                `
+                : '';
+            const tagsMarkup = campaignTag
+                ? `<div class="wallet-discount-assets-tags">${campaignTag}</div>`
+                : '';
+            const footMarkup = (tagsMarkup || actionButtonsMarkup)
+                ? `
+                    <div class="wallet-discount-assets-card-foot">
+                        ${tagsMarkup}
+                        ${actionButtonsMarkup}
+                    </div>
+                `
+                : '';
+
+            return `
+                <article class="wallet-discount-assets-card${isExpanded ? ' expanded' : ''}">
+                    <button
+                        type="button"
+                        class="wallet-discount-assets-card-toggle"
+                        aria-expanded="${isExpanded ? 'true' : 'false'}"
+                        ${this.buildDataAttributes({ 'wallet-action': 'toggle-discount-asset-card', 'wallet-asset-key': assetKey })}
+                    >
+                        <div class="wallet-discount-assets-card-summary">
+                            <div class="wallet-discount-assets-card-title-wrap">
+                                <div class="wallet-discount-assets-card-meta">
+                                    <span class="wallet-discount-assets-card-chip wallet-discount-assets-card-chip--code">${codeLabel}</span>
+                                    <span class="wallet-discount-assets-card-chip">${scopeLabel}</span>
+                                    <span class="${stackingChipClass}">${stackingLabel}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="wallet-discount-assets-card-toggle-side${showStatusBadge ? '' : ' wallet-discount-assets-card-toggle-side--available'}">
+                            ${showStatusBadge ? `<span class="wallet-discount-assets-status ${statusClass}">${statusLabel}</span>` : ''}
+                            <div class="wallet-discount-assets-card-toggle-main">
+                                ${benefitMarkup}
+                            </div>
+                        </div>
+                    </button>
+                    ${isExpanded ? `
+                        <div class="wallet-discount-assets-card-panel">
+                            <div class="wallet-discount-assets-card-body">
+                                <div class="wallet-discount-assets-card-grid">
+                                    <div class="wallet-discount-assets-card-line">
+                                        <span>来源</span>
+                                        <strong>${sourceLabel}</strong>
+                                    </div>
+                                    <div class="wallet-discount-assets-card-line">
+                                        <span>有效期</span>
+                                        <strong>${expiryText}</strong>
+                                    </div>
+                                    <div class="wallet-discount-assets-card-line wallet-discount-assets-card-line--wide">
+                                        <strong>${stackingSummary}</strong>
+                                    </div>
+                                    ${scopeProductMarkup}
+                                    ${relatedOrderMarkup}
+                                </div>
+                                ${shouldRenderStatusNote ? `<div class="wallet-discount-assets-card-note">${statusDetail}</div>` : ''}
+                            </div>
+                            ${footMarkup}
+                        </div>
+                    ` : ''}
+                </article>
+            `;
+        },
+
+        renderDiscountAssetsView() {
+            const container = document.getElementById('wallet-discount-assets');
+            this.updateDiscountAssetsMenuBadge();
+
+            if (!container) {
+                return;
+            }
+
+            if (this.discountAssetsLoading) {
+                container.innerHTML = `<div class="loading-text">正在同步你的卡券...</div>`;
+                return;
+            }
+
+            if (this.discountAssetsLoadError) {
+                container.innerHTML = `
+                    <div class="wallet-discount-assets-empty">
+                        <div class="wallet-discount-assets-empty-title">卡券加载失败</div>
+                        <div class="wallet-discount-assets-empty-copy">${this.escapeHtml(this.discountAssetsLoadError)}</div>
+                        <button type="button" class="wallet-discount-assets-empty-action"${this.buildDataAttributes({ 'wallet-action': 'refresh-discount-assets' })}>重新加载</button>
+                    </div>
+                `;
+                return;
+            }
+
+            if (!this.discountAssetsLoaded) {
+                container.innerHTML = `
+                    <div class="wallet-discount-assets-empty">
+                        <div class="wallet-discount-assets-empty-title">已到账的优惠券会收进这里</div>
+                        <div class="wallet-discount-assets-empty-copy">切到这个页签后，系统会自动同步你在当前站点可见的卡券资产。</div>
+                    </div>
+                `;
+                return;
+            }
+
+            const data = this.discountAssetsData || this.getDefaultDiscountAssetsData();
+            const summary = data.summary || {};
+            const availableAssets = Array.isArray(data.available_assets) ? data.available_assets : [];
+            const expiringAssets = availableAssets.filter((asset) => asset?.is_expiring_soon === true);
+            const summaryFilter = this.discountAssetsSummaryFilter === 'expiring' ? 'expiring' : 'available';
+            const listItems = summaryFilter === 'expiring' ? expiringAssets : availableAssets;
+            const sectionId = summaryFilter === 'expiring' ? 'expiring' : 'available';
+            const sectionTitle = summaryFilter === 'expiring' ? '即将过期' : '当前可用';
+            const emptyState = summaryFilter === 'expiring'
+                ? {
+                    title: '当前没有即将过期卡券',
+                    copy: '进入即将过期前 72 小时的卡券会展示在这里。',
+                    action: 'select-discount-assets-summary-filter',
+                    actionLabel: '查看当前可用',
+                    actionValue: 'available'
+                }
+                : this.getDiscountAssetsEmptyState('available');
+            const expandedStillExists = listItems.some((asset) => this.getDiscountAssetKey(asset, sectionId) === this.discountAssetsExpandedKey);
+            if (!expandedStillExists) {
+                this.discountAssetsExpandedKey = '';
+            }
+
+            container.innerHTML = `
+                <div class="wallet-discount-assets-summary">
+                    <button
+                        type="button"
+                        class="wallet-discount-assets-summary-card wallet-discount-assets-summary-card--primary wallet-discount-assets-summary-card--interactive${summaryFilter === 'available' ? ' active' : ''}"
+                        ${this.buildDataAttributes({ 'wallet-action': 'select-discount-assets-summary-filter', 'wallet-summary-filter': 'available' })}
+                    >
+                        <span>当前可用</span>
+                        <strong>${this.formatPoints(summary.available_count || 0)}</strong>
+                    </button>
+                    <button
+                        type="button"
+                        class="wallet-discount-assets-summary-card wallet-discount-assets-summary-card--interactive${summaryFilter === 'expiring' ? ' active' : ''}"
+                        ${this.buildDataAttributes({ 'wallet-action': 'select-discount-assets-summary-filter', 'wallet-summary-filter': 'expiring' })}
+                    >
+                        <span>即将过期</span>
+                        <strong>${this.formatPoints(summary.expiring_soon_count || 0)}</strong>
+                    </button>
+                    <div class="wallet-discount-assets-summary-card">
+                        <span>累计省下</span>
+                        <strong>${this.formatPoints(summary.saved_amount_total || 0)} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</strong>
+                    </div>
+                </div>
+                <div class="wallet-discount-assets-list-shell">
+                ${listItems.length > 0
+                    ? `
+                        <div class="wallet-discount-assets-sections">
+                            <section class="wallet-discount-assets-section">
+                                <div class="wallet-discount-assets-section-head">
+                                    <span class="wallet-discount-assets-section-title">${this.escapeHtml(sectionTitle)}</span>
+                                </div>
+                                <div class="wallet-discount-assets-list">${listItems.map((asset) => this.renderDiscountAssetCard(asset, sectionId)).join('')}</div>
+                            </section>
+                        </div>
+                    `
+                    : `
+                        <div class="wallet-discount-assets-empty">
+                            <div class="wallet-discount-assets-empty-title">${this.escapeHtml(emptyState.title)}</div>
+                            <div class="wallet-discount-assets-empty-copy">${this.escapeHtml(emptyState.copy)}</div>
+                            <button
+                                type="button"
+                                class="wallet-discount-assets-empty-action"
+                                ${this.buildDataAttributes(emptyState.actionValue
+                                    ? {
+                                        'wallet-action': emptyState.action,
+                                        'wallet-summary-filter': emptyState.actionValue
+                                    }
+                                    : {
+                                        'wallet-action': emptyState.action
+                                    })}
+                            >
+                                ${this.escapeHtml(emptyState.actionLabel)}
+                            </button>
+                        </div>
+                    `}
+                </div>
+            `;
+        },
+
+        async loadDiscountAssets(forceRefresh = false) {
+            if (this.discountAssetsLoading) {
+                return;
+            }
+
+            if (this.discountAssetsLoaded && !forceRefresh) {
+                this.renderDiscountAssetsView();
+                return;
+            }
+
+            this.discountAssetsLoading = true;
+            this.discountAssetsLoadError = '';
+            this.renderDiscountAssetsView();
+
+            try {
+                const { data: { session } } = await window.supabaseClient.auth.getSession();
+                if (!session?.access_token) {
+                    throw new Error(window.i18n?.t('security.loginRequired') || '请先登录');
+                }
+
+                const response = await fetch('/api/shop/my-discount-assets', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${session.access_token}`
+                    },
+                    body: JSON.stringify({
+                        site: window.SiteConfig?.site || 'cn'
+                    })
+                });
+                const payload = await response.json().catch(() => ({}));
+
+                if (!response.ok || payload?.success === false) {
+                    throw new Error(payload?.message || '加载卡券失败');
+                }
+
+                this.discountAssetsData = {
+                    ...this.getDefaultDiscountAssetsData(),
+                    ...payload
+                };
+                this.discountAssetsLoaded = true;
+
+                const preferredTabs = [this.discountAssetsActiveTab, 'available', 'used', 'inactive'];
+                const nextTab = preferredTabs.find((tabId) => this.getDiscountAssetsListByTab(tabId).length > 0) || 'available';
+                this.discountAssetsActiveTab = nextTab;
+                this.discountAssetsSummaryFilter = this.discountAssetsSummaryFilter === 'expiring' ? 'expiring' : 'available';
+            } catch (error) {
+                console.error('[WalletModal] Load discount assets failed:', error);
+                this.discountAssetsData = this.getDefaultDiscountAssetsData();
+                this.discountAssetsLoaded = false;
+                this.discountAssetsLoadError = error?.message || '加载卡券失败';
+            } finally {
+                this.discountAssetsLoading = false;
+                this.renderDiscountAssetsView();
+            }
+        },
+
+        async removeDiscountAsset(assetId = '') {
+            const normalizedAssetId = String(assetId || '').trim();
+            if (!normalizedAssetId || this.discountAssetsRemovingId === normalizedAssetId) {
+                return;
+            }
+
+            const availableAssets = this.getDiscountAssetsListByTab('available');
+            const matchedAsset = availableAssets.find((asset) => String(asset?.asset_id || asset?.id || '').trim() === normalizedAssetId) || null;
+            if (!matchedAsset) {
+                this.showToast('未找到这张卡券', 'error');
+                return;
+            }
+
+            const confirmLabel = matchedAsset.benefit_label || matchedAsset.code || '这张卡券';
+            if (!confirm(`确定要删除 ${confirmLabel} 吗？\n\n删除后将不能恢复使用。`)) {
+                return;
+            }
+
+            this.discountAssetsRemovingId = normalizedAssetId;
+            this.renderDiscountAssetsView();
+
+            try {
+                const { data: { session } } = await window.supabaseClient.auth.getSession();
+                if (!session?.access_token) {
+                    throw new Error(window.i18n?.t('security.loginRequired') || '请先登录');
+                }
+
+                const response = await fetch('/api/shop/remove-discount-asset', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${session.access_token}`
+                    },
+                    body: JSON.stringify({
+                        site: window.SiteConfig?.site || 'cn',
+                        assetId: normalizedAssetId
+                    })
+                });
+                const payload = await response.json().catch(() => ({}));
+
+                if (!response.ok || payload?.success === false) {
+                    throw new Error(payload?.message || '删除卡券失败');
+                }
+
+                if (this.discountAssetsExpandedKey === normalizedAssetId) {
+                    this.discountAssetsExpandedKey = '';
+                }
+
+                await this.loadDiscountAssets(true);
+                this.showToast(payload?.message || '卡券已删除', 'success');
+            } catch (error) {
+                console.error('[WalletModal] Remove discount asset failed:', error);
+                this.showToast(error?.message || '删除卡券失败', 'error');
+            } finally {
+                this.discountAssetsRemovingId = '';
+                if (!this.discountAssetsLoading) {
+                    this.renderDiscountAssetsView();
+                }
+            }
         },
 
         getDefaultCheckinConfig() {
@@ -2326,35 +2950,77 @@
 
         getDefaultPaymentChannelsConfig() {
             const rechargeOptions = this.normalizeRechargeOptionsConfig(this.rechargeOptionsConfig);
-            const activeProvider = rechargeOptions.mock_payment_enabled ? 'mock' : 'afdian';
+            const resolvePreferredActiveProviderKey = (providers = {}, fallback = 'afdian') => {
+                const candidateKeys = ['hupijiao', 'afdian', ...Object.keys(providers || {})];
+                const seen = new Set();
+
+                for (const providerKey of candidateKeys) {
+                    const normalizedKey = String(providerKey || '').trim().toLowerCase();
+                    if (!normalizedKey || normalizedKey === 'mock' || seen.has(normalizedKey)) {
+                        continue;
+                    }
+                    seen.add(normalizedKey);
+                    const provider = providers?.[normalizedKey];
+                    if (provider?.enabled === true && String(provider.checkout_url || '').trim()) {
+                        return normalizedKey;
+                    }
+                }
+
+                for (const providerKey of candidateKeys) {
+                    const normalizedKey = String(providerKey || '').trim().toLowerCase();
+                    if (!normalizedKey || normalizedKey === 'mock' || seen.has(`enabled:${normalizedKey}`)) {
+                        continue;
+                    }
+                    seen.add(`enabled:${normalizedKey}`);
+                    const provider = providers?.[normalizedKey];
+                    if (provider?.enabled === true) {
+                        return normalizedKey;
+                    }
+                }
+
+                return ['mock', 'afdian', 'hupijiao'].includes(fallback) ? fallback : 'afdian';
+            };
+
+            const providers = {
+                mock: {
+                    enabled: true,
+                    display_name: '模拟支付',
+                    description: '仅建议在正式支付接入前短期使用，开启后将直接到账积分。'
+                },
+                afdian: {
+                    enabled: true,
+                    display_name: '爱发电',
+                    checkout_url: window.PAYMENT_AFDIAN_URL || 'https://afdian.com/a/zaoyoe',
+                    package_hint: '请在爱发电完成支付后，返回这里输入订单号领取兑换码。',
+                    custom_amount_hint: '钱包会先生成本次应付金额，请按报价完成支付后返回这里输入订单号领取兑换码。',
+                    order_query_enabled: true,
+                    order_query_title: '订单号认领',
+                    order_query_hint: '完成支付后，可在这里输入订单号查询兑换结果。',
+                    order_query_placeholder: '输入支付平台订单号'
+                },
+                hupijiao: {
+                    enabled: false,
+                    display_name: '虎皮椒',
+                    checkout_url: '',
+                    gateway_url: '',
+                    merchant_id: '',
+                    return_url: window.location.origin,
+                    notify_url: '',
+                    package_hint: '虎皮椒通道已启用，完成支付后请按页面提示处理。',
+                    custom_amount_hint: '虎皮椒通道已启用。自定义金额真实支付能力接入后，这里会直接拉起支付。',
+                    order_query_enabled: false,
+                    order_query_title: '',
+                    order_query_hint: '',
+                    order_query_placeholder: ''
+                }
+            };
+            const activeProvider = rechargeOptions.mock_payment_enabled
+                ? 'mock'
+                : resolvePreferredActiveProviderKey(providers, 'afdian');
 
             return {
                 active_provider: activeProvider,
-                providers: {
-                    mock: {
-                        enabled: true,
-                        display_name: '模拟支付',
-                        description: '仅建议在正式支付接入前短期使用，开启后将直接到账积分。'
-                    },
-                    afdian: {
-                        enabled: true,
-                        display_name: '爱发电',
-                        checkout_url: window.PAYMENT_AFDIAN_URL || 'https://afdian.com/a/zaoyoe',
-                        package_hint: '请在爱发电完成支付后，返回这里输入订单号领取兑换码。',
-                        custom_amount_hint: '钱包会先生成本次应付金额，请按报价完成支付后返回这里输入订单号领取兑换码。'
-                    },
-                    hupijiao: {
-                        enabled: false,
-                        display_name: '虎皮椒',
-                        checkout_url: '',
-                        gateway_url: '',
-                        merchant_id: '',
-                        return_url: window.location.origin,
-                        notify_url: '',
-                        package_hint: '虎皮椒通道已启用，完成支付后请按页面提示处理。',
-                        custom_amount_hint: '虎皮椒通道已启用。自定义金额真实支付能力接入后，这里会直接拉起支付。'
-                    }
-                }
+                providers
             };
         },
 
@@ -2364,11 +3030,41 @@
             const sourceProviders = source.providers && typeof source.providers === 'object' && !Array.isArray(source.providers)
                 ? source.providers
                 : {};
+            const resolvePreferredActiveProviderKey = (providers = {}, fallback = defaults.active_provider) => {
+                const candidateKeys = ['hupijiao', 'afdian', ...Object.keys(providers || {})];
+                const seen = new Set();
+
+                for (const providerKey of candidateKeys) {
+                    const normalizedKey = String(providerKey || '').trim().toLowerCase();
+                    if (!normalizedKey || normalizedKey === 'mock' || seen.has(normalizedKey)) {
+                        continue;
+                    }
+                    seen.add(normalizedKey);
+                    const provider = providers?.[normalizedKey];
+                    if (provider?.enabled === true && String(provider.checkout_url || '').trim()) {
+                        return normalizedKey;
+                    }
+                }
+
+                for (const providerKey of candidateKeys) {
+                    const normalizedKey = String(providerKey || '').trim().toLowerCase();
+                    if (!normalizedKey || normalizedKey === 'mock' || seen.has(`enabled:${normalizedKey}`)) {
+                        continue;
+                    }
+                    seen.add(`enabled:${normalizedKey}`);
+                    const provider = providers?.[normalizedKey];
+                    if (provider?.enabled === true) {
+                        return normalizedKey;
+                    }
+                }
+
+                return ['mock', 'afdian', 'hupijiao'].includes(fallback) ? fallback : defaults.active_provider;
+            };
 
             const normalized = {
                 active_provider: ['mock', 'afdian', 'hupijiao'].includes(source.active_provider)
                     ? source.active_provider
-                    : defaults.active_provider,
+                    : resolvePreferredActiveProviderKey(sourceProviders, defaults.active_provider),
                 providers: {
                     mock: {
                         enabled: sourceProviders.mock?.enabled !== undefined
@@ -2384,7 +3080,13 @@
                         display_name: String(sourceProviders.afdian?.display_name || defaults.providers.afdian.display_name).trim() || defaults.providers.afdian.display_name,
                         checkout_url: String(sourceProviders.afdian?.checkout_url || defaults.providers.afdian.checkout_url).trim() || defaults.providers.afdian.checkout_url,
                         package_hint: String(sourceProviders.afdian?.package_hint || defaults.providers.afdian.package_hint).trim() || defaults.providers.afdian.package_hint,
-                        custom_amount_hint: String(sourceProviders.afdian?.custom_amount_hint || defaults.providers.afdian.custom_amount_hint).trim() || defaults.providers.afdian.custom_amount_hint
+                        custom_amount_hint: String(sourceProviders.afdian?.custom_amount_hint || defaults.providers.afdian.custom_amount_hint).trim() || defaults.providers.afdian.custom_amount_hint,
+                        order_query_enabled: sourceProviders.afdian?.order_query_enabled !== undefined
+                            ? (sourceProviders.afdian.order_query_enabled === true || String(sourceProviders.afdian.order_query_enabled) === 'true')
+                            : defaults.providers.afdian.order_query_enabled,
+                        order_query_title: String(sourceProviders.afdian?.order_query_title || defaults.providers.afdian.order_query_title).trim() || defaults.providers.afdian.order_query_title,
+                        order_query_hint: String(sourceProviders.afdian?.order_query_hint || defaults.providers.afdian.order_query_hint).trim() || defaults.providers.afdian.order_query_hint,
+                        order_query_placeholder: String(sourceProviders.afdian?.order_query_placeholder || defaults.providers.afdian.order_query_placeholder).trim() || defaults.providers.afdian.order_query_placeholder
                     },
                     hupijiao: {
                         enabled: sourceProviders.hupijiao?.enabled === true || String(sourceProviders.hupijiao?.enabled) === 'true',
@@ -2395,7 +3097,11 @@
                         return_url: String(sourceProviders.hupijiao?.return_url || defaults.providers.hupijiao.return_url).trim() || defaults.providers.hupijiao.return_url,
                         notify_url: String(sourceProviders.hupijiao?.notify_url || defaults.providers.hupijiao.notify_url).trim(),
                         package_hint: String(sourceProviders.hupijiao?.package_hint || defaults.providers.hupijiao.package_hint).trim() || defaults.providers.hupijiao.package_hint,
-                        custom_amount_hint: String(sourceProviders.hupijiao?.custom_amount_hint || defaults.providers.hupijiao.custom_amount_hint).trim() || defaults.providers.hupijiao.custom_amount_hint
+                        custom_amount_hint: String(sourceProviders.hupijiao?.custom_amount_hint || defaults.providers.hupijiao.custom_amount_hint).trim() || defaults.providers.hupijiao.custom_amount_hint,
+                        order_query_enabled: sourceProviders.hupijiao?.order_query_enabled === true || String(sourceProviders.hupijiao?.order_query_enabled) === 'true',
+                        order_query_title: String(sourceProviders.hupijiao?.order_query_title || defaults.providers.hupijiao.order_query_title).trim(),
+                        order_query_hint: String(sourceProviders.hupijiao?.order_query_hint || defaults.providers.hupijiao.order_query_hint).trim(),
+                        order_query_placeholder: String(sourceProviders.hupijiao?.order_query_placeholder || defaults.providers.hupijiao.order_query_placeholder).trim()
                     }
                 }
             };
@@ -2538,7 +3244,7 @@
 
         renderPaymentOrderQuerySection(config = this.paymentChannelsConfig) {
             const normalizedConfig = this.normalizePaymentChannelsConfig(config);
-            const activeProvider = normalizedConfig.active_provider;
+            const activeProvider = this.getActivePaymentProviderConfig(normalizedConfig);
             const section = document.getElementById('wallet-order-query-section');
             const title = document.getElementById('wallet-order-query-title');
             const hint = document.getElementById('wallet-order-query-hint');
@@ -2546,18 +3252,18 @@
 
             if (!section) return;
 
-            const shouldShowAfdianQuery = activeProvider === 'afdian';
-            section.toggleAttribute('hidden', !shouldShowAfdianQuery);
+            const queryEnabled = activeProvider?.key === 'afdian'
+                && activeProvider?.order_query_enabled === true;
+            section.toggleAttribute('hidden', !queryEnabled);
 
-            if (!shouldShowAfdianQuery) {
+            if (!queryEnabled) {
                 requestWalletRechargeScrollCueUpdate();
                 return;
             }
 
-            const provider = normalizedConfig.providers.afdian;
-            if (title) title.textContent = `${provider.display_name || '爱发电'}订单查询`;
-            if (hint) hint.textContent = provider.package_hint || '在爱发电支付后，输入订单号获取兑换码';
-            if (input) input.placeholder = `${provider.display_name || '爱发电'}订单号`;
+            if (title) title.textContent = activeProvider.order_query_title || `${activeProvider.display_name || '支付平台'}订单查询`;
+            if (hint) hint.textContent = activeProvider.order_query_hint || activeProvider.package_hint || '完成支付后，可在这里输入订单号查询结果。';
+            if (input) input.placeholder = activeProvider.order_query_placeholder || `${activeProvider.display_name || '支付平台'}订单号`;
 
             requestWalletRechargeScrollCueUpdate();
         },
@@ -3685,6 +4391,8 @@
                 const bonusEl = document.getElementById('wallet-bonus');
                 if (bonusEl) bonusEl.textContent = this.formatPoints(balance.bonus_balance);
 
+                this.renderBalanceContext(balance);
+
                 // Notify other widgets (e.g. verify-widget) that balance changed
                 window.dispatchEvent(new CustomEvent('walletBalanceUpdated', {
                     detail: { totalBalance: balance.total_balance }
@@ -3766,6 +4474,7 @@
         invalidateOrderRecordsCache() {
             this._prefetchedShopOrders = null;
             this._prefetchedLedger = null;
+            this._prefetchedPromptTitles = null;
             this.ordersLoaded = false;
             this.browseOrdersSnapshot = [];
         },
@@ -4364,24 +5073,35 @@
                     return;
                 }
 
-                const { data, error } = await window.supabaseClient.rpc('fn_daily_checkin_v2', {
-                    p_user_id: session.user.id,
-                    p_site: window.SiteConfig?.site || 'cn'
-                });
+                const currentSite = window.SiteConfig?.site || 'cn';
+                const currentDate = new Date();
+                const localDate = [
+                    currentDate.getFullYear(),
+                    String(currentDate.getMonth() + 1).padStart(2, '0'),
+                    String(currentDate.getDate()).padStart(2, '0')
+                ].join('-');
 
-                if (error) throw error;
+                const response = await fetch('/api/wallet/checkin', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${session.access_token}`
+                    },
+                    body: JSON.stringify({
+                        site: currentSite,
+                        local_date: localDate
+                    })
+                });
+                const data = await response.json().catch(() => ({}));
+
+                if (!response.ok) {
+                    throw new Error(data?.message || '签到失败');
+                }
 
                 if (data?.already_checked) {
                     this.showToast('今日已签到过了', 'info');
                     this.loadCheckinData(); // refresh grid
                 } else if (data?.success) {
-                    const currentDate = new Date();
-                    const localDate = [
-                        currentDate.getFullYear(),
-                        String(currentDate.getMonth() + 1).padStart(2, '0'),
-                        String(currentDate.getDate()).padStart(2, '0')
-                    ].join('-');
-
                     trackWalletAnalyticsEvent('checkin_success', {
                         entityType: 'checkin',
                         entityId: localDate,
@@ -4407,6 +5127,10 @@
                     let msg = `💰 签到奖励 +${this.formatPoints(data.points)} 积分`;
                     if (data.message && data.message !== '签到成功') {
                         msg += `\\n${data.message}`; // Append the bonus message
+                    }
+                    if (Number(data?.linked_discount_summary?.issued_count || 0) > 0) {
+                        msg += `\\n🎟 已发放 ${this.formatPoints(data.linked_discount_summary.issued_count)} 张卡券`;
+                        this.resetDiscountAssetsState();
                     }
                     this.showToast(msg, 'success');
 
@@ -4934,20 +5658,21 @@
                 // Avoid redundant fetches
                 const toFetch = ids.filter(id => !this.promptCache[id]);
                 if (toFetch.length === 0) return;
+                const pointsService = window.PointsService;
+                if (!pointsService?.getWalletPromptTitles) return;
 
-                const { data, error } = await window.supabaseClient
-                    .from('prompts')
-                    .select('id, title')
-                    .in('id', toFetch);
+                const promptTitles = await pointsService.getWalletPromptTitles(toFetch, {
+                    site: window.SiteConfig?.site || 'cn'
+                });
 
-                if (error) throw error;
-                if (data) {
-                    data.forEach(p => {
-                        this.promptCache[p.id] = p.title;
-                    });
-                }
+                Object.entries(promptTitles || {}).forEach(([id, title]) => {
+                    this.promptCache[id] = title;
+                });
+
+                return promptTitles || {};
             } catch (err) {
                 console.error('Error fetching prompt titles:', err);
+                return {};
             }
         },
 
@@ -5554,206 +6279,25 @@
         },
 
         async searchWalletTransactions({ userId, site, query }) {
-            const trimmedQuery = String(query || '').trim();
-            const orderSelect = `
-                id,
-                total_price,
-                item_count,
-                status,
-                created_at,
-                snapshot_product_name,
-                shop_order_items (
-                    id,
-                    snapshot_product_name
-                )
-            `;
-            const ledgerSelect = 'id, amount, reason, reference_id, created_at';
-            const likeValue = `%${trimmedQuery}%`;
-            const isUuidQuery = this.isUuid(trimmedQuery);
-            const numericQuery = Number(trimmedQuery);
-            const isPositiveAmountQuery = /^\d+$/.test(trimmedQuery) && Number.isFinite(numericQuery) && numericQuery > 0;
-            const shouldSearchVerifyLogs = trimmedQuery.length >= 3;
-
-            const shopRequests = [
-                supabase
-                    .from('shop_orders')
-                    .select(orderSelect)
-                    .eq('user_id', userId)
-                    .eq('site', site)
-                    .ilike('snapshot_product_name', likeValue)
-                    .order('created_at', { ascending: false })
-                    .limit(80)
-            ];
-
-            const ledgerRequests = [
-                supabase
-                    .from('points_ledger')
-                    .select(ledgerSelect)
-                    .eq('user_id', userId)
-                    .eq('site', site)
-                    .ilike('reference_id', likeValue)
-                    .order('created_at', { ascending: false })
-                    .limit(80),
-                supabase
-                    .from('points_ledger')
-                    .select(ledgerSelect)
-                    .eq('user_id', userId)
-                    .eq('site', site)
-                    .ilike('reason', likeValue)
-                    .order('created_at', { ascending: false })
-                    .limit(80)
-            ];
-
-            if (isPositiveAmountQuery) {
-                ledgerRequests.push(
-                    supabase
-                        .from('points_ledger')
-                        .select(ledgerSelect)
-                        .eq('user_id', userId)
-                        .eq('site', site)
-                        .eq('amount', numericQuery)
-                        .order('created_at', { ascending: false })
-                        .limit(80)
-                );
+            const pointsService = window.PointsService;
+            if (!pointsService?.getWalletTransactions) {
+                return {
+                    shopOrders: [],
+                    ledgerEntries: [],
+                    promptTitles: {}
+                };
             }
 
-            if (isUuidQuery) {
-                shopRequests.push(
-                    supabase
-                        .from('shop_orders')
-                        .select(orderSelect)
-                        .eq('user_id', userId)
-                        .eq('site', site)
-                        .eq('id', trimmedQuery)
-                        .limit(20)
-                );
-
-                ledgerRequests.push(
-                    supabase
-                        .from('points_ledger')
-                        .select(ledgerSelect)
-                        .eq('user_id', userId)
-                        .eq('site', site)
-                        .eq('id', trimmedQuery)
-                        .limit(20)
-                );
-            }
-
-            const promptSearchRequest = supabase
-                .from('prompts')
-                .select('id, title')
-                .ilike('title', likeValue)
-                .limit(30);
-
-            const verifyLogRequests = shouldSearchVerifyLogs ? [
-                supabase
-                    .from('verification_logs')
-                    .select('verification_id, status, message, points_deducted, created_at')
-                    .eq('user_id', userId)
-                    .eq('site', site)
-                    .ilike('verification_id', likeValue)
-                    .order('created_at', { ascending: false })
-                    .limit(80),
-                supabase
-                    .from('verification_logs')
-                    .select('verification_id, status, message, points_deducted, created_at')
-                    .eq('user_id', userId)
-                    .eq('site', site)
-                    .ilike('message', likeValue)
-                    .order('created_at', { ascending: false })
-                    .limit(80)
-            ] : [];
-
-            const [{ data: promptMatches, error: promptError }, verifyLogResults] = await Promise.all([
-                promptSearchRequest,
-                verifyLogRequests.length > 0 ? Promise.all(verifyLogRequests) : Promise.resolve([])
-            ]);
-
-            if (promptError) {
-                console.warn('[WalletModal] Prompt search failed:', promptError);
-            }
-
-            const promptTitles = {};
-            const promptIds = (promptMatches || []).map((prompt) => {
-                promptTitles[prompt.id] = prompt.title;
-                return prompt.id;
-            });
-
-            if (promptIds.length > 0) {
-                ledgerRequests.push(
-                    supabase
-                        .from('points_ledger')
-                        .select(ledgerSelect)
-                        .eq('user_id', userId)
-                        .eq('site', site)
-                        .eq('reason', 'unlock_prompt')
-                        .in('reference_id', promptIds)
-                        .order('created_at', { ascending: false })
-                        .limit(80)
-                );
-            }
-
-            const verifyLogRows = [];
-            verifyLogResults.forEach((result) => {
-                if (result.error) throw result.error;
-                if (result.data?.length) {
-                    verifyLogRows.push(...result.data);
-                }
-            });
-
-            const verifyReferenceIds = [...new Set(
-                verifyLogRows.map((row) => {
-                    const payload = this.parseVerifyLogMessage(row.message) || {};
-                    const verificationId = String(row.verification_id || '').trim();
-                    const payloadJobId = String(payload.job_id || '').trim();
-                    const payloadEmail = String(payload.email || '').trim().toLowerCase();
-                    const refs = [
-                        verificationId,
-                        payloadJobId,
-                        payloadEmail
-                    ].map((value) => String(value || '').trim()).filter(Boolean);
-                    return refs;
-                }).flat().filter(Boolean)
-            )];
-
-            if (verifyReferenceIds.length > 0) {
-                ledgerRequests.push(
-                    supabase
-                        .from('points_ledger')
-                        .select(ledgerSelect)
-                        .eq('user_id', userId)
-                        .eq('site', site)
-                        .in('reference_id', verifyReferenceIds.slice(0, 80))
-                        .order('created_at', { ascending: false })
-                        .limit(80)
-                );
-            }
-
-            const [shopResults, ledgerResults] = await Promise.all([
-                Promise.all(shopRequests),
-                Promise.all(ledgerRequests)
-            ]);
-
-            const shopOrders = [];
-            shopResults.forEach((result) => {
-                if (result.error) throw result.error;
-                if (result.data?.length) {
-                    shopOrders.push(...result.data);
-                }
-            });
-
-            const ledgerEntries = [];
-            ledgerResults.forEach((result) => {
-                if (result.error) throw result.error;
-                if (result.data?.length) {
-                    ledgerEntries.push(...result.data);
-                }
+            const result = await pointsService.getWalletTransactions({
+                site,
+                query,
+                searchLimit: 80
             });
 
             return {
-                shopOrders: this.dedupeRecordsById(shopOrders),
-                ledgerEntries: this.dedupeRecordsById(ledgerEntries),
-                promptTitles
+                shopOrders: this.dedupeRecordsById(result.shopOrders || []),
+                ledgerEntries: this.dedupeRecordsById(result.ledgerEntries || []),
+                promptTitles: result.promptTitles || {}
             };
         },
 
@@ -5908,8 +6452,10 @@
                     console.log('[WalletModal] ⚡ Using prefetched data (instant)');
                     shopOrders = this._prefetchedShopOrders;
                     ledgerEntries = this._prefetchedLedger;
+                    promptTitles = this._prefetchedPromptTitles || {};
                     this._prefetchedShopOrders = null;
                     this._prefetchedLedger = null;
+                    this._prefetchedPromptTitles = null;
                 } else if (normalizedQuery) {
                     const searchResult = await this.searchWalletTransactions({
                         userId: user.id,
@@ -5923,40 +6469,19 @@
                     ledgerEntries = searchResult.ledgerEntries || [];
                     promptTitles = searchResult.promptTitles || {};
                 } else {
-                    const [shopOrdersResult, ledgerResult] = await Promise.all([
-                        supabase
-                            .from('shop_orders')
-                            .select(`
-                                id,
-                                total_price,
-                                item_count,
-                                status,
-                                created_at,
-                                snapshot_product_name,
-                                shop_order_items (
-                                    id,
-                                    snapshot_product_name
-                                )
-                            `)
-                            .eq('user_id', user.id)
-                            .eq('site', site)
-                            .order('created_at', { ascending: false })
-                            .limit(100),
-                        supabase
-                            .from('points_ledger')
-                            .select('id, amount, reason, reference_id, created_at')
-                            .eq('user_id', user.id)
-                            .eq('site', site)
-                            .order('created_at', { ascending: false })
-                            .limit(100)
-                    ]);
+                    const pointsService = window.PointsService;
+                    if (!pointsService?.getWalletTransactions) {
+                        throw new Error('PointsService wallet transactions API not available');
+                    }
+                    const walletRecords = await pointsService.getWalletTransactions({
+                        site,
+                        limit: 100
+                    });
 
                     if (requestId !== this.orderRequestId) return;
-                    if (shopOrdersResult.error) throw shopOrdersResult.error;
-                    if (ledgerResult.error) throw ledgerResult.error;
-
-                    shopOrders = shopOrdersResult.data || [];
-                    ledgerEntries = ledgerResult.data || [];
+                    shopOrders = walletRecords.shopOrders || [];
+                    ledgerEntries = walletRecords.ledgerEntries || [];
+                    promptTitles = walletRecords.promptTitles || {};
                 }
 
                 const missingPromptIds = [...new Set(
@@ -5966,19 +6491,12 @@
                 )];
 
                 if (missingPromptIds.length > 0) {
-                    const { data: prompts, error: promptLookupError } = await supabase
-                        .from('prompts')
-                        .select('id, title')
-                        .in('id', missingPromptIds);
-
+                    const extraPromptTitles = await this.fetchPromptTitles(missingPromptIds);
                     if (requestId !== this.orderRequestId) return;
-                    if (promptLookupError) {
-                        console.warn('[WalletModal] Prompt title lookup failed:', promptLookupError);
-                    } else if (prompts) {
-                        prompts.forEach((prompt) => {
-                            promptTitles[prompt.id] = prompt.title;
-                        });
-                    }
+                    promptTitles = {
+                        ...promptTitles,
+                        ...(extraPromptTitles || {})
+                    };
                 }
 
                 const ledgerOrders = (ledgerEntries || []).map((entry) => {

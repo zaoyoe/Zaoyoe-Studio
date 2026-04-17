@@ -83,6 +83,70 @@ function maybeHandleGuestbookDeepLink() {
     }, 320);
 }
 
+function applyGuestbookImageReadyState(image) {
+    if (!(image instanceof HTMLImageElement)) return;
+
+    const wrapper = image.closest('.message-image');
+    if (!wrapper) return;
+
+    if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+        setCssVariables(wrapper, {
+            '--guestbook-image-ratio': `${image.naturalWidth} / ${image.naturalHeight}`
+        });
+    }
+
+    wrapper.classList.add('is-loaded');
+    image.classList.add('is-loaded');
+}
+
+function stabilizeGuestbookMessageImages(scope = document) {
+    const images = scope?.querySelectorAll
+        ? scope.querySelectorAll('.message-image img[data-guestbook-open-image="1"]')
+        : [];
+
+    images.forEach((image) => {
+        if (!(image instanceof HTMLImageElement)) return;
+
+        const wrapper = image.closest('.message-image');
+        if (wrapper) {
+            wrapper.classList.remove('is-loaded');
+        }
+        image.classList.remove('is-loaded');
+
+        const markReady = () => {
+            if (!image.naturalWidth || !image.naturalHeight) return;
+            applyGuestbookImageReadyState(image);
+        };
+
+        const waitForDecode = () => {
+            if (typeof image.decode === 'function') {
+                image.decode().then(markReady).catch(markReady);
+                return;
+            }
+            markReady();
+        };
+
+        if (image.dataset.guestbookImageBound === '1') {
+            if (image.complete) {
+                waitForDecode();
+            }
+            return;
+        }
+
+        image.dataset.guestbookImageBound = '1';
+
+        image.addEventListener('load', waitForDecode);
+        image.addEventListener('error', () => {
+            wrapper?.classList.remove('is-loaded');
+            image.classList.remove('is-loaded');
+        });
+
+        if (image.complete) {
+            waitForDecode();
+        }
+    });
+}
+
 function initGuestbookPage() {
     const messageContainer = document.getElementById('messageContainer');
     const floatingBackBtn = document.querySelector('.floating-back-btn');
@@ -445,6 +509,7 @@ function initGuestbookPage() {
                 // Find shortest column and append
                 const targetCol = getShortestColumn();
                 targetCol.appendChild(element);
+                stabilizeGuestbookMessageImages(element);
 
                 // Trigger animation with delay
                 // ⚡ CRITICAL FIX: Always use staggered animation for "cascading" effect
@@ -503,6 +568,7 @@ function initGuestbookPage() {
                     const element = htmlToElement(html);
                     const targetCol = getShortestColumn();
                     targetCol.appendChild(element);
+                    stabilizeGuestbookMessageImages(element);
 
                     // ⚡ VISUALS FIRST: Enable staggered animation on resize
                     // Using slightly faster stagger (50ms) for resize to feel responsive but fluid
@@ -807,6 +873,8 @@ function initGuestbookPage() {
             targetContainer.appendChild(element);
         }
 
+        stabilizeGuestbookMessageImages(element);
+
         if (messageId && !allMessages.some(existing => existing.id === messageId)) {
             if (position === 'prepend') {
                 allMessages.unshift(msg);
@@ -940,6 +1008,7 @@ function initGuestbookPage() {
         }
 
         currentWrapper.replaceWith(replacementElement);
+        stabilizeGuestbookMessageImages(replacementElement);
         attachCommentHandlers();
 
         return replacementCard;

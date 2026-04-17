@@ -1922,15 +1922,6 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-toggle-mock-payment':
                 window.toggleMockPaymentStatus?.();
                 break;
-            case 'settings-save-seo':
-                window.saveSeoSettings?.();
-                break;
-            case 'settings-export-dataset':
-                window.exportSettingsData?.(
-                    actionEl.dataset.exportDataset,
-                    actionEl.dataset.exportFormat
-                );
-                break;
             case 'homepage-switch-section':
                 window.HomepageAdmin?.switchSection?.(actionEl.dataset.hpSection);
                 break;
@@ -2059,6 +2050,9 @@ function bindAdminStudioDelegatedControls() {
                 window.dismissAllAlerts?.();
                 break;
             case 'analytics-switch-tab':
+                if (String(actionEl.dataset.tab || '').trim().toLowerCase() === 'product-detail') {
+                    window.primeAnalyticsProductDetailSkeletonOnEntry?.();
+                }
                 window.switchAnalyticsTab?.(actionEl.dataset.tab);
                 break;
             case 'analytics-toggle-range-dropdown':
@@ -2416,6 +2410,18 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'users-export-tab-data':
                 window.exportTabData?.(actionEl.dataset.userTabName);
+                break;
+            case 'users-filter-coupon-status':
+                window.setUserCouponStatusFilter?.(actionEl.dataset.couponStatusFilter);
+                break;
+            case 'users-toggle-coupon-detail':
+                window.toggleUserCouponDetail?.(decodeURIComponent(actionEl.dataset.discountAssetId || ''));
+                break;
+            case 'users-remove-discount-asset':
+                window.removeUserDiscountAsset?.(decodeURIComponent(actionEl.dataset.discountAssetId || ''));
+                break;
+            case 'users-restore-discount-asset':
+                window.restoreUserDiscountAsset?.(decodeURIComponent(actionEl.dataset.discountAssetId || ''));
                 break;
             case 'users-open-ledger-detail':
                 window.openAdminLedgerDetail?.(decodeURIComponent(actionEl.dataset.ledgerId || ''));

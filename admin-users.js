@@ -2413,6 +2413,16 @@ const USER_MODAL_TAB_REGISTRY = Object.freeze({
         load: (userId) => fetchUserPaymentOrders(userId),
         render: renderPaymentsTab
     },
+    coupons: {
+        id: 'coupons',
+        label: '优惠券',
+        icon: 'fas fa-ticket-alt',
+        emptyLabel: '暂无用户优惠券',
+        loadingLabel: '加载用户优惠券...',
+        prefetchOnOpen: true,
+        load: (userId) => fetchUserDiscountAssets(userId),
+        render: renderCouponsTab
+    },
     activity: {
         id: 'activity',
         label: '近期动态',
@@ -2479,6 +2489,7 @@ const USER_MODAL_SUPPORTED_TABS = new Set(USER_MODAL_TAB_ORDER);
 const USER_MODAL_TAB_DATA_KEY_MAP = Object.freeze({
     ledger: 'pointsLedger',
     payments: 'paymentOrders',
+    coupons: 'discountAssets',
     activity: 'contentLog',
     notes: 'notes',
     audit: 'auditLogs',
@@ -2486,7 +2497,7 @@ const USER_MODAL_TAB_DATA_KEY_MAP = Object.freeze({
     affiliate: 'affiliate',
     relatives: 'relatedAccounts'
 });
-const USER_MODAL_DATE_FILTER_TABS = new Set(['ledger', 'payments', 'activity', 'notes', 'audit', 'blocks']);
+const USER_MODAL_DATE_FILTER_TABS = new Set(['ledger', 'payments', 'coupons', 'activity', 'notes', 'audit', 'blocks']);
 const USER_MODAL_TAB_FEEDBACK_AUTO_DISMISS_MS = Object.freeze({
     info: 2200,
     success: 2400,
@@ -2833,6 +2844,10 @@ function createUserModalTabState(tabName = '', overrides = {}) {
         feedbackTone: 'info',
         feedbackAt: 0,
         feedbackClosing: false,
+        couponStatusFilter: 'all',
+        expandedCouponIds: [],
+        pendingDiscountAssetId: '',
+        pendingDiscountAssetAction: '',
         noteSubmitting: false,
         pendingNoteDraft: '',
         pendingNotePreview: null
@@ -5891,6 +5906,11 @@ function buildUserTabLoadingBody(tabName = currentTab) {
                 ${buildUserTabToolbarSkeleton()}
                 ${buildUserTabPaymentsListSkeleton(4)}
             `;
+        case 'coupons':
+            return `
+                ${buildUserTabToolbarSkeleton()}
+                ${buildUserTabSkeletonList(4, { chipCount: 4, side: true })}
+            `;
         case 'ledger':
             return `
                 ${buildUserTabToolbarSkeleton()}
@@ -5966,6 +5986,9 @@ function buildUserTabRefreshOverlay(tabName = '', variant = 'list') {
             break;
         case 'payments':
             bodyMarkup = buildUserTabPaymentsListSkeleton(3);
+            break;
+        case 'coupons':
+            bodyMarkup = buildUserTabSkeletonList(3, { chipCount: 4, side: true });
             break;
         case 'ledger':
             bodyMarkup = buildUserTabLedgerListSkeleton(3);
@@ -6575,6 +6598,565 @@ function renderPaymentItems(data) {
             </div>
         `;
     }).join('');
+}
+
+function normalizeUserDiscountAssetStatus(value = '') {
+    return String(value || '').trim().toLowerCase() || 'available';
+}
+
+function formatUserDiscountBenefitLabel(asset = {}) {
+    const directLabel = String(asset?.benefit_label || '').trim();
+    if (directLabel) {
+        return directLabel;
+    }
+
+    const discountType = String(asset?.discount_type || '').trim().toLowerCase();
+    const discountValue = Number(asset?.discount_value);
+    if (discountType === 'percent' && Number.isFinite(discountValue) && discountValue > 0) {
+        const folded = discountValue / 10;
+        const display = Number.isInteger(folded)
+            ? String(folded)
+            : folded.toFixed(1).replace(/\.0$/, '');
+        return `${display}折`;
+    }
+    if (discountType === 'fixed' && Number.isFinite(discountValue) && discountValue > 0) {
+        return `立减 ${discountValue} 积分`;
+    }
+    return String(asset?.code || '优惠券').trim() || '优惠券';
+}
+
+function formatUserDiscountSiteLabel(value = '') {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'cn') return '中国站';
+    if (normalized === 'intl') return '国际站';
+    return '全站通用';
+}
+
+function formatUserDiscountDistributionModeLabel(value = '') {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'user_assigned') return '定向发券';
+    if (normalized === 'targeted_push') return '定向发券';
+    if (normalized === 'public_claim') return '公开领取';
+    if (normalized === 'general_code') return '通用码';
+    if (normalized === 'single_use_code') return '单次码';
+    return normalized ? normalized.replace(/_/g, ' ') : '发放记录';
+}
+
+function formatUserDiscountSourceTypeLabel(value = '') {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'admin_assign') return '管理员发券';
+    if (normalized === 'recharge_linkage') return '充值联动';
+    if (normalized === 'public_claim') return '公开领取';
+    if (normalized === 'order_refund_restore') return '退款返券';
+    if (normalized === 'manual_restore') return '人工恢复';
+    if (normalized === 'migration') return '数据迁移';
+    return normalized ? normalized.replace(/_/g, ' ') : '未记录来源';
+}
+
+function buildUserDiscountSubtitleParts(asset = {}) {
+    const siteLabel = formatUserDiscountSiteLabel(asset?.applicable_site);
+    const sourceTypeLabel = formatUserDiscountSourceTypeLabel(asset?.source_type);
+    const distributionLabel = formatUserDiscountDistributionModeLabel(asset?.distribution_mode);
+    const parts = [];
+
+    if (siteLabel) {
+        parts.push(siteLabel);
+    }
+
+    if (sourceTypeLabel && sourceTypeLabel !== '未记录来源') {
+        parts.push(sourceTypeLabel);
+    } else if (distributionLabel && distributionLabel !== '发放记录') {
+        parts.push(distributionLabel);
+    }
+
+    return [...new Set(parts.filter(Boolean))];
+}
+
+function formatUserDiscountStackingLabel(asset = {}) {
+    return asset?.is_exclusive === false ? '可叠加' : '排他券';
+}
+
+function formatUserDiscountAssetStatusMeta(input = '') {
+    const asset = input && typeof input === 'object' && !Array.isArray(input) ? input : null;
+    const normalized = normalizeUserDiscountAssetStatus(asset?.asset_status || input);
+    if (normalized === 'used') {
+        return {
+            status: normalized,
+            label: '已使用',
+            tone: 'used',
+            note: '已完成核销，保留为历史记录'
+        };
+    }
+    if (normalized === 'expired') {
+        return {
+            status: normalized,
+            label: '已失效',
+            tone: 'expired',
+            note: '已超过可使用时间'
+        };
+    }
+    if (normalized === 'revoked') {
+        const removalOrigin = String(asset?.removal_origin || '').trim().toLowerCase();
+        return {
+            status: normalized,
+            label: '已删除',
+            tone: 'revoked',
+            note: removalOrigin === 'user'
+                ? '用户已从钱包删除，记录保留用于审计'
+                : '管理员已删除，记录保留用于审计',
+            removalLabel: removalOrigin === 'user'
+                ? '用户删除'
+                : removalOrigin === 'admin'
+                    ? '后台删除'
+                    : '已删除'
+        };
+    }
+    return {
+        status: 'available',
+        label: '可使用',
+        tone: 'available',
+        note: '当前仍在用户卡券包中'
+    };
+}
+
+function formatUserDiscountDateLabel(value = '', fallback = '未记录') {
+    return value ? formatAdminDateTime(value) : fallback;
+}
+
+function buildUserDiscountMetaCard(label = '', value = '', hint = '') {
+    return `
+        <div class="users-coupon-meta-card">
+            <span class="users-coupon-meta-card__label">${escapeHtml(label)}</span>
+            <strong class="users-coupon-meta-card__value">${escapeHtml(value || '未记录')}</strong>
+            <span class="users-coupon-meta-card__hint">${escapeHtml(hint || '')}</span>
+        </div>
+    `;
+}
+
+function getUserCouponStatusFilter() {
+    return String(getUserModalTabState('coupons').couponStatusFilter || 'all').trim().toLowerCase() || 'all';
+}
+
+function filterUserCouponDataByStatus(data = [], statusFilter = 'all') {
+    const rows = Array.isArray(data) ? data : [];
+    const normalizedFilter = String(statusFilter || 'all').trim().toLowerCase();
+
+    if (normalizedFilter === 'available' || normalizedFilter === 'used') {
+        return rows.filter((item) => normalizeUserDiscountAssetStatus(item?.asset_status) === normalizedFilter);
+    }
+
+    if (normalizedFilter === 'inactive') {
+        return rows.filter((item) => ['expired', 'revoked'].includes(normalizeUserDiscountAssetStatus(item?.asset_status)));
+    }
+
+    return rows;
+}
+
+function toggleUserCouponDetail(assetId = '') {
+    const normalizedAssetId = String(assetId || '').trim();
+    if (!normalizedAssetId) {
+        return;
+    }
+
+    const tabState = getUserModalTabState('coupons');
+    const expandedIds = Array.isArray(tabState.expandedCouponIds) ? [...tabState.expandedCouponIds] : [];
+    const currentIndex = expandedIds.indexOf(normalizedAssetId);
+    if (currentIndex >= 0) {
+        expandedIds.splice(currentIndex, 1);
+    } else {
+        expandedIds.push(normalizedAssetId);
+    }
+
+    patchUserModalTabState('coupons', {
+        expandedCouponIds: expandedIds
+    });
+
+    if (currentTab === 'coupons') {
+        renderUserTab('coupons');
+    }
+}
+
+function setUserCouponStatusFilter(statusFilter = 'all') {
+    const normalizedFilter = ['all', 'available', 'used', 'inactive'].includes(String(statusFilter || '').trim().toLowerCase())
+        ? String(statusFilter || '').trim().toLowerCase()
+        : 'all';
+
+    patchUserModalTabState('coupons', {
+        couponStatusFilter: normalizedFilter
+    });
+
+    if (currentTab === 'coupons') {
+        renderUserTab('coupons');
+    }
+}
+
+function buildUserDiscountSummaryCards(data = []) {
+    const rows = Array.isArray(data) ? data : [];
+    const activeFilter = getUserCouponStatusFilter();
+    const countByStatus = {
+        total: rows.length,
+        available: rows.filter((item) => normalizeUserDiscountAssetStatus(item?.asset_status) === 'available').length,
+        used: rows.filter((item) => normalizeUserDiscountAssetStatus(item?.asset_status) === 'used').length,
+        expired: rows.filter((item) => normalizeUserDiscountAssetStatus(item?.asset_status) === 'expired').length,
+        revoked: rows.filter((item) => normalizeUserDiscountAssetStatus(item?.asset_status) === 'revoked').length
+    };
+
+    const cards = [
+        { label: '全部', value: countByStatus.total, tone: 'neutral', filter: 'all' },
+        { label: '可使用', value: countByStatus.available, tone: 'available', filter: 'available' },
+        { label: '已使用', value: countByStatus.used, tone: 'used', filter: 'used' },
+        { label: '已失效/删除', value: countByStatus.expired + countByStatus.revoked, tone: 'muted', filter: 'inactive' }
+    ];
+
+    return cards.map((item) => `
+        <button class="users-coupon-summary-card users-coupon-summary-card--${escapeHtml(item.tone)}${activeFilter === item.filter ? ' is-active' : ''}" type="button" data-admin-action="users-filter-coupon-status" data-coupon-status-filter="${escapeHtml(item.filter)}">
+            <span class="users-coupon-summary-card__label">${escapeHtml(item.label)}</span>
+            <strong class="users-coupon-summary-card__value">${escapeHtml(String(item.value || 0))}</strong>
+        </button>
+    `).join('');
+}
+
+function renderCouponsTab(container, rawData = currentModalData.discountAssets || []) {
+    const dateFilteredData = getUserModalTabVisibleData('coupons', rawData);
+    const statusFilteredData = filterUserCouponDataByStatus(dateFilteredData, getUserCouponStatusFilter());
+
+    container.innerHTML = `
+        ${buildUserTabToolbar('coupons', { includeCustomDate: true, exportLabel: '导出优惠券' })}
+        ${buildUserTabActionBanner('coupons')}
+        <input type="text" id="couponsDatePicker" class="users-hidden-date-picker" placeholder="选择日期范围">
+        ${wrapUserTabRefreshShell('coupons', `
+            <div class="users-coupons-shell">
+                <section class="users-coupon-summary-strip">
+                    ${buildUserDiscountSummaryCards(dateFilteredData)}
+                </section>
+                <section class="users-coupons-list">
+                    ${renderCouponItems(statusFilteredData)}
+                </section>
+            </div>
+        `, { variant: 'coupons' })}
+    `;
+}
+
+function renderCouponItems(data = []) {
+    if (!Array.isArray(data) || data.length === 0) {
+        return buildUsersTabEmptyState(getUserCouponStatusFilter() === 'all' ? '该用户暂时没有可查看的优惠券' : '当前筛选下暂无优惠券');
+    }
+
+    const tabState = getUserModalTabState('coupons');
+
+    return data.map((asset) => {
+        const statusMeta = formatUserDiscountAssetStatusMeta(asset);
+        const benefitLabel = formatUserDiscountBenefitLabel(asset);
+        const distributionLabel = formatUserDiscountDistributionModeLabel(asset?.distribution_mode);
+        const sourceTypeLabel = formatUserDiscountSourceTypeLabel(asset?.source_type);
+        const canRemove = asset?.can_remove !== false && statusMeta.status === 'available';
+        const canRestore = statusMeta.status === 'revoked';
+        const isPending = String(tabState.pendingDiscountAssetId || '') === String(asset?.id || '');
+        const pendingAction = String(tabState.pendingDiscountAssetAction || '').trim().toLowerCase();
+        const isExpanded = Array.isArray(tabState.expandedCouponIds)
+            ? tabState.expandedCouponIds.includes(String(asset?.id || ''))
+            : false;
+        const summaryChipMarkup = [
+            `<span class="users-coupon-pill">${escapeHtml(formatUserDiscountStackingLabel(asset))}</span>`
+        ].filter(Boolean).join('');
+        const detailChipMarkup = [
+            statusMeta.status === 'revoked' && statusMeta.removalLabel ? `<span class="users-coupon-pill users-coupon-pill--revoked">${escapeHtml(statusMeta.removalLabel)}</span>` : '',
+            distributionLabel && distributionLabel !== '发放记录' ? `<span class="users-coupon-pill">发放 ${escapeHtml(distributionLabel)}</span>` : '',
+            sourceTypeLabel && sourceTypeLabel !== '未记录来源' ? `<span class="users-coupon-pill">来源 ${escapeHtml(sourceTypeLabel)}</span>` : '',
+            asset?.source_channel ? `<span class="users-coupon-pill">渠道 ${escapeHtml(asset.source_channel)}</span>` : '',
+            asset?.audience_segment ? `<span class="users-coupon-pill">人群 ${escapeHtml(asset.audience_segment)}</span>` : '',
+            asset?.expires_at ? `<span class="users-coupon-pill">失效 ${escapeHtml(formatAdminDateTime(asset.expires_at))}</span>` : '<span class="users-coupon-pill">长期有效</span>'
+        ].filter(Boolean).join('');
+        const subtitleParts = buildUserDiscountSubtitleParts(asset);
+
+        return `
+            <article class="users-coupon-item users-coupon-item--${escapeHtml(statusMeta.tone)}">
+                <div class="users-coupon-main">
+                    <div class="users-coupon-head">
+                        <button class="users-coupon-toggle" type="button" data-admin-action="users-toggle-coupon-detail" data-discount-asset-id="${encodeURIComponent(String(asset?.id || ''))}" aria-expanded="${isExpanded ? 'true' : 'false'}">
+                            <div class="users-coupon-icon users-coupon-icon--${escapeHtml(statusMeta.tone)}">
+                                <i class="fas fa-ticket-alt"></i>
+                            </div>
+                            <div class="users-coupon-copy">
+                                <div class="users-coupon-title-row">
+                                    <strong class="users-coupon-title">${escapeHtml(benefitLabel)}</strong>
+                                    <span class="users-coupon-code">${escapeHtml(String(asset?.code || '未命名券').trim() || '未命名券')}</span>
+                                </div>
+                                <div class="users-coupon-subtitle">${escapeHtml(subtitleParts.join(' · '))}</div>
+                            </div>
+                        </button>
+                        <div class="users-coupon-side">
+                            <span class="users-coupon-status users-coupon-status--${escapeHtml(statusMeta.tone)}">${escapeHtml(statusMeta.label)}</span>
+                        </div>
+                    </div>
+                    ${isExpanded ? `
+                        <div class="users-coupon-details">
+                            <div class="users-coupon-pill-row users-coupon-pill-row--summary">
+                                ${summaryChipMarkup}
+                                ${canRemove ? `
+                                    <button class="users-coupon-delete-btn" type="button" data-admin-action="users-remove-discount-asset" data-discount-asset-id="${encodeURIComponent(String(asset?.id || ''))}"${isPending || tabState.refreshing ? ' disabled' : ''}>
+                                        <span>${isPending && pendingAction === 'remove' ? '删除中' : '删除'}</span>
+                                    </button>
+                                ` : canRestore ? `
+                                    <button class="users-coupon-restore-btn" type="button" data-admin-action="users-restore-discount-asset" data-discount-asset-id="${encodeURIComponent(String(asset?.id || ''))}"${isPending || tabState.refreshing ? ' disabled' : ''}>
+                                        <span>${isPending && pendingAction === 'restore' ? '恢复中' : '恢复可用'}</span>
+                                    </button>
+                                ` : `<span class="users-coupon-side-note">${escapeHtml(statusMeta.note)}</span>`}
+                            </div>
+                            <div class="users-coupon-pill-row">
+                                ${detailChipMarkup}
+                            </div>
+                            <div class="users-coupon-meta-grid">
+                                ${buildUserDiscountMetaCard('发放时间', formatUserDiscountDateLabel(asset?.assigned_at), '管理员或系统发放时间')}
+                                ${buildUserDiscountMetaCard('领取时间', formatUserDiscountDateLabel(asset?.claimed_at, '未领取'), '公开领取券会记录领取时间')}
+                                ${buildUserDiscountMetaCard('使用时间', formatUserDiscountDateLabel(asset?.consumed_at, '未使用'), '已核销后会写入订单节点')}
+                                ${buildUserDiscountMetaCard('最近订单', String(asset?.last_order_id || '未关联'), '关联订单仅在核销后出现')}
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+            </article>
+        `;
+    }).join('');
+}
+
+function showUserCouponConfirmModal({
+    title = '确认操作',
+    summary = '',
+    description = '',
+    confirmLabel = '确定'
+} = {}) {
+    return new Promise((resolve) => {
+        document.querySelector('.users-coupon-confirm-modal-overlay')?.remove();
+
+        const overlay = document.createElement('div');
+        overlay.className = 'batch-export-modal-overlay users-coupon-confirm-modal-overlay';
+
+        const modal = document.createElement('div');
+        modal.className = 'batch-export-modal glass-panel users-coupon-confirm-modal';
+        modal.innerHTML = `
+            <div class="batch-export-modal-header users-coupon-confirm-modal__header">
+                <h3 class="batch-export-modal-title users-coupon-confirm-modal__title">${escapeHtml(title)}</h3>
+            </div>
+            <div class="batch-export-modal-body users-coupon-confirm-modal__body">
+                ${summary ? `<div class="users-coupon-confirm-modal__summary">${escapeHtml(summary)}</div>` : ''}
+                ${description ? `<div class="users-coupon-confirm-modal__copy">${escapeHtml(description)}</div>` : ''}
+            </div>
+            <div class="batch-export-modal-footer users-coupon-confirm-modal__footer">
+                <button class="modal-btn cancel batch-export-modal-btn users-coupon-confirm-modal__cancel" type="button" data-users-coupon-confirm-action="cancel">取消</button>
+                <button class="modal-btn confirm batch-export-modal-btn users-coupon-confirm-btn users-coupon-confirm-btn--restore" type="button" data-users-coupon-confirm-action="confirm">${escapeHtml(confirmLabel)}</button>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+        overlay.appendChild(modal);
+
+        requestAnimationFrame(() => {
+            overlay.classList.add('active');
+            modal.querySelector('[data-users-coupon-confirm-action="confirm"]')?.focus();
+        });
+
+        let finished = false;
+        const finish = (result) => {
+            if (finished) return;
+            finished = true;
+            document.removeEventListener('keydown', handleKeydown);
+            overlay.classList.remove('active');
+            setTimeout(() => {
+                overlay.remove();
+                resolve(result);
+            }, 220);
+        };
+
+        const handleKeydown = (event) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                finish(false);
+                return;
+            }
+            if (event.key === 'Enter') {
+                const activeElement = document.activeElement;
+                if (!(activeElement instanceof HTMLElement) || !overlay.contains(activeElement) || activeElement.dataset.usersCouponConfirmAction !== 'cancel') {
+                    event.preventDefault();
+                    finish(true);
+                }
+            }
+        };
+
+        document.addEventListener('keydown', handleKeydown);
+
+        overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) {
+                finish(false);
+                return;
+            }
+
+            const actionEl = event.target instanceof Element
+                ? event.target.closest('[data-users-coupon-confirm-action]')
+                : null;
+            if (!actionEl || !overlay.contains(actionEl)) {
+                return;
+            }
+
+            finish(actionEl.dataset.usersCouponConfirmAction === 'confirm');
+        });
+    });
+}
+
+async function removeUserDiscountAsset(assetId) {
+    const normalizedAssetId = String(assetId || '').trim();
+    const userId = String(currentModalUser?.id || '').trim();
+    if (!normalizedAssetId || !userId) {
+        return;
+    }
+
+    const asset = (Array.isArray(currentModalData.discountAssets) ? currentModalData.discountAssets : [])
+        .find((entry) => String(entry?.id || '').trim() === normalizedAssetId) || null;
+    const status = normalizeUserDiscountAssetStatus(asset?.asset_status);
+    if (status !== 'available') {
+        showToast?.('只有可使用状态的优惠券支持删除', 'warning');
+        return;
+    }
+
+    const displayName = asset?.code
+        ? `${formatUserDiscountBenefitLabel(asset)}（${asset.code}）`
+        : formatUserDiscountBenefitLabel(asset);
+    if (!window.confirm(`确定删除这张优惠券吗？\n${displayName}\n\n删除后会保留审计记录。`)) {
+        return;
+    }
+
+    clearUserModalTabFeedbackDismiss('coupons');
+    patchUserModalTabState('coupons', {
+        pendingDiscountAssetId: normalizedAssetId,
+        pendingDiscountAssetAction: 'remove',
+        feedbackMessage: '正在删除优惠券...',
+        feedbackTone: 'info',
+        feedbackAt: Date.now(),
+        feedbackClosing: false
+    });
+    renderUserTab('coupons');
+
+    try {
+        await postAdminUsersManage('revoke_discount_asset', {
+            userId,
+            assetId: normalizedAssetId
+        });
+
+        invalidateUserModalTab('audit', { resetData: true });
+        const refreshed = await reloadUserModalTab('coupons', {
+            preserveData: true,
+            loadingMessage: '优惠券已删除，正在同步最新卡券包...',
+            successMessage: '优惠券已删除并写入审计',
+            errorMessage: '优惠券已删除，但列表刷新失败，可稍后手动刷新'
+        });
+
+        patchUserModalTabState('coupons', {
+            pendingDiscountAssetId: '',
+            pendingDiscountAssetAction: ''
+        });
+        if (currentTab === 'coupons') {
+            renderUserTab('coupons');
+        }
+
+        if (refreshed) {
+            showToast?.('优惠券已删除并记录审计', 'success');
+        } else {
+            showToast?.('优惠券已删除，列表稍后可手动刷新', 'warning');
+        }
+    } catch (err) {
+        patchUserModalTabState('coupons', {
+            pendingDiscountAssetId: '',
+            pendingDiscountAssetAction: '',
+            feedbackMessage: `优惠券删除失败: ${err.message || '未知错误'}`,
+            feedbackTone: 'error',
+            feedbackAt: Date.now(),
+            feedbackClosing: false
+        });
+        scheduleUserModalTabFeedbackDismiss('coupons', 'error');
+        renderUserTab('coupons');
+        showToast?.(`优惠券删除失败: ${err.message || '未知错误'}`, 'error');
+    }
+}
+
+async function restoreUserDiscountAsset(assetId) {
+    const normalizedAssetId = String(assetId || '').trim();
+    const userId = String(currentModalUser?.id || '').trim();
+    if (!normalizedAssetId || !userId) {
+        return;
+    }
+
+    const asset = (Array.isArray(currentModalData.discountAssets) ? currentModalData.discountAssets : [])
+        .find((entry) => String(entry?.id || '').trim() === normalizedAssetId) || null;
+    const status = normalizeUserDiscountAssetStatus(asset?.asset_status);
+    if (status !== 'revoked') {
+        showToast?.('只有已删除状态的优惠券支持恢复', 'warning');
+        return;
+    }
+
+    const displayName = asset?.code
+        ? `${formatUserDiscountBenefitLabel(asset)}（${asset.code}）`
+        : formatUserDiscountBenefitLabel(asset);
+    const confirmed = await showUserCouponConfirmModal({
+        title: '确定恢复这张优惠券吗？',
+        summary: displayName,
+        description: '恢复后会重新回到可使用状态。',
+        confirmLabel: '确定'
+    });
+    if (!confirmed) {
+        return;
+    }
+
+    clearUserModalTabFeedbackDismiss('coupons');
+    patchUserModalTabState('coupons', {
+        pendingDiscountAssetId: normalizedAssetId,
+        pendingDiscountAssetAction: 'restore',
+        feedbackMessage: '正在恢复优惠券...',
+        feedbackTone: 'info',
+        feedbackAt: Date.now(),
+        feedbackClosing: false
+    });
+    renderUserTab('coupons');
+
+    try {
+        await postAdminUsersManage('restore_discount_asset', {
+            userId,
+            assetId: normalizedAssetId
+        });
+
+        invalidateUserModalTab('audit', { resetData: true });
+        const refreshed = await reloadUserModalTab('coupons', {
+            preserveData: true,
+            loadingMessage: '优惠券已恢复，正在同步最新卡券包...',
+            successMessage: '优惠券已恢复为可使用状态',
+            errorMessage: '优惠券已恢复，但列表刷新失败，可稍后手动刷新'
+        });
+
+        patchUserModalTabState('coupons', {
+            pendingDiscountAssetId: '',
+            pendingDiscountAssetAction: ''
+        });
+        if (currentTab === 'coupons') {
+            renderUserTab('coupons');
+        }
+
+        if (refreshed) {
+            showToast?.('优惠券已恢复并写入审计', 'success');
+        } else {
+            showToast?.('优惠券已恢复，列表稍后可手动刷新', 'warning');
+        }
+    } catch (err) {
+        patchUserModalTabState('coupons', {
+            pendingDiscountAssetId: '',
+            pendingDiscountAssetAction: '',
+            feedbackMessage: `优惠券恢复失败: ${err.message || '未知错误'}`,
+            feedbackTone: 'error',
+            feedbackAt: Date.now(),
+            feedbackClosing: false
+        });
+        scheduleUserModalTabFeedbackDismiss('coupons', 'error');
+        renderUserTab('coupons');
+        showToast?.(`优惠券恢复失败: ${err.message || '未知错误'}`, 'error');
+    }
 }
 
 function normalizeAdminLedgerValue(value, fallback = 0) {
@@ -8065,6 +8647,32 @@ async function exportTabData(tabName) {
                 filenameBase = `${username}_充值记录_${date}`;
                 sheetName = '充值记录';
                 break;
+            case 'coupons':
+                data = (Array.isArray(visibleData) ? visibleData : []).map(r => ({
+                    '资产 ID': r.id || '',
+                    '优惠券 ID': r.discount_id || '',
+                    '券码': r.code || '',
+                    '权益': formatUserDiscountBenefitLabel(r),
+                    '状态': formatUserDiscountAssetStatusMeta(r).label,
+                    '删除来源': normalizeUserDiscountAssetStatus(r.asset_status) === 'revoked'
+                        ? (formatUserDiscountAssetStatusMeta(r).removalLabel || '')
+                        : '',
+                    '适用站点': formatUserDiscountSiteLabel(r.applicable_site),
+                    '发放方式': formatUserDiscountDistributionModeLabel(r.distribution_mode),
+                    '叠加规则': formatUserDiscountStackingLabel(r),
+                    '来源': formatUserDiscountSourceTypeLabel(r.source_type),
+                    '渠道': r.source_channel || '',
+                    '人群': r.audience_segment || '',
+                    '发放时间': formatAdminDateTime(r.assigned_at),
+                    '领取时间': formatAdminDateTime(r.claimed_at),
+                    '使用时间': formatAdminDateTime(r.consumed_at),
+                    '失效时间': formatAdminDateTime(r.expires_at),
+                    '最近订单': r.last_order_id || '',
+                    '创建时间': formatAdminDateTime(r.created_at)
+                }));
+                filenameBase = `${username}_用户优惠券_${date}`;
+                sheetName = '用户优惠券';
+                break;
             case 'activity':
                 data = (Array.isArray(visibleData) ? visibleData : []).map(r => ({
                     '类型': r.type,
@@ -8313,6 +8921,14 @@ async function fetchUserPaymentOrders(userId) {
         console.error('Failed to fetch user payment orders:', err);
         return [];
     }
+}
+
+async function fetchUserDiscountAssets(userId) {
+    const payload = await postAdminUsersManage('list_discount_assets', {
+        userId
+    });
+
+    return Array.isArray(payload?.assets) ? payload.assets : [];
 }
 
 // Format ledger reason for display
@@ -9755,6 +10371,31 @@ async function submitUserNote() {
 // ==========================================
 // AUDIT TAB
 // ==========================================
+function renderUserDiscountAuditDetails(details = {}) {
+    const titleParts = [details.benefit_label, details.code ? `(${details.code})` : ''].filter(Boolean).join(' ');
+    const beforeMeta = formatUserDiscountAssetStatusMeta(details.asset_status_before);
+    const afterMeta = formatUserDiscountAssetStatusMeta(details.asset_status_after);
+    const parts = [];
+
+    if (titleParts) {
+        parts.push(`卡券: ${escapeHtml(titleParts)}`);
+    }
+    if (details.applicable_site) {
+        parts.push(`站点: ${escapeHtml(formatUserDiscountSiteLabel(details.applicable_site))}`);
+    }
+    if (details.asset_status_before || details.asset_status_after) {
+        parts.push(`状态: ${escapeHtml(beforeMeta.label)} -> ${escapeHtml(afterMeta.label)}`);
+    }
+    if (details.expires_at) {
+        parts.push(`失效时间: ${escapeHtml(formatAdminDateTime(details.expires_at))}`);
+    }
+    if (details.source_channel) {
+        parts.push(`渠道: ${escapeHtml(String(details.source_channel))}`);
+    }
+
+    return parts.join(' · ') || '已更新用户卡券中的一张优惠券';
+}
+
 async function fetchUserAuditLogs(userId) {
     const { data, error } = await window.supabaseClient
         .from('admin_audit_logs_view')
@@ -9864,18 +10505,26 @@ function renderAuditItems(data) {
     }
 
     return data.map(log => {
+        const actionType = String(log.action_type || '').trim();
+        const normalizedType = actionType.toLowerCase();
+        const details = log.details && typeof log.details === 'object' && !Array.isArray(log.details)
+            ? log.details
+            : {};
         const adminEmail = log.admin_email || 'Unknown';
         // Format details helper
         const formatDetails = (type, details) => {
-            if (type.includes('POINT')) {
+            const normalized = String(type || '').trim().toLowerCase();
+
+            if (normalized.includes('point')) {
                 const detailClass = details.amount > 0 ? 'is-positive' : 'is-negative';
                 return `变动: <span class="audit-detail-amount ${detailClass}">${details.amount > 0 ? '+' : ''}${details.amount}</span> · 理由: ${escapeHtml(details.reason || '-')} `;
             }
-            if (type.includes('BAN')) return `范围: ${details.scope === 'all' ? '全站' : '单项'} · 时长: ${escapeHtml(String(details.days || 0))}天`;
-            if (type.includes('UNBAN')) return `解封范围: ${details.scope === 'all' ? '全站' : '单项'}`;
-            if (type.includes('NOTE')) return `内容: ${escapeHtml(String(details.content_preview || ''))}...`;
-            if (type.includes('NOTIFICATION')) return `标题: ${escapeHtml(String(details.title || '-'))} (${escapeHtml(String(details.type || 'info'))})`;
-            if (type.includes('CLEAR')) return `清空项目: ${Array.isArray(details.cleared_items) ? details.cleared_items.map((item) => escapeHtml(String(item))).join(', ') : '无'}`;
+            if (normalized.includes('unban')) return `解封范围: ${details.scope === 'all' ? '全站' : '单项'}`;
+            if (normalized.includes('ban')) return `范围: ${details.scope === 'all' ? '全站' : '单项'} · 时长: ${escapeHtml(String(details.days || 0))}天`;
+            if (normalized.includes('note')) return `内容: ${escapeHtml(String(details.content_preview || ''))}...`;
+            if (normalized.includes('notification')) return `标题: ${escapeHtml(String(details.title || '-'))} (${escapeHtml(String(details.type || 'info'))})`;
+            if (normalized.includes('clear')) return `清空项目: ${Array.isArray(details.cleared_items) ? details.cleared_items.map((item) => escapeHtml(String(item))).join(', ') : '无'}`;
+            if (type === 'remove_user_discount_asset' || type === 'restore_user_discount_asset') return renderUserDiscountAuditDetails(details);
 
             // Admin Permission Changes
             if (type === 'grant_admin') {
@@ -9892,13 +10541,14 @@ function renderAuditItems(data) {
         let icon = 'fa-shield-alt';
         let toneClass = 'is-neutral';
 
-        if (log.action_type.includes('BAN')) { icon = 'fa-ban'; toneClass = 'is-danger'; }
-        else if (log.action_type.includes('UNBAN')) { icon = 'fa-unlock'; toneClass = 'is-success'; }
-        else if (log.action_type.includes('POINTS')) { icon = 'fa-coins'; toneClass = 'is-warning'; }
-        else if (log.action_type.includes('NOTE')) { icon = 'fa-sticky-note'; toneClass = 'is-info'; }
-        else if (log.action_type.includes('CLEAR')) { icon = 'fa-trash-alt'; toneClass = 'is-danger'; }
-        else if (log.action_type.includes('NOTIFICATION')) { icon = 'fa-bell'; toneClass = 'is-accent'; }
-        else if (log.action_type.includes('admin') || log.action_type.includes('permission')) { icon = 'fa-user-shield'; toneClass = 'is-accent'; }
+        if (normalizedType.includes('unban')) { icon = 'fa-unlock'; toneClass = 'is-success'; }
+        else if (normalizedType.includes('ban')) { icon = 'fa-ban'; toneClass = 'is-danger'; }
+        else if (normalizedType.includes('point')) { icon = 'fa-coins'; toneClass = 'is-warning'; }
+        else if (normalizedType.includes('note')) { icon = 'fa-sticky-note'; toneClass = 'is-info'; }
+        else if (normalizedType.includes('clear')) { icon = 'fa-trash-alt'; toneClass = 'is-danger'; }
+        else if (normalizedType.includes('notification')) { icon = 'fa-bell'; toneClass = 'is-accent'; }
+        else if (normalizedType.includes('discount') || normalizedType.includes('coupon')) { icon = 'fa-ticket-alt'; toneClass = 'is-danger'; }
+        else if (normalizedType.includes('admin') || normalizedType.includes('permission')) { icon = 'fa-user-shield'; toneClass = 'is-accent'; }
 
         return `
             <div class="audit-item users-audit-item ${toneClass}">
@@ -9907,15 +10557,15 @@ function renderAuditItems(data) {
                 </div>
                 <div class="audit-content users-audit-content">
                     <div class="audit-header users-audit-header">
-                        <span class="users-audit-title">${formatAuditAction(log.action_type)}</span>
+                        <span class="users-audit-title">${formatAuditAction(actionType)}</span>
                         <span class="users-audit-time">${formatTimeAgo(log.created_at)}</span>
                     </div>
                     <div class="audit-meta users-audit-meta">
                         <i class="fas fa-user-tie users-audit-meta-icon"></i> ${escapeHtml(adminEmail)}
                     </div>
-                    ${Object.keys(log.details).length > 0 || log.action_type === 'revoke_admin' ? `
+                    ${Object.keys(details).length > 0 || actionType === 'revoke_admin' ? `
                     <div class="audit-details users-audit-details">
-                        ${formatDetails(log.action_type, log.details)}
+                        ${formatDetails(actionType, details)}
                     </div>` : ''}
 
                 </div>
@@ -9936,6 +10586,8 @@ function formatAuditAction(action) {
         'RESET_AVATAR': '重置头像',
         'grant_admin': '授予管理员',
         'revoke_admin': '移除管理员',
+        'remove_user_discount_asset': '删除用户优惠券',
+        'restore_user_discount_asset': '恢复用户优惠券',
         'update_admin_permissions': '更新权限',
         'update_user_permissions': '更新权限',
         'update_permissions': '更新权限'
@@ -10049,6 +10701,10 @@ window.submitUserNote = submitUserNote;
 window.renderAuditTab = renderAuditTab;
 window.reloadUserModalTab = reloadUserModalTab;
 window.reloadAffiliateModalData = reloadAffiliateModalData;
+window.toggleUserCouponDetail = toggleUserCouponDetail;
+window.setUserCouponStatusFilter = setUserCouponStatusFilter;
+window.removeUserDiscountAsset = removeUserDiscountAsset;
+window.restoreUserDiscountAsset = restoreUserDiscountAsset;
 window.showNotificationModal = showNotificationModal;
 window.closeNotificationModal = closeNotificationModal;
 window.selectNotifType = selectNotifType;
