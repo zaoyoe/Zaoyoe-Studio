@@ -1045,7 +1045,11 @@
         }, 'important');
         dropdown.classList.add('active');
         dropdown.setAttribute('aria-hidden', 'false');
-        overlay?.classList.add('active');
+        if (overlay) {
+            overlay.dataset.dropdownPurpose = 'user-menu';
+            overlay.setAttribute('aria-hidden', 'false');
+            overlay.classList.add('active');
+        }
         authBtn.setAttribute('aria-expanded', 'true');
 
         if (window.WalletModal?.prefetchData) {
@@ -1064,7 +1068,11 @@
         const authBtn = document.getElementById('authBtn');
         dropdown?.classList.remove('active');
         dropdown?.setAttribute('aria-hidden', 'true');
-        overlay?.classList.remove('active');
+        if (overlay) {
+            overlay.classList.remove('active');
+            overlay.setAttribute('aria-hidden', 'true');
+            overlay.removeAttribute('data-dropdown-purpose');
+        }
         authBtn?.setAttribute('aria-expanded', 'false');
     }
 

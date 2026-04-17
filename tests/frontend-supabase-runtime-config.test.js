@@ -1460,7 +1460,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['privacy.html', 'css/privacy-page.css?v=20260324_PRIVACY_STYLES_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
-        ['shop.html', 'css/shop-page.css?v=20260416_SHOP_DISCOUNT_UNAVAILABLE_ACCORDION_9'],
+        ['shop.html', 'css/shop-page.css?v=20260417_SHOP_LIGHT_THEME_1'],
         ['admin-studio.html', 'css/admin-studio-page.css?v=20260416_DISCOUNT_TRIGGER_PRESET_BOX_FIX_10'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
@@ -1549,7 +1549,7 @@ test('selected preview showcase pages no longer embed inline style attributes', 
 
 test('shop and archived index pages no longer embed inline style attributes', () => {
     const expectations = new Map([
-        ['shop.html', 'css/shop-page.css?v=20260416_SHOP_DISCOUNT_UNAVAILABLE_ACCORDION_9'],
+        ['shop.html', 'css/shop-page.css?v=20260417_SHOP_LIGHT_THEME_1'],
         ['index_old.html', 'css/index-old.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1']
     ]);
     const inlineStyleAttributePattern = /\sstyle\s*=\s*["']/i;
@@ -1975,6 +1975,11 @@ test('shop client runtime renderers externalize product cards, purchase feedback
     }
 
     assert.equal(shopHtmlSource.includes('<body class="shop-page guestbook-page">'), true, 'shop.html should scope the page with shop-page before guestbook-page compatibility styles');
+    assert.equal(
+        shopHtmlSource.includes('./js/shop-theme-sync.js?v=20260417_SHOP_LIGHT_THEME_1'),
+        true,
+        'shop.html should load the shop theme-color sync bootstrap'
+    );
     assert.equal(shopHtmlSource.includes('id="purchaseDiscountAssetsPanel"'), true, 'shop.html should expose the purchase discount asset panel');
 });
 
@@ -2328,7 +2333,7 @@ test('guestbook runtime renderers externalize loading, modal, and interaction st
     }
 
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260417_GUESTBOOK_IMAGE_STABLE_1'),
+        guestbookHtml.includes('style.css?v=20260417_GUESTBOOK_IMAGE_BG_CLEAR_1'),
         true,
         'guestbook.html should reference the updated guestbook stylesheet version'
     );
@@ -2481,7 +2486,7 @@ test('homepage guestbook modal runtime renderers externalize keyboard dock, view
         'index.html should load the latest homepage guestbook modal script version'
     );
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260417_GUESTBOOK_IMAGE_STABLE_1'),
+        guestbookHtml.includes('style.css?v=20260417_GUESTBOOK_IMAGE_BG_CLEAR_1'),
         true,
         'guestbook.html should load the latest shared stylesheet version'
     );

@@ -130,8 +130,13 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /css\/shop-page\.css\?v=20260416_SHOP_DISCOUNT_UNAVAILABLE_ACCORDION_9/,
-        'shop.html should bust the shop stylesheet cache after integrating the cart drawer module'
+        /css\/shop-page\.css\?v=20260417_SHOP_LIGHT_THEME_1/,
+        'shop.html should bust the shop stylesheet cache after integrating the storefront light theme'
+    );
+    assert.match(
+        shopHtmlSource,
+        /js\/shop-theme-sync\.js\?v=20260417_SHOP_LIGHT_THEME_1/,
+        'shop.html should load the theme-color sync helper for the storefront light theme'
     );
     assert.match(
         shopHtmlSource,

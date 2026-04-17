@@ -2963,17 +2963,21 @@ body.guestbook-page.auth-sheet-open::after {
 }
 
 .message-image {
-    --guestbook-image-ratio: 4 / 3;
     margin: 15px 0;
     position: relative;
     display: block;
     width: 100%;
-    aspect-ratio: var(--guestbook-image-ratio, 4 / 3);
+    /* Keep a stable frame so masonry cards don't jump when images decode. */
+    aspect-ratio: 4 / 3;
     border-radius: 12px;
     overflow: hidden;
     background: linear-gradient(135deg, rgba(15, 23, 42, 0.6), rgba(30, 41, 59, 0.38));
     max-width: 100%;
     isolation: isolate;
+}
+
+.message-image.is-loaded {
+    background: transparent;
 }
 
 .message-image::before {
@@ -2998,8 +3002,10 @@ body.guestbook-page.auth-sheet-open::after {
 
 .message-image img {
     width: 100%;
-    height: auto;
+    height: 100%;
     display: block;
+    object-fit: contain;
+    object-position: center;
     cursor: pointer;
     pointer-events: none;
     opacity: 0;
