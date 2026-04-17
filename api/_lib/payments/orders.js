@@ -14,6 +14,10 @@ const {
 const {
     rechargePointsForPayment
 } = require('./rpc');
+const {
+    maybeIssueAffiliateDiscountAssetsForRecharge,
+    maybeIssueRechargeDiscountAssets
+} = require('../discount-trigger-linkage');
 
 const mockProvider = getPaymentProviderAdapter('mock');
 const CHECKOUT_SESSION_EXPIRY_HOURS = 24;
@@ -1901,6 +1905,7 @@ async function completeMockPayment({
             checkout_session_id: activeCheckoutSession.id,
             checkout_session_key: activeCheckoutSession.session_key,
             checkout_session_status: 'completed',
+            linked_discount_summary: null,
             message: `已使用模拟支付完成「${packageName}」`
         };
     }
@@ -2070,6 +2075,23 @@ async function completeMockPayment({
         throw runtimeError;
     }
 
+    const linkedDiscountSummary = await maybeIssueRechargeDiscountAssets({
+        supabase,
+        userId: user.id,
+        site,
+        paidPoints,
+        bonusPoints,
+        paidAmount,
+        paymentOrderId: pendingOrder.id,
+        paymentProvider: 'mock',
+        paymentOrderNo: orderNo
+    });
+    const linkedAffiliateDiscountSummary = await maybeIssueAffiliateDiscountAssetsForRecharge({
+        supabase,
+        site,
+        rechargeReferenceId: referenceId
+    });
+
     return {
         success: true,
         provider: 'mock',
@@ -2082,6 +2104,8 @@ async function completeMockPayment({
         checkout_session_id: activeCheckoutSession.id,
         checkout_session_key: activeCheckoutSession.session_key,
         checkout_session_status: 'completed',
+        linked_discount_summary: linkedDiscountSummary,
+        linked_affiliate_discount_summary: linkedAffiliateDiscountSummary,
         message: `已使用模拟支付完成「${packageName}」`
     };
 }

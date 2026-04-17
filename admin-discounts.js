@@ -23,6 +23,7 @@ const AdminDiscounts = {
     listRequestToken: 0,
     lastListLoadedAt: 0,
     lastListSite: '',
+    generateSubmitInFlight: false,
     categories: [],
     products: [],
     categoryNameMap: new Map(),
@@ -191,6 +192,29 @@ const AdminDiscounts = {
         });
 
         return this.parseAdminDiscountsResponse(response);
+    },
+
+    buildDiscountAssetAssignmentSummary: function (result = {}) {
+        const assignedCount = Math.max(0, Number(result?.assigned_count || 0));
+        const skippedCount = Math.max(0, Number(result?.skipped_count || 0));
+        const unresolvedCount = Math.max(0, Number(result?.unresolved_count || 0));
+        const summaryParts = [`成功发放 ${assignedCount} 张`];
+        if (skippedCount > 0) summaryParts.push(`跳过 ${skippedCount} 张`);
+        if (unresolvedCount > 0) summaryParts.push(`未识别 ${unresolvedCount} 个目标`);
+        return summaryParts.join('，');
+    },
+
+    assignAssetsToDiscount: async function ({ site = '', discountId = '', recipients = '', recipientTags = '', sourceChannel = '', audienceSegment = '' } = {}) {
+        return this.assignDiscountAssetsViaAdminApi({
+            site,
+            payload: {
+                discount_id: this.safeText(discountId),
+                recipients: this.safeText(recipients),
+                recipient_tags: this.safeText(recipientTags),
+                source_channel: this.safeText(sourceChannel),
+                audience_segment: this.safeText(audienceSegment)
+            }
+        });
     },
 
     escapeHtml: function (value) {
@@ -607,9 +631,28 @@ const AdminDiscounts = {
         dropdown.setAttribute('aria-hidden', open ? 'false' : 'true');
     },
 
-    getGenerateCustomSelectConfig: function (key = '') {
-        const normalizedKey = this.safeText(key).toLowerCase();
-        const configs = {
+    buildGenerateTimeOptions: function () {
+        if (Array.isArray(this.generateTimeOptionsCache) && this.generateTimeOptionsCache.length) {
+            return this.generateTimeOptionsCache;
+        }
+
+        const options = [];
+        for (let hour = 0; hour < 24; hour += 1) {
+            for (let minute = 0; minute < 60; minute += 15) {
+                const label = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+                options.push({ value: label, label });
+            }
+        }
+
+        options.push({ value: '23:59', label: '23:59', meta: '自然日结束' });
+        this.generateTimeOptionsCache = options;
+        return options;
+    },
+
+    getGenerateCustomSelectConfigs: function () {
+        const timeOptions = this.buildGenerateTimeOptions();
+
+        return {
             site: {
                 inputId: 'discountApplicableSite',
                 triggerId: 'discountApplicableSiteTrigger',
@@ -618,9 +661,9 @@ const AdminDiscounts = {
                 optionSelector: '[data-discount-generate-select-option="site"]',
                 defaultValue: '',
                 options: [
-                    { value: '', label: '全部站点' },
-                    { value: 'cn', label: '仅 CN' },
-                    { value: 'intl', label: '仅 INTL' }
+                    { value: '', label: '全部站点', meta: '国内站和国际站都可以使用' },
+                    { value: 'cn', label: '仅 CN', meta: '只在国内站生效' },
+                    { value: 'intl', label: '仅 INTL', meta: '只在国际站生效' }
                 ]
             },
             'scope-type': {
@@ -631,14 +674,170 @@ const AdminDiscounts = {
                 optionSelector: '[data-discount-generate-select-option="scope-type"]',
                 defaultValue: 'all',
                 options: [
-                    { value: 'all', label: '全部商品' },
-                    { value: 'category', label: '指定分类' },
-                    { value: 'product', label: '指定商品' }
+                    { value: 'all', label: '全部商品', meta: '不限制分类和具体商品' },
+                    { value: 'category', label: '指定分类', meta: '只允许指定分类商品使用' },
+                    { value: 'product', label: '指定商品', meta: '只允许单个商品使用' }
                 ]
+            },
+            'scope-category': {
+                inputId: 'discountScopeCategory',
+                triggerId: 'discountScopeCategoryTrigger',
+                labelId: 'discountScopeCategoryLabel',
+                dropdownId: 'discountScopeCategoryDropdown',
+                optionSelector: '[data-discount-generate-select-option="scope-category"]',
+                defaultValue: '',
+                options: [
+                    { value: '', label: '请选择分类', meta: '按分类限制优惠券使用范围' },
+                    ...this.categories.map((category) => {
+                        const value = String(category.name ?? category.id ?? '').trim();
+                        return { value, label: value || String(category.id || '') };
+                    })
+                ]
+            },
+            'scope-product': {
+                inputId: 'discountScopeProduct',
+                triggerId: 'discountScopeProductTrigger',
+                labelId: 'discountScopeProductLabel',
+                dropdownId: 'discountScopeProductDropdown',
+                optionSelector: '[data-discount-generate-select-option="scope-product"]',
+                defaultValue: '',
+                options: [
+                    { value: '', label: '请选择商品', meta: '按单个商品限制优惠券使用范围' },
+                    ...this.products.map((product) => ({
+                        value: String(product.id),
+                        label: product.name || String(product.id)
+                    }))
+                ]
+            },
+            'recovery-strategy': {
+                inputId: 'discountRecoveryStrategy',
+                triggerId: 'discountRecoveryStrategyTrigger',
+                labelId: 'discountRecoveryStrategyLabel',
+                dropdownId: 'discountRecoveryStrategyDropdown',
+                optionSelector: '[data-discount-generate-select-option="recovery-strategy"]',
+                defaultValue: 'manual_only',
+                options: [
+                    { value: 'manual_only', label: '仅人工恢复', meta: '命中风控后需手动复核恢复' },
+                    { value: 'auto_restore', label: '风险恢复后自动启用', meta: '恢复信号到达后自动恢复使用' },
+                    { value: 'observation_then_restore', label: '自动恢复并进入观察期', meta: '恢复后继续观察一段时间' }
+                ]
+            },
+            'distribution-mode': {
+                inputId: 'discountDistributionMode',
+                triggerId: 'discountDistributionModeTrigger',
+                labelId: 'discountDistributionModeLabel',
+                dropdownId: 'discountDistributionModeDropdown',
+                optionSelector: '[data-discount-generate-select-option="distribution-mode"]',
+                defaultValue: 'general_code',
+                options: [
+                    { value: 'general_code', label: '通用暗码', meta: '用户输入优惠码后直接核销' },
+                    { value: 'public_claim', label: '公开领券', meta: '先领取到卡券包，再下单使用' },
+                    { value: 'user_assigned', label: '定向发券', meta: '后台发到指定用户卡券包' }
+                ]
+            },
+            'pricing-stage': {
+                inputId: 'discountPricingApplyStage',
+                triggerId: 'discountPricingApplyStageTrigger',
+                labelId: 'discountPricingApplyStageLabel',
+                dropdownId: 'discountPricingApplyStageDropdown',
+                optionSelector: '[data-discount-generate-select-option="pricing-stage"]',
+                defaultValue: 'order_discount',
+                options: [
+                    { value: 'catalog_price', label: '目录价阶段', meta: '先作用在商品目录价' },
+                    { value: 'order_discount', label: '订单优惠阶段', meta: '在订单优惠阶段生效' },
+                    { value: 'balance_offset', label: '余额抵扣阶段', meta: '在余额抵扣前后单独处理' }
+                ]
+            },
+            'starts-at-time': {
+                inputId: 'discountStartsAtTime',
+                triggerId: 'discountStartsAtTimeTrigger',
+                labelId: 'discountStartsAtTimeLabel',
+                dropdownId: 'discountStartsAtTimeDropdown',
+                optionSelector: '[data-discount-generate-select-option="starts-at-time"]',
+                defaultValue: '00:00',
+                options: timeOptions
+            },
+            'expiry-time': {
+                inputId: 'discountExpiryTime',
+                triggerId: 'discountExpiryTimeTrigger',
+                labelId: 'discountExpiryTimeLabel',
+                dropdownId: 'discountExpiryTimeDropdown',
+                optionSelector: '[data-discount-generate-select-option="expiry-time"]',
+                defaultValue: '23:59',
+                options: timeOptions
+            },
+            'claim-starts-at-time': {
+                inputId: 'discountClaimStartsAtTime',
+                triggerId: 'discountClaimStartsAtTimeTrigger',
+                labelId: 'discountClaimStartsAtTimeLabel',
+                dropdownId: 'discountClaimStartsAtTimeDropdown',
+                optionSelector: '[data-discount-generate-select-option="claim-starts-at-time"]',
+                defaultValue: '10:00',
+                options: timeOptions
+            },
+            'claim-expires-at-time': {
+                inputId: 'discountClaimExpiresAtTime',
+                triggerId: 'discountClaimExpiresAtTimeTrigger',
+                labelId: 'discountClaimExpiresAtTimeLabel',
+                dropdownId: 'discountClaimExpiresAtTimeDropdown',
+                optionSelector: '[data-discount-generate-select-option="claim-expires-at-time"]',
+                defaultValue: '23:59',
+                options: timeOptions
             }
         };
+    },
 
+    getGenerateCustomSelectConfig: function (key = '') {
+        const normalizedKey = this.safeText(key).toLowerCase();
+        const configs = this.getGenerateCustomSelectConfigs();
         return configs[normalizedKey] || null;
+    },
+
+    getGenerateCustomSelectKeys: function () {
+        return Object.keys(this.getGenerateCustomSelectConfigs());
+    },
+
+    getGenerateCustomSelectOptions: function (key = '', currentValue = '') {
+        const config = this.getGenerateCustomSelectConfig(key);
+        if (!config) {
+            return [];
+        }
+
+        const options = Array.isArray(config.options) ? [...config.options] : [];
+        const normalizedCurrentValue = this.normalizeGenerateCustomSelectValue(key, currentValue);
+        const alreadyExists = options.some((item) => String(item.value) === String(normalizedCurrentValue));
+
+        if (normalizedCurrentValue && !alreadyExists) {
+            options.push({ value: normalizedCurrentValue, label: normalizedCurrentValue });
+        }
+
+        return options;
+    },
+
+    renderGenerateCustomSelectOptions: function (key = '', currentValue = '') {
+        const config = this.getGenerateCustomSelectConfig(key);
+        if (!config) return;
+
+        const dropdown = document.getElementById(config.dropdownId);
+        if (!(dropdown instanceof HTMLElement)) {
+            return;
+        }
+
+        const options = this.getGenerateCustomSelectOptions(key, currentValue);
+        dropdown.innerHTML = options.map((option) => `
+            <button type="button"
+                class="admin-discount-form-modal__select-option"
+                data-discount-generate-select-option="${this.escapeHtml(key)}"
+                data-select-value="${this.escapeHtml(String(option.value ?? ''))}"
+                role="option"
+                aria-selected="false">
+                <span class="admin-discount-form-modal__select-option-copy">
+                    <span class="admin-discount-form-modal__select-option-title">${this.escapeHtml(option.label || '')}</span>
+                    ${option.meta ? `<span class="admin-discount-form-modal__select-option-meta">${this.escapeHtml(option.meta)}</span>` : ''}
+                </span>
+                <i class="fas fa-check admin-discount-form-modal__select-option-check" aria-hidden="true"></i>
+            </button>
+        `).join('');
     },
 
     normalizeGenerateCustomSelectValue: function (key = '', value = '') {
@@ -647,15 +846,37 @@ const AdminDiscounts = {
             return this.safeText(value);
         }
 
-        const normalizedValue = this.safeText(value).toLowerCase();
-        if (key === 'site') {
-            return ['', 'cn', 'intl'].includes(normalizedValue) ? normalizedValue : config.defaultValue;
-        }
-        if (key === 'scope-type') {
-            return ['all', 'category', 'product'].includes(normalizedValue) ? normalizedValue : config.defaultValue;
+        const normalizedKey = this.safeText(key).toLowerCase();
+        const rawValue = this.safeText(value);
+        const loweredValue = rawValue.toLowerCase();
+        const isTimeKey = normalizedKey.endsWith('-time');
+
+        if (isTimeKey) {
+            return /^\d{2}:\d{2}$/.test(rawValue) ? rawValue : config.defaultValue;
         }
 
-        return normalizedValue || config.defaultValue;
+        if (normalizedKey === 'site') {
+            return ['', 'cn', 'intl'].includes(loweredValue) ? loweredValue : config.defaultValue;
+        }
+
+        if (normalizedKey === 'scope-type') {
+            return ['all', 'category', 'product'].includes(loweredValue) ? loweredValue : config.defaultValue;
+        }
+
+        if (['recovery-strategy', 'distribution-mode', 'pricing-stage'].includes(normalizedKey)) {
+            const optionValues = (Array.isArray(config.options) ? config.options : [])
+                .map((item) => this.safeText(item?.value).toLowerCase())
+                .filter(Boolean);
+            return optionValues.includes(loweredValue) ? loweredValue : config.defaultValue;
+        }
+
+        if (!rawValue) {
+            return config.defaultValue;
+        }
+
+        const optionValues = (Array.isArray(config.options) ? config.options : [])
+            .map((item) => String(item?.value ?? ''));
+        return optionValues.includes(rawValue) ? rawValue : rawValue;
     },
 
     setGenerateCustomSelectOpen: function (key = '', open = false) {
@@ -676,7 +897,7 @@ const AdminDiscounts = {
 
     closeGenerateCustomSelects: function (options = {}) {
         const except = this.safeText(options.except).toLowerCase();
-        ['site', 'scope-type'].forEach((key) => {
+        this.getGenerateCustomSelectKeys().forEach((key) => {
             if (key === except) return;
             this.setGenerateCustomSelectOpen(key, false);
         });
@@ -688,11 +909,17 @@ const AdminDiscounts = {
 
         const input = document.getElementById(config.inputId);
         const label = document.getElementById(config.labelId);
-        const selectedValue = this.normalizeGenerateCustomSelectValue(key, input?.value || config.defaultValue);
-        const selectedOption = config.options.find((item) => item.value === selectedValue) || config.options[0];
+        const currentValue = input?.value || config.defaultValue;
+        const selectedValue = this.normalizeGenerateCustomSelectValue(key, currentValue);
+        const options = this.getGenerateCustomSelectOptions(key, selectedValue);
+        const selectedOption = options.find((item) => String(item.value) === String(selectedValue))
+            || options[0]
+            || { value: config.defaultValue, label: config.defaultValue };
+
+        this.renderGenerateCustomSelectOptions(key, selectedValue);
 
         if (input) {
-            input.value = selectedOption?.value || config.defaultValue;
+            input.value = selectedOption?.value ?? config.defaultValue;
         }
         if (label) {
             label.textContent = selectedOption?.label || '';
@@ -700,10 +927,16 @@ const AdminDiscounts = {
 
         document.querySelectorAll(config.optionSelector).forEach((option) => {
             const optionValue = this.normalizeGenerateCustomSelectValue(key, option.getAttribute('data-select-value') || '');
-            const isSelected = optionValue === (selectedOption?.value || config.defaultValue);
+            const isSelected = String(optionValue) === String(selectedOption?.value ?? config.defaultValue);
             option.classList.toggle('is-selected', isSelected);
             option.setAttribute('aria-selected', isSelected ? 'true' : 'false');
         });
+    },
+
+    refreshGenerateCustomSelects: function () {
+        this.getGenerateCustomSelectKeys().forEach((key) => this.syncGenerateCustomSelect(key));
+        this.toggleScopeFields();
+        this.toggleDistributionFields();
     },
 
     setGenerateCustomSelectValue: function (key = '', value = '', options = {}) {
@@ -719,6 +952,10 @@ const AdminDiscounts = {
 
         if (key === 'scope-type') {
             this.toggleScopeFields();
+        }
+
+        if (key === 'distribution-mode') {
+            this.toggleDistributionFields();
         }
 
         if (options.close !== false) {
@@ -746,7 +983,6 @@ const AdminDiscounts = {
 
         const title = document.getElementById('discountModalTitle');
         const description = document.getElementById('discountModalDescription');
-        const submitLabel = document.getElementById('discountModalSubmitLabel');
 
         if (title) {
             title.textContent = this.modalMode === 'edit' ? '编辑优惠券' : '生成新优惠券';
@@ -754,8 +990,21 @@ const AdminDiscounts = {
         if (description) {
             description.textContent = '';
         }
+        this.setGenerateSubmitBusyState(this.generateSubmitInFlight);
+    },
+
+    setGenerateSubmitBusyState: function (busy = false) {
+        const submitButton = document.querySelector('[data-admin-action="discounts-submit-generate"]');
+        const submitLabel = document.getElementById('discountModalSubmitLabel');
+        const idleLabel = this.modalMode === 'edit' ? '保存更新' : '立即生成';
+        const busyLabel = this.modalMode === 'edit' ? '保存中...' : '生成中...';
+
+        if (submitButton instanceof HTMLButtonElement) {
+            submitButton.disabled = !!busy;
+            submitButton.setAttribute('aria-busy', busy ? 'true' : 'false');
+        }
         if (submitLabel) {
-            submitLabel.textContent = this.modalMode === 'edit' ? '保存更新' : '立即生成';
+            submitLabel.textContent = busy ? busyLabel : idleLabel;
         }
     },
 
@@ -797,6 +1046,14 @@ const AdminDiscounts = {
             return value;
         }
         return 'all';
+    },
+
+    normalizeDistributionMode: function (value = '') {
+        const normalized = this.safeText(value).toLowerCase();
+        if (normalized === 'public_claim' || normalized === 'user_assigned') {
+            return normalized;
+        }
+        return 'general_code';
     },
 
     getCategoryLabel: function (categoryId) {
@@ -1404,7 +1661,7 @@ const AdminDiscounts = {
                     <div class="admin-discount-detail-facts">
                         <div class="admin-discount-detail-fact">
                             <div class="admin-discount-detail-fact__label">目标用户</div>
-                            <div class="admin-discount-detail-fact__value">支持 UUID、用户名，按逗号或换行分隔</div>
+                            <div class="admin-discount-detail-fact__value">支持登录邮箱、用户名、UUID，也支持按“用户管理”标签批量发放</div>
                         </div>
                         <div class="admin-discount-detail-fact">
                             <div class="admin-discount-detail-fact__label">默认建议</div>
@@ -1412,9 +1669,10 @@ const AdminDiscounts = {
                         </div>
                     </div>
                     <div class="admin-discount-detail-inline-actions">
-                        <textarea id="discountAssetRecipientsInput" class="config-input" rows="4" placeholder="输入用户 UUID 或用户名，每行一个或逗号分隔"></textarea>
-                        <input id="discountAssetSourceChannelInput" class="config-input" type="text" placeholder="发放渠道，如 vip_recall / cs_compensation" value="${this.escapeHtml(this.safeText(discount.campaign_tag))}">
-                        <input id="discountAssetAudienceSegmentInput" class="config-input" type="text" placeholder="人群标签，如 new_user / vip / churn_risk" value="${this.escapeHtml(this.safeText(discount.audience_segment))}">
+                        <textarea id="discountAssetRecipientsInput" class="config-input" rows="4" placeholder="输入登录邮箱、用户名或 UUID，每行一个或逗号分隔"></textarea>
+                        <input id="discountAssetRecipientTagsInput" class="config-input" type="text" placeholder="按用户标签发放，如 用户, 创作者, vip">
+                        <input id="discountAssetSourceChannelInput" class="config-input" type="text" placeholder="渠道备注（统计），如 vip_recall / cs_compensation" value="${this.escapeHtml(this.safeText(discount.campaign_tag))}">
+                        <input id="discountAssetAudienceSegmentInput" class="config-input" type="text" placeholder="人群备注（统计），如 new_user / vip / churn_risk" value="${this.escapeHtml(this.safeText(discount.audience_segment))}">
                         <button type="button"
                             class="admin-discount-detail-inline-btn"
                             data-admin-action="discounts-assign-assets"
@@ -4092,7 +4350,8 @@ const AdminDiscounts = {
         if (this.controlsBound) {
             return;
         }
-        this.controlsBound = true;
+
+        const form = document.getElementById('discountGenerateForm');
 
         const openBtn = document.querySelector('[data-admin-action="discounts-open-generate-modal"]');
         if (openBtn) {
@@ -4112,23 +4371,7 @@ const AdminDiscounts = {
             });
         }
 
-        const submitBtn = document.querySelector('[data-admin-action="discounts-submit-generate"]');
-        if (submitBtn) {
-            submitBtn.addEventListener('click', async (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                await this.submitGenerate();
-            });
-        }
-
-        const form = document.getElementById('discountGenerateForm');
-        if (form) {
-            form.addEventListener('submit', async (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                await this.submitGenerate();
-            });
-        }
+        // Submit is delegated centrally from admin-studio-bootstrap.js to avoid duplicate create requests.
 
         const typeTrigger = document.getElementById('discountTypeTrigger');
         if (typeTrigger) {
@@ -4147,39 +4390,34 @@ const AdminDiscounts = {
             });
         });
 
-        const applicableSiteTrigger = document.getElementById('discountApplicableSiteTrigger');
-        if (applicableSiteTrigger) {
-            applicableSiteTrigger.addEventListener('click', (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                this.toggleGenerateCustomSelect('site');
+        if (form) {
+            form.addEventListener('click', (event) => {
+                const target = event.target instanceof Element ? event.target : null;
+                if (!target) {
+                    return;
+                }
+
+                const option = target.closest('[data-discount-generate-select-option]');
+                if (option) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this.setGenerateCustomSelectValue(
+                        option.getAttribute('data-discount-generate-select-option') || '',
+                        option.getAttribute('data-select-value') || ''
+                    );
+                    return;
+                }
+
+                const trigger = target.closest('[data-discount-generate-select-trigger]');
+                if (trigger) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this.toggleGenerateCustomSelect(trigger.getAttribute('data-discount-generate-select-trigger') || '');
+                }
             });
         }
 
-        document.querySelectorAll('[data-discount-generate-select-option="site"]').forEach((option) => {
-            option.addEventListener('click', (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                this.setGenerateCustomSelectValue('site', option.getAttribute('data-select-value') || '');
-            });
-        });
-
-        const scopeTypeTrigger = document.getElementById('discountScopeTypeTrigger');
-        if (scopeTypeTrigger) {
-            scopeTypeTrigger.addEventListener('click', (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                this.toggleGenerateCustomSelect('scope-type');
-            });
-        }
-
-        document.querySelectorAll('[data-discount-generate-select-option="scope-type"]').forEach((option) => {
-            option.addEventListener('click', (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                this.setGenerateCustomSelectValue('scope-type', option.getAttribute('data-select-value') || '');
-            });
-        });
+        this.refreshGenerateCustomSelects();
 
         const modal = document.getElementById('discountGenerateModal');
         if (modal) {
@@ -4208,6 +4446,8 @@ const AdminDiscounts = {
                 this.setTypeDropdownOpen(false);
             }
         });
+
+        this.controlsBound = true;
     },
 
     ensureRestrictionOptionsLoaded: async function () {
@@ -4307,35 +4547,8 @@ const AdminDiscounts = {
     },
 
     populateRestrictionSelects: function () {
-        const categorySelect = document.getElementById('discountScopeCategory');
-        const productSelect = document.getElementById('discountScopeProduct');
-
-        if (categorySelect) {
-            const currentValue = categorySelect.value;
-            categorySelect.innerHTML = [
-                '<option value="">请选择分类</option>',
-                ...this.categories.map((category) => {
-                    const categoryName = String(category.name ?? category.id ?? '').trim();
-                    return `<option value="${this.escapeHtml(categoryName)}">${this.escapeHtml(categoryName || String(category.id))}</option>`;
-                })
-            ].join('');
-
-            if (currentValue && this.categories.some((category) => String(category.name ?? category.id ?? '').trim() === currentValue)) {
-                categorySelect.value = currentValue;
-            }
-        }
-
-        if (productSelect) {
-            const currentValue = productSelect.value;
-            productSelect.innerHTML = [
-                '<option value="">请选择商品</option>',
-                ...this.products.map((product) => `<option value="${this.escapeHtml(String(product.id))}">${this.escapeHtml(product.name || String(product.id))}</option>`)
-            ].join('');
-
-            if (currentValue && this.products.some((product) => String(product.id) === currentValue)) {
-                productSelect.value = currentValue;
-            }
-        }
+        this.syncGenerateCustomSelect('scope-category');
+        this.syncGenerateCustomSelect('scope-product');
     },
 
     toggleScopeFields: function () {
@@ -4354,9 +4567,81 @@ const AdminDiscounts = {
 
         if (scopeType !== 'category' && categorySelect) {
             categorySelect.value = '';
+            this.syncGenerateCustomSelect('scope-category');
         }
         if (scopeType !== 'product' && productSelect) {
             productSelect.value = '';
+            this.syncGenerateCustomSelect('scope-product');
+        }
+    },
+
+    toggleDistributionFields: function () {
+        const distributionMode = this.normalizeDistributionMode(document.getElementById('discountDistributionMode')?.value);
+        const modeCopy = document.getElementById('discountDistributionModeCopy');
+        const modeHint = document.getElementById('discountDistributionModeHint');
+        const claimGroup = document.getElementById('discountDistributionClaimGroup');
+        const campaignField = document.getElementById('discountDistributionCampaignField');
+        const audienceField = document.getElementById('discountDistributionAudienceField');
+        const recipientsField = document.getElementById('discountDistributionRecipientsField');
+        const recipientTagsField = document.getElementById('discountDistributionRecipientTagsField');
+        const couponCodePanel = document.getElementById('discountCouponCodePanel');
+
+        const modeUi = {
+            general_code: {
+                copy: '控制这张券是暗码输入、公开领取，还是后台直接下发到用户卡券包。',
+                hint: '用户输入优惠码后直接核销，支持手动指定或自动生成优惠码。',
+                showClaimGroup: false,
+                showCampaignField: false,
+                showAudienceField: false,
+                showRecipientsField: false,
+                showRecipientTagsField: false,
+                showCouponCodePanel: true
+            },
+            public_claim: {
+                copy: '用户先领取到卡券包，再在领取窗口内下单使用。',
+                hint: '配置领取时间窗、每用户领取上限，以及公开渠道备注。',
+                showClaimGroup: true,
+                showCampaignField: true,
+                showAudienceField: false,
+                showRecipientsField: false,
+                showRecipientTagsField: false,
+                showCouponCodePanel: false
+            },
+            user_assigned: {
+                copy: '后台直接把券发到指定用户卡券包，不依赖公开领取或手动输码。',
+                hint: '可直接填写邮箱、用户名、UUID，或按用户管理标签立即发券；渠道备注和人群备注只用于统计。',
+                showClaimGroup: false,
+                showCampaignField: true,
+                showAudienceField: true,
+                showRecipientsField: true,
+                showRecipientTagsField: true,
+                showCouponCodePanel: false
+            }
+        }[distributionMode];
+
+        if (modeCopy) {
+            modeCopy.textContent = modeUi.copy;
+        }
+        if (modeHint) {
+            modeHint.textContent = modeUi.hint;
+        }
+        if (claimGroup) {
+            claimGroup.hidden = !modeUi.showClaimGroup;
+        }
+        if (campaignField) {
+            campaignField.hidden = !modeUi.showCampaignField;
+        }
+        if (audienceField) {
+            audienceField.hidden = !modeUi.showAudienceField;
+        }
+        if (recipientsField) {
+            recipientsField.hidden = !modeUi.showRecipientsField;
+        }
+        if (recipientTagsField) {
+            recipientTagsField.hidden = !modeUi.showRecipientTagsField;
+        }
+        if (couponCodePanel) {
+            couponCodePanel.hidden = !modeUi.showCouponCodePanel;
         }
     },
 
@@ -4746,33 +5031,28 @@ const AdminDiscounts = {
         }
 
         const recipientsInput = document.getElementById('discountAssetRecipientsInput');
+        const recipientTagsInput = document.getElementById('discountAssetRecipientTagsInput');
         const sourceChannelInput = document.getElementById('discountAssetSourceChannelInput');
         const audienceSegmentInput = document.getElementById('discountAssetAudienceSegmentInput');
 
         const recipients = this.safeText(recipientsInput?.value);
-        if (!recipients) {
-            alert('请先输入要发券的用户 UUID 或用户名');
+        const recipientTags = this.safeText(recipientTagsInput?.value);
+        if (!recipients && !recipientTags) {
+            alert('请先输入要发券的用户，或填写用户管理标签');
             return;
         }
 
         try {
-            const result = await this.assignDiscountAssetsViaAdminApi({
+            const result = await this.assignAssetsToDiscount({
                 site: writableSite,
-                payload: {
-                    discount_id: this.safeText(discount.id),
-                    recipients,
-                    source_channel: this.safeText(sourceChannelInput?.value),
-                    audience_segment: this.safeText(audienceSegmentInput?.value)
-                }
+                discountId: this.safeText(discount.id),
+                recipients,
+                recipientTags,
+                sourceChannel: this.safeText(sourceChannelInput?.value),
+                audienceSegment: this.safeText(audienceSegmentInput?.value)
             });
 
-            const assignedCount = Math.max(0, Number(result?.assigned_count || 0));
-            const skippedCount = Math.max(0, Number(result?.skipped_count || 0));
-            const unresolvedCount = Math.max(0, Number(result?.unresolved_count || 0));
-            const summaryParts = [`成功发放 ${assignedCount} 张`];
-            if (skippedCount > 0) summaryParts.push(`跳过 ${skippedCount} 张`);
-            if (unresolvedCount > 0) summaryParts.push(`未识别 ${unresolvedCount} 个目标`);
-            alert(summaryParts.join('，'));
+            alert(this.buildDiscountAssetAssignmentSummary(result));
 
             const detail = await this.ensureDiscountDetailLoadedByReference({ id: this.safeText(discount.id) });
             const cacheKey = this.getDetailCacheKey(this.safeText(discount.id));
@@ -4794,29 +5074,35 @@ const AdminDiscounts = {
         document.getElementById('discountMaxUses').value = '1';
         document.getElementById('discountMaxUsesPerUser').value = '0';
         document.getElementById('discountStartsAtDate').value = '';
-        document.getElementById('discountStartsAtTime').value = '';
         document.getElementById('discountExpiryDate').value = '';
-        document.getElementById('discountExpiryTime').value = '';
-        document.getElementById('discountApplicableSite').value = '';
-        document.getElementById('discountScopeType').value = 'all';
-        document.getElementById('discountScopeCategory').value = '';
-        document.getElementById('discountScopeProduct').value = '';
         document.getElementById('discountAllowZeroTotal').checked = false;
-        document.getElementById('discountDistributionMode').value = 'general_code';
         document.getElementById('discountClaimStartsAtDate').value = '';
-        document.getElementById('discountClaimStartsAtTime').value = '';
         document.getElementById('discountClaimExpiresAtDate').value = '';
-        document.getElementById('discountClaimExpiresAtTime').value = '';
         document.getElementById('discountClaimLimitPerUser').value = '1';
         document.getElementById('discountCampaignTag').value = '';
         document.getElementById('discountAudienceSegment').value = '';
+        const assignedRecipientsInput = document.getElementById('discountAssignedRecipients');
+        if (assignedRecipientsInput) {
+            assignedRecipientsInput.value = '';
+        }
+        const assignedRecipientTagsInput = document.getElementById('discountAssignedRecipientTags');
+        if (assignedRecipientTagsInput) {
+            assignedRecipientTagsInput.value = '';
+        }
         document.getElementById('discountIsExclusive').checked = true;
         document.getElementById('discountStackPriority').value = '100';
-        document.getElementById('discountPricingApplyStage').value = 'order_discount';
-        document.getElementById('discountRecoveryStrategy').value = 'manual_only';
         document.getElementById('discountObservationWindowHours').value = '24';
         this.setGenerateCustomSelectValue('site', '', { close: false });
         this.setGenerateCustomSelectValue('scope-type', 'all', { close: false });
+        this.setGenerateCustomSelectValue('scope-category', '', { close: false });
+        this.setGenerateCustomSelectValue('scope-product', '', { close: false });
+        this.setGenerateCustomSelectValue('starts-at-time', '00:00', { close: false });
+        this.setGenerateCustomSelectValue('expiry-time', '23:59', { close: false });
+        this.setGenerateCustomSelectValue('distribution-mode', 'general_code', { close: false });
+        this.setGenerateCustomSelectValue('claim-starts-at-time', '10:00', { close: false });
+        this.setGenerateCustomSelectValue('claim-expires-at-time', '23:59', { close: false });
+        this.setGenerateCustomSelectValue('pricing-stage', 'order_discount', { close: false });
+        this.setGenerateCustomSelectValue('recovery-strategy', 'manual_only', { close: false });
     },
 
     populateGenerateFormFromDiscount: function (discount = {}) {
@@ -4826,27 +5112,27 @@ const AdminDiscounts = {
         document.getElementById('discountMaxUses').value = Math.max(0, Number.parseInt(discount.max_uses, 10) || 0);
         document.getElementById('discountMaxUsesPerUser').value = Math.max(0, Number.parseInt(discount.max_uses_per_user, 10) || 0);
         document.getElementById('discountStartsAtDate').value = this.toDateInputValue(discount.starts_at);
-        document.getElementById('discountStartsAtTime').value = this.toTimeInputValue(discount.starts_at);
         document.getElementById('discountExpiryDate').value = this.toDateInputValue(discount.expires_at);
-        document.getElementById('discountExpiryTime').value = this.toTimeInputValue(discount.expires_at);
         this.setGenerateCustomSelectValue('site', this.safeText(discount.applicable_site).toLowerCase(), { close: false });
         this.setGenerateCustomSelectValue('scope-type', this.normalizeScopeType(discount.scope_type), { close: false });
-        document.getElementById('discountScopeCategory').value = this.safeText(discount.scope_category);
-        document.getElementById('discountScopeProduct').value = this.safeText(discount.scope_product_id);
+        this.setGenerateCustomSelectValue('scope-category', this.safeText(discount.scope_category), { close: false });
+        this.setGenerateCustomSelectValue('scope-product', this.safeText(discount.scope_product_id), { close: false });
         document.getElementById('discountAllowZeroTotal').checked = !!discount.allow_zero_total;
-        document.getElementById('discountDistributionMode').value = this.safeText(discount.distribution_mode).toLowerCase() || 'general_code';
         document.getElementById('discountClaimStartsAtDate').value = this.toDateInputValue(discount.claim_starts_at);
-        document.getElementById('discountClaimStartsAtTime').value = this.toTimeInputValue(discount.claim_starts_at);
         document.getElementById('discountClaimExpiresAtDate').value = this.toDateInputValue(discount.claim_expires_at);
-        document.getElementById('discountClaimExpiresAtTime').value = this.toTimeInputValue(discount.claim_expires_at);
         document.getElementById('discountClaimLimitPerUser').value = Math.max(0, Number.parseInt(discount.claim_limit_per_user, 10) || 0);
         document.getElementById('discountCampaignTag').value = this.safeText(discount.campaign_tag);
         document.getElementById('discountAudienceSegment').value = this.safeText(discount.audience_segment);
         document.getElementById('discountIsExclusive').checked = discount?.is_exclusive !== false;
         document.getElementById('discountStackPriority').value = Math.max(1, Number.parseInt(discount.stack_priority, 10) || 100);
-        document.getElementById('discountPricingApplyStage').value = this.safeText(discount.pricing_apply_stage).toLowerCase() || 'order_discount';
-        document.getElementById('discountRecoveryStrategy').value = this.safeText(discount.recovery_strategy).toLowerCase() || 'manual_only';
         document.getElementById('discountObservationWindowHours').value = Math.max(1, Number.parseInt(discount.observation_window_hours, 10) || 24);
+        this.setGenerateCustomSelectValue('starts-at-time', this.toTimeInputValue(discount.starts_at) || '00:00', { close: false });
+        this.setGenerateCustomSelectValue('expiry-time', this.toTimeInputValue(discount.expires_at) || '23:59', { close: false });
+        this.setGenerateCustomSelectValue('distribution-mode', this.safeText(discount.distribution_mode).toLowerCase() || 'general_code', { close: false });
+        this.setGenerateCustomSelectValue('claim-starts-at-time', this.toTimeInputValue(discount.claim_starts_at) || '10:00', { close: false });
+        this.setGenerateCustomSelectValue('claim-expires-at-time', this.toTimeInputValue(discount.claim_expires_at) || '23:59', { close: false });
+        this.setGenerateCustomSelectValue('pricing-stage', this.safeText(discount.pricing_apply_stage).toLowerCase() || 'order_discount', { close: false });
+        this.setGenerateCustomSelectValue('recovery-strategy', this.safeText(discount.recovery_strategy).toLowerCase() || 'manual_only', { close: false });
     },
 
     openGenerateModal: async function () {
@@ -4953,156 +5239,209 @@ const AdminDiscounts = {
             return;
         }
 
-        let code = document.getElementById('discountCodeInput').value.trim().toUpperCase();
-        if (!code) {
-            code = this.generateRandomCode();
-        }
-
-        const type = document.getElementById('discountValueType').value;
-        const value = parseInt(document.getElementById('discountValue').value);
-        if (!value || value <= 0) {
-            alert('请输入有效的优惠券面额');
+        if (this.generateSubmitInFlight) {
             return;
         }
-
-        if (type === 'percent' && value > 100) {
-            alert('折扣比例不能大于 100，例如 80 表示 8 折');
-            return;
-        }
-
-        const maxUses = parseInt(document.getElementById('discountMaxUses').value) || 0;
-        if (maxUses < 0) {
-            alert('最大核销次数不能小于 0');
-            return;
-        }
-        const maxUsesPerUser = parseInt(document.getElementById('discountMaxUsesPerUser').value) || 0;
-        if (maxUsesPerUser < 0) {
-            alert('每用户最多使用次数不能小于 0');
-            return;
-        }
-
-        const applicableSiteRaw = String(document.getElementById('discountApplicableSite')?.value || '').trim().toLowerCase();
-        const applicableSite = applicableSiteRaw || null;
-        if (applicableSite && !['cn', 'intl'].includes(applicableSite)) {
-            alert('适用站点配置无效');
-            return;
-        }
-
-        const scopeType = this.normalizeScopeType(document.getElementById('discountScopeType')?.value);
-        const scopeCategory = scopeType === 'category'
-            ? String(document.getElementById('discountScopeCategory')?.value || '').trim()
-            : null;
-        const scopeProductId = scopeType === 'product'
-            ? String(document.getElementById('discountScopeProduct')?.value || '').trim()
-            : null;
-
-        if (scopeType === 'category' && !scopeCategory) {
-            alert('请选择优惠券适用的分类');
-            return;
-        }
-
-        if (scopeType === 'product' && !scopeProductId) {
-            alert('请选择优惠券适用的商品');
-            return;
-        }
-
-        const allowZeroTotal = !!document.getElementById('discountAllowZeroTotal')?.checked;
-        const distributionMode = this.safeText(document.getElementById('discountDistributionMode')?.value).toLowerCase() || 'general_code';
-        const startsAtRaw = (document.getElementById('discountStartsAtDate') || {}).value || '';
-        const startsAtTime = (document.getElementById('discountStartsAtTime') || {}).value || '00:00';
-        let starts_at = null;
-        if (startsAtRaw.trim()) {
-            try { starts_at = new Date(startsAtRaw.trim() + 'T' + (startsAtTime.trim() || '00:00')).toISOString(); } catch (e) { starts_at = null; }
-        }
-        const expiryRaw = (document.getElementById('discountExpiryDate') || {}).value || '';
-        const expiryTime = (document.getElementById('discountExpiryTime') || {}).value || '23:59';
-        let expires_at = null;
-        if (expiryRaw.trim()) {
-            try { expires_at = new Date(expiryRaw.trim() + 'T' + (expiryTime.trim() || '23:59')).toISOString(); } catch (e) { expires_at = null; }
-        }
-        if (starts_at && expires_at && new Date(starts_at) >= new Date(expires_at)) {
-            alert('生效时间必须早于过期时间');
-            return;
-        }
-
-        const claimStartsAtRaw = (document.getElementById('discountClaimStartsAtDate') || {}).value || '';
-        const claimStartsAtTime = (document.getElementById('discountClaimStartsAtTime') || {}).value || '00:00';
-        let claim_starts_at = null;
-        if (claimStartsAtRaw.trim()) {
-            try { claim_starts_at = new Date(claimStartsAtRaw.trim() + 'T' + (claimStartsAtTime.trim() || '00:00')).toISOString(); } catch (e) { claim_starts_at = null; }
-        }
-        const claimExpiresAtRaw = (document.getElementById('discountClaimExpiresAtDate') || {}).value || '';
-        const claimExpiresAtTime = (document.getElementById('discountClaimExpiresAtTime') || {}).value || '23:59';
-        let claim_expires_at = null;
-        if (claimExpiresAtRaw.trim()) {
-            try { claim_expires_at = new Date(claimExpiresAtRaw.trim() + 'T' + (claimExpiresAtTime.trim() || '23:59')).toISOString(); } catch (e) { claim_expires_at = null; }
-        }
-        if (claim_starts_at && claim_expires_at && new Date(claim_starts_at) >= new Date(claim_expires_at)) {
-            alert('领取开始时间必须早于领取截止时间');
-            return;
-        }
-        const claimLimitPerUser = Math.max(0, parseInt(document.getElementById('discountClaimLimitPerUser')?.value, 10) || 0);
-        const campaignTag = this.safeText(document.getElementById('discountCampaignTag')?.value);
-        const audienceSegment = this.safeText(document.getElementById('discountAudienceSegment')?.value);
-        const isExclusive = !!document.getElementById('discountIsExclusive')?.checked;
-        const stackPriority = Math.max(1, parseInt(document.getElementById('discountStackPriority')?.value, 10) || 100);
-        const pricingApplyStage = this.safeText(document.getElementById('discountPricingApplyStage')?.value).toLowerCase() || 'order_discount';
-
-        const recoveryStrategy = this.safeText(document.getElementById('discountRecoveryStrategy')?.value).toLowerCase() || 'manual_only';
-        const observationWindowHours = Math.max(1, parseInt(document.getElementById('discountObservationWindowHours')?.value, 10) || 24);
-        const editingDiscount = this.modalMode === 'edit'
-            ? this.getCachedDiscountRecord({ id: this.editingDiscountId })
-            : null;
-
-        const payload = {
-            id: this.modalMode === 'edit' ? this.editingDiscountId : undefined,
-            code: code,
-            discount_type: type,
-            discount_value: value,
-            max_uses: maxUses,
-            max_uses_per_user: maxUsesPerUser,
-            starts_at: starts_at,
-            expires_at: expires_at,
-            applicable_site: applicableSite,
-            scope_type: scopeType,
-            scope_category: scopeCategory,
-            scope_product_id: scopeProductId,
-            allow_zero_total: allowZeroTotal,
-            distribution_mode: distributionMode,
-            claim_starts_at: claim_starts_at,
-            claim_expires_at: claim_expires_at,
-            claim_limit_per_user: claimLimitPerUser,
-            campaign_tag: campaignTag,
-            audience_segment: audienceSegment,
-            is_exclusive: isExclusive,
-            stack_priority: stackPriority,
-            pricing_apply_stage: pricingApplyStage,
-            recovery_strategy: recoveryStrategy,
-            observation_window_hours: observationWindowHours,
-            is_active: editingDiscount ? editingDiscount.is_active !== false : true
-        };
-
+        this.generateSubmitInFlight = true;
+        this.setGenerateSubmitBusyState(true);
         try {
+            let code = document.getElementById('discountCodeInput').value.trim().toUpperCase();
+            if (!code) {
+                code = this.generateRandomCode();
+            }
+
+            const type = document.getElementById('discountValueType').value;
+            const value = parseInt(document.getElementById('discountValue').value);
+            if (!value || value <= 0) {
+                alert('请输入有效的优惠券面额');
+                return;
+            }
+
+            if (type === 'percent' && value > 100) {
+                alert('折扣比例不能大于 100，例如 80 表示 8 折');
+                return;
+            }
+
+            const maxUses = parseInt(document.getElementById('discountMaxUses').value) || 0;
+            if (maxUses < 0) {
+                alert('最大核销次数不能小于 0');
+                return;
+            }
+            const maxUsesPerUser = parseInt(document.getElementById('discountMaxUsesPerUser').value) || 0;
+            if (maxUsesPerUser < 0) {
+                alert('每用户最多使用次数不能小于 0');
+                return;
+            }
+
+            const applicableSiteRaw = String(document.getElementById('discountApplicableSite')?.value || '').trim().toLowerCase();
+            const applicableSite = applicableSiteRaw || null;
+            if (applicableSite && !['cn', 'intl'].includes(applicableSite)) {
+                alert('适用站点配置无效');
+                return;
+            }
+
+            const scopeType = this.normalizeScopeType(document.getElementById('discountScopeType')?.value);
+            const scopeCategory = scopeType === 'category'
+                ? String(document.getElementById('discountScopeCategory')?.value || '').trim()
+                : null;
+            const scopeProductId = scopeType === 'product'
+                ? String(document.getElementById('discountScopeProduct')?.value || '').trim()
+                : null;
+
+            if (scopeType === 'category' && !scopeCategory) {
+                alert('请选择优惠券适用的分类');
+                return;
+            }
+
+            if (scopeType === 'product' && !scopeProductId) {
+                alert('请选择优惠券适用的商品');
+                return;
+            }
+
+            const allowZeroTotal = !!document.getElementById('discountAllowZeroTotal')?.checked;
+            const distributionMode = this.normalizeDistributionMode(document.getElementById('discountDistributionMode')?.value);
+            const startsAtRaw = (document.getElementById('discountStartsAtDate') || {}).value || '';
+            const startsAtTime = (document.getElementById('discountStartsAtTime') || {}).value || '00:00';
+            let starts_at = null;
+            if (startsAtRaw.trim()) {
+                try { starts_at = new Date(startsAtRaw.trim() + 'T' + (startsAtTime.trim() || '00:00')).toISOString(); } catch (e) { starts_at = null; }
+            }
+            const expiryRaw = (document.getElementById('discountExpiryDate') || {}).value || '';
+            const expiryTime = (document.getElementById('discountExpiryTime') || {}).value || '23:59';
+            let expires_at = null;
+            if (expiryRaw.trim()) {
+                try { expires_at = new Date(expiryRaw.trim() + 'T' + (expiryTime.trim() || '23:59')).toISOString(); } catch (e) { expires_at = null; }
+            }
+            if (starts_at && expires_at && new Date(starts_at) >= new Date(expires_at)) {
+                alert('生效时间必须早于过期时间');
+                return;
+            }
+
+            const claimStartsAtRaw = (document.getElementById('discountClaimStartsAtDate') || {}).value || '';
+            const claimStartsAtTime = (document.getElementById('discountClaimStartsAtTime') || {}).value || '00:00';
+            let claim_starts_at = null;
+            if (claimStartsAtRaw.trim()) {
+                try { claim_starts_at = new Date(claimStartsAtRaw.trim() + 'T' + (claimStartsAtTime.trim() || '00:00')).toISOString(); } catch (e) { claim_starts_at = null; }
+            }
+            const claimExpiresAtRaw = (document.getElementById('discountClaimExpiresAtDate') || {}).value || '';
+            const claimExpiresAtTime = (document.getElementById('discountClaimExpiresAtTime') || {}).value || '23:59';
+            let claim_expires_at = null;
+            if (claimExpiresAtRaw.trim()) {
+                try { claim_expires_at = new Date(claimExpiresAtRaw.trim() + 'T' + (claimExpiresAtTime.trim() || '23:59')).toISOString(); } catch (e) { claim_expires_at = null; }
+            }
+            if (claim_starts_at && claim_expires_at && new Date(claim_starts_at) >= new Date(claim_expires_at)) {
+                alert('领取开始时间必须早于领取截止时间');
+                return;
+            }
+            let claimLimitPerUser = Math.max(0, parseInt(document.getElementById('discountClaimLimitPerUser')?.value, 10) || 0);
+            let campaignTag = this.safeText(document.getElementById('discountCampaignTag')?.value);
+            let audienceSegment = this.safeText(document.getElementById('discountAudienceSegment')?.value);
+            const assignedRecipients = this.safeText(document.getElementById('discountAssignedRecipients')?.value);
+            const assignedRecipientTags = this.safeText(document.getElementById('discountAssignedRecipientTags')?.value);
+            const isExclusive = !!document.getElementById('discountIsExclusive')?.checked;
+            const stackPriority = Math.max(1, parseInt(document.getElementById('discountStackPriority')?.value, 10) || 100);
+            const pricingApplyStage = this.safeText(document.getElementById('discountPricingApplyStage')?.value).toLowerCase() || 'order_discount';
+
+            const recoveryStrategy = this.safeText(document.getElementById('discountRecoveryStrategy')?.value).toLowerCase() || 'manual_only';
+            const observationWindowHours = Math.max(1, parseInt(document.getElementById('discountObservationWindowHours')?.value, 10) || 24);
+            const editingDiscount = this.modalMode === 'edit'
+                ? this.getCachedDiscountRecord({ id: this.editingDiscountId })
+                : null;
+
+            if (distributionMode !== 'public_claim') {
+                claim_starts_at = null;
+                claim_expires_at = null;
+                claimLimitPerUser = 0;
+            }
+
+            if (distributionMode === 'general_code') {
+                campaignTag = '';
+                audienceSegment = '';
+            } else if (distributionMode === 'public_claim') {
+                audienceSegment = '';
+            }
+
+            const payload = {
+                id: this.modalMode === 'edit' ? this.editingDiscountId : undefined,
+                code: code,
+                discount_type: type,
+                discount_value: value,
+                max_uses: maxUses,
+                max_uses_per_user: maxUsesPerUser,
+                starts_at: starts_at,
+                expires_at: expires_at,
+                applicable_site: applicableSite,
+                scope_type: scopeType,
+                scope_category: scopeCategory,
+                scope_product_id: scopeProductId,
+                allow_zero_total: allowZeroTotal,
+                distribution_mode: distributionMode,
+                claim_starts_at: claim_starts_at,
+                claim_expires_at: claim_expires_at,
+                claim_limit_per_user: claimLimitPerUser,
+                campaign_tag: campaignTag,
+                audience_segment: audienceSegment,
+                is_exclusive: isExclusive,
+                stack_priority: stackPriority,
+                pricing_apply_stage: pricingApplyStage,
+                recovery_strategy: recoveryStrategy,
+                observation_window_hours: observationWindowHours,
+                is_active: editingDiscount ? editingDiscount.is_active !== false : true
+            };
+
             const isEditMode = this.modalMode === 'edit';
 
             if (isEditMode && !this.editingDiscountId) {
                 throw new Error('缺少要更新的优惠券 ID');
             }
 
-            await this.mutateDiscountsViaAdminApi({
+            const mutationResult = await this.mutateDiscountsViaAdminApi({
                 action: isEditMode ? 'update' : 'create',
                 site: writableSite,
                 payload
             });
 
+            let assignmentSummary = '';
+            let assignmentError = '';
+            if (distributionMode === 'user_assigned' && (assignedRecipients || assignedRecipientTags)) {
+                const savedDiscountId = this.safeText(mutationResult?.row?.id) || this.editingDiscountId;
+                if (!savedDiscountId) {
+                    assignmentError = '优惠券已保存，但缺少可发放的优惠券 ID';
+                } else {
+                    try {
+                        const assignResult = await this.assignAssetsToDiscount({
+                            site: writableSite,
+                            discountId: savedDiscountId,
+                            recipients: assignedRecipients,
+                            recipientTags: assignedRecipientTags,
+                            sourceChannel: campaignTag,
+                            audienceSegment
+                        });
+                        assignmentSummary = this.buildDiscountAssetAssignmentSummary(assignResult);
+                    } catch (assignErr) {
+                        assignmentError = assignErr?.message || '未知错误';
+                    }
+                }
+            }
+
             this.closeGenerateModal();
-            alert(isEditMode
+            await this.loadDiscounts();
+
+            const baseMessage = isEditMode
                 ? `已更新优惠码: ${code}`
-                : `成功生成优惠码: ${code}`);
-            this.loadDiscounts();
+                : `成功生成优惠码: ${code}`;
+            if (assignmentError) {
+                alert(`${baseMessage}；但立即发券失败：${assignmentError}`);
+                return;
+            }
+
+            alert(assignmentSummary ? `${baseMessage}；${assignmentSummary}` : baseMessage);
 
         } catch (err) {
             alert((this.modalMode === 'edit' ? '更新失败: ' : '生成失败: ') + err.message);
+        } finally {
+            this.generateSubmitInFlight = false;
+            this.setGenerateSubmitBusyState(false);
         }
     }
 };

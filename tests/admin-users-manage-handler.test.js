@@ -269,6 +269,9 @@ async function withUsersManageHandler(options, callback) {
             profiles: clone(options?.tables?.profiles || []),
             admin_roles: clone(options?.tables?.admin_roles || []),
             user_purchase_entitlements: clone(options?.tables?.user_purchase_entitlements || []),
+            discount_codes: clone(options?.tables?.discount_codes || []),
+            discount_user_assets: clone(options?.tables?.discount_user_assets || []),
+            discount_event_logs: clone(options?.tables?.discount_event_logs || []),
             user_tags: clone(options?.tables?.user_tags || []),
             admin_notes: clone(options?.tables?.admin_notes || []),
             user_points: clone(options?.tables?.user_points || []),
@@ -438,6 +441,402 @@ test('users manage handler blocks edits to locked super-admin accounts', async (
         assert.equal(res.statusCode, 403);
         assert.match(res.json().message, /内置超管账号不能在用户后台中修改/);
         assert.equal(state.tables.admin_roles.length, 0);
+        assert.equal(state.auditEntries.length, 0);
+    });
+});
+
+test('users manage handler can revoke an available user discount asset and write audit', async () => {
+    await withUsersManageHandler({
+        tables: {
+            profiles: [
+                { id: 'user_1', email: 'user1@example.com', username: 'user1' }
+            ],
+            discount_codes: [
+                {
+                    id: 'discount_1',
+                    code: 'VIP9',
+                    applicable_site: 'cn',
+                    discount_type: 'percent',
+                    discount_value: 90,
+                    distribution_mode: 'targeted_push',
+                    pricing_apply_stage: 'order_discount',
+                    is_exclusive: false,
+                    stack_priority: 30,
+                    expires_at: '2026-05-01T00:00:00.000Z'
+                }
+            ],
+            discount_user_assets: [
+                {
+                    id: 'asset_1',
+                    discount_id: 'discount_1',
+                    user_id: 'user_1',
+                    asset_status: 'available',
+                    assigned_at: '2026-04-16T09:00:00.000Z',
+                    claimed_at: '2026-04-16T09:01:00.000Z',
+                    expires_at: '2026-05-01T00:00:00.000Z',
+                    source_type: 'admin_assign',
+                    source_channel: 'vip_recall',
+                    audience_segment: 'vip',
+                    created_at: '2026-04-16T09:00:00.000Z',
+                    updated_at: '2026-04-16T09:00:00.000Z'
+                }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'revoke_discount_asset',
+                userId: 'user_1',
+                assetId: 'asset_1'
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().success, true);
+        assert.equal(state.tables.discount_user_assets[0]?.asset_status, 'revoked');
+        assert.equal(res.json().asset?.benefit_label, '9折');
+        assert.equal(state.auditEntries[0]?.actionType, 'remove_user_discount_asset');
+        assert.equal(state.auditEntries[0]?.details?.asset_id, 'asset_1');
+        assert.equal(state.auditEntries[0]?.details?.asset_status_before, 'available');
+        assert.equal(state.auditEntries[0]?.details?.asset_status_after, 'revoked');
+    });
+});
+
+test('users manage handler allows revoking discount assets for locked super-admin accounts', async () => {
+    await withUsersManageHandler({
+        tables: {
+            profiles: [
+                { id: 'user_1', email: 'zaoyoe@gmail.com', username: 'root' }
+            ],
+            discount_codes: [
+                {
+                    id: 'discount_1',
+                    code: 'VIP9',
+                    applicable_site: 'cn',
+                    discount_type: 'percent',
+                    discount_value: 90,
+                    distribution_mode: 'targeted_push',
+                    pricing_apply_stage: 'order_discount',
+                    is_exclusive: false,
+                    stack_priority: 30,
+                    expires_at: '2026-05-01T00:00:00.000Z'
+                }
+            ],
+            discount_user_assets: [
+                {
+                    id: 'asset_1',
+                    discount_id: 'discount_1',
+                    user_id: 'user_1',
+                    asset_status: 'available',
+                    assigned_at: '2026-04-16T09:00:00.000Z',
+                    claimed_at: '2026-04-16T09:01:00.000Z',
+                    expires_at: '2026-05-01T00:00:00.000Z',
+                    source_type: 'admin_assign',
+                    source_channel: 'vip_recall',
+                    audience_segment: 'vip',
+                    created_at: '2026-04-16T09:00:00.000Z',
+                    updated_at: '2026-04-16T09:00:00.000Z'
+                }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'revoke_discount_asset',
+                userId: 'user_1',
+                assetId: 'asset_1'
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().success, true);
+        assert.equal(state.tables.discount_user_assets[0]?.asset_status, 'revoked');
+        assert.equal(state.auditEntries[0]?.actionType, 'remove_user_discount_asset');
+    });
+});
+
+test('users manage handler treats revoked coupons without admin audit as user-removed', async () => {
+    await withUsersManageHandler({
+        tables: {
+            profiles: [
+                { id: 'user_1', email: 'user1@example.com', username: 'user1' }
+            ],
+            discount_codes: [
+                {
+                    id: 'discount_wallet_removed',
+                    code: 'WQXXIVPQ',
+                    applicable_site: 'cn',
+                    discount_type: 'percent',
+                    discount_value: 90,
+                    distribution_mode: 'public_claim',
+                    pricing_apply_stage: 'order_discount',
+                    is_exclusive: true,
+                    stack_priority: 100
+                }
+            ],
+            discount_user_assets: [
+                {
+                    id: 'asset_wallet_removed',
+                    discount_id: 'discount_wallet_removed',
+                    user_id: 'user_1',
+                    asset_status: 'revoked',
+                    assigned_at: '2026-04-15T15:44:00.000Z',
+                    claimed_at: '2026-04-15T15:44:00.000Z',
+                    source_type: 'public_claim',
+                    source_channel: 'claim_center',
+                    audience_segment: 'public_claim',
+                    created_at: '2026-04-15T15:44:00.000Z',
+                    updated_at: '2026-04-16T20:20:00.000Z'
+                }
+            ]
+        }
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'list_discount_assets',
+                userId: 'user_1'
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.assets.length, 1);
+        assert.equal(payload.assets[0]?.asset_status, 'revoked');
+        assert.equal(payload.assets[0]?.removal_origin, 'user');
+        assert.equal(payload.assets[0]?.removal_origin_label, '用户删除');
+    });
+});
+
+test('users manage handler keeps admin-removed coupons marked as backend removal', async () => {
+    await withUsersManageHandler({
+        tables: {
+            profiles: [
+                { id: 'user_1', email: 'user1@example.com', username: 'user1' }
+            ],
+            discount_codes: [
+                {
+                    id: 'discount_admin_removed',
+                    code: 'CZ187YE8',
+                    applicable_site: 'cn',
+                    discount_type: 'percent',
+                    discount_value: 90,
+                    distribution_mode: 'public_claim',
+                    pricing_apply_stage: 'order_discount',
+                    is_exclusive: true,
+                    stack_priority: 100
+                }
+            ],
+            discount_user_assets: [
+                {
+                    id: 'asset_admin_removed',
+                    discount_id: 'discount_admin_removed',
+                    user_id: 'user_1',
+                    asset_status: 'revoked',
+                    assigned_at: '2026-04-15T15:44:00.000Z',
+                    claimed_at: '2026-04-15T15:44:00.000Z',
+                    source_type: 'public_claim',
+                    source_channel: 'claim_center',
+                    audience_segment: 'public_claim',
+                    created_at: '2026-04-15T15:44:00.000Z',
+                    updated_at: '2026-04-16T20:20:00.000Z'
+                }
+            ],
+            admin_audit_logs: [
+                {
+                    id: 'audit_remove_1',
+                    target_user_id: 'user_1',
+                    action_type: 'remove_user_discount_asset',
+                    details: {
+                        asset_id: 'asset_admin_removed'
+                    },
+                    created_at: '2026-04-16T20:20:00.000Z'
+                }
+            ]
+        }
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'list_discount_assets',
+                userId: 'user_1'
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.assets.length, 1);
+        assert.equal(payload.assets[0]?.asset_status, 'revoked');
+        assert.equal(payload.assets[0]?.removal_origin, 'admin');
+        assert.equal(payload.assets[0]?.removal_origin_label, '后台删除');
+    });
+});
+
+test('users manage handler can restore a revoked user discount asset and write audit', async () => {
+    await withUsersManageHandler({
+        tables: {
+            profiles: [
+                { id: 'user_1', email: 'user1@example.com', username: 'user1' }
+            ],
+            discount_codes: [
+                {
+                    id: 'discount_1',
+                    code: 'VIP9',
+                    applicable_site: 'cn',
+                    discount_type: 'percent',
+                    discount_value: 90,
+                    distribution_mode: 'targeted_push',
+                    pricing_apply_stage: 'order_discount',
+                    is_exclusive: false,
+                    stack_priority: 30,
+                    expires_at: '2026-05-01T00:00:00.000Z'
+                }
+            ],
+            discount_user_assets: [
+                {
+                    id: 'asset_1',
+                    discount_id: 'discount_1',
+                    user_id: 'user_1',
+                    asset_status: 'revoked',
+                    assigned_at: '2026-04-16T09:00:00.000Z',
+                    claimed_at: '2026-04-16T09:01:00.000Z',
+                    expires_at: '2026-05-01T00:00:00.000Z',
+                    source_type: 'admin_assign',
+                    source_channel: 'vip_recall',
+                    audience_segment: 'vip',
+                    created_at: '2026-04-16T09:00:00.000Z',
+                    updated_at: '2026-04-16T10:00:00.000Z'
+                }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'restore_discount_asset',
+                userId: 'user_1',
+                assetId: 'asset_1'
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().success, true);
+        assert.equal(state.tables.discount_user_assets[0]?.asset_status, 'available');
+        assert.ok(state.tables.discount_user_assets[0]?.restored_at);
+        assert.equal(res.json().asset?.can_remove, true);
+        assert.equal(state.auditEntries[0]?.actionType, 'restore_user_discount_asset');
+        assert.equal(state.auditEntries[0]?.details?.asset_status_before, 'revoked');
+        assert.equal(state.auditEntries[0]?.details?.asset_status_after, 'available');
+    });
+});
+
+test('users manage handler rejects restoring a non-revoked discount asset', async () => {
+    await withUsersManageHandler({
+        tables: {
+            profiles: [
+                { id: 'user_1', email: 'user1@example.com', username: 'user1' }
+            ],
+            discount_codes: [
+                {
+                    id: 'discount_1',
+                    code: 'SAVE5',
+                    discount_type: 'fixed',
+                    discount_value: 5
+                }
+            ],
+            discount_user_assets: [
+                {
+                    id: 'asset_1',
+                    discount_id: 'discount_1',
+                    user_id: 'user_1',
+                    asset_status: 'available',
+                    assigned_at: '2026-04-16T09:00:00.000Z',
+                    created_at: '2026-04-16T09:00:00.000Z',
+                    updated_at: '2026-04-16T10:00:00.000Z'
+                }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'restore_discount_asset',
+                userId: 'user_1',
+                assetId: 'asset_1'
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 409);
+        assert.equal(res.json().success, false);
+        assert.equal(state.tables.discount_user_assets[0]?.asset_status, 'available');
+        assert.equal(state.auditEntries.length, 0);
+    });
+});
+
+test('users manage handler rejects removing a used discount asset', async () => {
+    await withUsersManageHandler({
+        tables: {
+            profiles: [
+                { id: 'user_1', email: 'user1@example.com', username: 'user1' }
+            ],
+            discount_codes: [
+                {
+                    id: 'discount_1',
+                    code: 'SAVE5',
+                    discount_type: 'fixed',
+                    discount_value: 5
+                }
+            ],
+            discount_user_assets: [
+                {
+                    id: 'asset_1',
+                    discount_id: 'discount_1',
+                    user_id: 'user_1',
+                    asset_status: 'used',
+                    assigned_at: '2026-04-16T09:00:00.000Z',
+                    created_at: '2026-04-16T09:00:00.000Z',
+                    updated_at: '2026-04-16T10:00:00.000Z'
+                }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'revoke_discount_asset',
+                userId: 'user_1',
+                assetId: 'asset_1'
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 409);
+        assert.equal(res.json().success, false);
+        assert.equal(state.tables.discount_user_assets[0]?.asset_status, 'used');
         assert.equal(state.auditEntries.length, 0);
     });
 });

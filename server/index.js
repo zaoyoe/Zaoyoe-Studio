@@ -27,6 +27,10 @@ const {
     parseHupijiaoAttach
 } = require('../api/_lib/payments/hupijiao');
 const {
+    maybeIssueAffiliateDiscountAssetsForRecharge,
+    maybeIssueRechargeDiscountAssets
+} = require('../api/_lib/discount-trigger-linkage');
+const {
     deriveHupijiaoPointBreakdown
 } = require('../api/_lib/payments/hupijiao-points');
 const {
@@ -4772,6 +4776,7 @@ app.post('/api/payments/hupijiao/webhook', async (req, res) => {
         let processingResult = paymentState === 'paid' ? 'pending_review' : `ignored_${paymentState}`;
         let errorMessage = null;
         let responseStatus = 200;
+        let rechargeBreakdown = null;
 
         if (!signatureValid) {
             processingResult = 'signature_mismatch';
@@ -4786,14 +4791,14 @@ app.post('/api/payments/hupijiao/webhook', async (req, res) => {
             processingResult = 'amount_mismatch';
             errorMessage = `amount_mismatch_expected_${expectedAmount}`;
         } else {
-            const pointBreakdown = deriveHupijiaoPointBreakdown(paymentOrder, attachData);
+            rechargeBreakdown = deriveHupijiaoPointBreakdown(paymentOrder, attachData);
             const currentOrderStatus = String(paymentOrder.status || '').trim().toLowerCase();
             if (!['paid', 'redeemed'].includes(currentOrderStatus)) {
                 const { error: rechargeError } = await rechargePointsForPayment({
                     supabase,
                     userId: paymentOrder.user_id,
-                    paidPoints: pointBreakdown.paidPoints,
-                    bonusPoints: pointBreakdown.bonusPoints,
+                    paidPoints: rechargeBreakdown.paidPoints,
+                    bonusPoints: rechargeBreakdown.bonusPoints,
                     reason: attachData.charge_type === 'custom'
                         ? 'custom_recharge'
                         : `虎皮椒充值: ${String(paymentOrder.package_name || '充值订单').trim() || '充值订单'}`,
@@ -4890,6 +4895,23 @@ app.post('/api/payments/hupijiao/webhook', async (req, res) => {
                 } catch (linkError) {
                     console.warn('[Hupijiao] Failed to link checkout session from webhook:', linkError.message);
                 }
+
+                await maybeIssueRechargeDiscountAssets({
+                    supabase,
+                    userId: paymentOrder.user_id,
+                    site: paymentOrder.site || currentSite,
+                    paidPoints: rechargeBreakdown?.paidPoints || 0,
+                    bonusPoints: rechargeBreakdown?.bonusPoints || 0,
+                    paidAmount: amount,
+                    paymentOrderId: paymentOrder.id,
+                    paymentProvider: 'hupijiao',
+                    paymentOrderNo: orderNo
+                });
+                await maybeIssueAffiliateDiscountAssetsForRecharge({
+                    supabase,
+                    site: paymentOrder.site || currentSite,
+                    rechargeReferenceId: `hupijiao_${orderNo}`
+                });
             }
         }
 

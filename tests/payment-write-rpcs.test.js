@@ -13,6 +13,7 @@ function createQueryBuilder(executor) {
     const state = {
         mode: 'select',
         payload: null,
+        options: null,
         filters: [],
         order: null,
         limit: null,
@@ -29,6 +30,12 @@ function createQueryBuilder(executor) {
         update(payload) {
             state.mode = 'update';
             state.payload = payload;
+            return builder;
+        },
+        upsert(payload, options = {}) {
+            state.mode = 'upsert';
+            state.payload = payload;
+            state.options = options;
             return builder;
         },
         select() {
@@ -521,4 +528,241 @@ test('completeMockPayment rejects unsupported site values before touching Supaba
             return true;
         }
     );
+});
+
+test('completeMockPayment issues linked discount assets after recharge succeeds', async () => {
+    const state = {
+        paymentOrders: [],
+        paymentEvents: [],
+        paymentCheckoutSessions: [
+            {
+                id: 'checkout-session-1',
+                session_key: 'PCS_MOCK_TEST_1',
+                provider: 'mock',
+                user_id: 'user-1',
+                site: 'cn',
+                status: 'created',
+                provider_metadata: {},
+                request_payload: {}
+            }
+        ],
+        systemConfigRows: [
+            {
+                config_key: 'discount_trigger_rules',
+                config_value: {
+                    recharge: {
+                        enabled: true,
+                        rules: [
+                            {
+                                discount_id: 'discount-1',
+                                min_paid_points: 100
+                            }
+                        ]
+                    }
+                }
+            }
+        ],
+        discountCodes: [
+            {
+                id: 'discount-1',
+                code: 'RECHARGE-100',
+                applicable_site: 'cn',
+                distribution_mode: 'user_assigned',
+                expires_at: '2026-12-31T23:59:59.000Z',
+                is_active: true,
+                starts_at: '2026-01-01T00:00:00.000Z',
+                lifecycle_status: 'active',
+                status_reason: null,
+                max_uses: null,
+                used_count: 0
+            }
+        ],
+        discountUserAssets: [],
+        pointsLedger: []
+    };
+
+    const supabase = {
+        async rpc(name, args) {
+            if (name === 'fn_recharge_points') {
+                state.pointsLedger.push({
+                    id: `ledger-${state.pointsLedger.length + 1}`,
+                    user_id: args.target_user_id,
+                    amount: (Number(args.p_paid) || 0) + (Number(args.p_bonus) || 0),
+                    reference_id: args.p_reference_id,
+                    site: args.p_site || null
+                });
+                return {
+                    data: {
+                        paid: Number(args.p_paid) || 0,
+                        bonus: Number(args.p_bonus) || 0
+                    },
+                    error: null
+                };
+            }
+
+            return {
+                data: null,
+                error: {
+                    code: '42883',
+                    message: `function ${name} does not exist`
+                }
+            };
+        },
+        from(table) {
+            return createQueryBuilder(async (query) => {
+                if (table === 'payment_orders' && query.mode === 'select') {
+                    const rows = applyFilters(state.paymentOrders, query);
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'payment_orders' && query.mode === 'upsert') {
+                    const payload = { ...query.payload };
+                    const existingIndex = state.paymentOrders.findIndex((row) => (
+                        row.provider === payload.provider
+                        && row.provider_order_no === payload.provider_order_no
+                    ));
+                    const nextRow = {
+                        id: existingIndex >= 0 ? state.paymentOrders[existingIndex].id : `payment-order-${state.paymentOrders.length + 1}`,
+                        ...(existingIndex >= 0 ? state.paymentOrders[existingIndex] : {}),
+                        ...payload
+                    };
+                    if (existingIndex >= 0) {
+                        state.paymentOrders[existingIndex] = nextRow;
+                    } else {
+                        state.paymentOrders.push(nextRow);
+                    }
+                    return {
+                        data: query.single || query.maybeSingle ? nextRow : [nextRow],
+                        error: null
+                    };
+                }
+
+                if (table === 'payment_orders' && query.mode === 'update') {
+                    const rows = applyFilters(state.paymentOrders, query);
+                    rows.forEach((row) => Object.assign(row, query.payload || {}));
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'payment_events' && query.mode === 'upsert') {
+                    const payload = { ...query.payload };
+                    const existingIndex = state.paymentEvents.findIndex((row) => row.event_key === payload.event_key);
+                    const nextRow = {
+                        id: existingIndex >= 0 ? state.paymentEvents[existingIndex].id : `payment-event-${state.paymentEvents.length + 1}`,
+                        ...(existingIndex >= 0 ? state.paymentEvents[existingIndex] : {}),
+                        ...payload
+                    };
+                    if (existingIndex >= 0) {
+                        state.paymentEvents[existingIndex] = nextRow;
+                    } else {
+                        state.paymentEvents.push(nextRow);
+                    }
+                    return {
+                        data: query.single || query.maybeSingle ? nextRow : [nextRow],
+                        error: null
+                    };
+                }
+
+                if (table === 'payment_checkout_sessions' && query.mode === 'update') {
+                    const rows = applyFilters(state.paymentCheckoutSessions, query);
+                    rows.forEach((row) => Object.assign(row, query.payload || {}));
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'system_config' && query.mode === 'select') {
+                    const rows = applyFilters(state.systemConfigRows, query);
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'discount_codes' && query.mode === 'select') {
+                    const rows = applyFilters(state.discountCodes, query);
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'discount_user_assets' && query.mode === 'select') {
+                    const rows = applyFilters(state.discountUserAssets, query);
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'discount_user_assets' && query.mode === 'insert') {
+                    const rows = Array.isArray(query.payload) ? query.payload : [query.payload];
+                    const inserted = rows.map((row, index) => {
+                        const nextRow = {
+                            id: row.id || `discount-asset-${state.discountUserAssets.length + index + 1}`,
+                            ...row
+                        };
+                        state.discountUserAssets.push(nextRow);
+                        return nextRow;
+                    });
+                    return {
+                        data: inserted,
+                        error: null
+                    };
+                }
+
+                if (table === 'points_ledger' && query.mode === 'select') {
+                    const rows = applyFilters(state.pointsLedger, query);
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                throw new Error(`Unexpected table access in test: ${table}/${query.mode}`);
+            });
+        }
+    };
+
+    const result = await completeMockPayment({
+        supabase,
+        user: { id: 'user-1' },
+        body: {
+            site: 'cn',
+            order_no: 'MOCK_LINKED_1',
+            points_amount: 100,
+            paid_amount: 10
+        },
+        checkoutSession: state.paymentCheckoutSessions[0],
+        paymentChannels: {
+            active_provider: 'mock',
+            providers: {
+                mock: {
+                    enabled: true,
+                    display_name: '模拟支付',
+                    description: '测试模拟支付'
+                }
+            }
+        },
+        rechargeOptions: {
+            custom_amount_enabled: true,
+            mock_payment_enabled: true
+        },
+        requestHost: '127.0.0.1:8000'
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(result.status, 'redeemed');
+    assert.equal(result.linked_discount_summary?.issued_count, 1);
+    assert.equal(state.discountUserAssets.length, 1);
+    assert.equal(state.discountUserAssets[0].discount_id, 'discount-1');
+    assert.equal(state.paymentOrders[0].status, 'redeemed');
+    assert.equal(state.paymentEvents[0].processing_result, 'processed_paid');
+    assert.equal(state.paymentCheckoutSessions[0].status, 'completed');
 });

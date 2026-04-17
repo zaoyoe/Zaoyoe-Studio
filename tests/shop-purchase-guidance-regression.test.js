@@ -25,8 +25,8 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
-        /this\.openPurchaseModal\(productId, productName, productNameEn, price, rules, quantityCap, purchaseNotes, usageInstructions, \{\s+category: productCategory,\s+sourceContext\s+\}\);\s+void this\.refreshCurrentPurchaseGuidance\(productId\);\s+void this\.syncPurchaseAccessAfterOpen\(productId, quantityCap\);/s,
-        'shop purchase clicks should open the modal immediately, refresh the latest product guidance, and sync purchase access in the background'
+        /void this\.prefetchDiscountAssetsForProduct\(\{\s+productId,\s+quantity: 1,\s+agentId: this\.currentAgentId,\s+site: window\.SiteConfig\?\.site \|\| 'cn'\s+\}\);\s+this\.openPurchaseModal\(productId, productName, productNameEn, price, rules, quantityCap, purchaseNotes, usageInstructions, \{\s+category: productCategory,\s+sourceContext\s+\}\);\s+void this\.refreshCurrentPurchaseGuidance\(productId\);\s+void this\.syncPurchaseAccessAfterOpen\(productId, quantityCap\);/s,
+        'shop purchase clicks should prefetch discount assets, open the modal immediately, refresh the latest product guidance, and sync purchase access in the background'
     );
     assert.doesNotMatch(
         shopClientSource,
@@ -130,18 +130,28 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /css\/shop-page\.css\?v=20260414_SHOP_SUCCESS_MODAL_51/,
+        /css\/shop-page\.css\?v=20260416_SHOP_DISCOUNT_UNAVAILABLE_ACCORDION_9/,
         'shop.html should bust the shop stylesheet cache after integrating the cart drawer module'
     );
     assert.match(
         shopHtmlSource,
-        /js\/shop-client\.js\?v=20260414_SHOP_SUCCESS_MODAL_51/,
+        /js\/shop-client\.js\?v=20260416_SHOP_MULTI_DISCOUNT_STACKING_13/,
         'shop.html should load the cart-enabled shop client runtime'
     );
     assert.match(
         shopHtmlSource,
         /id="shopCartAnchor"[\s\S]*id="shopCartDrawer"[\s\S]*id="shopCartCheckoutModal"/,
         'shop.html should render the floating cart anchor, drawer, and checkout review modal'
+    );
+    assert.match(
+        shopClientSource,
+        /当前商品可用[\s\S]*当前商品不可用/,
+        'shop-client.js should separate discounts usable for the current product from owned but unusable discounts'
+    );
+    assert.match(
+        shopClientSource,
+        /const shouldWaitForLiveAvailableItems = discountAssetsLoading[\s\S]*currentlyUnavailableItems\.length > 0;[\s\S]*if \(\(\!ownedItems\.length && !claimableItems\.length\) \|\| shouldWaitForLiveAvailableItems\) \{\s+container\.innerHTML = discountAssetsLoading\s+\? '<div class="shop-discount-assets-empty">正在同步当前商品可用卡券\.\.\.<\/div>'/s,
+        'purchase modal should keep the unified loading state while only stale unavailable coupon prefills are present'
     );
     assert.doesNotMatch(
         shopHtmlSource,
@@ -170,13 +180,23 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
+        /openPurchaseModalFromCartEntry: function \(entry\) \{[\s\S]*void this\.prefetchDiscountAssetsForProduct\(\{\s+productId: entry\.productId,\s+quantity: entry\.quantity,\s+agentId: this\.currentAgentId,\s+site: window\.SiteConfig\?\.site \|\| 'cn'\s+\}\);[\s\S]*this\.openPurchaseModal\(/s,
+        'cart re-entry should prefetch matching quantity coupon data before reopening the product modal'
+    );
+    assert.match(
+        shopClientSource,
         /getPurchaseQuantityCapForProduct: function \(product, fallbackMaxQuantity = null\) \{[\s\S]*stockCount[\s\S]*Math\.min\(99,\s*Math\.trunc\(stockCount\)\)/s,
         'purchase modals should derive their quantity cap from live stock when stock is available'
     );
     assert.match(
         shopHtmlSource,
         /id="purchaseAddToCartBtn"[\s\S]*id="nextPurchaseStepBtn"/,
-        'shop purchase modal should render the add-to-cart button before the confirm-order button'
+        'shop purchase modal should render the add-to-cart button before the direct confirm button'
+    );
+    assert.match(
+        shopClientSource,
+        /if \(event\.target instanceof Element && event\.target\.closest\('#nextPurchaseStepBtn'\)\) \{\s+event\.preventDefault\?\.\(\);\s+void this\.confirmPurchase\(\);\s+return;\s+\}/s,
+        'single-item purchase should submit directly from the primary action instead of navigating into a second confirmation stage'
     );
     assert.match(
         shopClientSource,
@@ -292,6 +312,16 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         shopCssSource,
         /body\[data-shop-cart-open="true"\]\s+\.shop-main\s*\{\s*padding-right:/,
         'cart drawer should overlay the storefront instead of pushing the product grid sideways'
+    );
+    assert.doesNotMatch(
+        shopHtmlSource,
+        /purchaseConfirmSummary|purchaseConfirmProductName|purchaseConfirmQuantity|purchaseConfirmUnitPrice|purchaseConfirmSubtotal|purchaseConfirmDiscountRow|purchaseConfirmTotal/,
+        'shop.html should not render the legacy final confirmation summary for single-item checkout'
+    );
+    assert.doesNotMatch(
+        shopHtmlSource,
+        /purchaseBackBtn|confirmPurchaseBtn/,
+        'shop.html should not render the legacy back/confirm buttons for the removed final confirmation stage'
     );
     assert.doesNotMatch(
         shopHtmlSource,

@@ -266,6 +266,17 @@ function loadFreshPaymentsApiHandler(repoRoot = path.resolve(__dirname, '..'), r
     });
 }
 
+function loadFreshWalletApiHandler(repoRoot = path.resolve(__dirname, '..'), reqOrUrl = '') {
+    const rawUrl = typeof reqOrUrl === 'string'
+        ? reqOrUrl
+        : (reqOrUrl?.originalUrl || reqOrUrl?.url || '/api/wallet');
+
+    return loadFreshStandaloneApiHandler(repoRoot, rawUrl, {
+        mountPath: '/api/wallet',
+        baseDir: 'api/wallet'
+    });
+}
+
 function applyPreviewEnvToProcess(envValues = {}) {
     Object.entries(envValues).forEach(([key, value]) => {
         if (value === undefined || value === null || value === '') {
@@ -505,6 +516,22 @@ function createLocalPreviewApp(options = {}) {
         });
     });
 
+    app.all('/api/wallet', async (req, res) => {
+        await dispatchLocalPreviewApiRequest(req, res, {
+            kind: 'wallet api',
+            loadHandler: loadFreshWalletApiHandler,
+            repoRoot
+        });
+    });
+
+    app.all('/api/wallet/*', async (req, res) => {
+        await dispatchLocalPreviewApiRequest(req, res, {
+            kind: 'wallet api',
+            loadHandler: loadFreshWalletApiHandler,
+            repoRoot
+        });
+    });
+
     app.use(express.static(repoRoot, {
         extensions: ['html'],
         etag: false,
@@ -561,6 +588,7 @@ module.exports = {
     loadFreshPaymentsApiHandler,
     loadFreshPublicApiHandler,
     loadFreshShopApiHandler,
+    loadFreshWalletApiHandler,
     loadPreviewEnv,
     resolveLocalPreviewListenHost,
     resolveLocalPreviewStandaloneApiRoute,

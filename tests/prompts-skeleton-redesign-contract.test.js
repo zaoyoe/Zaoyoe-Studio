@@ -27,9 +27,9 @@ test('prompts loading skeleton covers featured banner, nav, and richer gallery c
         'function renderFeaturedBannerSkeleton()',
         "banner.classList.add('featured-banner--visible', 'featured-banner--loading');",
         'renderFeaturedBannerSkeleton();',
-        'prompt-card-skeleton-topbar',
-        'prompt-card-skeleton-fav',
-        'prompt-card-skeleton-dots'
+        'prompt-card-skeleton-overlay',
+        'prompt-card-skeleton-title',
+        'prompt-card-skeleton-meta'
     ];
 
     for (const marker of jsMarkers) {
@@ -45,10 +45,11 @@ test('prompts loading skeleton covers featured banner, nav, and richer gallery c
         'justify-content: flex-start;',
         'align-items: flex-start;',
         '.prompts-skeleton-block',
-        '.prompt-card-skeleton-topbar',
-        '.prompt-card-skeleton-fav',
+        '.prompt-card-skeleton-overlay',
+        '.prompt-card-skeleton-title',
         '.prompt-card-skeleton-title--wide',
-        '.prompt-card-skeleton-dot'
+        '.prompt-card-skeleton-meta',
+        '.prompt-card-skeleton-meta--wide'
     ];
 
     for (const marker of cssMarkers) {

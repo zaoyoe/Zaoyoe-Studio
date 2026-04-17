@@ -32,7 +32,7 @@
 
     <!-- Styles -->
     <!-- Prompts Module Styles -->
-    <link rel="stylesheet" href="prompts-poetry.css?v=20260409_PROMPTS_FEATURED_SKELETON_LEFT_LOCK_1">
+    <link rel="stylesheet" href="prompts-poetry.css?v=20260416_PROMPTS_CARD_SKELETON_MINIMAL_1">
     <link rel="stylesheet" href="pagination.css?v=1">
     <link rel="stylesheet" href="css/auth-sheet.css?v=20260324_AUTH_INJECT_RUNTIME_STYLE_HELPERS_2">
     <link rel="stylesheet" href="css/profile-modal.css?v=20260317_PROFILE_MODAL_SUBPAGES_1">
@@ -47,7 +47,7 @@
     <script src="./js/prompts-head-bootstrap.js"></script>
     <script src="./js/homepage-contract.js?v=20260415_HOME_VERIFY_DEMO_1"></script>
 
-    <link rel="stylesheet" href="css/prompts-page.css?v=20260409_PROMPTS_FEATURED_BANNER_VISIBLE_1">
+    <link rel="stylesheet" href="css/prompts-page.css?v=20260416_PROMPTS_MODAL_SCROLL_LOCK_1">
 </head>
 
 <body class="prompts-page">
@@ -307,11 +307,8 @@
 
                 <!-- Comment Section (Initially Hidden) -->
                 <div id="commentSection" class="comment-section">
-                    <!-- Comment Header: Title + Sorting -->
+                    <!-- Comment Header: Sorting -->
                     <div class="comment-header">
-                        <div class="comment-header-title" id="commentSectionTitle">
-                            <span data-i18n="gallery.viewAll">View all</span>
-                        </div>
                         <div class="comment-sort-wrapper">
                             <button class="comment-sort-btn" id="commentSortBtn">
                                 <span id="currentSortLabel" data-i18n="gallery.top">Top</span>
@@ -328,6 +325,11 @@
                     <div class="comment-list" id="commentList">
                         <!-- Comments injected here -->
                     </div>
+
+                    <button class="comment-header-title comment-footer-toggle comment-header-title--static"
+                        id="commentSectionTitle" type="button">
+                        <span data-i18n="gallery.viewAllComments">查看全部评论</span>
+                    </button>
 
                     <div class="comment-input-area">
                         <div class="comment-input-proxy-ui" aria-hidden="true">
@@ -392,7 +394,7 @@
     <script src="./js/section-visibility.js?v=20260411_HOMEPAGE_CONTRACT_P1_2"></script>
     <script src="prompts-data.js?v=20260302_G_AUTH"></script>
     <script src="starry-sky.js?v=20260302_G_AUTH"></script>
-    <script src="prompts-poetry.js?v=20260409_PROMPTS_VISIBILITY_2"></script>
+    <script src="prompts-poetry.js?v=20260416_PROMPTS_CARD_SKELETON_MINIMAL_1"></script>
     <script src="js/services/PointsService.js?v=20260321_PAYMENT_CREATE_UNIFIED_1"></script>
     <script src="js/components/WalletModal.js?v=20260413_WALLET_RUNTIME_TRACKING_2"></script>
     <script src="js/profile-modal-template.js?v=20260324_PROFILE_MODAL_RUNTIME_STYLE_1" defer></script>

@@ -16,6 +16,7 @@ const {
     loadFreshPaymentsApiHandler,
     loadFreshPublicApiHandler,
     loadFreshShopApiHandler,
+    loadFreshWalletApiHandler,
     resolveLocalPreviewListenHost,
     resolveLocalPreviewStandaloneApiRoute,
     resolveLocalPreviewRuntimeScript,
@@ -125,6 +126,21 @@ test('local preview server resolves standalone payments api routes from legacy e
     );
 });
 
+test('local preview server resolves standalone wallet api routes from legacy endpoints', () => {
+    assert.equal(
+        resolveLocalPreviewStandaloneApiRoute('/api/wallet/overview?site=cn', '/api/wallet'),
+        'overview'
+    );
+    assert.equal(
+        resolveLocalPreviewStandaloneApiRoute('/api/wallet/verify-log', '/api/wallet'),
+        'verify-log'
+    );
+    assert.equal(
+        resolveLocalPreviewStandaloneApiRoute('/api/public/wallet/overview', '/api/wallet'),
+        ''
+    );
+});
+
 test('local preview server reloads shared admin handler modules without requiring a restart', () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-preview-admin-handler-'));
     const tempApiDir = path.join(tempRoot, 'api');
@@ -203,6 +219,25 @@ test('local preview server reloads standalone payments handlers without requirin
     fs.writeFileSync(tempPaymentsHandler, "module.exports = function handler() { return 'v2'; };\n");
 
     const secondLoad = loadFreshPaymentsApiHandler(tempRoot, '/api/payments/mock/complete');
+    assert.equal(typeof secondLoad, 'function');
+    assert.equal(secondLoad(), 'v2');
+});
+
+test('local preview server reloads standalone wallet handlers without requiring a restart', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-preview-wallet-handler-'));
+    const tempWalletHandlerDir = path.join(tempRoot, 'api/wallet');
+    const tempWalletHandler = path.join(tempWalletHandlerDir, 'overview.js');
+
+    fs.mkdirSync(tempWalletHandlerDir, { recursive: true });
+    fs.writeFileSync(tempWalletHandler, "module.exports = function handler() { return 'v1'; };\n");
+
+    const firstLoad = loadFreshWalletApiHandler(tempRoot, '/api/wallet/overview');
+    assert.equal(typeof firstLoad, 'function');
+    assert.equal(firstLoad(), 'v1');
+
+    fs.writeFileSync(tempWalletHandler, "module.exports = function handler() { return 'v2'; };\n");
+
+    const secondLoad = loadFreshWalletApiHandler(tempRoot, '/api/wallet/overview');
     assert.equal(typeof secondLoad, 'function');
     assert.equal(secondLoad(), 'v2');
 });

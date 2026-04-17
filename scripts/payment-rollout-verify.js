@@ -1,6 +1,9 @@
 const path = require('path');
 const dotenv = require('dotenv');
 const { createClient } = require('@supabase/supabase-js');
+const {
+    runReadinessGate
+} = require('./payment-readiness-gate');
 
 const DEFAULT_ENV_FILE = path.resolve(__dirname, '../server/.env.production');
 const DEFAULT_SAMPLE_LIMIT = 20;
@@ -303,7 +306,8 @@ function buildVerificationSummary({
     unresolvedLinkedCodes,
     pendingSyntheticCodes,
     missingLedgerSites,
-    customCodeBatches
+    customCodeBatches,
+    rpcReadiness
 }) {
     const findings = [];
 
@@ -364,11 +368,22 @@ function buildVerificationSummary({
         });
     }
 
+    for (const capability of Object.values(rpcReadiness?.capabilities || {})) {
+        if (capability?.available === true) continue;
+        findings.push({
+            severity: 'high',
+            key: `missing_rpc_${capability.key}`,
+            message: `${capability.label} is missing; run ${capability.migration} before rollout verification can pass`,
+            count: 1
+        });
+    }
+
     return {
         verified_at: new Date().toISOString(),
         env_file: envFile,
         project_host: projectHost,
         supported_sites: [...SUPPORTED_SITES],
+        rpc_capabilities: rpcReadiness?.capabilities || {},
         site_summary: siteSummary,
         payment_orders_with_premature_redemption_code: prematureRedemptionCodes,
         unresolved_payment_orders_with_linked_codes: unresolvedLinkedCodes,
@@ -414,6 +429,19 @@ function formatHuman(summary = {}) {
             lines.push('  samples:');
             for (const row of tableSummary.samples) {
                 lines.push(`    - ${JSON.stringify(row)}`);
+            }
+        }
+        lines.push('');
+    }
+
+    if (Object.keys(summary.rpc_capabilities || {}).length) {
+        lines.push('rpc_capabilities');
+        for (const capability of Object.values(summary.rpc_capabilities || {})) {
+            lines.push(`  ${capability.key}.available: ${capability.available === true ? 'yes' : 'no'}`);
+            lines.push(`  ${capability.key}.rpc_name: ${capability.rpc_name}`);
+            lines.push(`  ${capability.key}.migration: ${capability.migration}`);
+            if (capability.probe?.message) {
+                lines.push(`  ${capability.key}.probe_message: ${capability.probe.message}`);
             }
         }
         lines.push('');
@@ -486,13 +514,15 @@ async function main() {
         unresolvedLinkedCodes,
         pendingSyntheticCodes,
         missingLedgerSites,
-        customCodeBatches
+        customCodeBatches,
+        rpcReadiness
     ] = await Promise.all([
         verifyPrematureRedemptionCodes(supabase, options.sampleLimit),
         verifyUnresolvedLinkedCodes(supabase, options.sampleLimit),
         verifyPendingSyntheticExternalOrderIds(supabase, options.sampleLimit),
         verifyMissingLedgerSites(supabase, options.sampleLimit),
-        fetchRecentCustomCodeBatches(supabase, options.sampleLimit)
+        fetchRecentCustomCodeBatches(supabase, options.sampleLimit),
+        runReadinessGate({ envFile: options.envFile })
     ]);
 
     const summary = buildVerificationSummary({
@@ -503,7 +533,8 @@ async function main() {
         unresolvedLinkedCodes,
         pendingSyntheticCodes,
         missingLedgerSites,
-        customCodeBatches
+        customCodeBatches,
+        rpcReadiness
     });
 
     console.log(options.json ? JSON.stringify(summary, null, 2) : formatHuman(summary));

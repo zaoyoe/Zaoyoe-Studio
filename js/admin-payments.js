@@ -47,7 +47,8 @@
         'reject_review',
         'approve_amount_mismatch',
         'reject_amount_mismatch',
-        'refund_hupijiao'
+        'refund_hupijiao',
+        'reconcile_hupijiao_order'
     ]);
     const CLEANUP_SCOPE_HTML = '只会清理订单号前缀为 <code>AUTO_CDX_*</code> 或 <code>SMOKE_*</code> 的测试订单，以及邮箱匹配 <code>codex.*@example.com</code> 或 <code>smoke-payment-*@zaoyoe.invalid</code> 的测试账号。';
     const CLEANUP_SCOPE_TEXT = '将删除 AUTO_CDX_* / SMOKE_* 测试订单，以及 codex.*@example.com / smoke-payment-*@zaoyoe.invalid 测试账号。此操作不可撤销，是否继续？';
@@ -1169,14 +1170,20 @@
             reject_review: '驳回',
             approve_amount_mismatch: '人工放行',
             reject_amount_mismatch: '拒绝入账',
-            refund_hupijiao: '执行退款'
+            refund_hupijiao: '执行退款',
+            query_hupijiao_order: '实时查单',
+            reconcile_hupijiao_order: '人工补单'
         };
         return map[String(action || '').trim().toLowerCase()] || '执行操作';
     }
 
     function getAnomalyActionPrompt(action) {
-        if (String(action || '').trim().toLowerCase() === 'refund_hupijiao') {
+        const normalizedAction = String(action || '').trim().toLowerCase();
+        if (normalizedAction === 'refund_hupijiao') {
             return '请填写退款备注，这条备注会进入后台审计记录，并作为退款原因传给虎皮椒：';
+        }
+        if (normalizedAction === 'reconcile_hupijiao_order') {
+            return '请填写补单备注，这条备注会进入后台审计记录，并作为这次人工补单的处理说明：';
         }
         return '请填写处理备注，这条备注会进入后台审计记录：';
     }
@@ -3668,11 +3675,13 @@
                 })
             });
 
-            window.showToast?.(`${getAnomalyActionLabel(normalizedAction)}成功`, 'success');
+            window.showToast?.(payload?.message || `${getAnomalyActionLabel(normalizedAction)}成功`, 'success');
             recordPaymentsResolutionFeedback(normalizedTargetType, normalizedTargetId, normalizedAction);
-            clearTabPrefetch();
-            state.viewCache = {};
-            await reload();
+            if (payload?.reload !== false) {
+                clearTabPrefetch();
+                state.viewCache = {};
+                await reload();
+            }
             return payload;
         } catch (error) {
             console.error('[AdminPayments] Failed to handle anomaly action:', error);

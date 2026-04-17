@@ -2,6 +2,7 @@
     'use strict';
 
     const GUESTBOOK_KEYBOARD_SETTLE_MS = 90;
+    const GUESTBOOK_ENTRY_ANIMATION_MS = 760;
     const GUESTBOOK_MODAL_STYLE_DECL_KEY = 'style';
     const guestbookModalKeyboardState = {
         baseScrollY: 0,
@@ -265,7 +266,7 @@
         guestbookModalKeyboardState.entryAnimationTimer = setTimeout(() => {
             overlay.classList.remove('guestbook-entrying');
             guestbookModalKeyboardState.entryAnimationTimer = null;
-        }, 760);
+        }, GUESTBOOK_ENTRY_ANIMATION_MS);
     }
 
     function toggleGuestbookSheetAnimation(card, animate) {
@@ -647,6 +648,7 @@
         guestbookModalKeyboardState.ownsFullScrollLock = false;
         guestbookModalKeyboardState.baseScrollY = 0;
         overlay._overlayDown = false;
+        document.body.classList.remove('guestbook-composer-open');
         syncGuestbookModalHitTargets(false);
     };
 
@@ -692,8 +694,18 @@
         if (typeof window._prefetchGuestbook === 'function') {
             window._prefetchGuestbook();
         }
+        document.body.classList.add('guestbook-composer-open');
         syncGuestbookComposerEmptyState();
         syncGuestbookComposerImageState();
+
+        if (guestbookInput && window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+            setTimeout(() => {
+                if (!modal.classList.contains('active')) {
+                    return;
+                }
+                focusGuestbookInputWithoutScroll(guestbookInput);
+            }, GUESTBOOK_ENTRY_ANIMATION_MS + 40);
+        }
     };
 
     const swallowGuestbookSheetEvent = (event) => {
@@ -715,6 +727,32 @@
             window.closeGuestbookModal?.();
         }
         this._overlayDown = false;
+    });
+
+    document.querySelectorAll('[data-guestbook-open="1"]').forEach((trigger) => {
+        if (trigger.dataset.guestbookOpenBound === '1') {
+            return;
+        }
+
+        trigger.addEventListener('click', (event) => {
+            event.preventDefault();
+            window.openGuestbookModal?.();
+        });
+
+        trigger.dataset.guestbookOpenBound = '1';
+    });
+
+    document.querySelectorAll('[data-guestbook-close="1"]').forEach((trigger) => {
+        if (trigger.dataset.guestbookCloseBound === '1') {
+            return;
+        }
+
+        trigger.addEventListener('click', (event) => {
+            event.preventDefault();
+            window.closeGuestbookModal?.();
+        });
+
+        trigger.dataset.guestbookCloseBound = '1';
     });
 
     syncGuestbookModalHitTargets(false);

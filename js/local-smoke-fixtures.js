@@ -28,6 +28,37 @@
         'chat.manage',
         'analytics.view'
     ];
+    const SMOKE_SYSTEM_CONFIG_DOMAIN_KEY_MAP = Object.freeze({
+        commerce: [
+            'unlock_pricing',
+            'recharge_options',
+            'channels',
+            'payment_channels',
+            'discount_trigger_rules'
+        ],
+        affiliate: [
+            'affiliate_program',
+            'affiliate_poster',
+            'rewards',
+            'checkin_system'
+        ],
+        governance: [
+            'security',
+            'notifications',
+            'moderation',
+            'gallery',
+            'comments'
+        ],
+        growth: [
+            'seo',
+            'performance',
+            'analytics_preferences',
+            'integrations'
+        ],
+        verify: [
+            'verify_settings'
+        ]
+    });
     const smokeState = {
         user: {
             id: 'admin-1',
@@ -201,6 +232,38 @@
         },
         rechargeOptions: {
             mock_payment_enabled: true
+        },
+        discountTriggerRules: {
+            recharge: {
+                enabled: false,
+                rules: []
+            },
+            checkin: {
+                enabled: false,
+                rules: []
+            },
+            affiliate: {
+                enabled: false,
+                rules: []
+            }
+        },
+        systemConfigs: {
+            unlock_pricing: {},
+            channels: {},
+            affiliate_program: {},
+            affiliate_poster: {},
+            rewards: {},
+            checkin_system: {},
+            security: {},
+            notifications: {},
+            moderation: {},
+            gallery: {},
+            comments: {},
+            seo: {},
+            performance: {},
+            analytics_preferences: {},
+            integrations: {},
+            verify_settings: {}
         },
         opsAlertHealthPayload: {
             success: true,
@@ -616,6 +679,23 @@
                 is_exclusive: true,
                 stack_priority: 90,
                 pricing_apply_stage: 'order_discount'
+            },
+            {
+                id: 'discount-cn-wallet-bonus',
+                code: 'TOPUP88',
+                applicable_site: 'cn',
+                is_active: true,
+                lifecycle_status: 'active',
+                status_reason: 'manual_enabled',
+                distribution_mode: 'user_assigned',
+                starts_at: '2026-03-16T00:00:00+08:00',
+                expires_at: '2026-05-05T00:00:00+08:00',
+                created_at: '2026-03-19T11:10:00+08:00',
+                is_exclusive: false,
+                stack_priority: 24,
+                pricing_apply_stage: 'order_discount',
+                discount_type: 'fixed',
+                discount_value: 18
             },
             {
                 id: 'discount-intl-global',
@@ -2481,6 +2561,98 @@
             .replace(/^\/+|\/+$/g, '')
             .replace(/^api\/admin\/?/i, '')
             .toLowerCase();
+    }
+
+    function getDefaultSmokeDiscountTriggerRules() {
+        return {
+            recharge: {
+                enabled: false,
+                rules: []
+            },
+            checkin: {
+                enabled: false,
+                rules: []
+            },
+            affiliate: {
+                enabled: false,
+                rules: []
+            }
+        };
+    }
+
+    function normalizeSmokeSystemConfigDomains(value) {
+        const values = Array.isArray(value) ? value : [value];
+        const normalized = Array.from(new Set(
+            values
+                .map((entry) => String(entry || '').trim().toLowerCase())
+                .filter(Boolean)
+        ));
+        return normalized.length ? normalized : ['all'];
+    }
+
+    function listSmokeSystemConfigKeys(domains = []) {
+        const normalizedDomains = normalizeSmokeSystemConfigDomains(domains);
+        if (normalizedDomains.includes('all')) {
+            return Array.from(new Set(Object.values(SMOKE_SYSTEM_CONFIG_DOMAIN_KEY_MAP).flat()));
+        }
+
+        return Array.from(new Set(
+            normalizedDomains.flatMap((domain) => SMOKE_SYSTEM_CONFIG_DOMAIN_KEY_MAP[domain] || [])
+        ));
+    }
+
+    function getSmokeSystemConfigValue(key = '') {
+        const normalizedKey = String(key || '').trim();
+        if (!normalizedKey) {
+            return {};
+        }
+        if (normalizedKey === 'payment_channels') {
+            return deepClone(smokeState.paymentChannelsConfig);
+        }
+        if (normalizedKey === 'recharge_options') {
+            return deepClone(smokeState.rechargeOptions);
+        }
+        if (normalizedKey === 'discount_trigger_rules') {
+            return deepClone(smokeState.discountTriggerRules || getDefaultSmokeDiscountTriggerRules());
+        }
+        return deepClone(smokeState.systemConfigs?.[normalizedKey] || {});
+    }
+
+    function setSmokeSystemConfigValue(key = '', value = {}) {
+        const normalizedKey = String(key || '').trim();
+        if (!normalizedKey) {
+            return;
+        }
+        if (normalizedKey === 'payment_channels') {
+            smokeState.paymentChannelsConfig = deepClone(value || {});
+            return;
+        }
+        if (normalizedKey === 'recharge_options') {
+            smokeState.rechargeOptions = deepClone(value || {});
+            return;
+        }
+        if (normalizedKey === 'discount_trigger_rules') {
+            smokeState.discountTriggerRules = deepClone(value || getDefaultSmokeDiscountTriggerRules());
+            return;
+        }
+        smokeState.systemConfigs[normalizedKey] = deepClone(value || {});
+    }
+
+    function buildSmokeSystemConfigDomainPayload(domains = []) {
+        const normalizedDomains = normalizeSmokeSystemConfigDomains(domains);
+        const keys = listSmokeSystemConfigKeys(normalizedDomains);
+        const configs = keys.reduce((accumulator, key) => {
+            accumulator[key] = getSmokeSystemConfigValue(key);
+            return accumulator;
+        }, {});
+
+        return {
+            success: true,
+            domains: normalizedDomains,
+            keys,
+            meta: deepClone(SMOKE_SYSTEM_CONFIG_DOMAIN_KEY_MAP),
+            configs
+        };
     }
 
     function getSmokeTableStateKey(table = '') {
@@ -5833,6 +6005,82 @@
                 });
             }
 
+            if (url.pathname === '/api/admin/settings/system-config') {
+                if (method === 'GET') {
+                    const domains = url.searchParams.getAll('domain');
+                    return createResponse(buildSmokeSystemConfigDomainPayload(domains));
+                }
+
+                if (method === 'POST') {
+                    let body = {};
+                    try {
+                        body = JSON.parse(String(init?.body || '{}'));
+                    } catch (_) {
+                        body = {};
+                    }
+
+                    const key = String(body?.key || '').trim();
+                    if (!key) {
+                        return createResponse({
+                            success: false,
+                            message: 'key is required'
+                        }, 400);
+                    }
+
+                    setSmokeSystemConfigValue(key, body?.value);
+                    return createResponse({
+                        success: true,
+                        key,
+                        value: getSmokeSystemConfigValue(key)
+                    });
+                }
+            }
+
+            if (url.pathname === '/api/admin/settings/discount-trigger-options') {
+                const site = normalizeSmokeAnalyticsSite(url.searchParams.get('site'));
+                const rows = getTableRows('discount_codes')
+                    .filter((row) => String(row?.distribution_mode || '').trim().toLowerCase() === 'user_assigned')
+                    .filter((row) => matchesSmokeSiteScope(row?.applicable_site, site))
+                    .map((row) => ({
+                        id: row.id,
+                        code: String(row?.code || '').trim().toUpperCase(),
+                        applicable_site: normalizeSmokeAnalyticsSite(row?.applicable_site),
+                        discount_type: String(row?.discount_type || 'fixed').trim().toLowerCase() || 'fixed',
+                        discount_value: Number.isFinite(Number(row?.discount_value)) ? Number(row.discount_value) : 0,
+                        distribution_mode: 'user_assigned',
+                        lifecycle_status: String(row?.lifecycle_status || 'active').trim().toLowerCase() || 'active',
+                        lifecycle_summary: {
+                            key: String(row?.lifecycle_status || 'active').trim().toLowerCase() || 'active',
+                            label: formatSmokeLifecycleLabel(row?.lifecycle_status)
+                        }
+                    }));
+
+                return createResponse({
+                    success: true,
+                    site,
+                    rows: deepClone(rows)
+                });
+            }
+
+            if (url.pathname === '/api/wallet/checkin') {
+                return createResponse({
+                    success: true,
+                    message: '签到成功',
+                    points: 5,
+                    base_reward: 5,
+                    bonus_reward: 0,
+                    consecutive_days: 3,
+                    new_balance: 90.7,
+                    linked_discount_summary: {
+                        success: true,
+                        event_type: 'checkin',
+                        matched_rule_count: 0,
+                        issued_count: 0,
+                        assigned_discount_ids: []
+                    }
+                });
+            }
+
             if (url.pathname === '/api/admin/settings/ops-alert-health') {
                 return createResponse(deepClone(smokeState.opsAlertHealthPayload));
             }
@@ -6539,7 +6787,436 @@
             minePanelText.replace(/\s+/g, ' ').trim().slice(0, 72)
         );
 
+        await runDiscountTriggerSettingsSmoke();
         await runUserModalSmoke();
+    }
+
+    async function runDiscountTriggerSettingsSmoke() {
+        globalScope.switchModule?.('settings');
+        await sleep(180);
+
+        const card = await waitFor(() => {
+            const node = document.querySelector('[data-config="discount-trigger-rules"]');
+            return node instanceof HTMLElement ? node : null;
+        }, { message: '卡券联动配置卡片未渲染' });
+
+        card.scrollIntoView({ block: 'center', behavior: 'instant' });
+        await nextFrame();
+        await sleep(80);
+        await globalScope.loadDiscountTriggerDiscountOptions?.(true);
+        await sleep(120);
+
+        const firstPresetCard = card.querySelector('[data-discount-trigger-section="recharge"][data-discount-trigger-preset="first_recharge"]');
+        if (firstPresetCard instanceof HTMLElement) {
+            const measuredCard = firstPresetCard.querySelector('.discount-trigger-preset-btn__surface') || firstPresetCard;
+            const titleEl = measuredCard.querySelector('.discount-trigger-preset-btn__title');
+            const descEl = measuredCard.querySelector('.discount-trigger-preset-btn__desc');
+            const recommendationEl = measuredCard.querySelector('.discount-trigger-preset-btn__recommendation');
+            const cardRect = measuredCard.getBoundingClientRect();
+            const titleRect = titleEl?.getBoundingClientRect?.();
+            const descRect = descEl?.getBoundingClientRect?.();
+            const recommendationRect = recommendationEl?.getBoundingClientRect?.();
+            const style = globalScope.getComputedStyle?.(measuredCard);
+            const metrics = {
+                display: style?.display || '',
+                appearance: style?.appearance || style?.getPropertyValue?.('appearance') || '',
+                paddingTop: Math.round(parseFloat(style?.paddingTop || '0')),
+                paddingRight: Math.round(parseFloat(style?.paddingRight || '0')),
+                paddingBottom: Math.round(parseFloat(style?.paddingBottom || '0')),
+                paddingLeft: Math.round(parseFloat(style?.paddingLeft || '0')),
+                minHeight: Math.round(parseFloat(style?.minHeight || '0')),
+                titleTopInset: titleRect ? Math.round(titleRect.top - cardRect.top) : -1,
+                titleLeftInset: titleRect ? Math.round(titleRect.left - cardRect.left) : -1,
+                descTopGap: titleRect && descRect ? Math.round(descRect.top - titleRect.bottom) : -1,
+                recommendationBottomInset: recommendationRect ? Math.round(cardRect.bottom - recommendationRect.bottom) : -1,
+                recommendationTopGap: descRect && recommendationRect ? Math.round(recommendationRect.top - descRect.bottom) : -1
+            };
+            const spacingPass = metrics.paddingTop >= 18
+                && metrics.paddingLeft >= 20
+                && metrics.paddingBottom >= 20
+                && metrics.minHeight >= 136
+                && metrics.minHeight <= 156;
+            recordResult(
+                '卡券联动模板卡片留白体检',
+                spacingPass,
+                Object.entries(metrics).map(([key, value]) => `${key}:${value}`).join(' / ')
+            );
+
+            const matchedRules = [];
+            Array.from(document.styleSheets || []).forEach((sheet) => {
+                let rules;
+                try {
+                    rules = Array.from(sheet.cssRules || []);
+                } catch (_) {
+                    rules = [];
+                }
+                rules.forEach((rule) => {
+                    if (!(rule instanceof CSSStyleRule)) {
+                        return;
+                    }
+                    const selectorText = String(rule.selectorText || '').trim();
+                    if (!selectorText) {
+                        return;
+                    }
+                    let matches = false;
+                    try {
+                        matches = measuredCard.matches(selectorText);
+                    } catch (_) {
+                        matches = false;
+                    }
+                    if (!matches) {
+                        return;
+                    }
+                    const styleText = [
+                        rule.style.getPropertyValue('display') ? `display:${rule.style.getPropertyValue('display')}${rule.style.getPropertyPriority('display') ? ' !important' : ''}` : '',
+                        rule.style.getPropertyValue('padding') ? `padding:${rule.style.getPropertyValue('padding')}${rule.style.getPropertyPriority('padding') ? ' !important' : ''}` : '',
+                        rule.style.getPropertyValue('padding-top') ? `padding-top:${rule.style.getPropertyValue('padding-top')}${rule.style.getPropertyPriority('padding-top') ? ' !important' : ''}` : '',
+                        rule.style.getPropertyValue('padding-bottom') ? `padding-bottom:${rule.style.getPropertyValue('padding-bottom')}${rule.style.getPropertyPriority('padding-bottom') ? ' !important' : ''}` : '',
+                        rule.style.getPropertyValue('min-height') ? `min-height:${rule.style.getPropertyValue('min-height')}${rule.style.getPropertyPriority('min-height') ? ' !important' : ''}` : '',
+                        rule.style.getPropertyValue('height') ? `height:${rule.style.getPropertyValue('height')}${rule.style.getPropertyPriority('height') ? ' !important' : ''}` : ''
+                    ].filter(Boolean).join(' / ');
+                    if (!styleText) {
+                        return;
+                    }
+                    matchedRules.push(`${selectorText} => ${styleText}`);
+                });
+            });
+            recordResult(
+                '卡券联动模板卡片命中样式规则',
+                matchedRules.some((entry) => entry.includes('.discount-trigger-preset-btn__surface')),
+                matchedRules.join(' || ').slice(0, 1500) || '未找到命中规则'
+            );
+
+            const presetCards = Array.from(card.querySelectorAll('#discountTriggerRechargePresetRow .discount-trigger-preset-btn__surface'));
+            const firstSurface = presetCards[0];
+            const secondSurface = presetCards[1];
+            if (firstSurface instanceof HTMLElement && secondSurface instanceof HTMLElement) {
+                const firstRect = firstSurface.getBoundingClientRect();
+                const secondRect = secondSurface.getBoundingClientRect();
+                const firstButtonRect = firstSurface.parentElement?.getBoundingClientRect?.();
+                const secondButtonRect = secondSurface.parentElement?.getBoundingClientRect?.();
+                const firstStyle = globalScope.getComputedStyle?.(firstSurface);
+                const secondStyle = globalScope.getComputedStyle?.(secondSurface);
+                const horizontalGap = Math.round(secondRect.left - firstRect.right);
+                const firstOverflow = firstButtonRect ? Math.round(firstRect.width - firstButtonRect.width) : -1;
+                const secondOverflow = secondButtonRect ? Math.round(secondRect.width - secondButtonRect.width) : -1;
+                const overlapPass = firstOverflow <= 0
+                    && secondOverflow <= 0
+                    && String(firstStyle?.boxSizing || '') === 'border-box'
+                    && String(secondStyle?.boxSizing || '') === 'border-box';
+                recordResult(
+                    '卡券联动模板卡片网格间距体检',
+                    overlapPass,
+                    [
+                        `gap:${horizontalGap}`,
+                        `firstWidth:${Math.round(firstRect.width)}`,
+                        `secondWidth:${Math.round(secondRect.width)}`,
+                        `firstOverflow:${firstOverflow}`,
+                        `secondOverflow:${secondOverflow}`,
+                        `firstBoxSizing:${String(firstStyle?.boxSizing || '')}`,
+                        `secondBoxSizing:${String(secondStyle?.boxSizing || '')}`
+                    ].join(' / ')
+                );
+            } else {
+                recordResult('卡券联动模板卡片网格间距体检', false, '未找到前两张模板卡片');
+            }
+        } else {
+            recordResult('卡券联动模板卡片留白体检', false, '未找到首张推荐模板卡片');
+            recordResult('卡券联动模板卡片命中样式规则', false, '未找到首张推荐模板卡片');
+            recordResult('卡券联动模板卡片网格间距体检', false, '未找到首张推荐模板卡片');
+        }
+
+        const sections = [
+            {
+                key: 'recharge',
+                label: '充值',
+                toggleId: 'discountTriggerRechargeEnabledToggle',
+                summaryId: 'discountTriggerRechargeSummary',
+                addButtonId: 'discountTriggerAddRechargeRuleBtn',
+                listId: 'discountTriggerRechargeRuleList',
+                presetId: 'first_recharge',
+                expectedPrefill: { field: 'first_recharge_only', kind: 'checked', value: true },
+                expectedRecommendationCode: 'TOPUP88',
+                expectedAutoDiscountId: 'discount-cn-wallet-bonus',
+                expectedSite: 'cn'
+            },
+            {
+                key: 'checkin',
+                label: '签到',
+                toggleId: 'discountTriggerCheckinEnabledToggle',
+                summaryId: 'discountTriggerCheckinSummary',
+                addButtonId: 'discountTriggerAddCheckinRuleBtn',
+                listId: 'discountTriggerCheckinRuleList',
+                presetId: 'streak_7',
+                expectedPrefill: { field: 'min_streak_days', kind: 'value', value: '7' },
+                expectedRecommendationCode: 'TOPUP88',
+                expectedAutoDiscountId: 'discount-cn-wallet-bonus',
+                expectedSite: 'cn'
+            },
+            {
+                key: 'affiliate',
+                label: '推广',
+                toggleId: 'discountTriggerAffiliateEnabledToggle',
+                summaryId: 'discountTriggerAffiliateSummary',
+                addButtonId: 'discountTriggerAddAffiliateRuleBtn',
+                listId: 'discountTriggerAffiliateRuleList',
+                presetId: 'commission',
+                expectedPrefill: { field: 'reward_type', kind: 'value', value: 'commission' },
+                expectedRecommendationCode: 'TOPUP88',
+                expectedAutoDiscountId: 'discount-cn-wallet-bonus',
+                expectedSite: 'cn'
+            }
+        ];
+
+        const renderedSections = await waitFor(() => {
+            const ready = sections.every((section) => {
+                const toggle = document.getElementById(section.toggleId);
+                const summary = document.getElementById(section.summaryId);
+                const addButton = document.getElementById(section.addButtonId);
+                const list = document.getElementById(section.listId);
+                return toggle instanceof HTMLElement
+                    && summary instanceof HTMLElement
+                    && String(summary.textContent || '').trim().length > 0
+                    && addButton instanceof HTMLButtonElement
+                    && document.querySelector(`[data-trigger-section="${section.key}"] [data-discount-trigger-preset="${section.presetId}"]`) instanceof HTMLButtonElement
+                    && list instanceof HTMLElement;
+            });
+            return ready ? sections : null;
+        }, { message: '卡券联动三段配置未完整渲染' });
+
+        recordResult(
+            '卡券联动三段配置已渲染',
+            renderedSections.length === 3,
+            renderedSections.map((section) => section.label).join(' / ')
+        );
+
+        recordResult(
+            '卡券联动推荐模板已渲染',
+            renderedSections.every((section) => (
+                document.querySelector(`[data-trigger-section="${section.key}"] [data-discount-trigger-preset="${section.presetId}"]`) instanceof HTMLButtonElement
+            )),
+            renderedSections.map((section) => `${section.label}:${section.presetId}`).join(' / ')
+        );
+
+        await waitFor(() => {
+            const ready = renderedSections.every((section) => {
+                const recommendationNode = document.querySelector(`[data-trigger-section="${section.key}"] [data-discount-trigger-preset="${section.presetId}"] [data-discount-trigger-preset-role="recommendation"]`);
+                return recommendationNode instanceof HTMLElement
+                    && String(recommendationNode.textContent || '').includes(section.expectedRecommendationCode)
+                    ? true
+                    : null;
+            });
+            return ready ? true : null;
+        }, { message: '卡券联动模板候选提示未刷新为具体卡券', timeoutMs: 20000 });
+
+        recordResult(
+            '卡券联动模板说明和候选提示已渲染',
+            renderedSections.every((section) => {
+                const presetButton = document.querySelector(`[data-trigger-section="${section.key}"] [data-discount-trigger-preset="${section.presetId}"]`);
+                if (!(presetButton instanceof HTMLButtonElement)) {
+                    return false;
+                }
+                const descNode = presetButton.querySelector('.discount-trigger-preset-btn__desc');
+                const recommendationNode = presetButton.querySelector('[data-discount-trigger-preset-role="recommendation"]');
+                return descNode instanceof HTMLElement
+                    && String(descNode.textContent || '').trim().length > 0
+                    && recommendationNode instanceof HTMLElement
+                    && String(recommendationNode.textContent || '').includes(section.expectedRecommendationCode);
+            }),
+            renderedSections
+                .map((section) => {
+                    const recommendationNode = document.querySelector(`[data-trigger-section="${section.key}"] [data-discount-trigger-preset="${section.presetId}"] [data-discount-trigger-preset-role="recommendation"]`);
+                    return `${section.label}:${recommendationNode instanceof HTMLElement ? String(recommendationNode.textContent || '').trim().slice(0, 24) : '<missing>'}`;
+                })
+                .join(' / ')
+        );
+
+        const getRuleCardCount = (listId) => document.querySelectorAll(`#${listId} [data-rule-key]`).length;
+        const baselineCounts = Object.fromEntries(renderedSections.map((section) => [section.key, getRuleCardCount(section.listId)]));
+
+        let isolatedPresetPass = true;
+        let autoSelectionPass = true;
+        for (const section of renderedSections) {
+            const presetButton = document.querySelector(`[data-trigger-section="${section.key}"] [data-discount-trigger-preset="${section.presetId}"]`);
+            if (!(presetButton instanceof HTMLButtonElement)) {
+                isolatedPresetPass = false;
+                autoSelectionPass = false;
+                continue;
+            }
+
+            presetButton.click();
+            await waitFor(
+                () => getRuleCardCount(section.listId) === baselineCounts[section.key] + 1
+                    ? true
+                    : null,
+                { message: `${section.label} 模板规则未能新增` }
+            );
+
+            const crossAffected = renderedSections.some((otherSection) => (
+                otherSection.key !== section.key
+                && getRuleCardCount(otherSection.listId) !== baselineCounts[otherSection.key]
+            ));
+            if (crossAffected) {
+                isolatedPresetPass = false;
+            }
+
+            const targetCard = document.querySelector(`#${section.listId} [data-rule-key]`);
+            if (!(targetCard instanceof HTMLElement)) {
+                isolatedPresetPass = false;
+                autoSelectionPass = false;
+            } else {
+                const prefill = section.expectedPrefill || {};
+                const targetField = targetCard.querySelector(`[data-field="${prefill.field}"]`);
+                if (prefill.kind === 'checked') {
+                    if (!(targetField instanceof HTMLInputElement) || targetField.checked !== prefill.value) {
+                        isolatedPresetPass = false;
+                    }
+                } else if (prefill.kind === 'value') {
+                    if (!(targetField instanceof HTMLInputElement || targetField instanceof HTMLSelectElement) || String(targetField.value || '') !== String(prefill.value || '')) {
+                        isolatedPresetPass = false;
+                    }
+                }
+
+                const discountField = targetCard.querySelector('[data-field="discount_id"]');
+                const siteField = targetCard.querySelector('[data-field="site"]');
+                if (!(discountField instanceof HTMLSelectElement) || String(discountField.value || '') !== section.expectedAutoDiscountId) {
+                    autoSelectionPass = false;
+                }
+                if (!(siteField instanceof HTMLSelectElement) || String(siteField.value || '') !== section.expectedSite) {
+                    autoSelectionPass = false;
+                }
+            }
+
+            baselineCounts[section.key] = getRuleCardCount(section.listId);
+        }
+
+        recordResult(
+            '卡券联动推荐模板会按段落插入预填规则',
+            isolatedPresetPass,
+            renderedSections
+                .map((section) => `${section.label} ${baselineCounts[section.key]} 条`)
+                .join(' / ')
+        );
+
+        recordResult(
+            '卡券联动模板会自动预选推荐卡券',
+            autoSelectionPass,
+            renderedSections
+                .map((section) => {
+                    const discountField = document.querySelector(`#${section.listId} [data-field="discount_id"]`);
+                    const siteField = document.querySelector(`#${section.listId} [data-field="site"]`);
+                    return `${section.label} ${discountField instanceof HTMLSelectElement ? discountField.value || '<empty>' : '<missing>'} / ${siteField instanceof HTMLSelectElement ? siteField.value || '<empty>' : '<missing>'}`;
+                })
+                .join(' / ')
+        );
+
+        const statusText = String(document.getElementById('discountTriggerRechargeStatusText')?.textContent || '').trim();
+        recordResult(
+            '卡券联动改动后会进入统一待保存状态',
+            /改动还没保存|保存前需要补齐/.test(statusText),
+            statusText.slice(0, 64)
+        );
+
+        await waitFor(() => {
+            const ready = renderedSections.every((section) => {
+                const select = document.querySelector(`#${section.listId} [data-field="discount_id"]`);
+                if (!(select instanceof HTMLSelectElement)) {
+                    return null;
+                }
+                return Array.from(select.options).some((option) => String(option.value || '').trim())
+                    ? true
+                    : null;
+            });
+            return ready ? true : null;
+        }, { message: '卡券联动可选卡券未加载完成', timeoutMs: 20000 });
+
+        renderedSections.forEach((section) => {
+            const toggle = document.getElementById(section.toggleId);
+            if (toggle instanceof HTMLElement && !toggle.classList.contains('active')) {
+                toggle.click();
+            }
+        });
+
+        await sleep(160);
+
+        const saveButton = document.getElementById('discountTriggerRechargeSaveBtn');
+        if (saveButton instanceof HTMLButtonElement) {
+            saveButton.click();
+        }
+
+        await waitFor(() => {
+            const node = document.getElementById('discountTriggerRechargeStatusText');
+            return node instanceof HTMLElement && /当前配置已保存/.test(String(node.textContent || ''))
+                ? node
+                : null;
+        }, { message: '卡券联动保存后未进入已保存状态', timeoutMs: 20000 });
+
+        const savedResponse = await globalScope.fetch('/api/admin/settings/system-config?domain=commerce', {
+            method: 'GET',
+            credentials: 'include'
+        });
+        const savedPayload = await savedResponse.json();
+        const savedRules = savedPayload?.configs?.discount_trigger_rules || {};
+        const savedToConfigPass = renderedSections.every((section) => {
+            const rules = Array.isArray(savedRules?.[section.key]?.rules) ? savedRules[section.key].rules : [];
+            return rules.length === 1
+                && String(rules[0]?.discount_id || '').trim().length > 0
+                && savedRules?.[section.key]?.enabled === true;
+        });
+
+        recordResult(
+            '卡券联动保存后会写回 system-config',
+            savedToConfigPass,
+            renderedSections
+                .map((section) => `${section.label} ${Array.isArray(savedRules?.[section.key]?.rules) ? savedRules[section.key].rules.length : 0} 条`)
+                .join(' / ')
+        );
+
+        if (globalScope.systemConfigCache && typeof globalScope.systemConfigCache === 'object') {
+            globalScope.systemConfigCache.discount_trigger_rules = deepClone(savedRules);
+        }
+        await globalScope.hydrateDiscountTriggerSettingsDraft?.({ force: true });
+        await globalScope.renderDiscountTriggerSettings?.();
+        await sleep(180);
+
+        await waitFor(() => {
+            const restored = renderedSections.every((section) => getRuleCardCount(section.listId) === 1);
+            return restored ? true : null;
+        }, { message: '卡券联动重载后规则数量未恢复', timeoutMs: 20000 });
+
+        const restoredSelectionsPass = renderedSections.every((section) => {
+            const discountSelect = document.querySelector(`#${section.listId} [data-field="discount_id"]`);
+            return discountSelect instanceof HTMLSelectElement && String(discountSelect.value || '').trim().length > 0;
+        });
+        const restoredPrefillsPass = renderedSections.every((section) => {
+            const prefill = section.expectedPrefill || {};
+            const targetField = document.querySelector(`#${section.listId} [data-field="${prefill.field}"]`);
+            if (prefill.kind === 'checked') {
+                return targetField instanceof HTMLInputElement && targetField.checked === prefill.value;
+            }
+            if (prefill.kind === 'value') {
+                return (targetField instanceof HTMLInputElement || targetField instanceof HTMLSelectElement)
+                    && String(targetField.value || '') === String(prefill.value || '');
+            }
+            return true;
+        });
+
+        const restoredStatusText = String(document.getElementById('discountTriggerRechargeStatusText')?.textContent || '').trim();
+        recordResult(
+            '卡券联动重载后会保留已保存规则',
+            restoredSelectionsPass && restoredPrefillsPass && /当前配置已保存/.test(restoredStatusText),
+            `${renderedSections
+                .map((section) => {
+                    const discountSelect = document.querySelector(`#${section.listId} [data-field="discount_id"]`);
+                    const prefill = section.expectedPrefill || {};
+                    const targetField = document.querySelector(`#${section.listId} [data-field="${prefill.field}"]`);
+                    const prefillValue = prefill.kind === 'checked'
+                        ? (targetField instanceof HTMLInputElement ? String(targetField.checked) : '<missing>')
+                        : ((targetField instanceof HTMLInputElement || targetField instanceof HTMLSelectElement) ? targetField.value || '<empty>' : '<missing>');
+                    return `${section.label} ${discountSelect instanceof HTMLSelectElement ? discountSelect.value || '<empty>' : '<missing>'} / ${prefill.field}:${prefillValue}`;
+                })
+                .join(' / ')} | ${restoredStatusText.slice(0, 48)}`
+        );
     }
 
     async function runAdminAnalyticsSmoke() {
@@ -8478,6 +9155,8 @@
                     await runAdminGallerySmoke();
                 } else if (moduleParam === 'comments') {
                     await runAdminCommentsSmoke();
+                } else if (moduleParam === 'settings') {
+                    await runDiscountTriggerSettingsSmoke();
                 } else if (moduleParam === 'homepage') {
                     await runHomepageAdminSmoke();
                 } else if (moduleParam === 'tickets') {

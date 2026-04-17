@@ -104,6 +104,24 @@ INSERT INTO public.system_config (config_key, config_value, description) VALUES
 }'::jsonb, '支付通道配置')
 ON CONFLICT (config_key) DO NOTHING;
 
+-- 卡券联动触发规则
+INSERT INTO public.system_config (config_key, config_value, description) VALUES
+('discount_trigger_rules', '{
+    "recharge": {
+        "enabled": false,
+        "rules": []
+    },
+    "checkin": {
+        "enabled": false,
+        "rules": []
+    },
+    "affiliate": {
+        "enabled": false,
+        "rules": []
+    }
+}'::jsonb, '充值成功后自动发放卡券的触发规则')
+ON CONFLICT (config_key) DO NOTHING;
+
 -- 销售渠道
 INSERT INTO public.system_config (config_key, config_value, description) VALUES
 ('channels', '[

@@ -12,6 +12,22 @@ body {
     margin: 0;
 }
 
+/* Prompts page: honor shared modal scroll-lock classes from iOSScrollLock */
+html.no-scroll,
+body.no-scroll {
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
+}
+
+body.ios-scroll-lock-fixed {
+    position: fixed;
+    left: 0;
+    right: 0;
+    width: 100%;
+    top: var(--ios-scroll-lock-offset, 0px);
+    overflow: hidden !important;
+}
+
 /* Content areas start hidden, fade in when ready */
 .featured-banner:not(.featured-banner--visible) {
     display: none;

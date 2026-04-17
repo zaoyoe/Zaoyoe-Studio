@@ -4,6 +4,7 @@ const {
 } = require('../secrets');
 
 const PROVIDER_KEYS = Object.freeze(['mock', 'afdian', 'hupijiao']);
+const NON_MOCK_PROVIDER_PRIORITY = Object.freeze(['hupijiao', 'afdian']);
 const DEFAULT_SITE_ORIGIN = 'https://www.zaoyoe.com';
 const DEFAULT_AFDIAN_CHECKOUT_URL = 'https://afdian.com/a/zaoyoe';
 const DEFAULT_CUSTOM_RECHARGE_MIN_POINTS = 1;
@@ -25,8 +26,8 @@ const SECRET_ENV_FALLBACKS = Object.freeze({
 });
 const PUBLIC_PROVIDER_FIELDS = Object.freeze({
     mock: ['enabled', 'display_name', 'description'],
-    afdian: ['enabled', 'display_name', 'checkout_url', 'package_hint', 'custom_amount_hint'],
-    hupijiao: ['enabled', 'display_name', 'checkout_url', 'package_hint', 'custom_amount_hint']
+    afdian: ['enabled', 'display_name', 'checkout_url', 'package_hint', 'custom_amount_hint', 'order_query_enabled', 'order_query_title', 'order_query_hint', 'order_query_placeholder'],
+    hupijiao: ['enabled', 'display_name', 'checkout_url', 'package_hint', 'custom_amount_hint', 'order_query_enabled', 'order_query_title', 'order_query_hint', 'order_query_placeholder']
 });
 const PUBLIC_MOCK_RUNTIME_MESSAGES = Object.freeze({
     local_request_host: '当前环境允许使用模拟支付。',
@@ -75,6 +76,42 @@ function coercePositiveInteger(value, fallback) {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function hasCheckoutUrl(provider = {}) {
+    return Boolean(String(provider?.checkout_url || '').trim());
+}
+
+function resolvePreferredEnabledProviderKey(providers = {}, fallback = 'afdian') {
+    const sourceProviders = providers && typeof providers === 'object' ? providers : {};
+    const candidateKeys = [...NON_MOCK_PROVIDER_PRIORITY, ...Object.keys(sourceProviders)];
+    const seen = new Set();
+
+    for (const providerKey of candidateKeys) {
+        const normalizedKey = String(providerKey || '').trim().toLowerCase();
+        if (!normalizedKey || normalizedKey === 'mock' || seen.has(normalizedKey)) {
+            continue;
+        }
+        seen.add(normalizedKey);
+        const provider = sourceProviders[normalizedKey];
+        if (provider?.enabled === true && hasCheckoutUrl(provider)) {
+            return normalizedKey;
+        }
+    }
+
+    for (const providerKey of candidateKeys) {
+        const normalizedKey = String(providerKey || '').trim().toLowerCase();
+        if (!normalizedKey || normalizedKey === 'mock' || seen.has(`enabled:${normalizedKey}`)) {
+            continue;
+        }
+        seen.add(`enabled:${normalizedKey}`);
+        const provider = sourceProviders[normalizedKey];
+        if (provider?.enabled === true) {
+            return normalizedKey;
+        }
+    }
+
+    return PROVIDER_KEYS.includes(fallback) ? fallback : 'afdian';
+}
+
 function normalizeRechargeOptionsConfig(raw) {
     const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
     return {
@@ -113,33 +150,43 @@ function getDefaultPaymentChannelsConfig(options = {}) {
         500
     );
 
-    return {
-        active_provider: 'afdian',
-        providers: {
-            mock: {
-                enabled: true,
-                display_name: '模拟支付',
-                description: '仅允许本地开发或显式白名单环境使用，开启后会直接到账积分。'
-            },
-            afdian: {
-                enabled: true,
-                display_name: '爱发电',
-                checkout_url: afdianCheckoutUrl,
-                package_hint: '请在爱发电完成支付后，返回钱包输入订单号领取兑换码。',
-                custom_amount_hint: '钱包会先生成本次应付金额，请按报价完成支付后返回输入订单号领取兑换码。'
-            },
-            hupijiao: {
-                enabled: false,
-                display_name: '虎皮椒',
-                checkout_url: '',
-                gateway_url: '',
-                merchant_id: '',
-                return_url: origin,
-                notify_url: '',
-                package_hint: '虎皮椒通道已启用，正式回调与自动发货接入后即可完整使用。',
-                custom_amount_hint: '虎皮椒通道已启用。自定义金额下单能力接入后，这里会直接拉起真实支付。'
-            }
+    const providers = {
+        mock: {
+            enabled: true,
+            display_name: '模拟支付',
+            description: '仅允许本地开发或显式白名单环境使用，开启后会直接到账积分。'
+        },
+        afdian: {
+            enabled: true,
+            display_name: '爱发电',
+            checkout_url: afdianCheckoutUrl,
+            package_hint: '请在爱发电完成支付后，返回钱包输入订单号领取兑换码。',
+            custom_amount_hint: '钱包会先生成本次应付金额，请按报价完成支付后返回输入订单号领取兑换码。',
+            order_query_enabled: true,
+            order_query_title: '订单号认领',
+            order_query_hint: '完成支付后，可在这里输入订单号查询兑换结果。',
+            order_query_placeholder: '输入支付平台订单号'
+        },
+        hupijiao: {
+            enabled: false,
+            display_name: '虎皮椒',
+            checkout_url: '',
+            gateway_url: '',
+            merchant_id: '',
+            return_url: origin,
+            notify_url: '',
+            package_hint: '虎皮椒通道已启用，正式回调与自动发货接入后即可完整使用。',
+            custom_amount_hint: '虎皮椒通道已启用。自定义金额下单能力接入后，这里会直接拉起真实支付。',
+            order_query_enabled: false,
+            order_query_title: '',
+            order_query_hint: '',
+            order_query_placeholder: ''
         }
+    };
+
+    return {
+        active_provider: resolvePreferredEnabledProviderKey(providers, 'afdian'),
+        providers
     };
 }
 
@@ -150,7 +197,9 @@ function normalizePaymentChannelsConfig(raw, legacyRechargeOptions = null, optio
         ? source.providers
         : {};
     const normalizedRechargeOptions = normalizeRechargeOptionsConfig(legacyRechargeOptions);
-    const fallbackActiveProvider = normalizedRechargeOptions.mock_payment_enabled ? 'mock' : defaults.active_provider;
+    const fallbackActiveProvider = normalizedRechargeOptions.mock_payment_enabled
+        ? 'mock'
+        : resolvePreferredEnabledProviderKey(sourceProviders, defaults.active_provider);
 
     const config = {
         active_provider: PROVIDER_KEYS.includes(source.active_provider) ? source.active_provider : fallbackActiveProvider,
@@ -165,7 +214,11 @@ function normalizePaymentChannelsConfig(raw, legacyRechargeOptions = null, optio
                 display_name: sanitizeText(sourceProviders.afdian?.display_name, defaults.providers.afdian.display_name, 40),
                 checkout_url: sanitizeText(sourceProviders.afdian?.checkout_url, defaults.providers.afdian.checkout_url, 500),
                 package_hint: sanitizeText(sourceProviders.afdian?.package_hint, defaults.providers.afdian.package_hint, 240),
-                custom_amount_hint: sanitizeText(sourceProviders.afdian?.custom_amount_hint, defaults.providers.afdian.custom_amount_hint, 240)
+                custom_amount_hint: sanitizeText(sourceProviders.afdian?.custom_amount_hint, defaults.providers.afdian.custom_amount_hint, 240),
+                order_query_enabled: coerceBoolean(sourceProviders.afdian?.order_query_enabled, defaults.providers.afdian.order_query_enabled),
+                order_query_title: sanitizeText(sourceProviders.afdian?.order_query_title, defaults.providers.afdian.order_query_title, 80),
+                order_query_hint: sanitizeText(sourceProviders.afdian?.order_query_hint, defaults.providers.afdian.order_query_hint, 240),
+                order_query_placeholder: sanitizeText(sourceProviders.afdian?.order_query_placeholder, defaults.providers.afdian.order_query_placeholder, 80)
             },
             hupijiao: {
                 enabled: coerceBoolean(sourceProviders.hupijiao?.enabled, defaults.providers.hupijiao.enabled),
@@ -176,7 +229,11 @@ function normalizePaymentChannelsConfig(raw, legacyRechargeOptions = null, optio
                 return_url: sanitizeText(sourceProviders.hupijiao?.return_url, defaults.providers.hupijiao.return_url, 500),
                 notify_url: sanitizeText(sourceProviders.hupijiao?.notify_url, defaults.providers.hupijiao.notify_url, 500),
                 package_hint: sanitizeText(sourceProviders.hupijiao?.package_hint, defaults.providers.hupijiao.package_hint, 240),
-                custom_amount_hint: sanitizeText(sourceProviders.hupijiao?.custom_amount_hint, defaults.providers.hupijiao.custom_amount_hint, 240)
+                custom_amount_hint: sanitizeText(sourceProviders.hupijiao?.custom_amount_hint, defaults.providers.hupijiao.custom_amount_hint, 240),
+                order_query_enabled: coerceBoolean(sourceProviders.hupijiao?.order_query_enabled, defaults.providers.hupijiao.order_query_enabled),
+                order_query_title: sanitizeText(sourceProviders.hupijiao?.order_query_title, defaults.providers.hupijiao.order_query_title, 80),
+                order_query_hint: sanitizeText(sourceProviders.hupijiao?.order_query_hint, defaults.providers.hupijiao.order_query_hint, 240),
+                order_query_placeholder: sanitizeText(sourceProviders.hupijiao?.order_query_placeholder, defaults.providers.hupijiao.order_query_placeholder, 80)
             }
         }
     };
@@ -238,14 +295,7 @@ function buildPublicPaymentRuntime(runtime = null) {
 
 function resolvePublicActiveProvider(paymentChannels = {}) {
     const providers = paymentChannels?.providers || {};
-    const afdianCheckoutUrl = String(providers.afdian?.checkout_url || '').trim();
-    if (afdianCheckoutUrl) {
-        return 'afdian';
-    }
-
-    if (providers.afdian) return 'afdian';
-    if (providers.hupijiao) return 'hupijiao';
-    return 'afdian';
+    return resolvePreferredEnabledProviderKey(providers, 'afdian');
 }
 
 function buildPublicPaymentConfig(paymentChannels, rechargeOptions, runtime = null, options = {}) {

@@ -8,6 +8,7 @@ const {
 const OPS_ALERT_CASES_SELECT_FIELDS = 'category_key, target_id, alert_type, status, owner_admin_id, owner_label, note, resolution, metadata, last_action, last_action_at, updated_at';
 const DEFAULT_PAGE_SIZE = 500;
 const DEFAULT_MAX_PAGES = 5;
+const OPS_ALERT_TARGET_CHUNK_SIZE = 50;
 
 function normalizeText(value, maxLength = 4000) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
@@ -17,6 +18,18 @@ function normalizePayload(value) {
     return value && typeof value === 'object' && !Array.isArray(value)
         ? value
         : {};
+}
+
+function chunkValues(values = [], chunkSize = OPS_ALERT_TARGET_CHUNK_SIZE) {
+    const normalizedValues = Array.isArray(values) ? values : [];
+    const normalizedChunkSize = Math.max(1, Number(chunkSize) || OPS_ALERT_TARGET_CHUNK_SIZE);
+    const chunks = [];
+
+    for (let index = 0; index < normalizedValues.length; index += normalizedChunkSize) {
+        chunks.push(normalizedValues.slice(index, index + normalizedChunkSize));
+    }
+
+    return chunks;
 }
 
 function buildOpsAlertCaseKey(categoryKey = '', targetId = '') {
@@ -148,20 +161,22 @@ async function fetchOpsAlertCasesByTargets(supabase, targets = []) {
     try {
         for (const [categoryKey, targetIds] of groupedTargets.entries()) {
             const uniqueTargetIds = Array.from(new Set(targetIds));
-            const rows = await fetchPagedRows(() => supabase
-                .from('ops_alert_cases')
-                .select(OPS_ALERT_CASES_SELECT_FIELDS)
-                .in('category_key', [categoryKey])
-                .in('target_id', uniqueTargetIds)
-                .order('updated_at', { ascending: false }), Math.max(uniqueTargetIds.length, 1), 1);
+            for (const targetChunk of chunkValues(uniqueTargetIds)) {
+                const rows = await fetchPagedRows(() => supabase
+                    .from('ops_alert_cases')
+                    .select(OPS_ALERT_CASES_SELECT_FIELDS)
+                    .in('category_key', [categoryKey])
+                    .in('target_id', targetChunk)
+                    .order('updated_at', { ascending: false }), Math.max(targetChunk.length, 1), 1);
 
-            rows.forEach((row) => {
-                const caseRecord = buildOpsAlertCaseRecord(row, categoryKey);
-                caseMap.set(
-                    buildOpsAlertCaseKey(caseRecord.category_key, caseRecord.target_id),
-                    caseRecord
-                );
-            });
+                rows.forEach((row) => {
+                    const caseRecord = buildOpsAlertCaseRecord(row, categoryKey);
+                    caseMap.set(
+                        buildOpsAlertCaseKey(caseRecord.category_key, caseRecord.target_id),
+                        caseRecord
+                    );
+                });
+            }
         }
 
         return caseMap;

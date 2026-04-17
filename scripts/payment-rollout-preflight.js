@@ -64,7 +64,14 @@ function main() {
     ]);
     console.log('');
 
-    if (envStatus !== 0 || scanStatus !== 0) {
+    console.log('--- Payment RPC readiness gate ---');
+    const readinessStatus = runNodeScript('./payment-readiness-gate.js', [
+        ...sharedArgs,
+        '--fail-on-missing'
+    ]);
+    console.log('');
+
+    if (envStatus !== 0 || scanStatus !== 0 || readinessStatus !== 0) {
         console.log('Preflight result: FAIL');
         process.exitCode = 1;
         return;

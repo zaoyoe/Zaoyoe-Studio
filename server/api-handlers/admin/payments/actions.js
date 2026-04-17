@@ -18,8 +18,17 @@ const {
     rechargePointsForPayment
 } = require('../../../../api/_lib/payments/rpc');
 const {
-    getPaymentProviderAdapter
+    amountsMatch,
+    getPaymentProviderAdapter,
+    roundCurrencyAmount
 } = require('../../../../api/_lib/payments/provider-adapters');
+const {
+    reconcileCheckoutSessionForPaymentOrder
+} = require('../../../../api/_lib/payments/orders');
+const {
+    maybeIssueAffiliateDiscountAssetsForRecharge,
+    maybeIssueRechargeDiscountAssets
+} = require('../../../../api/_lib/discount-trigger-linkage');
 const {
     deriveHupijiaoPointBreakdown
 } = require('../../../../api/_lib/payments/hupijiao-points');
@@ -34,14 +43,21 @@ const VALID_ACTIONS = new Set([
     'reject_review',
     'approve_amount_mismatch',
     'reject_amount_mismatch',
-    'refund_hupijiao'
+    'refund_hupijiao',
+    'query_hupijiao_order',
+    'reconcile_hupijiao_order'
 ]);
 const NOTE_REQUIRED_ACTIONS = new Set([
     'approve_review',
     'reject_review',
     'approve_amount_mismatch',
     'reject_amount_mismatch',
-    'refund_hupijiao'
+    'refund_hupijiao',
+    'reconcile_hupijiao_order'
+]);
+const ORDER_ONLY_ACTIONS = new Set([
+    'query_hupijiao_order',
+    'reconcile_hupijiao_order'
 ]);
 const SENSITIVE_REVIEW_ACTIONS = new Set([
     'approve_review',
@@ -54,6 +70,11 @@ const REFUNDABLE_HUPIJIAO_STATUSES = new Set([
     'amount_mismatch',
     'paid',
     'redeemed'
+]);
+const RECONCILABLE_HUPIJIAO_STATUSES = new Set([
+    'pending',
+    'pending_review',
+    'amount_mismatch'
 ]);
 const REFUND_ALERT_CONFIG = Object.freeze({
     admin_refund_failed: {
@@ -118,6 +139,7 @@ function mapActionToStatus(action) {
     switch (action) {
     case 'mark_handled':
     case 'refund_hupijiao':
+    case 'reconcile_hupijiao_order':
         return 'handled';
     case 'ignore':
         return 'ignored';
@@ -156,6 +178,8 @@ function getResolutionText(action, note) {
         return '已人工驳回金额异常订单。';
     case 'refund_hupijiao':
         return '已通过后台执行虎皮椒退款。';
+    case 'reconcile_hupijiao_order':
+        return '已根据虎皮椒实时查单结果完成人工补单。';
     case 'reopen':
         return '已重新打开异常项。';
     default:
@@ -301,7 +325,7 @@ async function fetchTargetRecord(supabase, targetType, targetId) {
     if (targetType === 'order') {
         const { data, error } = await supabase
             .from('payment_orders')
-            .select('id, user_id, provider, provider_order_no, checkout_session_id, site, expected_amount, paid_amount, points_amount, status, claimed_at, paid_at, verified_at, last_error, provider_metadata, raw_payload')
+            .select('id, user_id, provider, provider_order_no, checkout_session_id, package_id, package_name, site, expected_amount, paid_amount, points_amount, status, claimed_at, paid_at, verified_at, sign_verified, amount_verified, created_at, last_error, provider_metadata, raw_payload')
             .eq('id', targetId)
             .single();
         if (error) throw error;
@@ -411,6 +435,328 @@ async function upsertAnomalyCase(supabase, {
 
     if (error) throw error;
     return data;
+}
+
+function buildAdminReconcileEventKey(targetId, providerOrderNo, actorId) {
+    const digest = crypto
+        .createHash('sha256')
+        .update([
+            String(targetId || '').trim(),
+            String(providerOrderNo || '').trim(),
+            String(actorId || '').trim(),
+            new Date().toISOString()
+        ].join(':'))
+        .digest('hex')
+        .slice(0, 24);
+
+    return `admin-reconcile:hupijiao:${digest}`;
+}
+
+function buildRechargeReferenceId(providerOrderNo = '') {
+    const normalizedProviderOrderNo = normalizeText(providerOrderNo).slice(0, 140);
+    return normalizedProviderOrderNo ? `hupijiao_${normalizedProviderOrderNo}` : '';
+}
+
+function formatAdminCurrencyAmount(value) {
+    const amount = roundCurrencyAmount(value);
+    const digits = Number.isInteger(amount) ? 0 : 2;
+    return `¥${amount.toLocaleString('zh-CN', {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: 2
+    })}`;
+}
+
+function getPaymentStatusLabel(status = '') {
+    const map = {
+        pending: '待支付',
+        paid: '已支付',
+        redeemed: '已入账',
+        refunded: '已退款',
+        refund_pending: '退款处理中',
+        amount_mismatch: '金额异常',
+        pending_review: '待审核',
+        rejected: '已拒绝',
+        unknown: '未知状态'
+    };
+    return map[String(status || '').trim().toLowerCase()] || (String(status || '').trim() || '未知状态');
+}
+
+function buildHupijiaoLiveOrderMessage(liveOrder = {}) {
+    const parts = [`虎皮椒实时状态：${getPaymentStatusLabel(liveOrder.status)}`];
+    if (roundCurrencyAmount(liveOrder.paidAmount) > 0) {
+        parts.push(`实付 ${formatAdminCurrencyAmount(liveOrder.paidAmount)}`);
+    }
+    if (normalizeText(liveOrder.transactionId)) {
+        parts.push(`流水号 ${normalizeText(liveOrder.transactionId)}`);
+    }
+    return `${parts.join('，')}。`;
+}
+
+async function queryHupijiaoGatewayOrder(supabase, target, env = process.env) {
+    const provider = normalizeText(target?.provider).toLowerCase();
+    if (provider !== 'hupijiao') {
+        const error = new Error('当前只支持对虎皮椒订单执行实时查单');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const snapshot = getHupijiaoRefundSnapshot(target);
+    if (!snapshot.providerOrderNo && !snapshot.openOrderId) {
+        const error = new Error('缺少虎皮椒订单号，暂时无法发起实时查单');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const adapter = getPaymentProviderAdapter('hupijiao');
+    if (!adapter || typeof adapter.resolveRuntimeContext !== 'function' || typeof adapter.queryOrder !== 'function') {
+        const error = new Error('虎皮椒查单适配器尚未完成接入');
+        error.statusCode = 503;
+        throw error;
+    }
+
+    const runtimeContext = await adapter.resolveRuntimeContext({
+        supabase,
+        env
+    });
+    const liveOrder = await adapter.queryOrder({
+        runtimeContext,
+        providerOrderNo: snapshot.providerOrderNo,
+        openOrderId: snapshot.openOrderId
+    });
+
+    if (liveOrder?.supported === false) {
+        const error = new Error(liveOrder.message || '虎皮椒查单能力当前不可用');
+        error.statusCode = 503;
+        throw error;
+    }
+
+    if (liveOrder?.success === false) {
+        const error = new Error(liveOrder.message || '虎皮椒查单失败');
+        error.statusCode = 502;
+        throw error;
+    }
+
+    return {
+        snapshot,
+        liveOrder: {
+            ...liveOrder,
+            paidAmount: roundCurrencyAmount(liveOrder?.paidAmount)
+        }
+    };
+}
+
+async function applyHupijiaoOrderQuery(supabase, target, actorId, env = process.env) {
+    const { snapshot, liveOrder } = await queryHupijiaoGatewayOrder(supabase, target, env);
+
+    return {
+        liveOrder,
+        message: buildHupijiaoLiveOrderMessage(liveOrder),
+        auditDetails: {
+            query_provider: 'hupijiao',
+            query_status: normalizeText(liveOrder.status).toLowerCase() || null,
+            query_status_raw: normalizeText(liveOrder.statusRaw) || null,
+            query_paid_amount: roundCurrencyAmount(liveOrder.paidAmount),
+            provider_order_no: liveOrder.providerOrderNo || snapshot.providerOrderNo || null,
+            gateway_open_order_id: liveOrder.openOrderId || snapshot.openOrderId || null,
+            gateway_transaction_id: liveOrder.transactionId || null,
+            query_actor_id: actorId || null
+        }
+    };
+}
+
+async function applyHupijiaoReconcileDecision(supabase, target, note, actorId, env = process.env) {
+    const normalizedStatus = normalizeText(target?.status).toLowerCase();
+    if (!RECONCILABLE_HUPIJIAO_STATUSES.has(normalizedStatus)) {
+        const error = new Error('当前订单状态不适合执行人工补单');
+        error.statusCode = 409;
+        throw error;
+    }
+
+    const normalizedUserId = normalizeText(target?.user_id);
+    if (!normalizedUserId) {
+        const error = new Error('该订单尚未绑定用户，暂时不能人工补单，请先完成认领或关联用户');
+        error.statusCode = 409;
+        throw error;
+    }
+
+    const { snapshot, liveOrder } = await queryHupijiaoGatewayOrder(supabase, target, env);
+    const liveStatus = normalizeText(liveOrder.status).toLowerCase();
+    if (liveStatus !== 'paid') {
+        const error = new Error(`虎皮椒实时状态为${getPaymentStatusLabel(liveStatus)}，暂时不能执行人工补单`);
+        error.statusCode = 409;
+        throw error;
+    }
+
+    const expectedAmount = roundCurrencyAmount(target?.expected_amount);
+    if (!(expectedAmount > 0)) {
+        const error = new Error('本地订单缺少有效的期望金额，暂时无法安全补单');
+        error.statusCode = 409;
+        throw error;
+    }
+
+    const livePaidAmount = roundCurrencyAmount(liveOrder.paidAmount);
+    if (!(livePaidAmount > 0)) {
+        const error = new Error('虎皮椒查单未返回实付金额，暂时无法安全补单');
+        error.statusCode = 502;
+        throw error;
+    }
+
+    if (!amountsMatch(expectedAmount, livePaidAmount)) {
+        const error = new Error(`虎皮椒实时金额为 ${formatAdminCurrencyAmount(livePaidAmount)}，与本地期望金额 ${formatAdminCurrencyAmount(expectedAmount)} 不一致，已停止补单`);
+        error.statusCode = 409;
+        throw error;
+    }
+
+    const attemptId = buildAdminRefundAttemptId(target.id, liveOrder.providerOrderNo || snapshot.providerOrderNo, actorId);
+    const rechargeReferenceId = buildRechargeReferenceId(liveOrder.providerOrderNo || snapshot.providerOrderNo);
+    const providerMetadata = normalizeJsonObject(target.provider_metadata);
+    const rechargeBreakdown = deriveHupijiaoPointBreakdown(target, providerMetadata);
+    const nowIso = new Date().toISOString();
+
+    const { error: rechargeError } = await rechargePointsForPayment({
+        supabase,
+        userId: normalizedUserId,
+        paidPoints: normalizePointAmount(rechargeBreakdown.paidPoints, 0),
+        bonusPoints: normalizePointAmount(rechargeBreakdown.bonusPoints, 0),
+        reason: `虎皮椒补单: ${normalizeText(target.package_name) || normalizeText(target.provider_order_no) || '充值订单'}`,
+        referenceId: rechargeReferenceId || `hupijiao_${attemptId}`,
+        site: target.site || 'cn'
+    });
+
+    if (rechargeError) {
+        const error = new Error(rechargeError.message || '人工补单入账失败');
+        error.statusCode = 502;
+        throw error;
+    }
+
+    const nextProviderMetadata = mergeJsonObjects(providerMetadata, {
+        provider_order_no: liveOrder.providerOrderNo || snapshot.providerOrderNo || target.provider_order_no || null,
+        gateway_open_order_id: liveOrder.openOrderId || snapshot.openOrderId || providerMetadata.gateway_open_order_id || null,
+        transaction_id: liveOrder.transactionId || providerMetadata.transaction_id || null,
+        payment_status: 'paid',
+        payment_status_raw: normalizeText(liveOrder.statusRaw) || providerMetadata.payment_status_raw || 'OD',
+        admin_reconciled_at: nowIso,
+        admin_reconciled_by: actorId || null,
+        admin_reconcile_note: normalizeText(note) || null
+    });
+    const nextRawPayload = mergeJsonObjects(normalizeJsonObject(target.raw_payload), {
+        admin_reconcile: {
+            reconciled_at: nowIso,
+            reconciled_by: actorId || null,
+            note: normalizeText(note) || null,
+            live_order: liveOrder,
+            recharge_reference_id: rechargeReferenceId || null
+        }
+    });
+
+    const { data: reconciledOrder, error: orderUpdateError } = await supabase
+        .from('payment_orders')
+        .update({
+            status: 'redeemed',
+            sign_verified: true,
+            amount_verified: true,
+            paid_amount: livePaidAmount,
+            expected_amount: expectedAmount,
+            paid_at: target.paid_at || nowIso,
+            verified_at: target.verified_at || nowIso,
+            claimed_at: target.claimed_at || nowIso,
+            last_error: null,
+            provider_metadata: nextProviderMetadata,
+            raw_payload: nextRawPayload
+        })
+        .eq('id', target.id)
+        .select('*')
+        .single();
+
+    if (orderUpdateError) {
+        const error = new Error(orderUpdateError.message || '更新人工补单后的支付订单失败');
+        error.statusCode = 500;
+        throw error;
+    }
+
+    let linkedSession = null;
+    try {
+        linkedSession = await reconcileCheckoutSessionForPaymentOrder({
+            supabase,
+            providerKey: 'hupijiao',
+            paymentOrderId: reconciledOrder.id,
+            providerOrderNo: liveOrder.providerOrderNo || snapshot.providerOrderNo,
+            userId: reconciledOrder.user_id,
+            site: reconciledOrder.site || target.site || 'cn',
+            packageId: reconciledOrder.package_id || target.package_id,
+            packageName: reconciledOrder.package_name || target.package_name,
+            expectedAmount,
+            paidAmount: livePaidAmount,
+            pointsAmount: reconciledOrder.points_amount || target.points_amount || 0,
+            orderStatus: 'redeemed',
+            linkedBy: 'admin_hupijiao_reconcile',
+            allowHeuristic: true,
+            lookbackMinutes: 1440
+        });
+    } catch (linkError) {
+        console.warn('[admin/payments/actions] failed to reconcile checkout session after admin reconcile:', linkError.message);
+    }
+
+    const linkedDiscountSummary = await maybeIssueRechargeDiscountAssets({
+        supabase,
+        userId: reconciledOrder.user_id,
+        site: reconciledOrder.site || target.site || 'cn',
+        paidPoints: normalizePointAmount(rechargeBreakdown.paidPoints, 0),
+        bonusPoints: normalizePointAmount(rechargeBreakdown.bonusPoints, 0),
+        paidAmount: livePaidAmount,
+        paymentOrderId: reconciledOrder.id,
+        paymentProvider: 'hupijiao',
+        paymentOrderNo: liveOrder.providerOrderNo || snapshot.providerOrderNo
+    });
+    const linkedAffiliateDiscountSummary = await maybeIssueAffiliateDiscountAssetsForRecharge({
+        supabase,
+        site: reconciledOrder.site || target.site || 'cn',
+        rechargeReferenceId: rechargeReferenceId || ''
+    });
+
+    await tryRecordPaymentEvent(supabase, {
+        payment_order_id: reconciledOrder.id,
+        provider: 'hupijiao',
+        provider_order_no: liveOrder.providerOrderNo || snapshot.providerOrderNo || null,
+        event_key: buildAdminReconcileEventKey(reconciledOrder.id, liveOrder.providerOrderNo || snapshot.providerOrderNo, actorId),
+        event_type: 'admin_reconcile',
+        signature_valid: true,
+        amount_valid: true,
+        payload: {
+            action: 'reconcile_hupijiao_order',
+            source: 'admin_action',
+            query: liveOrder,
+            note: note || null,
+            checkout_session_id: linkedSession?.id || null,
+            linked_discount_summary: linkedDiscountSummary,
+            linked_affiliate_discount_summary: linkedAffiliateDiscountSummary
+        },
+        processing_result: 'admin_reconcile_processed',
+        response_status: 200,
+        processed_at: nowIso
+    });
+
+    return {
+        order: reconciledOrder,
+        anomalyStatus: 'handled',
+        resolution: normalizeText(note) || '已根据虎皮椒实时查单结果完成人工补单。',
+        message: `${buildHupijiaoLiveOrderMessage(liveOrder)} 后台已完成补单并同步入账。`,
+        auditDetails: {
+            reconcile_provider: 'hupijiao',
+            reconcile_status: 'processed',
+            reconcile_paid_amount: livePaidAmount,
+            provider_order_no: liveOrder.providerOrderNo || snapshot.providerOrderNo || null,
+            gateway_open_order_id: liveOrder.openOrderId || snapshot.openOrderId || null,
+            gateway_transaction_id: liveOrder.transactionId || null,
+            recharge_reference_id: rechargeReferenceId || null,
+            recharge_paid_points: normalizePointAmount(rechargeBreakdown.paidPoints, 0),
+            recharge_bonus_points: normalizePointAmount(rechargeBreakdown.bonusPoints, 0),
+            checkout_session_id: linkedSession?.id || null,
+            linked_discount_count: normalizePointAmount(linkedDiscountSummary?.issued_count, 0),
+            linked_affiliate_discount_count: normalizePointAmount(linkedAffiliateDiscountSummary?.issued_count, 0)
+        },
+        liveOrder
+    };
 }
 
 function buildAdminRefundEventKey(targetId, providerOrderNo, actorId) {
@@ -1233,8 +1579,41 @@ module.exports = async function handler(req, res) {
             });
         }
 
+        if (ORDER_ONLY_ACTIONS.has(action) && targetType !== 'order') {
+            return sendJson(res, 400, {
+                success: false,
+                message: '该操作仅适用于支付订单'
+            });
+        }
+
         if (targetType === 'order' && SENSITIVE_REVIEW_ACTIONS.has(action)) {
             await applyOrderReviewDecision(supabase, target, action, note, user.id);
+        }
+
+        if (targetType === 'order' && action === 'query_hupijiao_order') {
+            const queryDecision = await applyHupijiaoOrderQuery(supabase, target, user.id, process.env);
+
+            await writeAdminAuditLog({
+                supabase: requestSupabase || supabase,
+                adminId: user.id,
+                actionType: 'payments.order.query',
+                details: {
+                    targetType,
+                    targetId,
+                    targetProvider,
+                    targetProviderOrderNo,
+                    action,
+                    status: normalizeText(queryDecision.liveOrder?.status).toLowerCase() || 'unknown',
+                    ...queryDecision.auditDetails
+                }
+            });
+
+            return sendJson(res, 200, {
+                success: true,
+                message: queryDecision.message,
+                live_order: queryDecision.liveOrder,
+                reload: false
+            });
         }
 
         let resolvedTarget = target;
@@ -1242,6 +1621,7 @@ module.exports = async function handler(req, res) {
         let resolvedResolution = getResolutionText(action, note);
         let auditDetails = {};
         let anomalyCase = null;
+        let responseMessage = '';
 
         if (targetType === 'order' && action === 'refund_hupijiao') {
             const refundDecision = await applyHupijiaoRefundDecision(supabase, target, note, user.id, process.env);
@@ -1249,6 +1629,16 @@ module.exports = async function handler(req, res) {
             resolvedStatus = refundDecision.anomalyStatus || resolvedStatus;
             resolvedResolution = refundDecision.resolution || resolvedResolution;
             auditDetails = refundDecision.auditDetails || {};
+            responseMessage = normalizeText(refundDecision.message);
+        }
+
+        if (targetType === 'order' && action === 'reconcile_hupijiao_order') {
+            const reconcileDecision = await applyHupijiaoReconcileDecision(supabase, target, note, user.id, process.env);
+            resolvedTarget = reconcileDecision.order || target;
+            resolvedStatus = reconcileDecision.anomalyStatus || resolvedStatus;
+            resolvedResolution = reconcileDecision.resolution || resolvedResolution;
+            auditDetails = reconcileDecision.auditDetails || {};
+            responseMessage = normalizeText(reconcileDecision.message);
         }
 
         if (targetType === 'ops_alert_job') {
@@ -1275,7 +1665,9 @@ module.exports = async function handler(req, res) {
         await writeAdminAuditLog({
             supabase: requestSupabase || supabase,
             adminId: user.id,
-            actionType: targetType === 'ops_alert_job' ? 'payments.ops_alert.action' : 'payments.anomaly.action',
+            actionType: targetType === 'ops_alert_job'
+                ? 'payments.ops_alert.action'
+                : (action === 'reconcile_hupijiao_order' ? 'payments.order.reconcile' : 'payments.anomaly.action'),
             details: {
                 targetType,
                 targetId,
@@ -1290,7 +1682,9 @@ module.exports = async function handler(req, res) {
 
         return sendJson(res, 200, {
             success: true,
+            message: responseMessage || undefined,
             anomaly_case: anomalyCase,
+            order: targetType === 'order' ? resolvedTarget : undefined,
             ops_alert_job: targetType === 'ops_alert_job' ? resolvedTarget : undefined
         });
     } catch (error) {

@@ -2588,21 +2588,20 @@ function buildPromptCardSkeletonMarkup(index = 0) {
         'prompt-card-skeleton-title--medium',
         'prompt-card-skeleton-title--short'
     ];
+    const metaWidthClasses = [
+        'prompt-card-skeleton-meta--medium',
+        'prompt-card-skeleton-meta--short',
+        'prompt-card-skeleton-meta--wide'
+    ];
     const titleWidthClass = titleWidthClasses[index % titleWidthClasses.length];
+    const metaWidthClass = metaWidthClasses[index % metaWidthClasses.length];
 
     return `
         <div class="prompt-card-media-skeleton" aria-hidden="true">
             <div class="skeleton prompts-skeleton-block prompt-card-skeleton-image"></div>
-            <div class="prompt-card-skeleton-topbar">
-                <span class="skeleton prompts-skeleton-block prompt-card-skeleton-fav"></span>
-            </div>
             <div class="prompt-card-skeleton-overlay">
-                <div class="skeleton prompts-skeleton-block prompt-card-skeleton-title ${titleWidthClass}"></div>
-                <div class="prompt-card-skeleton-dots">
-                    <span class="skeleton prompts-skeleton-block prompt-card-skeleton-dot"></span>
-                    <span class="skeleton prompts-skeleton-block prompt-card-skeleton-dot"></span>
-                    <span class="skeleton prompts-skeleton-block prompt-card-skeleton-dot"></span>
-                </div>
+                <span class="skeleton prompts-skeleton-block prompt-card-skeleton-title ${titleWidthClass}"></span>
+                <span class="skeleton prompts-skeleton-block prompt-card-skeleton-meta ${metaWidthClass}"></span>
             </div>
         </div>
     `;
@@ -5133,16 +5132,20 @@ function updateCommentSectionHeading(totalCount = null) {
     const explicitCount = typeof totalCount === 'number' ? totalCount : null;
     const badgeCount = parseInt(document.getElementById('commentCountBadge')?.textContent || '0', 10);
     const count = Number.isFinite(explicitCount) ? explicitCount : (Number.isFinite(badgeCount) ? badgeCount : 0);
-    const commentsTitle = window.i18n?.t('gallery.commentsTitle') || 'Comments';
+    const currentLanguage = getCurrentLanguage();
+    const isEnglish = currentLanguage === 'en';
+    const commentsTitle = window.i18n?.t('gallery.commentsTitle') || (isEnglish ? 'Comments' : '评论');
 
     if (isPromptModalExpandedCommentView()) {
-        title.textContent = count > 0 ? `${commentsTitle} · ${count}` : commentsTitle;
+        title.textContent = count > 0
+            ? (isEnglish ? `${commentsTitle} · ${count}` : `${commentsTitle} · ${count}`)
+            : commentsTitle;
         return;
     }
 
     title.textContent = count > 0
-        ? `View all ${count} comments`
-        : (window.i18n?.t('gallery.viewAll') || 'View all');
+        ? (isEnglish ? `View all ${count} comments` : `查看全部 ${count} 条评论`)
+        : (window.i18n?.t('gallery.viewAllComments') || (isEnglish ? 'View all comments' : '查看全部评论'));
 }
 
 function syncPromptModalTopButtonState() {

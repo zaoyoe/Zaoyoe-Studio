@@ -44,14 +44,32 @@ test('prompts featured banner prefers homepage manual featured items before dail
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.js?v=20260409_PROMPTS_VISIBILITY_2'),
+        promptsHtml.includes('prompts-poetry.js?v=20260416_PROMPTS_CARD_SKELETON_MINIMAL_1'),
         true,
         'prompts.html should reference the featured-banner homepage-config bundle version'
+    );
+
+    assert.equal(
+        promptsHtml.includes('css/prompts-page.css?v=20260416_PROMPTS_MODAL_SCROLL_LOCK_1'),
+        true,
+        'prompts.html should reference the prompt page CSS bundle with modal scroll lock styles'
     );
 
     assert.equal(
         promptsPageCss.includes('.featured-banner:not(.featured-banner--visible)'),
         true,
         'css/prompts-page.css should hide the featured banner only before the visible state class is applied'
+    );
+
+    assert.equal(
+        promptsPageCss.includes('html.no-scroll,'),
+        true,
+        'css/prompts-page.css should define the shared no-scroll state for prompt modal scroll locking'
+    );
+
+    assert.equal(
+        promptsPageCss.includes('body.ios-scroll-lock-fixed {'),
+        true,
+        'css/prompts-page.css should define the fixed-body scroll lock state for prompt modals'
     );
 });

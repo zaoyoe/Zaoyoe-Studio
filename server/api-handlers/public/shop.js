@@ -1,4 +1,10 @@
 const crypto = require('node:crypto');
+const {
+    buildDiscountLifecycleSummary
+} = require('../admin/discounts/_shared');
+const {
+    maybeIssueAffiliateDiscountAssetsForShopOrder
+} = require('../../../api/_lib/discount-trigger-linkage');
 
 function createShopHandlers({
     admin,
@@ -8,6 +14,9 @@ function createShopHandlers({
     discountPricing,
     env = process.env
 } = {}) {
+    const {
+        notifyUsers
+    } = require('../../../api/_lib/admin-notifications');
     const {
         getOptionalSupabaseAdmin,
         parseJsonBody,
@@ -24,10 +33,15 @@ function createShopHandlers({
     } = site || {};
     const {
         normalizeDistributionMode,
-        normalizeText
+        normalizeText,
+        normalizeSite,
+        isRefundedOrder
     } = discountAssets || {};
     const {
-        buildPricingWaterfall
+        buildPricingWaterfall,
+        buildDiscountStackingPolicy,
+        normalizeDiscountSelection: normalizePricingDiscountSelection,
+        resolveDiscountStacking: resolvePricingDiscountStacking
     } = discountPricing || {};
 
     function isMissingRelationError(error, relationName = '') {
@@ -43,6 +57,22 @@ function createShopHandlers({
             || normalizedMessage.includes('could not find')
             || normalizedMessage.includes('undefined table')
         );
+    }
+
+    function isMissingColumnError(error, columnName = '') {
+        const normalizedMessage = String(error?.message || '').trim().toLowerCase();
+        const normalizedColumn = String(columnName || '').trim().toLowerCase();
+        if (!normalizedMessage || !normalizedColumn) {
+            return false;
+        }
+
+        return normalizedMessage.includes(normalizedColumn)
+            && (
+                normalizedMessage.includes('does not exist')
+                || normalizedMessage.includes('not exist')
+                || normalizedMessage.includes('undefined column')
+                || normalizedMessage.includes('schema cache')
+            );
     }
 
     function getSafeTimestamp(value) {
@@ -64,7 +94,7 @@ function createShopHandlers({
         try {
             const { data, error } = await supabase
                 .from('discount_user_assets')
-                .select('id, discount_id, user_id, asset_status, assigned_at, claimed_at, consumed_at, expires_at, restored_at, source_type, source_channel, audience_segment')
+                .select('id, discount_id, user_id, asset_status, assigned_at, claimed_at, consumed_at, expires_at, restored_at, source_type, source_channel, audience_segment, last_order_id')
                 .eq('user_id', userId)
                 .eq('asset_status', 'available')
                 .order('assigned_at', { ascending: false });
@@ -79,6 +109,57 @@ function createShopHandlers({
         }
     }
 
+    async function loadAllUserAssets(supabase, userId) {
+        try {
+            const { data, error } = await supabase
+                .from('discount_user_assets')
+                .select('id, discount_id, user_id, asset_status, assigned_at, claimed_at, consumed_at, expires_at, restored_at, source_type, source_channel, audience_segment, last_order_id')
+                .eq('user_id', userId)
+                .order('assigned_at', { ascending: false });
+
+            if (error) throw error;
+            return Array.isArray(data) ? data : [];
+        } catch (error) {
+            if (isMissingRelationError(error, 'discount_user_assets')) {
+                return [];
+            }
+            throw error;
+        }
+    }
+
+    async function loadUserAssetById(supabase, userId, assetId) {
+        const normalizedAssetId = normalizeText(assetId, 160);
+        if (!normalizedAssetId) {
+            const error = new Error('assetId is required');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        try {
+            const { data, error } = await supabase
+                .from('discount_user_assets')
+                .select('id, discount_id, user_id, asset_status, assigned_at, claimed_at, consumed_at, expires_at, restored_at, source_type, source_channel, audience_segment, last_order_id, updated_at')
+                .eq('id', normalizedAssetId)
+                .eq('user_id', userId)
+                .single();
+
+            if (error || !data) {
+                const notFoundError = new Error('未找到这张卡券');
+                notFoundError.statusCode = 404;
+                throw notFoundError;
+            }
+
+            return data;
+        } catch (error) {
+            if (isMissingRelationError(error, 'discount_user_assets')) {
+                const missingError = new Error('优惠券资产表尚未完成迁移，请先执行 P1 SQL');
+                missingError.statusCode = 500;
+                throw missingError;
+            }
+            throw error;
+        }
+    }
+
     async function loadDiscountRowsByIds(supabase, ids = []) {
         const discountIds = [...new Set((Array.isArray(ids) ? ids : []).map((value) => normalizeText(value, 160)).filter(Boolean))];
         if (!discountIds.length) {
@@ -87,7 +168,7 @@ function createShopHandlers({
 
         const { data, error } = await supabase
             .from('discount_codes')
-            .select('id, code, is_active, applicable_site, discount_type, discount_value, max_uses, used_count, max_uses_per_user, starts_at, expires_at, lifecycle_status, status_reason, scope_type, scope_category, scope_product_id, allow_zero_total, distribution_mode, claim_starts_at, claim_expires_at, claim_limit_per_user, campaign_tag, audience_segment')
+            .select('id, code, is_active, applicable_site, discount_type, discount_value, max_uses, used_count, max_uses_per_user, starts_at, expires_at, lifecycle_status, status_reason, scope_type, scope_category, scope_product_id, allow_zero_total, distribution_mode, claim_starts_at, claim_expires_at, claim_limit_per_user, campaign_tag, audience_segment, observation_ends_at, is_exclusive, stack_priority, pricing_apply_stage')
             .in('id', discountIds);
 
         if (error) throw error;
@@ -97,12 +178,199 @@ function createShopHandlers({
     async function loadPublicClaimDiscounts(supabase) {
         const { data, error } = await supabase
             .from('discount_codes')
-            .select('id, code, is_active, applicable_site, discount_type, discount_value, max_uses, used_count, max_uses_per_user, starts_at, expires_at, lifecycle_status, status_reason, scope_type, scope_category, scope_product_id, allow_zero_total, distribution_mode, claim_starts_at, claim_expires_at, claim_limit_per_user, campaign_tag, audience_segment')
+            .select('id, code, is_active, applicable_site, discount_type, discount_value, max_uses, used_count, max_uses_per_user, starts_at, expires_at, lifecycle_status, status_reason, scope_type, scope_category, scope_product_id, allow_zero_total, distribution_mode, claim_starts_at, claim_expires_at, claim_limit_per_user, campaign_tag, audience_segment, is_exclusive, stack_priority, pricing_apply_stage')
             .eq('distribution_mode', 'public_claim')
             .order('created_at', { ascending: false });
 
         if (error) throw error;
         return Array.isArray(data) ? data : [];
+    }
+
+    async function loadShopOrdersByDiscountAssets(supabase, assets = []) {
+        const assetRows = Array.isArray(assets) ? assets : [];
+        const assetIds = [...new Set(assetRows.map((row) => normalizeText(row?.id, 160)).filter(Boolean))];
+        const lastOrderIds = [...new Set(assetRows.map((row) => normalizeText(row?.last_order_id, 160)).filter(Boolean))];
+        const orderByAssetId = new Map();
+
+        if (!assetIds.length && !lastOrderIds.length) {
+            return orderByAssetId;
+        }
+
+        try {
+            if (assetIds.length) {
+                const { data, error } = await supabase
+                    .from('shop_orders')
+                    .select('id, discount_asset_id, snapshot_product_name, discount_amount, refund_status, created_at')
+                    .in('discount_asset_id', assetIds)
+                    .order('created_at', { ascending: false });
+
+                if (error) throw error;
+
+                for (const row of data || []) {
+                    const assetId = normalizeText(row?.discount_asset_id, 160);
+                    if (!assetId || orderByAssetId.has(assetId)) continue;
+                    orderByAssetId.set(assetId, row);
+                }
+            }
+        } catch (error) {
+            if (
+                isMissingRelationError(error, 'shop_orders')
+                || isMissingColumnError(error, 'discount_asset_id')
+            ) {
+                return orderByAssetId;
+            }
+            throw error;
+        }
+
+        const missingAssetRows = assetRows.filter((asset) => {
+            const assetId = normalizeText(asset?.id, 160);
+            return assetId && !orderByAssetId.has(assetId) && normalizeText(asset?.last_order_id, 160);
+        });
+        const missingOrderIds = [...new Set(missingAssetRows.map((row) => normalizeText(row?.last_order_id, 160)).filter(Boolean))];
+        if (!missingOrderIds.length) {
+            return orderByAssetId;
+        }
+
+        try {
+            const { data, error } = await supabase
+                .from('shop_orders')
+                .select('id, discount_asset_id, snapshot_product_name, discount_amount, refund_status, created_at')
+                .in('id', missingOrderIds);
+
+            if (error) throw error;
+
+            const assetIdByOrderId = new Map(
+                missingAssetRows.map((row) => [normalizeText(row?.last_order_id, 160), normalizeText(row?.id, 160)])
+            );
+
+            for (const row of data || []) {
+                const orderId = normalizeText(row?.id, 160);
+                const assetId = assetIdByOrderId.get(orderId);
+                if (!assetId || orderByAssetId.has(assetId)) continue;
+                orderByAssetId.set(assetId, row);
+            }
+        } catch (error) {
+            if (isMissingRelationError(error, 'shop_orders')) {
+                return orderByAssetId;
+            }
+            throw error;
+        }
+
+        return orderByAssetId;
+    }
+
+    async function loadShopProductsByIds(supabase, ids = []) {
+        const productIds = [...new Set((Array.isArray(ids) ? ids : []).map((value) => normalizeText(value, 160)).filter(Boolean))];
+        if (!productIds.length) {
+            return new Map();
+        }
+
+        try {
+            const { data, error } = await supabase
+                .from('shop_products')
+                .select('id, name, name_en, category, is_active')
+                .in('id', productIds);
+
+            if (error) throw error;
+
+            return new Map(
+                (Array.isArray(data) ? data : [])
+                    .map((row) => [normalizeText(row?.id, 160), row])
+                    .filter(([id]) => id)
+            );
+        } catch (error) {
+            if (isMissingRelationError(error, 'shop_products')) {
+                return new Map();
+            }
+            throw error;
+        }
+    }
+
+    async function loadScopedProductAvailabilityByAsset(supabase, {
+        userId = '',
+        site: currentSite = 'cn',
+        assets = [],
+        discountMap = new Map(),
+        productById = new Map()
+    } = {}) {
+        const availabilityByAssetId = new Map();
+        const relevantAssets = (Array.isArray(assets) ? assets : []).filter((asset) => {
+            const normalizedAssetId = normalizeText(asset?.id, 160);
+            const discount = discountMap.get(normalizeText(asset?.discount_id, 160));
+            return normalizedAssetId
+                && normalizeClaimText(asset?.asset_status, 40).toLowerCase() === 'available'
+                && normalizeClaimText(discount?.scope_type, 40).toLowerCase() === 'product'
+                && normalizeClaimText(discount?.scope_product_id, 160);
+        });
+
+        if (!relevantAssets.length || !supabase?.rpc || !userId) {
+            return availabilityByAssetId;
+        }
+
+        const entries = await Promise.all(relevantAssets.map(async (asset) => {
+            const assetId = normalizeText(asset?.id, 160);
+            const discount = discountMap.get(normalizeText(asset?.discount_id, 160));
+            const productId = normalizeClaimText(discount?.scope_product_id, 160);
+            const product = productById.get(productId) || null;
+
+            if (!productId) {
+                return [assetId, {
+                    available: false,
+                    message: '指定商品信息缺失，请联系管理员检查卡券配置',
+                    preview: null
+                }];
+            }
+
+            if (!product) {
+                return [assetId, {
+                    available: false,
+                    message: '指定商品当前暂不可见，请稍后再试',
+                    preview: null
+                }];
+            }
+
+            if (product.is_active === false) {
+                return [assetId, {
+                    available: false,
+                    message: '指定商品当前已下架，暂时无法使用这张卡券',
+                    preview: null
+                }];
+            }
+
+            try {
+                const payload = await previewDiscount(supabase, {
+                    productId,
+                    userId,
+                    site: currentSite,
+                    quantity: 1,
+                    discountCode: discount?.code,
+                    discountAssetId: assetId,
+                    agentId: null
+                });
+
+                if (payload?.success === false) {
+                    return [assetId, {
+                        available: false,
+                        message: normalizeClaimText(payload?.message, 160) || '指定商品当前暂不可用',
+                        preview: payload?.data || null
+                    }];
+                }
+
+                return [assetId, {
+                    available: true,
+                    message: buildScopedProductAvailabilityMessage(payload),
+                    preview: payload?.data || null
+                }];
+            } catch (error) {
+                return [assetId, {
+                    available: false,
+                    message: normalizeClaimText(error?.message, 160) || '指定商品当前暂不可用',
+                    preview: null
+                }];
+            }
+        }));
+
+        return new Map(entries.filter(([assetId]) => assetId));
     }
 
     async function loadUserClaimCounts(supabase, userId, discountIds = []) {
@@ -134,6 +402,92 @@ function createShopHandlers({
         }
     }
 
+    function getDiscountAssetActivityTime(asset = {}) {
+        return getSafeTimestamp(asset?.claimed_at || asset?.assigned_at || asset?.created_at);
+    }
+
+    function isFreshPublicClaimAssetCandidate(asset = {}) {
+        return normalizeClaimText(asset?.asset_status, 40).toLowerCase() === 'available'
+            && normalizeClaimText(asset?.source_type, 40).toLowerCase() === 'public_claim'
+            && !normalizeClaimText(asset?.consumed_at, 80)
+            && !normalizeClaimText(asset?.restored_at, 80)
+            && !normalizeClaimText(asset?.last_order_id, 160);
+    }
+
+    function suppressExcessPublicClaimAssets(assets = [], discountMap = new Map()) {
+        const assetRows = Array.isArray(assets) ? assets.slice() : [];
+        if (!assetRows.length) {
+            return assetRows;
+        }
+
+        const groupedAssets = new Map();
+        for (const asset of assetRows) {
+            const discountId = normalizeText(asset?.discount_id, 160);
+            if (!discountId) continue;
+            if (!groupedAssets.has(discountId)) {
+                groupedAssets.set(discountId, []);
+            }
+            groupedAssets.get(discountId).push(asset);
+        }
+
+        const suppressedAssetIds = new Set();
+        for (const [discountId, rows] of groupedAssets.entries()) {
+            const discount = discountMap.get(discountId);
+            if (normalizeDistributionMode(discount?.distribution_mode, 'general_code') !== 'public_claim') {
+                continue;
+            }
+
+            const claimLimitPerUser = Math.max(0, Number(discount?.claim_limit_per_user || 0));
+            if (claimLimitPerUser <= 0 || rows.length <= claimLimitPerUser) {
+                continue;
+            }
+
+            const candidateRows = rows.filter((asset) => isFreshPublicClaimAssetCandidate(asset));
+            if (!candidateRows.length) {
+                continue;
+            }
+
+            const candidateIdSet = new Set(
+                candidateRows
+                    .map((asset) => normalizeText(asset?.id, 160))
+                    .filter(Boolean)
+            );
+            const preservedClaimCount = rows.filter((asset) => {
+                const assetId = normalizeText(asset?.id, 160);
+                if (candidateIdSet.has(assetId)) {
+                    return false;
+                }
+                return normalizeClaimText(asset?.asset_status, 40).toLowerCase() !== 'revoked';
+            }).length;
+            const allowedCandidateCount = Math.max(0, claimLimitPerUser - preservedClaimCount);
+
+            if (candidateRows.length <= allowedCandidateCount) {
+                continue;
+            }
+
+            const sortedCandidates = candidateRows.slice().sort((left, right) => {
+                const leftTime = getDiscountAssetActivityTime(left);
+                const rightTime = getDiscountAssetActivityTime(right);
+                if (leftTime !== rightTime) {
+                    return leftTime - rightTime;
+                }
+                return normalizeText(left?.id, 160).localeCompare(normalizeText(right?.id, 160));
+            });
+
+            for (const asset of sortedCandidates.slice(allowedCandidateCount)) {
+                const assetId = normalizeText(asset?.id, 160);
+                if (!assetId) continue;
+                suppressedAssetIds.add(assetId);
+            }
+        }
+
+        if (!suppressedAssetIds.size) {
+            return assetRows;
+        }
+
+        return assetRows.filter((asset) => !suppressedAssetIds.has(normalizeText(asset?.id, 160)));
+    }
+
     async function previewDiscount(supabase, {
         productId,
         userId,
@@ -155,6 +509,219 @@ function createShopHandlers({
 
         if (error) throw error;
         return Array.isArray(data) ? data[0] : data;
+    }
+
+    function normalizeDiscountSelectionInput(selection = {}) {
+        if (typeof normalizePricingDiscountSelection !== 'function') {
+            return null;
+        }
+
+        const normalized = normalizePricingDiscountSelection({
+            discount_code: selection?.discountCode ?? selection?.discount_code ?? selection?.code,
+            discount_asset_id: selection?.discountAssetId ?? selection?.discount_asset_id ?? selection?.assetId ?? selection?.asset_id
+        });
+
+        if (!normalized?.code && !normalized?.asset_id) {
+            return null;
+        }
+
+        return {
+            code: normalized.code || null,
+            assetId: normalized.asset_id || null
+        };
+    }
+
+    function normalizeDiscountSelectionsInput(source = {}, options = {}) {
+        const rawSelections = Array.isArray(source?.discountSelections)
+            ? source.discountSelections
+            : (Array.isArray(source?.discount_selections) ? source.discount_selections : []);
+        const selections = rawSelections
+            .map((selection) => normalizeDiscountSelectionInput(selection))
+            .filter(Boolean);
+
+        const fallbackSelection = normalizeDiscountSelectionInput({
+            discountCode: options.discountCode ?? source?.discountCode ?? source?.discount_code,
+            discountAssetId: options.discountAssetId ?? source?.discountAssetId ?? source?.discount_asset_id
+        });
+        if (!selections.length && fallbackSelection) {
+            selections.push(fallbackSelection);
+        }
+
+        const dedupedSelections = [];
+        const seenSelectionKeys = new Set();
+        for (const selection of selections) {
+            const selectionKey = selection.assetId
+                ? `asset:${selection.assetId}`
+                : `code:${selection.code || ''}`;
+            if (!selectionKey || seenSelectionKeys.has(selectionKey)) {
+                continue;
+            }
+            seenSelectionKeys.add(selectionKey);
+            dedupedSelections.push(selection);
+        }
+
+        return dedupedSelections;
+    }
+
+    function buildCombinedBenefitLabel(appliedDiscounts = [], totalDiscountAmount = 0) {
+        const normalizedDiscounts = Array.isArray(appliedDiscounts) ? appliedDiscounts : [];
+        if (normalizedDiscounts.length === 1) {
+            return formatBenefitLabel(normalizedDiscounts[0]);
+        }
+
+        const normalizedAmount = Number(totalDiscountAmount);
+        if (normalizedDiscounts.length > 1 && Number.isFinite(normalizedAmount) && normalizedAmount > 0) {
+            return `已叠加 ${normalizedDiscounts.length} 张卡券`;
+        }
+
+        return normalizedDiscounts.length > 1
+            ? `已选 ${normalizedDiscounts.length} 张卡券`
+            : '';
+    }
+
+    async function buildDiscountSelectionPreview(supabase, {
+        productId,
+        userId,
+        site: currentSite,
+        quantity,
+        selections = [],
+        agentId
+    } = {}) {
+        const normalizedSelections = normalizeDiscountSelectionsInput({
+            discountSelections: selections
+        });
+
+        if (!normalizedSelections.length) {
+            return {
+                success: false,
+                statusCode: 400,
+                message: '请输入优惠码'
+            };
+        }
+
+        if (normalizedSelections.length > 8) {
+            return {
+                success: false,
+                statusCode: 400,
+                message: '单次最多选择 8 张卡券'
+            };
+        }
+
+        const previewRows = [];
+        for (const selection of normalizedSelections) {
+            const payload = await previewDiscount(supabase, {
+                productId,
+                userId,
+                site: currentSite,
+                quantity,
+                discountCode: selection.code,
+                discountAssetId: selection.assetId,
+                agentId
+            });
+
+            if (!payload || payload.success === false) {
+                return {
+                    success: false,
+                    statusCode: 400,
+                    message: payload?.message || '优惠码验证失败'
+                };
+            }
+
+            previewRows.push({
+                selection,
+                payload
+            });
+        }
+
+        const discountRows = await loadDiscountRowsByIds(
+            supabase,
+            previewRows
+                .map((row) => normalizeText(row?.payload?.data?.discount_id, 160))
+                .filter(Boolean)
+        );
+        const discountRowById = new Map(
+            discountRows.map((row) => [normalizeText(row?.id, 160), row])
+        );
+
+        const appliedDiscounts = previewRows.map(({ selection, payload }) => {
+            const responseData = payload?.data && typeof payload.data === 'object' && !Array.isArray(payload.data)
+                ? payload.data
+                : {};
+            const discountId = normalizeText(responseData?.discount_id, 160);
+            const matchingDiscountRow = discountRowById.get(discountId) || {};
+
+            return {
+                ...responseData,
+                discount_code: responseData.discount_code || selection.code,
+                discount_asset_id: selection.assetId || responseData.discount_asset_id || null,
+                allow_zero_total: matchingDiscountRow.allow_zero_total === true,
+                benefit_label: formatBenefitLabel({
+                    discount_type: responseData.discount_type,
+                    discount_value: responseData.discount_value,
+                    code: responseData.discount_code || selection.code
+                })
+            };
+        });
+
+        const subtotal = Number(appliedDiscounts[0]?.subtotal);
+        const resolvedStack = typeof resolvePricingDiscountStacking === 'function'
+            ? resolvePricingDiscountStacking({
+                subtotal,
+                discounts: appliedDiscounts
+            })
+            : null;
+
+        if (!resolvedStack?.success) {
+            return {
+                success: false,
+                statusCode: 400,
+                message: resolvedStack?.message || '当前卡券组合不可用'
+            };
+        }
+
+        const resolvedAppliedDiscounts = (resolvedStack.applied_discounts || []).map((discount) => ({
+            ...discount,
+            benefit_label: discount?.benefit_label || formatBenefitLabel(discount)
+        }));
+        const totalDiscountAmount = Number(resolvedStack.discount_amount || 0) || 0;
+        const finalTotal = Number(resolvedStack.final_total || subtotal || 0) || 0;
+        const primaryDiscount = resolvedAppliedDiscounts[0] || null;
+        const displayCode = resolvedAppliedDiscounts
+            .map((discount) => normalizeText(discount?.code, 80).toUpperCase())
+            .filter(Boolean)
+            .join(' + ') || null;
+
+        return {
+            success: true,
+            statusCode: 200,
+            payload: {
+                success: true,
+                message: resolvedAppliedDiscounts.length > 1 ? '卡券组合可用' : '优惠码可用',
+                data: {
+                    ...(primaryDiscount ? {
+                        discount_id: primaryDiscount.discount_id || null,
+                        discount_asset_id: primaryDiscount.asset_id || null,
+                        distribution_mode: primaryDiscount.distribution_mode || null,
+                        campaign_tag: primaryDiscount.campaign_tag || null,
+                        audience_segment: primaryDiscount.audience_segment || null,
+                        discount_type: primaryDiscount.discount_type || null,
+                        discount_value: primaryDiscount.discount_value ?? null,
+                        is_exclusive: primaryDiscount.is_exclusive !== false,
+                        stack_priority: primaryDiscount.stack_priority ?? 100,
+                        pricing_apply_stage: primaryDiscount.pricing_apply_stage || 'order_discount'
+                    } : {}),
+                    discount_code: displayCode,
+                    discount_codes: resolvedAppliedDiscounts.map((discount) => discount.code).filter(Boolean),
+                    applied_discounts: resolvedAppliedDiscounts,
+                    subtotal: Number.isFinite(subtotal) ? subtotal : 0,
+                    discount_amount: totalDiscountAmount,
+                    final_total: finalTotal,
+                    unit_price: Number(primaryDiscount?.unit_price ?? appliedDiscounts[0]?.unit_price ?? 0) || 0,
+                    benefit_label: buildCombinedBenefitLabel(resolvedAppliedDiscounts, totalDiscountAmount)
+                }
+            },
+            appliedDiscounts: resolvedAppliedDiscounts
+        };
     }
 
     function sortOwnedDiscounts(items = []) {
@@ -186,6 +753,398 @@ function createShopHandlers({
 
     function normalizeClaimText(value, maxLength = 255) {
         return String(value || '').trim().slice(0, Math.max(0, maxLength));
+    }
+
+    function formatClaimPoints(value, fallback = '0') {
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue)) {
+            return fallback;
+        }
+
+        const normalized = Math.round(numericValue * 100) / 100;
+        return Number.isInteger(normalized)
+            ? String(normalized)
+            : normalized
+                .toFixed(2)
+                .replace(/(\.\d*?[1-9])0+$/, '$1')
+                .replace(/\.0+$/, '');
+    }
+
+    function buildScopedProductAvailabilityMessage(payload = {}) {
+        const preview = payload?.data && typeof payload.data === 'object' && !Array.isArray(payload.data)
+            ? payload.data
+            : null;
+        const finalTotal = Number(preview?.final_total);
+        const discountAmount = Number(preview?.discount_amount);
+
+        if (Number.isFinite(finalTotal) && finalTotal >= 0) {
+            const prefix = Number.isFinite(discountAmount) && discountAmount > 0
+                ? '打开指定商品后预计实付'
+                : '打开指定商品后实付';
+            return `${prefix} ${formatClaimPoints(finalTotal)} 积分`;
+        }
+
+        return normalizeClaimText(payload?.message, 160) || '打开指定商品后可直接选择使用';
+    }
+
+    function matchesApplicableSite(discount = {}, currentSite = 'cn') {
+        const discountSite = typeof normalizeSite === 'function'
+            ? normalizeSite(discount?.applicable_site, 'all')
+            : (normalizeClaimText(discount?.applicable_site, 20).toLowerCase() || 'all');
+        return discountSite === 'all' || discountSite === currentSite;
+    }
+
+    function formatPercentDiscountValue(value) {
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue) || numericValue <= 0) {
+            return '折扣券';
+        }
+
+        const folded = numericValue / 10;
+        const display = Number.isInteger(folded)
+            ? String(folded)
+            : folded.toFixed(1).replace(/\.0$/, '');
+        return `${display}折`;
+    }
+
+    function formatBenefitLabel(discount = {}) {
+        const discountType = normalizeClaimText(discount?.discount_type, 20).toLowerCase();
+        const discountValue = Number(discount?.discount_value);
+
+        if (discountType === 'percent') {
+            return formatPercentDiscountValue(discountValue);
+        }
+
+        if (discountType === 'fixed') {
+            return Number.isFinite(discountValue) && discountValue > 0
+                ? `立减 ${discountValue} 积分`
+                : '立减券';
+        }
+
+        return normalizeClaimText(discount?.code, 80) || '卡券';
+    }
+
+    function formatDiscountNotificationExpiryLabel(asset = {}, discount = {}) {
+        const effectiveExpiresAt = resolveEffectiveExpiry(asset, discount);
+        return effectiveExpiresAt
+            ? `有效期至 ${effectiveExpiresAt}`
+            : '长期有效';
+    }
+
+    function buildDiscountUserNotificationPayload({
+        action = 'claim',
+        asset = {},
+        discount = {}
+    } = {}) {
+        const benefitLabel = formatBenefitLabel(discount);
+        const code = normalizeClaimText(discount?.code, 80);
+        const expiryLabel = formatDiscountNotificationExpiryLabel(asset, discount);
+        const normalizedAction = normalizeClaimText(action, 20).toLowerCase();
+        const title = normalizedAction === 'assign' ? '优惠券已到账' : '优惠券领取成功';
+        const intro = normalizedAction === 'assign'
+            ? `${benefitLabel}${code ? `（${code}）` : ''} 已发放到你的钱包卡券。`
+            : `你已领取 ${benefitLabel}${code ? `（${code}）` : ''}。`;
+
+        return {
+            title,
+            content: `${intro}\n${expiryLabel}。\n请前往“我的钱包 > 卡券”查看，并在下单时点击使用。`,
+            type: 'success',
+            scope: 'user_personal',
+            category: 'discount_notice',
+            dedupeWindowMinutes: 0
+        };
+    }
+
+    function resolveScopeProductSummary(discount = {}, productById = new Map()) {
+        const scopeType = normalizeClaimText(discount?.scope_type, 40).toLowerCase() || 'all';
+        if (scopeType !== 'product') {
+            return null;
+        }
+
+        const productId = normalizeClaimText(discount?.scope_product_id, 160);
+        if (!productId) {
+            return null;
+        }
+
+        const product = productById instanceof Map
+            ? (productById.get(productId) || null)
+            : null;
+        const displayName = normalizeClaimText(product?.name, 120) || normalizeClaimText(product?.name_en, 120) || null;
+
+        return {
+            id: productId,
+            name: normalizeClaimText(product?.name, 160) || null,
+            name_en: normalizeClaimText(product?.name_en, 160) || null,
+            category: normalizeClaimText(product?.category, 120) || null,
+            is_active: product ? product.is_active !== false : null,
+            display_name: displayName,
+            is_missing: !product
+        };
+    }
+
+    function formatScopeLabel(discount = {}, productById = new Map()) {
+        const scopeType = normalizeClaimText(discount?.scope_type, 40).toLowerCase() || 'all';
+        if (scopeType === 'category') {
+            return normalizeClaimText(discount?.scope_category, 80)
+                ? `分类限定 · ${normalizeClaimText(discount?.scope_category, 80)}`
+                : '分类限定';
+        }
+
+        if (scopeType === 'product') {
+            const scopeProduct = resolveScopeProductSummary(discount, productById);
+            return scopeProduct?.display_name
+                ? `指定商品 · ${scopeProduct.display_name}`
+                : '指定商品';
+        }
+
+        return '全场可用';
+    }
+
+    function buildDiscountScopePayload(discount = {}, productById = new Map()) {
+        return {
+            scope_type: normalizeClaimText(discount?.scope_type, 40).toLowerCase() || 'all',
+            scope_category: normalizeClaimText(discount?.scope_category, 120) || null,
+            scope_product_id: normalizeClaimText(discount?.scope_product_id, 160) || null,
+            scope_product: resolveScopeProductSummary(discount, productById),
+            scope_label: formatScopeLabel(discount, productById)
+        };
+    }
+
+    function formatSourceLabel(asset = {}, discount = {}) {
+        const sourceChannel = normalizeClaimText(asset?.source_channel, 80).toLowerCase();
+        const sourceType = normalizeClaimText(asset?.source_type, 80).toLowerCase();
+        const distributionMode = normalizeDistributionMode(discount?.distribution_mode, 'general_code');
+
+        if (sourceChannel.includes('checkin') || sourceType.includes('checkin')) {
+            return '签到发券';
+        }
+        if (sourceChannel.includes('affiliate') || sourceChannel.includes('invite') || sourceType.includes('affiliate')) {
+            return '推广奖励';
+        }
+        if (sourceChannel.includes('recharge') || sourceType.includes('recharge')) {
+            return '充值赠券';
+        }
+        if (sourceChannel.includes('claim') || sourceType === 'public_claim' || distributionMode === 'public_claim') {
+            return '主动领取';
+        }
+        if (sourceChannel.includes('admin') || sourceType.includes('manual')) {
+            return '后台发放';
+        }
+        if (distributionMode === 'user_assigned') {
+            return '到账卡券';
+        }
+        return '卡券资产';
+    }
+
+    function buildDiscountStackingPresentation(discount = {}) {
+        const policy = typeof buildDiscountStackingPolicy === 'function'
+            ? buildDiscountStackingPolicy(discount)
+            : {
+                is_exclusive: discount?.is_exclusive !== false,
+                stack_priority: Number(discount?.stack_priority || 100) || 100,
+                pricing_apply_stage: normalizeClaimText(discount?.pricing_apply_stage, 40).toLowerCase() || 'order_discount',
+                exclusivity_label: discount?.is_exclusive === false ? '可并行权益' : '排他券',
+                apply_stage_label: '订单优惠阶段',
+                summary: discount?.is_exclusive === false ? '可与其它优惠券叠加' : '不可与其它优惠券叠加'
+            };
+
+        return {
+            is_exclusive: policy.is_exclusive !== false,
+            stack_priority: Number(policy.stack_priority || 100) || 100,
+            pricing_apply_stage: policy.pricing_apply_stage || 'order_discount',
+            stacking_label: policy.exclusivity_label || (policy.is_exclusive === false ? '可并行权益' : '排他券'),
+            stacking_summary: policy.is_exclusive === false ? '可与其它优惠券叠加' : '不可与其它优惠券叠加',
+            stacking_stage_label: policy.apply_stage_label || '订单优惠阶段'
+        };
+    }
+
+    function resolveEffectiveExpiry(asset = {}, discount = {}) {
+        const assetExpiry = normalizeClaimText(asset?.expires_at, 80);
+        const discountExpiry = normalizeClaimText(discount?.expires_at, 80);
+        const assetExpiryMs = getSafeTimestamp(assetExpiry);
+        const discountExpiryMs = getSafeTimestamp(discountExpiry);
+
+        if (assetExpiryMs > 0 && discountExpiryMs > 0) {
+            return assetExpiryMs <= discountExpiryMs ? assetExpiry : discountExpiry;
+        }
+        if (assetExpiryMs > 0) return assetExpiry;
+        if (discountExpiryMs > 0) return discountExpiry;
+        return null;
+    }
+
+    function getWalletOrderDiscountAmount(order = {}) {
+        const amount = Number(order?.discount_amount);
+        if (!Number.isFinite(amount) || amount <= 0) {
+            return 0;
+        }
+        const refunded = typeof isRefundedOrder === 'function'
+            ? isRefundedOrder(order)
+            : ['refunded', 'full_refund'].includes(normalizeClaimText(order?.refund_status, 40).toLowerCase());
+        return refunded ? 0 : amount;
+    }
+
+    function buildWalletAssetCard(
+        asset = {},
+        discount = {},
+        orderByAssetId = new Map(),
+        productById = new Map(),
+        now = new Date(),
+        options = {}
+    ) {
+        const normalizedAssetStatus = normalizeClaimText(asset?.asset_status, 40).toLowerCase() || 'available';
+        const lifecycle = buildDiscountLifecycleSummary(discount, { now });
+        const effectiveExpiresAt = resolveEffectiveExpiry(asset, discount);
+        const effectiveExpiresAtMs = getSafeTimestamp(effectiveExpiresAt);
+        const nowMs = now.getTime();
+        const relatedOrder = orderByAssetId.get(normalizeClaimText(asset?.id, 160)) || null;
+        const savedAmount = getWalletOrderDiscountAmount(relatedOrder);
+        const isExpiredByTime = effectiveExpiresAtMs > 0 && effectiveExpiresAtMs <= nowMs;
+        const scopeProduct = resolveScopeProductSummary(discount, productById);
+        const scopedProductAvailability = options?.scopedProductAvailability || null;
+        const isProductScoped = normalizeClaimText(discount?.scope_type, 40).toLowerCase() === 'product';
+
+        let statusGroup = 'inactive';
+        let statusLabel = '已失效';
+        let statusDetail = lifecycle.detail_text || '当前不可使用';
+        let statusTone = 'inactive';
+
+        if (normalizedAssetStatus === 'used') {
+            statusGroup = 'used';
+            statusLabel = '已使用';
+            statusDetail = relatedOrder?.snapshot_product_name
+                ? `已用于 ${relatedOrder.snapshot_product_name}`
+                : '已在商城下单时使用';
+            statusTone = 'used';
+        } else if (normalizedAssetStatus === 'available' && !isExpiredByTime && lifecycle.key === 'active') {
+            statusGroup = 'available';
+            statusTone = 'available';
+            if (isProductScoped && scopedProductAvailability?.available === false) {
+                statusLabel = '暂不可用';
+                statusDetail = `指定商品当前不可用：${normalizeClaimText(scopedProductAvailability?.message, 160) || '请稍后再试'}`;
+                statusTone = 'inactive';
+            } else {
+                statusLabel = '可用';
+                const scopedAvailableMessage = normalizeClaimText(scopedProductAvailability?.message, 160) || '';
+                statusDetail = isProductScoped && scopedAvailableMessage
+                    ? scopedAvailableMessage
+                    : (effectiveExpiresAt
+                        ? `有效期至 ${effectiveExpiresAt}`
+                        : (isProductScoped
+                            ? '打开指定商品后可直接选择使用'
+                            : '当前下单可直接选择使用'));
+            }
+        } else if (normalizedAssetStatus === 'expired' || isExpiredByTime || lifecycle.key === 'expired') {
+            statusLabel = '已过期';
+            statusDetail = effectiveExpiresAt
+                ? `已于 ${effectiveExpiresAt} 过期`
+                : '该卡券已过期';
+        } else if (normalizedAssetStatus === 'revoked') {
+            statusLabel = '已停用';
+            statusDetail = '该卡券已被停用，暂时无法使用';
+        } else if (lifecycle.key === 'scheduled') {
+            statusLabel = '待生效';
+            statusDetail = lifecycle.detail_text || '未到生效时间';
+        } else if (lifecycle.key === 'paused_manual' || lifecycle.key === 'paused_risk' || lifecycle.key === 'archived' || lifecycle.key === 'exhausted') {
+            statusLabel = lifecycle.label || '暂不可用';
+            statusDetail = lifecycle.detail_text || '当前暂不可使用';
+        }
+
+        const isExpiringSoon = statusGroup === 'available'
+            && statusTone === 'available'
+            && effectiveExpiresAtMs > nowMs
+            && effectiveExpiresAtMs - nowMs <= 72 * 60 * 60 * 1000;
+
+        const stackingPresentation = buildDiscountStackingPresentation(discount);
+
+        return {
+            asset_id: asset.id,
+            discount_id: discount.id,
+            code: discount.code || null,
+            asset_status: normalizedAssetStatus,
+            can_remove: normalizedAssetStatus === 'available',
+            status_group: statusGroup,
+            status_label: isExpiringSoon ? '即将过期' : statusLabel,
+            status_tone: isExpiringSoon ? 'available' : statusTone,
+            status_detail: statusDetail,
+            benefit_label: formatBenefitLabel(discount),
+            scope_type: normalizeClaimText(discount?.scope_type, 40).toLowerCase() || 'all',
+            scope_category: normalizeClaimText(discount?.scope_category, 120) || null,
+            scope_product_id: normalizeClaimText(discount?.scope_product_id, 160) || null,
+            scope_product: scopeProduct,
+            scoped_product_available: scopedProductAvailability?.available ?? null,
+            scoped_product_message: scopedProductAvailability?.message || null,
+            scoped_product_preview: scopedProductAvailability?.preview || null,
+            scope_label: formatScopeLabel(discount, productById),
+            source_label: formatSourceLabel(asset, discount),
+            source_channel: asset.source_channel || null,
+            discount_type: discount.discount_type || null,
+            discount_value: discount.discount_value == null ? null : Number(discount.discount_value),
+            distribution_mode: normalizeDistributionMode(discount.distribution_mode, 'general_code'),
+            is_exclusive: stackingPresentation.is_exclusive,
+            stack_priority: stackingPresentation.stack_priority,
+            pricing_apply_stage: stackingPresentation.pricing_apply_stage,
+            stacking_label: stackingPresentation.stacking_label,
+            stacking_summary: stackingPresentation.stacking_summary,
+            stacking_stage_label: stackingPresentation.stacking_stage_label,
+            campaign_tag: discount.campaign_tag || null,
+            audience_segment: asset.audience_segment || discount.audience_segment || null,
+            assigned_at: asset.assigned_at || null,
+            claimed_at: asset.claimed_at || null,
+            consumed_at: asset.consumed_at || null,
+            restored_at: asset.restored_at || null,
+            expires_at: asset.expires_at || null,
+            effective_expires_at: effectiveExpiresAt,
+            is_expiring_soon: isExpiringSoon,
+            lifecycle_key: lifecycle.key,
+            lifecycle_label: lifecycle.label,
+            lifecycle_detail: lifecycle.detail_text,
+            related_order: relatedOrder
+                ? {
+                    id: relatedOrder.id,
+                    created_at: relatedOrder.created_at || null,
+                    snapshot_product_name: relatedOrder.snapshot_product_name || '商城订单',
+                    discount_amount: Number(relatedOrder.discount_amount || 0) || 0,
+                    refund_status: relatedOrder.refund_status || null
+                }
+                : null,
+            saved_amount: savedAmount
+        };
+    }
+
+    function sortWalletAssets(items = [], bucket = 'available') {
+        return (Array.isArray(items) ? items : []).slice().sort((left, right) => {
+            if (bucket === 'available') {
+                const leftExpiringSoon = left?.is_expiring_soon ? 1 : 0;
+                const rightExpiringSoon = right?.is_expiring_soon ? 1 : 0;
+                if (rightExpiringSoon !== leftExpiringSoon) {
+                    return rightExpiringSoon - leftExpiringSoon;
+                }
+
+                const leftExpiry = getSafeTimestamp(left?.effective_expires_at);
+                const rightExpiry = getSafeTimestamp(right?.effective_expires_at);
+                if (leftExpiry !== rightExpiry) {
+                    if (!leftExpiry) return 1;
+                    if (!rightExpiry) return -1;
+                    return leftExpiry - rightExpiry;
+                }
+            }
+
+            if (bucket === 'used') {
+                const leftUsedAt = getSafeTimestamp(left?.consumed_at || left?.related_order?.created_at);
+                const rightUsedAt = getSafeTimestamp(right?.consumed_at || right?.related_order?.created_at);
+                if (rightUsedAt !== leftUsedAt) {
+                    return rightUsedAt - leftUsedAt;
+                }
+            }
+
+            const rightAssigned = getSafeTimestamp(right?.assigned_at || right?.claimed_at);
+            const leftAssigned = getSafeTimestamp(left?.assigned_at || left?.claimed_at);
+            if (rightAssigned !== leftAssigned) {
+                return rightAssigned - leftAssigned;
+            }
+
+            return normalizeClaimText(left?.code, 80).localeCompare(normalizeClaimText(right?.code, 80));
+        });
     }
 
     function getClaimTimestamp(value) {
@@ -237,16 +1196,16 @@ function createShopHandlers({
         return data;
     }
 
-    async function countUserClaims(supabase, userId, discountId) {
+    async function loadUserClaimAssets(supabase, userId, discountId) {
         try {
             const { data, error } = await supabase
                 .from('discount_user_assets')
-                .select('id')
+                .select('id, discount_id, user_id, asset_status, assigned_at, claimed_at, consumed_at, expires_at, restored_at, source_type, source_channel, audience_segment, last_order_id')
                 .eq('user_id', userId)
                 .eq('discount_id', discountId);
 
             if (error) throw error;
-            return Array.isArray(data) ? data.length : 0;
+            return Array.isArray(data) ? data : [];
         } catch (error) {
             if (isMissingRelationError(error, 'discount_user_assets')) {
                 const missingError = new Error('优惠券资产表尚未完成迁移，请先执行 P1 SQL');
@@ -257,22 +1216,32 @@ function createShopHandlers({
         }
     }
 
-    async function recordClaimEvent(supabase, payload = {}) {
-        try {
-            const { error } = await supabase
-                .from('discount_event_logs')
-                .insert(payload);
-            if (error && !isMissingRelationError(error, 'discount_event_logs')) {
-                throw error;
-            }
-        } catch (error) {
-            if (!isMissingRelationError(error, 'discount_event_logs')) {
-                throw error;
-            }
-        }
+    async function countUserClaims(supabase, userId, discountId) {
+        const rows = await loadUserClaimAssets(supabase, userId, discountId);
+        return rows.length;
     }
 
-    async function recordApplyAttempt(supabase, payload = {}) {
+    function pickExistingClaimAsset(claimRows = []) {
+        return (Array.isArray(claimRows) ? claimRows : [])
+            .filter((row) => normalizeClaimText(row?.asset_status, 40).toLowerCase() !== 'revoked')
+            .sort((left, right) => {
+                const leftAvailable = normalizeClaimText(left?.asset_status, 40).toLowerCase() === 'available' ? 1 : 0;
+                const rightAvailable = normalizeClaimText(right?.asset_status, 40).toLowerCase() === 'available' ? 1 : 0;
+                if (rightAvailable !== leftAvailable) {
+                    return rightAvailable - leftAvailable;
+                }
+
+                const leftTime = getDiscountAssetActivityTime(left);
+                const rightTime = getDiscountAssetActivityTime(right);
+                if (rightTime !== leftTime) {
+                    return rightTime - leftTime;
+                }
+
+                return normalizeClaimText(right?.id, 160).localeCompare(normalizeClaimText(left?.id, 160));
+            })[0] || null;
+    }
+
+    async function recordDiscountEvent(supabase, payload = {}) {
         if (!supabase || !payload?.discount_id) {
             return;
         }
@@ -291,16 +1260,151 @@ function createShopHandlers({
         }
     }
 
+    function buildClaimSuccessPayload({
+        asset = {},
+        discount = {},
+        claimLimitPerUser = 0,
+        existingClaimCount = 0,
+        message = '领取成功',
+        alreadyClaimed = false
+    } = {}) {
+        const normalizedClaimLimit = Math.max(0, Number(claimLimitPerUser || 0) || 0);
+        const normalizedClaimCount = Math.max(0, Number(existingClaimCount || 0) || 0);
+        const remainingClaims = normalizedClaimLimit > 0
+            ? Math.max(0, normalizedClaimLimit - normalizedClaimCount)
+            : null;
+
+        return {
+            success: true,
+            message,
+            already_claimed: alreadyClaimed,
+            asset,
+            discount: {
+                id: discount.id || null,
+                code: discount.code || null,
+                campaign_tag: discount.campaign_tag || null,
+                claim_limit_per_user: normalizedClaimLimit,
+                claimed_count: normalizedClaimCount,
+                remaining_claims: remainingClaims
+            }
+        };
+    }
+
+    function buildAlreadyClaimedPayload({ claimRows = [], discount = {} } = {}) {
+        const claimLimitPerUser = Math.max(0, Number(discount?.claim_limit_per_user || 0) || 0);
+        if (claimLimitPerUser !== 1) {
+            return null;
+        }
+
+        const existingAsset = pickExistingClaimAsset(claimRows);
+        if (!existingAsset) {
+            return null;
+        }
+
+        return buildClaimSuccessPayload({
+            asset: existingAsset,
+            discount,
+            claimLimitPerUser,
+            existingClaimCount: claimRows.length,
+            message: '你已领取过该券，可直接使用',
+            alreadyClaimed: true
+        });
+    }
+
+    function canFallbackToLegacyClaimRpc(error) {
+        const normalizedMessage = [
+            error?.message,
+            error?.details,
+            error?.hint
+        ].filter(Boolean).join(' ').trim().toLowerCase();
+
+        return isMissingRpcCapabilityError(error)
+            || isAmbiguousRpcOverloadError(error, 'fn_claim_public_discount')
+            || normalizedMessage.includes('permission denied for function fn_claim_public_discount');
+    }
+
+    function buildClaimRpcParams({ discountId = '', discountCode = '', site: currentSite = 'cn', sourceChannel = '' } = {}, userId = '') {
+        return {
+            p_discount_id: String(discountId || '').trim() || null,
+            p_discount_code: String(discountCode || '').trim().toUpperCase() || null,
+            p_user_id: String(userId || '').trim() || null,
+            p_site: String(currentSite || 'cn').trim() || 'cn',
+            p_source_channel: normalizeClaimText(sourceChannel, 80).toLowerCase() || null
+        };
+    }
+
+    async function executeClaimDiscountRpc({
+        discountId = '',
+        discountCode = '',
+        site: currentSite = 'cn',
+        sourceChannel = '',
+        userId = '',
+        requestSupabase,
+        adminSupabase,
+        fallbackSupabase
+    }) {
+        const params = buildClaimRpcParams({
+            discountId,
+            discountCode,
+            site: currentSite,
+            sourceChannel
+        }, userId);
+        const clients = [];
+        for (const client of [requestSupabase, adminSupabase, fallbackSupabase]) {
+            if (client?.rpc && !clients.includes(client)) {
+                clients.push(client);
+            }
+        }
+
+        let lastError = null;
+        for (const client of clients) {
+            try {
+                const { data, error } = await client.rpc('fn_claim_public_discount', params);
+                if (error) {
+                    throw error;
+                }
+
+                const payload = getRpcSingleRow(data);
+                if (payload) {
+                    return payload;
+                }
+            } catch (error) {
+                lastError = error;
+                if (canFallbackToLegacyClaimRpc(error)) {
+                    continue;
+                }
+                throw error;
+            }
+        }
+
+        if (lastError && !canFallbackToLegacyClaimRpc(lastError)) {
+            throw lastError;
+        }
+
+        return null;
+    }
+
+    async function recordApplyAttempt(supabase, payload = {}) {
+        return recordDiscountEvent(supabase, payload);
+    }
+
     function normalizePurchaseBody(body = {}, headers = {}) {
         const quantityValue = Number(body?.quantity ?? body?.p_quantity ?? 1);
         const quantity = Number.isFinite(quantityValue) ? Math.trunc(quantityValue) : NaN;
+        const discountCode = String(body?.discountCode || body?.p_discount_code || '').trim().toUpperCase() || null;
+        const discountAssetId = String(body?.discountAssetId || body?.p_discount_asset_id || '').trim() || null;
+        const discountSelections = normalizeDiscountSelectionsInput(body, {
+            discountCode,
+            discountAssetId
+        });
 
         return {
             productId: String(body?.productId || body?.product_id || '').trim(),
             quantity,
             site: requireSupportedSite(body?.site || body?.p_site || 'cn', { fieldName: 'site' }),
-            discountCode: String(body?.discountCode || body?.p_discount_code || '').trim().toUpperCase() || null,
-            discountAssetId: String(body?.discountAssetId || body?.p_discount_asset_id || '').trim() || null,
+            discountCode,
+            discountAssetId,
+            discountSelections,
             agentId: String(body?.agentId || body?.p_agent_id || '').trim() || null,
             idempotencyKey: String(
                 body?.idempotencyKey
@@ -336,6 +1440,16 @@ function createShopHandlers({
     }
 
     function buildIdempotencyFingerprint({ userId, payload }) {
+        const normalizedSelections = normalizeDiscountSelectionsInput({
+            discountSelections: payload?.discountSelections
+        }, {
+            discountCode: payload?.discountCode,
+            discountAssetId: payload?.discountAssetId
+        }).map((selection) => ({
+            code: selection.code || '',
+            assetId: selection.assetId || ''
+        }));
+
         return crypto
             .createHash('sha256')
             .update(JSON.stringify({
@@ -345,6 +1459,7 @@ function createShopHandlers({
                 site: payload.site,
                 discountCode: payload.discountCode || '',
                 discountAssetId: payload.discountAssetId || '',
+                discountSelections: normalizedSelections,
                 agentId: payload.agentId || '',
                 idempotencyKey: payload.idempotencyKey || ''
             }))
@@ -410,6 +1525,74 @@ function createShopHandlers({
         }
 
         return params;
+    }
+
+    function buildMultiDiscountPurchaseRpcParams(payload = {}, userId = '') {
+        return {
+            p_product_id: payload.productId,
+            p_user_id: userId,
+            p_site: payload.site,
+            p_quantity: payload.quantity,
+            p_discount_inputs: (Array.isArray(payload.discountSelections) ? payload.discountSelections : []).map((selection) => ({
+                discount_code: selection?.code || null,
+                discount_asset_id: selection?.assetId || null
+            })),
+            p_agent_id: payload.agentId
+        };
+    }
+
+    async function executeMultiDiscountPurchaseRpc({
+        payload,
+        userId,
+        requestSupabase,
+        adminSupabase,
+        fallbackSupabase
+    }) {
+        const clients = [];
+        for (const client of [requestSupabase, adminSupabase, fallbackSupabase]) {
+            if (client?.rpc && !clients.includes(client)) {
+                clients.push(client);
+            }
+        }
+
+        if (!clients.length) {
+            const error = new Error('商城购买服务暂时不可用');
+            error.statusCode = 503;
+            throw error;
+        }
+
+        const params = buildMultiDiscountPurchaseRpcParams(payload, userId);
+        let lastError = null;
+
+        for (const client of clients) {
+            try {
+                const { data, error } = await client.rpc('fn_purchase_shop_item_with_discounts', params);
+                if (error) {
+                    throw error;
+                }
+
+                const rpcPayload = getRpcSingleRow(data);
+                if (rpcPayload) {
+                    return rpcPayload;
+                }
+            } catch (error) {
+                lastError = error;
+            }
+        }
+
+        if (isMissingRpcCapabilityError(lastError)) {
+            const error = new Error('当前数据库尚未启用多券叠加，请先执行最新的 shop discount stacking 迁移');
+            error.statusCode = 503;
+            throw error;
+        }
+
+        if (lastError) {
+            throw lastError;
+        }
+
+        const error = new Error('多券购买服务未返回结果，请检查 fn_purchase_shop_item_with_discounts RPC 配置');
+        error.statusCode = 502;
+        throw error;
     }
 
     async function executePurchaseRpc({
@@ -516,7 +1699,7 @@ function createShopHandlers({
 
         const { data: order, error: orderError } = await dataSupabase
             .from('shop_orders')
-            .select('id, user_id, product_id, inventory_id, snapshot_product_name, created_at, price_paid, total_price, discount_code, discount_amount, item_count')
+            .select('id, user_id, product_id, inventory_id, snapshot_product_name, created_at, price_paid, total_price, discount_code, discount_amount, discount_snapshot, item_count')
             .eq('id', normalizedOrderId)
             .eq('user_id', normalizedUserId)
             .single();
@@ -618,6 +1801,9 @@ function createShopHandlers({
                 total_price: order.total_price == null ? null : (Number(order.total_price) || 0),
                 discount_code: order.discount_code || null,
                 discount_amount: Number(order.discount_amount || 0) || 0,
+                applied_discounts: Array.isArray(order?.discount_snapshot?.applied_discounts)
+                    ? order.discount_snapshot.applied_discounts
+                    : [],
                 item_count: Math.max(1, Number(order.item_count || items.length || 1) || 1)
             },
             items,
@@ -704,11 +1890,22 @@ function createShopHandlers({
                 const ownedAssets = await loadUserAssets(dataSupabase, user.id);
                 const masterDiscountRows = await loadDiscountRowsByIds(dataSupabase, ownedAssets.map((asset) => asset?.discount_id));
                 const discountMap = new Map(masterDiscountRows.map((row) => [normalizeText(row?.id, 160), row]));
+                const visibleOwnedAssets = suppressExcessPublicClaimAssets(ownedAssets, discountMap);
+                const publicClaimDiscounts = (await loadPublicClaimDiscounts(dataSupabase))
+                    .filter((discount) => matchesApplicableSite(discount, currentSite))
+                    .filter((discount) => isClaimWindowOpen(discount, new Date()));
+                const scopedProductById = await loadShopProductsByIds(
+                    dataSupabase,
+                    [...masterDiscountRows, ...publicClaimDiscounts]
+                        .filter((row) => normalizeClaimText(row?.scope_type, 40).toLowerCase() === 'product')
+                        .map((row) => row?.scope_product_id)
+                );
 
                 const ownedDiscounts = [];
-                for (const asset of ownedAssets) {
+                for (const asset of visibleOwnedAssets) {
                     const masterDiscount = discountMap.get(normalizeText(asset?.discount_id, 160));
                     if (!masterDiscount) continue;
+                    if (!matchesApplicableSite(masterDiscount, currentSite)) continue;
 
                     let preview = null;
                     let available = false;
@@ -723,7 +1920,11 @@ function createShopHandlers({
                             discountAssetId: asset.id,
                             agentId
                         });
-                        if (payload?.success !== false) {
+                        if (payload?.success === false) {
+                            available = false;
+                            preview = payload?.data || null;
+                            message = String(payload?.message || '当前不可用');
+                        } else {
                             preview = payload?.data || {};
                             available = true;
                             message = String(payload?.message || '当前可用');
@@ -737,8 +1938,15 @@ function createShopHandlers({
                         asset_id: asset.id,
                         discount_id: masterDiscount.id,
                         code: masterDiscount.code,
+                        benefit_label: formatBenefitLabel(masterDiscount),
+                        ...buildDiscountScopePayload(masterDiscount, scopedProductById),
+                        discount_type: masterDiscount.discount_type || null,
+                        discount_value: masterDiscount.discount_value == null ? null : Number(masterDiscount.discount_value),
                         distribution_mode: normalizeDistributionMode(masterDiscount.distribution_mode, 'general_code'),
+                        ...buildDiscountStackingPresentation(masterDiscount),
+                        source_label: formatSourceLabel(asset, masterDiscount),
                         source_channel: asset.source_channel || null,
+                        campaign_tag: masterDiscount.campaign_tag || null,
                         audience_segment: asset.audience_segment || null,
                         expires_at: asset.expires_at || masterDiscount.expires_at || null,
                         available,
@@ -747,31 +1955,33 @@ function createShopHandlers({
                     });
                 }
 
-                const publicClaimDiscounts = (await loadPublicClaimDiscounts(dataSupabase))
-                    .filter((discount) => {
-                        const applicableSite = String(discount?.applicable_site || '').trim().toLowerCase();
-                        return !applicableSite || applicableSite === currentSite;
-                    })
-                    .filter((discount) => isClaimWindowOpen(discount, new Date()));
                 const claimCounts = await loadUserClaimCounts(dataSupabase, user.id, publicClaimDiscounts.map((discount) => discount?.id));
-                const claimableDiscounts = publicClaimDiscounts.map((discount) => {
-                    const alreadyClaimedCount = Math.max(0, Number(claimCounts.get(normalizeText(discount?.id, 160)) || 0));
-                    const claimLimitPerUser = Math.max(0, Number(discount?.claim_limit_per_user || 0));
-                    const canClaim = claimLimitPerUser <= 0 || alreadyClaimedCount < claimLimitPerUser;
-                    return {
-                        discount_id: discount.id,
-                        code: discount.code,
-                        distribution_mode: 'public_claim',
-                        campaign_tag: discount.campaign_tag || null,
-                        audience_segment: discount.audience_segment || null,
-                        claim_starts_at: discount.claim_starts_at || null,
-                        claim_expires_at: discount.claim_expires_at || null,
-                        claim_limit_per_user: claimLimitPerUser,
-                        already_claimed_count: alreadyClaimedCount,
-                        can_claim: canClaim,
-                        message: canClaim ? '领取后即可在结算时直接选择' : '你已达到该券的领取上限'
-                    };
-                });
+                const claimableDiscounts = publicClaimDiscounts
+                    .map((discount) => {
+                        const alreadyClaimedCount = Math.max(0, Number(claimCounts.get(normalizeText(discount?.id, 160)) || 0));
+                        const claimLimitPerUser = Math.max(0, Number(discount?.claim_limit_per_user || 0));
+                        const canClaim = claimLimitPerUser <= 0 || alreadyClaimedCount < claimLimitPerUser;
+                        return {
+                            discount_id: discount.id,
+                            code: discount.code,
+                            benefit_label: formatBenefitLabel(discount),
+                            ...buildDiscountScopePayload(discount, scopedProductById),
+                            discount_type: discount.discount_type || null,
+                            discount_value: discount.discount_value == null ? null : Number(discount.discount_value),
+                            distribution_mode: 'public_claim',
+                            ...buildDiscountStackingPresentation(discount),
+                            source_label: formatSourceLabel({}, discount),
+                            campaign_tag: discount.campaign_tag || null,
+                            audience_segment: discount.audience_segment || null,
+                            claim_starts_at: discount.claim_starts_at || null,
+                            claim_expires_at: discount.claim_expires_at || null,
+                            claim_limit_per_user: claimLimitPerUser,
+                            already_claimed_count: alreadyClaimedCount,
+                            can_claim: canClaim,
+                            message: '领取后即可在结算时直接选择'
+                        };
+                    })
+                    .filter((discount) => discount.can_claim);
 
                 return sendJson(res, 200, {
                     success: true,
@@ -786,7 +1996,122 @@ function createShopHandlers({
                 });
             }
         },
-        'claim-discount': async function claimDiscountHandler(req, res) {
+        'my-discount-assets': async function myDiscountAssetsHandler(req, res) {
+            if (req.method !== 'POST') {
+                res.setHeader('Allow', 'POST');
+                return sendJson(res, 405, {
+                    success: false,
+                    message: 'Method not allowed'
+                });
+            }
+
+            const clientIp = resolveClientIp(req, { env }) || 'unknown';
+            const rateLimit = await takeRateLimitToken({
+                supabase: getOptionalSupabaseAdmin(),
+                key: `shop-my-discount-assets:${clientIp}`,
+                limit: Math.max(1, Number(env.SHOP_DISCOUNT_ASSETS_RATE_LIMIT_MAX || 16)),
+                windowMs: Math.max(10_000, Number(env.SHOP_DISCOUNT_ASSETS_RATE_LIMIT_WINDOW_MS || 60_000))
+            });
+            applyRateLimitHeaders(res, rateLimit);
+            if (!rateLimit.allowed) {
+                return sendJson(res, 429, {
+                    success: false,
+                    code: 'rate_limited',
+                    message: '卡券列表请求过于频繁，请稍后重试',
+                    retry_after_seconds: rateLimit.retryAfterSeconds
+                });
+            }
+
+            try {
+                const { supabase, requestSupabase, adminSupabase, user } = await requireAuthenticatedUser(req);
+                const body = await parseJsonBody(req);
+                const currentSite = requireSupportedSite(body?.site || body?.p_site || 'cn', { fieldName: 'site' });
+                const dataSupabase = adminSupabase || supabase;
+                const now = new Date();
+
+                const userAssets = await loadAllUserAssets(dataSupabase, user.id);
+                const discountRows = await loadDiscountRowsByIds(dataSupabase, userAssets.map((asset) => asset?.discount_id));
+                const discountMap = new Map(
+                    discountRows
+                        .filter((row) => matchesApplicableSite(row, currentSite))
+                        .map((row) => [normalizeText(row?.id, 160), row])
+                );
+                const visibleUserAssets = suppressExcessPublicClaimAssets(userAssets, discountMap);
+                const scopedAssets = visibleUserAssets.filter((asset) => discountMap.has(normalizeText(asset?.discount_id, 160)));
+                const orderByAssetId = await loadShopOrdersByDiscountAssets(dataSupabase, scopedAssets);
+                const productById = await loadShopProductsByIds(
+                    dataSupabase,
+                    Array.from(discountMap.values())
+                        .filter((row) => normalizeClaimText(row?.scope_type, 40).toLowerCase() === 'product')
+                        .map((row) => row?.scope_product_id)
+                );
+                const scopedProductAvailabilityByAsset = await loadScopedProductAvailabilityByAsset(requestSupabase || supabase, {
+                    userId: user.id,
+                    site: currentSite,
+                    assets: scopedAssets,
+                    discountMap,
+                    productById
+                });
+
+                const availableAssets = [];
+                const usedAssets = [];
+                const inactiveAssets = [];
+
+                for (const asset of scopedAssets) {
+                    const discount = discountMap.get(normalizeText(asset?.discount_id, 160));
+                    if (!discount) continue;
+
+                    const payload = buildWalletAssetCard(
+                        asset,
+                        discount,
+                        orderByAssetId,
+                        productById,
+                        now,
+                        {
+                            scopedProductAvailability: scopedProductAvailabilityByAsset.get(normalizeText(asset?.id, 160)) || null
+                        }
+                    );
+                    if (payload.status_group === 'available') {
+                        availableAssets.push(payload);
+                    } else if (payload.status_group === 'used') {
+                        usedAssets.push(payload);
+                    } else {
+                        inactiveAssets.push(payload);
+                    }
+                }
+
+                const sortedAvailableAssets = sortWalletAssets(availableAssets, 'available');
+                const sortedUsedAssets = sortWalletAssets(usedAssets, 'used');
+                const sortedInactiveAssets = sortWalletAssets(inactiveAssets, 'inactive');
+                const allAssets = [
+                    ...sortedAvailableAssets,
+                    ...sortedUsedAssets,
+                    ...sortedInactiveAssets
+                ];
+
+                return sendJson(res, 200, {
+                    success: true,
+                    site: currentSite,
+                    summary: {
+                        total_count: allAssets.length,
+                        available_count: sortedAvailableAssets.length,
+                        used_count: sortedUsedAssets.length,
+                        inactive_count: sortedInactiveAssets.length,
+                        expiring_soon_count: sortedAvailableAssets.filter((asset) => asset?.is_expiring_soon).length,
+                        saved_amount_total: allAssets.reduce((sum, asset) => sum + (Number(asset?.saved_amount || 0) || 0), 0)
+                    },
+                    available_assets: sortedAvailableAssets,
+                    used_assets: sortedUsedAssets,
+                    inactive_assets: sortedInactiveAssets
+                });
+            } catch (error) {
+                return sendJson(res, error.statusCode || 500, {
+                    success: false,
+                    message: error.message || '加载我的卡券失败'
+                });
+            }
+        },
+        'remove-discount-asset': async function removeDiscountAssetHandler(req, res) {
             if (req.method !== 'POST') {
                 res.setHeader('Allow', 'POST');
                 return sendJson(res, 405, {
@@ -799,11 +2124,167 @@ function createShopHandlers({
                 const { supabase, adminSupabase, user } = await requireAuthenticatedUser(req);
                 const body = await parseJsonBody(req);
                 const currentSite = requireSupportedSite(body?.site || body?.p_site || 'cn', { fieldName: 'site' });
+                const assetId = normalizeClaimText(body?.assetId || body?.asset_id, 160);
+
+                if (!assetId) {
+                    const error = new Error('assetId is required');
+                    error.statusCode = 400;
+                    throw error;
+                }
+
                 const dataSupabase = adminSupabase || supabase;
-                const discount = await loadClaimDiscount(dataSupabase, {
+                const asset = await loadUserAssetById(dataSupabase, user.id, assetId);
+                const discount = (await loadDiscountRowsByIds(dataSupabase, [asset.discount_id]))[0] || null;
+
+                if (!discount || !matchesApplicableSite(discount, currentSite)) {
+                    const error = new Error('未找到这张卡券');
+                    error.statusCode = 404;
+                    throw error;
+                }
+
+                const assetStatus = normalizeClaimText(asset?.asset_status, 40).toLowerCase() || 'available';
+                if (assetStatus !== 'available') {
+                    const error = new Error('当前卡券不能删除');
+                    error.statusCode = 409;
+                    throw error;
+                }
+
+                const removedAt = new Date().toISOString();
+                const { error: updateError } = await dataSupabase
+                    .from('discount_user_assets')
+                    .update({
+                        asset_status: 'revoked',
+                        updated_at: removedAt
+                    })
+                    .eq('id', asset.id)
+                    .eq('user_id', user.id)
+                    .eq('asset_status', 'available');
+
+                if (updateError) {
+                    throw updateError;
+                }
+
+                try {
+                    await recordDiscountEvent(dataSupabase, {
+                        discount_id: discount.id,
+                        user_id: user.id,
+                        discount_asset_id: asset.id,
+                        order_id: null,
+                        event_type: 'wallet_remove',
+                        site: currentSite,
+                        source_channel: asset.source_channel || null,
+                        event_source: 'wallet_modal',
+                        audience_segment: asset.audience_segment || discount.audience_segment || null,
+                        created_at: removedAt
+                    });
+                } catch (auditError) {
+                    console.warn('[Shop] Failed to record wallet discount removal event:', auditError?.message || auditError);
+                }
+
+                return sendJson(res, 200, {
+                    success: true,
+                    message: '卡券已删除',
+                    asset_id: asset.id,
+                    asset_status: 'revoked',
+                    removed_at: removedAt
+                });
+            } catch (error) {
+                return sendJson(res, error.statusCode || 500, {
+                    success: false,
+                    message: error.message || '删除卡券失败'
+                });
+            }
+        },
+        'claim-discount': async function claimDiscountHandler(req, res) {
+            if (req.method !== 'POST') {
+                res.setHeader('Allow', 'POST');
+                return sendJson(res, 405, {
+                    success: false,
+                    message: 'Method not allowed'
+                });
+            }
+
+            try {
+                const { supabase, requestSupabase, adminSupabase, user } = await requireAuthenticatedUser(req);
+                const body = await parseJsonBody(req);
+                const currentSite = requireSupportedSite(body?.site || body?.p_site || 'cn', { fieldName: 'site' });
+                const dataSupabase = adminSupabase || supabase;
+                const sourceChannel = normalizeClaimText(body?.sourceChannel || body?.source_channel, 80).toLowerCase() || 'claim_center';
+                const claimLookup = {
                     id: body?.discountId || body?.discount_id,
                     code: body?.discountCode || body?.discount_code
+                };
+                const rpcPayload = await executeClaimDiscountRpc({
+                    discountId: claimLookup.id,
+                    discountCode: claimLookup.code,
+                    site: currentSite,
+                    sourceChannel,
+                    userId: user.id,
+                    requestSupabase: requestSupabase || supabase,
+                    adminSupabase,
+                    fallbackSupabase: dataSupabase
                 });
+
+                if (rpcPayload && rpcPayload.success === false) {
+                    const rpcStatusCode = Math.max(400, Number(rpcPayload?.status_code || 409) || 409);
+                    const rpcMessage = normalizeClaimText(rpcPayload?.message, 160);
+                    if (rpcStatusCode === 409 && rpcMessage.includes('领取上限')) {
+                        try {
+                            const discount = await loadClaimDiscount(dataSupabase, claimLookup);
+                            const claimRows = await loadUserClaimAssets(dataSupabase, user.id, discount.id);
+                            const alreadyClaimedPayload = buildAlreadyClaimedPayload({ claimRows, discount });
+                            if (alreadyClaimedPayload) {
+                                return sendJson(res, 200, alreadyClaimedPayload);
+                            }
+                        } catch (alreadyClaimedError) {
+                            console.warn('[Shop] Failed to resolve repeated claim gracefully:', alreadyClaimedError.message);
+                        }
+                    }
+                    return sendJson(res, rpcStatusCode, rpcPayload);
+                }
+
+                if (rpcPayload && rpcPayload.success === true) {
+                    const claimedAsset = rpcPayload?.asset && typeof rpcPayload.asset === 'object' && !Array.isArray(rpcPayload.asset)
+                        ? rpcPayload.asset
+                        : null;
+                    const claimedDiscount = rpcPayload?.discount && typeof rpcPayload.discount === 'object' && !Array.isArray(rpcPayload.discount)
+                        ? rpcPayload.discount
+                        : null;
+
+                    if (claimedAsset?.id && claimedDiscount?.id) {
+                        await recordDiscountEvent(dataSupabase, {
+                            discount_id: claimedDiscount.id,
+                            user_id: user.id,
+                            discount_asset_id: claimedAsset.id,
+                            order_id: null,
+                            event_type: 'claim',
+                            site: currentSite,
+                            source_channel: claimedAsset.source_channel || sourceChannel,
+                            event_source: 'shop_claim_center',
+                            audience_segment: claimedAsset.audience_segment || claimedDiscount.audience_segment || 'public_claim',
+                            created_at: claimedAsset.claimed_at || new Date().toISOString()
+                        });
+                    }
+
+                    if (rpcPayload?.already_claimed !== true) {
+                        try {
+                            await notifyUsers(dataSupabase, {
+                                userIds: [user.id],
+                                ...buildDiscountUserNotificationPayload({
+                                    action: 'claim',
+                                    asset: claimedAsset || {},
+                                    discount: claimedDiscount || {}
+                                })
+                            });
+                        } catch (notificationError) {
+                            console.warn('[Shop] Failed to notify claimed discount recipient:', notificationError.message || notificationError);
+                        }
+                    }
+
+                    return sendJson(res, 200, rpcPayload);
+                }
+
+                const discount = await loadClaimDiscount(dataSupabase, claimLookup);
 
                 if (normalizeClaimText(discount?.distribution_mode, 40).toLowerCase() !== 'public_claim') {
                     return sendJson(res, 409, {
@@ -812,8 +2293,7 @@ function createShopHandlers({
                     });
                 }
 
-                const applicableSite = normalizeClaimText(discount?.applicable_site, 20).toLowerCase();
-                if (applicableSite && applicableSite !== currentSite) {
+                if (!matchesApplicableSite(discount, currentSite)) {
                     return sendJson(res, 409, {
                         success: false,
                         message: '当前站点下不可领取该优惠券'
@@ -823,8 +2303,16 @@ function createShopHandlers({
                 assertClaimWindowOpen(discount, new Date());
 
                 const claimLimitPerUser = Math.max(0, Number(discount?.claim_limit_per_user || 0));
-                const existingClaimCount = await countUserClaims(dataSupabase, user.id, discount.id);
+                const existingClaimRows = await loadUserClaimAssets(dataSupabase, user.id, discount.id);
+                const existingClaimCount = existingClaimRows.length;
                 if (claimLimitPerUser > 0 && existingClaimCount >= claimLimitPerUser) {
+                    const alreadyClaimedPayload = buildAlreadyClaimedPayload({
+                        claimRows: existingClaimRows,
+                        discount
+                    });
+                    if (alreadyClaimedPayload) {
+                        return sendJson(res, 200, alreadyClaimedPayload);
+                    }
                     return sendJson(res, 409, {
                         success: false,
                         message: '你已达到该优惠券的领取上限'
@@ -840,7 +2328,7 @@ function createShopHandlers({
                     claimed_at: nowIso,
                     expires_at: discount.expires_at || null,
                     source_type: 'public_claim',
-                    source_channel: normalizeClaimText(body?.sourceChannel || body?.source_channel, 80).toLowerCase() || 'claim_center',
+                    source_channel: sourceChannel,
                     audience_segment: normalizeClaimText(discount?.audience_segment, 80).toLowerCase() || 'public_claim',
                     source_batch_id: null,
                     created_by: null,
@@ -862,7 +2350,7 @@ function createShopHandlers({
                     });
                 }
 
-                await recordClaimEvent(dataSupabase, {
+                await recordDiscountEvent(dataSupabase, {
                     discount_id: discount.id,
                     user_id: user.id,
                     discount_asset_id: data.id,
@@ -875,14 +2363,26 @@ function createShopHandlers({
                     created_at: nowIso
                 });
 
+                try {
+                    await notifyUsers(dataSupabase, {
+                        userIds: [user.id],
+                        ...buildDiscountUserNotificationPayload({
+                            action: 'claim',
+                            asset: data,
+                            discount
+                        })
+                    });
+                } catch (notificationError) {
+                    console.warn('[Shop] Failed to notify claimed discount recipient:', notificationError.message || notificationError);
+                }
+
                 return sendJson(res, 200, {
-                    success: true,
-                    asset: data,
-                    discount: {
-                        id: discount.id,
-                        code: discount.code,
-                        campaign_tag: discount.campaign_tag || null
-                    }
+                    ...buildClaimSuccessPayload({
+                        asset: data,
+                        discount,
+                        claimLimitPerUser,
+                        existingClaimCount: existingClaimCount + 1
+                    })
                 });
             } catch (error) {
                 return sendJson(res, error.statusCode || 500, {
@@ -921,12 +2421,11 @@ function createShopHandlers({
                 const body = await parseJsonBody(req);
 
                 const productId = String(body?.productId || body?.product_id || '').trim();
-                const discountCode = String(body?.discountCode || body?.discount_code || '').trim();
-                const discountAssetId = String(body?.discountAssetId || body?.discount_asset_id || '').trim() || null;
                 const quantityValue = Number(body?.quantity ?? body?.p_quantity ?? 1);
                 const quantity = Number.isFinite(quantityValue) ? Math.max(1, Math.trunc(quantityValue)) : 1;
                 const currentSite = requireSupportedSite(body?.site || body?.p_site || 'cn', { fieldName: 'site' });
                 const agentId = String(body?.agentId || body?.agent_id || '').trim() || null;
+                const discountSelections = normalizeDiscountSelectionsInput(body);
 
                 if (!productId) {
                     return sendJson(res, 400, {
@@ -935,56 +2434,60 @@ function createShopHandlers({
                     });
                 }
 
-                if (!discountCode) {
+                if (!discountSelections.length) {
                     return sendJson(res, 400, {
                         success: false,
                         message: '请输入优惠码'
                     });
                 }
 
-                const { data, error } = await (requestSupabase || supabase).rpc('fn_validate_discount_code', {
-                    p_product_id: productId,
-                    p_user_id: user.id,
-                    p_site: currentSite,
-                    p_quantity: quantity,
-                    p_discount_code: discountCode,
-                    p_discount_asset_id: discountAssetId,
-                    p_agent_id: agentId
+                const previewResult = await buildDiscountSelectionPreview(requestSupabase || supabase, {
+                    productId,
+                    userId: user.id,
+                    site: currentSite,
+                    quantity,
+                    selections: discountSelections,
+                    agentId
                 });
 
-                if (error) {
-                    throw error;
-                }
-
-                const payload = Array.isArray(data) ? data[0] : data;
-                if (!payload || payload.success === false) {
-                    return sendJson(res, 400, payload || {
+                if (!previewResult?.success) {
+                    return sendJson(res, previewResult?.statusCode || 400, {
                         success: false,
-                        message: '优惠码验证失败'
+                        message: previewResult?.message || '优惠码验证失败'
                     });
                 }
 
+                const payload = previewResult.payload;
                 const responseData = payload?.data && typeof payload.data === 'object' && !Array.isArray(payload.data)
                     ? payload.data
                     : {};
                 const pricingWaterfall = buildPricingWaterfall({
                     ...responseData,
-                    discount_code: responseData.discount_code || discountCode,
-                    discount_asset_id: discountAssetId || responseData.discount_asset_id || null
+                    applied_discounts: responseData.applied_discounts || [],
+                    discount_code: responseData.discount_code || null,
+                    discount_asset_id: responseData.discount_asset_id || null
                 }, {
                     quantity
                 });
                 payload.data = {
                     ...responseData,
+                    benefit_label: responseData.benefit_label || buildCombinedBenefitLabel(
+                        Array.isArray(responseData.applied_discounts) ? responseData.applied_discounts : [],
+                        responseData.discount_amount
+                    ),
                     pricing_waterfall: pricingWaterfall.rows,
                     stacking_policy: pricingWaterfall.stacking_policy
                 };
 
-                if (discountAssetId) {
+                for (const selection of discountSelections.filter((item) => item?.assetId)) {
                     await recordApplyAttempt(adminSupabase || supabase, {
-                        discount_id: String(payload?.data?.discount_id || '').trim() || null,
+                        discount_id: String(
+                            (payload?.data?.applied_discounts || []).find((item) => String(item?.asset_id || '').trim() === selection.assetId)?.discount_id
+                            || payload?.data?.discount_id
+                            || ''
+                        ).trim() || null,
                         user_id: user.id,
-                        discount_asset_id: discountAssetId,
+                        discount_asset_id: selection.assetId,
                         order_id: null,
                         event_type: 'apply_attempt',
                         site: currentSite,
@@ -1158,6 +2661,16 @@ function createShopHandlers({
                 const { supabase, requestSupabase, adminSupabase: requestAdminSupabase, user } = await requireAuthenticatedUser(req);
                 const body = await parseJsonBody(req);
                 const payload = normalizePurchaseBody(body, req.headers || {});
+                payload.discountSelections = normalizeDiscountSelectionsInput({
+                    discountSelections: payload.discountSelections
+                }, {
+                    discountCode: payload.discountCode,
+                    discountAssetId: payload.discountAssetId
+                });
+                if (payload.discountSelections.length === 1) {
+                    payload.discountCode = payload.discountSelections[0].code || null;
+                    payload.discountAssetId = payload.discountSelections[0].assetId || null;
+                }
 
                 if (!payload.productId) {
                     return sendJson(res, 400, {
@@ -1208,13 +2721,21 @@ function createShopHandlers({
                     });
                 }
 
-                const responsePayload = await executePurchaseRpc({
-                    payload,
-                    userId: user.id,
-                    requestSupabase,
-                    adminSupabase,
-                    fallbackSupabase: supabase
-                });
+                const responsePayload = payload.discountSelections.length > 1
+                    ? await executeMultiDiscountPurchaseRpc({
+                        payload,
+                        userId: user.id,
+                        requestSupabase,
+                        adminSupabase,
+                        fallbackSupabase: supabase
+                    })
+                    : await executePurchaseRpc({
+                        payload,
+                        userId: user.id,
+                        requestSupabase,
+                        adminSupabase,
+                        fallbackSupabase: supabase
+                    });
                 if (!responsePayload || responsePayload.success === false) {
                     return sendJson(res, 400, responsePayload || {
                         success: false,
@@ -1225,6 +2746,18 @@ function createShopHandlers({
                 const responseData = responsePayload?.data && typeof responsePayload.data === 'object' && !Array.isArray(responsePayload.data)
                     ? responsePayload.data
                     : {};
+                const orderId = normalizeText(responseData.order_id || responseData.id, 160);
+                if (orderId && (requestAdminSupabase?.from || adminSupabase?.from || supabase?.from)) {
+                    try {
+                        await maybeIssueAffiliateDiscountAssetsForShopOrder({
+                            supabase: requestAdminSupabase || adminSupabase || supabase,
+                            site: payload.site,
+                            orderId
+                        });
+                    } catch (linkageError) {
+                        console.warn('[Shop] Affiliate discount linkage skipped:', linkageError.message);
+                    }
+                }
                 let guidanceData = null;
                 if (!normalizeGuidanceText(responseData.usage_instructions)) {
                     try {
@@ -1237,16 +2770,26 @@ function createShopHandlers({
                 }
                 const pricingWaterfall = buildPricingWaterfall({
                     ...responseData,
+                    applied_discounts: responseData.applied_discounts || [],
                     discount_code: responseData.discount_code || payload.discountCode,
                     discount_asset_id: payload.discountAssetId || responseData.discount_asset_id || null
                 }, {
                     quantity: payload.quantity
                 });
+                const benefitLabel = buildCombinedBenefitLabel(
+                    Array.isArray(responseData.applied_discounts) ? responseData.applied_discounts : [{
+                        discount_type: responseData.discount_type,
+                        discount_value: responseData.discount_value,
+                        code: responseData.discount_code || payload.discountCode
+                    }],
+                    responseData.discount_amount
+                );
 
                 return sendJson(res, 200, {
                     ...responsePayload,
                     data: {
                         ...responseData,
+                        benefit_label: benefitLabel,
                         usage_instructions: normalizeGuidanceText(responseData.usage_instructions) || guidanceData?.usage_instructions || null,
                         show_usage_instructions: responseData.show_usage_instructions ?? guidanceData?.has_usage_instructions ?? false,
                         pricing_waterfall: pricingWaterfall.rows,

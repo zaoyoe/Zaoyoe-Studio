@@ -65,6 +65,10 @@
             "destination": "/api/public?scope=shop&route=:path*"
         },
         {
+            "source": "/api/wallet/:path*",
+            "destination": "/api/public?scope=wallet&route=:path*"
+        },
+        {
             "source": "/api/:path*",
             "destination": "/api/:path*"
         },

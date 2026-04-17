@@ -10,7 +10,7 @@ const { spawn } = require('child_process');
 const DEFAULT_BASE_URL = 'http://127.0.0.1:8000';
 const DEFAULT_PAGE = 'admin-studio.html';
 const DEFAULT_TIMEOUT_MS = 45000;
-const DEFAULT_VIRTUAL_TIME_BUDGET = 30000;
+const DEFAULT_VIRTUAL_TIME_BUDGET = 60000;
 const DEFAULT_CHROME_CANDIDATES = Object.freeze([
     process.env.CHROME_BIN || '',
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',

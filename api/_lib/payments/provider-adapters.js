@@ -39,6 +39,22 @@ function sanitizeText(value, fallback = '', maxLength = 240) {
     return normalized ? normalized.slice(0, maxLength) : fallback;
 }
 
+function pickFirstText(...values) {
+    for (const value of values) {
+        const normalized = sanitizeText(value, '', 240);
+        if (normalized) return normalized;
+    }
+    return '';
+}
+
+function pickFirstCurrencyAmount(...values) {
+    for (const value of values) {
+        const amount = roundCurrencyAmount(value);
+        if (amount > 0) return amount;
+    }
+    return null;
+}
+
 function buildHashedEventKey(provider, keyParts = [], payload = null) {
     const hash = crypto
         .createHash('sha256')
@@ -504,6 +520,24 @@ const providerRegistry = {
                 ? gatewayPayload.data
                 : {};
             const statusRaw = sanitizeText(orderData.status, '', 12).toUpperCase();
+            const paidAmount = pickFirstCurrencyAmount(
+                orderData.total_fee,
+                orderData.pay_price,
+                orderData.realprice,
+                orderData.order_price,
+                gatewayPayload.total_fee,
+                gatewayPayload.pay_price,
+                gatewayPayload.realprice,
+                gatewayPayload.order_price
+            );
+            const transactionId = pickFirstText(
+                orderData.transaction_id,
+                orderData.trade_no,
+                orderData.pay_order_id,
+                gatewayPayload.transaction_id,
+                gatewayPayload.trade_no,
+                gatewayPayload.pay_order_id
+            ) || null;
             return {
                 supported: true,
                 success: gatewayErrcode === 0,
@@ -511,7 +545,10 @@ const providerRegistry = {
                 openOrderId: sanitizeText(orderData.open_order_id || openOrderId, '', 120) || null,
                 status: normalizeHupijiaoPaymentStatus(statusRaw),
                 statusRaw,
-                message: sanitizeText(gatewayPayload.errmsg, gatewayErrcode === 0 ? 'success' : '虎皮椒查单失败', 240)
+                paidAmount,
+                transactionId,
+                message: sanitizeText(gatewayPayload.errmsg, gatewayErrcode === 0 ? 'success' : '虎皮椒查单失败', 240),
+                responsePayload: gatewayPayload
             };
         },
         async refundOrder({ runtimeContext, providerOrderNo = '', openOrderId = '', reason = '' } = {}) {

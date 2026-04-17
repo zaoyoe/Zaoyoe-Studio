@@ -1464,6 +1464,7 @@ document.addEventListener('DOMContentLoaded', function () {
 // ==================== 表单绑定 ====================
 document.addEventListener('DOMContentLoaded', function () {
     console.log('📋 绑定留言板表单...');
+    const GUESTBOOK_SUCCESS_FEEDBACK_MS = 1160;
 
     const guestbookModal = document.getElementById('guestbookModal');
     const guestbookForm = document.getElementById('guestbookForm');
@@ -1479,6 +1480,24 @@ document.addEventListener('DOMContentLoaded', function () {
         resetTimer: null,
         viewMoreTabIndex: viewMoreLink?.getAttribute('tabindex') ?? ''
     };
+
+    if (uploadButton && imageUpload && uploadButton.dataset.guestbookUploadBound !== '1') {
+        uploadButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+
+            if (submitState.locked || uploadButton.disabled || imageUpload.disabled) {
+                return;
+            }
+
+            try {
+                imageUpload.click();
+            } catch (error) {
+                console.warn('⚠️ 打开图片选择器失败:', error);
+            }
+        });
+        uploadButton.dataset.guestbookUploadBound = '1';
+    }
 
     function clearGuestbookSubmitResetTimer() {
         if (submitState.resetTimer) {
@@ -1496,7 +1515,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         if (state === 'success') {
-            return window.i18n?.t('guestbook.submit') || (isZh ? '留言' : 'Post');
+            return window.i18n?.t('guestbook.submitSuccess') || (isZh ? '留言成功' : 'Posted');
         }
 
         return window.i18n?.t('guestbook.submit') || (isZh ? '留言' : 'Post');
@@ -1528,8 +1547,11 @@ document.addEventListener('DOMContentLoaded', function () {
         submitButton.setAttribute('aria-busy', state === 'submitting' ? 'true' : 'false');
         submitButton.setAttribute('aria-disabled', state !== 'idle' ? 'true' : 'false');
 
-        if (state === 'submitting' || state === 'success') {
+        if (state === 'submitting') {
             submitButton.classList.add('is-submitting');
+            submitLabel.removeAttribute('data-i18n');
+        } else if (state === 'success') {
+            submitButton.classList.add('is-success');
             submitLabel.removeAttribute('data-i18n');
         } else {
             submitLabel.setAttribute('data-i18n', 'guestbook.submit');
@@ -1581,12 +1603,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function syncHomepageGuestbookSection(message) {
         const home = window.FramerHome;
-        if (!home?.cachedData) return;
+        const homepageSection = document.getElementById('guestbook-section');
+        if (!home?.cachedData || !homepageSection) return;
 
         const maxItems = Math.max(1, Number(home.config?.guestbook?.max_items) || 5);
         home.cachedData.guestbook = mergeGuestbookMessageList(home.cachedData.guestbook, message, maxItems);
 
-        if (typeof home.renderGuestbook === 'function') {
+        if (typeof home.renderGuestbook === 'function' && home.config && typeof home.config === 'object') {
             home.renderGuestbook();
         }
     }
@@ -1675,8 +1698,11 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    function syncHomepageGuestbookCaches(message, userId = null) {
-        syncHomepageGuestbookSection(message);
+    function syncHomepageGuestbookCaches(message, userId = null, options = {}) {
+        const shouldRenderHomepageSection = options?.renderHomepageSection !== false;
+        if (shouldRenderHomepageSection) {
+            syncHomepageGuestbookSection(message);
+        }
         syncHomepagePrefetchCache(message);
         syncGuestbookPrefetchCache(message);
         window.Cache?.invalidateCache?.('guestbook_messages');
@@ -1695,11 +1721,12 @@ document.addEventListener('DOMContentLoaded', function () {
         setGuestbookComposerHandleState('success');
         submitState.locked = false;
         setGuestbookComposerBusyState(false);
-        setGuestbookSubmitButtonState('idle');
+        setGuestbookSubmitButtonState('success');
         submitState.resetTimer = setTimeout(() => {
             submitState.resetTimer = null;
             setGuestbookComposerHandleState('idle');
-        }, 1080);
+            setGuestbookSubmitButtonState('idle');
+        }, GUESTBOOK_SUCCESS_FEEDBACK_MS);
     }
 
     if (guestbookForm) {
@@ -1771,11 +1798,49 @@ document.addEventListener('DOMContentLoaded', function () {
                     window.clearGuestbookImage();
                 }
 
+                showGuestbookSubmitSuccessState();
+
                 // 如果在首页，不跳转，更新本地缓存并展示按钮成功态
                 const isHomepage = window.location.pathname === '/' || window.location.pathname === '/index.html';
+                const isGuestbookPage = window.location.pathname === '/guestbook.html'
+                    || window.location.pathname.endsWith('/guestbook.html');
                 if (isHomepage) {
                     syncHomepageGuestbookCaches(createdMessage, user.id);
-                    showGuestbookSubmitSuccessState();
+                } else if (isGuestbookPage) {
+                    const normalizedMessage = {
+                        ...createdMessage,
+                        comments: Array.isArray(createdMessage.comments) ? createdMessage.comments : []
+                    };
+
+                    syncHomepageGuestbookCaches(normalizedMessage, user.id, {
+                        renderHomepageSection: false
+                    });
+                    guestbookCache.messages = mergeGuestbookMessageList(guestbookCache.messages, normalizedMessage, 50);
+                    guestbookCache.lastFetch = Date.now();
+                    setGuestbookEmptyStateVisible(document.getElementById('emptyState'), false);
+
+                    let insertedCard = null;
+                    if (typeof formatMessageForUI === 'function' && typeof window.insertMessageToDOM === 'function') {
+                        insertedCard = window.insertMessageToDOM(formatMessageForUI(normalizedMessage), {
+                            position: 'prepend'
+                        });
+                    }
+
+                    if (!insertedCard) {
+                        invalidateGuestbookCache();
+                        await loadGuestbookMessages(true);
+                    } else {
+                        insertedCard.classList.add('comment-post-highlight');
+                        setTimeout(() => {
+                            insertedCard.classList.remove('comment-post-highlight');
+                        }, 1800);
+                        requestAnimationFrame(() => {
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                        });
+                    }
+                    setTimeout(() => {
+                        window.closeGuestbookModal?.();
+                    }, 320);
                 } else {
                     window.location.href = 'guestbook.html';
                     return;

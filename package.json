@@ -14,6 +14,7 @@
     "optimize-images": "node scripts/optimize-images.js",
     "preview:local": "node scripts/local-preview-server.js",
     "preflight:payment-rollout": "node scripts/payment-rollout-preflight.js",
+    "readiness:payment": "node scripts/payment-readiness-gate.js",
     "rollout:payment": "node scripts/payment-rollout-apply.js",
     "scan:payment-sites": "node scripts/scan-payment-site-values.js",
     "smoke:admin-analytics": "node scripts/admin-local-smoke.js --module analytics",

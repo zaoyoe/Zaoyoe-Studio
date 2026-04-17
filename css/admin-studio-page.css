@@ -10442,6 +10442,472 @@ body {
     line-height: 1.2 !important;
 }
 
+.discount-trigger-config-card:not(.collapsed) .config-card-body {
+    max-height: none !important;
+    overflow: visible !important;
+}
+
+.discount-trigger-config-card .config-inline-note span {
+    font-size: 0.83rem !important;
+    line-height: 1.68 !important;
+}
+
+.discount-trigger-section {
+    position: relative !important;
+    gap: 0 !important;
+    padding: 18px 18px 16px !important;
+    border-radius: 20px !important;
+    border: 1px solid rgba(255, 255, 255, 0.06) !important;
+    background: linear-gradient(180deg, rgba(15, 23, 36, 0.72), rgba(10, 16, 27, 0.5)) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02) !important;
+    overflow: visible !important;
+    transition: border-color 0.22s ease, background 0.22s ease, box-shadow 0.22s ease !important;
+}
+
+.discount-trigger-section + .discount-trigger-section {
+    margin-top: 16px !important;
+    padding-top: 18px !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+
+.discount-trigger-section.is-expanded {
+    border-color: rgba(107, 158, 206, 0.18) !important;
+    background: linear-gradient(180deg, rgba(15, 24, 39, 0.82), rgba(9, 15, 25, 0.58)) !important;
+    box-shadow: 0 12px 28px rgba(2, 8, 23, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+}
+
+.discount-trigger-section > .config-row {
+    align-items: flex-start !important;
+    gap: 16px !important;
+    margin: 0 !important;
+}
+
+.discount-trigger-section .config-info {
+    min-width: 0 !important;
+}
+
+.discount-trigger-section .config-label {
+    font-size: 1rem !important;
+    line-height: 1.3 !important;
+    letter-spacing: 0.01em !important;
+}
+
+.discount-trigger-section .config-desc {
+    margin-top: 6px !important;
+    max-width: 660px !important;
+    font-size: 0.8rem !important;
+    line-height: 1.65 !important;
+    color: rgba(226, 232, 240, 0.58) !important;
+}
+
+.discount-trigger-section__content {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 14px !important;
+    margin-top: 0 !important;
+    max-height: 0 !important;
+    opacity: 0 !important;
+    overflow: hidden !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    transform: translateY(-8px) !important;
+    transition:
+        max-height 0.34s ease,
+        opacity 0.22s ease,
+        transform 0.22s ease,
+        margin-top 0.22s ease,
+        visibility 0s linear 0.34s !important;
+}
+
+.discount-trigger-section.is-expanded .discount-trigger-section__content {
+    margin-top: 16px !important;
+    max-height: 10000px !important;
+    opacity: 1 !important;
+    overflow: visible !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+    transform: translateY(0) !important;
+    transition:
+        max-height 0.4s ease,
+        opacity 0.24s ease,
+        transform 0.24s ease,
+        margin-top 0.24s ease,
+        visibility 0s linear 0s !important;
+}
+
+.discount-trigger-presets {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    align-items: start !important;
+    gap: 14px !important;
+    padding: 18px !important;
+}
+
+.discount-trigger-presets__label {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    justify-self: start !important;
+    min-height: 30px !important;
+    padding: 0 12px !important;
+    border-radius: 999px !important;
+    border: 1px solid rgba(107, 158, 206, 0.18) !important;
+    background: rgba(107, 158, 206, 0.08) !important;
+    font-size: 0.78rem !important;
+    font-weight: 600 !important;
+    color: rgba(214, 229, 245, 0.82) !important;
+    letter-spacing: 0.04em !important;
+}
+
+.discount-trigger-presets__actions {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 14px !important;
+    align-items: stretch !important;
+}
+
+.discount-trigger-presets__actions .discount-trigger-preset-btn:last-child:nth-child(odd) {
+    grid-column: 1 / -1 !important;
+}
+
+.discount-trigger-preset-btn.btn-add-config--compact {
+    display: block !important;
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    background: transparent !important;
+    border: none !important;
+    box-sizing: border-box !important;
+    font: inherit !important;
+    width: 100% !important;
+    min-height: 0 !important;
+    height: auto !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    text-align: left !important;
+    white-space: normal !important;
+}
+
+.discount-trigger-preset-btn__surface {
+    display: grid !important;
+    grid-template-rows: auto auto auto !important;
+    align-items: start !important;
+    justify-items: start !important;
+    box-sizing: border-box !important;
+    gap: 12px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 144px !important;
+    padding: 20px 22px 22px !important;
+    border-radius: 18px !important;
+    border: 1px dashed rgba(123, 188, 255, 0.78) !important;
+    background: linear-gradient(180deg, rgba(31, 43, 60, 0.96), rgba(27, 38, 54, 0.92)) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02) !important;
+    transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+.discount-trigger-preset-btn.btn-add-config--compact:hover .discount-trigger-preset-btn__surface {
+    border-color: rgba(147, 197, 253, 0.9) !important;
+    background: linear-gradient(180deg, rgba(35, 48, 67, 0.98), rgba(29, 41, 58, 0.94)) !important;
+}
+
+.discount-trigger-preset-btn.btn-add-config--compact:active .discount-trigger-preset-btn__surface,
+.discount-trigger-preset-btn.btn-add-config--compact.is-pressed .discount-trigger-preset-btn__surface {
+    transform: translateY(1px) scale(0.992) !important;
+    border-color: rgba(147, 197, 253, 0.98) !important;
+}
+
+.discount-trigger-preset-btn.btn-add-config--compact:focus-visible {
+    outline: none !important;
+}
+
+.discount-trigger-preset-btn.btn-add-config--compact:focus-visible .discount-trigger-preset-btn__surface {
+    box-shadow: 0 0 0 3px rgba(107, 158, 206, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.02) !important;
+}
+
+.discount-trigger-preset-btn__surface > * {
+    display: block !important;
+    width: 100% !important;
+    white-space: normal !important;
+}
+
+.discount-trigger-preset-btn__title {
+    font-size: 0.95rem !important;
+    line-height: 1.28 !important;
+    margin: 0 !important;
+}
+
+.discount-trigger-preset-btn__desc,
+.discount-trigger-preset-btn__recommendation {
+    font-size: 0.81rem !important;
+    line-height: 1.6 !important;
+    margin: 0 !important;
+}
+
+.discount-trigger-preset-btn__desc {
+    color: rgba(226, 232, 240, 0.68) !important;
+    max-width: none !important;
+}
+
+.discount-trigger-preset-btn__recommendation {
+    align-self: start !important;
+    padding-top: 0 !important;
+}
+
+.discount-trigger-toolbar__copy span,
+.discount-trigger-save-row__meta,
+.discount-trigger-rule-empty,
+.discount-trigger-rule-card__title span,
+.discount-trigger-rule-card__hint,
+.discount-trigger-rule-card__warning {
+    font-size: 0.8rem !important;
+    line-height: 1.6 !important;
+}
+
+.discount-trigger-dropdown-shell {
+    position: relative;
+    width: 100%;
+}
+
+.discount-trigger-native-select {
+    display: none !important;
+}
+
+.discount-trigger-dropdown {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+}
+
+.discount-trigger-dropdown .dropdown-trigger {
+    width: 100% !important;
+    min-height: 56px !important;
+    justify-content: space-between !important;
+    gap: 12px !important;
+    padding: 13px 14px !important;
+    border-radius: 15px !important;
+    border: 1px solid rgba(107, 158, 206, 0.16) !important;
+    background: linear-gradient(180deg, rgba(15, 23, 36, 0.96), rgba(11, 18, 30, 0.94)) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+}
+
+.discount-trigger-dropdown .dropdown-trigger:hover {
+    border-color: rgba(107, 158, 206, 0.32) !important;
+    background: linear-gradient(180deg, rgba(18, 28, 44, 0.98), rgba(13, 21, 35, 0.96)) !important;
+}
+
+.discount-trigger-dropdown.open .dropdown-trigger {
+    border-color: rgba(107, 158, 206, 0.44) !important;
+    background: linear-gradient(180deg, rgba(20, 31, 48, 0.98), rgba(14, 23, 37, 0.96)) !important;
+    box-shadow: 0 0 0 3px rgba(107, 158, 206, 0.12) !important;
+}
+
+.discount-trigger-dropdown__trigger-copy {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+}
+
+.discount-trigger-dropdown .dropdown-value {
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: rgba(241, 245, 249, 0.94) !important;
+    font-size: 0.92rem !important;
+    font-weight: 600 !important;
+    line-height: 1.35 !important;
+}
+
+.discount-trigger-dropdown__trigger-meta {
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: rgba(148, 163, 184, 0.78) !important;
+    font-size: 0.75rem !important;
+    line-height: 1.35 !important;
+}
+
+.discount-trigger-rule-field--compact {
+    gap: 6px !important;
+}
+
+.discount-trigger-rule-field--compact > span {
+    min-height: 22px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+}
+
+.discount-trigger-dropdown--compact .dropdown-trigger {
+    min-height: var(--admin-studio-control-height) !important;
+    padding: 0 14px !important;
+    align-items: center !important;
+}
+
+.discount-trigger-dropdown--compact .discount-trigger-dropdown__trigger-copy {
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 0 !important;
+}
+
+.discount-trigger-dropdown--compact .dropdown-value {
+    display: block !important;
+    line-height: 1.2 !important;
+}
+
+.discount-trigger-dropdown--compact .dropdown-option {
+    align-items: center !important;
+}
+
+.discount-trigger-dropdown--compact .discount-trigger-dropdown__option-copy {
+    gap: 0 !important;
+}
+
+.discount-trigger-dropdown--compact .discount-trigger-dropdown__option-title {
+    font-size: 0.84rem !important;
+    line-height: 1.35 !important;
+}
+
+.discount-trigger-dropdown .dropdown-trigger i {
+    color: rgba(159, 195, 255, 0.76) !important;
+    font-size: 0.74rem !important;
+    opacity: 1 !important;
+}
+
+.discount-trigger-dropdown .dropdown-menu {
+    top: calc(100% + 8px) !important;
+    left: 0 !important;
+    right: auto !important;
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: none !important;
+    max-height: 320px !important;
+    overflow: auto !important;
+    padding: 8px !important;
+    border-radius: 16px !important;
+    border: 1px solid rgba(107, 158, 206, 0.18) !important;
+    background: rgba(11, 17, 28, 0.98) !important;
+    box-shadow: 0 18px 40px rgba(2, 8, 23, 0.46) !important;
+    backdrop-filter: blur(20px) !important;
+}
+
+.discount-trigger-dropdown .dropdown-option {
+    display: flex !important;
+    width: 100% !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+    padding: 12px 13px !important;
+    border-radius: 12px !important;
+    border: 1px solid transparent !important;
+    background: rgba(255, 255, 255, 0.02) !important;
+    color: rgba(226, 232, 240, 0.92) !important;
+    text-align: left !important;
+}
+
+.discount-trigger-dropdown .dropdown-option + .dropdown-option {
+    margin-top: 6px;
+}
+
+.discount-trigger-dropdown .dropdown-option:hover {
+    border-color: rgba(107, 158, 206, 0.18) !important;
+    background: rgba(107, 158, 206, 0.08) !important;
+}
+
+.discount-trigger-dropdown .dropdown-option.selected {
+    border-color: rgba(107, 158, 206, 0.3) !important;
+    background: rgba(107, 158, 206, 0.12) !important;
+    color: #dbeafe !important;
+}
+
+.discount-trigger-dropdown .dropdown-option.selected::after {
+    content: '✓';
+    margin-left: auto;
+    padding-left: 12px;
+    color: #93c5fd;
+    font-size: 0.78rem;
+    line-height: 1.4;
+}
+
+.discount-trigger-dropdown__option-copy {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.discount-trigger-dropdown__option-title {
+    color: inherit;
+    font-size: 0.86rem;
+    font-weight: 600;
+    line-height: 1.45;
+}
+
+.discount-trigger-dropdown__option-meta {
+    color: rgba(148, 163, 184, 0.76);
+    font-size: 0.74rem;
+    line-height: 1.45;
+}
+
+.discount-trigger-dropdown .dropdown-option[data-tone="success"] .discount-trigger-dropdown__option-meta {
+    color: rgba(134, 239, 172, 0.82);
+}
+
+.discount-trigger-dropdown .dropdown-option[data-tone="warning"] .discount-trigger-dropdown__option-meta {
+    color: rgba(253, 186, 116, 0.88);
+}
+
+.discount-trigger-dropdown .dropdown-option[data-tone="muted"] .discount-trigger-dropdown__option-meta {
+    color: rgba(148, 163, 184, 0.68);
+}
+
+.discount-trigger-dropdown .dropdown-menu::-webkit-scrollbar {
+    width: 10px;
+}
+
+.discount-trigger-dropdown .dropdown-menu::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 999px;
+}
+
+.discount-trigger-dropdown .dropdown-menu::-webkit-scrollbar-thumb {
+    background: rgba(107, 158, 206, 0.3);
+    border-radius: 999px;
+}
+
+.discount-trigger-dropdown .dropdown-menu::-webkit-scrollbar-thumb:hover {
+    background: rgba(107, 158, 206, 0.42);
+}
+
+@media (max-width: 900px) {
+    .discount-trigger-section {
+        padding: 16px 16px 14px !important;
+    }
+
+    .discount-trigger-section.is-expanded .discount-trigger-section__content {
+        max-height: 12000px !important;
+    }
+
+    .discount-trigger-presets__actions {
+        grid-template-columns: 1fr !important;
+    }
+
+    .discount-trigger-dropdown .dropdown-menu {
+        max-height: 280px !important;
+    }
+
+    .discount-trigger-toolbar {
+        align-items: stretch !important;
+    }
+
+    .discount-trigger-toolbar .btn-add-config {
+        width: 100% !important;
+    }
+}
+
 :is(.modal-close-btn, .edit-modal-close, .batch-modal-close) {
     width: var(--admin-studio-control-height-compact) !important;
     height: var(--admin-studio-control-height-compact) !important;
@@ -12816,7 +13282,7 @@ body {
 
 #discountGenerateModal .admin-discount-form-modal__dialog {
     background: var(--admin-studio-list-surface-bg) !important;
-    width: min(1120px, calc(100vw - 72px)) !important;
+    width: min(1400px, calc(100vw - 56px)) !important;
     max-width: none !important;
     max-height: calc(100vh - 48px);
     border-radius: 18px;
@@ -12873,7 +13339,7 @@ body {
     padding: 28px;
     overflow-y: auto;
     display: grid;
-    grid-template-columns: minmax(0, 1.42fr) minmax(320px, 0.88fr);
+    grid-template-columns: minmax(0, 1.12fr) minmax(520px, 1fr);
     gap: 20px 22px;
     align-items: start;
     background: var(--admin-studio-list-surface-bg);
@@ -12892,7 +13358,38 @@ body {
 
 #discountGenerateModal .admin-discount-form-modal__column--side {
     grid-column: 2 / 3;
-    gap: 16px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    align-content: start;
+    align-items: start;
+}
+
+#discountGenerateModal .admin-discount-form-modal__column--side .admin-discount-form-modal__grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+}
+
+#discountGenerateModal .admin-discount-form-modal__column--side .admin-discount-form-modal__risk-grid {
+    grid-template-columns: 1fr;
+}
+
+#discountGenerateModal .admin-discount-form-modal__panel--stacking {
+    order: 1;
+}
+
+#discountGenerateModal .admin-discount-form-modal__panel--risk-strategy {
+    order: 2;
+}
+
+#discountGenerateModal .admin-discount-form-modal__panel--distribution {
+    order: 3;
+    grid-column: 1 / -1;
+}
+
+#discountGenerateModal .admin-discount-form-modal__panel--coupon-code {
+    order: 4;
+    grid-column: 1 / -1;
 }
 
 #discountGenerateModal .admin-discount-form-modal__panel {
@@ -12903,8 +13400,18 @@ body {
     box-shadow: none;
 }
 
+#discountGenerateModal .admin-discount-form-modal__column--side .admin-discount-form-modal__panel {
+    min-width: 0;
+    padding: 18px;
+    border-radius: 14px;
+}
+
 #discountGenerateModal .admin-discount-form-modal__panel--compact {
     padding-top: 16px;
+}
+
+#discountGenerateModal .admin-discount-form-modal__column--side .admin-discount-form-modal__panel--compact {
+    padding-top: 14px;
 }
 
 #discountGenerateModal .admin-discount-form-modal__section-head {
@@ -12918,6 +13425,11 @@ body {
     margin-bottom: 14px;
 }
 
+#discountGenerateModal .admin-discount-form-modal__column--side .admin-discount-form-modal__section-head {
+    gap: 4px;
+    margin-bottom: 12px;
+}
+
 #discountGenerateModal .admin-discount-form-modal__section-title {
     color: #f8fafc;
     font-size: 0.98rem;
@@ -12926,10 +13438,20 @@ body {
     letter-spacing: 0.01em;
 }
 
+#discountGenerateModal .admin-discount-form-modal__column--side .admin-discount-form-modal__section-title {
+    font-size: 0.92rem;
+    line-height: 1.3;
+}
+
 #discountGenerateModal .admin-discount-form-modal__section-copy {
     color: rgba(148, 163, 184, 0.84);
-    font-size: 0.81rem;
-    line-height: 1.55;
+    font-size: 0.75rem;
+    line-height: 1.48;
+}
+
+#discountGenerateModal .admin-discount-form-modal__column--side .admin-discount-form-modal__section-copy {
+    font-size: 0.68rem;
+    line-height: 1.38;
 }
 
 #discountGenerateModal .admin-discount-form-modal__panel--pricing .admin-discount-form-modal__grid {
@@ -12952,17 +13474,97 @@ body {
     margin-bottom: 0;
 }
 
+#discountGenerateModal .admin-discount-form-modal__risk-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    align-items: stretch;
+}
+
+#discountGenerateModal .admin-discount-form-modal__risk-grid .admin-discount-form-modal__field {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+#discountGenerateModal .admin-discount-form-modal__risk-grid .admin-discount-form-modal__checkbox-row {
+    min-height: 46px;
+    align-items: flex-start;
+}
+
 #discountGenerateModal .admin-discount-form-modal__field {
     min-width: 0;
     margin-bottom: 18px;
+}
+
+#discountGenerateModal .admin-discount-form-modal__column--side .admin-discount-form-modal__field {
+    margin-bottom: 12px;
 }
 
 #discountGenerateModal .admin-discount-form-modal__field:last-child {
     margin-bottom: 0;
 }
 
+#discountGenerateModal .admin-discount-form-modal__datetime-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 112px;
+    gap: 10px;
+    align-items: stretch;
+}
+
+#discountGenerateModal .admin-discount-form-modal__date-shell {
+    position: relative;
+    min-width: 0;
+}
+
+#discountGenerateModal .admin-discount-form-modal__date-input {
+    width: 100%;
+    min-height: 46px;
+    padding: 11px 14px 11px 42px !important;
+    font-size: 0.84rem;
+    line-height: 1.35;
+    font-family: 'SF Mono', Consolas, monospace;
+}
+
+#discountGenerateModal .admin-discount-form-modal__date-icon {
+    left: 14px;
+    font-size: 0.82rem;
+    z-index: 1;
+    pointer-events: none;
+}
+
 #discountGenerateModal .admin-discount-form-modal__custom-select {
     position: relative;
+}
+
+#discountGenerateModal .admin-discount-form-modal__custom-select--time {
+    min-width: 112px;
+}
+
+#discountGenerateModal .admin-discount-form-modal__column--side .admin-discount-form-modal__datetime-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+}
+
+#discountGenerateModal .admin-discount-form-modal__column--side .admin-discount-form-modal__date-input {
+    font-size: 0.8rem;
+    padding-left: 44px !important;
+}
+
+#discountGenerateModal .admin-discount-form-modal__column--side .admin-discount-form-modal__custom-select--time {
+    min-width: 0;
+    width: 100%;
+}
+
+#discountGenerateModal .admin-discount-form-modal__column--side .admin-discount-form-modal__select-trigger--time {
+    width: 100%;
+}
+
+#discountGenerateModal .admin-discount-form-modal__column--side .admin-discount-form-modal__select-dropdown--time {
+    left: 0;
+    right: 0;
+    width: auto;
 }
 
 #discountGenerateModal .admin-discount-form-modal__select-trigger {
@@ -12982,6 +13584,11 @@ body {
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
+#discountGenerateModal .admin-discount-form-modal__select-trigger--time {
+    min-height: 46px;
+    padding: 10px 12px;
+}
+
 #discountGenerateModal .admin-discount-form-modal__select-trigger:hover,
 #discountGenerateModal .admin-discount-form-modal__select-trigger:focus-visible,
 #discountGenerateModal .admin-discount-form-modal__select-trigger.is-open {
@@ -12996,6 +13603,15 @@ body {
     font-size: 0.95rem;
     line-height: 1.4;
     text-align: left;
+}
+
+#discountGenerateModal .admin-discount-form-modal__select-trigger--time .admin-discount-form-modal__select-trigger-label {
+    font-family: 'SF Mono', Consolas, monospace;
+    font-size: 0.85rem;
+}
+
+#discountGenerateModal .admin-discount-form-modal__column--side .admin-discount-form-modal__select-trigger-label {
+    font-size: 0.86rem;
 }
 
 #discountGenerateModal .admin-discount-form-modal__select-trigger-chevron {
@@ -13022,6 +13638,13 @@ body {
     background: var(--card-bg);
     box-shadow: none;
     z-index: 20;
+}
+
+#discountGenerateModal .admin-discount-form-modal__select-dropdown--time {
+    left: auto;
+    width: 112px;
+    max-height: 240px;
+    overflow-y: auto;
 }
 
 #discountGenerateModal .admin-discount-form-modal__select-dropdown.is-open {
@@ -13103,8 +13726,14 @@ body {
 
 #discountGenerateModal .admin-discount-form-modal__note,
 #discountGenerateModal .admin-discount-form-modal__hint {
-    line-height: 1.7;
+    font-size: 0.73rem;
+    line-height: 1.58;
     color: rgba(148, 163, 184, 0.84) !important;
+}
+
+#discountGenerateModal .admin-discount-form-modal__column--side :is(.admin-discount-form-modal__note, .admin-discount-form-modal__hint) {
+    font-size: 0.67rem;
+    line-height: 1.46;
 }
 
 #discountGenerateModal .admin-discount-form-modal__checkbox-row {
@@ -13117,6 +13746,14 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.08);
     background: rgba(255, 255, 255, 0.04);
     color: #e2e8f0;
+}
+
+#discountGenerateModal .admin-discount-form-modal__column--side .admin-discount-form-modal__checkbox-row {
+    gap: 8px;
+    min-height: 42px;
+    padding: 10px 12px;
+    font-size: 0.84rem;
+    line-height: 1.45;
 }
 
 #discountGenerateModal .admin-discount-form-modal__checkbox-row input {
@@ -13134,11 +13771,7 @@ body {
     justify-content: flex-end;
 }
 
-@media (max-width: 1120px) {
-    #discountGenerateModal .admin-discount-form-modal__dialog {
-        width: min(980px, calc(100vw - 48px)) !important;
-    }
-
+@media (max-width: 1480px) {
     #discountGenerateModal .admin-discount-form-modal__form {
         grid-template-columns: 1fr;
         gap: 18px;
@@ -13149,10 +13782,34 @@ body {
     #discountGenerateModal .admin-discount-form-modal__actions {
         grid-column: 1 / -1;
     }
+}
+
+@media (max-width: 1120px) {
+    #discountGenerateModal .admin-discount-form-modal__dialog {
+        width: min(980px, calc(100vw - 48px)) !important;
+    }
+
+    #discountGenerateModal .admin-discount-form-modal__column--side {
+        grid-template-columns: 1fr;
+    }
 
     #discountGenerateModal .admin-discount-form-modal__select-dropdown {
         position: static;
         margin-top: 8px;
+    }
+
+    #discountGenerateModal .admin-discount-form-modal__select-dropdown--time {
+        width: 100%;
+    }
+}
+
+@media (max-width: 720px) {
+    #discountGenerateModal .admin-discount-form-modal__datetime-row {
+        grid-template-columns: 1fr;
+    }
+
+    #discountGenerateModal .admin-discount-form-modal__custom-select--time {
+        min-width: 0;
     }
 }
 
@@ -13178,7 +13835,7 @@ body {
     transform: translateY(-1px);
 }
 
-#discountGenerateModal .admin-discount-form-modal__form :is(input[type="text"], input[type="number"], select),
+#discountGenerateModal .admin-discount-form-modal__form :is(input[type="text"], input[type="number"], select, textarea),
 #discountGenerateModal #discountTypeTrigger {
     background: rgba(255, 255, 255, 0.04) !important;
     border: 1px solid rgba(255, 255, 255, 0.08) !important;
@@ -13186,11 +13843,33 @@ body {
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
-#discountGenerateModal .admin-discount-form-modal__form :is(input[type="text"], input[type="number"], select)::placeholder {
+#discountGenerateModal .admin-discount-form-modal__column--side :is(input[type="text"], input[type="number"], select),
+#discountGenerateModal .admin-discount-form-modal__column--side .admin-discount-form-modal__select-trigger {
+    min-height: 42px;
+    padding: 10px 12px;
+    font-size: 0.88rem;
+}
+
+#discountGenerateModal .admin-discount-form-modal__textarea {
+    width: 100%;
+    min-height: 92px;
+    padding: 12px 14px !important;
+    border-radius: 12px;
+    resize: vertical;
+    line-height: 1.5;
+    font-size: 0.86rem;
+}
+
+#discountGenerateModal .admin-discount-form-modal__column--side .admin-discount-form-modal__textarea {
+    min-height: 96px;
+    font-size: 0.8rem;
+}
+
+#discountGenerateModal .admin-discount-form-modal__form :is(input[type="text"], input[type="number"], select, textarea)::placeholder {
     color: rgba(148, 163, 184, 0.72);
 }
 
-#discountGenerateModal .admin-discount-form-modal__form :is(input[type="text"], input[type="number"], select):focus,
+#discountGenerateModal .admin-discount-form-modal__form :is(input[type="text"], input[type="number"], select, textarea):focus,
 #discountGenerateModal #discountTypeTrigger:focus,
 #discountGenerateModal #discountTypeTrigger:focus-visible {
     border-color: rgba(107, 158, 206, 0.32) !important;
@@ -13200,10 +13879,19 @@ body {
 
 #discountGenerateModal :is(.admin-studio-inline-style-attr-172, .admin-studio-inline-style-attr-177) {
     color: rgba(226, 232, 240, 0.74);
+    font-size: 0.78rem;
+}
+
+#discountGenerateModal .admin-discount-form-modal__column--side :is(.admin-studio-inline-style-attr-172, .admin-studio-inline-style-attr-177) {
+    font-size: 0.68rem;
 }
 
 #discountGenerateModal :is(.admin-studio-inline-style-attr-173, .admin-studio-inline-style-attr-186) {
     color: rgba(148, 163, 184, 0.82);
+}
+
+#discountGenerateModal .admin-discount-form-modal__panel--stacking .admin-discount-form-modal__checkbox-row {
+    align-items: flex-start;
 }
 
 #discountGenerateModal :is(.admin-studio-inline-style-attr-181, .admin-studio-inline-style-attr-190, .admin-studio-inline-style-attr-195) {
@@ -13582,6 +14270,7 @@ body {
     }
 
     #discountGenerateModal .admin-discount-form-modal__grid,
+    #discountGenerateModal .admin-discount-form-modal__risk-grid,
     :is(#discountBatchRestoreHistoryOverlay, #discountBatchRestoreHistoryRunDetailOverlay) .admin-discount-restore-grid,
     :is(#discountBatchRestoreHistoryOverlay, #discountBatchRestoreHistoryRunDetailOverlay) .admin-discount-history-summary-grid {
         grid-template-columns: 1fr;

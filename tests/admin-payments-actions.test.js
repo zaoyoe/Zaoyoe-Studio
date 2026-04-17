@@ -414,6 +414,8 @@ async function withPaymentsActionHandler(state, callback) {
     const mockAdminModule = createMockAdminModule(state);
     const providerAdaptersModule = state.providerAdaptersModule || null;
     const opsAlertsModule = state.opsAlertsModule || null;
+    const paymentsOrdersModule = state.paymentsOrdersModule || null;
+    const discountTriggerLinkageModule = state.discountTriggerLinkageModule || null;
 
     delete require.cache[handlerPath];
     Module._load = function patchedLoad(request, parent, isMain) {
@@ -422,11 +424,22 @@ async function withPaymentsActionHandler(state, callback) {
         }
 
         if (request === '../../../../api/_lib/payments/provider-adapters' && providerAdaptersModule) {
-            return providerAdaptersModule;
+            return {
+                ...originalLoad.call(this, request, parent, isMain),
+                ...providerAdaptersModule
+            };
         }
 
         if (request === '../../../../api/_lib/ops-alerts' && opsAlertsModule) {
             return opsAlertsModule;
+        }
+
+        if (request === '../../../../api/_lib/payments/orders' && paymentsOrdersModule) {
+            return paymentsOrdersModule;
+        }
+
+        if (request === '../../../../api/_lib/discount-trigger-linkage' && discountTriggerLinkageModule) {
+            return discountTriggerLinkageModule;
         }
 
         return originalLoad.call(this, request, parent, isMain);
@@ -570,6 +583,293 @@ test('sensitive review actions require an operator note', async () => {
         assert.equal(payload.success, false);
         assert.match(payload.message, /请填写处理备注/);
         assert.equal(state.metrics.reviewRpcCalls.length, 0);
+        assert.equal(state.anomalyCases.length, 0);
+        assert.equal(state.auditLogs.length, 0);
+    });
+});
+
+test('query_hupijiao_order returns live gateway status without mutating anomaly state', async () => {
+    const state = {
+        orders: [
+            {
+                id: 'order-hj-query-1',
+                user_id: 'user-query-1',
+                provider: 'hupijiao',
+                provider_order_no: 'HJ_QUERY_1',
+                checkout_session_id: 'session-query-1',
+                package_id: 'pkg-1',
+                package_name: '查询套餐',
+                site: 'cn',
+                expected_amount: 20,
+                paid_amount: null,
+                points_amount: 1000,
+                status: 'pending_review',
+                claimed_at: null,
+                paid_at: null,
+                verified_at: null,
+                sign_verified: false,
+                amount_verified: false,
+                created_at: '2026-04-16T09:00:00.000Z',
+                last_error: 'missing_webhook',
+                provider_metadata: {
+                    gateway_open_order_id: 'OPEN_QUERY_1'
+                },
+                raw_payload: {}
+            }
+        ],
+        providerAdaptersModule: {
+            getPaymentProviderAdapter(providerKey) {
+                assert.equal(providerKey, 'hupijiao');
+                return {
+                    async resolveRuntimeContext() {
+                        return { provider: 'hupijiao' };
+                    },
+                    async queryOrder() {
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: 'HJ_QUERY_1',
+                            openOrderId: 'OPEN_QUERY_1',
+                            status: 'paid',
+                            statusRaw: 'OD',
+                            paidAmount: 20,
+                            transactionId: 'TXN_QUERY_1',
+                            message: 'success'
+                        };
+                    }
+                };
+            }
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-hj-query-1',
+                action: 'query_hupijiao_order'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.reload, false);
+        assert.equal(payload.live_order.status, 'paid');
+        assert.equal(payload.live_order.paidAmount, 20);
+        assert.equal(payload.live_order.transactionId, 'TXN_QUERY_1');
+        assert.match(payload.message, /虎皮椒实时状态：已支付/);
+        assert.equal(state.anomalyCases.length, 0);
+        assert.equal(state.orders[0].status, 'pending_review');
+        assert.equal(state.paymentEvents.length, 0);
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'payments.order.query');
+        assert.equal(state.auditLogs[0].details.query_paid_amount, 20);
+    });
+});
+
+test('reconcile_hupijiao_order credits the order, links checkout session, and issues linked discounts', async () => {
+    const state = {
+        orders: [
+            {
+                id: 'order-hj-reconcile-1',
+                user_id: 'user-reconcile-1',
+                provider: 'hupijiao',
+                provider_order_no: 'HJ_RECONCILE_1',
+                checkout_session_id: 'session-reconcile-1',
+                package_id: 'pkg-1',
+                package_name: '补单套餐',
+                site: 'cn',
+                expected_amount: 20,
+                paid_amount: null,
+                points_amount: 1000,
+                status: 'pending_review',
+                claimed_at: null,
+                paid_at: null,
+                verified_at: null,
+                sign_verified: false,
+                amount_verified: false,
+                created_at: '2026-04-16T09:00:00.000Z',
+                last_error: 'webhook_timeout',
+                provider_metadata: {
+                    gateway_open_order_id: 'OPEN_RECONCILE_1',
+                    paid_points: 900,
+                    bonus_points: 100
+                },
+                raw_payload: {
+                    request: {
+                        points_amount: 900,
+                        bonus_points: 100
+                    }
+                }
+            }
+        ],
+        providerAdaptersModule: {
+            getPaymentProviderAdapter(providerKey) {
+                assert.equal(providerKey, 'hupijiao');
+                return {
+                    async resolveRuntimeContext() {
+                        return { provider: 'hupijiao' };
+                    },
+                    async queryOrder() {
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: 'HJ_RECONCILE_1',
+                            openOrderId: 'OPEN_RECONCILE_1',
+                            status: 'paid',
+                            statusRaw: 'OD',
+                            paidAmount: 20,
+                            transactionId: 'TXN_RECONCILE_1',
+                            message: 'success'
+                        };
+                    }
+                };
+            }
+        },
+        paymentsOrdersModule: {
+            async reconcileCheckoutSessionForPaymentOrder() {
+                return {
+                    id: 'session-reconcile-1',
+                    payment_order_id: 'order-hj-reconcile-1'
+                };
+            }
+        },
+        discountTriggerLinkageModule: {
+            async maybeIssueRechargeDiscountAssets() {
+                return {
+                    success: true,
+                    issued_count: 1
+                };
+            },
+            async maybeIssueAffiliateDiscountAssetsForRecharge() {
+                return {
+                    success: true,
+                    issued_count: 1
+                };
+            }
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-hj-reconcile-1',
+                action: 'reconcile_hupijiao_order',
+                note: '网关显示已支付，执行人工补单'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /后台已完成补单并同步入账/);
+        assert.equal(payload.anomaly_case.status, 'handled');
+        assert.equal(payload.anomaly_case.last_action, 'reconcile_hupijiao_order');
+        assert.equal(state.orders[0].status, 'redeemed');
+        assert.equal(state.orders[0].paid_amount, 20);
+        assert.equal(state.orders[0].amount_verified, true);
+        assert.equal(state.orders[0].sign_verified, true);
+        assert.equal(state.orders[0].provider_metadata.transaction_id, 'TXN_RECONCILE_1');
+        assert.equal(state.orders[0].provider_metadata.admin_reconcile_note, '网关显示已支付，执行人工补单');
+        assert.equal(state.orders[0].raw_payload.admin_reconcile.live_order.transactionId, 'TXN_RECONCILE_1');
+        assert.equal(state.metrics.rechargeRpcCalls.length, 1);
+        assert.equal(state.metrics.rechargeRpcCalls[0].target_user_id, 'user-reconcile-1');
+        assert.equal(state.metrics.rechargeRpcCalls[0].p_reference_id, 'hupijiao_HJ_RECONCILE_1');
+        assert.equal(state.paymentEvents.length, 1);
+        assert.equal(state.paymentEvents[0].event_type, 'admin_reconcile');
+        assert.equal(state.paymentEvents[0].processing_result, 'admin_reconcile_processed');
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'payments.order.reconcile');
+        assert.equal(state.auditLogs[0].details.checkout_session_id, 'session-reconcile-1');
+        assert.equal(state.auditLogs[0].details.linked_discount_count, 1);
+        assert.equal(state.auditLogs[0].details.linked_affiliate_discount_count, 1);
+    });
+});
+
+test('reconcile_hupijiao_order fails closed when live amount mismatches the local expectation', async () => {
+    const state = {
+        orders: [
+            {
+                id: 'order-hj-reconcile-2',
+                user_id: 'user-reconcile-2',
+                provider: 'hupijiao',
+                provider_order_no: 'HJ_RECONCILE_2',
+                checkout_session_id: 'session-reconcile-2',
+                package_id: 'pkg-2',
+                package_name: '补单套餐',
+                site: 'cn',
+                expected_amount: 20,
+                paid_amount: null,
+                points_amount: 1000,
+                status: 'pending_review',
+                claimed_at: null,
+                paid_at: null,
+                verified_at: null,
+                sign_verified: false,
+                amount_verified: false,
+                created_at: '2026-04-16T09:00:00.000Z',
+                last_error: 'webhook_timeout',
+                provider_metadata: {
+                    gateway_open_order_id: 'OPEN_RECONCILE_2'
+                },
+                raw_payload: {}
+            }
+        ],
+        providerAdaptersModule: {
+            getPaymentProviderAdapter() {
+                return {
+                    async resolveRuntimeContext() {
+                        return { provider: 'hupijiao' };
+                    },
+                    async queryOrder() {
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: 'HJ_RECONCILE_2',
+                            openOrderId: 'OPEN_RECONCILE_2',
+                            status: 'paid',
+                            statusRaw: 'OD',
+                            paidAmount: 19.5,
+                            transactionId: 'TXN_RECONCILE_2',
+                            message: 'success'
+                        };
+                    }
+                };
+            }
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-hj-reconcile-2',
+                action: 'reconcile_hupijiao_order',
+                note: '尝试补单'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 409);
+        assert.equal(payload.success, false);
+        assert.match(payload.message, /与本地期望金额/);
+        assert.equal(state.orders[0].status, 'pending_review');
+        assert.equal(state.metrics.rechargeRpcCalls.length, 0);
+        assert.equal(state.paymentEvents.length, 0);
         assert.equal(state.anomalyCases.length, 0);
         assert.equal(state.auditLogs.length, 0);
     });

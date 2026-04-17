@@ -377,10 +377,38 @@ function canRefundHupijiaoOrder(item) {
     return !['refunded', 'refund_pending'].includes(refundStatus);
 }
 
+function canQueryHupijiaoOrder(item) {
+    if (!item) return false;
+    if ((item?.type && item.type !== 'order')) return false;
+    if (String(item?.provider || '').trim().toLowerCase() !== 'hupijiao') return false;
+
+    const metadata = normalizeJsonObject(item?.provider_metadata);
+    return Boolean(
+        String(item?.provider_order_no || metadata.provider_order_no || '').trim()
+        || String(metadata.gateway_open_order_id || metadata.open_order_id || '').trim()
+    );
+}
+
+function canReconcileHupijiaoOrder(item) {
+    if (!canQueryHupijiaoOrder(item)) return false;
+    if (!String(item?.user_id || '').trim()) return false;
+
+    const status = String(item?.status || '').trim().toLowerCase();
+    return ['pending', 'pending_review', 'amount_mismatch'].includes(status);
+}
+
 function getOrderAvailableActions(order) {
-    return canRefundHupijiaoOrder(order)
-        ? ['refund_hupijiao']
-        : [];
+    const actions = [];
+    if (canQueryHupijiaoOrder(order)) {
+        actions.push('query_hupijiao_order');
+    }
+    if (canReconcileHupijiaoOrder(order)) {
+        actions.push('reconcile_hupijiao_order');
+    }
+    if (canRefundHupijiaoOrder(order)) {
+        actions.push('refund_hupijiao');
+    }
+    return actions;
 }
 
 function normalizeStringArray(value) {
@@ -530,19 +558,40 @@ function getAnomalyAvailableActions(item, caseStatus) {
     }
 
     if (item?.type === 'order' && String(item?.status || '').trim().toLowerCase() === 'amount_mismatch') {
-        return canRefundHupijiaoOrder(item)
-            ? ['approve_amount_mismatch', 'reject_amount_mismatch', 'refund_hupijiao', 'ignore']
-            : ['approve_amount_mismatch', 'reject_amount_mismatch', 'ignore'];
+        const actions = [];
+        if (canQueryHupijiaoOrder(item)) actions.push('query_hupijiao_order');
+        if (canReconcileHupijiaoOrder(item)) actions.push('reconcile_hupijiao_order');
+        actions.push('approve_amount_mismatch', 'reject_amount_mismatch');
+        if (canRefundHupijiaoOrder(item)) actions.push('refund_hupijiao');
+        actions.push('ignore');
+        return actions;
     }
 
     if (item?.type === 'order' && String(item?.status || '').trim().toLowerCase() === 'pending_review') {
-        return canRefundHupijiaoOrder(item)
-            ? ['approve_review', 'reject_review', 'refund_hupijiao', 'ignore']
-            : ['approve_review', 'reject_review', 'ignore'];
+        const actions = [];
+        if (canQueryHupijiaoOrder(item)) actions.push('query_hupijiao_order');
+        if (canReconcileHupijiaoOrder(item)) actions.push('reconcile_hupijiao_order');
+        actions.push('approve_review', 'reject_review');
+        if (canRefundHupijiaoOrder(item)) actions.push('refund_hupijiao');
+        actions.push('ignore');
+        return actions;
     }
 
     if (canRefundHupijiaoOrder(item)) {
-        return ['refund_hupijiao', 'mark_handled', 'ignore', 'request_retry'];
+        const actions = [];
+        if (canQueryHupijiaoOrder(item)) actions.push('query_hupijiao_order');
+        if (canReconcileHupijiaoOrder(item)) actions.push('reconcile_hupijiao_order');
+        actions.push('refund_hupijiao', 'mark_handled', 'ignore', 'request_retry');
+        return actions;
+    }
+
+    if (canQueryHupijiaoOrder(item)) {
+        const actions = ['query_hupijiao_order'];
+        if (canReconcileHupijiaoOrder(item)) {
+            actions.push('reconcile_hupijiao_order');
+        }
+        actions.push('mark_handled', 'ignore', 'request_retry');
+        return actions;
     }
 
     return ['mark_handled', 'ignore', 'request_retry'];

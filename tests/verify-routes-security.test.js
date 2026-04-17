@@ -159,6 +159,8 @@ function createSupabaseStub(state = {}) {
     const afdianOrders = state.afdianOrders || [];
     const pointsLedger = state.pointsLedger || [];
     const pointsPackages = state.pointsPackages || [];
+    const discountCodes = state.discountCodes || [];
+    const discountUserAssets = state.discountUserAssets || [];
     const rateLimitBuckets = state.rateLimitBuckets || new Map();
     const adminSecretStore = state.adminSecretStore || [];
     const adminRoles = state.adminRoles || {};
@@ -173,6 +175,7 @@ function createSupabaseStub(state = {}) {
     };
     const paymentChannels = state.paymentChannels || null;
     const rechargeOptions = state.rechargeOptions || null;
+    const discountTriggerRules = state.discountTriggerRules || null;
     const afdianProcessPaymentResult = state.afdianProcessPaymentResult || { status: 'pending_review', payment_order_id: null };
     const afdianProcessPaymentError = state.afdianProcessPaymentError || null;
     const rpcCalls = state.rpcCalls || [];
@@ -181,6 +184,8 @@ function createSupabaseStub(state = {}) {
     state.paymentCheckoutSessions = paymentCheckoutSessions;
     state.afdianOrders = afdianOrders;
     state.pointsLedger = pointsLedger;
+    state.discountCodes = discountCodes;
+    state.discountUserAssets = discountUserAssets;
     state.rateLimitBuckets = rateLimitBuckets;
     state.rpcCalls = rpcCalls;
     state.metrics = state.metrics || {};
@@ -333,6 +338,14 @@ function createSupabaseStub(state = {}) {
                         };
                     }
 
+                    if (configKey === 'discount_trigger_rules' && discountTriggerRules) {
+                        const row = { config_key: 'discount_trigger_rules', config_value: discountTriggerRules };
+                        return {
+                            data: query.single || query.maybeSingle ? row : [row],
+                            error: null
+                        };
+                    }
+
                     if (configKeys.length) {
                         const rows = [];
                         if (configKeys.includes('payment_channels') && paymentChannels) {
@@ -340,6 +353,9 @@ function createSupabaseStub(state = {}) {
                         }
                         if (configKeys.includes('recharge_options') && rechargeOptions) {
                             rows.push({ config_key: 'recharge_options', config_value: rechargeOptions });
+                        }
+                        if (configKeys.includes('discount_trigger_rules') && discountTriggerRules) {
+                            rows.push({ config_key: 'discount_trigger_rules', config_value: discountTriggerRules });
                         }
                         return { data: rows, error: null };
                     }
@@ -429,6 +445,46 @@ function createSupabaseStub(state = {}) {
 
                     return {
                         data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'discount_codes' && query.mode === 'select') {
+                    let rows = applyCommonFilters(discountCodes, query);
+                    if (Number.isFinite(query.limit)) {
+                        rows = rows.slice(0, query.limit);
+                    }
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'discount_user_assets' && query.mode === 'select') {
+                    let rows = applyCommonFilters(discountUserAssets, query);
+                    if (Number.isFinite(query.limit)) {
+                        rows = rows.slice(0, query.limit);
+                    }
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'discount_user_assets' && query.mode === 'insert') {
+                    const rows = Array.isArray(query.payload) ? query.payload : [query.payload];
+                    const inserted = rows.map((row, index) => {
+                        const nextRow = {
+                            id: row.id || `discount-asset-${discountUserAssets.length + index + 1}`,
+                            created_at: row.created_at || new Date().toISOString(),
+                            ...row
+                        };
+                        discountUserAssets.push(nextRow);
+                        return nextRow;
+                    });
+
+                    return {
+                        data: query.single || query.maybeSingle ? (inserted[0] || null) : inserted,
                         error: null
                     };
                 }
@@ -1924,6 +1980,131 @@ test('hupijiao webhook verifies the signature and auto-credits the linked order'
         assert.equal(paymentOrder.provider_metadata.transaction_id, 'TXN_HJ_1');
         assert.equal(checkoutSession.status, 'completed');
         assert.equal(checkoutSession.payment_order_id, 'pay-order-hj-1');
+    });
+});
+
+test('hupijiao webhook issues linked discount assets after a successful recharge', async () => {
+    const state = {
+        discountTriggerRules: {
+            recharge: {
+                enabled: true,
+                rules: [
+                    {
+                        discount_id: 'discount-hj-1',
+                        min_paid_amount: 9.9
+                    }
+                ]
+            }
+        },
+        discountCodes: [
+            {
+                id: 'discount-hj-1',
+                code: 'HJ-RECHARGE',
+                applicable_site: 'cn',
+                distribution_mode: 'user_assigned',
+                expires_at: '2026-12-31T23:59:59.000Z',
+                is_active: true,
+                starts_at: '2026-01-01T00:00:00.000Z',
+                lifecycle_status: 'active',
+                status_reason: null,
+                max_uses: null,
+                used_count: 0
+            }
+        ],
+        discountUserAssets: [],
+        paymentEvents: [],
+        paymentOrders: [
+            {
+                id: 'pay-order-hj-discount-1',
+                provider: 'hupijiao',
+                provider_order_no: 'HJ_ORDER_DISCOUNT_1',
+                checkout_session_id: 'checkout-hj-discount-1',
+                user_id: 'user-discount-1',
+                site: 'cn',
+                package_id: 'pkg-1',
+                package_name: '虎皮椒套餐',
+                expected_amount: 9.9,
+                paid_amount: null,
+                points_amount: 110,
+                status: 'pending',
+                sign_verified: false,
+                amount_verified: false,
+                provider_metadata: {},
+                raw_payload: {
+                    request: {
+                        points_amount: 100,
+                        bonus_points: 10
+                    }
+                },
+                created_at: '2026-03-23T00:00:00.000Z'
+            }
+        ],
+        paymentCheckoutSessions: [
+            {
+                id: 'checkout-hj-discount-1',
+                session_key: 'PCS_HUPIJIAO_TEST_DISCOUNT_1',
+                provider: 'hupijiao',
+                user_id: 'user-discount-1',
+                site: 'cn',
+                package_id: 'pkg-1',
+                package_name: '虎皮椒套餐',
+                requested_points: 100,
+                bonus_points: 10,
+                granted_points: 110,
+                expected_amount: 9.9,
+                status: 'redirect_ready',
+                payment_order_id: null,
+                provider_metadata: {
+                    provider_order_no: 'HJ_ORDER_DISCOUNT_1'
+                },
+                created_at: '2026-03-23T00:00:00.000Z'
+            }
+        ]
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const payload = {
+            trade_order_id: 'HJ_ORDER_DISCOUNT_1',
+            total_fee: '9.90',
+            transaction_id: 'TXN_HJ_DISCOUNT_1',
+            open_order_id: 'OPEN_HJ_DISCOUNT_1',
+            order_title: '虎皮椒套餐',
+            status: 'OD',
+            appid: 'appid-123',
+            time: '1742711999',
+            nonce_str: 'nonce_hj_discount_1',
+            attach: JSON.stringify({
+                provider: 'hupijiao',
+                user_id: 'user-discount-1',
+                site: 'cn',
+                checkout_session_id: 'checkout-hj-discount-1',
+                checkout_session_key: 'PCS_HUPIJIAO_TEST_DISCOUNT_1',
+                package_id: 'pkg-1',
+                package_name: '虎皮椒套餐',
+                paid_points: 100,
+                bonus_points: 10,
+                granted_points: 110,
+                expected_amount: 9.9,
+                charge_type: 'package'
+            })
+        };
+        payload.hash = buildHupijiaoHash(payload, 'secret-123');
+
+        const response = await withEnv({
+            HUPIJIAO_SECRET_KEY: 'secret-123'
+        }, async () => dispatchRoute(app, {
+            method: 'POST',
+            url: '/api/payments/hupijiao/webhook',
+            body: payload
+        }));
+
+        assert.equal(response.status, 200);
+        assert.equal(response.text, 'success');
+        assert.equal(state.discountUserAssets.length, 1);
+        assert.equal(state.discountUserAssets[0].discount_id, 'discount-hj-1');
+        assert.equal(state.discountUserAssets[0].user_id, 'user-discount-1');
+        assert.equal(state.discountUserAssets[0].source_type, 'recharge_linkage');
+        assert.equal(state.discountUserAssets[0].source_channel, 'wallet_recharge');
     });
 });
 
