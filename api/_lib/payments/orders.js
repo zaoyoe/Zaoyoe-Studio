@@ -6,7 +6,8 @@ const {
 } = require('../site');
 const {
     getPaymentProviderAdapter,
-    normalizePointValue
+    normalizePointValue,
+    amountsMatch
 } = require('./provider-adapters');
 const {
     loadStoredPaymentConfigs
