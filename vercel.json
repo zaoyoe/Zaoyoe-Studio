@@ -10,6 +10,11 @@
             "codex/*": false
         }
     },
+    "functions": {
+        "api/admin.js": {
+            "maxDuration": 60
+        }
+    },
     "redirects": [
         {
             "source": "/gongyi",

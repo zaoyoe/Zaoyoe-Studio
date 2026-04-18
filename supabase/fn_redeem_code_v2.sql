@@ -17,7 +17,7 @@ DECLARE
     v_code_record RECORD;
     v_batch_expires_at TIMESTAMPTZ;
     v_package RECORD;
-    v_points_amount INT;
+    v_points_amount NUMERIC(12,2);
     v_package_name TEXT;
     v_effective_expires_at TIMESTAMPTZ;
     v_site VARCHAR := COALESCE(NULLIF(BTRIM(p_site), ''), 'cn');
@@ -76,7 +76,7 @@ BEGIN
             RETURN json_build_object('success', false, 'message', '关联的套餐不存在');
         END IF;
     ELSE
-        v_points_amount := v_package.points_amount + COALESCE(v_package.bonus_points, 0);
+        v_points_amount := ROUND(COALESCE(v_package.points_amount, 0) + COALESCE(v_package.bonus_points, 0), 2);
         v_package_name := v_package.name;
     END IF;
 
@@ -93,7 +93,7 @@ BEGIN
     VALUES (v_user_id, v_site, v_points_amount, 0)
     ON CONFLICT (user_id, site)
     DO UPDATE SET
-        paid_balance = public.points_balance.paid_balance + EXCLUDED.paid_balance,
+        paid_balance = ROUND(public.points_balance.paid_balance + EXCLUDED.paid_balance, 2),
         updated_at = NOW(),
         version = public.points_balance.version + 1;
 

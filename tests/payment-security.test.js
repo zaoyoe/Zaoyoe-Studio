@@ -42,7 +42,7 @@ test('custom recharge quote no longer falls back to service role key', () => {
         userId: 'user-1',
         site: 'cn',
         providerKey: 'afdian',
-        pointsAmount: 100,
+        pointsAmount: 2,
         rechargeOptions: {
             custom_amount_points_per_cny: 50
         },
@@ -57,7 +57,7 @@ test('custom recharge quote secret must not reuse service role key', () => {
         userId: 'user-1',
         site: 'cn',
         providerKey: 'afdian',
-        pointsAmount: 100,
+        pointsAmount: 2,
         rechargeOptions: {
             custom_amount_points_per_cny: 50
         },
@@ -78,7 +78,7 @@ test('custom recharge quote signs and verifies with an independent secret', () =
         userId: 'user-1',
         site: 'cn',
         providerKey: 'afdian',
-        pointsAmount: 100,
+        pointsAmount: 2,
         rechargeOptions: {
             custom_amount_points_per_cny: 50
         },
@@ -94,8 +94,70 @@ test('custom recharge quote signs and verifies with an independent secret', () =
 
     assert.ok(verified);
     assert.equal(verified.quoteId, quote.quoteId);
-    assert.equal(verified.pointsAmount, 100);
+    assert.equal(verified.pointsAmount, 2);
     assert.equal(verified.paidAmount, 2);
+});
+
+test('custom recharge quote ignores legacy non-1:1 exchange ratios', () => {
+    const env = {
+        SUPABASE_SERVICE_ROLE_KEY: 'service-role-secret',
+        PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET: 'quote-secret'
+    };
+
+    const quote = issueCustomRechargeQuote({
+        userId: 'user-1',
+        site: 'cn',
+        providerKey: 'zpay',
+        pointsAmount: 0.5,
+        rechargeOptions: {
+            custom_amount_min_points: 1,
+            custom_amount_step: 1,
+            custom_amount_points_per_cny: 50
+        },
+        env
+    });
+
+    const verified = verifyCustomRechargeQuoteToken(quote.token, {
+        env,
+        userId: 'user-1',
+        site: 'cn',
+        providerKey: 'zpay'
+    });
+
+    assert.ok(verified);
+    assert.equal(verified.pointsAmount, 0.5);
+    assert.equal(verified.paidAmount, 0.5);
+});
+
+test('custom recharge quote preserves 1:1 decimal amounts at 0.01 precision', () => {
+    const env = {
+        SUPABASE_SERVICE_ROLE_KEY: 'service-role-secret',
+        PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET: 'quote-secret'
+    };
+
+    const quote = issueCustomRechargeQuote({
+        userId: 'user-1',
+        site: 'cn',
+        providerKey: 'zpay',
+        pointsAmount: 0.25,
+        rechargeOptions: {
+            custom_amount_min_points: 0.01,
+            custom_amount_step: 0.01,
+            custom_amount_points_per_cny: 1
+        },
+        env
+    });
+
+    const verified = verifyCustomRechargeQuoteToken(quote.token, {
+        env,
+        userId: 'user-1',
+        site: 'cn',
+        providerKey: 'zpay'
+    });
+
+    assert.ok(verified);
+    assert.equal(verified.pointsAmount, 0.25);
+    assert.equal(verified.paidAmount, 0.25);
 });
 
 test('misconfigured quote secret fails closed during verification', () => {
@@ -108,7 +170,7 @@ test('misconfigured quote secret fails closed during verification', () => {
         userId: 'user-1',
         site: 'cn',
         providerKey: 'afdian',
-        pointsAmount: 100,
+        pointsAmount: 2,
         rechargeOptions: {
             custom_amount_points_per_cny: 50
         },

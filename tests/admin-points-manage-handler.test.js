@@ -397,6 +397,30 @@ test('points manage handler uses request-scoped client for generate RPC when adm
     });
 });
 
+test('points manage handler passes decimal custom point amounts through to the custom code rpc', async () => {
+    await withPointsManageHandler({ tables: {} }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'generate_codes',
+                site: 'cn',
+                batch_name: '小额激活',
+                package_id: 'custom',
+                custom_points_amount: '0.25',
+                count: 1,
+                channel: 'manual'
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.rpcCalls[0]?.fn, 'fn_generate_custom_codes');
+        assert.equal(state.rpcCalls[0]?.args?.p_points_amount, 0.25);
+    });
+});
+
 test('points manage handler falls back to service generate flow when admin RPC is rejected', async () => {
     await withPointsManageHandler({
         failGenerateOnAdminClient: true,

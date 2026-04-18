@@ -81,6 +81,24 @@ function normalizePositiveInteger(value, fieldName, { max = 1000 } = {}) {
     return parsed;
 }
 
+function normalizePositivePointAmount(value, fieldName, { min = 0.01, max = 100000 } = {}) {
+    const parsed = Number(String(value ?? '').trim());
+    const normalized = Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : NaN;
+    if (!Number.isFinite(normalized) || normalized < min) {
+        const error = new Error(`${fieldName} must be a positive number`);
+        error.statusCode = 400;
+        throw error;
+    }
+
+    if (normalized > max) {
+        const error = new Error(`${fieldName} must be <= ${max}`);
+        error.statusCode = 400;
+        throw error;
+    }
+
+    return normalized;
+}
+
 function normalizeOptionalTimestamp(value, fieldName) {
     if (value === undefined) return undefined;
     if (value === null || value === '') return null;
@@ -414,13 +432,13 @@ async function generateCodesViaService({
     const batchId = crypto.randomUUID();
     const normalizedPackageId = normalizeString(packageId);
     const hasCustomPoints = Number.isFinite(Number(customPointsAmount)) && Number(customPointsAmount) > 0;
-    let resolvedPointsAmount = Math.max(0, Math.round(Number(customPointsAmount) || 0));
+    let resolvedPointsAmount = Math.max(0, Math.round((Number(customPointsAmount) || 0) * 100) / 100);
 
     if (!hasCustomPoints) {
         const packageRow = await loadPackageForGeneration(supabase, normalizedPackageId);
         resolvedPointsAmount = Math.max(
             0,
-            Math.round(Number(packageRow?.points_amount) || 0) + Math.round(Number(packageRow?.bonus_points) || 0)
+            Math.round(((Number(packageRow?.points_amount) || 0) + (Number(packageRow?.bonus_points) || 0)) * 100) / 100
         );
 
         if (resolvedPointsAmount <= 0) {
@@ -532,7 +550,7 @@ async function runGenerateCodesAction({ supabase, requestSupabase, token, user, 
     };
 
     if (hasCustomPoints) {
-        customPointsAmount = normalizePositiveInteger(customPointsAmountRaw, 'custom_points_amount', {
+        customPointsAmount = normalizePositivePointAmount(customPointsAmountRaw, 'custom_points_amount', {
             max: 100000
         });
         rpcName = 'fn_generate_custom_codes';

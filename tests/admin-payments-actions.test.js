@@ -672,6 +672,91 @@ test('query_hupijiao_order returns live gateway status without mutating anomaly 
     });
 });
 
+test('query_zpay_order returns live gateway status without mutating anomaly state', async () => {
+    const state = {
+        orders: [
+            {
+                id: 'order-zp-query-1',
+                user_id: 'user-zp-query-1',
+                provider: 'zpay',
+                provider_order_no: 'ZPAY_QUERY_1',
+                checkout_session_id: 'session-zp-query-1',
+                package_id: 'pkg-zp-1',
+                package_name: '易支付查询套餐',
+                site: 'cn',
+                expected_amount: 20,
+                paid_amount: null,
+                points_amount: 1000,
+                status: 'pending_review',
+                claimed_at: null,
+                paid_at: null,
+                verified_at: null,
+                sign_verified: false,
+                amount_verified: false,
+                created_at: '2026-04-16T10:00:00.000Z',
+                last_error: 'missing_webhook',
+                provider_metadata: {
+                    trade_no: 'ZPAY_TRADE_QUERY_1'
+                },
+                raw_payload: {}
+            }
+        ],
+        providerAdaptersModule: {
+            getPaymentProviderAdapter(providerKey) {
+                assert.equal(providerKey, 'zpay');
+                return {
+                    async resolveRuntimeContext() {
+                        return { provider: 'zpay' };
+                    },
+                    async queryOrder() {
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: 'ZPAY_QUERY_1',
+                            tradeNo: 'ZPAY_TRADE_QUERY_1',
+                            status: 'paid',
+                            statusRaw: 'TRADE_SUCCESS',
+                            paidAmount: 20,
+                            transactionId: 'ZPAY_TRADE_QUERY_1',
+                            message: 'success'
+                        };
+                    }
+                };
+            }
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-zp-query-1',
+                action: 'query_zpay_order'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.reload, false);
+        assert.equal(payload.live_order.status, 'paid');
+        assert.equal(payload.live_order.paidAmount, 20);
+        assert.equal(payload.live_order.transactionId, 'ZPAY_TRADE_QUERY_1');
+        assert.match(payload.message, /易支付实时状态：已支付/);
+        assert.equal(state.anomalyCases.length, 0);
+        assert.equal(state.orders[0].status, 'pending_review');
+        assert.equal(state.paymentEvents.length, 0);
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'payments.order.query');
+        assert.equal(state.auditLogs[0].details.query_provider, 'zpay');
+        assert.equal(state.auditLogs[0].details.query_paid_amount, 20);
+    });
+});
+
 test('reconcile_hupijiao_order credits the order, links checkout session, and issues linked discounts', async () => {
     const state = {
         orders: [
@@ -793,6 +878,132 @@ test('reconcile_hupijiao_order credits the order, links checkout session, and is
         assert.equal(state.auditLogs[0].details.checkout_session_id, 'session-reconcile-1');
         assert.equal(state.auditLogs[0].details.linked_discount_count, 1);
         assert.equal(state.auditLogs[0].details.linked_affiliate_discount_count, 1);
+    });
+});
+
+test('reconcile_zpay_order credits the order, links checkout session, and records zpay metadata', async () => {
+    const state = {
+        orders: [
+            {
+                id: 'order-zp-reconcile-1',
+                user_id: 'user-zp-reconcile-1',
+                provider: 'zpay',
+                provider_order_no: 'ZPAY_RECONCILE_1',
+                checkout_session_id: 'session-zp-reconcile-1',
+                package_id: 'pkg-zp-2',
+                package_name: '易支付补单套餐',
+                site: 'cn',
+                expected_amount: 20,
+                paid_amount: null,
+                points_amount: 1000,
+                status: 'pending_review',
+                claimed_at: null,
+                paid_at: null,
+                verified_at: null,
+                sign_verified: false,
+                amount_verified: false,
+                created_at: '2026-04-16T10:20:00.000Z',
+                last_error: 'webhook_timeout',
+                provider_metadata: {
+                    trade_no: 'ZPAY_TRADE_RECONCILE_1',
+                    paid_points: 950,
+                    bonus_points: 50
+                },
+                raw_payload: {
+                    request: {
+                        points_amount: 950,
+                        bonus_points: 50
+                    }
+                }
+            }
+        ],
+        providerAdaptersModule: {
+            getPaymentProviderAdapter(providerKey) {
+                assert.equal(providerKey, 'zpay');
+                return {
+                    async resolveRuntimeContext() {
+                        return { provider: 'zpay' };
+                    },
+                    async queryOrder() {
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: 'ZPAY_RECONCILE_1',
+                            tradeNo: 'ZPAY_TRADE_RECONCILE_1',
+                            status: 'paid',
+                            statusRaw: 'TRADE_SUCCESS',
+                            paidAmount: 20,
+                            transactionId: 'ZPAY_TRADE_RECONCILE_1',
+                            message: 'success'
+                        };
+                    }
+                };
+            }
+        },
+        paymentsOrdersModule: {
+            async reconcileCheckoutSessionForPaymentOrder() {
+                return {
+                    id: 'session-zp-reconcile-1',
+                    payment_order_id: 'order-zp-reconcile-1'
+                };
+            }
+        },
+        discountTriggerLinkageModule: {
+            async maybeIssueRechargeDiscountAssets() {
+                return {
+                    success: true,
+                    issued_count: 1
+                };
+            },
+            async maybeIssueAffiliateDiscountAssetsForRecharge() {
+                return {
+                    success: true,
+                    issued_count: 1
+                };
+            }
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-zp-reconcile-1',
+                action: 'reconcile_zpay_order',
+                note: '易支付查单确认已支付，执行人工补单'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /后台已完成补单并同步入账/);
+        assert.equal(payload.anomaly_case.status, 'handled');
+        assert.equal(payload.anomaly_case.last_action, 'reconcile_zpay_order');
+        assert.equal(state.orders[0].status, 'redeemed');
+        assert.equal(state.orders[0].paid_amount, 20);
+        assert.equal(state.orders[0].amount_verified, true);
+        assert.equal(state.orders[0].sign_verified, true);
+        assert.equal(state.orders[0].provider_metadata.trade_no, 'ZPAY_TRADE_RECONCILE_1');
+        assert.equal(state.orders[0].provider_metadata.transaction_id, 'ZPAY_TRADE_RECONCILE_1');
+        assert.equal(state.orders[0].provider_metadata.admin_reconcile_note, '易支付查单确认已支付，执行人工补单');
+        assert.equal(state.orders[0].raw_payload.admin_reconcile.live_order.transactionId, 'ZPAY_TRADE_RECONCILE_1');
+        assert.equal(state.metrics.rechargeRpcCalls.length, 1);
+        assert.equal(state.metrics.rechargeRpcCalls[0].target_user_id, 'user-zp-reconcile-1');
+        assert.equal(state.metrics.rechargeRpcCalls[0].p_reference_id, 'zpay_ZPAY_RECONCILE_1');
+        assert.equal(state.paymentEvents.length, 1);
+        assert.equal(state.paymentEvents[0].provider, 'zpay');
+        assert.equal(state.paymentEvents[0].event_type, 'admin_reconcile');
+        assert.equal(state.paymentEvents[0].processing_result, 'admin_reconcile_processed');
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'payments.order.reconcile');
+        assert.equal(state.auditLogs[0].details.reconcile_provider, 'zpay');
+        assert.equal(state.auditLogs[0].details.gateway_transaction_id, 'ZPAY_TRADE_RECONCILE_1');
+        assert.equal(state.auditLogs[0].details.checkout_session_id, 'session-zp-reconcile-1');
     });
 });
 
@@ -968,6 +1179,114 @@ test('refund_hupijiao refunds an uncredited order, syncs local state, and record
         assert.equal(state.paymentEvents[0].processing_result, 'admin_refund_processed');
         assert.equal(state.auditLogs.length, 1);
         assert.equal(state.auditLogs[0].actionType, 'payments.anomaly.action');
+        assert.equal(state.auditLogs[0].details.refund_status, 'refunded');
+    });
+});
+
+test('refund_zpay refunds an uncredited order, syncs local state, and records audit data', async () => {
+    let refundArgs = null;
+    const state = {
+        orders: [
+            {
+                id: 'order-zp-refund-1',
+                user_id: 'user-zp-refund-1',
+                provider: 'zpay',
+                provider_order_no: 'ZPAY_ORDER_1',
+                checkout_session_id: 'session-zp-refund-1',
+                site: 'cn',
+                expected_amount: 20,
+                paid_amount: 20,
+                points_amount: 1000,
+                status: 'pending_review',
+                claimed_at: null,
+                paid_at: '2026-03-24T08:00:00.000Z',
+                verified_at: null,
+                last_error: 'amount_mismatch_expected_20',
+                provider_metadata: {
+                    trade_no: 'ZPAY_TRADE_1'
+                },
+                raw_payload: {}
+            }
+        ],
+        providerAdaptersModule: {
+            getPaymentProviderAdapter(providerKey) {
+                assert.equal(providerKey, 'zpay');
+                return {
+                    async resolveRuntimeContext() {
+                        return {
+                            provider: 'zpay'
+                        };
+                    },
+                    async queryOrder() {
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: 'ZPAY_ORDER_1',
+                            tradeNo: 'ZPAY_TRADE_1',
+                            status: 'paid',
+                            statusRaw: 'TRADE_SUCCESS',
+                            message: 'success',
+                            transactionId: 'ZPAY_TRADE_1'
+                        };
+                    },
+                    async refundOrder(args) {
+                        refundArgs = args;
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: 'ZPAY_ORDER_1',
+                            tradeNo: 'ZPAY_TRADE_1',
+                            status: 'refunded',
+                            statusRaw: 'REFUNDED',
+                            message: 'success',
+                            responsePayload: {
+                                code: 1,
+                                msg: '退款成功'
+                            }
+                        };
+                    }
+                };
+            }
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-zp-refund-1',
+                action: 'refund_zpay',
+                note: '易支付原路退款'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.anomaly_case.status, 'handled');
+        assert.equal(payload.anomaly_case.last_action, 'refund_zpay');
+        assert.equal(refundArgs.providerOrderNo, 'ZPAY_ORDER_1');
+        assert.equal(refundArgs.tradeNo, 'ZPAY_TRADE_1');
+        assert.equal(refundArgs.money, 20);
+        assert.equal(state.orders[0].status, 'refunded');
+        assert.equal(state.orders[0].provider_metadata.refund_status, 'refunded');
+        assert.equal(state.orders[0].provider_metadata.payment_status, 'refunded');
+        assert.equal(state.orders[0].provider_metadata.refund_source, 'admin_action');
+        assert.equal(state.orders[0].provider_metadata.trade_no, 'ZPAY_TRADE_1');
+        assert.equal(state.orders[0].provider_metadata.transaction_id, 'ZPAY_TRADE_1');
+        assert.equal(state.orders[0].raw_payload.admin_refund.note, '易支付原路退款');
+        assert.equal(state.paymentEvents.length, 1);
+        assert.equal(state.paymentEvents[0].provider, 'zpay');
+        assert.equal(state.paymentEvents[0].event_type, 'admin_refund');
+        assert.equal(state.paymentEvents[0].processing_result, 'admin_refund_processed');
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'payments.anomaly.action');
+        assert.equal(state.auditLogs[0].details.refund_provider, 'zpay');
+        assert.equal(state.auditLogs[0].details.gateway_transaction_id, 'ZPAY_TRADE_1');
         assert.equal(state.auditLogs[0].details.refund_status, 'refunded');
     });
 });

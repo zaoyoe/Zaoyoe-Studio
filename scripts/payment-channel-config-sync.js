@@ -3,13 +3,12 @@ const path = require('path');
 const dotenv = require('dotenv');
 const { createClient } = require('@supabase/supabase-js');
 const {
+    buildPaymentProviderActivationCheck,
+    buildPaymentSecretStatus,
     loadStoredPaymentConfigs,
     normalizePaymentChannelsConfig,
     normalizeRechargeOptionsConfig
 } = require('../api/_lib/payments/providers');
-const {
-    normalizeHupijiaoConfig
-} = require('../api/_lib/payments/hupijiao');
 const {
     getMockPaymentRuntimeState
 } = require('../api/_lib/payments/orders');
@@ -82,22 +81,24 @@ function buildSupabaseClient(envValues = {}) {
     );
 }
 
-function resolveTargetProvider(paymentChannels = {}, explicitProvider = '') {
-    if (explicitProvider === 'mock' || explicitProvider === 'afdian' || explicitProvider === 'hupijiao') {
+function resolveTargetProvider(paymentChannels = {}, explicitProvider = '', secretStatus = {}, env = process.env) {
+    if (explicitProvider === 'mock' || explicitProvider === 'afdian' || explicitProvider === 'hupijiao' || explicitProvider === 'zpay') {
         return explicitProvider;
     }
 
     const providers = paymentChannels?.providers || {};
-    const afdianCheckoutUrl = String(providers.afdian?.checkout_url || '').trim();
-    if (afdianCheckoutUrl) {
-        return 'afdian';
+    const zpayReadiness = buildPaymentProviderActivationCheck('zpay', paymentChannels, secretStatus, env);
+    if (providers.zpay?.enabled === true && zpayReadiness.ready) {
+        return 'zpay';
     }
 
-    const hupijiaoReadiness = normalizeHupijiaoConfig({
-        channelConfig: providers.hupijiao || {},
-        secretValues: {}
-    });
-    if (providers.hupijiao && hupijiaoReadiness.createReady) {
+    const hupijiaoReadiness = buildPaymentProviderActivationCheck('hupijiao', paymentChannels, secretStatus, env);
+    if (providers.hupijiao?.enabled === true && hupijiaoReadiness.ready) {
+        return 'hupijiao';
+    }
+
+    const afdianReadiness = buildPaymentProviderActivationCheck('afdian', paymentChannels, secretStatus, env);
+    if (providers.afdian?.enabled === true && afdianReadiness.ready) {
         return 'afdian';
     }
 
@@ -107,7 +108,14 @@ function resolveTargetProvider(paymentChannels = {}, explicitProvider = '') {
 function buildSyncPlan(paymentChannels, rechargeOptions, options = {}) {
     const normalizedPaymentChannels = normalizePaymentChannelsConfig(paymentChannels, rechargeOptions);
     const normalizedRechargeOptions = normalizeRechargeOptionsConfig(rechargeOptions);
-    const targetProvider = resolveTargetProvider(normalizedPaymentChannels, options.provider);
+    const runtimeEnv = options.env || process.env;
+    const secretStatus = options.secretStatus || {};
+    const targetProvider = resolveTargetProvider(
+        normalizedPaymentChannels,
+        options.provider,
+        secretStatus,
+        runtimeEnv
+    );
     const nextPaymentChannels = JSON.parse(JSON.stringify(normalizedPaymentChannels));
     const nextRechargeOptions = {
         ...normalizedRechargeOptions,
@@ -124,10 +132,17 @@ function buildSyncPlan(paymentChannels, rechargeOptions, options = {}) {
 
     const changed = JSON.stringify(nextPaymentChannels) !== JSON.stringify(normalizedPaymentChannels)
         || JSON.stringify(nextRechargeOptions) !== JSON.stringify(normalizedRechargeOptions);
+    const targetProviderValidation = buildPaymentProviderActivationCheck(
+        targetProvider,
+        nextPaymentChannels,
+        secretStatus,
+        runtimeEnv
+    );
 
     return {
         changed,
         targetProvider,
+        targetProviderValidation,
         current: {
             paymentChannels: normalizedPaymentChannels,
             rechargeOptions: normalizedRechargeOptions
@@ -155,19 +170,30 @@ function getMockRuntimeForEnv(envValues = {}) {
 }
 
 function assertExecuteAllowed(plan, envValues = {}, options = {}) {
-    if (!options.execute || plan?.targetProvider !== 'mock') {
+    if (!options.execute) {
         return null;
     }
 
-    const runtime = getMockRuntimeForEnv(envValues);
-    if (runtime.allowed === true) {
-        return runtime;
+    if (plan?.targetProvider === 'mock') {
+        const runtime = getMockRuntimeForEnv(envValues);
+        if (runtime.allowed === true) {
+            return runtime;
+        }
+
+        throw new Error(
+            `Refusing to switch stored payment config to mock because runtime mock payments are still blocked (${runtime.reason || 'unknown'}). `
+            + '请先设置 ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL 并完成 redeploy。'
+        );
     }
 
-    throw new Error(
-        `Refusing to switch stored payment config to mock because runtime mock payments are still blocked (${runtime.reason || 'unknown'}). `
-        + '请先设置 ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL 并完成 redeploy。'
-    );
+    if (plan?.targetProviderValidation && plan.targetProviderValidation.ready !== true) {
+        throw new Error(
+            `Refusing to switch stored payment config to ${plan.targetProvider} because `
+            + `${plan.targetProviderValidation.issues.join('；') || 'the provider is not ready'}.`
+        );
+    }
+
+    return null;
 }
 
 async function upsertSystemConfig(supabase, existingRow = {}, configValue) {
@@ -198,7 +224,14 @@ function formatHumanReport(result = {}) {
     lines.push(`mode: ${result.mode || 'preview'}`);
     lines.push(`project_host: ${result.project_host || ''}`);
     lines.push(`target_provider: ${result.plan?.targetProvider || ''}`);
+    lines.push(`target_ready: ${result.plan?.targetProviderValidation?.ready === true ? 'yes' : 'no'}`);
     lines.push(`changed: ${result.plan?.changed ? 'yes' : 'no'}`);
+    if (Array.isArray(result.plan?.targetProviderValidation?.issues) && result.plan.targetProviderValidation.issues.length) {
+        lines.push(`target_issues: ${result.plan.targetProviderValidation.issues.join('；')}`);
+    }
+    if (Array.isArray(result.plan?.targetProviderValidation?.warnings) && result.plan.targetProviderValidation.warnings.length) {
+        lines.push(`target_warnings: ${result.plan.targetProviderValidation.warnings.join('；')}`);
+    }
     lines.push('');
     lines.push('current');
     lines.push(`  active_provider: ${result.plan?.current?.paymentChannels?.active_provider || ''}`);
@@ -221,6 +254,7 @@ function formatHumanReport(result = {}) {
 async function runSync(options = {}) {
     const envValues = loadEnvFile(options.envFile);
     const supabase = buildSupabaseClient(envValues);
+    const runtimeEnv = getRuntimeEnv(envValues);
     const { data, error } = await supabase
         .from('system_config')
         .select('config_key, config_value, description, updated_by')
@@ -233,7 +267,12 @@ async function runSync(options = {}) {
     const rows = Array.isArray(data) ? data : [];
     const rowMap = Object.fromEntries(rows.map((row) => [row.config_key, row]));
     const loaded = await loadStoredPaymentConfigs(supabase);
-    const plan = buildSyncPlan(loaded.rawPaymentChannels, loaded.rawRechargeOptions, options);
+    const secretStatus = await buildPaymentSecretStatus(supabase, runtimeEnv);
+    const plan = buildSyncPlan(loaded.rawPaymentChannels, loaded.rawRechargeOptions, {
+        ...options,
+        env: runtimeEnv,
+        secretStatus
+    });
     const runtime = plan.targetProvider === 'mock' ? getMockRuntimeForEnv(envValues) : null;
     const result = {
         mode: options.execute ? 'execute' : 'preview',

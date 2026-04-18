@@ -7,6 +7,12 @@
 // CONFIGURATION
 // ========================================
 const DEFAULT_ADMIN_VISION_MODEL = 'gemini-2.5-flash';
+const ADMIN_VISION_ANALYSIS_TIMEOUT_MS = 45000;
+const ADMIN_VISION_ANALYSIS_MAX_OUTPUT_TOKENS = 1536;
+const ADMIN_VISION_SINGLE_IMAGE_MAX_WIDTH = 1024;
+const ADMIN_VISION_SINGLE_IMAGE_QUALITY = 0.8;
+const ADMIN_VISION_GRID_CELL_SIZE = 448;
+const ADMIN_VISION_RETRYABLE_STATUS_CODES = new Set([500, 502, 503, 504]);
 
 // State
 let uploadedFiles = [];
@@ -1025,7 +1031,24 @@ async function mutateAdminPrompt({ action, site, id, payload = {} } = {}) {
 }
 
 async function deleteAdminPrompts({ site, id, ids = [] } = {}) {
-    const response = await (window.AdminApi?.fetch || fetch)('/api/admin/prompts/manage', {
+    const url = new URL('/api/admin/prompts/manage', window.location.origin);
+    if (site) {
+        url.searchParams.set('site', String(site));
+    }
+
+    const normalizedSingleId = String(id || '').trim();
+    const normalizedIds = Array.isArray(ids)
+        ? ids.map((item) => String(item || '').trim()).filter(Boolean)
+        : [];
+
+    if (normalizedSingleId) {
+        url.searchParams.set('id', normalizedSingleId);
+    }
+    normalizedIds.forEach((value) => {
+        url.searchParams.append('ids', value);
+    });
+
+    const response = await (window.AdminApi?.fetch || fetch)(`${url.pathname}${url.search}`, {
         method: 'DELETE',
         credentials: 'include',
         headers: {
@@ -1033,8 +1056,8 @@ async function deleteAdminPrompts({ site, id, ids = [] } = {}) {
         },
         body: JSON.stringify({
             site,
-            id,
-            ids
+            id: normalizedSingleId,
+            ids: normalizedIds
         })
     });
 
@@ -1362,6 +1385,13 @@ function bindAdminStudioDelegatedControls() {
                 const index = parseInt(actionEl.dataset.previewIndex || '', 10);
                 if (!Number.isNaN(index)) {
                     removeFile(index);
+                }
+                break;
+            }
+            case 'ai-crop-preview': {
+                const index = parseInt(actionEl.dataset.previewIndex || '', 10);
+                if (!Number.isNaN(index)) {
+                    openCropModal(index);
                 }
                 break;
             }
@@ -5097,8 +5127,7 @@ async function editPrompt(id) {
 
         // Update button
         const saveBtn = document.getElementById('saveBtn');
-        const btnText = saveBtn.querySelector('.btn-text');
-        btnText.innerHTML = '<i class="fas fa-save"></i> Update Prompt';
+        syncGallerySaveButtonState('edit');
 
         // Show cancel button if not exists
         let cancelBtn = document.getElementById('cancelEditBtn');
@@ -5114,12 +5143,10 @@ async function editPrompt(id) {
 
         // Load images into preview AND into uploadedFiles for analysis
         if (currentEditingPromptImageUrls.length > 0) {
-            const previewGrid = document.getElementById('previewGrid');
-            previewGrid.innerHTML = currentEditingPromptImageUrls.map((url, idx) => `
-                <div class="preview-item">
-                    <img src="${url}" alt="Preview ${idx + 1}">
-                </div>
-            `).join('');
+            renderPreviewGridItems(
+                currentEditingPromptImageUrls.map((url) => ({ url })),
+                { removable: false, croppable: true }
+            );
 
             // Clear and load images into uploadedFiles for analysis capability
             uploadedFiles = [];
@@ -5169,6 +5196,34 @@ async function editPrompt(id) {
 
 window.editPrompt = editPrompt;
 
+function buildGallerySaveButtonMarkup(label, iconClass = 'fas fa-save') {
+    return `<i class="${iconClass}"></i><span>${label}</span>`;
+}
+
+function syncGallerySaveButtonState(mode = currentMode) {
+    const saveBtn = document.getElementById('saveBtn');
+    if (!saveBtn) {
+        return;
+    }
+
+    const normalizedMode = mode === 'edit' ? 'edit' : 'create';
+    const btnText = saveBtn.querySelector('.btn-text');
+    const loadingLabel = saveBtn.querySelector('.btn-loading-label');
+
+    saveBtn.dataset.mode = normalizedMode;
+    saveBtn.setAttribute('aria-label', normalizedMode === 'edit' ? 'Update Prompt' : 'Save to Gallery');
+
+    if (btnText) {
+        btnText.innerHTML = buildGallerySaveButtonMarkup(
+            normalizedMode === 'edit' ? 'Update Prompt' : 'Save to Gallery'
+        );
+    }
+
+    if (loadingLabel) {
+        loadingLabel.textContent = normalizedMode === 'edit' ? 'Updating' : 'Saving';
+    }
+}
+
 // ========================================
 // CANCEL EDIT
 // ========================================
@@ -5180,9 +5235,7 @@ function cancelEdit() {
     resetForm();
 
     // Update button
-    const saveBtn = document.getElementById('saveBtn');
-    const btnText = saveBtn.querySelector('.btn-text');
-    btnText.innerHTML = '<i class="fas fa-save"></i> Save to Gallery';
+    syncGallerySaveButtonState('create');
 
     // Remove cancel button
     const cancelBtn = document.getElementById('cancelEditBtn');
@@ -5269,17 +5322,25 @@ async function checkApiKey() {
         }
     } catch (err) {
         console.warn('Failed to verify AI proxy:', err);
-
-        if (normalizedCurrentService === 'gemini') {
-            window.GEMINI_API_KEY = '';
-            window.GEMINI_API_SOURCE = 'missing';
-        }
-
-        updateStatus(`${currentServiceLabel} Missing`, 'error');
+        updateStatus(getAIHealthFailureStatusText(currentServiceLabel, err), 'error');
     } finally {
         renderApiKeySelector();
         updateAnalyzeButton();
     }
+}
+
+function getAIHealthFailureStatusText(serviceLabel = 'AI Proxy', error = null) {
+    const status = Number(error?.status || error?.statusCode || 0);
+
+    if (status === 401) {
+        return `${serviceLabel} Auth Required`;
+    }
+
+    if (status === 403) {
+        return `${serviceLabel} Forbidden`;
+    }
+
+    return `${serviceLabel} Unavailable`;
 }
 
 function getApiKeys() {
@@ -6225,8 +6286,8 @@ async function convertToWebP(dataUrl, quality = 0.85, maxWidth = 1200) {
 async function createImageGrid(images) {
     if (images.length === 0) return null;
     if (images.length === 1) {
-        // Single image - return as-is
-        return { dataUrl: images[0].dataUrl, base64: images[0].base64 };
+        // Single image - normalize again for analysis so the AI payload stays comfortably below gateway limits.
+        return normalizeImageForAnalysis(images[0]);
     }
 
     return new Promise((resolve, reject) => {
@@ -6248,7 +6309,7 @@ async function createImageGrid(images) {
         }
 
         // Target size for each cell (maintaining reasonable resolution)
-        const cellSize = 512;
+        const cellSize = ADMIN_VISION_GRID_CELL_SIZE;
         const canvasWidth = cellSize * cols;
         const canvasHeight = cellSize * rows;
 
@@ -6299,6 +6360,29 @@ async function createImageGrid(images) {
             img.src = imgData.dataUrl;
         });
     });
+}
+
+async function normalizeImageForAnalysis(imageData) {
+    const fallback = {
+        dataUrl: imageData?.dataUrl || '',
+        base64: imageData?.base64 || ''
+    };
+
+    if (!fallback.dataUrl || !fallback.base64) {
+        return fallback;
+    }
+
+    try {
+        const normalized = await convertToWebP(
+            fallback.dataUrl,
+            ADMIN_VISION_SINGLE_IMAGE_QUALITY,
+            ADMIN_VISION_SINGLE_IMAGE_MAX_WIDTH
+        );
+        return normalized?.dataUrl && normalized?.base64 ? normalized : fallback;
+    } catch (error) {
+        console.warn('Failed to normalize analysis image payload:', error);
+        return fallback;
+    }
 }
 
 // ========================================
@@ -6379,20 +6463,54 @@ async function handleFiles(files) {
     }
 }
 
-function renderPreviews() {
+function buildPreviewGridMarkup(items, options = {}) {
+    const removable = options.removable !== false;
+    const croppable = options.croppable !== false;
+
+    return items.map((item, index) => {
+        const imageSrc = item?.dataUrl || item?.url || '';
+        const cropButton = croppable
+            ? `
+                <button class="preview-action-btn preview-crop-btn" type="button" data-admin-action="ai-crop-preview" data-preview-index="${index}" title="裁切图片">
+                    <i class="fas fa-crop-alt"></i>
+                </button>
+            `
+            : '';
+        const removeButton = removable
+            ? `
+                <button class="remove-btn" type="button" data-admin-action="ai-remove-preview" data-preview-index="${index}" title="移除图片">
+                    <i class="fas fa-times"></i>
+                </button>
+            `
+            : '';
+
+        return `
+            <div class="preview-item" data-index="${index}" tabindex="0" role="button" aria-label="预览图片 ${index + 1}">
+                <img src="${imageSrc}" alt="Preview ${index + 1}">
+                ${cropButton}
+                ${removeButton}
+            </div>
+        `;
+    }).join('');
+}
+
+function renderPreviewGridItems(items, options = {}) {
     const grid = document.getElementById('previewGrid');
-    grid.innerHTML = uploadedFiles.map((item, index) => `
-        <div class="preview-item" data-index="${index}">
-            <img src="${item.dataUrl}" alt="Preview ${index + 1}">
-            <button class="remove-btn" type="button" data-admin-action="ai-remove-preview" data-preview-index="${index}">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-    `).join('');
+    if (!grid) {
+        return;
+    }
+    grid.innerHTML = buildPreviewGridMarkup(items, options);
+}
+
+function renderPreviews() {
+    renderPreviewGridItems(uploadedFiles, { removable: true, croppable: true });
 }
 
 function removeFile(index) {
     uploadedFiles.splice(index, 1);
+    if (currentMode === 'edit' && index >= 0 && index < currentEditingPromptImageUrls.length) {
+        currentEditingPromptImageUrls.splice(index, 1);
+    }
     renderPreviews();
     updateAnalyzeButton();
 }
@@ -6472,50 +6590,41 @@ async function analyzeImages(options = {}) {
 }
 
 async function callAdminVision(imageBase64) {
-    const analysisPrompt = `Analyze this AI-generated art image and return a JSON object with the following structure. Be creative and descriptive.
+    const analysisPrompt = `Analyze this AI-generated art image for an admin prompt gallery and return ONLY valid JSON.
 
 {
-    "title": "A creative, descriptive title in English (2-5 words)",
-    "title_en": "Same as title - the English version of the title",
-    "title_zh": "创意标题的中文版本",
+    "title": "Creative English title, 2-5 words",
+    "title_en": "Same as title",
+    "title_zh": "自然中文标题",
     "category": "One of: Photography, Illustration, 3D Art, Miniature, Creative, Animation",
-    "description": "A brief 1-2 sentence description of the image in English",
-    "description_en": "Same as description - English version",
-    "description_zh": "描述的中文版本",
-    "prompt_suggestion_en": "A suggested prompt in English that could recreate this image style (2-4 sentences)",
-    "prompt_suggestion_zh": "一个建议的中文提示词，可以重现这种图像风格（2-4句话）",
+    "description": "One short English sentence",
+    "description_en": "Same as description",
+    "description_zh": "一句自然中文描述",
     "objects": {
-        "en": ["5-8 objects or subjects visible in the image"],
+        "en": ["4-6 visible objects or subjects"],
         "zh": ["对应的中文翻译"]
     },
     "scenes": {
-        "en": ["3-5 scene or environment descriptors"],
+        "en": ["3-4 scene or environment descriptors"],
         "zh": ["对应的中文翻译"]
     },
     "styles": {
-        "en": ["5-7 art style descriptors"],
+        "en": ["4-6 art style descriptors"],
         "zh": ["对应的中文翻译"]
     },
     "mood": {
-        "en": ["5-7 mood or atmosphere words"],
+        "en": ["4-6 mood or atmosphere words"],
         "zh": ["对应的中文翻译"]
     },
-    "dominantColors": ["3-5 color names in English, e.g., 'blue', 'golden', 'dark gray'"],
-    "useCase": {
-        "platform": ["Best 2-3 platforms: 小红书封面, 抖音头图, 公众号配图, Instagram帖子, 淘宝主图, 手机壁纸, 头像, 海报"],
-        "purpose": ["Best 1-2 purposes: 电商卖货, 品牌营销, 个人IP, 知识付费, 虚拟产品, 自媒体配图, 表情包"],
-        "format": ["Recommended 1-2 formats: 9:16竖版, 1:1方图, 16:9横版, 3:4小红书, 手机壁纸尺寸"]
-    },
-    "commercial": {
-        "niche": ["Best 1-3 niches: 母婴, 美妆, 健身, 美食, 旅游, 教育, 宠物, 家居, 时尚, 科技, 游戏, 情感"],
-        "targetAudience": ["Target 1-2 audiences: Z世代, 职场女性, 新手妈妈, 中产家庭, 学生党, 二次元, 文艺青年"]
-    },
-    "difficulty": "One of: 新手友好, 进阶, 专业级"
+    "dominantColors": ["3-4 English color names"]
 }
 
-IMPORTANT: Return ONLY valid JSON, no markdown formatting, no code blocks, no explanation.`;
+Rules:
+- Keep every array compact, searchable, and aligned 1:1 between English and Chinese.
+- Prefer concrete tags over poetic paragraphs.
+- Return JSON only. No markdown, no code fence, no explanation.`;
 
-    const response = await window.AdminAI.generate({
+    const requestPayload = {
         model: window.AdminAI?.defaultModel || DEFAULT_ADMIN_VISION_MODEL,
         contents: [{
             parts: [
@@ -6529,10 +6638,36 @@ IMPORTANT: Return ONLY valid JSON, no markdown formatting, no code blocks, no ex
             ]
         }],
         generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 4096
+            temperature: 0.35,
+            maxOutputTokens: ADMIN_VISION_ANALYSIS_MAX_OUTPUT_TOKENS
         }
-    });
+    };
+
+    let response = null;
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+        try {
+            response = await withTimeout(
+                window.AdminAI.generate(requestPayload),
+                ADMIN_VISION_ANALYSIS_TIMEOUT_MS,
+                'AI 分析超时，请稍后重试'
+            );
+            lastError = null;
+            break;
+        } catch (error) {
+            lastError = error;
+            const shouldRetry = attempt < 2 && isRetryableVisionError(error);
+            if (!shouldRetry) {
+                throw error;
+            }
+            await sleep(900 * attempt);
+        }
+    }
+
+    if (!response && lastError) {
+        throw lastError;
+    }
 
     const text = window.AdminAI.extractText(response);
 
@@ -6552,6 +6687,19 @@ IMPORTANT: Return ONLY valid JSON, no markdown formatting, no code blocks, no ex
         console.error('JSON parse error:', jsonStr);
         throw new Error('Failed to parse AI response');
     }
+}
+
+function isRetryableVisionError(error) {
+    const status = Number(error?.status || error?.statusCode || 0);
+    const message = String(error?.message || '').trim().toLowerCase();
+
+    return ADMIN_VISION_RETRYABLE_STATUS_CODES.has(status)
+        || message.includes('bad gateway')
+        || message.includes('gateway')
+        || message.includes('timeout')
+        || message.includes('timed out')
+        || message.includes('fetch failed')
+        || message.includes('network');
 }
 
 // ========================================
@@ -7040,24 +7188,16 @@ async function savePrompt(e) {
     }
 
     const saveBtn = document.getElementById('saveBtn');
-    const dotMatrix = document.getElementById('dotMatrix');
-
-    // Initialize dot matrix
-    initDotMatrix();
+    const saveStatusLabel = currentMode === 'edit' ? 'Updating...' : 'Saving...';
+    syncGallerySaveButtonState(currentMode);
 
     // Start saving animation
+    saveBtn.classList.remove('saved');
     saveBtn.classList.add('saving');
     saveBtn.disabled = true;
-    updateStatus('Saving...', 'processing');
-
-    // Start progress animation
-    let progress = 0;
-    const progressInterval = setInterval(() => {
-        if (progress < 24) { // Leave last 6 dots for completion
-            progress++;
-            updateDotProgress(progress);
-        }
-    }, 80);
+    saveBtn.setAttribute('aria-busy', 'true');
+    saveBtn.setAttribute('aria-label', currentMode === 'edit' ? 'Updating Prompt' : 'Saving Prompt');
+    updateStatus(saveStatusLabel, 'processing');
 
     try {
         // Get form values
@@ -7110,8 +7250,6 @@ async function savePrompt(e) {
             } else {
                 imageUrls = await uploadImages();
             }
-            progress = Math.min(progress + 3, 27);
-            updateDotProgress(progress);
         } catch (storageError) {
             console.warn('Storage upload failed:', storageError);
             storageAvailable = false;
@@ -7200,7 +7338,7 @@ async function savePrompt(e) {
                     description_zh: promptData.description_zh,
                     description_en: promptData.description_en
                 });
-                updateStatus('Saving...', 'processing');
+                updateStatus(saveStatusLabel, 'processing');
             } catch (translateError) {
                 console.warn('[Gallery] Translation failed, continuing without:', translateError);
                 // Don't block save if translation fails
@@ -7309,74 +7447,40 @@ async function savePrompt(e) {
             cancelEdit();
         }
 
-        // Complete the progress
-        clearInterval(progressInterval);
-        completeDotProgress();
-
         // Success state
         setTimeout(() => {
             saveBtn.classList.remove('saving');
             saveBtn.classList.add('saved');
-            saveBtn.querySelector('.btn-text').innerHTML = '<i class="fas fa-check"></i> Saved!';
+            saveBtn.setAttribute('aria-busy', 'false');
+            saveBtn.setAttribute('aria-label', 'Saved');
+            saveBtn.querySelector('.btn-text').innerHTML = buildGallerySaveButtonMarkup('Saved!', 'fas fa-check');
             updateStatus('Saved', 'ready');
             showToast('Prompt 已保存到数据库！', 'success');
 
             // Reset button after delay
             setTimeout(() => {
                 saveBtn.classList.remove('saved');
-                saveBtn.querySelector('.btn-text').innerHTML = '<i class="fas fa-save"></i> Save to Gallery';
+                syncGallerySaveButtonState(currentMode);
                 saveBtn.disabled = false;
             }, 2000);
         }, 400);
 
     } catch (error) {
-        clearInterval(progressInterval);
         console.error('Save error:', error);
         showToast(`保存失败: ${error.message}`, 'error');
         updateStatus('Error', 'error');
 
         // Reset button
         saveBtn.classList.remove('saving');
+        saveBtn.setAttribute('aria-busy', 'false');
+        syncGallerySaveButtonState(currentMode);
         saveBtn.disabled = false;
     }
 }
 
 // ========================================
-// DOT MATRIX ANIMATION
+// SAVE BUTTON FEEDBACK
 // ========================================
-function initDotMatrix() {
-    const dotMatrix = document.getElementById('dotMatrix');
-    dotMatrix.innerHTML = '';
-
-    // Create 30 dots (10 columns x 3 rows)
-    for (let i = 0; i < 30; i++) {
-        const dot = document.createElement('div');
-        dot.className = 'dot';
-        dot.dataset.index = i;
-        dotMatrix.appendChild(dot);
-    }
-}
-
-function updateDotProgress(count) {
-    const dots = document.querySelectorAll('.dot-matrix .dot');
-    dots.forEach((dot, index) => {
-        if (index < count) {
-            dot.classList.add('active');
-            dot.classList.remove('complete');
-        }
-    });
-}
-
-function completeDotProgress() {
-    const dots = document.querySelectorAll('.dot-matrix .dot');
-    dots.forEach((dot, index) => {
-        setTimeout(() => {
-            dot.classList.remove('active');
-            dot.classList.add('complete');
-        }, index * 15);
-    });
-}
-
 /**
  * Generate a thumbnail from base64 image using Canvas API
  * @param {string} base64 - Original image base64 (without data: prefix)
@@ -7598,10 +7702,11 @@ function updateStatus(text, state) {
 function setToastContent(toast, message, type = 'info') {
     if (!toast) return;
     toast.className = `toast ${type}`;
-    toast.innerHTML = `
-        <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : type === 'warning' ? 'triangle-exclamation' : 'info-circle'}"></i>
-        <span>${message}</span>
-    `;
+    const icon = document.createElement('i');
+    icon.className = `fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : type === 'warning' ? 'triangle-exclamation' : 'info-circle'}`;
+    const text = document.createElement('span');
+    text.textContent = String(message ?? '');
+    toast.replaceChildren(icon, text);
 }
 
 function dismissToast(toast) {
@@ -8694,10 +8799,18 @@ function sleep(ms) {
 let hoveredPreviewItem = null;
 
 function handleImageKeydown(e) {
-    // Spacebar for preview when hovering over preview items
-    if (e.code === 'Space' && hoveredPreviewItem) {
+    const focusedPreviewItem = document.activeElement instanceof Element
+        ? document.activeElement.closest('.preview-item')
+        : null;
+    const activePreviewItem = focusedPreviewItem || hoveredPreviewItem;
+    const actionTarget = e.target instanceof Element
+        ? e.target.closest('.preview-action-btn, .remove-btn')
+        : null;
+
+    // Spacebar / Enter for preview when hovering or focusing preview items
+    if ((e.code === 'Space' || e.code === 'Enter') && activePreviewItem && !actionTarget) {
         e.preventDefault();
-        openLightbox(hoveredPreviewItem.querySelector('img')?.src);
+        openLightbox(activePreviewItem.querySelector('img')?.src);
     }
 
     // Escape to close lightbox
@@ -8741,7 +8854,10 @@ let cropperInstance = null;
 function openCropModal(index) {
     cropImageIndex = index;
     const file = uploadedFiles[index];
-    if (!file) return;
+    if (!file?.dataUrl) {
+        showToast('图片仍在加载中，请稍后再试', 'warning');
+        return;
+    }
 
     const cropImage = document.getElementById('cropImage');
     cropImage.src = file.dataUrl;
@@ -8861,14 +8977,11 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// Attach click-to-crop on preview items
+// Attach click-to-preview on preview items
 document.addEventListener('click', (e) => {
     const previewItem = e.target.closest('.preview-item');
-    if (previewItem && !e.target.closest('.remove-btn')) {
-        const index = Array.from(previewItem.parentElement.children).indexOf(previewItem);
-        if (index >= 0) {
-            openCropModal(index);
-        }
+    if (previewItem && !e.target.closest('.remove-btn') && !e.target.closest('.preview-action-btn')) {
+        openLightbox(previewItem.querySelector('img')?.src);
     }
 });
 

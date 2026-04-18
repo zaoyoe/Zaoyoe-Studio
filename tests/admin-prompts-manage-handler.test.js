@@ -671,3 +671,29 @@ test('prompts manage handler deletes multiple ids through admin api', async () =
         assert.equal(state.auditEntries[0]?.actionType, 'prompt.delete_many');
     });
 });
+
+test('prompts manage handler accepts delete ids from query params when delete body is stripped', async () => {
+    await withPromptsManageHandler({
+        deletedRows: [
+            { id: 'prompt-query-1', title: 'Prompt Query One' },
+            { id: 'prompt-query-2', title: 'Prompt Query Two' }
+        ]
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'DELETE',
+            url: '/api/admin/prompts/manage?site=cn&ids=prompt-query-1&ids=prompt-query-2',
+            headers: {},
+            body: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().deletedCount, 2);
+        assert.deepEqual(state.deleteFilters, [{
+            field: 'id',
+            values: ['prompt-query-1', 'prompt-query-2']
+        }]);
+        assert.equal(state.auditEntries[0]?.actionType, 'prompt.delete_many');
+    });
+});

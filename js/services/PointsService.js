@@ -144,6 +144,18 @@
             return responsePayload;
         },
 
+        async getPaymentRequestStatus(payload = {}) {
+            const checkoutSessionId = String(payload?.checkout_session_id || '').trim();
+            if (!checkoutSessionId) {
+                throw new Error('缺少支付会话');
+            }
+
+            return this._postWalletJson('/api/payments/status', {
+                checkout_session_id: checkoutSessionId,
+                site: payload.site || window.SiteConfig?.site || 'cn'
+            });
+        },
+
         /**
          * Get user's current balance
          */

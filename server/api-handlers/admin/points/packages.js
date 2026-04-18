@@ -71,19 +71,19 @@ function normalizePackagePayload(body = {}, { existing = null, action = 'update'
     }
 
     if (Object.prototype.hasOwnProperty.call(body, 'points_amount') || Object.prototype.hasOwnProperty.call(body, 'points') || isCreate) {
-        payload.points_amount = Math.round(normalizeNumber(
+        payload.points_amount = normalizeNumber(
             body.points_amount ?? body.points,
             existing?.points_amount ?? 0,
-            { min: 0 }
-        ));
+            { min: 0, decimals: 2 }
+        );
     }
 
     if (Object.prototype.hasOwnProperty.call(body, 'bonus_points') || Object.prototype.hasOwnProperty.call(body, 'bonus') || isCreate) {
-        payload.bonus_points = Math.round(normalizeNumber(
+        payload.bonus_points = normalizeNumber(
             body.bonus_points ?? body.bonus,
             existing?.bonus_points ?? 0,
-            { min: 0 }
-        ));
+            { min: 0, decimals: 2 }
+        );
     }
 
     if (Object.prototype.hasOwnProperty.call(body, 'price_cny') || Object.prototype.hasOwnProperty.call(body, 'price') || isCreate) {
