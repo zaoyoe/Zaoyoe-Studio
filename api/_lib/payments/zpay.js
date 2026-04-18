@@ -322,11 +322,10 @@ function buildZpayOrderQueryPayload({
         key: config.pkey
     };
 
-    if (normalizedTradeNo) {
-        payload.trade_no = normalizedTradeNo;
-    }
     if (normalizedOutTradeNo) {
         payload.out_trade_no = normalizedOutTradeNo;
+    } else if (normalizedTradeNo) {
+        payload.trade_no = normalizedTradeNo;
     }
 
     return payload;
@@ -355,11 +354,10 @@ function buildZpayRefundPayload({
         money: normalizeAmount(money)
     };
 
-    if (normalizedTradeNo) {
-        payload.trade_no = normalizedTradeNo;
-    }
     if (normalizedOutTradeNo) {
         payload.out_trade_no = normalizedOutTradeNo;
+    } else if (normalizedTradeNo) {
+        payload.trade_no = normalizedTradeNo;
     }
 
     return payload;
