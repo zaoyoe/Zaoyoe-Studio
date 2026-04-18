@@ -1618,6 +1618,106 @@ async function loadPaymentOrderForUserByCheckoutSession(supabase, userId, checko
     return resolveLookup('checkout_session');
 }
 
+function getCheckoutSessionProviderOrderNo(checkoutSession = {}) {
+    const metadata = checkoutSession?.provider_metadata && typeof checkoutSession.provider_metadata === 'object'
+        ? checkoutSession.provider_metadata
+        : {};
+    const summary = metadata.summary && typeof metadata.summary === 'object'
+        ? metadata.summary
+        : {};
+
+    return sanitizeText(
+        checkoutSession?.provider_order_no
+        || metadata.provider_order_no
+        || metadata.order_no
+        || summary.out_trade_no,
+        '',
+        160
+    );
+}
+
+async function recoverZpayPaymentOrderForCheckoutSession({
+    supabase,
+    userId = '',
+    checkoutSession = null
+} = {}) {
+    const normalizedUserId = String(userId || '').trim();
+    const providerKey = sanitizeText(checkoutSession?.provider, '', 40).toLowerCase();
+    if (!supabase || !checkoutSession?.id || !normalizedUserId || providerKey !== 'zpay') {
+        return {
+            checkoutSession,
+            paymentOrder: null,
+            recovered: false
+        };
+    }
+
+    const providerOrderNo = getCheckoutSessionProviderOrderNo(checkoutSession);
+    if (!providerOrderNo) {
+        return {
+            checkoutSession,
+            paymentOrder: null,
+            recovered: false
+        };
+    }
+
+    const resolution = await resolvePendingPaymentOrderFromCheckoutContext({
+        supabase,
+        providerKey,
+        providerOrderNo,
+        userId: normalizedUserId,
+        site: checkoutSession.site,
+        packageId: checkoutSession.package_id,
+        packageName: checkoutSession.package_name,
+        expectedAmount: checkoutSession.expected_amount,
+        pointsAmount: checkoutSession.granted_points || checkoutSession.requested_points || 0,
+        lookbackMinutes: 1440
+    });
+
+    if (!resolution?.paymentOrderId) {
+        return {
+            checkoutSession,
+            paymentOrder: null,
+            recovered: false
+        };
+    }
+
+    try {
+        await reconcileCheckoutSessionForPaymentOrder({
+            supabase,
+            providerKey,
+            paymentOrderId: resolution.paymentOrderId,
+            providerOrderNo,
+            userId: normalizedUserId,
+            site: checkoutSession.site || 'cn',
+            packageId: checkoutSession.package_id,
+            packageName: checkoutSession.package_name,
+            expectedAmount: checkoutSession.expected_amount,
+            paidAmount: checkoutSession.expected_amount,
+            pointsAmount: checkoutSession.granted_points || checkoutSession.requested_points || 0,
+            linkedBy: 'zpay_status_recovery',
+            allowHeuristic: true,
+            lookbackMinutes: 1440
+        });
+    } catch (recoveryError) {
+        console.warn('[Payments] Failed to recover ZPAY payment order linkage:', recoveryError.message);
+    }
+
+    const refreshedCheckoutSession = await loadCheckoutSessionForUser(supabase, normalizedUserId, checkoutSession.id)
+        || checkoutSession;
+    const refreshedPaymentOrder = await loadPaymentOrderForUserByCheckoutSession(
+        supabase,
+        normalizedUserId,
+        refreshedCheckoutSession.id,
+        resolution.paymentOrderId
+    );
+
+    return {
+        checkoutSession: refreshedCheckoutSession,
+        paymentOrder: refreshedPaymentOrder,
+        recovered: Boolean(refreshedPaymentOrder?.id)
+    };
+}
+
 async function attemptZpayPaymentStatusRefresh({
     supabase,
     checkoutSession,
@@ -1892,11 +1992,35 @@ async function getPaymentRequestStatus({
 
     let activeCheckoutSession = checkoutSession;
     let activePaymentOrder = paymentOrder;
-    const activeProvider = sanitizeText(
+    let activeProvider = sanitizeText(
         activeCheckoutSession?.provider || activePaymentOrder?.provider,
         '',
         40
     ).toLowerCase();
+
+    if (!activePaymentOrder?.id && activeProvider === 'zpay') {
+        try {
+            const recovered = await recoverZpayPaymentOrderForCheckoutSession({
+                supabase,
+                userId: normalizedUserId,
+                checkoutSession: activeCheckoutSession
+            });
+
+            if (recovered?.checkoutSession) {
+                activeCheckoutSession = recovered.checkoutSession;
+            }
+            if (recovered?.paymentOrder?.id) {
+                activePaymentOrder = recovered.paymentOrder;
+                activeProvider = sanitizeText(
+                    activeCheckoutSession?.provider || activePaymentOrder?.provider,
+                    '',
+                    40
+                ).toLowerCase();
+            }
+        } catch (recoveryError) {
+            console.warn('[Payments] Failed to recover ZPAY payment order from checkout session:', recoveryError.message);
+        }
+    }
 
     if (
         activeProvider === 'zpay'
