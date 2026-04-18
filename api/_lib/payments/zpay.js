@@ -203,6 +203,9 @@ function normalizeZpayPaymentStatus(tradeStatus = '', status = null) {
     if (normalizedTradeStatus === 'TRADE_SUCCESS') {
         return 'paid';
     }
+    if (normalizedTradeStatus === 'REFUNDED') {
+        return 'refunded';
+    }
     if (normalizedTradeStatus) {
         return 'pending';
     }
@@ -210,6 +213,7 @@ function normalizeZpayPaymentStatus(tradeStatus = '', status = null) {
     const numericStatus = Number(status);
     if (numericStatus === 1) return 'paid';
     if (numericStatus === 0) return 'pending';
+    if (numericStatus === 2) return 'refunded';
     return 'unknown';
 }
 

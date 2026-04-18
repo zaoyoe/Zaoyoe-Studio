@@ -757,6 +757,97 @@ test('query_zpay_order returns live gateway status without mutating anomaly stat
     });
 });
 
+test('query_zpay_order syncs externally refunded orders back to local refunded state', async () => {
+    const state = {
+        defaultUserBalance: 5,
+        orders: [
+            {
+                id: 'order-zp-query-refunded-1',
+                user_id: 'user-zp-query-refunded-1',
+                provider: 'zpay',
+                provider_order_no: 'ZPAY_QUERY_REFUNDED_1',
+                checkout_session_id: 'session-zp-query-refunded-1',
+                package_id: null,
+                package_name: '易支付退款查询套餐',
+                site: 'cn',
+                expected_amount: 0.01,
+                paid_amount: 0.01,
+                points_amount: 0.01,
+                status: 'redeemed',
+                claimed_at: '2026-04-16T10:05:00.000Z',
+                paid_at: '2026-04-16T10:02:00.000Z',
+                verified_at: '2026-04-16T10:03:00.000Z',
+                sign_verified: true,
+                amount_verified: true,
+                created_at: '2026-04-16T10:00:00.000Z',
+                last_error: null,
+                provider_metadata: {
+                    trade_no: 'ZPAY_TRADE_REFUNDED_1',
+                    payment_type: 'alipay'
+                },
+                raw_payload: {}
+            }
+        ],
+        providerAdaptersModule: {
+            getPaymentProviderAdapter(providerKey) {
+                assert.equal(providerKey, 'zpay');
+                return {
+                    async resolveRuntimeContext() {
+                        return { provider: 'zpay' };
+                    },
+                    async queryOrder() {
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: 'ZPAY_QUERY_REFUNDED_1',
+                            tradeNo: 'ZPAY_TRADE_REFUNDED_1',
+                            status: 'refunded',
+                            statusRaw: '2',
+                            paidAmount: 0.01,
+                            transactionId: 'ZPAY_TRADE_REFUNDED_1',
+                            message: 'success'
+                        };
+                    }
+                };
+            }
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-zp-query-refunded-1',
+                action: 'query_zpay_order'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.reload, true);
+        assert.equal(payload.live_order.status, 'refunded');
+        assert.match(payload.message, /已退款/);
+        assert.match(payload.message, /已同步本地退款状态/);
+        assert.equal(state.orders[0].status, 'refunded');
+        assert.equal(state.orders[0].provider_metadata.refund_status, 'refunded');
+        assert.equal(state.orders[0].provider_metadata.payment_status, 'refunded');
+        assert.equal(state.orders[0].provider_metadata.refund_source, 'gateway_query_sync');
+        assert.equal(state.paymentEvents.length, 1);
+        assert.equal(state.paymentEvents[0].processing_result, 'admin_refund_synced_refunded');
+        assert.equal(state.pointsLedger.length, 1);
+        assert.equal(state.pointsLedger[0].amount, -0.01);
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'payments.order.query');
+        assert.equal(state.auditLogs[0].details.refund_status, 'refunded');
+        assert.equal(state.auditLogs[0].details.refund_reclaimed_points, 0.01);
+    });
+});
+
 test('reconcile_hupijiao_order credits the order, links checkout session, and issues linked discounts', async () => {
     const state = {
         orders: [

@@ -629,13 +629,90 @@ async function applyGatewayOrderQuery(supabase, target, actorId, env = process.e
     const meta = getGatewayProviderMeta(providerKey);
     const { snapshot, liveOrder } = await queryGatewayOrder(supabase, target, meta?.key, env);
     const transactionId = getGatewayTransactionId(snapshot, liveOrder);
+    const liveStatus = normalizeText(liveOrder.status).toLowerCase();
+
+    if (liveStatus === 'refunded') {
+        const targetStatus = normalizeText(target?.status).toLowerCase();
+        if (targetStatus !== 'refunded') {
+            const attemptId = buildAdminRefundAttemptId(
+                target.id,
+                liveOrder.providerOrderNo || snapshot.providerOrderNo,
+                actorId,
+                meta.key
+            );
+            let reclaimSummary = null;
+
+            if (snapshot.credited) {
+                reclaimSummary = await reclaimCreditedGatewayPoints(supabase, target, attemptId, meta.key);
+            }
+
+            const syncedOrder = await syncRefundedPaymentOrder(supabase, target, {
+                actorId,
+                note: '后台实时查单确认外部已退款，系统自动同步本地状态。',
+                providerOrderNo: liveOrder.providerOrderNo || snapshot.providerOrderNo,
+                openOrderId: liveOrder.openOrderId || snapshot.openOrderId,
+                tradeNo: transactionId,
+                refundStatus: 'refunded',
+                refundStatusRaw: liveOrder.statusRaw || meta.refundStatusRaw,
+                refundSource: 'gateway_query_sync',
+                payload: {
+                    query: liveOrder
+                },
+                reclaimSummary,
+                providerKey: meta.key
+            });
+
+            await tryRecordPaymentEvent(supabase, {
+                payment_order_id: target.id,
+                provider: meta.key,
+                provider_order_no: liveOrder.providerOrderNo || snapshot.providerOrderNo || null,
+                event_key: buildAdminRefundEventKey(target.id, liveOrder.providerOrderNo || snapshot.providerOrderNo, actorId, meta.key),
+                event_type: 'admin_refund',
+                signature_valid: true,
+                amount_valid: null,
+                payload: {
+                    action: meta.queryAction,
+                    source: 'gateway_query_sync',
+                    query: liveOrder,
+                    reclaim: reclaimSummary,
+                    note: '后台实时查单确认外部已退款'
+                },
+                processing_result: 'admin_refund_synced_refunded',
+                response_status: 200,
+                processed_at: new Date().toISOString()
+            });
+
+            return {
+                liveOrder,
+                order: syncedOrder,
+                reload: true,
+                message: `${buildGatewayLiveOrderMessage(meta.key, liveOrder).replace(/。$/, '')}，已同步本地退款状态。`,
+                auditDetails: {
+                    query_provider: meta.key,
+                    query_status: liveStatus,
+                    query_status_raw: normalizeText(liveOrder.statusRaw) || null,
+                    query_paid_amount: roundCurrencyAmount(liveOrder.paidAmount),
+                    provider_order_no: liveOrder.providerOrderNo || snapshot.providerOrderNo || null,
+                    gateway_open_order_id: liveOrder.openOrderId || snapshot.openOrderId || null,
+                    gateway_transaction_id: transactionId,
+                    query_actor_id: actorId || null,
+                    refund_status: 'refunded',
+                    refund_source: 'gateway_query_sync',
+                    refund_reclaimed_points: reclaimSummary?.reclaimedPoints || 0,
+                    refund_reclaimed_paid_points: reclaimSummary?.reclaimedPaidPoints || 0,
+                    refund_reclaimed_bonus_points: reclaimSummary?.reclaimedBonusPoints || 0
+                }
+            };
+        }
+    }
 
     return {
         liveOrder,
+        reload: false,
         message: buildGatewayLiveOrderMessage(meta.key, liveOrder),
         auditDetails: {
             query_provider: meta.key,
-            query_status: normalizeText(liveOrder.status).toLowerCase() || null,
+            query_status: liveStatus || null,
             query_status_raw: normalizeText(liveOrder.statusRaw) || null,
             query_paid_amount: roundCurrencyAmount(liveOrder.paidAmount),
             provider_order_no: liveOrder.providerOrderNo || snapshot.providerOrderNo || null,
@@ -1782,7 +1859,8 @@ module.exports = async function handler(req, res) {
                 success: true,
                 message: queryDecision.message,
                 live_order: queryDecision.liveOrder,
-                reload: false
+                order: queryDecision.order,
+                reload: queryDecision.reload === true
             });
         }
 
