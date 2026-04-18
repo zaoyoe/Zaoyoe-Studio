@@ -277,6 +277,7 @@ test('createPaymentRequest launches ZPAY checkout and precreates the payment ord
         assert.equal(result.mode, 'redirect');
         assert.equal(result.checkout_url, 'https://zpayz.cn/pay/demo/1');
         assert.equal(result.query_mode, 'provider_order_no');
+        assert.match(String(result.provider_order_no || ''), /^ZP[A-Z0-9]{30}$/);
         assert.equal(state.checkoutSessions.length, 1);
         assert.equal(state.paymentOrders.length, 1);
         assert.match(state.paymentOrders[0].provider_order_no, /^ZP[A-Z0-9]{30}$/);

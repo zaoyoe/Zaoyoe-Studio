@@ -214,4 +214,76 @@ test('getPaymentRequestStatus recovers completed zpay orders that were not linke
     assert.equal(state.payment_checkout_sessions[0].status, 'completed');
     assert.equal(state.payment_orders[0].user_id, 'user_zpay_1');
     assert.equal(state.payment_orders[0].checkout_session_id, 'pcs_zpay_1');
-  });
+});
+
+test('getPaymentRequestStatus can recover a zpay order from provider_order_no passed by the client when session metadata is stale', async () => {
+    const nowIso = new Date().toISOString();
+    const state = {
+        payment_checkout_sessions: [
+            {
+                id: 'pcs_zpay_2',
+                user_id: 'user_zpay_2',
+                provider: 'zpay',
+                site: 'cn',
+                package_id: null,
+                package_name: '自定义充值',
+                requested_points: 0.01,
+                granted_points: 0.01,
+                expected_amount: 0.01,
+                payment_order_id: null,
+                status: 'redirect_ready',
+                error_message: null,
+                created_at: nowIso,
+                updated_at: nowIso,
+                completed_at: null,
+                session_key: 'PCS_ZPAY_RECOVERY_2',
+                provider_metadata: {}
+            }
+        ],
+        payment_orders: [
+            {
+                id: 'po_zpay_2',
+                user_id: 'user_zpay_2',
+                provider: 'zpay',
+                provider_order_no: 'ZPAY_ORDER_2',
+                checkout_session_id: null,
+                site: 'cn',
+                package_id: null,
+                package_name: '自定义充值',
+                expected_amount: 0.01,
+                paid_amount: 0.01,
+                points_amount: 0.01,
+                status: 'redeemed',
+                last_error: null,
+                created_at: nowIso,
+                updated_at: nowIso,
+                paid_at: nowIso,
+                claimed_at: nowIso,
+                verified_at: nowIso,
+                raw_payload: {
+                    checkout_session_id: 'pcs_zpay_2'
+                },
+                provider_metadata: {}
+            }
+        ]
+    };
+
+    const payload = await getPaymentRequestStatus({
+        supabase: createSupabaseStub(state),
+        user: {
+            id: 'user_zpay_2'
+        },
+        body: {
+            checkout_session_id: 'pcs_zpay_2',
+            provider_order_no: 'ZPAY_ORDER_2',
+            site: 'cn'
+        }
+    });
+
+    assert.equal(payload.success, true);
+    assert.equal(payload.status, 'completed');
+    assert.equal(payload.payment_order_id, 'po_zpay_2');
+    assert.equal(payload.provider_order_no, 'ZPAY_ORDER_2');
+    assert.equal(state.payment_checkout_sessions[0].payment_order_id, 'po_zpay_2');
+    assert.equal(state.payment_checkout_sessions[0].status, 'completed');
+});

@@ -54,6 +54,7 @@ test('public payments status handler returns current checkout session state for 
             async parseJsonBody() {
                 return {
                     checkout_session_id: 'pcs_zpay_1',
+                    provider_order_no: 'ZPORDER001',
                     site: 'cn'
                 };
             },
@@ -120,6 +121,7 @@ test('public payments status handler returns current checkout session state for 
     assert.equal(state.user.id, 'user_zpay_1');
     assert.deepEqual(state.body, {
         checkout_session_id: 'pcs_zpay_1',
+        provider_order_no: 'ZPORDER001',
         site: 'cn'
     });
 });
