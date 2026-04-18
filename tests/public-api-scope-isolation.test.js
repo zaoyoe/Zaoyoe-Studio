@@ -134,3 +134,91 @@ test('public payments scope returns a handled 500 when payments modules fail to 
         });
     });
 });
+
+test('public wallet overview remains available when wallet checkin module fails to load', async () => {
+    await withPublicHandler((request, parent, isMain, originalLoad) => {
+        if (request === '../server/api-handlers/public/wallet') {
+            return {
+                createWalletHandlers() {
+                    return {
+                        async overview(req, res) {
+                            res.status(200).setHeader('Content-Type', 'application/json; charset=utf-8');
+                            res.end(JSON.stringify({
+                                success: true,
+                                source: 'wallet-overview-stub'
+                            }));
+                        }
+                    };
+                }
+            };
+        }
+
+        if (request === './_lib/site') {
+            return {
+                requireSupportedSite(value) {
+                    return String(value || 'cn').trim().toLowerCase() || 'cn';
+                }
+            };
+        }
+
+        if (request === './wallet/checkin') {
+            throw new Error('simulated wallet checkin bootstrap failure');
+        }
+
+        return originalLoad.call(Module, request, parent, isMain);
+    }, async (handler) => {
+        const req = {
+            method: 'GET',
+            url: '/api/public?scope=wallet&route=overview'
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.deepEqual(res.json(), {
+            success: true,
+            source: 'wallet-overview-stub'
+        });
+    });
+});
+
+test('public wallet checkin returns a handled 500 when wallet checkin module fails to load', async () => {
+    await withPublicHandler((request, parent, isMain, originalLoad) => {
+        if (request === '../server/api-handlers/public/wallet') {
+            return {
+                createWalletHandlers() {
+                    return {};
+                }
+            };
+        }
+
+        if (request === './_lib/site') {
+            return {
+                requireSupportedSite(value) {
+                    return String(value || 'cn').trim().toLowerCase() || 'cn';
+                }
+            };
+        }
+
+        if (request === './wallet/checkin') {
+            throw new Error('simulated wallet checkin bootstrap failure');
+        }
+
+        return originalLoad.call(Module, request, parent, isMain);
+    }, async (handler) => {
+        const req = {
+            method: 'POST',
+            url: '/api/public?scope=wallet&route=checkin'
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+
+        assert.equal(res.statusCode, 500);
+        assert.deepEqual(res.json(), {
+            success: false,
+            message: 'Public route handler unavailable'
+        });
+    });
+});
