@@ -7878,7 +7878,7 @@
 
         const titleEnInput = document.getElementById('promptTitleEn');
         if (titleEnInput instanceof HTMLInputElement) {
-            titleZhInput.value = '';
+            titleZhInput.value = '中文 Prompt 卡片（smoke updated）';
             titleZhInput.dispatchEvent(new Event('input', { bubbles: true }));
             titleEnInput.value = 'CN Prompt Card (smoke updated)';
             titleEnInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -7889,18 +7889,70 @@
             await waitFor(
                 () => {
                     const row = getTableRows('prompts').find((item) => item.id === 'prompt-cn-1');
-                    return row?.title_zh === '' && row?.title_en === 'CN Prompt Card (smoke updated)' ? row : null;
+                    return row?.title_zh === '中文 Prompt 卡片（smoke updated）' && row?.title_en === 'CN Prompt Card (smoke updated)' ? row : null;
                 },
                 { message: '画廊双语字段保存未写回 prompts 表' }
             );
 
             recordResult(
                 'Gallery 编辑保存会显式写回双语字段',
-                getTableRows('prompts').some((item) => item.id === 'prompt-cn-1' && item.title_zh === '' && item.title_en === 'CN Prompt Card (smoke updated)'),
+                getTableRows('prompts').some((item) => item.id === 'prompt-cn-1' && item.title_zh === '中文 Prompt 卡片（smoke updated）' && item.title_en === 'CN Prompt Card (smoke updated)'),
                 JSON.stringify(getTableRows('prompts').find((item) => item.id === 'prompt-cn-1') || {})
             );
         } else {
             recordResult('Gallery 编辑保存会显式写回双语字段', false, '未找到英文标题输入框');
+        }
+
+        globalScope.switchView?.('create');
+        await waitFor(
+            () => document.getElementById('view-create')?.classList.contains('active')
+                ? document.getElementById('view-create')
+                : null,
+            { message: '画廊 Create 视图未切换成功' }
+        );
+        globalScope.resetForm?.();
+        await nextFrame();
+        await sleep(80);
+
+        const hiddenPromptTextEnInput = document.getElementById('promptTextEn');
+        const visiblePromptTextEnLabel = Array.from(document.querySelectorAll('#promptBilingualFields label'))
+            .find((label) => /Prompt Text \(EN\)/.test(String(label?.textContent || '')));
+        recordResult(
+            'Gallery Create 不会渲染 Prompt Text (EN) 可见字段',
+            hiddenPromptTextEnInput instanceof HTMLInputElement
+                && hiddenPromptTextEnInput.type === 'hidden'
+                && !visiblePromptTextEnLabel,
+            `type=${hiddenPromptTextEnInput instanceof HTMLInputElement ? hiddenPromptTextEnInput.type : '<missing>'} / label=${visiblePromptTextEnLabel ? 'visible' : 'hidden'}`
+        );
+
+        if (typeof globalScope.populateForm === 'function') {
+            globalScope.populateForm({
+                title: 'Smoke Analysis Title',
+                title_en: 'Smoke Analysis Title',
+                title_zh: '烟雾分析标题',
+                description: 'Smoke analysis description.',
+                description_en: 'Smoke analysis description.',
+                description_zh: '烟雾分析描述。',
+                prompt_suggestion_en: 'This prompt suggestion should stay manual.',
+                prompt_suggestion_zh: '这个提示词建议应该保持手动填写。'
+            }, {
+                preserveExisting: false,
+                source: 'analysis'
+            });
+            await nextFrame();
+            await sleep(80);
+
+            recordResult(
+                'Gallery Create Analyze 只会回填标题和描述',
+                document.getElementById('promptTitle')?.value === 'Smoke Analysis Title'
+                    && document.getElementById('promptDescription')?.value === 'Smoke analysis description.'
+                    && document.getElementById('promptText')?.value === ''
+                    && document.getElementById('promptTextZh')?.value === ''
+                    && document.getElementById('promptTextEn')?.value === '',
+                `title=${document.getElementById('promptTitle')?.value || '<empty>'} / prompt=${document.getElementById('promptText')?.value || '<empty>'} / promptZh=${document.getElementById('promptTextZh')?.value || '<empty>'}`
+            );
+        } else {
+            recordResult('Gallery Create Analyze 只会回填标题和描述', false, '未找到 populateForm');
         }
 
         globalScope.AdminSiteFilter.select('intl');
