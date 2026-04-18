@@ -136,6 +136,36 @@ test('buildZpayMapiPayload and follow-up payloads match the documented field nam
     assert.equal(refundPayload.money, '9.90');
 });
 
+test('buildZpay query and refund payloads prefer out_trade_no when both order ids are present', () => {
+    const config = normalizeZpayConfig({
+        channelConfig: {
+            pid: 'pid-123',
+            checkout_url: 'https://zpayz.cn',
+            notify_url: 'https://www.zaoyoe.com/api/payments/zpay/webhook'
+        },
+        secretValues: {
+            zpay_pkey: 'pkey-123'
+        }
+    });
+
+    const queryPayload = buildZpayOrderQueryPayload({
+        config,
+        outTradeNo: 'ZPORDER001',
+        tradeNo: 'TRADE001'
+    });
+    assert.equal(queryPayload.out_trade_no, 'ZPORDER001');
+    assert.equal(Object.prototype.hasOwnProperty.call(queryPayload, 'trade_no'), false);
+
+    const refundPayload = buildZpayRefundPayload({
+        config,
+        outTradeNo: 'ZPORDER001',
+        tradeNo: 'TRADE001',
+        money: 9.9
+    });
+    assert.equal(refundPayload.out_trade_no, 'ZPORDER001');
+    assert.equal(Object.prototype.hasOwnProperty.call(refundPayload, 'trade_no'), false);
+});
+
 test('createZpayPayment posts form data to the mapi endpoint', async () => {
     const result = await createZpayPayment({
         channelConfig: {
