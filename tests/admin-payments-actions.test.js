@@ -848,6 +848,91 @@ test('query_zpay_order syncs externally refunded orders back to local refunded s
     });
 });
 
+test('query_zpay_order explains that the decimal refund reclaim migration is still missing when legacy integer RPC rejects 0.01', async () => {
+    const state = {
+        orders: [
+            {
+                id: 'order-zp-query-refunded-legacy-rpc',
+                user_id: 'user-zp-query-refunded-legacy-rpc',
+                provider: 'zpay',
+                provider_order_no: 'ZPAY_QUERY_REFUNDED_LEGACY_RPC',
+                checkout_session_id: 'session-zp-query-refunded-legacy-rpc',
+                site: 'cn',
+                expected_amount: 0.01,
+                paid_amount: 0.01,
+                points_amount: 0.01,
+                status: 'redeemed',
+                claimed_at: '2026-04-18T13:30:00.000Z',
+                paid_at: '2026-04-18T13:25:00.000Z',
+                verified_at: '2026-04-18T13:25:10.000Z',
+                provider_metadata: {
+                    trade_no: 'ZPAY_TRADE_REFUNDED_LEGACY_RPC',
+                    paid_points: 0.01,
+                    bonus_points: 0
+                },
+                raw_payload: {}
+            }
+        ],
+        userBalances: {
+            'user-zp-query-refunded-legacy-rpc': {
+                total_balance: 0.01,
+                paid_balance: 0.01,
+                bonus_balance: 0
+            }
+        },
+        refundReclaimRpcError: {
+            message: 'invalid input syntax for type integer: "0.01"'
+        },
+        providerAdaptersModule: {
+            getPaymentProviderAdapter(providerKey) {
+                assert.equal(providerKey, 'zpay');
+                return {
+                    async resolveRuntimeContext() {
+                        return { provider: 'zpay' };
+                    },
+                    async queryOrder() {
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: 'ZPAY_QUERY_REFUNDED_LEGACY_RPC',
+                            tradeNo: 'ZPAY_TRADE_REFUNDED_LEGACY_RPC',
+                            status: 'refunded',
+                            statusRaw: '2',
+                            paidAmount: 0.01,
+                            transactionId: 'ZPAY_TRADE_REFUNDED_LEGACY_RPC',
+                            message: 'success'
+                        };
+                    }
+                };
+            }
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-zp-query-refunded-legacy-rpc',
+                action: 'query_zpay_order'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 503);
+        assert.equal(payload.success, false);
+        assert.match(payload.message, /退款扣回 RPC 仍是整数版本/);
+        assert.match(payload.message, /20260418_enable_decimal_refund_reclaim_rpc\.sql/);
+        assert.equal(state.orders[0].status, 'redeemed');
+        assert.equal(state.paymentEvents.length, 1);
+        assert.equal(state.paymentEvents[0].processing_result, 'admin_refund_reclaim_failed');
+        assert.equal(state.auditLogs.length, 0);
+    });
+});
+
 test('reconcile_hupijiao_order credits the order, links checkout session, and issues linked discounts', async () => {
     const state = {
         orders: [

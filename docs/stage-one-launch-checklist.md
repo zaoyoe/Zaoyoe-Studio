@@ -40,7 +40,7 @@
 - [20260322_constrain_payment_sites.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_constrain_payment_sites.sql)
 - [20260322_retire_legacy_redemption_overloads.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_retire_legacy_redemption_overloads.sql)
 - [20260324_add_persistent_rate_limits.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260324_add_persistent_rate_limits.sql)
-- [20260324_add_admin_refund_reclaim_rpc.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260324_add_admin_refund_reclaim_rpc.sql)
+- [20260418_enable_decimal_refund_reclaim_rpc.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260418_enable_decimal_refund_reclaim_rpc.sql)
 - [20260324_add_ops_alert_queue.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260324_add_ops_alert_queue.sql)
 
 ### 上线前最少 SQL 自检

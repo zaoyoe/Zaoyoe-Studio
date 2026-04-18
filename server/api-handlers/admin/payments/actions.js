@@ -141,6 +141,7 @@ const REFUND_ALERT_CONFIG = Object.freeze({
         detail: '网关退款失败后，系统自动补回积分也失败了，需要立即人工核对账务并修复。'
     }
 });
+const DECIMAL_REFUND_RECLAIM_MIGRATION = '20260418_enable_decimal_refund_reclaim_rpc.sql';
 
 function normalizeText(value) {
     return String(value || '').trim();
@@ -643,7 +644,38 @@ async function applyGatewayOrderQuery(supabase, target, actorId, env = process.e
             let reclaimSummary = null;
 
             if (snapshot.credited) {
-                reclaimSummary = await reclaimCreditedGatewayPoints(supabase, target, attemptId, meta.key);
+                try {
+                    reclaimSummary = await reclaimCreditedGatewayPoints(supabase, target, attemptId, meta.key);
+                } catch (reclaimError) {
+                    await tryRecordPaymentEvent(supabase, {
+                        payment_order_id: target.id,
+                        provider: meta.key,
+                        provider_order_no: liveOrder.providerOrderNo || snapshot.providerOrderNo || null,
+                        event_key: buildAdminRefundEventKey(target.id, liveOrder.providerOrderNo || snapshot.providerOrderNo, actorId, meta.key),
+                        event_type: 'admin_refund',
+                        signature_valid: true,
+                        amount_valid: null,
+                        payload: {
+                            action: meta.queryAction,
+                            source: 'gateway_query_sync',
+                            query: liveOrder,
+                            reclaim: reclaimError?.reclaimDetails || null,
+                            note: '后台实时查单确认外部已退款'
+                        },
+                        processing_result: 'admin_refund_reclaim_failed',
+                        error_message: reclaimError.message || `${meta.label}退款积分扣回失败`,
+                        response_status: reclaimError?.statusCode || 409,
+                        processed_at: new Date().toISOString()
+                    });
+                    await tryNotifyRefundOpsAlert(supabase, target, 'admin_refund_reclaim_failed', {
+                        note: '后台实时查单确认外部已退款',
+                        failureMessage: reclaimError.message,
+                        responseStatus: reclaimError?.statusCode || 409,
+                        liveOrder,
+                        reclaimDetails: reclaimError?.reclaimDetails || null
+                    });
+                    throw reclaimError;
+                }
             }
 
             const syncedOrder = await syncRefundedPaymentOrder(supabase, target, {
@@ -1084,6 +1116,16 @@ function isMissingRefundReclaimRpc(error) {
     );
 }
 
+function isLegacyIntegerRefundReclaimRpc(error) {
+    const message = [
+        error?.message,
+        error?.details,
+        error?.hint
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    return message.includes('invalid input syntax for type integer');
+}
+
 function getGatewayRefundSnapshot(target = {}, providerKey = '') {
     const metadata = normalizeJsonObject(target.provider_metadata);
     const status = normalizeText(target.status).toLowerCase();
@@ -1229,12 +1271,17 @@ async function reclaimCreditedGatewayPoints(supabase, target, attemptId, provide
     });
 
     if (reclaimResult?.error) {
+        const missingRpc = isMissingRefundReclaimRpc(reclaimResult.error);
+        const legacyIntegerRpc = isLegacyIntegerRefundReclaimRpc(reclaimResult.error);
         const error = new Error(
-            isMissingRefundReclaimRpc(reclaimResult.error)
-                ? '退款扣回 RPC 尚未部署，请先执行 20260324_add_admin_refund_reclaim_rpc.sql'
+            missingRpc
+                ? `退款扣回 RPC 尚未部署，请先执行 ${DECIMAL_REFUND_RECLAIM_MIGRATION}`
+                : (legacyIntegerRpc
+                    ? `退款扣回 RPC 仍是整数版本，请先执行 ${DECIMAL_REFUND_RECLAIM_MIGRATION}`
                 : (reclaimResult.error.message || '执行退款积分扣回失败')
+                )
         );
-        error.statusCode = isMissingRefundReclaimRpc(reclaimResult.error) ? 503 : 502;
+        error.statusCode = missingRpc || legacyIntegerRpc ? 503 : 502;
         throw error;
     }
 

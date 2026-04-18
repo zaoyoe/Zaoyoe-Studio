@@ -184,7 +184,7 @@
 5. 如果要收紧来源链路，再补：
    - `HUPIJIAO_WEBHOOK_TRUSTED_PROXIES`
    - `HUPIJIAO_WEBHOOK_ALLOWED_IPS`
-6. 先执行 migration：`20260324_add_admin_refund_reclaim_rpc.sql`，确认 `fn_deduct_points_admin_site_with_breakdown` 已落库
+6. 先执行 migration：`20260418_enable_decimal_refund_reclaim_rpc.sql`，确认 `fn_deduct_points_admin_site_with_breakdown` 已升级为小数精度版本
 7. 做 1 笔“已入账订单退款”演练，确认后台会写入：
    - `payment_events.admin_refund_*`
    - `payment_orders.provider_metadata.refund_reclaimed_*`

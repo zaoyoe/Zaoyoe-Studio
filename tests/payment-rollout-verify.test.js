@@ -84,7 +84,7 @@ test('formatHuman renders a readable PASS report', () => {
             admin_refund_reclaim: {
                 key: 'admin_refund_reclaim',
                 rpc_name: 'fn_deduct_points_admin_site_with_breakdown',
-                migration: '20260324_add_admin_refund_reclaim_rpc.sql',
+                migration: '20260418_enable_decimal_refund_reclaim_rpc.sql',
                 available: true,
                 probe: {
                     message: 'target_user_id is required'

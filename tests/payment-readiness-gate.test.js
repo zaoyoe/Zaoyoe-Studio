@@ -26,7 +26,11 @@ test('isMissingRpcCapabilityError detects missing function signatures from postg
         true
     );
     assert.equal(
-        isMissingRpcCapabilityError({ code: '42883', message: 'function public.fn_deduct_points_admin_site_with_breakdown(uuid, integer, text, text, character varying) does not exist' }, 'fn_deduct_points_admin_site_with_breakdown'),
+        isMissingRpcCapabilityError({ code: '42883', message: 'function public.fn_deduct_points_admin_site_with_breakdown(uuid, numeric, text, text, character varying) does not exist' }, 'fn_deduct_points_admin_site_with_breakdown'),
+        true
+    );
+    assert.equal(
+        isMissingRpcCapabilityError({ code: '22P02', message: 'invalid input syntax for type integer: "0.01"' }, 'fn_deduct_points_admin_site_with_breakdown'),
         true
     );
     assert.equal(
@@ -56,7 +60,7 @@ test('buildReadinessSummary marks missing rpc capabilities as blocking', () => {
                 key: 'admin_refund_reclaim',
                 rpc_name: 'fn_deduct_points_admin_site_with_breakdown',
                 label: '后台退款积分扣回 RPC',
-                migration: '20260324_add_admin_refund_reclaim_rpc.sql',
+                migration: '20260418_enable_decimal_refund_reclaim_rpc.sql',
                 available: true,
                 outcome: 'rejected_as_expected',
                 probe: {

@@ -117,14 +117,14 @@
 - `hupijiao.queryOrder` 已接入官方查询接口，后续只需要再暴露后台/补单入口即可
 - 后台退款流已经接入支付异常页和最近订单列表，未入账订单会先查单再退款
 - 已入账 / 已发点订单现在会先精确扣回积分，再调虎皮椒退款；若网关失败，会按 paid / bonus 拆分自动补回积分并保留审计事件
-- 这条“已入账退款”链路依赖 migration：`/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260324_add_admin_refund_reclaim_rpc.sql`
+- 这条“已入账退款”链路依赖 migration：`/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260418_enable_decimal_refund_reclaim_rpc.sql`
 
 上线前仍建议完成的收口：
 
 1. 用真实商户号完成一次正式联调，确认 `notify_url` / `return_url` 域名配置无误
 2. 决定是否启用 `HUPIJIAO_WEBHOOK_TRUSTED_PROXIES` / `HUPIJIAO_WEBHOOK_ALLOWED_IPS` 做来源链路收口
 3. 把虎皮椒查单/补单能力接进后台支付对账页面，而不是只停留在 adapter 层
-4. 上线前先执行 `20260324_add_admin_refund_reclaim_rpc.sql`，否则“已入账订单退款”会保持 fail-closed
+4. 上线前先执行 `20260418_enable_decimal_refund_reclaim_rpc.sql`，否则“小数积分退款扣回”会保持 fail-closed
 
 ## 约束
 
