@@ -136,7 +136,7 @@
 
 当前支付链路里要特别记住的一项：
 
-- [20260324_add_admin_refund_reclaim_rpc.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260324_add_admin_refund_reclaim_rpc.sql)
+- [20260418_enable_decimal_refund_reclaim_rpc.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260418_enable_decimal_refund_reclaim_rpc.sql)
   - 未执行时，“已入账订单退款”会继续保持 fail-closed
 
 ## 5. 配额控制建议

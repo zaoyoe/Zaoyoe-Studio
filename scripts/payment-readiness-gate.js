@@ -24,11 +24,11 @@ const CAPABILITY_DEFINITIONS = Object.freeze([
         key: 'admin_refund_reclaim',
         rpcName: 'fn_deduct_points_admin_site_with_breakdown',
         label: '后台退款积分扣回 RPC',
-        migration: '20260324_add_admin_refund_reclaim_rpc.sql',
+        migration: '20260418_enable_decimal_refund_reclaim_rpc.sql',
         buildProbeArgs() {
             return {
                 p_target_user_id: null,
-                p_amount: 1,
+                p_amount: 0.01,
                 p_reason: 'readiness_probe',
                 p_reference_id: null,
                 p_site: 'cn'
@@ -106,6 +106,13 @@ function isMissingRpcCapabilityError(error, rpcName = '') {
     const normalizedRpcName = String(rpcName || '').trim().toLowerCase();
 
     if (normalizedCode === '42883' || normalizedCode === 'PGRST202') {
+        return true;
+    }
+
+    if (
+        normalizedRpcName === 'fn_deduct_points_admin_site_with_breakdown'
+        && normalizedMessage.includes('invalid input syntax for type integer')
+    ) {
         return true;
     }
 

@@ -1,8 +1,3 @@
--- ============================================
--- Site-aware admin deduction with explicit paid/bonus breakdown
--- 用于退款扣回等需要精确补偿的服务端场景
--- ============================================
-
 DROP FUNCTION IF EXISTS public.fn_deduct_points_admin_site_with_breakdown(UUID, INT, TEXT, TEXT, VARCHAR);
 DROP FUNCTION IF EXISTS public.fn_deduct_points_admin_site_with_breakdown(UUID, NUMERIC, TEXT, TEXT, VARCHAR);
 
