@@ -168,6 +168,11 @@ test('buildZpay query and refund payloads prefer out_trade_no when both order id
     assert.equal(Object.prototype.hasOwnProperty.call(refundPayload, 'trade_no'), false);
 });
 
+test('normalizeZpayPaymentStatus maps refunded status values', () => {
+    assert.equal(require('../api/_lib/payments/zpay').normalizeZpayPaymentStatus('', 2), 'refunded');
+    assert.equal(require('../api/_lib/payments/zpay').normalizeZpayPaymentStatus('REFUNDED', null), 'refunded');
+});
+
 test('createZpayPayment posts form data to the mapi endpoint', async () => {
     const result = await createZpayPayment({
         channelConfig: {
