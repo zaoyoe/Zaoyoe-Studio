@@ -294,11 +294,15 @@ async function withPaymentsSummaryHandler(state, callback) {
     const handlerPath = path.resolve(__dirname, '../server/api-handlers/admin/payments/summary.js');
     const originalLoad = Module._load;
     const mockAdminModule = createMockAdminModule(state);
+    const mockProviderAdaptersModule = state.providerAdaptersModule || null;
 
     delete require.cache[handlerPath];
     Module._load = function patchedLoad(request, parent, isMain) {
         if (request === '../../../../api/_lib/admin') {
             return mockAdminModule;
+        }
+        if (request === '../../../../api/_lib/payments/provider-adapters' && mockProviderAdaptersModule) {
+            return mockProviderAdaptersModule;
         }
 
         return originalLoad.call(this, request, parent, isMain);
@@ -1420,6 +1424,85 @@ test('payments summary exposes zpay query and reconcile actions on recent orders
             'query_zpay_order',
             'reconcile_zpay_order',
             'refund_zpay'
+        ]);
+    });
+});
+
+test('payments summary hides refund actions for recent zpay orders that are already refunded upstream', async () => {
+    const state = {
+        paymentOrders: [
+            {
+                id: 'order-zp-summary-refunded-live-1',
+                provider: 'zpay',
+                provider_order_no: 'ZPAY_SUMMARY_REFUNDED_LIVE_1',
+                user_id: 'user-zp-summary-refunded-live-1',
+                site: 'cn',
+                status: 'redeemed',
+                expected_amount: 0.01,
+                paid_amount: 0.01,
+                points_amount: 0.01,
+                package_name: '易支付退款测试单',
+                created_at: '2026-04-18T12:00:00.000Z',
+                paid_at: '2026-04-18T12:01:00.000Z',
+                claimed_at: '2026-04-18T12:02:00.000Z',
+                verified_at: '2026-04-18T12:02:00.000Z',
+                last_error: null,
+                provider_metadata: {
+                    trade_no: 'ZPAY_TRADE_SUMMARY_REFUNDED_LIVE_1'
+                }
+            }
+        ],
+        paymentEvents: [],
+        checkoutSessions: [],
+        paymentQueryAttempts: [],
+        paymentAnomalyCases: [],
+        opsAlertJobs: [],
+        providerAdaptersModule: {
+            getPaymentProviderAdapter(providerKey) {
+                assert.equal(providerKey, 'zpay');
+                return {
+                    async resolveRuntimeContext() {
+                        return { provider: 'zpay' };
+                    },
+                    async queryOrder() {
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: 'ZPAY_SUMMARY_REFUNDED_LIVE_1',
+                            tradeNo: 'ZPAY_TRADE_SUMMARY_REFUNDED_LIVE_1',
+                            status: 'refunded',
+                            statusRaw: '2',
+                            paidAmount: 0.01,
+                            transactionId: 'ZPAY_TRADE_SUMMARY_REFUNDED_LIVE_1',
+                            message: 'success'
+                        };
+                    }
+                };
+            }
+        }
+    };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'ops',
+                days: '30'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+        const order = Array.isArray(payload.recent_orders) ? payload.recent_orders[0] : null;
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.ok(order);
+        assert.equal(order.provider_order_no, 'ZPAY_SUMMARY_REFUNDED_LIVE_1');
+        assert.equal(order.provider_metadata.refund_status, 'refunded');
+        assert.deepEqual(order.order_available_actions, [
+            'query_zpay_order'
         ]);
     });
 });
