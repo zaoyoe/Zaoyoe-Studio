@@ -11,6 +11,8 @@ const {
     createZpayPayment,
     normalizeZpayConfig,
     parseZpayParam,
+    refundZpayPayment,
+    requestZpayJson,
     verifyZpaySign
 } = require('../api/_lib/payments/zpay');
 
@@ -208,4 +210,42 @@ test('createZpayPayment posts form data to the mapi endpoint', async () => {
 
     assert.equal(result.response.data.payurl, 'https://zpayz.cn/pay/demo/1');
     assert.equal(result.requestPayload.out_trade_no, 'ZPORDER001');
+});
+
+test('requestZpayJson wraps upstream fetch failures with a friendly message', async () => {
+    await assert.rejects(
+        requestZpayJson('https://zpayz.cn/api.php', { act: 'order' }, {
+            fetchImpl: async () => {
+                throw new Error('fetch failed');
+            }
+        }),
+        /易支付网关请求失败，请稍后重试/
+    );
+});
+
+test('refundZpayPayment surfaces empty-body responses as a safe manual-check prompt', async () => {
+    await assert.rejects(
+        refundZpayPayment({
+            channelConfig: {
+                pid: 'pid-123',
+                checkout_url: 'https://zpayz.cn',
+                notify_url: 'https://www.zaoyoe.com/api/payments/zpay/webhook'
+            },
+            secretValues: {
+                zpay_pkey: 'pkey-123'
+            },
+            outTradeNo: 'ZPORDER001',
+            money: 9.9
+        }, {
+            fetchImpl: async () => ({
+                ok: true,
+                status: 200,
+                statusText: 'OK',
+                async text() {
+                    return '';
+                }
+            })
+        }),
+        /易支付退款接口返回空响应，请先到易支付后台确认是否已退款，避免重复提交/
+    );
 });
