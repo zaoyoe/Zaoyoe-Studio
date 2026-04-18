@@ -6444,7 +6444,10 @@ async function analyzeImages(options = {}) {
         const result = await callAdminVision(gridImage.base64);
 
         analysisResult = result;
-        populateForm(result, { preserveExisting: Boolean(settings.preserveExisting) });
+        populateForm(result, {
+            preserveExisting: Boolean(settings.preserveExisting),
+            source: 'analysis'
+        });
 
         setAdminStudioVisibility(loadingEl, false);
         setAdminStudioVisibility(formEl, true);
@@ -6890,8 +6893,17 @@ function resolvePromptPrimaryFields(formValues = {}, analysisData = {}) {
 
 function populateForm(data, options = {}) {
     const preserveExisting = Boolean(options.preserveExisting);
+    const source = String(options.source || 'record').trim().toLowerCase();
+    const isAnalysisSource = source === 'analysis';
     const currentForm = preserveExisting ? getPromptFormSnapshot() : null;
-    const resolvedPrimaryFields = resolvePromptPrimaryFields(currentForm || {}, data || {});
+    let resolvedPrimaryFields = resolvePromptPrimaryFields(currentForm || {}, data || {});
+
+    if (isAnalysisSource && !promptHasVisibleCopy(currentForm?.prompt)) {
+        resolvedPrimaryFields = {
+            ...resolvedPrimaryFields,
+            promptText: ''
+        };
+    }
 
     // Title
     document.getElementById('promptTitle').value = resolvedPrimaryFields.title;
@@ -6920,10 +6932,10 @@ function populateForm(data, options = {}) {
             : (data.description_en || ''),
         prompt_text_zh: preserveExisting && promptHasVisibleCopy(currentForm?.bilingual?.prompt_text_zh)
             ? currentForm.bilingual.prompt_text_zh
-            : (data.prompt_text_zh || data.prompt_suggestion_zh || ''),
+            : (isAnalysisSource ? '' : (data.prompt_text_zh || '')),
         prompt_text_en: preserveExisting && promptHasVisibleCopy(currentForm?.bilingual?.prompt_text_en)
             ? currentForm.bilingual.prompt_text_en
-            : (data.prompt_text_en || data.prompt_suggestion_en || '')
+            : (isAnalysisSource ? '' : (data.prompt_text_en || ''))
     };
 
     populatePromptBilingualFields(nextBilingualValues);
@@ -7053,7 +7065,7 @@ async function savePrompt(e) {
         const resolvedPrimaryFields = resolvePromptPrimaryFields(formValues, activeAnalysisResult || {});
         let title = resolvedPrimaryFields.title;
         let category = resolvedPrimaryFields.category;
-        const promptText = resolvedPrimaryFields.promptText;
+        const promptText = formValues.prompt;
         const description = resolvedPrimaryFields.description;
         const bilingualValues = collectPromptBilingualFieldValues();
         const promptOps = collectPromptOpsFieldValues();
@@ -7126,23 +7138,27 @@ async function savePrompt(e) {
             promptData.title_zh = promptData.title_zh || activeAnalysisResult.title_zh || '';
             promptData.description_en = promptData.description_en || activeAnalysisResult.description_en || activeAnalysisResult.description || description;
             promptData.description_zh = promptData.description_zh || activeAnalysisResult.description_zh || '';
-            promptData.prompt_text_en = promptData.prompt_text_en || activeAnalysisResult.prompt_suggestion_en || '';
-            promptData.prompt_text_zh = promptData.prompt_text_zh || activeAnalysisResult.prompt_suggestion_zh || '';
+        }
+
+        const promptTextLooksChinese = /[\u4e00-\u9fff]/.test(promptData.prompt || '');
+        if (!promptTextLooksChinese && promptData.prompt) {
+            promptData.prompt_text_en = promptData.prompt;
+            const promptTextEnInput = document.getElementById('promptTextEn');
+            if (promptTextEnInput) {
+                promptTextEnInput.value = promptData.prompt;
+            }
         }
 
         // Auto-seed and translate missing bilingual fields using PromptTranslator.
-        // Single-save should try to complete all missing zh/en fields, not just establish minimal coverage.
+        // Prompt text stays manual; only title/description participate in the auto bilingual flow.
         let translationSoftFailed = false;
         const bilingualCoverageInput = {
             title: promptData.title,
             description: promptData.description,
-            prompt_text: promptData.prompt,
             title_zh: promptData.title_zh,
             title_en: promptData.title_en,
             description_zh: promptData.description_zh,
-            description_en: promptData.description_en,
-            prompt_text_zh: promptData.prompt_text_zh,
-            prompt_text_en: promptData.prompt_text_en
+            description_en: promptData.description_en
         };
 
         if (window.PromptTranslator?.seedCoverageFields) {
@@ -7151,8 +7167,6 @@ async function savePrompt(e) {
             promptData.title_en = promptData.title_en || seededCoverageFields.title_en || '';
             promptData.description_zh = promptData.description_zh || seededCoverageFields.description_zh || '';
             promptData.description_en = promptData.description_en || seededCoverageFields.description_en || '';
-            promptData.prompt_text_zh = promptData.prompt_text_zh || seededCoverageFields.prompt_text_zh || '';
-            promptData.prompt_text_en = promptData.prompt_text_en || seededCoverageFields.prompt_text_en || '';
         }
 
         if (window.PromptTranslator && window.AdminAI?.configured) {
@@ -7169,21 +7183,16 @@ async function savePrompt(e) {
                 const translatedFields = await PromptTranslator.translatePromptFields({
                     title: promptData.title,
                     description: promptData.description,
-                    prompt_text: promptData.prompt,
                     title_zh: promptData.title_zh,
                     title_en: promptData.title_en,
                     description_zh: promptData.description_zh,
-                    description_en: promptData.description_en,
-                    prompt_text_zh: promptData.prompt_text_zh,
-                    prompt_text_en: promptData.prompt_text_en
+                    description_en: promptData.description_en
                 }, { mode: 'full' });
 
                 promptData.title_zh = promptData.title_zh || translatedFields.title_zh || '';
                 promptData.title_en = promptData.title_en || translatedFields.title_en || '';
                 promptData.description_zh = promptData.description_zh || translatedFields.description_zh || '';
                 promptData.description_en = promptData.description_en || translatedFields.description_en || '';
-                promptData.prompt_text_zh = promptData.prompt_text_zh || translatedFields.prompt_text_zh || '';
-                promptData.prompt_text_en = promptData.prompt_text_en || translatedFields.prompt_text_en || '';
 
                 console.log('[Gallery] Auto-translation complete:', {
                     title_zh: promptData.title_zh,
