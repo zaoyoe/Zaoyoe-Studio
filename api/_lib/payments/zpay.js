@@ -378,22 +378,29 @@ async function requestZpayJson(url, payload, {
         searchParams.append(key, String(value));
     });
 
-    const response = await fetchImpl(
-        normalizedMethod === 'GET'
-            ? `${String(url || '').trim()}?${searchParams.toString()}`
-            : String(url || '').trim(),
-        normalizedMethod === 'GET'
-            ? {
-                method: 'GET'
-            }
-            : {
-                method: normalizedMethod,
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8'
-                },
-                body: searchParams.toString()
-            }
-    );
+    let response;
+    try {
+        response = await fetchImpl(
+            normalizedMethod === 'GET'
+                ? `${String(url || '').trim()}?${searchParams.toString()}`
+                : String(url || '').trim(),
+            normalizedMethod === 'GET'
+                ? {
+                    method: 'GET'
+                }
+                : {
+                    method: normalizedMethod,
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8'
+                    },
+                    body: searchParams.toString()
+                }
+        );
+    } catch (error) {
+        const wrappedError = new Error('易支付网关请求失败，请稍后重试');
+        wrappedError.cause = error;
+        throw wrappedError;
+    }
 
     const text = await response.text();
     let data = null;
@@ -471,6 +478,10 @@ async function refundZpayPayment(options = {}, dependencies = {}) {
     const response = await requestZpayJson(config.refundUrl, payload, dependencies);
 
     if (!response.data || typeof response.data !== 'object') {
+        const rawText = String(response.text || '').trim();
+        if (!rawText) {
+            throw new Error('易支付退款接口返回空响应，请先到易支付后台确认是否已退款，避免重复提交');
+        }
         throw new Error(`易支付退款返回非 JSON：HTTP ${response.status}`);
     }
 
