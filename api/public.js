@@ -126,14 +126,20 @@ function createRouteHandlersForScope(scope) {
         const {
             createWalletHandlers
         } = require('../server/api-handlers/public/wallet');
-        const walletCheckinHandler = require('./wallet/checkin');
 
         return {
             ...createWalletHandlers({
                 admin,
                 site
             }),
-            checkin: walletCheckinHandler
+            async checkin(req, res) {
+                try {
+                    const walletCheckinHandler = require('./wallet/checkin');
+                    return walletCheckinHandler(req, res);
+                } catch (error) {
+                    return sendScopeInitializationFailure(res, 'wallet', error);
+                }
+            }
         };
     }
     default:
