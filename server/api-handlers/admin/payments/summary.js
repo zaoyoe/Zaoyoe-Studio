@@ -3,6 +3,9 @@ const {
     sendJson,
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
+const {
+    getPaymentProviderAdapter
+} = require('../../../../api/_lib/payments/provider-adapters');
 
 const EVENT_OK_RESULTS = new Set([
     'processed_paid',
@@ -451,6 +454,68 @@ function canQueryZpayOrder(item) {
 
 function canReconcileZpayOrder(item) {
     return canReconcileGatewayOrder(item, 'zpay');
+}
+
+async function enrichRecentOrdersWithGatewayRefundHints(orders = [], supabase, env = process.env) {
+    if (!Array.isArray(orders) || !orders.length || !supabase) {
+        return Array.isArray(orders) ? orders : [];
+    }
+
+    const runtimeContextPromises = new Map();
+
+    return Promise.all(orders.map(async (order) => {
+        const meta = getGatewayActionMetaFromItem(order);
+        if (!meta || !canRefundGatewayOrder(order, meta.key)) {
+            return order;
+        }
+
+        const adapter = getPaymentProviderAdapter(meta.key);
+        if (!adapter || typeof adapter.resolveRuntimeContext !== 'function' || typeof adapter.queryOrder !== 'function') {
+            return order;
+        }
+
+        const metadata = normalizeJsonObject(order?.provider_metadata);
+
+        try {
+            if (!runtimeContextPromises.has(meta.key)) {
+                runtimeContextPromises.set(meta.key, Promise.resolve(adapter.resolveRuntimeContext({
+                    supabase,
+                    env
+                })));
+            }
+
+            const runtimeContext = await runtimeContextPromises.get(meta.key);
+            const liveOrder = await adapter.queryOrder({
+                runtimeContext,
+                providerOrderNo: String(order?.provider_order_no || metadata.provider_order_no || '').trim(),
+                openOrderId: String(metadata.gateway_open_order_id || metadata.open_order_id || '').trim(),
+                tradeNo: String(metadata.trade_no || metadata.transaction_id || '').trim()
+            });
+
+            if (liveOrder?.supported === false || liveOrder?.success === false) {
+                return order;
+            }
+
+            const liveStatus = String(liveOrder?.status || '').trim().toLowerCase();
+            if (!['refunded', 'refund_pending'].includes(liveStatus)) {
+                return order;
+            }
+
+            return {
+                ...order,
+                provider_metadata: {
+                    ...metadata,
+                    refund_status: liveStatus,
+                    payment_status: liveStatus,
+                    payment_status_raw: String(liveOrder?.statusRaw || metadata.payment_status_raw || '').trim() || undefined,
+                    trade_no: String(liveOrder?.tradeNo || metadata.trade_no || metadata.transaction_id || '').trim() || undefined,
+                    transaction_id: String(liveOrder?.transactionId || liveOrder?.tradeNo || metadata.transaction_id || metadata.trade_no || '').trim() || undefined
+                }
+            };
+        } catch (error) {
+            return order;
+        }
+    }));
 }
 
 function getOrderAvailableActions(order) {
@@ -2103,9 +2168,11 @@ module.exports = async function handler(req, res) {
             ? []
             : scopedEvents.filter((event) => new Date(event.created_at).getTime() >= new Date(trendSinceIso).getTime());
 
+        const recentOrderCandidates = view === 'ops'
+            ? (visibleOrders || []).slice(0, 20)
+            : [];
         const recentOrders = view === 'ops'
-            ? (visibleOrders || [])
-                .slice(0, 20)
+            ? (await enrichRecentOrdersWithGatewayRefundHints(recentOrderCandidates, adminSupabase || scopedClient, process.env))
                 .map((order) => ({
                     ...order,
                     order_available_actions: getOrderAvailableActions(order)
