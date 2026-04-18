@@ -437,6 +437,90 @@ test('zpay webhook accepts signed GET callbacks through the shared handler', asy
     });
 });
 
+test('zpay webhook ignores internal public-route query params before signature verification', async () => {
+    const state = {
+        existingPaymentOrder: {
+            id: 'payment-order-rewrite',
+            user_id: 'user-1',
+            provider: 'zpay',
+            provider_order_no: 'ZP789',
+            checkout_session_id: 'checkout-session-789',
+            site: 'cn',
+            package_id: null,
+            package_name: '自定义充值',
+            expected_amount: 0.01,
+            paid_amount: null,
+            points_amount: 0.01,
+            status: 'pending',
+            sign_verified: false,
+            amount_verified: false,
+            provider_metadata: {},
+            raw_payload: {
+                request: {
+                    points_amount: 0.01,
+                    bonus_points: 0
+                }
+            }
+        },
+        queryOrderResult: {
+            supported: true,
+            success: true,
+            providerOrderNo: 'ZP789',
+            tradeNo: 'TRADE-789',
+            paidAmount: 0.01,
+            status: 'paid',
+            statusRaw: 'TRADE_SUCCESS',
+            responsePayload: {
+                code: '1',
+                status: 1
+            }
+        }
+    };
+
+    await withZpayWebhookModule(buildDependencyMocks(state), async ({ createZpayWebhookHandler }) => {
+        const handler = createZpayWebhookHandler({
+            supabase: createSupabaseMock(state),
+            env: {
+                APP_ENV: 'production',
+                APP_BASE_URL: 'https://www.zaoyoe.com',
+                TRUSTED_PROXY_IPS: '10.0.0.0/8',
+                ZPAY_WEBHOOK_ALLOWED_IPS: '203.0.113.10'
+            }
+        });
+        const attachData = JSON.stringify({
+            user_id: 'user-1',
+            site: 'cn',
+            expected_amount: 0.01,
+            charge_type: 'custom',
+            checkout_session_id: 'checkout-session-789'
+        });
+        const req = {
+            method: 'GET',
+            url: `/api/public?scope=payments&route=zpay/webhook&path=zpay/webhook&out_trade_no=ZP789&trade_no=TRADE-789&trade_status=TRADE_SUCCESS&money=0.01&pid=2026041807323142&type=alipay&param=${encodeURIComponent(attachData)}`,
+            headers: {
+                host: 'www.zaoyoe.com',
+                'x-forwarded-for': '203.0.113.10'
+            },
+            query: {
+                scope: 'payments',
+                route: 'zpay/webhook',
+                path: 'zpay/webhook'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.body, 'success');
+        assert.equal(state.verificationRequest.payload.scope, undefined);
+        assert.equal(state.verificationRequest.payload.route, undefined);
+        assert.equal(state.verificationRequest.payload.path, undefined);
+        assert.equal(state.paymentOrderPatch.status, 'redeemed');
+        assert.equal(state.finalizedEvent.processing_result, 'processed_paid');
+    });
+});
+
 test('zpay webhook does not credit points when active query reports a non-paid order', async () => {
     const state = {
         existingPaymentOrder: {

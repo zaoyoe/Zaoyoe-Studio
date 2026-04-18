@@ -32,6 +32,7 @@ const {
 
 const PAYMENT_ORDER_SNAPSHOT_SELECT = 'id, user_id, provider, provider_order_no, checkout_session_id, site, package_id, package_name, expected_amount, paid_amount, points_amount, status, sign_verified, amount_verified, provider_metadata, raw_payload, created_at, paid_at, claimed_at, verified_at, last_error';
 const zpayProvider = getPaymentProviderAdapter('zpay');
+const INTERNAL_PUBLIC_ROUTE_QUERY_KEYS = new Set(['scope', 'route', 'path']);
 
 function getRequestHostName(req) {
     const rawHost = String(req?.headers?.host || req?.headers?.Host || '').trim().toLowerCase();
@@ -272,6 +273,18 @@ function parseSearchParamsObject(searchParams) {
     return payload;
 }
 
+function stripInternalRouteQueryKeys(payload = {}) {
+    const sanitized = normalizeRequestObject(payload);
+
+    for (const key of INTERNAL_PUBLIC_ROUTE_QUERY_KEYS) {
+        if (Object.prototype.hasOwnProperty.call(sanitized, key)) {
+            delete sanitized[key];
+        }
+    }
+
+    return sanitized;
+}
+
 function parseBodyByContentType(rawBody = '', contentType = '') {
     const normalizedRawBody = String(rawBody || '').trim();
     if (!normalizedRawBody) {
@@ -319,7 +332,7 @@ async function collectWebhookPayload(req) {
         const host = getRequestHostName(req) || 'localhost';
         try {
             const parsedUrl = new URL(String(req?.url || ''), `http://${host}`);
-            return parseSearchParamsObject(parsedUrl.searchParams);
+            return stripInternalRouteQueryKeys(parseSearchParamsObject(parsedUrl.searchParams));
         } catch (_) {
             return {};
         }
@@ -327,7 +340,7 @@ async function collectWebhookPayload(req) {
 
     const queryPayload = {
         ...queryPayloadFromUrl,
-        ...normalizeRequestObject(req?.query)
+        ...stripInternalRouteQueryKeys(normalizeRequestObject(req?.query))
     };
 
     let bodyPayload = {};
