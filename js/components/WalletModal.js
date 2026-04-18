@@ -1491,6 +1491,11 @@
                 try {
                     const statusResult = await PointsService.getPaymentRequestStatus({
                         checkout_session_id: checkoutSessionId,
+                        provider_order_no: String(
+                            paymentResult?.provider_order_no
+                            || paymentResult?.provider_summary?.out_trade_no
+                            || ''
+                        ).trim() || null,
                         site: paymentResult?.site || window.SiteConfig?.site || 'cn'
                     });
                     if (stopped) {
