@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 const {
     getPaymentProviderAdapter,
+    normalizePointValue,
     roundCurrencyAmount: roundPaymentCurrencyAmount,
     amountsMatch: paymentAmountsMatch
 } = require('../api/_lib/payments/provider-adapters');
@@ -26,6 +27,9 @@ const {
     normalizeHupijiaoPaymentStatus,
     parseHupijiaoAttach
 } = require('../api/_lib/payments/hupijiao');
+const {
+    createZpayWebhookHandler
+} = require('../api/_lib/payments/zpay-webhook');
 const {
     maybeIssueAffiliateDiscountAssetsForRecharge,
     maybeIssueRechargeDiscountAssets
@@ -180,6 +184,10 @@ const supabase = createClient(
     process.env.SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+const zpayWebhookHandler = createZpayWebhookHandler({
+    supabase,
+    env: process.env
+});
 
 // Middleware — merge env var origins WITH code defaults (env var alone used to override defaults)
 const defaultOrigins = [
@@ -394,6 +402,13 @@ function getAfdianWebhookTrustedProxies() {
 
 function getHupijiaoWebhookTrustedProxies() {
     return process.env.HUPIJIAO_WEBHOOK_TRUSTED_PROXIES
+        || process.env.TRUSTED_PROXY_IPS
+        || process.env.TRUSTED_PROXY_CIDRS
+        || '';
+}
+
+function getZpayWebhookTrustedProxies() {
+    return process.env.ZPAY_WEBHOOK_TRUSTED_PROXIES
         || process.env.TRUSTED_PROXY_IPS
         || process.env.TRUSTED_PROXY_CIDRS
         || '';
@@ -1172,7 +1187,7 @@ async function ensureHupijiaoRecoveredPaymentOrder({
     }
 
     const recoveredSite = sanitizeSite(attachData.site || currentSite || 'cn');
-    const recoveredPoints = Math.max(0, Math.round(Number(attachData.granted_points || 0) || 0));
+    const recoveredPoints = normalizePointValue(attachData.granted_points, 0);
     const recoveredExpectedAmount = Number.isFinite(Number(attachData.expected_amount))
         ? roundPaymentCurrencyAmount(attachData.expected_amount)
         : roundPaymentCurrencyAmount(amount);
@@ -1214,6 +1229,67 @@ async function ensureHupijiaoRecoveredPaymentOrder({
 
     if (error) {
         throw new Error(error.message || 'Failed to recover Hupijiao payment order');
+    }
+
+    return data || null;
+}
+
+async function ensureZpayRecoveredPaymentOrder({
+    providerOrderNo,
+    attachData = {},
+    payload = {},
+    amount,
+    signatureValid,
+    currentSite
+}) {
+    let paymentOrder = await loadPaymentOrderSnapshotByProviderOrderNo('zpay', providerOrderNo);
+    if (paymentOrder) {
+        return paymentOrder;
+    }
+
+    const recoveredSite = sanitizeSite(attachData.site || currentSite || 'cn');
+    const recoveredPoints = normalizePointValue(attachData.granted_points, 0);
+    const recoveredExpectedAmount = Number.isFinite(Number(attachData.expected_amount))
+        ? roundPaymentCurrencyAmount(attachData.expected_amount)
+        : roundPaymentCurrencyAmount(amount);
+    const nowIso = new Date().toISOString();
+    const insertPayload = {
+        provider: 'zpay',
+        provider_order_no: providerOrderNo,
+        user_id: String(attachData.user_id || '').trim() || null,
+        checkout_session_id: String(attachData.checkout_session_id || '').trim() || null,
+        site: recoveredSite,
+        package_id: String(attachData.package_id || '').trim() || null,
+        package_name: String(attachData.package_name || '').trim() || '充值订单',
+        expected_amount: recoveredExpectedAmount > 0 ? recoveredExpectedAmount : null,
+        paid_amount: roundPaymentCurrencyAmount(amount),
+        points_amount: recoveredPoints,
+        status: 'pending_review',
+        sign_verified: signatureValid === true,
+        amount_verified: false,
+        raw_payload: {
+            source: 'zpay_webhook_recovery',
+            attach: attachData,
+            webhook: payload
+        },
+        provider_metadata: {
+            recovered_from: 'zpay_param',
+            checkout_session_key: String(attachData.checkout_session_key || '').trim() || null,
+            charge_type: String(attachData.charge_type || '').trim() || null,
+            custom_quote_id: String(attachData.custom_quote_id || '').trim() || null
+        },
+        created_at: nowIso,
+        updated_at: nowIso
+    };
+
+    const { data, error } = await supabase
+        .from('payment_orders')
+        .insert(insertPayload)
+        .select('id, user_id, provider, provider_order_no, checkout_session_id, site, package_id, package_name, expected_amount, paid_amount, points_amount, status, sign_verified, amount_verified, provider_metadata, raw_payload, created_at, paid_at, claimed_at, verified_at, last_error')
+        .single();
+
+    if (error) {
+        throw new Error(error.message || 'Failed to recover ZPAY payment order');
     }
 
     return data || null;
@@ -1445,10 +1521,7 @@ function buildAfdianQueryOrderInfo({ afdianOrder = null, paymentOrder = null } =
 
     return {
         code: String(afdianOrder?.redeem_code || '').trim() || null,
-        points: Math.max(
-            0,
-            Math.round(Number(paymentOrder?.points_amount ?? afdianOrder?.points ?? 0) || 0)
-        ),
+        points: normalizePointValue(paymentOrder?.points_amount ?? afdianOrder?.points, 0),
         is_redeemed: Boolean(afdianOrder?.is_redeemed),
         created_at: afdianOrder?.created_at || paymentOrder?.created_at || null,
         payment_status: String(paymentOrder?.status || afdianOrder?.payment_status || 'pending').trim() || 'pending',
@@ -1489,7 +1562,7 @@ function getCustomQuoteSnapshot(order = {}) {
     );
     const pointsAmount = Math.max(
         0,
-        Math.round(Number(quote.points_amount ?? order.points_amount ?? 0) || 0)
+        normalizePointValue(quote.points_amount ?? order.points_amount, 0)
     );
     const site = String(order.site || quote.site || '').trim().toLowerCase() || 'cn';
     const chargeType = String(metadata.charge_type || '').trim().toLowerCase();
@@ -1656,7 +1729,7 @@ async function resolveAfdianPaymentIntentClaim({
     const linkedPackageId = String(linkedPaymentOrder?.package_id || '').trim() || null;
     const linkedPointsAmount = Math.max(
         0,
-        Math.round(Number(linkedPaymentOrder?.points_amount ?? afdianOrder?.points ?? 0) || 0)
+        normalizePointValue(linkedPaymentOrder?.points_amount ?? afdianOrder?.points, 0)
     );
     const orderSite = sanitizeSite(linkedPaymentOrder?.site || afdianOrder?.site || '');
     const orderCreatedAtTs = Date.parse(String(
@@ -1705,7 +1778,7 @@ async function resolveAfdianPaymentIntentClaim({
 
         const sourcePointsAmount = Math.max(
             0,
-            Math.round(Number(sourceOrder.points_amount ?? claim.pointsAmount ?? 0) || 0)
+            normalizePointValue(sourceOrder.points_amount ?? claim.pointsAmount, 0)
         );
         if (sourcePointsAmount <= 0 || sourcePointsAmount !== claim.pointsAmount) {
             continue;
@@ -4939,6 +5012,9 @@ app.post('/api/payments/hupijiao/webhook', async (req, res) => {
         return res.status(500).end('error');
     }
 });
+
+// GET or POST /api/payments/zpay/webhook
+app.all('/api/payments/zpay/webhook', zpayWebhookHandler);
 
 // POST /api/afdian/webhook
 app.post('/api/afdian/webhook', async (req, res) => {

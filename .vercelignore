@@ -12,6 +12,7 @@ api/payments/auth-check.js
 api/payments/config.js
 api/payments/create.js
 api/payments/mock/complete.js
+api/payments/status.js
 api/runtime/supabase-config.js
 api/shop/available-discounts.js
 api/shop/claim-discount.js

@@ -18,6 +18,9 @@ const {
     maybeIssueAffiliateDiscountAssetsForRecharge,
     maybeIssueRechargeDiscountAssets
 } = require('../discount-trigger-linkage');
+const {
+    deriveZpayPointBreakdown
+} = require('./zpay-points');
 
 const mockProvider = getPaymentProviderAdapter('mock');
 const CHECKOUT_SESSION_EXPIRY_HOURS = 24;
@@ -26,10 +29,10 @@ const TERMINAL_CHECKOUT_SESSION_STATUSES = ['completed', 'cancelled', 'expired']
 const PENDING_PROVIDER_ORDER_PREFIX = 'PENDING';
 const CUSTOM_RECHARGE_QUOTE_PREFIX = 'crq';
 const PAYMENT_INTENT_CLAIM_PREFIX = 'pic';
-const DEFAULT_CUSTOM_RECHARGE_MIN_POINTS = 1;
+const DEFAULT_CUSTOM_RECHARGE_MIN_POINTS = 0.01;
 const DEFAULT_CUSTOM_RECHARGE_MAX_POINTS = 50000;
-const DEFAULT_CUSTOM_RECHARGE_STEP = 1;
-const DEFAULT_CUSTOM_RECHARGE_POINTS_PER_CNY = 50;
+const DEFAULT_CUSTOM_RECHARGE_STEP = 0.01;
+const DEFAULT_CUSTOM_RECHARGE_POINTS_PER_CNY = 1;
 const DEFAULT_CUSTOM_RECHARGE_QUOTE_TTL_SECONDS = 1800;
 const REMOTE_MOCK_PAYMENT_UNTIL_ENV_NAMES = Object.freeze([
     'ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL',
@@ -56,6 +59,25 @@ function normalizeCurrency(value, fallback = null) {
 function normalizeInteger(value, fallback = 0) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? Math.round(parsed) : fallback;
+}
+
+function normalizePointAmount(value, fallback = 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : fallback;
+}
+
+function toPointCents(value, fallback = 0) {
+    const normalized = normalizePointAmount(value, fallback / 100);
+    return Number.isFinite(normalized) ? Math.round(normalized * 100) : fallback;
+}
+
+function isPointStepAligned(value, step) {
+    const normalizedValue = toPointCents(value, 0);
+    const normalizedStep = toPointCents(step, 0);
+    if (normalizedValue <= 0 || normalizedStep <= 0) {
+        return false;
+    }
+    return normalizedValue % normalizedStep === 0;
 }
 
 function roundUpCurrency(value, fallback = null) {
@@ -133,19 +155,12 @@ function buildCustomRechargeQuoteId() {
 }
 
 function getNormalizedCustomRechargeRules(rechargeOptions = {}) {
-    const minPoints = Math.max(
-        1,
-        normalizeInteger(rechargeOptions?.custom_amount_min_points, DEFAULT_CUSTOM_RECHARGE_MIN_POINTS)
-    );
+    const minPoints = DEFAULT_CUSTOM_RECHARGE_MIN_POINTS;
     const maxPoints = Math.max(
         minPoints,
-        normalizeInteger(rechargeOptions?.custom_amount_max_points, DEFAULT_CUSTOM_RECHARGE_MAX_POINTS)
+        normalizePointAmount(rechargeOptions?.custom_amount_max_points, DEFAULT_CUSTOM_RECHARGE_MAX_POINTS)
     );
-    const step = Math.max(
-        1,
-        normalizeInteger(rechargeOptions?.custom_amount_step, DEFAULT_CUSTOM_RECHARGE_STEP)
-    );
-    const pointsPerCny = Number(rechargeOptions?.custom_amount_points_per_cny);
+    const step = DEFAULT_CUSTOM_RECHARGE_STEP;
     const quoteTtlSeconds = Math.max(
         60,
         normalizeInteger(
@@ -158,9 +173,7 @@ function getNormalizedCustomRechargeRules(rechargeOptions = {}) {
         minPoints,
         maxPoints,
         step,
-        pointsPerCny: Number.isFinite(pointsPerCny) && pointsPerCny > 0
-            ? pointsPerCny
-            : DEFAULT_CUSTOM_RECHARGE_POINTS_PER_CNY,
+        pointsPerCny: DEFAULT_CUSTOM_RECHARGE_POINTS_PER_CNY,
         quoteTtlSeconds
     };
 }
@@ -175,10 +188,10 @@ function issueCustomRechargeQuote({
 }) {
     const normalizedSite = requireSupportedSite(site);
     const rules = getNormalizedCustomRechargeRules(rechargeOptions);
-    const normalizedPoints = normalizeInteger(pointsAmount, 0);
+    const normalizedPoints = normalizePointAmount(pointsAmount, 0);
 
     if (!Number.isFinite(normalizedPoints) || normalizedPoints <= 0) {
-        throw new Error('请输入大于 0 的整数积分');
+        throw new Error('请输入大于 0 的充值积分');
     }
     if (normalizedPoints < rules.minPoints) {
         throw new Error(`单次自定义充值最少为 ${rules.minPoints} 积分`);
@@ -186,8 +199,8 @@ function issueCustomRechargeQuote({
     if (normalizedPoints > rules.maxPoints) {
         throw new Error(`单次自定义充值最多为 ${rules.maxPoints} 积分`);
     }
-    if (normalizedPoints % rules.step !== 0) {
-        throw new Error(`自定义充值需按 ${rules.step} 积分整数档位提交`);
+    if (!isPointStepAligned(normalizedPoints, rules.step)) {
+        throw new Error(`自定义充值需按 ${rules.step} 积分档位提交`);
     }
 
     const paidAmount = roundUpCurrency(normalizedPoints / rules.pointsPerCny, null);
@@ -307,7 +320,7 @@ function verifyCustomRechargeQuoteToken(token, {
         return null;
     }
 
-    const pointsAmount = normalizeInteger(payload.points_amount, 0);
+    const pointsAmount = normalizePointAmount(payload.points_amount, 0);
     const paidAmount = normalizeCurrency(payload.paid_amount, null);
     if (pointsAmount <= 0 || paidAmount === null || paidAmount <= 0) {
         return null;
@@ -393,7 +406,7 @@ function issuePaymentIntentClaimToken({
     const normalizedSite = requireSupportedSite(site);
     const normalizedProvider = String(providerKey || 'afdian').trim().toLowerCase() || 'afdian';
     const normalizedExpectedAmount = normalizeCurrency(expectedAmount, null);
-    const normalizedPointsAmount = normalizeInteger(pointsAmount, 0);
+    const normalizedPointsAmount = normalizePointAmount(pointsAmount, 0);
     const normalizedChargeType = sanitizeText(
         chargeType || (packageId ? 'package' : 'custom'),
         packageId ? 'package' : 'custom',
@@ -526,7 +539,7 @@ function verifyPaymentIntentClaimToken(token, {
     }
 
     const checkoutSessionId = String(payload.checkout_session_id || '').trim();
-    const pointsAmount = normalizeInteger(payload.points_amount, 0);
+    const pointsAmount = normalizePointAmount(payload.points_amount, 0);
     const expectedAmount = normalizeCurrency(payload.expected_amount, null);
     if (!checkoutSessionId || pointsAmount <= 0 || expectedAmount === null || expectedAmount <= 0) {
         return null;
@@ -1543,6 +1556,440 @@ async function loadCheckoutSessionForUser(supabase, userId, sessionId) {
     return data;
 }
 
+async function loadPaymentOrderForUserByCheckoutSession(supabase, userId, checkoutSessionId, paymentOrderId = '') {
+    const normalizedUserId = String(userId || '').trim();
+    const normalizedCheckoutSessionId = String(checkoutSessionId || '').trim();
+    const normalizedPaymentOrderId = String(paymentOrderId || '').trim();
+    if (!supabase || !normalizedUserId || (!normalizedCheckoutSessionId && !normalizedPaymentOrderId)) {
+        return null;
+    }
+
+    const primarySelect = 'id, provider, provider_order_no, checkout_session_id, site, package_id, package_name, expected_amount, paid_amount, points_amount, status, last_error, created_at, updated_at, paid_at, claimed_at, verified_at';
+    const fallbackSelect = 'id, provider, provider_order_no, site, package_id, package_name, expected_amount, paid_amount, points_amount, status, last_error, created_at, updated_at, paid_at, claimed_at, verified_at';
+
+    async function runLookup(selectClause, mode = 'checkout_session') {
+        let query = supabase
+            .from('payment_orders')
+            .select(selectClause)
+            .eq('user_id', normalizedUserId);
+
+        if (mode === 'payment_order_id') {
+            query = query
+                .eq('id', normalizedPaymentOrderId)
+                .maybeSingle();
+        } else {
+            query = query
+                .eq('checkout_session_id', normalizedCheckoutSessionId)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+        }
+
+        return query;
+    }
+
+    async function resolveLookup(mode = 'checkout_session') {
+        let data;
+        let error;
+
+        ({ data, error } = await runLookup(primarySelect, mode));
+        if (error && isMissingDatabaseStructureError(error)) {
+            ({ data, error } = await runLookup(fallbackSelect, mode));
+        }
+
+        if (error) {
+            throw new Error(error.message || 'Failed to inspect payment order status');
+        }
+
+        return data || null;
+    }
+
+    if (normalizedPaymentOrderId) {
+        const byPaymentOrderId = await resolveLookup('payment_order_id');
+        if (byPaymentOrderId) {
+            return byPaymentOrderId;
+        }
+    }
+
+    if (!normalizedCheckoutSessionId) {
+        return null;
+    }
+
+    return resolveLookup('checkout_session');
+}
+
+async function attemptZpayPaymentStatusRefresh({
+    supabase,
+    checkoutSession,
+    paymentOrder,
+    env = process.env
+} = {}) {
+    const normalizedProvider = sanitizeText(
+        paymentOrder?.provider || checkoutSession?.provider,
+        '',
+        40
+    ).toLowerCase();
+    if (normalizedProvider !== 'zpay') {
+        return { refreshed: false, reason: 'unsupported_provider' };
+    }
+
+    const normalizedOrderId = String(paymentOrder?.id || '').trim();
+    const normalizedOrderNo = sanitizeText(paymentOrder?.provider_order_no, '', 160);
+    const normalizedUserId = String(paymentOrder?.user_id || checkoutSession?.user_id || '').trim();
+    if (!supabase || !normalizedOrderId || !normalizedOrderNo || !normalizedUserId) {
+        return { refreshed: false, reason: 'missing_local_order' };
+    }
+
+    const normalizedOrderStatus = sanitizeText(paymentOrder?.status, '', 40).toLowerCase();
+    if (['paid', 'redeemed', 'pending_review', 'amount_mismatch', 'rejected'].includes(normalizedOrderStatus)) {
+        return { refreshed: false, reason: 'already_resolved' };
+    }
+
+    const providerMetadata = paymentOrder?.provider_metadata && typeof paymentOrder.provider_metadata === 'object'
+        ? paymentOrder.provider_metadata
+        : {};
+    const lastQueryAt = Date.parse(String(providerMetadata.query_verified_at || providerMetadata.status_poll_query_at || ''));
+    if (Number.isFinite(lastQueryAt) && (Date.now() - lastQueryAt) < 8_000) {
+        return { refreshed: false, reason: 'query_throttled' };
+    }
+
+    const adapter = getPaymentProviderAdapter('zpay');
+    if (!adapter || typeof adapter.resolveRuntimeContext !== 'function' || typeof adapter.queryOrder !== 'function') {
+        return { refreshed: false, reason: 'adapter_unavailable' };
+    }
+
+    const runtimeContext = await adapter.resolveRuntimeContext({
+        supabase,
+        env
+    });
+    const liveOrder = await adapter.queryOrder({
+        runtimeContext,
+        providerOrderNo: normalizedOrderNo,
+        tradeNo: sanitizeText(providerMetadata.trade_no || providerMetadata.query_trade_no, '', 120)
+    });
+
+    const queryStatus = sanitizeText(liveOrder?.status, '', 40).toLowerCase();
+    const nowIso = new Date().toISOString();
+    const expectedAmount = normalizeCurrency(
+        paymentOrder?.expected_amount ?? checkoutSession?.expected_amount,
+        null
+    );
+    const livePaidAmount = normalizeCurrency(liveOrder?.paidAmount, null);
+    const nextRawPayloadBase = mergeObjects(paymentOrder?.raw_payload, {
+        zpay_status_poll: liveOrder?.responsePayload || null
+    });
+    const nextProviderMetadataBase = mergeObjects(providerMetadata, {
+        provider_order_no: normalizedOrderNo,
+        query_trade_no: sanitizeText(liveOrder?.tradeNo, '', 120) || sanitizeText(providerMetadata.query_trade_no, '', 120) || null,
+        query_status: queryStatus || null,
+        query_status_raw: sanitizeText(liveOrder?.statusRaw, '', 80) || null,
+        query_verified_at: nowIso,
+        status_poll_query_at: nowIso
+    });
+
+    if (liveOrder?.supported === false || liveOrder?.success !== true) {
+        return {
+            refreshed: false,
+            reason: 'query_unavailable',
+            liveOrder
+        };
+    }
+
+    if (queryStatus !== 'paid') {
+        return {
+            refreshed: false,
+            reason: 'not_paid',
+            liveOrder
+        };
+    }
+
+    if (!(expectedAmount > 0) || !(livePaidAmount > 0)) {
+        return {
+            refreshed: false,
+            reason: 'invalid_amount',
+            liveOrder
+        };
+    }
+
+    if (!amountsMatch(expectedAmount, livePaidAmount)) {
+        const mismatchPatch = {
+            status: 'amount_mismatch',
+            amount_verified: false,
+            paid_amount: livePaidAmount,
+            expected_amount: expectedAmount,
+            last_error: `query_amount_mismatch_expected_${expectedAmount}`,
+            raw_payload: nextRawPayloadBase,
+            provider_metadata: mergeObjects(nextProviderMetadataBase, {
+                payment_status: 'paid',
+                payment_status_raw: sanitizeText(liveOrder?.statusRaw, '', 80) || 'TRADE_SUCCESS'
+            })
+        };
+
+        const { error: mismatchUpdateError } = await supabase
+            .from('payment_orders')
+            .update(mismatchPatch)
+            .eq('id', normalizedOrderId);
+
+        if (mismatchUpdateError) {
+            throw new Error(mismatchUpdateError.message || 'Failed to mark ZPAY amount mismatch');
+        }
+
+        try {
+            await reconcileCheckoutSessionForPaymentOrder({
+                supabase,
+                providerKey: 'zpay',
+                paymentOrderId: normalizedOrderId,
+                providerOrderNo: normalizedOrderNo,
+                userId: normalizedUserId,
+                site: paymentOrder?.site || checkoutSession?.site || 'cn',
+                packageId: paymentOrder?.package_id || checkoutSession?.package_id,
+                packageName: paymentOrder?.package_name || checkoutSession?.package_name,
+                expectedAmount,
+                paidAmount: livePaidAmount,
+                pointsAmount: paymentOrder?.points_amount || checkoutSession?.granted_points || 0,
+                orderStatus: 'amount_mismatch',
+                linkedBy: 'zpay_status_poll',
+                allowHeuristic: true,
+                lookbackMinutes: 1440
+            });
+        } catch (linkError) {
+            console.warn('[Payments] Failed to link amount-mismatch ZPAY checkout session from status poll:', linkError.message);
+        }
+
+        return {
+            refreshed: true,
+            settled: 'amount_mismatch',
+            liveOrder
+        };
+    }
+
+    const rechargeBreakdown = deriveZpayPointBreakdown(paymentOrder);
+    if (!['paid', 'redeemed'].includes(normalizedOrderStatus)) {
+        const { error: rechargeError } = await rechargePointsForPayment({
+            supabase,
+            userId: normalizedUserId,
+            paidPoints: rechargeBreakdown.paidPoints,
+            bonusPoints: rechargeBreakdown.bonusPoints,
+            reason: paymentOrder?.package_id
+                ? `易支付充值: ${String(paymentOrder?.package_name || '充值订单').trim() || '充值订单'}`
+                : 'custom_recharge',
+            referenceId: `zpay_${normalizedOrderNo}`,
+            site: paymentOrder?.site || checkoutSession?.site || 'cn'
+        });
+
+        if (rechargeError) {
+            throw new Error(rechargeError.message || 'Failed to credit ZPAY payment points');
+        }
+    }
+
+    const orderPatch = {
+        status: 'redeemed',
+        amount_verified: true,
+        paid_amount: livePaidAmount,
+        expected_amount: expectedAmount,
+        paid_at: paymentOrder?.paid_at || nowIso,
+        verified_at: paymentOrder?.verified_at || nowIso,
+        claimed_at: paymentOrder?.claimed_at || nowIso,
+        last_error: null,
+        raw_payload: nextRawPayloadBase,
+        provider_metadata: mergeObjects(nextProviderMetadataBase, {
+            payment_status: 'paid',
+            payment_status_raw: sanitizeText(liveOrder?.statusRaw, '', 80) || 'TRADE_SUCCESS',
+            trade_no: sanitizeText(liveOrder?.tradeNo, '', 120) || sanitizeText(providerMetadata.trade_no, '', 120) || null,
+            auto_reconciled_by: 'zpay_status_poll',
+            auto_reconciled_at: nowIso
+        })
+    };
+
+    const { error: orderUpdateError } = await supabase
+        .from('payment_orders')
+        .update(orderPatch)
+        .eq('id', normalizedOrderId);
+
+    if (orderUpdateError) {
+        throw new Error(orderUpdateError.message || 'Failed to settle ZPAY payment order from status poll');
+    }
+
+    try {
+        await reconcileCheckoutSessionForPaymentOrder({
+            supabase,
+            providerKey: 'zpay',
+            paymentOrderId: normalizedOrderId,
+            providerOrderNo: normalizedOrderNo,
+            userId: normalizedUserId,
+            site: paymentOrder?.site || checkoutSession?.site || 'cn',
+            packageId: paymentOrder?.package_id || checkoutSession?.package_id,
+            packageName: paymentOrder?.package_name || checkoutSession?.package_name,
+            expectedAmount,
+            paidAmount: livePaidAmount,
+            pointsAmount: paymentOrder?.points_amount || checkoutSession?.granted_points || 0,
+            orderStatus: 'redeemed',
+            linkedBy: 'zpay_status_poll',
+            allowHeuristic: true,
+            lookbackMinutes: 1440
+        });
+    } catch (linkError) {
+        console.warn('[Payments] Failed to link ZPAY checkout session from status poll:', linkError.message);
+    }
+
+    await maybeIssueRechargeDiscountAssets({
+        supabase,
+        userId: normalizedUserId,
+        site: paymentOrder?.site || checkoutSession?.site || 'cn',
+        paidPoints: rechargeBreakdown?.paidPoints || 0,
+        bonusPoints: rechargeBreakdown?.bonusPoints || 0,
+        paidAmount: livePaidAmount,
+        paymentOrderId: normalizedOrderId,
+        paymentProvider: 'zpay',
+        paymentOrderNo: normalizedOrderNo
+    });
+    await maybeIssueAffiliateDiscountAssetsForRecharge({
+        supabase,
+        site: paymentOrder?.site || checkoutSession?.site || 'cn',
+        rechargeReferenceId: `zpay_${normalizedOrderNo}`
+    });
+
+    return {
+        refreshed: true,
+        settled: 'paid',
+        liveOrder
+    };
+}
+
+async function getPaymentRequestStatus({
+    supabase,
+    user,
+    body = {},
+    env = process.env
+} = {}) {
+    const normalizedUserId = String(user?.id || '').trim();
+    if (!supabase || !normalizedUserId) {
+        const error = new Error('请先登录');
+        error.statusCode = 401;
+        throw error;
+    }
+
+    const checkoutSessionId = String(body.checkout_session_id || '').trim();
+    if (!checkoutSessionId) {
+        const error = new Error('缺少支付会话');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const checkoutSession = await loadCheckoutSessionForUser(supabase, normalizedUserId, checkoutSessionId);
+    if (!checkoutSession) {
+        const error = new Error('未找到对应的支付会话');
+        error.statusCode = 404;
+        throw error;
+    }
+
+    const paymentOrder = await loadPaymentOrderForUserByCheckoutSession(
+        supabase,
+        normalizedUserId,
+        checkoutSession.id,
+        checkoutSession.payment_order_id
+    );
+
+    let activeCheckoutSession = checkoutSession;
+    let activePaymentOrder = paymentOrder;
+    const activeProvider = sanitizeText(
+        activeCheckoutSession?.provider || activePaymentOrder?.provider,
+        '',
+        40
+    ).toLowerCase();
+
+    if (
+        activeProvider === 'zpay'
+        && activePaymentOrder?.id
+        && !['paid', 'redeemed', 'pending_review', 'amount_mismatch', 'rejected'].includes(
+            sanitizeText(activePaymentOrder.status, '', 40).toLowerCase()
+        )
+    ) {
+        try {
+            const refreshResult = await attemptZpayPaymentStatusRefresh({
+                supabase,
+                checkoutSession: activeCheckoutSession,
+                paymentOrder: activePaymentOrder,
+                env
+            });
+
+            if (refreshResult?.refreshed) {
+                activeCheckoutSession = await loadCheckoutSessionForUser(supabase, normalizedUserId, checkoutSession.id) || activeCheckoutSession;
+                activePaymentOrder = await loadPaymentOrderForUserByCheckoutSession(
+                    supabase,
+                    normalizedUserId,
+                    activeCheckoutSession.id,
+                    activeCheckoutSession.payment_order_id || activePaymentOrder.id
+                ) || activePaymentOrder;
+            }
+        } catch (statusRefreshError) {
+            console.warn('[Payments] Failed to refresh ZPAY payment status actively:', statusRefreshError.message);
+        }
+    }
+
+    const checkoutStatus = sanitizeText(activeCheckoutSession.status, 'created', 40).toLowerCase() || 'created';
+    const paymentOrderStatus = sanitizeText(activePaymentOrder?.status, '', 40).toLowerCase();
+    const terminalSuccessStatuses = new Set(['paid', 'redeemed']);
+    const reviewStatuses = new Set(['pending_review', 'amount_mismatch']);
+    const terminalFailureStatuses = new Set(['failed', 'cancelled', 'expired', 'rejected']);
+
+    let status = 'pending';
+    let message = '等待支付完成，系统会自动刷新到账状态。';
+
+    if (checkoutStatus === 'completed' || terminalSuccessStatuses.has(paymentOrderStatus)) {
+        status = 'completed';
+        message = '支付成功，积分已到账。';
+    } else if (reviewStatuses.has(paymentOrderStatus)) {
+        status = 'review';
+        message = paymentOrderStatus === 'amount_mismatch'
+            ? '支付已到账，但金额仍在复核，请稍后查看结果。'
+            : '支付已提交，正在等待平台确认，请稍后。';
+    } else if (terminalFailureStatuses.has(checkoutStatus) || terminalFailureStatuses.has(paymentOrderStatus)) {
+        status = 'failed';
+        message = sanitizeText(
+            paymentOrder?.last_error || checkoutSession.error_message,
+            checkoutStatus === 'expired' ? '支付会话已过期，请重新发起支付。' : '支付未成功，请重新发起。',
+            240
+        );
+    } else if (checkoutStatus === 'failed') {
+        status = 'failed';
+        message = sanitizeText(checkoutSession.error_message, '支付请求创建失败，请重新发起。', 240);
+    } else if (checkoutStatus === 'redirect_ready') {
+        message = '付款后这里会自动刷新到账状态。';
+    }
+
+    return {
+        success: true,
+        status,
+        checkout_session_id: activeCheckoutSession.id,
+        checkout_session_status: checkoutStatus,
+        payment_order_id: activePaymentOrder?.id || activeCheckoutSession.payment_order_id || null,
+        payment_order_status: paymentOrderStatus || null,
+        provider: sanitizeText(activeCheckoutSession.provider, activePaymentOrder?.provider || 'unknown', 40).toLowerCase(),
+        provider_order_no: sanitizeText(activePaymentOrder?.provider_order_no, '', 160) || null,
+        site: requireSupportedSite(activeCheckoutSession.site || activePaymentOrder?.site || body.site || 'cn'),
+        package_name: sanitizeText(activeCheckoutSession.package_name, activePaymentOrder?.package_name || '', 120) || null,
+        points_amount: normalizePointAmount(
+            activePaymentOrder?.points_amount ?? activeCheckoutSession.granted_points ?? activeCheckoutSession.requested_points,
+            0
+        ),
+        paid_amount: normalizeCurrency(
+            activePaymentOrder?.paid_amount ?? activeCheckoutSession.expected_amount,
+            0
+        ),
+        expected_amount: normalizeCurrency(
+            activePaymentOrder?.expected_amount ?? activeCheckoutSession.expected_amount,
+            0
+        ),
+        message,
+        error_message: sanitizeText(activePaymentOrder?.last_error || activeCheckoutSession.error_message, '', 240) || null,
+        completed_at: activeCheckoutSession.completed_at || activePaymentOrder?.paid_at || activePaymentOrder?.verified_at || null,
+        updated_at: activeCheckoutSession.updated_at || activePaymentOrder?.updated_at || activeCheckoutSession.created_at || null,
+        refresh_wallet: status === 'completed',
+        should_stop_polling: status === 'completed' || status === 'failed'
+    };
+}
+
 async function createCheckoutSession({
     supabase,
     user,
@@ -1565,7 +2012,7 @@ async function createCheckoutSession({
             token_hash: customQuote.tokenHash,
             issued_at: customQuote.issuedAt,
             expires_at: customQuote.expiresAt,
-            points_amount: normalizeInteger(customQuote.pointsAmount, 0),
+            points_amount: normalizePointAmount(customQuote.pointsAmount, 0),
             paid_amount: normalizeCurrency(customQuote.paidAmount, null),
             pricing_mode: customQuote.pricingMode || 'fixed_rate',
             points_per_cny: Number(customQuote.pointsPerCny) || null
@@ -2116,7 +2563,9 @@ async function createPaymentRequest({
     user,
     body = {},
     env = process.env,
-    requestHost = ''
+    requestHost = '',
+    clientIp = '',
+    userAgent = ''
 }) {
     let paymentWriteSupabase = supabase;
     const paymentRuntimeSupabase = adminSupabase || supabase;
@@ -2259,7 +2708,9 @@ async function createPaymentRequest({
             bonusPoints,
             grantedPoints,
             paidAmount,
-            customQuote
+            customQuote,
+            clientIp,
+            userAgent
         });
 
         if (!checkoutContext?.supported) {
@@ -2426,6 +2877,7 @@ module.exports = {
     createCheckoutSession,
     createPaymentRequest,
     findCheckoutSessionCandidates,
+    getPaymentRequestStatus,
     getMockPaymentRuntimeState,
     issueCustomRechargeQuote,
     issuePaymentIntentClaimToken,

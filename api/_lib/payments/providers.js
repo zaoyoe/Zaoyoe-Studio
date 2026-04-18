@@ -2,32 +2,41 @@ const {
     PAYMENT_CHANNEL_SECRET_KEYS,
     getStoredAdminSecret
 } = require('../secrets');
+const {
+    normalizeHupijiaoConfig
+} = require('./hupijiao');
+const {
+    normalizeZpayConfig
+} = require('./zpay');
 
-const PROVIDER_KEYS = Object.freeze(['mock', 'afdian', 'hupijiao']);
-const NON_MOCK_PROVIDER_PRIORITY = Object.freeze(['hupijiao', 'afdian']);
+const PROVIDER_KEYS = Object.freeze(['mock', 'afdian', 'hupijiao', 'zpay']);
+const NON_MOCK_PROVIDER_PRIORITY = Object.freeze(['zpay', 'hupijiao', 'afdian']);
 const DEFAULT_SITE_ORIGIN = 'https://www.zaoyoe.com';
 const DEFAULT_AFDIAN_CHECKOUT_URL = 'https://afdian.com/a/zaoyoe';
-const DEFAULT_CUSTOM_RECHARGE_MIN_POINTS = 1;
+const DEFAULT_CUSTOM_RECHARGE_MIN_POINTS = 0.01;
 const DEFAULT_CUSTOM_RECHARGE_MAX_POINTS = 50000;
-const DEFAULT_CUSTOM_RECHARGE_STEP = 1;
-const DEFAULT_CUSTOM_RECHARGE_POINTS_PER_CNY = 50;
+const DEFAULT_CUSTOM_RECHARGE_STEP = 0.01;
+const DEFAULT_CUSTOM_RECHARGE_POINTS_PER_CNY = 1;
 const DEFAULT_CUSTOM_RECHARGE_QUOTE_TTL_SECONDS = 1800;
 
 const PROVIDER_SECRET_NAMES = Object.freeze({
     mock: [],
     afdian: ['afdian_token'],
-    hupijiao: ['hupijiao_api_key', 'hupijiao_secret_key']
+    hupijiao: ['hupijiao_api_key', 'hupijiao_secret_key'],
+    zpay: ['zpay_pkey']
 });
 
 const SECRET_ENV_FALLBACKS = Object.freeze({
     afdian_token: ['AFDIAN_TOKEN'],
     hupijiao_api_key: ['HUPIJIAO_API_KEY'],
-    hupijiao_secret_key: ['HUPIJIAO_SECRET_KEY']
+    hupijiao_secret_key: ['HUPIJIAO_SECRET_KEY'],
+    zpay_pkey: ['ZPAY_PKEY', 'ZPAY_KEY']
 });
 const PUBLIC_PROVIDER_FIELDS = Object.freeze({
     mock: ['enabled', 'display_name', 'description'],
     afdian: ['enabled', 'display_name', 'checkout_url', 'package_hint', 'custom_amount_hint', 'order_query_enabled', 'order_query_title', 'order_query_hint', 'order_query_placeholder'],
-    hupijiao: ['enabled', 'display_name', 'checkout_url', 'package_hint', 'custom_amount_hint', 'order_query_enabled', 'order_query_title', 'order_query_hint', 'order_query_placeholder']
+    hupijiao: ['enabled', 'display_name', 'checkout_url', 'package_hint', 'custom_amount_hint', 'order_query_enabled', 'order_query_title', 'order_query_hint', 'order_query_placeholder'],
+    zpay: ['enabled', 'display_name', 'checkout_url', 'package_hint', 'custom_amount_hint', 'order_query_enabled', 'order_query_title', 'order_query_hint', 'order_query_placeholder']
 });
 const PUBLIC_MOCK_RUNTIME_MESSAGES = Object.freeze({
     local_request_host: '当前环境允许使用模拟支付。',
@@ -38,6 +47,12 @@ const PUBLIC_MOCK_RUNTIME_MESSAGES = Object.freeze({
     remote_whitelist_until_expired: '当前环境暂未开放模拟支付。',
     production_like_runtime: '当前环境暂未开放模拟支付。',
     remote_whitelist_required: '当前环境暂未开放模拟支付。'
+});
+const PROVIDER_DISPLAY_NAMES = Object.freeze({
+    mock: '模拟支付',
+    afdian: '爱发电',
+    hupijiao: '虎皮椒',
+    zpay: '易支付'
 });
 
 function sanitizeOrigin(value, fallback = DEFAULT_SITE_ORIGIN) {
@@ -50,6 +65,15 @@ function sanitizeText(value, fallback = '', maxLength = 500) {
     if (typeof value !== 'string') return fallback;
     const normalized = value.trim();
     return normalized ? normalized.slice(0, maxLength) : fallback;
+}
+
+function buildDefaultPaymentWebhookUrl(origin = DEFAULT_SITE_ORIGIN, providerKey = '') {
+    const normalizedOrigin = sanitizeOrigin(origin, DEFAULT_SITE_ORIGIN);
+    const normalizedProviderKey = sanitizeText(String(providerKey || '').toLowerCase(), '', 32);
+    if (!normalizedProviderKey) {
+        return normalizedOrigin;
+    }
+    return `${normalizedOrigin}/api/payments/${normalizedProviderKey}/webhook`;
 }
 
 function coerceBoolean(value, fallback = false) {
@@ -71,6 +95,13 @@ function coercePositiveNumber(value, fallback) {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function coercePositivePointNumber(value, fallback) {
+    const parsed = coercePositiveNumber(value, fallback);
+    return Number.isFinite(parsed) && parsed > 0
+        ? Math.round(parsed * 100) / 100
+        : fallback;
+}
+
 function coercePositiveInteger(value, fallback) {
     const parsed = Math.round(coerceFiniteNumber(value, fallback));
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -78,6 +109,190 @@ function coercePositiveInteger(value, fallback) {
 
 function hasCheckoutUrl(provider = {}) {
     return Boolean(String(provider?.checkout_url || '').trim());
+}
+
+function isHttpsUrl(value = '') {
+    const normalized = String(value || '').trim();
+    if (!normalized) return false;
+
+    try {
+        const candidate = /^https?:\/\//i.test(normalized) ? normalized : `https://${normalized}`;
+        return new URL(candidate).protocol === 'https:';
+    } catch (_) {
+        return false;
+    }
+}
+
+function isProductionLikeRuntime(env = process.env) {
+    const vercelEnv = String(env?.VERCEL_ENV || '').trim().toLowerCase();
+    const railwayEnv = String(env?.RAILWAY_ENVIRONMENT_NAME || '').trim().toLowerCase();
+    const deploymentTier = String(env?.DEPLOYMENT_TIER || env?.APP_ENV || '').trim().toLowerCase();
+
+    return vercelEnv === 'production'
+        || railwayEnv === 'production'
+        || deploymentTier === 'production';
+}
+
+function isSecretConfigured(entry) {
+    if (entry === true) return true;
+    if (typeof entry === 'string') return Boolean(entry.trim());
+    if (entry && typeof entry === 'object') {
+        return entry.configured === true || Boolean(String(entry.value || '').trim());
+    }
+    return false;
+}
+
+function mapProviderMissingFieldLabel(providerKey = '', fieldName = '') {
+    const normalizedProvider = String(providerKey || '').trim().toLowerCase();
+    const normalizedField = String(fieldName || '').trim().toLowerCase();
+    const fieldMap = {
+        zpay: {
+            pid: '缺少 PID',
+            pkey: '缺少 PKEY',
+            notify_url: '缺少 notify_url'
+        },
+        hupijiao: {
+            appid: '缺少商户号',
+            appsecret: '缺少密钥',
+            notify_url: '缺少 notify_url'
+        }
+    };
+
+    return fieldMap[normalizedProvider]?.[normalizedField]
+        || `缺少 ${normalizedField || '必要配置'}`;
+}
+
+function buildPaymentProviderActivationCheck(
+    providerKey,
+    paymentChannels = {},
+    secretStatus = {},
+    env = process.env
+) {
+    const normalizedProviderKey = String(providerKey || '').trim().toLowerCase();
+    const normalizedChannels = normalizePaymentChannelsConfig(paymentChannels);
+    const provider = normalizedChannels.providers?.[normalizedProviderKey] || {};
+    const label = PROVIDER_DISPLAY_NAMES[normalizedProviderKey]
+        || String(provider.display_name || '').trim()
+        || '支付通道';
+    const issues = [];
+    const warnings = [];
+
+    if (!normalizedProviderKey || !PROVIDER_KEYS.includes(normalizedProviderKey)) {
+        return {
+            providerKey: normalizedProviderKey,
+            label,
+            ready: false,
+            issues: ['未知支付通道'],
+            warnings
+        };
+    }
+
+    if (normalizedProviderKey === 'mock') {
+        return {
+            providerKey: normalizedProviderKey,
+            label,
+            ready: true,
+            issues: [],
+            warnings
+        };
+    }
+
+    if (provider.enabled !== true) {
+        issues.push(`${label}通道未启用`);
+    }
+
+    if (normalizedProviderKey === 'afdian') {
+        if (!hasCheckoutUrl(provider)) {
+            issues.push('缺少 checkout_url');
+        }
+        return {
+            providerKey: normalizedProviderKey,
+            label,
+            ready: issues.length === 0,
+            issues,
+            warnings
+        };
+    }
+
+    if (normalizedProviderKey === 'hupijiao') {
+        const normalizedConfig = normalizeHupijiaoConfig({
+            channelConfig: provider,
+            secretValues: {
+                hupijiao_secret_key: isSecretConfigured(secretStatus.hupijiao_secret_key)
+                    ? '__configured__'
+                    : ''
+            },
+            requestOrigin: provider.return_url || DEFAULT_SITE_ORIGIN
+        });
+
+        normalizedConfig.missingFields.forEach((fieldName) => {
+            issues.push(mapProviderMissingFieldLabel(normalizedProviderKey, fieldName));
+        });
+
+        if (isProductionLikeRuntime(env)) {
+            if (!String(env?.HUPIJIAO_WEBHOOK_ALLOWED_IPS || '').trim()) {
+                issues.push('生产环境缺少 HUPIJIAO_WEBHOOK_ALLOWED_IPS');
+            }
+            if (normalizedConfig.notifyUrl && !isHttpsUrl(normalizedConfig.notifyUrl)) {
+                issues.push('notify_url 必须使用 HTTPS');
+            }
+            if (normalizedConfig.returnUrl && !isHttpsUrl(normalizedConfig.returnUrl)) {
+                issues.push('return_url 必须使用 HTTPS');
+            }
+        }
+
+        return {
+            providerKey: normalizedProviderKey,
+            label,
+            ready: issues.length === 0,
+            issues,
+            warnings
+        };
+    }
+
+    if (normalizedProviderKey === 'zpay') {
+        const normalizedConfig = normalizeZpayConfig({
+            channelConfig: provider,
+            secretValues: {
+                zpay_pkey: isSecretConfigured(secretStatus.zpay_pkey)
+                    ? '__configured__'
+                    : ''
+            },
+            requestOrigin: provider.return_url || DEFAULT_SITE_ORIGIN
+        });
+
+        normalizedConfig.missingFields.forEach((fieldName) => {
+            issues.push(mapProviderMissingFieldLabel(normalizedProviderKey, fieldName));
+        });
+
+        if (isProductionLikeRuntime(env)) {
+            if (!String(env?.ZPAY_WEBHOOK_ALLOWED_IPS || '').trim()) {
+                warnings.push('生产环境未配置 ZPAY_WEBHOOK_ALLOWED_IPS，将启用严格查单模式');
+            }
+            if (normalizedConfig.notifyUrl && !isHttpsUrl(normalizedConfig.notifyUrl)) {
+                issues.push('notify_url 必须使用 HTTPS');
+            }
+            if (normalizedConfig.returnUrl && !isHttpsUrl(normalizedConfig.returnUrl)) {
+                issues.push('return_url 必须使用 HTTPS');
+            }
+        }
+
+        return {
+            providerKey: normalizedProviderKey,
+            label,
+            ready: issues.length === 0,
+            issues,
+            warnings
+        };
+    }
+
+    return {
+        providerKey: normalizedProviderKey,
+        label,
+        ready: issues.length === 0,
+        issues,
+        warnings
+    };
 }
 
 function resolvePreferredEnabledProviderKey(providers = {}, fallback = 'afdian') {
@@ -119,22 +334,16 @@ function normalizeRechargeOptionsConfig(raw) {
             || String(source.custom_amount_enabled) === 'true',
         mock_payment_enabled: source.mock_payment_enabled === true
             || String(source.mock_payment_enabled) === 'true',
-        custom_amount_min_points: coercePositiveInteger(
-            source.custom_amount_min_points,
-            DEFAULT_CUSTOM_RECHARGE_MIN_POINTS
+        custom_amount_min_points: DEFAULT_CUSTOM_RECHARGE_MIN_POINTS,
+        custom_amount_max_points: Math.max(
+            DEFAULT_CUSTOM_RECHARGE_MIN_POINTS,
+            coercePositivePointNumber(
+                source.custom_amount_max_points,
+                DEFAULT_CUSTOM_RECHARGE_MAX_POINTS
+            )
         ),
-        custom_amount_max_points: coercePositiveInteger(
-            source.custom_amount_max_points,
-            DEFAULT_CUSTOM_RECHARGE_MAX_POINTS
-        ),
-        custom_amount_step: coercePositiveInteger(
-            source.custom_amount_step,
-            DEFAULT_CUSTOM_RECHARGE_STEP
-        ),
-        custom_amount_points_per_cny: coercePositiveNumber(
-            source.custom_amount_points_per_cny,
-            DEFAULT_CUSTOM_RECHARGE_POINTS_PER_CNY
-        ),
+        custom_amount_step: DEFAULT_CUSTOM_RECHARGE_STEP,
+        custom_amount_points_per_cny: DEFAULT_CUSTOM_RECHARGE_POINTS_PER_CNY,
         custom_amount_quote_ttl_seconds: coercePositiveInteger(
             source.custom_amount_quote_ttl_seconds,
             DEFAULT_CUSTOM_RECHARGE_QUOTE_TTL_SECONDS
@@ -174,9 +383,25 @@ function getDefaultPaymentChannelsConfig(options = {}) {
             gateway_url: '',
             merchant_id: '',
             return_url: origin,
-            notify_url: '',
+            notify_url: buildDefaultPaymentWebhookUrl(origin, 'hupijiao'),
             package_hint: '虎皮椒通道已启用，正式回调与自动发货接入后即可完整使用。',
             custom_amount_hint: '虎皮椒通道已启用。自定义金额下单能力接入后，这里会直接拉起真实支付。',
+            order_query_enabled: false,
+            order_query_title: '',
+            order_query_hint: '',
+            order_query_placeholder: ''
+        },
+        zpay: {
+            enabled: false,
+            display_name: '易支付',
+            checkout_url: 'https://zpayz.cn',
+            pid: '',
+            payment_type: 'alipay',
+            channel_ids: '',
+            return_url: origin,
+            notify_url: buildDefaultPaymentWebhookUrl(origin, 'zpay'),
+            package_hint: '易支付通道已启用，创建订单后会直接拉起收银台完成支付。',
+            custom_amount_hint: '易支付通道已启用。自定义金额订单会按当前报价直接拉起收银台。',
             order_query_enabled: false,
             order_query_title: '',
             order_query_hint: '',
@@ -234,6 +459,22 @@ function normalizePaymentChannelsConfig(raw, legacyRechargeOptions = null, optio
                 order_query_title: sanitizeText(sourceProviders.hupijiao?.order_query_title, defaults.providers.hupijiao.order_query_title, 80),
                 order_query_hint: sanitizeText(sourceProviders.hupijiao?.order_query_hint, defaults.providers.hupijiao.order_query_hint, 240),
                 order_query_placeholder: sanitizeText(sourceProviders.hupijiao?.order_query_placeholder, defaults.providers.hupijiao.order_query_placeholder, 80)
+            },
+            zpay: {
+                enabled: coerceBoolean(sourceProviders.zpay?.enabled, defaults.providers.zpay.enabled),
+                display_name: sanitizeText(sourceProviders.zpay?.display_name, defaults.providers.zpay.display_name, 40),
+                checkout_url: sanitizeText(sourceProviders.zpay?.checkout_url, defaults.providers.zpay.checkout_url, 500),
+                pid: sanitizeText(sourceProviders.zpay?.pid, defaults.providers.zpay.pid, 120),
+                payment_type: sanitizeText(sourceProviders.zpay?.payment_type, defaults.providers.zpay.payment_type, 20).toLowerCase() || defaults.providers.zpay.payment_type,
+                channel_ids: sanitizeText(sourceProviders.zpay?.channel_ids, defaults.providers.zpay.channel_ids, 255),
+                return_url: sanitizeText(sourceProviders.zpay?.return_url, defaults.providers.zpay.return_url, 500),
+                notify_url: sanitizeText(sourceProviders.zpay?.notify_url, defaults.providers.zpay.notify_url, 500),
+                package_hint: sanitizeText(sourceProviders.zpay?.package_hint, defaults.providers.zpay.package_hint, 240),
+                custom_amount_hint: sanitizeText(sourceProviders.zpay?.custom_amount_hint, defaults.providers.zpay.custom_amount_hint, 240),
+                order_query_enabled: coerceBoolean(sourceProviders.zpay?.order_query_enabled, defaults.providers.zpay.order_query_enabled),
+                order_query_title: sanitizeText(sourceProviders.zpay?.order_query_title, defaults.providers.zpay.order_query_title, 80),
+                order_query_hint: sanitizeText(sourceProviders.zpay?.order_query_hint, defaults.providers.zpay.order_query_hint, 240),
+                order_query_placeholder: sanitizeText(sourceProviders.zpay?.order_query_placeholder, defaults.providers.zpay.order_query_placeholder, 80)
             }
         }
     };
@@ -272,7 +513,8 @@ function sanitizePublicPaymentChannels(paymentChannels = {}) {
         providers: {
             mock: pickPublicProviderConfig('mock', providers.mock),
             afdian: pickPublicProviderConfig('afdian', providers.afdian),
-            hupijiao: pickPublicProviderConfig('hupijiao', providers.hupijiao)
+            hupijiao: pickPublicProviderConfig('hupijiao', providers.hupijiao),
+            zpay: pickPublicProviderConfig('zpay', providers.zpay)
         }
     };
 }
@@ -422,6 +664,7 @@ async function buildPaymentSecretStatus(supabase, env = process.env) {
 }
 
 module.exports = {
+    buildPaymentProviderActivationCheck,
     buildPublicPaymentConfig,
     buildPublicPaymentRuntime,
     DEFAULT_AFDIAN_CHECKOUT_URL,

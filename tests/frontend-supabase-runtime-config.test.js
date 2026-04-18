@@ -75,6 +75,7 @@ const SHARED_PUBLIC_FUNCTION_WRAPPERS = [
     'api/payments/config.js',
     'api/payments/create.js',
     'api/payments/mock/complete.js',
+    'api/payments/status.js',
     'api/runtime/supabase-config.js',
     'api/shop/available-discounts.js',
     'api/shop/claim-discount.js',
@@ -9175,7 +9176,7 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
         'admin-studio.css?v=20260416_GROWTH_NEW_USERS_1',
         'class="charts-grid analytics-growth-insight-grid"',
         'class="chart-card glass-panel analytics-growth-card analytics-growth-card--full"',
-        'admin-points.js?v=20260404_ADMIN_POINTS_ANALYTICS_CONTEXT_1',
+        'admin-points.js?v=20260418_ADMIN_POINTS_DECIMAL_PRECISION_1',
         'admin-config.js?v=20260416_PAYMENT_PROVIDER_NEUTRALITY_1',
         'js/admin-payments.js?v=20260416_ADMIN_PAYMENTS_QUERY_RECONCILE_12',
         'js/admin-workbench.js?v=20260410_ADMIN_SHELL_CONTEXT_P1_1',
@@ -10601,7 +10602,7 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index_old.html should load the latest guestbook runtime');
     assert.equal(shopSource.includes('js/shop-client.js?v=20260416_SHOP_MULTI_DISCOUNT_STACKING_13'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260412_SHOP_CARD_IMAGE_OPT_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
-    assert.equal(verifyPageSource.includes('js/components/WalletModal.js?v=20260416_WALLET_SERVICE_READ_PATH_4'), true, 'verify.html should load the latest tracking-aware wallet modal runtime');
+    assert.equal(verifyPageSource.includes('js/components/WalletModal.js?v=20260418_WALLET_PAYMENT_QR_POLL_2'), true, 'verify.html should load the latest tracking-aware wallet modal runtime');
 });
 
 test('analytics phase 3 prefers real event rpc v2 for ai summary and conversion funnel', () => {

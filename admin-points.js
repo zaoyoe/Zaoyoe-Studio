@@ -695,9 +695,26 @@ function buildEmptyPointsPackageMetrics() {
     };
 }
 
+function normalizePointAmount(value, fallback = 0) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+        return fallback;
+    }
+    return Math.max(0, Math.round(parsed * 100) / 100);
+}
+
+function formatPointAmount(value) {
+    const normalized = normalizePointAmount(value, 0);
+    const hasDecimal = Math.abs(normalized % 1) > 0.0001;
+    return normalized.toLocaleString(undefined, {
+        minimumFractionDigits: hasDecimal ? (Math.abs(normalized * 10 - Math.round(normalized * 10)) > 0.0001 ? 2 : 1) : 0,
+        maximumFractionDigits: 2
+    });
+}
+
 function normalizePointsCatalogPackageRow(row = {}) {
-    const normalizedPoints = Math.max(0, Math.round(Number(row.points_amount) || 0));
-    const normalizedBonus = Math.max(0, Math.round(Number(row.bonus_points) || 0));
+    const normalizedPoints = normalizePointAmount(row.points_amount, 0);
+    const normalizedBonus = normalizePointAmount(row.bonus_points, 0);
     const normalizedPrice = row.price_cny == null || row.price_cny === ''
         ? null
         : Math.max(0, Math.round((Number(row.price_cny) || 0) * 100) / 100);
@@ -951,18 +968,18 @@ function buildPointsGeneratePreviewModel() {
     const packageId = String(packageInput?.value || '').trim();
     const isCustomPoints = packageId === 'custom';
     const selectedPackage = getPointsSelectedPackageData(packageId);
-    const customPointsAmount = Math.max(0, Math.round(Number(customPointsInput?.value) || 0));
+    const customPointsAmount = normalizePointAmount(customPointsInput?.value, 0);
     const pointsPerCode = isCustomPoints
         ? customPointsAmount
-        : Math.max(0, Number(selectedPackage?.total_points) || 0);
+        : normalizePointAmount(selectedPackage?.total_points, 0);
     const count = Math.max(0, Math.round(Number(countInput?.value) || 0));
     const site = getPointsReadSite();
     const channel = String(channelInput?.value || '').trim();
     const expiresAt = String(expiresInput?.value || '').trim();
     const packageLabel = isCustomPoints
-        ? (customPointsAmount > 0 ? `自定义积分 (${customPointsAmount}分)` : '自定义积分')
+        ? (customPointsAmount > 0 ? `自定义积分 (${formatPointAmount(customPointsAmount)} 积分)` : '自定义积分')
         : (selectedPackage
-            ? `${selectedPackage.name}${selectedPackage.total_points ? ` (${selectedPackage.total_points}分)` : ''}`
+            ? `${selectedPackage.name}${selectedPackage.total_points ? ` (${formatPointAmount(selectedPackage.total_points)} 积分)` : ''}`
             : '未选择套餐');
     const batchLabel = batchName || '未命名批次';
     const totalPoints = pointsPerCode > 0 && count > 0 ? pointsPerCode * count : 0;
@@ -1969,7 +1986,7 @@ function applyPendingGenerateSeed() {
         setPointsSelectDropdownValue('packageSelectDropdown', 'custom', '✏️ 自定义积分');
     } else {
         const packageText = seed.packageLabel
-            ? `${seed.packageLabel}${seed.pointsPerCode > 0 ? ` (${seed.pointsPerCode}分)` : ''}`
+            ? `${seed.packageLabel}${seed.pointsPerCode > 0 ? ` (${formatPointAmount(seed.pointsPerCode)} 积分)` : ''}`
             : '请选择套餐';
         setPointsSelectDropdownValue('packageSelectDropdown', seed.packageId, packageText);
     }
@@ -2317,8 +2334,8 @@ function renderPointsPackageEditor() {
     if (idInput) idInput.value = source.id || '';
     nameInput.value = source.name || '';
     if (nameEnInput) nameEnInput.value = source.name_en || '';
-    basePointsInput.value = String(Math.max(0, Number(source.points_amount) || 0));
-    if (bonusPointsInput) bonusPointsInput.value = String(Math.max(0, Number(source.bonus_points) || 0));
+    basePointsInput.value = String(normalizePointAmount(source.points_amount, 0));
+    if (bonusPointsInput) bonusPointsInput.value = String(normalizePointAmount(source.bonus_points, 0));
     if (priceInput) priceInput.value = source.price_cny == null ? '' : String(source.price_cny);
     if (sortInput) sortInput.value = String(Math.max(0, Number(source.sort_order) || 0));
     if (enabledInput) enabledInput.checked = source.is_active !== false;
@@ -2403,8 +2420,8 @@ function duplicatePointsPackageToEditor(packageId = '') {
     if (idInput) idInput.value = '';
     if (nameInput) nameInput.value = row.name ? `${row.name} 副本` : '未命名套餐 副本';
     if (nameEnInput) nameEnInput.value = row.name_en ? `${row.name_en} Copy` : '';
-    if (basePointsInput) basePointsInput.value = String(Math.max(0, Number(row.points_amount) || 0));
-    if (bonusPointsInput) bonusPointsInput.value = String(Math.max(0, Number(row.bonus_points) || 0));
+    if (basePointsInput) basePointsInput.value = String(normalizePointAmount(row.points_amount, 0));
+    if (bonusPointsInput) bonusPointsInput.value = String(normalizePointAmount(row.bonus_points, 0));
     if (priceInput) priceInput.value = row.price_cny == null ? '' : String(row.price_cny);
     if (sortInput) sortInput.value = String(getNextPointsPackageSortOrder());
     if (enabledInput) enabledInput.checked = row.is_active !== false;
@@ -2448,12 +2465,12 @@ function collectPointsPackageFormPayload() {
         throw new Error('请先填写套餐名称');
     }
 
-    const pointsAmount = Math.max(0, Math.round(Number(basePointsInput?.value) || 0));
+    const pointsAmount = normalizePointAmount(basePointsInput?.value, 0);
     if (pointsAmount <= 0) {
         throw new Error('基础积分需要大于 0');
     }
 
-    const bonusPoints = Math.max(0, Math.round(Number(bonusPointsInput?.value) || 0));
+    const bonusPoints = normalizePointAmount(bonusPointsInput?.value, 0);
     const sortOrder = Math.max(0, Math.round(Number(sortInput?.value) || 0));
     const rawPrice = String(priceInput?.value || '').trim();
     const normalizedPrice = rawPrice
@@ -2797,8 +2814,8 @@ function renderPointsPackageCatalogTable(rows = getPointsCatalogRows()) {
                 </td>
                 <td>
                     <div class="points-package-balance">
-                        <strong>${totalPoints} 积分</strong>
-                        <span>基础 ${pkg.points_amount || 0} / 赠送 ${pkg.bonus_points || 0}</span>
+                        <strong>${formatPointAmount(totalPoints)} 积分</strong>
+                        <span>基础 ${formatPointAmount(pkg.points_amount || 0)} / 赠送 ${formatPointAmount(pkg.bonus_points || 0)}</span>
                     </div>
                 </td>
                 <td>${formatPointsPackagePrice(pkg.price_cny)}</td>
@@ -2921,7 +2938,7 @@ async function loadPackagesForSelect() {
         let optionsHtml = packages.map((pkg, index) => {
             const total = pkg.points_amount + (pkg.bonus_points || 0);
             const isFirst = index === 0;
-            return `<div class="select-option${isFirst ? ' selected' : ''}" data-value="${pkg.id}">${pkg.name} (${total}分)</div>`;
+            return `<div class="select-option${isFirst ? ' selected' : ''}" data-value="${pkg.id}">${pkg.name} (${formatPointAmount(total)} 积分)</div>`;
         }).join('');
 
         // Add custom points option
@@ -2933,7 +2950,7 @@ async function loadPackagesForSelect() {
         if (packages.length > 0) {
             const firstPkg = packages[0];
             const total = firstPkg.points_amount + (firstPkg.bonus_points || 0);
-            displayText.textContent = `${firstPkg.name} (${total}分)`;
+            displayText.textContent = `${firstPkg.name} (${formatPointAmount(total)} 积分)`;
             hiddenInput.value = firstPkg.id;
         } else {
             displayText.textContent = '暂无套餐';
@@ -3055,7 +3072,7 @@ async function generateCodes(event) {
 
     const isCustomPoints = packageIdValue === 'custom';
     const customPointsAmount = isCustomPoints
-        ? parseInt(document.getElementById('customPointsAmount')?.value)
+        ? normalizePointAmount(document.getElementById('customPointsAmount')?.value, 0)
         : null;
 
     if (previewModel.blockers.length > 0) {
@@ -3091,7 +3108,7 @@ async function generateCodes(event) {
             site: currentSite,
             channel,
             packageLabel: isCustomPoints
-                ? (customPointsAmount ? `自定义积分 (${customPointsAmount}分)` : '自定义积分')
+                ? (customPointsAmount ? `自定义积分 (${formatPointAmount(customPointsAmount)} 积分)` : '自定义积分')
                 : (selectedPackage?.name || previewModel.packageLabel || '未命名套餐')
         };
         displayGeneratedCodes();
@@ -3160,8 +3177,11 @@ function seedGenerateFromBatch(batchId = '') {
         packageLabel,
         channel: String(batch.channel || 'manual').trim() || 'manual',
         count: Math.min(1000, Math.max(1, Number(batch.total_count) || 10)),
-        customPointsAmount: Math.max(0, Number(batch.custom_points_amount) || 0),
-        pointsPerCode: Math.max(0, Number(batch.custom_points_amount) || Number(pkg?.points_amount) || 0),
+        customPointsAmount: normalizePointAmount(batch.custom_points_amount, 0),
+        pointsPerCode: normalizePointAmount(
+            batch.custom_points_amount,
+            normalizePointAmount((Number(pkg?.points_amount) || 0) + (Number(pkg?.bonus_points) || 0), 0)
+        ),
         isCustom: Math.max(0, Number(batch.custom_points_amount) || 0) > 0 || !String(batch.package_id || '').trim()
     };
 
@@ -4806,7 +4826,14 @@ async function viewBatchCodes(batchId) {
         const headerTitleEl = document.querySelector('.codes-modal-header__copy h3');
         const headerSubtitleEl = document.querySelector('.codes-modal-header__copy p');
 
-        const pointsPerCode = Math.max(0, Number(batch.custom_points_amount) || Number(batch.points_packages?.points_amount) || 0);
+        const pointsPerCode = normalizePointAmount(
+            batch.custom_points_amount,
+            normalizePointAmount(
+                (Number(batch.points_packages?.points_amount) || 0)
+                + (Number(batch.points_packages?.bonus_points) || 0),
+                0
+            )
+        );
         const packageLabel = batch.points_packages?.name || (Math.max(0, Number(batch.custom_points_amount) || 0) > 0 ? '自定义积分' : '未命名套餐');
         const riskBadges = buildPointsBatchRiskBadges(batch);
         const codeCounts = getPointsBatchCodeStatusCounts(data);
@@ -5821,7 +5848,14 @@ function openBatchEditModal(batchId, { returnToCodes = false } = {}) {
     const context = getPointsWriteContextState();
     const insights = getPointsBatchInsights(batch);
     const packageLabel = batch.points_packages?.name || (insights.isCustom ? '自定义积分' : '未命名套餐');
-    const pointsPerCode = Math.max(0, Number(batch.custom_points_amount) || Number(batch.points_packages?.points_amount) || 0);
+    const pointsPerCode = normalizePointAmount(
+        batch.custom_points_amount,
+        normalizePointAmount(
+            (Number(batch.points_packages?.points_amount) || 0)
+            + (Number(batch.points_packages?.bonus_points) || 0),
+            0
+        )
+    );
     const usagePercent = insights.totalCount > 0 ? Math.round(insights.usageRate * 100) : 0;
     const expiryLabel = formatPointsBatchExpiryLabel(batch, insights);
     const riskBadges = buildPointsBatchRiskBadges(batch);

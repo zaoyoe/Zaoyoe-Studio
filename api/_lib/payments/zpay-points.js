@@ -10,7 +10,7 @@ function normalizeJsonObject(value) {
         : {};
 }
 
-function deriveHupijiaoPointBreakdown(paymentOrder = null, attachData = {}) {
+function deriveZpayPointBreakdown(paymentOrder = null, attachData = {}) {
     const requestPayload = paymentOrder?.raw_payload?.request && typeof paymentOrder.raw_payload.request === 'object'
         ? paymentOrder.raw_payload.request
         : {};
@@ -65,5 +65,5 @@ function deriveHupijiaoPointBreakdown(paymentOrder = null, attachData = {}) {
 }
 
 module.exports = {
-    deriveHupijiaoPointBreakdown
+    deriveZpayPointBreakdown
 };

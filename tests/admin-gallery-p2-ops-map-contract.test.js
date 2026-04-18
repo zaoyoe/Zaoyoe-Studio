@@ -21,6 +21,8 @@ test('gallery p2 ops map adds overview, sorting, batch workflow actions, and hom
         'id="galleryOpsOverview"',
         'data-admin-action="gallery-batch-set-status"',
         'data-admin-action="gallery-batch-add-homepage"',
+        'data-gallery-batch-status="live"',
+        '批量发布',
         'id="batchLocalizeMenuItem"',
         'data-admin-action="gallery-batch-localize"',
         'id="batchActionFeedback"'

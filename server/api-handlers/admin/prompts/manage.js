@@ -551,10 +551,15 @@ module.exports = async (req, res) => {
         }
 
         const body = await parseJsonBody(req);
-        const site = requireWritableAdminSite(body.site || req.adminSite, { fieldName: 'site' });
+        const site = requireWritableAdminSite(body.site || req.adminSite || searchParams.get('site'), { fieldName: 'site' });
 
         if (method === 'DELETE') {
-            const ids = toUniqueStringArray(body.ids || body.id);
+            const ids = toUniqueStringArray([
+                ...(Array.isArray(body.ids) ? body.ids : (body.ids ? [body.ids] : [])),
+                body.id,
+                ...searchParams.getAll('ids'),
+                searchParams.get('id')
+            ]);
             if (!ids.length) {
                 return sendJson(res, 400, { success: false, message: 'id or ids is required' });
             }

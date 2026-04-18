@@ -1,8 +1,13 @@
+const {
+    createZpayWebhookHandler
+} = require('../../../api/_lib/payments/zpay-webhook');
+
 function createPaymentsHandlers({
     admin,
     requestSecurity,
     paymentProviders,
     paymentOrders,
+    zpayWebhook,
     env = process.env
 } = {}) {
     const {
@@ -26,8 +31,12 @@ function createPaymentsHandlers({
     const {
         completeMockPayment,
         createPaymentRequest,
+        getPaymentRequestStatus,
         getMockPaymentRuntimeState
     } = paymentOrders || {};
+    const resolvedZpayWebhook = zpayWebhook || {
+        createZpayWebhookHandler
+    };
 
     const parseBody = typeof parseJsonBody === 'function'
         ? parseJsonBody
@@ -42,6 +51,19 @@ function createPaymentsHandlers({
         );
         return hasServiceRole ? getSupabaseAdmin?.() : getSupabasePublicClient?.();
     }
+
+    function getWebhookSupabaseClient() {
+        try {
+            return getOptionalSupabaseAdmin?.() || getSupabaseAdmin?.() || null;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    const zpayWebhookHandler = resolvedZpayWebhook.createZpayWebhookHandler({
+        getSupabase: getWebhookSupabaseClient,
+        env
+    });
 
     return {
         'auth-check': async function paymentsAuthCheckHandler(req, res) {
@@ -173,7 +195,9 @@ function createPaymentsHandlers({
                     user,
                     body,
                     env,
-                    requestHost: req.headers.host || req.headers.Host || ''
+                    requestHost: req.headers.host || req.headers.Host || '',
+                    clientIp: resolveClientIp(req, { env }) || '',
+                    userAgent: String(req.headers['user-agent'] || '').trim()
                 });
 
                 return sendJson(res, 200, payload);
@@ -181,6 +205,55 @@ function createPaymentsHandlers({
                 return sendJson(res, error.statusCode || 500, {
                     success: false,
                     message: error.message || '创建支付请求失败'
+                });
+            }
+        },
+        status: async function paymentsStatusHandler(req, res) {
+            if (req.method !== 'POST') {
+                res.setHeader('Allow', 'POST');
+                return sendJson(res, 405, {
+                    success: false,
+                    message: 'Method not allowed'
+                });
+            }
+
+            const rateLimit = await takeRateLimitToken({
+                supabase: getOptionalSupabaseAdmin(),
+                key: `payments-status:${resolveClientIp(req, { env }) || 'unknown'}`,
+                limit: Math.max(1, Number(env.PAYMENTS_STATUS_RATE_LIMIT_MAX || 60)),
+                windowMs: Math.max(10_000, Number(env.PAYMENTS_STATUS_RATE_LIMIT_WINDOW_MS || 60_000))
+            });
+            applyRateLimitHeaders(res, rateLimit);
+            if (!rateLimit.allowed) {
+                return sendJson(res, 429, {
+                    success: false,
+                    code: 'rate_limited',
+                    message: 'Too many payment status requests',
+                    retry_after_seconds: rateLimit.retryAfterSeconds
+                });
+            }
+
+            try {
+                if (typeof getPaymentRequestStatus !== 'function') {
+                    const unavailableError = new Error('支付状态查询能力暂未完成接入');
+                    unavailableError.statusCode = 503;
+                    throw unavailableError;
+                }
+
+                const { requestSupabase, adminSupabase, user } = await requireAuthenticatedUser(req);
+                const body = await parseBody(req);
+                const payload = await getPaymentRequestStatus({
+                    supabase: requestSupabase || adminSupabase,
+                    user,
+                    body,
+                    env
+                });
+
+                return sendJson(res, 200, payload);
+            } catch (error) {
+                return sendJson(res, error.statusCode || 500, {
+                    success: false,
+                    message: error.message || '查询支付状态失败'
                 });
             }
         },
@@ -227,6 +300,9 @@ function createPaymentsHandlers({
                     message: error.message || '模拟支付失败'
                 });
             }
+        },
+        'zpay/webhook': async function paymentsZpayWebhookHandler(req, res) {
+            return zpayWebhookHandler(req, res);
         }
     };
 }

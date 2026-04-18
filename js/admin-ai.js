@@ -177,13 +177,28 @@
         },
 
         async getAuthHeaders() {
-            const { data: { session } = {} } = await window.supabaseClient.auth.getSession();
             const headers = {
                 'Content-Type': 'application/json'
             };
+            let accessToken = '';
 
-            if (session?.access_token) {
-                headers.Authorization = `Bearer ${session.access_token}`;
+            try {
+                const { data: { session } = {} } = await window.supabaseClient.auth.getSession();
+                accessToken = String(session?.access_token || '').trim();
+            } catch (_) {
+                accessToken = '';
+            }
+
+            if (!accessToken && typeof window.supabaseClient?.accessToken === 'function') {
+                try {
+                    accessToken = String(await window.supabaseClient.accessToken() || '').trim();
+                } catch (_) {
+                    accessToken = '';
+                }
+            }
+
+            if (accessToken) {
+                headers.Authorization = `Bearer ${accessToken}`;
             }
 
             return headers;
@@ -218,8 +233,10 @@
 
                 const payload = await response.json().catch(() => ({}));
                 if (!response.ok || !payload.success) {
-                    this.configured = false;
-                    throw new Error(payload.message || 'AI proxy unavailable');
+                    const error = new Error(payload.message || 'AI proxy unavailable');
+                    error.status = response.status;
+                    error.details = payload?.error || payload || null;
+                    throw error;
                 }
 
                 this.configured = Boolean(payload.configured);

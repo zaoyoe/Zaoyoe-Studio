@@ -7,6 +7,7 @@
 let systemConfigCache = {};
 let paymentChannelSecretStatus = getDefaultPaymentChannelSecretStatus();
 let paymentChannelRuntimeState = getDefaultPaymentChannelRuntimeState();
+let paymentChannelActivationChecks = getDefaultPaymentChannelActivationChecks();
 let discountTriggerSettingsState = getDefaultDiscountTriggerSettingsState();
 let opsAlertSecretStatus = getDefaultOpsAlertSecretStatus();
 let opsAlertHealthState = getDefaultOpsAlertHealthState();
@@ -27,6 +28,7 @@ let affiliateSettingsFocusTimeoutId = 0;
 let paymentChannelAccordionState = {
     mock: false,
     afdian: false,
+    zpay: false,
     hupijiao: false
 };
 let discountTriggerRuleDraftCounter = 0;
@@ -1986,10 +1988,10 @@ function getDefaultRechargeOptionsConfig() {
     return {
         custom_amount_enabled: false,
         mock_payment_enabled: false,
-        custom_amount_min_points: 1,
+        custom_amount_min_points: 0.01,
         custom_amount_max_points: 50000,
-        custom_amount_step: 1,
-        custom_amount_points_per_cny: 50,
+        custom_amount_step: 0.01,
+        custom_amount_points_per_cny: 1,
         custom_amount_quote_ttl_seconds: 1800
     };
 }
@@ -1998,7 +2000,8 @@ function getDefaultPaymentChannelSecretStatus() {
     return {
         afdian_token: { configured: false, source: 'missing', updatedAt: null },
         hupijiao_api_key: { configured: false, source: 'missing', updatedAt: null },
-        hupijiao_secret_key: { configured: false, source: 'missing', updatedAt: null }
+        hupijiao_secret_key: { configured: false, source: 'missing', updatedAt: null },
+        zpay_pkey: { configured: false, source: 'missing', updatedAt: null }
     };
 }
 
@@ -2014,6 +2017,15 @@ function getDefaultPaymentChannelRuntimeState() {
             override_mode: 'none',
             cleanup_message: ''
         }
+    };
+}
+
+function getDefaultPaymentChannelActivationChecks() {
+    return {
+        mock: { providerKey: 'mock', label: '模拟支付', ready: true, issues: [], warnings: [] },
+        afdian: { providerKey: 'afdian', label: '爱发电', ready: true, issues: [], warnings: [] },
+        zpay: { providerKey: 'zpay', label: '易支付', ready: false, issues: [], warnings: [] },
+        hupijiao: { providerKey: 'hupijiao', label: '虎皮椒', ready: false, issues: [], warnings: [] }
     };
 }
 
@@ -3288,10 +3300,71 @@ function normalizePaymentChannelRuntimeState(raw) {
     };
 }
 
+function normalizePaymentChannelActivationChecks(raw) {
+    const defaults = getDefaultPaymentChannelActivationChecks();
+    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+
+    return Object.fromEntries(
+        Object.keys(defaults).map((providerKey) => {
+            const defaultEntry = defaults[providerKey];
+            const nextEntry = source[providerKey] && typeof source[providerKey] === 'object' && !Array.isArray(source[providerKey])
+                ? source[providerKey]
+                : {};
+
+            return [providerKey, {
+                providerKey,
+                label: String(nextEntry.label || defaultEntry.label).trim() || defaultEntry.label,
+                ready: nextEntry.ready === true,
+                issues: Array.isArray(nextEntry.issues)
+                    ? nextEntry.issues.map((item) => String(item || '').trim()).filter(Boolean)
+                    : defaultEntry.issues,
+                warnings: Array.isArray(nextEntry.warnings)
+                    ? nextEntry.warnings.map((item) => String(item || '').trim()).filter(Boolean)
+                    : (defaultEntry.warnings || [])
+            }];
+        })
+    );
+}
+
+function summarizePaymentChannelActivationState(providerKey) {
+    const checks = normalizePaymentChannelActivationChecks(paymentChannelActivationChecks);
+    const entry = checks[providerKey];
+    if (!entry) return '';
+    if (Array.isArray(entry.issues) && entry.issues.length) {
+        return `待处理：${entry.issues.slice(0, 2).join('；')}`;
+    }
+    if (Array.isArray(entry.warnings) && entry.warnings.length) {
+        return `安全提示：${entry.warnings.slice(0, 1).join('；')}`;
+    }
+    return '';
+}
+
+function formatPaymentChannelSaveError(payload = {}) {
+    const message = String(payload?.message || '保存支付通道配置失败').trim() || '保存支付通道配置失败';
+    const guidance = String(payload?.guidance || '').trim();
+    if (!guidance) {
+        return message;
+    }
+    return `${message}。${guidance}`;
+}
+
 function getDefaultPaymentChannelsConfig() {
     const rechargeOptions = normalizeRechargeOptionsConfig(systemConfigCache['recharge_options']);
+    const currentOrigin = (() => {
+        try {
+            return window.location?.origin || 'https://www.zaoyoe.com';
+        } catch (_) {
+            return 'https://www.zaoyoe.com';
+        }
+    })();
+    const buildDefaultPaymentWebhookUrl = (providerKey = '') => {
+        const normalizedProviderKey = String(providerKey || '').trim().toLowerCase();
+        return normalizedProviderKey
+            ? `${currentOrigin}/api/payments/${normalizedProviderKey}/webhook`
+            : currentOrigin;
+    };
     const resolvePreferredEnabledProviderKey = (providers = {}, fallback = 'afdian') => {
-        const candidateKeys = ['hupijiao', 'afdian', ...Object.keys(providers || {})];
+        const candidateKeys = ['zpay', 'hupijiao', 'afdian', ...Object.keys(providers || {})];
         const seen = new Set();
 
         for (const providerKey of candidateKeys) {
@@ -3318,7 +3391,7 @@ function getDefaultPaymentChannelsConfig() {
             }
         }
 
-        return ['mock', 'afdian', 'hupijiao'].includes(fallback) ? fallback : 'afdian';
+        return ['mock', 'afdian', 'hupijiao', 'zpay'].includes(fallback) ? fallback : 'afdian';
     };
 
     const providers = {
@@ -3338,14 +3411,30 @@ function getDefaultPaymentChannelsConfig() {
             order_query_hint: '完成支付后，可在这里输入订单号查询兑换结果。',
             order_query_placeholder: '输入支付平台订单号'
         },
+        zpay: {
+            enabled: false,
+            display_name: '易支付',
+            checkout_url: 'https://zpayz.cn',
+            pid: '',
+            payment_type: 'alipay',
+            channel_ids: '',
+            return_url: currentOrigin,
+            notify_url: buildDefaultPaymentWebhookUrl('zpay'),
+            package_hint: '易支付通道已启用，创建订单后会直接拉起收银台完成支付。',
+            custom_amount_hint: '易支付通道已启用。自定义金额订单会按当前报价直接拉起收银台。',
+            order_query_enabled: false,
+            order_query_title: '',
+            order_query_hint: '',
+            order_query_placeholder: ''
+        },
         hupijiao: {
             enabled: false,
             display_name: '虎皮椒',
             checkout_url: '',
             gateway_url: '',
             merchant_id: '',
-            return_url: 'https://www.zaoyoe.com',
-            notify_url: '',
+            return_url: currentOrigin,
+            notify_url: buildDefaultPaymentWebhookUrl('hupijiao'),
             package_hint: '虎皮椒通道已启用，正式回调与自动发货接入后即可完整使用。',
             custom_amount_hint: '虎皮椒通道已启用。自定义金额订单能力接入后，这里会直接拉起真实支付。',
             order_query_enabled: false,
@@ -4054,7 +4143,7 @@ function toWholeNumber(value, fallback = 0) {
 
 function toPointNumber(value, fallback = 0) {
     const parsed = Number(value);
-    return Number.isFinite(parsed) ? Math.round(parsed * 10) / 10 : fallback;
+    return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : fallback;
 }
 
 function toDecimal(value, fallback = 0) {
@@ -4459,13 +4548,13 @@ function normalizeRechargeOptionsConfig(raw) {
     return {
         custom_amount_enabled: source.custom_amount_enabled === true || String(source.custom_amount_enabled) === 'true',
         mock_payment_enabled: source.mock_payment_enabled === true || String(source.mock_payment_enabled) === 'true',
-        custom_amount_min_points: Math.max(1, Math.round(toPointNumber(source.custom_amount_min_points, defaults.custom_amount_min_points))),
+        custom_amount_min_points: defaults.custom_amount_min_points,
         custom_amount_max_points: Math.max(
-            Math.max(1, Math.round(toPointNumber(source.custom_amount_min_points, defaults.custom_amount_min_points))),
-            Math.round(toPointNumber(source.custom_amount_max_points, defaults.custom_amount_max_points))
+            defaults.custom_amount_min_points,
+            toPointNumber(source.custom_amount_max_points, defaults.custom_amount_max_points)
         ),
-        custom_amount_step: Math.max(1, Math.round(toPointNumber(source.custom_amount_step, defaults.custom_amount_step))),
-        custom_amount_points_per_cny: Math.max(0.01, toPointNumber(source.custom_amount_points_per_cny, defaults.custom_amount_points_per_cny)),
+        custom_amount_step: defaults.custom_amount_step,
+        custom_amount_points_per_cny: defaults.custom_amount_points_per_cny,
         custom_amount_quote_ttl_seconds: Math.max(60, Math.round(toPointNumber(source.custom_amount_quote_ttl_seconds, defaults.custom_amount_quote_ttl_seconds)))
     };
 }
@@ -4477,7 +4566,7 @@ function normalizePaymentChannelsConfig(raw) {
         ? source.providers
         : {};
     const resolvePreferredEnabledProviderKey = (providers = {}, fallback = defaults.active_provider) => {
-        const candidateKeys = ['hupijiao', 'afdian', ...Object.keys(providers || {})];
+        const candidateKeys = ['zpay', 'hupijiao', 'afdian', ...Object.keys(providers || {})];
         const seen = new Set();
 
         for (const providerKey of candidateKeys) {
@@ -4504,11 +4593,11 @@ function normalizePaymentChannelsConfig(raw) {
             }
         }
 
-        return ['mock', 'afdian', 'hupijiao'].includes(fallback) ? fallback : defaults.active_provider;
+        return ['mock', 'afdian', 'hupijiao', 'zpay'].includes(fallback) ? fallback : defaults.active_provider;
     };
 
     const normalized = {
-        active_provider: ['mock', 'afdian', 'hupijiao'].includes(source.active_provider)
+        active_provider: ['mock', 'afdian', 'hupijiao', 'zpay'].includes(source.active_provider)
             ? source.active_provider
             : resolvePreferredEnabledProviderKey(sourceProviders, defaults.active_provider),
         providers: {
@@ -4533,6 +4622,22 @@ function normalizePaymentChannelsConfig(raw) {
                 order_query_title: String(sourceProviders.afdian?.order_query_title || defaults.providers.afdian.order_query_title).trim() || defaults.providers.afdian.order_query_title,
                 order_query_hint: String(sourceProviders.afdian?.order_query_hint || defaults.providers.afdian.order_query_hint).trim() || defaults.providers.afdian.order_query_hint,
                 order_query_placeholder: String(sourceProviders.afdian?.order_query_placeholder || defaults.providers.afdian.order_query_placeholder).trim() || defaults.providers.afdian.order_query_placeholder
+            },
+            zpay: {
+                enabled: sourceProviders.zpay?.enabled === true || String(sourceProviders.zpay?.enabled) === 'true',
+                display_name: String(sourceProviders.zpay?.display_name || defaults.providers.zpay.display_name).trim() || defaults.providers.zpay.display_name,
+                checkout_url: String(sourceProviders.zpay?.checkout_url || defaults.providers.zpay.checkout_url).trim() || defaults.providers.zpay.checkout_url,
+                pid: String(sourceProviders.zpay?.pid || defaults.providers.zpay.pid).trim(),
+                payment_type: String(sourceProviders.zpay?.payment_type || defaults.providers.zpay.payment_type).trim().toLowerCase() || defaults.providers.zpay.payment_type,
+                channel_ids: String(sourceProviders.zpay?.channel_ids || defaults.providers.zpay.channel_ids).trim(),
+                return_url: String(sourceProviders.zpay?.return_url || defaults.providers.zpay.return_url).trim() || defaults.providers.zpay.return_url,
+                notify_url: String(sourceProviders.zpay?.notify_url || defaults.providers.zpay.notify_url).trim(),
+                package_hint: String(sourceProviders.zpay?.package_hint || defaults.providers.zpay.package_hint).trim() || defaults.providers.zpay.package_hint,
+                custom_amount_hint: String(sourceProviders.zpay?.custom_amount_hint || defaults.providers.zpay.custom_amount_hint).trim() || defaults.providers.zpay.custom_amount_hint,
+                order_query_enabled: sourceProviders.zpay?.order_query_enabled === true || String(sourceProviders.zpay?.order_query_enabled) === 'true',
+                order_query_title: String(sourceProviders.zpay?.order_query_title || defaults.providers.zpay.order_query_title).trim(),
+                order_query_hint: String(sourceProviders.zpay?.order_query_hint || defaults.providers.zpay.order_query_hint).trim(),
+                order_query_placeholder: String(sourceProviders.zpay?.order_query_placeholder || defaults.providers.zpay.order_query_placeholder).trim()
             },
             hupijiao: {
                 enabled: sourceProviders.hupijiao?.enabled === true || String(sourceProviders.hupijiao?.enabled) === 'true',
@@ -6023,6 +6128,7 @@ function getPaymentProviderDomRefs(providerKey) {
     const suffixMap = {
         mock: 'Mock',
         afdian: 'Afdian',
+        zpay: 'Zpay',
         hupijiao: 'Hupijiao'
     };
     const suffix = suffixMap[providerKey];
@@ -6058,17 +6164,27 @@ function togglePaymentProviderPanel(providerKey) {
 function applyPaymentChannelOverview(config) {
     const activeProvider = config.providers[config.active_provider];
     const mockRuntime = normalizePaymentChannelRuntimeState(paymentChannelRuntimeState).mock_payment;
+    const activationChecks = normalizePaymentChannelActivationChecks(paymentChannelActivationChecks);
+    const activeProviderCheck = activationChecks[config.active_provider];
     const isMockCurrentlyEnabled = config.active_provider === 'mock';
     const isMockActiveButBlocked = config.active_provider === 'mock' && mockRuntime.allowed !== true;
     const hasMockOverrideCleanupNotice = !isMockCurrentlyEnabled
         && mockRuntime.override_configured === true
         && Boolean(mockRuntime.cleanup_message);
+    const hasActiveProviderIssue = activeProviderCheck && activeProviderCheck.ready !== true && Array.isArray(activeProviderCheck.issues) && activeProviderCheck.issues.length > 0;
+    const hasActiveProviderWarning = activeProviderCheck && activeProviderCheck.ready === true && Array.isArray(activeProviderCheck.warnings) && activeProviderCheck.warnings.length > 0;
     const summaryMessage = isMockActiveButBlocked
         ? mockRuntime.message
         : (hasMockOverrideCleanupNotice
             ? mockRuntime.cleanup_message
-            : '公开配置保存在系统设置中；敏感密钥会通过服务端加密保存，不再存浏览器。');
-    const summaryIcon = (isMockActiveButBlocked || hasMockOverrideCleanupNotice) ? 'fa-exclamation-triangle' : 'fa-plug';
+            : (hasActiveProviderIssue
+                ? `当前主通道还缺前置条件：${activeProviderCheck.issues.join('；')}`
+                : (hasActiveProviderWarning
+                    ? `当前主通道存在安全提示：${activeProviderCheck.warnings.join('；')}`
+                    : '公开配置保存在系统设置中；敏感密钥会通过服务端加密保存，不再存浏览器。')));
+    const summaryIcon = (isMockActiveButBlocked || hasMockOverrideCleanupNotice || hasActiveProviderIssue || hasActiveProviderWarning)
+        ? 'fa-exclamation-triangle'
+        : 'fa-plug';
     const activeSelect = document.getElementById('paymentChannelActiveSelect');
     if (activeSelect && activeSelect.value !== config.active_provider) {
         activeSelect.value = config.active_provider;
@@ -6085,6 +6201,7 @@ function applyPaymentChannelOverview(config) {
     const toggleMap = {
         mock: 'paymentProviderMockToggle',
         afdian: 'paymentProviderAfdianToggle',
+        zpay: 'paymentProviderZpayToggle',
         hupijiao: 'paymentProviderHupijiaoToggle'
     };
 
@@ -6095,7 +6212,14 @@ function applyPaymentChannelOverview(config) {
                 ? mockRuntime.cleanup_message
                 : (config.providers.mock.description || '直接到账，适合短期过渡验证。')),
         afdian: `历史手工认领通道 · ${paymentChannelSecretStatus?.afdian_token?.configured ? 'Token 已配置' : 'Token 待配置'}`,
-        hupijiao: `${config.providers.hupijiao.merchant_id ? `商户号 ${config.providers.hupijiao.merchant_id}` : '商户号待填写'} · ${(paymentChannelSecretStatus?.hupijiao_api_key?.configured && paymentChannelSecretStatus?.hupijiao_secret_key?.configured) ? '密钥已配置' : '密钥待配置'}`
+        zpay: [
+            `${config.providers.zpay.pid ? `PID ${config.providers.zpay.pid}` : 'PID 待填写'} · ${paymentChannelSecretStatus?.zpay_pkey?.configured ? 'PKEY 已配置' : 'PKEY 待配置'}`,
+            summarizePaymentChannelActivationState('zpay')
+        ].filter(Boolean).join(' · '),
+        hupijiao: [
+            `${config.providers.hupijiao.merchant_id ? `商户号 ${config.providers.hupijiao.merchant_id}` : '商户号待填写'} · ${(paymentChannelSecretStatus?.hupijiao_api_key?.configured && paymentChannelSecretStatus?.hupijiao_secret_key?.configured) ? '密钥已配置' : '密钥待配置'}`,
+            summarizePaymentChannelActivationState('hupijiao')
+        ].filter(Boolean).join(' · ')
     };
 
     Object.keys(toggleMap).forEach((providerKey) => {
@@ -6152,6 +6276,15 @@ function renderPaymentChannelsConfig() {
     setValue('paymentProviderAfdianCheckoutUrl', config.providers.afdian.checkout_url);
     setValue('paymentProviderAfdianPackageHint', config.providers.afdian.package_hint);
     setValue('paymentProviderAfdianCustomHint', config.providers.afdian.custom_amount_hint);
+    setValue('paymentProviderZpayDisplayName', config.providers.zpay.display_name);
+    setValue('paymentProviderZpayCheckoutUrl', config.providers.zpay.checkout_url);
+    setValue('paymentProviderZpayPid', config.providers.zpay.pid);
+    setValue('paymentProviderZpayType', config.providers.zpay.payment_type);
+    setValue('paymentProviderZpayChannelIds', config.providers.zpay.channel_ids);
+    setValue('paymentProviderZpayReturnUrl', config.providers.zpay.return_url);
+    setValue('paymentProviderZpayNotifyUrl', config.providers.zpay.notify_url);
+    setValue('paymentProviderZpayPackageHint', config.providers.zpay.package_hint);
+    setValue('paymentProviderZpayCustomHint', config.providers.zpay.custom_amount_hint);
     setValue('paymentProviderHupijiaoDisplayName', config.providers.hupijiao.display_name);
     setValue('paymentProviderHupijiaoCheckoutUrl', config.providers.hupijiao.checkout_url);
     setValue('paymentProviderHupijiaoGatewayUrl', config.providers.hupijiao.gateway_url);
@@ -6163,6 +6296,9 @@ function renderPaymentChannelsConfig() {
 
     const afdianStatus = document.getElementById('paymentProviderAfdianTokenStatus');
     if (afdianStatus) afdianStatus.textContent = getPaymentSecretStatusMessage('afdian_token');
+
+    const zpayPkeyStatus = document.getElementById('paymentProviderZpayPkeyStatus');
+    if (zpayPkeyStatus) zpayPkeyStatus.textContent = getPaymentSecretStatusMessage('zpay_pkey');
 
     const hupijiaoApiKeyStatus = document.getElementById('paymentProviderHupijiaoApiKeyStatus');
     if (hupijiaoApiKeyStatus) hupijiaoApiKeyStatus.textContent = getPaymentSecretStatusMessage('hupijiao_api_key');
@@ -15920,6 +16056,7 @@ async function loadPaymentChannelSettings(force = false) {
             systemConfigCache['payment_channels'] = normalizePaymentChannelsConfig(payload.config);
             paymentChannelSecretStatus = payload.secrets || getDefaultPaymentChannelSecretStatus();
             paymentChannelRuntimeState = normalizePaymentChannelRuntimeState(payload.runtime);
+            paymentChannelActivationChecks = normalizePaymentChannelActivationChecks(payload.activation_checks);
             const rechargeOptions = normalizeRechargeOptionsConfig(systemConfigCache['recharge_options']);
             rechargeOptions.mock_payment_enabled = systemConfigCache['payment_channels'].active_provider === 'mock';
             systemConfigCache['recharge_options'] = rechargeOptions;
@@ -15930,6 +16067,7 @@ async function loadPaymentChannelSettings(force = false) {
             console.warn('[Config] Payment channel settings load failed:', error.message);
             paymentChannelSecretStatus = getDefaultPaymentChannelSecretStatus();
             paymentChannelRuntimeState = getDefaultPaymentChannelRuntimeState();
+            paymentChannelActivationChecks = getDefaultPaymentChannelActivationChecks();
             renderPaymentChannelsConfig();
             renderPackagesConfig();
             return null;
@@ -16566,7 +16704,7 @@ async function toggleCustomRechargeEntryStatus() {
 function collectPaymentChannelsConfigFromForm() {
     const currentConfig = normalizePaymentChannelsConfig(systemConfigCache['payment_channels']);
     const activeSelect = document.getElementById('paymentChannelActiveSelect');
-    const activeProvider = ['mock', 'afdian', 'hupijiao'].includes(activeSelect?.value)
+    const activeProvider = ['mock', 'afdian', 'hupijiao', 'zpay'].includes(activeSelect?.value)
         ? activeSelect.value
         : currentConfig.active_provider;
 
@@ -16586,6 +16724,19 @@ function collectPaymentChannelsConfigFromForm() {
                 checkout_url: document.getElementById('paymentProviderAfdianCheckoutUrl')?.value?.trim() || currentConfig.providers.afdian.checkout_url,
                 package_hint: document.getElementById('paymentProviderAfdianPackageHint')?.value?.trim() || currentConfig.providers.afdian.package_hint,
                 custom_amount_hint: document.getElementById('paymentProviderAfdianCustomHint')?.value?.trim() || currentConfig.providers.afdian.custom_amount_hint
+            },
+            zpay: {
+                ...currentConfig.providers.zpay,
+                enabled: document.getElementById('paymentProviderZpayToggle')?.classList.contains('active') ?? currentConfig.providers.zpay.enabled,
+                display_name: document.getElementById('paymentProviderZpayDisplayName')?.value?.trim() || currentConfig.providers.zpay.display_name,
+                checkout_url: document.getElementById('paymentProviderZpayCheckoutUrl')?.value?.trim() || currentConfig.providers.zpay.checkout_url,
+                pid: document.getElementById('paymentProviderZpayPid')?.value?.trim() || currentConfig.providers.zpay.pid,
+                payment_type: document.getElementById('paymentProviderZpayType')?.value?.trim() || currentConfig.providers.zpay.payment_type,
+                channel_ids: document.getElementById('paymentProviderZpayChannelIds')?.value?.trim() || currentConfig.providers.zpay.channel_ids,
+                return_url: document.getElementById('paymentProviderZpayReturnUrl')?.value?.trim() || currentConfig.providers.zpay.return_url,
+                notify_url: document.getElementById('paymentProviderZpayNotifyUrl')?.value?.trim() || currentConfig.providers.zpay.notify_url,
+                package_hint: document.getElementById('paymentProviderZpayPackageHint')?.value?.trim() || currentConfig.providers.zpay.package_hint,
+                custom_amount_hint: document.getElementById('paymentProviderZpayCustomHint')?.value?.trim() || currentConfig.providers.zpay.custom_amount_hint
             },
             hupijiao: {
                 ...currentConfig.providers.hupijiao,
@@ -16612,6 +16763,7 @@ function collectPaymentChannelsConfigFromForm() {
 function clearPaymentChannelSecretInputs() {
     [
         'paymentProviderAfdianToken',
+        'paymentProviderZpayPkey',
         'paymentProviderHupijiaoApiKey',
         'paymentProviderHupijiaoSecretKey'
     ].forEach((id) => {
@@ -16630,6 +16782,7 @@ async function savePaymentChannelSettings(options = {}) {
             config,
             secrets: {
                 afdian_token: document.getElementById('paymentProviderAfdianToken')?.value?.trim() || '',
+                zpay_pkey: document.getElementById('paymentProviderZpayPkey')?.value?.trim() || '',
                 hupijiao_api_key: document.getElementById('paymentProviderHupijiaoApiKey')?.value?.trim() || '',
                 hupijiao_secret_key: document.getElementById('paymentProviderHupijiaoSecretKey')?.value?.trim() || ''
             }
@@ -16643,12 +16796,14 @@ async function savePaymentChannelSettings(options = {}) {
 
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || !payload.success) {
-            throw new Error(payload.message || '保存支付通道配置失败');
+            paymentChannelActivationChecks = normalizePaymentChannelActivationChecks(payload.activation_checks);
+            throw new Error(formatPaymentChannelSaveError(payload));
         }
 
         systemConfigCache['payment_channels'] = normalizePaymentChannelsConfig(payload.config);
         paymentChannelSecretStatus = payload.secrets || getDefaultPaymentChannelSecretStatus();
         paymentChannelRuntimeState = normalizePaymentChannelRuntimeState(payload.runtime);
+        paymentChannelActivationChecks = normalizePaymentChannelActivationChecks(payload.activation_checks);
 
         const rechargeOptions = normalizeRechargeOptionsConfig(systemConfigCache['recharge_options']);
         rechargeOptions.mock_payment_enabled = systemConfigCache['payment_channels'].active_provider === 'mock';
@@ -16672,6 +16827,7 @@ async function togglePaymentProviderEnabled(providerKey) {
     const toggleMap = {
         mock: 'paymentProviderMockToggle',
         afdian: 'paymentProviderAfdianToggle',
+        zpay: 'paymentProviderZpayToggle',
         hupijiao: 'paymentProviderHupijiaoToggle'
     };
     const toggleEl = document.getElementById(toggleMap[providerKey]);
@@ -16689,7 +16845,7 @@ async function togglePaymentProviderEnabled(providerKey) {
 
     const activeSelect = document.getElementById('paymentChannelActiveSelect');
     if (!nextValue && activeSelect?.value === providerKey) {
-        const fallback = ['mock', 'hupijiao', 'afdian'].find((key) => key !== providerKey && document.getElementById(toggleMap[key])?.classList.contains('active'));
+        const fallback = ['mock', 'zpay', 'hupijiao', 'afdian'].find((key) => key !== providerKey && document.getElementById(toggleMap[key])?.classList.contains('active'));
         if (fallback) {
             activeSelect.value = fallback;
         } else {
@@ -16709,7 +16865,7 @@ async function toggleMockPaymentStatus() {
         currentConfig.active_provider = 'mock';
         currentConfig.providers.mock.enabled = true;
     } else if (currentConfig.active_provider === 'mock') {
-        const fallbackProvider = ['hupijiao', 'afdian'].find((providerKey) => currentConfig.providers[providerKey]?.enabled);
+        const fallbackProvider = ['zpay', 'hupijiao', 'afdian'].find((providerKey) => currentConfig.providers[providerKey]?.enabled);
         currentConfig.active_provider = fallbackProvider || 'afdian';
         if (!currentConfig.providers[currentConfig.active_provider]?.enabled) {
             currentConfig.providers[currentConfig.active_provider].enabled = true;

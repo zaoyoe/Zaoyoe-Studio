@@ -296,6 +296,32 @@ test('points packages handler updates and deletes rows with audit trail', async 
     });
 });
 
+test('points packages handler preserves decimal point amounts', async () => {
+    await withPointsPackagesHandler({
+        rows: []
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'create',
+                site: 'cn',
+                name: '  小数礼包  ',
+                points: '0.50',
+                bonus: '0.25',
+                price: '0.50'
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.insertPayload.points_amount, 0.5);
+        assert.equal(state.insertPayload.bonus_points, 0.25);
+        assert.equal(state.insertPayload.price_cny, 0.5);
+    });
+});
+
 test('points packages handler rejects all-site writes', async () => {
     await withPointsPackagesHandler({
         rows: [

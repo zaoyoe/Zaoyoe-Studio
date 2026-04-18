@@ -4,8 +4,8 @@ DROP FUNCTION IF EXISTS public.fn_recharge_points(UUID, INTEGER, INTEGER, TEXT, 
 
 CREATE OR REPLACE FUNCTION public.fn_recharge_points(
     target_user_id UUID,
-    p_paid NUMERIC(12,1),
-    p_bonus NUMERIC(12,1),
+    p_paid NUMERIC(12,2),
+    p_bonus NUMERIC(12,2),
     p_reason TEXT,
     p_reference_id TEXT
 )
@@ -18,8 +18,8 @@ DECLARE
     v_new_balance RECORD;
     v_recharge_ledger_id UUID;
     v_pending_reward RECORD;
-    v_paid NUMERIC(12,1) := COALESCE(p_paid, 0);
-    v_bonus NUMERIC(12,1) := COALESCE(p_bonus, 0);
+    v_paid NUMERIC(12,2) := ROUND(COALESCE(p_paid, 0), 2);
+    v_bonus NUMERIC(12,2) := ROUND(COALESCE(p_bonus, 0), 2);
 BEGIN
     IF COALESCE(auth.role(), '') <> 'service_role' THEN
         RAISE EXCEPTION 'Access denied';
@@ -33,12 +33,12 @@ BEGIN
         RAISE EXCEPTION 'paid and bonus must be non-negative';
     END IF;
 
-    IF (v_paid + v_bonus) <= 0 THEN
+    IF ROUND(v_paid + v_bonus, 2) <= 0 THEN
         RAISE EXCEPTION 'recharge total must be greater than 0';
     END IF;
 
     INSERT INTO public.points_ledger (user_id, amount, reason, reference_id)
-    VALUES (target_user_id, v_paid + v_bonus, p_reason, p_reference_id)
+    VALUES (target_user_id, ROUND(v_paid + v_bonus, 2), p_reason, p_reference_id)
     RETURNING id INTO v_recharge_ledger_id;
 
     INSERT INTO public.points_balance (user_id, paid_balance, bonus_balance)
@@ -50,7 +50,7 @@ BEGIN
         updated_at = NOW()
     RETURNING paid_balance, bonus_balance, total_balance INTO v_new_balance;
 
-    IF (v_paid + v_bonus) > 0
+    IF ROUND(v_paid + v_bonus, 2) > 0
        AND public.fn_is_affiliate_qualifying_recharge_reason(p_reason) THEN
         SELECT *
         INTO v_pending_reward
@@ -88,8 +88,8 @@ $$;
 
 CREATE OR REPLACE FUNCTION public.fn_recharge_points(
     target_user_id UUID,
-    p_paid NUMERIC(12,1),
-    p_bonus NUMERIC(12,1),
+    p_paid NUMERIC(12,2),
+    p_bonus NUMERIC(12,2),
     p_reason TEXT,
     p_reference_id TEXT,
     p_site VARCHAR DEFAULT 'cn'
@@ -103,8 +103,8 @@ DECLARE
     v_new_balance RECORD;
     v_recharge_ledger_id UUID;
     v_pending_reward RECORD;
-    v_paid NUMERIC(12,1) := COALESCE(p_paid, 0);
-    v_bonus NUMERIC(12,1) := COALESCE(p_bonus, 0);
+    v_paid NUMERIC(12,2) := ROUND(COALESCE(p_paid, 0), 2);
+    v_bonus NUMERIC(12,2) := ROUND(COALESCE(p_bonus, 0), 2);
     v_site VARCHAR := COALESCE(NULLIF(BTRIM(p_site), ''), 'cn');
 BEGIN
     IF COALESCE(auth.role(), '') <> 'service_role' THEN
@@ -119,12 +119,12 @@ BEGIN
         RAISE EXCEPTION 'paid and bonus must be non-negative';
     END IF;
 
-    IF (v_paid + v_bonus) <= 0 THEN
+    IF ROUND(v_paid + v_bonus, 2) <= 0 THEN
         RAISE EXCEPTION 'recharge total must be greater than 0';
     END IF;
 
     INSERT INTO public.points_ledger (user_id, amount, reason, reference_id, site)
-    VALUES (target_user_id, v_paid + v_bonus, p_reason, p_reference_id, v_site)
+    VALUES (target_user_id, ROUND(v_paid + v_bonus, 2), p_reason, p_reference_id, v_site)
     RETURNING id INTO v_recharge_ledger_id;
 
     INSERT INTO public.points_balance (user_id, site, paid_balance, bonus_balance)
@@ -136,7 +136,7 @@ BEGIN
         updated_at = NOW()
     RETURNING paid_balance, bonus_balance, total_balance INTO v_new_balance;
 
-    IF (v_paid + v_bonus) > 0
+    IF ROUND(v_paid + v_bonus, 2) > 0
        AND public.fn_is_affiliate_qualifying_recharge_reason(p_reason) THEN
         SELECT *
         INTO v_pending_reward

@@ -48,7 +48,9 @@
         'approve_amount_mismatch',
         'reject_amount_mismatch',
         'refund_hupijiao',
-        'reconcile_hupijiao_order'
+        'reconcile_hupijiao_order',
+        'refund_zpay',
+        'reconcile_zpay_order'
     ]);
     const CLEANUP_SCOPE_HTML = '只会清理订单号前缀为 <code>AUTO_CDX_*</code> 或 <code>SMOKE_*</code> 的测试订单，以及邮箱匹配 <code>codex.*@example.com</code> 或 <code>smoke-payment-*@zaoyoe.invalid</code> 的测试账号。';
     const CLEANUP_SCOPE_TEXT = '将删除 AUTO_CDX_* / SMOKE_* 测试订单，以及 codex.*@example.com / smoke-payment-*@zaoyoe.invalid 测试账号。此操作不可撤销，是否继续？';
@@ -542,7 +544,7 @@
                 })
                 .slice(0, 3)
                 .map((item, index) => {
-                    const recommendedAction = resolveRecommendedAnomalyAction(item, ['refund_hupijiao', 'request_retry', 'mark_handled', 'ignore']);
+                    const recommendedAction = resolveRecommendedAnomalyAction(item, ['refund_zpay', 'refund_hupijiao', 'request_retry', 'mark_handled', 'ignore']);
                     return ({
                     rankLabel: `TOP ${index + 1}`,
                     title: item?.title || item?.topic_label || '退款异常',
@@ -1061,6 +1063,7 @@
         const map = {
             mock: '模拟支付',
             afdian: '爱发电',
+            zpay: '易支付',
             hupijiao: '虎皮椒'
         };
         return map[String(provider || '').trim().toLowerCase()] || String(provider || '未知通道');
@@ -1070,6 +1073,7 @@
         const map = {
             mock: 'fas fa-bolt',
             afdian: 'fas fa-heart',
+            zpay: 'fas fa-wallet',
             hupijiao: 'fas fa-pepper-hot'
         };
         return map[String(provider || '').trim().toLowerCase()] || 'fas fa-credit-card';
@@ -1171,18 +1175,23 @@
             approve_amount_mismatch: '人工放行',
             reject_amount_mismatch: '拒绝入账',
             refund_hupijiao: '执行退款',
+            refund_zpay: '执行退款',
             query_hupijiao_order: '实时查单',
-            reconcile_hupijiao_order: '人工补单'
+            query_zpay_order: '实时查单',
+            reconcile_hupijiao_order: '人工补单',
+            reconcile_zpay_order: '人工补单'
         };
         return map[String(action || '').trim().toLowerCase()] || '执行操作';
     }
 
     function getAnomalyActionPrompt(action) {
         const normalizedAction = String(action || '').trim().toLowerCase();
-        if (normalizedAction === 'refund_hupijiao') {
-            return '请填写退款备注，这条备注会进入后台审计记录，并作为退款原因传给虎皮椒：';
+        if (normalizedAction === 'refund_hupijiao' || normalizedAction === 'refund_zpay') {
+            return normalizedAction === 'refund_zpay'
+                ? '请填写退款备注，这条备注会进入后台审计记录，并作为退款原因传给易支付：'
+                : '请填写退款备注，这条备注会进入后台审计记录，并作为退款原因传给虎皮椒：';
         }
-        if (normalizedAction === 'reconcile_hupijiao_order') {
+        if (normalizedAction === 'reconcile_hupijiao_order' || normalizedAction === 'reconcile_zpay_order') {
             return '请填写补单备注，这条备注会进入后台审计记录，并作为这次人工补单的处理说明：';
         }
         return '请填写处理备注，这条备注会进入后台审计记录：';

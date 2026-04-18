@@ -13,13 +13,24 @@ const {
     verifyHupijiaoHash
 } = require('./hupijiao');
 const {
+    buildZpayOutTradeNo,
+    buildZpayParam,
+    createZpayPayment,
+    normalizeZpayConfig,
+    normalizeZpayDevice,
+    normalizeZpayPaymentStatus,
+    queryZpayPayment,
+    refundZpayPayment,
+    verifyZpaySign
+} = require('./zpay');
+const {
     loadStoredPaymentConfigs,
     resolvePaymentProviderSecrets
 } = require('./providers');
 
 function normalizePointValue(value, fallback = 0) {
     const parsed = Number(value);
-    return Number.isFinite(parsed) ? Math.round(parsed * 10) / 10 : fallback;
+    return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : fallback;
 }
 
 function roundCurrencyAmount(value) {
@@ -287,6 +298,310 @@ const providerRegistry = {
                     expectedAmount: roundCurrencyAmount(paidAmount),
                     quoteExpiresAt: customQuote?.expiresAt || null
                 }
+            };
+        }
+    },
+    zpay: {
+        key: 'zpay',
+        label: '易支付',
+        supports: {
+            createCheckout: true,
+            webhook: true,
+            queryOrder: true,
+            refundOrder: true,
+            autoCredit: true
+        },
+        async resolveRuntimeContext({ supabase, env = process.env, config = null } = {}) {
+            const loaded = config
+                ? { paymentChannels: config }
+                : await loadStoredPaymentConfigs(supabase, {
+                    origin: env.APP_BASE_URL,
+                    afdianCheckoutUrl: env.PAYMENT_AFDIAN_URL
+                });
+            const secrets = await resolvePaymentProviderSecrets(supabase, 'zpay', env);
+            const integration = normalizeZpayConfig({
+                channelConfig: loaded.paymentChannels.providers.zpay,
+                secretValues: {
+                    zpay_pkey: secrets.zpay_pkey?.value || ''
+                },
+                requestOrigin: env.APP_BASE_URL
+            });
+
+            return {
+                provider: 'zpay',
+                channelConfig: loaded.paymentChannels.providers.zpay,
+                activeProvider: loaded.paymentChannels.active_provider,
+                implemented: true,
+                integration,
+                requestOrigin: env.APP_BASE_URL,
+                secretValues: {
+                    zpay_pkey: secrets.zpay_pkey?.value || ''
+                },
+                secretMeta: secrets
+            };
+        },
+        buildEventKey({ providerOrderNo, transactionId, status, payload } = {}) {
+            return buildHashedEventKey('zpay', [
+                String(providerOrderNo || '').trim() || 'unknown',
+                String(transactionId || '').trim() || 'na',
+                String(status || '').trim().toUpperCase() || 'na'
+            ], payload);
+        },
+        async createCheckoutContext({
+            runtimeContext,
+            checkoutSession,
+            site,
+            packageId,
+            packageName,
+            paidPoints,
+            bonusPoints,
+            grantedPoints,
+            paidAmount,
+            isCustomRecharge,
+            customQuote,
+            clientIp = '',
+            userAgent = ''
+        } = {}) {
+            const channelConfig = runtimeContext?.channelConfig || {};
+            const integration = runtimeContext?.integration || normalizeZpayConfig({
+                channelConfig,
+                secretValues: runtimeContext?.secretValues || {},
+                requestOrigin: runtimeContext?.requestOrigin || ''
+            });
+            const missingFields = Array.isArray(integration?.missingFields)
+                ? integration.missingFields
+                : [];
+            if (missingFields.length) {
+                return {
+                    supported: false,
+                    action: 'redirect',
+                    displayName: channelConfig.display_name || '易支付',
+                    message: `当前还缺少：${missingFields.join(', ')}。请先补齐 PID / PKEY / notify_url 后再启用易支付真实支付。`
+                };
+            }
+
+            const normalizedAmount = roundCurrencyAmount(paidAmount);
+            if (!(normalizedAmount > 0)) {
+                return {
+                    supported: false,
+                    action: 'redirect',
+                    displayName: channelConfig.display_name || '易支付',
+                    message: '易支付订单金额无效，暂时无法拉起支付。'
+                };
+            }
+
+            const sessionId = String(checkoutSession?.id || '').trim();
+            const sessionKey = String(checkoutSession?.session_key || '').trim();
+            const outTradeNo = buildZpayOutTradeNo(sessionKey || sessionId || `${site}:${packageName}`);
+            const normalizedSite = normalizeSiteValue(site);
+            const title = isCustomRecharge
+                ? `积分充值 ${normalizePointValue(grantedPoints, 0)} 点`
+                : (String(packageName || '').trim() || `积分充值 ${normalizePointValue(grantedPoints, 0)} 点`);
+            const attach = {
+                provider: 'zpay',
+                user_id: sanitizeText(checkoutSession?.user_id, '', 80),
+                site: normalizedSite,
+                checkout_session_id: sessionId || null,
+                checkout_session_key: sessionKey || null,
+                package_id: sanitizeText(packageId, '', 80) || null,
+                package_name: sanitizeText(packageName, '', 120) || null,
+                paid_points: normalizePointValue(paidPoints, 0),
+                bonus_points: normalizePointValue(bonusPoints, 0),
+                granted_points: normalizePointValue(grantedPoints, 0),
+                expected_amount: normalizedAmount,
+                charge_type: isCustomRecharge ? 'custom' : 'package',
+                custom_quote_id: sanitizeText(customQuote?.quoteId, '', 120) || null
+            };
+
+            const paymentResult = await createZpayPayment({
+                channelConfig,
+                secretValues: runtimeContext?.secretValues || {},
+                requestOrigin: runtimeContext?.requestOrigin || '',
+                outTradeNo,
+                amount: normalizedAmount,
+                name: title,
+                clientIp,
+                device: normalizeZpayDevice(userAgent, channelConfig.device),
+                param: buildZpayParam(attach)
+            });
+            const gatewayPayload = paymentResult.response?.data || {};
+            const gatewayCode = String(gatewayPayload.code || '').trim();
+            const gatewayMessage = sanitizeText(gatewayPayload.msg, '', 240);
+            if (gatewayCode !== '1') {
+                return {
+                    supported: false,
+                    action: 'redirect',
+                    displayName: channelConfig.display_name || '易支付',
+                    message: gatewayMessage || '易支付下单失败，请稍后重试。'
+                };
+            }
+
+            const checkoutUrl = sanitizeText(
+                gatewayPayload.payurl || gatewayPayload.qrcode || gatewayPayload.img || channelConfig.checkout_url,
+                '',
+                1000
+            );
+            if (!checkoutUrl) {
+                return {
+                    supported: false,
+                    action: 'redirect',
+                    displayName: channelConfig.display_name || '易支付',
+                    message: '易支付未返回可用支付链接，请检查网关配置。'
+                };
+            }
+
+            const tradeNo = sanitizeText(gatewayPayload.trade_no, '', 120) || null;
+            const gatewayOrderId = sanitizeText(gatewayPayload.O_id, '', 120) || null;
+            const qrcodeUrl = sanitizeText(gatewayPayload.qrcode || gatewayPayload.payurl, '', 1000) || null;
+            const imgUrl = sanitizeText(gatewayPayload.img, '', 1000) || null;
+
+            return {
+                supported: true,
+                action: 'redirect',
+                displayName: channelConfig.display_name || '易支付',
+                checkoutUrl,
+                queryMode: 'provider_order_no',
+                providerOrderNo: outTradeNo,
+                providerMetadata: {
+                    provider_order_no: outTradeNo,
+                    trade_no: tradeNo,
+                    gateway_open_order_id: gatewayOrderId,
+                    qrcode_url: qrcodeUrl,
+                    qrcode_img_url: imgUrl,
+                    payment_type: integration.paymentType || 'alipay',
+                    gateway_code: gatewayCode,
+                    gateway_message: gatewayMessage || null,
+                    charge_type: isCustomRecharge ? 'custom' : 'package'
+                },
+                summary: {
+                    grantedPoints: normalizePointValue(grantedPoints, 0),
+                    expectedAmount: normalizedAmount,
+                    out_trade_no: outTradeNo,
+                    trade_no: tradeNo,
+                    open_order_id: gatewayOrderId,
+                    qrcode_url: qrcodeUrl,
+                    qrcode_img_url: imgUrl,
+                    quoteExpiresAt: customQuote?.expiresAt || null
+                },
+                message: (isCustomRecharge
+                    ? channelConfig.custom_amount_hint
+                    : channelConfig.package_hint)
+                    || '易支付订单已创建，请在新窗口完成支付后返回页面查看状态。'
+            };
+        },
+        verifyWebhook({ payload, runtimeContext, secret } = {}) {
+            const integration = runtimeContext?.integration || normalizeZpayConfig({
+                channelConfig: runtimeContext?.channelConfig || {},
+                secretValues: runtimeContext?.secretValues || {},
+                requestOrigin: runtimeContext?.requestOrigin || ''
+            });
+            const secretValue = sanitizeText(secret || integration.pkey, '', 240);
+            if (!secretValue) {
+                return {
+                    supported: false,
+                    valid: false,
+                    reason: 'missing_secret',
+                    expectedSign: '',
+                    receivedSign: sanitizeText(payload?.sign, '', 120).toLowerCase()
+                };
+            }
+
+            const verification = verifyZpaySign(payload || {}, secretValue);
+            return {
+                supported: true,
+                valid: verification.valid,
+                reason: verification.valid
+                    ? ''
+                    : (verification.receivedSign ? 'signature_mismatch' : 'missing_signature'),
+                ...verification
+            };
+        },
+        async queryOrder({ runtimeContext, providerOrderNo = '', tradeNo = '' } = {}) {
+            const integration = runtimeContext?.integration || normalizeZpayConfig({
+                channelConfig: runtimeContext?.channelConfig || {},
+                secretValues: runtimeContext?.secretValues || {},
+                requestOrigin: runtimeContext?.requestOrigin || ''
+            });
+            if (!integration?.pid || !integration?.pkey) {
+                return {
+                    supported: false,
+                    message: '易支付查询配置不完整，请先补齐 PID / PKEY。'
+                };
+            }
+
+            const queryResult = await queryZpayPayment({
+                channelConfig: runtimeContext?.channelConfig || {},
+                secretValues: runtimeContext?.secretValues || {},
+                requestOrigin: runtimeContext?.requestOrigin || '',
+                outTradeNo: providerOrderNo,
+                tradeNo
+            });
+            const gatewayPayload = queryResult.response?.data || {};
+            const gatewayCode = String(gatewayPayload.code || '').trim();
+            const statusRaw = String(gatewayPayload.trade_status || gatewayPayload.status || '').trim().toUpperCase();
+            const normalizedStatus = normalizeZpayPaymentStatus(
+                gatewayPayload.trade_status,
+                gatewayPayload.status
+            );
+            const paidAmount = pickFirstCurrencyAmount(gatewayPayload.money);
+            const transactionId = pickFirstText(gatewayPayload.trade_no, tradeNo) || null;
+
+            return {
+                supported: true,
+                success: gatewayCode === '1',
+                providerOrderNo: sanitizeText(gatewayPayload.out_trade_no || providerOrderNo, '', 120) || null,
+                openOrderId: null,
+                tradeNo: transactionId,
+                status: normalizedStatus,
+                statusRaw,
+                paidAmount,
+                transactionId,
+                message: sanitizeText(gatewayPayload.msg, gatewayCode === '1' ? 'success' : '易支付查单失败', 240),
+                responsePayload: gatewayPayload
+            };
+        },
+        async refundOrder({ runtimeContext, providerOrderNo = '', tradeNo = '', money = null } = {}) {
+            const integration = runtimeContext?.integration || normalizeZpayConfig({
+                channelConfig: runtimeContext?.channelConfig || {},
+                secretValues: runtimeContext?.secretValues || {},
+                requestOrigin: runtimeContext?.requestOrigin || ''
+            });
+            if (!integration?.pid || !integration?.pkey) {
+                return {
+                    supported: false,
+                    message: '易支付退款配置不完整，请先补齐 PID / PKEY。'
+                };
+            }
+
+            const refundAmount = roundCurrencyAmount(money);
+            if (!(refundAmount > 0)) {
+                return {
+                    supported: false,
+                    message: '易支付退款金额无效。'
+                };
+            }
+
+            const refundResult = await refundZpayPayment({
+                channelConfig: runtimeContext?.channelConfig || {},
+                secretValues: runtimeContext?.secretValues || {},
+                requestOrigin: runtimeContext?.requestOrigin || '',
+                outTradeNo: providerOrderNo,
+                tradeNo,
+                money: refundAmount
+            });
+            const gatewayPayload = refundResult.response?.data || {};
+            const gatewayCode = String(gatewayPayload.code || '').trim();
+
+            return {
+                supported: true,
+                success: gatewayCode === '1',
+                providerOrderNo: sanitizeText(gatewayPayload.out_trade_no || providerOrderNo, '', 120) || null,
+                openOrderId: null,
+                tradeNo: sanitizeText(gatewayPayload.trade_no || tradeNo, '', 120) || null,
+                status: gatewayCode === '1' ? 'refunded' : 'unknown',
+                statusRaw: gatewayCode === '1' ? 'REFUNDED' : '',
+                message: sanitizeText(gatewayPayload.msg, gatewayCode === '1' ? 'success' : '易支付退款失败', 240),
+                responsePayload: gatewayPayload
             };
         }
     },

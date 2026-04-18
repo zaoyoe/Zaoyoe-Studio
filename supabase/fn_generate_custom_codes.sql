@@ -3,7 +3,7 @@
 
 CREATE OR REPLACE FUNCTION public.fn_generate_custom_codes(
     p_batch_name TEXT,
-    p_points_amount INTEGER,
+    p_points_amount NUMERIC(12,2),
     p_count INTEGER,
     p_channel TEXT DEFAULT 'manual',
     p_expires_at TIMESTAMPTZ DEFAULT NULL,
@@ -90,7 +90,7 @@ $$;
 
 CREATE OR REPLACE FUNCTION public.fn_generate_custom_codes(
     p_batch_name TEXT,
-    p_points_amount INTEGER,
+    p_points_amount NUMERIC(12,2),
     p_count INTEGER,
     p_channel TEXT DEFAULT 'manual',
     p_expires_at TIMESTAMPTZ DEFAULT NULL
@@ -114,8 +114,8 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.fn_generate_custom_codes(TEXT, INTEGER, INTEGER, TEXT, TIMESTAMPTZ, VARCHAR) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.fn_generate_custom_codes(TEXT, INTEGER, INTEGER, TEXT, TIMESTAMPTZ, VARCHAR) TO authenticated;
+REVOKE ALL ON FUNCTION public.fn_generate_custom_codes(TEXT, NUMERIC, INTEGER, TEXT, TIMESTAMPTZ, VARCHAR) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.fn_generate_custom_codes(TEXT, NUMERIC, INTEGER, TEXT, TIMESTAMPTZ, VARCHAR) TO authenticated;
 
-REVOKE ALL ON FUNCTION public.fn_generate_custom_codes(TEXT, INTEGER, INTEGER, TEXT, TIMESTAMPTZ) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.fn_generate_custom_codes(TEXT, INTEGER, INTEGER, TEXT, TIMESTAMPTZ) TO authenticated;
+REVOKE ALL ON FUNCTION public.fn_generate_custom_codes(TEXT, NUMERIC, INTEGER, TEXT, TIMESTAMPTZ) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.fn_generate_custom_codes(TEXT, NUMERIC, INTEGER, TEXT, TIMESTAMPTZ) TO authenticated;

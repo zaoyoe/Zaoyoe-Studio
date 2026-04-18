@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260416_WALLET_DISCOUNT_STACKING_2';
+    const walletCssHref = 'css/wallet.css?v=20260418_WALLET_PAYMENT_QR_POLL_1';
     const existingWalletCss = document.getElementById('wallet-modal-css');
     if (existingWalletCss) {
         existingWalletCss.href = walletCssHref;
@@ -1381,6 +1381,351 @@
             });
         },
 
+        formatCny(value) {
+            const normalized = Number(value);
+            return Number.isFinite(normalized)
+                ? normalized.toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                })
+                : '0.00';
+        },
+
+        isMobilePaymentBrowser() {
+            const userAgent = String(window.navigator?.userAgent || '').trim().toLowerCase();
+            if (!userAgent) return false;
+            return /android|iphone|ipad|ipod|mobile|micromessenger|wechat|harmonyos/.test(userAgent);
+        },
+
+        updateHostedPaymentQrStatus(detailOverlay, message = '', tone = 'info') {
+            const statusEl = detailOverlay?.querySelector('.js-wallet-payment-qr-status');
+            if (!statusEl) {
+                return;
+            }
+
+            const normalizedTone = ['success', 'error', 'info'].includes(tone) ? tone : 'info';
+            statusEl.classList.remove('is-info', 'is-success', 'is-error');
+            statusEl.classList.add(`is-${normalizedTone}`);
+            statusEl.textContent = String(message || '').trim() || '等待支付完成，系统会自动刷新到账状态。';
+        },
+
+        stopHostedPaymentQrPolling(detailOverlay) {
+            const cleanup = detailOverlay?._walletPaymentQrCleanup;
+            if (typeof cleanup === 'function') {
+                cleanup();
+            }
+            if (detailOverlay) {
+                detailOverlay._walletPaymentQrCleanup = null;
+            }
+        },
+
+        startHostedPaymentQrPolling(detailOverlay, paymentResult = {}, options = {}) {
+            const checkoutSessionId = String(paymentResult?.checkout_session_id || '').trim();
+            if (!checkoutSessionId) {
+                this.updateHostedPaymentQrStatus(
+                    detailOverlay,
+                    '二维码已生成。支付成功后可在钱包订单记录中查看到账结果。',
+                    'info'
+                );
+                return;
+            }
+
+            this.stopHostedPaymentQrPolling(detailOverlay);
+
+            const intervalMs = Math.max(2000, Number(options.intervalMs || 3000) || 3000);
+            const initialDelayMs = Math.max(800, Number(options.initialDelayMs || 1500) || 1500);
+            const timeoutMs = Math.max(intervalMs * 2, Number(options.timeoutMs || 180000) || 180000);
+            const startedAt = Date.now();
+            let timer = null;
+            let stopped = false;
+
+            const stop = () => {
+                if (timer) {
+                    clearTimeout(timer);
+                    timer = null;
+                }
+                stopped = true;
+                if (detailOverlay && detailOverlay._walletPaymentQrCleanup === stop) {
+                    detailOverlay._walletPaymentQrCleanup = null;
+                }
+            };
+
+            const closeIfNeeded = () => {
+                if (options.closeOnCompleted === false) {
+                    return;
+                }
+                window.setTimeout(() => {
+                    if (!detailOverlay?.isConnected) {
+                        return;
+                    }
+                    this.stopHostedPaymentQrPolling(detailOverlay);
+                    detailOverlay.remove();
+                }, Math.max(600, Number(options.closeDelayMs || 900) || 900));
+            };
+
+            const scheduleNext = (delay = intervalMs) => {
+                if (stopped) {
+                    return;
+                }
+                timer = window.setTimeout(runPoll, delay);
+            };
+
+            const runPoll = async () => {
+                if (stopped) {
+                    return;
+                }
+
+                if ((Date.now() - startedAt) >= timeoutMs) {
+                    stop();
+                    this.updateHostedPaymentQrStatus(
+                        detailOverlay,
+                        '暂未自动同步到支付结果。若你已完成付款，请稍后刷新钱包或在订单记录中查看。',
+                        'info'
+                    );
+                    if (typeof options.onTimeout === 'function') {
+                        options.onTimeout();
+                    }
+                    return;
+                }
+
+                try {
+                    const statusResult = await PointsService.getPaymentRequestStatus({
+                        checkout_session_id: checkoutSessionId,
+                        site: paymentResult?.site || window.SiteConfig?.site || 'cn'
+                    });
+                    if (stopped) {
+                        return;
+                    }
+
+                    const paymentState = String(statusResult?.status || '').trim().toLowerCase();
+                    if (paymentState === 'completed') {
+                        stop();
+                        this.updateHostedPaymentQrStatus(
+                            detailOverlay,
+                            statusResult.message || '支付成功，正在刷新钱包余额...',
+                            'success'
+                        );
+                        if (typeof options.onCompleted === 'function') {
+                            await options.onCompleted(statusResult);
+                        }
+                        closeIfNeeded();
+                        return;
+                    }
+
+                    if (paymentState === 'failed') {
+                        stop();
+                        this.updateHostedPaymentQrStatus(
+                            detailOverlay,
+                            statusResult.message || '支付未成功，请重新发起支付。',
+                            'error'
+                        );
+                        if (typeof options.onFailed === 'function') {
+                            options.onFailed(statusResult);
+                        }
+                        return;
+                    }
+
+                    this.updateHostedPaymentQrStatus(
+                        detailOverlay,
+                        statusResult.message || '等待支付完成，系统会自动刷新到账状态。',
+                        paymentState === 'review' ? 'info' : 'info'
+                    );
+                } catch (_) {
+                    if (stopped) {
+                        return;
+                    }
+                    this.updateHostedPaymentQrStatus(
+                        detailOverlay,
+                        '正在等待支付结果同步，请保持此页面打开。',
+                        'info'
+                    );
+                }
+
+                scheduleNext(intervalMs);
+            };
+
+            detailOverlay._walletPaymentQrCleanup = stop;
+            this.updateHostedPaymentQrStatus(
+                detailOverlay,
+                '二维码已生成。付款成功后，这里会自动刷新到账状态。',
+                'info'
+            );
+            scheduleNext(initialDelayMs);
+        },
+
+        tryPresentHostedPaymentQrModal(paymentResult = {}, options = {}) {
+            const provider = String(paymentResult?.provider || '').trim().toLowerCase();
+            if (provider !== 'zpay' || this.isMobilePaymentBrowser()) {
+                return false;
+            }
+
+            const providerSummary = paymentResult?.provider_summary && typeof paymentResult.provider_summary === 'object'
+                ? paymentResult.provider_summary
+                : {};
+            const qrcodeImgUrl = String(providerSummary.qrcode_img_url || '').trim();
+            const qrcodeUrl = String(providerSummary.qrcode_url || '').trim();
+            const checkoutUrl = String(paymentResult?.checkout_url || '').trim();
+
+            if (!qrcodeImgUrl && !qrcodeUrl) {
+                return false;
+            }
+
+            const modalTitle = String(options.title || paymentResult?.package_name || paymentResult?.display_name || '扫码支付').trim() || '扫码支付';
+            const displayName = String(paymentResult?.display_name || '易支付').trim() || '易支付';
+            const paidAmount = Number(paymentResult?.paid_amount || 0) || 0;
+            const pointsAmount = Number(paymentResult?.points_amount || 0) || 0;
+            const copyValue = qrcodeUrl || checkoutUrl || '';
+            const openUrl = checkoutUrl || qrcodeUrl || '';
+            const detailRows = [
+                paidAmount > 0
+                    ? `
+                        <div class="detail-row">
+                            <span class="detail-label">应付金额</span>
+                            <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass('#fbbf24')}">¥${this.formatCny(paidAmount)}</span>
+                        </div>
+                    `
+                    : '',
+                pointsAmount > 0
+                    ? `
+                        <div class="detail-row">
+                            <span class="detail-label">到账积分</span>
+                            <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass('#22c55e')}">${this.formatPoints(pointsAmount)}</span>
+                        </div>
+                    `
+                    : '',
+                `
+                    <div class="detail-row">
+                        <span class="detail-label">支付通道</span>
+                        <span class="detail-val">${this.escapeHtml(displayName)}</span>
+                    </div>
+                `
+            ].filter(Boolean).join('');
+
+            const detailOverlay = document.createElement('div');
+            detailOverlay.className = 'wallet-order-modal-overlay';
+            detailOverlay.innerHTML = `
+                <div class="wallet-order-modal wallet-order-modal--compact wallet-payment-qr-modal">
+                    <div class="wallet-order-modal-header">
+                        <div class="wallet-order-modal-title">${this.renderWalletInlineIcon('fa-qrcode', '#fbbf24')} ${this.escapeHtml(modalTitle)}</div>
+                        <button class="wallet-order-close-btn" type="button" aria-label="${window.i18n?.t('common.close') || '关闭'}">&times;</button>
+                    </div>
+                    <div class="wallet-order-modal-body wallet-order-modal-body--fade">
+                        <div class="wallet-payment-qr-panel">
+                            <p class="wallet-payment-qr-hint">请使用支付宝扫描下方付款码完成支付。支付成功后，系统会根据回调与查单结果自动入账。</p>
+                            <div class="wallet-payment-qr-status js-wallet-payment-qr-status is-info">二维码已生成。付款成功后，这里会自动刷新到账状态。</div>
+                            ${qrcodeImgUrl
+                                ? `
+                                    <div class="wallet-payment-qr-card">
+                                        <img src="${this.escapeAttribute(qrcodeImgUrl)}" alt="支付宝付款码" class="wallet-payment-qr-image" loading="eager" decoding="async" referrerpolicy="no-referrer">
+                                    </div>
+                                `
+                                : `
+                                    <div class="wallet-payment-qr-fallback">
+                                        当前通道没有返回二维码图片，请使用下方按钮打开支付页继续付款。
+                                    </div>
+                                `}
+                            <div class="meta-section">
+                                ${detailRows}
+                            </div>
+                            <div class="modal-actions wallet-modal-actions--compact">
+                                ${copyValue
+                                    ? `<button class="action-btn secondary wallet-action-btn--grow js-wallet-copy-payment-qr" type="button">复制付款链接</button>`
+                                    : ''}
+                                ${openUrl
+                                    ? `<button class="action-btn primary wallet-action-btn--grow js-wallet-open-payment-qr" type="button">打开支付页</button>`
+                                    : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            const closeModal = () => {
+                this.stopHostedPaymentQrPolling(detailOverlay);
+                detailOverlay.remove();
+            };
+            detailOverlay.querySelector('.wallet-order-close-btn')?.addEventListener('click', closeModal);
+            detailOverlay.addEventListener('click', (event) => {
+                if (event.target === detailOverlay) {
+                    closeModal();
+                }
+            });
+            detailOverlay.querySelector('.js-wallet-copy-payment-qr')?.addEventListener('click', (event) => {
+                this.copyToClipboard(copyValue, event);
+            });
+            detailOverlay.querySelector('.js-wallet-open-payment-qr')?.addEventListener('click', () => {
+                if (!openUrl) return;
+                window.open(openUrl, '_blank', 'noopener,noreferrer');
+            });
+
+            document.body.appendChild(detailOverlay);
+            this.startHostedPaymentQrPolling(detailOverlay, paymentResult, options);
+            return true;
+        },
+
+        toPointCents(value, fallback = 0) {
+            const normalized = this.normalizePointValue(value, fallback / 100);
+            return Number.isFinite(normalized) ? Math.round(normalized * 100) : fallback;
+        },
+
+        isPointStepAligned(value, step) {
+            const normalizedValue = this.toPointCents(value, 0);
+            const normalizedStep = this.toPointCents(step, 0);
+            if (normalizedValue <= 0 || normalizedStep <= 0) {
+                return false;
+            }
+            return normalizedValue % normalizedStep === 0;
+        },
+
+        resolveCustomRechargeRequest(rawValue, rechargeOptions = this.rechargeOptionsConfig) {
+            const rawText = String(rawValue ?? '').trim();
+            const normalizedRaw = rawText.replace(/，/g, '.');
+            const numericValue = Number(normalizedRaw);
+            const minPoints = Math.max(0.01, this.normalizePointValue(rechargeOptions?.custom_amount_min_points, 0.01));
+            const maxPoints = Math.max(minPoints, this.normalizePointValue(rechargeOptions?.custom_amount_max_points, minPoints));
+            const stepPoints = Math.max(0.01, this.normalizePointValue(rechargeOptions?.custom_amount_step, 0.01));
+            const pointsPerCny = Math.max(0.01, this.normalizePointValue(rechargeOptions?.custom_amount_points_per_cny, 1));
+            const normalizedPoints = this.normalizePointValue(numericValue, 0);
+            const estimatedPaidAmount = Math.ceil((normalizedPoints / pointsPerCny) * 100) / 100;
+
+            if (!normalizedRaw) {
+                return {
+                    ok: false,
+                    errorMessage: '请输入充值积分或金额，例如 0.01'
+                };
+            }
+
+            if (!Number.isFinite(numericValue) || numericValue <= 0) {
+                return {
+                    ok: false,
+                    errorMessage: '请输入大于 0 的充值积分或金额'
+                };
+            }
+
+            if (normalizedPoints < minPoints || normalizedPoints > maxPoints) {
+                return {
+                    ok: false,
+                    errorMessage: `请输入 ${this.formatPoints(minPoints)} 到 ${this.formatPoints(maxPoints)} 之间的积分/金额`
+                };
+            }
+
+            if (!this.isPointStepAligned(normalizedPoints, stepPoints)) {
+                return {
+                    ok: false,
+                    errorMessage: `请输入 ${this.formatPoints(stepPoints)} 的整数倍积分/金额`
+                };
+            }
+
+            return {
+                ok: true,
+                inputMode: Math.abs(pointsPerCny - 1) < 0.0001 ? 'unified' : 'points',
+                normalizedPoints,
+                enteredAmountCny: Math.abs(pointsPerCny - 1) < 0.0001 ? normalizedPoints : null,
+                estimatedPaidAmount,
+                pointsPerCny
+            };
+        },
+
         formatWalletSiteLabel(site = '') {
             const normalized = String(site || '').trim().toLowerCase();
             if (normalized === 'intl') return 'INTL';
@@ -1882,7 +2227,7 @@
                                     <div class="custom-recharge-header">
                                         <div>
                                             <div class="custom-recharge-title">自定义充值</div>
-                                            <div class="custom-recharge-subtitle" id="wallet-custom-recharge-subtitle">输入要充值的整数积分数量，系统会生成本次应付金额。</div>
+                                            <div class="custom-recharge-subtitle" id="wallet-custom-recharge-subtitle">当前按 1 积分 = 1 元结算，支持 0.01 精度。</div>
                                         </div>
                                         <span class="custom-recharge-badge" id="wallet-custom-recharge-badge">按需充值</span>
                                     </div>
@@ -1890,14 +2235,14 @@
                                         <input type="number"
                                                id="wallet-custom-recharge-input"
                                                class="custom-recharge-input"
-                                               min="1"
-                                               step="1"
-                                               inputmode="numeric"
-                                               placeholder="例如 100"
+                                               min="0.01"
+                                               step="0.01"
+                                               inputmode="decimal"
+                                               placeholder="例如 1 或 0.01"
                                                ${this.buildDataAttributes({ 'wallet-enter-action': 'custom-recharge' })} />
                                         <button class="custom-recharge-btn" id="wallet-custom-recharge-btn"${this.buildDataAttributes({ 'wallet-action': 'custom-recharge' })}>立即充值</button>
                                     </div>
-                                    <div class="custom-recharge-meta" id="wallet-custom-recharge-meta">该入口由管理员在后台控制显示，会按服务端定价规则生成本次应付金额。</div>
+                                    <div class="custom-recharge-meta" id="wallet-custom-recharge-meta">该入口由管理员在后台控制显示。积分与人民币统一按两位小数处理，输入的数值会直接作为本次充值金额。</div>
                                 </div>
                                 
                                 <!-- Payment Order Query Section -->
@@ -2897,10 +3242,10 @@
             return {
                 custom_amount_enabled: false,
                 mock_payment_enabled: false,
-                custom_amount_min_points: 1,
+                custom_amount_min_points: 0.01,
                 custom_amount_max_points: 50000,
-                custom_amount_step: 1,
-                custom_amount_points_per_cny: 50,
+                custom_amount_step: 0.01,
+                custom_amount_points_per_cny: 1,
                 custom_amount_quote_ttl_seconds: 1800
             };
         },
@@ -2916,13 +3261,13 @@
                 mock_payment_enabled: source.mock_payment_enabled === true || String(source.mock_payment_enabled) === 'true'
                     ? true
                     : defaults.mock_payment_enabled,
-                custom_amount_min_points: Math.max(1, Math.round(Number(source.custom_amount_min_points) || defaults.custom_amount_min_points)),
+                custom_amount_min_points: defaults.custom_amount_min_points,
                 custom_amount_max_points: Math.max(
-                    Math.max(1, Math.round(Number(source.custom_amount_min_points) || defaults.custom_amount_min_points)),
-                    Math.round(Number(source.custom_amount_max_points) || defaults.custom_amount_max_points)
+                    defaults.custom_amount_min_points,
+                    this.normalizePointValue(source.custom_amount_max_points, defaults.custom_amount_max_points)
                 ),
-                custom_amount_step: Math.max(1, Math.round(Number(source.custom_amount_step) || defaults.custom_amount_step)),
-                custom_amount_points_per_cny: Math.max(0.01, Number(source.custom_amount_points_per_cny) || defaults.custom_amount_points_per_cny),
+                custom_amount_step: defaults.custom_amount_step,
+                custom_amount_points_per_cny: defaults.custom_amount_points_per_cny,
                 custom_amount_quote_ttl_seconds: Math.max(60, Math.round(Number(source.custom_amount_quote_ttl_seconds) || defaults.custom_amount_quote_ttl_seconds))
             };
         },
@@ -2950,8 +3295,15 @@
 
         getDefaultPaymentChannelsConfig() {
             const rechargeOptions = this.normalizeRechargeOptionsConfig(this.rechargeOptionsConfig);
+            const currentOrigin = window.location?.origin || 'https://www.zaoyoe.com';
+            const buildDefaultPaymentWebhookUrl = (providerKey = '') => {
+                const normalizedProviderKey = String(providerKey || '').trim().toLowerCase();
+                return normalizedProviderKey
+                    ? `${currentOrigin}/api/payments/${normalizedProviderKey}/webhook`
+                    : currentOrigin;
+            };
             const resolvePreferredActiveProviderKey = (providers = {}, fallback = 'afdian') => {
-                const candidateKeys = ['hupijiao', 'afdian', ...Object.keys(providers || {})];
+                const candidateKeys = ['zpay', 'hupijiao', 'afdian', ...Object.keys(providers || {})];
                 const seen = new Set();
 
                 for (const providerKey of candidateKeys) {
@@ -2978,7 +3330,7 @@
                     }
                 }
 
-                return ['mock', 'afdian', 'hupijiao'].includes(fallback) ? fallback : 'afdian';
+                return ['mock', 'afdian', 'hupijiao', 'zpay'].includes(fallback) ? fallback : 'afdian';
             };
 
             const providers = {
@@ -2998,14 +3350,30 @@
                     order_query_hint: '完成支付后，可在这里输入订单号查询兑换结果。',
                     order_query_placeholder: '输入支付平台订单号'
                 },
+                zpay: {
+                    enabled: false,
+                    display_name: '易支付',
+                    checkout_url: 'https://zpayz.cn',
+                    pid: '',
+                    payment_type: 'alipay',
+                    channel_ids: '',
+                    return_url: currentOrigin,
+                    notify_url: buildDefaultPaymentWebhookUrl('zpay'),
+                    package_hint: '易支付订单创建后会直接拉起收银台完成支付。',
+                    custom_amount_hint: '易支付会按当前报价创建订单并直接拉起收银台。',
+                    order_query_enabled: false,
+                    order_query_title: '',
+                    order_query_hint: '',
+                    order_query_placeholder: ''
+                },
                 hupijiao: {
                     enabled: false,
                     display_name: '虎皮椒',
                     checkout_url: '',
                     gateway_url: '',
                     merchant_id: '',
-                    return_url: window.location.origin,
-                    notify_url: '',
+                    return_url: currentOrigin,
+                    notify_url: buildDefaultPaymentWebhookUrl('hupijiao'),
                     package_hint: '虎皮椒通道已启用，完成支付后请按页面提示处理。',
                     custom_amount_hint: '虎皮椒通道已启用。自定义金额真实支付能力接入后，这里会直接拉起支付。',
                     order_query_enabled: false,
@@ -3031,7 +3399,7 @@
                 ? source.providers
                 : {};
             const resolvePreferredActiveProviderKey = (providers = {}, fallback = defaults.active_provider) => {
-                const candidateKeys = ['hupijiao', 'afdian', ...Object.keys(providers || {})];
+                const candidateKeys = ['zpay', 'hupijiao', 'afdian', ...Object.keys(providers || {})];
                 const seen = new Set();
 
                 for (const providerKey of candidateKeys) {
@@ -3058,11 +3426,11 @@
                     }
                 }
 
-                return ['mock', 'afdian', 'hupijiao'].includes(fallback) ? fallback : defaults.active_provider;
+                return ['mock', 'afdian', 'hupijiao', 'zpay'].includes(fallback) ? fallback : defaults.active_provider;
             };
 
             const normalized = {
-                active_provider: ['mock', 'afdian', 'hupijiao'].includes(source.active_provider)
+                active_provider: ['mock', 'afdian', 'hupijiao', 'zpay'].includes(source.active_provider)
                     ? source.active_provider
                     : resolvePreferredActiveProviderKey(sourceProviders, defaults.active_provider),
                 providers: {
@@ -3087,6 +3455,22 @@
                         order_query_title: String(sourceProviders.afdian?.order_query_title || defaults.providers.afdian.order_query_title).trim() || defaults.providers.afdian.order_query_title,
                         order_query_hint: String(sourceProviders.afdian?.order_query_hint || defaults.providers.afdian.order_query_hint).trim() || defaults.providers.afdian.order_query_hint,
                         order_query_placeholder: String(sourceProviders.afdian?.order_query_placeholder || defaults.providers.afdian.order_query_placeholder).trim() || defaults.providers.afdian.order_query_placeholder
+                    },
+                    zpay: {
+                        enabled: sourceProviders.zpay?.enabled === true || String(sourceProviders.zpay?.enabled) === 'true',
+                        display_name: String(sourceProviders.zpay?.display_name || defaults.providers.zpay.display_name).trim() || defaults.providers.zpay.display_name,
+                        checkout_url: String(sourceProviders.zpay?.checkout_url || defaults.providers.zpay.checkout_url).trim() || defaults.providers.zpay.checkout_url,
+                        pid: String(sourceProviders.zpay?.pid || defaults.providers.zpay.pid).trim(),
+                        payment_type: String(sourceProviders.zpay?.payment_type || defaults.providers.zpay.payment_type).trim().toLowerCase() || defaults.providers.zpay.payment_type,
+                        channel_ids: String(sourceProviders.zpay?.channel_ids || defaults.providers.zpay.channel_ids).trim(),
+                        return_url: String(sourceProviders.zpay?.return_url || defaults.providers.zpay.return_url).trim() || defaults.providers.zpay.return_url,
+                        notify_url: String(sourceProviders.zpay?.notify_url || defaults.providers.zpay.notify_url).trim(),
+                        package_hint: String(sourceProviders.zpay?.package_hint || defaults.providers.zpay.package_hint).trim() || defaults.providers.zpay.package_hint,
+                        custom_amount_hint: String(sourceProviders.zpay?.custom_amount_hint || defaults.providers.zpay.custom_amount_hint).trim() || defaults.providers.zpay.custom_amount_hint,
+                        order_query_enabled: sourceProviders.zpay?.order_query_enabled === true || String(sourceProviders.zpay?.order_query_enabled) === 'true',
+                        order_query_title: String(sourceProviders.zpay?.order_query_title || defaults.providers.zpay.order_query_title).trim(),
+                        order_query_hint: String(sourceProviders.zpay?.order_query_hint || defaults.providers.zpay.order_query_hint).trim(),
+                        order_query_placeholder: String(sourceProviders.zpay?.order_query_placeholder || defaults.providers.zpay.order_query_placeholder).trim()
                     },
                     hupijiao: {
                         enabled: sourceProviders.hupijiao?.enabled === true || String(sourceProviders.hupijiao?.enabled) === 'true',
@@ -3294,19 +3678,24 @@
             const isSimulationBlocked = activeProvider.key === 'mock' && mockPayment.blocked;
             const isDirectRechargeAllowed = isSimulationEnabled;
             const providerLabel = activeProvider.display_name || '当前通道';
-            const minPoints = Math.max(1, Number(normalizedConfig.custom_amount_min_points) || 1);
+            const minPoints = Math.max(0.01, Number(normalizedConfig.custom_amount_min_points) || 0.01);
             const maxPoints = Math.max(minPoints, Number(normalizedConfig.custom_amount_max_points) || minPoints);
-            const stepPoints = Math.max(1, Number(normalizedConfig.custom_amount_step) || 1);
-            const pointsPerCny = Math.max(0.01, Number(normalizedConfig.custom_amount_points_per_cny) || 50);
+            const stepPoints = Math.max(0.01, Number(normalizedConfig.custom_amount_step) || 0.01);
+            const pointsPerCny = Math.max(0.01, Number(normalizedConfig.custom_amount_points_per_cny) || 1);
             const quoteMinutes = Math.max(1, Math.round((Number(normalizedConfig.custom_amount_quote_ttl_seconds) || 1800) / 60));
+            const isUnifiedRate = Math.abs(pointsPerCny - 1) < 0.0001;
+            const amountInputHint = isUnifiedRate
+                ? '当前按 1 积分 = 1 元结算，支持两位小数。'
+                : `当前按 ${this.formatPoints(pointsPerCny)} 积分 = 1 元结算，支持两位小数。`;
 
             section.toggleAttribute('hidden', !isFeatureEnabled);
 
             if (input) {
                 input.disabled = !isFeatureEnabled || isSimulationBlocked;
-                input.min = String(minPoints);
-                input.step = String(stepPoints);
-                input.placeholder = `例如 ${Math.max(minPoints, stepPoints * 100)}`;
+                input.min = '0.01';
+                input.step = '0.01';
+                input.inputMode = 'decimal';
+                input.placeholder = `例如 ${this.formatPoints(Math.max(minPoints, stepPoints))}`;
                 if (!isFeatureEnabled) input.value = '';
             }
 
@@ -3323,8 +3712,8 @@
                     : (isDirectRechargeAllowed
                     ? (isSimulationEnabled
                         ? '已开启临时模拟支付，提交后会直接到账积分。'
-                        : `输入 ${stepPoints} 的整数倍积分，系统会按服务端报价生成应付金额。`)
-                    : (activeProvider.custom_amount_hint || `输入想购买的积分数量，我们会按服务端报价引导你前往${providerLabel}完成真实支付。`));
+                        : amountInputHint)
+                    : `${activeProvider.custom_amount_hint || `输入的积分会按当前汇率换算金额，并引导你前往${providerLabel}完成真实支付。`} ${amountInputHint}`.trim());
             }
 
             if (badge) {
@@ -3341,10 +3730,10 @@
                     : (isDirectRechargeAllowed
                     ? (isSimulationEnabled
                         ? '当前为临时模拟支付模式，仅用于正式支付接入前过渡。用户提交后会直接到账，请谨慎使用。'
-                        : `该入口由管理员在后台控制显示。当前按 ${this.formatPoints(pointsPerCny)} 积分/元报价，单次范围 ${this.formatPoints(minPoints)}-${this.formatPoints(maxPoints)} 积分，报价约 ${quoteMinutes} 分钟内有效。`)
+                        : `该入口由管理员在后台控制显示。当前按 ${this.formatPoints(pointsPerCny)} 积分 = 1 元结算，单次范围 ${this.formatPoints(minPoints)}-${this.formatPoints(maxPoints)}，步长 ${this.formatPoints(stepPoints)}，报价约 ${quoteMinutes} 分钟内有效。`)
                     : (activeProvider.key === 'afdian'
-                        ? `该入口由管理员在后台控制显示。当前按 ${this.formatPoints(pointsPerCny)} 积分/元报价，单次范围 ${this.formatPoints(minPoints)}-${this.formatPoints(maxPoints)} 积分，报价约 ${quoteMinutes} 分钟内有效。完成支付后请返回这里输入订单号领取兑换码。`
-                        : `该入口由管理员在后台控制显示。当前会跳转到${providerLabel}，具体支付回执与入账方式以你配置的通道说明为准。`));
+                        ? `该入口由管理员在后台控制显示。当前按 ${this.formatPoints(pointsPerCny)} 积分 = 1 元结算，单次范围 ${this.formatPoints(minPoints)}-${this.formatPoints(maxPoints)}，步长 ${this.formatPoints(stepPoints)}，报价约 ${quoteMinutes} 分钟内有效。完成支付后请返回这里输入订单号领取兑换码。`
+                        : `该入口由管理员在后台控制显示。当前会跳转到${providerLabel}。输入的积分会按当前汇率直接生成支付金额，具体支付回执与入账方式以你配置的通道说明为准。`));
             }
 
             requestWalletRechargeScrollCueUpdate();
@@ -4580,6 +4969,28 @@
                         throw new Error(`${paymentResult.display_name || activeProvider.display_name || '当前支付通道'}尚未配置支付链接`);
                     }
 
+                    const qrModalShown = this.tryPresentHostedPaymentQrModal(paymentResult, {
+                        title: `${displayName} · 扫码支付`,
+                        onCompleted: async (statusResult = {}) => {
+                            this.showToast(statusResult.message || `✅ 已为你完成「${displayName}」`, 'success');
+                            this.invalidateOrderRecordsCache();
+                            this.loadOrders({
+                                searchQuery: this.orderSearchActiveQuery || this.orderSearchQuery,
+                                ignorePrefetch: true
+                            }).catch(e => console.error('Order reload after zpay package purchase failed:', e));
+                            await this.loadData().catch(e => console.error('Wallet reload after zpay package purchase failed:', e));
+                        }
+                    });
+                    if (qrModalShown) {
+                        this.rememberPendingPaymentClaim(paymentResult);
+                        this.showToast(
+                            paymentResult.message
+                                || `${paymentResult.display_name || activeProvider.display_name || '当前支付通道'}已生成付款码，请扫码完成支付后返回查看结果。`,
+                            'success'
+                        );
+                        return;
+                    }
+
                     window.open(paymentResult.checkout_url, '_blank', 'noopener,noreferrer');
                     this.rememberPendingPaymentClaim(paymentResult);
                     this.showToast(
@@ -4609,7 +5020,6 @@
             const overlay = document.getElementById('wallet-modal-overlay');
             const input = document.getElementById('wallet-custom-recharge-input');
             const rawValue = input?.value ?? '';
-            const numericAmount = Number(rawValue);
             const rechargeOptions = this.normalizeRechargeOptionsConfig(this.rechargeOptionsConfig);
             const paymentChannels = this.normalizePaymentChannelsConfig(this.paymentChannelsConfig);
             const activeProvider = this.getActivePaymentProviderConfig(paymentChannels);
@@ -4621,29 +5031,23 @@
             const providerKey = mockPayment.activeProviderRequested && mockPayment.allowed
                 ? 'mock'
                 : activeProvider.key;
-            const normalizedAmount = Math.round(numericAmount);
-            const minPoints = Math.max(1, Number(rechargeOptions.custom_amount_min_points) || 1);
-            const maxPoints = Math.max(minPoints, Number(rechargeOptions.custom_amount_max_points) || minPoints);
-            const stepPoints = Math.max(1, Number(rechargeOptions.custom_amount_step) || 1);
             const openContext = this.lastOpenContext && typeof this.lastOpenContext === 'object'
                 ? this.lastOpenContext
                 : {};
+            const customRechargeRequest = this.resolveCustomRechargeRequest(rawValue, rechargeOptions);
 
-            if (!Number.isFinite(numericAmount) || !Number.isInteger(numericAmount) || normalizedAmount <= 0) {
-                this.showToast('请输入大于 0 的整数积分', 'error');
+            if (!customRechargeRequest.ok) {
+                this.showToast(customRechargeRequest.errorMessage || '请输入有效的充值积分或金额', 'error');
                 if (input) input.focus();
                 return;
             }
-            if (normalizedAmount < minPoints || normalizedAmount > maxPoints) {
-                this.showToast(`请输入 ${this.formatPoints(minPoints)} 到 ${this.formatPoints(maxPoints)} 之间的积分数量`, 'error');
-                if (input) input.focus();
-                return;
-            }
-            if (normalizedAmount % stepPoints !== 0) {
-                this.showToast(`请输入 ${this.formatPoints(stepPoints)} 的整数倍积分`, 'error');
-                if (input) input.focus();
-                return;
-            }
+
+            const normalizedAmount = customRechargeRequest.normalizedPoints;
+            const quotedAmountCny = customRechargeRequest.estimatedPaidAmount;
+            const inputMode = customRechargeRequest.inputMode || 'points';
+            const pendingMessage = providerKey === 'mock'
+                ? `正在处理 ${this.formatPoints(normalizedAmount)} 积分（约 ¥${this.formatCny(quotedAmountCny)}）的模拟充值...`
+                : `正在为 ${this.formatPoints(normalizedAmount)} 积分（约 ¥${this.formatCny(quotedAmountCny)}）创建支付请求...`;
 
             try {
                 if (providerKey === 'mock' && !mockPayment.allowed) {
@@ -4659,16 +5063,17 @@
                         initial_view: openContext.initial_view || 'recharge',
                         source_module: openContext.source_module || null,
                         channel: providerKey,
-                        points_amount: normalizedAmount
+                        points_amount: normalizedAmount,
+                        input_mode: inputMode,
+                        entered_amount_cny: customRechargeRequest.enteredAmountCny,
+                        quoted_amount_cny: quotedAmountCny
                     }
                 });
 
                 this.setRechargeActionPendingState({
                     kind: 'custom',
                     controlLabel: providerKey === 'mock' ? '模拟充值中' : '充值中',
-                    message: providerKey === 'mock'
-                        ? `正在处理 ${this.formatPoints(normalizedAmount)} 积分的模拟充值...`
-                        : `正在为 ${this.formatPoints(normalizedAmount)} 积分创建支付请求...`
+                    message: pendingMessage
                 });
 
                 const paymentResult = await PointsService.createPaymentRequest({
@@ -4679,6 +5084,36 @@
                 if (paymentResult.mode === 'redirect') {
                     if (!paymentResult.checkout_url) {
                         throw new Error(`${paymentResult.display_name || activeProvider.display_name || '当前支付通道'}尚未配置支付链接`);
+                    }
+
+                    const qrModalShown = this.tryPresentHostedPaymentQrModal(paymentResult, {
+                        title: '自定义充值 · 扫码支付',
+                        onCompleted: async (statusResult = {}) => {
+                            if (input) {
+                                input.value = '';
+                            }
+                            this.showToast(
+                                statusResult.message
+                                    || `✅ 自定义充值成功！ +${this.formatPoints(statusResult.points_amount || normalizedAmount)} 积分（¥${this.formatCny(statusResult.paid_amount ?? paymentResult.paid_amount ?? quotedAmountCny)}）`,
+                                'success'
+                            );
+                            this.invalidateOrderRecordsCache();
+                            this.loadOrders({
+                                searchQuery: this.orderSearchActiveQuery || this.orderSearchQuery,
+                                ignorePrefetch: true
+                            }).catch(e => console.error('Order reload after zpay custom recharge failed:', e));
+                            await this.loadData().catch(e => console.error('Wallet reload after zpay custom recharge failed:', e));
+                        }
+                    });
+                    if (qrModalShown) {
+                        this.rememberPendingPaymentClaim(paymentResult);
+                        this.rememberPendingCustomRechargeQuote(paymentResult);
+                        this.showToast(
+                            paymentResult.message
+                                || `${paymentResult.display_name || activeProvider.display_name || '当前支付通道'}已生成付款码，请按 ¥${Number(paymentResult.paid_amount || 0).toFixed(2)} 完成扫码支付。`,
+                            'success'
+                        );
+                        return;
                     }
 
                     const popup = window.open(paymentResult.checkout_url, '_blank', 'noopener,noreferrer');
@@ -4717,6 +5152,9 @@
                         channel: providerKey,
                         points_amount: Number(paymentResult.points_amount || normalizedAmount || 0) || null,
                         paid_amount: Number(paymentResult.paid_amount || 0) || null,
+                        input_mode: inputMode,
+                        entered_amount_cny: customRechargeRequest.enteredAmountCny,
+                        quoted_amount_cny: quotedAmountCny,
                         mode: paymentResult.mode || 'completed'
                     }
                 }, {
@@ -4725,7 +5163,11 @@
                         : ''
                 });
 
-                this.showToast(paymentResult.message || `✅ 自定义充值成功！ +${this.formatPoints(normalizedAmount)} 积分`, 'success');
+                this.showToast(
+                    paymentResult.message
+                        || `✅ 自定义充值成功！ +${this.formatPoints(normalizedAmount)} 积分（¥${this.formatCny(paymentResult.paid_amount ?? quotedAmountCny)}）`,
+                    'success'
+                );
 
                 this.invalidateOrderRecordsCache();
                 this.loadOrders({

@@ -6,7 +6,8 @@ const CODEX_SECRET_KEY = 'codex_api_key';
 const PAYMENT_CHANNEL_SECRET_KEYS = {
     afdian_token: 'payment_provider_afdian_token',
     hupijiao_api_key: 'payment_provider_hupijiao_api_key',
-    hupijiao_secret_key: 'payment_provider_hupijiao_secret_key'
+    hupijiao_secret_key: 'payment_provider_hupijiao_secret_key',
+    zpay_pkey: 'payment_provider_zpay_pkey'
 };
 const OPS_ALERT_SECRET_KEYS = {
     telegram_bot_token: 'ops_alert_telegram_bot_token',

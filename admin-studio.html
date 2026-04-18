@@ -450,16 +450,16 @@
                                         <i class="fas fa-undo"></i>
                                         Reset
                                     </button>
-                                    <button type="submit" class="btn-primary" id="saveBtn">
+                                    <button type="submit" class="btn-primary gallery-save-btn" id="saveBtn" data-mode="create"
+                                        aria-live="polite">
                                         <span class="btn-text">
                                             <i class="fas fa-save"></i>
-                                            Save to Gallery
+                                            <span>Save to Gallery</span>
                                         </span>
-                                        <div class="dot-matrix-container">
-                                            <div class="dot-matrix" id="dotMatrix">
-                                                <!-- 30 dots: 10 columns x 3 rows -->
-                                            </div>
-                                        </div>
+                                        <span class="btn-loading" aria-hidden="true">
+                                            <span class="btn-loading-spinner"></span>
+                                            <span class="btn-loading-label">Saving</span>
+                                        </span>
                                     </button>
                                 </div>
                             </form>
@@ -607,6 +607,10 @@
                                         <div class="batch-menu-item" data-admin-action="gallery-batch-add-homepage">
                                             <i class="fas fa-house"></i>
                                             <span>批量加入首页精选</span>
+                                        </div>
+                                        <div class="batch-menu-item" data-admin-action="gallery-batch-set-status" data-gallery-batch-status="live">
+                                            <i class="fas fa-paper-plane"></i>
+                                            <span>批量发布</span>
                                         </div>
                                         <div class="batch-menu-item" id="batchLocalizeMenuItem" data-admin-action="gallery-batch-localize">
                                             <i class="fas fa-language"></i>
@@ -1047,6 +1051,7 @@
                                             <select class="config-input" id="paymentChannelActiveSelect" data-admin-change-action="payments-change-active-provider">
                                                 <option value="mock">模拟支付</option>
                                                 <option value="afdian">爱发电</option>
+                                                <option value="zpay">易支付</option>
                                                 <option value="hupijiao">虎皮椒</option>
                                             </select>
                                         </div>
@@ -1138,6 +1143,92 @@
                                                     </div>
                                                     <div class="config-input-wrapper">
                                                         <input type="password" class="config-input" id="paymentProviderAfdianToken" placeholder="留空表示保持现有密钥不变">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="payment-provider-accordion" id="paymentProviderAccordionZpay">
+                                            <div class="payment-provider-accordion-header" data-admin-action="payments-toggle-provider-panel" data-provider="zpay">
+                                                <div class="payment-provider-accordion-copy">
+                                                    <div class="payment-provider-accordion-title-line">
+                                                        <span class="payment-provider-accordion-title" id="paymentProviderHeaderNameZpay">易支付</span>
+                                                        <span class="payment-provider-accordion-status" id="paymentProviderHeaderStatusZpay">已停用</span>
+                                                    </div>
+                                                    <div class="payment-provider-accordion-desc" id="paymentProviderHeaderDescZpay">兼容易支付接口，完成 PID / PKEY / 回调配置后即可切为主通道。</div>
+                                                </div>
+                                                <div class="payment-provider-accordion-actions">
+                                                    <div class="status-toggle" id="paymentProviderZpayToggle" data-admin-action="payments-toggle-provider-enabled" data-provider="zpay"></div>
+                                                    <button type="button" class="payment-provider-expand-btn" data-admin-action="payments-toggle-provider-panel" data-provider="zpay">
+                                                        <i class="fas fa-chevron-down" id="paymentProviderChevronZpay"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div class="payment-provider-accordion-body" id="paymentProviderPanelZpay">
+                                                <div class="config-row">
+                                                    <label>显示名称</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="text" class="config-input" id="paymentProviderZpayDisplayName" placeholder="易支付">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>支付域名</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="url" class="config-input" id="paymentProviderZpayCheckoutUrl" placeholder="https://zpayz.cn">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>商户 PID</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="text" class="config-input" id="paymentProviderZpayPid" placeholder="请输入商户 PID">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>默认支付方式</label>
+                                                    <div class="config-input-wrapper">
+                                                        <select class="config-input" id="paymentProviderZpayType">
+                                                            <option value="alipay">支付宝</option>
+                                                            <option value="wxpay">微信支付</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>支付渠道 ID</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="text" class="config-input" id="paymentProviderZpayChannelIds" placeholder="可留空，多个渠道用逗号分隔">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>回跳地址</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="url" class="config-input" id="paymentProviderZpayReturnUrl" placeholder="https://www.zaoyoe.com">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>通知地址</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="url" class="config-input" id="paymentProviderZpayNotifyUrl" placeholder="https://your-server.example.com/api/payments/zpay/webhook">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>套餐购买提示</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="text" class="config-input" id="paymentProviderZpayPackageHint" placeholder="创建订单后会直接拉起收银台完成支付">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>自定义充值提示</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="text" class="config-input" id="paymentProviderZpayCustomHint" placeholder="按当前报价创建订单后会直接拉起收银台">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <div class="config-info">
+                                                        <div class="config-label">易支付 PKEY</div>
+                                                        <div class="config-desc" id="paymentProviderZpayPkeyStatus">未配置后台安全密钥</div>
+                                                    </div>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="password" class="config-input" id="paymentProviderZpayPkey" placeholder="留空表示保持现有密钥不变">
                                                     </div>
                                                 </div>
                                             </div>
@@ -6154,11 +6245,11 @@
                                     <div class="form-row">
                                         <div class="form-group">
                                             <label for="pointsPackageBasePoints">基础积分</label>
-                                            <input type="number" id="pointsPackageBasePoints" min="0" step="1" placeholder="500" required>
+                                            <input type="number" id="pointsPackageBasePoints" min="0" step="0.01" placeholder="500.00" required>
                                         </div>
                                         <div class="form-group">
                                             <label for="pointsPackageBonusPoints">赠送积分</label>
-                                            <input type="number" id="pointsPackageBonusPoints" min="0" step="1" placeholder="100">
+                                            <input type="number" id="pointsPackageBonusPoints" min="0" step="0.01" placeholder="100.00">
                                         </div>
                                     </div>
                                     <div class="form-row">
@@ -6324,8 +6415,8 @@
                                 <!-- Custom Points Input (shown when "自定义积分" is selected) -->
                                 <div id="customPointsWrapper" class="form-group admin-studio-inline-style-attr-3">
                                     <label>自定义积分数量</label>
-                                    <input type="number" id="customPointsAmount" min="1" max="100000"
-                                        placeholder="输入积分数量">
+                                    <input type="number" id="customPointsAmount" min="0.01" max="100000" step="0.01"
+                                        placeholder="输入积分数量，例如 0.50">
                                 </div>
                                 <div class="form-row">
                                     <div class="form-group">
@@ -11204,7 +11295,7 @@
     <script src="js/admin-shell.js?v=20260410_ADMIN_SHELL_P1_1"></script>
     <script src="js/ios-scroll-lock.js"></script>
     <script src="admin-users.js?v=20260410_ADMIN_USERS_BAN_FIX_2"></script>
-    <script src="admin-points.js?v=20260404_ADMIN_POINTS_ANALYTICS_CONTEXT_1"></script>
+    <script src="admin-points.js?v=20260418_ADMIN_POINTS_DECIMAL_PRECISION_1"></script>
     <script src="admin-discounts.js?v=20260416_DISCOUNT_STACKING_REAL_MULTI_14"></script>
     <script src="js/admin-growth-center.js?v=20260409_MARKETING_ASSET_CENTER_P2_1"></script>
     <script src="starry-sky.js"></script>

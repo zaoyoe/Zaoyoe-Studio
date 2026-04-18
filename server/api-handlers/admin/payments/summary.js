@@ -17,6 +17,24 @@ const SESSION_OPEN_STATUSES = new Set(['created', 'redirect_ready']);
 const SESSION_FAILURE_STATUSES = new Set(['failed', 'expired', 'cancelled']);
 const SESSION_LINK_FEATURE_START_ISO = '2026-03-21T00:00:00.000Z';
 const PENDING_PROVIDER_ORDER_PREFIX = 'PENDING_';
+const REFUNDABLE_GATEWAY_ORDER_STATUSES = new Set(['pending_review', 'amount_mismatch', 'paid', 'redeemed']);
+const RECONCILABLE_GATEWAY_ORDER_STATUSES = new Set(['pending', 'pending_review', 'amount_mismatch']);
+const GATEWAY_ACTION_META = Object.freeze({
+    hupijiao: Object.freeze({
+        key: 'hupijiao',
+        queryAction: 'query_hupijiao_order',
+        reconcileAction: 'reconcile_hupijiao_order',
+        refundAction: 'refund_hupijiao',
+        queryMetadataKeys: ['provider_order_no', 'gateway_open_order_id', 'open_order_id']
+    }),
+    zpay: Object.freeze({
+        key: 'zpay',
+        queryAction: 'query_zpay_order',
+        reconcileAction: 'reconcile_zpay_order',
+        refundAction: 'refund_zpay',
+        queryMetadataKeys: ['provider_order_no', 'trade_no']
+    })
+});
 const QUERY_OUTCOME_META = Object.freeze({
     success: { label: '查码成功', severity: 'info' },
     missing_order_no: { label: '未填写订单号', severity: 'info' },
@@ -89,6 +107,7 @@ const TREND_FAILED_EVENT_RESULTS = new Set([
     'missing_signature',
     'invalid_order_no',
     'missing_afdian_token',
+    'missing_zpay_pkey',
     'admin_refund_failed',
     'admin_refund_reclaim_failed',
     'admin_refund_compensation_failed'
@@ -282,7 +301,7 @@ function getSessionAgeMinutes(session) {
 function isCheckoutSessionEligibleOrder(order) {
     if (!order) return false;
     const provider = String(order.provider || '').trim().toLowerCase();
-    if (!['mock', 'afdian', 'hupijiao'].includes(provider)) return false;
+    if (!['mock', 'afdian', 'hupijiao', 'zpay'].includes(provider)) return false;
 
     const metadata = normalizeJsonObject(order.provider_metadata);
     if (metadata.checkout_session_id || metadata.checkout_session_key) return true;
@@ -363,13 +382,23 @@ function isResolvedOpsStatus(status) {
     return ['handled', 'ignored', 'approved', 'rejected'].includes(String(status || '').trim().toLowerCase());
 }
 
-function canRefundHupijiaoOrder(item) {
+function getGatewayActionMeta(providerKey = '') {
+    return GATEWAY_ACTION_META[String(providerKey || '').trim().toLowerCase()] || null;
+}
+
+function getGatewayActionMetaFromItem(item) {
+    return getGatewayActionMeta(item?.provider);
+}
+
+function canRefundGatewayOrder(item, providerKey = '') {
     if (!item) return false;
     if ((item?.type && item.type !== 'order')) return false;
-    if (String(item?.provider || '').trim().toLowerCase() !== 'hupijiao') return false;
+    const meta = getGatewayActionMeta(providerKey);
+    if (!meta) return false;
+    if (String(item?.provider || '').trim().toLowerCase() !== meta.key) return false;
 
     const status = String(item?.status || '').trim().toLowerCase();
-    if (!['pending_review', 'amount_mismatch', 'paid', 'redeemed'].includes(status)) return false;
+    if (!REFUNDABLE_GATEWAY_ORDER_STATUSES.has(status)) return false;
     if ((status === 'redeemed' || Boolean(String(item?.claimed_at || '').trim())) && !item?.user_id) return false;
 
     const metadata = normalizeJsonObject(item?.provider_metadata);
@@ -377,36 +406,66 @@ function canRefundHupijiaoOrder(item) {
     return !['refunded', 'refund_pending'].includes(refundStatus);
 }
 
-function canQueryHupijiaoOrder(item) {
+function canQueryGatewayOrder(item, providerKey = '') {
     if (!item) return false;
     if ((item?.type && item.type !== 'order')) return false;
-    if (String(item?.provider || '').trim().toLowerCase() !== 'hupijiao') return false;
+    const meta = getGatewayActionMeta(providerKey);
+    if (!meta) return false;
+    if (String(item?.provider || '').trim().toLowerCase() !== meta.key) return false;
 
     const metadata = normalizeJsonObject(item?.provider_metadata);
-    return Boolean(
-        String(item?.provider_order_no || metadata.provider_order_no || '').trim()
-        || String(metadata.gateway_open_order_id || metadata.open_order_id || '').trim()
-    );
+    if (String(item?.provider_order_no || metadata.provider_order_no || '').trim()) {
+        return true;
+    }
+
+    return meta.queryMetadataKeys.some((field) => Boolean(String(metadata[field] || '').trim()));
 }
 
-function canReconcileHupijiaoOrder(item) {
-    if (!canQueryHupijiaoOrder(item)) return false;
+function canReconcileGatewayOrder(item, providerKey = '') {
+    if (!canQueryGatewayOrder(item, providerKey)) return false;
     if (!String(item?.user_id || '').trim()) return false;
 
     const status = String(item?.status || '').trim().toLowerCase();
-    return ['pending', 'pending_review', 'amount_mismatch'].includes(status);
+    return RECONCILABLE_GATEWAY_ORDER_STATUSES.has(status);
+}
+
+function canRefundHupijiaoOrder(item) {
+    return canRefundGatewayOrder(item, 'hupijiao');
+}
+
+function canQueryHupijiaoOrder(item) {
+    return canQueryGatewayOrder(item, 'hupijiao');
+}
+
+function canReconcileHupijiaoOrder(item) {
+    return canReconcileGatewayOrder(item, 'hupijiao');
+}
+
+function canRefundZpayOrder(item) {
+    return canRefundGatewayOrder(item, 'zpay');
+}
+
+function canQueryZpayOrder(item) {
+    return canQueryGatewayOrder(item, 'zpay');
+}
+
+function canReconcileZpayOrder(item) {
+    return canReconcileGatewayOrder(item, 'zpay');
 }
 
 function getOrderAvailableActions(order) {
+    const meta = getGatewayActionMetaFromItem(order);
+    if (!meta) return [];
+
     const actions = [];
-    if (canQueryHupijiaoOrder(order)) {
-        actions.push('query_hupijiao_order');
+    if (canQueryGatewayOrder(order, meta.key)) {
+        actions.push(meta.queryAction);
     }
-    if (canReconcileHupijiaoOrder(order)) {
-        actions.push('reconcile_hupijiao_order');
+    if (canReconcileGatewayOrder(order, meta.key)) {
+        actions.push(meta.reconcileAction);
     }
-    if (canRefundHupijiaoOrder(order)) {
-        actions.push('refund_hupijiao');
+    if (canRefundGatewayOrder(order, meta.key)) {
+        actions.push(meta.refundAction);
     }
     return actions;
 }
@@ -548,6 +607,7 @@ function buildOpsAlertQueueItems(jobs) {
 
 function getAnomalyAvailableActions(item, caseStatus) {
     const normalizedStatus = String(caseStatus || '').trim().toLowerCase();
+    const gatewayMeta = getGatewayActionMetaFromItem(item);
 
     if (isResolvedOpsStatus(normalizedStatus)) {
         return ['reopen'];
@@ -559,36 +619,36 @@ function getAnomalyAvailableActions(item, caseStatus) {
 
     if (item?.type === 'order' && String(item?.status || '').trim().toLowerCase() === 'amount_mismatch') {
         const actions = [];
-        if (canQueryHupijiaoOrder(item)) actions.push('query_hupijiao_order');
-        if (canReconcileHupijiaoOrder(item)) actions.push('reconcile_hupijiao_order');
+        if (gatewayMeta && canQueryGatewayOrder(item, gatewayMeta.key)) actions.push(gatewayMeta.queryAction);
+        if (gatewayMeta && canReconcileGatewayOrder(item, gatewayMeta.key)) actions.push(gatewayMeta.reconcileAction);
         actions.push('approve_amount_mismatch', 'reject_amount_mismatch');
-        if (canRefundHupijiaoOrder(item)) actions.push('refund_hupijiao');
+        if (gatewayMeta && canRefundGatewayOrder(item, gatewayMeta.key)) actions.push(gatewayMeta.refundAction);
         actions.push('ignore');
         return actions;
     }
 
     if (item?.type === 'order' && String(item?.status || '').trim().toLowerCase() === 'pending_review') {
         const actions = [];
-        if (canQueryHupijiaoOrder(item)) actions.push('query_hupijiao_order');
-        if (canReconcileHupijiaoOrder(item)) actions.push('reconcile_hupijiao_order');
+        if (gatewayMeta && canQueryGatewayOrder(item, gatewayMeta.key)) actions.push(gatewayMeta.queryAction);
+        if (gatewayMeta && canReconcileGatewayOrder(item, gatewayMeta.key)) actions.push(gatewayMeta.reconcileAction);
         actions.push('approve_review', 'reject_review');
-        if (canRefundHupijiaoOrder(item)) actions.push('refund_hupijiao');
+        if (gatewayMeta && canRefundGatewayOrder(item, gatewayMeta.key)) actions.push(gatewayMeta.refundAction);
         actions.push('ignore');
         return actions;
     }
 
-    if (canRefundHupijiaoOrder(item)) {
+    if (gatewayMeta && canRefundGatewayOrder(item, gatewayMeta.key)) {
         const actions = [];
-        if (canQueryHupijiaoOrder(item)) actions.push('query_hupijiao_order');
-        if (canReconcileHupijiaoOrder(item)) actions.push('reconcile_hupijiao_order');
-        actions.push('refund_hupijiao', 'mark_handled', 'ignore', 'request_retry');
+        if (canQueryGatewayOrder(item, gatewayMeta.key)) actions.push(gatewayMeta.queryAction);
+        if (canReconcileGatewayOrder(item, gatewayMeta.key)) actions.push(gatewayMeta.reconcileAction);
+        actions.push(gatewayMeta.refundAction, 'mark_handled', 'ignore', 'request_retry');
         return actions;
     }
 
-    if (canQueryHupijiaoOrder(item)) {
-        const actions = ['query_hupijiao_order'];
-        if (canReconcileHupijiaoOrder(item)) {
-            actions.push('reconcile_hupijiao_order');
+    if (gatewayMeta && canQueryGatewayOrder(item, gatewayMeta.key)) {
+        const actions = [gatewayMeta.queryAction];
+        if (canReconcileGatewayOrder(item, gatewayMeta.key)) {
+            actions.push(gatewayMeta.reconcileAction);
         }
         actions.push('mark_handled', 'ignore', 'request_retry');
         return actions;

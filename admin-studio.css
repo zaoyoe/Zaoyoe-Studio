@@ -531,11 +531,17 @@ body.ios-scroll-lock-fixed {
     overflow: hidden;
     border: 1px solid var(--card-border);
     transition: all 0.3s ease;
+    cursor: zoom-in;
 }
 
 .preview-item:hover {
     transform: scale(1.03);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.preview-item:focus-visible {
+    outline: 2px solid rgba(117, 183, 255, 0.9);
+    outline-offset: 2px;
 }
 
 .preview-item img {
@@ -544,10 +550,10 @@ body.ios-scroll-lock-fixed {
     object-fit: cover;
 }
 
+.preview-item .preview-action-btn,
 .preview-item .remove-btn {
     position: absolute;
     top: 4px;
-    right: 4px;
     background: rgba(0, 0, 0, 0.5);
     border: none;
     color: white;
@@ -563,7 +569,18 @@ body.ios-scroll-lock-fixed {
     transition: opacity 0.2s;
 }
 
-.preview-item:hover .remove-btn {
+.preview-item .preview-action-btn {
+    left: 4px;
+}
+
+.preview-item .remove-btn {
+    right: 4px;
+}
+
+.preview-item:hover .preview-action-btn,
+.preview-item:hover .remove-btn,
+.preview-item:focus-within .preview-action-btn,
+.preview-item:focus-within .remove-btn {
     opacity: 1;
 }
 
@@ -571,8 +588,8 @@ body.ios-scroll-lock-fixed {
    ANALYZE BUTTON
    ======================================== */
 .analyze-btn {
-    background: var(--accent-purple);
-    border: none;
+    background: #3d5a80;
+    border: 1px solid #3d5a80;
     color: white;
     padding: 12px 24px;
     border-radius: 20px;
@@ -590,8 +607,10 @@ body.ios-scroll-lock-fixed {
 }
 
 .analyze-btn:hover:not(:disabled) {
+    background: #47688d;
+    border-color: #47688d;
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(155, 93, 229, 0.25);
+    box-shadow: 0 10px 24px rgba(61, 90, 128, 0.26);
 }
 
 .analyze-btn:disabled {
@@ -2656,90 +2675,110 @@ body.ios-scroll-lock-fixed {
 }
 
 /* ========================================
-   DOT MATRIX PROGRESS ANIMATION
+   GALLERY SAVE BUTTON
    ======================================== */
-.btn-primary.saving {
+#saveBtn.gallery-save-btn {
     position: relative;
-    overflow: hidden;
-    background: linear-gradient(135deg, #1e1e2e 0%, #2a2a3a 100%);
-    border: 1px solid rgba(155, 93, 229, 0.3);
-    min-width: 180px;
-    padding: 10px 20px;
+    justify-content: center;
+    min-width: 168px;
+    min-height: 46px;
+    padding: 12px 22px;
+    border: 1px solid #3d5a80;
+    border-radius: 16px;
+    background: #3d5a80;
+    box-shadow: none;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
 }
 
-.btn-primary.saving .btn-text {
+#saveBtn.gallery-save-btn:hover:not(:disabled):not(.saving) {
+    background: #47688d;
+    border-color: #47688d;
+    box-shadow: 0 10px 24px rgba(61, 90, 128, 0.26);
+    transform: translateY(-1px);
+}
+
+#saveBtn.gallery-save-btn:focus-visible {
+    outline: 2px solid rgba(95, 132, 180, 0.95);
+    outline-offset: 2px;
+}
+
+#saveBtn.gallery-save-btn .btn-text,
+#saveBtn.gallery-save-btn .btn-loading {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+#saveBtn.gallery-save-btn .btn-text {
+    position: relative;
+    z-index: 1;
+}
+
+#saveBtn.gallery-save-btn .btn-loading {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+#saveBtn.gallery-save-btn .btn-loading-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.32);
+    border-top-color: rgba(255, 255, 255, 0.96);
+    border-radius: 999px;
+}
+
+#saveBtn.gallery-save-btn.saving {
+    background: #47688d;
+    border-color: #47688d;
+    box-shadow: 0 10px 24px rgba(61, 90, 128, 0.26);
+}
+
+#saveBtn.gallery-save-btn.saving:disabled,
+#saveBtn.gallery-save-btn.saved:disabled {
+    opacity: 1;
+    cursor: default;
+}
+
+#saveBtn.gallery-save-btn.saving .btn-text {
+    opacity: 0;
+    transform: translateY(2px);
+}
+
+#saveBtn.gallery-save-btn.saving .btn-loading {
+    opacity: 1;
+}
+
+#saveBtn.gallery-save-btn.saving .btn-loading-spinner {
+    animation: gallerySaveSpin 0.75s linear infinite;
+}
+
+#saveBtn.gallery-save-btn.saved {
+    background: #2f9e68;
+    border-color: rgba(109, 211, 154, 0.9);
+    box-shadow: 0 10px 24px rgba(14, 53, 35, 0.22);
+}
+
+#saveBtn.gallery-save-btn.saved .btn-loading {
     opacity: 0;
 }
 
-.btn-primary.saving .dot-matrix-container {
-    display: flex;
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-}
-
-.dot-matrix-container {
-    display: none;
-}
-
-.dot-matrix {
-    display: grid;
-    grid-template-columns: repeat(10, 1fr);
-    grid-template-rows: repeat(3, 1fr);
-    gap: 3px;
-    padding: 4px;
-}
-
-.dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 2px;
-    background: rgba(155, 93, 229, 0.2);
-    transition: all 0.15s ease;
-}
-
-.dot.active {
-    background: linear-gradient(135deg, #00d4ff 0%, #9b5de5 100%);
-    box-shadow: 0 0 6px rgba(0, 212, 255, 0.5);
-}
-
-.dot.complete {
-    background: linear-gradient(135deg, #22c55e 0%, #4ade80 100%);
-    box-shadow: 0 0 6px rgba(34, 197, 94, 0.5);
-}
-
-/* Wave animation for active dots */
-@keyframes dotPulse {
-
-    0%,
-    100% {
-        transform: scale(1);
-        opacity: 1;
-    }
-
-    50% {
-        transform: scale(1.2);
-        opacity: 0.8;
-    }
-}
-
-.dot.active {
-    animation: dotPulse 0.5s ease infinite;
-}
-
-/* Success state */
-.btn-primary.saved {
-    background: linear-gradient(135deg, #22c55e 0%, #4ade80 100%);
-    border: none;
-}
-
-.btn-primary.saved .dot-matrix-container {
-    display: none;
-}
-
-.btn-primary.saved .btn-text {
+#saveBtn.gallery-save-btn.saved .btn-text {
     opacity: 1;
+}
+
+@keyframes gallerySaveSpin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 /* ========================================

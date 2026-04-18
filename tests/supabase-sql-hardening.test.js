@@ -29,7 +29,7 @@ test('standalone Supabase helper SQL files stay aligned with hardened site-aware
 
     assert.match(
         rechargeSql,
-        /CREATE OR REPLACE FUNCTION public\.fn_recharge_points\(\s*target_user_id UUID,\s*p_paid NUMERIC\(12,1\),\s*p_bonus NUMERIC\(12,1\),\s*p_reason TEXT,\s*p_reference_id TEXT,\s*p_site VARCHAR DEFAULT 'cn'/s,
+        /CREATE OR REPLACE FUNCTION public\.fn_recharge_points\(\s*target_user_id UUID,\s*p_paid NUMERIC\(12,2\),\s*p_bonus NUMERIC\(12,2\),\s*p_reason TEXT,\s*p_reference_id TEXT,\s*p_site VARCHAR DEFAULT 'cn'/s,
         'fn_recharge_points helper should preserve the site-aware overload'
     );
     assert.match(
@@ -61,12 +61,12 @@ test('standalone Supabase helper SQL files stay aligned with hardened site-aware
 
     assert.match(
         customCodesSql,
-        /CREATE OR REPLACE FUNCTION public\.fn_generate_custom_codes\(\s*p_batch_name TEXT,\s*p_points_amount INTEGER,\s*p_count INTEGER,\s*p_channel TEXT DEFAULT 'manual',\s*p_expires_at TIMESTAMPTZ DEFAULT NULL,\s*p_site VARCHAR DEFAULT 'cn'/s,
+        /CREATE OR REPLACE FUNCTION public\.fn_generate_custom_codes\(\s*p_batch_name TEXT,\s*p_points_amount NUMERIC\(12,2\),\s*p_count INTEGER,\s*p_channel TEXT DEFAULT 'manual',\s*p_expires_at TIMESTAMPTZ DEFAULT NULL,\s*p_site VARCHAR DEFAULT 'cn'/s,
         'fn_generate_custom_codes helper should expose the hardened site-aware signature'
     );
     assert.match(
         customCodesSql,
-        /CREATE OR REPLACE FUNCTION public\.fn_generate_custom_codes\(\s*p_batch_name TEXT,\s*p_points_amount INTEGER,\s*p_count INTEGER,\s*p_channel TEXT DEFAULT 'manual',\s*p_expires_at TIMESTAMPTZ DEFAULT NULL\s*\)/s,
+        /CREATE OR REPLACE FUNCTION public\.fn_generate_custom_codes\(\s*p_batch_name TEXT,\s*p_points_amount NUMERIC\(12,2\),\s*p_count INTEGER,\s*p_channel TEXT DEFAULT 'manual',\s*p_expires_at TIMESTAMPTZ DEFAULT NULL\s*\)/s,
         'fn_generate_custom_codes helper should keep the legacy wrapper only as a delegator'
     );
 });

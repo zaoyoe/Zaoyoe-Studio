@@ -1368,6 +1368,62 @@ test('payments summary exposes hupijiao query and reconcile actions on recent or
     });
 });
 
+test('payments summary exposes zpay query and reconcile actions on recent orders', async () => {
+    const state = {
+        paymentOrders: [
+            {
+                id: 'order-zp-summary-1',
+                provider: 'zpay',
+                provider_order_no: 'ZPAY_SUMMARY_1',
+                user_id: 'user-zp-summary-1',
+                site: 'cn',
+                status: 'pending_review',
+                expected_amount: 20,
+                paid_amount: null,
+                package_name: '易支付套餐',
+                created_at: '2026-04-16T12:00:00.000Z',
+                paid_at: null,
+                claimed_at: null,
+                verified_at: null,
+                last_error: 'webhook_timeout',
+                provider_metadata: {
+                    trade_no: 'ZPAY_TRADE_SUMMARY_1'
+                }
+            }
+        ],
+        paymentEvents: [],
+        checkoutSessions: [],
+        paymentQueryAttempts: [],
+        paymentAnomalyCases: [],
+        opsAlertJobs: []
+    };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'ops',
+                days: '30'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+        const order = Array.isArray(payload.recent_orders) ? payload.recent_orders[0] : null;
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.ok(order);
+        assert.equal(order.provider_order_no, 'ZPAY_SUMMARY_1');
+        assert.deepEqual(order.order_available_actions, [
+            'query_zpay_order',
+            'reconcile_zpay_order',
+            'refund_zpay'
+        ]);
+    });
+});
+
 test('payments summary skips audit log writes for background prefetch requests', async () => {
     const state = {
         paymentOrders: []

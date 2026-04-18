@@ -4309,6 +4309,81 @@ body.wallet-modal-lock {
     flex: 1;
 }
 
+.wallet-payment-qr-modal {
+    max-width: 420px;
+}
+
+.wallet-payment-qr-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.wallet-payment-qr-hint {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.7;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+.wallet-payment-qr-status {
+    padding: 12px 14px;
+    border-radius: 14px;
+    font-size: 13px;
+    line-height: 1.6;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(255, 255, 255, 0.78);
+}
+
+.wallet-payment-qr-status.is-success {
+    border-color: rgba(34, 197, 94, 0.28);
+    background: rgba(34, 197, 94, 0.12);
+    color: #bbf7d0;
+}
+
+.wallet-payment-qr-status.is-error {
+    border-color: rgba(248, 113, 113, 0.28);
+    background: rgba(248, 113, 113, 0.12);
+    color: #fecaca;
+}
+
+.wallet-payment-qr-card,
+.wallet-payment-qr-fallback {
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background:
+        radial-gradient(circle at top, rgba(251, 191, 36, 0.16), transparent 54%),
+        rgba(255, 255, 255, 0.04);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        0 16px 40px rgba(0, 0, 0, 0.22);
+}
+
+.wallet-payment-qr-card {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.wallet-payment-qr-image {
+    display: block;
+    width: min(100%, 260px);
+    aspect-ratio: 1 / 1;
+    object-fit: contain;
+    background: #fff;
+    border-radius: 16px;
+    padding: 10px;
+}
+
+.wallet-payment-qr-fallback {
+    padding: 18px;
+    font-size: 13px;
+    line-height: 1.7;
+    color: rgba(255, 255, 255, 0.7);
+}
+
 .wallet-content-grid {
     gap: 8px;
     width: 100%;
