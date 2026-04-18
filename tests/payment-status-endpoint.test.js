@@ -116,7 +116,7 @@ test('public payments status handler returns current checkout session state for 
     assert.equal(payload.success, true);
     assert.equal(payload.status, 'completed');
     assert.equal(payload.checkout_session_id, 'pcs_zpay_1');
-    assert.equal(state.supabase.label, 'request-client');
+    assert.equal(state.supabase.label, 'admin-client');
     assert.equal(state.user.id, 'user_zpay_1');
     assert.deepEqual(state.body, {
         checkout_session_id: 'pcs_zpay_1',

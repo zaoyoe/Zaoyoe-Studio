@@ -243,7 +243,7 @@ function createPaymentsHandlers({
                 const { requestSupabase, adminSupabase, user } = await requireAuthenticatedUser(req);
                 const body = await parseBody(req);
                 const payload = await getPaymentRequestStatus({
-                    supabase: requestSupabase || adminSupabase,
+                    supabase: adminSupabase || requestSupabase,
                     user,
                     body,
                     env
