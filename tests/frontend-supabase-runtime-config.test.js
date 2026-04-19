@@ -9178,7 +9178,7 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
         'class="chart-card glass-panel analytics-growth-card analytics-growth-card--full"',
         'admin-points.js?v=20260418_ADMIN_POINTS_DECIMAL_PRECISION_1',
         'admin-config.js?v=20260416_PAYMENT_PROVIDER_NEUTRALITY_1',
-        'js/admin-payments.js?v=20260416_ADMIN_PAYMENTS_QUERY_RECONCILE_12',
+        'js/admin-payments.js?v=20260419_ADMIN_PAYMENTS_SESSION_TRACE_1',
         'js/admin-workbench.js?v=20260410_ADMIN_SHELL_CONTEXT_P1_1',
         'js/admin-tickets.js?v=20260410_ADMIN_SHELL_CONTEXT_P1_1',
         'js/admin-shop.js?v=20260410_SHOP_ORDER_UUID_SEARCH_1',
