@@ -58,6 +58,11 @@ function pickFirstText(...values) {
     return '';
 }
 
+function isZpayEmptyRefundResponseError(error) {
+    const message = sanitizeText(error?.message, '', 280);
+    return message.includes('易支付退款接口返回空响应');
+}
+
 function pickFirstCurrencyAmount(...values) {
     for (const value of values) {
         const amount = roundCurrencyAmount(value);
@@ -581,16 +586,55 @@ const providerRegistry = {
                 };
             }
 
-            const refundResult = await refundZpayPayment({
-                channelConfig: runtimeContext?.channelConfig || {},
-                secretValues: runtimeContext?.secretValues || {},
-                requestOrigin: runtimeContext?.requestOrigin || '',
-                outTradeNo: providerOrderNo,
-                tradeNo,
-                money: refundAmount
-            });
-            const gatewayPayload = refundResult.response?.data || {};
-            const gatewayCode = String(gatewayPayload.code || '').trim();
+            let refundResult = null;
+            let gatewayPayload = {};
+            let gatewayCode = '';
+
+            try {
+                refundResult = await refundZpayPayment({
+                    channelConfig: runtimeContext?.channelConfig || {},
+                    secretValues: runtimeContext?.secretValues || {},
+                    requestOrigin: runtimeContext?.requestOrigin || '',
+                    outTradeNo: providerOrderNo,
+                    tradeNo,
+                    money: refundAmount
+                });
+                gatewayPayload = refundResult.response?.data || {};
+                gatewayCode = String(gatewayPayload.code || '').trim();
+            } catch (error) {
+                if (!isZpayEmptyRefundResponseError(error)) {
+                    throw error;
+                }
+
+                const queryResult = await queryZpayPayment({
+                    channelConfig: runtimeContext?.channelConfig || {},
+                    secretValues: runtimeContext?.secretValues || {},
+                    requestOrigin: runtimeContext?.requestOrigin || '',
+                    outTradeNo: providerOrderNo,
+                    tradeNo
+                });
+                const queryPayload = queryResult.response?.data || {};
+                const normalizedStatus = normalizeZpayPaymentStatus(
+                    queryPayload.trade_status,
+                    queryPayload.status
+                );
+
+                if (String(queryPayload.code || '').trim() === '1' && normalizedStatus === 'refunded') {
+                    return {
+                        supported: true,
+                        success: true,
+                        providerOrderNo: sanitizeText(queryPayload.out_trade_no || providerOrderNo, '', 120) || null,
+                        openOrderId: null,
+                        tradeNo: sanitizeText(queryPayload.trade_no || tradeNo, '', 120) || null,
+                        status: 'refunded',
+                        statusRaw: sanitizeText(queryPayload.trade_status || queryPayload.status, 'REFUNDED', 32).toUpperCase() || 'REFUNDED',
+                        message: '易支付退款接口返回空响应，但查单已确认上游退款成功。',
+                        responsePayload: queryPayload
+                    };
+                }
+
+                throw error;
+            }
 
             return {
                 supported: true,
