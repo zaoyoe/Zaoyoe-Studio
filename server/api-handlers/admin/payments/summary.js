@@ -377,6 +377,36 @@ function buildCheckoutSessionAnomaly(session) {
     return null;
 }
 
+function buildCheckoutSessionTrace(session) {
+    if (!session) return null;
+
+    const metadata = normalizeJsonObject(session.provider_metadata);
+    return {
+        id: session.id || null,
+        provider: session.provider || null,
+        provider_order_no: getSessionProviderOrderNo(session),
+        session_key: session.session_key || null,
+        user_id: session.user_id || null,
+        site: session.site || null,
+        package_name: session.package_name || null,
+        requested_points: normalizeNumber(session.requested_points, 0),
+        bonus_points: normalizeNumber(session.bonus_points, 0),
+        granted_points: normalizeNumber(session.granted_points, 0),
+        expected_amount: normalizeNumber(session.expected_amount, 0),
+        status: String(session.status || '').trim().toLowerCase() || 'created',
+        payment_order_id: session.payment_order_id || null,
+        linked_by: getSessionLinkedBy(session),
+        linked_at: metadata.linked_at || null,
+        query_mode: session.query_mode || null,
+        has_checkout_url: Boolean(String(session.checkout_url || '').trim()),
+        error_message: String(session.error_message || '').trim() || null,
+        expires_at: session.expires_at || null,
+        completed_at: session.completed_at || null,
+        created_at: session.created_at || null,
+        updated_at: session.updated_at || null
+    };
+}
+
 function buildAnomalyCaseKey(targetType, targetId) {
     return `${String(targetType || '').trim().toLowerCase()}:${String(targetId || '').trim()}`;
 }
@@ -2178,6 +2208,21 @@ module.exports = async function handler(req, res) {
                     order_available_actions: getOrderAvailableActions(order)
                 }))
             : [];
+        const recentCheckoutSessions = view === 'ops'
+            ? (checkoutSessions || [])
+                .filter((session) => {
+                    const status = String(session?.status || '').trim().toLowerCase();
+                    return (
+                        !session?.payment_order_id
+                        || SESSION_OPEN_STATUSES.has(status)
+                        || SESSION_FAILURE_STATUSES.has(status)
+                    );
+                })
+                .sort((left, right) => getSessionSortValue(right) - getSessionSortValue(left))
+                .slice(0, 20)
+                .map(buildCheckoutSessionTrace)
+                .filter(Boolean)
+            : [];
         const recentOrderAnomalies = view === 'ops'
             ? (visibleOrders || [])
                 .filter(isOrderAnomaly)
@@ -2388,6 +2433,7 @@ module.exports = async function handler(req, res) {
             exception_topics: exceptionTopics.topics || [],
             exception_topic_items: enrichedExceptionTopicItems,
             recent_anomalies: recentAnomalies,
+            recent_checkout_sessions: recentCheckoutSessions,
             recent_orders: recentOrders || []
         });
     } catch (error) {

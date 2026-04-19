@@ -34,6 +34,7 @@
         workbenchContext: null,
         pagination: {
             anomalies: 1,
+            sessions: 1,
             orders: 1,
             cleanupOrders: 1,
             cleanupUsers: 1
@@ -1233,6 +1234,85 @@
         return '已匹配';
     }
 
+    function getCheckoutSessionStatusTone(status) {
+        const normalized = normalizeStatusValue(status);
+        if (normalized === 'completed') return 'success';
+        if (normalized === 'redirect_ready' || normalized === 'created') return 'info';
+        if (normalized === 'expired' || normalized === 'cancelled') return 'muted';
+        if (normalized === 'failed') return 'danger';
+        return 'muted';
+    }
+
+    function getCheckoutSessionTraceMatchInfo(session) {
+        const linkedBy = normalizeStatusValue(session?.linked_by);
+        const status = normalizeStatusValue(session?.status);
+        const matched = Boolean(session?.payment_order_id);
+
+        if (matched) {
+            return {
+                label: getSessionLinkSourceLabel(linkedBy),
+                tone: linkedBy.includes('query') || linkedBy.includes('claim') || linkedBy.includes('fallback') ? 'warning' : 'success'
+            };
+        }
+
+        if (status === 'completed') {
+            return {
+                label: '待回填',
+                tone: 'warning'
+            };
+        }
+
+        if (status === 'failed' || status === 'expired' || status === 'cancelled') {
+            return {
+                label: '未匹配',
+                tone: 'danger'
+            };
+        }
+
+        return {
+            label: '未付款',
+            tone: 'muted'
+        };
+    }
+
+    function getCheckoutSessionTraceDetail(session) {
+        const status = normalizeStatusValue(session?.status);
+        const matched = Boolean(session?.payment_order_id);
+        const errorMessage = String(session?.error_message || '').trim();
+
+        if (matched) {
+            return status === 'completed'
+                ? '该支付意图已经完成并成功挂到正式订单。'
+                : `该支付意图已关联正式订单，当前会话状态：${getSessionStatusLabel(status)}。`;
+        }
+
+        if (status === 'redirect_ready') {
+            return '二维码/支付页已生成，但用户尚未完成付款或中途关闭。';
+        }
+
+        if (status === 'created') {
+            return '支付意图已创建，等待进入支付页或生成二维码。';
+        }
+
+        if (status === 'completed') {
+            return '支付意图已完成，但正式订单还没有回填成功。';
+        }
+
+        if (status === 'expired') {
+            return '支付意图已过期，用户在有效期内没有完成付款。';
+        }
+
+        if (status === 'cancelled') {
+            return '支付意图已取消，本次拉起不会继续回填订单。';
+        }
+
+        if (status === 'failed') {
+            return errorMessage || '支付意图创建或拉起失败，请检查通道配置和支付跳转链路。';
+        }
+
+        return errorMessage || '支付意图状态已记录，可结合最近订单和异常队列继续排查。';
+    }
+
     function getCheckoutSessionMatchInfo(order) {
         const linkedBy = String(order?.checkout_session_linked_by || '').trim().toLowerCase();
         const status = String(order?.checkout_session_status || '').trim().toLowerCase();
@@ -1641,6 +1721,7 @@
         state.cleanupPreview = null;
         state.pagination = {
             anomalies: 1,
+            sessions: 1,
             orders: 1,
             cleanupOrders: 1,
             cleanupUsers: 1
@@ -2624,6 +2705,7 @@
                 document.getElementById('paymentsOpsAlertQueue')?.childElementCount
                 || document.getElementById('paymentsExceptionTopics')?.childElementCount
                 || document.getElementById('paymentsAnomalyList')?.childElementCount
+                || document.getElementById('paymentsCheckoutSessionsList')?.childElementCount
                 || document.getElementById('paymentsOrdersTable')?.childElementCount
                 || document.getElementById('paymentsCleanupPreview')?.childElementCount
             );
@@ -2664,6 +2746,7 @@
             const topicsTarget = document.getElementById('paymentsExceptionTopics');
             const topicListTarget = document.getElementById('paymentsExceptionTopicList');
             const anomalyTarget = document.getElementById('paymentsAnomalyList');
+            const sessionsTarget = document.getElementById('paymentsCheckoutSessionsList');
             const ordersTarget = document.getElementById('paymentsOrdersTable');
             const cleanupTarget = document.getElementById('paymentsCleanupPreview');
 
@@ -2681,6 +2764,9 @@
             }
             if (anomalyTarget) {
                 anomalyTarget.innerHTML = `<div class="payments-anomaly-items">${Array.from({ length: 3 }, () => buildPaymentsAnomalySkeleton()).join('')}</div>`;
+            }
+            if (sessionsTarget) {
+                sessionsTarget.innerHTML = Array.from({ length: 4 }, () => buildPaymentsProviderRowSkeleton()).join('');
             }
             if (ordersTarget) {
                 ordersTarget.innerHTML = buildPaymentsOrdersSkeleton();
@@ -3294,6 +3380,70 @@
         `;
     }
 
+    function renderCheckoutSessions(data) {
+        const target = document.getElementById('paymentsCheckoutSessionsList');
+        if (!target) return;
+
+        const sessions = Array.isArray(data?.recent_checkout_sessions) ? data.recent_checkout_sessions : [];
+
+        if (!sessions.length) {
+            target.innerHTML = '<div class="payments-empty-state">当前时间范围内暂无需要跟踪的支付意图会话。</div>';
+            return;
+        }
+
+        const pager = paginateItems(sessions, 'sessions');
+
+        target.innerHTML = `
+            ${pager.pageItems.map((session) => {
+                const matchInfo = getCheckoutSessionTraceMatchInfo(session);
+                const statusTone = getCheckoutSessionStatusTone(session?.status);
+                const packageName = String(session?.package_name || '').trim() || '自定义充值';
+                const sessionKey = String(session?.session_key || '').trim();
+                const providerOrderNo = String(session?.provider_order_no || '').trim();
+                const siteLabel = String(session?.site || 'cn').trim().toUpperCase() || 'CN';
+                const linkedAt = session?.linked_at ? formatDateTime(session.linked_at) : '';
+                const completedAt = session?.completed_at ? formatDateTime(session.completed_at) : '';
+                const expiresAt = session?.expires_at ? formatDateTime(session.expires_at) : '';
+                const timelineLabel = linkedAt
+                    ? `回填 ${linkedAt}`
+                    : completedAt
+                        ? `完成 ${completedAt}`
+                        : expiresAt
+                            ? `过期 ${expiresAt}`
+                            : `更新 ${formatDateTime(session?.updated_at || session?.created_at)}`;
+
+                return `
+                    <div class="payments-provider-row">
+                        <div class="payments-provider-copy">
+                            <div class="payments-provider-name">
+                                <i class="${escapeHtml(getProviderIcon(session?.provider))}"></i>${escapeHtml(packageName)}
+                            </div>
+                            <div class="payments-provider-meta">
+                                ${escapeHtml(getProviderLabel(session?.provider))}
+                                · ${escapeHtml(siteLabel)}
+                                · 会话 ${escapeHtml(sessionKey || '—')}
+                                ${providerOrderNo ? ` · 参考单号 ${escapeHtml(providerOrderNo)}` : ''}
+                            </div>
+                            <div class="payments-provider-extra">
+                                <span>应付 ${escapeHtml(formatCurrency(session?.expected_amount))}</span>
+                                <span>到账 ${escapeHtml(formatNumber(session?.granted_points))} 积分</span>
+                                <span>创建 ${escapeHtml(formatDateTime(session?.created_at))}</span>
+                                <span>${escapeHtml(timelineLabel)}</span>
+                            </div>
+                            <div class="payments-provider-meta">${escapeHtml(getCheckoutSessionTraceDetail(session))}</div>
+                        </div>
+                        <div class="payments-provider-badges">
+                            <span class="payments-mini-badge ${escapeHtml(statusTone)}">${escapeHtml(getSessionStatusLabel(session?.status))}</span>
+                            <span class="payments-mini-badge ${escapeHtml(matchInfo.tone)}">${escapeHtml(matchInfo.label)}</span>
+                            ${session?.has_checkout_url ? '<span class="payments-mini-badge info">已生成支付页</span>' : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('')}
+            ${renderPager('sessions', pager.currentPage, pager.totalPages, pager.totalItems)}
+        `;
+    }
+
     function renderOrders(data) {
         const target = document.getElementById('paymentsOrdersTable');
         if (!target) return;
@@ -3500,6 +3650,7 @@
         renderOpsAlertQueue(state.summary);
         renderExceptionTopics(state.summary);
         renderAnomalies(state.summary);
+        renderCheckoutSessions(state.summary);
         renderOrders(state.summary);
         if (state.cleanupPreview) {
             renderCleanupPreview({ preview: state.cleanupPreview });
@@ -3683,6 +3834,7 @@
         renderOpsAlertQueue(data);
         renderExceptionTopics(data);
         renderAnomalies(data);
+        renderCheckoutSessions(data);
         renderOrders(data);
         updateOverviewBanner(data);
         renderAnalyticsIssueSummary(data, state.workbenchContext);
@@ -4088,6 +4240,7 @@
             exception_topics: opsPayload.exception_topics || [],
             exception_topic_items: opsPayload.exception_topic_items || [],
             recent_anomalies: opsPayload.recent_anomalies || [],
+            recent_checkout_sessions: opsPayload.recent_checkout_sessions || [],
             recent_orders: opsPayload.recent_orders || []
         };
     }
@@ -4122,6 +4275,12 @@
         csv += '标题,严重级别,通道,订单号,时间\n';
         (bundle.recent_anomalies || []).forEach((item) => {
             csv += `${(item.title || '').replace(/,/g, '，')},${getSeverityLabel(item.severity)},${getProviderLabel(item.provider)},${(item.provider_order_no || '').replace(/,/g, '，')},${formatDateTime(item.created_at)}\n`;
+        });
+        csv += '\n=== 支付意图会话 ===\n';
+        csv += '会话号,参考单号,通道,套餐,应付金额,到账积分,状态,匹配情况,创建时间\n';
+        (bundle.recent_checkout_sessions || []).forEach((item) => {
+            const matchInfo = getCheckoutSessionTraceMatchInfo(item);
+            csv += `${(item.session_key || '').replace(/,/g, '，')},${(item.provider_order_no || '').replace(/,/g, '，')},${getProviderLabel(item.provider)},${(item.package_name || '').replace(/,/g, '，')},${item.expected_amount || 0},${item.granted_points || 0},${getSessionStatusLabel(item.status)},${matchInfo.label},${formatDateTime(item.created_at)}\n`;
         });
         csv += '\n=== 最近订单 ===\n';
         csv += '订单号,通道,套餐,金额,积分,状态,创建时间\n';
