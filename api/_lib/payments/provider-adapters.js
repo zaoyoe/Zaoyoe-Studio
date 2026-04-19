@@ -63,6 +63,62 @@ function isZpayEmptyRefundResponseError(error) {
     return message.includes('易支付退款接口返回空响应');
 }
 
+const DEFAULT_ZPAY_REFUND_CONFIRMATION_DELAYS_MS = Object.freeze([800, 1600, 3200]);
+
+function normalizeRetryDelays(value, fallback = DEFAULT_ZPAY_REFUND_CONFIRMATION_DELAYS_MS) {
+    if (Array.isArray(value)) {
+        const parsed = value
+            .map((item) => Number(item))
+            .filter((item) => Number.isFinite(item) && item >= 0 && item <= 15000)
+            .map((item) => Math.round(item));
+        if (parsed.length) return parsed;
+    }
+
+    if (typeof value === 'string') {
+        const parsed = value
+            .split(',')
+            .map((item) => Number(item.trim()))
+            .filter((item) => Number.isFinite(item) && item >= 0 && item <= 15000)
+            .map((item) => Math.round(item));
+        if (parsed.length) return parsed;
+    }
+
+    return Array.from(fallback);
+}
+
+function resolveZpayRefundConfirmationDelays(runtimeContext = {}) {
+    return normalizeRetryDelays(
+        runtimeContext?.refundConfirmationDelaysMs
+        || runtimeContext?.integration?.refundConfirmationDelaysMs
+        || runtimeContext?.channelConfig?.refund_confirmation_delays_ms
+    );
+}
+
+function delayMs(duration = 0) {
+    const normalized = Math.max(0, Number(duration) || 0);
+    if (!normalized) return Promise.resolve();
+    return new Promise((resolve) => setTimeout(resolve, normalized));
+}
+
+function buildZpayRefundPendingMessage(lastQueryPayload = {}) {
+    const normalizedStatus = normalizeZpayPaymentStatus(
+        lastQueryPayload.trade_status,
+        lastQueryPayload.status
+    );
+    const amountText = sanitizeText(lastQueryPayload.money, '', 32);
+    const suffix = amountText ? `当前查单金额 ¥${amountText}。` : '';
+
+    if (normalizedStatus === 'paid') {
+        return `易支付退款接口返回空响应，且轮询查单后仍显示已支付。请先到易支付后台确认是否已退款，再决定是否重试。${suffix}`;
+    }
+
+    if (normalizedStatus === 'pending') {
+        return `易支付退款接口返回空响应，且轮询查单后订单仍未完成退款确认。请先到易支付后台确认是否已退款，再决定是否重试。${suffix}`;
+    }
+
+    return '易支付退款接口返回空响应，且轮询查单后仍未确认退款结果。请先到易支付后台确认是否已退款，再决定是否重试。';
+}
+
 function pickFirstCurrencyAmount(...values) {
     for (const value of values) {
         const amount = roundCurrencyAmount(value);
@@ -605,35 +661,44 @@ const providerRegistry = {
                 if (!isZpayEmptyRefundResponseError(error)) {
                     throw error;
                 }
+                const confirmationDelays = resolveZpayRefundConfirmationDelays(runtimeContext);
+                let lastQueryPayload = {};
 
-                const queryResult = await queryZpayPayment({
-                    channelConfig: runtimeContext?.channelConfig || {},
-                    secretValues: runtimeContext?.secretValues || {},
-                    requestOrigin: runtimeContext?.requestOrigin || '',
-                    outTradeNo: providerOrderNo,
-                    tradeNo
-                });
-                const queryPayload = queryResult.response?.data || {};
-                const normalizedStatus = normalizeZpayPaymentStatus(
-                    queryPayload.trade_status,
-                    queryPayload.status
-                );
+                for (let attemptIndex = 0; attemptIndex <= confirmationDelays.length; attemptIndex += 1) {
+                    if (attemptIndex > 0) {
+                        await delayMs(confirmationDelays[attemptIndex - 1]);
+                    }
 
-                if (String(queryPayload.code || '').trim() === '1' && normalizedStatus === 'refunded') {
-                    return {
-                        supported: true,
-                        success: true,
-                        providerOrderNo: sanitizeText(queryPayload.out_trade_no || providerOrderNo, '', 120) || null,
-                        openOrderId: null,
-                        tradeNo: sanitizeText(queryPayload.trade_no || tradeNo, '', 120) || null,
-                        status: 'refunded',
-                        statusRaw: sanitizeText(queryPayload.trade_status || queryPayload.status, 'REFUNDED', 32).toUpperCase() || 'REFUNDED',
-                        message: '易支付退款接口返回空响应，但查单已确认上游退款成功。',
-                        responsePayload: queryPayload
-                    };
+                    const queryResult = await queryZpayPayment({
+                        channelConfig: runtimeContext?.channelConfig || {},
+                        secretValues: runtimeContext?.secretValues || {},
+                        requestOrigin: runtimeContext?.requestOrigin || '',
+                        outTradeNo: providerOrderNo,
+                        tradeNo
+                    });
+                    const queryPayload = queryResult.response?.data || {};
+                    lastQueryPayload = queryPayload;
+                    const normalizedStatus = normalizeZpayPaymentStatus(
+                        queryPayload.trade_status,
+                        queryPayload.status
+                    );
+
+                    if (String(queryPayload.code || '').trim() === '1' && normalizedStatus === 'refunded') {
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: sanitizeText(queryPayload.out_trade_no || providerOrderNo, '', 120) || null,
+                            openOrderId: null,
+                            tradeNo: sanitizeText(queryPayload.trade_no || tradeNo, '', 120) || null,
+                            status: 'refunded',
+                            statusRaw: sanitizeText(queryPayload.trade_status || queryPayload.status, 'REFUNDED', 32).toUpperCase() || 'REFUNDED',
+                            message: '易支付退款接口返回空响应，但查单已确认上游退款成功。',
+                            responsePayload: queryPayload
+                        };
+                    }
                 }
 
-                throw error;
+                throw new Error(buildZpayRefundPendingMessage(lastQueryPayload));
             }
 
             return {
