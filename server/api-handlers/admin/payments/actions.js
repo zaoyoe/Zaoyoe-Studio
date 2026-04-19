@@ -1126,6 +1126,21 @@ function isLegacyIntegerRefundReclaimRpc(error) {
     return message.includes('invalid input syntax for type integer');
 }
 
+function normalizeActionResponseStatus(statusCode = 500) {
+    const numericStatus = Number(statusCode);
+    if (!Number.isFinite(numericStatus)) return 500;
+
+    // Cloudflare replaces origin 502/503/504 bodies with its own generic error
+    // page, which hides the actionable JSON message from the admin console.
+    // Keep the gateway failure status in logs/events, but respond with a
+    // conflict status that can still surface the detailed message to operators.
+    if (numericStatus >= 502 && numericStatus <= 504) {
+        return 409;
+    }
+
+    return numericStatus;
+}
+
 function getGatewayRefundSnapshot(target = {}, providerKey = '') {
     const metadata = normalizeJsonObject(target.provider_metadata);
     const status = normalizeText(target.status).toLowerCase();
@@ -1987,7 +2002,7 @@ module.exports = async function handler(req, res) {
             ops_alert_job: targetType === 'ops_alert_job' ? resolvedTarget : undefined
         });
     } catch (error) {
-        return sendJson(res, error?.statusCode || 500, {
+        return sendJson(res, normalizeActionResponseStatus(error?.statusCode || 500), {
             success: false,
             message: error?.message || 'Failed to apply anomaly action'
         });
