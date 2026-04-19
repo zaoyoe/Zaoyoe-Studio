@@ -1130,10 +1130,10 @@ function normalizeActionResponseStatus(statusCode = 500) {
     const numericStatus = Number(statusCode);
     if (!Number.isFinite(numericStatus)) return 500;
 
-    // Cloudflare replaces origin 502/503/504 bodies with its own generic error
-    // page, which hides the actionable JSON message from the admin console.
-    // Keep the gateway failure status in logs/events, but respond with a
-    // conflict status that can still surface the detailed message to operators.
+    // Cloudflare will replace origin 502/503/504 bodies with its own generic
+    // error page, which hides the actionable JSON message from the admin UI.
+    // For admin actions, preserve the detailed business error while keeping the
+    // original gateway status inside logs/payment events.
     if (numericStatus >= 502 && numericStatus <= 504) {
         return 409;
     }

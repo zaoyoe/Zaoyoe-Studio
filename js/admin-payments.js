@@ -1562,10 +1562,7 @@
                 return false;
             }
 
-            state.summary = {
-                ...(state.summary || {}),
-                ...payload
-            };
+            mergeSummaryPayload(payload, { sourceTab: normalizedTab });
             state.viewCache[normalizedTab] = cacheKey;
 
             return true;
@@ -1780,14 +1777,71 @@
             headers
         });
 
-        const payload = await response.json().catch(() => ({}));
+        let rawText = '';
+        let payload = {};
+
+        if (typeof response?.text === 'function') {
+            rawText = await response.text().catch(() => '');
+            if (rawText) {
+                try {
+                    payload = JSON.parse(rawText);
+                } catch (_) {
+                    payload = {
+                        rawText: String(rawText || '').trim()
+                    };
+                }
+            }
+        } else if (typeof response?.json === 'function') {
+            payload = await response.json().catch(() => ({}));
+        }
+
         if (!response.ok || payload?.success === false) {
-            const error = new Error(payload?.message || '请求失败');
+            const fallbackMessage = payload?.rawText
+                || `${response.status ? `请求失败（HTTP ${response.status}）` : '请求失败'}`;
+            const error = new Error(payload?.message || fallbackMessage);
             error.statusCode = response.status;
+            if (payload?.rawText) {
+                error.rawText = payload.rawText;
+            }
             throw error;
         }
 
         return payload;
+    }
+
+    function mergeSummaryPayload(payload, options = {}) {
+        const incoming = payload && typeof payload === 'object' && !Array.isArray(payload)
+            ? { ...payload }
+            : {};
+        const sourceTab = String(options.sourceTab || state.activeTab || 'overview').trim().toLowerCase() || 'overview';
+        const hasWarmOpsCache = state.viewCache.ops === getCurrentCacheKey()
+            && Array.isArray(state.summary?.recent_anomalies)
+            && Array.isArray(state.summary?.recent_orders);
+
+        if (sourceTab !== 'ops') {
+            delete incoming.exception_topics;
+            delete incoming.exception_topic_items;
+            delete incoming.recent_anomalies;
+            delete incoming.recent_orders;
+
+            if (hasWarmOpsCache) {
+                delete incoming.ops_alert_summary;
+                delete incoming.ops_alert_items;
+            } else if (incoming.ops_alert_summary == null && state.summary?.ops_alert_summary && typeof state.summary.ops_alert_summary === 'object') {
+                delete incoming.ops_alert_summary;
+            }
+
+            if (!hasWarmOpsCache && incoming.ops_alert_items == null && Array.isArray(state.summary?.ops_alert_items)) {
+                delete incoming.ops_alert_items;
+            }
+        }
+
+        state.summary = {
+            ...(state.summary || {}),
+            ...incoming
+        };
+
+        return state.summary;
     }
 
     function hasCachedDataForTab(tabId) {
@@ -2112,6 +2166,10 @@
         if (shouldReload && state.initialized && !state.loading && !hasCachedTabData) {
             reload();
             return;
+        }
+
+        if (shouldReload && state.initialized && state.loading && !hasCachedTabData && !hasRenderedContentForTab(state.activeTab)) {
+            renderLoadingSkeletonForTab(state.activeTab);
         }
 
         if (state.initialized) {
@@ -2520,10 +2578,7 @@
             return false;
         }
 
-        state.summary = {
-            ...(state.summary || {}),
-            ...payload
-        };
+        mergeSummaryPayload(payload, { sourceTab: 'overview' });
         state.overviewSecondaryLoaded = true;
         syncOverviewStage();
 
@@ -2544,10 +2599,7 @@
             return false;
         }
 
-        state.summary = {
-            ...(state.summary || {}),
-            ...payload
-        };
+        mergeSummaryPayload(payload, { sourceTab: 'overview' });
         state.overviewOpsLoaded = true;
         syncOverviewStage();
 
@@ -3563,8 +3615,10 @@
         });
     }
 
-    async function loadSummary(requestToken) {
-        if (state.activeTab === 'overview') {
+    async function loadSummary(requestToken, targetTab = state.activeTab) {
+        const requestedTab = String(targetTab || state.activeTab || 'overview').trim().toLowerCase() || 'overview';
+
+        if (requestedTab === 'overview') {
             state.overviewStage = 'loading';
             state.overviewSecondaryLoaded = false;
             state.overviewOpsLoaded = false;
@@ -3576,10 +3630,7 @@
                 return false;
             }
 
-            state.summary = {
-                ...(state.summary || {}),
-                ...corePayload
-            };
+            mergeSummaryPayload(corePayload, { sourceTab: requestedTab });
 
             const coreData = state.summary;
             syncOverviewStage();
@@ -3605,25 +3656,22 @@
             }
 
             syncOverviewStage();
-            state.viewCache[state.activeTab] = getCurrentCacheKey();
+            state.viewCache[requestedTab] = getCurrentCacheKey();
             updateLastSynced(new Date());
             scheduleTabPrefetch(state.activeTab);
             return true;
         }
 
-        const query = buildSummaryQuery(state.activeTab);
+        const query = buildSummaryQuery(requestedTab);
         const payload = await fetchAdminJson(`/api/admin/payments/summary?${query.toString()}`);
         if (requestToken !== state.requestToken) {
             return false;
         }
 
-        state.summary = {
-            ...(state.summary || {}),
-            ...payload
-        };
+        mergeSummaryPayload(payload, { sourceTab: requestedTab });
 
         const data = state.summary;
-        state.viewCache[state.activeTab] = getCurrentCacheKey();
+        state.viewCache[requestedTab] = getCurrentCacheKey();
         updateToolbarHighlights(data);
         renderRefundAlerts(data);
         renderOverviewCards(data);
@@ -3807,22 +3855,45 @@
             return;
         }
 
+        const requestedTab = String(state.activeTab || 'overview').trim().toLowerCase() || 'overview';
         const requestToken = Date.now() + Math.random();
         state.requestToken = requestToken;
 
         try {
             clearAccessState();
             syncTabIndicator();
-            if (!hasRenderedContentForTab(state.activeTab)) {
-                renderLoadingSkeletonForTab(state.activeTab);
+            if (!hasRenderedContentForTab(requestedTab)) {
+                renderLoadingSkeletonForTab(requestedTab);
             }
             setLoading(true);
-            const applied = await loadSummary(requestToken);
+            const applied = await loadSummary(requestToken, requestedTab);
             if (!applied || requestToken !== state.requestToken) {
                 return;
             }
 
-            if (state.activeTab === 'ops') {
+            const currentActiveTab = String(state.activeTab || 'overview').trim().toLowerCase() || 'overview';
+            if (currentActiveTab !== requestedTab) {
+                if (hasCachedDataForTab(currentActiveTab)) {
+                    updateToolbarHighlights(state.summary);
+                    rerenderCurrentView();
+                    updateOverviewBanner(state.summary);
+                    renderAnalyticsIssueSummary(state.summary, state.workbenchContext);
+
+                    if (currentActiveTab === 'ops') {
+                        try {
+                            await loadCleanupPreview({ silent: true });
+                        } catch (cleanupError) {
+                            console.error('[AdminPayments] Failed to load cleanup preview:', cleanupError);
+                            renderCleanupPreviewFallback(getFriendlyErrorMessage(cleanupError, '测试数据扫描失败，但不影响支付对账查看。'));
+                        }
+                    }
+                    return;
+                }
+
+                return reload();
+            }
+
+            if (currentActiveTab === 'ops') {
                 try {
                     await loadCleanupPreview({ silent: true });
                 } catch (cleanupError) {
