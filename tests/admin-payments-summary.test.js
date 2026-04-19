@@ -1428,6 +1428,140 @@ test('payments summary exposes zpay query and reconcile actions on recent orders
     });
 });
 
+test('payments summary exposes unmatched checkout session traces for ops visibility', async () => {
+    const state = {
+        paymentOrders: [
+            {
+                id: 'order-linked-session-1',
+                provider: 'zpay',
+                provider_order_no: 'ZPAY_LINKED_SESSION_1',
+                user_id: 'user-linked-session-1',
+                site: 'cn',
+                status: 'redeemed',
+                expected_amount: 10,
+                paid_amount: 10,
+                points_amount: 10,
+                package_name: '已回填套餐',
+                created_at: '2026-04-18T19:00:00.000Z',
+                paid_at: '2026-04-18T19:01:00.000Z',
+                claimed_at: '2026-04-18T19:02:00.000Z',
+                verified_at: '2026-04-18T19:02:00.000Z',
+                last_error: null,
+                provider_metadata: {}
+            }
+        ],
+        paymentEvents: [],
+        checkoutSessions: [
+            {
+                id: 'session-open-zpay-1',
+                session_key: 'PCS_ZPAY_OPEN_1',
+                provider: 'zpay',
+                user_id: 'user-open-session-1',
+                site: 'cn',
+                package_id: null,
+                package_name: '自定义充值',
+                requested_points: 0.01,
+                bonus_points: 0,
+                granted_points: 0.01,
+                expected_amount: 0.01,
+                status: 'redirect_ready',
+                checkout_url: 'https://zpayz.cn/pay/open-1',
+                query_mode: 'polling',
+                payment_order_id: null,
+                provider_metadata: {
+                    provider_order_no: 'ZP_SESSION_TRACE_1'
+                },
+                error_message: null,
+                expires_at: '2026-04-18T21:30:00.000Z',
+                completed_at: null,
+                created_at: '2026-04-18T21:00:00.000Z',
+                updated_at: '2026-04-18T21:01:00.000Z'
+            },
+            {
+                id: 'session-completed-unlinked-1',
+                session_key: 'PCS_ZPAY_COMPLETED_UNLINKED_1',
+                provider: 'zpay',
+                user_id: 'user-completed-session-1',
+                site: 'cn',
+                package_id: null,
+                package_name: '积分充值 0.01 点',
+                requested_points: 0.01,
+                bonus_points: 0,
+                granted_points: 0.01,
+                expected_amount: 0.01,
+                status: 'completed',
+                checkout_url: 'https://zpayz.cn/pay/completed-1',
+                query_mode: 'polling',
+                payment_order_id: null,
+                provider_metadata: {
+                    provider_order_no: 'ZP_SESSION_TRACE_2'
+                },
+                error_message: null,
+                expires_at: null,
+                completed_at: '2026-04-18T20:02:00.000Z',
+                created_at: '2026-04-18T20:00:00.000Z',
+                updated_at: '2026-04-18T20:02:00.000Z'
+            },
+            {
+                id: 'session-linked-zpay-1',
+                session_key: 'PCS_ZPAY_LINKED_1',
+                provider: 'zpay',
+                user_id: 'user-linked-session-1',
+                site: 'cn',
+                package_id: null,
+                package_name: '已回填套餐',
+                requested_points: 10,
+                bonus_points: 0,
+                granted_points: 10,
+                expected_amount: 10,
+                status: 'completed',
+                checkout_url: 'https://zpayz.cn/pay/linked-1',
+                query_mode: 'polling',
+                payment_order_id: 'order-linked-session-1',
+                provider_metadata: {
+                    provider_order_no: 'ZPAY_LINKED_SESSION_1',
+                    linked_by: 'webhook',
+                    linked_at: '2026-04-18T19:02:00.000Z'
+                },
+                error_message: null,
+                expires_at: null,
+                completed_at: '2026-04-18T19:01:00.000Z',
+                created_at: '2026-04-18T19:00:00.000Z',
+                updated_at: '2026-04-18T19:02:00.000Z'
+            }
+        ],
+        paymentQueryAttempts: [],
+        paymentAnomalyCases: [],
+        opsAlertJobs: []
+    };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'ops',
+                days: '30'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+        const sessions = Array.isArray(payload.recent_checkout_sessions) ? payload.recent_checkout_sessions : [];
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(sessions.length, 2);
+        assert.equal(sessions[0].session_key, 'PCS_ZPAY_OPEN_1');
+        assert.equal(sessions[0].status, 'redirect_ready');
+        assert.equal(sessions[0].provider_order_no, 'ZP_SESSION_TRACE_1');
+        assert.equal(sessions[0].has_checkout_url, true);
+        assert.equal(sessions[0].payment_order_id, null);
+        assert.equal(sessions[1].session_key, 'PCS_ZPAY_COMPLETED_UNLINKED_1');
+        assert.equal(sessions.some((session) => session.session_key === 'PCS_ZPAY_LINKED_1'), false);
+    });
+});
+
 test('payments summary hides refund actions for recent zpay orders that are already refunded upstream', async () => {
     const state = {
         paymentOrders: [
