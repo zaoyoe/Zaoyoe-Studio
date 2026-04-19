@@ -922,7 +922,7 @@ test('query_zpay_order explains that the decimal refund reclaim migration is sti
         await handler(req, res);
         const payload = res.json();
 
-        assert.equal(res.statusCode, 503);
+        assert.equal(res.statusCode, 409);
         assert.equal(payload.success, false);
         assert.match(payload.message, /退款扣回 RPC 仍是整数版本/);
         assert.match(payload.message, /20260418_enable_decimal_refund_reclaim_rpc\.sql/);
@@ -1678,7 +1678,7 @@ test('refund_hupijiao compensates reclaimed points when credited-order refund fa
         await handler(req, res);
         const payload = res.json();
 
-        assert.equal(res.statusCode, 502);
+        assert.equal(res.statusCode, 409);
         assert.equal(payload.success, false);
         assert.match(payload.message, /gateway busy/);
         assert.equal(state.orders[0].status, 'redeemed');
@@ -1898,12 +1898,12 @@ test('refund_hupijiao dedupes repeated admin refund alerts within the recent win
 
         const firstRes = createMockResponse();
         await handler(req, firstRes);
-        assert.equal(firstRes.statusCode, 502);
+        assert.equal(firstRes.statusCode, 409);
         assert.equal(state.systemNotifications.length, 2);
 
         const secondRes = createMockResponse();
         await handler(req, secondRes);
-        assert.equal(secondRes.statusCode, 502);
+        assert.equal(secondRes.statusCode, 409);
         assert.equal(state.systemNotifications.length, 2);
         assert.equal(state.systemNotifications.every((item) => item.title === '支付退款失败（已补回）'), true);
     });
