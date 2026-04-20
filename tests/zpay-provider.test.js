@@ -40,6 +40,25 @@ test('normalizeZpayConfig derives official endpoint urls and reports missing fie
     assert.deepEqual(config.missingFields, []);
 });
 
+test('normalizeZpayConfig rewrites managed notify and return urls onto the intl site origin', () => {
+    const config = normalizeZpayConfig({
+        channelConfig: {
+            pid: 'pid-123',
+            checkout_url: 'https://zpayz.cn/',
+            notify_url: 'https://www.zaoyoe.com/api/payments/zpay/webhook',
+            return_url: 'https://www.zaoyoe.com/wallet'
+        },
+        secretValues: {
+            zpay_pkey: 'pkey-123'
+        },
+        requestOrigin: 'https://www.zaoyoe.xyz'
+    });
+
+    assert.equal(config.notifyUrl, 'https://www.zaoyoe.xyz/api/payments/zpay/webhook');
+    assert.equal(config.returnUrl, 'https://www.zaoyoe.xyz/wallet');
+    assert.equal(config.createReady, true);
+});
+
 test('buildZpaySign ignores empty fields and the sign/sign_type keys', () => {
     const payload = {
         pid: 'pid-123',

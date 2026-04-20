@@ -1,4 +1,7 @@
 const crypto = require('crypto');
+const {
+    rewriteManagedUrlForOrigin
+} = require('./site-origins');
 
 const ZPAY_DEFAULT_BASE_URL = 'https://zpayz.cn';
 const ZPAY_SUBMIT_PATH = '/submit.php';
@@ -237,8 +240,15 @@ function normalizeZpayConfig({
         '',
         500
     );
-    const notifyUrl = normalizeUrl(channelConfig.notify_url);
-    const returnUrl = normalizeUrl(channelConfig.return_url || requestOrigin);
+    const notifyUrl = rewriteManagedUrlForOrigin(
+        channelConfig.notify_url,
+        requestOrigin,
+        '/api/payments/zpay/webhook'
+    );
+    const returnUrl = rewriteManagedUrlForOrigin(
+        channelConfig.return_url,
+        requestOrigin
+    ) || normalizeUrl(requestOrigin);
     const paymentType = normalizeZpayPaymentType(
         channelConfig.payment_type || channelConfig.default_type,
         'alipay'

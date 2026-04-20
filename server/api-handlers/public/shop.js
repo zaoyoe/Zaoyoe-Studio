@@ -1751,19 +1751,42 @@ function createShopHandlers({
             }
         }
 
+        let purchaseNotes = '';
         let usageInstructions = '';
         const normalizedProductId = String(order?.product_id || '').trim();
         if (isUuid(normalizedProductId)) {
-            const { data: productGuidanceRow, error: productGuidanceError } = await dataSupabase
+            let productGuidanceRow = null;
+            const { data: guidanceData, error: productGuidanceError } = await dataSupabase
                 .from('shop_products')
-                .select('show_usage_instructions, usage_instructions')
+                .select('show_purchase_notes, purchase_notes, show_usage_instructions, usage_instructions')
                 .eq('id', normalizedProductId)
                 .maybeSingle();
 
             if (productGuidanceError) {
-                throw productGuidanceError;
+                if (
+                    isMissingColumnError(productGuidanceError, 'purchase_notes')
+                    || isMissingColumnError(productGuidanceError, 'show_purchase_notes')
+                ) {
+                    const { data: legacyGuidanceData, error: legacyGuidanceError } = await dataSupabase
+                        .from('shop_products')
+                        .select('show_usage_instructions, usage_instructions')
+                        .eq('id', normalizedProductId)
+                        .maybeSingle();
+
+                    if (legacyGuidanceError) {
+                        throw legacyGuidanceError;
+                    }
+                    productGuidanceRow = legacyGuidanceData;
+                } else {
+                    throw productGuidanceError;
+                }
+            } else {
+                productGuidanceRow = guidanceData;
             }
 
+            purchaseNotes = productGuidanceRow?.show_purchase_notes
+                ? normalizeGuidanceText(productGuidanceRow?.purchase_notes)
+                : '';
             usageInstructions = productGuidanceRow?.show_usage_instructions
                 ? normalizeGuidanceText(productGuidanceRow?.usage_instructions)
                 : '';
@@ -1808,6 +1831,8 @@ function createShopHandlers({
             },
             items,
             guidance: {
+                purchase_notes: purchaseNotes || null,
+                has_purchase_notes: purchaseNotes.length > 0,
                 usage_instructions: usageInstructions || null,
                 has_usage_instructions: usageInstructions.length > 0
             }

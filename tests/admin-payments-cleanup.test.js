@@ -141,11 +141,18 @@ function executeQuery(state, table, query) {
 
 function createSupabaseStub(state) {
     const authUsers = state.authUsers || [];
+    const listUsersFailures = Array.isArray(state.listUsersFailures)
+        ? [...state.listUsersFailures]
+        : [];
 
     return {
         auth: {
             admin: {
                 async listUsers({ page = 1, perPage = 200 } = {}) {
+                    state.listUsersCalls = Number(state.listUsersCalls || 0) + 1;
+                    if (listUsersFailures.length > 0) {
+                        throw listUsersFailures.shift();
+                    }
                     const start = (page - 1) * perPage;
                     const users = authUsers.slice(start, start + perPage).map((user) => ({ ...user }));
                     return { data: { users }, error: null };
@@ -383,5 +390,26 @@ test('cleanup POST removes both legacy codex fixtures and production smoke fixtu
         );
         assert.equal(state.auditLogs.length, 1);
         assert.equal(state.auditLogs[0].actionType, 'payments.cleanup_test_data');
+    });
+});
+
+test('cleanup preview retries transient auth listUsers failures before surfacing an error', async () => {
+    const state = createFixtureState();
+    const transientError = new Error('fetch failed');
+    transientError.name = 'AuthRetryableFetchError';
+    transientError.status = 503;
+    state.listUsersFailures = [transientError];
+
+    await withCleanupHandler(state, async (handler) => {
+        const req = { method: 'GET' };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.preview.counts.auth_users, 2);
+        assert.equal(state.listUsersCalls, 2);
     });
 });

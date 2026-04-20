@@ -2,9 +2,13 @@ const AdminGrowthCenter = {
     state: {
         initialized: false,
         loading: false,
+        detailLoading: false,
         loadedSite: '',
+        detailsLoaded: false,
+        requestId: 0,
         payload: null,
-        error: ''
+        error: '',
+        detailError: ''
     },
 
     safeText(value, maxLength = 4000) {
@@ -48,14 +52,32 @@ const AdminGrowthCenter = {
         return `${url.pathname}${url.search}`;
     },
 
-    async fetchPayload({ force = false } = {}) {
+    normalizeLoadMode(value = '') {
+        return this.safeText(value, 40).toLowerCase() === 'summary' ? 'summary' : 'full';
+    },
+
+    hasFullCacheForSite(site = this.getReadSite()) {
+        return this.state.payload
+            && this.state.loadedSite === site
+            && this.state.detailsLoaded === true;
+    },
+
+    async fetchPayload({ force = false, mode = 'full' } = {}) {
         const site = this.getReadSite();
+        const loadMode = this.normalizeLoadMode(mode);
         if (!force && this.state.payload && this.state.loadedSite === site) {
+            if (loadMode === 'summary' || this.state.detailsLoaded === true) {
+                return this.state.payload;
+            }
+        }
+
+        if (!force && loadMode === 'full' && this.hasFullCacheForSite(site)) {
             return this.state.payload;
         }
 
         const response = await (window.AdminApi?.fetch || fetch)(this.buildUrl('marketing/assets-center', {
-            site
+            site,
+            mode: loadMode
         }), {
             credentials: 'include'
         });
@@ -73,7 +95,9 @@ const AdminGrowthCenter = {
 
         this.state.loadedSite = site;
         this.state.payload = payload;
+        this.state.detailsLoaded = payload?.details_pending !== true && loadMode === 'full';
         this.state.error = '';
+        this.state.detailError = '';
         return payload;
     },
 
@@ -255,11 +279,26 @@ const AdminGrowthCenter = {
         `;
     },
 
+    renderDeferredDetailsPlaceholder(message = '明细后台补齐中...') {
+        return `<div class="loading-text">${this.escapeHtml(message)}</div>`;
+    },
+
+    renderDetailError(message = '明细加载失败，请稍后刷新') {
+        return `
+            <div class="marketing-asset-center__error">
+                <span>${this.escapeHtml(message)}</span>
+                <button type="button" class="marketing-asset-center__family-action" data-growth-center-action="refresh">重试</button>
+            </div>
+        `;
+    },
+
     renderPayload(payload = {}) {
         const summary = payload?.summary && typeof payload.summary === 'object' ? payload.summary : {};
         const families = Array.isArray(payload?.asset_families) ? payload.asset_families : [];
         const items = Array.isArray(payload?.unified_assets) ? payload.unified_assets : [];
         const workflows = Array.isArray(payload?.workflows) ? payload.workflows : [];
+        const detailsPending = payload?.details_pending === true || this.state.detailLoading === true;
+        const detailError = this.safeText(this.state.detailError, 240);
 
         return `
             <div class="marketing-asset-center">
@@ -276,14 +315,22 @@ const AdminGrowthCenter = {
                         <h4>最近活跃资产</h4>
                         <span>优先处理最近在跑、最近被核销或最近需要复核的资产。</span>
                     </div>
-                    ${this.renderUnifiedAssets(items)}
+                    ${detailError
+                        ? this.renderDetailError(detailError)
+                        : detailsPending
+                            ? this.renderDeferredDetailsPlaceholder('最近活跃资产后台补齐中...')
+                            : this.renderUnifiedAssets(items)}
                 </section>
                 <section class="marketing-asset-center__section">
                     <div class="marketing-asset-center__section-head">
                         <h4>运营编排</h4>
                         <span>先收口生命周期同步、观察期收口、历史归档和复盘快照。</span>
                     </div>
-                    ${this.renderWorkflows(workflows)}
+                    ${detailError
+                        ? this.renderDetailError(detailError)
+                        : detailsPending
+                            ? this.renderDeferredDetailsPlaceholder('运营编排后台补齐中...')
+                            : this.renderWorkflows(workflows)}
                 </section>
             </div>
         `;
@@ -304,7 +351,7 @@ const AdminGrowthCenter = {
             return;
         }
 
-        if (this.state.loading) {
+        if (this.state.loading && !this.state.payload) {
             container.innerHTML = '<div class="loading-text">营销资产中心加载中...</div>';
             if (meta) {
                 meta.textContent = '加载中';
@@ -327,7 +374,12 @@ const AdminGrowthCenter = {
 
         container.innerHTML = this.renderPayload(this.state.payload || {});
         if (meta) {
-            meta.textContent = `优惠券 / 兑换码 / 工作流 · ${this.escapeHtml(this.formatSiteLabel(this.getReadSite()))}`;
+            const statusLabel = this.state.detailLoading
+                ? '明细补齐中'
+                : this.state.detailError
+                    ? '明细加载失败'
+                    : '已同步';
+            meta.textContent = `优惠券 / 兑换码 / 工作流 · ${this.escapeHtml(this.formatSiteLabel(this.getReadSite()))} · ${statusLabel}`;
         }
     },
 
@@ -337,17 +389,70 @@ const AdminGrowthCenter = {
             return;
         }
 
+        const site = this.getReadSite();
+        if (!force && this.hasFullCacheForSite(site)) {
+            this.renderState();
+            return;
+        }
+
+        const requestId = this.state.requestId + 1;
+        this.state.requestId = requestId;
         this.state.loading = true;
+        this.state.detailLoading = false;
+        this.state.detailError = '';
         this.renderState();
 
         try {
-            await this.fetchPayload({ force });
+            await this.fetchPayload({ force, mode: 'summary' });
+            if (requestId !== this.state.requestId) {
+                return;
+            }
+            this.state.loading = false;
+            this.state.detailLoading = true;
+            this.renderState();
+            this.scheduleDetailLoad({ force, requestId });
         } catch (error) {
             this.state.error = error?.message || '营销资产中心加载失败';
-        } finally {
             this.state.loading = false;
+            this.state.detailLoading = false;
             this.renderState();
         }
+    },
+
+    scheduleDetailLoad({ force = false, requestId = this.state.requestId } = {}) {
+        window.setTimeout(() => {
+            void (async () => {
+                if (requestId !== this.state.requestId || !this.shouldDisplay()) {
+                    return;
+                }
+
+                try {
+                    await this.fetchPayload({ force, mode: 'full' });
+                } catch (error) {
+                    if (requestId !== this.state.requestId) {
+                        return;
+                    }
+                    this.state.detailError = error?.message || '营销资产中心明细加载失败';
+                } finally {
+                    if (requestId === this.state.requestId) {
+                        this.state.detailLoading = false;
+                        this.state.loading = false;
+                        this.renderState();
+                    }
+                }
+            })();
+        }, 120);
+    },
+
+    resetSiteScopedState() {
+        this.state.requestId += 1;
+        this.state.loading = false;
+        this.state.loadedSite = '';
+        this.state.detailsLoaded = false;
+        this.state.payload = null;
+        this.state.error = '';
+        this.state.detailError = '';
+        this.state.detailLoading = false;
     },
 
     scheduleSync({ force = false } = {}) {
@@ -488,6 +593,7 @@ const AdminGrowthCenter = {
         });
 
         window.addEventListener('admin-site-changed', () => {
+            this.resetSiteScopedState();
             this.scheduleSync({ force: true });
         });
         window.addEventListener('adminStudioAccessGranted', () => {

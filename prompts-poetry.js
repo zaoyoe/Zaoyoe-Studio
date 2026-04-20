@@ -165,6 +165,218 @@ function getLocalizedField(item, field) {
     return item[field] || '';
 }
 
+const PROMPT_MODAL_TAG_GROUP_LIMIT = 12;
+const PROMPT_HOT_TAG_LIMIT = 10;
+const PROMPT_AI_PAIRED_TAG_FIELDS = Object.freeze(['objects', 'scenes', 'styles', 'mood']);
+
+function getPromptAiTags(item = {}) {
+    const aiTags = item?.aiTags || item?.ai_tags;
+    return aiTags && typeof aiTags === 'object' ? aiTags : {};
+}
+
+function normalizePromptTagText(value = '') {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function pushUniquePromptTag(target, value, seen = new Set()) {
+    const normalized = normalizePromptTagText(value);
+    const key = normalized.toLowerCase();
+    if (!normalized || seen.has(key)) {
+        return;
+    }
+    seen.add(key);
+    target.push(normalized);
+}
+
+function getPromptPlainTagList(values = []) {
+    if (!Array.isArray(values)) {
+        return [];
+    }
+
+    const seen = new Set();
+    const output = [];
+    values.forEach((value) => pushUniquePromptTag(output, value, seen));
+    return output;
+}
+
+function getLocalizedPromptPairedTags(tagData = {}) {
+    if (!tagData || typeof tagData !== 'object') {
+        return [];
+    }
+
+    const lang = getCurrentLanguage();
+    const primaryTags = Array.isArray(tagData[lang]) ? tagData[lang] : [];
+    const fallbackTags = Array.isArray(tagData[lang === 'zh' ? 'en' : 'zh'])
+        ? tagData[lang === 'zh' ? 'en' : 'zh']
+        : [];
+    const maxLength = Math.max(primaryTags.length, fallbackTags.length);
+    const output = [];
+    const seen = new Set();
+
+    for (let index = 0; index < maxLength; index += 1) {
+        pushUniquePromptTag(output, primaryTags[index] || fallbackTags[index], seen);
+    }
+
+    return output;
+}
+
+function getPromptDifficultyLabel(value = '') {
+    const key = normalizePromptTagText(value).toLowerCase();
+    const isZh = getCurrentLanguage() === 'zh';
+    const labels = {
+        beginner: isZh ? '新手友好' : 'Beginner friendly',
+        intermediate: isZh ? '进阶' : 'Intermediate',
+        advanced: isZh ? '专业级' : 'Advanced'
+    };
+    return labels[key] || normalizePromptTagText(value);
+}
+
+function getPromptContentTagGroupLabels() {
+    const isZh = getCurrentLanguage() === 'zh';
+    return {
+        objects: isZh ? '画面主体' : 'Subjects',
+        scenes: isZh ? '场景环境' : 'Scenes',
+        styles: isZh ? '视觉风格' : 'Styles',
+        mood: isZh ? '情绪氛围' : 'Mood',
+        useCase: isZh ? '适用场景' : 'Use cases',
+        commercial: isZh ? '商业方向' : 'Commercial',
+        difficulty: isZh ? '创作难度' : 'Difficulty'
+    };
+}
+
+function buildPromptModalContentTagGroups(item = {}) {
+    const aiTags = getPromptAiTags(item);
+    const labels = getPromptContentTagGroupLabels();
+    const groups = [];
+
+    PROMPT_AI_PAIRED_TAG_FIELDS.forEach((field) => {
+        const tags = getLocalizedPromptPairedTags(aiTags[field]).slice(0, PROMPT_MODAL_TAG_GROUP_LIMIT);
+        if (tags.length > 0) {
+            groups.push({ key: field, label: labels[field], tags });
+        }
+    });
+
+    const useCaseTags = [
+        ...getPromptPlainTagList(aiTags.useCase?.platform),
+        ...getPromptPlainTagList(aiTags.useCase?.purpose),
+        ...getPromptPlainTagList(aiTags.useCase?.format)
+    ].slice(0, PROMPT_MODAL_TAG_GROUP_LIMIT);
+    if (useCaseTags.length > 0) {
+        groups.push({ key: 'useCase', label: labels.useCase, tags: useCaseTags });
+    }
+
+    const commercialTags = [
+        ...getPromptPlainTagList(aiTags.commercial?.niche),
+        ...getPromptPlainTagList(aiTags.commercial?.targetAudience)
+    ].slice(0, PROMPT_MODAL_TAG_GROUP_LIMIT);
+    if (commercialTags.length > 0) {
+        groups.push({ key: 'commercial', label: labels.commercial, tags: commercialTags });
+    }
+
+    const difficultyLabel = getPromptDifficultyLabel(aiTags.difficulty);
+    if (difficultyLabel) {
+        groups.push({ key: 'difficulty', label: labels.difficulty, tags: [difficultyLabel] });
+    }
+
+    return groups;
+}
+
+function renderPromptModalContentTags(item = {}) {
+    const section = document.getElementById('modalContentTagsSection');
+    const container = document.getElementById('modalContentTags');
+    if (!section || !container) {
+        return;
+    }
+
+    const groups = buildPromptModalContentTagGroups(item);
+    container.replaceChildren();
+    const title = section.querySelector('.modal-content-tags-title');
+    if (title) {
+        title.textContent = getCurrentLanguage() === 'zh' ? '内容标签' : 'Content tags';
+    }
+
+    if (groups.length === 0) {
+        section.hidden = true;
+        return;
+    }
+
+    groups.forEach((group) => {
+        const groupEl = document.createElement('div');
+        groupEl.className = `modal-content-tag-group modal-content-tag-group--${group.key}`;
+
+        const label = document.createElement('div');
+        label.className = 'modal-content-tag-label';
+        label.textContent = group.label;
+        groupEl.appendChild(label);
+
+        const list = document.createElement('div');
+        list.className = 'modal-content-tag-list';
+        group.tags.forEach((tag) => {
+            const chip = document.createElement('span');
+            chip.className = 'modal-content-tag-chip';
+            chip.textContent = tag;
+            list.appendChild(chip);
+        });
+        groupEl.appendChild(list);
+        container.appendChild(groupEl);
+    });
+
+    section.hidden = false;
+}
+
+function collectPromptAiHotTags(prompt = {}) {
+    const aiTags = getPromptAiTags(prompt);
+    const output = [];
+    const seen = new Set();
+
+    PROMPT_AI_PAIRED_TAG_FIELDS.forEach((field) => {
+        getLocalizedPromptPairedTags(aiTags[field]).forEach((tag) => pushUniquePromptTag(output, tag, seen));
+    });
+
+    [
+        aiTags.useCase?.platform,
+        aiTags.useCase?.purpose,
+        aiTags.useCase?.format,
+        aiTags.commercial?.niche,
+        aiTags.commercial?.targetAudience
+    ].forEach((values) => {
+        getPromptPlainTagList(values).forEach((tag) => pushUniquePromptTag(output, tag, seen));
+    });
+
+    const difficultyLabel = getPromptDifficultyLabel(aiTags.difficulty);
+    if (difficultyLabel) {
+        pushUniquePromptTag(output, difficultyLabel, seen);
+    }
+
+    return output;
+}
+
+function addPromptHotTagsToFrequency(prompt = {}, tagFreq = {}) {
+    if (Array.isArray(prompt.tags)) {
+        prompt.tags.forEach((tag) => {
+            const normalized = normalizePromptTagText(tag);
+            if (normalized) {
+                tagFreq[normalized] = (tagFreq[normalized] || 0) + 1;
+            }
+        });
+    }
+
+    collectPromptAiHotTags(prompt).forEach((tag) => {
+        tagFreq[tag] = (tagFreq[tag] || 0) + 1;
+    });
+
+    return tagFreq;
+}
+
+function buildPromptHotTags(prompts = [], limit = PROMPT_HOT_TAG_LIMIT) {
+    const tagFreq = {};
+    prompts.forEach((prompt) => addPromptHotTagsToFrequency(prompt, tagFreq));
+    return Object.entries(tagFreq)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, limit)
+        .map(([tag]) => tag);
+}
+
 // ========================================
 // SEARCH OPTIMIZATION CONFIG
 // ========================================
@@ -4234,48 +4446,64 @@ function handleNavClick(filterType, clickedItem) {
 // Get AI-derived sub-tags for a category (with Chinese translations from aiTags)
 function getAISubTags(category) {
     // Filter prompts by category
-    const categoryPrompts = PROMPTS.filter(p => p.tags.includes(category));
+    const categoryPrompts = PROMPTS.filter(p => Array.isArray(p.tags) && p.tags.includes(category));
 
     // Aggregate all AI tags with their Chinese translations
     const tagData = {}; // { normalizedTag: { count: number, en: string, zh: string } }
 
     categoryPrompts.forEach(prompt => {
-        if (!prompt.aiTags) return;
+        const aiTags = getPromptAiTags(prompt);
+        if (!Object.keys(aiTags).length) return;
 
-        // Collect from styles, mood, scenes - pair en and zh
-        const collectTags = (tagObj) => {
+        const addTag = (tag, zhTag = '') => {
+            const normalized = normalizePromptTagText(tag).toLowerCase();
+            if (normalized.length <= 2) {
+                return;
+            }
+            if (!tagData[normalized]) {
+                tagData[normalized] = {
+                    count: 0,
+                    en: tag.charAt(0).toUpperCase() + tag.slice(1),
+                    zh: zhTag || ''
+                };
+            }
+            tagData[normalized].count++;
+            if (!tagData[normalized].zh && zhTag) {
+                tagData[normalized].zh = zhTag;
+            }
+        };
+
+        // Collect bilingual visual tags and keep their Chinese pair where available.
+        const collectPairedTags = (tagObj) => {
             if (!tagObj || !tagObj.en) return;
             const enTags = tagObj.en;
             const zhTags = tagObj.zh || [];
 
             enTags.forEach((tag, index) => {
-                const normalized = tag.toLowerCase().trim();
-                if (normalized.length > 2) {
-                    if (!tagData[normalized]) {
-                        tagData[normalized] = {
-                            count: 0,
-                            en: tag.charAt(0).toUpperCase() + tag.slice(1),
-                            zh: zhTags[index] || '' // Get corresponding Chinese translation
-                        };
-                    }
-                    tagData[normalized].count++;
-                    // Keep the Chinese translation if we find one
-                    if (!tagData[normalized].zh && zhTags[index]) {
-                        tagData[normalized].zh = zhTags[index];
-                    }
-                }
+                addTag(tag, zhTags[index] || '');
             });
         };
 
-        collectTags(prompt.aiTags.styles);
-        collectTags(prompt.aiTags.mood);
-        collectTags(prompt.aiTags.scenes);
+        const collectPlainTags = (values) => {
+            getPromptPlainTagList(values).forEach((tag) => addTag(tag));
+        };
+
+        PROMPT_AI_PAIRED_TAG_FIELDS.forEach((field) => collectPairedTags(aiTags[field]));
+        collectPlainTags(aiTags.useCase?.platform);
+        collectPlainTags(aiTags.useCase?.purpose);
+        collectPlainTags(aiTags.useCase?.format);
+        collectPlainTags(aiTags.commercial?.niche);
+        collectPlainTags(aiTags.commercial?.targetAudience);
+        const difficultyLabel = getPromptDifficultyLabel(aiTags.difficulty);
+        if (difficultyLabel) {
+            addTag(difficultyLabel);
+        }
     });
 
-    // Sort by frequency and take top 6
+    // Sort by frequency and keep enough options to make the sub-nav useful.
     const sortedTags = Object.values(tagData)
         .sort((a, b) => b.count - a.count)
-        .slice(0, 6);
+        .slice(0, PROMPT_HOT_TAG_LIMIT);
 
     return sortedTags; // Returns array of { en, zh, count }
 }
@@ -4379,33 +4607,7 @@ function setupSearch() {
             return;
         }
 
-        // Collect all tags with frequency
-        const tagFreq = {};
-        PROMPTS.forEach(p => {
-            if (p.tags) {
-                p.tags.forEach(tag => {
-                    tagFreq[tag] = (tagFreq[tag] || 0) + 1;
-                });
-            }
-            // Also include AI tags
-            if (p.aiTags) {
-                const aiTagSources = ['styles', 'mood', 'scenes'];
-                aiTagSources.forEach(source => {
-                    const tags = p.aiTags[source];
-                    if (tags && tags.en) {
-                        tags.en.forEach(t => {
-                            tagFreq[t] = (tagFreq[t] || 0) + 1;
-                        });
-                    }
-                });
-            }
-        });
-
-        // Sort by frequency and take top 6
-        HOT_TAGS_CACHE = Object.entries(tagFreq)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 6)
-            .map(([tag]) => tag);
+        HOT_TAGS_CACHE = buildPromptHotTags(PROMPTS, PROMPT_HOT_TAG_LIMIT);
 
         renderHotTags(HOT_TAGS_CACHE, hotTagsList, searchInput);
     }
@@ -4542,29 +4744,7 @@ function setupSearch() {
     // Get inline hot tags (returns top N hot tags not matching current query)
     function getInlineHotTags(count) {
         if (!HOT_TAGS_CACHE) {
-            // Generate cache if not available
-            const tagFreq = {};
-            PROMPTS.forEach(p => {
-                if (p.tags) {
-                    p.tags.forEach(tag => {
-                        tagFreq[tag] = (tagFreq[tag] || 0) + 1;
-                    });
-                }
-                if (p.aiTags) {
-                    ['styles', 'mood', 'scenes'].forEach(source => {
-                        const tags = p.aiTags[source];
-                        if (tags && tags.en) {
-                            tags.en.forEach(t => {
-                                tagFreq[t] = (tagFreq[t] || 0) + 1;
-                            });
-                        }
-                    });
-                }
-            });
-            HOT_TAGS_CACHE = Object.entries(tagFreq)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 6)
-                .map(([tag]) => tag);
+            HOT_TAGS_CACHE = buildPromptHotTags(PROMPTS, PROMPT_HOT_TAG_LIMIT);
         }
         return HOT_TAGS_CACHE.slice(0, count);
     }
@@ -5868,6 +6048,7 @@ function openPromptModal(id) {
     // Tags hidden as per user request
     const tagsContainer = document.getElementById('modalTags');
     tagsContainer.innerHTML = ''; // Hidden
+    renderPromptModalContentTags(item);
 
     // Show/hide navigation arrows and counter
     const hasMultipleImages = currentModalImages.length > 1;

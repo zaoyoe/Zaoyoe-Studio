@@ -39,6 +39,11 @@ test('growth center runtime and styles expose unified asset and workflow surface
         'renderSummaryCards(summary = {})',
         'renderUnifiedAssets(items = [])',
         'renderWorkflows(workflows = [])',
+        "mode: 'summary'",
+        "mode: 'full'",
+        'scheduleDetailLoad({ force',
+        'details_pending',
+        '明细补齐中',
         "data-growth-center-action=\"run-workflow\"",
         "data-growth-center-action=\"open-asset\"",
         'window.AdminGrowthCenter = AdminGrowthCenter;'

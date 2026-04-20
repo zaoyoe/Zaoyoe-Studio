@@ -60,6 +60,10 @@ test('inferProjectRefFromSupabaseUrl extracts the project ref from Supabase URLs
 test('getMigrationSet exposes both incremental and full payment rollout chains', () => {
     assert.deepEqual(getMigrationSet('incremental').migrations, [...MIGRATION_SETS.incremental]);
     assert.deepEqual(getMigrationSet('full').migrations, [...MIGRATION_SETS.full]);
+    assert.equal(getMigrationSet('incremental').migrations.includes('20260419_allow_archived_payment_anomaly_cases.sql'), true);
+    assert.equal(getMigrationSet('full').migrations.includes('20260419_allow_archived_payment_anomaly_cases.sql'), true);
+    assert.equal(getMigrationSet('incremental').migrations.includes('20260419_fix_payment_overview_summary_active_anomalies.sql'), true);
+    assert.equal(getMigrationSet('full').migrations.includes('20260419_fix_payment_overview_summary_active_anomalies.sql'), true);
 });
 
 test('resolveRolloutContext prefers explicit project ref and db url overrides', () => {

@@ -44,7 +44,7 @@ test('prompts featured banner prefers homepage manual featured items before dail
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.js?v=20260416_PROMPTS_CARD_SKELETON_MINIMAL_1'),
+        promptsHtml.includes('prompts-poetry.js?v=20260420_PROMPT_RICH_TAGS_1'),
         true,
         'prompts.html should reference the featured-banner homepage-config bundle version'
     );

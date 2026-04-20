@@ -13,6 +13,11 @@ const {
     loadStoredPaymentConfigs
 } = require('./providers');
 const {
+    extractHostname,
+    isLocalHostname,
+    resolveSiteRequestOrigin
+} = require('./site-origins');
+const {
     rechargePointsForPayment
 } = require('./rpc');
 const {
@@ -568,31 +573,6 @@ function isTruthyFlag(value) {
     if (value === true) return true;
     const normalized = String(value || '').trim().toLowerCase();
     return ['1', 'true', 'yes', 'on'].includes(normalized);
-}
-
-function extractHostname(value) {
-    const normalized = String(value || '').trim();
-    if (!normalized) return '';
-
-    try {
-        const candidate = normalized.includes('://')
-            ? normalized
-            : `http://${normalized.replace(/^\/*/, '')}`;
-        return String(new URL(candidate).hostname || '').trim().toLowerCase();
-    } catch (_) {
-        return normalized
-            .replace(/^[a-z]+:\/\//i, '')
-            .replace(/^\/+/, '')
-            .split('/')[0]
-            .split(':')[0]
-            .trim()
-            .toLowerCase();
-    }
-}
-
-function isLocalHostname(value) {
-    const hostname = extractHostname(value);
-    return hostname === 'localhost' || hostname === '127.0.0.1';
 }
 
 function isProductionLikeRuntime(env = process.env) {
@@ -2841,6 +2821,11 @@ async function createPaymentRequest({
     const requestedProviderKey = String(body.provider_key || '').trim().toLowerCase();
     const packageId = body.package_id ? String(body.package_id).trim() : '';
     const isCustomRecharge = !packageId;
+    const requestOrigin = resolveSiteRequestOrigin({
+        site,
+        requestHost,
+        appBaseUrl: env.APP_BASE_URL
+    });
 
     const runPaymentWriteOperation = async (operationLabel, operation) => {
         const { client, result } = await runPaymentOperationWithAdminFallback({
@@ -2858,7 +2843,7 @@ async function createPaymentRequest({
     };
 
     const { paymentChannels, rechargeOptions } = await loadStoredPaymentConfigs(paymentRuntimeSupabase, {
-        origin: env.APP_BASE_URL,
+        origin: requestOrigin || env.APP_BASE_URL,
         afdianCheckoutUrl: env.PAYMENT_AFDIAN_URL
     });
 
@@ -2958,7 +2943,8 @@ async function createPaymentRequest({
         const runtimeContext = await adapter.resolveRuntimeContext({
             supabase: paymentRuntimeSupabase,
             env,
-            config: paymentChannels
+            config: paymentChannels,
+            requestOrigin
         });
 
         const checkoutContext = await adapter.createCheckoutContext({

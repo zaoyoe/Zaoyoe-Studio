@@ -477,7 +477,9 @@ test('payments ops tab auto-recovers after switching during initial overview loa
                     {
                         id: 'order_1',
                         provider: 'mock',
-                        provider_order_no: 'ORD-1',
+                        user_id: 'user_1',
+                        user_email: 'buyer@example.com',
+                        provider_order_no: 'ZPEC42F46329738A87345986347A2438',
                         package_name: '月付套餐',
                         paid_amount: 92,
                         points_amount: 920,
@@ -517,12 +519,17 @@ test('payments ops tab auto-recovers after switching during initial overview loa
     );
     assert.match(elements['paymentsOpsAlertQueue'].innerHTML, /支付告警待处理/);
     assert.match(elements['paymentsExceptionTopics'].innerHTML, /全部专题/);
+    assert.match(elements['paymentsExceptionTopics'].innerHTML, /支付意图异常/);
     assert.match(elements['paymentsAnomalyList'].innerHTML, /未回填异常/);
-    assert.match(elements['paymentsOrdersTable'].innerHTML, /ORD-1/);
+    assert.match(elements['paymentsOrdersTable'].innerHTML, /buyer@example\.com/);
+    assert.match(elements['paymentsOrdersTable'].innerHTML, /analytics-open-user-detail/);
+    assert.match(elements['paymentsOrdersTable'].innerHTML, /ZPEC42F4\.\.\.7A2438/);
+    assert.match(elements['paymentsOrdersTable'].innerHTML, /payments-copy-order-no/);
     assert.match(elements['paymentsCleanupPreview'].innerHTML, /AUTO_CDX_ORDER_1/);
 });
 
-test('payments overview warm-load does not clobber prefetched ops data with empty overview payloads', async () => {
+test('payments overview warm-load keeps full ops tab data on demand', async () => {
+    const fetchCalls = [];
     let releaseOverviewDeferred;
     const overviewDeferred = new Promise((resolve) => {
         releaseOverviewDeferred = resolve;
@@ -530,6 +537,7 @@ test('payments overview warm-load does not clobber prefetched ops data with empt
 
     const fetchImpl = async (url) => {
         const parsedUrl = new URL(url, 'https://example.com');
+        fetchCalls.push(`${parsedUrl.pathname}?${parsedUrl.searchParams.toString()}`);
         const view = parsedUrl.searchParams.get('view') || 'overview';
         const scope = parsedUrl.searchParams.get('scope') || 'full';
 
@@ -710,13 +718,501 @@ test('payments overview warm-load does not clobber prefetched ops data with empt
     await flushMicrotasks();
 
     await window.AdminPayments.scheduleTabPrefetch('overview');
+    assert.equal(
+        fetchCalls.some((call) => call.includes('view=ops')),
+        false,
+        'overview warm-load should not eagerly fetch the full ops tab'
+    );
     releaseOverviewDeferred();
     await initPromise;
 
-    window.AdminPayments.switchTab('ops', { reload: false });
+    assert.equal(
+        fetchCalls.some((call) => call.includes('view=ops')),
+        false,
+        'overview staged loading should finish without full ops tab prefetch'
+    );
+
+    window.AdminPayments.switchTab('ops');
+    await flushMicrotasks(10);
 
     assert.match(elements['paymentsOpsAlertQueue'].innerHTML, /预热告警仍在队列/);
     assert.match(elements['paymentsExceptionTopics'].innerHTML, /未回填专题/);
     assert.match(elements['paymentsAnomalyList'].innerHTML, /预热异常仍可见/);
     assert.match(elements['paymentsOrdersTable'].innerHTML, /ORD-PREFETCH-1/);
+});
+
+test('payments overview keeps callback topic count after visiting finance tab', async () => {
+    const fetchImpl = async (url) => {
+        const parsedUrl = new URL(url, 'https://example.com');
+        const view = parsedUrl.searchParams.get('view') || 'overview';
+        const scope = parsedUrl.searchParams.get('scope') || 'full';
+
+        if (view === 'overview' && scope === 'core') {
+            return createJsonResponse({
+                success: true,
+                overview_scope: 'core',
+                overview: {
+                    total_orders: 31,
+                    paid_orders: 29,
+                    paid_rate: 93.55,
+                    total_amount: 920.06,
+                    total_points: 920
+                },
+                anomaly_summary: {
+                    review_orders: 0,
+                    failed_orders: 0,
+                    unclaimed_paid_orders: 0
+                },
+                session_summary: {
+                    total_sessions: 31,
+                    matched_sessions: 31,
+                    order_match_rate: 100,
+                    match_rate: 100
+                },
+                query_summary: {
+                    total_attempts: 0,
+                    failed_attempts: 0
+                },
+                refund_alert_items: null
+            });
+        }
+
+        if (view === 'overview' && scope === 'secondary') {
+            return createJsonResponse({
+                success: true,
+                overview_scope: 'secondary',
+                anomaly_summary: {
+                    review_orders: 0,
+                    failed_orders: 0,
+                    duplicate_webhook_orders: 19,
+                    session_anomalies: 0,
+                    query_failures: 0,
+                    refund_failures: 0,
+                    refund_reclaim_failures: 0,
+                    refund_compensation_failures: 0
+                },
+                provider_stats: [],
+                trend_24h: [],
+                refund_alert_topics: [],
+                refund_alert_items: []
+            });
+        }
+
+        if (view === 'overview' && scope === 'ops') {
+            return createJsonResponse({
+                success: true,
+                overview_scope: 'ops',
+                ops_alert_summary: {
+                    total: 0,
+                    pending: 0,
+                    retry: 0,
+                    processing: 0,
+                    dead_letter: 0,
+                    handled: 0,
+                    ignored: 0
+                },
+                ops_alert_items: []
+            });
+        }
+
+        if (view === 'finance') {
+            return createJsonResponse({
+                success: true,
+                overview: {
+                    total_orders: 41,
+                    paid_orders: 29,
+                    paid_rate: 70.73,
+                    total_amount: 920.06,
+                    total_points: 920
+                },
+                anomaly_summary: {
+                    review_orders: 0,
+                    failed_orders: 0,
+                    duplicate_webhook_orders: 0,
+                    session_anomalies: 0,
+                    query_failures: 0,
+                    refund_failures: 0,
+                    refund_reclaim_failures: 0,
+                    refund_compensation_failures: 0
+                },
+                sitewide_summary: {
+                    recharge_amount: 920.06,
+                    recharge_points: 920,
+                    shop_points_spent: 0,
+                    refunded_shop_points: 0,
+                    paid_balance: 0,
+                    bonus_balance: 0
+                },
+                business_breakdown: [],
+                points_breakdown: []
+            });
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+    };
+
+    const { window, elements } = createAdminPaymentsRuntime(fetchImpl);
+    await window.AdminPayments.init();
+
+    assert.match(elements['paymentsToolbarHighlights'].innerHTML, /异常 19/);
+    assert.match(elements['paymentsOverviewGrid'].innerHTML, /回调专题/);
+    assert.match(elements['paymentsOverviewGrid'].innerHTML, />19</);
+
+    window.AdminPayments.switchTab('finance');
+    await flushMicrotasks(10);
+    assert.match(elements['paymentsSitewideGrid'].innerHTML, /充值收入/);
+
+    window.AdminPayments.switchTab('overview');
+
+    assert.match(elements['paymentsToolbarHighlights'].innerHTML, /异常 19/);
+    assert.match(elements['paymentsOverviewGrid'].innerHTML, /回调专题/);
+    assert.match(elements['paymentsOverviewGrid'].innerHTML, />19</);
+    assert.doesNotMatch(elements['paymentsToolbarHighlights'].innerHTML, /异常 0/);
+});
+
+test('payments overview uses zero active ops topics over stale callback aggregate after ops tab is loaded', async () => {
+    const fetchImpl = async (url) => {
+        const parsedUrl = new URL(url, 'https://example.com');
+        const view = parsedUrl.searchParams.get('view') || 'overview';
+        const scope = parsedUrl.searchParams.get('scope') || 'full';
+
+        if (view === 'overview' && scope === 'core') {
+            return createJsonResponse({
+                success: true,
+                overview_scope: 'core',
+                overview: {
+                    total_orders: 31,
+                    paid_orders: 29,
+                    paid_rate: 93.55,
+                    total_amount: 920.06,
+                    total_points: 920
+                },
+                anomaly_summary: {
+                    review_orders: 0,
+                    failed_orders: 0,
+                    unclaimed_paid_orders: 0
+                },
+                session_summary: {
+                    total_sessions: 31,
+                    matched_sessions: 31,
+                    order_match_rate: 100,
+                    match_rate: 100
+                },
+                query_summary: {
+                    total_attempts: 0,
+                    failed_attempts: 0
+                },
+                refund_alert_items: null
+            });
+        }
+
+        if (view === 'overview' && scope === 'secondary') {
+            return createJsonResponse({
+                success: true,
+                overview_scope: 'secondary',
+                anomaly_summary: {
+                    review_orders: 0,
+                    failed_orders: 0,
+                    duplicate_webhook_orders: 7,
+                    session_anomalies: 12,
+                    query_failures: 0,
+                    refund_failures: 0,
+                    refund_reclaim_failures: 0,
+                    refund_compensation_failures: 0
+                },
+                provider_stats: [],
+                trend_24h: [],
+                refund_alert_topics: [],
+                refund_alert_items: []
+            });
+        }
+
+        if (view === 'overview' && scope === 'ops') {
+            return createJsonResponse({
+                success: true,
+                overview_scope: 'ops',
+                ops_alert_summary: {
+                    total: 0,
+                    pending: 0,
+                    retry: 0,
+                    processing: 0,
+                    dead_letter: 0,
+                    handled: 0,
+                    ignored: 0
+                },
+                ops_alert_items: []
+            });
+        }
+
+        if (view === 'ops') {
+            return createJsonResponse({
+                success: true,
+                anomaly_summary: {
+                    review_orders: 0,
+                    failed_orders: 0,
+                    open_cases: 0
+                },
+                ops_alert_summary: {
+                    total: 0,
+                    pending: 0,
+                    retry: 0,
+                    processing: 0,
+                    dead_letter: 0,
+                    handled: 0,
+                    ignored: 0
+                },
+                ops_alert_items: [],
+                exception_topics: [],
+                exception_topic_items: [],
+                recent_anomalies: [],
+                recent_orders: []
+            });
+        }
+
+        if (parsedUrl.pathname === '/api/admin/payments/cleanup') {
+            return createJsonResponse({
+                success: true,
+                preview: {
+                    counts: {
+                        payment_orders: 0,
+                        payment_events: 0,
+                        afdian_orders: 0,
+                        auth_users: 0
+                    },
+                    samples: {
+                        orders: [],
+                        users: []
+                    }
+                }
+            });
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+    };
+
+    const { window, elements } = createAdminPaymentsRuntime(fetchImpl);
+    await window.AdminPayments.init();
+
+    assert.match(elements['paymentsToolbarHighlights'].innerHTML, /异常 19/);
+    assert.match(elements['paymentsOverviewGrid'].innerHTML, /回调专题/);
+    assert.match(elements['paymentsOverviewGrid'].innerHTML, />19</);
+
+    window.AdminPayments.switchTab('ops');
+    await flushMicrotasks(10);
+    assert.match(elements['paymentsExceptionTopics'].innerHTML, /全部专题/);
+    assert.match(elements['paymentsExceptionTopics'].innerHTML, /0 项/);
+
+    window.AdminPayments.switchTab('overview');
+
+    assert.match(elements['paymentsToolbarHighlights'].innerHTML, /异常 0/);
+    assert.match(elements['paymentsOverviewGrid'].innerHTML, /回调专题/);
+    assert.match(elements['paymentsOverviewGrid'].innerHTML, />0</);
+    assert.doesNotMatch(elements['paymentsToolbarHighlights'].innerHTML, /异常 19/);
+});
+
+test('payments overview refresh does not flash stale refund anomaly aggregate while ops scope is still loading', async () => {
+    let releaseOpsDeferred;
+    const opsDeferred = new Promise((resolve) => {
+        releaseOpsDeferred = resolve;
+    });
+
+    const fetchImpl = async (url) => {
+        const parsedUrl = new URL(url, 'https://example.com');
+        const view = parsedUrl.searchParams.get('view') || 'overview';
+        const scope = parsedUrl.searchParams.get('scope') || 'full';
+
+        if (view === 'overview' && scope === 'core') {
+            return createJsonResponse({
+                success: true,
+                overview_scope: 'core',
+                overview: {
+                    total_orders: 1,
+                    paid_orders: 1,
+                    paid_rate: 100,
+                    total_amount: 920.06,
+                    total_points: 920
+                },
+                anomaly_summary: {
+                    review_orders: 0,
+                    failed_orders: 0,
+                    unclaimed_paid_orders: 0
+                },
+                session_summary: {
+                    total_sessions: 1,
+                    order_match_rate: 100,
+                    match_rate: 100
+                },
+                query_summary: {
+                    total_attempts: 0,
+                    failed_attempts: 0
+                },
+                refund_alert_items: null
+            });
+        }
+
+        if (view === 'overview' && scope === 'secondary') {
+            return createJsonResponse({
+                success: true,
+                overview_scope: 'secondary',
+                anomaly_summary: {
+                    review_orders: 0,
+                    failed_orders: 0,
+                    duplicate_webhook_orders: 0,
+                    session_anomalies: 0,
+                    query_failures: 0,
+                    refund_failures: 8,
+                    refund_reclaim_failures: 0,
+                    refund_compensation_failures: 0
+                },
+                provider_stats: [],
+                trend_24h: [],
+                refund_alert_topics: [],
+                refund_alert_items: []
+            });
+        }
+
+        if (view === 'overview' && scope === 'ops') {
+            await opsDeferred;
+            return createJsonResponse({
+                success: true,
+                overview_scope: 'ops',
+                ops_alert_summary: {
+                    total: 0,
+                    pending: 0,
+                    retry: 0,
+                    processing: 0,
+                    dead_letter: 0,
+                    handled: 0,
+                    ignored: 0
+                },
+                ops_alert_items: []
+            });
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+    };
+
+    const { window, elements } = createAdminPaymentsRuntime(fetchImpl);
+    const initPromise = window.AdminPayments.init();
+    await flushMicrotasks(10);
+
+    assert.match(elements['paymentsToolbarHighlights'].innerHTML, /异常补充中/);
+    assert.doesNotMatch(elements['paymentsToolbarHighlights'].innerHTML, /异常 8/);
+
+    releaseOpsDeferred();
+    await initPromise;
+
+    assert.match(elements['paymentsToolbarHighlights'].innerHTML, /异常 0/);
+    assert.doesNotMatch(elements['paymentsToolbarHighlights'].innerHTML, /异常 8/);
+});
+
+test('payments cleanup preview fallback hides raw fetch-failed errors', async () => {
+    const fetchImpl = async (url) => {
+        const parsedUrl = new URL(url, 'https://example.com');
+
+        if (parsedUrl.pathname === '/api/admin/payments/cleanup') {
+            throw new Error('TypeError: fetch failed');
+        }
+
+        if (parsedUrl.pathname !== '/api/admin/payments/summary') {
+            throw new Error(`Unexpected fetch: ${url}`);
+        }
+
+        const view = parsedUrl.searchParams.get('view') || 'overview';
+        const scope = parsedUrl.searchParams.get('scope') || 'full';
+
+        if (view === 'overview' && scope === 'core') {
+            return createJsonResponse({
+                success: true,
+                overview_scope: 'core',
+                overview: {
+                    total_orders: 2,
+                    paid_orders: 2,
+                    paid_rate: 100,
+                    total_amount: 184,
+                    total_points: 1840
+                },
+                anomaly_summary: {
+                    review_orders: 0,
+                    failed_orders: 0,
+                    unclaimed_paid_orders: 0
+                },
+                session_summary: {
+                    total_sessions: 0,
+                    match_rate: 100
+                },
+                query_summary: {
+                    total_attempts: 0,
+                    failed_attempts: 0
+                }
+            });
+        }
+
+        if (view === 'overview' && scope === 'secondary') {
+            return createJsonResponse({
+                success: true,
+                overview_scope: 'secondary',
+                anomaly_summary: {
+                    review_orders: 0,
+                    failed_orders: 0,
+                    duplicate_webhook_orders: 0,
+                    session_anomalies: 0,
+                    query_failures: 0,
+                    refund_failures: 0,
+                    refund_reclaim_failures: 0,
+                    refund_compensation_failures: 0
+                },
+                provider_stats: [],
+                trend_24h: [],
+                refund_alert_topics: [],
+                refund_alert_items: []
+            });
+        }
+
+        if (view === 'overview' && scope === 'ops') {
+            return createJsonResponse({
+                success: true,
+                overview_scope: 'ops',
+                ops_alert_summary: {
+                    total: 0,
+                    pending: 0,
+                    retry: 0,
+                    processing: 0,
+                    dead_letter: 0,
+                    handled: 0,
+                    ignored: 0
+                },
+                ops_alert_items: []
+            });
+        }
+
+        if (view === 'ops') {
+            return createJsonResponse({
+                success: true,
+                ops_alert_summary: {
+                    total: 0,
+                    pending: 0,
+                    retry: 0,
+                    processing: 0,
+                    dead_letter: 0,
+                    handled: 0,
+                    ignored: 0
+                },
+                ops_alert_items: [],
+                exception_topics: [],
+                exception_topic_items: [],
+                recent_anomalies: [],
+                recent_orders: []
+            });
+        }
+
+        throw new Error(`Unexpected summary fetch: ${url}`);
+    };
+
+    const { window, elements } = createAdminPaymentsRuntime(fetchImpl);
+    await window.AdminPayments.init();
+    await window.AdminPayments.previewCleanup();
+
+    assert.match(elements['paymentsCleanupPreview'].innerHTML, /测试数据扫描失败/);
+    assert.doesNotMatch(elements['paymentsCleanupPreview'].innerHTML, /TypeError: fetch failed/);
 });

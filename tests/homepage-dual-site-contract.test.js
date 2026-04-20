@@ -39,6 +39,16 @@ test('homepage frontend runtime reads and writes site-specific prefetch payloads
     const contractSource = fs.readFileSync(homepageContractPath, 'utf8');
 
     assert.match(framerSource, /\.rpc\('fn_get_homepage_config'/);
+    assert.match(framerSource, /async fetchVisiblePromptPool\(\)/);
+    assert.match(framerSource, /\.from\('prompts'\)\s*\.select\('\*'\)\s*\.order\('updated_at', \{ ascending: false \}\)/);
+    assert.match(framerSource, /filterHomeVisiblePrompts\(data\)/);
+    assert.match(framerSource, /const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';/);
+    assert.match(framerSource, /const isFreshPromptPool = !promptPoolUpdatedAt \|\| \(prefetch\.timestamp \|\| 0\) >= promptPoolUpdatedAt;/);
+    assert.match(framerSource, /function buildHomepagePromptRenderSignature\(prompts = \[\]\)/);
+    assert.match(framerSource, /async syncPromptPoolFromLiveSourceInBackground\(options = \{\}\)/);
+    assert.match(framerSource, /void this\.syncPromptPoolFromLiveSourceInBackground\(\{ reason: 'prefetch-cache' \}\);/);
+    assert.match(framerSource, /prompt\?\.image_url/);
+    assert.match(framerSource, /prompt\?\.cover_image/);
     assert.match(framerSource, /function readHomepagePrefetchCache\(site = getHomepageRuntimeSite\(\)\)/);
     assert.match(framerSource, /sessionStorage\.setItem\(getHomepagePrefetchCacheKey\(site\), JSON\.stringify\(/);
     assert.match(framerSource, /this\.sectionOrder = HomepageContract\?\.sortSectionsByDisplayOrder\?\.\(data\)/);
@@ -53,8 +63,14 @@ test('homepage frontend runtime reads and writes site-specific prefetch payloads
     assert.doesNotMatch(framerSource, /sessionStorage\.getItem\(HOMEPAGE_PREFETCH_CACHE_KEY\)/);
 
     assert.match(prefetchSource, /\.rpc\('fn_get_homepage_config'/);
+    assert.match(prefetchSource, /async function fetchVisiblePromptPool\(\)/);
+    assert.match(prefetchSource, /\.from\('prompts'\)\s*\.select\('\*'\)\s*\.order\('updated_at', \{ ascending: false \}\)/);
+    assert.match(prefetchSource, /filterVisibleHomepagePrompts\(data\)/);
+    assert.match(prefetchSource, /const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';/);
+    assert.match(prefetchSource, /prompt\?\.image_url/);
+    assert.match(prefetchSource, /prompt\?\.cover_image/);
     assert.match(prefetchSource, /sessionStorage\.setItem\(getHomepagePrefetchCacheKey\(currentSite\), JSON\.stringify\(/);
-    assert.match(prefetchSource, /cacheKind = promptPool\.length > 0 \? 'complete' : 'partial'/);
+    assert.match(prefetchSource, /cacheKind = promptPoolSource === 'live' \? 'complete' : 'partial'/);
     assert.match(prefetchSource, /prompt\?\.supabaseId \?\? prompt\?\.id/);
     assert.match(prefetchSource, /findFeaturedPromptRecord\(promptPool, item\) \|\| buildFeaturedPromptFallback\(item\)/);
     assert.match(prefetchSource, /getSectionExperimentValue\('prompts', config, 'featured_items', null\)/);

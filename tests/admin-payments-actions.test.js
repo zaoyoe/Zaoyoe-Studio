@@ -231,6 +231,13 @@ function createSupabaseStub(state = {}) {
                 }
 
                 if (table === 'payment_anomaly_cases' && query.mode === 'upsert') {
+                    if (state.anomalyUpsertError) {
+                        return {
+                            data: query.single ? null : [],
+                            error: state.anomalyUpsertError
+                        };
+                    }
+
                     const payload = query.payload || {};
                     const existingIndex = anomalyCases.findIndex((item) => (
                         item.target_type === payload.target_type && item.target_id === payload.target_id
@@ -252,6 +259,14 @@ function createSupabaseStub(state = {}) {
                     };
                 }
 
+                if (table === 'payment_anomaly_cases' && query.mode === 'select') {
+                    const rows = sortRows(applyFilters(anomalyCases, query.filters), query.order);
+                    return {
+                        data: query.single ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
                 if (table === 'payment_events' && query.mode === 'insert') {
                     const payload = Array.isArray(query.payload)
                         ? query.payload
@@ -265,6 +280,14 @@ function createSupabaseStub(state = {}) {
                     return {
                         data: query.single ? paymentEvents[paymentEvents.length - 1] : payload,
                         error: null
+                    };
+                }
+
+                if (table === 'payment_events' && query.mode === 'select') {
+                    const rows = sortRows(applyFilters(paymentEvents, query.filters), query.order);
+                    return {
+                        data: query.single ? (rows[0] || null) : rows,
+                        error: rows.length ? null : { message: 'Payment event not found' }
                     };
                 }
 
@@ -505,6 +528,139 @@ test('approve_review applies review RPC, writes anomaly case, and records audit 
         assert.equal(state.anomalyCases[0].resolution, '人工复核后确认放行');
         assert.equal(state.auditLogs.length, 1);
         assert.equal(state.auditLogs[0].actionType, 'payments.anomaly.action');
+    });
+});
+
+test('archive event anomaly stores archived status so summary can hide it from topic counts', async () => {
+    const state = {
+        paymentEvents: [
+            {
+                id: 'event-archive-1',
+                provider: 'zpay',
+                provider_order_no: 'ZP_ARCHIVE_1',
+                processing_result: 'webhook_exception',
+                error_message: 'duplicate callback already handled'
+            }
+        ],
+        anomalyCases: [
+            {
+                id: 'case-event-archive-1',
+                target_type: 'event',
+                target_id: 'event-archive-1',
+                status: 'handled',
+                resolution: '已人工确认并标记处理完成。',
+                last_action: 'mark_handled',
+                last_action_at: '2026-04-19T02:04:00.000Z'
+            }
+        ]
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'event',
+                targetId: 'event-archive-1',
+                action: 'archive'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.anomaly_case.status, 'archived');
+        assert.equal(payload.anomaly_case.last_action, 'archive');
+        assert.equal(payload.anomaly_case.resolution, '该异常已归档，不再进入专题计数。');
+        assert.equal(state.anomalyCases.length, 1);
+        assert.equal(state.auditLogs[0].details.action, 'archive');
+    });
+});
+
+test('archive rejects open anomaly items before they are handled', async () => {
+    const state = {
+        paymentEvents: [
+            {
+                id: 'event-archive-blocked-1',
+                provider: 'zpay',
+                provider_order_no: 'ZP_ARCHIVE_BLOCKED_1',
+                processing_result: 'webhook_exception',
+                error_message: 'duplicate callback still open'
+            }
+        ]
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'event',
+                targetId: 'event-archive-blocked-1',
+                action: 'archive'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 409);
+        assert.equal(payload.success, false);
+        assert.equal(payload.message, '只有已处理或已审核通过的异常项才能归档');
+        assert.equal(state.anomalyCases.length, 0);
+    });
+});
+
+test('archive returns a friendly message when the archived status migration is missing', async () => {
+    const state = {
+        paymentEvents: [
+            {
+                id: 'event-archive-migration-missing-1',
+                provider: 'zpay',
+                provider_order_no: 'ZP_ARCHIVE_MIGRATION_MISSING_1',
+                processing_result: 'webhook_exception',
+                error_message: 'duplicate callback already handled'
+            }
+        ],
+        anomalyCases: [
+            {
+                id: 'case-event-archive-migration-missing-1',
+                target_type: 'event',
+                target_id: 'event-archive-migration-missing-1',
+                status: 'handled',
+                resolution: '已人工确认并标记处理完成。',
+                last_action: 'mark_handled',
+                last_action_at: '2026-04-19T02:14:00.000Z'
+            }
+        ],
+        anomalyUpsertError: {
+            code: '23514',
+            message: 'new row for relation "payment_anomaly_cases" violates check constraint "payment_anomaly_cases_status_check"'
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'event',
+                targetId: 'event-archive-migration-missing-1',
+                action: 'archive'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 409);
+        assert.equal(payload.success, false);
+        assert.equal(
+            payload.message,
+            '当前数据库还没有应用“异常归档”所需迁移，请先执行 20260419_allow_archived_payment_anomaly_cases.sql。'
+        );
     });
 });
 
@@ -1180,6 +1336,89 @@ test('reconcile_zpay_order credits the order, links checkout session, and record
         assert.equal(state.auditLogs[0].details.reconcile_provider, 'zpay');
         assert.equal(state.auditLogs[0].details.gateway_transaction_id, 'ZPAY_TRADE_RECONCILE_1');
         assert.equal(state.auditLogs[0].details.checkout_session_id, 'session-zp-reconcile-1');
+    });
+});
+
+test('reconcile_checkout_session links a redeemed order without recharging points', async () => {
+    const state = {
+        orders: [
+            {
+                id: 'order-session-backfill-1',
+                user_id: 'user-session-backfill-1',
+                provider: 'zpay',
+                provider_order_no: 'ZPAY_SESSION_BACKFILL_1',
+                checkout_session_id: null,
+                package_id: 'pkg-session-backfill',
+                package_name: '易支付自定义充值',
+                site: 'cn',
+                expected_amount: 0.01,
+                paid_amount: 0.01,
+                points_amount: 0.01,
+                status: 'redeemed',
+                claimed_at: '2026-04-18T12:02:00.000Z',
+                paid_at: '2026-04-18T12:01:00.000Z',
+                verified_at: '2026-04-18T12:02:00.000Z',
+                sign_verified: true,
+                amount_verified: true,
+                created_at: '2026-04-18T12:00:00.000Z',
+                last_error: null,
+                provider_metadata: {
+                    trade_no: 'ZPAY_SESSION_BACKFILL_TRADE_1'
+                },
+                raw_payload: {}
+            }
+        ],
+        paymentsOrdersModule: {
+            async reconcileCheckoutSessionForPaymentOrder(args) {
+                assert.equal(args.paymentOrderId, 'order-session-backfill-1');
+                assert.equal(args.providerKey, 'zpay');
+                assert.equal(args.linkedBy, 'admin_checkout_session_reconcile');
+                state.orders[0].checkout_session_id = 'session-backfill-1';
+                state.orders[0].provider_metadata = {
+                    ...state.orders[0].provider_metadata,
+                    checkout_session_id: 'session-backfill-1',
+                    checkout_session_status: 'completed',
+                    checkout_session_linked_by: 'admin_checkout_session_reconcile'
+                };
+                return {
+                    sessionId: 'session-backfill-1',
+                    checkoutSession: {
+                        id: 'session-backfill-1',
+                        status: 'completed'
+                    },
+                    paymentOrderId: 'order-session-backfill-1'
+                };
+            }
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-session-backfill-1',
+                action: 'reconcile_checkout_session'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.message, '已补回支付意图关联，不会重复入账。');
+        assert.equal(payload.anomaly_case.status, 'handled');
+        assert.equal(payload.anomaly_case.last_action, 'reconcile_checkout_session');
+        assert.equal(state.orders[0].checkout_session_id, 'session-backfill-1');
+        assert.equal(state.orders[0].provider_metadata.checkout_session_linked_by, 'admin_checkout_session_reconcile');
+        assert.equal(state.metrics.rechargeRpcCalls.length, 0);
+        assert.equal(state.paymentEvents.length, 1);
+        assert.equal(state.paymentEvents[0].processing_result, 'admin_checkout_session_reconciled');
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'payments.order.reconcile');
+        assert.equal(state.auditLogs[0].details.checkout_session_id, 'session-backfill-1');
     });
 });
 

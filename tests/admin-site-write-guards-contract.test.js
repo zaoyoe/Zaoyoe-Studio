@@ -30,6 +30,21 @@ test('homepage module routes save and visibility writes through writable site gu
         false,
         'admin-homepage.js should no longer mutate homepage_config directly from the browser'
     );
+    assert.equal(
+        homepageSource.includes('保存草稿中...'),
+        true,
+        'admin-homepage.js should expose save-state copy for homepage draft saves'
+    );
+    assert.equal(
+        homepageSource.includes('翻译中...'),
+        false,
+        'admin-homepage.js should not label homepage draft saves as translation work'
+    );
+    assert.equal(
+        homepageSource.includes('autoTranslatePair('),
+        false,
+        'admin-homepage.js should no longer auto-translate homepage draft fields during save'
+    );
 });
 
 test('points module routes mutation entry points through writable site guard', () => {
@@ -108,6 +123,17 @@ test('gallery module routes prompt mutations through writable site guard', () =>
     for (const marker of requiredMarkers) {
         assert.equal(studioSource.includes(marker), true, `admin-studio.js should contain ${marker}`);
     }
+
+    assert.equal(
+        studioSource.includes("const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';"),
+        true,
+        'admin-studio.js should mark homepage prompt-pool caches stale after prompt saves'
+    );
+    assert.equal(
+        studioSource.includes('markHomepagePromptPoolUpdated();'),
+        true,
+        'admin-studio.js should invalidate homepage prompt-pool freshness after prompt saves'
+    );
 
     assert.equal(
         studioSource.includes(".from('prompts')"),

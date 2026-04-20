@@ -854,18 +854,59 @@ const AdminTickets = {
         if (this._initialized && options?.force !== true) return;
 
         console.log('[AdminTickets] Initializing...');
-        this.syncTicketWorkspaceView();
-        this._initPromise = Promise.all([
-            this.loadOverview({
-                showSkeleton: options.showOverviewSkeleton !== false
-            }),
-            this.loadTickets(options)
-        ])
+        const activeWorkspace = this.syncTicketWorkspaceView();
+        const overviewOptions = {
+            showSkeleton: options.showOverviewSkeleton !== false
+        };
+
+        if (activeWorkspace === 'queue' && overviewOptions.showSkeleton) {
+            this.renderOverviewSkeleton();
+        }
+
+        this._initPromise = Promise.resolve()
+            .then(async () => {
+                if (activeWorkspace !== 'queue') {
+                    await Promise.all([
+                        this.loadOverview(overviewOptions),
+                        this.loadTickets(options)
+                    ]);
+                    return;
+                }
+
+                await this.loadTickets(options);
+                void this.warmOverviewInBackground({
+                    ...overviewOptions,
+                    showSkeleton: false
+                });
+            })
             .finally(() => {
                 this._initPromise = null;
             });
         await this._initPromise;
         this._initialized = true;
+    },
+
+    warmOverviewInBackground: function (options = {}) {
+        return this.loadOverview(options).catch((error) => {
+            console.warn('[AdminTickets] overview background warm failed:', error);
+            return false;
+        });
+    },
+
+    refreshQueueListFirst: async function (options = {}) {
+        const listOptions = options?.listOptions && typeof options.listOptions === 'object'
+            ? options.listOptions
+            : {};
+        const overviewOptions = options?.overviewOptions && typeof options.overviewOptions === 'object'
+            ? options.overviewOptions
+            : {};
+
+        await this.loadTickets(listOptions);
+        void this.warmOverviewInBackground({
+            force: true,
+            showSkeleton: false,
+            ...overviewOptions
+        });
     },
 
     createTableStateRow: function ({ message, icon = 'fa-inbox', variant = 'empty', spinning = false }) {
@@ -7466,20 +7507,16 @@ const AdminTickets = {
                 this.notify(`已将 ${Math.max(0, Number(result.changedCount || 0))} 个工单指派给你`, 'success');
             }
 
-            await Promise.all([
-                this.loadOverview({
-                    force: true,
-                    showSkeleton: false
-                }),
-                this.loadTickets({
+            await this.refreshQueueListFirst({
+                listOptions: {
                     page: this.currentPage,
                     status: this.currentStatus,
                     searchQuery: this.searchQuery,
                     overdueOnly: this.quickFilters.overdueOnly,
                     priority: this.quickFilters.priority,
                     assignee: this.quickFilters.assignee
-                })
-            ]);
+                }
+            });
         } catch (error) {
             this.notify(`批量处理失败: ${this.safeText(error?.message, '未知错误')}`, 'error');
         }
@@ -7688,20 +7725,16 @@ const AdminTickets = {
             }
             this.notify(successMessage, failedCount > 0 ? 'warning' : 'success');
 
-            await Promise.all([
-                this.loadOverview({
-                    force: true,
-                    showSkeleton: false
-                }),
-                this.loadTickets({
+            await this.refreshQueueListFirst({
+                listOptions: {
                     page: this.currentPage,
                     status: this.currentStatus,
                     searchQuery: this.searchQuery,
                     overdueOnly: this.quickFilters.overdueOnly,
                     priority: this.quickFilters.priority,
                     assignee: this.quickFilters.assignee
-                })
-            ]);
+                }
+            });
         } catch (error) {
             this.notify(`批量处理失败: ${this.safeText(error?.message, '未知错误')}`, 'error');
         } finally {
@@ -8066,13 +8099,7 @@ const AdminTickets = {
             }
             this.recordAnalyticsResolutionFeedback(ticket, newStatus, result, doRefund);
 
-            await Promise.all([
-                this.loadOverview({
-                    force: true,
-                    showSkeleton: false
-                }),
-                this.loadTickets()
-            ]);
+            await this.refreshQueueListFirst();
 
         } catch (err) {
             this.notify(`处理失败: ${this.safeText(err?.message, '未知错误')}`, 'error');

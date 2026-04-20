@@ -41,7 +41,8 @@ const HOME_GUESTBOOK_PARTICLE_SEED = 20260409;
 const HOME_GUESTBOOK_PARTICLE_RESET_SEED = 9090909;
 const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
 const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
-const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260415_HOME_VERIFY_DEMO_1';
+const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';
+const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260419_HOME_PROMPT_CACHE_INVALIDATION_2';
 const HomepageContract = window.HomepageContract || null;
 const HOME_DEFAULT_SECTION_ORDER = Array.isArray(HomepageContract?.MANAGED_SECTION_ORDER)
   ? [...HomepageContract.MANAGED_SECTION_ORDER]
@@ -57,6 +58,10 @@ function getHomepagePrefetchCacheKey(site = getHomepageRuntimeSite()) {
 
 function getHomepageConfigLastUpdatedKey(site = getHomepageRuntimeSite()) {
   return `${HOMEPAGE_CONFIG_LAST_UPDATED_KEY}_${site}`;
+}
+
+function getHomepagePromptPoolLastUpdatedKey(site = getHomepageRuntimeSite()) {
+  return `${HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY}_${site}`;
 }
 
 async function loadHomepageConfigRows(site = getHomepageRuntimeSite()) {
@@ -143,6 +148,105 @@ function cloneHomeExperimentValue(value) {
     return value.map((item) => ({ ...item }));
   }
   return value;
+}
+
+function normalizeHomePromptRecord(prompt = {}) {
+  const normalizedId = String(prompt?.supabaseId || prompt?.id || '').trim();
+  const promptText = String(prompt?.prompt_text || prompt?.prompt || '').trim();
+  const aiTags = prompt?.aiTags && typeof prompt.aiTags === 'object' && !Array.isArray(prompt.aiTags)
+    ? prompt.aiTags
+    : (prompt?.ai_tags && typeof prompt.ai_tags === 'object' && !Array.isArray(prompt.ai_tags)
+      ? prompt.ai_tags
+      : {});
+  const images = [...new Set([
+    ...(Array.isArray(prompt?.images) ? prompt.images : []),
+    prompt?.image,
+    prompt?.image_url,
+    prompt?.imageUrl,
+    prompt?.cover_image,
+    prompt?.coverImage,
+    prompt?.cover_url,
+    prompt?.coverUrl,
+    prompt?.thumbnail_url,
+    prompt?.thumbnailUrl
+  ].map((item) => String(item || '').trim()).filter(Boolean))];
+
+  return {
+    ...prompt,
+    id: normalizedId || String(prompt?.id || '').trim(),
+    supabaseId: normalizedId || String(prompt?.supabaseId || '').trim(),
+    title: String(prompt?.title || prompt?.title_zh || prompt?.title_en || '').trim(),
+    title_zh: String(prompt?.title_zh || prompt?.title || '').trim(),
+    title_en: String(prompt?.title_en || prompt?.title || '').trim(),
+    tags: Array.isArray(prompt?.tags) ? prompt.tags : [],
+    description: String(prompt?.description || prompt?.description_zh || prompt?.description_en || '').trim(),
+    description_zh: String(prompt?.description_zh || prompt?.description || '').trim(),
+    description_en: String(prompt?.description_en || prompt?.description || '').trim(),
+    prompt: promptText,
+    prompt_text: promptText,
+    prompt_text_zh: String(prompt?.prompt_text_zh || promptText).trim(),
+    prompt_text_en: String(prompt?.prompt_text_en || '').trim(),
+    images,
+    image: images[0] || '',
+    image_url: String(prompt?.image_url || images[0] || '').trim(),
+    dominantColors: Array.isArray(prompt?.dominantColors)
+      ? prompt.dominantColors
+      : (Array.isArray(prompt?.dominant_colors) ? prompt.dominant_colors : []),
+    dominant_colors: Array.isArray(prompt?.dominant_colors)
+      ? prompt.dominant_colors
+      : (Array.isArray(prompt?.dominantColors) ? prompt.dominantColors : []),
+    aiTags,
+    ai_tags: aiTags
+  };
+}
+
+function buildHomepagePromptRenderSignature(prompts = []) {
+  return (Array.isArray(prompts) ? prompts : []).map((prompt) => {
+    const normalizedPrompt = normalizeHomePromptRecord(prompt);
+    const normalizedId = String(normalizedPrompt?.supabaseId || normalizedPrompt?.id || '').trim();
+    const updatedAt = String(normalizedPrompt?.updated_at || normalizedPrompt?.created_at || '').trim();
+    const primaryImage = String(normalizedPrompt?.images?.[0] || normalizedPrompt?.image || normalizedPrompt?.image_url || '').trim();
+    const title = String(normalizedPrompt?.title || normalizedPrompt?.title_zh || normalizedPrompt?.title_en || '').trim();
+    return [normalizedId, updatedAt, primaryImage, title].join('::');
+  }).join('||');
+}
+
+function getHomePromptAdminVisibilityStatus(prompt = {}) {
+  const aiTags = prompt?.aiTags && typeof prompt.aiTags === 'object' && !Array.isArray(prompt.aiTags)
+    ? prompt.aiTags
+    : (prompt?.ai_tags && typeof prompt.ai_tags === 'object' && !Array.isArray(prompt.ai_tags)
+      ? prompt.ai_tags
+      : {});
+  const adminOps = aiTags?.admin && typeof aiTags.admin === 'object' && !Array.isArray(aiTags.admin)
+    ? aiTags.admin
+    : (aiTags?.ops && typeof aiTags.ops === 'object' && !Array.isArray(aiTags.ops)
+      ? aiTags.ops
+      : {});
+  return String(adminOps.status || '').trim().toLowerCase();
+}
+
+function hasHomePromptVisibleCopy(value) {
+  return String(value || '').trim().length > 0;
+}
+
+function isHomePromptVisible(prompt = {}) {
+  const status = getHomePromptAdminVisibilityStatus(prompt);
+  if (status === 'draft' || status === 'archived') {
+    return false;
+  }
+
+  const normalizedPrompt = normalizeHomePromptRecord(prompt);
+  const hasBaseTitle = hasHomePromptVisibleCopy(normalizedPrompt?.title);
+  const hasPromptText = hasHomePromptVisibleCopy(normalizedPrompt?.prompt_text || normalizedPrompt?.prompt);
+  const hasImages = Array.isArray(normalizedPrompt?.images) && normalizedPrompt.images.some((item) => hasHomePromptVisibleCopy(item));
+
+  return hasBaseTitle && hasPromptText && hasImages;
+}
+
+function filterHomeVisiblePrompts(prompts = []) {
+  return (Array.isArray(prompts) ? prompts : [])
+    .map((prompt) => normalizeHomePromptRecord(prompt))
+    .filter((prompt) => isHomePromptVisible(prompt));
 }
 
 function getHomepageExperimentAssignmentStorageKey(experimentId = '') {
@@ -653,6 +757,7 @@ const FramerHome = {
   // Cached data
   cachedData: null,
   config: null,
+  promptPool: [],
   guestbookRuntime: null,
   gongyiTerminalRuntime: null,
   verifyDemoRuntime: null,
@@ -718,6 +823,88 @@ const FramerHome = {
     }
 
     return cloneHomeExperimentValue(matched.selected_value);
+  },
+
+  getPromptPool() {
+    if (Array.isArray(this.promptPool)) {
+      return this.promptPool;
+    }
+    return filterHomeVisiblePrompts(window.PROMPTS);
+  },
+
+  async fetchVisiblePromptPool() {
+    const fallbackPool = filterHomeVisiblePrompts(window.PROMPTS);
+
+    if (!window.supabaseClient) {
+      this.promptPool = fallbackPool;
+      return fallbackPool;
+    }
+
+    try {
+      const { data, error } = await window.supabaseClient
+        .from('prompts')
+        .select('*')
+        .order('updated_at', { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      const livePool = filterHomeVisiblePrompts(data);
+      this.promptPool = livePool;
+      window.PROMPTS = livePool;
+      return livePool;
+    } catch (error) {
+      console.warn('Failed to fetch live homepage prompt pool:', error);
+      this.promptPool = fallbackPool;
+      window.PROMPTS = fallbackPool;
+      return fallbackPool;
+    }
+  },
+
+  async syncPromptPoolFromLiveSourceInBackground(options = {}) {
+    if (!window.supabaseClient || !this.config) {
+      return false;
+    }
+
+    try {
+      const previousSignature = buildHomepagePromptRenderSignature(this.cachedData?.prompts || []);
+      const livePromptPool = await this.fetchVisiblePromptPool();
+      const nextPrompts = await this.aggregatePrompts(this.config.prompts || {});
+      const nextSignature = buildHomepagePromptRenderSignature(nextPrompts);
+
+      if (previousSignature === nextSignature) {
+        return false;
+      }
+
+      this.cachedData = this.cachedData || {};
+      this.cachedData.prompts = nextPrompts;
+      this.cachedData.ticker = await this.buildTickerData(this.config.ticker || {});
+      this.renderPrompts();
+      this.renderTicker();
+
+      try {
+        writeHomepagePrefetchCache({
+          cachedData: this.cachedData,
+          config: this.config,
+          promptPool: Array.isArray(livePromptPool) ? livePromptPool : this.promptPool,
+          sectionRows: this.sectionRows,
+          sectionOrder: this.sectionOrder,
+          cacheKind: 'complete',
+          timestamp: Date.now()
+        });
+      } catch (error) {
+        // Ignore sessionStorage write failures.
+      }
+
+      console.log('♻️ Homepage prompt cards refreshed from live prompt pool', {
+        reason: String(options.reason || 'background-sync').trim() || 'background-sync'
+      });
+      return true;
+    } catch (error) {
+      console.warn('Failed to refresh homepage prompt cards from live prompt pool:', error);
+      return false;
+    }
   },
 
   /**
@@ -916,16 +1103,30 @@ const FramerHome = {
         if (prefetch) {
           const age = Date.now() - prefetch.timestamp;
           const configUpdatedAt = getHomepageConfigLastUpdatedAt();
+          const promptPoolUpdatedAt = (() => {
+            try {
+              const raw = localStorage.getItem(getHomepagePromptPoolLastUpdatedKey());
+              const parsed = Number.parseInt(raw || '0', 10);
+              return Number.isFinite(parsed) ? parsed : 0;
+            } catch (error) {
+              return 0;
+            }
+          })();
 
           // ONLY use cache if it was saved AFTER i18n was ready (a rudimentary check: title shouldn't equal its own key)
           const isTranslated = prefetch.cachedData?.hero?.title && !prefetch.cachedData.hero.title.includes('home.hero');
           const isFreshConfig = !configUpdatedAt || (prefetch.timestamp || 0) >= configUpdatedAt;
+          const isFreshPromptPool = !promptPoolUpdatedAt || (prefetch.timestamp || 0) >= promptPoolUpdatedAt;
           const isCompletePrefetch = prefetch.cacheKind === 'complete';
 
           // Use if < 5 minutes old and contains actual translated text
-          if (age < 300000 && prefetch.cachedData && prefetch.config && isTranslated && isFreshConfig && isCompletePrefetch) {
+          if (age < 300000 && prefetch.cachedData && prefetch.config && isTranslated && isFreshConfig && isFreshPromptPool && isCompletePrefetch) {
             this.cachedData = prefetch.cachedData;
             this.config = prefetch.config;
+            this.promptPool = Array.isArray(prefetch.promptPool)
+              ? filterHomeVisiblePrompts(prefetch.promptPool)
+              : filterHomeVisiblePrompts(prefetch.cachedData?.prompts || []);
+            window.PROMPTS = this.promptPool;
             this.sectionRows = prefetch.sectionRows || {};
             this.sectionOrder = Array.isArray(prefetch.sectionOrder) && prefetch.sectionOrder.length
               ? prefetch.sectionOrder
@@ -940,6 +1141,7 @@ const FramerHome = {
             this.cachedData.gongyi = this.cachedData.gongyi || this.buildGongyiData(this.config.gongyi || {});
             this.cachedData.ticker = await this.buildTickerData(this.config.ticker || {});
             this.writeHeroTextCache(this.cachedData.hero);
+            void this.syncPromptPoolFromLiveSourceInBackground({ reason: 'prefetch-cache' });
             console.log(`⚡ Using prefetched homepage data (${Math.round(age / 1000)}s old)`);
             return;
           } else {
@@ -950,11 +1152,15 @@ const FramerHome = {
       } catch (e) {
         // Ignore parse errors
         clearHomepagePrefetchCache();
-      }
+    }
 
     try {
-      // Fetch homepage config from Supabase
-      this.config = await this.fetchHomepageConfig();
+      const [config, promptPool] = await Promise.all([
+        this.fetchHomepageConfig(),
+        this.fetchVisiblePromptPool()
+      ]);
+      this.config = config;
+      this.promptPool = promptPool;
       this.resetActiveExperiments();
 
       // Aggregate section data in parallel to reduce initial waiting time
@@ -986,6 +1192,7 @@ const FramerHome = {
         writeHomepagePrefetchCache({
           cachedData: this.cachedData,
           config: this.config,
+          promptPool: this.promptPool,
           sectionRows: this.sectionRows,
           sectionOrder: this.sectionOrder,
           cacheKind: 'complete',
@@ -1151,7 +1358,8 @@ const FramerHome = {
       return null;
     }
 
-    const image = String(item?.image || item?.image_url || '').trim();
+    const normalizedItem = normalizeHomePromptRecord(item);
+    const image = String(normalizedItem?.image || normalizedItem?.image_url || '').trim();
     const tags = Array.isArray(item?.tags)
       ? item.tags.map(tag => String(tag || '').trim()).filter(Boolean).slice(0, 8)
       : [];
@@ -1164,7 +1372,9 @@ const FramerHome = {
       title,
       title_zh: titleZh,
       title_en: titleEn,
-      images: image ? [image] : [],
+      images: normalizedItem.images,
+      image,
+      image_url: image,
       tags,
       ai_tags: [...tags],
       aiTags: tags.length > 0 ? { styles: { zh: [...tags], en: [...tags] } } : undefined,
@@ -1176,7 +1386,7 @@ const FramerHome = {
    * Aggregate prompts data (auto or manual)
    */
   async aggregatePrompts(config) {
-    const promptPool = Array.isArray(window.PROMPTS) ? window.PROMPTS : [];
+    const promptPool = this.getPromptPool();
     const experimentFeaturedItems = this.getSectionExperimentValue('prompts', config, 'featured_items', null);
     const featuredItems = Array.isArray(experimentFeaturedItems) && experimentFeaturedItems.length > 0
       ? experimentFeaturedItems
@@ -1404,6 +1614,117 @@ const FramerHome = {
     return url;
   },
 
+  isShopImageSource(value) {
+    const trimmed = String(value || '').trim();
+    return trimmed.startsWith('http://')
+      || trimmed.startsWith('https://')
+      || trimmed.startsWith('/')
+      || trimmed.startsWith('data:image/');
+  },
+
+  getOptimizedShopImageUrl(url, options = {}) {
+    const trimmed = String(url || '').trim();
+    if (!trimmed) return '';
+
+    const { format = 'avif' } = options;
+
+    if (trimmed.startsWith('data:image/') || trimmed.startsWith('/')) {
+      return trimmed;
+    }
+
+    if (trimmed.includes('cdn.zaoyoe.com/prompts/') && !trimmed.includes('/thumb/')) {
+      return trimmed.replace('/prompts/', '/prompts/thumb/');
+    }
+
+    if (
+      trimmed.includes('supabase.co/storage/v1/object/public/')
+      || trimmed.includes('supabase.co/storage/v1/render/image/public/')
+    ) {
+      try {
+        const optimizedUrl = new URL(trimmed);
+        if (optimizedUrl.pathname.includes('/storage/v1/object/public/')) {
+          optimizedUrl.pathname = optimizedUrl.pathname.replace(
+            '/storage/v1/object/public/',
+            '/storage/v1/render/image/public/'
+          );
+        }
+        optimizedUrl.searchParams.set('width', '480');
+        optimizedUrl.searchParams.set('height', '320');
+        optimizedUrl.searchParams.set('quality', '80');
+        if (format) {
+          optimizedUrl.searchParams.set('format', format);
+        } else {
+          optimizedUrl.searchParams.delete('format');
+        }
+        return optimizedUrl.toString();
+      } catch (error) {
+        console.warn('Failed to build homepage shop image transform URL:', error);
+      }
+    }
+
+    return trimmed;
+  },
+
+  setHomeShopCardImageSource(cardImage, originalUrl) {
+    if (!(cardImage instanceof HTMLImageElement) || !originalUrl) return;
+
+    const primaryUrl = this.getOptimizedShopImageUrl(originalUrl);
+    const transformFallbackUrl = this.getOptimizedShopImageUrl(originalUrl, { format: '' });
+
+    cardImage.dataset.originalSrc = originalUrl;
+    cardImage.dataset.transformFallbackSrc = transformFallbackUrl !== primaryUrl ? transformFallbackUrl : '';
+    cardImage.dataset.fallbackStage = '';
+    cardImage.src = primaryUrl;
+  },
+
+  handleHomeShopCardImageError(cardImage, originalUrl) {
+    if (!(cardImage instanceof HTMLImageElement)) return false;
+
+    const transformFallbackSrc = String(cardImage.dataset.transformFallbackSrc || '').trim();
+    const fallbackOriginalSrc = String(cardImage.dataset.originalSrc || originalUrl || '').trim();
+
+    if (!cardImage.dataset.fallbackStage && transformFallbackSrc && cardImage.src !== transformFallbackSrc) {
+      cardImage.dataset.fallbackStage = 'transform';
+      cardImage.src = transformFallbackSrc;
+      return true;
+    }
+
+    if (cardImage.dataset.fallbackStage !== 'original' && fallbackOriginalSrc && cardImage.src !== fallbackOriginalSrc) {
+      cardImage.dataset.fallbackStage = 'original';
+      cardImage.src = fallbackOriginalSrc;
+      return true;
+    }
+
+    return false;
+  },
+
+  getVersionedPromptImageUrl(url, prompt = {}) {
+    const rawUrl = String(url || '').trim();
+    if (!rawUrl) {
+      return '';
+    }
+
+    const version = String(prompt?.updated_at || prompt?.created_at || '').trim();
+    const resolvedUrl = rawUrl.includes('cdn.zaoyoe.com/prompts/') && !rawUrl.includes('/thumb/')
+      ? rawUrl
+      : this.getOptimizedImageUrl(rawUrl);
+
+    if (!version) {
+      return resolvedUrl;
+    }
+
+    try {
+      const nextUrl = new URL(resolvedUrl, window.location.origin);
+      nextUrl.searchParams.set('v', version);
+      if (nextUrl.origin === window.location.origin) {
+        return `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`;
+      }
+      return nextUrl.toString();
+    } catch (error) {
+      return `${resolvedUrl}${resolvedUrl.includes('?') ? '&' : '?'}v=${encodeURIComponent(version)}`;
+    }
+  },
+
   /**
    * Build Gemini verify section data
    */
@@ -1572,7 +1893,7 @@ const FramerHome = {
    */
   async buildTickerData(config = {}) {
     const lang = window.i18n?.getCurrentLanguage() || 'zh';
-    const promptPool = Array.isArray(window.PROMPTS) ? window.PROMPTS : [];
+    const promptPool = this.getPromptPool();
     const promptTagSeed = [
       ...sanitizeTickerItems(config.prompt_tags),
       ...sanitizeTickerItems(config.activity_keywords),
@@ -1625,7 +1946,7 @@ const FramerHome = {
   useFallbackData() {
     console.warn('⚠️ Using fallback data');
     this.resetActiveExperiments();
-    const promptPool = Array.isArray(window.PROMPTS) ? window.PROMPTS : [];
+    const promptPool = this.getPromptPool();
     this.config = {
       hero: { enable_auto: true },
       prompts: { enable_auto: true, max_items: 24, sort: 'popular', section_title: 'AI 提示词工作室', section_subtitle: '让创作更高效，让灵感更自由' },
@@ -2204,14 +2525,19 @@ const FramerHome = {
             <div class="masonry-column" data-column="${columnIndex}">
                 ${columnCards.map(prompt => {
       const promptImage = Array.isArray(prompt.images) ? prompt.images[0] : (prompt.image || '');
+      const promptImageSrc = this.getVersionedPromptImageUrl(promptImage, prompt);
+      const promptFallbackSrc = this.getVersionedPromptImageUrl(promptImage, {
+        updated_at: '',
+        created_at: prompt?.updated_at || prompt?.created_at || ''
+      });
       const promptTitle = this.getLocalizedField(prompt, 'title') || prompt.title || prompt.title_zh || prompt.title_en || 'Prompt';
       const promptId = this.normalizeFeaturedPromptLookupId(prompt?.supabaseId ?? prompt?.id);
       const promptHref = promptId ? `/prompts.html?id=${encodeURIComponent(promptId)}` : '/prompts.html';
       const cardMedia = promptImage
-        ? `<img src="${this.getOptimizedImageUrl(promptImage)}" 
+        ? `<img src="${promptImageSrc}"
                          alt="${escapeHomeHtml(promptTitle)}" 
                          loading="lazy"
-                         data-home-fallback-src="${encodeURIComponent(promptImage)}" />`
+                         data-home-fallback-src="${encodeURIComponent(promptFallbackSrc)}" />`
         : `<div class="masonry-card-placeholder" aria-hidden="true"></div>`;
 
       return `
@@ -2333,6 +2659,7 @@ const FramerHome = {
       const productId = String(product?.id || '').trim();
       const productName = this.getLocalizedField(product, 'name');
       const productDescription = this.getLocalizedField(product, 'description');
+      const hasProductImage = this.isShopImageSource(product?.icon_url);
       const stockText = Number(product?.stock_count || 0) > 0
         ? `${window.i18n?.t('home.shop.stock') || '库存'} ${Number(product.stock_count || 0)}`
         : (window.i18n?.t('home.shop.lowStock') || '库存紧张');
@@ -2344,8 +2671,8 @@ const FramerHome = {
         data-home-shop-title="${escapeHomeHtml(productName || '')}">
         ${product.homepage_badge ? `<span class="shop-card-badge">${escapeHomeHtml(product.homepage_badge)}</span>` : ''}
         <div class="shop-card-image">
-          ${product.icon_url && (product.icon_url.startsWith('http') || product.icon_url.startsWith('/') || product.icon_url.startsWith('data:'))
-      ? `<img src="${product.icon_url}" alt="${escapeHomeHtml(productName)}" loading="lazy" data-home-replace-parent-icon="1">`
+          ${hasProductImage
+      ? `<img class="shop-card-home-image" alt="${escapeHomeHtml(productName)}" loading="lazy" decoding="async" data-home-shop-image="1" data-home-shop-original-src="${escapeHomeHtml(product.icon_url)}">`
       : (product.icon_url && product.icon_url.startsWith('fa-') ? `<i class="fas ${product.icon_url} shop-card-icon"></i>` : `<i class="fas fa-box-open shop-card-icon shop-card-icon--fallback"></i>`)}
         </div>
         <div class="shop-card-info">
@@ -2378,15 +2705,28 @@ const FramerHome = {
       </div>
     `;
 
-    bindImageFallbacks(section, 'img[data-home-replace-parent-icon="1"]', (image) => {
-      if (image.dataset.homeFallbackApplied === '1') {
+    section.querySelectorAll('img[data-home-shop-image="1"]').forEach((image) => {
+      const originalSrc = String(image.dataset.homeShopOriginalSrc || '').trim();
+      if (!originalSrc) {
+        const fallbackIcon = document.createElement('i');
+        fallbackIcon.className = 'fas fa-box-open shop-card-icon shop-card-icon--fallback';
+        fallbackIcon.setAttribute('aria-hidden', 'true');
+        image.replaceWith(fallbackIcon);
         return;
       }
 
-      image.dataset.homeFallbackApplied = '1';
-      if (image.parentElement) {
-        image.parentElement.innerHTML = '<i class="fas fa-box-open shop-card-icon shop-card-icon--fallback"></i>';
-      }
+      image.addEventListener('error', () => {
+        if (this.handleHomeShopCardImageError(image, originalSrc)) {
+          return;
+        }
+
+        const fallbackIcon = document.createElement('i');
+        fallbackIcon.className = 'fas fa-box-open shop-card-icon shop-card-icon--fallback';
+        fallbackIcon.setAttribute('aria-hidden', 'true');
+        image.replaceWith(fallbackIcon);
+      });
+
+      this.setHomeShopCardImageSource(image, originalSrc);
     });
     section.querySelectorAll('[data-home-animation-duration]').forEach((track) => {
       const primaryCycle = track.querySelector('[data-home-shop-cycle="1"]');

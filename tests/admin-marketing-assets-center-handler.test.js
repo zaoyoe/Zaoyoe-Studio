@@ -130,6 +130,7 @@ function createSupabaseStub(state) {
     state.redemptionBatches = Array.isArray(state.redemptionBatches) ? state.redemptionBatches : [];
     state.workflowRows = Array.isArray(state.workflowRows) ? state.workflowRows : [];
     state.workflowRunRows = Array.isArray(state.workflowRunRows) ? state.workflowRunRows : [];
+    state.tableRequests = Array.isArray(state.tableRequests) ? state.tableRequests : [];
     state.insertSeq = state.insertSeq || 1;
 
     function getRows(table) {
@@ -145,6 +146,7 @@ function createSupabaseStub(state) {
 
     return {
         from(table) {
+            state.tableRequests.push(table);
             return createQueryBuilder((query) => {
                 const sourceRows = getRows(table);
 
@@ -321,6 +323,83 @@ test('marketing assets center GET returns unified discount, package, and workflo
         assert.equal(payload.unified_assets[0].stacking_policy.pricing_apply_stage, 'catalog_price');
         assert.equal(Object.prototype.hasOwnProperty.call(payload.unified_assets[0], '__source'), false);
         assert.equal(payload.workflows[0].due_count, 1);
+    });
+});
+
+test('marketing assets center summary mode skips detail table scans for faster first paint', async () => {
+    await withMarketingAssetsHandler({
+        discountRows: [
+            {
+                id: 'discount_1',
+                code: 'SPRING20',
+                created_at: '2099-04-09T08:00:00.000Z',
+                applicable_site: 'cn',
+                is_active: true,
+                lifecycle_status: 'scheduled',
+                status_reason: 'scheduled_start',
+                starts_at: '2000-01-01T00:00:00.000Z',
+                expires_at: '2099-05-01T00:00:00.000Z',
+                distribution_mode: 'public_claim'
+            }
+        ],
+        orderRows: [
+            {
+                id: 'order_1',
+                discount_code: 'SPRING20',
+                price_paid: 180,
+                discount_amount: 20,
+                refund_status: null,
+                created_at: '2099-04-09T10:00:00.000Z',
+                site: 'cn'
+            }
+        ],
+        assetRows: [
+            {
+                id: 'asset_1',
+                discount_id: 'discount_1',
+                asset_status: 'available',
+                assigned_at: '2099-04-09T09:00:00.000Z'
+            }
+        ],
+        pointsPackages: [
+            {
+                id: 'package_1',
+                name: '积分礼包',
+                points_amount: 100,
+                bonus_points: 20,
+                price_cny: 12,
+                is_active: true,
+                sort_order: 1,
+                created_at: '2099-04-01T08:00:00.000Z'
+            }
+        ],
+        redemptionBatches: [],
+        workflowRows: [],
+        workflowRunRows: [
+            {
+                id: 'run_1',
+                workflow_id: 'workflow_1',
+                workflow_key: 'discount_lifecycle_sync',
+                started_at: '2099-04-09T10:00:00.000Z',
+                run_status: 'success',
+                summary: 'done'
+            }
+        ]
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', headers: {}, url: '/api/admin/marketing/assets-center?site=cn&mode=summary' }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.load_mode, 'summary');
+        assert.equal(payload.details_pending, true);
+        assert.equal(payload.asset_families.length, 2);
+        assert.equal(state.tableRequests.includes('discount_codes'), true);
+        assert.equal(state.tableRequests.includes('points_packages'), true);
+        assert.equal(state.tableRequests.includes('shop_orders'), false);
+        assert.equal(state.tableRequests.includes('discount_user_assets'), false);
+        assert.equal(state.tableRequests.includes('marketing_asset_workflow_runs'), false);
     });
 });
 

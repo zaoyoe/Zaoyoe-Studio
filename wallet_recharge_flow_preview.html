@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>钱包充值流程预演</title>
+    <link rel="stylesheet" href="css/wallet-recharge-flow-preview.css">
+</head>
+<body>
+    <div class="ambient a1" aria-hidden="true"></div>
+    <div class="ambient a2" aria-hidden="true"></div>
+    <div class="ambient a3" aria-hidden="true"></div>
+
+    <div class="page-shell">
+        <div class="workspace">
+            <section class="wallet-stage" id="walletStage">
+                <div class="wallet-shell">
+                    <header class="wallet-header">
+                        <div class="wallet-title">
+                            <span class="wallet-title-badge">💰</span>
+                            <span>我的钱包</span>
+                        </div>
+                        <div class="header-balance">
+                            <span>当前余额</span>
+                            <strong id="headerBalanceValue">128.50 分</strong>
+                        </div>
+                    </header>
+
+                    <div class="wallet-layout">
+                        <nav class="wallet-sidebar" aria-label="钱包导航">
+                            <button class="wallet-menu-item" type="button" data-view="balance">
+                                <span class="menu-icon">💳</span>
+                                <span class="menu-text">余额</span>
+                            </button>
+                            <button class="wallet-menu-item" type="button" data-view="cards">
+                                <span class="menu-icon">🎟</span>
+                                <span class="menu-text">卡券</span>
+                            </button>
+                            <button class="wallet-menu-item active" type="button" data-view="recharge">
+                                <span class="menu-icon">⚡</span>
+                                <span class="menu-text">充值</span>
+                            </button>
+                            <button class="wallet-menu-item" type="button" data-view="orders">
+                                <span class="menu-icon">📋</span>
+                                <span class="menu-text">记录</span>
+                            </button>
+                            <button class="wallet-menu-item" type="button" data-view="affiliate">
+                                <span class="menu-icon">🔗</span>
+                                <span class="menu-text">推广</span>
+                            </button>
+                            <button class="wallet-menu-item" type="button" data-view="checkin">
+                                <span class="menu-icon">🏷</span>
+                                <span class="menu-text">签到</span>
+                            </button>
+                        </nav>
+
+                        <main class="wallet-content">
+                            <section class="balance-spotlight" id="balanceSpotlight">
+                                <div class="balance-spotlight-top">
+                                    <div>
+                                        <span class="balance-kicker">当前可用积分</span>
+                                        <strong class="balance-spotlight-value" id="balanceHeroValue">128.50 分</strong>
+                                        <p class="balance-note" id="balanceNote">支付成功后，会自动回到这里并聚焦余额变化。</p>
+                                    </div>
+                                    <div class="balance-pill" id="balancePill">等待到账</div>
+                                </div>
+                                <div class="balance-meta-grid">
+                                    <div class="balance-meta-card">
+                                        <span>本次到账</span>
+                                        <strong id="balanceIncomingValue">+0.01 分</strong>
+                                    </div>
+                                    <div class="balance-meta-card">
+                                        <span>目标余额</span>
+                                        <strong id="balanceTargetValue">128.51 分</strong>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <div class="view-head">
+                                <div class="view-head-main">
+                                    <h2>⚡ 充值套餐</h2>
+                                    <p>这个页面是独立的流程原型，不会发真实请求。用来观察从点击充值、拉起扫码弹窗，到最终成功或失败时的视觉反馈和节奏。</p>
+                                </div>
+                                <div class="view-chip" id="viewScenarioChip">当前场景：支付成功</div>
+                            </div>
+
+                            <div class="status-strip">
+                                <div class="status-card">
+                                    <span>本次模拟充值</span>
+                                    <strong id="quoteValue">¥0.01</strong>
+                                    <p id="quoteHint">输入 0.01 分时，会生成对应金额的支付单。</p>
+                                </div>
+                                <div class="status-card pending">
+                                    <span>流程反馈</span>
+                                    <strong id="flowStateTitle">等待发起</strong>
+                                    <p id="flowStateHint">点击任意套餐或自定义充值按钮后，这里会同步展示流程进度。</p>
+                                </div>
+                            </div>
+
+                            <div class="packages-grid" id="packagesGrid"></div>
+
+                            <section class="custom-card">
+                                <div class="custom-head">
+                                    <div>
+                                        <h3>自定义充值</h3>
+                                        <p>当前按 1 积分 = 1 元结算，支持两位小数。支付成功后会自动返回余额区域展示到账动画。</p>
+                                    </div>
+                                    <span class="custom-badge">易支付</span>
+                                </div>
+
+                                <div class="custom-row">
+                                    <label class="custom-input-wrap">
+                                        <input class="custom-input" id="customInput" type="number" min="0.01" step="0.01" value="0.01" placeholder=" ">
+                                        <span class="custom-placeholder">例如 0.01</span>
+                                    </label>
+                                    <button class="custom-submit" id="customSubmit" type="button">前往易支付</button>
+                                </div>
+
+                                <div class="custom-meta">该入口仅用于独立预演。你可以在右侧切换场景，分别观察创建失败、扫码中、支付成功、支付失败的 UI 节奏。</div>
+                                <div class="inline-state" id="inlineState"><strong>当前说明：</strong> 还没有开始流程，建议先点一次 `前往易支付` 看完整过渡。</div>
+                            </section>
+                        </main>
+                    </div>
+                </div>
+            </section>
+
+            <aside class="dock">
+                <span class="eyebrow">Wallet Flow Lab</span>
+                <h3>流程调试台</h3>
+                <p>调完这个独立页后，再把满意的节奏和状态接回正式站内逻辑。</p>
+
+                <div class="dock-section">
+                    <div class="dock-label">结果场景</div>
+                    <div class="chip-row" id="scenarioChips">
+                        <button class="chip active" type="button" data-scenario="success">支付成功</button>
+                        <button class="chip" type="button" data-scenario="review">平台复核中</button>
+                        <button class="chip" type="button" data-scenario="paymentFail">支付失败</button>
+                        <button class="chip" type="button" data-scenario="hold">停留扫码中</button>
+                        <button class="chip" type="button" data-scenario="requestFail">创建失败</button>
+                    </div>
+                </div>
+
+                <div class="dock-section">
+                    <div class="dock-label">节点推进</div>
+                    <p class="dock-helper">现在默认会停在“二维码已生成”。你可以手动推进到“等待结果同步”“平台复核”“成功”“失败”，更接近真实链路。</p>
+                    <div class="dock-actions">
+                        <button class="dock-btn" id="stepQrReady" type="button">推进到二维码已生成</button>
+                        <button class="dock-btn" id="stepPolling" type="button">推进到结果同步</button>
+                        <button class="dock-btn" id="stepReview" type="button">推进到平台复核</button>
+                        <button class="dock-btn" id="stepSuccess" type="button">直接切到成功</button>
+                        <button class="dock-btn" id="stepFailure" type="button">直接切到失败</button>
+                    </div>
+                </div>
+
+                <div class="dock-section">
+                    <div class="dock-label">播放速度</div>
+                    <div class="chip-row" id="speedChips">
+                        <button class="chip secondary" type="button" data-speed="0.75">慢一点</button>
+                        <button class="chip secondary active" type="button" data-speed="1">标准</button>
+                        <button class="chip secondary" type="button" data-speed="1.35">快一点</button>
+                    </div>
+                </div>
+
+                <div class="dock-section">
+                    <div class="dock-label">预览尺寸</div>
+                    <div class="chip-row" id="viewportChips">
+                        <button class="chip secondary active" type="button" data-viewport="desktop">桌面</button>
+                        <button class="chip secondary" type="button" data-viewport="mobile">移动</button>
+                    </div>
+                </div>
+
+                <div class="dock-section">
+                    <div class="dock-label">快速操作</div>
+                    <div class="dock-actions">
+                        <button class="dock-btn primary" id="quickCustomStart" type="button">直接演示自定义充值</button>
+                        <button class="dock-btn" id="quickPackageStart" type="button">直接演示 50 分套餐</button>
+                        <button class="dock-btn" id="resetFlow" type="button">重置流程</button>
+                    </div>
+                </div>
+
+                <div class="dock-section">
+                    <div class="dock-label">最近事件</div>
+                    <ul class="dock-log" id="eventLog"></ul>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <div class="modal-layer" id="modalLayer" aria-hidden="true">
+        <div class="modal-backdrop"></div>
+        <section class="payment-modal" aria-modal="true" role="dialog" aria-labelledby="modalTitle">
+            <header class="payment-header">
+                <div class="payment-title">
+                    <span class="payment-title-icon">⌘</span>
+                    <div>
+                        <strong id="modalTitle">自定义充值</strong>
+                        <small id="modalSubtitle">请使用支付宝扫码支付</small>
+                    </div>
+                </div>
+            </header>
+
+            <div class="payment-body">
+                <p class="payment-hint" id="modalHint" hidden></p>
+                <div class="payment-status info" id="modalStatus">二维码已生成。付款成功后，这里会自动刷新到账状态。</div>
+
+                <div class="qr-card">
+                    <div class="qr-frame" id="qrFrame" hidden></div>
+                    <div class="success-stage" id="successStage" hidden>
+                        <div class="success-mark" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none">
+                                <path d="M5 12.5 9.2 16.7 19 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path>
+                            </svg>
+                        </div>
+                        <div class="success-title">支付成功</div>
+                        <div class="success-caption" id="successCaption" hidden></div>
+                    </div>
+                    <div class="qr-badge" id="qrBadge" hidden></div>
+                </div>
+
+                <div class="meta-grid" id="metaGrid">
+                    <div class="meta-row">
+                        <span>应付金额</span>
+                        <strong class="accent" id="metaAmount">¥0.01</strong>
+                    </div>
+                    <div class="meta-row">
+                        <span>到账积分</span>
+                        <strong id="metaPoints">0.01</strong>
+                    </div>
+                    <div class="meta-row">
+                        <span>支付通道</span>
+                        <strong id="metaChannel">易支付</strong>
+                    </div>
+                </div>
+
+                <div class="result-banner" id="resultBanner"></div>
+
+                <div class="modal-actions" id="modalActions">
+                    <button class="action-btn secondary" id="copyButton" type="button">复制付款链接</button>
+                    <button class="action-btn primary" id="primaryButton" type="button">打开支付页</button>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <div class="toast-stack" id="toastStack" aria-live="polite"></div>
+
+    <script src="js/wallet-recharge-flow-preview.js"></script>
+</body>
+</html>

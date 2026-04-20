@@ -1,4 +1,7 @@
 const crypto = require('crypto');
+const {
+    rewriteManagedUrlForOrigin
+} = require('./site-origins');
 
 const HUPIJIAO_DEFAULT_BASE_URL = 'https://api.xunhupay.com';
 const HUPIJIAO_PAYMENT_PATH = '/payment/do.html';
@@ -195,9 +198,19 @@ function normalizeHupijiaoConfig({
         '',
         500
     );
-    const notifyUrl = normalizeUrl(channelConfig.notify_url);
-    const returnUrl = normalizeUrl(channelConfig.return_url || requestOrigin);
-    const callbackUrl = normalizeUrl(channelConfig.callback_url || returnUrl || requestOrigin);
+    const notifyUrl = rewriteManagedUrlForOrigin(
+        channelConfig.notify_url,
+        requestOrigin,
+        '/api/payments/hupijiao/webhook'
+    );
+    const returnUrl = rewriteManagedUrlForOrigin(
+        channelConfig.return_url,
+        requestOrigin
+    ) || normalizeUrl(requestOrigin);
+    const callbackUrl = rewriteManagedUrlForOrigin(
+        channelConfig.callback_url,
+        requestOrigin
+    ) || returnUrl || normalizeUrl(requestOrigin);
     const pluginId = sanitizeText(channelConfig.plugins || channelConfig.plugin_id, HUPIJIAO_PLUGIN_ID, 120);
     const missingFields = [];
 

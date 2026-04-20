@@ -12,6 +12,7 @@ function readRepoFile(relativePath) {
 test('admin pricing settings expose discount trigger rule controls and wiring', () => {
     const html = readRepoFile('admin-studio.html');
     const js = readRepoFile('admin-config.js');
+    const studioJs = readRepoFile('admin-studio.js');
     const css = readRepoFile('admin-studio.css');
     const smoke = readRepoFile('js/local-smoke-fixtures.js');
 
@@ -46,7 +47,14 @@ test('admin pricing settings expose discount trigger rule controls and wiring', 
         "let discountTriggerSettingsState = getDefaultDiscountTriggerSettingsState();",
         'async function initSettingsModule(options = {}) {',
         'await initSettingsModule({ bindListeners: true });',
-        'await loadDiscountTriggerDiscountOptions();',
+        'const SETTINGS_VIEW_DOMAIN_MAP = Object.freeze({',
+        "pricing: ['commerce', 'affiliate'],",
+        "general: ['growth']",
+        'function renderSettingsViewSections(viewName = \'\') {',
+        'async function warmSettingsDomainsInBackground(domains = [], options = {}) {',
+        'async function warmSettingsViewConfigInBackground(options = {}) {',
+        'void warmSettingsViewConfigInBackground({ force: options.force === true, viewName });',
+        'async function warmSettingsSecondaryPanelsInBackground({ force = false, viewName = \'\' } = {}) {',
         'function normalizeDiscountTriggerRulesConfig(raw, options = {}) {',
         'function getDiscountTriggerSectionMeta(sectionKey) {',
         'function createDiscountTriggerCheckinRuleDraft(overrides = {}) {',
@@ -68,6 +76,7 @@ test('admin pricing settings expose discount trigger rule controls and wiring', 
         "dropdownId.endsWith('_discount_id')",
         'void loadDiscountTriggerDiscountOptions(true);',
         'window.initSettingsModule = initSettingsModule;',
+        'window.warmSettingsViewConfigInBackground = warmSettingsViewConfigInBackground;',
         "getDiscountTriggerSectionKeys().forEach((sectionKey) => {",
         "discountTriggerAddCheckinRuleBtn",
         "discountTriggerAddAffiliateRuleBtn"
@@ -76,6 +85,17 @@ test('admin pricing settings expose discount trigger rule controls and wiring', 
     for (const marker of requiredJsMarkers) {
         assert.equal(js.includes(marker), true, `admin-config.js should contain ${marker}`);
     }
+
+    assert.equal(
+        studioJs.includes('initSystemConfig();'),
+        false,
+        'admin-studio.js should not eagerly initialize the entire settings payload during page bootstrap'
+    );
+    assert.match(
+        studioJs,
+        /function switchSettingsView\(viewName\) \{[\s\S]*warmSettingsViewConfigInBackground\?\.\(\{ viewName \}\);[\s\S]*\}/,
+        'admin-studio.js should warm the active settings view lazily when switching tabs'
+    );
 
     const requiredCssMarkers = [
         '.discount-trigger-config-card .config-card-body {',

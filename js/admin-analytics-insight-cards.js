@@ -1265,6 +1265,10 @@ function renderAnalyticsDutyQueue(items = []) {
     const [primaryItem, ...secondaryItems] = items;
     const primarySamples = Array.isArray(primaryItem?.sampleItems) ? primaryItem.sampleItems.slice(0, 2) : [];
     const primaryMetric = splitAnalyticsDutyDisplayValue(primaryItem?.metricValue || '--');
+    const primaryMetricIsStatus = !primaryMetric.secondary
+        && primaryMetric.primary !== '--'
+        && !/[0-9]/.test(primaryMetric.primary);
+    const primaryMetricClass = primaryMetricIsStatus ? ' analytics-duty-hero__metric--status' : '';
 
     return `
         <div class="analytics-duty-queue${secondaryItems.length ? '' : ' analytics-duty-queue--single'}">
@@ -1291,7 +1295,7 @@ function renderAnalyticsDutyQueue(items = []) {
                     </div>
                     <div class="analytics-duty-hero__metric-card">
                         <div class="analytics-duty-hero__metric-stack">
-                            <strong class="analytics-duty-hero__metric">${escapeHtml(primaryMetric.primary)}</strong>
+                            <strong class="analytics-duty-hero__metric${primaryMetricClass}">${escapeHtml(primaryMetric.primary)}</strong>
                             ${primaryMetric.secondary ? `<span class="analytics-duty-hero__metric-unit">${escapeHtml(primaryMetric.secondary)}</span>` : ''}
                         </div>
                         <span class="analytics-duty-hero__metric-label">${escapeHtml(primaryItem?.metricLabel || '异常指标')}</span>

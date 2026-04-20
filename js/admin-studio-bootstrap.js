@@ -687,6 +687,24 @@
         overlay?.classList.remove('active');
     }
 
+    function warmOpsAlertsModuleData() {
+        const loaders = [
+            window.loadOpsAlertSettings,
+            window.loadOpsAlertHealth,
+            window.loadOpsAlertMonitor
+        ].filter((loader) => typeof loader === 'function');
+
+        loaders.forEach((loader) => {
+            try {
+                void Promise.resolve(loader()).catch((error) => {
+                    console.warn('[AdminStudio] Ops alerts warm failed:', error);
+                });
+            } catch (error) {
+                console.warn('[AdminStudio] Ops alerts warm failed:', error);
+            }
+        });
+    }
+
     function baseSwitchModule(moduleId) {
         const normalizedRequestedModuleId = normalizeAdminModuleValue(moduleId);
         const analyticsConfig = resolveAdminAnalyticsModuleConfig(normalizedRequestedModuleId);
@@ -734,7 +752,11 @@
             if (normalizedModuleId === 'analytics' && !switchingBetweenAnalyticsContainers) window.initAnalyticsModule?.();
             if (normalizedModuleId === 'payments' && window.AdminPayments?.init) window.AdminPayments.init();
             if (normalizedModuleId === 'shop') window.ShopAdmin?.init?.();
-            if (normalizedModuleId === 'ops-alerts') window.initOpsAlertsModule?.();
+            if (normalizedModuleId === 'ops-alerts') {
+                window.initSettingsModule?.({ bindListeners: true, loadConfig: false });
+                window.initOpsAlertsModule?.();
+                warmOpsAlertsModuleData();
+            }
             if (normalizedModuleId === 'discounts' && typeof window.AdminDiscounts !== 'undefined') window.AdminDiscounts.init();
             if (normalizedModuleId === 'comments') {
                 window.initCommentsModule?.();
@@ -742,7 +764,6 @@
                 window.initSettingsModule?.();
             } else if (normalizedModuleId === 'points') {
                 window.loadBatches?.();
-                window.loadPackagesForSelect?.();
             }
         }
 
@@ -1245,8 +1266,12 @@
         return true;
     }
 
-    function scheduleHomepageModulePrewarm() {
+    function scheduleHomepageModulePrewarm(activeModule = restoreAdminStudioModuleFromUrl()) {
         if (window.__homepageModulePrewarmScheduled) {
+            return;
+        }
+
+        if (normalizeAdminModuleId(activeModule) !== 'homepage') {
             return;
         }
 
@@ -1293,6 +1318,8 @@
         window.__adminModulePrefetchTarget = '';
     }
 
+    const ADMIN_BOOTSTRAP_MODULE_PREFETCH_ALLOWLIST = new Set([]);
+
     function getAdminModulePrefetcher(moduleId) {
         const normalizedModuleId = normalizeAdminModuleId(moduleId);
         switch (normalizedModuleId) {
@@ -1330,6 +1357,13 @@
         }
 
         if (!hasModulePermission(normalizedModuleId)) {
+            return;
+        }
+
+        // Most modules already hydrate their own secondary data after first paint.
+        // Keep bootstrap-level prefetch conservative so switching modules does not
+        // immediately fan out into sibling tabs, summaries, and background bundles.
+        if (!ADMIN_BOOTSTRAP_MODULE_PREFETCH_ALLOWLIST.has(normalizedModuleId)) {
             return;
         }
 
@@ -1416,8 +1450,7 @@
             enforceActiveModule: true
         });
         scheduleAdminStudioPendingWorkspaceRestore();
-        scheduleAdminChatPrewarm();
-        scheduleHomepageModulePrewarm();
+        scheduleHomepageModulePrewarm(restoreAdminStudioModuleFromUrl());
     });
 
     document.addEventListener('click', (event) => {
@@ -1456,8 +1489,7 @@
 
         if (window.adminStudioAccessGranted === true || window.isAdmin === true || window.isSuperAdmin === true) {
             scheduleAdminStudioPendingWorkspaceRestore();
-            scheduleAdminChatPrewarm();
-            scheduleHomepageModulePrewarm();
+            scheduleHomepageModulePrewarm(initialModule);
             scheduleAdminModulePrefetch(initialModule);
         }
     });

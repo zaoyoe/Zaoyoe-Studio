@@ -27,6 +27,8 @@ let usersLastLoadedAt = 0;
 let usersLastLoadedSite = '';
 let usersLoadPromise = null;
 let usersLoadRequestId = 0;
+let usersEnrichmentLoadPromise = null;
+let usersEnrichmentLoadRequestId = 0;
 
 // Prompt Cache for History Display
 let promptCache = {};
@@ -79,6 +81,8 @@ function syncUserModuleControls() {
     if (showTestAccountsToggle) {
         showTestAccountsToggle.checked = Boolean(userState.filters.showTestAccounts);
     }
+
+    renderUsersScopeHint();
 
     if (window._isSuperAdmin) {
         const roleFilter = document.getElementById('adminRoleFilter');
@@ -207,6 +211,29 @@ function isLockedSuperAdminEmail(email = '') {
 
 function getUsersAuditSite() {
     return window.AdminSiteFilter?.getSiteFilter?.() || 'all';
+}
+
+function renderUsersScopeHint() {
+    const hintEl = document.getElementById('usersScopeHint');
+    if (!hintEl) {
+        return;
+    }
+
+    const currentSite = getUsersAuditSite();
+    if (currentSite === 'all') {
+        hintEl.hidden = true;
+        hintEl.innerHTML = '';
+        return;
+    }
+
+    const siteLabels = {
+        cn: 'CN',
+        intl: 'EN'
+    };
+    const siteLabel = siteLabels[currentSite] || String(currentSite || '').trim().toUpperCase() || '当前';
+
+    hintEl.hidden = false;
+    hintEl.innerHTML = `当前为 <strong>${escapeHtml(siteLabel)}</strong> 站点视图，仅展示在该站点有 <strong>登录、评论、留言或积分</strong> 记录的账号，用于运营排查，不代表完整注册用户名册；如需核对全量范围，请切回 <strong>🌐 全部</strong> 并按需打开“显示测试/系统账号”。`;
 }
 
 function requireWritableUsersPointsSite(options = {}) {
@@ -692,10 +719,237 @@ function debounce(func, wait) {
 }
 
 // Fetch Users from Supabase with Real Points Data
+function getUserProfileId(profile = {}) {
+    return profile.out_id || profile.id;
+}
+
+function getUserProfileEmail(profile = {}) {
+    return profile.out_email || profile.email || null;
+}
+
+function getUserProfileUsername(profile = {}) {
+    return profile.out_username || profile.username || 'Unknown';
+}
+
+function buildBasicUserListRow(profile = {}) {
+    const id = getUserProfileId(profile);
+    const email = getUserProfileEmail(profile);
+    const username = getUserProfileUsername(profile);
+    const accountFlags = classifyUserAccount({ email, username });
+    const created = profile.out_created_at || profile.created_at || null;
+    const lastActive = profile.out_last_active_at || profile.out_last_sign_in_at || profile.last_sign_in_at || null;
+
+    return {
+        id,
+        username,
+        email,
+        avatar_url: profile.out_avatar_url || profile.avatar_url || null,
+        last_sign_in_at: lastActive,
+        created_at: created,
+        points: 0,
+        total_earned: 0,
+        vip_level: null,
+        tags: [],
+        is_banned: false,
+        block_info: null,
+        is_admin: isLockedSuperAdminEmail(email),
+        admin_role: null,
+        admin_role_expiry_meta: getAdminRoleExpiryMeta(null, { email }),
+        is_test_or_system: accountFlags.isTestOrSystem,
+        _enrichmentPending: true
+    };
+}
+
+async function fetchUserListEnrichment(siteFilter = null) {
+    let pointsQuery = window.supabaseClient.from('points_balance').select('user_id, total_balance');
+    if (window.AdminSiteFilter) {
+        pointsQuery = AdminSiteFilter.applySiteFilter(pointsQuery);
+    }
+
+    let loginHistoryQuery = window.supabaseClient
+        .from('user_login_history')
+        .select('user_id, created_at');
+
+    if (siteFilter) {
+        loginHistoryQuery = loginHistoryQuery.eq('site', siteFilter);
+    }
+
+    const enrichmentTasks = [
+        window.supabaseClient
+            .from('blocked_users')
+            .select('user_id, scope, expires_at'),
+        pointsQuery,
+        window.supabaseClient
+            .from('user_tags')
+            .select('user_id, tag'),
+        window.supabaseClient
+            .from('admin_roles')
+            .select('user_id, role_name, permissions, expires_at'),
+        loginHistoryQuery
+    ];
+
+    if (siteFilter) {
+        enrichmentTasks.push(
+            window.supabaseClient
+                .from('prompt_comments')
+                .select('user_id')
+                .eq('site', siteFilter)
+                .not('user_id', 'is', null),
+            window.supabaseClient
+                .from('guestbook_messages')
+                .select('user_id')
+                .eq('site', siteFilter)
+                .not('user_id', 'is', null)
+        );
+    }
+
+    const [
+        blocksResult,
+        pointsResult,
+        tagsResult,
+        rolesResult,
+        loginHistoryResult,
+        commentsResult,
+        messagesResult
+    ] = await Promise.all(enrichmentTasks);
+
+    const blocks = blocksResult.data || [];
+    const points = pointsResult.data || [];
+    const tags = tagsResult.data || [];
+    const roles = rolesResult.data || [];
+    const loginHistoryRows = loginHistoryResult.data || [];
+
+    const blockedMap = new Map();
+    blocks.forEach(b => blockedMap.set(b.user_id, b));
+
+    const pointsMap = new Map();
+    points.forEach((row) => {
+        const userId = String(row?.user_id || '').trim();
+        if (!userId) return;
+        const current = pointsMap.get(userId) || {
+            user_id: userId,
+            total_balance: 0
+        };
+        current.total_balance += Number(row?.total_balance || 0);
+        pointsMap.set(userId, current);
+    });
+
+    const latestLoginMap = new Map();
+    loginHistoryRows.forEach((row) => {
+        const userId = String(row?.user_id || '').trim();
+        const createdAt = String(row?.created_at || '').trim();
+        if (!userId || !createdAt) return;
+        const existing = latestLoginMap.get(userId);
+        if (!existing || new Date(createdAt).getTime() > new Date(existing).getTime()) {
+            latestLoginMap.set(userId, createdAt);
+        }
+    });
+
+    const tagsMap = new Map();
+    tags.forEach(t => {
+        if (!tagsMap.has(t.user_id)) tagsMap.set(t.user_id, []);
+        tagsMap.get(t.user_id).push(t.tag);
+    });
+
+    const rolesMap = new Map();
+    roles.forEach(r => {
+        if (!r.expires_at || new Date(r.expires_at) > new Date()) {
+            rolesMap.set(r.user_id, r);
+        }
+    });
+
+    const activeUserIds = new Set();
+    if (siteFilter) {
+        loginHistoryRows.forEach(r => activeUserIds.add(r.user_id));
+        (commentsResult?.data || []).forEach(r => activeUserIds.add(r.user_id));
+        (messagesResult?.data || []).forEach(r => activeUserIds.add(r.user_id));
+        points.forEach(p => activeUserIds.add(p.user_id));
+    }
+
+    return {
+        blockedMap,
+        pointsMap,
+        latestLoginMap,
+        tagsMap,
+        rolesMap,
+        activeUserIds
+    };
+}
+
+function applyUserListEnrichmentToRow(user = {}, enrichment = {}) {
+    const id = String(user.id || '').trim();
+    const userPoints = enrichment.pointsMap?.get(id);
+    const activeRole = enrichment.rolesMap?.get(id) || null;
+    const pointsTotal = Number(userPoints?.total_balance || 0);
+
+    return {
+        ...user,
+        last_sign_in_at: enrichment.latestLoginMap?.get(id) || user.last_sign_in_at || null,
+        points: pointsTotal,
+        total_earned: pointsTotal,
+        vip_level: pointsTotal >= 1000 ? 'VIP' : null,
+        tags: enrichment.tagsMap?.get(id) || [],
+        is_banned: enrichment.blockedMap?.has(id) || false,
+        block_info: enrichment.blockedMap?.get(id) || null,
+        is_admin: Boolean(activeRole) || isLockedSuperAdminEmail(user.email),
+        admin_role: activeRole,
+        admin_role_expiry_meta: getAdminRoleExpiryMeta(activeRole, { email: user.email }),
+        _enrichmentPending: false
+    };
+}
+
+function buildEnrichedUserListRows(profiles = [], enrichment = {}) {
+    return profiles
+        .map((profile) => buildBasicUserListRow(profile))
+        .map((user) => applyUserListEnrichmentToRow(user, enrichment));
+}
+
+function filterProfilesBySiteActivity(profiles = [], activeUserIds = new Set()) {
+    if (!activeUserIds?.size) {
+        return [];
+    }
+
+    return profiles.filter((profile) => activeUserIds.has(getUserProfileId(profile)));
+}
+
+function warmUserListEnrichmentInBackground({ requestId, siteFilter = null } = {}) {
+    if (usersEnrichmentLoadPromise && usersEnrichmentLoadRequestId === requestId) {
+        return usersEnrichmentLoadPromise;
+    }
+
+    usersEnrichmentLoadRequestId = requestId;
+    const enrichmentPromise = (async () => {
+        try {
+            const enrichment = await fetchUserListEnrichment(siteFilter);
+            if (requestId !== usersLoadRequestId) {
+                return false;
+            }
+
+            userState.users = userState.users.map((user) => applyUserListEnrichmentToRow(user, enrichment));
+            renderUsersTable();
+            void maybeRestoreUserModalFromUrl();
+            return true;
+        } catch (error) {
+            console.warn('[Users] Background enrichment failed:', error?.message || error);
+            return false;
+        } finally {
+            if (usersEnrichmentLoadPromise === enrichmentPromise) {
+                usersEnrichmentLoadPromise = null;
+                usersEnrichmentLoadRequestId = 0;
+            }
+        }
+    })();
+
+    usersEnrichmentLoadPromise = enrichmentPromise;
+    return usersEnrichmentLoadPromise;
+}
+
 async function loadUsers(options = {}) {
     if (usersLoadPromise && options?.force !== true) {
         return usersLoadPromise;
     }
+
+    renderUsersScopeHint();
 
     const requestId = ++usersLoadRequestId;
     const shouldShowLoading = options?.showLoading !== false || !userState.users.length;
@@ -725,160 +979,33 @@ async function loadUsers(options = {}) {
                 profiles = profileData || [];
             }
 
-            // Fetch blocks, points, tags, and admin roles in parallel
             const siteFilter = window.AdminSiteFilter ? AdminSiteFilter.getSiteParam() : null;
-
-            const loginHistoryQuery = window.supabaseClient
-                .from('user_login_history')
-                .select('user_id, created_at');
-
             if (siteFilter) {
-                loginHistoryQuery.eq('site', siteFilter);
-            }
+                const enrichment = await fetchUserListEnrichment(siteFilter);
+                profiles = filterProfilesBySiteActivity(profiles, enrichment.activeUserIds);
 
-            const [blocksResult, pointsResult, tagsResult, rolesResult, loginHistoryResult] = await Promise.all([
-                window.supabaseClient
-                    .from('blocked_users')
-                    .select('user_id, scope, expires_at'),
-                (function () {
-                    let q = window.supabaseClient.from('points_balance').select('user_id, total_balance');
-                    if (window.AdminSiteFilter) q = AdminSiteFilter.applySiteFilter(q);
-                    return q;
-                })(),
-                window.supabaseClient
-                    .from('user_tags')
-                    .select('user_id, tag'),
-                window.supabaseClient
-                    .from('admin_roles')
-                    .select('user_id, role_name, permissions, expires_at'),
-                loginHistoryQuery
-            ]);
-
-            const blocks = blocksResult.data || [];
-            const points = pointsResult.data || [];
-            const tags = tagsResult.data || [];
-            const roles = rolesResult.data || [];
-            const loginHistoryRows = loginHistoryResult.data || [];
-
-            // Create lookup maps
-            const blockedMap = new Map();
-            blocks.forEach(b => blockedMap.set(b.user_id, b));
-
-            const pointsMap = new Map();
-            points.forEach((row) => {
-                const userId = String(row?.user_id || '').trim();
-                if (!userId) return;
-                const current = pointsMap.get(userId) || {
-                    user_id: userId,
-                    total_balance: 0
-                };
-                current.total_balance += Number(row?.total_balance || 0);
-                pointsMap.set(userId, current);
-            });
-
-            const latestLoginMap = new Map();
-            loginHistoryRows.forEach((row) => {
-                const userId = String(row?.user_id || '').trim();
-                const createdAt = String(row?.created_at || '').trim();
-                if (!userId || !createdAt) return;
-                const existing = latestLoginMap.get(userId);
-                if (!existing || new Date(createdAt).getTime() > new Date(existing).getTime()) {
-                    latestLoginMap.set(userId, createdAt);
+                if (requestId !== usersLoadRequestId) {
+                    return false;
                 }
-            });
 
-            const tagsMap = new Map();
-            tags.forEach(t => {
-                if (!tagsMap.has(t.user_id)) tagsMap.set(t.user_id, []);
-                tagsMap.get(t.user_id).push(t.tag);
-            });
-
-            const rolesMap = new Map();
-            roles.forEach(r => {
-                // Check if role is not expired
-                if (!r.expires_at || new Date(r.expires_at) > new Date()) {
-                    rolesMap.set(r.user_id, r);
+                userState.users = buildEnrichedUserListRows(profiles, enrichment);
+            } else {
+                if (requestId !== usersLoadRequestId) {
+                    return false;
                 }
-            });
 
-            // Site-based user filtering: only show users with activity on selected site
-            if (siteFilter) {
-                // Fetch user IDs with activity on this site (login, points, comments, messages)
-                const [loginResult, commentsResult, messagesResult] = await Promise.all([
-                    window.supabaseClient
-                        .from('user_login_history')
-                        .select('user_id')
-                        .eq('site', siteFilter),
-                    window.supabaseClient
-                        .from('prompt_comments')
-                        .select('user_id')
-                        .eq('site', siteFilter)
-                        .not('user_id', 'is', null),
-                    window.supabaseClient
-                        .from('guestbook_messages')
-                        .select('user_id')
-                        .eq('site', siteFilter)
-                        .not('user_id', 'is', null)
-                ]);
-
-                const activeUserIds = new Set();
-                (loginResult.data || []).forEach(r => activeUserIds.add(r.user_id));
-                (commentsResult.data || []).forEach(r => activeUserIds.add(r.user_id));
-                (messagesResult.data || []).forEach(r => activeUserIds.add(r.user_id));
-                // Also include users with points on this site
-                points.forEach(p => activeUserIds.add(p.user_id));
-
-                profiles = profiles.filter(p => {
-                    const uid = p.out_id || p.id;
-                    return activeUserIds.has(uid);
-                });
+                userState.users = profiles.map((profile) => buildBasicUserListRow(profile));
             }
-
-            if (requestId !== usersLoadRequestId) {
-                return false;
-            }
-
-            // Transform to View Model with real data
-            userState.users = profiles.map(p => {
-                // Support both new out_ prefixed columns and legacy column names
-                const id = p.out_id || p.id;
-                const email = p.out_email || p.email;
-                const username = p.out_username || p.username;
-                const avatar_url = p.out_avatar_url || p.avatar_url;
-                const last_active = latestLoginMap.get(id) || p.out_last_active_at || p.out_last_sign_in_at || p.last_sign_in_at;
-                const created = p.out_created_at || p.created_at;
-
-                const userPoints = pointsMap.get(id);
-                const accountFlags = classifyUserAccount({ email, username });
-                const activeRole = rolesMap.get(id) || null;
-                return {
-                    id: id,
-                    username: username || 'Unknown',
-                    email: email || null,
-                    avatar_url: avatar_url,
-                    last_sign_in_at: last_active || null, // Use computed active time
-                    created_at: created || null,
-                    // Real Points Data (using new system)
-                    points: userPoints?.total_balance || 0,
-                    total_earned: userPoints?.total_balance || 0, // Fallback as total_earned is not in balance table yet
-                    vip_level: (userPoints?.balance || 0) >= 1000 ? 'VIP' : null,
-                    // Tags
-                    tags: tagsMap.get(id) || [],
-                    // Status
-                    is_banned: blockedMap.has(id),
-                    block_info: blockedMap.get(id),
-                    // Admin Role
-                    is_admin: rolesMap.has(id) || isLockedSuperAdminEmail(email),
-                    admin_role: activeRole,
-                    admin_role_expiry_meta: getAdminRoleExpiryMeta(activeRole, { email }),
-                    is_test_or_system: accountFlags.isTestOrSystem
-                };
-            });
 
             usersLastLoadedAt = Date.now();
             usersLastLoadedSite = getUsersAuditSite();
             renderUsersTable();
             void maybeRestoreUserModalFromUrl();
+
+            if (!siteFilter) {
+                void warmUserListEnrichmentInBackground({ requestId, siteFilter });
+            }
+
             return true;
 
         } catch (err) {
@@ -1081,10 +1208,24 @@ function renderUsersTable() {
 
     // 4. Render Rows
     tableBody.innerHTML = paginatedUsers.map(u => {
+        const isEnrichmentPending = u._enrichmentPending === true;
         // Status Logic
         let statusClass = 'offline';
         let statusText = '离线';
         let timeAgo = '未知';
+        const pointsLabel = isEnrichmentPending
+            ? '同步中'
+            : Number(u.points || 0).toLocaleString();
+        const statusBadgeHtml = isEnrichmentPending
+            ? `<span class="status-badge pending"><i class="fas fa-sync-alt fa-spin"></i> 同步中</span>`
+            : (u.is_banned
+                ? `<span class="status-badge banned"><i class="fas fa-ban"></i> 封禁中</span>`
+                : `<span class="status-badge active"><i class="fas fa-check-circle"></i> 正常</span>`);
+        const tagsHtml = isEnrichmentPending
+            ? '<span class="users-empty-tag">同步中</span>'
+            : ((u.tags || []).length > 0
+                ? (u.tags || []).slice(0, 2).map(tag => `<span class="user-tag ${getTagClass(tag)}">${getTagLabel(tag)}</span>`).join('') + ((u.tags || []).length > 2 ? `<span class="user-tag more">+${(u.tags || []).length - 2}</span>` : '')
+                : '<span class="users-empty-tag">-</span>');
 
         if (u.last_sign_in_at) {
             const date = new Date(u.last_sign_in_at);
@@ -1136,7 +1277,7 @@ function renderUsersTable() {
                 <div class="assets-cell">
                     <div class="points-display">
                         <i class="fas fa-coins"></i>
-                        <span>${u.points.toLocaleString()}</span>
+                        <span>${pointsLabel}</span>
                     </div>
                 </div>
             </td>
@@ -1147,17 +1288,11 @@ function renderUsersTable() {
                 </div>
             </td>
             <td>
-                ${u.is_banned
-                ? `<span class="status-badge banned"><i class="fas fa-ban"></i> 封禁中</span>`
-                : `<span class="status-badge active"><i class="fas fa-check-circle"></i> 正常</span>`
-            }
+                ${statusBadgeHtml}
             </td>
             <td>
                 <div class="user-tags-cell">
-                    ${u.tags.length > 0
-                ? u.tags.slice(0, 2).map(tag => `<span class="user-tag ${getTagClass(tag)}">${getTagLabel(tag)}</span>`).join('') + (u.tags.length > 2 ? `<span class="user-tag more">+${u.tags.length - 2}</span>` : '')
-                : '<span class="users-empty-tag">-</span>'
-            }
+                    ${tagsHtml}
                 </div>
             </td>
         </tr>
@@ -2409,7 +2544,7 @@ const USER_MODAL_TAB_REGISTRY = Object.freeze({
         icon: 'fas fa-wallet',
         emptyLabel: '暂无充值记录',
         loadingLabel: '加载充值记录...',
-        prefetchOnOpen: true,
+        prefetchOnOpen: false,
         load: (userId) => fetchUserPaymentOrders(userId),
         render: renderPaymentsTab
     },
@@ -2419,7 +2554,7 @@ const USER_MODAL_TAB_REGISTRY = Object.freeze({
         icon: 'fas fa-ticket-alt',
         emptyLabel: '暂无用户优惠券',
         loadingLabel: '加载用户优惠券...',
-        prefetchOnOpen: true,
+        prefetchOnOpen: false,
         load: (userId) => fetchUserDiscountAssets(userId),
         render: renderCouponsTab
     },
@@ -2429,7 +2564,7 @@ const USER_MODAL_TAB_REGISTRY = Object.freeze({
         icon: 'fas fa-history',
         emptyLabel: '暂无内容记录',
         loadingLabel: '加载近期动态...',
-        prefetchOnOpen: true,
+        prefetchOnOpen: false,
         load: (userId) => fetchUserContentLog(userId),
         render: renderActivityTab
     },
@@ -2439,7 +2574,7 @@ const USER_MODAL_TAB_REGISTRY = Object.freeze({
         icon: 'far fa-sticky-note',
         emptyLabel: '暂无备注',
         loadingLabel: '加载备注...',
-        prefetchOnOpen: true,
+        prefetchOnOpen: false,
         load: (userId) => fetchUserNotes(userId),
         render: renderNotesTab
     },
@@ -4048,81 +4183,10 @@ async function fetchUserSummaryRecord(criteria = {}) {
             return null;
         }
 
-        let pointsQuery = window.supabaseClient
-            .from('points_balance')
-            .select('user_id, total_balance')
-            .eq('user_id', resolvedUserId);
-
-        if (window.AdminSiteFilter?.applySiteFilter) {
-            pointsQuery = window.AdminSiteFilter.applySiteFilter(pointsQuery);
-        }
-
-        const [pointsResult, tagsResult, blocksResult, rolesResult, loginResult] = await Promise.all([
-            pointsQuery,
-            window.supabaseClient
-                .from('user_tags')
-                .select('tag')
-                .eq('user_id', resolvedUserId),
-            window.supabaseClient
-                .from('blocked_users')
-                .select('user_id, scope, expires_at')
-                .eq('user_id', resolvedUserId),
-            window.supabaseClient
-                .from('admin_roles')
-                .select('user_id, role_name, permissions, expires_at')
-                .eq('user_id', resolvedUserId),
-            window.supabaseClient
-                .from('user_login_history')
-                .select('created_at')
-                .eq('user_id', resolvedUserId)
-                .order('created_at', { ascending: false })
-                .limit(1)
-                .maybeSingle()
-        ]);
-
-        if (pointsResult?.error) {
-            console.warn('Failed to load user points summary:', pointsResult.error);
-        }
-        if (tagsResult?.error) {
-            console.warn('Failed to load user tags summary:', tagsResult.error);
-        }
-        if (blocksResult?.error) {
-            console.warn('Failed to load user block summary:', blocksResult.error);
-        }
-        if (rolesResult?.error) {
-            console.warn('Failed to load user role summary:', rolesResult.error);
-        }
-        if (loginResult?.error) {
-            console.warn('Failed to load user login summary:', loginResult.error);
-        }
-
-        const email = profile.email || null;
-        const username = profile.username || 'Unknown';
-        const pointRows = Array.isArray(pointsResult?.data)
-            ? pointsResult.data
-            : (pointsResult?.data ? [pointsResult.data] : []);
-        const pointsBalance = pointRows.reduce((sum, row) => sum + Number(row?.total_balance || 0), 0);
-        const activeRole = (rolesResult?.data || []).find((role) => !role.expires_at || new Date(role.expires_at) > new Date()) || null;
-        const accountFlags = classifyUserAccount({ email, username });
-
-        return {
-            id: resolvedUserId,
-            username,
-            email,
-            avatar_url: profile.avatar_url || null,
-            created_at: profile.created_at || null,
-            last_sign_in_at: loginResult?.data?.created_at || null,
-            points: pointsBalance,
-            total_earned: pointsBalance,
-            vip_level: pointsBalance >= 1000 ? 'VIP' : null,
-            tags: (tagsResult?.data || []).map((item) => item.tag).filter(Boolean),
-            is_banned: Array.isArray(blocksResult?.data) && blocksResult.data.length > 0,
-            block_info: Array.isArray(blocksResult?.data) ? blocksResult.data[0] || null : null,
-            is_admin: Boolean(activeRole) || isLockedSuperAdminEmail(email),
-            admin_role: activeRole,
-            admin_role_expiry_meta: getAdminRoleExpiryMeta(activeRole, { email }),
-            is_test_or_system: accountFlags.isTestOrSystem
-        };
+        return buildBasicUserListRow({
+            ...profile,
+            id: resolvedUserId
+        });
     } catch (error) {
         console.error('Failed to fetch user summary by id:', error);
         return null;
@@ -4163,6 +4227,160 @@ async function ensureUserSummaryInState(userId, options = {}) {
 
     userState.users = [fetchedUser, ...userState.users.filter((user) => user.id !== fetchedUser.id)];
     return fetchedUser;
+}
+
+function buildInitialUserModalRoleInfo(user = {}) {
+    const activeRole = user?.admin_role || null;
+    return {
+        is_admin: Boolean(user?.is_admin || activeRole),
+        is_super_admin: isLockedSuperAdminEmail(user?.email),
+        permissions: Array.isArray(activeRole?.permissions) ? activeRole.permissions : [],
+        expires_at: activeRole?.expires_at || null,
+        role_name: activeRole?.role_name || 'admin',
+        unlimited_shop_purchases: false
+    };
+}
+
+function getInitialUserModalActiveBans(user = {}) {
+    if (Array.isArray(user?.active_bans)) {
+        return user.active_bans;
+    }
+    if (user?.is_banned && user?.block_info) {
+        return [user.block_info];
+    }
+    return [];
+}
+
+async function fetchUserModalSummaryEnrichment(userId) {
+    let pointsQuery = window.supabaseClient
+        .from('points_balance')
+        .select('user_id, total_balance')
+        .eq('user_id', userId);
+    let loginHistoryQuery = window.supabaseClient
+        .from('user_login_history')
+        .select('created_at')
+        .eq('user_id', userId);
+
+    if (window.AdminSiteFilter?.applySiteFilter) {
+        pointsQuery = window.AdminSiteFilter.applySiteFilter(pointsQuery);
+        loginHistoryQuery = window.AdminSiteFilter.applySiteFilter(loginHistoryQuery);
+    }
+
+    const [pointsResult, tagsResult, loginResult] = await Promise.all([
+        pointsQuery,
+        window.supabaseClient
+            .from('user_tags')
+            .select('tag')
+            .eq('user_id', userId),
+        loginHistoryQuery
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+    ]);
+
+    if (pointsResult?.error) {
+        console.warn('Failed to load user modal points summary:', pointsResult.error);
+    }
+    if (tagsResult?.error) {
+        console.warn('Failed to load user modal tags summary:', tagsResult.error);
+    }
+    if (loginResult?.error) {
+        console.warn('Failed to load user modal login summary:', loginResult.error);
+    }
+
+    const pointRows = Array.isArray(pointsResult?.data)
+        ? pointsResult.data
+        : (pointsResult?.data ? [pointsResult.data] : []);
+    const pointsBalance = pointRows.reduce((sum, row) => sum + Number(row?.total_balance || 0), 0);
+
+    return {
+        points: pointsBalance,
+        total_earned: pointsBalance,
+        vip_level: pointsBalance >= 1000 ? 'VIP' : null,
+        tags: (tagsResult?.data || []).map((item) => item.tag).filter(Boolean),
+        last_sign_in_at: loginResult?.data?.created_at || null
+    };
+}
+
+function syncUserSummaryAfterModalWarm(userId, nextUser = {}, roleInfo = null) {
+    const userIndex = userState.users.findIndex((entry) => String(entry.id || '') === String(userId || ''));
+    if (userIndex === -1) {
+        return;
+    }
+
+    const activeRole = roleInfo?.is_admin
+        ? {
+            role_name: roleInfo.role_name || 'admin',
+            permissions: Array.isArray(roleInfo.permissions) ? roleInfo.permissions : [],
+            expires_at: roleInfo.expires_at || null
+        }
+        : null;
+
+    userState.users[userIndex] = {
+        ...userState.users[userIndex],
+        points: Number(nextUser.points || 0),
+        total_earned: Number(nextUser.total_earned || nextUser.points || 0),
+        vip_level: nextUser.vip_level || null,
+        tags: Array.isArray(nextUser.tags) ? nextUser.tags : [],
+        last_sign_in_at: nextUser.last_sign_in_at || userState.users[userIndex].last_sign_in_at || null,
+        is_banned: nextUser.is_banned === true,
+        block_info: nextUser.block_info || null,
+        is_admin: Boolean(roleInfo?.is_admin) || isLockedSuperAdminEmail(nextUser.email),
+        admin_role: activeRole,
+        admin_role_expiry_meta: getAdminRoleExpiryMeta(activeRole, { email: nextUser.email }),
+        _enrichmentPending: false
+    };
+    renderUsersTable();
+}
+
+async function warmUserModalOverviewInBackground(userId, user) {
+    const targetUserId = String(userId || '').trim();
+    if (!targetUserId) {
+        return false;
+    }
+
+    try {
+        console.log('📡 Fetching user modal overview for:', targetUserId);
+        const [roleInfo, isSuperAdmin, activeBans, registrationOrigin, summaryEnrichment] = await Promise.all([
+            fetchUserRoleInfo(targetUserId),
+            checkSuperAdmin(),
+            fetchActiveBans(targetUserId),
+            fetchUserRegistrationOrigin(targetUserId),
+            fetchUserModalSummaryEnrichment(targetUserId)
+        ]);
+
+        if (String(currentModalUser?.id || '') !== targetUserId) {
+            return false;
+        }
+
+        Object.assign(user, summaryEnrichment || {}, registrationOrigin || {});
+        user.is_banned = Array.isArray(activeBans) && activeBans.length > 0;
+        user.block_info = user.is_banned ? activeBans[0] || null : null;
+        user.is_admin = Boolean(roleInfo?.is_admin) || isLockedSuperAdminEmail(user.email);
+        user.admin_role = roleInfo?.is_admin
+            ? {
+                role_name: roleInfo.role_name || 'admin',
+                permissions: Array.isArray(roleInfo.permissions) ? roleInfo.permissions : [],
+                expires_at: roleInfo.expires_at || null
+            }
+            : null;
+        user.admin_role_expiry_meta = getAdminRoleExpiryMeta(user.admin_role, { email: user.email });
+        user._enrichmentPending = false;
+        currentModalUser = user;
+
+        currentModalData.roleInfo = roleInfo;
+        currentModalData.isSuperAdmin = isSuperAdmin;
+        currentModalData.activeBans = activeBans;
+
+        renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans);
+        renderModalActions(user);
+        syncUserSummaryAfterModalWarm(targetUserId, user, roleInfo);
+        syncCurrentUserModalPersistentState();
+        return true;
+    } catch (err) {
+        console.warn('[Users] User modal overview warm failed:', err?.message || err);
+        return false;
+    }
 }
 
 // Fetch Active Bans
@@ -4483,24 +4701,16 @@ async function openUserModal(userId, options = {}) {
     tabContent.innerHTML = buildUserTabLoadingState(currentTab);
 
     try {
-        // Fetch lightweight first-screen data only.
-        console.log('📡 Fetching user modal overview for:', userId);
-        const [roleInfo, isSuperAdmin, activeBans, registrationOrigin] = await Promise.all([
-            fetchUserRoleInfo(userId),
-            checkSuperAdmin(),
-            fetchActiveBans(userId),
-            fetchUserRegistrationOrigin(userId)
-        ]);
+        const initialRoleInfo = buildInitialUserModalRoleInfo(user);
+        const initialActiveBans = getInitialUserModalActiveBans(user);
+        const initialIsSuperAdmin = window._isSuperAdmin === true;
 
-        Object.assign(user, registrationOrigin || {});
-        currentModalUser = user;
-
-        currentModalData.roleInfo = roleInfo;
-        currentModalData.isSuperAdmin = isSuperAdmin;
-        currentModalData.activeBans = activeBans;
+        currentModalData.roleInfo = initialRoleInfo;
+        currentModalData.isSuperAdmin = initialIsSuperAdmin;
+        currentModalData.activeBans = initialActiveBans;
 
         // Render left panel
-        renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans);
+        renderModalLeftPanel(user, initialRoleInfo, initialIsSuperAdmin, initialActiveBans);
 
         // Render actions
         renderModalActions(user);
@@ -4509,6 +4719,7 @@ async function openUserModal(userId, options = {}) {
         renderUserTabNavigation(currentTab);
         renderUserTab(currentTab);
         scheduleUserModalTabPrefetch(currentTab);
+        void warmUserModalOverviewInBackground(userId, user);
         syncCurrentUserModalPersistentState();
         return true;
 
@@ -4609,6 +4820,7 @@ function buildUserOverviewCard({ label, value, meta, tone = 'neutral' }) {
 function buildUserProfileOverview(user, roleInfo, activeBans = []) {
     const permissionList = Array.isArray(roleInfo?.permissions) ? roleInfo.permissions : [];
     const isLockedSuperAdmin = isLockedSuperAdminEmail(user?.email);
+    const isSummaryPending = user?._enrichmentPending === true;
     const roleExpiryMeta = getAdminRoleExpiryMeta(
         roleInfo?.is_admin
             ? { ...(roleInfo || {}), is_admin: true }
@@ -4665,11 +4877,13 @@ function buildUserProfileOverview(user, roleInfo, activeBans = []) {
         },
         {
             label: '积分概览',
-            value: `${formatAdminPointValue(user?.points || 0)} 分`,
-            meta: user?.vip_level
+            value: isSummaryPending ? '同步中' : `${formatAdminPointValue(user?.points || 0)} 分`,
+            meta: isSummaryPending
+                ? '积分与标签后台补载中'
+                : user?.vip_level
                 ? `${user.vip_level} · ${userTags.length} 个标签`
                 : `${userTags.length} 个标签 · ${user?.email ? '已绑定邮箱' : '邮箱缺失'}`,
-            tone: Number(user?.points || 0) > 0 ? 'success' : 'neutral'
+            tone: !isSummaryPending && Number(user?.points || 0) > 0 ? 'success' : 'neutral'
         },
         {
             label: '风险与身份',
@@ -5021,6 +5235,9 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
     const registrationLocationTitle = user.registration_location_title || '';
     const isLockedSuperAdmin = isLockedSuperAdminEmail(user.email);
     const permissionList = Array.isArray(roleInfo.permissions) ? roleInfo.permissions : [];
+    const pointsAssetLabel = user?._enrichmentPending === true
+        ? '同步中'
+        : Number(user.points || 0).toLocaleString();
 
     // Format ban details for tooltip
     let banTooltip = '账号已封禁';
@@ -5074,7 +5291,7 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
         <div class="assets-refined-section compact">
             <div class="asset-stat-row">
                 <i class="fas fa-coins coin-icon"></i>
-                <span class="asset-value-compact">${user.points.toLocaleString()}</span>
+                <span class="asset-value-compact">${pointsAssetLabel}</span>
             </div>
         </div>
 

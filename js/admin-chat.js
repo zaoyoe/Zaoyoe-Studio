@@ -6216,6 +6216,48 @@ class AdminChat {
         if (sendBtn) sendBtn.disabled = readonly;
     }
 
+    fetchSessionMessages(sessionIds = []) {
+        const normalizedSessionIds = Array.from(new Set(
+            (Array.isArray(sessionIds) ? sessionIds : [sessionIds])
+                .map((value) => String(value || '').trim())
+                .filter(Boolean)
+        ));
+
+        let query = this.supabase
+            .from('chat_messages')
+            .select('*')
+            .order('created_at', { ascending: true });
+
+        query = normalizedSessionIds.length === 1
+            ? query.eq('session_id', normalizedSessionIds[0])
+            : query.in('session_id', normalizedSessionIds);
+
+        return query;
+    }
+
+    warmUser360ContextForSession(session = {}, contextRequestId = this._userContextRequestId) {
+        return this.fetchUser360Context(session || {})
+            .then((context) => {
+                if (this.destroyed || contextRequestId !== this._userContextRequestId) {
+                    return null;
+                }
+
+                this.currentUserContext = context;
+                this.renderUser360Context(context);
+                return context;
+            })
+            .catch((error) => {
+                if (this.destroyed || contextRequestId !== this._userContextRequestId) {
+                    return null;
+                }
+
+                this.currentUserContext = null;
+                this.renderUserContextPanelState('暂时无法读取用户上下文', 'error');
+                console.warn('[AdminChat] User 360 context warm failed:', error?.message || error);
+                return null;
+            });
+    }
+
     async loadSession(sessionId) {
         this.currentSessionKey = sessionId;
         this.renderSessionList(this.searchQuery);
@@ -6274,47 +6316,30 @@ class AdminChat {
         document.getElementById('currentChatId').textContent = sub;
 
         area.innerHTML = this.buildMessageAreaLoadingSkeleton();
+        this.currentUserContext = null;
         this.renderUserContextPanelState('正在整理用户上下文...', 'loading');
+        const contextPromise = this.warmUser360ContextForSession(session || {}, contextRequestId);
 
-        const [messagesResult, contextResult] = await Promise.allSettled([
-            (() => {
-                let query = this.supabase
-                    .from('chat_messages')
-                    .select('*')
-                    .order('created_at', { ascending: true });
-
-                query = sessionIds.length === 1
-                    ? query.eq('session_id', sessionIds[0])
-                    : query.in('session_id', sessionIds);
-
-                return query;
-            })(),
-            this.fetchUser360Context(session || {})
-        ]);
+        let messagesResult;
+        try {
+            messagesResult = await this.fetchSessionMessages(sessionIds);
+        } catch (error) {
+            messagesResult = { error };
+        }
 
         if (contextRequestId !== this._userContextRequestId) {
             return;
         }
 
-        const { data } = messagesResult.status === 'fulfilled'
-            ? messagesResult.value
-            : { data: [] };
-        if (contextResult.status === 'fulfilled') {
-            this.currentUserContext = contextResult.value;
-            this.renderUser360Context(contextResult.value);
-        } else {
-            this.currentUserContext = null;
-            this.renderUserContextPanelState('暂时无法读取用户上下文', 'error');
-        }
-
-        if (messagesResult.status !== 'fulfilled' || messagesResult.value?.error) {
+        if (messagesResult?.error) {
             area.innerHTML = `<div class="chat-loading-state chat-loading-state--error">${this.escapeHtml(this.t('chat.loadFailed', '加载失败'))}</div>`;
             return;
         }
 
         area.innerHTML = '';
-        (data || []).forEach((message) => this.appendMessage(message, { scroll: false }));
+        (messagesResult?.data || []).forEach((message) => this.appendMessage(message, { scroll: false }));
         this.scrollToBottom();
+        void contextPromise;
     }
 
     renderOpsAlertMessages() {

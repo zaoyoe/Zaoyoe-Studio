@@ -94,6 +94,10 @@ function createSupabaseStub(state = {}) {
     const paymentQueryAttempts = state.paymentQueryAttempts || [];
     const paymentAnomalyCases = state.paymentAnomalyCases || [];
     const opsAlertJobs = state.opsAlertJobs || [];
+    const profiles = state.profiles || [];
+    const shopOrders = state.shopOrders || [];
+    const pointsLedger = state.pointsLedger || [];
+    const pointsBalance = state.pointsBalance || [];
     state.rpcCalls = state.rpcCalls || [];
     state.tableAccesses = state.tableAccesses || [];
 
@@ -216,6 +220,68 @@ function createSupabaseStub(state = {}) {
 
                 if (table === 'ops_alert_jobs' && query.mode === 'select') {
                     let rows = applyFilters(opsAlertJobs, query.filters);
+                    if (query.order) {
+                        const { column, ascending } = query.order;
+                        rows = rows.slice().sort((left, right) => (
+                            ascending
+                                ? compareValue(left[column], right[column])
+                                : compareValue(right[column], left[column])
+                        ));
+                    }
+                    const from = query.range?.from ?? 0;
+                    const to = query.range?.to ?? (rows.length ? rows.length - 1 : -1);
+                    return {
+                        data: rows.slice(from, to + 1),
+                        error: null
+                    };
+                }
+
+                if (table === 'profiles' && query.mode === 'select') {
+                    const rows = applyFilters(profiles, query.filters);
+                    return {
+                        data: rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'shop_orders' && query.mode === 'select') {
+                    let rows = applyFilters(shopOrders, query.filters);
+                    if (query.order) {
+                        const { column, ascending } = query.order;
+                        rows = rows.slice().sort((left, right) => (
+                            ascending
+                                ? compareValue(left[column], right[column])
+                                : compareValue(right[column], left[column])
+                        ));
+                    }
+                    const from = query.range?.from ?? 0;
+                    const to = query.range?.to ?? (rows.length ? rows.length - 1 : -1);
+                    return {
+                        data: rows.slice(from, to + 1),
+                        error: null
+                    };
+                }
+
+                if (table === 'points_ledger' && query.mode === 'select') {
+                    let rows = applyFilters(pointsLedger, query.filters);
+                    if (query.order) {
+                        const { column, ascending } = query.order;
+                        rows = rows.slice().sort((left, right) => (
+                            ascending
+                                ? compareValue(left[column], right[column])
+                                : compareValue(right[column], left[column])
+                        ));
+                    }
+                    const from = query.range?.from ?? 0;
+                    const to = query.range?.to ?? (rows.length ? rows.length - 1 : -1);
+                    return {
+                        data: rows.slice(from, to + 1),
+                        error: null
+                    };
+                }
+
+                if (table === 'points_balance' && query.mode === 'select') {
+                    let rows = applyFilters(pointsBalance, query.filters);
                     if (query.order) {
                         const { column, ascending } = query.order;
                         rows = rows.slice().sort((left, right) => (
@@ -427,6 +493,285 @@ test('payments summary groups refund failure events into dedicated ops topics an
     });
 });
 
+test('payments summary excludes archived exception topic items from card counts while keeping archived history visible', async () => {
+    const state = {
+        paymentEvents: [
+            {
+                id: 'event-dup-handled-old',
+                provider: 'zpay',
+                provider_order_no: 'ZP_DUP_HANDLED',
+                event_type: 'webhook',
+                processing_result: 'success',
+                response_status: 200,
+                created_at: '2026-03-24T09:00:00.000Z'
+            },
+            {
+                id: 'event-dup-handled-latest',
+                provider: 'zpay',
+                provider_order_no: 'ZP_DUP_HANDLED',
+                event_type: 'webhook',
+                processing_result: 'success',
+                response_status: 200,
+                created_at: '2026-03-24T09:05:00.000Z'
+            },
+            {
+                id: 'event-dup-archived-old',
+                provider: 'zpay',
+                provider_order_no: 'ZP_DUP_ARCHIVED',
+                event_type: 'webhook',
+                processing_result: 'success',
+                response_status: 200,
+                created_at: '2026-03-24T09:10:00.000Z'
+            },
+            {
+                id: 'event-dup-archived-latest',
+                provider: 'zpay',
+                provider_order_no: 'ZP_DUP_ARCHIVED',
+                event_type: 'webhook',
+                processing_result: 'success',
+                response_status: 200,
+                created_at: '2026-03-24T09:15:00.000Z'
+            }
+        ],
+        paymentAnomalyCases: [
+            {
+                id: 'case-handled',
+                target_type: 'event',
+                target_id: 'event-dup-handled-latest',
+                status: 'handled',
+                resolution: '已人工确认并标记处理完成。',
+                last_action: 'mark_handled',
+                last_action_at: '2026-03-24T09:20:00.000Z'
+            },
+            {
+                id: 'case-archived',
+                target_type: 'event',
+                target_id: 'event-dup-archived-latest',
+                status: 'archived',
+                resolution: '该异常已归档，不再进入专题计数。',
+                last_action: 'archive',
+                last_action_at: '2026-03-24T09:25:00.000Z'
+            }
+        ]
+    };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'ops',
+                days: '30'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        const topicMap = new Map((payload.exception_topics || []).map((topic) => [topic.key, topic]));
+        assert.equal(topicMap.get('duplicate_webhook')?.count, 1);
+        const topicItems = payload.exception_topic_items || [];
+        const handledItem = topicItems.find((item) => item.provider_order_no === 'ZP_DUP_HANDLED');
+        const archivedItem = topicItems.find((item) => item.provider_order_no === 'ZP_DUP_ARCHIVED');
+        assert.equal(Boolean(handledItem), true);
+        assert.equal(handledItem.ops_status, 'handled');
+        assert.equal(handledItem.ops_available_actions.includes('reopen'), true);
+        assert.equal(handledItem.ops_available_actions.includes('archive'), true);
+        assert.equal(Boolean(archivedItem), true);
+        assert.equal(archivedItem.ops_status, 'archived');
+        assert.deepEqual(archivedItem.ops_available_actions, []);
+    });
+});
+
+test('payments overview counts only unarchived duplicate callback topics when aggregate RPC is unavailable', async () => {
+    const state = {
+        paymentEvents: [
+            {
+                id: 'event-dup-open-old',
+                provider: 'zpay',
+                provider_order_no: 'ZP_DUP_OPEN',
+                event_type: 'webhook',
+                processing_result: 'received',
+                response_status: 200,
+                created_at: '2026-03-24T09:00:00.000Z'
+            },
+            {
+                id: 'event-dup-open-latest',
+                provider: 'zpay',
+                provider_order_no: 'ZP_DUP_OPEN',
+                event_type: 'webhook',
+                processing_result: 'received',
+                response_status: 200,
+                created_at: '2026-03-24T09:05:00.000Z'
+            },
+            {
+                id: 'event-dup-archived-old',
+                provider: 'zpay',
+                provider_order_no: 'ZP_DUP_ARCHIVED',
+                event_type: 'webhook',
+                processing_result: 'received',
+                response_status: 200,
+                created_at: '2026-03-24T09:10:00.000Z'
+            },
+            {
+                id: 'event-dup-archived-latest',
+                provider: 'zpay',
+                provider_order_no: 'ZP_DUP_ARCHIVED',
+                event_type: 'webhook',
+                processing_result: 'received',
+                response_status: 200,
+                created_at: '2026-03-24T09:15:00.000Z'
+            }
+        ],
+        paymentAnomalyCases: [
+            {
+                id: 'case-archived-duplicate',
+                target_type: 'event',
+                target_id: 'event-dup-archived-latest',
+                status: 'archived',
+                resolution: '该重复回调已归档，不再进入总览计数。',
+                last_action: 'archive',
+                last_action_at: '2026-03-24T09:25:00.000Z'
+            }
+        ]
+    };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'overview',
+                days: '30'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.anomaly_summary.duplicate_webhook_orders, 1);
+        assert.equal(payload.anomaly_summary.session_anomalies, 0);
+        assert.equal(
+            state.tableAccesses.some((entry) => entry.table === 'payment_anomaly_cases'),
+            true
+        );
+    });
+});
+
+test('payments summary keeps older unarchived refund failures visible even when newer archived history exceeds the topic preview cap', async () => {
+    const paymentEvents = [];
+    const paymentAnomalyCases = [];
+
+    for (let index = 0; index < 12; index += 1) {
+        const suffix = String(index + 1).padStart(2, '0');
+        paymentEvents.push({
+            id: `event-refund-archived-${suffix}`,
+            provider: 'zpay',
+            provider_order_no: `ZP_REFUND_ARCHIVED_${suffix}`,
+            event_type: 'admin_refund',
+            processing_result: 'admin_refund_failed',
+            response_status: 500,
+            created_at: `2026-03-24T10:${suffix}:00.000Z`
+        });
+        paymentAnomalyCases.push({
+            id: `case-refund-archived-${suffix}`,
+            target_type: 'event',
+            target_id: `event-refund-archived-${suffix}`,
+            status: 'archived',
+            resolution: '该异常已归档，不再进入专题计数。',
+            last_action: 'archive',
+            last_action_at: `2026-03-24T11:${suffix}:00.000Z`
+        });
+    }
+
+    for (let index = 0; index < 4; index += 1) {
+        const suffix = String(index + 1).padStart(2, '0');
+        paymentEvents.push({
+            id: `event-refund-open-${suffix}`,
+            provider: 'zpay',
+            provider_order_no: `ZP_REFUND_OPEN_${suffix}`,
+            event_type: 'admin_refund',
+            processing_result: 'admin_refund_failed',
+            response_status: 500,
+            created_at: `2026-03-24T09:${suffix}:00.000Z`
+        });
+    }
+
+    const state = {
+        paymentEvents,
+        paymentAnomalyCases
+    };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'ops',
+                days: '30'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        const topicMap = new Map((payload.exception_topics || []).map((topic) => [topic.key, topic]));
+        assert.equal(topicMap.get('refund_failures')?.count, 4);
+        const refundItems = (payload.exception_topic_items || []).filter((item) => item.topic_key === 'refund_failures');
+        assert.equal(refundItems.filter((item) => item.ops_status === 'archived').length, 12);
+        assert.equal(refundItems.filter((item) => item.ops_status === 'open').length, 4);
+        assert.equal(refundItems.some((item) => item.provider_order_no === 'ZP_REFUND_OPEN_01'), true);
+        assert.equal(refundItems.some((item) => item.provider_order_no === 'ZP_REFUND_OPEN_04'), true);
+    });
+});
+
+test('payments summary exposes payment intent failures as dedicated exception topics', async () => {
+    const state = {
+        checkoutSessions: [
+            {
+                id: 'session-failed-1',
+                session_key: 'PCS_ZPAY_FAILED_1',
+                provider: 'zpay',
+                site: 'cn',
+                status: 'failed',
+                error_message: 'TypeError: fetch failed',
+                payment_order_id: null,
+                created_at: '2026-03-24T10:00:00.000Z'
+            }
+        ]
+    };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'ops',
+                days: '30'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        const topicMap = new Map((payload.exception_topics || []).map((topic) => [topic.key, topic]));
+        assert.equal(topicMap.get('payment_intent_failed')?.count, 1);
+        const intentTopicItem = (payload.exception_topic_items || []).find((item) => item.topic_key === 'payment_intent_failed');
+        assert.equal(Boolean(intentTopicItem), true);
+        assert.equal(intentTopicItem.title, '支付意图失败');
+        assert.match(intentTopicItem.message, /fetch failed/);
+        assert.equal((payload.recent_anomalies || []).some((item) => item.title === '支付意图失败'), true);
+    });
+});
+
 test('payments overview summary exposes refund alerts for admin-studio visibility panel', async () => {
     const now = new Date('2026-03-24T10:00:00.000Z').toISOString();
     const state = {
@@ -497,8 +842,9 @@ test('payments overview summary exposes refund alerts for admin-studio visibilit
         assert.equal(payload.success, true);
         assert.equal(Array.isArray(payload.refund_alert_topics), true);
         assert.equal(Array.isArray(payload.refund_alert_items), true);
-        assert.equal(payload.refund_alert_topics.some((topic) => topic.key === 'refund_compensation_failures' && topic.count === 1), true);
-        assert.equal(payload.refund_alert_items.some((item) => item.title === '退款积分回滚失败' && item.ops_status === 'handled'), true);
+        assert.equal(payload.anomaly_summary.refund_compensation_failures, 0);
+        assert.equal(payload.refund_alert_topics.length, 0);
+        assert.equal(payload.refund_alert_items.length, 0);
         assert.equal((payload.exception_topics || []).length, 0);
     });
 });
@@ -676,7 +1022,9 @@ test('payments overview view can use aggregated rpc payload instead of scanning 
         assert.equal(payload.query_summary.failed_attempts, 2);
         assert.equal(payload.session_summary.total_sessions, 18);
         assert.equal(payload.provider_stats[0].provider, 'hupijiao');
-        assert.equal(payload.refund_alert_items[0].ops_status, 'handled');
+        assert.equal(payload.anomaly_summary.refund_failures, 0);
+        assert.equal(payload.refund_alert_topics.length, 0);
+        assert.equal(payload.refund_alert_items.length, 0);
         assert.equal(Array.isArray(payload.trend_24h), true);
         assert.equal(state.rpcCalls.some((call) => call.name === 'fn_admin_get_payment_overview_summary'), true);
         assert.equal(
@@ -770,6 +1118,68 @@ test('payments finance view can use aggregated rpc payload instead of scanning f
                     outflow: 2300,
                     net: -2300
                 }
+            ],
+            points_breakdown_trend: [
+                {
+                    key: 'recharge',
+                    label: '充值入账',
+                    points: [
+                        { label: '03-22', value: 2400 },
+                        { label: '03-23', value: 3000 },
+                        { label: '03-24', value: 4000 }
+                    ]
+                },
+                {
+                    key: 'shop_purchase',
+                    label: '商城消费',
+                    points: [
+                        { label: '03-22', value: -600 },
+                        { label: '03-23', value: -800 },
+                        { label: '03-24', value: -900 }
+                    ]
+                }
+            ],
+            business_breakdown_trend: [
+                {
+                    key: 'recharge',
+                    tone: 'recharge',
+                    metric_kind: 'currency',
+                    points: [
+                        { label: '03-22', value: 36 },
+                        { label: '03-23', value: 48 },
+                        { label: '03-24', value: 104 }
+                    ]
+                },
+                {
+                    key: 'shop',
+                    tone: 'shop',
+                    metric_kind: 'points',
+                    points: [
+                        { label: '03-22', value: 400 },
+                        { label: '03-23', value: 820 },
+                        { label: '03-24', value: 1080 }
+                    ]
+                },
+                {
+                    key: 'mock',
+                    tone: 'mock',
+                    metric_kind: 'count',
+                    points: [
+                        { label: '03-22', value: 0 },
+                        { label: '03-23', value: 1 },
+                        { label: '03-24', value: 1 }
+                    ]
+                },
+                {
+                    key: 'balance',
+                    tone: 'balance',
+                    metric_kind: 'points',
+                    points: [
+                        { label: '03-22', value: 30120 },
+                        { label: '03-23', value: 31220 },
+                        { label: '03-24', value: 32000 }
+                    ]
+                }
             ]
         }
     };
@@ -793,11 +1203,237 @@ test('payments finance view can use aggregated rpc payload instead of scanning f
         assert.equal(payload.sitewide_summary.recharge_amount, 188);
         assert.equal(payload.points_breakdown.length, 2);
         assert.equal(payload.provider_stats[0].provider, 'hupijiao');
+        assert.equal(payload.points_breakdown[0].trend.length, 3);
+        assert.equal(payload.points_breakdown[1].trend[2].value, -900);
         assert.equal(payload.business_breakdown[2].metric, '2 笔');
+        assert.equal(payload.business_breakdown[0].trend.length, 3);
+        assert.equal(payload.business_breakdown[3].trend[2].value, 32000);
         assert.equal(state.rpcCalls.some((call) => call.name === 'fn_admin_get_payment_finance_summary'), true);
         assert.equal(
             state.tableAccesses.some((entry) => ['payment_orders', 'shop_orders', 'points_ledger', 'points_balance'].includes(entry.table)),
-            false
+            false,
+            JSON.stringify(state.tableAccesses)
+        );
+    });
+});
+
+test('payments finance view falls back to finance tables for business trends when aggregate payload has no trend series', async () => {
+    const state = {
+        financeSummaryRpc: {
+            overview: {
+                total_orders: 2,
+                paid_orders: 2,
+                redeemed_orders: 0,
+                claimed_orders: 2,
+                review_orders: 0,
+                failed_orders: 0,
+                total_amount: 30,
+                total_points: 300,
+                paid_rate: 100,
+                claim_rate: 100
+            },
+            anomaly_summary: {
+                review_orders: 0,
+                failed_orders: 0,
+                unclaimed_paid_orders: 0,
+                recent_event_anomalies: 0,
+                duplicate_webhook_orders: 0,
+                refund_failures: 0,
+                refund_reclaim_failures: 0,
+                refund_compensation_failures: 0,
+                query_failures: 0,
+                stale_checkout_sessions: 0,
+                failed_checkout_sessions: 0,
+                completed_unlinked_sessions: 0,
+                unmatched_session_orders: 0,
+                webhook_linked_sessions: 0,
+                fallback_linked_sessions: 0,
+                session_anomalies: 0,
+                open_cases: 0,
+                handled_cases: 0,
+                ignored_cases: 0,
+                retry_requested_cases: 0
+            },
+            provider_stats: [
+                {
+                    provider: 'hupijiao',
+                    total_orders: 1,
+                    paid_orders: 1,
+                    claimed_orders: 1,
+                    review_orders: 0,
+                    failed_orders: 0,
+                    total_amount: 20,
+                    total_points: 200,
+                    paid_rate: 100,
+                    claim_rate: 100
+                }
+            ],
+            sitewide_summary: {
+                recharge_amount: 30,
+                recharge_points: 300,
+                recharge_order_count: 2,
+                shop_points_spent: 30,
+                shop_order_count: 1,
+                refunded_shop_points: 15,
+                refunded_shop_order_count: 1,
+                points_inflow: 150,
+                points_outflow: 30,
+                net_points_flow: 120,
+                circulating_points: 1000,
+                paid_balance: 700,
+                bonus_balance: 300,
+                balance_account_count: 2,
+                mock_recharge_order_count: 1,
+                mock_recharge_points: 100
+            },
+            points_breakdown: [
+                {
+                    key: 'recharge',
+                    label: '充值入账',
+                    inflow: 150,
+                    outflow: 0,
+                    net: 150
+                }
+            ]
+        },
+        paymentOrders: [
+            {
+                id: 'order-f-trend-1',
+                provider: 'hupijiao',
+                provider_order_no: 'HJ_TREND_1',
+                paid_amount: 20,
+                expected_amount: 20,
+                points_amount: 200,
+                status: 'paid',
+                user_id: 'user-1',
+                created_at: '2026-03-19T08:00:00.000Z',
+                paid_at: '2026-03-19T08:00:00.000Z',
+                claimed_at: '2026-03-19T08:05:00.000Z',
+                checkout_session_id: null,
+                site: 'cn',
+                provider_metadata: {}
+            },
+            {
+                id: 'order-f-trend-2',
+                provider: 'mock',
+                provider_order_no: 'MOCK_TREND_1',
+                paid_amount: 10,
+                expected_amount: 10,
+                points_amount: 100,
+                status: 'paid',
+                user_id: 'user-2',
+                created_at: '2026-03-20T09:00:00.000Z',
+                paid_at: '2026-03-20T09:00:00.000Z',
+                claimed_at: '2026-03-20T09:10:00.000Z',
+                checkout_session_id: null,
+                site: 'cn',
+                provider_metadata: {}
+            }
+        ],
+        shopOrders: [
+            {
+                id: 'shop-f-trend-1',
+                user_id: 'user-1',
+                price_paid: 30,
+                snapshot_product_name: '权益卡',
+                refund_status: 'none',
+                created_at: '2026-03-20T10:00:00.000Z',
+                site: 'cn'
+            },
+            {
+                id: 'shop-f-trend-2',
+                user_id: 'user-1',
+                price_paid: 15,
+                snapshot_product_name: '权益卡退款',
+                refund_status: 'refunded',
+                created_at: '2026-03-21T11:00:00.000Z',
+                site: 'cn'
+            }
+        ],
+        pointsLedger: [
+            {
+                id: 'ledger-f-trend-1',
+                user_id: 'user-1',
+                amount: 100,
+                reason: '充值入账',
+                reference_id: 'order-f-trend-1',
+                created_at: '2026-03-19T08:00:00.000Z',
+                site: 'cn'
+            },
+            {
+                id: 'ledger-f-trend-2',
+                user_id: 'user-1',
+                amount: -30,
+                reason: '商城购买',
+                reference_id: 'shop-f-trend-1',
+                created_at: '2026-03-20T10:00:00.000Z',
+                site: 'cn'
+            },
+            {
+                id: 'ledger-f-trend-3',
+                user_id: 'user-2',
+                amount: 50,
+                reason: '奖励入账',
+                reference_id: 'reward-f-trend-1',
+                created_at: '2026-03-21T12:00:00.000Z',
+                site: 'cn'
+            },
+            {
+                id: 'ledger-f-trend-4',
+                user_id: 'user-1',
+                amount: 80,
+                reason: '充值入账',
+                reference_id: 'order-future',
+                created_at: '2026-03-22T09:00:00.000Z',
+                site: 'cn'
+            }
+        ],
+        pointsBalance: [
+            {
+                user_id: 'user-1',
+                paid_balance: 700,
+                bonus_balance: 300,
+                total_balance: 1000,
+                site: 'cn'
+            }
+        ]
+    };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'finance',
+                startDate: '2026-03-19T00:00:00.000Z',
+                endDate: '2026-03-21T23:59:59.999Z'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.deepEqual(
+            payload.business_breakdown[0].trend.map((point) => point.value),
+            [20, 10, 0]
+        );
+        assert.deepEqual(
+            payload.business_breakdown[2].trend.map((point) => point.value),
+            [0, 1, 0]
+        );
+        assert.deepEqual(
+            payload.business_breakdown[3].trend.map((point) => point.value),
+            [900, 870, 920]
+        );
+        const pointsTrendByKey = new Map(payload.points_breakdown.map((item) => [item.key, item.trend.map((point) => point.value)]));
+        assert.deepEqual(pointsTrendByKey.get('recharge'), [100, 0, 0]);
+        assert.deepEqual(pointsTrendByKey.get('shop_purchase'), [0, -30, 0]);
+        assert.deepEqual(pointsTrendByKey.get('rewards'), [0, 0, 50]);
+        assert.equal(
+            state.tableAccesses.some((entry) => ['payment_orders', 'shop_orders', 'points_ledger', 'points_balance'].includes(entry.table)),
+            true
         );
     });
 });
@@ -1147,7 +1783,9 @@ test('payments overview secondary scope returns trend and refund panels without 
         assert.equal(payload.overview_scope, 'secondary');
         assert.equal(Array.isArray(payload.provider_stats), true);
         assert.equal(Array.isArray(payload.trend_24h), true);
-        assert.equal(payload.refund_alert_items[0].ops_status, 'handled');
+        assert.equal(payload.anomaly_summary.refund_failures, 0);
+        assert.equal(payload.refund_alert_topics.length, 0);
+        assert.equal(payload.refund_alert_items.length, 0);
         assert.equal(payload.ops_alert_summary, undefined);
         assert.equal(payload.ops_alert_items, undefined);
         assert.equal(state.rpcCalls.some((call) => call.name === 'fn_admin_get_payment_overview_summary'), true);
@@ -1339,6 +1977,13 @@ test('payments summary exposes hupijiao query and reconcile actions on recent or
                 }
             }
         ],
+        profiles: [
+            {
+                id: 'user-summary-1',
+                email: 'buyer-summary@example.com',
+                username: 'buyer-summary'
+            }
+        ],
         paymentEvents: [],
         checkoutSessions: [],
         paymentQueryAttempts: [],
@@ -1364,6 +2009,7 @@ test('payments summary exposes hupijiao query and reconcile actions on recent or
         assert.equal(payload.success, true);
         assert.ok(order);
         assert.equal(order.provider_order_no, 'HJ_SUMMARY_1');
+        assert.equal(order.user_email, 'buyer-summary@example.com');
         assert.deepEqual(order.order_available_actions, [
             'query_hupijiao_order',
             'reconcile_hupijiao_order',
@@ -1428,108 +2074,32 @@ test('payments summary exposes zpay query and reconcile actions on recent orders
     });
 });
 
-test('payments summary exposes unmatched checkout session traces for ops visibility', async () => {
+test('payments summary exposes checkout-session backfill action on redeemed unmatched orders', async () => {
     const state = {
         paymentOrders: [
             {
-                id: 'order-linked-session-1',
+                id: 'order-zp-session-backfill-1',
                 provider: 'zpay',
-                provider_order_no: 'ZPAY_LINKED_SESSION_1',
-                user_id: 'user-linked-session-1',
+                provider_order_no: 'ZPAY_SESSION_BACKFILL_1',
+                user_id: 'user-zp-session-backfill-1',
                 site: 'cn',
                 status: 'redeemed',
-                expected_amount: 10,
-                paid_amount: 10,
-                points_amount: 10,
-                package_name: '已回填套餐',
-                created_at: '2026-04-18T19:00:00.000Z',
-                paid_at: '2026-04-18T19:01:00.000Z',
-                claimed_at: '2026-04-18T19:02:00.000Z',
-                verified_at: '2026-04-18T19:02:00.000Z',
+                expected_amount: 0.01,
+                paid_amount: 0.01,
+                points_amount: 0.01,
+                package_name: '易支付自定义充值',
+                created_at: '2026-04-18T12:00:00.000Z',
+                paid_at: '2026-04-18T12:01:00.000Z',
+                claimed_at: '2026-04-18T12:02:00.000Z',
+                verified_at: '2026-04-18T12:02:00.000Z',
                 last_error: null,
-                provider_metadata: {}
+                provider_metadata: {
+                    trade_no: 'ZPAY_SESSION_BACKFILL_TRADE_1'
+                }
             }
         ],
         paymentEvents: [],
-        checkoutSessions: [
-            {
-                id: 'session-open-zpay-1',
-                session_key: 'PCS_ZPAY_OPEN_1',
-                provider: 'zpay',
-                user_id: 'user-open-session-1',
-                site: 'cn',
-                package_id: null,
-                package_name: '自定义充值',
-                requested_points: 0.01,
-                bonus_points: 0,
-                granted_points: 0.01,
-                expected_amount: 0.01,
-                status: 'redirect_ready',
-                checkout_url: 'https://zpayz.cn/pay/open-1',
-                query_mode: 'polling',
-                payment_order_id: null,
-                provider_metadata: {
-                    provider_order_no: 'ZP_SESSION_TRACE_1'
-                },
-                error_message: null,
-                expires_at: '2026-04-18T21:30:00.000Z',
-                completed_at: null,
-                created_at: '2026-04-18T21:00:00.000Z',
-                updated_at: '2026-04-18T21:01:00.000Z'
-            },
-            {
-                id: 'session-completed-unlinked-1',
-                session_key: 'PCS_ZPAY_COMPLETED_UNLINKED_1',
-                provider: 'zpay',
-                user_id: 'user-completed-session-1',
-                site: 'cn',
-                package_id: null,
-                package_name: '积分充值 0.01 点',
-                requested_points: 0.01,
-                bonus_points: 0,
-                granted_points: 0.01,
-                expected_amount: 0.01,
-                status: 'completed',
-                checkout_url: 'https://zpayz.cn/pay/completed-1',
-                query_mode: 'polling',
-                payment_order_id: null,
-                provider_metadata: {
-                    provider_order_no: 'ZP_SESSION_TRACE_2'
-                },
-                error_message: null,
-                expires_at: null,
-                completed_at: '2026-04-18T20:02:00.000Z',
-                created_at: '2026-04-18T20:00:00.000Z',
-                updated_at: '2026-04-18T20:02:00.000Z'
-            },
-            {
-                id: 'session-linked-zpay-1',
-                session_key: 'PCS_ZPAY_LINKED_1',
-                provider: 'zpay',
-                user_id: 'user-linked-session-1',
-                site: 'cn',
-                package_id: null,
-                package_name: '已回填套餐',
-                requested_points: 10,
-                bonus_points: 0,
-                granted_points: 10,
-                expected_amount: 10,
-                status: 'completed',
-                checkout_url: 'https://zpayz.cn/pay/linked-1',
-                query_mode: 'polling',
-                payment_order_id: 'order-linked-session-1',
-                provider_metadata: {
-                    provider_order_no: 'ZPAY_LINKED_SESSION_1',
-                    linked_by: 'webhook',
-                    linked_at: '2026-04-18T19:02:00.000Z'
-                },
-                error_message: null,
-                expires_at: null,
-                completed_at: '2026-04-18T19:01:00.000Z',
-                created_at: '2026-04-18T19:00:00.000Z',
-                updated_at: '2026-04-18T19:02:00.000Z'
-            }
-        ],
+        checkoutSessions: [],
         paymentQueryAttempts: [],
         paymentAnomalyCases: [],
         opsAlertJobs: []
@@ -1547,18 +2117,78 @@ test('payments summary exposes unmatched checkout session traces for ops visibil
 
         await handler(req, res);
         const payload = res.json();
-        const sessions = Array.isArray(payload.recent_checkout_sessions) ? payload.recent_checkout_sessions : [];
+        const order = Array.isArray(payload.recent_orders) ? payload.recent_orders[0] : null;
 
         assert.equal(res.statusCode, 200);
         assert.equal(payload.success, true);
-        assert.equal(sessions.length, 2);
-        assert.equal(sessions[0].session_key, 'PCS_ZPAY_OPEN_1');
-        assert.equal(sessions[0].status, 'redirect_ready');
-        assert.equal(sessions[0].provider_order_no, 'ZP_SESSION_TRACE_1');
-        assert.equal(sessions[0].has_checkout_url, true);
-        assert.equal(sessions[0].payment_order_id, null);
-        assert.equal(sessions[1].session_key, 'PCS_ZPAY_COMPLETED_UNLINKED_1');
-        assert.equal(sessions.some((session) => session.session_key === 'PCS_ZPAY_LINKED_1'), false);
+        assert.ok(order);
+        assert.equal(order.checkout_session_required, true);
+        assert.equal(order.checkout_session_matched, false);
+        assert.deepEqual(order.order_available_actions, [
+            'query_zpay_order',
+            'reconcile_checkout_session',
+            'refund_zpay'
+        ]);
+    });
+});
+
+test('payments summary treats order checkout_session_id column as matched even when metadata is stale', async () => {
+    const state = {
+        paymentOrders: [
+            {
+                id: 'order-zp-session-column-1',
+                provider: 'zpay',
+                provider_order_no: 'ZPAY_SESSION_COLUMN_1',
+                checkout_session_id: 'session-column-1',
+                user_id: 'user-zp-session-column-1',
+                site: 'cn',
+                status: 'redeemed',
+                expected_amount: 0.01,
+                paid_amount: 0.01,
+                points_amount: 0.01,
+                package_name: '易支付自定义充值',
+                created_at: '2026-04-18T12:00:00.000Z',
+                paid_at: '2026-04-18T12:01:00.000Z',
+                claimed_at: '2026-04-18T12:02:00.000Z',
+                verified_at: '2026-04-18T12:02:00.000Z',
+                last_error: null,
+                provider_metadata: {
+                    trade_no: 'ZPAY_SESSION_COLUMN_TRADE_1'
+                }
+            }
+        ],
+        paymentEvents: [],
+        checkoutSessions: [],
+        paymentQueryAttempts: [],
+        paymentAnomalyCases: [],
+        opsAlertJobs: []
+    };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'ops',
+                days: '30'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+        const order = Array.isArray(payload.recent_orders) ? payload.recent_orders[0] : null;
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.ok(order);
+        assert.equal(order.checkout_session_id, 'session-column-1');
+        assert.equal(order.checkout_session_required, true);
+        assert.equal(order.checkout_session_matched, true);
+        assert.equal(order.checkout_session_status, 'completed');
+        assert.deepEqual(order.order_available_actions, [
+            'query_zpay_order',
+            'refund_zpay'
+        ]);
     });
 });
 
@@ -1739,10 +2369,160 @@ test('payments summary keeps ignored ops alert items visible even when queue has
     });
 });
 
+test('payments summary exposes unmatched checkout session traces for ops visibility', async () => {
+    const state = {
+        paymentOrders: [
+            {
+                id: 'order-linked-session-1',
+                provider: 'zpay',
+                provider_order_no: 'ZPAY_LINKED_SESSION_1',
+                user_id: 'user-linked-session-1',
+                site: 'cn',
+                status: 'redeemed',
+                expected_amount: 10,
+                paid_amount: 10,
+                points_amount: 10,
+                package_name: '已回填套餐',
+                created_at: '2026-04-18T19:00:00.000Z',
+                paid_at: '2026-04-18T19:01:00.000Z',
+                claimed_at: '2026-04-18T19:02:00.000Z',
+                verified_at: '2026-04-18T19:02:00.000Z',
+                last_error: null,
+                provider_metadata: {}
+            }
+        ],
+        paymentEvents: [],
+        checkoutSessions: [
+            {
+                id: 'session-open-zpay-1',
+                session_key: 'PCS_ZPAY_OPEN_1',
+                provider: 'zpay',
+                user_id: 'user-open-session-1',
+                site: 'cn',
+                package_id: null,
+                package_name: '自定义充值',
+                requested_points: 0.01,
+                bonus_points: 0,
+                granted_points: 0.01,
+                expected_amount: 0.01,
+                status: 'redirect_ready',
+                checkout_url: 'https://zpayz.cn/pay/open-1',
+                query_mode: 'polling',
+                payment_order_id: null,
+                provider_metadata: {
+                    provider_order_no: 'ZP_SESSION_TRACE_1'
+                },
+                error_message: null,
+                expires_at: '2026-04-18T21:30:00.000Z',
+                completed_at: null,
+                created_at: '2026-04-18T21:00:00.000Z',
+                updated_at: '2026-04-18T21:01:00.000Z'
+            },
+            {
+                id: 'session-completed-unlinked-1',
+                session_key: 'PCS_ZPAY_COMPLETED_UNLINKED_1',
+                provider: 'zpay',
+                user_id: 'user-completed-session-1',
+                site: 'cn',
+                package_id: null,
+                package_name: '积分充值 0.01 点',
+                requested_points: 0.01,
+                bonus_points: 0,
+                granted_points: 0.01,
+                expected_amount: 0.01,
+                status: 'completed',
+                checkout_url: 'https://zpayz.cn/pay/completed-1',
+                query_mode: 'polling',
+                payment_order_id: null,
+                provider_metadata: {
+                    provider_order_no: 'ZP_SESSION_TRACE_2'
+                },
+                error_message: null,
+                expires_at: null,
+                completed_at: '2026-04-18T20:02:00.000Z',
+                created_at: '2026-04-18T20:00:00.000Z',
+                updated_at: '2026-04-18T20:02:00.000Z'
+            },
+            {
+                id: 'session-linked-zpay-1',
+                session_key: 'PCS_ZPAY_LINKED_1',
+                provider: 'zpay',
+                user_id: 'user-linked-session-1',
+                site: 'cn',
+                package_id: null,
+                package_name: '已回填套餐',
+                requested_points: 10,
+                bonus_points: 0,
+                granted_points: 10,
+                expected_amount: 10,
+                status: 'completed',
+                checkout_url: 'https://zpayz.cn/pay/linked-1',
+                query_mode: 'polling',
+                payment_order_id: 'order-linked-session-1',
+                provider_metadata: {
+                    provider_order_no: 'ZPAY_LINKED_SESSION_1',
+                    linked_by: 'webhook',
+                    linked_at: '2026-04-18T19:02:00.000Z'
+                },
+                error_message: null,
+                expires_at: null,
+                completed_at: '2026-04-18T19:01:00.000Z',
+                created_at: '2026-04-18T19:00:00.000Z',
+                updated_at: '2026-04-18T19:02:00.000Z'
+            }
+        ],
+        profiles: [
+            {
+                id: 'user-open-session-1',
+                email: 'open-session@example.com',
+                username: 'open-session'
+            },
+            {
+                id: 'user-completed-session-1',
+                email: 'completed-session@example.com',
+                username: 'completed-session'
+            }
+        ],
+        paymentQueryAttempts: [],
+        paymentAnomalyCases: [],
+        opsAlertJobs: []
+    };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'ops',
+                days: '30'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+        const sessions = Array.isArray(payload.recent_checkout_sessions) ? payload.recent_checkout_sessions : [];
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(sessions.length, 2);
+        assert.equal(sessions[0].session_key, 'PCS_ZPAY_OPEN_1');
+        assert.equal(sessions[0].status, 'redirect_ready');
+        assert.equal(sessions[0].provider_order_no, 'ZP_SESSION_TRACE_1');
+        assert.equal(sessions[0].has_checkout_url, true);
+        assert.equal(sessions[0].payment_order_id, null);
+        assert.equal(sessions[0].user_email, 'open-session@example.com');
+        assert.equal(sessions[1].session_key, 'PCS_ZPAY_COMPLETED_UNLINKED_1');
+        assert.equal(sessions[1].user_email, 'completed-session@example.com');
+        assert.equal(sessions.some((session) => session.session_key === 'PCS_ZPAY_LINKED_1'), false);
+    });
+});
+
 test('payments runtime summary UI keeps refund anomaly indicators wired in source', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', 'js', 'admin-payments.js'), 'utf8');
+    const summarySource = fs.readFileSync(path.join(__dirname, '..', 'server', 'api-handlers', 'admin', 'payments', 'summary.js'), 'utf8');
     const adminStudioSource = fs.readFileSync(path.join(__dirname, '..', 'admin-studio.js'), 'utf8');
     const adminStudioHtml = fs.readFileSync(path.join(__dirname, '..', 'admin-studio.html'), 'utf8');
+    const activeOverviewMigration = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20260419_fix_payment_overview_summary_active_anomalies.sql'), 'utf8');
 
     assert.match(source, /refund_failures/);
     assert.match(source, /refund_reclaim_failures/);
@@ -1764,6 +2544,11 @@ test('payments runtime summary UI keeps refund anomaly indicators wired in sourc
     assert.match(source, /buildPaymentsRefundAlertItemSkeleton/);
     assert.match(source, /buildPaymentsTrendLegendSkeleton/);
     assert.match(source, /Array\.from\(\{ length: 24 \}, \(_, index\) =>/);
+    assert.match(summarySource, /'checkout_session_id'/);
+    assert.match(summarySource, /order\?\.checkout_session_id \|\| metadata\.checkout_session_id/);
+    assert.match(activeOverviewMigration, /duplicate_webhooks/);
+    assert.match(activeOverviewMigration, /duplicate_webhook_orders/);
+    assert.doesNotMatch(activeOverviewMigration, /'session_anomalies',\s*0/);
     assert.match(adminStudioSource, /payments-focus-ops-alert-queue/);
     assert.doesNotMatch(adminStudioHtml, /paymentsOpsAlertHealthPanel/);
     assert.match(adminStudioHtml, /paymentsOpsAlertQueuePanel/);

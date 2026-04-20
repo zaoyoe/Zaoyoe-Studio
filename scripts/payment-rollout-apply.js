@@ -12,7 +12,9 @@ const MIGRATION_SETS = Object.freeze({
         '20260322_harden_payment_creation_entrypoints.sql',
         '20260322_constrain_payment_sites.sql',
         '20260322_retire_legacy_redemption_overloads.sql',
-        '20260324_add_persistent_rate_limits.sql'
+        '20260324_add_persistent_rate_limits.sql',
+        '20260419_allow_archived_payment_anomaly_cases.sql',
+        '20260419_fix_payment_overview_summary_active_anomalies.sql'
     ]),
     full: Object.freeze([
         '20260322_harden_shop_purchase_identity.sql',
@@ -21,7 +23,9 @@ const MIGRATION_SETS = Object.freeze({
         '20260322_harden_payment_redemption_entrypoints.sql',
         '20260322_constrain_payment_sites.sql',
         '20260322_retire_legacy_redemption_overloads.sql',
-        '20260324_add_persistent_rate_limits.sql'
+        '20260324_add_persistent_rate_limits.sql',
+        '20260419_allow_archived_payment_anomaly_cases.sql',
+        '20260419_fix_payment_overview_summary_active_anomalies.sql'
     ])
 });
 

@@ -287,3 +287,70 @@ test('checkApiKey keeps existing Gemini source when health probe is temporarily 
     assert.equal(renderCalls, 1);
     assert.equal(analyzeButtonCalls, 1);
 });
+
+test('initializeAdminStudioShell warms saved AI service before first health check', async () => {
+    const source = readRepoFile('admin-studio.js');
+    const warmSource = extractFunction(source, 'warmAdminAIServicePreference');
+    const initializeSource = extractFunction(source, 'initializeAdminStudioShell');
+
+    const callLog = [];
+    const context = {
+        console: {
+            warn() {}
+        },
+        bindAdminStudioDelegatedControls() {},
+        observeAdminScrollbarAutoHide() {},
+        observeAdminStudioModalScrollLock() {},
+        initUploadZone() {},
+        initForm() {},
+        initCustomDropdown() {},
+        renderCodexConfigPanel() {},
+        refreshCodexConfig() {
+            callLog.push('refresh-codex');
+            return Promise.resolve(true);
+        },
+        initStarrySky() {},
+        initBatchOperations() {},
+        getAdminGalleryRouteState() {
+            return { view: 'create' };
+        },
+        switchView() {
+            callLog.push('switch-view');
+        },
+        checkApiKey() {
+            callLog.push(`check:${context.window.ADMIN_AI_SERVICE}`);
+            return Promise.resolve();
+        },
+        window: {
+            ADMIN_AI_SERVICE: 'gemini',
+            warmSettingsDomainsInBackground(domains) {
+                callLog.push(`warm:${Array.isArray(domains) ? domains.join(',') : domains}`);
+                return Promise.resolve([{ status: 'fulfilled' }]);
+            },
+            applyAdminAIServicePreference() {
+                callLog.push('apply-preference');
+                context.window.ADMIN_AI_SERVICE = 'codex';
+                return { ai_service: 'codex' };
+            },
+            AdminSiteFilter: {
+                renderSiteSelector() {
+                    callLog.push('render-site-selector');
+                }
+            }
+        }
+    };
+
+    vm.runInNewContext(`
+        let adminAIServicePreferenceWarmPromise = null;
+        ${warmSource}
+        ${initializeSource}
+        globalThis.initializeAdminStudioShell = initializeAdminStudioShell;
+    `, context);
+
+    await context.initializeAdminStudioShell();
+
+    assert.equal(callLog.includes('check:gemini'), false);
+    assert.equal(callLog.includes('check:codex'), true);
+    assert.ok(callLog.indexOf('warm:growth') < callLog.indexOf('check:codex'));
+    assert.ok(callLog.indexOf('apply-preference') < callLog.indexOf('check:codex'));
+});

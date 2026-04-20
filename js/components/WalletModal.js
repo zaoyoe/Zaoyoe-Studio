@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260418_WALLET_PAYMENT_QR_POLL_1';
+    const walletCssHref = 'css/wallet.css?v=20260419_GOOGLE_ONE_FILTER_WIDTH_1';
     const existingWalletCss = document.getElementById('wallet-modal-css');
     if (existingWalletCss) {
         existingWalletCss.href = walletCssHref;
@@ -1203,7 +1203,11 @@
                         Number(actionEl.dataset.walletAmount || 0),
                         this.decodeActionValue(actionEl.dataset.walletCreatedAt),
                         this.decodeActionValue(actionEl.dataset.walletReason),
-                        this.decodeActionValue(actionEl.dataset.walletReferenceId)
+                        this.decodeActionValue(actionEl.dataset.walletReferenceId),
+                        {
+                            balanceBefore: this.readOptionalPointDataset(actionEl.dataset.walletBalanceBefore),
+                            balanceAfter: this.readOptionalPointDataset(actionEl.dataset.walletBalanceAfter)
+                        }
                     );
                     break;
                 case 'redeem':
@@ -1223,6 +1227,36 @@
             detailOverlay.querySelectorAll('.js-wallet-order-close').forEach((button) => {
                 button.addEventListener('click', () => detailOverlay.remove());
             });
+        },
+
+        openShopProductFromWalletDetail(productId = '', detailOverlay = null) {
+            const normalizedProductId = String(productId || '').trim();
+            if (!normalizedProductId) return;
+
+            detailOverlay?.remove?.();
+            this.close();
+
+            if (
+                /\/shop\.html$/i.test(window.location.pathname || '')
+                && window.ShopClient
+                && typeof window.ShopClient.jumpToDiscountTargetProduct === 'function'
+            ) {
+                void window.ShopClient.jumpToDiscountTargetProduct(normalizedProductId, {
+                    autoOpen: true
+                });
+                return;
+            }
+
+            window.location.href = `/shop.html?productId=${encodeURIComponent(normalizedProductId)}`;
+        },
+
+        openPromptFromWalletDetail(promptId = '', detailOverlay = null) {
+            const normalizedPromptId = String(promptId || '').trim();
+            if (!normalizedPromptId) return;
+
+            detailOverlay?.remove?.();
+            this.close();
+            window.location.href = `/prompts.html?id=${encodeURIComponent(normalizedPromptId)}`;
         },
 
         isVerifyServiceReason(reason = '') {
@@ -1367,9 +1401,216 @@
             return rawReason;
         },
 
+        getLedgerTransactionTypeLabel(reason = '', amount = 0) {
+            const rawReason = String(reason || '').trim();
+            const normalizedAmount = this.normalizePointValue(amount, 0);
+
+            if (!rawReason) {
+                return normalizedAmount >= 0
+                    ? (window.i18n?.t('wallet.rechargeType') || '充值')
+                    : (window.i18n?.t('wallet.shopPurchase') || '商品');
+            }
+
+            if (rawReason === 'daily_checkin') {
+                return window.i18n?.t('wallet.dailyCheckin') || '每日签到';
+            }
+
+            if (rawReason === 'makeup_checkin_cost') {
+                return '补签扣分';
+            }
+
+            if (rawReason === 'signup_bonus') {
+                return '注册奖励';
+            }
+
+            if (rawReason === 'custom_recharge') {
+                return '自定义充值';
+            }
+
+            if (rawReason.startsWith('模拟充值:') || rawReason.startsWith('模拟充值：')) {
+                return '模拟充值';
+            }
+
+            if (rawReason.startsWith('admin_manual')) {
+                return window.i18n?.t('wallet.adminAdjustment') || '管理员调整';
+            }
+
+            if (rawReason === 'package_purchase' || rawReason === 'afdian_recharge') {
+                return window.i18n?.t('wallet.rechargeType') || '充值';
+            }
+
+            return normalizedAmount >= 0
+                ? this.getRechargeDisplayName(rawReason)
+                : (window.i18n?.t('wallet.shopPurchase') || '商品');
+        },
+
         normalizePointValue(value, fallback = 0) {
             const parsed = Number(value);
             return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : fallback;
+        },
+
+        normalizeOptionalPointValue(value) {
+            if (value === null || value === undefined || String(value).trim() === '') {
+                return null;
+            }
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? this.normalizePointValue(parsed) : null;
+        },
+
+        readOptionalPointDataset(value) {
+            const rawValue = String(value ?? '').trim();
+            if (!rawValue) return null;
+            return this.normalizeOptionalPointValue(this.decodeActionValue(rawValue));
+        },
+
+        getCurrentWalletTotalBalance() {
+            const fromState = this.normalizeOptionalPointValue(this.currentWalletBalance?.total_balance);
+            if (fromState !== null) {
+                return fromState;
+            }
+
+            const totalEl = document.getElementById('wallet-total');
+            const rawValue = totalEl?.dataset?.value || totalEl?.textContent || '';
+            const normalizedText = String(rawValue).replace(/[^\d.-]/g, '');
+            return this.normalizeOptionalPointValue(normalizedText);
+        },
+
+        async ensureWalletBalanceForOrderSnapshots() {
+            if (this.getCurrentWalletTotalBalance() !== null) {
+                return true;
+            }
+
+            const pointsService = window.PointsService;
+            if (!pointsService?.getBalance) {
+                return false;
+            }
+
+            try {
+                const balance = await pointsService.getBalance();
+                if (balance?._load_failed) {
+                    return false;
+                }
+
+                const totalBalance = this.normalizeOptionalPointValue(balance?.total_balance);
+                if (totalBalance === null) {
+                    return false;
+                }
+
+                this.currentWalletBalance = {
+                    ...balance,
+                    total_balance: totalBalance,
+                    paid_balance: this.normalizePointValue(balance?.paid_balance),
+                    bonus_balance: this.normalizePointValue(balance?.bonus_balance)
+                };
+                return true;
+            } catch (error) {
+                console.warn('[WalletModal] Balance snapshot preload failed:', error);
+                return false;
+            }
+        },
+
+        annotateLedgerEntriesWithBalanceSnapshots(ledgerEntries = []) {
+            const currentTotal = this.getCurrentWalletTotalBalance();
+            if (currentTotal === null || !Array.isArray(ledgerEntries) || ledgerEntries.length === 0) {
+                return ledgerEntries;
+            }
+
+            const snapshotsById = new Map();
+            let runningBalance = currentTotal;
+            [...ledgerEntries]
+                .sort((a, b) => new Date(b?.created_at || 0) - new Date(a?.created_at || 0))
+                .forEach((entry) => {
+                    const entryId = String(entry?.id || '').trim();
+                    if (!entryId) return;
+
+                    const entryAmount = this.normalizePointValue(entry?.amount);
+                    const balanceAfter = this.normalizePointValue(runningBalance);
+                    const balanceBefore = this.normalizePointValue(balanceAfter - entryAmount);
+                    snapshotsById.set(entryId, {
+                        balanceBefore,
+                        balanceAfter
+                    });
+                    runningBalance = balanceBefore;
+                });
+
+            return ledgerEntries.map((entry) => {
+                const snapshot = snapshotsById.get(String(entry?.id || '').trim());
+                return snapshot ? { ...entry, ...snapshot } : entry;
+            });
+        },
+
+        resolveOrderBalanceSnapshot(orderId = '', balanceSnapshot = {}) {
+            const directBefore = this.normalizeOptionalPointValue(balanceSnapshot?.balanceBefore);
+            const directAfter = this.normalizeOptionalPointValue(balanceSnapshot?.balanceAfter);
+            if (directBefore !== null && directAfter !== null) {
+                return {
+                    balanceBefore: directBefore,
+                    balanceAfter: directAfter
+                };
+            }
+
+            const normalizedOrderId = String(orderId || '').trim();
+            if (!normalizedOrderId) {
+                return {
+                    balanceBefore: directBefore,
+                    balanceAfter: directAfter
+                };
+            }
+
+            const orderPools = [
+                ...(this.browseOrdersSnapshot || []),
+                ...(this.ordersData || [])
+            ];
+            const existingOrder = orderPools.find((order) => String(order?.id || '').trim() === normalizedOrderId);
+            const existingBefore = this.normalizeOptionalPointValue(existingOrder?.balanceBefore);
+            const existingAfter = this.normalizeOptionalPointValue(existingOrder?.balanceAfter);
+            if (existingBefore !== null && existingAfter !== null) {
+                return {
+                    balanceBefore: existingBefore,
+                    balanceAfter: existingAfter
+                };
+            }
+
+            const currentTotal = this.getCurrentWalletTotalBalance();
+            if (currentTotal === null || orderPools.length === 0) {
+                return {
+                    balanceBefore: directBefore ?? existingBefore,
+                    balanceAfter: directAfter ?? existingAfter
+                };
+            }
+
+            const seenIds = new Set();
+            const sortedOrders = orderPools
+                .filter((order) => {
+                    const id = String(order?.id || '').trim();
+                    if (!id || seenIds.has(id)) return false;
+                    seenIds.add(id);
+                    return true;
+                })
+                .sort((a, b) => new Date(b?.created_at || 0) - new Date(a?.created_at || 0));
+            const snapshotsById = new Map();
+            let runningBalance = currentTotal;
+
+            sortedOrders.forEach((order) => {
+                const id = String(order?.id || '').trim();
+                const signedAmount = order?.isShopOrder
+                    ? -this.normalizePointValue(order?.total_price || 0)
+                    : this.normalizePointValue(order?.amount ?? order?.total_price ?? 0);
+
+                const balanceAfter = this.normalizePointValue(runningBalance);
+                const balanceBefore = this.normalizePointValue(balanceAfter - signedAmount);
+                snapshotsById.set(id, {
+                    balanceBefore,
+                    balanceAfter
+                });
+                runningBalance = balanceBefore;
+            });
+
+            const resolved = snapshotsById.get(normalizedOrderId) || {};
+            return {
+                balanceBefore: this.normalizeOptionalPointValue(resolved.balanceBefore ?? directBefore ?? existingBefore),
+                balanceAfter: this.normalizeOptionalPointValue(resolved.balanceAfter ?? directAfter ?? existingAfter)
+            };
         },
 
         formatPoints(value) {
@@ -1397,16 +1638,218 @@
             return /android|iphone|ipad|ipod|mobile|micromessenger|wechat|harmonyos/.test(userAgent);
         },
 
-        updateHostedPaymentQrStatus(detailOverlay, message = '', tone = 'info') {
+        isHostedPaymentQrDesktopLayout() {
+            return !window.matchMedia('(max-width: 760px)').matches;
+        },
+
+        resolveFriendlyRechargeErrorMessage(error, fallback = '充值发起失败，请稍后重试。') {
+            const rawMessage = String(error?.message || '').trim();
+            if (!rawMessage) {
+                return fallback;
+            }
+
+            if (/fetch failed|failed to fetch|networkerror|network request failed/i.test(rawMessage)) {
+                return fallback;
+            }
+
+            if (
+                /尚未配置|浏览器拦截|请输入|当前支付通道暂未完成接入|请先登录|禁用模拟支付|加载失败|发起失败|支付页面/.test(rawMessage)
+            ) {
+                return rawMessage;
+            }
+
+            return rawMessage.length > 80 ? fallback : rawMessage;
+        },
+
+        buildHostedPaymentQrStatusMarkup(message = '', options = {}) {
+            const loading = !!options.loading;
+            const safeMessage = this.escapeHtml(String(message || '').trim() || '请使用支付宝扫码支付。');
+            if (!loading) {
+                return safeMessage;
+            }
+
+            return `
+                ${safeMessage}
+                <span class="wallet-payment-qr-status-dots" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </span>
+            `;
+        },
+
+        updateHostedPaymentQrStatus(detailOverlay, message = '', tone = 'info', options = {}) {
             const statusEl = detailOverlay?.querySelector('.js-wallet-payment-qr-status');
             if (!statusEl) {
                 return;
             }
 
             const normalizedTone = ['success', 'error', 'info'].includes(tone) ? tone : 'info';
+            const isHidden = !!options.hidden;
+            const isLoading = !!options.loading;
+            statusEl.hidden = isHidden;
+            if (isHidden) {
+                return;
+            }
             statusEl.classList.remove('is-info', 'is-success', 'is-error');
             statusEl.classList.add(`is-${normalizedTone}`);
-            statusEl.textContent = String(message || '').trim() || '等待支付完成，系统会自动刷新到账状态。';
+            statusEl.classList.toggle('is-loading', isLoading);
+            statusEl.innerHTML = this.buildHostedPaymentQrStatusMarkup(message, { loading: isLoading });
+        },
+
+        resetHostedPaymentQrPresentation(detailOverlay) {
+            const modalEl = detailOverlay?.querySelector('.wallet-payment-qr-modal');
+            const panelEl = detailOverlay?.querySelector('.wallet-payment-qr-panel');
+            const imageEl = detailOverlay?.querySelector('.js-wallet-payment-qr-image');
+            const fallbackEl = detailOverlay?.querySelector('.js-wallet-payment-qr-fallback');
+            const successEl = detailOverlay?.querySelector('.js-wallet-payment-qr-success');
+            const metaEl = detailOverlay?.querySelector('.js-wallet-payment-qr-meta');
+            const actionsEl = detailOverlay?.querySelector('.js-wallet-payment-qr-actions');
+
+            if (modalEl) {
+                modalEl.classList.remove('is-success');
+                modalEl.style.height = '';
+                modalEl.style.minHeight = '';
+            }
+            panelEl?.classList.remove('is-success');
+            imageEl?.classList.remove('is-entering', 'is-exiting');
+            if (imageEl) {
+                imageEl.hidden = false;
+            }
+            fallbackEl?.classList.remove('is-exiting');
+            if (fallbackEl) {
+                fallbackEl.hidden = false;
+            }
+            if (successEl) {
+                successEl.hidden = true;
+                successEl.classList.remove('is-visible');
+            }
+            if (metaEl) {
+                metaEl.hidden = false;
+            }
+            if (actionsEl) {
+                actionsEl.hidden = actionsEl.dataset.hasActions !== 'true';
+            }
+            this.updateHostedPaymentQrStatus(detailOverlay, '请使用支付宝扫码支付。', 'info');
+        },
+
+        animateHostedPaymentQrEntry(detailOverlay) {
+            const imageEl = detailOverlay?.querySelector('.js-wallet-payment-qr-image');
+            if (!imageEl) {
+                return;
+            }
+
+            imageEl.classList.add('is-entering');
+            const reveal = () => {
+                window.requestAnimationFrame(() => {
+                    imageEl.classList.remove('is-entering');
+                });
+            };
+
+            if (imageEl.complete) {
+                reveal();
+                return;
+            }
+
+            imageEl.addEventListener('load', reveal, { once: true });
+            imageEl.addEventListener('error', () => {
+                imageEl.classList.remove('is-entering');
+            }, { once: true });
+        },
+
+        transitionHostedPaymentQrToSuccess(detailOverlay) {
+            const modalEl = detailOverlay?.querySelector('.wallet-payment-qr-modal');
+            const panelEl = detailOverlay?.querySelector('.wallet-payment-qr-panel');
+            const imageEl = detailOverlay?.querySelector('.js-wallet-payment-qr-image');
+            const fallbackEl = detailOverlay?.querySelector('.js-wallet-payment-qr-fallback');
+            const successEl = detailOverlay?.querySelector('.js-wallet-payment-qr-success');
+            const metaEl = detailOverlay?.querySelector('.js-wallet-payment-qr-meta');
+            const actionsEl = detailOverlay?.querySelector('.js-wallet-payment-qr-actions');
+
+            if (!panelEl || !successEl) {
+                return;
+            }
+
+            if (modalEl) {
+                const currentHeight = Math.ceil(modalEl.getBoundingClientRect().height);
+                if (currentHeight > 0) {
+                    modalEl.style.height = `${currentHeight}px`;
+                    modalEl.style.minHeight = `${currentHeight}px`;
+                }
+                modalEl.classList.add('is-success');
+            }
+
+            panelEl.classList.add('is-success');
+            if (metaEl) {
+                metaEl.hidden = true;
+            }
+            if (actionsEl) {
+                actionsEl.hidden = true;
+            }
+            this.updateHostedPaymentQrStatus(detailOverlay, '', 'info', { hidden: true });
+
+            successEl.hidden = false;
+            successEl.classList.remove('is-visible');
+
+            const revealSuccess = () => {
+                if (imageEl) {
+                    imageEl.hidden = true;
+                    imageEl.classList.remove('is-exiting');
+                }
+                if (fallbackEl) {
+                    fallbackEl.hidden = true;
+                    fallbackEl.classList.remove('is-exiting');
+                }
+                window.requestAnimationFrame(() => {
+                    successEl.classList.add('is-visible');
+                });
+            };
+
+            if (imageEl && !imageEl.hidden) {
+                imageEl.classList.add('is-exiting');
+                window.setTimeout(revealSuccess, 180);
+                return;
+            }
+
+            if (fallbackEl && !fallbackEl.hidden) {
+                fallbackEl.classList.add('is-exiting');
+                window.setTimeout(revealSuccess, 180);
+                return;
+            }
+
+            revealSuccess();
+        },
+
+        async revealWalletBalanceAfterRecharge() {
+            const overlay = document.getElementById('wallet-modal-overlay');
+            if (!overlay?.isConnected) {
+                return;
+            }
+
+            this.switchView('balance');
+
+            const contentEl = overlay.querySelector('.wallet-content');
+            const balanceCard = overlay.querySelector('#view-balance .balance-card.compact-premium-card');
+            if (contentEl) {
+                try {
+                    contentEl.scrollTo({ top: 0, behavior: 'smooth' });
+                } catch (_) {
+                    contentEl.scrollTop = 0;
+                }
+            }
+
+            if (balanceCard) {
+                balanceCard.classList.remove('wallet-balance-card--focus');
+                void balanceCard.offsetWidth;
+                balanceCard.classList.add('wallet-balance-card--focus');
+                window.setTimeout(() => {
+                    balanceCard.classList.remove('wallet-balance-card--focus');
+                }, 2600);
+            }
+
+            await this.loadData().catch((error) => {
+                console.error('[WalletModal] Wallet reload after QR completion failed:', error);
+            });
         },
 
         stopHostedPaymentQrPolling(detailOverlay) {
@@ -1424,7 +1867,7 @@
             if (!checkoutSessionId) {
                 this.updateHostedPaymentQrStatus(
                     detailOverlay,
-                    '二维码已生成。支付成功后可在钱包订单记录中查看到账结果。',
+                    '请使用支付宝扫码支付。',
                     'info'
                 );
                 return;
@@ -1454,13 +1897,19 @@
                 if (options.closeOnCompleted === false) {
                     return;
                 }
-                window.setTimeout(() => {
+                window.setTimeout(async () => {
                     if (!detailOverlay?.isConnected) {
                         return;
                     }
                     this.stopHostedPaymentQrPolling(detailOverlay);
                     detailOverlay.remove();
-                }, Math.max(600, Number(options.closeDelayMs || 900) || 900));
+                    if (options.focusBalanceOnCompleted !== false) {
+                        await this.revealWalletBalanceAfterRecharge();
+                    }
+                    if (typeof options.onAfterCompletedClose === 'function') {
+                        options.onAfterCompletedClose();
+                    }
+                }, Math.max(1200, Number(options.closeDelayMs || 3000) || 3000));
             };
 
             const scheduleNext = (delay = intervalMs) => {
@@ -1479,7 +1928,7 @@
                     stop();
                     this.updateHostedPaymentQrStatus(
                         detailOverlay,
-                        '暂未自动同步到支付结果。若你已完成付款，请稍后刷新钱包或在订单记录中查看。',
+                        '暂未自动同步到支付结果。若你已完成付款，请稍后刷新钱包或在订单记录中查看，或联系人工客服。',
                         'info'
                     );
                     if (typeof options.onTimeout === 'function') {
@@ -1489,6 +1938,12 @@
                 }
 
                 try {
+                    this.updateHostedPaymentQrStatus(
+                        detailOverlay,
+                        '请支付并保持此页面，正在等待支付结果同步',
+                        'info',
+                        { loading: true }
+                    );
                     const statusResult = await PointsService.getPaymentRequestStatus({
                         checkout_session_id: checkoutSessionId,
                         provider_order_no: String(
@@ -1505,11 +1960,7 @@
                     const paymentState = String(statusResult?.status || '').trim().toLowerCase();
                     if (paymentState === 'completed') {
                         stop();
-                        this.updateHostedPaymentQrStatus(
-                            detailOverlay,
-                            statusResult.message || '支付成功，正在刷新钱包余额...',
-                            'success'
-                        );
+                        this.transitionHostedPaymentQrToSuccess(detailOverlay);
                         if (typeof options.onCompleted === 'function') {
                             await options.onCompleted(statusResult);
                         }
@@ -1530,10 +1981,21 @@
                         return;
                     }
 
+                    if (paymentState === 'review') {
+                        this.updateHostedPaymentQrStatus(
+                            detailOverlay,
+                            statusResult.message || '支付已提交，正在等待平台确认，请稍后。',
+                            'info'
+                        );
+                        scheduleNext(intervalMs);
+                        return;
+                    }
+
                     this.updateHostedPaymentQrStatus(
                         detailOverlay,
-                        statusResult.message || '等待支付完成，系统会自动刷新到账状态。',
-                        paymentState === 'review' ? 'info' : 'info'
+                        '请支付并保持此页面，正在等待支付结果同步',
+                        'info',
+                        { loading: true }
                     );
                 } catch (_) {
                     if (stopped) {
@@ -1541,8 +2003,9 @@
                     }
                     this.updateHostedPaymentQrStatus(
                         detailOverlay,
-                        '正在等待支付结果同步，请保持此页面打开。',
-                        'info'
+                        '请支付并保持此页面，正在等待支付结果同步',
+                        'info',
+                        { loading: true }
                     );
                 }
 
@@ -1550,9 +2013,10 @@
             };
 
             detailOverlay._walletPaymentQrCleanup = stop;
+            this.resetHostedPaymentQrPresentation(detailOverlay);
             this.updateHostedPaymentQrStatus(
                 detailOverlay,
-                '二维码已生成。付款成功后，这里会自动刷新到账状态。',
+                '请使用支付宝扫码支付。',
                 'info'
             );
             scheduleNext(initialDelayMs);
@@ -1575,12 +2039,14 @@
                 return false;
             }
 
-            const modalTitle = String(options.title || paymentResult?.package_name || paymentResult?.display_name || '扫码支付').trim() || '扫码支付';
+            const modalTitle = String(options.title || paymentResult?.package_name || paymentResult?.display_name || '充值').trim() || '充值';
             const displayName = String(paymentResult?.display_name || '易支付').trim() || '易支付';
             const paidAmount = Number(paymentResult?.paid_amount || 0) || 0;
             const pointsAmount = Number(paymentResult?.points_amount || 0) || 0;
             const copyValue = qrcodeUrl || checkoutUrl || '';
             const openUrl = checkoutUrl || qrcodeUrl || '';
+            const showOpenAction = Boolean(openUrl) && (!this.isHostedPaymentQrDesktopLayout() || !qrcodeImgUrl);
+            const hasActions = Boolean(copyValue || showOpenAction);
             const detailRows = [
                 paidAmount > 0
                     ? `
@@ -1611,32 +2077,54 @@
             detailOverlay.innerHTML = `
                 <div class="wallet-order-modal wallet-order-modal--compact wallet-payment-qr-modal">
                     <div class="wallet-order-modal-header">
-                        <div class="wallet-order-modal-title">${this.renderWalletInlineIcon('fa-qrcode', '#fbbf24')} ${this.escapeHtml(modalTitle)}</div>
-                        <button class="wallet-order-close-btn" type="button" aria-label="${window.i18n?.t('common.close') || '关闭'}">&times;</button>
+                        <div class="wallet-order-modal-title wallet-payment-qr-title">
+                            <span class="wallet-payment-qr-title-icon">${this.renderWalletInlineIcon('fa-qrcode', '#fbbf24')}</span>
+                            <span class="wallet-payment-qr-title-copy">
+                                <strong>${this.escapeHtml(modalTitle)}</strong>
+                                <small>请使用支付宝扫码支付</small>
+                            </span>
+                        </div>
                     </div>
                     <div class="wallet-order-modal-body wallet-order-modal-body--fade">
                         <div class="wallet-payment-qr-panel">
-                            <p class="wallet-payment-qr-hint">请使用支付宝扫描下方付款码完成支付。支付成功后，系统会根据回调与查单结果自动入账。</p>
-                            <div class="wallet-payment-qr-status js-wallet-payment-qr-status is-info">二维码已生成。付款成功后，这里会自动刷新到账状态。</div>
+                            <div class="wallet-payment-qr-status js-wallet-payment-qr-status is-info">请使用支付宝扫码支付。</div>
                             ${qrcodeImgUrl
                                 ? `
-                                    <div class="wallet-payment-qr-card">
-                                        <img src="${this.escapeAttribute(qrcodeImgUrl)}" alt="支付宝付款码" class="wallet-payment-qr-image" loading="eager" decoding="async" referrerpolicy="no-referrer">
+                                    <div class="wallet-payment-qr-card js-wallet-payment-qr-visual">
+                                        <img src="${this.escapeAttribute(qrcodeImgUrl)}" alt="支付宝付款码" class="wallet-payment-qr-image js-wallet-payment-qr-image" loading="eager" decoding="async" referrerpolicy="no-referrer">
+                                        <div class="wallet-payment-qr-success js-wallet-payment-qr-success" hidden>
+                                            <div class="wallet-payment-qr-success-mark" aria-hidden="true">
+                                                <svg viewBox="0 0 24 24" fill="none">
+                                                    <path d="M5 12.5L9.2 16.7L19 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path>
+                                                </svg>
+                                            </div>
+                                            <div class="wallet-payment-qr-success-title">支付成功</div>
+                                        </div>
                                     </div>
                                 `
                                 : `
-                                    <div class="wallet-payment-qr-fallback">
+                                    <div class="wallet-payment-qr-card js-wallet-payment-qr-visual">
+                                        <div class="wallet-payment-qr-fallback js-wallet-payment-qr-fallback">
                                         当前通道没有返回二维码图片，请使用下方按钮打开支付页继续付款。
+                                        </div>
+                                        <div class="wallet-payment-qr-success js-wallet-payment-qr-success" hidden>
+                                            <div class="wallet-payment-qr-success-mark" aria-hidden="true">
+                                                <svg viewBox="0 0 24 24" fill="none">
+                                                    <path d="M5 12.5L9.2 16.7L19 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path>
+                                                </svg>
+                                            </div>
+                                            <div class="wallet-payment-qr-success-title">支付成功</div>
+                                        </div>
                                     </div>
                                 `}
-                            <div class="meta-section">
+                            <div class="meta-section js-wallet-payment-qr-meta">
                                 ${detailRows}
                             </div>
-                            <div class="modal-actions wallet-modal-actions--compact">
+                            <div class="modal-actions wallet-modal-actions--compact js-wallet-payment-qr-actions"${hasActions ? ' data-has-actions="true"' : ' data-has-actions="false" hidden'}>
                                 ${copyValue
                                     ? `<button class="action-btn secondary wallet-action-btn--grow js-wallet-copy-payment-qr" type="button">复制付款链接</button>`
                                     : ''}
-                                ${openUrl
+                                ${showOpenAction
                                     ? `<button class="action-btn primary wallet-action-btn--grow js-wallet-open-payment-qr" type="button">打开支付页</button>`
                                     : ''}
                             </div>
@@ -1649,7 +2137,6 @@
                 this.stopHostedPaymentQrPolling(detailOverlay);
                 detailOverlay.remove();
             };
-            detailOverlay.querySelector('.wallet-order-close-btn')?.addEventListener('click', closeModal);
             detailOverlay.addEventListener('click', (event) => {
                 if (event.target === detailOverlay) {
                     closeModal();
@@ -1665,6 +2152,7 @@
 
             document.body.appendChild(detailOverlay);
             this.startHostedPaymentQrPolling(detailOverlay, paymentResult, options);
+            this.animateHostedPaymentQrEntry(detailOverlay);
             return true;
         },
 
@@ -1908,12 +2396,24 @@
             return `<i class="${classNames}"></i>`;
         },
 
-        buildWalletOrderLoadingMarkup(message = '') {
+        buildWalletOrderLoadingMarkup(message = '', options = {}) {
+            const loadingLabel = String(message || (window.i18n?.t('wallet.loading') || '加载中...'))
+                .replace(/[.。…\s]+$/g, '');
+            const modalClass = String(options?.modalClass || '')
+                .split(/\s+/)
+                .filter(Boolean)
+                .map((className) => this.escapeAttribute(className))
+                .join(' ');
+            const extraClass = modalClass ? ` ${modalClass}` : '';
+
             return `
-                <div class="wallet-order-modal wallet-order-modal--loading">
-                    <div class="wallet-order-loading-state">
-                        <i class="fas fa-circle-notch fa-spin wallet-order-loading-icon"></i>
-                        <div class="wallet-order-loading-text">${this.escapeHtml(message || (window.i18n?.t('wallet.loading') || '加载中...'))}</div>
+                <div class="wallet-order-modal wallet-order-modal--loading${extraClass}">
+                    <div class="wallet-order-loading-state" aria-label="${this.escapeAttribute(loadingLabel)}">
+                        <div class="wallet-order-loading-row">
+                            <span class="wallet-pending-dots wallet-order-loading-dots" aria-hidden="true">
+                                <span></span><span></span><span></span>
+                            </span>
+                        </div>
                     </div>
                 </div>
             `;
@@ -2023,6 +2523,7 @@
             this.ordersLoaded = false; // Reset loaded flag for new session
             this.ordersData = [];
             this.browseOrdersSnapshot = [];
+            this.currentWalletBalance = null;
             this.orderRequestId += 1;
             this.resetOrderSearchState();
             this.resetAffiliateState();
@@ -2232,7 +2733,7 @@
                                     <div class="custom-recharge-header">
                                         <div>
                                             <div class="custom-recharge-title">自定义充值</div>
-                                            <div class="custom-recharge-subtitle" id="wallet-custom-recharge-subtitle">当前按 1 积分 = 1 元结算，支持 0.01 精度。</div>
+                                            <div class="custom-recharge-subtitle" id="wallet-custom-recharge-subtitle" hidden></div>
                                         </div>
                                         <span class="custom-recharge-badge" id="wallet-custom-recharge-badge">按需充值</span>
                                     </div>
@@ -2245,9 +2746,9 @@
                                                inputmode="decimal"
                                                placeholder="例如 1 或 0.01"
                                                ${this.buildDataAttributes({ 'wallet-enter-action': 'custom-recharge' })} />
-                                        <button class="custom-recharge-btn" id="wallet-custom-recharge-btn"${this.buildDataAttributes({ 'wallet-action': 'custom-recharge' })}>立即充值</button>
+                                        <button class="custom-recharge-btn" id="wallet-custom-recharge-btn"${this.buildDataAttributes({ 'wallet-action': 'custom-recharge' })}>充值</button>
                                     </div>
-                                    <div class="custom-recharge-meta" id="wallet-custom-recharge-meta">该入口由管理员在后台控制显示。积分与人民币统一按两位小数处理，输入的数值会直接作为本次充值金额。</div>
+                                    <div class="custom-recharge-meta" id="wallet-custom-recharge-meta" hidden></div>
                                 </div>
                                 
                                 <!-- Payment Order Query Section -->
@@ -2320,7 +2821,7 @@
                                             type="search"
                                             id="wallet-order-search-input"
                                             class="history-search-input"
-                                            placeholder="${window.i18n?.t('wallet.searchPlaceholder') || '搜索订单号 / 任务号 / 兑换码 / 商品名 / 认证邮箱 / 积分数量'}"
+                                            placeholder="${window.i18n?.t('wallet.searchPlaceholder') || '搜索订单号 / 任务号 / 兑换码 / 商品名 / Google One 邮箱 / 积分数量'}"
                                             autocomplete="off"
                                             spellcheck="false"
                                             ${this.buildDataAttributes({ 'wallet-input-action': 'order-search', 'wallet-keydown-action': 'order-search' })}
@@ -2358,10 +2859,10 @@
                                             <div class="filter-popup" id="order-filter-popup">
                                                 <div class="filter-option active" data-value="all"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'all', 'wallet-filter-label': window.i18n?.t('wallet.all') || '全部' })}>${window.i18n?.t('wallet.all') || '全部'}</div>
                                                 <div class="filter-option" data-value="recharge"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'recharge', 'wallet-filter-label': window.i18n?.t('wallet.rechargeType') || '充值' })}>${this.renderWalletInlineIcon('fa-bolt', '#fbbf24')}${window.i18n?.t('wallet.rechargeType') || '充值'}</div>
-                                                <div class="filter-option" data-value="redeem"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'redeem', 'wallet-filter-label': window.i18n?.t('wallet.redeemCode') || '兑换码' })}>${this.renderWalletInlineIcon('fa-ticket-alt', '#f472b6')}${window.i18n?.t('wallet.redeemCode') || '兑换码'}</div>
                                                 <div class="filter-option" data-value="shop"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'shop', 'wallet-filter-label': window.i18n?.t('wallet.shopPurchase') || '商品' })}>${this.renderWalletInlineIcon('fa-shopping-bag', '#22c55e')}${window.i18n?.t('wallet.shopPurchase') || '商品'}</div>
-                                                <div class="filter-option" data-value="verify"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'verify', 'wallet-filter-label': window.i18n?.t('wallet.verifyPurchase') || '认证' })}>${this.renderWalletInlineIcon('fa-shield-alt', '#60a5fa')}${window.i18n?.t('wallet.verifyPurchase') || '认证'}</div>
                                                 <div class="filter-option" data-value="prompt"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'prompt', 'wallet-filter-label': window.i18n?.t('wallet.promptPurchase') || '提示词' })}>${this.renderWalletInlineIcon('fa-lightbulb', '#fde68a')}${window.i18n?.t('wallet.promptPurchase') || '提示词'}</div>
+                                                <div class="filter-option" data-value="redeem"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'redeem', 'wallet-filter-label': window.i18n?.t('wallet.redeemCode') || '兑换码' })}>${this.renderWalletInlineIcon('fa-ticket-alt', '#f472b6')}${window.i18n?.t('wallet.redeemCode') || '兑换码'}</div>
+                                                <div class="filter-option" data-value="verify"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'verify', 'wallet-filter-label': 'Google One' })}>${this.renderWalletInlineIcon('fa-shield-alt', '#60a5fa')}Google One</div>
                                             </div>
                                         </div>
                                         <div class="clear-chip"${this.buildDataAttributes({ 'wallet-action': 'clear-orders' })}>🗑</div>
@@ -2468,6 +2969,9 @@
 
             // Close on overlay click
             overlay.addEventListener('click', (e) => {
+                if (overlay.classList.contains('loading')) {
+                    return;
+                }
                 if (
                     e.target === overlay ||
                     e.target.classList?.contains('wallet-backdrop') ||
@@ -3686,12 +4190,6 @@
             const minPoints = Math.max(0.01, Number(normalizedConfig.custom_amount_min_points) || 0.01);
             const maxPoints = Math.max(minPoints, Number(normalizedConfig.custom_amount_max_points) || minPoints);
             const stepPoints = Math.max(0.01, Number(normalizedConfig.custom_amount_step) || 0.01);
-            const pointsPerCny = Math.max(0.01, Number(normalizedConfig.custom_amount_points_per_cny) || 1);
-            const quoteMinutes = Math.max(1, Math.round((Number(normalizedConfig.custom_amount_quote_ttl_seconds) || 1800) / 60));
-            const isUnifiedRate = Math.abs(pointsPerCny - 1) < 0.0001;
-            const amountInputHint = isUnifiedRate
-                ? '当前按 1 积分 = 1 元结算，支持两位小数。'
-                : `当前按 ${this.formatPoints(pointsPerCny)} 积分 = 1 元结算，支持两位小数。`;
 
             section.toggleAttribute('hidden', !isFeatureEnabled);
 
@@ -3708,17 +4206,12 @@
                 button.disabled = !isFeatureEnabled || isSimulationBlocked;
                 button.textContent = isSimulationBlocked
                     ? '当前环境不可用'
-                    : (isDirectRechargeAllowed ? '立即充值' : `前往${providerLabel}`);
+                    : '充值';
             }
 
             if (subtitle) {
-                subtitle.textContent = isSimulationBlocked
-                    ? mockPayment.message
-                    : (isDirectRechargeAllowed
-                    ? (isSimulationEnabled
-                        ? '已开启临时模拟支付，提交后会直接到账积分。'
-                        : amountInputHint)
-                    : `${activeProvider.custom_amount_hint || `输入的积分会按当前汇率换算金额，并引导你前往${providerLabel}完成真实支付。`} ${amountInputHint}`.trim());
+                subtitle.textContent = '';
+                subtitle.hidden = true;
             }
 
             if (badge) {
@@ -3730,15 +4223,8 @@
             }
 
             if (meta) {
-                meta.textContent = isSimulationBlocked
-                    ? '后台虽然已切到模拟支付，但当前站点不在本地或白名单环境内，服务端会拒绝直充。请在支付通道里切换到爱发电或虎皮椒。'
-                    : (isDirectRechargeAllowed
-                    ? (isSimulationEnabled
-                        ? '当前为临时模拟支付模式，仅用于正式支付接入前过渡。用户提交后会直接到账，请谨慎使用。'
-                        : `该入口由管理员在后台控制显示。当前按 ${this.formatPoints(pointsPerCny)} 积分 = 1 元结算，单次范围 ${this.formatPoints(minPoints)}-${this.formatPoints(maxPoints)}，步长 ${this.formatPoints(stepPoints)}，报价约 ${quoteMinutes} 分钟内有效。`)
-                    : (activeProvider.key === 'afdian'
-                        ? `该入口由管理员在后台控制显示。当前按 ${this.formatPoints(pointsPerCny)} 积分 = 1 元结算，单次范围 ${this.formatPoints(minPoints)}-${this.formatPoints(maxPoints)}，步长 ${this.formatPoints(stepPoints)}，报价约 ${quoteMinutes} 分钟内有效。完成支付后请返回这里输入订单号领取兑换码。`
-                        : `该入口由管理员在后台控制显示。当前会跳转到${providerLabel}。输入的积分会按当前汇率直接生成支付金额，具体支付回执与入账方式以你配置的通道说明为准。`));
+                meta.textContent = '';
+                meta.hidden = true;
             }
 
             requestWalletRechargeScrollCueUpdate();
@@ -4769,6 +5255,12 @@
                 const paymentRuntime = this.normalizePaymentRuntimeConfig(this.paymentRuntimeConfig);
 
                 console.log('[WalletModal] ✅ Data loaded:', { balance, packagesLength: packages.length });
+                this.currentWalletBalance = {
+                    ...balance,
+                    total_balance: this.normalizePointValue(balance.total_balance),
+                    paid_balance: this.normalizePointValue(balance.paid_balance),
+                    bonus_balance: this.normalizePointValue(balance.bonus_balance)
+                };
 
                 // Update balance with animation
                 const totalEl = document.getElementById('wallet-total');
@@ -4975,7 +5467,7 @@
                     }
 
                     const qrModalShown = this.tryPresentHostedPaymentQrModal(paymentResult, {
-                        title: `${displayName} · 扫码支付`,
+                        title: displayName,
                         onCompleted: async (statusResult = {}) => {
                             this.showToast(statusResult.message || `✅ 已为你完成「${displayName}」`, 'success');
                             this.invalidateOrderRecordsCache();
@@ -4983,16 +5475,11 @@
                                 searchQuery: this.orderSearchActiveQuery || this.orderSearchQuery,
                                 ignorePrefetch: true
                             }).catch(e => console.error('Order reload after zpay package purchase failed:', e));
-                            await this.loadData().catch(e => console.error('Wallet reload after zpay package purchase failed:', e));
-                        }
+                        },
+                        closeDelayMs: 3000
                     });
                     if (qrModalShown) {
                         this.rememberPendingPaymentClaim(paymentResult);
-                        this.showToast(
-                            paymentResult.message
-                                || `${paymentResult.display_name || activeProvider.display_name || '当前支付通道'}已生成付款码，请扫码完成支付后返回查看结果。`,
-                            'success'
-                        );
                         return;
                     }
 
@@ -5010,7 +5497,7 @@
 
             } catch (err) {
                 console.error('[WalletModal] Purchase failed:', err);
-                this.showToast('❌ 充值失败: ' + (err.message || '未知错误'), 'error');
+                this.showToast(this.resolveFriendlyRechargeErrorMessage(err, '充值发起失败，请稍后重试。'), 'error');
             } finally {
                 if (overlay) overlay.classList.remove('loading');
                 this.setRechargeActionPendingState(null);
@@ -5077,7 +5564,7 @@
 
                 this.setRechargeActionPendingState({
                     kind: 'custom',
-                    controlLabel: providerKey === 'mock' ? '模拟充值中' : '充值中',
+                    controlLabel: providerKey === 'mock' ? '模拟处理中' : '处理中',
                     message: pendingMessage
                 });
 
@@ -5092,7 +5579,7 @@
                     }
 
                     const qrModalShown = this.tryPresentHostedPaymentQrModal(paymentResult, {
-                        title: '自定义充值 · 扫码支付',
+                        title: '自定义充值',
                         onCompleted: async (statusResult = {}) => {
                             if (input) {
                                 input.value = '';
@@ -5107,17 +5594,12 @@
                                 searchQuery: this.orderSearchActiveQuery || this.orderSearchQuery,
                                 ignorePrefetch: true
                             }).catch(e => console.error('Order reload after zpay custom recharge failed:', e));
-                            await this.loadData().catch(e => console.error('Wallet reload after zpay custom recharge failed:', e));
-                        }
+                        },
+                        closeDelayMs: 3000
                     });
                     if (qrModalShown) {
                         this.rememberPendingPaymentClaim(paymentResult);
                         this.rememberPendingCustomRechargeQuote(paymentResult);
-                        this.showToast(
-                            paymentResult.message
-                                || `${paymentResult.display_name || activeProvider.display_name || '当前支付通道'}已生成付款码，请按 ¥${Number(paymentResult.paid_amount || 0).toFixed(2)} 完成扫码支付。`,
-                            'success'
-                        );
                         return;
                     }
 
@@ -5183,7 +5665,7 @@
                 this.loadData().catch(e => console.error('Wallet reload after custom recharge failed:', e));
             } catch (err) {
                 console.error('[WalletModal] Custom recharge failed:', err);
-                this.showToast('❌ 自定义充值失败: ' + (err.message || '未知错误'), 'error');
+                this.showToast(this.resolveFriendlyRechargeErrorMessage(err, '自定义充值发起失败，请稍后重试。'), 'error');
             } finally {
                 if (overlay) overlay.classList.remove('loading');
                 this.setRechargeActionPendingState(null);
@@ -5907,11 +6389,16 @@
             }, 2000);
         },
 
-        buildRechargePendingMarkup(label = '处理中') {
+        buildRechargePendingMarkup(label = '处理中', options = {}) {
+            const dotsOnly = !!options.dotsOnly;
             return `
-                <span class="wallet-pending-badge">
-                    <span class="wallet-pending-spinner" aria-hidden="true"></span>
-                    <span>${this.escapeHtml(label)}</span>
+                <span class="wallet-pending-badge${dotsOnly ? ' wallet-pending-badge--dots-only' : ''}">
+                    ${dotsOnly ? '' : `<span>${this.escapeHtml(label)}</span>`}
+                    <span class="wallet-pending-dots" aria-hidden="true">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </span>
                 </span>
             `;
         },
@@ -5979,7 +6466,8 @@
                 }
 
                 if (state.kind === 'custom') {
-                    customButton.innerHTML = this.buildRechargePendingMarkup(state.controlLabel || '充值中');
+                    customButton.innerHTML = this.buildRechargePendingMarkup(state.controlLabel || '处理中', { dotsOnly: true });
+                    customButton.setAttribute('aria-label', state.controlLabel || '处理中');
                 }
             }
         },
@@ -6087,10 +6575,6 @@
                                     'wallet-action': 'copy-value',
                                     'wallet-copy-value': this.encodeActionValue(item.id)
                                 })} title="点击复制订单号">${item.id}</span>
-                             </div>
-                             <div class="detail-row">
-                                <span>业务关联</span>
-                                <span class="detail-val mono">${item.reference_id || '无'}</span>
                              </div>
                         </div>
                     </div>
@@ -6331,6 +6815,7 @@
         orderFilter: 'all',
         ordersData: [],
         browseOrdersSnapshot: [],
+        currentWalletBalance: null,
         orderSearchQuery: '',
         orderSearchActiveQuery: '',
         orderSearchDebounceTimer: null,
@@ -6946,8 +7431,30 @@
                     };
                 }
 
-                const ledgerOrders = (ledgerEntries || []).map((entry) => {
+                if (!normalizedQuery) {
+                    await this.ensureWalletBalanceForOrderSnapshots();
+                    if (requestId !== this.orderRequestId) return;
+                }
+
+                const ledgerEntriesWithBalances = normalizedQuery
+                    ? (ledgerEntries || [])
+                    : this.annotateLedgerEntriesWithBalanceSnapshots(ledgerEntries || []);
+                const existingBalanceSnapshots = new Map();
+                [
+                    ...(this.browseOrdersSnapshot || []),
+                    ...(this.ordersData || [])
+                ].forEach((order) => {
+                    const id = String(order?.id || '').trim();
+                    const balanceBefore = this.normalizeOptionalPointValue(order?.balanceBefore);
+                    const balanceAfter = this.normalizeOptionalPointValue(order?.balanceAfter);
+                    if (id && (balanceBefore !== null || balanceAfter !== null)) {
+                        existingBalanceSnapshots.set(id, { balanceBefore, balanceAfter });
+                    }
+                });
+
+                const ledgerOrders = ledgerEntriesWithBalances.map((entry) => {
                     const entryAmount = this.normalizePointValue(entry.amount);
+                    const existingSnapshot = existingBalanceSnapshots.get(String(entry.id || '').trim()) || {};
                     let transactionType = 'other';
                     let displayName = entry.reason || '交易';
                     let icon = '💳';
@@ -7030,6 +7537,8 @@
                         promptId: entry.reason === 'unlock_prompt' ? entry.reference_id : null,
                         redeemCode: transactionType === 'redeem' ? entry.reference_id : null,
                         referenceId: entry.reference_id || '',
+                        balanceBefore: this.normalizeOptionalPointValue(entry.balanceBefore ?? existingSnapshot.balanceBefore),
+                        balanceAfter: this.normalizeOptionalPointValue(entry.balanceAfter ?? existingSnapshot.balanceAfter),
                         shopOrderId,
                         rawReason: entry.reason || '',
                         icon,
@@ -7130,6 +7639,8 @@
                     ? -this.normalizePointValue(order.total_price || 0)
                     : this.normalizePointValue(order.amount ?? order.total_price ?? 0);
                 const absAmountText = this.formatPoints(Math.abs(signedAmount));
+                const balanceBeforeValue = this.normalizeOptionalPointValue(order.balanceBefore);
+                const balanceAfterValue = this.normalizeOptionalPointValue(order.balanceAfter);
 
                 // Determine amount display and color
                 if (signedAmount >= 0) {
@@ -7184,7 +7695,9 @@
                             'wallet-amount': -Math.abs(this.normalizePointValue(order.total_price || order.amount || 0)),
                             'wallet-created-at': this.encodeActionValue(order.created_at),
                             'wallet-reason': this.encodeActionValue(order.rawReason || ''),
-                            'wallet-reference-id': this.encodeActionValue(order.referenceId || '')
+                            'wallet-reference-id': this.encodeActionValue(order.referenceId || ''),
+                            'wallet-balance-before': balanceBeforeValue === null ? null : this.encodeActionValue(balanceBeforeValue),
+                            'wallet-balance-after': balanceAfterValue === null ? null : this.encodeActionValue(balanceAfterValue)
                         });
                     }
 
@@ -7207,7 +7720,9 @@
                         'wallet-amount': this.normalizePointValue(order.amount || order.total_price || 0),
                         'wallet-created-at': this.encodeActionValue(order.created_at),
                         'wallet-reason': this.encodeActionValue(order.rawReason || ''),
-                        'wallet-reference-id': this.encodeActionValue(order.referenceId || '')
+                        'wallet-reference-id': this.encodeActionValue(order.referenceId || ''),
+                        'wallet-balance-before': balanceBeforeValue === null ? null : this.encodeActionValue(balanceBeforeValue),
+                        'wallet-balance-after': balanceAfterValue === null ? null : this.encodeActionValue(balanceAfterValue)
                     });
                 } else if (order.transactionType === 'recharge') {
                     displayName = `${this.renderWalletInlineIcon('fa-bolt', '#fbbf24')} ${this.escapeHtml(order.snapshot_product_name)}`;
@@ -7274,9 +7789,6 @@
                         <div class="wallet-order-modal-title">
                             💡 ${window.i18n?.t('wallet.orderDetails') || '订单详情'}
                         </div>
-                        <button class="wallet-order-close-btn js-wallet-order-close">
-                            <i class="fas fa-times"></i>
-                        </button>
                     </div>
                     <div class="wallet-order-modal-body">
                         <div class="meta-section">
@@ -7290,7 +7802,13 @@
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.productName') || '商品名称'}</span>
+                                ${promptId ? `
+                                <button type="button" class="detail-val copyable wallet-detail-link wallet-order-product-name js-wallet-open-prompt-order" title="打开提示词详情">
+                                    ${this.escapeHtml(promptName || '--')}
+                                </button>
+                                ` : `
                                 <span class="detail-val">${this.escapeHtml(promptName || '--')}</span>
+                                `}
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.orderTime') || '下单时间'}</span>
@@ -7302,16 +7820,9 @@
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.status') || '状态'}</span>
-                                <span class="detail-val ${this.getWalletToneClass('#10b981')}">✓ ${window.i18n?.t('wallet.completed') || '已完成'}</span>
+                                <span class="detail-val wallet-status-success"><span class="wallet-status-check" aria-hidden="true">✓</span> ${window.i18n?.t('wallet.completed') || '已完成'}</span>
                             </div>
                         </div>
-                        ${promptId ? `
-                        <div class="modal-actions">
-                            <button class="action-btn primary js-wallet-open-prompt-order">
-                                <i class="fas fa-eye"></i> ${window.i18n?.t('wallet.viewPrompt') || '查看提示词'}
-                            </button>
-                        </div>
-                        ` : ''}
                     </div>
                 </div>
             `;
@@ -7323,7 +7834,7 @@
             });
             if (promptId) {
                 detailOverlay.querySelector('.js-wallet-open-prompt-order')?.addEventListener('click', () => {
-                    window.location.href = `prompts.html?id=${promptId}`;
+                    this.openPromptFromWalletDetail(promptId, detailOverlay);
                 });
             }
         },
@@ -7349,9 +7860,6 @@
                         <div class="wallet-order-modal-title">
                             🎫 ${window.i18n?.t('wallet.redeemDetails') || '兑换详情'}
                         </div>
-                        <button class="wallet-order-close-btn js-wallet-order-close">
-                            <i class="fas fa-times"></i>
-                        </button>
                     </div>
                     <div class="wallet-order-modal-body">
                         <div class="meta-section">
@@ -7379,7 +7887,7 @@
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.status') || '状态'}</span>
-                                <span class="detail-val ${this.getWalletToneClass('#10b981')}">✓ ${window.i18n?.t('wallet.completed') || '已完成'}</span>
+                                <span class="detail-val wallet-status-success"><span class="wallet-status-check" aria-hidden="true">✓</span> ${window.i18n?.t('wallet.completed') || '已完成'}</span>
                             </div>
                         </div>
                     </div>
@@ -7486,9 +7994,6 @@
                         <div class="wallet-order-modal-title">
                             ${this.renderWalletInlineIcon(meta.icon, meta.color)} ${this.escapeHtml(detail.reward_label || meta.label)}
                         </div>
-                        <button class="wallet-order-close-btn js-wallet-order-close">
-                            <i class="fas fa-times"></i>
-                        </button>
                     </div>
                     <div class="wallet-order-modal-body wallet-order-modal-body--fade">
                         <div class="meta-section">
@@ -7608,23 +8113,30 @@
             }
         },
 
-        showRechargeOrderDetail(orderId, amount, createdAt, reason = '', referenceId = '') {
+        showRechargeOrderDetail(orderId, amount, createdAt, reason = '', referenceId = '', balanceSnapshot = {}) {
             const date = new Date(createdAt);
             const dateStr = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
-            const displayName = this.getRechargeDisplayName(reason);
             const normalizedAmount = this.normalizePointValue(amount);
             const titleText = normalizedAmount >= 0
                 ? (window.i18n?.t('wallet.rechargeDetails') || '充值详情')
                 : (window.i18n?.t('wallet.orderDetails') || '订单详情');
-            const typeLabel = normalizedAmount >= 0
-                ? (window.i18n?.t('wallet.rechargeType') || '充值')
-                : reason === 'makeup_checkin_cost'
-                    ? '补签扣分'
-                : (window.i18n?.t('wallet.shopPurchase') || '商品');
             const pointsLabel = `${normalizedAmount >= 0 ? '+' : '-'}${this.formatPoints(Math.abs(normalizedAmount))} ${window.i18n?.t('wallet.pointsUnit') || '积分'}`;
             const amountColor = normalizedAmount >= 0 ? '#10b981' : '#f87171';
             const shortOrderId = orderId ? `${orderId.substring(0, 8)}...${orderId.slice(-4)}` : '--';
-            const shortRefId = referenceId ? `${referenceId.substring(0, 10)}...${referenceId.slice(-4)}` : '--';
+            const resolvedBalanceSnapshot = this.resolveOrderBalanceSnapshot(orderId, balanceSnapshot);
+            const balanceBefore = this.normalizeOptionalPointValue(resolvedBalanceSnapshot?.balanceBefore);
+            const balanceAfter = this.normalizeOptionalPointValue(resolvedBalanceSnapshot?.balanceAfter);
+            const balanceSnapshotMarkup = normalizedAmount >= 0 && balanceBefore !== null && balanceAfter !== null
+                ? `
+                            <div class="detail-row">
+                                <span class="detail-label">到账前积分</span>
+                                <span class="detail-val">${this.escapeHtml(this.formatPoints(balanceBefore))} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">到账后积分</span>
+                                <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass('#10b981')}">${this.escapeHtml(this.formatPoints(balanceAfter))} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</span>
+                            </div>`
+                : '';
 
             const detailOverlay = document.createElement('div');
             detailOverlay.className = 'wallet-order-modal-overlay';
@@ -7638,29 +8150,12 @@
                         <div class="wallet-order-modal-title">
                             ${this.renderWalletInlineIcon(normalizedAmount >= 0 ? 'fa-bolt' : 'fa-shopping-bag', normalizedAmount >= 0 ? '#fbbf24' : '#22c55e')} ${this.escapeHtml(titleText)}
                         </div>
-                        <button class="wallet-order-close-btn js-wallet-order-close">
-                            <i class="fas fa-times"></i>
-                        </button>
                     </div>
                     <div class="wallet-order-modal-body">
                         <div class="meta-section">
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.orderNumber') || '订单编号'}</span>
                                 <span class="detail-val mono copyable js-copy-ledger-order" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">${this.escapeHtml(shortOrderId)}</span>
-                            </div>
-                            ${referenceId ? `
-                            <div class="detail-row">
-                                <span class="detail-label">${window.i18n?.t('wallet.businessRef') || '业务关联'}</span>
-                                <span class="detail-val mono copyable js-copy-ledger-ref" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">${this.escapeHtml(shortRefId)}</span>
-                            </div>
-                            ` : ''}
-                            <div class="detail-row">
-                                <span class="detail-label">${window.i18n?.t('wallet.transactionType') || '交易类型'}</span>
-                                <span class="detail-val ${this.getWalletToneClass('#fbbf24')}">${this.escapeHtml(typeLabel)}</span>
-                            </div>
-                            <div class="detail-row">
-                                <span class="detail-label">${window.i18n?.t('wallet.productName') || '商品名称'}</span>
-                                <span class="detail-val">${this.escapeHtml(displayName || '--')}</span>
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.orderTime') || '下单时间'}</span>
@@ -7670,9 +8165,10 @@
                                 <span class="detail-label">${normalizedAmount >= 0 ? (window.i18n?.t('wallet.receivedPoints') || '获得积分') : (window.i18n?.t('wallet.pointsPaid') || '支付积分')}</span>
                                 <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass(amountColor)}">${this.escapeHtml(pointsLabel)}</span>
                             </div>
+                            ${balanceSnapshotMarkup}
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.status') || '状态'}</span>
-                                <span class="detail-val ${this.getWalletToneClass('#10b981')}">✓ ${window.i18n?.t('wallet.completed') || '已完成'}</span>
+                                <span class="detail-val wallet-status-success"><span class="wallet-status-check" aria-hidden="true">✓</span> ${window.i18n?.t('wallet.completed') || '已完成'}</span>
                             </div>
                         </div>
                     </div>
@@ -7685,12 +8181,6 @@
             detailOverlay.querySelector('.js-copy-ledger-order')?.addEventListener('click', (event) => {
                 this.copyToClipboard(orderId, event);
             });
-
-            if (referenceId) {
-                detailOverlay.querySelector('.js-copy-ledger-ref')?.addEventListener('click', (event) => {
-                    this.copyToClipboard(referenceId, event);
-                });
-            }
         },
 
         /**
@@ -7769,9 +8259,6 @@
                         <div class="wallet-order-modal-title">
                             ${this.renderWalletInlineIcon('fa-key', '#6b9ece')} ${this.escapeHtml(displayName)}
                         </div>
-                        <button class="wallet-order-close-btn js-wallet-order-close">
-                            <i class="fas fa-times"></i>
-                        </button>
                     </div>
                     <div class="wallet-order-modal-body wallet-order-modal-body--fade">
                         <div class="meta-section">
@@ -7898,7 +8385,9 @@
 
             // Skeleton HTML - shows immediately with loading animation
             const t = (key, fallback) => window.i18n?.t(key) || fallback;
-            detailOverlay.innerHTML = this.buildWalletOrderLoadingMarkup(t('wallet.loading', '加载详情...'));
+            detailOverlay.innerHTML = this.buildWalletOrderLoadingMarkup(t('wallet.loading', '加载详情...'), {
+                modalClass: 'wallet-order-modal--shop-detail'
+            });
 
             // 🚀 Append skeleton immediately - user sees modal in ~0ms
             document.body.appendChild(detailOverlay);
@@ -7955,14 +8444,50 @@
 
                 const dateStr = this.formatOrderDateTime(order.created_at);
                 const totalPrice = order.total_price != null ? order.total_price : order.price_paid;
+                const productName = items.length > 0 ? items[0].name : (order.snapshot_product_name || '');
+                const productId = String(order.product_id || '').trim();
+                const purchaseNotes = typeof detail?.guidance?.purchase_notes === 'string'
+                    ? detail.guidance.purchase_notes.trim()
+                    : '';
                 const usageInstructions = typeof detail?.guidance?.usage_instructions === 'string'
                     ? detail.guidance.usage_instructions.trim()
                     : '';
-                const usageInstructionsMarkup = usageInstructions
+                const guidanceItems = [
+                    purchaseNotes
+                        ? {
+                            key: 'notes',
+                            label: window.i18n?.t('shop.purchaseNotes') || '注意事项',
+                            content: purchaseNotes
+                        }
+                        : null,
+                    usageInstructions
+                        ? {
+                            key: 'usage',
+                            label: window.i18n?.t('shop.usageInstructions') || '使用说明',
+                            content: usageInstructions
+                        }
+                        : null
+                ].filter(Boolean);
+                const guidanceTogglesMarkup = guidanceItems.length
                     ? `
-                            <div class="content-section wallet-order-guidance-section">
-                                <div class="content-section-title">${window.i18n?.t('shop.usageInstructions') || '使用说明'}</div>
-                                <div class="wallet-order-guidance-content">${this.renderStoredWalletOrderRichText(usageInstructions)}</div>
+                            <div class="wallet-order-guidance-toggles" aria-label="订单说明">
+                                ${guidanceItems.map((item) => `
+                                    <button class="wallet-order-guidance-toggle js-wallet-toggle-guidance" type="button" data-wallet-guidance-panel="${this.escapeAttribute(item.key)}" aria-expanded="false">
+                                        ${this.escapeHtml(item.label)}
+                                    </button>
+                                `).join('')}
+                            </div>
+                        `
+                    : '';
+                const guidancePanelsMarkup = guidanceItems.length
+                    ? `
+                            <div class="wallet-order-guidance-panels">
+                                ${guidanceItems.map((item) => `
+                                    <section class="wallet-order-guidance-panel js-wallet-guidance-panel" data-wallet-guidance-panel="${this.escapeAttribute(item.key)}" hidden>
+                                        <div class="wallet-order-guidance-panel-title">${this.escapeHtml(item.label)}</div>
+                                        <div class="wallet-order-guidance-content">${this.renderStoredWalletOrderRichText(item.content)}</div>
+                                    </section>
+                                `).join('')}
                             </div>
                         `
                     : '';
@@ -7985,7 +8510,6 @@
                 }).join('') + `</div>`;
 
                 // Format: product name once at top, then all content items
-                const productName = items.length > 0 ? items[0].name : (order.snapshot_product_name || '');
                 const allContentItems = items.length > 0
                     ? items.map(i => i.content).join('\n')
                     : (window.i18n?.t('shop.noContent') || '（无内容）');
@@ -8011,16 +8535,12 @@
                 const modal = detailOverlay.querySelector('.wallet-order-modal');
                 if (modal) {
                     this.markWalletOrderModalReady(modal);
-                    const tooltipValue = this.escapeAttribute(items.length > 0 ? items[0].name : '');
 
                     modal.innerHTML = `
                         <div class="wallet-order-modal-header">
                             <div class="wallet-order-modal-title">
                                 ${this.renderWalletInlineIcon('fa-box-open', '#6b9ece')} ${window.i18n?.t('wallet.orderDetails') || '订单详情'}
                             </div>
-                            <button class="wallet-order-close-btn js-wallet-order-close">
-                                <i class="fas fa-times"></i>
-                            </button>
                         </div>
                         <div class="wallet-order-modal-body wallet-order-modal-body--fade">
                             <div class="meta-section">
@@ -8036,23 +8556,38 @@
                                     <span class="detail-label">${window.i18n?.t('wallet.pointsPaid') || '支付积分'}</span>
                                     <span class="detail-val highlight">-${totalPrice} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</span>
                                 </div>
+                                ${productName ? `
+                                    <div class="detail-row wallet-detail-row--product">
+                                        <span class="detail-label">${window.i18n?.t('shop.productName') || '商品名称'}</span>
+                                        ${productId ? `
+                                        <button type="button" class="detail-val mono copyable wallet-order-product-name wallet-detail-link js-wallet-open-shop-product" data-wallet-product-id="${this.escapeAttribute(this.encodeActionValue(productId))}" title="打开商品详情">
+                                            ${this.escapeHtml(productName)}
+                                        </button>
+                                        ` : `
+                                        <span class="detail-val wallet-order-product-name">${this.escapeHtml(productName)}</span>
+                                        `}
+                                    </div>
+                                ` : ''}
                             </div>
-                            <div class="modal-actions wallet-modal-actions--toolbar">
-                                <button class="action-btn-minimal wallet-order-action-btn wallet-order-action-btn-copy js-wallet-copy-all" title="${window.i18n?.t('wallet.copyAll') || '全部复制'}">
-                                    <i class="fas fa-copy"></i>
-                                </button>
-                                <button class="action-btn-minimal wallet-order-action-btn wallet-order-action-btn-neutral js-wallet-export-order" title="${window.i18n?.t('wallet.export') || '导出'}">
-                                    <i class="fas fa-download"></i>
-                                </button>
-                                <button class="action-btn-minimal wallet-order-action-btn wallet-order-action-btn-danger js-wallet-open-ticket" title="${window.i18n?.t('wallet.reportIssue') || '报告问题'}">
-                                    <i class="fas fa-exclamation-circle"></i>
-                                </button>
+                            <div class="wallet-order-detail-toolbar">
+                                ${guidanceTogglesMarkup}
+                                <div class="modal-actions wallet-modal-actions--toolbar">
+                                    <button class="action-btn-minimal wallet-order-action-btn wallet-order-action-btn-copy js-wallet-copy-all" title="${window.i18n?.t('wallet.copyAll') || '全部复制'}">
+                                        <i class="fas fa-copy"></i>
+                                    </button>
+                                    <button class="action-btn-minimal wallet-order-action-btn wallet-order-action-btn-neutral js-wallet-export-order" title="${window.i18n?.t('wallet.export') || '导出'}">
+                                        <i class="fas fa-download"></i>
+                                    </button>
+                                    <button class="action-btn-minimal wallet-order-action-btn wallet-order-action-btn-danger js-wallet-open-ticket" title="${window.i18n?.t('wallet.submitTicket') || '提交工单'}" aria-label="${window.i18n?.t('wallet.submitTicket') || '提交工单'}">
+                                        <i class="fas fa-exclamation-circle"></i>
+                                    </button>
+                                </div>
                             </div>
+                            ${guidancePanelsMarkup}
                             <div class="content-section">
-                                <div class="content-section-title">${window.i18n?.t('wallet.purchaseContent') || '购买内容'} (${items.length}) <span class="product-dot product-dot--info" data-tooltip="${tooltipValue}"></span></div>
+                                <div class="content-section-title">${window.i18n?.t('wallet.purchaseContent') || '购买内容'} (${items.length})</div>
                                 ${contentHtml}
                             </div>
-                            ${usageInstructionsMarkup}
                         </div>
                     `;
 
@@ -8073,6 +8608,34 @@
                     });
                     modal.querySelector('.js-wallet-open-ticket')?.addEventListener('click', () => {
                         this.openTicketModal(order.id);
+                    });
+                    modal.querySelector('.js-wallet-open-shop-product')?.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        this.openShopProductFromWalletDetail(
+                            this.decodeActionValue(event.currentTarget?.dataset?.walletProductId || ''),
+                            detailOverlay
+                        );
+                    });
+                    modal.querySelectorAll('.js-wallet-toggle-guidance').forEach((button) => {
+                        button.addEventListener('click', () => {
+                            const panelKey = String(button.dataset.walletGuidancePanel || '').trim();
+                            const wasExpanded = button.getAttribute('aria-expanded') === 'true';
+
+                            modal.querySelectorAll('.js-wallet-toggle-guidance').forEach((toggle) => {
+                                toggle.setAttribute('aria-expanded', 'false');
+                            });
+                            modal.querySelectorAll('.js-wallet-guidance-panel').forEach((panel) => {
+                                panel.hidden = true;
+                            });
+
+                            if (!wasExpanded && panelKey) {
+                                button.setAttribute('aria-expanded', 'true');
+                                const panel = Array.from(modal.querySelectorAll('.js-wallet-guidance-panel'))
+                                    .find((candidate) => candidate.dataset.walletGuidancePanel === panelKey);
+                                if (panel) panel.hidden = false;
+                            }
+                        });
                     });
                 }
             } catch (err) {
@@ -8160,19 +8723,29 @@
                     animation: fadeIn 0.3s ease-out;
                 }
                 .wallet-order-modal {
-                    width: 92% !important; max-width: 360px !important;
+                    width: 92% !important; max-width: 560px !important;
                     background: var(--auth-sheet-panel, rgba(12, 14, 18, 0.98)) !important;
                     border: 1px solid var(--auth-sheet-border, rgba(255, 255, 255, 0.08)) !important;
                     border-radius: 22px !important;
                     box-shadow: 0 26px 70px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
                     overflow: hidden !important;
                     display: flex !important; flex-direction: column !important;
-                    max-height: 85vh !important;
+                    max-height: min(86vh, 780px) !important;
                     color: var(--auth-sheet-text, #f2f5f8) !important;
-                    animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+                    animation: walletOrderModalIn 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
                     opacity: 1;
                     position: relative !important;
                     isolation: isolate !important;
+                }
+                .wallet-order-modal--compact {
+                    width: min(92vw, 420px) !important;
+                    max-width: 420px !important;
+                }
+                .wallet-order-modal--shop-detail {
+                    width: min(92vw, 560px) !important;
+                    max-width: 560px !important;
+                    min-height: min(420px, 82vh) !important;
+                    max-height: min(86vh, 620px) !important;
                 }
                 .wallet-order-modal::before {
                     content: '' !important;
@@ -8188,13 +8761,13 @@
                     z-index: 1 !important;
                 }
                 .wallet-order-modal-header {
-                    padding: 16px 20px 12px;
+                    padding: 18px 24px 14px;
                     border-bottom: 1px solid var(--auth-sheet-border, rgba(255, 255, 255, 0.08));
                     background: transparent;
                     display: flex; justify-content: space-between; align-items: center;
                 }
                 .wallet-order-modal-title {
-                    font-size: 16px; font-weight: 700; color: var(--auth-sheet-text, #f2f5f8);
+                    font-size: 18px; font-weight: 700; color: var(--auth-sheet-text, #f2f5f8);
                     display: flex; align-items: center; gap: 8px;
                     letter-spacing: -0.5px;
                 }
@@ -8215,7 +8788,9 @@
                     color: var(--auth-sheet-text, #f2f5f8);
                 }
                 .wallet-order-modal-body {
-                    padding: 0 16px 12px;
+                    padding: 0 20px 18px;
+                    flex: 1 1 auto;
+                    min-height: 0;
                     overflow-y: auto;
                     scrollbar-width: thin;
                     scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
@@ -8244,7 +8819,91 @@
                 .detail-val { color: rgba(255, 255, 255, 0.9); font-weight: 500; font-family: 'Outfit', sans-serif;}
                 .detail-val.mono { font-family: monospace; letter-spacing: 0.5px; opacity: 0.8; }
                 .detail-val.highlight { color: #f87171; font-weight: 700; }
+                .wallet-status-success { color: rgba(255, 255, 255, 0.9); }
+                .wallet-status-check { color: #22c55e; font-weight: 900; }
+                .wallet-detail-link {
+                    appearance: none !important;
+                    border: 0 !important;
+                    background: transparent !important;
+                    padding: 0 !important;
+                    color: rgba(255, 255, 255, 0.92) !important;
+                    cursor: pointer !important;
+                    text-decoration: none !important;
+                    transition: color 0.2s, transform 0.12s ease !important;
+                }
+                .wallet-detail-link:hover,
+                .wallet-detail-link:focus-visible {
+                    color: #FFD700 !important;
+                    text-decoration: underline !important;
+                    outline: none !important;
+                }
+                .wallet-detail-link:active {
+                    transform: scale(0.98) !important;
+                }
                 .modal-actions { display: flex; gap: 10px; margin-bottom: 20px; }
+                .wallet-order-detail-toolbar {
+                    display: flex !important;
+                    align-items: center !important;
+                    justify-content: space-between !important;
+                    gap: 16px !important;
+                    padding: 4px 0 2px !important;
+                    margin: 4px 0 10px !important;
+                }
+                .wallet-order-product-name {
+                    max-width: min(380px, 56vw) !important;
+                    text-align: right !important;
+                    overflow: hidden !important;
+                    text-overflow: ellipsis !important;
+                    white-space: nowrap !important;
+                }
+                .wallet-order-guidance-toggles {
+                    display: flex !important;
+                    align-items: center !important;
+                    gap: 8px !important;
+                    flex-wrap: wrap !important;
+                    min-height: 32px !important;
+                }
+                .wallet-order-guidance-toggle {
+                    height: 32px !important;
+                    padding: 0 12px !important;
+                    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+                    border-radius: 999px !important;
+                    background: rgba(255, 255, 255, 0.045) !important;
+                    color: rgba(255, 255, 255, 0.72) !important;
+                    font-size: 12px !important;
+                    font-weight: 600 !important;
+                    cursor: pointer !important;
+                    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease !important;
+                }
+                .wallet-order-guidance-toggle:hover,
+                .wallet-order-guidance-toggle[aria-expanded="true"] {
+                    background: rgba(107, 158, 206, 0.16) !important;
+                    border-color: rgba(107, 158, 206, 0.42) !important;
+                    color: #dbeafe !important;
+                }
+                .wallet-order-guidance-panels {
+                    margin: 0 0 12px !important;
+                }
+                .wallet-order-guidance-panel {
+                    animation: fadeIn 0.16s ease-out !important;
+                }
+                .wallet-order-guidance-panel[hidden] {
+                    display: none !important;
+                }
+                .wallet-order-guidance-panel-title {
+                    margin-bottom: 8px !important;
+                    color: rgba(255, 255, 255, 0.48) !important;
+                    font-size: 12px !important;
+                    font-weight: 700 !important;
+                }
+                .wallet-modal-actions--toolbar {
+                    gap: 8px !important;
+                    justify-content: flex-end !important;
+                    padding: 4px 0 !important;
+                    margin: 0 !important;
+                    margin-left: auto !important;
+                    flex: 0 0 auto !important;
+                }
                 .action-btn.primary {
                     flex: 1;
                     background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
@@ -8290,8 +8949,10 @@
                     border-radius: 14px !important;
                     padding: 14px !important;
                     color: rgba(255, 255, 255, 0.88) !important;
-                    font-size: 12px !important;
-                    line-height: 1.7 !important;
+                    font-size: 13px !important;
+                    line-height: 1.8 !important;
+                    overflow-wrap: anywhere !important;
+                    word-break: break-word !important;
                 }
                 .wallet-order-guidance-content a {
                     color: #93c5fd !important;
@@ -8350,35 +9011,35 @@
                     font-size: 12px; color: #10b981;
                     word-break: break-all; line-height: 1.5; opacity: 0.9;
                 }
-                .product-dot:hover {
-                    transform: scale(1.4);
-                    box-shadow: 0 0 8px 3px rgba(107, 158, 206, 0.6);
-                    background: #8bb8e8 !important;
+                .wallet-order-loading-row {
+                    display: inline-flex !important;
+                    align-items: center !important;
+                    justify-content: center !important;
+                    gap: 10px !important;
                 }
-                .product-dot::after {
-                    content: attr(data-tooltip);
-                    position: absolute;
-                    bottom: 150%;
-                    left: 50%;
-                    transform: translateX(-50%);
-                    background: rgba(20, 20, 22, 0.95);
-                    color: #fff;
-                    padding: 6px 12px;
-                    border-radius: 8px;
-                    font-size: 12px;
-                    white-space: nowrap;
-                    opacity: 0;
-                    visibility: hidden;
-                    transition: all 0.2s ease;
-                    pointer-events: none;
-                    border: 1px solid rgba(255, 255, 255, 0.1);
-                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+                .wallet-order-loading-dots {
+                    color: currentColor !important;
+                    transform: translateY(1px) !important;
                 }
-                .product-dot:hover::after {
-                    opacity: 1;
-                    visibility: visible;
+                @media (max-width: 640px) {
+                    .wallet-order-modal--shop-detail {
+                        width: min(94vw, 560px) !important;
+                        min-height: min(400px, 84vh) !important;
+                        max-height: min(86vh, 620px) !important;
+                    }
+                    .wallet-order-detail-toolbar {
+                        align-items: flex-start !important;
+                        gap: 10px !important;
+                    }
+                    .wallet-order-guidance-toggle {
+                        padding: 0 10px !important;
+                    }
+                    .wallet-order-product-name {
+                        max-width: 54vw !important;
+                    }
                 }
                 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+                @keyframes walletOrderModalIn { from { opacity: 0; transform: translateY(6px) scale(0.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
                 @keyframes slideUp { from { opacity: 0; transform: translateY(20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
             `;
             document.head.appendChild(style);
@@ -8393,15 +9054,145 @@
             return div.innerHTML;
         },
 
+        linkifyWalletOrderRichText(text) {
+            return String(text || '').replace(
+                /(https?:\/\/[^\s<]+)/g,
+                '<a href="$1" target="_blank" rel="noopener noreferrer" class="shop-rich-link">$1</a>'
+            );
+        },
+
+        looksLikeWalletOrderRichTextHtml(content) {
+            return /<\/?(?:a|b|strong|i|em|u|div|p|br|font|span|ul|ol|li)\b/i.test(content || '');
+        },
+
+        decodeWalletOrderHtmlEntities(content) {
+            const textarea = document.createElement('textarea');
+            textarea.innerHTML = String(content || '');
+            return textarea.value;
+        },
+
+        sanitizeWalletOrderRichTextHtml(html) {
+            const template = document.createElement('template');
+            template.innerHTML = html;
+
+            const allowedTags = new Set(['A', 'B', 'STRONG', 'I', 'EM', 'U', 'BR', 'DIV', 'P', 'SPAN', 'FONT', 'UL', 'OL', 'LI']);
+            const allowedTextAlign = /^(left|center|right|justify)$/i;
+            const allowedColor = /^(#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})|rgba?\([^)]*\))$/i;
+            const allowedFontSize = /^([1-7]|\d+(\.\d+)?(px|em|rem|%)|xx-small|x-small|small|medium|large|x-large|xx-large)$/i;
+
+            const sanitizeStyle = (styleText = '') => {
+                const safeRules = [];
+                String(styleText || '').split(';').forEach((rule) => {
+                    const [rawProp, rawValue] = rule.split(':');
+                    if (!rawProp || !rawValue) return;
+
+                    const prop = rawProp.trim().toLowerCase();
+                    const value = rawValue.trim().replace(/\s*!important$/i, '');
+
+                    if (prop === 'text-align' && allowedTextAlign.test(value)) {
+                        safeRules.push(`text-align: ${value.toLowerCase()}`);
+                    }
+                    if (prop === 'color' && allowedColor.test(value)) {
+                        safeRules.push(`color: ${value}`);
+                    }
+                    if (prop === 'font-size' && allowedFontSize.test(value)) {
+                        safeRules.push(`font-size: ${value}`);
+                    }
+                });
+
+                return safeRules.join('; ');
+            };
+
+            const sanitizeHref = (href = '') => {
+                const value = String(href || '').trim();
+                return /^https?:\/\//i.test(value) ? value : '';
+            };
+
+            const sanitizeChildren = (parent) => {
+                Array.from(parent.childNodes).forEach((child) => {
+                    if (child.nodeType === Node.COMMENT_NODE) {
+                        child.remove();
+                        return;
+                    }
+
+                    if (child.nodeType !== Node.ELEMENT_NODE) {
+                        return;
+                    }
+
+                    if (!allowedTags.has(child.tagName)) {
+                        while (child.firstChild) {
+                            parent.insertBefore(child.firstChild, child);
+                        }
+                        child.remove();
+                        sanitizeChildren(parent);
+                        return;
+                    }
+
+                    const attrs = {};
+                    Array.from(child.attributes).forEach((attr) => {
+                        attrs[attr.name.toLowerCase()] = attr.value;
+                    });
+                    Array.from(child.attributes).forEach((attr) => child.removeAttribute(attr.name));
+
+                    if (['DIV', 'P', 'SPAN'].includes(child.tagName)) {
+                        const safeStyle = sanitizeStyle(attrs.style || '');
+                        if (safeStyle) {
+                            child.setAttribute('style', safeStyle);
+                        }
+                    }
+
+                    if (child.tagName === 'FONT') {
+                        const color = String(attrs.color || '').trim();
+                        const size = String(attrs.size || '').trim();
+                        if (allowedColor.test(color)) {
+                            child.setAttribute('color', color);
+                        }
+                        if (allowedFontSize.test(size)) {
+                            child.setAttribute('size', size);
+                        }
+                    }
+
+                    if (child.tagName === 'A') {
+                        const safeHref = sanitizeHref(attrs.href || '');
+                        if (!safeHref) {
+                            while (child.firstChild) {
+                                parent.insertBefore(child.firstChild, child);
+                            }
+                            child.remove();
+                            sanitizeChildren(parent);
+                            return;
+                        }
+
+                        child.setAttribute('href', safeHref);
+                        child.setAttribute('target', '_blank');
+                        child.setAttribute('rel', 'noopener noreferrer');
+                        child.classList.add('shop-rich-link');
+                    }
+
+                    sanitizeChildren(child);
+                });
+            };
+
+            sanitizeChildren(template.content);
+            return template.innerHTML;
+        },
+
         renderStoredWalletOrderRichText(content) {
             const normalized = typeof content === 'string' ? content.trim() : '';
             if (!normalized) return '';
 
-            if (window.ShopClient && typeof window.ShopClient.renderStoredRichText === 'function') {
-                return window.ShopClient.renderStoredRichText(normalized);
+            const decoded = /&(?:lt|gt|quot|amp|#39|apos);/i.test(normalized)
+                ? this.decodeWalletOrderHtmlEntities(normalized).trim()
+                : normalized;
+            if (decoded && decoded !== normalized && this.looksLikeWalletOrderRichTextHtml(decoded)) {
+                return this.sanitizeWalletOrderRichTextHtml(decoded);
             }
 
-            return this.escapeHtml(normalized).replace(/\n/g, '<br>');
+            if (!this.looksLikeWalletOrderRichTextHtml(normalized)) {
+                return this.linkifyWalletOrderRichText(this.escapeHtml(normalized)).replace(/\n/g, '<br>');
+            }
+
+            return this.sanitizeWalletOrderRichTextHtml(normalized);
         },
 
         /**

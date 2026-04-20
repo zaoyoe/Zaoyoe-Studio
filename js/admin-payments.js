@@ -24,6 +24,11 @@
         autoRefreshIntervalMs: 5 * 60 * 1000,
         autoRefreshTimer: null,
         anomalyActionLoading: {},
+        batchAnomalyActionLoading: {},
+        businessBreakdownFocusKey: 'all',
+        businessBreakdownHoverIndex: null,
+        pointsBreakdownFocusKey: 'all',
+        pointsBreakdownHoverIndex: null,
         exceptionTopicFilter: 'all',
         focusOrderId: '',
         tabPrefetchHandle: 0,
@@ -42,7 +47,7 @@
     };
 
     const PAYMENTS_PAGE_SIZE = 5;
-    const PAYMENTS_PREFETCH_TABS = ['overview', 'finance', 'ops'];
+    const PAYMENTS_PREFETCH_TABS = [];
     const NOTE_REQUIRED_ACTIONS = new Set([
         'approve_review',
         'reject_review',
@@ -57,8 +62,134 @@
     const CLEANUP_SCOPE_TEXT = '将删除 AUTO_CDX_* / SMOKE_* 测试订单，以及 codex.*@example.com / smoke-payment-*@zaoyoe.invalid 测试账号。此操作不可撤销，是否继续？';
     const REFUND_TOPIC_ORDER = ['refund_compensation_failures', 'refund_reclaim_failures', 'refund_failures'];
     const REFUND_TOPIC_KEY_SET = new Set(REFUND_TOPIC_ORDER);
-    const RESOLVED_ANOMALY_STATUSES = new Set(['handled', 'ignored', 'approved', 'rejected']);
+    const PAYMENT_INTENT_EXCEPTION_TOPIC_KEYS = [
+        'checkout_unlinked',
+        'checkout_session_failed',
+        'checkout_session_stale',
+        'checkout_session_unlinked',
+        'payment_intent_failed',
+        'payment_intent_stale',
+        'payment_intent_unlinked'
+    ];
+    const PAYMENT_INTENT_EXCEPTION_TOPIC_KEY_SET = new Set(PAYMENT_INTENT_EXCEPTION_TOPIC_KEYS);
+    const CALLBACK_EXCEPTION_TOPIC_KEYS = new Set([
+        ...PAYMENT_INTENT_EXCEPTION_TOPIC_KEYS,
+        'session_anomalies'
+    ]);
+    const RESOLVED_ANOMALY_STATUSES = new Set(['handled', 'ignored', 'approved', 'rejected', 'archived']);
     const ACTIVE_OPS_ALERT_STATUSES = new Set(['pending', 'retry', 'processing', 'dead_letter']);
+    const BUSINESS_BREAKDOWN_TONE_META = {
+        recharge: {
+            icon: 'fas fa-wallet',
+            color: '#38cfff',
+            fill: 'rgba(56, 207, 255, 0.18)',
+            glow: 'rgba(56, 207, 255, 0.26)'
+        },
+        shop: {
+            icon: 'fas fa-store',
+            color: '#45e6a8',
+            fill: 'rgba(69, 230, 168, 0.17)',
+            glow: 'rgba(69, 230, 168, 0.22)'
+        },
+        mock: {
+            icon: 'fas fa-flask',
+            color: '#b56cff',
+            fill: 'rgba(181, 108, 255, 0.18)',
+            glow: 'rgba(181, 108, 255, 0.24)'
+        },
+        balance: {
+            icon: 'fas fa-coins',
+            color: '#ffb84d',
+            fill: 'rgba(255, 184, 77, 0.18)',
+            glow: 'rgba(255, 184, 77, 0.24)'
+        },
+        all: {
+            icon: 'fas fa-chart-line',
+            color: '#7dd3fc',
+            fill: 'rgba(125, 211, 252, 0.15)',
+            glow: 'rgba(125, 211, 252, 0.2)'
+        }
+    };
+    const POINTS_BREAKDOWN_TONE_META = {
+        recharge: {
+            icon: 'fas fa-wallet',
+            color: '#38cfff',
+            fill: 'rgba(56, 207, 255, 0.18)',
+            glow: 'rgba(56, 207, 255, 0.24)'
+        },
+        redeem_code: {
+            icon: 'fas fa-ticket',
+            color: '#7dd3fc',
+            fill: 'rgba(125, 211, 252, 0.16)',
+            glow: 'rgba(125, 211, 252, 0.2)'
+        },
+        rewards: {
+            icon: 'fas fa-gift',
+            color: '#45e6a8',
+            fill: 'rgba(69, 230, 168, 0.16)',
+            glow: 'rgba(69, 230, 168, 0.2)'
+        },
+        refund: {
+            icon: 'fas fa-rotate-left',
+            color: '#9ee6ff',
+            fill: 'rgba(158, 230, 255, 0.15)',
+            glow: 'rgba(158, 230, 255, 0.18)'
+        },
+        admin_in: {
+            icon: 'fas fa-user-shield',
+            color: '#c4b5fd',
+            fill: 'rgba(196, 181, 253, 0.16)',
+            glow: 'rgba(196, 181, 253, 0.2)'
+        },
+        shop_purchase: {
+            icon: 'fas fa-store',
+            color: '#ffb84d',
+            fill: 'rgba(255, 184, 77, 0.17)',
+            glow: 'rgba(255, 184, 77, 0.22)'
+        },
+        content_unlock: {
+            icon: 'fas fa-unlock',
+            color: '#f472b6',
+            fill: 'rgba(244, 114, 182, 0.16)',
+            glow: 'rgba(244, 114, 182, 0.2)'
+        },
+        verification: {
+            icon: 'fas fa-shield-halved',
+            color: '#fb7185',
+            fill: 'rgba(251, 113, 133, 0.16)',
+            glow: 'rgba(251, 113, 133, 0.2)'
+        },
+        refund_out: {
+            icon: 'fas fa-arrow-rotate-left',
+            color: '#fca5a5',
+            fill: 'rgba(252, 165, 165, 0.15)',
+            glow: 'rgba(252, 165, 165, 0.18)'
+        },
+        admin_deduct: {
+            icon: 'fas fa-minus-circle',
+            color: '#fdba74',
+            fill: 'rgba(253, 186, 116, 0.15)',
+            glow: 'rgba(253, 186, 116, 0.18)'
+        },
+        other_in: {
+            icon: 'fas fa-plus',
+            color: '#a7f3d0',
+            fill: 'rgba(167, 243, 208, 0.14)',
+            glow: 'rgba(167, 243, 208, 0.16)'
+        },
+        other_out: {
+            icon: 'fas fa-minus',
+            color: '#f9a8d4',
+            fill: 'rgba(249, 168, 212, 0.14)',
+            glow: 'rgba(249, 168, 212, 0.16)'
+        },
+        all: {
+            icon: 'fas fa-chart-line',
+            color: '#bde7ff',
+            fill: 'rgba(189, 231, 255, 0.14)',
+            glow: 'rgba(189, 231, 255, 0.16)'
+        }
+    };
 
     function escapeHtml(value) {
         return String(value ?? '')
@@ -375,9 +506,7 @@
         ).trim();
         const reviewCount = Math.max(0, Number(anomaly.review_orders || 0) || 0);
         const failedCount = Math.max(0, Number(anomaly.failed_orders || 0) || 0);
-        const refundIssueCount = Math.max(0, Number(anomaly.refund_failures || 0) || 0)
-            + Math.max(0, Number(anomaly.refund_reclaim_failures || 0) || 0)
-            + Math.max(0, Number(anomaly.refund_compensation_failures || 0) || 0);
+        const refundIssueCount = getRefundIssueCount(data);
         const pendingOpsCount = Math.max(0, Number(ops.pending || 0) || 0);
         const retryOpsCount = Math.max(0, Number(ops.retry || 0) || 0);
         const processingOpsCount = Math.max(0, Number(ops.processing || 0) || 0);
@@ -426,9 +555,7 @@
             { key: 'failed', count: Math.max(0, Number(anomaly.failed_orders || 0) || 0) },
             {
                 key: 'refund',
-                count: Math.max(0, Number(anomaly.refund_failures || 0) || 0)
-                    + Math.max(0, Number(anomaly.refund_reclaim_failures || 0) || 0)
-                    + Math.max(0, Number(anomaly.refund_compensation_failures || 0) || 0)
+                count: getRefundIssueCount(data)
             },
             {
                 key: 'ops',
@@ -449,7 +576,7 @@
 
         const normalizedFocus = String(focus || '').trim().toLowerCase();
         const recentOrders = Array.isArray(data?.recent_orders) ? data.recent_orders : [];
-        const refundItems = Array.isArray(data?.refund_alert_items) ? data.refund_alert_items : [];
+        const refundItems = getActiveRefundAlertItems(data);
         const opsItems = Array.isArray(data?.ops_alert_items) ? data.ops_alert_items : [];
 
         let title = '建议先处理的支付异常';
@@ -926,8 +1053,20 @@
     }
 
     function getFriendlyErrorMessage(error, fallback = '支付数据刷新失败，请稍后重试。') {
-        const message = String(error?.message || '').trim();
-        if (!message || message === 'Failed to fetch' || message === 'NetworkError when attempting to fetch resource.') {
+        const message = String(error?.message || error || '').trim();
+        const normalizedMessage = message.toLowerCase();
+        const errorName = String(error?.name || '').trim();
+        if (
+            !message
+            || errorName === 'AbortError'
+            || normalizedMessage === 'typeerror: fetch failed'
+            || normalizedMessage === 'fetch failed'
+            || normalizedMessage === 'failed to fetch'
+            || normalizedMessage === 'networkerror when attempting to fetch resource.'
+            || normalizedMessage.includes('networkerror')
+            || normalizedMessage.includes('load failed')
+            || normalizedMessage.includes('network request failed')
+        ) {
             return fallback;
         }
         return message;
@@ -1116,6 +1255,98 @@
         return ACTIVE_OPS_ALERT_STATUSES.has(normalizeStatusValue(status));
     }
 
+    function getRefundAlertItems(data = {}) {
+        return Array.isArray(data?.refund_alert_items) ? data.refund_alert_items : [];
+    }
+
+    function hasRefundAlertItems(data = {}) {
+        return Array.isArray(data?.refund_alert_items);
+    }
+
+    function getActiveRefundAlertItems(data = {}) {
+        return getRefundAlertItems(data).filter((item) => !isResolvedAnomalyStatus(item?.ops_status));
+    }
+
+    function getRefundIssueBreakdown(data = {}) {
+        if (hasRefundAlertItems(data)) {
+            const activeItems = getActiveRefundAlertItems(data);
+            return {
+                refund_failures: activeItems.filter((item) => normalizeStatusValue(item?.topic_key) === 'refund_failures').length,
+                refund_reclaim_failures: activeItems.filter((item) => normalizeStatusValue(item?.topic_key) === 'refund_reclaim_failures').length,
+                refund_compensation_failures: activeItems.filter((item) => normalizeStatusValue(item?.topic_key) === 'refund_compensation_failures').length
+            };
+        }
+
+        const anomaly = data?.anomaly_summary || {};
+        return {
+            refund_failures: Math.max(0, Number(anomaly.refund_failures || 0) || 0),
+            refund_reclaim_failures: Math.max(0, Number(anomaly.refund_reclaim_failures || 0) || 0),
+            refund_compensation_failures: Math.max(0, Number(anomaly.refund_compensation_failures || 0) || 0)
+        };
+    }
+
+    function getRefundIssueCount(data = {}) {
+        const breakdown = getRefundIssueBreakdown(data);
+        return Number(breakdown.refund_failures || 0)
+            + Number(breakdown.refund_reclaim_failures || 0)
+            + Number(breakdown.refund_compensation_failures || 0);
+    }
+
+    function hasExceptionTopicSummary(data = {}) {
+        return Array.isArray(data?.exception_topics);
+    }
+
+    function getExceptionTopicCount(data = {}, topicKey = '') {
+        const normalizedTopicKey = String(topicKey || '').trim().toLowerCase();
+        if (!normalizedTopicKey || !Array.isArray(data?.exception_topics)) return 0;
+        const topic = data.exception_topics.find((item) => String(item?.key || '').trim().toLowerCase() === normalizedTopicKey);
+        return Math.max(0, Number(topic?.count || 0) || 0);
+    }
+
+    function getCallbackIssueBreakdown(data = {}) {
+        if (hasExceptionTopicSummary(data)) {
+            return {
+                duplicate_webhook_orders: getExceptionTopicCount(data, 'duplicate_webhook'),
+                session_anomalies: Array.from(CALLBACK_EXCEPTION_TOPIC_KEYS)
+                    .reduce((sum, topicKey) => sum + getExceptionTopicCount(data, topicKey), 0)
+            };
+        }
+
+        const anomaly = data?.anomaly_summary || {};
+        return {
+            duplicate_webhook_orders: Math.max(0, Number(anomaly.duplicate_webhook_orders || 0) || 0),
+            session_anomalies: Math.max(0, Number(anomaly.session_anomalies || 0) || 0)
+        };
+    }
+
+    function getCallbackIssueCount(data = {}) {
+        const breakdown = getCallbackIssueBreakdown(data);
+        return Number(breakdown.duplicate_webhook_orders || 0)
+            + Number(breakdown.session_anomalies || 0);
+    }
+
+    function getOverviewIssueBreakdown(data = {}) {
+        const anomaly = data?.anomaly_summary || {};
+        const reviewOrders = Math.max(0, Number(anomaly.review_orders || 0) || 0);
+        const failedOrders = Math.max(0, Number(anomaly.failed_orders || 0) || 0);
+        const callbackIssues = getCallbackIssueCount(data);
+        const queryFailures = Math.max(0, Number(anomaly.query_failures || 0) || 0);
+        const refundIssues = getRefundIssueCount(data);
+
+        return {
+            review_orders: reviewOrders,
+            failed_orders: failedOrders,
+            callback_issues: callbackIssues,
+            query_failures: queryFailures,
+            refund_issues: refundIssues,
+            total: reviewOrders + failedOrders + callbackIssues + queryFailures + refundIssues
+        };
+    }
+
+    function getOverviewIssueCount(data = {}) {
+        return getOverviewIssueBreakdown(data).total;
+    }
+
     function splitItemsByResolution(items, getStatus) {
         const activeItems = [];
         const resolvedItems = [];
@@ -1139,6 +1370,33 @@
         return (items || []).filter((item) => set.has(normalizeStatusValue(item?.ops_status ?? item?.queue_status)));
     }
 
+    function normalizeExceptionTopicFilterKey(topicKey = '') {
+        const normalizedTopicKey = String(topicKey || 'all').trim().toLowerCase() || 'all';
+        if (PAYMENT_INTENT_EXCEPTION_TOPIC_KEY_SET.has(normalizedTopicKey)) {
+            return 'payment_intent_issues';
+        }
+        return normalizedTopicKey;
+    }
+
+    function getExceptionTopicFilterKeys(topicKey = state.exceptionTopicFilter) {
+        const normalizedTopicKey = normalizeExceptionTopicFilterKey(topicKey);
+        if (normalizedTopicKey === 'payment_intent_issues') {
+            return PAYMENT_INTENT_EXCEPTION_TOPIC_KEYS;
+        }
+        if (normalizedTopicKey === 'all') {
+            return [];
+        }
+        return [normalizedTopicKey];
+    }
+
+    function getExceptionTopicFilteredItems(data = state.summary, topicKey = state.exceptionTopicFilter) {
+        const items = Array.isArray(data?.exception_topic_items) ? data.exception_topic_items : [];
+        const filterKeys = getExceptionTopicFilterKeys(topicKey);
+        if (!filterKeys.length) return items;
+        const filterKeySet = new Set(filterKeys);
+        return items.filter((item) => filterKeySet.has(String(item?.topic_key || '').trim().toLowerCase()));
+    }
+
     function getSeverityLabel(severity) {
         const map = {
             critical: '高危',
@@ -1160,7 +1418,8 @@
             retry_requested: '已登记重试',
             retry: '等待重试',
             approved: '已审核通过',
-            rejected: '已驳回'
+            rejected: '已驳回',
+            archived: '已归档'
         };
         return map[String(status || '').trim().toLowerCase()] || '待处理';
     }
@@ -1169,6 +1428,7 @@
         const map = {
             mark_handled: '标记已处理',
             ignore: '忽略',
+            archive: '归档',
             request_retry: '登记重试',
             reopen: '重新打开',
             approve_review: '审核通过',
@@ -1180,9 +1440,21 @@
             query_hupijiao_order: '实时查单',
             query_zpay_order: '实时查单',
             reconcile_hupijiao_order: '人工补单',
-            reconcile_zpay_order: '人工补单'
+            reconcile_zpay_order: '人工补单',
+            reconcile_checkout_session: '补回填'
         };
         return map[String(action || '').trim().toLowerCase()] || '执行操作';
+    }
+
+    function getOrderActionLabel(action) {
+        const map = {
+            query_hupijiao_order: '查单',
+            query_zpay_order: '查单',
+            refund_hupijiao: '退款',
+            refund_zpay: '退款'
+        };
+        const normalizedAction = String(action || '').trim().toLowerCase();
+        return map[normalizedAction] || getAnomalyActionLabel(normalizedAction);
     }
 
     function getAnomalyActionPrompt(action) {
@@ -1204,7 +1476,7 @@
         if (normalized === 'delivered' || normalized === 'handled' || normalized === 'approved') return 'success';
         if (normalized === 'retry' || normalized === 'retry_requested') return 'warning';
         if (normalized === 'pending' || normalized === 'processing') return 'info';
-        if (normalized === 'ignored') return 'muted';
+        if (normalized === 'ignored' || normalized === 'archived') return 'muted';
         if (normalized === 'rejected') return 'danger';
         return 'info';
     }
@@ -1478,6 +1750,7 @@
         const description = String(config?.description || '').trim();
         const body = String(config?.body || '').trim();
         const badges = Array.isArray(config?.badges) ? config.badges.filter(Boolean).join('') : '';
+        const actionButton = String(config?.actionButton || '').trim();
 
         if (!body) return '';
 
@@ -1493,6 +1766,7 @@
                     </div>
                     <div class="payments-handled-group-summary-meta">
                         ${badges}
+                        ${actionButton}
                         <span class="payments-handled-group-summary-action">
                             <span>展开查看</span>
                             <i class="fas fa-chevron-down"></i>
@@ -1568,7 +1842,7 @@
 
         const loading = isAnomalyActionLoading('order', order.id);
         return `
-            <div class="payments-anomaly-actions">
+            <div class="payments-anomaly-actions payments-order-actions">
                 ${actions.map((action) => `
                     <button
                         type="button"
@@ -1579,11 +1853,145 @@
                         data-payments-action="${escapeHtml(action)}"
                         ${loading ? 'disabled' : ''}
                     >
-                        ${escapeHtml(getAnomalyActionLabel(action))}
+                        ${escapeHtml(getOrderActionLabel(action))}
                     </button>
                 `).join('')}
             </div>
         `;
+    }
+
+    function buildPaymentsOpenUserDetailAttrs(userId = '') {
+        const safeUserId = String(userId || '').trim();
+        if (!safeUserId) {
+            return '';
+        }
+
+        return `data-admin-action="analytics-open-user-detail" data-user-id="${escapeHtml(encodeURIComponent(safeUserId))}"`;
+    }
+
+    function getPaymentsOrderUserLabel(order = {}) {
+        const userEmail = String(order?.user_email || '').trim();
+        if (userEmail) {
+            return userEmail;
+        }
+        if (String(order?.user_id || '').trim()) {
+            return '未绑定邮箱';
+        }
+        return '未认领';
+    }
+
+    function renderPaymentsOrderUser(order = {}) {
+        const label = getPaymentsOrderUserLabel(order);
+        const userId = String(order?.user_id || '').trim();
+
+        if (!userId) {
+            return `<span class="payments-user-text is-muted">${escapeHtml(label)}</span>`;
+        }
+
+        return `
+            <button
+                type="button"
+                class="payments-user-link"
+                ${buildPaymentsOpenUserDetailAttrs(userId)}
+                title="查看用户信息卡"
+                aria-label="查看 ${escapeHtml(label)} 的用户信息卡"
+            >
+                ${escapeHtml(label)}
+            </button>
+        `;
+    }
+
+    function formatCompactOrderNo(value = '') {
+        const text = String(value || '').trim();
+        if (!text) {
+            return '—';
+        }
+        if (text.length <= 18) {
+            return text;
+        }
+        return `${text.slice(0, 8)}...${text.slice(-6)}`;
+    }
+
+    function renderPaymentsOrderNo(order = {}) {
+        const orderNo = String(order?.provider_order_no || '').trim();
+        if (!orderNo) {
+            return '<span class="payments-order-no payments-order-no--empty">—</span>';
+        }
+
+        return `
+            <button
+                type="button"
+                class="payments-order-no payments-order-copy-btn"
+                data-admin-action="payments-copy-order-no"
+                data-payments-order-no="${escapeHtml(encodeURIComponent(orderNo))}"
+                title="点击复制完整订单号"
+                aria-label="复制订单号"
+            >
+                ${escapeHtml(formatCompactOrderNo(orderNo))}
+            </button>
+        `;
+    }
+
+    function decodePaymentsActionValue(value = '') {
+        const raw = String(value || '').trim();
+        if (!raw) {
+            return '';
+        }
+        try {
+            return decodeURIComponent(raw);
+        } catch (_) {
+            return raw;
+        }
+    }
+
+    async function copyTextToClipboard(text = '') {
+        const value = String(text || '').trim();
+        if (!value) {
+            throw new Error('没有可复制的内容');
+        }
+
+        if (typeof navigator !== 'undefined' && navigator?.clipboard?.writeText) {
+            await navigator.clipboard.writeText(value);
+            return true;
+        }
+
+        if (typeof document === 'undefined' || !document.createElement || !document.body) {
+            throw new Error('当前浏览器不支持剪贴板写入');
+        }
+
+        const helper = document.createElement('textarea');
+        helper.value = value;
+        helper.setAttribute('readonly', '');
+        helper.style.position = 'fixed';
+        helper.style.left = '-9999px';
+        helper.style.top = '0';
+        document.body.appendChild(helper);
+        helper.select();
+
+        let copied = false;
+        try {
+            copied = document.execCommand?.('copy') === true;
+        } finally {
+            document.body.removeChild(helper);
+        }
+
+        if (!copied) {
+            throw new Error('复制失败');
+        }
+        return true;
+    }
+
+    async function copyOrderNo(encodedOrderNo = '') {
+        const orderNo = decodePaymentsActionValue(encodedOrderNo);
+        try {
+            await copyTextToClipboard(orderNo);
+            window.showToast?.('订单号已复制', 'success');
+            return true;
+        } catch (error) {
+            console.warn('[AdminPayments] Failed to copy order number:', error);
+            window.showToast?.('订单号复制失败，请手动复制。', 'error');
+            return false;
+        }
     }
 
     function getRangeLabel(days) {
@@ -1663,13 +2071,10 @@
     }
 
     function getAutoPrefetchTabs(activeTab = state.activeTab) {
-        const normalizedTab = String(activeTab || state.activeTab || 'overview').trim().toLowerCase() || 'overview';
-        if (normalizedTab === 'finance') {
-            return PAYMENTS_PREFETCH_TABS.filter((tabId) => tabId !== normalizedTab);
-        }
-
-        // `finance` 视图会触发积分流水与余额汇总，自动预热它会明显放大页面首开成本。
-        return PAYMENTS_PREFETCH_TABS.filter((tabId) => tabId !== normalizedTab && tabId !== 'finance');
+        void activeTab;
+        // Payment tabs fan out into orders, events, sessions, queries, and ledger scans.
+        // Keep sibling tabs fully on demand; overview already performs its own staged load.
+        return PAYMENTS_PREFETCH_TABS;
     }
 
     function scheduleTabPrefetch(activeTab = state.activeTab) {
@@ -1719,6 +2124,10 @@
         clearTabPrefetch();
         state.viewCache = {};
         state.cleanupPreview = null;
+        state.businessBreakdownFocusKey = 'all';
+        state.businessBreakdownHoverIndex = null;
+        state.pointsBreakdownFocusKey = 'all';
+        state.pointsBreakdownHoverIndex = null;
         state.pagination = {
             anomalies: 1,
             sessions: 1,
@@ -1899,10 +2308,23 @@
             && Array.isArray(state.summary?.recent_anomalies)
             && Array.isArray(state.summary?.recent_orders);
 
+        if (sourceTab !== 'overview') {
+            delete incoming.overview_scope;
+            delete incoming.overview;
+            delete incoming.session_summary;
+            delete incoming.query_summary;
+            delete incoming.anomaly_summary;
+            delete incoming.provider_stats;
+            delete incoming.trend_24h;
+            delete incoming.refund_alert_topics;
+            delete incoming.refund_alert_items;
+        }
+
         if (sourceTab !== 'ops') {
             delete incoming.exception_topics;
             delete incoming.exception_topic_items;
             delete incoming.recent_anomalies;
+            delete incoming.recent_checkout_sessions;
             delete incoming.recent_orders;
 
             if (hasWarmOpsCache) {
@@ -1915,6 +2337,27 @@
             if (!hasWarmOpsCache && incoming.ops_alert_items == null && Array.isArray(state.summary?.ops_alert_items)) {
                 delete incoming.ops_alert_items;
             }
+        }
+
+        if (options.replace === true) {
+            const preservedOpsPayload = sourceTab !== 'ops' && hasWarmOpsCache
+                ? {
+                    ops_alert_summary: state.summary?.ops_alert_summary,
+                    ops_alert_items: state.summary?.ops_alert_items,
+                    exception_topics: state.summary?.exception_topics,
+                    exception_topic_items: state.summary?.exception_topic_items,
+                    recent_anomalies: state.summary?.recent_anomalies,
+                    recent_checkout_sessions: state.summary?.recent_checkout_sessions,
+                    recent_orders: state.summary?.recent_orders
+                }
+                : {};
+            state.summary = {
+                ...incoming,
+                ...Object.fromEntries(
+                    Object.entries(preservedOpsPayload).filter(([, value]) => value !== undefined)
+                )
+            };
+            return state.summary;
         }
 
         state.summary = {
@@ -1989,7 +2432,17 @@
 
     function isOverviewCorePayload(data = state.summary) {
         return state.activeTab === 'overview'
-            && String(data?.overview_scope || '').trim().toLowerCase() === 'core';
+            && (
+                state.overviewStage === 'core'
+                || String(data?.overview_scope || '').trim().toLowerCase() === 'core'
+            );
+    }
+
+    function isOverviewIssuePayloadPending(data = state.summary) {
+        if (state.activeTab !== 'overview') return false;
+        const stage = String(state.overviewStage || '').trim().toLowerCase();
+        if (stage && stage !== 'full' && stage !== 'idle') return true;
+        return String(data?.overview_scope || '').trim().toLowerCase() === 'core';
     }
 
     function syncOverviewStage() {
@@ -2125,19 +2578,14 @@
         if (!target) return;
 
         const isCoreOverview = isOverviewCorePayload(data);
+        const isIssuePending = isOverviewIssuePayloadPending(data);
         const overview = data?.overview || {};
         const anomaly = data?.anomaly_summary || {};
         const sitewide = data?.sitewide_summary || {};
         const sessionSummary = data?.session_summary || {};
         const providerCount = Array.isArray(data?.provider_stats) ? data.provider_stats.length : 0;
-        const refundIssueCount = Number(anomaly.refund_failures || 0)
-            + Number(anomaly.refund_reclaim_failures || 0)
-            + Number(anomaly.refund_compensation_failures || 0);
-        const anomalyCount = Number(anomaly.review_orders || 0)
-            + Number(anomaly.failed_orders || 0)
-            + Number(anomaly.recent_event_anomalies || 0)
-            + Number(anomaly.session_anomalies || 0)
-            + Number(anomaly.query_failures || 0);
+        const refundIssueCount = getRefundIssueCount(data);
+        const anomalyCount = getOverviewIssueCount(data);
         const incomeValue = sitewide.recharge_amount != null
             ? sitewide.recharge_amount
             : overview.total_amount;
@@ -2152,11 +2600,11 @@
                 <i class="fas fa-circle-check"></i>
                 <span>成功率 ${escapeHtml(formatPercent(overview.paid_rate))}</span>
             </div>
-            <div class="payments-highlight-pill ${!isCoreOverview && anomalyCount > 0 ? 'warning' : ''}">
+            <div class="payments-highlight-pill ${!isIssuePending && anomalyCount > 0 ? 'warning' : ''}">
                 <i class="fas fa-triangle-exclamation"></i>
-                <span>${isCoreOverview ? '异常补充中' : `异常 ${escapeHtml(formatNumber(anomalyCount))}`}</span>
+                <span>${isIssuePending ? '异常补充中' : `异常 ${escapeHtml(formatNumber(anomalyCount))}`}</span>
             </div>
-            ${isCoreOverview ? `
+            ${isIssuePending ? `
                 <div class="payments-highlight-pill">
                     <i class="fas fa-rotate-left"></i>
                     <span>退款补充中</span>
@@ -2180,32 +2628,30 @@
             return;
         }
 
-        if (isOverviewCorePayload(data)) {
+        if (isOverviewIssuePayloadPending(data)) {
             clearAccessState();
             return;
         }
 
         const anomaly = data?.anomaly_summary || {};
-        const refundIssueCount = Number(anomaly.refund_failures || 0)
-            + Number(anomaly.refund_reclaim_failures || 0)
-            + Number(anomaly.refund_compensation_failures || 0);
-        const anomalyCount = Number(anomaly.review_orders || 0)
-            + Number(anomaly.failed_orders || 0)
-            + Number(anomaly.recent_event_anomalies || 0)
-            + Number(anomaly.session_anomalies || 0)
-            + Number(anomaly.query_failures || 0);
+        const issueBreakdown = getOverviewIssueBreakdown(data);
+        const refundIssueCount = issueBreakdown.refund_issues;
+        const anomalyCount = issueBreakdown.total;
 
-        if (refundIssueCount > 0) {
+        if (anomalyCount > 0) {
+            const issueParts = [
+                issueBreakdown.review_orders > 0 ? `待审核 ${formatNumber(issueBreakdown.review_orders)}` : '',
+                issueBreakdown.failed_orders > 0 ? `失败订单 ${formatNumber(issueBreakdown.failed_orders)}` : '',
+                issueBreakdown.callback_issues > 0 ? `回调/意图 ${formatNumber(issueBreakdown.callback_issues)}` : '',
+                issueBreakdown.query_failures > 0 ? `查码失败 ${formatNumber(issueBreakdown.query_failures)}` : '',
+                (refundIssueCount > 0 || issueBreakdown.callback_issues > 0) ? `退款售后 ${formatNumber(refundIssueCount)}` : ''
+            ].filter(Boolean);
+            const issueBreakdownText = issueParts.length ? `（${issueParts.join('，')}）` : '';
             renderAccessState(
-                `当前有 ${formatNumber(refundIssueCount)} 项退款售后异常，请优先查看退款失败、积分扣回失败与积分回滚失败专题。`,
+                `当前有 ${formatNumber(anomalyCount)} 项未归档专题异常需要关注${issueBreakdownText}，请优先查看金额异常、待审核、重复回调、查码失败、支付意图回填与退款售后。`,
                 Number(anomaly.refund_compensation_failures || 0) > 0 ? 'error' : 'warning',
                 { preserveBody: true }
             );
-            return;
-        }
-
-        if (anomalyCount > 0) {
-            renderAccessState(`当前有 ${formatNumber(anomalyCount)} 项异常需要关注，请优先查看金额异常、待审核、重复回调、查码失败与支付意图回填。`, 'warning', { preserveBody: true });
             return;
         }
 
@@ -2322,6 +2768,19 @@
         }
     }
 
+    function getCleanupTotalCount(counts = {}) {
+        return Number(counts.payment_orders || 0)
+            + Number(counts.payment_events || 0)
+            + Number(counts.afdian_orders || 0)
+            + Number(counts.auth_users || 0);
+    }
+
+    function setCleanupCardVisible(visible) {
+        const cleanupCard = document.getElementById('paymentsCleanupCard');
+        if (!cleanupCard) return;
+        cleanupCard.hidden = !visible;
+    }
+
     function buildPaymentsSkeletonBlock(variant = 'line', widthClass = 'admin-skeleton-w-full', extraClass = '') {
         const classes = ['admin-skeleton-block'];
         if (variant) {
@@ -2392,6 +2851,50 @@
                 </div>
                 <div class="payments-breakdown-meta payments-skeleton-inline">
                     ${buildPaymentsSkeletonPills(3)}
+                </div>
+            </div>
+        `;
+    }
+
+    function buildPaymentsBusinessBoardSkeleton() {
+        return `
+            <div class="payments-business-board payments-business-board--skeleton" aria-hidden="true">
+                <div class="payments-business-trend-panel payments-skeleton-card">
+                    <div class="payments-business-trend-head">
+                        <div class="payments-skeleton-stack">
+                            ${buildPaymentsSkeletonBlock('title', 'admin-skeleton-w-30')}
+                            ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-60')}
+                        </div>
+                        <div class="payments-skeleton-stack payments-skeleton-stack--align-end">
+                            ${buildPaymentsSkeletonBlock('pill', 'admin-skeleton-w-chip-md')}
+                            ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-30')}
+                        </div>
+                    </div>
+                    <div class="payments-business-legend">
+                        ${buildPaymentsSkeletonPills(5)}
+                    </div>
+                    <div class="payments-business-trend-body">
+                        <div class="payments-business-trend-plot-shell">
+                            <div class="payments-business-trend-plot-frame">
+                                <div class="payments-business-trend-skeleton-grid">
+                                    ${Array.from({ length: 5 }, () => '<span></span>').join('')}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="payments-business-trend-inspector payments-skeleton-stack">
+                            ${buildPaymentsSkeletonBlock('title', 'admin-skeleton-w-50')}
+                            ${Array.from({ length: 4 }, () => buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-full')).join('')}
+                        </div>
+                    </div>
+                </div>
+                <div class="payments-business-table-panel payments-skeleton-card">
+                    <div class="payments-business-table-head">
+                        ${buildPaymentsSkeletonBlock('title', 'admin-skeleton-w-20')}
+                        ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-50')}
+                    </div>
+                    <div class="payments-business-table-skeleton-rows">
+                        ${Array.from({ length: 4 }, () => buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-full')).join('')}
+                    </div>
                 </div>
             </div>
         `;
@@ -2547,9 +3050,10 @@
 
         return `
             <div class="payments-table-wrap">
-                <table class="payments-table payments-table-skeleton" aria-hidden="true">
+                <table class="payments-table payments-table-skeleton payments-orders-grid-table" aria-hidden="true">
                     <thead>
                         <tr>
+                            <th>用户邮箱</th>
                             <th>订单号</th>
                             <th>套餐</th>
                             <th>金额</th>
@@ -2565,6 +3069,7 @@
                     <tbody>
                         ${Array.from({ length: rowCount }, (_, index) => `
                             <tr class="payments-table-skeleton-row">
+                                <td>${buildPaymentsSkeletonBlock('line', index % 2 === 0 ? 'admin-skeleton-w-40' : 'admin-skeleton-w-50')}</td>
                                 <td>
                                     <div class="payments-skeleton-stack">
                                         ${buildPaymentsSkeletonBlock('title', index % 2 === 0 ? 'admin-skeleton-w-40' : 'admin-skeleton-w-50')}
@@ -2729,13 +3234,13 @@
             const pointsBreakdown = document.getElementById('paymentsPointsBreakdown');
 
             if (sitewideGrid) {
-                sitewideGrid.innerHTML = buildPaymentsKpiSkeletonCards(6);
+                sitewideGrid.innerHTML = buildPaymentsKpiSkeletonCards(7);
             }
             if (businessBreakdown) {
-                businessBreakdown.innerHTML = Array.from({ length: 3 }, () => buildPaymentsBreakdownSkeleton()).join('');
+                businessBreakdown.innerHTML = buildPaymentsBusinessBoardSkeleton();
             }
             if (pointsBreakdown) {
-                pointsBreakdown.innerHTML = Array.from({ length: 4 }, () => buildPaymentsPointsRowSkeleton()).join('');
+                pointsBreakdown.innerHTML = buildPaymentsBusinessBoardSkeleton();
             }
             return;
         }
@@ -2772,7 +3277,9 @@
                 ordersTarget.innerHTML = buildPaymentsOrdersSkeleton();
             }
             if (cleanupTarget) {
-                cleanupTarget.innerHTML = buildPaymentsCleanupSkeleton();
+                const showCleanupSkeleton = getCleanupTotalCount(state.cleanupPreview?.counts || {}) > 0;
+                setCleanupCardVisible(showCleanupSkeleton);
+                cleanupTarget.innerHTML = showCleanupSkeleton ? buildPaymentsCleanupSkeleton() : '';
             }
             return;
         }
@@ -2814,9 +3321,11 @@
         const target = document.getElementById('paymentsOverviewGrid');
         if (!target) return;
         const isCoreOverview = isOverviewCorePayload(data);
-        const refundIssueCount = Number(anomaly.refund_failures || 0)
-            + Number(anomaly.refund_reclaim_failures || 0)
-            + Number(anomaly.refund_compensation_failures || 0);
+        const refundIssueCount = getRefundIssueCount(data);
+        const refundBreakdown = getRefundIssueBreakdown(data);
+        const callbackBreakdown = getCallbackIssueBreakdown(data);
+        const callbackIssueCount = Number(callbackBreakdown.duplicate_webhook_orders || 0)
+            + Number(callbackBreakdown.session_anomalies || 0);
 
         const cards = [
             {
@@ -2869,11 +3378,11 @@
             },
             {
                 icon: 'fas fa-wave-square',
-                label: isCoreOverview ? '异常回调补充中' : '异常回调',
-                value: isCoreOverview ? '补充中' : formatNumber(Number(anomaly.recent_event_anomalies || 0) + Number(anomaly.session_anomalies || 0)),
+                label: isCoreOverview ? '回调专题补充中' : '回调专题',
+                value: isCoreOverview ? '补充中' : formatNumber(callbackIssueCount),
                 help: isCoreOverview
-                    ? '正在补充 webhook 异常、重复回调和趋势统计。'
-                    : `${formatNumber(anomaly.duplicate_webhook_orders)} 个订单出现重复回调 · 会话异常 ${formatNumber(anomaly.session_anomalies)}`,
+                    ? '正在补充重复回调、支付意图回填和趋势统计。'
+                    : `未归档专题中的回调/意图部分：重复回调 ${formatNumber(callbackBreakdown.duplicate_webhook_orders)} · 支付意图异常 ${formatNumber(callbackBreakdown.session_anomalies)}，不含退款失败与扣回失败。`,
                 tone: isCoreOverview ? 'info' : 'warning'
             },
             {
@@ -2882,10 +3391,10 @@
                 value: isCoreOverview ? '补充中' : formatNumber(refundIssueCount),
                 help: isCoreOverview
                     ? '正在补充退款失败、积分扣回失败和积分回滚失败统计。'
-                    : `退款失败 ${formatNumber(anomaly.refund_failures)} · 扣回失败 ${formatNumber(anomaly.refund_reclaim_failures)} · 回滚失败 ${formatNumber(anomaly.refund_compensation_failures)}`,
+                    : `退款失败 ${formatNumber(refundBreakdown.refund_failures)} · 扣回失败 ${formatNumber(refundBreakdown.refund_reclaim_failures)} · 回滚失败 ${formatNumber(refundBreakdown.refund_compensation_failures)}`,
                 tone: isCoreOverview
                     ? 'info'
-                    : (Number(anomaly.refund_compensation_failures || 0) > 0 || Number(anomaly.refund_reclaim_failures || 0) > 0
+                    : (Number(refundBreakdown.refund_compensation_failures || 0) > 0 || Number(refundBreakdown.refund_reclaim_failures || 0) > 0
                     ? 'critical'
                     : (refundIssueCount > 0 ? 'warning' : 'info'))
             },
@@ -2912,7 +3421,7 @@
         const topics = (Array.isArray(data?.refund_alert_topics) ? data.refund_alert_topics : [])
             .filter((topic) => REFUND_TOPIC_KEY_SET.has(String(topic?.key || '').trim().toLowerCase()))
             .sort((left, right) => REFUND_TOPIC_ORDER.indexOf(String(left?.key || '').trim().toLowerCase()) - REFUND_TOPIC_ORDER.indexOf(String(right?.key || '').trim().toLowerCase()));
-        const items = Array.isArray(data?.refund_alert_items) ? data.refund_alert_items : [];
+        const items = getActiveRefundAlertItems(data);
         const totalCount = topics.reduce((sum, topic) => sum + Number(topic?.count || 0), 0);
         const criticalCount = topics.reduce((sum, topic) => sum + (String(topic?.severity || '').trim().toLowerCase() === 'critical' ? Number(topic?.count || 0) : 0), 0);
 
@@ -2992,10 +3501,18 @@
         const summary = data?.ops_alert_summary || {};
         const items = Array.isArray(data?.ops_alert_items) ? data.ops_alert_items : [];
         const total = Number(summary.total || 0);
+        const deliveredCount = Math.max(0, Number(summary.delivered || 0) || 0);
+        const pendingCount = Math.max(0, Number(summary.pending || 0) || 0);
+        const retryCount = Math.max(0, Number(summary.retry || 0) || 0);
+        const processingCount = Math.max(0, Number(summary.processing || 0) || 0);
+        const deadLetterCount = Math.max(0, Number(summary.dead_letter || 0) || 0);
+        const actionableCount = summary.actionable_count != null
+            ? Math.max(0, Number(summary.actionable_count || 0) || 0)
+            : pendingCount + retryCount + processingCount + deadLetterCount;
 
         panel.hidden = false;
         meta.textContent = total
-            ? `当前范围内共 ${formatNumber(total)} 条站外告警任务，其中 ${formatNumber(summary.dead_letter || 0)} 条死信、${formatNumber(summary.retry || 0)} 条等待重试；已处理和已忽略记录都收在下方折叠区。`
+            ? `当前范围内共 ${formatNumber(total)} 条站外告警任务，其中 ${formatNumber(deliveredCount)} 条已送达、${formatNumber(actionableCount)} 条待处理、${formatNumber(deadLetterCount)} 条死信、${formatNumber(retryCount)} 条等待重试。`
             : '当前时间范围内还没有站外告警任务。';
 
         if (!items.length) {
@@ -3102,6 +3619,13 @@
                 help: `${formatNumber(summary.shop_order_count)} 笔消费 · 退款 ${formatPoints(summary.refunded_shop_points)}`
             },
             {
+                icon: 'fas fa-flask',
+                label: '模拟支付',
+                value: `${formatNumber(summary.mock_recharge_order_count)} 笔`,
+                help: `${formatPoints(summary.mock_recharge_points)} 已入账 · 用于和真实支付分开核对`,
+                tone: 'mock'
+            },
+            {
                 icon: 'fas fa-arrow-trend-up',
                 label: '流入',
                 value: formatPoints(summary.points_inflow),
@@ -3131,64 +3655,1229 @@
         renderMetricCards(target, cards);
     }
 
+    function getBusinessBreakdownKey(item) {
+        return String(item?.key || '').trim().toLowerCase();
+    }
+
+    function getBusinessBreakdownTone(item) {
+        const key = getBusinessBreakdownKey(item);
+        if (key === 'shop') return 'shop';
+        if (key === 'mock') return 'mock';
+        if (key === 'balance') return 'balance';
+        return 'recharge';
+    }
+
+    function getBusinessBreakdownMetricKind(item) {
+        const explicitKind = String(item?.metric_kind || item?.metricKind || '').trim().toLowerCase();
+        if (explicitKind) return explicitKind;
+
+        const key = getBusinessBreakdownKey(item);
+        if (key === 'recharge') return 'currency';
+        if (key === 'mock') return 'count';
+        return 'points';
+    }
+
+    function getBusinessBreakdownTrendPoints(item) {
+        return Array.isArray(item?.trend)
+            ? item.trend
+                .filter((point) => point && typeof point === 'object')
+                .map((point) => ({
+                    label: String(point.label || '').trim(),
+                    value: Number(point.value || 0)
+                }))
+                .filter((point) => Number.isFinite(point.value))
+            : [];
+    }
+
+    function formatBusinessBreakdownCount(value) {
+        const num = Number(value || 0);
+        if (!Number.isFinite(num)) return '0 笔';
+        return `${num.toLocaleString('zh-CN', {
+            minimumFractionDigits: num % 1 ? 1 : 0,
+            maximumFractionDigits: 1
+        })} 笔`;
+    }
+
+    function formatBusinessBreakdownTrendValue(kind, value) {
+        if (kind === 'currency') {
+            return formatCurrency(value);
+        }
+        if (kind === 'count') {
+            return formatBusinessBreakdownCount(value);
+        }
+        return formatPoints(value);
+    }
+
+    function getBusinessBreakdownToneMeta(itemOrTone) {
+        const tone = typeof itemOrTone === 'string'
+            ? String(itemOrTone || '').trim().toLowerCase()
+            : getBusinessBreakdownTone(itemOrTone);
+        return BUSINESS_BREAKDOWN_TONE_META[tone] || BUSINESS_BREAKDOWN_TONE_META.recharge;
+    }
+
+    function formatBusinessBreakdownSignedValue(kind, value) {
+        const num = Number(value || 0);
+        if (!Number.isFinite(num)) {
+            return formatBusinessBreakdownTrendValue(kind, 0);
+        }
+
+        const sign = num > 0 ? '+' : (num < 0 ? '-' : '');
+        const absValue = Math.abs(num);
+        if (kind === 'currency') {
+            return `${sign}${formatCurrency(absValue)}`;
+        }
+        if (kind === 'count') {
+            return `${sign}${formatBusinessBreakdownCount(absValue)}`;
+        }
+        return `${sign}${formatPoints(absValue)}`;
+    }
+
+    function getBusinessBreakdownDeltaDirection(value) {
+        const num = Number(value || 0);
+        if (!Number.isFinite(num) || Math.abs(num) < 0.0001) {
+            return 'flat';
+        }
+        return num > 0 ? 'up' : 'down';
+    }
+
+    function getBusinessBreakdownDeltaText(item) {
+        const direction = getBusinessBreakdownDeltaDirection(item?.delta);
+        if (direction === 'flat') {
+            return '较前一日持平';
+        }
+        return `较前一日 ${formatBusinessBreakdownSignedValue(getBusinessBreakdownMetricKind(item), item?.delta)}`;
+    }
+
+    function buildBusinessBreakdownItems(data) {
+        const items = Array.isArray(data?.business_breakdown) ? data.business_breakdown : [];
+        return items.map((item, index) => {
+            const trend = getBusinessBreakdownTrendPoints(item);
+            const values = trend.map((point) => Number(point.value || 0));
+            const latest = values.length ? values[values.length - 1] : 0;
+            const previous = values.length > 1 ? values[values.length - 2] : latest;
+            const average = values.length ? (values.reduce((sum, value) => sum + value, 0) / values.length) : 0;
+            const peak = values.length ? Math.max(...values) : latest;
+            const key = getBusinessBreakdownKey(item) || `business-${index + 1}`;
+            const tone = getBusinessBreakdownTone(item);
+            const metricKind = getBusinessBreakdownMetricKind(item);
+
+            return {
+                ...item,
+                key,
+                tone,
+                metricKind,
+                trend,
+                latest,
+                latestLabel: trend[trend.length - 1]?.label || '当前',
+                average,
+                peak,
+                delta: latest - previous
+            };
+        });
+    }
+
+    function buildBusinessBreakdownLabels(items) {
+        const labels = [];
+        const seen = new Set();
+
+        items.forEach((item) => {
+            (item?.trend || []).forEach((point) => {
+                const label = String(point?.label || '').trim();
+                if (!label || seen.has(label)) return;
+                seen.add(label);
+                labels.push(label);
+            });
+        });
+
+        return labels;
+    }
+
+    function getBusinessBreakdownSeriesValues(item, labels) {
+        const valueMap = new Map(
+            (item?.trend || []).map((point) => [
+                String(point?.label || '').trim(),
+                Number(point?.value || 0)
+            ])
+        );
+
+        return labels.map((label) => {
+            const value = valueMap.get(label);
+            return Number.isFinite(value) ? value : 0;
+        });
+    }
+
+    function buildBusinessBreakdownTickIndexes(totalCount, preferredCount = 6) {
+        const total = Number(totalCount || 0);
+        if (total <= 0) return [];
+        if (total <= preferredCount) {
+            return Array.from({ length: total }, (_, index) => index);
+        }
+
+        const step = Math.max(1, Math.ceil((total - 1) / Math.max(1, preferredCount - 1)));
+        const indexes = new Set([0, total - 1]);
+        for (let index = 0; index < total; index += step) {
+            indexes.add(index);
+        }
+
+        return Array.from(indexes).sort((left, right) => left - right);
+    }
+
+    function getResolvedBusinessBreakdownFocusKey(items) {
+        const keys = new Set((items || []).map((item) => item.key));
+        if (keys.has(state.businessBreakdownFocusKey)) {
+            return state.businessBreakdownFocusKey;
+        }
+        return 'all';
+    }
+
+    function buildBusinessBreakdownSmoothPath(points) {
+        if (!Array.isArray(points) || !points.length) return '';
+        if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+
+        return points.reduce((path, point, index) => {
+            if (index === 0) {
+                return `M ${point.x} ${point.y}`;
+            }
+
+            const previousPoint = points[index - 1];
+            const midX = Number(((previousPoint.x + point.x) / 2).toFixed(2));
+            return `${path} C ${midX} ${previousPoint.y}, ${midX} ${point.y}, ${point.x} ${point.y}`;
+        }, '');
+    }
+
+    function buildBusinessBreakdownChartModel(items) {
+        const labels = buildBusinessBreakdownLabels(items);
+        const focusKey = getResolvedBusinessBreakdownFocusKey(items);
+        const mode = 'normalized';
+        const chartItems = items;
+        const focusedItem = focusKey === 'all'
+            ? null
+            : items.find((item) => item.key === focusKey) || null;
+        const width = 1040;
+        const height = 340;
+        const chartLeft = 66;
+        const chartRight = 24;
+        const chartTop = 24;
+        const chartBottom = 40;
+        const plotWidth = Math.max(0, width - chartLeft - chartRight);
+        const plotHeight = Math.max(0, height - chartTop - chartBottom);
+        const xPositions = labels.map((label, index) => {
+            const x = labels.length === 1
+                ? chartLeft + (plotWidth / 2)
+                : chartLeft + ((plotWidth * index) / Math.max(1, labels.length - 1));
+            return {
+                label,
+                index,
+                x: Number(x.toFixed(2))
+            };
+        });
+        const xTickIndexes = buildBusinessBreakdownTickIndexes(labels.length, 6);
+        const series = chartItems.map((item) => {
+            const meta = getBusinessBreakdownToneMeta(item);
+            const values = getBusinessBreakdownSeriesValues(item, labels);
+            const minValue = values.length ? Math.min(...values) : 0;
+            const maxValue = values.length ? Math.max(...values) : 0;
+            const rawRange = maxValue - minValue;
+            const pad = rawRange > 0
+                ? rawRange * 0.08
+                : Math.max(1, Math.abs(maxValue) * 0.08 || 1);
+            const scaleMin = rawRange > 0 ? (minValue - pad) : (minValue - pad);
+            const scaleMax = rawRange > 0 ? (maxValue + pad) : (maxValue + pad);
+            const scaleRange = Math.max(scaleMax - scaleMin, 1);
+            const points = values.map((value, index) => {
+                const ratio = (value - scaleMin) / scaleRange;
+                const y = chartTop + plotHeight - (ratio * plotHeight);
+                return {
+                    index,
+                    label: labels[index] || '',
+                    value,
+                    x: xPositions[index]?.x ?? chartLeft,
+                    y: Number(y.toFixed(2))
+                };
+            });
+            const linePath = buildBusinessBreakdownSmoothPath(points);
+            const areaPath = points.length
+                ? `${linePath} L ${points[points.length - 1].x} ${chartTop + plotHeight} L ${points[0].x} ${chartTop + plotHeight} Z`
+                : '';
+
+            return {
+                ...item,
+                meta,
+                values,
+                scaleMin,
+                scaleMax,
+                isFocused: focusKey !== 'all' && item.key === focusKey,
+                isMuted: focusKey !== 'all' && item.key !== focusKey,
+                showArea: focusKey !== 'all' && item.key === focusKey,
+                points,
+                linePath,
+                areaPath
+            };
+        });
+
+        const yTicks = [100, 75, 50, 25, 0].map((value, index) => ({
+            label: `${value}%`,
+            y: Number((chartTop + (plotHeight * (index / 4))).toFixed(2))
+        }));
+
+        return {
+            focusKey,
+            mode,
+            focusedItem,
+            labels,
+            series,
+            width,
+            height,
+            chartLeft,
+            chartRight,
+            chartTop,
+            chartBottom,
+            plotWidth,
+            plotHeight,
+            xPositions,
+            xTickIndexes,
+            yTicks,
+            rangeLabel: labels.length ? `最近 ${labels.length} 个观察日` : '暂无观察日',
+            modeLabel: focusedItem ? `聚焦 ${focusedItem.title || '业务项'}` : '多序列对比',
+            note: focusedItem
+                ? `已聚焦 ${focusedItem.title || '当前业务项'}，其它曲线保留走势并淡化显示。`
+                : '当前为多序列对比模式，各曲线按自身区间缩放，便于对比走势起伏。'
+        };
+    }
+
+    function getBusinessBreakdownActiveIndex(model) {
+        if (!model?.labels?.length) return -1;
+        const index = Number(state.businessBreakdownHoverIndex);
+        if (Number.isInteger(index) && index >= 0 && index < model.labels.length) {
+            return index;
+        }
+        return model.labels.length - 1;
+    }
+
+    function renderBusinessBreakdownSummaryCards(items) {
+        const focusKey = getResolvedBusinessBreakdownFocusKey(items);
+        return `
+            <div class="payments-business-summary-grid">
+                ${items.map((item) => {
+                    const toneMeta = getBusinessBreakdownToneMeta(item);
+                    const deltaDirection = getBusinessBreakdownDeltaDirection(item.delta);
+                    const isActive = focusKey === item.key;
+                    const isMuted = focusKey !== 'all' && !isActive;
+                    return `
+                        <button
+                            type="button"
+                            class="payments-business-summary-card${isActive ? ' is-active' : ''}${isMuted ? ' is-muted' : ''}"
+                            data-payments-business-focus-key="${escapeHtml(item.key)}"
+                            aria-pressed="${isActive ? 'true' : 'false'}"
+                            style="--payments-business-accent:${toneMeta.color}; --payments-business-accent-fill:${toneMeta.fill}; --payments-business-accent-glow:${toneMeta.glow};"
+                        >
+                            <span class="payments-business-summary-card__icon">
+                                <i class="${escapeHtml(toneMeta.icon)}"></i>
+                            </span>
+                            <span class="payments-business-summary-card__copy">
+                                <span class="payments-business-summary-card__title">${escapeHtml(item.title || '业务项')}</span>
+                                <strong class="payments-business-summary-card__metric">${escapeHtml(item.metric || '—')}</strong>
+                                <span class="payments-business-summary-card__meta">${escapeHtml(item.meta || item.description || '当前暂无补充说明')}</span>
+                                <span class="payments-business-summary-card__foot">
+                                    <span class="payments-business-summary-card__latest">最近 ${escapeHtml(item.latestLabel)} · ${escapeHtml(formatBusinessBreakdownTrendValue(item.metricKind, item.latest))}</span>
+                                    <span class="payments-business-summary-card__delta trend-${escapeHtml(deltaDirection)}">${escapeHtml(getBusinessBreakdownDeltaText(item))}</span>
+                                </span>
+                            </span>
+                        </button>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+
+    function renderBusinessBreakdownLegend(items) {
+        const focusKey = getResolvedBusinessBreakdownFocusKey(items);
+        return `
+            <div class="payments-business-legend">
+                <button
+                    type="button"
+                    class="payments-business-legend-btn${focusKey === 'all' ? ' is-active' : ''}"
+                    data-payments-business-focus-key="all"
+                    aria-pressed="${focusKey === 'all' ? 'true' : 'false'}"
+                    style="--payments-business-accent:${BUSINESS_BREAKDOWN_TONE_META.all.color};"
+                >
+                    <span class="payments-business-legend-dot"></span>
+                    <span>全部走势</span>
+                </button>
+                ${items.map((item) => {
+                    const toneMeta = getBusinessBreakdownToneMeta(item);
+                    const isActive = focusKey === item.key;
+                    const isMuted = focusKey !== 'all' && !isActive;
+                    return `
+                        <button
+                            type="button"
+                            class="payments-business-legend-btn${isActive ? ' is-active' : ''}${isMuted ? ' is-muted' : ''}"
+                            data-payments-business-focus-key="${escapeHtml(item.key)}"
+                            aria-pressed="${isActive ? 'true' : 'false'}"
+                            style="--payments-business-accent:${toneMeta.color};"
+                        >
+                            <span class="payments-business-legend-dot"></span>
+                            <span>${escapeHtml(item.title || '业务项')}</span>
+                        </button>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+
+    function renderBusinessBreakdownInspector(model, items) {
+        const activeIndex = getBusinessBreakdownActiveIndex(model);
+        const activeLabel = model?.labels?.[activeIndex] || '当前';
+        const focusKey = getResolvedBusinessBreakdownFocusKey(items);
+        const orderedItems = focusKey === 'all'
+            ? items
+            : [
+                ...items.filter((item) => item.key === focusKey),
+                ...items.filter((item) => item.key !== focusKey)
+            ];
+
+        return `
+            <div class="payments-business-trend-inspector__head">
+                <span class="payments-business-trend-inspector__eyebrow">${escapeHtml(model.modeLabel || '走势')}</span>
+                <strong class="payments-business-trend-inspector__label">${escapeHtml(activeLabel)}</strong>
+                <span class="payments-business-trend-inspector__note">${escapeHtml(model.note || '')}</span>
+            </div>
+            <div class="payments-business-trend-inspector__rows">
+                ${orderedItems.map((item) => {
+                    const meta = getBusinessBreakdownToneMeta(item);
+                    const values = getBusinessBreakdownSeriesValues(item, model.labels || []);
+                    const currentValue = values[activeIndex] ?? item.latest ?? 0;
+                    const previousValue = activeIndex > 0 ? (values[activeIndex - 1] ?? currentValue) : currentValue;
+                    const delta = currentValue - previousValue;
+                    const deltaDirection = getBusinessBreakdownDeltaDirection(delta);
+                    return `
+                        <button
+                            type="button"
+                            class="payments-business-trend-inspector__row${focusKey === item.key ? ' is-active' : ''}${focusKey !== 'all' && focusKey !== item.key ? ' is-muted' : ''}"
+                            data-payments-business-focus-key="${escapeHtml(item.key)}"
+                            aria-pressed="${focusKey === item.key ? 'true' : 'false'}"
+                            style="--payments-business-accent:${meta.color};"
+                        >
+                            <span class="payments-business-trend-inspector__series">
+                                <span class="payments-business-trend-inspector__dot" style="--payments-business-accent:${meta.color};"></span>
+                                <span>${escapeHtml(item.title || '业务项')}</span>
+                            </span>
+                            <span class="payments-business-trend-inspector__value">${escapeHtml(formatBusinessBreakdownTrendValue(item.metricKind, currentValue))}</span>
+                            <span class="payments-business-trend-inspector__delta trend-${escapeHtml(deltaDirection)}">${escapeHtml(deltaDirection === 'flat' ? '持平' : formatBusinessBreakdownSignedValue(item.metricKind, delta))}</span>
+                        </button>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+
+    function renderBusinessBreakdownChartPanel(model, items) {
+        if (!model.labels.length) {
+            return '<div class="payments-breakdown-chart-empty">当前范围内暂无按天走势。</div>';
+        }
+
+        const hitareaStyle = [
+            `left:${((model.chartLeft / model.width) * 100).toFixed(4)}%`,
+            `right:${((model.chartRight / model.width) * 100).toFixed(4)}%`,
+            `top:${((model.chartTop / model.height) * 100).toFixed(4)}%`,
+            `bottom:${((model.chartBottom / model.height) * 100).toFixed(4)}%`,
+            `--payments-business-columns:${Math.max(1, model.labels.length)}`
+        ].join('; ');
+
+        return `
+            <div class="payments-business-trend-panel">
+                <div class="payments-business-trend-head">
+                    <div class="payments-business-trend-heading">
+                        <div class="payments-business-trend-title">近窗趋势</div>
+                        <div class="payments-business-trend-subtitle">按日观察业务收支与余额变化，点选图例或右侧清单可聚焦单根曲线。</div>
+                    </div>
+                    <div class="payments-business-trend-range">
+                        <strong>${escapeHtml(model.rangeLabel)}</strong>
+                        <span>${escapeHtml(model.modeLabel)}</span>
+                    </div>
+                </div>
+                ${renderBusinessBreakdownLegend(items)}
+                <div class="payments-business-trend-body">
+                    <div class="payments-business-trend-plot-shell">
+                        <div class="payments-business-trend-chart-note">${escapeHtml(model.note)}</div>
+                        <div class="payments-business-trend-plot-frame">
+                            <svg class="payments-business-trend-svg" viewBox="0 0 ${model.width} ${model.height}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+                                <rect class="payments-business-trend-plot-bg" x="${model.chartLeft}" y="${model.chartTop}" width="${model.plotWidth}" height="${model.plotHeight}" rx="18"></rect>
+                                ${model.yTicks.map((tick) => `
+                                    <g class="payments-business-trend-grid-row">
+                                        <line class="payments-business-trend-grid-line" x1="${model.chartLeft}" y1="${tick.y}" x2="${model.width - model.chartRight}" y2="${tick.y}"></line>
+                                        <text class="payments-business-trend-grid-label" x="${model.chartLeft - 12}" y="${tick.y + 4}" text-anchor="end">${escapeHtml(tick.label)}</text>
+                                    </g>
+                                `).join('')}
+                                <line
+                                    class="payments-business-trend-guide"
+                                    data-payments-business-guide
+                                    x1="${model.xPositions[getBusinessBreakdownActiveIndex(model)]?.x ?? model.chartLeft}"
+                                    y1="${model.chartTop}"
+                                    x2="${model.xPositions[getBusinessBreakdownActiveIndex(model)]?.x ?? model.chartLeft}"
+                                    y2="${model.chartTop + model.plotHeight}"
+                                ></line>
+                                ${model.series.map((series) => `
+                                    <g class="payments-business-trend-series${series.isFocused ? ' is-focused' : ''}${series.isMuted ? ' is-muted' : ''}" data-payments-business-series-key="${escapeHtml(series.key)}">
+                                        ${series.showArea && series.areaPath
+                                            ? `<path class="payments-business-trend-area" d="${series.areaPath}" style="--payments-business-series-color:${series.meta.color}; --payments-business-series-fill:${series.meta.fill};"></path>`
+                                            : ''}
+                                        <path class="payments-business-trend-line" d="${series.linePath}" style="--payments-business-series-color:${series.meta.color}; --payments-business-series-glow:${series.meta.glow};"></path>
+                                    </g>
+                                `).join('')}
+                                ${model.xTickIndexes.map((tickIndex) => `
+                                    <text
+                                        class="payments-business-trend-axis-label"
+                                        x="${model.xPositions[tickIndex]?.x ?? model.chartLeft}"
+                                        y="${model.height - 10}"
+                                        text-anchor="middle"
+                                    >${escapeHtml(model.labels[tickIndex] || '')}</text>
+                                `).join('')}
+                            </svg>
+                            <div class="payments-business-trend-point-layer" aria-hidden="true">
+                                ${model.series.map((series) => series.points.map((point) => `
+                                    <span
+                                        class="payments-business-trend-point"
+                                        data-payments-business-point-index="${point.index}"
+                                        data-payments-business-point-key="${escapeHtml(series.key)}"
+                                        style="left:${((point.x / model.width) * 100).toFixed(4)}%; top:${((point.y / model.height) * 100).toFixed(4)}%; --payments-business-series-color:${series.meta.color};"
+                                    ></span>
+                                `).join('')).join('')}
+                            </div>
+                            <div
+                                class="payments-business-trend-hitareas"
+                                style="${hitareaStyle};"
+                            >
+                                ${model.labels.map((label, index) => `
+                                    <button
+                                        type="button"
+                                        class="payments-business-trend-hitarea"
+                                        data-payments-business-index="${index}"
+                                        aria-label="${escapeHtml(label)}"
+                                    ></button>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="payments-business-trend-inspector" data-payments-business-inspector></div>
+                </div>
+            </div>
+        `;
+    }
+
+    function renderBusinessBreakdownTable(items) {
+        const focusKey = getResolvedBusinessBreakdownFocusKey(items);
+        return `
+            <div class="payments-business-table-panel">
+                <div class="payments-business-table-head">
+                    <div class="payments-business-table-title">拆分明细</div>
+                    <div class="payments-business-table-note">保留最近观测、日均、峰值和走势摘要，汇总数已移到顶部总览。</div>
+                </div>
+                <div class="payments-business-table-wrap">
+                    <table class="payments-business-table">
+                        <thead>
+                            <tr>
+                                <th>业务项</th>
+                                <th>最近观测</th>
+                                <th>日均</th>
+                                <th>峰值</th>
+                                <th>走势摘要</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${items.map((item) => {
+                                const toneMeta = getBusinessBreakdownToneMeta(item);
+                                const deltaDirection = getBusinessBreakdownDeltaDirection(item.delta);
+                                return `
+                                    <tr
+                                        class="payments-business-table-row${focusKey === item.key ? ' is-focused' : ''}${focusKey !== 'all' && focusKey !== item.key ? ' is-muted' : ''}"
+                                        data-payments-business-row-key="${escapeHtml(item.key)}"
+                                        style="--payments-business-accent:${toneMeta.color};"
+                                    >
+                                        <td>
+                                            <div class="payments-business-table-label">
+                                                <span class="payments-business-table-dot"></span>
+                                                <div class="payments-business-table-copy">
+                                                    <strong>${escapeHtml(item.title || '业务项')}</strong>
+                                                    <span>${escapeHtml(item.description || item.help || '—')}</span>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="payments-business-table-value">
+                                                <strong>${escapeHtml(formatBusinessBreakdownTrendValue(item.metricKind, item.latest))}</strong>
+                                                <span>${escapeHtml(item.latestLabel || '当前')}</span>
+                                            </div>
+                                        </td>
+                                        <td>${escapeHtml(formatBusinessBreakdownTrendValue(item.metricKind, item.average))}</td>
+                                        <td>${escapeHtml(formatBusinessBreakdownTrendValue(item.metricKind, item.peak))}</td>
+                                        <td>
+                                            <div class="payments-business-table-trend">
+                                                <span class="payments-business-table-trend-chip trend-${escapeHtml(deltaDirection)}">${escapeHtml(deltaDirection === 'flat' ? '持平' : (deltaDirection === 'up' ? '抬升' : '回落'))}</span>
+                                                <span>${escapeHtml(getBusinessBreakdownDeltaText(item))}</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    }
+
+    function syncBusinessBreakdownInteractiveState(target, model, items) {
+        if (!target || !model?.labels?.length) return;
+
+        const activeIndex = getBusinessBreakdownActiveIndex(model);
+        const focusKey = getResolvedBusinessBreakdownFocusKey(items);
+        const guideX = model.xPositions[activeIndex]?.x ?? model.chartLeft;
+        const inspector = target.querySelector('[data-payments-business-inspector]');
+        if (inspector) {
+            inspector.innerHTML = renderBusinessBreakdownInspector(model, items);
+        }
+
+        const guide = target.querySelector('[data-payments-business-guide]');
+        if (guide) {
+            guide.setAttribute('x1', guideX);
+            guide.setAttribute('x2', guideX);
+        }
+
+        target.querySelectorAll('[data-payments-business-point-index]').forEach((pointNode) => {
+            const pointIndex = Number(pointNode.dataset.paymentsBusinessPointIndex || -1);
+            const pointKey = String(pointNode.dataset.paymentsBusinessPointKey || '').trim().toLowerCase();
+            const isActive = pointIndex === activeIndex;
+            const isMuted = focusKey !== 'all' && pointKey !== focusKey;
+            const isFocused = focusKey !== 'all' && pointKey === focusKey;
+            pointNode.classList.toggle('is-active', isActive);
+            pointNode.classList.toggle('is-muted', isMuted);
+            pointNode.classList.toggle('is-focused', isFocused);
+        });
+
+        target.querySelectorAll('[data-payments-business-index]').forEach((hitareaNode) => {
+            const hitareaIndex = Number(hitareaNode.dataset.paymentsBusinessIndex || -1);
+            hitareaNode.classList.toggle('is-active', hitareaIndex === activeIndex);
+        });
+
+        target.querySelectorAll('[data-payments-business-series-key]').forEach((seriesNode) => {
+            const seriesKey = String(seriesNode.dataset.paymentsBusinessSeriesKey || '').trim().toLowerCase();
+            seriesNode.classList.toggle('is-focused', focusKey !== 'all' && focusKey === seriesKey);
+            seriesNode.classList.toggle('is-muted', focusKey !== 'all' && focusKey !== seriesKey);
+        });
+
+        target.querySelectorAll('[data-payments-business-focus-key]').forEach((focusNode) => {
+            const nodeKey = String(focusNode.dataset.paymentsBusinessFocusKey || '').trim().toLowerCase() || 'all';
+            const isActive = nodeKey === focusKey;
+            const isMuted = focusKey !== 'all' && nodeKey !== 'all' && !isActive;
+            focusNode.classList.toggle('is-active', isActive);
+            focusNode.classList.toggle('is-muted', isMuted);
+            focusNode.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        });
+
+        target.querySelectorAll('[data-payments-business-row-key]').forEach((rowNode) => {
+            const rowKey = String(rowNode.dataset.paymentsBusinessRowKey || '').trim().toLowerCase();
+            rowNode.classList.toggle('is-focused', focusKey === rowKey);
+            rowNode.classList.toggle('is-muted', focusKey !== 'all' && focusKey !== rowKey);
+        });
+    }
+
+    function setBusinessBreakdownFocusKey(focusKey = 'all') {
+        const normalizedFocusKey = String(focusKey || 'all').trim().toLowerCase() || 'all';
+        state.businessBreakdownFocusKey = normalizedFocusKey === state.businessBreakdownFocusKey && normalizedFocusKey !== 'all'
+            ? 'all'
+            : normalizedFocusKey;
+        state.businessBreakdownHoverIndex = null;
+        renderBusinessBreakdown(state.summary || {});
+    }
+
+    function bindBusinessBreakdownInteractions(target, model, items) {
+        if (!target) return;
+
+        if (!target.dataset.paymentsBusinessFocusBound) {
+            target.addEventListener('click', (event) => {
+                const focusButton = event.target.closest('[data-payments-business-focus-key]');
+                if (!focusButton || !target.contains(focusButton)) return;
+                setBusinessBreakdownFocusKey(focusButton.dataset.paymentsBusinessFocusKey || 'all');
+            });
+            target.dataset.paymentsBusinessFocusBound = 'true';
+        }
+
+        target.querySelectorAll('[data-payments-business-index]').forEach((hitarea) => {
+            const nextIndex = Number(hitarea.dataset.paymentsBusinessIndex || -1);
+            if (!Number.isInteger(nextIndex) || nextIndex < 0) return;
+
+            hitarea.addEventListener('mouseenter', () => {
+                state.businessBreakdownHoverIndex = nextIndex;
+                syncBusinessBreakdownInteractiveState(target, model, items);
+            });
+            hitarea.addEventListener('focus', () => {
+                state.businessBreakdownHoverIndex = nextIndex;
+                syncBusinessBreakdownInteractiveState(target, model, items);
+            });
+        });
+
+        const chartShell = target.querySelector('.payments-business-trend-plot-shell');
+        if (chartShell) {
+            chartShell.addEventListener('mouseleave', () => {
+                state.businessBreakdownHoverIndex = null;
+                syncBusinessBreakdownInteractiveState(target, model, items);
+            });
+        }
+    }
+
     function renderBusinessBreakdown(data) {
         const target = document.getElementById('paymentsBusinessBreakdown');
         if (!target) return;
-        const items = Array.isArray(data?.business_breakdown) ? data.business_breakdown : [];
+        const items = buildBusinessBreakdownItems(data);
 
         if (!items.length) {
             target.innerHTML = '<div class="payments-empty-state">当前暂无全站业务收支数据。</div>';
             return;
         }
 
-        target.innerHTML = items.map((item) => `
-            <div class="payments-breakdown-card">
-                <div class="payments-row-head">
-                    <div class="payments-row-title-wrap">
-                        <div class="payments-breakdown-title">${escapeHtml(item.title || '业务项')}</div>
-                        ${renderInfoChip(item.help || '')}
+        const model = buildBusinessBreakdownChartModel(items);
+        target.innerHTML = `
+            <div class="payments-business-board">
+                ${renderBusinessBreakdownChartPanel(model, items)}
+                ${renderBusinessBreakdownTable(items)}
+            </div>
+        `;
+
+        bindBusinessBreakdownInteractions(target, model, items);
+        syncBusinessBreakdownInteractiveState(target, model, items);
+    }
+
+    function getPointsBreakdownKey(item) {
+        return String(item?.key || '').trim().toLowerCase();
+    }
+
+    function getPointsBreakdownToneMeta(itemOrKey) {
+        const key = typeof itemOrKey === 'string'
+            ? String(itemOrKey || '').trim().toLowerCase()
+            : getPointsBreakdownKey(itemOrKey);
+        return POINTS_BREAKDOWN_TONE_META[key] || POINTS_BREAKDOWN_TONE_META.all;
+    }
+
+    function getPointsBreakdownTrendPoints(item) {
+        return Array.isArray(item?.trend)
+            ? item.trend
+                .filter((point) => point && typeof point === 'object')
+                .map((point) => ({
+                    label: String(point.label || '').trim(),
+                    value: Number(point.value || 0)
+                }))
+                .filter((point) => Number.isFinite(point.value))
+            : [];
+    }
+
+    function buildPointsBreakdownItems(data) {
+        const items = Array.isArray(data?.points_breakdown) ? data.points_breakdown : [];
+        return items.map((item, index) => {
+            const key = getPointsBreakdownKey(item) || `points-${index + 1}`;
+            const trend = getPointsBreakdownTrendPoints(item);
+            const values = trend.map((point) => Number(point.value || 0));
+            const latest = values.length ? values[values.length - 1] : Number(item.net || 0);
+            const previous = values.length > 1 ? values[values.length - 2] : latest;
+            const average = values.length ? (values.reduce((sum, value) => sum + value, 0) / values.length) : Number(item.net || 0);
+            const peak = values.length
+                ? values.reduce((winner, value) => (Math.abs(value) > Math.abs(winner) ? value : winner), values[0])
+                : Number(item.net || 0);
+
+            return {
+                ...item,
+                key,
+                title: item.label || item.key || '积分分类',
+                description: `流入 ${formatPoints(item.inflow)} · 流出 ${formatPoints(item.outflow)}`,
+                metric: formatSignedPoints(item.net),
+                meta: Number(item.net || 0) >= 0 ? '净流入' : '净流出',
+                metricKind: 'points',
+                trend,
+                latest,
+                latestLabel: trend[trend.length - 1]?.label || '当前',
+                average,
+                peak,
+                delta: latest - previous
+            };
+        });
+    }
+
+    function getResolvedPointsBreakdownFocusKey(items) {
+        const keys = new Set((items || []).map((item) => item.key));
+        if (keys.has(state.pointsBreakdownFocusKey)) {
+            return state.pointsBreakdownFocusKey;
+        }
+        return 'all';
+    }
+
+    function buildPointsBreakdownChartModel(items) {
+        const labels = buildBusinessBreakdownLabels(items);
+        const focusKey = getResolvedPointsBreakdownFocusKey(items);
+        const mode = 'normalized';
+        const chartItems = items;
+        const focusedItem = focusKey === 'all'
+            ? null
+            : items.find((item) => item.key === focusKey) || null;
+        const width = 1040;
+        const height = 340;
+        const chartLeft = 66;
+        const chartRight = 24;
+        const chartTop = 24;
+        const chartBottom = 40;
+        const plotWidth = Math.max(0, width - chartLeft - chartRight);
+        const plotHeight = Math.max(0, height - chartTop - chartBottom);
+        const xPositions = labels.map((label, index) => {
+            const x = labels.length === 1
+                ? chartLeft + (plotWidth / 2)
+                : chartLeft + ((plotWidth * index) / Math.max(1, labels.length - 1));
+            return {
+                label,
+                index,
+                x: Number(x.toFixed(2))
+            };
+        });
+        const xTickIndexes = buildBusinessBreakdownTickIndexes(labels.length, 6);
+        const series = chartItems.map((item) => {
+            const meta = getPointsBreakdownToneMeta(item);
+            const values = getBusinessBreakdownSeriesValues(item, labels);
+            const minValue = values.length ? Math.min(...values) : 0;
+            const maxValue = values.length ? Math.max(...values) : 0;
+            const rawRange = maxValue - minValue;
+            const pad = rawRange > 0
+                ? rawRange * 0.1
+                : Math.max(1, Math.abs(maxValue) * 0.1 || 1);
+            const scaleMin = minValue - pad;
+            const scaleMax = maxValue + pad;
+            const scaleRange = Math.max(scaleMax - scaleMin, 1);
+            const points = values.map((value, index) => {
+                const ratio = (value - scaleMin) / scaleRange;
+                const y = chartTop + plotHeight - (ratio * plotHeight);
+                return {
+                    index,
+                    label: labels[index] || '',
+                    value,
+                    x: xPositions[index]?.x ?? chartLeft,
+                    y: Number(y.toFixed(2))
+                };
+            });
+            const linePath = buildBusinessBreakdownSmoothPath(points);
+            const areaPath = points.length
+                ? `${linePath} L ${points[points.length - 1].x} ${chartTop + plotHeight} L ${points[0].x} ${chartTop + plotHeight} Z`
+                : '';
+
+            return {
+                ...item,
+                meta,
+                values,
+                scaleMin,
+                scaleMax,
+                isFocused: focusKey !== 'all' && item.key === focusKey,
+                isMuted: focusKey !== 'all' && item.key !== focusKey,
+                showArea: focusKey !== 'all' && item.key === focusKey,
+                points,
+                linePath,
+                areaPath
+            };
+        });
+        const yTicks = [100, 75, 50, 25, 0].map((value, index) => ({
+            label: `${value}%`,
+            y: Number((chartTop + (plotHeight * (index / 4))).toFixed(2))
+        }));
+
+        return {
+            focusKey,
+            mode,
+            focusedItem,
+            labels,
+            series,
+            width,
+            height,
+            chartLeft,
+            chartRight,
+            chartTop,
+            chartBottom,
+            plotWidth,
+            plotHeight,
+            xPositions,
+            xTickIndexes,
+            yTicks,
+            rangeLabel: labels.length ? `最近 ${labels.length} 个观察日` : '暂无观察日',
+            modeLabel: focusedItem ? `聚焦 ${focusedItem.title || '积分分类'}` : '多序列对比',
+            note: focusedItem
+                ? `已聚焦 ${focusedItem.title || '当前分类'}，其它曲线保留走势并淡化显示。`
+                : '当前为多分类对比模式，各曲线按自身区间缩放，便于观察分类节奏。'
+        };
+    }
+
+    function getPointsBreakdownActiveIndex(model) {
+        if (!model?.labels?.length) return -1;
+        const index = Number(state.pointsBreakdownHoverIndex);
+        if (Number.isInteger(index) && index >= 0 && index < model.labels.length) {
+            return index;
+        }
+        return model.labels.length - 1;
+    }
+
+    function renderPointsBreakdownLegend(items) {
+        const focusKey = getResolvedPointsBreakdownFocusKey(items);
+        return `
+            <div class="payments-business-legend payments-points-legend">
+                <button
+                    type="button"
+                    class="payments-business-legend-btn${focusKey === 'all' ? ' is-active' : ''}"
+                    data-payments-points-focus-key="all"
+                    aria-pressed="${focusKey === 'all' ? 'true' : 'false'}"
+                    style="--payments-business-accent:${POINTS_BREAKDOWN_TONE_META.all.color};"
+                >
+                    <span class="payments-business-legend-dot"></span>
+                    <span>全部分类</span>
+                </button>
+                ${items.map((item) => {
+                    const toneMeta = getPointsBreakdownToneMeta(item);
+                    const isActive = focusKey === item.key;
+                    const isMuted = focusKey !== 'all' && !isActive;
+                    return `
+                        <button
+                            type="button"
+                            class="payments-business-legend-btn${isActive ? ' is-active' : ''}${isMuted ? ' is-muted' : ''}"
+                            data-payments-points-focus-key="${escapeHtml(item.key)}"
+                            aria-pressed="${isActive ? 'true' : 'false'}"
+                            style="--payments-business-accent:${toneMeta.color};"
+                        >
+                            <span class="payments-business-legend-dot"></span>
+                            <span>${escapeHtml(item.title || '积分分类')}</span>
+                        </button>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+
+    function renderPointsBreakdownInspector(model, items) {
+        const activeIndex = getPointsBreakdownActiveIndex(model);
+        const activeLabel = model?.labels?.[activeIndex] || '当前';
+        const focusKey = getResolvedPointsBreakdownFocusKey(items);
+        const orderedItems = focusKey === 'all'
+            ? items
+            : [
+                ...items.filter((item) => item.key === focusKey),
+                ...items.filter((item) => item.key !== focusKey)
+            ];
+
+        return `
+            <div class="payments-business-trend-inspector__head">
+                <span class="payments-business-trend-inspector__eyebrow">${escapeHtml(model.modeLabel || '走势')}</span>
+                <strong class="payments-business-trend-inspector__label">${escapeHtml(activeLabel)}</strong>
+                <span class="payments-business-trend-inspector__note">${escapeHtml(model.note || '')}</span>
+            </div>
+            <div class="payments-business-trend-inspector__rows">
+                ${orderedItems.map((item) => {
+                    const meta = getPointsBreakdownToneMeta(item);
+                    const values = getBusinessBreakdownSeriesValues(item, model.labels || []);
+                    const currentValue = values[activeIndex] ?? item.latest ?? 0;
+                    const previousValue = activeIndex > 0 ? (values[activeIndex - 1] ?? currentValue) : currentValue;
+                    const delta = currentValue - previousValue;
+                    const deltaDirection = getBusinessBreakdownDeltaDirection(delta);
+                    return `
+                        <button
+                            type="button"
+                            class="payments-business-trend-inspector__row${focusKey === item.key ? ' is-active' : ''}${focusKey !== 'all' && focusKey !== item.key ? ' is-muted' : ''}"
+                            data-payments-points-focus-key="${escapeHtml(item.key)}"
+                            aria-pressed="${focusKey === item.key ? 'true' : 'false'}"
+                            style="--payments-business-accent:${meta.color};"
+                        >
+                            <span class="payments-business-trend-inspector__series">
+                                <span class="payments-business-trend-inspector__dot" style="--payments-business-accent:${meta.color};"></span>
+                                <span>${escapeHtml(item.title || '积分分类')}</span>
+                            </span>
+                            <span class="payments-business-trend-inspector__value">${escapeHtml(formatSignedPoints(currentValue))}</span>
+                            <span class="payments-business-trend-inspector__delta trend-${escapeHtml(deltaDirection)}">${escapeHtml(deltaDirection === 'flat' ? '持平' : formatSignedPoints(delta))}</span>
+                        </button>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+
+    function renderPointsBreakdownChartPanel(model, items) {
+        if (!model.labels.length) {
+            return '<div class="payments-breakdown-chart-empty">当前范围内暂无积分流水走势。</div>';
+        }
+
+        const hitareaStyle = [
+            `left:${((model.chartLeft / model.width) * 100).toFixed(4)}%`,
+            `right:${((model.chartRight / model.width) * 100).toFixed(4)}%`,
+            `top:${((model.chartTop / model.height) * 100).toFixed(4)}%`,
+            `bottom:${((model.chartBottom / model.height) * 100).toFixed(4)}%`,
+            `--payments-business-columns:${Math.max(1, model.labels.length)}`
+        ].join('; ');
+
+        return `
+            <div class="payments-business-trend-panel payments-points-trend-panel">
+                <div class="payments-business-trend-head">
+                    <div class="payments-business-trend-heading">
+                        <div class="payments-business-trend-title">积分分类趋势</div>
+                        <div class="payments-business-trend-subtitle">按日观察积分流入、流出与净流动，点选图例或右侧清单可聚焦单根曲线。</div>
                     </div>
-                    <div class="payments-row-metric-wrap">
-                        <div class="payments-breakdown-metric">${escapeHtml(item.metric || '—')}</div>
+                    <div class="payments-business-trend-range">
+                        <strong>${escapeHtml(model.rangeLabel)}</strong>
+                        <span>${escapeHtml(model.modeLabel)}</span>
                     </div>
                 </div>
-                <div class="payments-breakdown-description">${escapeHtml(item.description || '')}</div>
-                <div class="payments-breakdown-meta">${escapeHtml(item.meta || '')}</div>
+                ${renderPointsBreakdownLegend(items)}
+                <div class="payments-business-trend-body">
+                    <div class="payments-business-trend-plot-shell">
+                        <div class="payments-business-trend-chart-note">${escapeHtml(model.note)}</div>
+                        <div class="payments-business-trend-plot-frame">
+                            <svg class="payments-business-trend-svg" viewBox="0 0 ${model.width} ${model.height}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+                                <rect class="payments-business-trend-plot-bg" x="${model.chartLeft}" y="${model.chartTop}" width="${model.plotWidth}" height="${model.plotHeight}" rx="18"></rect>
+                                ${model.yTicks.map((tick) => `
+                                    <g class="payments-business-trend-grid-row">
+                                        <line class="payments-business-trend-grid-line" x1="${model.chartLeft}" y1="${tick.y}" x2="${model.width - model.chartRight}" y2="${tick.y}"></line>
+                                        <text class="payments-business-trend-grid-label" x="${model.chartLeft - 12}" y="${tick.y + 4}" text-anchor="end">${escapeHtml(tick.label)}</text>
+                                    </g>
+                                `).join('')}
+                                <line
+                                    class="payments-business-trend-guide"
+                                    data-payments-points-guide
+                                    x1="${model.xPositions[getPointsBreakdownActiveIndex(model)]?.x ?? model.chartLeft}"
+                                    y1="${model.chartTop}"
+                                    x2="${model.xPositions[getPointsBreakdownActiveIndex(model)]?.x ?? model.chartLeft}"
+                                    y2="${model.chartTop + model.plotHeight}"
+                                ></line>
+                                ${model.series.map((series) => `
+                                    <g class="payments-business-trend-series${series.isFocused ? ' is-focused' : ''}${series.isMuted ? ' is-muted' : ''}" data-payments-points-series-key="${escapeHtml(series.key)}">
+                                        ${series.showArea && series.areaPath
+                                            ? `<path class="payments-business-trend-area" d="${series.areaPath}" style="--payments-business-series-color:${series.meta.color}; --payments-business-series-fill:${series.meta.fill};"></path>`
+                                            : ''}
+                                        <path class="payments-business-trend-line" d="${series.linePath}" style="--payments-business-series-color:${series.meta.color}; --payments-business-series-glow:${series.meta.glow};"></path>
+                                    </g>
+                                `).join('')}
+                                ${model.xTickIndexes.map((tickIndex) => `
+                                    <text
+                                        class="payments-business-trend-axis-label"
+                                        x="${model.xPositions[tickIndex]?.x ?? model.chartLeft}"
+                                        y="${model.height - 10}"
+                                        text-anchor="middle"
+                                    >${escapeHtml(model.labels[tickIndex] || '')}</text>
+                                `).join('')}
+                            </svg>
+                            <div class="payments-business-trend-point-layer" aria-hidden="true">
+                                ${model.series.map((series) => series.points.map((point) => `
+                                    <span
+                                        class="payments-business-trend-point"
+                                        data-payments-points-point-index="${point.index}"
+                                        data-payments-points-point-key="${escapeHtml(series.key)}"
+                                        style="left:${((point.x / model.width) * 100).toFixed(4)}%; top:${((point.y / model.height) * 100).toFixed(4)}%; --payments-business-series-color:${series.meta.color};"
+                                    ></span>
+                                `).join('')).join('')}
+                            </div>
+                            <div
+                                class="payments-business-trend-hitareas"
+                                style="${hitareaStyle};"
+                            >
+                                ${model.labels.map((label, index) => `
+                                    <button
+                                        type="button"
+                                        class="payments-business-trend-hitarea"
+                                        data-payments-points-index="${index}"
+                                        aria-label="${escapeHtml(label)}"
+                                    ></button>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="payments-business-trend-inspector" data-payments-points-inspector></div>
+                </div>
             </div>
-        `).join('');
+        `;
+    }
+
+    function renderPointsBreakdownTable(items) {
+        const focusKey = getResolvedPointsBreakdownFocusKey(items);
+        return `
+            <div class="payments-business-table-panel payments-points-table-panel">
+                <div class="payments-business-table-head">
+                    <div class="payments-business-table-title">积分明细</div>
+                    <div class="payments-business-table-note">按净流动排序，保留流入/流出汇总与最近走势。</div>
+                </div>
+                <div class="payments-business-table-wrap">
+                    <table class="payments-business-table payments-points-trend-table">
+                        <thead>
+                            <tr>
+                                <th>分类</th>
+                                <th>净流动</th>
+                                <th>最近观测</th>
+                                <th>日均</th>
+                                <th>峰值</th>
+                                <th>走势摘要</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${items.map((item) => {
+                                const toneMeta = getPointsBreakdownToneMeta(item);
+                                const deltaDirection = getBusinessBreakdownDeltaDirection(item.delta);
+                                return `
+                                    <tr
+                                        class="payments-business-table-row${focusKey === item.key ? ' is-focused' : ''}${focusKey !== 'all' && focusKey !== item.key ? ' is-muted' : ''}"
+                                        data-payments-points-row-key="${escapeHtml(item.key)}"
+                                        style="--payments-business-accent:${toneMeta.color};"
+                                    >
+                                        <td>
+                                            <div class="payments-business-table-label">
+                                                <span class="payments-business-table-dot"></span>
+                                                <div class="payments-business-table-copy">
+                                                    <strong>${escapeHtml(item.title || '积分分类')}</strong>
+                                                    <span>${escapeHtml(item.description || '—')}</span>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="payments-business-table-value">
+                                                <strong class="${Number(item.net || 0) < 0 ? 'is-negative' : 'is-positive'}">${escapeHtml(formatSignedPoints(item.net))}</strong>
+                                                <span>${escapeHtml(item.meta || '')}</span>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="payments-business-table-value">
+                                                <strong>${escapeHtml(formatSignedPoints(item.latest))}</strong>
+                                                <span>${escapeHtml(item.latestLabel || '当前')}</span>
+                                            </div>
+                                        </td>
+                                        <td>${escapeHtml(formatSignedPoints(item.average))}</td>
+                                        <td>${escapeHtml(formatSignedPoints(item.peak))}</td>
+                                        <td>
+                                            <div class="payments-business-table-trend">
+                                                <span class="payments-business-table-trend-chip trend-${escapeHtml(deltaDirection)}">${escapeHtml(deltaDirection === 'flat' ? '持平' : (deltaDirection === 'up' ? '抬升' : '回落'))}</span>
+                                                <span>${escapeHtml(deltaDirection === 'flat' ? '较前一日持平' : `较前一日 ${formatSignedPoints(item.delta)}`)}</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    }
+
+    function syncPointsBreakdownInteractiveState(target, model, items) {
+        if (!target || !model?.labels?.length) return;
+
+        const activeIndex = getPointsBreakdownActiveIndex(model);
+        const focusKey = getResolvedPointsBreakdownFocusKey(items);
+        const guideX = model.xPositions[activeIndex]?.x ?? model.chartLeft;
+        const inspector = target.querySelector('[data-payments-points-inspector]');
+        if (inspector) {
+            inspector.innerHTML = renderPointsBreakdownInspector(model, items);
+        }
+
+        const guide = target.querySelector('[data-payments-points-guide]');
+        if (guide) {
+            guide.setAttribute('x1', guideX);
+            guide.setAttribute('x2', guideX);
+        }
+
+        target.querySelectorAll('[data-payments-points-point-index]').forEach((pointNode) => {
+            const pointIndex = Number(pointNode.dataset.paymentsPointsPointIndex || -1);
+            const pointKey = String(pointNode.dataset.paymentsPointsPointKey || '').trim().toLowerCase();
+            pointNode.classList.toggle('is-active', pointIndex === activeIndex);
+            pointNode.classList.toggle('is-muted', focusKey !== 'all' && pointKey !== focusKey);
+            pointNode.classList.toggle('is-focused', focusKey !== 'all' && pointKey === focusKey);
+        });
+
+        target.querySelectorAll('[data-payments-points-index]').forEach((hitareaNode) => {
+            const hitareaIndex = Number(hitareaNode.dataset.paymentsPointsIndex || -1);
+            hitareaNode.classList.toggle('is-active', hitareaIndex === activeIndex);
+        });
+
+        target.querySelectorAll('[data-payments-points-series-key]').forEach((seriesNode) => {
+            const seriesKey = String(seriesNode.dataset.paymentsPointsSeriesKey || '').trim().toLowerCase();
+            seriesNode.classList.toggle('is-focused', focusKey !== 'all' && focusKey === seriesKey);
+            seriesNode.classList.toggle('is-muted', focusKey !== 'all' && focusKey !== seriesKey);
+        });
+
+        target.querySelectorAll('[data-payments-points-focus-key]').forEach((focusNode) => {
+            const nodeKey = String(focusNode.dataset.paymentsPointsFocusKey || '').trim().toLowerCase() || 'all';
+            const isActive = nodeKey === focusKey;
+            const isMuted = focusKey !== 'all' && nodeKey !== 'all' && !isActive;
+            focusNode.classList.toggle('is-active', isActive);
+            focusNode.classList.toggle('is-muted', isMuted);
+            focusNode.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        });
+
+        target.querySelectorAll('[data-payments-points-row-key]').forEach((rowNode) => {
+            const rowKey = String(rowNode.dataset.paymentsPointsRowKey || '').trim().toLowerCase();
+            rowNode.classList.toggle('is-focused', focusKey === rowKey);
+            rowNode.classList.toggle('is-muted', focusKey !== 'all' && focusKey !== rowKey);
+        });
+    }
+
+    function setPointsBreakdownFocusKey(focusKey = 'all') {
+        const normalizedFocusKey = String(focusKey || 'all').trim().toLowerCase() || 'all';
+        state.pointsBreakdownFocusKey = normalizedFocusKey === state.pointsBreakdownFocusKey && normalizedFocusKey !== 'all'
+            ? 'all'
+            : normalizedFocusKey;
+        state.pointsBreakdownHoverIndex = null;
+        renderPointsBreakdown(state.summary || {});
+    }
+
+    function bindPointsBreakdownInteractions(target, model, items) {
+        if (!target) return;
+
+        if (!target.dataset.paymentsPointsFocusBound) {
+            target.addEventListener('click', (event) => {
+                const focusButton = event.target.closest('[data-payments-points-focus-key]');
+                if (!focusButton || !target.contains(focusButton)) return;
+                setPointsBreakdownFocusKey(focusButton.dataset.paymentsPointsFocusKey || 'all');
+            });
+            target.dataset.paymentsPointsFocusBound = 'true';
+        }
+
+        target.querySelectorAll('[data-payments-points-index]').forEach((hitarea) => {
+            const nextIndex = Number(hitarea.dataset.paymentsPointsIndex || -1);
+            if (!Number.isInteger(nextIndex) || nextIndex < 0) return;
+
+            hitarea.addEventListener('mouseenter', () => {
+                state.pointsBreakdownHoverIndex = nextIndex;
+                syncPointsBreakdownInteractiveState(target, model, items);
+            });
+            hitarea.addEventListener('focus', () => {
+                state.pointsBreakdownHoverIndex = nextIndex;
+                syncPointsBreakdownInteractiveState(target, model, items);
+            });
+        });
+
+        const chartShell = target.querySelector('.payments-business-trend-plot-shell');
+        if (chartShell) {
+            chartShell.addEventListener('mouseleave', () => {
+                state.pointsBreakdownHoverIndex = null;
+                syncPointsBreakdownInteractiveState(target, model, items);
+            });
+        }
     }
 
     function renderPointsBreakdown(data) {
         const target = document.getElementById('paymentsPointsBreakdown');
         if (!target) return;
-        const items = Array.isArray(data?.points_breakdown) ? data.points_breakdown : [];
+        const items = buildPointsBreakdownItems(data);
 
         if (!items.length) {
             target.innerHTML = '<div class="payments-empty-state">当前时间范围内暂无积分流水可汇总。</div>';
             return;
         }
 
+        const model = buildPointsBreakdownChartModel(items);
         target.innerHTML = `
-            <div class="payments-points-table">
-                ${items.map((item) => `
-                    <div class="payments-points-row">
-                        <div class="payments-row-head">
-                            <div class="payments-row-title-wrap">
-                                <div class="payments-points-label">${escapeHtml(item.label || item.key || '未分类')}</div>
-                                ${renderInfoChip(item.help || '')}
-                            </div>
-                            <div class="payments-row-metric-wrap">
-                                <div class="payments-points-net ${Number(item.net || 0) < 0 ? 'is-negative' : 'is-positive'}">${escapeHtml(formatSignedPoints(item.net))}</div>
-                            </div>
-                        </div>
-                        <div class="payments-points-values">
-                            <span>流入 ${escapeHtml(formatPoints(item.inflow))}</span>
-                            <span>流出 ${escapeHtml(formatPoints(item.outflow))}</span>
-                        </div>
-                    </div>
-                `).join('')}
+            <div class="payments-business-board payments-points-board">
+                ${renderPointsBreakdownChartPanel(model, items)}
+                ${renderPointsBreakdownTable(items)}
             </div>
         `;
+
+        bindPointsBreakdownInteractions(target, model, items);
+        syncPointsBreakdownInteractiveState(target, model, items);
     }
 
     function renderTrend(data) {
@@ -3301,45 +4990,114 @@
 
         const topics = Array.isArray(data?.exception_topics) ? data.exception_topics : [];
         const items = Array.isArray(data?.exception_topic_items) ? data.exception_topic_items : [];
-        const activeFilter = String(state.exceptionTopicFilter || 'all').trim().toLowerCase() || 'all';
-        const filteredItems = activeFilter === 'all'
-            ? items
-            : items.filter((item) => String(item?.topic_key || '').trim().toLowerCase() === activeFilter);
+        const topicMap = new Map(
+            topics.map((topic) => [String(topic?.key || '').trim().toLowerCase(), topic])
+        );
+        const topicLabels = topics
+            .map((topic) => String(topic?.label || '').trim())
+            .filter(Boolean);
+        const topicCardDefinitions = [
+            {
+                key: 'all',
+                label: '全部专题',
+                icon: 'fas fa-layer-group',
+                severity: 'info',
+                description: topicLabels.length
+                    ? `覆盖 ${topicLabels.join('、')}。`
+                    : '当前范围内所有支付异常专题。'
+            },
+            {
+                key: 'duplicate_webhook',
+                label: '重复回调',
+                icon: 'fas fa-wave-square',
+                severity: 'warning',
+                description: '重点关注是否只是重复通知，还是已经造成重复入账、重复回填。'
+            },
+            {
+                key: 'payment_intent_issues',
+                label: '支付意图异常',
+                icon: 'fas fa-link-slash',
+                severity: 'warning',
+                description: '重点关注支付意图拉起失败、长时间未回填，或已完成但未关联正式订单。',
+                topicKeys: PAYMENT_INTENT_EXCEPTION_TOPIC_KEYS
+            },
+            {
+                key: 'refund_failures',
+                label: '退款失败',
+                icon: 'fas fa-rotate-left',
+                severity: 'warning',
+                description: '网关退款失败，但系统已自动补回积分，仍需复核通道响应和重复提交风险。'
+            },
+            {
+                key: 'refund_reclaim_failures',
+                label: '扣回失败',
+                icon: 'fas fa-shield-halved',
+                severity: 'critical',
+                description: '已入账订单在退款前无法安全扣回积分，当前退款已 fail-closed 停止。'
+            }
+        ];
+        const allowedTopicKeys = new Set(topicCardDefinitions.map((item) => item.key));
+        const rawActiveFilter = normalizeExceptionTopicFilterKey(state.exceptionTopicFilter || 'all');
+        const activeFilter = allowedTopicKeys.has(rawActiveFilter) ? rawActiveFilter : 'all';
+        const filteredItems = getExceptionTopicFilteredItems(data, activeFilter);
         const totalTopicCount = topics.reduce((sum, topic) => sum + Number(topic?.count || 0), 0);
         const split = splitItemsByResolution(filteredItems, (item) => item?.ops_status);
         const activeItems = split.activeItems;
         const resolvedItems = split.resolvedItems;
         const handledItems = filterItemsByStatuses(resolvedItems, ['handled', 'approved']);
         const ignoredItems = filterItemsByStatuses(resolvedItems, ['ignored', 'rejected']);
-
-        if (!topics.length) {
-            topicsTarget.innerHTML = '<div class="payments-empty-state">当前时间范围内没有需要专题跟进的支付异常。</div>';
-            listTarget.innerHTML = '';
-            return;
-        }
+        const archivedItems = filterItemsByStatuses(resolvedItems, ['archived']);
+        const topicCards = topicCardDefinitions.map((definition) => {
+            const topicKeys = Array.isArray(definition.topicKeys) && definition.topicKeys.length
+                ? definition.topicKeys
+                : [definition.key];
+            const matchedTopics = topicKeys
+                .map((key) => topicMap.get(String(key || '').trim().toLowerCase()))
+                .filter(Boolean);
+            const topic = matchedTopics[0] || topicMap.get(definition.key);
+            const severity = matchedTopics.some((item) => String(item?.severity || '').trim().toLowerCase() === 'critical')
+                ? 'critical'
+                : matchedTopics.some((item) => String(item?.severity || '').trim().toLowerCase() === 'warning')
+                    ? 'warning'
+                    : String(topic?.severity || definition.severity || 'info').trim().toLowerCase();
+            return {
+                ...definition,
+                label: Array.isArray(definition.topicKeys) && definition.topicKeys.length
+                    ? String(definition.label || '').trim()
+                    : String(topic?.label || definition.label).trim(),
+                severity,
+                description: Array.isArray(definition.topicKeys) && definition.topicKeys.length
+                    ? String(definition.description || '').trim()
+                    : String(topic?.description || definition.description || '').trim(),
+                count: definition.key === 'all'
+                    ? totalTopicCount
+                    : topicKeys.reduce((sum, key) => sum + Math.max(0, Number(topicMap.get(String(key || '').trim().toLowerCase())?.count || 0) || 0), 0)
+            };
+        });
+        const activeTopicCard = topicCards.find((topic) => topic.key === activeFilter) || topicCards[0];
+        const handledCount = resolvedItems.filter((item) => ['handled', 'approved'].includes(normalizeStatusValue(item?.ops_status))).length;
+        const ignoredCount = resolvedItems.filter((item) => ['ignored', 'rejected'].includes(normalizeStatusValue(item?.ops_status))).length;
+        const archivedCount = resolvedItems.filter((item) => normalizeStatusValue(item?.ops_status) === 'archived').length;
+        const batchArchiveLoading = isBatchAnomalyActionLoading('exception-topic-handled', 'archive');
 
         topicsTarget.innerHTML = `
-            <div class="payments-provider-row">
-                <div class="payments-provider-copy">
-                    <div class="payments-provider-name"><i class="fas fa-layer-group"></i>全部专题</div>
-                    <div class="payments-provider-meta">当前范围内共 ${escapeHtml(formatNumber(totalTopicCount))} 项专题异常，默认只展开待处理明细，已处理记录会收进下方“已处理”。</div>
-                </div>
-                <div class="payments-provider-badges">
-                    <button type="button" class="payments-anomaly-action-btn ${activeFilter === 'all' ? 'mark_handled' : ''}" data-admin-action="payments-set-exception-topic-filter" data-payments-topic-key="all">查看全部</button>
-                </div>
-            </div>
-            ${topics.map((topic) => `
-                <div class="payments-provider-row">
-                    <div class="payments-provider-copy">
-                        <div class="payments-provider-name"><i class="fas fa-bullseye"></i>${escapeHtml(topic.label || '专题')}</div>
-                        <div class="payments-provider-meta">${escapeHtml(topic.description || '')}</div>
-                    </div>
-                    <div class="payments-provider-badges">
+            <div class="payments-exception-topic-grid">
+            ${topicCards.map((topic) => `
+                <button
+                    type="button"
+                    class="payments-exception-topic-card payments-exception-topic-card--${escapeHtml(topic.severity === 'critical' ? 'critical' : (topic.severity === 'warning' ? 'warning' : 'info'))}${activeFilter === topic.key ? ' is-active' : ''}"
+                    data-admin-action="payments-set-exception-topic-filter"
+                    data-payments-topic-key="${escapeHtml(topic.key)}"
+                    aria-pressed="${activeFilter === topic.key ? 'true' : 'false'}"
+                >
+                    <span class="payments-exception-topic-card__top">
+                        <span class="payments-exception-topic-card__title"><i class="${escapeHtml(topic.icon)}"></i>${escapeHtml(topic.label || '专题')}</span>
                         <span class="payments-mini-badge ${escapeHtml(topic.severity === 'critical' ? 'danger' : (topic.severity === 'warning' ? 'warning' : 'info'))}">${escapeHtml(formatNumber(topic.count || 0))} 项</span>
-                        <button type="button" class="payments-anomaly-action-btn ${activeFilter === String(topic.key || '').trim().toLowerCase() ? 'mark_handled' : ''}" data-admin-action="payments-set-exception-topic-filter" data-payments-topic-key="${escapeHtml(topic.key)}">查看</button>
-                    </div>
-                </div>
+                    </span>
+                    <span class="payments-exception-topic-card__desc">${escapeHtml(topic.description || '')}</span>
+                </button>
             `).join('')}
+            </div>
         `;
 
         if (!filteredItems.length) {
@@ -3348,25 +5106,47 @@
         }
 
         listTarget.innerHTML = `
+            <div class="payments-exception-topic-detail-head">
+                <div>
+                    <strong>${escapeHtml(activeTopicCard?.label || '全部专题')}</strong>
+                    <span>${escapeHtml(activeTopicCard?.description || '当前激活专题的待处理、已处理、已忽略和已归档明细。')}</span>
+                </div>
+                <div class="payments-provider-badges">
+                    ${renderMiniCountBadge('待处理', activeItems.length, activeItems.length ? 'warning' : 'muted')}
+                    ${handledCount > 0 ? renderMiniCountBadge('已处理', handledCount, 'success') : ''}
+                    ${ignoredCount > 0 ? renderMiniCountBadge('已忽略', ignoredCount, 'muted') : ''}
+                    ${archivedCount > 0 ? renderMiniCountBadge('已归档', archivedCount, 'muted') : ''}
+                </div>
+            </div>
             ${activeItems.length ? `
                 <div class="payments-anomaly-items">
                     ${renderExceptionTopicItemsHtml(activeItems)}
                 </div>
-            ` : `
-                <div class="payments-empty-state compact">
-                    当前专题下待处理项已清空，已处理记录已收进下方“已处理”。
-                </div>
-            `}
-            ${renderCollapsedHandledSection({
+            ` : ''}
+            ${handledItems.length ? renderCollapsedHandledSection({
                 title: '已处理',
                 description: '已处理和已审核通过的专题卡片默认收起，避免列表持续向下堆叠。',
                 badges: [
                     renderMiniCountBadge('已处理', resolvedItems.filter((item) => normalizeStatusValue(item?.ops_status) === 'handled').length, 'success'),
                     renderMiniCountBadge('已通过', resolvedItems.filter((item) => normalizeStatusValue(item?.ops_status) === 'approved').length, 'success')
                 ],
+                actionButton: handledItems.length > 1
+                    ? `
+                        <button
+                            type="button"
+                            class="payments-anomaly-action-btn archive compact"
+                            data-admin-action="payments-batch-anomaly-action"
+                            data-payments-batch-scope="exception-topic-handled"
+                            data-payments-action="archive"
+                            ${batchArchiveLoading ? 'disabled' : ''}
+                        >
+                            ${escapeHtml(batchArchiveLoading ? '归档中...' : `批量归档 ${formatNumber(handledItems.length)} 条`)}
+                        </button>
+                    `
+                    : '',
                 body: handledItems.length ? `<div class="payments-anomaly-items">${renderExceptionTopicItemsHtml(handledItems)}</div>` : ''
-            })}
-            ${renderCollapsedHandledSection({
+            }) : ''}
+            ${ignoredItems.length ? renderCollapsedHandledSection({
                 title: '已忽略',
                 description: '已忽略和已驳回的专题项也会保留在这里，方便后续复查，不会直接消失。',
                 badges: [
@@ -3376,7 +5156,17 @@
                 body: ignoredItems.length
                     ? `<div class="payments-anomaly-items">${renderExceptionTopicItemsHtml(ignoredItems)}</div>`
                     : '<div class="payments-empty-state compact">当前没有已忽略或已驳回的专题项。</div>'
-            })}
+            }) : ''}
+            ${archivedItems.length ? renderCollapsedHandledSection({
+                title: '已归档',
+                description: '归档后的专题项会保留在这里，方便回头复核，但不会再计入上方四个专题卡片数字。',
+                badges: [
+                    renderMiniCountBadge('已归档', archivedItems.length, 'muted')
+                ],
+                body: archivedItems.length
+                    ? `<div class="payments-anomaly-items">${renderExceptionTopicItemsHtml(archivedItems)}</div>`
+                    : '<div class="payments-empty-state compact">当前没有已归档的专题项。</div>'
+            }) : ''}
         `;
     }
 
@@ -3419,6 +5209,8 @@
                                 <i class="${escapeHtml(getProviderIcon(session?.provider))}"></i>${escapeHtml(packageName)}
                             </div>
                             <div class="payments-provider-meta">
+                                发起人 ${escapeHtml(String(session?.user_email || '').trim() || (String(session?.user_id || '').trim() ? '未绑定邮箱' : '匿名 / 未识别用户'))}
+                                ·
                                 ${escapeHtml(getProviderLabel(session?.provider))}
                                 · ${escapeHtml(siteLabel)}
                                 · 会话 ${escapeHtml(sessionKey || '—')}
@@ -3475,7 +5267,8 @@
                         <div class="payments-order-card${isFocusedOrder ? ' payments-order-card--focused' : ''}" data-payments-focused-order="${isFocusedOrder ? '1' : '0'}">
                             <div class="payments-order-card-top">
                                 <div>
-                                    <div class="payments-order-no">${escapeHtml(order.provider_order_no || '—')}</div>
+                                    <div class="payments-order-user">${renderPaymentsOrderUser(order)}</div>
+                                    ${renderPaymentsOrderNo(order)}
                                     <div class="payments-order-provider">${escapeHtml(getProviderLabel(order.provider))} · ${(order.site || 'cn').toUpperCase()}</div>
                                 </div>
                                 <span class="payments-status-badge status-${escapeHtml(order.status || 'pending')}">${escapeHtml(getStatusLabel(order.status))}</span>
@@ -3523,9 +5316,10 @@
 
         target.innerHTML = `
             <div class="payments-table-wrap">
-                <table class="payments-table">
+                <table class="payments-table payments-orders-grid-table">
                     <thead>
                         <tr>
+                            <th>用户邮箱</th>
                             <th>订单号</th>
                             <th>套餐</th>
                             <th>金额</th>
@@ -3543,8 +5337,9 @@
                             const isFocusedOrder = matchesFocusedOrder(order);
                             return `
                             <tr class="${isFocusedOrder ? 'payments-order-row--focused' : ''}" data-payments-focused-order="${isFocusedOrder ? '1' : '0'}">
+                                <td>${renderPaymentsOrderUser(order)}</td>
                                 <td>
-                                    <div class="payments-order-no">${escapeHtml(order.provider_order_no || '—')}</div>
+                                    ${renderPaymentsOrderNo(order)}
                                     <div class="payments-order-provider">${escapeHtml(getProviderLabel(order.provider))}</div>
                                 </td>
                                 <td>${escapeHtml(order.package_name || '未匹配套餐')}</td>
@@ -3578,6 +5373,13 @@
         const sampleOrders = preview.samples?.orders || [];
         const sampleUsers = preview.samples?.users || [];
         state.cleanupPreview = preview;
+        const cleanupTotal = getCleanupTotalCount(counts);
+        const hasManagedCleanupCard = Boolean(document.getElementById('paymentsCleanupCard'));
+        setCleanupCardVisible(cleanupTotal > 0);
+        if (hasManagedCleanupCard && cleanupTotal <= 0) {
+            target.innerHTML = '';
+            return;
+        }
 
         const orderPager = paginateItems(sampleOrders, 'cleanupOrders');
         const userPager = paginateItems(sampleUsers, 'cleanupUsers');
@@ -3661,6 +5463,7 @@
         const target = document.getElementById('paymentsCleanupPreview');
         if (!target) return;
         state.cleanupPreview = null;
+        setCleanupCardVisible(true);
 
         target.innerHTML = `
             <div class="payments-access-state warning">
@@ -3781,7 +5584,7 @@
                 return false;
             }
 
-            mergeSummaryPayload(corePayload, { sourceTab: requestedTab });
+            mergeSummaryPayload(corePayload, { sourceTab: requestedTab, replace: true });
 
             const coreData = state.summary;
             syncOverviewStage();
@@ -3807,6 +5610,10 @@
             }
 
             syncOverviewStage();
+            updateToolbarHighlights(state.summary);
+            renderOverviewCards(state.summary);
+            updateOverviewBanner(state.summary);
+            renderAnalyticsIssueSummary(state.summary, state.workbenchContext);
             state.viewCache[requestedTab] = getCurrentCacheKey();
             updateLastSynced(new Date());
             scheduleTabPrefetch(state.activeTab);
@@ -3874,14 +5681,11 @@
         rerenderCurrentView();
 
         try {
-            const payload = await fetchAdminJson('/api/admin/payments/actions', {
-                method: 'POST',
-                body: JSON.stringify({
-                    targetType: normalizedTargetType,
-                    targetId: normalizedTargetId,
-                    action: normalizedAction,
-                    note: note || undefined
-                })
+            const payload = await requestAnomalyAction({
+                targetType: normalizedTargetType,
+                targetId: normalizedTargetId,
+                action: normalizedAction,
+                note: note || undefined
             });
 
             window.showToast?.(payload?.message || `${getAnomalyActionLabel(normalizedAction)}成功`, 'success');
@@ -3898,6 +5702,115 @@
             throw error;
         } finally {
             delete state.anomalyActionLoading[actionKey];
+            rerenderCurrentView();
+        }
+    }
+
+    function requestAnomalyAction({ targetType = '', targetId = '', action = '', note } = {}) {
+        return fetchAdminJson('/api/admin/payments/actions', {
+            method: 'POST',
+            body: JSON.stringify({
+                targetType,
+                targetId,
+                action,
+                note: note || undefined
+            })
+        });
+    }
+
+    function isBatchAnomalyActionLoading(scope = '', action = '') {
+        const key = `${String(scope || '').trim().toLowerCase()}:${String(action || '').trim().toLowerCase()}`;
+        return Boolean(state.batchAnomalyActionLoading[key]);
+    }
+
+    function getBatchAnomalyTargets(scope = '', action = '') {
+        const normalizedScope = String(scope || '').trim().toLowerCase();
+        const normalizedAction = String(action || '').trim().toLowerCase();
+
+        if (normalizedScope === 'exception-topic-handled' && normalizedAction === 'archive') {
+            const filteredItems = getExceptionTopicFilteredItems(state.summary || {}, state.exceptionTopicFilter);
+            const split = splitItemsByResolution(filteredItems, (item) => item?.ops_status);
+            const handledItems = filterItemsByStatuses(split.resolvedItems, ['handled', 'approved']);
+            const uniqueTargets = new Map();
+
+            handledItems.forEach((item) => {
+                const targetType = String(item?.type || '').trim().toLowerCase();
+                const targetId = String(item?.id || '').trim();
+                if (!targetType || !targetId) return;
+                uniqueTargets.set(`${targetType}:${targetId}`, {
+                    targetType,
+                    targetId
+                });
+            });
+
+            return Array.from(uniqueTargets.values());
+        }
+
+        return [];
+    }
+
+    async function handleBatchAnomalyAction(scope, action) {
+        const normalizedScope = String(scope || '').trim().toLowerCase();
+        const normalizedAction = String(action || '').trim().toLowerCase();
+        if (!normalizedScope || !normalizedAction) return;
+
+        const targets = getBatchAnomalyTargets(normalizedScope, normalizedAction);
+        if (!targets.length) {
+            window.showToast?.('当前专题下暂无可归档的已处理项。', 'warning');
+            return;
+        }
+
+        const confirmed = window.confirm(
+            `确认归档当前专题下 ${targets.length} 条已处理项吗？归档后它们不会再计入四个专题卡片数字。`
+        );
+        if (!confirmed) return;
+
+        const batchKey = `${normalizedScope}:${normalizedAction}`;
+        if (state.batchAnomalyActionLoading[batchKey]) return;
+
+        state.batchAnomalyActionLoading[batchKey] = true;
+        rerenderCurrentView();
+
+        try {
+            const results = await Promise.allSettled(
+                targets.map((target) => requestAnomalyAction({
+                    targetType: target.targetType,
+                    targetId: target.targetId,
+                    action: normalizedAction
+                }))
+            );
+
+            const successCount = results.filter((result) => result.status === 'fulfilled').length;
+            const failCount = results.length - successCount;
+
+            if (successCount > 0) {
+                clearTabPrefetch();
+                state.viewCache = {};
+                await reload();
+            }
+
+            if (failCount === 0) {
+                window.showToast?.(`已批量归档 ${successCount} 条异常。`, 'success');
+                return results;
+            }
+
+            const firstFailure = results.find((result) => result.status === 'rejected');
+            const failureMessage = firstFailure?.reason
+                ? getFriendlyErrorMessage(firstFailure.reason, '部分异常归档失败，请稍后重试。')
+                : '部分异常归档失败，请稍后重试。';
+            window.showToast?.(
+                successCount > 0
+                    ? `已归档 ${successCount} 条，另有 ${failCount} 条失败：${failureMessage}`
+                    : failureMessage,
+                successCount > 0 ? 'warning' : 'error'
+            );
+            return results;
+        } catch (error) {
+            console.error('[AdminPayments] Failed to handle batch anomaly action:', error);
+            window.showToast?.(getFriendlyErrorMessage(error, '批量异常操作执行失败，请稍后重试。'), 'error');
+            throw error;
+        } finally {
+            delete state.batchAnomalyActionLoading[batchKey];
             rerenderCurrentView();
         }
     }
@@ -4016,6 +5929,8 @@
             syncTabIndicator();
             if (!hasRenderedContentForTab(requestedTab)) {
                 renderLoadingSkeletonForTab(requestedTab);
+            } else {
+                renderPaymentsToolbarHighlightsSkeleton();
             }
             setLoading(true);
             const applied = await loadSummary(requestToken, requestedTab);
@@ -4112,7 +6027,7 @@
 
         const preview = state.cleanupPreview || {};
         const counts = preview.counts || {};
-        const totalRows = Number(counts.payment_orders || 0) + Number(counts.auth_users || 0);
+        const totalRows = getCleanupTotalCount(counts);
         if (!totalRows) {
             if (typeof window.showToast === 'function') {
                 window.showToast('当前没有待清理的测试数据。', 'info');
@@ -4277,15 +6192,15 @@
             csv += `${(item.title || '').replace(/,/g, '，')},${getSeverityLabel(item.severity)},${getProviderLabel(item.provider)},${(item.provider_order_no || '').replace(/,/g, '，')},${formatDateTime(item.created_at)}\n`;
         });
         csv += '\n=== 最近支付意图会话 ===\n';
-        csv += '会话号,参考单号,通道,套餐,应付金额,到账积分,状态,匹配情况,创建时间\n';
+        csv += '发起人邮箱,通道,套餐,会话Key,参考单号,站点,应付金额,到账积分,状态,匹配状态,创建时间\n';
         (bundle.recent_checkout_sessions || []).forEach((item) => {
             const matchInfo = getCheckoutSessionTraceMatchInfo(item);
-            csv += `${(item.session_key || '').replace(/,/g, '，')},${(item.provider_order_no || '').replace(/,/g, '，')},${getProviderLabel(item.provider)},${(item.package_name || '').replace(/,/g, '，')},${item.expected_amount || 0},${item.granted_points || 0},${getSessionStatusLabel(item.status)},${matchInfo.label},${formatDateTime(item.created_at)}\n`;
+            csv += `${(item.user_email || '').replace(/,/g, '，')},${getProviderLabel(item.provider)},${(item.package_name || '').replace(/,/g, '，')},${(item.session_key || '').replace(/,/g, '，')},${(item.provider_order_no || '').replace(/,/g, '，')},${String(item.site || 'cn').toUpperCase()},${item.expected_amount || 0},${item.granted_points || 0},${getSessionStatusLabel(item.status)},${matchInfo.label},${formatDateTime(item.created_at)}\n`;
         });
         csv += '\n=== 最近订单 ===\n';
-        csv += '订单号,通道,套餐,金额,积分,状态,创建时间\n';
+        csv += '用户邮箱,订单号,通道,套餐,金额,积分,状态,创建时间\n';
         (bundle.recent_orders || []).forEach((item) => {
-            csv += `${(item.provider_order_no || '').replace(/,/g, '，')},${getProviderLabel(item.provider)},${(item.package_name || '').replace(/,/g, '，')},${item.paid_amount || 0},${item.points_amount || 0},${getStatusLabel(item.status)},${formatDateTime(item.created_at)}\n`;
+            csv += `${(item.user_email || '').replace(/,/g, '，')},${(item.provider_order_no || '').replace(/,/g, '，')},${getProviderLabel(item.provider)},${(item.package_name || '').replace(/,/g, '，')},${item.paid_amount || 0},${item.points_amount || 0},${getStatusLabel(item.status)},${formatDateTime(item.created_at)}\n`;
         });
 
         downloadBlob(
@@ -4352,8 +6267,29 @@
             }))), '异常队列');
         }
 
+        if ((bundle.recent_checkout_sessions || []).length) {
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet((bundle.recent_checkout_sessions || []).map((item) => {
+                const matchInfo = getCheckoutSessionTraceMatchInfo(item);
+                return {
+                    发起人邮箱: item.user_email || '',
+                    通道: getProviderLabel(item.provider),
+                    套餐: item.package_name || '',
+                    会话Key: item.session_key || '',
+                    参考单号: item.provider_order_no || '',
+                    站点: String(item.site || 'cn').toUpperCase(),
+                    应付金额: item.expected_amount || 0,
+                    到账积分: item.granted_points || 0,
+                    状态: getSessionStatusLabel(item.status),
+                    匹配状态: matchInfo.label,
+                    创建时间: formatDateTime(item.created_at),
+                    说明: getCheckoutSessionTraceDetail(item)
+                };
+            })), '支付意图会话');
+        }
+
         if ((bundle.recent_orders || []).length) {
             XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet((bundle.recent_orders || []).map((item) => ({
+                用户邮箱: item.user_email || '',
                 订单号: item.provider_order_no || '',
                 通道: getProviderLabel(item.provider),
                 套餐: item.package_name || '',
@@ -4395,6 +6331,10 @@
         if (!state.summary) return;
         if (pageKey === 'anomalies') {
             renderAnomalies(state.summary);
+            return;
+        }
+        if (pageKey === 'sessions') {
+            renderCheckoutSessions(state.summary);
             return;
         }
         if (pageKey === 'orders') {
@@ -4450,7 +6390,9 @@
         previewCleanup,
         cleanupTestData,
         goToPage,
+        copyOrderNo,
         handleAnomalyAction,
+        handleBatchAnomalyAction,
         setExceptionTopicFilter,
         focusExceptionTopic,
         focusOpsAlertQueue,
