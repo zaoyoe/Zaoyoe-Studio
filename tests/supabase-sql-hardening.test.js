@@ -402,6 +402,55 @@ test('analytics heatmap migration promotes real business events before login fal
     }
 });
 
+test('analytics online-user rpc consolidates recent activity probes with scoped-site safeguards', () => {
+    const migrationSql = readRepoFile(path.join('supabase', 'migrations', '20260420_admin_analytics_online_users_rpc.sql'));
+
+    const markers = [
+        'CREATE OR REPLACE FUNCTION public.get_online_user_count(',
+        'p_window_minutes INTEGER DEFAULT 5',
+        'p_site VARCHAR DEFAULT NULL',
+        'SECURITY DEFINER',
+        'IF auth.uid() IS NULL OR NOT public.is_admin() THEN',
+        "v_site IN ('', 'all', '*')",
+        "v_site NOT IN ('cn', 'intl')",
+        'RETURN 0;',
+        'WITH online_user_ids AS',
+        'FROM public.prompt_comments pc',
+        'FROM public.comment_likes cl',
+        'FROM public.user_events ue',
+        'AND (v_site IS NULL OR pc.site = v_site)',
+        'AND (v_site IS NULL OR cl.site = v_site)',
+        'AND (v_site IS NULL OR ue.site = v_site)',
+        'IF v_count = 0 AND v_site IS NULL THEN',
+        'FROM public.profiles p',
+        'WHERE p.updated_at >= v_window_start',
+        'GRANT EXECUTE ON FUNCTION public.get_online_user_count(INTEGER, VARCHAR) TO authenticated;'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(
+            migrationSql.includes(marker),
+            true,
+            `online-user rpc migration should contain ${marker}`
+        );
+    }
+
+    const indexMarkers = [
+        'idx_prompt_comments_online_users_site_window',
+        'idx_comment_likes_online_users_site_window',
+        'idx_user_events_online_users_site_window',
+        'idx_profiles_online_users_updated_at'
+    ];
+
+    for (const marker of indexMarkers) {
+        assert.equal(
+            migrationSql.includes(marker),
+            true,
+            `online-user rpc migration should create ${marker}`
+        );
+    }
+});
+
 test('analytics heatmap cleanup migration removes the legacy login fallback path', () => {
     const migrationSql = readRepoFile(path.join('supabase', 'migrations', '20260405_admin_analytics_heatmap_remove_login_fallback.sql'));
 

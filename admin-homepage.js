@@ -154,6 +154,28 @@ const HomepageAdmin = (() => {
         return payload;
     }
 
+    function isHomepageTransientPublishError(error) {
+        const message = String(error?.message || '').trim().toLowerCase();
+        return message.includes('terminated')
+            || message.includes('failed to fetch')
+            || message.includes('networkerror')
+            || message.includes('load failed')
+            || message.includes('fetch failed');
+    }
+
+    function humanizeHomepagePublishError(error) {
+        const rawMessage = String(error?.message || '').trim();
+        if (!rawMessage) {
+            return '发布请求没有成功返回，请稍后重试。';
+        }
+
+        if (isHomepageTransientPublishError(error)) {
+            return '发布请求已发出，但返回结果在传输中断开。请刷新页面确认是否已发布；若仍未生效，再重试一次。';
+        }
+
+        return rawMessage;
+    }
+
     function escapeHomepageHtml(value) {
         return String(value ?? '')
             .replace(/&/g, '&amp;')
@@ -1309,6 +1331,9 @@ const HomepageAdmin = (() => {
             await ensureHomepageConfigLoaded();
             renderAllSections();
             switchSection(currentSection);
+            if (!isHomepageAggregateMode()) {
+                void warmHomepageContextInBackground(currentReadSite);
+            }
             return;
         }
 
@@ -1327,6 +1352,9 @@ const HomepageAdmin = (() => {
             setHomepageAdminHiddenState(loading, true);
             setHomepageAdminHiddenState(content, false);
             switchSection(currentSection);
+            if (!isHomepageAggregateMode()) {
+                void warmHomepageContextInBackground(currentReadSite);
+            }
 
             console.log('[Homepage] Initialized successfully');
         } catch (err) {
@@ -1339,6 +1367,9 @@ const HomepageAdmin = (() => {
         await ensureHomepageConfigLoaded({ force: true });
         renderAllSections();
         renderCurrentSection();
+        if (!isHomepageAggregateMode()) {
+            void warmHomepageContextInBackground(currentReadSite, { force: true });
+        }
         return true;
     }
 
@@ -1386,14 +1417,6 @@ const HomepageAdmin = (() => {
         configCache = isHomepageAggregateMode(currentReadSite)
             ? buildAggregateHomepageConfigCache(configCacheBySite)
             : { ...(configCacheBySite[normalizeHomepageSite(currentReadSite)] || {}) };
-
-        if (!isHomepageAggregateMode(currentReadSite)) {
-            try {
-                await ensureHomepageContextLoaded(currentReadSite, { force: true });
-            } catch (error) {
-                console.warn('[Homepage] Failed to load orchestration context:', error);
-            }
-        }
 
         console.log('[Homepage] Loaded config for site:', currentReadSite, Object.keys(configCache));
 
@@ -1488,6 +1511,26 @@ const HomepageAdmin = (() => {
             : [];
     }
 
+    function hasHomepageContextForSite(site = getHomepageReadSite()) {
+        const normalizedSite = normalizeHomepageSite(site);
+        if (normalizedSite === 'all') {
+            return false;
+        }
+        return Boolean(homepageContextBySite[normalizedSite]);
+    }
+
+    function isHomepageContextLoading(site = getHomepageReadSite()) {
+        const normalizedSite = normalizeHomepageSite(site);
+        if (normalizedSite === 'all') {
+            return false;
+        }
+        return Boolean(homepageContextLoadingBySite[normalizedSite]);
+    }
+
+    function isHomepageModuleActive() {
+        return document.getElementById('module-homepage')?.classList.contains('active') === true;
+    }
+
     async function fetchHomepageContext(site = getHomepageReadSite()) {
         const normalizedSite = normalizeHomepageSite(site);
         const response = await (window.AdminApi?.fetch || fetch)(
@@ -1567,6 +1610,51 @@ const HomepageAdmin = (() => {
             });
 
         return homepageContextLoadingBySite[normalizedSite];
+    }
+
+    function refreshHomepageContextDependentUi(site = getHomepageReadSite()) {
+        const normalizedSite = normalizeHomepageSite(site);
+        if (normalizedSite !== normalizeHomepageSite(currentReadSite)) {
+            return;
+        }
+        if (!isHomepageModuleActive()) {
+            return;
+        }
+
+        renderHomepageOpsShell();
+
+        switch (currentSection) {
+            case 'prompts':
+                renderHomepagePromptCandidateList();
+                break;
+            case 'shop':
+                renderHomepageShopCategoryOptions();
+                renderHomepageShopProductList();
+                break;
+            case 'guestbook':
+                renderHomepageGuestbookCandidateList();
+                break;
+            case HOMEPAGE_OVERVIEW_SECTION:
+            default:
+                break;
+        }
+    }
+
+    async function warmHomepageContextInBackground(site = getHomepageReadSite(), { force = false } = {}) {
+        const normalizedSite = normalizeHomepageSite(site);
+        if (normalizedSite === 'all') {
+            return null;
+        }
+
+        try {
+            const context = await ensureHomepageContextLoaded(normalizedSite, { force });
+            refreshHomepageContextDependentUi(normalizedSite);
+            return context;
+        } catch (error) {
+            console.warn('[Homepage] Failed to warm orchestration context:', error);
+            refreshHomepageContextDependentUi(normalizedSite);
+            return null;
+        }
     }
 
     function buildHomepagePreviewCard(section, cfg = null) {
@@ -1752,9 +1840,26 @@ const HomepageAdmin = (() => {
         const siteLabel = getHomepageSiteLabel(site);
         const previousExperimentSlot = shell.querySelector('#hp-experiment-slot')?.value || HOMEPAGE_EXPERIMENT_SLOT_DEFS[0].value;
         const previousThemePack = shell.querySelector('#hp-theme-pack-select')?.value || '';
+        const previousTemplateName = shell.querySelector('#hp-template-name')?.value || '';
+        const previousTemplateType = shell.querySelector('#hp-template-type')?.value || 'custom';
+        const previousTemplateDescription = shell.querySelector('#hp-template-description')?.value || '';
+        const previousTemplateSelect = shell.querySelector('#hp-template-select')?.value || '';
+        const previousScheduleName = shell.querySelector('#hp-schedule-name')?.value || '';
+        const previousScheduleStarts = shell.querySelector('#hp-schedule-starts')?.value || '';
+        const previousScheduleEnds = shell.querySelector('#hp-schedule-ends')?.value || '';
+        const previousScheduleNote = shell.querySelector('#hp-schedule-note')?.value || '';
+        const previousExperimentName = shell.querySelector('#hp-experiment-name')?.value || '';
+        const previousExperimentTraffic = shell.querySelector('#hp-experiment-traffic')?.value || '50';
+        const previousExperimentVariantInput = shell.querySelector('#hp-experiment-variant-input')?.value || '';
+        const previousThemePackSections = Array.from(shell.querySelectorAll('[data-homepage-theme-pack-section]:checked'))
+            .map((input) => String(input.value || '').trim())
+            .filter(Boolean);
         const draftMeta = getHomepageDraftMeta(site);
         const releases = getHomepageReleaseMeta(site);
         const health = getHomepageHealth(site) || { status: 'healthy', errors: [], warnings: [] };
+        const hasContext = !aggregateMode && hasHomepageContextForSite(site);
+        const contextLoading = !aggregateMode && isHomepageContextLoading(site);
+        const isContextPending = !aggregateMode && !hasContext && contextLoading;
         const context = !aggregateMode ? getHomepageContext(site) : null;
         const analytics = context?.analytics || buildEmptyHomepageAnalyticsFallback();
         const support = context?.orchestration_support || { templates_available: false, schedules_available: false, message: '' };
@@ -1799,7 +1904,7 @@ const HomepageAdmin = (() => {
             { value: 'community', label: '社区活跃' }
         ];
         const templateOptions = [
-            { value: '', label: '请选择模板' },
+            { value: '', label: isContextPending ? '模板加载中...' : '请选择模板' },
             ...templates.map((template) => ({
                 value: String(template.id || ''),
                 label: template.name || `模板 #${template.id}`
@@ -1809,7 +1914,9 @@ const HomepageAdmin = (() => {
             value: slot.value,
             label: slot.label
         }));
-        const experimentCards = experiments.length
+        const experimentCards = isContextPending
+            ? '<div class="hp-preview-empty">首页实验数据加载中...</div>'
+            : experiments.length
             ? experiments.map((experiment) => `
                 <article class="hp-experiment-card">
                     <div class="hp-experiment-card__head">
@@ -1841,12 +1948,16 @@ const HomepageAdmin = (() => {
                 </article>
             `).join('')
             : '<div class="hp-preview-empty">当前站点还没有运行中的首页实验，可从标题、CTA 或精选清单开始做小步试验。</div>';
-        const signalMarkup = (recommendations.signals || []).length
+        const signalMarkup = isContextPending
+            ? '<div class="hp-preview-empty">运营信号加载中...</div>'
+            : (recommendations.signals || []).length
             ? `<div class="hp-signal-list">${(recommendations.signals || []).map((signal) => `
                 <span class="hp-signal-chip hp-signal-chip--${escapeHomepageHtml(signal.tone || 'default')}">${escapeHomepageHtml(signal.title || signal.summary || '运营信号')}</span>
             `).join('')}</div>`
             : '<div class="hp-preview-empty">当前没有明显的运营异常信号。</div>';
-        const recommendationCards = (recommendations.items || []).length
+        const recommendationCards = isContextPending
+            ? '<div class="hp-preview-empty">推荐建议加载中...</div>'
+            : (recommendations.items || []).length
             ? (recommendations.items || []).map((item) => `
                 <article class="hp-recommendation-card">
                     <div class="hp-recommendation-card__head">
@@ -1861,7 +1972,9 @@ const HomepageAdmin = (() => {
                 </article>
             `).join('')
             : '<div class="hp-preview-empty">当前没有待处理的推荐动作。</div>';
-        const alertCards = (alerts.items || []).length
+        const alertCards = isContextPending
+            ? '<div class="hp-preview-empty">首页巡检数据加载中...</div>'
+            : (alerts.items || []).length
             ? (alerts.items || []).map((alert) => `
                 <article class="hp-alert-card hp-alert-card--${escapeHomepageHtml(alert.level || 'info')}">
                     <strong>${escapeHomepageHtml(alert.title || '首页告警')}</strong>
@@ -1874,10 +1987,12 @@ const HomepageAdmin = (() => {
                 value: String(pack.id || ''),
                 label: pack.name || pack.id || '主题包'
             }))
-            : [{ value: '', label: '暂无主题包' }];
+            : [{ value: '', label: isContextPending ? '主题包加载中...' : '暂无主题包' }];
         const selectedThemePackId = previousThemePack || themePackOptions[0]?.value || '';
         const selectedThemePack = themePacks.find((pack) => String(pack.id || '') === selectedThemePackId) || null;
-        const themePackCards = themePacks.length
+        const themePackCards = isContextPending
+            ? '<div class="hp-preview-empty">主题包数据加载中...</div>'
+            : themePacks.length
             ? themePacks.map((pack) => {
                 const packId = String(pack.id || '');
                 const isSelected = packId === selectedThemePackId;
@@ -2006,30 +2121,32 @@ const HomepageAdmin = (() => {
                             <div class="hp-ops-card__eyebrow">运营数据</div>
                             <strong>${aggregateMode ? '切站后查看' : '候选池与效果回流'}</strong>
                         </div>
-                        <span class="status-badge ${aggregateMode ? 'banned' : 'active'}">${aggregateMode ? '只读' : '可用'}</span>
+                        <span class="status-badge ${aggregateMode ? 'banned' : (isContextPending ? 'default' : 'active')}">${aggregateMode ? '只读' : (isContextPending ? '加载中' : '可用')}</span>
                     </div>
                     ${aggregateMode ? '<div class="hp-preview-empty">切换到 CN 或 INTL 后可查看候选 Prompt、商城候选池、留言候选池，以及最近 7 / 30 天首页位表现。</div>' : `
-                        <div class="hp-orchestration-summary">
-                            ${buildHomepageMetricPill('候选 Prompt', formatHomepageCount(context?.prompt_candidates?.length || 0), 'accent')}
-                            ${buildHomepageMetricPill('商城候选', formatHomepageCount(context?.shop_products?.length || 0), 'default')}
-                            ${buildHomepageMetricPill('留言候选', formatHomepageCount(context?.guestbook_messages?.length || 0), 'default')}
-                            ${buildHomepageMetricPill('模板', formatHomepageCount(templates.length), 'default')}
-                        </div>
-                        <div class="hp-analytics-module-grid">
-                            ${analyticsRows.map(({ key, metrics }) => `
-                                <article class="hp-analytics-module-card">
-                                    <div class="hp-analytics-module-card__head">
-                                        <strong>${escapeHomepageHtml(SV_LABELS[key]?.label || key)}</strong>
-                                        <span>7d</span>
-                                    </div>
-                                    <div class="hp-analytics-module-card__stats">
-                                        <span>曝光 ${escapeHomepageHtml(formatHomepageCount(metrics.impressions_7d || 0))}</span>
-                                        <span>点击 ${escapeHomepageHtml(formatHomepageCount(metrics.clicks_7d || 0))}</span>
-                                        <span>转化 ${escapeHomepageHtml(formatHomepageCount(metrics.conversions_7d || 0))}</span>
-                                    </div>
-                                </article>
-                            `).join('')}
-                        </div>
+                        ${isContextPending ? '<div class="hp-preview-empty">候选池、模板和效果回流数据加载中...</div>' : `
+                            <div class="hp-orchestration-summary">
+                                ${buildHomepageMetricPill('候选 Prompt', formatHomepageCount(context?.prompt_candidates?.length || 0), 'accent')}
+                                ${buildHomepageMetricPill('商城候选', formatHomepageCount(context?.shop_products?.length || 0), 'default')}
+                                ${buildHomepageMetricPill('留言候选', formatHomepageCount(context?.guestbook_messages?.length || 0), 'default')}
+                                ${buildHomepageMetricPill('模板', formatHomepageCount(templates.length), 'default')}
+                            </div>
+                            <div class="hp-analytics-module-grid">
+                                ${analyticsRows.map(({ key, metrics }) => `
+                                    <article class="hp-analytics-module-card">
+                                        <div class="hp-analytics-module-card__head">
+                                            <strong>${escapeHomepageHtml(SV_LABELS[key]?.label || key)}</strong>
+                                            <span>7d</span>
+                                        </div>
+                                        <div class="hp-analytics-module-card__stats">
+                                            <span>曝光 ${escapeHomepageHtml(formatHomepageCount(metrics.impressions_7d || 0))}</span>
+                                            <span>点击 ${escapeHomepageHtml(formatHomepageCount(metrics.clicks_7d || 0))}</span>
+                                            <span>转化 ${escapeHomepageHtml(formatHomepageCount(metrics.conversions_7d || 0))}</span>
+                                        </div>
+                                    </article>
+                                `).join('')}
+                            </div>
+                        `}
                     `}
                 </section>
 
@@ -2039,71 +2156,73 @@ const HomepageAdmin = (() => {
                             <div class="hp-ops-card__eyebrow">模板与定时</div>
                             <strong>${aggregateMode ? '切站后可操作' : '活动模板 / 定时发布'}</strong>
                         </div>
-                        <span class="status-badge ${(support.templates_available && support.schedules_available) ? 'active' : 'pending'}">
-                            ${(support.templates_available && support.schedules_available) ? '可用' : '待迁移'}
+                        <span class="status-badge ${isContextPending ? 'default' : ((support.templates_available && support.schedules_available) ? 'active' : 'pending')}">
+                            ${isContextPending ? '加载中' : ((support.templates_available && support.schedules_available) ? '可用' : '待迁移')}
                         </span>
                     </div>
                     ${aggregateMode ? '<div class="hp-preview-empty">全部站点视图只展示摘要，不支持创建模板或定时发布。</div>' : `
-                        ${support.message ? `<div class="hp-inline-note hp-inline-note--warning"><i class="fas fa-triangle-exclamation"></i><span>${escapeHomepageHtml(support.message)}</span></div>` : ''}
+                        ${isContextPending
+                ? '<div class="hp-inline-note hp-inline-note--muted"><i class="fas fa-spinner fa-spin"></i><span>运营模板、定时任务与编排支持加载中...</span></div>'
+                : (support.message ? `<div class="hp-inline-note hp-inline-note--warning"><i class="fas fa-triangle-exclamation"></i><span>${escapeHomepageHtml(support.message)}</span></div>` : '')}
                         <div class="hp-ops-form-grid">
                             <div class="hp-field">
                                 <label>模板名称</label>
-                                <input type="text" class="config-input" id="hp-template-name" placeholder="新品上新模板">
+                                <input type="text" class="config-input" id="hp-template-name" value="${escapeHomepageHtml(previousTemplateName)}" placeholder="新品上新模板">
                             </div>
                             <div class="hp-field">
                                 <label>模板类型</label>
                                 ${buildHomepageCustomSelect({
                                     id: 'hp-template-type',
-                                    value: 'custom',
+                                    value: previousTemplateType,
                                     options: templateTypeOptions,
-                                    disabled: !support.templates_available
+                                    disabled: isContextPending || !support.templates_available
                                 })}
                             </div>
                             <div class="hp-field hp-field-full">
                                 <label>模板说明</label>
-                                <input type="text" class="config-input" id="hp-template-description" placeholder="从当前草稿生成一个可复用首页模板">
+                                <input type="text" class="config-input" id="hp-template-description" value="${escapeHomepageHtml(previousTemplateDescription)}" placeholder="从当前草稿生成一个可复用首页模板">
                             </div>
                         </div>
                         <div class="hp-inline-actions">
-                            <button type="button" class="btn-sm btn-secondary" id="hp-template-save-btn" ${support.templates_available ? '' : 'disabled'}>保存为模板</button>
+                            <button type="button" class="btn-sm btn-secondary" id="hp-template-save-btn" ${(isContextPending || !support.templates_available) ? 'disabled' : ''}>保存为模板</button>
                         </div>
                         <div class="hp-ops-form-grid hp-ops-form-grid--compact">
                             <div class="hp-field hp-field-full">
                                 <label>套用模板</label>
                                 ${buildHomepageCustomSelect({
                                     id: 'hp-template-select',
-                                    value: '',
+                                    value: previousTemplateSelect,
                                     options: templateOptions,
-                                    disabled: !templates.length
+                                    disabled: isContextPending || !templates.length
                                 })}
                             </div>
                         </div>
                         <div class="hp-inline-actions">
-                            <button type="button" class="btn-sm btn-secondary" id="hp-template-apply-btn" ${(templates.length && support.templates_available) ? '' : 'disabled'}>应用到当前草稿</button>
+                            <button type="button" class="btn-sm btn-secondary" id="hp-template-apply-btn" ${(isContextPending || !(templates.length && support.templates_available)) ? 'disabled' : ''}>应用到当前草稿</button>
                         </div>
                         <div class="hp-ops-form-grid">
                             <div class="hp-field">
                                 <label>定时名称</label>
-                                <input type="text" class="config-input" id="hp-schedule-name" placeholder="春季活动首页">
+                                <input type="text" class="config-input" id="hp-schedule-name" value="${escapeHomepageHtml(previousScheduleName)}" placeholder="春季活动首页">
                             </div>
                             <div class="hp-field">
                                 <label>开始时间</label>
-                                <input type="datetime-local" class="config-input" id="hp-schedule-starts">
+                                <input type="datetime-local" class="config-input" id="hp-schedule-starts" value="${escapeHomepageHtml(previousScheduleStarts)}">
                             </div>
                             <div class="hp-field">
                                 <label>结束时间</label>
-                                <input type="datetime-local" class="config-input" id="hp-schedule-ends">
+                                <input type="datetime-local" class="config-input" id="hp-schedule-ends" value="${escapeHomepageHtml(previousScheduleEnds)}">
                             </div>
                             <div class="hp-field">
                                 <label>说明</label>
-                                <input type="text" class="config-input" id="hp-schedule-note" placeholder="活动结束后自动回退到发布版">
+                                <input type="text" class="config-input" id="hp-schedule-note" value="${escapeHomepageHtml(previousScheduleNote)}" placeholder="活动结束后自动回退到发布版">
                             </div>
                         </div>
                         <div class="hp-inline-actions">
-                            <button type="button" class="btn-sm btn-primary" id="hp-schedule-create-btn" ${support.schedules_available ? '' : 'disabled'}>创建定时发布</button>
+                            <button type="button" class="btn-sm btn-primary" id="hp-schedule-create-btn" ${(isContextPending || !support.schedules_available) ? 'disabled' : ''}>创建定时发布</button>
                         </div>
                         <div class="hp-schedule-list ${schedules.length ? '' : 'is-empty'}">
-                            ${schedules.length ? schedules.map((schedule) => `
+                            ${isContextPending ? '<div class="hp-preview-empty">定时任务加载中...</div>' : (schedules.length ? schedules.map((schedule) => `
                                 <article class="hp-schedule-card">
                                     <div class="hp-schedule-card__head">
                                         <strong>${escapeHomepageHtml(schedule.name || `定时 #${schedule.id}`)}</strong>
@@ -2118,7 +2237,7 @@ const HomepageAdmin = (() => {
                                         <button type="button" class="btn-sm btn-secondary" data-homepage-schedule-cancel="${escapeHomepageHtml(String(schedule.id || ''))}" ${schedule.status === 'cancelled' ? 'disabled' : ''}>取消定时</button>
                                     </div>
                                 </article>
-                            `).join('') : '<div class="hp-preview-empty">当前站点还没有已创建的定时任务。</div>'}
+                            `).join('') : '<div class="hp-preview-empty">当前站点还没有已创建的定时任务。</div>')}
                         </div>
                     `}
                 </section>
@@ -2129,8 +2248,8 @@ const HomepageAdmin = (() => {
                             <div class="hp-ops-card__eyebrow">实验</div>
                             <strong>${aggregateMode ? '切站后配置实验' : '关键位小步试验'}</strong>
                         </div>
-                        <span class="status-badge ${aggregateMode ? 'banned' : (experiments.length ? 'active' : 'pending')}">
-                            ${aggregateMode ? '只读' : `${escapeHomepageHtml(String(experiments.length || 0))} 个实验`}
+                        <span class="status-badge ${aggregateMode ? 'banned' : (isContextPending ? 'default' : (experiments.length ? 'active' : 'pending'))}">
+                            ${aggregateMode ? '只读' : (isContextPending ? '加载中' : `${escapeHomepageHtml(String(experiments.length || 0))} 个实验`)}
                         </span>
                     </div>
                     ${aggregateMode ? '<div class="hp-preview-empty">切换到具体站点后，可对 Hero 标题、Verify CTA 和精选清单做轻量实验。</div>' : `
@@ -2145,13 +2264,13 @@ const HomepageAdmin = (() => {
                             </div>
                             <div class="hp-field">
                                 <label>实验名称</label>
-                                <input type="text" class="config-input" id="hp-experiment-name" placeholder="Hero 标题实验">
+                                <input type="text" class="config-input" id="hp-experiment-name" value="${escapeHomepageHtml(previousExperimentName)}" placeholder="Hero 标题实验">
                             </div>
                             <div class="hp-field">
                                 <label>实验流量</label>
                                 <div class="hp-slider-row hp-slider-row--compact">
-                                    <input type="range" min="10" max="90" step="5" value="50" id="hp-experiment-traffic">
-                                    <span id="hp-experiment-traffic-label">50%</span>
+                                    <input type="range" min="10" max="90" step="5" value="${escapeHomepageHtml(previousExperimentTraffic)}" id="hp-experiment-traffic">
+                                    <span id="hp-experiment-traffic-label">${escapeHomepageHtml(previousExperimentTraffic)}%</span>
                                 </div>
                             </div>
                             <div class="hp-field hp-field-full">
@@ -2160,7 +2279,7 @@ const HomepageAdmin = (() => {
                             </div>
                             <div class="hp-field hp-field-full">
                                 <label>实验版本内容</label>
-                                <textarea class="config-input hp-multiline-input" id="hp-experiment-variant-input" placeholder=""></textarea>
+                                <textarea class="config-input hp-multiline-input" id="hp-experiment-variant-input" placeholder="">${escapeHomepageHtml(previousExperimentVariantInput)}</textarea>
                                 <small class="hp-field-help" id="hp-experiment-variant-hint"></small>
                             </div>
                         </div>
@@ -2179,8 +2298,8 @@ const HomepageAdmin = (() => {
                             <div class="hp-ops-card__eyebrow">推荐</div>
                             <strong>${aggregateMode ? '切站后查看建议' : '运营信号与替换建议'}</strong>
                         </div>
-                        <span class="status-badge ${aggregateMode ? 'banned' : ((recommendations.items || []).length ? 'active' : 'pending')}">
-                            ${aggregateMode ? '只读' : `${escapeHomepageHtml(String((recommendations.items || []).length || 0))} 条建议`}
+                        <span class="status-badge ${aggregateMode ? 'banned' : (isContextPending ? 'default' : ((recommendations.items || []).length ? 'active' : 'pending'))}">
+                            ${aggregateMode ? '只读' : (isContextPending ? '加载中' : `${escapeHomepageHtml(String((recommendations.items || []).length || 0))} 条建议`)}
                         </span>
                     </div>
                     ${aggregateMode ? '<div class="hp-preview-empty">切换到具体站点后，可查看 Prompt / Shop / Guestbook 的替换建议。</div>' : `
@@ -2197,8 +2316,8 @@ const HomepageAdmin = (() => {
                             <div class="hp-ops-card__eyebrow">巡检</div>
                             <strong>${aggregateMode ? '切站后查看日报' : '首页主动提醒与运营日报'}</strong>
                         </div>
-                        <span class="status-badge ${aggregateMode ? 'banned' : ((alerts.items || []).length ? 'pending' : 'active')}">
-                            ${aggregateMode ? '只读' : `${escapeHomepageHtml(String((alerts.items || []).length || 0))} 条告警`}
+                        <span class="status-badge ${aggregateMode ? 'banned' : (isContextPending ? 'default' : ((alerts.items || []).length ? 'pending' : 'active'))}">
+                            ${aggregateMode ? '只读' : (isContextPending ? '加载中' : `${escapeHomepageHtml(String((alerts.items || []).length || 0))} 条告警`)}
                         </span>
                     </div>
                     ${aggregateMode ? '<div class="hp-preview-empty">切换到具体站点后，可查看首页巡检告警、日报和周报摘要。</div>' : `
@@ -2209,19 +2328,23 @@ const HomepageAdmin = (() => {
                             <article class="hp-report-card">
                                 <div class="hp-report-card__head">
                                     <strong>${escapeHomepageHtml(reports.daily?.title || '首页运营日报')}</strong>
-                                    <button type="button" class="btn-sm btn-secondary" data-homepage-report-copy="daily">复制日报</button>
+                                    <button type="button" class="btn-sm btn-secondary" data-homepage-report-copy="daily" ${isContextPending ? 'disabled' : ''}>复制日报</button>
                                 </div>
                                 <div class="hp-report-card__lines">
-                                    ${(Array.isArray(reports.daily?.lines) ? reports.daily.lines : []).map((line) => `<span>${escapeHomepageHtml(line)}</span>`).join('') || '<span>暂无日报内容</span>'}
+                                    ${isContextPending
+                ? '<span>日报加载中...</span>'
+                : ((Array.isArray(reports.daily?.lines) ? reports.daily.lines : []).map((line) => `<span>${escapeHomepageHtml(line)}</span>`).join('') || '<span>暂无日报内容</span>')}
                                 </div>
                             </article>
                             <article class="hp-report-card">
                                 <div class="hp-report-card__head">
                                     <strong>${escapeHomepageHtml(reports.weekly?.title || '首页运营周报')}</strong>
-                                    <button type="button" class="btn-sm btn-secondary" data-homepage-report-copy="weekly">复制周报</button>
+                                    <button type="button" class="btn-sm btn-secondary" data-homepage-report-copy="weekly" ${isContextPending ? 'disabled' : ''}>复制周报</button>
                                 </div>
                                 <div class="hp-report-card__lines">
-                                    ${(Array.isArray(reports.weekly?.lines) ? reports.weekly.lines : []).map((line) => `<span>${escapeHomepageHtml(line)}</span>`).join('') || '<span>暂无周报内容</span>'}
+                                    ${isContextPending
+                ? '<span>周报加载中...</span>'
+                : ((Array.isArray(reports.weekly?.lines) ? reports.weekly.lines : []).map((line) => `<span>${escapeHomepageHtml(line)}</span>`).join('') || '<span>暂无周报内容</span>')}
                                 </div>
                             </article>
                         </div>
@@ -2234,8 +2357,8 @@ const HomepageAdmin = (() => {
                             <div class="hp-ops-card__eyebrow">主题包</div>
                             <strong>${aggregateMode ? '切站后套用主题包' : '场景化编排与局部覆盖'}</strong>
                         </div>
-                        <span class="status-badge ${aggregateMode ? 'banned' : (themePacks.length ? 'active' : 'pending')}">
-                            ${aggregateMode ? '只读' : `${escapeHomepageHtml(String(themePacks.length || 0))} 个主题包`}
+                        <span class="status-badge ${aggregateMode ? 'banned' : (isContextPending ? 'default' : (themePacks.length ? 'active' : 'pending'))}">
+                            ${aggregateMode ? '只读' : (isContextPending ? '加载中' : `${escapeHomepageHtml(String(themePacks.length || 0))} 个主题包`)}
                         </span>
                     </div>
                     ${aggregateMode ? '<div class="hp-preview-empty">切换到具体站点后，可一键套用节日活动、新品发布、国际站专题和社区活动主题包。</div>' : `
@@ -2246,7 +2369,7 @@ const HomepageAdmin = (() => {
                                     id: 'hp-theme-pack-select',
                                     value: selectedThemePackId,
                                     options: themePackOptions,
-                                    disabled: !themePacks.length
+                                    disabled: isContextPending || !themePacks.length
                                 })}
                             </div>
                             <div class="hp-field hp-field-full">
@@ -2260,7 +2383,7 @@ const HomepageAdmin = (() => {
                                 <div class="hp-theme-pack-selector">
                                     ${HOMEPAGE_MANAGED_SECTIONS.map((sectionKey) => `
                                         <label class="hp-theme-pack-selector__item">
-                                            <input type="checkbox" data-homepage-theme-pack-section value="${escapeHomepageHtml(sectionKey)}" checked>
+                                            <input type="checkbox" data-homepage-theme-pack-section value="${escapeHomepageHtml(sectionKey)}" ${(previousThemePackSections.length ? previousThemePackSections.includes(sectionKey) : true) ? 'checked' : ''}>
                                             <span>${escapeHomepageHtml(SV_LABELS[sectionKey]?.label || sectionKey)}</span>
                                         </label>
                                     `).join('')}
@@ -2268,7 +2391,7 @@ const HomepageAdmin = (() => {
                             </div>
                         </div>
                         <div class="hp-inline-actions">
-                            <button type="button" class="btn-sm btn-primary" id="hp-theme-pack-apply-btn" ${themePacks.length ? '' : 'disabled'}>应用主题包</button>
+                            <button type="button" class="btn-sm btn-primary" id="hp-theme-pack-apply-btn" ${(isContextPending || !themePacks.length) ? 'disabled' : ''}>应用主题包</button>
                         </div>
                         <div class="hp-theme-pack-list">
                             ${themePackCards}
@@ -2610,6 +2733,11 @@ const HomepageAdmin = (() => {
             return;
         }
 
+        if (!hasHomepageContextForSite(currentReadSite) && isHomepageContextLoading(currentReadSite)) {
+            container.innerHTML = '<div class="hp-featured-empty">首页候选 Prompt 加载中...</div>';
+            return;
+        }
+
         const candidates = getHomepageContextPromptCandidates(currentReadSite);
         if (!candidates.length) {
             container.innerHTML = '<div class="hp-featured-empty">当前站点暂无首页候选 Prompt。</div>';
@@ -2715,6 +2843,11 @@ const HomepageAdmin = (() => {
             return;
         }
 
+        if (!hasHomepageContextForSite(currentReadSite) && isHomepageContextLoading(currentReadSite)) {
+            container.innerHTML = '<div class="hp-featured-empty">商城候选池加载中...</div>';
+            return;
+        }
+
         const currentItems = Array.isArray(getHomepageCurrentSectionContent('shop').custom_items)
             ? getHomepageCurrentSectionContent('shop').custom_items
             : [];
@@ -2796,6 +2929,11 @@ const HomepageAdmin = (() => {
         if (!container) return;
         if (isHomepageAggregateMode()) {
             container.innerHTML = '<div class="hp-featured-empty">聚合视图不展示留言候选池，请切换到具体站点。</div>';
+            return;
+        }
+
+        if (!hasHomepageContextForSite(currentReadSite) && isHomepageContextLoading(currentReadSite)) {
+            container.innerHTML = '<div class="hp-featured-empty">留言候选池加载中...</div>';
             return;
         }
 
@@ -3398,12 +3536,13 @@ const HomepageAdmin = (() => {
             return;
         }
 
-        // Show translating status on save button
-        const saveBtn = document.querySelector(`.hp-section-view[data-hp-view="${section}"] .btn-primary`);
+        // Keep the CTA centered on saving; bilingual auto-fill stays an implementation detail.
+        const saveBtn = document.querySelector(`.hp-section-view[data-hp-view="${section}"] [data-admin-action="homepage-save-section"]`);
         const originalBtnText = saveBtn ? saveBtn.innerHTML : '';
         if (saveBtn) {
             saveBtn.disabled = true;
-            saveBtn.innerHTML = '<i class="fas fa-language"></i> 翻译中...';
+            saveBtn.setAttribute('aria-busy', 'true');
+            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 保存草稿中...';
         }
 
         // Collect updated values
@@ -3431,9 +3570,6 @@ const HomepageAdmin = (() => {
                 content.subtitle = getInputValue('hp-hero-subtitle');
                 delete content.cta;
                 content.custom_image = getInputValue('hp-hero-custom-image');
-                // Auto-translate bilingual fields
-                await autoTranslatePair(content, 'title');
-                await autoTranslatePair(content, 'subtitle');
                 break;
 
             case 'prompts':
@@ -3442,8 +3578,6 @@ const HomepageAdmin = (() => {
                 content.max_items = parseInt(getInputValue('hp-prompts-max')) || 6;
                 content.sort = getSelectValue('hp-prompts-sort');
                 content.featured_items = normalizeHomepageFeaturedPromptItems(content.featured_items);
-                await autoTranslatePair(content, 'section_title');
-                await autoTranslatePair(content, 'section_subtitle');
                 break;
 
             case 'shop':
@@ -3452,8 +3586,6 @@ const HomepageAdmin = (() => {
                 content.max_items = parseInt(getInputValue('hp-shop-max')) || 8;
                 content.category = getSelectValue('hp-shop-category');
                 content.sort = getSelectValue('hp-shop-sort');
-                await autoTranslatePair(content, 'section_title');
-                await autoTranslatePair(content, 'section_subtitle');
                 break;
 
             case 'gongyi':
@@ -3470,8 +3602,6 @@ const HomepageAdmin = (() => {
                 content.feature_3_description = getInputValue('hp-gongyi-feature-3-description');
                 content.show_model_section = getToggleState('hp-gongyi-models-visible');
                 content.model_items = normalizeHomepageGongyiModelItems(content.model_items);
-                await autoTranslatePair(content, 'brand_subtitle');
-                await autoTranslatePair(content, 'cta_text');
                 break;
 
             case 'verify':
@@ -3493,16 +3623,12 @@ const HomepageAdmin = (() => {
                 content.cta_text = getInputValue('hp-verify-cta-text');
                 content.cta_link = getInputValue('hp-verify-cta-link');
                 content.risk_notice = getInputValue('hp-verify-risk-notice');
-                await autoTranslatePair(content, 'section_title');
-                await autoTranslatePair(content, 'section_subtitle');
                 break;
 
             case 'guestbook':
                 content.section_title = getInputValue('hp-guestbook-title');
                 content.section_subtitle = getInputValue('hp-guestbook-subtitle');
                 content.max_items = parseInt(getInputValue('hp-guestbook-max')) || 5;
-                await autoTranslatePair(content, 'section_title');
-                await autoTranslatePair(content, 'section_subtitle');
                 break;
 
             case 'ticker':
@@ -3548,7 +3674,7 @@ const HomepageAdmin = (() => {
             renderAllSections();
 
             if (typeof showToast === 'function') {
-                showToast('草稿已保存', 'success');
+                showToast('草稿已保存，点击“发布当前站点”后首页才会更新', 'success');
             }
 
             console.log(`[Homepage] Section "${section}" saved successfully`);
@@ -3561,6 +3687,7 @@ const HomepageAdmin = (() => {
             // Restore save button
             if (saveBtn) {
                 saveBtn.disabled = false;
+                saveBtn.removeAttribute('aria-busy');
                 saveBtn.innerHTML = originalBtnText;
             }
         }
@@ -3586,8 +3713,28 @@ const HomepageAdmin = (() => {
             return true;
         } catch (error) {
             console.error('[Homepage] Publish failed:', error);
+
+            if (isHomepageTransientPublishError(error)) {
+                try {
+                    const refreshed = await fetchHomepageConfigRows(writableSite);
+                    applyHomepageResponsePayload(writableSite, refreshed);
+                    invalidateHomepageRuntimeCaches(writableSite);
+                    invalidateSectionVisibilityCaches();
+                    renderAllSections();
+
+                    if (refreshed?.draft?.exists === false) {
+                        if (typeof showToast === 'function') {
+                            showToast('发布已完成，刚才只是结果回传中断；当前站点状态已刷新。', 'success');
+                        }
+                        return true;
+                    }
+                } catch (refreshError) {
+                    console.warn('[Homepage] Publish recovery refresh failed:', refreshError);
+                }
+            }
+
             if (typeof showToast === 'function') {
-                showToast(`发布失败: ${error.message}`, 'error');
+                showToast(`发布失败: ${humanizeHomepagePublishError(error)}`, 'error');
             }
             return false;
         }
@@ -3887,6 +4034,9 @@ const HomepageAdmin = (() => {
     function switchSection(section) {
         currentSection = normalizeHomepageAdminSection(section, currentSection || HOMEPAGE_DEFAULT_SECTION);
         renderCurrentSection();
+        if (!isHomepageAggregateMode()) {
+            void warmHomepageContextInBackground(currentReadSite);
+        }
         syncHomepageAdminRouteState({
             section: currentSection,
             focusPromptId: currentSection === 'prompts' ? getHomepageAdminRouteState().focusPromptId : ''
@@ -3935,46 +4085,6 @@ const HomepageAdmin = (() => {
     }
 
     // ============================================
-    // AUTO-TRANSLATE HELPER
-    // ============================================
-
-    /**
-     * Auto-translate a field to its bilingual counterpart.
-     * If base field is Chinese → generates field_en
-     * If base field is English → generates field_zh
-     * Uses PromptTranslator (Gemini API). Fails silently if no API key.
-     *
-     * @param {Object} content - The content object to mutate
-     * @param {String} fieldName - Base field name (e.g. 'title', 'section_title')
-     */
-    async function autoTranslatePair(content, fieldName) {
-        const text = content[fieldName];
-        if (!text || !window.PromptTranslator) return;
-
-        try {
-            const isChinese = /[\u4e00-\u9fff]/.test(text);
-            if (isChinese) {
-                // Chinese → English
-                const en = await window.PromptTranslator.translateToEnglish(text);
-                if (en) {
-                    content[`${fieldName}_en`] = en;
-                    console.log(`[Homepage] Translated ${fieldName}: "${text}" → EN: "${en}"`);
-                }
-            } else {
-                // English → Chinese
-                const zh = await window.PromptTranslator.translateToChinese(text);
-                if (zh) {
-                    content[`${fieldName}_zh`] = zh;
-                    console.log(`[Homepage] Translated ${fieldName}: "${text}" → ZH: "${zh}"`);
-                }
-            }
-        } catch (err) {
-            console.warn(`[Homepage] Translation failed for ${fieldName}:`, err);
-            // Non-blocking: save proceeds without translation
-        }
-    }
-
-    // ============================================
     // TOGGLE HELPERS
     // ============================================
 
@@ -3983,7 +4093,7 @@ const HomepageAdmin = (() => {
         const toggleEl = document.getElementById(`hp-${section}-visible`);
         if (!toggleEl) return;
         const isActive = toggleEl.classList.toggle('active');
-        // Visual feedback only — actual save happens when "保存修改" is clicked
+        // Visual feedback only — actual save happens when "保存草稿" is clicked
     }
 
     function toggleField(section, field) {
@@ -4466,7 +4576,7 @@ const HomepageAdmin = (() => {
             renderAllSections();
 
             if (typeof showToast === 'function') {
-                showToast('分栏草稿已保存', 'success');
+                showToast('分栏草稿已保存，点击“发布当前站点”后首页才会更新', 'success');
             }
         } catch (err) {
             cfg.is_visible = previousValue;
@@ -4529,6 +4639,9 @@ const HomepageAdmin = (() => {
             try {
                 await loadAllConfig();
                 renderCurrentSection();
+                if (isHomepageModuleActive() && !isHomepageAggregateMode()) {
+                    void warmHomepageContextInBackground(currentReadSite, { force: true });
+                }
             } catch (err) {
                 console.error('[Homepage] Failed to reload config for new site:', err);
                 if (typeof showToast === 'function') {

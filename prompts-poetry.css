@@ -3090,6 +3090,7 @@ body.modal-open .prompt-card {
 
 .modal-header,
 .modal-description,
+.modal-content-tags,
 .prompt-area,
 .comment-section {
     transition: opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1), transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), max-height 0.32s cubic-bezier(0.22, 1, 0.36, 1), margin 0.32s cubic-bezier(0.22, 1, 0.36, 1), padding 0.32s cubic-bezier(0.22, 1, 0.36, 1);
@@ -3233,6 +3234,72 @@ body.modal-open .prompt-card {
 
 .modal-description {
     display: none;
+}
+
+.modal-content-tags[hidden] {
+    display: none !important;
+}
+
+.modal-content-tags {
+    margin: -6px 0 26px;
+    padding: 16px;
+    border-radius: 18px;
+    background: color-mix(in srgb, var(--card-bg) 82%, transparent);
+    border: 1px solid var(--card-border);
+}
+
+.modal-content-tags-title {
+    margin-bottom: 12px;
+    color: var(--text-dim);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.modal-content-tags-grid {
+    display: grid;
+    gap: 12px;
+}
+
+.modal-content-tag-group {
+    display: grid;
+    gap: 8px;
+}
+
+.modal-content-tag-label {
+    color: var(--text-dim);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.modal-content-tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.modal-content-tag-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent-purple) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent-purple) 20%, transparent);
+    color: var(--text-main);
+    font-size: 0.78rem;
+    line-height: 1.25;
+}
+
+[data-theme="dark"] .modal-content-tags {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.09);
+}
+
+[data-theme="dark"] .modal-content-tag-chip {
+    background: rgba(107, 158, 206, 0.11);
+    border-color: rgba(107, 158, 206, 0.18);
 }
 
 .prompt-area {
@@ -4832,6 +4899,7 @@ body.modal-open .prompt-card {
     }
 
     .modal-inner.comment-mode .modal-description,
+    .modal-inner.comment-mode .modal-content-tags,
     .modal-inner.comment-mode .prompt-area {
         opacity: 0;
         transform: none;
@@ -4844,6 +4912,7 @@ body.modal-open .prompt-card {
     }
 
     .modal-description,
+    .modal-content-tags,
     .prompt-area {
         transition-property: opacity, max-height, margin, padding;
     }

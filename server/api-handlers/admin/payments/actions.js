@@ -40,6 +40,7 @@ const VALID_TARGET_TYPES = new Set(['order', 'event', 'session', 'ops_alert_job'
 const VALID_ACTIONS = new Set([
     'mark_handled',
     'ignore',
+    'archive',
     'request_retry',
     'reopen',
     'approve_review',
@@ -51,7 +52,8 @@ const VALID_ACTIONS = new Set([
     'reconcile_hupijiao_order',
     'refund_zpay',
     'query_zpay_order',
-    'reconcile_zpay_order'
+    'reconcile_zpay_order',
+    'reconcile_checkout_session'
 ]);
 const NOTE_REQUIRED_ACTIONS = new Set([
     'approve_review',
@@ -69,7 +71,8 @@ const ORDER_ONLY_ACTIONS = new Set([
     'refund_hupijiao',
     'query_zpay_order',
     'reconcile_zpay_order',
-    'refund_zpay'
+    'refund_zpay',
+    'reconcile_checkout_session'
 ]);
 const SENSITIVE_REVIEW_ACTIONS = new Set([
     'approve_review',
@@ -87,6 +90,16 @@ const RECONCILABLE_GATEWAY_STATUSES = new Set([
     'pending',
     'pending_review',
     'amount_mismatch'
+]);
+const OPS_ALERT_ACTIONS = new Set([
+    'mark_handled',
+    'ignore',
+    'request_retry',
+    'reopen'
+]);
+const ARCHIVABLE_ANOMALY_STATUSES = new Set([
+    'handled',
+    'approved'
 ]);
 const GATEWAY_PROVIDER_META = Object.freeze({
     hupijiao: Object.freeze({
@@ -197,9 +210,12 @@ function mapActionToStatus(action) {
     case 'refund_zpay':
     case 'reconcile_hupijiao_order':
     case 'reconcile_zpay_order':
+    case 'reconcile_checkout_session':
         return 'handled';
     case 'ignore':
         return 'ignored';
+    case 'archive':
+        return 'archived';
     case 'request_retry':
         return 'retry_requested';
     case 'approve_review':
@@ -225,6 +241,8 @@ function getResolutionText(action, note) {
         return '已人工确认并标记处理完成。';
     case 'ignore':
         return '该异常已人工忽略。';
+    case 'archive':
+        return '该异常已归档，不再进入专题计数。';
     case 'request_retry':
         return '已登记重试申请，等待后续履约链路接管。';
     case 'approve_review':
@@ -241,6 +259,8 @@ function getResolutionText(action, note) {
     case 'reconcile_hupijiao_order':
     case 'reconcile_zpay_order':
         return `已根据${gatewayLabel}实时查单结果完成人工补单。`;
+    case 'reconcile_checkout_session':
+        return '已补回支付意图与订单的关联。';
     case 'reopen':
         return '已重新打开异常项。';
     default:
@@ -420,6 +440,37 @@ async function fetchTargetRecord(supabase, targetType, targetId) {
         .single();
     if (error) throw error;
     return data;
+}
+
+async function fetchAnomalyCase(supabase, targetType, targetId) {
+    const { data, error } = await supabase
+        .from('payment_anomaly_cases')
+        .select('id, status, last_action, last_action_at')
+        .eq('target_type', targetType)
+        .eq('target_id', targetId);
+
+    if (error) throw error;
+    return Array.isArray(data) ? (data[0] || null) : null;
+}
+
+function assertActionAllowedForTarget(targetType, action, anomalyCase) {
+    if (targetType === 'ops_alert_job') {
+        if (!OPS_ALERT_ACTIONS.has(action)) {
+            const error = new Error('该操作仅适用于支付异常项');
+            error.statusCode = 400;
+            throw error;
+        }
+        return;
+    }
+
+    if (action !== 'archive') return;
+
+    const currentStatus = normalizeText(anomalyCase?.status).toLowerCase();
+    if (!ARCHIVABLE_ANOMALY_STATUSES.has(currentStatus)) {
+        const error = new Error('只有已处理或已审核通过的异常项才能归档');
+        error.statusCode = 409;
+        throw error;
+    }
 }
 
 function normalizeReviewRpcAction(action) {
@@ -922,7 +973,7 @@ async function applyGatewayReconcileDecision(supabase, target, note, actorId, en
             source: 'admin_action',
             query: liveOrder,
             note: note || null,
-            checkout_session_id: linkedSession?.id || null,
+            checkout_session_id: linkedSession?.sessionId || linkedSession?.id || null,
             linked_discount_summary: linkedDiscountSummary,
             linked_affiliate_discount_summary: linkedAffiliateDiscountSummary
         },
@@ -946,11 +997,104 @@ async function applyGatewayReconcileDecision(supabase, target, note, actorId, en
             recharge_reference_id: rechargeReferenceId || null,
             recharge_paid_points: normalizePointAmount(rechargeBreakdown.paidPoints, 0),
             recharge_bonus_points: normalizePointAmount(rechargeBreakdown.bonusPoints, 0),
-            checkout_session_id: linkedSession?.id || null,
+            checkout_session_id: linkedSession?.sessionId || linkedSession?.id || null,
             linked_discount_count: normalizePointAmount(linkedDiscountSummary?.issued_count, 0),
             linked_affiliate_discount_count: normalizePointAmount(linkedAffiliateDiscountSummary?.issued_count, 0)
         },
         liveOrder
+    };
+}
+
+async function applyCheckoutSessionReconcileDecision(supabase, target, note, actorId) {
+    const normalizedStatus = normalizeText(target?.status).toLowerCase();
+    if (!['paid', 'redeemed'].includes(normalizedStatus)) {
+        const error = new Error('当前订单状态不适合补回支付意图关联');
+        error.statusCode = 409;
+        throw error;
+    }
+
+    const providerMetadata = normalizeJsonObject(target?.provider_metadata);
+    const currentSessionId = normalizeText(target?.checkout_session_id || providerMetadata.checkout_session_id);
+    if (currentSessionId) {
+        return {
+            order: target,
+            anomalyStatus: 'handled',
+            resolution: normalizeText(note) || '该订单已经关联支付意图，无需重复回填。',
+            message: '该订单已经关联支付意图，无需重复回填。',
+            auditDetails: {
+                checkout_session_already_linked: true,
+                checkout_session_id: currentSessionId
+            }
+        };
+    }
+
+    const linkedSession = await reconcileCheckoutSessionForPaymentOrder({
+        supabase,
+        providerKey: target.provider,
+        paymentOrderId: target.id,
+        providerOrderNo: normalizeText(target.provider_order_no || providerMetadata.provider_order_no),
+        userId: target.user_id,
+        site: target.site || 'cn',
+        packageId: target.package_id,
+        packageName: target.package_name,
+        expectedAmount: target.expected_amount,
+        paidAmount: target.paid_amount,
+        pointsAmount: target.points_amount || 0,
+        orderStatus: target.status,
+        linkedBy: 'admin_checkout_session_reconcile',
+        allowHeuristic: true,
+        lookbackMinutes: 1440
+    });
+
+    if (!linkedSession?.sessionId) {
+        const error = new Error('未找到可安全匹配的支付意图会话，请先实时查单并核对订单号、用户和金额。');
+        error.statusCode = 409;
+        throw error;
+    }
+
+    const { data: refreshedOrder } = await supabase
+        .from('payment_orders')
+        .select('id, user_id, provider, provider_order_no, checkout_session_id, package_id, package_name, site, expected_amount, paid_amount, points_amount, status, claimed_at, paid_at, verified_at, sign_verified, amount_verified, created_at, last_error, provider_metadata, raw_payload')
+        .eq('id', target.id)
+        .single();
+
+    await tryRecordPaymentEvent(supabase, {
+        payment_order_id: target.id,
+        provider: target.provider || null,
+        provider_order_no: normalizeText(target.provider_order_no || providerMetadata.provider_order_no) || null,
+        event_key: `admin_checkout_session_reconcile:${target.id}:${linkedSession.sessionId}`,
+        event_type: 'admin_reconcile',
+        signature_valid: true,
+        amount_valid: true,
+        payload: {
+            action: 'reconcile_checkout_session',
+            source: 'admin_action',
+            note: note || null,
+            checkout_session_id: linkedSession.sessionId
+        },
+        processing_result: 'admin_checkout_session_reconciled',
+        response_status: 200,
+        processed_at: new Date().toISOString()
+    });
+
+    return {
+        order: refreshedOrder || {
+            ...target,
+            checkout_session_id: linkedSession.sessionId,
+            provider_metadata: mergeJsonObjects(providerMetadata, {
+                checkout_session_id: linkedSession.sessionId,
+                checkout_session_status: linkedSession.checkoutSession?.status || 'completed',
+                checkout_session_linked_by: 'admin_checkout_session_reconcile'
+            })
+        },
+        anomalyStatus: 'handled',
+        resolution: normalizeText(note) || '已补回支付意图与订单的关联。',
+        message: '已补回支付意图关联，不会重复入账。',
+        auditDetails: {
+            checkout_session_id: linkedSession.sessionId,
+            checkout_session_linked_by: 'admin_checkout_session_reconcile',
+            checkout_session_actor_id: actorId || null
+        }
     };
 }
 
@@ -1139,6 +1283,31 @@ function normalizeActionResponseStatus(statusCode = 500) {
     }
 
     return numericStatus;
+}
+
+function resolveFriendlyActionError(error) {
+    const message = normalizeText(error?.message);
+    const details = normalizeText(error?.details);
+    const hint = normalizeText(error?.hint);
+    const combined = [message, details, hint].filter(Boolean).join(' ');
+    const normalizedCombined = combined.toLowerCase();
+    const code = normalizeText(error?.code);
+
+    if (
+        code === '23514'
+        && normalizedCombined.includes('payment_anomaly_cases_status_check')
+        && normalizedCombined.includes('payment_anomaly_cases')
+    ) {
+        return {
+            statusCode: 409,
+            message: '当前数据库还没有应用“异常归档”所需迁移，请先执行 20260419_allow_archived_payment_anomaly_cases.sql。'
+        };
+    }
+
+    return {
+        statusCode: error?.statusCode || 500,
+        message: message || 'Failed to apply anomaly action'
+    };
 }
 
 function getGatewayRefundSnapshot(target = {}, providerKey = '') {
@@ -1893,6 +2062,11 @@ module.exports = async function handler(req, res) {
             });
         }
 
+        const anomalyCaseRecord = targetType === 'ops_alert_job'
+            ? null
+            : await fetchAnomalyCase(supabase, targetType, targetId);
+        assertActionAllowedForTarget(targetType, action, anomalyCaseRecord);
+
         if (targetType === 'order' && SENSITIVE_REVIEW_ACTIONS.has(action)) {
             await applyOrderReviewDecision(supabase, target, action, note, user.id);
         }
@@ -1955,6 +2129,15 @@ module.exports = async function handler(req, res) {
             responseMessage = normalizeText(reconcileDecision.message);
         }
 
+        if (targetType === 'order' && action === 'reconcile_checkout_session') {
+            const reconcileDecision = await applyCheckoutSessionReconcileDecision(supabase, target, note, user.id);
+            resolvedTarget = reconcileDecision.order || target;
+            resolvedStatus = reconcileDecision.anomalyStatus || resolvedStatus;
+            resolvedResolution = reconcileDecision.resolution || resolvedResolution;
+            auditDetails = reconcileDecision.auditDetails || {};
+            responseMessage = normalizeText(reconcileDecision.message);
+        }
+
         if (targetType === 'ops_alert_job') {
             const opsAlertDecision = await applyOpsAlertJobAction(supabase, target, action, note, user.id);
             resolvedTarget = opsAlertDecision.job || target;
@@ -2002,9 +2185,10 @@ module.exports = async function handler(req, res) {
             ops_alert_job: targetType === 'ops_alert_job' ? resolvedTarget : undefined
         });
     } catch (error) {
-        return sendJson(res, normalizeActionResponseStatus(error?.statusCode || 500), {
+        const friendlyError = resolveFriendlyActionError(error);
+        return sendJson(res, normalizeActionResponseStatus(friendlyError.statusCode), {
             success: false,
-            message: error?.message || 'Failed to apply anomaly action'
+            message: friendlyError.message
         });
     }
 };

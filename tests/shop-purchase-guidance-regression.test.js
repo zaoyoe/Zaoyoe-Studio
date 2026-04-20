@@ -110,8 +110,8 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHandlerSource,
-        /guidance:\s*\{\s*usage_instructions: usageInstructions \|\| null,\s*has_usage_instructions: usageInstructions\.length > 0\s*\}/s,
-        'order detail responses should carry guidance metadata so wallet order details can show usage instructions'
+        /guidance:\s*\{\s*purchase_notes: purchaseNotes \|\| null,\s*has_purchase_notes: purchaseNotes\.length > 0,\s*usage_instructions: usageInstructions \|\| null,\s*has_usage_instructions: usageInstructions\.length > 0\s*\}/s,
+        'order detail responses should carry guidance metadata so wallet order details can show purchase notes and usage instructions'
     );
     assert.match(
         shopGuidanceApiSource,
@@ -125,8 +125,13 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         walletModalSource,
-        /renderStoredWalletOrderRichText\(usageInstructions\)/,
-        'wallet order detail modal should render usage instructions with rich-text fallback support'
+        /detail\?\.guidance\?\.purchase_notes/,
+        'wallet order detail modal should read purchase notes from the server-side order detail payload'
+    );
+    assert.match(
+        walletModalSource,
+        /renderStoredWalletOrderRichText\(item\.content\)/,
+        'wallet order detail modal should render folded guidance content with rich-text fallback support'
     );
     assert.match(
         shopHtmlSource,

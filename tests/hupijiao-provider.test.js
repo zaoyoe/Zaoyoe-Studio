@@ -36,6 +36,27 @@ test('normalizeHupijiaoConfig derives official endpoint urls and reports missing
     assert.deepEqual(config.missingFields, []);
 });
 
+test('normalizeHupijiaoConfig rewrites managed urls onto the intl site origin', () => {
+    const config = normalizeHupijiaoConfig({
+        channelConfig: {
+            merchant_id: 'appid-123',
+            gateway_url: 'https://api.dpweixin.com/payment/do.html',
+            notify_url: 'https://www.zaoyoe.com/api/payments/hupijiao/webhook',
+            return_url: 'https://www.zaoyoe.com/wallet',
+            callback_url: 'https://www.zaoyoe.com/wallet'
+        },
+        secretValues: {
+            hupijiao_secret_key: 'secret-123'
+        },
+        requestOrigin: 'https://www.zaoyoe.xyz'
+    });
+
+    assert.equal(config.notifyUrl, 'https://www.zaoyoe.xyz/api/payments/hupijiao/webhook');
+    assert.equal(config.returnUrl, 'https://www.zaoyoe.xyz/wallet');
+    assert.equal(config.callbackUrl, 'https://www.zaoyoe.xyz/wallet');
+    assert.equal(config.createReady, true);
+});
+
 test('resolveHupijiaoEndpointUrl falls back to official production gateway', () => {
     assert.equal(
         resolveHupijiaoEndpointUrl('', '/payment/query.html'),

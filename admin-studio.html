@@ -18,8 +18,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 
     <!-- Styles -->
-    <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=20260416_GROWTH_NEW_USERS_1">
+    <link rel="stylesheet" href="prompts-poetry.css?v=20260420_ADMIN_CACHE_BUST_1">
+    <link rel="stylesheet" href="admin-studio.css?v=20260420_POINTS_LEADERBOARD_AVATAR_1">
     <link rel="stylesheet" href="admin-sidebar.css?v=20260412_SIDEBAR_HEX_182634_1">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260402_ADMIN_CHAT_INPUT_UI_13">
 
@@ -31,7 +31,7 @@
 
     <!-- Prevent flash of wrong theme -->
     <link rel="stylesheet" href="css/admin-studio-page.css?v=20260416_DISCOUNT_TRIGGER_PRESET_BOX_FIX_10">
-    <script src="./js/theme-preload.js"></script>
+    <script src="./js/theme-preload.js?v=20260420_ADMIN_CACHE_BUST_1"></script>
 
 </head>
 
@@ -407,8 +407,8 @@
                                         placeholder="Brief description..."></textarea>
                                 </div>
 
-                                <!-- AI Tags Display (Hidden - still analyzed in background) -->
-                                <div class="form-group admin-studio-inline-style-attr-3">
+                                <!-- AI Tags Display -->
+                                <div class="form-group" id="promptAiTagsGroup">
                                     <label>
                                         <i class="fas fa-tags"></i>
                                         AI Tags
@@ -430,6 +430,30 @@
                                         <div class="tag-category">
                                             <span class="tag-label">Mood:</span>
                                             <div class="tag-list" id="tagMood"></div>
+                                        </div>
+                                        <div class="tag-category">
+                                            <span class="tag-label">Platform:</span>
+                                            <div class="tag-list" id="tagUseCasePlatform"></div>
+                                        </div>
+                                        <div class="tag-category">
+                                            <span class="tag-label">Purpose:</span>
+                                            <div class="tag-list" id="tagUseCasePurpose"></div>
+                                        </div>
+                                        <div class="tag-category">
+                                            <span class="tag-label">Format:</span>
+                                            <div class="tag-list" id="tagUseCaseFormat"></div>
+                                        </div>
+                                        <div class="tag-category">
+                                            <span class="tag-label">Niche:</span>
+                                            <div class="tag-list" id="tagCommercialNiche"></div>
+                                        </div>
+                                        <div class="tag-category">
+                                            <span class="tag-label">Audience:</span>
+                                            <div class="tag-list" id="tagCommercialAudience"></div>
+                                        </div>
+                                        <div class="tag-category">
+                                            <span class="tag-label">Difficulty:</span>
+                                            <div class="tag-list" id="tagDifficulty"></div>
                                         </div>
                                     </div>
                                 </div>
@@ -6724,6 +6748,8 @@
                     </div>
                 </div>
 
+                <div class="admin-users-scope-hint" id="usersScopeHint" hidden aria-live="polite"></div>
+
                 <!-- User Directory Table -->
                 <div class="glass-panel table-view users-table-panel">
                     <table class="admin-table users-table" id="usersTable">
@@ -8096,7 +8122,7 @@
                                     class="admin-studio-inline-style-attr-147"></span>
                                 <div class="admin-studio-inline-style-attr-148">
                                     <button class="btn-sm btn-primary" data-admin-action="homepage-save-section" data-homepage-section="hero"><i
-                                            class="fas fa-save"></i> 保存修改</button>
+                                            class="fas fa-save"></i> 保存草稿</button>
                                 </div>
                             </div>
                         </div>
@@ -8177,7 +8203,7 @@
                                 <div class="admin-studio-inline-style-attr-148">
 
                                     <button class="btn-sm btn-primary" data-admin-action="homepage-save-section" data-homepage-section="prompts"><i
-                                            class="fas fa-save"></i> 保存修改</button>
+                                            class="fas fa-save"></i> 保存草稿</button>
                                 </div>
                             </div>
                         </div>
@@ -8260,7 +8286,7 @@
                                 <div class="admin-studio-inline-style-attr-148">
 
                                     <button class="btn-sm btn-primary" data-admin-action="homepage-save-section" data-homepage-section="shop"><i
-                                            class="fas fa-save"></i> 保存修改</button>
+                                            class="fas fa-save"></i> 保存草稿</button>
                                 </div>
                             </div>
                         </div>
@@ -8365,7 +8391,7 @@
                                 <div class="admin-studio-inline-style-attr-148">
 
                                     <button class="btn-sm btn-primary" data-admin-action="homepage-save-section" data-homepage-section="gongyi"><i
-                                            class="fas fa-save"></i> 保存修改</button>
+                                            class="fas fa-save"></i> 保存草稿</button>
                                 </div>
                             </div>
                         </div>
@@ -8482,7 +8508,7 @@
                                 <div class="admin-studio-inline-style-attr-148">
 
                                     <button class="btn-sm btn-primary" data-admin-action="homepage-save-section" data-homepage-section="verify"><i
-                                            class="fas fa-save"></i> 保存修改</button>
+                                            class="fas fa-save"></i> 保存草稿</button>
                                 </div>
                             </div>
                         </div>
@@ -8566,7 +8592,7 @@
 
                                     <button class="btn-sm btn-primary"
                                         data-admin-action="homepage-save-section" data-homepage-section="guestbook"><i class="fas fa-save"></i>
-                                        保存修改</button>
+                                        保存草稿</button>
                                 </div>
                             </div>
                         </div>
@@ -8661,7 +8687,7 @@
                                 <div class="admin-studio-inline-style-attr-148">
 
                                     <button class="btn-sm btn-primary" data-admin-action="homepage-save-section" data-homepage-section="ticker"><i
-                                            class="fas fa-save"></i> 保存修改</button>
+                                            class="fas fa-save"></i> 保存草稿</button>
                                 </div>
                             </div>
                         </div>
@@ -8795,30 +8821,47 @@
 
                         <div id="payments-tab-finance" class="payments-tab-content">
                             <div class="kpi-cards-row payments-kpi-grid" id="paymentsSitewideGrid"></div>
-                            <div class="charts-grid payments-charts-grid">
-                                <div class="chart-card glass-panel payments-card">
-                                    <div class="chart-header">
-                                        <h3><i class="fas fa-briefcase"></i> 业务收支拆分</h3>
-                                        <span>充值、商城、模拟支付与当前积分存量</span>
-                                    </div>
-                                    <div class="chart-body payments-card-body">
-                                        <div class="payments-business-breakdown" id="paymentsBusinessBreakdown"></div>
-                                    </div>
+                            <div class="chart-card glass-panel payments-card payments-card-wide payments-finance-breakdown-card">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-briefcase"></i> 业务收支拆分</h3>
+                                    <span>按当前范围展示业务数据与按天走势</span>
                                 </div>
+                                <div class="chart-body payments-card-body">
+                                    <div class="payments-business-breakdown" id="paymentsBusinessBreakdown"></div>
+                                </div>
+                            </div>
 
-                                <div class="chart-card glass-panel payments-card">
-                                    <div class="chart-header">
-                                        <h3><i class="fas fa-coins"></i> 积分流水分类</h3>
-                                        <span>按充值、奖励、商城消费、验证消耗等维度聚合</span>
-                                    </div>
-                                    <div class="chart-body payments-card-body">
-                                        <div class="payments-points-breakdown" id="paymentsPointsBreakdown"></div>
-                                    </div>
+                            <div class="chart-card glass-panel payments-card payments-card-wide payments-finance-points-card">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-coins"></i> 积分流水分类</h3>
+                                    <span>按充值、奖励、商城消费、验证消耗等维度聚合</span>
+                                </div>
+                                <div class="chart-body payments-card-body">
+                                    <div class="payments-points-breakdown" id="paymentsPointsBreakdown"></div>
                                 </div>
                             </div>
                         </div>
 
                         <div id="payments-tab-ops" class="payments-tab-content">
+                            <div class="chart-card glass-panel payments-card payments-card-wide">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-bullseye"></i> 支付异常专题</h3>
+                                    <span>全部专题、重复回调、支付意图异常、退款失败与扣回失败按卡片切换</span>
+                                </div>
+                                <div class="chart-body payments-card-body">
+                                    <div class="payments-provider-stats" id="paymentsExceptionTopics"></div>
+                                    <div class="payments-anomaly-list" id="paymentsExceptionTopicList"></div>
+                                </div>
+                            </div>
+                            <div class="chart-card glass-panel payments-card payments-card-wide">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-receipt"></i> 最近订单</h3>
+                                    <span>人工核对支付、认领与站点归属</span>
+                                </div>
+                                <div class="chart-body payments-card-body">
+                                    <div class="payments-orders-table" id="paymentsOrdersTable"></div>
+                                </div>
+                            </div>
                             <div class="chart-card glass-panel payments-card payments-card-wide" id="paymentsOpsAlertQueuePanel">
                                 <div class="chart-header">
                                     <h3><i class="fas fa-tower-broadcast"></i> 站外告警队列</h3>
@@ -8830,40 +8873,27 @@
                             </div>
                             <div class="chart-card glass-panel payments-card payments-card-wide">
                                 <div class="chart-header">
-                                    <h3><i class="fas fa-bullseye"></i> 支付异常专题</h3>
-                                    <span>金额异常、待审核、重复回调与查码失败分专题跟进</span>
+                                    <h3><i class="fas fa-triangle-exclamation"></i> 异常队列</h3>
+                                    <span>综合异常总队列，适合回头扫尾和处理跨专题问题</span>
                                 </div>
                                 <div class="chart-body payments-card-body">
-                                    <div class="payments-provider-stats" id="paymentsExceptionTopics"></div>
-                                    <div class="payments-anomaly-list" id="paymentsExceptionTopicList"></div>
+                                    <div class="payments-anomaly-list" id="paymentsAnomalyList"></div>
                                 </div>
                             </div>
-                            <div class="charts-grid payments-charts-grid">
-                                <div class="chart-card glass-panel payments-card">
-                                    <div class="chart-header">
-                                        <h3><i class="fas fa-triangle-exclamation"></i> 异常队列</h3>
-                                        <span>综合异常总队列，适合回头扫尾和处理跨专题问题</span>
-                                    </div>
-                                    <div class="chart-body payments-card-body">
-                                        <div class="payments-anomaly-list" id="paymentsAnomalyList"></div>
-                                    </div>
-                                </div>
-
-                                <div class="chart-card glass-panel payments-card">
-                                    <div class="chart-header">
-                                        <h3><i class="fas fa-receipt"></i> 最近订单</h3>
-                                        <span>人工核对支付、认领与站点归属</span>
-                                    </div>
-                                    <div class="chart-body payments-card-body">
-                                        <div class="payments-orders-table" id="paymentsOrdersTable"></div>
-                                    </div>
-                                </div>
-                            </div>
-
                             <div class="chart-card glass-panel payments-card payments-card-wide">
                                 <div class="chart-header">
+                                    <h3><i class="fas fa-qrcode"></i> 支付意图会话</h3>
+                                    <span>单独跟踪未付款、待回填、失败、过期的支付会话</span>
+                                </div>
+                                <div class="chart-body payments-card-body">
+                                    <div class="payments-provider-stats" id="paymentsCheckoutSessionsList"></div>
+                                </div>
+                            </div>
+
+                            <div class="chart-card glass-panel payments-card payments-card-wide" id="paymentsCleanupCard" hidden>
+                                <div class="chart-header">
                                     <h3><i class="fas fa-broom"></i> 测试数据清理</h3>
-                                    <span>专门清理 AUTO_CDX_* 与 codex.*@example.com</span>
+                                    <span>仅扫描到测试订单或测试账号时显示</span>
                                 </div>
                                 <div class="payments-cleanup-actions">
                                     <button type="button" class="btn-sm btn-secondary" id="paymentsCleanupPreviewBtn" data-admin-action="payments-preview-cleanup">
@@ -9000,7 +9030,7 @@
                                                     </div>
                                                     <div class="payments-manual-item">
                                                         <strong>测试数据清理</strong>
-                                                        <span>只针对 <code>AUTO_CDX_</code> 和 <code>codex.*@example.com</code>，不会影响正式订单。<br><b>使用前：</b>先点重新扫描确认范围。<br><b>处理：</b>上线前或联调结束后执行一次，避免测试数据污染总览和通道表现。</span>
+                                                        <span>只针对 <code>AUTO_CDX_</code> / <code>SMOKE_</code> 测试订单和测试账号，不会影响正式订单。<br><b>显示：</b>只有扫描到待清理测试数据时才出现。<br><b>处理：</b>上线前或联调结束后执行一次，避免测试数据污染总览和通道表现。</span>
                                                     </div>
                                                 </div>
                                             </section>
@@ -9512,7 +9542,7 @@
                                 </div>
                             </div>
 
-                            <div class="chart-card glass-panel analytics-nav-focus-target" id="productRankingsSection">
+                            <div class="chart-card glass-panel chart-wide analytics-nav-focus-target" id="productRankingsSection">
                                 <div class="chart-header">
                                     <h3><i class="fas fa-ranking-star"></i> 商品榜单</h3>
                                     <span class="analytics-panel-note" id="productRankingsMeta">销量 / 收入 / 转化 / 风险榜</span>
@@ -11284,7 +11314,7 @@
     <!-- Supabase Client (使用国内可访问的CDN) -->
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="/api/runtime/supabase-config"></script>
-    <script src="./js/runtime-supabase-config.js"></script>
+    <script src="./js/runtime-supabase-config.js?v=20260420_ADMIN_CACHE_BUST_1"></script>
     <!-- Cropper.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
     <!-- SheetJS for Excel export -->
@@ -11293,24 +11323,24 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="js/admin-studio-bootstrap.js?v=20260416_PRODUCT_DETAIL_TAB_1"></script>
     <script src="js/admin-shell.js?v=20260410_ADMIN_SHELL_P1_1"></script>
-    <script src="js/ios-scroll-lock.js"></script>
-    <script src="admin-users.js?v=20260410_ADMIN_USERS_BAN_FIX_2"></script>
+    <script src="js/ios-scroll-lock.js?v=20260420_ADMIN_CACHE_BUST_1"></script>
+    <script src="admin-users.js?v=20260420_ADMIN_USERS_SCOPE_HINT_1"></script>
     <script src="admin-points.js?v=20260418_ADMIN_POINTS_DECIMAL_PRECISION_1"></script>
     <script src="admin-discounts.js?v=20260416_DISCOUNT_STACKING_REAL_MULTI_14"></script>
     <script src="js/admin-growth-center.js?v=20260409_MARKETING_ASSET_CENTER_P2_1"></script>
-    <script src="starry-sky.js"></script>
+    <script src="starry-sky.js?v=20260420_ADMIN_CACHE_BUST_1"></script>
     <!-- Flatpickr JS -->
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh.js"></script>
     <script src="js/admin-api-auth.js?v=20260402_ADMIN_API_AUTH_5"></script>
-    <script src="js/admin-ai.js"></script>
+    <script src="js/admin-ai.js?v=20260420_ADMIN_CACHE_BUST_1"></script>
     <script src="admin-comments.js?v=20260416_COMMENTS_PAGE_SIZE_15_1"></script>
     <script src="js/admin-analytics-metric-context.js?v=20260405_ANALYTICS_METRIC_CONTEXT_HELPERS_6"></script>
     <script src="admin-analytics.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1"></script>
-    <script src="js/admin-analytics-derived-bundles.js?v=20260405_ANALYTICS_DERIVED_BUNDLES_5"></script>
-    <script src="js/admin-analytics-runtime-controls.js?v=20260405_ANALYTICS_RUNTIME_CONTROLS_1"></script>
-    <script src="js/admin-analytics-panel-loaders.js?v=20260416_GROWTH_NEW_USERS_1"></script>
-    <script src="js/admin-analytics-lifecycle.js?v=20260416_PRODUCT_DETAIL_NO_BLANK_ENTRY_1"></script>
+    <script src="js/admin-analytics-derived-bundles.js?v=20260420_DERIVED_VARIANT_CACHE_1"></script>
+    <script src="js/admin-analytics-runtime-controls.js?v=20260420_ANALYTICS_ONLINE_USERS_RPC_1"></script>
+    <script src="js/admin-analytics-panel-loaders.js?v=20260420_POINTS_LEADERBOARD_AVATAR_1"></script>
+    <script src="js/admin-analytics-lifecycle.js?v=20260420_ANALYTICS_LIFECYCLE_STALE_GUARD_1"></script>
     <script src="js/admin-analytics-workbench.js?v=20260416_PRODUCT_DETAIL_WORKBENCH_1"></script>
     <script src="js/admin-analytics-insight-cards.js?v=20260407_ANALYTICS_INSIGHT_CARDS_HELPERS_5"></script>
     <script src="js/admin-analytics-ai-state.js?v=20260405_ANALYTICS_AI_STATE_1"></script>
@@ -11320,8 +11350,8 @@
     <script src="js/admin-analytics-ai-controller.js?v=20260405_ANALYTICS_AI_CONTROLLER_1"></script>
     <script src="js/admin-analytics-export-builders.js?v=20260405_ANALYTICS_EXPORT_BUILDERS_1"></script>
     <script src="js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9"></script>
-    <script src="js/admin-payments.js?v=20260416_ADMIN_PAYMENTS_QUERY_RECONCILE_12"></script>
-    <script src="js/local-smoke-fixtures.js?v=20260412_LOCAL_SMOKE_FIXTURES_PRODUCT_BUNDLES_35"></script>
+    <script src="js/admin-payments.js?v=20260419_ADMIN_PAYMENTS_SESSION_TRACE_1"></script>
+    <script src="js/admin-smoke-loader.js?v=20260420_ADMIN_SMOKE_LOADER_1"></script>
     <script src="js/admin-workbench.js?v=20260410_ADMIN_SHELL_CONTEXT_P1_1"></script>
     <script src="js/admin-ticket-links.js?v=20260410_ADMIN_SHELL_CONTEXT_P1_1"></script>
     <script src="admin-config.js?v=20260416_PAYMENT_PROVIDER_NEUTRALITY_1"></script>
@@ -11331,11 +11361,11 @@
     <script src="js/admin-site-filter.js?v=20260410_ADMIN_SHELL_SITE_BUS_P1_1"></script>
     <script src="js/admin-tickets.js?v=20260410_ADMIN_SHELL_CONTEXT_P1_1"></script>
     <script src="js/admin-access.js?v=20260403_ADMIN_ENTRY_WARMUP_1"></script>
-<script src="admin-studio.js?v=20260416_PRODUCT_DETAIL_NO_BLANK_ENTRY_1"></script>
+<script src="admin-studio.js?v=20260420_ANALYTICS_USER_TREND_REQUEST_1"></script>
     <script src="js/admin-shop.js?v=20260410_SHOP_ORDER_UUID_SEARCH_1"></script>
 </body>
 
 <!-- Admin Chat Script -->
 <script src="js/admin-chat.js?v=20260402_ADMIN_CHAT_INPUT_UI_13"></script>
-<script src="js/admin-real-smoke.js?v=20260402_ADMIN_REAL_SMOKE_9"></script>
+<script src="js/admin-real-smoke-loader.js?v=20260420_ADMIN_REAL_SMOKE_LOADER_1"></script>
 </html>

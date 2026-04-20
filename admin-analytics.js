@@ -27,6 +27,8 @@ let productTrendChart = null;
 let activeAnalyticsProductId = '';
 let activeAnalyticsProductName = '';
 let analyticsProductDetailRequestId = 0;
+let analyticsUserTrendRequestId = 0;
+let analyticsGrowthSummaryRequestId = 0;
 let analyticsDestinationFocusTimeoutId = 0;
 const DEFAULT_ANALYTICS_DAYS = 7;
 const ANALYTICS_DAY_MS = 24 * 60 * 60 * 1000;
@@ -48,6 +50,8 @@ const analyticsRuntime = {
     reloadPromise: null,
     reloadRequestId: 0,
     reloadContextKey: '',
+    reloadTabId: '',
+    loadedTabsByContext: {},
     lastLoadedAt: 0,
     lastLoadedContextKey: '',
     lastReloadReason: ''

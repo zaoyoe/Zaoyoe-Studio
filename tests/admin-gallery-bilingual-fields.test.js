@@ -512,4 +512,31 @@ test('gallery populateForm keeps prompt fields manual for analysis results and p
     assert.equal(elements.promptText.value, 'Manual primary prompt');
     assert.equal(elements.promptTextZh.value, '手动中文提示词');
     assert.equal(elements.promptTextEn.value, 'Manual English prompt');
+
+    elements.promptTitle.value = 'Old title';
+    elements.promptCategory.value = 'Photography';
+    elements.promptDescription.value = 'Old description';
+    elements.promptText.value = 'Keep this primary prompt';
+    elements.promptTextZh.value = '保留这段中文提示词';
+    elements.promptTextEn.value = 'Keep this English prompt';
+
+    exports.populateForm({
+        title: 'Recomputed Title',
+        title_en: 'Recomputed Title',
+        title_zh: '重算标题',
+        category: 'Miniature',
+        description: 'Recomputed description.',
+        description_en: 'Recomputed description.',
+        description_zh: '重算描述。'
+    }, {
+        preserveExisting: false,
+        source: 'analysis'
+    });
+
+    assert.equal(elements.promptTitle.value, 'Recomputed Title');
+    assert.equal(elements.promptCategory.value, 'Miniature');
+    assert.equal(elements.promptDescription.value, 'Recomputed description.');
+    assert.equal(elements.promptText.value, 'Keep this primary prompt');
+    assert.equal(elements.promptTextZh.value, '保留这段中文提示词');
+    assert.equal(elements.promptTextEn.value, 'Keep this English prompt');
 });

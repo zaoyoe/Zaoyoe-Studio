@@ -64,6 +64,7 @@ const supabaseClient = (() => {
 const ShopAdmin = {
     currentTab: 'products',
     SHOP_TAB_IDS: ['products', 'import', 'inventory', 'orders', 'fulfillment'],
+    SHOP_TAB_PREFETCH_ALLOWLIST: [],
     shopTabLoadState: Object.create(null),
     shopTabLoadPromiseMap: Object.create(null),
     shopTabLoadGeneration: Object.create(null),
@@ -961,12 +962,15 @@ Example output format:
 
     getShopTabPrefetchQueue: function (activeTab = this.currentTab) {
         const normalizedActiveTab = this.normalizeShopTabName(activeTab);
-        return this.SHOP_TAB_IDS.filter((tabName) => {
-            if (tabName === normalizedActiveTab) {
+        // Shop tabs hydrate large grids, order lists, inventory browsers, and fulfillment queues.
+        // Keep hidden tabs fully on demand unless a future tab is explicitly allowlisted.
+        return this.SHOP_TAB_PREFETCH_ALLOWLIST.filter((tabName) => {
+            const normalizedTab = this.normalizeShopTabName(tabName);
+            if (normalizedTab === normalizedActiveTab) {
                 return false;
             }
 
-            const state = this.getShopTabLoadState(tabName);
+            const state = this.getShopTabLoadState(normalizedTab);
             return state !== 'loaded' && state !== 'loading';
         });
     },
@@ -4259,6 +4263,99 @@ Example output format:
     },
 
     // ==================== Products (Grid View) ====================
+    isShopImageSource: function (value) {
+        const trimmed = String(value || '').trim();
+        return trimmed.startsWith('http://')
+            || trimmed.startsWith('https://')
+            || trimmed.startsWith('/')
+            || trimmed.startsWith('data:image/');
+    },
+
+    getOptimizedShopImageUrl: function (url, options = {}) {
+        const trimmed = String(url || '').trim();
+        if (!trimmed) return '';
+
+        const { format = 'avif' } = options;
+
+        if (trimmed.startsWith('data:image/') || trimmed.startsWith('/')) {
+            return trimmed;
+        }
+
+        if (trimmed.includes('cdn.zaoyoe.com/prompts/') && !trimmed.includes('/thumb/')) {
+            return trimmed.replace('/prompts/', '/prompts/thumb/');
+        }
+
+        if (
+            trimmed.includes('supabase.co/storage/v1/object/public/')
+            || trimmed.includes('supabase.co/storage/v1/render/image/public/')
+        ) {
+            try {
+                const optimizedUrl = new URL(trimmed);
+                if (optimizedUrl.pathname.includes('/storage/v1/object/public/')) {
+                    optimizedUrl.pathname = optimizedUrl.pathname.replace(
+                        '/storage/v1/object/public/',
+                        '/storage/v1/render/image/public/'
+                    );
+                }
+                optimizedUrl.searchParams.set('width', '480');
+                optimizedUrl.searchParams.set('height', '320');
+                optimizedUrl.searchParams.set('quality', '80');
+                if (format) {
+                    optimizedUrl.searchParams.set('format', format);
+                } else {
+                    optimizedUrl.searchParams.delete('format');
+                }
+                return optimizedUrl.toString();
+            } catch (error) {
+                console.warn('Failed to build admin shop image transform URL:', error);
+            }
+        }
+
+        return trimmed;
+    },
+
+    setProductCardImageSource: function (cardImage, originalUrl) {
+        if (!(cardImage instanceof HTMLImageElement) || !originalUrl) return;
+
+        const primaryUrl = this.getOptimizedShopImageUrl(originalUrl);
+        const transformFallbackUrl = this.getOptimizedShopImageUrl(originalUrl, { format: '' });
+
+        cardImage.dataset.originalSrc = originalUrl;
+        cardImage.dataset.transformFallbackSrc = transformFallbackUrl !== primaryUrl ? transformFallbackUrl : '';
+        cardImage.dataset.fallbackStage = '';
+        cardImage.src = primaryUrl;
+    },
+
+    handleProductCardImageError: function (cardImage, originalUrl) {
+        if (!(cardImage instanceof HTMLImageElement)) return false;
+
+        const transformFallbackSrc = String(cardImage.dataset.transformFallbackSrc || '').trim();
+        const fallbackOriginalSrc = String(cardImage.dataset.originalSrc || originalUrl || '').trim();
+
+        if (!cardImage.dataset.fallbackStage && transformFallbackSrc && cardImage.src !== transformFallbackSrc) {
+            cardImage.dataset.fallbackStage = 'transform';
+            cardImage.src = transformFallbackSrc;
+            return true;
+        }
+
+        if (cardImage.dataset.fallbackStage !== 'original' && fallbackOriginalSrc && cardImage.src !== fallbackOriginalSrc) {
+            cardImage.dataset.fallbackStage = 'original';
+            cardImage.src = fallbackOriginalSrc;
+            return true;
+        }
+
+        return false;
+    },
+
+    replaceProductCardImageWithFallback: function (cardImage) {
+        if (!(cardImage instanceof HTMLImageElement)) return;
+
+        const fallbackIcon = document.createElement('i');
+        fallbackIcon.className = 'fas fa-box shop-admin-product-cover-icon shop-admin-product-cover-icon--fallback';
+        fallbackIcon.setAttribute('aria-hidden', 'true');
+        cardImage.replaceWith(fallbackIcon);
+    },
+
     loadProducts: async function () {
         const container = document.getElementById('productsGrid');
         if (!container) return; // Grid container might be missing if HTML update failed
@@ -4325,6 +4422,7 @@ Example output format:
                 const safeProductIconClass = this.escapeForAttr(String(p.icon_url || 'fas fa-box'));
                 const safeProductNameAttr = this.escapeForAttr(p.name || '');
                 const productAltText = this.escapeForAttr(p.name || '商品封面');
+                const hasProductImage = this.isShopImageSource(p.icon_url);
                 const priceHtml = (() => {
                     const editSite = ShopAdmin.getEditSite();
                     if (editSite === 'intl') {
@@ -4340,8 +4438,8 @@ Example output format:
                 card.className = 'shop-card shop-admin-product-card' + (p.is_active ? '' : ' inactive-product');
 
                 // If it's an image, make it cover. If icon, keep it centered.
-                const displayHtml = p.icon_url?.startsWith('http')
-                    ? `<img src="${safeProductIconUrl}" class="shop-admin-product-cover-image" alt="${productAltText}">`
+                const displayHtml = hasProductImage
+                    ? `<img class="shop-admin-product-cover-image" alt="${productAltText}" loading="lazy" decoding="async" data-shop-product-image="1" data-shop-product-original-src="${safeProductIconUrl}">`
                     : p.icon_url?.startsWith('fa')
                         ? `<i class="${safeProductIconClass} shop-admin-product-cover-icon" aria-hidden="true"></i>`
                         : (p.icon_url
@@ -4381,7 +4479,18 @@ Example output format:
                            </button>
                         </div>
                     </div>
-`;
+	`;
+
+                const productImage = card.querySelector('img[data-shop-product-image="1"]');
+                if (productImage) {
+                    productImage.addEventListener('error', () => {
+                        if (this.handleProductCardImageError(productImage, p.icon_url)) {
+                            return;
+                        }
+                        this.replaceProductCardImageWithFallback(productImage);
+                    });
+                    this.setProductCardImageSource(productImage, p.icon_url);
+                }
 
                 const editBtn = card.querySelector('[data-shop-action="product-edit"]');
                 if (editBtn) {

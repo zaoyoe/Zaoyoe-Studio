@@ -11,7 +11,8 @@
     const Contract = window.HomepageContract || null;
     const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
     const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
-    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260415_HOME_VERIFY_DEMO_1';
+    const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';
+    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260419_HOME_PROMPT_CACHE_INVALIDATION_2';
     const HOMEPAGE_GUESTBOOK_CARD_LIMIT = 6;
 
     // Only run on sub-pages (not homepage)
@@ -30,6 +31,10 @@
 
     function getHomepageConfigLastUpdatedKey(site = getCurrentSite()) {
         return `${HOMEPAGE_CONFIG_LAST_UPDATED_KEY}_${site === 'intl' ? 'intl' : 'cn'}`;
+    }
+
+    function getHomepagePromptPoolLastUpdatedKey(site = getCurrentSite()) {
+        return `${HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY}_${site === 'intl' ? 'intl' : 'cn'}`;
     }
 
     async function loadHomepageConfigRows(site = getCurrentSite()) {
@@ -67,10 +72,10 @@
 
     function getPromptPool() {
         if (Array.isArray(window.PROMPTS)) {
-            return window.PROMPTS;
+            return filterVisibleHomepagePrompts(window.PROMPTS);
         }
         if (Array.isArray(window.promptsData)) {
-            return window.promptsData;
+            return filterVisibleHomepagePrompts(window.promptsData);
         }
         return [];
     }
@@ -100,6 +105,127 @@
             return value.map((item) => ({ ...item }));
         }
         return value;
+    }
+
+    function normalizeHomepagePromptRecord(prompt = {}) {
+        const normalizedId = String(prompt?.supabaseId || prompt?.id || '').trim();
+        const promptText = String(prompt?.prompt_text || prompt?.prompt || '').trim();
+        const aiTags = prompt?.aiTags && typeof prompt.aiTags === 'object' && !Array.isArray(prompt.aiTags)
+            ? prompt.aiTags
+            : (prompt?.ai_tags && typeof prompt.ai_tags === 'object' && !Array.isArray(prompt.ai_tags)
+                ? prompt.ai_tags
+                : {});
+        const images = [...new Set([
+            ...(Array.isArray(prompt?.images) ? prompt.images : []),
+            prompt?.image,
+            prompt?.image_url,
+            prompt?.imageUrl,
+            prompt?.cover_image,
+            prompt?.coverImage,
+            prompt?.cover_url,
+            prompt?.coverUrl,
+            prompt?.thumbnail_url,
+            prompt?.thumbnailUrl
+        ].map((item) => String(item || '').trim()).filter(Boolean))];
+
+        return {
+            ...prompt,
+            id: normalizedId || String(prompt?.id || '').trim(),
+            supabaseId: normalizedId || String(prompt?.supabaseId || '').trim(),
+            title: String(prompt?.title || prompt?.title_zh || prompt?.title_en || '').trim(),
+            title_zh: String(prompt?.title_zh || prompt?.title || '').trim(),
+            title_en: String(prompt?.title_en || prompt?.title || '').trim(),
+            tags: Array.isArray(prompt?.tags) ? prompt.tags : [],
+            description: String(prompt?.description || prompt?.description_zh || prompt?.description_en || '').trim(),
+            description_zh: String(prompt?.description_zh || prompt?.description || '').trim(),
+            description_en: String(prompt?.description_en || prompt?.description || '').trim(),
+            prompt: promptText,
+            prompt_text: promptText,
+            prompt_text_zh: String(prompt?.prompt_text_zh || promptText).trim(),
+            prompt_text_en: String(prompt?.prompt_text_en || '').trim(),
+            images,
+            image: images[0] || '',
+            image_url: String(prompt?.image_url || images[0] || '').trim(),
+            dominantColors: Array.isArray(prompt?.dominantColors)
+                ? prompt.dominantColors
+                : (Array.isArray(prompt?.dominant_colors) ? prompt.dominant_colors : []),
+            dominant_colors: Array.isArray(prompt?.dominant_colors)
+                ? prompt.dominant_colors
+                : (Array.isArray(prompt?.dominantColors) ? prompt.dominantColors : []),
+            aiTags,
+            ai_tags: aiTags
+        };
+    }
+
+    function getHomepagePromptAdminVisibilityStatus(prompt = {}) {
+        const aiTags = prompt?.aiTags && typeof prompt.aiTags === 'object' && !Array.isArray(prompt.aiTags)
+            ? prompt.aiTags
+            : (prompt?.ai_tags && typeof prompt.ai_tags === 'object' && !Array.isArray(prompt.ai_tags)
+                ? prompt.ai_tags
+                : {});
+        const adminOps = aiTags?.admin && typeof aiTags.admin === 'object' && !Array.isArray(aiTags.admin)
+            ? aiTags.admin
+            : (aiTags?.ops && typeof aiTags.ops === 'object' && !Array.isArray(aiTags.ops)
+                ? aiTags.ops
+                : {});
+        return String(adminOps.status || '').trim().toLowerCase();
+    }
+
+    function hasHomepagePromptVisibleCopy(value) {
+        return String(value || '').trim().length > 0;
+    }
+
+    function isHomepagePromptVisible(prompt = {}) {
+        const status = getHomepagePromptAdminVisibilityStatus(prompt);
+        if (status === 'draft' || status === 'archived') {
+            return false;
+        }
+
+        const normalizedPrompt = normalizeHomepagePromptRecord(prompt);
+        const hasBaseTitle = hasHomepagePromptVisibleCopy(normalizedPrompt?.title);
+        const hasPromptText = hasHomepagePromptVisibleCopy(normalizedPrompt?.prompt_text || normalizedPrompt?.prompt);
+        const hasImages = Array.isArray(normalizedPrompt?.images) && normalizedPrompt.images.some((item) => hasHomepagePromptVisibleCopy(item));
+
+        return hasBaseTitle && hasPromptText && hasImages;
+    }
+
+    function filterVisibleHomepagePrompts(prompts = []) {
+        return (Array.isArray(prompts) ? prompts : [])
+            .map((prompt) => normalizeHomepagePromptRecord(prompt))
+            .filter((prompt) => isHomepagePromptVisible(prompt));
+    }
+
+    async function fetchVisiblePromptPool() {
+        const fallbackPool = getPromptPool();
+
+        if (!window.supabaseClient) {
+            return {
+                items: fallbackPool,
+                source: 'fallback'
+            };
+        }
+
+        try {
+            const { data, error } = await window.supabaseClient
+                .from('prompts')
+                .select('*')
+                .order('updated_at', { ascending: false });
+
+            if (error) {
+                throw error;
+            }
+
+            return {
+                items: filterVisibleHomepagePrompts(data),
+                source: 'live'
+            };
+        } catch (error) {
+            console.warn('Homepage prefetch prompt pool fallback:', error?.message || error);
+            return {
+                items: fallbackPool,
+                source: 'fallback'
+            };
+        }
     }
 
     function getHomepageExperimentAssignmentStorageKey(experimentId = '') {
@@ -189,7 +315,8 @@
             return null;
         }
 
-        const image = String(item?.image || item?.image_url || '').trim();
+        const normalizedItem = normalizeHomepagePromptRecord(item);
+        const image = String(normalizedItem?.image || normalizedItem?.image_url || '').trim();
         const tags = Array.isArray(item?.tags)
             ? item.tags.map((tag) => String(tag || '').trim()).filter(Boolean).slice(0, 8)
             : [];
@@ -200,7 +327,9 @@
             title,
             title_zh: String(item?.title_zh || item?.title || '').trim(),
             title_en: String(item?.title_en || item?.title || '').trim(),
-            images: image ? [image] : [],
+            images: normalizedItem.images,
+            image,
+            image_url: image,
             tags,
             ai_tags: [...tags],
             aiTags: tags.length > 0 ? { styles: { zh: [...tags], en: [...tags] } } : undefined,
@@ -208,8 +337,8 @@
         };
     }
 
-    function aggregatePrompts(config = {}) {
-        const promptPool = getPromptPool();
+    function aggregatePrompts(config = {}, promptPoolOverride = null) {
+        const promptPool = Array.isArray(promptPoolOverride) ? promptPoolOverride : getPromptPool();
         const experimentFeaturedItems = getSectionExperimentValue('prompts', config, 'featured_items', null);
         const featuredItems = Array.isArray(experimentFeaturedItems) && experimentFeaturedItems.length > 0
             ? experimentFeaturedItems
@@ -611,7 +740,7 @@
             const config = Contract?.buildConfigMap?.(rows) || {};
             const sectionRows = Contract?.mapRowsBySection?.(rows) || {};
             const sectionOrder = Contract?.sortSectionsByDisplayOrder?.(rows) || ['hero', 'prompts', 'shop', 'gongyi', 'verify', 'guestbook', 'ticker'];
-            const promptPool = getPromptPool();
+            const { items: promptPool, source: promptPoolSource } = await fetchVisiblePromptPool();
 
             const [shopResult, guestbookResult] = await Promise.all([
                 window.supabaseClient
@@ -632,7 +761,7 @@
 
             const allProducts = Array.isArray(shopResult.data) ? shopResult.data : [];
             const guestbookMessages = Array.isArray(guestbookResult.data) ? guestbookResult.data : [];
-            const prompts = aggregatePrompts(config.prompts || {});
+            const prompts = aggregatePrompts(config.prompts || {}, promptPool);
             const shop = aggregateShop(config.shop || {}, allProducts);
             const guestbook = aggregateGuestbook(config.guestbook || {}, guestbookMessages);
             const ticker = {
@@ -640,7 +769,7 @@
                 speed: config.ticker?.speed || 30,
                 shopScrollSpeed: config.ticker?.shop_scroll_speed || config.ticker?.speed || 30
             };
-            const cacheKind = promptPool.length > 0 ? 'complete' : 'partial';
+            const cacheKind = promptPoolSource === 'live' ? 'complete' : 'partial';
             const currentSite = getCurrentSite();
 
             sessionStorage.setItem(getHomepagePrefetchCacheKey(currentSite), JSON.stringify({
@@ -655,6 +784,7 @@
                     shopCategories: []
                 },
                 config,
+                promptPool,
                 sectionRows,
                 sectionOrder,
                 cacheKind,

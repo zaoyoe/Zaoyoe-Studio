@@ -28,12 +28,14 @@ const analyticsDerivedState = {
     productDetailBundle: null,
     productDetailBundleKey: '',
     commentsSummaryData: null,
-    verifyMonitorSnapshot: null
+    verifyMonitorSnapshot: null,
+    variantCache: Object.create(null)
 };
 
 const analyticsDerivedRequests = {
     contextKey: '',
-    requests: Object.create(null)
+    requests: Object.create(null),
+    generations: Object.create(null)
 };
 
 function ensureAnalyticsDerivedContext(contextKey = getAnalyticsAIContextKey()) {
@@ -48,9 +50,15 @@ function ensureAnalyticsDerivedRequestContext(contextKey = getAnalyticsAIContext
     if (analyticsDerivedRequests.contextKey !== contextKey) {
         analyticsDerivedRequests.contextKey = contextKey;
         analyticsDerivedRequests.requests = Object.create(null);
+        analyticsDerivedRequests.generations = Object.create(null);
     }
 
     return analyticsDerivedRequests.requests;
+}
+
+function ensureAnalyticsDerivedGenerationContext(contextKey = getAnalyticsAIContextKey()) {
+    ensureAnalyticsDerivedRequestContext(contextKey);
+    return analyticsDerivedRequests.generations;
 }
 
 function getAnalyticsDerivedRequestPromise(key, contextKey = getAnalyticsAIContextKey()) {
@@ -67,6 +75,17 @@ function setAnalyticsDerivedRequestPromise(key, promise, contextKey = getAnalyti
 function clearAnalyticsDerivedRequestPromise(key, contextKey = getAnalyticsAIContextKey()) {
     const requests = ensureAnalyticsDerivedRequestContext(contextKey);
     delete requests[key];
+}
+
+function bumpAnalyticsDerivedRequestGeneration(key, contextKey = getAnalyticsAIContextKey()) {
+    const generations = ensureAnalyticsDerivedGenerationContext(contextKey);
+    generations[key] = (Number(generations[key] || 0) + 1);
+    return generations[key];
+}
+
+function getAnalyticsDerivedRequestGeneration(key, contextKey = getAnalyticsAIContextKey()) {
+    const generations = ensureAnalyticsDerivedGenerationContext(contextKey);
+    return Number(generations[key] || 0);
 }
 
 function resetAnalyticsDerivedContext(contextKey = getAnalyticsAIContextKey()) {
@@ -95,36 +114,76 @@ function resetAnalyticsDerivedContext(contextKey = getAnalyticsAIContextKey()) {
     analyticsDerivedState.productDetailBundleKey = '';
     analyticsDerivedState.commentsSummaryData = null;
     analyticsDerivedState.verifyMonitorSnapshot = null;
+    analyticsDerivedState.variantCache = Object.create(null);
 
     analyticsDerivedRequests.contextKey = contextKey;
     analyticsDerivedRequests.requests = Object.create(null);
+    analyticsDerivedRequests.generations = Object.create(null);
 
     return analyticsDerivedState;
+}
+
+function getAnalyticsDerivedRequestKey(key, cacheKey = '') {
+    const normalizedKey = String(key || '').trim();
+    const normalizedCacheKey = String(cacheKey || '').trim();
+    return normalizedCacheKey ? `${normalizedKey}:${normalizedCacheKey}` : normalizedKey;
+}
+
+function getAnalyticsDerivedCachedValue(key, contextKey = getAnalyticsAIContextKey(), cacheKey = '') {
+    if (analyticsDerivedState.contextKey !== contextKey) {
+        return null;
+    }
+
+    const normalizedCacheKey = String(cacheKey || '').trim();
+    if (normalizedCacheKey) {
+        return analyticsDerivedState.variantCache?.[getAnalyticsDerivedRequestKey(key, normalizedCacheKey)] || null;
+    }
+
+    return analyticsDerivedState[key];
+}
+
+function setAnalyticsDerivedCachedValue(key, value, contextKey = getAnalyticsAIContextKey(), cacheKey = '') {
+    const state = ensureAnalyticsDerivedContext(contextKey);
+    const normalizedCacheKey = String(cacheKey || '').trim();
+    if (normalizedCacheKey) {
+        state.variantCache[getAnalyticsDerivedRequestKey(key, normalizedCacheKey)] = value;
+        state[key] = value;
+        return value;
+    }
+
+    state[key] = value;
+    return value;
 }
 
 function runAnalyticsDerivedRequest(key, fetcher, options = {}) {
     const contextKey = options.contextKey || getAnalyticsAIContextKey();
     const forceRefresh = Boolean(options.forceRefresh);
+    const cacheKey = String(options.cacheKey || '').trim();
+    const requestKey = getAnalyticsDerivedRequestKey(key, cacheKey);
     if (!forceRefresh) {
-        const cached = getAnalyticsDerivedStateValue(key, contextKey);
+        const cached = getAnalyticsDerivedCachedValue(key, contextKey, cacheKey);
         if (cached) return Promise.resolve(cached);
 
-        const pending = getAnalyticsDerivedRequestPromise(key, contextKey);
-        if (pending) return pending;
+        const pending = getAnalyticsDerivedRequestPromise(requestKey, contextKey);
+            if (pending) return pending;
     }
 
+    const requestGeneration = bumpAnalyticsDerivedRequestGeneration(requestKey, contextKey);
     const request = Promise.resolve()
         .then(fetcher)
-        .then((value) => setAnalyticsDerivedStateValue(key, value, contextKey))
+        .then((value) => {
+            if (getAnalyticsDerivedRequestGeneration(requestKey, contextKey) === requestGeneration) {
+                setAnalyticsDerivedCachedValue(key, value, contextKey, cacheKey);
+            }
+            return value;
+        })
         .finally(() => {
-            if (!forceRefresh) {
-                clearAnalyticsDerivedRequestPromise(key, contextKey);
+            if (getAnalyticsDerivedRequestPromise(requestKey, contextKey) === request) {
+                clearAnalyticsDerivedRequestPromise(requestKey, contextKey);
             }
         });
 
-    if (!forceRefresh) {
-        setAnalyticsDerivedRequestPromise(key, request, contextKey);
-    }
+    setAnalyticsDerivedRequestPromise(requestKey, request, contextKey);
 
     return request;
 }
@@ -236,16 +295,17 @@ function buildAnalyticsSummaryWindowBundleQuery(options = {}) {
 
 async function getAnalyticsSummaryWindowBundle(options = {}) {
     const contextKey = options.contextKey || getAnalyticsAIContextKey();
+    const query = buildAnalyticsSummaryWindowBundleQuery(options);
     return runAnalyticsDerivedRequest(
         'summaryWindowBundle',
         async () => {
             const requestUrl = buildAnalyticsAdminRouteUrl(
                 'analytics/summary-window-bundle',
-                buildAnalyticsSummaryWindowBundleQuery(options)
+                query
             );
             return fetchAnalyticsAdminJson(`${requestUrl.pathname}${requestUrl.search}`);
         },
-        { contextKey, forceRefresh: options.forceRefresh }
+        { contextKey, forceRefresh: options.forceRefresh, cacheKey: query.toString() }
     );
 }
 
@@ -725,16 +785,17 @@ function createAnalyticsSnapshotBundleSegmentError(segment = null, fallbackMessa
 
 async function getAnalyticsAdminSnapshotBundle(options = {}) {
     const contextKey = options.contextKey || getAnalyticsAIContextKey();
+    const query = buildAnalyticsAdminSnapshotBundleQuery(options);
     return runAnalyticsDerivedRequest(
         'adminSnapshotBundle',
         async () => {
             const requestUrl = buildAnalyticsAdminRouteUrl(
                 'analytics/snapshot-bundle',
-                buildAnalyticsAdminSnapshotBundleQuery(options)
+                query
             );
             return fetchAnalyticsAdminJson(`${requestUrl.pathname}${requestUrl.search}`);
         },
-        { contextKey, forceRefresh: options.forceRefresh }
+        { contextKey, forceRefresh: options.forceRefresh, cacheKey: query.toString() }
     );
 }
 
@@ -771,16 +832,17 @@ function buildAnalyticsSummaryRowsBundleQuery(options = {}) {
 
 async function getAnalyticsSummaryPayloadBundle(options = {}) {
     const contextKey = options.contextKey || getAnalyticsAIContextKey();
+    const query = buildAnalyticsSummaryRowsBundleQuery(options);
     return runAnalyticsDerivedRequest(
         'summaryPayloadBundle',
         async () => {
             const requestUrl = buildAnalyticsAdminRouteUrl(
                 'analytics/summary-payload-bundle',
-                buildAnalyticsSummaryRowsBundleQuery(options)
+                query
             );
             return fetchAnalyticsAdminJson(`${requestUrl.pathname}${requestUrl.search}`);
         },
-        { contextKey, forceRefresh: options.forceRefresh }
+        { contextKey, forceRefresh: options.forceRefresh, cacheKey: query.toString() }
     );
 }
 
@@ -797,16 +859,17 @@ function getAnalyticsSummaryPayloadBundleSegment(bundle = null, key = '') {
 
 async function getAnalyticsSummaryRowsBundle(options = {}) {
     const contextKey = options.contextKey || getAnalyticsAIContextKey();
+    const query = buildAnalyticsSummaryRowsBundleQuery(options);
     return runAnalyticsDerivedRequest(
         'summaryRowsBundle',
         async () => {
             const requestUrl = buildAnalyticsAdminRouteUrl(
                 'analytics/summary-rows-bundle',
-                buildAnalyticsSummaryRowsBundleQuery(options)
+                query
             );
             return fetchAnalyticsAdminJson(`${requestUrl.pathname}${requestUrl.search}`);
         },
-        { contextKey, forceRefresh: options.forceRefresh }
+        { contextKey, forceRefresh: options.forceRefresh, cacheKey: query.toString() }
     );
 }
 
@@ -830,16 +893,17 @@ function buildAnalyticsPanelSupportBundleQuery(options = {}) {
 
 async function getAnalyticsPanelSupportBundle(options = {}) {
     const contextKey = options.contextKey || getAnalyticsAIContextKey();
+    const query = buildAnalyticsPanelSupportBundleQuery(options);
     return runAnalyticsDerivedRequest(
         'panelSupportBundle',
         async () => {
             const requestUrl = buildAnalyticsAdminRouteUrl(
                 'analytics/panel-support-bundle',
-                buildAnalyticsPanelSupportBundleQuery(options)
+                query
             );
             return fetchAnalyticsAdminJson(`${requestUrl.pathname}${requestUrl.search}`);
         },
-        { contextKey, forceRefresh: options.forceRefresh }
+        { contextKey, forceRefresh: options.forceRefresh, cacheKey: query.toString() }
     );
 }
 
@@ -902,16 +966,17 @@ function buildAnalyticsVisualPanelBundleQuery(options = {}) {
 
 async function getAnalyticsVisualPanelBundle(options = {}) {
     const contextKey = options.contextKey || getAnalyticsAIContextKey();
+    const query = buildAnalyticsVisualPanelBundleQuery(options);
     return runAnalyticsDerivedRequest(
         'visualPanelBundle',
         async () => {
             const requestUrl = buildAnalyticsAdminRouteUrl(
                 'analytics/visual-panel-bundle',
-                buildAnalyticsVisualPanelBundleQuery(options)
+                query
             );
             return fetchAnalyticsAdminJson(`${requestUrl.pathname}${requestUrl.search}`);
         },
-        { contextKey, forceRefresh: options.forceRefresh }
+        { contextKey, forceRefresh: options.forceRefresh, cacheKey: query.toString() }
     );
 }
 
@@ -942,16 +1007,17 @@ function buildAnalyticsTrendSeriesBundleQuery(options = {}) {
 
 async function getAnalyticsTrendSeriesBundle(options = {}) {
     const contextKey = options.contextKey || getAnalyticsAIContextKey();
+    const query = buildAnalyticsTrendSeriesBundleQuery(options);
     return runAnalyticsDerivedRequest(
         'trendSeriesBundle',
         async () => {
             const requestUrl = buildAnalyticsAdminRouteUrl(
                 'analytics/trend-series-bundle',
-                buildAnalyticsTrendSeriesBundleQuery(options)
+                query
             );
             return fetchAnalyticsAdminJson(`${requestUrl.pathname}${requestUrl.search}`);
         },
-        { contextKey, forceRefresh: options.forceRefresh }
+        { contextKey, forceRefresh: options.forceRefresh, cacheKey: query.toString() }
     );
 }
 
@@ -986,76 +1052,81 @@ function buildAnalyticsProductBundleQuery(options = {}) {
 
 async function getAnalyticsProductSummaryBundle(options = {}) {
     const contextKey = options.contextKey || getAnalyticsAIContextKey();
+    const query = buildAnalyticsProductBundleQuery(options);
     return runAnalyticsDerivedRequest(
         'productSummaryBundle',
         async () => {
             const requestUrl = buildAnalyticsAdminRouteUrl(
                 'analytics/product-summary-bundle',
-                buildAnalyticsProductBundleQuery(options)
+                query
             );
             return fetchAnalyticsAdminJson(`${requestUrl.pathname}${requestUrl.search}`);
         },
-        { contextKey, forceRefresh: options.forceRefresh }
+        { contextKey, forceRefresh: options.forceRefresh, cacheKey: query.toString() }
     );
 }
 
 async function getAnalyticsProductDashboardBundle(options = {}) {
     const contextKey = options.contextKey || getAnalyticsAIContextKey();
+    const query = buildAnalyticsProductBundleQuery(options);
     return runAnalyticsDerivedRequest(
         'productDashboardBundle',
         async () => {
             const requestUrl = buildAnalyticsAdminRouteUrl(
                 'analytics/product-dashboard-bundle',
-                buildAnalyticsProductBundleQuery(options)
+                query
             );
             return fetchAnalyticsAdminJson(`${requestUrl.pathname}${requestUrl.search}`);
         },
-        { contextKey, forceRefresh: options.forceRefresh }
+        { contextKey, forceRefresh: options.forceRefresh, cacheKey: query.toString() }
     );
 }
 
 async function getAnalyticsProductRankBundle(options = {}) {
     const contextKey = options.contextKey || getAnalyticsAIContextKey();
+    const query = buildAnalyticsProductBundleQuery(options);
     return runAnalyticsDerivedRequest(
         'productRankBundle',
         async () => {
             const requestUrl = buildAnalyticsAdminRouteUrl(
                 'analytics/product-rank-bundle',
-                buildAnalyticsProductBundleQuery(options)
+                query
             );
             return fetchAnalyticsAdminJson(`${requestUrl.pathname}${requestUrl.search}`);
         },
-        { contextKey, forceRefresh: options.forceRefresh }
+        { contextKey, forceRefresh: options.forceRefresh, cacheKey: query.toString() }
     );
 }
 
 async function getAnalyticsProductHealthBundle(options = {}) {
     const contextKey = options.contextKey || getAnalyticsAIContextKey();
+    const query = buildAnalyticsProductBundleQuery(options);
     return runAnalyticsDerivedRequest(
         'productHealthBundle',
         async () => {
             const requestUrl = buildAnalyticsAdminRouteUrl(
                 'analytics/product-health-bundle',
-                buildAnalyticsProductBundleQuery(options)
+                query
             );
             return fetchAnalyticsAdminJson(`${requestUrl.pathname}${requestUrl.search}`);
         },
-        { contextKey, forceRefresh: options.forceRefresh }
+        { contextKey, forceRefresh: options.forceRefresh, cacheKey: query.toString() }
     );
 }
 
 async function getAnalyticsProductFunnelBundle(options = {}) {
     const contextKey = options.contextKey || getAnalyticsAIContextKey();
+    const query = buildAnalyticsProductBundleQuery(options);
     return runAnalyticsDerivedRequest(
         'productFunnelBundle',
         async () => {
             const requestUrl = buildAnalyticsAdminRouteUrl(
                 'analytics/product-funnel-bundle',
-                buildAnalyticsProductBundleQuery(options)
+                query
             );
             return fetchAnalyticsAdminJson(`${requestUrl.pathname}${requestUrl.search}`);
         },
-        { contextKey, forceRefresh: options.forceRefresh }
+        { contextKey, forceRefresh: options.forceRefresh, cacheKey: query.toString() }
     );
 }
 

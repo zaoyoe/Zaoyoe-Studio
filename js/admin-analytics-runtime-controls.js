@@ -5,6 +5,14 @@
 
 let autoRefreshInterval = null;
 let currentRefreshIntervalMs = 300000;
+const ANALYTICS_ONLINE_USERS_CACHE_TTL_MS = 60000;
+const analyticsOnlineUsersCache = {
+    key: '',
+    count: null,
+    expiresAt: 0,
+    pending: null,
+    pendingKey: ''
+};
 
 function closeAnalyticsDateRangeDropdown() {
     document.getElementById('dateRangeDropdown')?.classList.remove('open');
@@ -495,7 +503,10 @@ async function refreshAllAnalytics(options = {}) {
             resetAnalyticsAICache();
         }
 
-        await reloadAnalyticsDashboard({ reason });
+        await reloadAnalyticsDashboard({
+            reason,
+            force: reason === 'manual-refresh'
+        });
 
         if (!silent && typeof showToast === 'function') {
             showToast('数据已刷新', 'success');
@@ -513,76 +524,148 @@ async function refreshAllAnalytics(options = {}) {
 }
 
 async function updateOnlineUsers() {
+    let requestPromise = null;
     try {
         const countEl = document.getElementById('onlineUsersCount');
         if (!countEl) return;
+        const options = arguments[0] || {};
+        const force = options?.force === true;
+        const cacheKey = window.AdminSiteFilter?.getSiteFilter?.() || 'all';
+        const cacheValid = (
+            !force
+            && analyticsOnlineUsersCache.key === cacheKey
+            && Number.isFinite(analyticsOnlineUsersCache.count)
+            && analyticsOnlineUsersCache.expiresAt > Date.now()
+        );
 
-        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-        const uniqueUsers = new Set();
-        const addUserIds = (rows = []) => {
-            rows.forEach((row) => {
-                if (row?.user_id) {
-                    uniqueUsers.add(row.user_id);
-                }
-            });
-        };
-
-        try {
-            let commentsQuery = getAnalyticsSupabaseClient()
-                .from('prompt_comments')
-                .select('user_id')
-                .gte('created_at', fiveMinutesAgo);
-            commentsQuery = window.AdminSiteFilter?.applySiteFilter(commentsQuery) || commentsQuery;
-            const { data } = await commentsQuery;
-            addUserIds(Array.isArray(data) ? data : []);
-        } catch (_error) {
-            console.warn('[Analytics] Comments query failed');
+        if (cacheValid) {
+            countEl.textContent = String(analyticsOnlineUsersCache.count);
+            return analyticsOnlineUsersCache.count;
         }
 
-        try {
-            let likesQuery = getAnalyticsSupabaseClient()
-                .from('comment_likes')
-                .select('user_id')
-                .gte('created_at', fiveMinutesAgo);
-            likesQuery = window.AdminSiteFilter?.applySiteFilter(likesQuery) || likesQuery;
-            const { data } = await likesQuery;
-            addUserIds(Array.isArray(data) ? data : []);
-        } catch (_error) {
-            console.warn('[Analytics] Likes query failed');
-        }
-
-        try {
-            let eventsQuery = getAnalyticsSupabaseClient()
-                .from('user_events')
-                .select('user_id')
-                .gte('created_at', fiveMinutesAgo);
-            eventsQuery = window.AdminSiteFilter?.applySiteFilter(eventsQuery) || eventsQuery;
-            const { data } = await eventsQuery;
-            addUserIds(Array.isArray(data) ? data : []);
-        } catch (_error) {
-            // user_events may be unavailable in some environments.
-        }
-
-        if (uniqueUsers.size === 0) {
-            try {
-                const { count } = await getAnalyticsSupabaseClient()
-                    .from('profiles')
-                    .select('*', { count: 'exact', head: true })
-                    .gte('updated_at', fiveMinutesAgo);
-
-                countEl.textContent = String(count || 0);
-                return;
-            } catch (_error) {
-                // Fall through to the default zero state below.
+        if (!force && analyticsOnlineUsersCache.pending && analyticsOnlineUsersCache.pendingKey === cacheKey) {
+            const pendingCount = await analyticsOnlineUsersCache.pending;
+            const latestCountEl = document.getElementById('onlineUsersCount');
+            if (latestCountEl && (window.AdminSiteFilter?.getSiteFilter?.() || 'all') === cacheKey) {
+                latestCountEl.textContent = String(pendingCount);
             }
+            return pendingCount;
         }
 
-        countEl.textContent = String(uniqueUsers.size);
+        requestPromise = (async () => {
+            const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+            const siteParam = window.AdminSiteFilter?.getSiteParam?.() || null;
+            const analyticsClient = getAnalyticsSupabaseClient();
+
+            if (typeof analyticsClient?.rpc === 'function') {
+                try {
+                    const { data, error } = await analyticsClient.rpc('get_online_user_count', {
+                        p_window_minutes: 5,
+                        p_site: siteParam
+                    });
+                    const rpcCount = Number(data);
+                    if (!error && Number.isFinite(rpcCount)) {
+                        return Math.max(0, rpcCount);
+                    }
+                } catch (_error) {
+                    // Keep the table-based fallback for environments that have not
+                    // applied the online-user RPC migration yet.
+                }
+            }
+
+            const uniqueUsers = new Set();
+            const addUserIds = (rows = []) => {
+                rows.forEach((row) => {
+                    if (row?.user_id) {
+                        uniqueUsers.add(row.user_id);
+                    }
+                });
+            };
+            await Promise.allSettled([
+                (async () => {
+                    try {
+                        let commentsQuery = getAnalyticsSupabaseClient()
+                            .from('prompt_comments')
+                            .select('user_id')
+                            .gte('created_at', fiveMinutesAgo);
+                        commentsQuery = window.AdminSiteFilter?.applySiteFilter(commentsQuery) || commentsQuery;
+                        const { data } = await commentsQuery;
+                        addUserIds(Array.isArray(data) ? data : []);
+                    } catch (_error) {
+                        console.warn('[Analytics] Comments query failed');
+                    }
+                })(),
+                (async () => {
+                    try {
+                        let likesQuery = getAnalyticsSupabaseClient()
+                            .from('comment_likes')
+                            .select('user_id')
+                            .gte('created_at', fiveMinutesAgo);
+                        likesQuery = window.AdminSiteFilter?.applySiteFilter(likesQuery) || likesQuery;
+                        const { data } = await likesQuery;
+                        addUserIds(Array.isArray(data) ? data : []);
+                    } catch (_error) {
+                        console.warn('[Analytics] Likes query failed');
+                    }
+                })(),
+                (async () => {
+                    try {
+                        let eventsQuery = getAnalyticsSupabaseClient()
+                            .from('user_events')
+                            .select('user_id')
+                            .gte('created_at', fiveMinutesAgo);
+                        eventsQuery = window.AdminSiteFilter?.applySiteFilter(eventsQuery) || eventsQuery;
+                        const { data } = await eventsQuery;
+                        addUserIds(Array.isArray(data) ? data : []);
+                    } catch (_error) {
+                        // user_events may be unavailable in some environments.
+                    }
+                })()
+            ]);
+
+            if (uniqueUsers.size === 0 && !siteParam) {
+                try {
+                    // profiles has no site column in the current schema, so only use
+                    // this coarse fallback for the all-sites view.
+                    const { count } = await getAnalyticsSupabaseClient()
+                        .from('profiles')
+                        .select('*', { count: 'exact', head: true })
+                        .gte('updated_at', fiveMinutesAgo);
+
+                    return Number(count || 0);
+                } catch (_error) {
+                    // Fall through to the default zero state below.
+                }
+            }
+
+            return uniqueUsers.size;
+        })();
+
+        analyticsOnlineUsersCache.pending = requestPromise;
+        analyticsOnlineUsersCache.pendingKey = cacheKey;
+
+        const count = await requestPromise;
+        analyticsOnlineUsersCache.key = cacheKey;
+        analyticsOnlineUsersCache.count = count;
+        analyticsOnlineUsersCache.expiresAt = Date.now() + ANALYTICS_ONLINE_USERS_CACHE_TTL_MS;
+
+        const latestCountEl = document.getElementById('onlineUsersCount');
+        if (latestCountEl && (window.AdminSiteFilter?.getSiteFilter?.() || 'all') === cacheKey) {
+            latestCountEl.textContent = String(count);
+        }
+
+        return count;
     } catch (error) {
         console.warn('[Analytics] Online users error:', error.message);
         const countEl = document.getElementById('onlineUsersCount');
         if (countEl) {
             countEl.textContent = '0';
+        }
+        return 0;
+    } finally {
+        if (requestPromise && analyticsOnlineUsersCache.pending === requestPromise) {
+            analyticsOnlineUsersCache.pending = null;
+            analyticsOnlineUsersCache.pendingKey = '';
         }
     }
 }

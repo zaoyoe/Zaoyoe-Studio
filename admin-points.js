@@ -1279,21 +1279,64 @@ function renderPointsSiteContexts() {
     syncPointsGenerateSubmitState();
 }
 
-function renderBatchPackageFilterOptions(packages = []) {
+function syncBatchPackageFilterLabel(packages = allPackages) {
+    const label = document.getElementById('batchPackageLabel');
+    if (!label) return;
+
+    if (batchPackageFilterValue === 'all') {
+        label.textContent = '套餐';
+        return;
+    }
+
+    const rows = Array.isArray(packages) ? packages : [];
+    const matchedPackage = rows.find((pkg) => String(pkg?.id || '').trim() === batchPackageFilterValue);
+    label.textContent = matchedPackage?.name || '套餐';
+}
+
+function renderBatchPackageFilterOptions(packages = [], options = {}) {
     const popup = document.getElementById('batchPackagePopup');
-    if (!popup) return;
+    if (!popup) return false;
+
+    const rows = Array.isArray(packages) ? packages : [];
+    const loading = options?.loading === true;
+    const previousFilterValue = batchPackageFilterValue;
+    const selectedPackageExists = batchPackageFilterValue === 'all'
+        || rows.some((pkg) => String(pkg?.id || '').trim() === batchPackageFilterValue);
+
+    if (!loading && batchPackageFilterValue !== 'all' && !selectedPackageExists) {
+        batchPackageFilterValue = 'all';
+    }
 
     const existingOptions = popup.querySelectorAll('.filter-option:not([data-value="all"])');
     existingOptions.forEach((option) => option.remove());
 
-    (Array.isArray(packages) ? packages : []).forEach((pkg) => {
+    const allOption = popup.querySelector('.filter-option[data-value="all"]');
+    if (allOption) {
+        allOption.classList.toggle('selected', batchPackageFilterValue === 'all');
+    }
+
+    rows.forEach((pkg) => {
         const opt = document.createElement('div');
         opt.className = 'filter-option';
         opt.dataset.value = pkg.id;
+        opt.dataset.adminAction = 'points-filter-package';
+        opt.dataset.batchPackage = pkg.id;
         opt.textContent = pkg.name;
+        opt.classList.toggle('selected', batchPackageFilterValue === pkg.id);
         opt.onclick = () => filterBatchByPackage(pkg.id);
         popup.appendChild(opt);
     });
+
+    if (loading) {
+        const loadingOption = document.createElement('div');
+        loadingOption.className = 'filter-option';
+        loadingOption.dataset.pointsBatchPackageStatus = 'loading';
+        loadingOption.textContent = '套餐加载中...';
+        popup.appendChild(loadingOption);
+    }
+
+    syncBatchPackageFilterLabel(rows);
+    return previousFilterValue !== batchPackageFilterValue;
 }
 
 function getPointsPackageMetrics(pkg = {}) {
@@ -1340,7 +1383,7 @@ function enableHorizontalScroll(container) {
 // Make it globally available for other modules
 window.enableHorizontalScroll = enableHorizontalScroll;
 
-const POINTS_PREFETCH_VIEWS = ['batches', 'catalog', 'generate'];
+const POINTS_PREFETCH_VIEWS = ['catalog'];
 let pointsViewPrefetchHandle = 0;
 let pointsViewPrefetchMode = '';
 
@@ -1375,19 +1418,9 @@ function clearPointsViewPrefetch() {
 function prefetchPointsView(viewName) {
     const normalizedView = String(viewName || '').trim().toLowerCase();
 
-    if (normalizedView === 'batches') {
-        return loadBatches();
-    }
-
-    if (normalizedView === 'catalog') {
-        return loadPointsPackageCatalog();
-    }
-
-    if (normalizedView === 'generate') {
-        return Promise.all([
-            loadPackagesForSelect(),
-            Promise.resolve().then(() => initBatchExpiresPicker())
-        ]);
+    if (normalizedView === 'catalog' || normalizedView === 'generate') {
+        // Warm the shared package snapshot only; hidden tab DOM is hydrated on demand.
+        return fetchPointsCatalogSnapshot({ site: getPointsReadSite() });
     }
 
     return Promise.resolve(false);
@@ -1690,6 +1723,20 @@ const batchPageSize = 10;
 
 // All available packages (for filter dropdown)
 let allPackages = [];
+let pointsBatchFilterPackagesSite = '';
+let pointsBatchFilterPackagesPendingSite = '';
+let pointsBatchFilterPackagesPromise = null;
+
+function normalizePointsBatchFilterSite(site = getPointsReadSite()) {
+    const normalizedSite = String(site || '').trim().toLowerCase();
+    if (normalizedSite === 'intl') return 'intl';
+    if (normalizedSite === 'cn') return 'cn';
+    return 'all';
+}
+
+function hasPointsBatchFilterPackagesForSite(site = getPointsReadSite()) {
+    return allPackages.length > 0 && pointsBatchFilterPackagesSite === normalizePointsBatchFilterSite(site);
+}
 
 function syncPointsBatchSelectModeState() {
     const batchView = document.getElementById('points-view-batches');
@@ -2023,12 +2070,10 @@ async function loadBatches() {
             closeCodesModal();
         }
 
-        // Also load packages for filter dropdown (if not already loaded)
-        if (allPackages.length === 0) {
-            await loadPackagesForFilter();
-            if (requestId !== pointsBatchListLoadRequestId) {
-                return false;
-            }
+        if (hasPointsBatchFilterPackagesForSite(currentSite)) {
+            renderBatchPackageFilterOptions(allPackages);
+        } else {
+            void loadPackagesForFilter({ site: currentSite });
         }
 
         const pendingSearch = String(pendingBatchSearchTerm || '').trim();
@@ -2068,13 +2113,55 @@ function initBatchTableHorizontalScroll() {
 
 // Load packages for filter dropdown
 async function loadPackagesForFilter() {
-    try {
-        const payload = await fetchPointsCatalogSnapshot();
-        allPackages = Array.isArray(payload?.packages) ? payload.packages : [];
+    const options = arguments[0] || {};
+    const normalizedSite = normalizePointsBatchFilterSite(options.site || getPointsReadSite());
+    const force = options.force === true;
+
+    if (!force && hasPointsBatchFilterPackagesForSite(normalizedSite)) {
         renderBatchPackageFilterOptions(allPackages);
-    } catch (err) {
-        console.error('Failed to load packages for filter:', err);
+        return allPackages;
     }
+
+    if (!force && pointsBatchFilterPackagesPromise && pointsBatchFilterPackagesPendingSite === normalizedSite) {
+        return pointsBatchFilterPackagesPromise;
+    }
+
+    const fallbackPackages = pointsBatchFilterPackagesSite === normalizedSite ? allPackages : [];
+    renderBatchPackageFilterOptions(fallbackPackages, { loading: true });
+
+    const request = (async () => {
+        try {
+            const payload = await fetchPointsCatalogSnapshot({ site: normalizedSite, force });
+            const packages = Array.isArray(payload?.packages) ? payload.packages : [];
+
+            if (normalizePointsBatchFilterSite(getPointsReadSite()) !== normalizedSite) {
+                return packages;
+            }
+
+            allPackages = packages;
+            pointsBatchFilterPackagesSite = normalizedSite;
+            const filterChanged = renderBatchPackageFilterOptions(allPackages);
+            if (filterChanged) {
+                applyBatchFilters();
+            }
+            return packages;
+        } catch (err) {
+            console.error('Failed to load packages for filter:', err);
+            if (normalizePointsBatchFilterSite(getPointsReadSite()) === normalizedSite) {
+                renderBatchPackageFilterOptions(fallbackPackages);
+            }
+            return fallbackPackages;
+        } finally {
+            if (pointsBatchFilterPackagesPromise === request) {
+                pointsBatchFilterPackagesPromise = null;
+                pointsBatchFilterPackagesPendingSite = '';
+            }
+        }
+    })();
+
+    pointsBatchFilterPackagesPendingSite = normalizedSite;
+    pointsBatchFilterPackagesPromise = request;
+    return request;
 }
 
 function renderBatches() {
@@ -2840,6 +2927,7 @@ function renderPointsPackageCatalog(payload = {}) {
     const packages = setPointsCatalogRows(Array.isArray(payload?.packages) ? payload.packages : []);
     const summaryEl = document.getElementById('pointsCatalogSummary');
     const currentSite = getPointsReadSite();
+    pointsBatchFilterPackagesSite = normalizePointsBatchFilterSite(currentSite);
     renderBatchPackageFilterOptions(allPackages);
 
     if (summaryEl) {

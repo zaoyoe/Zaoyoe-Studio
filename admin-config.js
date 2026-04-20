@@ -5851,21 +5851,246 @@ function normalizeAffiliatePosterConfig(raw) {
 
 let configEventListenersBound = false;
 let settingsModuleInitPromise = null;
+const SETTINGS_MODULE_WARM_TTL_MS = 5 * 60 * 1000;
+const settingsDomainWarmPromises = new Map();
+const settingsDomainLastLoadedAt = new Map();
+const SETTINGS_VIEW_DOMAIN_MAP = Object.freeze({
+    pricing: ['commerce', 'affiliate'],
+    security: ['governance'],
+    notifications: ['governance'],
+    content: ['governance'],
+    'google-one': ['verify'],
+    affiliate: ['affiliate'],
+    general: ['growth']
+});
+
+function normalizeSettingsViewName(viewName = '') {
+    const normalizedView = String(viewName || '').trim().toLowerCase();
+    if (normalizedView && SETTINGS_VIEW_DOMAIN_MAP[normalizedView]) {
+        return normalizedView;
+    }
+    return 'pricing';
+}
+
+function getActiveSettingsViewName() {
+    const settingsModule = document.getElementById('module-settings');
+    const activeTab = settingsModule?.querySelector('.admin-tab[data-settings-view].active');
+    return normalizeSettingsViewName(activeTab?.dataset?.settingsView);
+}
+
+function getSettingsDomainsForView(viewName = '') {
+    const normalizedView = normalizeSettingsViewName(viewName);
+    return Array.isArray(SETTINGS_VIEW_DOMAIN_MAP[normalizedView])
+        ? [...SETTINGS_VIEW_DOMAIN_MAP[normalizedView]]
+        : [...SETTINGS_VIEW_DOMAIN_MAP.pricing];
+}
+
+function renderSettingsViewSections(viewName = '') {
+    const normalizedView = normalizeSettingsViewName(viewName);
+
+    if (normalizedView === 'pricing') {
+        renderUnlockPricingConfig();
+        renderPackagesConfig();
+        renderPaymentChannelsConfig();
+        hydrateDiscountTriggerSettingsDraft({ force: true });
+        renderDiscountTriggerSettings();
+        renderChannelsConfig();
+        renderRewardsConfig();
+        return;
+    }
+
+    if (normalizedView === 'security') {
+        renderSecurityConfig();
+        return;
+    }
+
+    if (normalizedView === 'notifications') {
+        renderNotificationsConfig();
+        return;
+    }
+
+    if (normalizedView === 'content') {
+        renderModerationConfig();
+        renderGalleryConfig();
+        return;
+    }
+
+    if (normalizedView === 'google-one') {
+        renderVerifyConfig();
+        return;
+    }
+
+    if (normalizedView === 'affiliate') {
+        loadAffiliateSettings();
+        return;
+    }
+
+    if (normalizedView === 'general') {
+        renderGeneralSettingsConfig();
+    }
+}
+
+async function warmSettingsSecondaryPanelsInBackground({ force = false, viewName = '' } = {}) {
+    const normalizedView = normalizeSettingsViewName(viewName || getActiveSettingsViewName());
+    const tasks = [];
+
+    if (normalizedView === 'pricing') {
+        tasks.push(
+            () => loadPaymentChannelSettings(force),
+            () => loadDiscountTriggerDiscountOptions(force)
+        );
+    }
+
+    if (!tasks.length) {
+        return [];
+    }
+
+    const settledResults = await Promise.allSettled(
+        tasks.map((task) => Promise.resolve().then(task))
+    );
+
+    settledResults.forEach((result) => {
+        if (result.status !== 'rejected') {
+            return;
+        }
+        console.warn('[Config] Secondary panel warm failed:', result.reason?.message || result.reason);
+    });
+
+    return settledResults;
+}
+
+async function loadSystemConfigDomains(domains = []) {
+    const normalizedDomains = Array.from(new Set(
+        (Array.isArray(domains) ? domains : [domains])
+            .map((domain) => String(domain || '').trim().toLowerCase())
+            .filter(Boolean)
+    ));
+
+    if (!normalizedDomains.length) {
+        return [];
+    }
+
+    const settledResults = await Promise.allSettled(
+        normalizedDomains.map((domain) => fetchSystemConfigDomain(domain))
+    );
+
+    settledResults.forEach((result) => {
+        if (result.status !== 'fulfilled') {
+            console.warn('[Config] Domain load failed:', result.reason?.message || result.reason);
+            return;
+        }
+
+        Object.entries(result.value?.configs || {}).forEach(([configKey, configValue]) => {
+            systemConfigCache[configKey] = configValue;
+        });
+    });
+
+    return settledResults;
+}
+
+async function warmSingleSystemConfigDomainInBackground(domain, options = {}) {
+    const normalizedDomain = String(domain || '').trim().toLowerCase();
+    if (!normalizedDomain) {
+        return null;
+    }
+
+    const force = options.force === true;
+    const lastLoadedAt = settingsDomainLastLoadedAt.get(normalizedDomain) || 0;
+    const canReuseWarmCache = !force
+        && lastLoadedAt
+        && (Date.now() - lastLoadedAt) <= SETTINGS_MODULE_WARM_TTL_MS;
+
+    if (canReuseWarmCache) {
+        return true;
+    }
+
+    if (settingsDomainWarmPromises.has(normalizedDomain) && !force) {
+        return settingsDomainWarmPromises.get(normalizedDomain);
+    }
+
+    const warmPromise = (async () => {
+        const settledResults = await loadSystemConfigDomains([normalizedDomain]);
+        const loadResult = settledResults[0] || null;
+        if (loadResult?.status === 'fulfilled') {
+            settingsDomainLastLoadedAt.set(normalizedDomain, Date.now());
+        }
+        return loadResult;
+    })();
+
+    settingsDomainWarmPromises.set(normalizedDomain, warmPromise);
+
+    try {
+        return await warmPromise;
+    } finally {
+        settingsDomainWarmPromises.delete(normalizedDomain);
+    }
+}
+
+async function warmSettingsDomainsInBackground(domains = [], options = {}) {
+    const normalizedDomains = Array.from(new Set(
+        (Array.isArray(domains) ? domains : [domains])
+            .map((domain) => String(domain || '').trim().toLowerCase())
+            .filter(Boolean)
+    ));
+
+    if (!normalizedDomains.length) {
+        return [];
+    }
+
+    const settledResults = await Promise.allSettled(
+        normalizedDomains.map((domain) => warmSingleSystemConfigDomainInBackground(domain, options))
+    );
+
+    settledResults.forEach((result) => {
+        if (result.status !== 'rejected') {
+            return;
+        }
+        console.warn('[Config] Domain warm failed:', result.reason?.message || result.reason);
+    });
+
+    return settledResults;
+}
+
+async function warmSettingsViewConfigInBackground(options = {}) {
+    const force = options.force === true;
+    const viewName = normalizeSettingsViewName(options.viewName || getActiveSettingsViewName());
+    const isViewStillActive = () => getActiveSettingsViewName() === viewName;
+
+    await warmSettingsDomainsInBackground(getSettingsDomainsForView(viewName), { force });
+
+    if (!isViewStillActive()) {
+        return true;
+    }
+
+    renderSettingsViewSections(viewName);
+    await warmSettingsSecondaryPanelsInBackground({ force, viewName });
+    return true;
+}
 
 async function initSettingsModule(options = {}) {
     const shouldBindListeners = options.bindListeners === true || !configEventListenersBound;
+    const shouldLoadConfig = options.loadConfig !== false;
+    const shouldRenderView = shouldLoadConfig || options.renderView === true;
+    const viewName = normalizeSettingsViewName(options.viewName || getActiveSettingsViewName());
     if (settingsModuleInitPromise) {
         return settingsModuleInitPromise;
     }
 
     settingsModuleInitPromise = (async () => {
-        await loadAllSystemConfig();
-        await loadDiscountTriggerDiscountOptions();
+        if (shouldRenderView) {
+            renderSettingsViewSections(viewName);
+        }
 
         if (shouldBindListeners) {
             setupConfigEventListeners();
             configEventListenersBound = true;
         }
+
+        if (shouldLoadConfig) {
+            void warmSettingsViewConfigInBackground({ force: options.force === true, viewName });
+        }
+
+        return true;
     })();
 
     try {
@@ -5915,48 +6140,11 @@ async function fetchSystemConfigDomain(domain) {
 
 async function loadAllSystemConfig() {
     try {
-        const settledResults = await Promise.allSettled(
-            ADMIN_SYSTEM_CONFIG_DOMAINS.map((domain) => fetchSystemConfigDomain(domain))
-        );
-
-        settledResults.forEach((result) => {
-            if (result.status !== 'fulfilled') {
-                console.warn('[Config] Domain load failed:', result.reason?.message || result.reason);
-                return;
-            }
-
-            Object.entries(result.value?.configs || {}).forEach(([configKey, configValue]) => {
-                systemConfigCache[configKey] = configValue;
-            });
-        });
-
-        // Render UI
-        renderUnlockPricingConfig();
-        renderPackagesConfig();
-        renderPaymentChannelsConfig();
-        hydrateDiscountTriggerSettingsDraft({ force: true });
-        renderDiscountTriggerSettings();
-        renderOpsAlertSettings();
-        renderOpsAlertHealthPanel();
-        renderOpsAlertMonitorPanel();
-        renderChannelsConfig();
-        renderRewardsConfig();
-        renderGeneralSettingsConfig();
-        renderSecurityConfig();
-        renderNotificationsConfig();
-        renderModerationConfig();
-        renderGalleryConfig();
-        renderVerifyConfig();
-        loadAffiliateSettings();
-        loadPaymentChannelSettings();
-        void loadDiscountTriggerDiscountOptions();
-        loadOpsAlertSettings();
-        loadOpsAlertHealth();
-        loadOpsAlertMonitor();
-
+        return await warmSettingsDomainsInBackground(ADMIN_SYSTEM_CONFIG_DOMAINS, { force: true });
     } catch (err) {
         console.warn('[Config] Load error:', err.message);
         // Use defaults on error
+        return [];
     }
 }
 
@@ -21027,21 +21215,52 @@ function renderGeneralSettingsConfig() {
     const realtimeToggle = document.getElementById('cfgSupabaseRealtime');
     if (realtimeToggle) realtimeToggle.checked = integrationsConfig.supabase_realtime_enabled;
 
-    applyCustomDropdownValue(
-        'aiServiceDropdown',
-        integrationsConfig.ai_service,
-        AI_SERVICE_LABELS[integrationsConfig.ai_service] || AI_SERVICE_LABELS.gemini
-    );
-
-    window.ADMIN_AI_SERVICE = integrationsConfig.ai_service;
-    window.AdminAI?.setPreferredService?.(integrationsConfig.ai_service);
-
-    window.checkApiKey?.();
+    applyAdminAIServicePreference({ checkHealth: true });
 }
 
 window.getCurrentAdminAIService = function getCurrentAdminAIService() {
     return normalizeIntegrationsConfig(systemConfigCache['integrations']).ai_service;
 };
+
+function applyAdminAIServicePreference(options = {}) {
+    const integrationsConfig = normalizeIntegrationsConfig(systemConfigCache['integrations']);
+    const shouldSyncDropdown = options.syncDropdown !== false;
+    const shouldCheckHealth = options.checkHealth === true;
+    const shouldRefreshService = options.refreshService === true;
+
+    systemConfigCache['integrations'] = integrationsConfig;
+
+    if (shouldSyncDropdown) {
+        applyCustomDropdownValue(
+            'aiServiceDropdown',
+            integrationsConfig.ai_service,
+            AI_SERVICE_LABELS[integrationsConfig.ai_service] || AI_SERVICE_LABELS.gemini
+        );
+    }
+
+    window.ADMIN_AI_SERVICE = integrationsConfig.ai_service;
+
+    const serviceUpdate = shouldRefreshService
+        ? window.AdminAI?.setPreferredService?.(integrationsConfig.ai_service, { refresh: true })
+        : window.AdminAI?.setPreferredService?.(integrationsConfig.ai_service);
+
+    if (serviceUpdate && typeof serviceUpdate.catch === 'function') {
+        serviceUpdate.catch((error) => {
+            console.warn('[Config] Failed to apply AI service preference:', error?.message || error);
+        });
+    }
+
+    if (shouldCheckHealth) {
+        const healthCheck = window.checkApiKey?.();
+        if (healthCheck && typeof healthCheck.catch === 'function') {
+            healthCheck.catch((error) => {
+                console.warn('[Config] Failed to refresh AI health status:', error?.message || error);
+            });
+        }
+    }
+
+    return integrationsConfig;
+}
 
 async function saveVerifyConfig(options = {}) {
     const priceInput = document.getElementById('cfgVerifyPrice');
@@ -21838,9 +22057,8 @@ window.selectDropdownOption = function (dropdownId, value, displayText) {
         const config = normalizeIntegrationsConfig(systemConfigCache['integrations']);
         config.ai_service = value;
         saveConfig('integrations', config);
-        window.ADMIN_AI_SERVICE = config.ai_service;
-        window.AdminAI?.setPreferredService?.(config.ai_service, { refresh: true });
-        window.checkApiKey?.();
+        systemConfigCache['integrations'] = config;
+        applyAdminAIServicePreference({ syncDropdown: false, refreshService: true, checkHealth: true });
     }
 };
 
@@ -22045,6 +22263,9 @@ function restorePageSelector(pages) {
 
 window.initSettingsModule = initSettingsModule;
 window.initSystemConfig = initSystemConfig;
+window.warmSettingsDomainsInBackground = warmSettingsDomainsInBackground;
+window.warmSettingsViewConfigInBackground = warmSettingsViewConfigInBackground;
+window.applyAdminAIServicePreference = applyAdminAIServicePreference;
 window.toggleConfigCard = toggleConfigCard;
 window.toggleCustomRechargeEntryStatus = toggleCustomRechargeEntryStatus;
 window.toggleMockPaymentStatus = toggleMockPaymentStatus;

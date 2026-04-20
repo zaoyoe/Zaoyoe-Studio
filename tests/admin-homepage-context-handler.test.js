@@ -60,6 +60,9 @@ test('homepage admin runtime and studio shell expose P1 orchestration controls',
     assert.match(runtimeSource, /function applyHomepageExperimentWinnerForCurrentSite\(experimentId = ''\)/);
     assert.match(runtimeSource, /function applyHomepageRecommendationForCurrentSite\(recommendationId = ''\)/);
     assert.match(runtimeSource, /function applyHomepageThemePackForCurrentSite\(packId = ''\)/);
+    assert.match(runtimeSource, /function warmHomepageContextInBackground\(site = getHomepageReadSite\(\), \{ force = false \} = \{\}\)/);
+    assert.match(runtimeSource, /void warmHomepageContextInBackground\(currentReadSite\)/);
+    assert.match(runtimeSource, /void warmHomepageContextInBackground\(currentReadSite, \{ force: true \}\)/);
     assert.match(runtimeSource, /const HOMEPAGE_SCROLL_CHAIN_SELECTOR = \[/);
     assert.match(runtimeSource, /function bindHomepageNestedScrollBridge\(homepageModule\)/);
     assert.match(runtimeSource, /data-homepage-direction="top"/);
@@ -73,6 +76,9 @@ test('homepage admin runtime and studio shell expose P1 orchestration controls',
     assert.match(runtimeSource, /data-homepage-theme-pack-card=/);
     assert.match(runtimeSource, /function updateHomepageThemePackSelectionState\(root = document\)/);
     assert.match(runtimeSource, /id="hp-theme-pack-apply-btn"/);
+    assert.match(runtimeSource, /首页候选 Prompt 加载中/);
+    assert.match(runtimeSource, /商城候选池加载中/);
+    assert.match(runtimeSource, /留言候选池加载中/);
     assert.match(runtimeSource, /case 'add-prompt-candidate':/);
     assert.match(runtimeSource, /case 'add-shop-product':/);
     assert.match(runtimeSource, /case 'add-guestbook-candidate':/);

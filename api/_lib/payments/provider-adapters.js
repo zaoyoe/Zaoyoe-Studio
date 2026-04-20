@@ -372,11 +372,12 @@ const providerRegistry = {
             refundOrder: true,
             autoCredit: true
         },
-        async resolveRuntimeContext({ supabase, env = process.env, config = null } = {}) {
+        async resolveRuntimeContext({ supabase, env = process.env, config = null, requestOrigin = '' } = {}) {
+            const effectiveRequestOrigin = requestOrigin || env.APP_BASE_URL;
             const loaded = config
                 ? { paymentChannels: config }
                 : await loadStoredPaymentConfigs(supabase, {
-                    origin: env.APP_BASE_URL,
+                    origin: effectiveRequestOrigin,
                     afdianCheckoutUrl: env.PAYMENT_AFDIAN_URL
                 });
             const secrets = await resolvePaymentProviderSecrets(supabase, 'zpay', env);
@@ -385,7 +386,7 @@ const providerRegistry = {
                 secretValues: {
                     zpay_pkey: secrets.zpay_pkey?.value || ''
                 },
-                requestOrigin: env.APP_BASE_URL
+                requestOrigin: effectiveRequestOrigin
             });
 
             return {
@@ -394,7 +395,7 @@ const providerRegistry = {
                 activeProvider: loaded.paymentChannels.active_provider,
                 implemented: true,
                 integration,
-                requestOrigin: env.APP_BASE_URL,
+                requestOrigin: effectiveRequestOrigin,
                 secretValues: {
                     zpay_pkey: secrets.zpay_pkey?.value || ''
                 },
@@ -724,11 +725,12 @@ const providerRegistry = {
             refundOrder: true,
             autoCredit: true
         },
-        async resolveRuntimeContext({ supabase, env = process.env, config = null } = {}) {
+        async resolveRuntimeContext({ supabase, env = process.env, config = null, requestOrigin = '' } = {}) {
+            const effectiveRequestOrigin = requestOrigin || env.APP_BASE_URL;
             const loaded = config
                 ? { paymentChannels: config }
                 : await loadStoredPaymentConfigs(supabase, {
-                    origin: env.APP_BASE_URL,
+                    origin: effectiveRequestOrigin,
                     afdianCheckoutUrl: env.PAYMENT_AFDIAN_URL
                 });
             const secrets = await resolvePaymentProviderSecrets(supabase, 'hupijiao', env);
@@ -738,7 +740,7 @@ const providerRegistry = {
                     hupijiao_api_key: secrets.hupijiao_api_key?.value || '',
                     hupijiao_secret_key: secrets.hupijiao_secret_key?.value || ''
                 },
-                requestOrigin: env.APP_BASE_URL
+                requestOrigin: effectiveRequestOrigin
             });
 
             return {
@@ -747,7 +749,7 @@ const providerRegistry = {
                 activeProvider: loaded.paymentChannels.active_provider,
                 implemented: true,
                 integration,
-                requestOrigin: env.APP_BASE_URL,
+                requestOrigin: effectiveRequestOrigin,
                 secretValues: {
                     hupijiao_api_key: secrets.hupijiao_api_key?.value || '',
                     hupijiao_secret_key: secrets.hupijiao_secret_key?.value || ''

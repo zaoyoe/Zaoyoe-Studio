@@ -732,11 +732,11 @@ function initCommentsModule() {
         console.log('Comments module already initialized');
         syncAdminCommentsFilterUi();
         syncCommentsSelectModeUi();
-        loadCommentStats();
         loadComments(routeState.view || currentCommentView, {
             resetPage: true,
             focusCommentId: routeState.focusCommentId || pendingFocusedCommentId
         });
+        scheduleCommentStatsRefresh(routeState.view || currentCommentView, { showLoading: true });
         return;
     }
     commentsInitialized = true;
@@ -745,8 +745,8 @@ function initCommentsModule() {
 
     syncAdminCommentsFilterUi();
     syncCommentsSelectModeUi(0);
-    loadCommentStats();
     loadComments(currentCommentView, { resetPage: true });
+    scheduleCommentStatsRefresh(currentCommentView, { showLoading: true });
     setupCommentEventHandlers();
 }
 
@@ -1512,6 +1512,19 @@ async function loadCommentStats(view = currentCommentView, options = {}) {
     return cachedPayload;
 }
 
+function scheduleCommentStatsRefresh(view = currentCommentView, options = {}) {
+    const normalizedView = view === 'gallery' ? 'gallery' : 'guestbook';
+    const delayMs = Math.max(0, Number(options?.delayMs) || 0);
+    const showLoading = options?.showLoading === true;
+
+    window.setTimeout(() => {
+        if (!isCommentsModuleActive()) {
+            return;
+        }
+        void loadCommentStats(normalizedView, { showLoading });
+    }, delayMs);
+}
+
 /**
  * Switch comment view (guestbook/gallery)
  */
@@ -1530,10 +1543,8 @@ function switchCommentView(view) {
     });
     document.querySelector(`[data-comment-view="${view}"]`)?.classList.add('active');
 
-    loadCommentStats(view, { showLoading: true });
-
-    // Load comments for the selected view
     loadComments(view, { resetPage: true });
+    scheduleCommentStatsRefresh(view, { showLoading: true });
 }
 
 /**
@@ -1944,10 +1955,10 @@ function scheduleCommentsViewPrefetch(activeView = currentCommentView) {
             }
 
             try {
-                await prefetchCommentsView(view);
+                // Keep sibling warming cheap: list rows are loaded only when the tab is opened.
                 await prefetchCommentsSummary(view);
             } catch (error) {
-                console.warn(`[AdminComments] Failed to prefetch ${view} comments view:`, error);
+                console.warn(`[AdminComments] Failed to prefetch ${view} comments summary:`, error);
             }
         }
     };
@@ -2222,11 +2233,11 @@ function refreshCommentsForUserStatus(userId) {
         preserveSelection: true,
         focusCommentId
     });
-    loadCommentStats(currentCommentView, { showLoading: false });
     loadComments(currentCommentView, {
         preserveSelection: true,
         focusCommentId
     });
+    loadCommentStats(currentCommentView, { showLoading: false });
 }
 
 function getCommentById(commentId) {
@@ -2771,7 +2782,6 @@ async function createCommentTicket(commentId) {
         });
         setCommentGovernanceBusyState(true, '工单已创建，正在同步评论列表...');
         showToast(payload?.message || '已创建工单', 'success');
-        await loadCommentStats();
         prepareCommentReloadState({
             preserveSelection: true,
             focusCommentId: comment.id
@@ -2780,6 +2790,7 @@ async function createCommentTicket(commentId) {
             preserveSelection: true,
             focusCommentId: comment.id
         });
+        loadCommentStats(currentCommentView, { showLoading: false });
         if (payload?.ticket_id) {
             setCommentGovernanceBusyState(true, '工单已创建，正在打开工单...');
             await openCommentTicket(payload.ticket_id, comment.id);
@@ -2811,7 +2822,6 @@ async function updateCommentWorkflowStatus(commentId, status) {
             status
         });
         showToast('状态已更新', 'success');
-        await loadCommentStats();
         prepareCommentReloadState({
             preserveSelection: true,
             focusCommentId: comment.id
@@ -2820,6 +2830,7 @@ async function updateCommentWorkflowStatus(commentId, status) {
             preserveSelection: true,
             focusCommentId: comment.id
         });
+        loadCommentStats(currentCommentView, { showLoading: false });
         await openCommentDetail(comment.id);
     } catch (error) {
         console.error('Failed to update comment workflow status:', error);
@@ -3578,8 +3589,8 @@ async function batchSetCommentWorkflowStatus(status = '', actionEl = null) {
         }
 
         clearSelectedComments({ closeMenu: false });
-        await loadCommentStats();
         await loadComments(currentCommentView, { resetPage: true });
+        loadCommentStats(currentCommentView, { showLoading: false });
 
         if (failedCount > 0) {
             showToast(`批量处理完成：成功 ${successCount} 条，失败 ${failedCount} 条`, successCount > 0 ? 'warning' : 'error');
@@ -3789,9 +3800,9 @@ async function batchDeleteComments(actionEl = null) {
         showToast(cascadeDeleted > 0
             ? `成功删除 ${deleted} 条内容（含级联 ${cascadeDeleted} 条）`
             : `成功删除 ${deleted} 条评论`, 'success');
-        loadCommentStats();
         clearSelectedComments({ closeMenu: false });
         loadComments(currentCommentView, { preserveSelection: true });
+        loadCommentStats(currentCommentView, { showLoading: false });
     } catch (error) {
         console.error('Batch delete error:', error);
         showToast('批量删除失败: ' + error.message, 'error');
@@ -3832,8 +3843,7 @@ async function deleteComment(id, type, recordType = '') {
             setTimeout(() => item.remove(), 200);
         }
 
-        // Refresh stats
-        loadCommentStats();
+        // Refresh list first, then sync stats in the background.
         prepareCommentReloadState({
             preserveSelection: true,
             removeSelectionIds: [id],
@@ -3843,6 +3853,7 @@ async function deleteComment(id, type, recordType = '') {
             preserveSelection: true,
             focusCommentId: fallbackFocusId
         });
+        loadCommentStats(currentCommentView, { showLoading: false });
         const cascadeDeleted = Number(payload?.cascadeDeletedCount || 0);
         const deleted = Number(payload?.deletedCount || 0);
         showToast(cascadeDeleted > 0

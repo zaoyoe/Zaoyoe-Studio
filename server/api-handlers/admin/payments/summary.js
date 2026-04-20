@@ -151,6 +151,52 @@ function formatHourBucket(dateLike) {
     return `${month}-${day} ${hour}:00`;
 }
 
+function formatDayBucket(dateLike) {
+    const date = new Date(dateLike);
+    if (Number.isNaN(date.getTime())) return '';
+    const month = `${date.getUTCMonth() + 1}`.padStart(2, '0');
+    const day = `${date.getUTCDate()}`.padStart(2, '0');
+    return `${month}-${day}`;
+}
+
+function getUtcDayKey(dateLike) {
+    const date = new Date(dateLike);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toISOString().slice(0, 10);
+}
+
+function buildUtcDayBuckets(startIso, endIso) {
+    const startDate = new Date(startIso);
+    const endDate = new Date(endIso || Date.now());
+
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+        return [];
+    }
+
+    const cursor = new Date(Date.UTC(
+        startDate.getUTCFullYear(),
+        startDate.getUTCMonth(),
+        startDate.getUTCDate()
+    ));
+    const last = new Date(Date.UTC(
+        endDate.getUTCFullYear(),
+        endDate.getUTCMonth(),
+        endDate.getUTCDate()
+    ));
+    const buckets = [];
+
+    while (cursor.getTime() <= last.getTime()) {
+        const key = cursor.toISOString().slice(0, 10);
+        buckets.push({
+            key,
+            label: formatDayBucket(cursor)
+        });
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+
+    return buckets;
+}
+
 function isEventAnomaly(event) {
     if (!event) return false;
     const processingResult = String(event.processing_result || '').trim();
@@ -207,6 +253,9 @@ function buildOrderAnomaly(order) {
         status: order.status,
         user_id: order.user_id || null,
         claimed_at: order.claimed_at || null,
+        checkout_session_id: order.checkout_session_id || null,
+        checkout_session_required: Boolean(order.checkout_session_required),
+        checkout_session_matched: Boolean(order.checkout_session_matched),
         provider_metadata: normalizeJsonObject(order.provider_metadata),
         severity,
         title,
@@ -307,6 +356,7 @@ function isCheckoutSessionEligibleOrder(order) {
     if (!['mock', 'afdian', 'hupijiao', 'zpay'].includes(provider)) return false;
 
     const metadata = normalizeJsonObject(order.provider_metadata);
+    if (order.checkout_session_id) return true;
     if (metadata.checkout_session_id || metadata.checkout_session_key) return true;
 
     const createdAt = Number(new Date(order.created_at || 0).getTime());
@@ -377,12 +427,93 @@ function buildCheckoutSessionAnomaly(session) {
     return null;
 }
 
+const PAYMENT_INTENT_EXCEPTION_TOPIC_META = [
+    {
+        key: 'payment_intent_failed',
+        label: '支付意图失败',
+        severity: 'warning',
+        description: '支付意图创建或拉起失败，请检查通道参数、跳转结果与 checkout session 状态。'
+    },
+    {
+        key: 'payment_intent_unlinked',
+        label: '支付意图未回填',
+        severity: 'critical',
+        description: '支付意图已完成，但最终订单尚未建立关联，建议优先补查回填链路。'
+    },
+    {
+        key: 'payment_intent_stale',
+        label: '支付意图待回填',
+        severity: 'warning',
+        description: '支付意图长时间未匹配正式订单，需要检查 webhook、认领或兜底链路。'
+    }
+];
+
+function buildPaymentIntentTopicItems(sessions) {
+    return (sessions || [])
+        .map((session) => {
+            const anomaly = buildCheckoutSessionAnomaly(session);
+            if (!anomaly) return null;
+
+            let topicMeta = null;
+            if (anomaly.title === '支付意图失败') {
+                topicMeta = PAYMENT_INTENT_EXCEPTION_TOPIC_META[0];
+            } else if (anomaly.title === '支付意图已完成但未回填') {
+                topicMeta = PAYMENT_INTENT_EXCEPTION_TOPIC_META[1];
+            } else if (anomaly.title === '支付意图待回填') {
+                topicMeta = PAYMENT_INTENT_EXCEPTION_TOPIC_META[2];
+            }
+            if (!topicMeta) return null;
+
+            return {
+                ...anomaly,
+                topic_key: topicMeta.key,
+                topic_label: topicMeta.label
+            };
+        })
+        .filter(Boolean)
+        .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
+}
+
+function buildCheckoutSessionTrace(session) {
+    if (!session) return null;
+
+    const metadata = normalizeJsonObject(session.provider_metadata);
+    return {
+        id: session.id || null,
+        provider: session.provider || null,
+        provider_order_no: getSessionProviderOrderNo(session),
+        session_key: session.session_key || null,
+        user_id: session.user_id || null,
+        site: session.site || null,
+        package_name: session.package_name || null,
+        requested_points: normalizeNumber(session.requested_points, 0),
+        bonus_points: normalizeNumber(session.bonus_points, 0),
+        granted_points: normalizeNumber(session.granted_points, 0),
+        expected_amount: normalizeNumber(session.expected_amount, 0),
+        status: String(session.status || '').trim().toLowerCase() || 'created',
+        payment_order_id: session.payment_order_id || null,
+        linked_by: getSessionLinkedBy(session),
+        linked_at: metadata.linked_at || null,
+        query_mode: session.query_mode || null,
+        has_checkout_url: Boolean(String(session.checkout_url || '').trim()),
+        error_message: String(session.error_message || '').trim() || null,
+        expires_at: session.expires_at || null,
+        completed_at: session.completed_at || null,
+        created_at: session.created_at || null,
+        updated_at: session.updated_at || null
+    };
+}
+
 function buildAnomalyCaseKey(targetType, targetId) {
     return `${String(targetType || '').trim().toLowerCase()}:${String(targetId || '').trim()}`;
 }
 
+function isArchivedOpsStatus(status) {
+    return String(status || '').trim().toLowerCase() === 'archived';
+}
+
 function isResolvedOpsStatus(status) {
-    return ['handled', 'ignored', 'approved', 'rejected'].includes(String(status || '').trim().toLowerCase());
+    return ['handled', 'ignored', 'approved', 'rejected', 'archived'].includes(String(status || '').trim().toLowerCase());
 }
 
 function getGatewayActionMeta(providerKey = '') {
@@ -430,6 +561,18 @@ function canReconcileGatewayOrder(item, providerKey = '') {
 
     const status = String(item?.status || '').trim().toLowerCase();
     return RECONCILABLE_GATEWAY_ORDER_STATUSES.has(status);
+}
+
+function canReconcileCheckoutSession(item) {
+    if (!item || (item?.type && item.type !== 'order')) return false;
+    if (!String(item?.user_id || '').trim()) return false;
+    if (!item.checkout_session_required || item.checkout_session_matched || item.checkout_session_id) return false;
+    const metadata = normalizeJsonObject(item?.provider_metadata);
+    const refundStatus = String(metadata.refund_status || '').trim().toLowerCase();
+    if (['refunded', 'refund_pending'].includes(refundStatus)) return false;
+
+    const status = String(item?.status || '').trim().toLowerCase();
+    return ['paid', 'redeemed'].includes(status);
 }
 
 function canRefundHupijiaoOrder(item) {
@@ -528,6 +671,9 @@ function getOrderAvailableActions(order) {
     }
     if (canReconcileGatewayOrder(order, meta.key)) {
         actions.push(meta.reconcileAction);
+    }
+    if (canReconcileCheckoutSession(order)) {
+        actions.push('reconcile_checkout_session');
     }
     if (canRefundGatewayOrder(order, meta.key)) {
         actions.push(meta.refundAction);
@@ -674,7 +820,14 @@ function getAnomalyAvailableActions(item, caseStatus) {
     const normalizedStatus = String(caseStatus || '').trim().toLowerCase();
     const gatewayMeta = getGatewayActionMetaFromItem(item);
 
+    if (isArchivedOpsStatus(normalizedStatus)) {
+        return [];
+    }
+
     if (isResolvedOpsStatus(normalizedStatus)) {
+        if (normalizedStatus === 'handled' || normalizedStatus === 'approved') {
+            return ['reopen', 'archive'];
+        }
         return ['reopen'];
     }
 
@@ -706,6 +859,7 @@ function getAnomalyAvailableActions(item, caseStatus) {
         const actions = [];
         if (canQueryGatewayOrder(item, gatewayMeta.key)) actions.push(gatewayMeta.queryAction);
         if (canReconcileGatewayOrder(item, gatewayMeta.key)) actions.push(gatewayMeta.reconcileAction);
+        if (canReconcileCheckoutSession(item)) actions.push('reconcile_checkout_session');
         actions.push(gatewayMeta.refundAction, 'mark_handled', 'ignore', 'request_retry');
         return actions;
     }
@@ -714,6 +868,9 @@ function getAnomalyAvailableActions(item, caseStatus) {
         const actions = [gatewayMeta.queryAction];
         if (canReconcileGatewayOrder(item, gatewayMeta.key)) {
             actions.push(gatewayMeta.reconcileAction);
+        }
+        if (canReconcileCheckoutSession(item)) {
+            actions.push('reconcile_checkout_session');
         }
         actions.push('mark_handled', 'ignore', 'request_retry');
         return actions;
@@ -741,6 +898,54 @@ function enrichAnomaliesWithCases(anomalies, cases) {
             ops_available_actions: getAnomalyAvailableActions(item, opsStatus)
         };
     });
+}
+
+function filterActiveAnomalyItems(items) {
+    return (items || []).filter((item) => !isResolvedOpsStatus(item?.ops_status));
+}
+
+function filterUnarchivedAnomalyItems(items) {
+    return (items || []).filter((item) => !isArchivedOpsStatus(item?.ops_status));
+}
+
+function buildDisplayExceptionTopicItems(items, archivedLimitPerTopic = 12) {
+    const groupedItems = new Map();
+
+    (items || []).forEach((item) => {
+        const topicKey = String(item?.topic_key || '').trim().toLowerCase() || '__untagged__';
+        const bucket = groupedItems.get(topicKey) || [];
+        bucket.push(item);
+        groupedItems.set(topicKey, bucket);
+    });
+
+    return Array.from(groupedItems.values())
+        .flatMap((groupItems) => {
+            const sortedItems = groupItems
+                .slice()
+                .sort((left, right) => new Date(right.created_at || 0).getTime() - new Date(left.created_at || 0).getTime());
+            const visibleItems = sortedItems.filter((item) => !isArchivedOpsStatus(item?.ops_status));
+            const archivedItems = sortedItems
+                .filter((item) => isArchivedOpsStatus(item?.ops_status))
+                .slice(0, Math.max(0, Number(archivedLimitPerTopic) || 0));
+
+            return [...visibleItems, ...archivedItems];
+        })
+        .sort((left, right) => new Date(right.created_at || 0).getTime() - new Date(left.created_at || 0).getTime());
+}
+
+function countTopicItems(items, key) {
+    const normalizedKey = String(key || '').trim().toLowerCase();
+    if (!normalizedKey) return 0;
+    return (items || []).filter((item) => String(item?.topic_key || '').trim().toLowerCase() === normalizedKey).length;
+}
+
+function recalculateTopicCounts(topics, items) {
+    return (topics || [])
+        .map((topic) => ({
+            ...topic,
+            count: countTopicItems(items, topic.key)
+        }))
+        .filter((topic) => Number(topic.count || 0) > 0);
 }
 
 function buildTrend24h(events) {
@@ -970,6 +1175,81 @@ function normalizeJsonArray(value) {
     return Array.isArray(value) ? value : [];
 }
 
+function normalizeBusinessBreakdownTrendSeries(value) {
+    return normalizeJsonArray(value)
+        .filter((item) => item && typeof item === 'object' && !Array.isArray(item))
+        .map((item) => ({
+            key: String(item.key || '').trim().toLowerCase(),
+            tone: String(item.tone || '').trim().toLowerCase(),
+            metric_kind: String(item.metric_kind || item.metricKind || '').trim().toLowerCase(),
+            points: normalizeJsonArray(item.points)
+                .filter((point) => point && typeof point === 'object' && !Array.isArray(point))
+                .map((point) => ({
+                    label: String(point.label || '').trim(),
+                    value: roundNumber(point.value, 2)
+                }))
+        }))
+        .filter((item) => item.key);
+}
+
+function normalizePointsBreakdownTrendSeries(value) {
+    return normalizeJsonArray(value)
+        .filter((item) => item && typeof item === 'object' && !Array.isArray(item))
+        .map((item) => ({
+            key: String(item.key || '').trim().toLowerCase(),
+            label: String(item.label || '').trim(),
+            points: normalizeJsonArray(item.points || item.trend)
+                .filter((point) => point && typeof point === 'object' && !Array.isArray(point))
+                .map((point) => ({
+                    label: String(point.label || '').trim(),
+                    value: roundNumber(point.value, 1)
+                }))
+        }))
+        .filter((item) => item.key);
+}
+
+function attachPointsBreakdownTrend(items, trendSeries) {
+    const normalizedTrendSeries = normalizePointsBreakdownTrendSeries(trendSeries);
+    const trendMap = new Map(normalizedTrendSeries.map((series) => [series.key, series]));
+    const seenKeys = new Set();
+
+    const mergedItems = normalizeJsonArray(items)
+        .filter((item) => item && typeof item === 'object' && !Array.isArray(item))
+        .map((item) => {
+            const key = String(item.key || '').trim().toLowerCase();
+            const existingTrend = normalizeJsonArray(item.trend).length
+                ? normalizePointsBreakdownTrendSeries([{ key, points: item.trend }])[0]?.points || []
+                : [];
+            const trend = existingTrend.length ? existingTrend : (trendMap.get(key)?.points || []);
+            seenKeys.add(key);
+            return {
+                ...item,
+                key,
+                trend
+            };
+        });
+
+    normalizedTrendSeries.forEach((series) => {
+        if (seenKeys.has(series.key)) return;
+        const inflow = roundNumber(series.points
+            .filter((point) => normalizeNumber(point.value, 0) > 0)
+            .reduce((sum, point) => sum + normalizeNumber(point.value, 0), 0), 1);
+        const outflow = roundNumber(series.points
+            .filter((point) => normalizeNumber(point.value, 0) < 0)
+            .reduce((sum, point) => sum + Math.abs(normalizeNumber(point.value, 0)), 0), 1);
+        mergedItems.push({
+            key: series.key,
+            label: series.label || series.key,
+            inflow,
+            outflow,
+            net: roundNumber(inflow - outflow, 1),
+            trend: series.points
+        });
+    });
+
+    return mergedItems.sort((left, right) => Math.abs(normalizeNumber(right.net, 0)) - Math.abs(normalizeNumber(left.net, 0)));
+}
+
 function normalizeFinanceAggregatePayload(payload) {
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
         return null;
@@ -982,13 +1262,21 @@ function normalizeFinanceAggregatePayload(payload) {
         .filter((item) => item && typeof item === 'object' && !Array.isArray(item));
     const pointsBreakdown = normalizeJsonArray(payload.points_breakdown)
         .filter((item) => item && typeof item === 'object' && !Array.isArray(item));
+    const businessBreakdownTrend = Object.prototype.hasOwnProperty.call(payload, 'business_breakdown_trend')
+        ? normalizeBusinessBreakdownTrendSeries(payload.business_breakdown_trend)
+        : null;
+    const pointsBreakdownTrend = Object.prototype.hasOwnProperty.call(payload, 'points_breakdown_trend')
+        ? normalizePointsBreakdownTrendSeries(payload.points_breakdown_trend)
+        : null;
 
     return {
         overview,
         anomaly_summary: anomalySummary,
         provider_stats: providerStats,
         sitewide_summary: sitewideSummary,
-        points_breakdown: pointsBreakdown
+        points_breakdown: pointsBreakdown,
+        points_breakdown_trend: pointsBreakdownTrend,
+        business_breakdown_trend: businessBreakdownTrend
     };
 }
 
@@ -1159,6 +1447,7 @@ function buildPaymentOrderSelect(view = 'overview') {
         'created_at',
         'paid_at',
         'claimed_at',
+        'checkout_session_id',
         'site',
         'provider_metadata'
     ];
@@ -1187,6 +1476,46 @@ async function fetchPaymentOrders(client, sinceIso, untilIso, site, view = 'over
 
         return query;
     }, SUMMARY_PAGE_SIZES.heavy, 50);
+}
+
+async function fetchProfilesByIds(client, userIds = []) {
+    const ids = Array.from(new Set(
+        (Array.isArray(userIds) ? userIds : [])
+            .map((value) => String(value || '').trim())
+            .filter(Boolean)
+    ));
+    if (!ids.length || !client) {
+        return new Map();
+    }
+
+    let data = null;
+    let error = null;
+
+    ({ data, error } = await client
+        .from('profiles')
+        .select('id, email, username')
+        .in('id', ids));
+
+    if (error && isMissingColumnError(error)) {
+        ({ data, error } = await client
+            .from('profiles')
+            .select('id, username')
+            .in('id', ids));
+    }
+
+    if (error && isMissingColumnError(error)) {
+        return new Map();
+    }
+
+    if (error) {
+        throw error;
+    }
+
+    return new Map(
+        (Array.isArray(data) ? data : [])
+            .filter((row) => row?.id)
+            .map((row) => [String(row.id).trim(), row])
+    );
 }
 
 async function fetchCheckoutSessions(client, sinceIso, untilIso, site) {
@@ -1468,11 +1797,12 @@ function buildRefundExceptionTopics(events) {
                 count: refundItems.filter((item) => item.topic_key === topic.key).length
             }))
             .filter((topic) => Number(topic.count || 0) > 0),
-        items: topicItems
+        items: topicItems,
+        countItems: refundItems
     };
 }
 
-function buildExceptionTopics({ orders, events, queryAttempts }) {
+function buildExceptionTopics({ orders, events, queryAttempts, sessions }) {
     const amountMismatchItems = (orders || [])
         .filter((order) => order.status === 'amount_mismatch')
         .map((order) => ({
@@ -1488,13 +1818,23 @@ function buildExceptionTopics({ orders, events, queryAttempts }) {
             topic_label: '待审核'
         }));
     const duplicateItems = buildDuplicateWebhookTopicItems(events);
+    const paymentIntentItems = buildPaymentIntentTopicItems(sessions);
     const queryFailureItems = buildQueryFailureTopicItems(queryAttempts);
     const refundTopics = buildRefundExceptionTopics(events);
+    const countItems = [
+        ...amountMismatchItems,
+        ...reviewItems,
+        ...duplicateItems,
+        ...paymentIntentItems,
+        ...queryFailureItems,
+        ...(refundTopics.countItems || refundTopics.items || [])
+    ].sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
 
     const topicItems = [
         ...amountMismatchItems.slice(0, 12),
         ...reviewItems.slice(0, 12),
         ...duplicateItems.slice(0, 12),
+        ...paymentIntentItems.slice(0, 12),
         ...queryFailureItems.slice(0, 12),
         ...(refundTopics.items || [])
     ].sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
@@ -1522,6 +1862,10 @@ function buildExceptionTopics({ orders, events, queryAttempts }) {
                 description: '重点关注是否只是重复通知，还是已经造成重复入账、重复回填。',
                 count: duplicateItems.length
             },
+            ...PAYMENT_INTENT_EXCEPTION_TOPIC_META.map((topic) => ({
+                ...topic,
+                count: paymentIntentItems.filter((item) => item.topic_key === topic.key).length
+            })),
             {
                 key: 'query_failures',
                 label: '查码失败',
@@ -1531,7 +1875,8 @@ function buildExceptionTopics({ orders, events, queryAttempts }) {
             },
             ...(refundTopics.topics || [])
         ].filter((topic) => Number(topic.count || 0) > 0),
-        items: topicItems
+        items: topicItems,
+        countItems
     };
 }
 
@@ -1714,7 +2059,7 @@ function mergeCheckoutSessionsWithOrderFallback(orders, sessions) {
 
     (orders || []).forEach((order) => {
         const metadata = normalizeJsonObject(order?.provider_metadata);
-        const sessionId = String(metadata.checkout_session_id || '').trim();
+        const sessionId = String(order?.checkout_session_id || metadata.checkout_session_id || '').trim();
         const sessionKey = String(metadata.checkout_session_key || '').trim();
 
         if (!sessionId && !sessionKey) {
@@ -1794,7 +2139,7 @@ function enrichPaymentOrdersWithCheckoutSessions(orders, sessions) {
     return (orders || []).map((order) => {
         const metadata = normalizeJsonObject(order.provider_metadata);
         const linkedSession = sessionMap.get(order.id);
-        const sessionId = linkedSession?.id || metadata.checkout_session_id || null;
+        const sessionId = linkedSession?.id || order.checkout_session_id || metadata.checkout_session_id || null;
         const sessionKey = linkedSession?.session_key || metadata.checkout_session_key || null;
         const sessionStatus = linkedSession?.status || metadata.checkout_session_status || null;
         const sessionLinkedBy = getSessionLinkedBy(linkedSession) || String(metadata.checkout_session_linked_by || '').trim() || null;
@@ -1914,7 +2259,7 @@ function buildFinanceSummary(paymentOrders, shopOrders, ledgerRows, balanceRows)
     };
 }
 
-function buildPointsBreakdown(ledgerRows) {
+function buildPointsBreakdown(ledgerRows, trendSeries = []) {
     const categoryMap = new Map();
 
     (ledgerRows || []).forEach((entry) => {
@@ -1942,51 +2287,279 @@ function buildPointsBreakdown(ledgerRows) {
             ...item,
             inflow: roundNumber(item.inflow, 1),
             outflow: roundNumber(item.outflow, 1),
-            net: roundNumber(item.inflow - item.outflow, 1)
+            net: roundNumber(item.inflow - item.outflow, 1),
+            trend: normalizePointsBreakdownTrendSeries(trendSeries)
+                .find((series) => series.key === item.key)?.points || []
         }))
         .sort((left, right) => Math.abs(right.net) - Math.abs(left.net));
 }
 
-function buildBusinessBreakdown({ paymentOrders, shopOrders, balanceRows, sitewideSummary }) {
+function buildPointsBreakdownTrend({ pointsLedgerRows, sinceIso, untilIso }) {
+    const rangeStart = new Date(sinceIso);
+    const rangeEnd = new Date(untilIso || Date.now());
+
+    if (Number.isNaN(rangeStart.getTime()) || Number.isNaN(rangeEnd.getTime()) || rangeStart.getTime() > rangeEnd.getTime()) {
+        return [];
+    }
+
+    const buckets = buildUtcDayBuckets(rangeStart.toISOString(), rangeEnd.toISOString());
+    if (!buckets.length) {
+        return [];
+    }
+
+    const seriesMap = new Map();
+    const ensureSeries = (category) => {
+        if (!seriesMap.has(category.key)) {
+            seriesMap.set(category.key, {
+                key: category.key,
+                label: category.label,
+                points: buckets.map((bucket) => ({
+                    key: bucket.key,
+                    label: bucket.label,
+                    value: 0
+                }))
+            });
+        }
+        return seriesMap.get(category.key);
+    };
+
+    (pointsLedgerRows || []).forEach((entry) => {
+        const createdAt = new Date(entry?.created_at);
+        if (
+            Number.isNaN(createdAt.getTime())
+            || createdAt.getTime() < rangeStart.getTime()
+            || createdAt.getTime() > rangeEnd.getTime()
+        ) {
+            return;
+        }
+
+        const category = classifyLedgerCategory(entry);
+        const bucketKey = getUtcDayKey(createdAt);
+        const series = ensureSeries(category);
+        const point = series.points.find((item) => item.key === bucketKey);
+        if (point) {
+            point.value += normalizeNumber(entry.amount, 0);
+        }
+    });
+
+    return Array.from(seriesMap.values()).map((series) => ({
+        key: series.key,
+        label: series.label,
+        points: series.points.map((point) => ({
+            label: point.label,
+            value: roundNumber(point.value, 1)
+        }))
+    }));
+}
+
+function formatBusinessCurrency(value) {
+    const amount = normalizeNumber(value, 0);
+    return `¥${amount.toLocaleString('zh-CN', {
+        minimumFractionDigits: amount % 1 ? 2 : 0,
+        maximumFractionDigits: 2
+    })}`;
+}
+
+function buildBusinessBreakdownTrend({
+    paymentOrders,
+    shopOrders,
+    pointsLedgerRows,
+    pointsBalanceRows,
+    sitewideSummary,
+    sinceIso,
+    untilIso
+}) {
+    const rangeStart = new Date(sinceIso);
+    const rangeEnd = new Date(untilIso || Date.now());
+
+    if (Number.isNaN(rangeStart.getTime()) || Number.isNaN(rangeEnd.getTime()) || rangeStart.getTime() > rangeEnd.getTime()) {
+        return [];
+    }
+
+    const buckets = buildUtcDayBuckets(rangeStart.toISOString(), rangeEnd.toISOString());
+    if (!buckets.length) {
+        return [];
+    }
+
+    const bucketMap = new Map(
+        buckets.map((bucket) => [bucket.key, {
+            key: bucket.key,
+            label: bucket.label,
+            recharge: 0,
+            shop: 0,
+            mock: 0,
+            ledgerNet: 0
+        }])
+    );
+
+    (paymentOrders || []).forEach((order) => {
+        if (!isSuccessOrder(order)) return;
+        const bucket = bucketMap.get(getUtcDayKey(order.created_at));
+        if (!bucket) return;
+
+        bucket.recharge += normalizeNumber(order.paid_amount, normalizeNumber(order.expected_amount, 0));
+        if (String(order.provider || '').trim().toLowerCase() === 'mock') {
+            bucket.mock += 1;
+        }
+    });
+
+    (shopOrders || []).forEach((order) => {
+        if (String(order.refund_status || '').trim().toLowerCase() === 'refunded') return;
+        const bucket = bucketMap.get(getUtcDayKey(order.created_at));
+        if (!bucket) return;
+        bucket.shop += normalizeNumber(order.price_paid, 0);
+    });
+
+    const ledgerRows = (pointsLedgerRows || []).filter((row) => {
+        const createdAt = new Date(row?.created_at);
+        return !Number.isNaN(createdAt.getTime()) && createdAt.getTime() >= rangeStart.getTime();
+    });
+
+    ledgerRows.forEach((entry) => {
+        const createdAt = new Date(entry.created_at);
+        if (Number.isNaN(createdAt.getTime())) return;
+        const key = getUtcDayKey(createdAt);
+        const bucket = bucketMap.get(key);
+        if (bucket && createdAt.getTime() <= rangeEnd.getTime()) {
+            bucket.ledgerNet += normalizeNumber(entry.amount, 0);
+        }
+    });
+
+    const currentCirculatingPoints = normalizeNumber(
+        sitewideSummary?.circulating_points,
+        roundNumber((pointsBalanceRows || []).reduce((sum, row) => sum + normalizeNumber(row.total_balance, 0), 0), 1)
+    );
+    const postRangeLedgerNet = ledgerRows
+        .filter((entry) => new Date(entry.created_at).getTime() > rangeEnd.getTime())
+        .reduce((sum, entry) => sum + normalizeNumber(entry.amount, 0), 0);
+    const selectedLedgerNet = buckets.reduce((sum, bucket) => sum + normalizeNumber(bucketMap.get(bucket.key)?.ledgerNet, 0), 0);
+    const rangeEndBalance = currentCirculatingPoints - postRangeLedgerNet;
+    let runningBalance = rangeEndBalance - selectedLedgerNet;
+
+    const rechargePoints = [];
+    const shopPoints = [];
+    const mockPoints = [];
+    const balancePoints = [];
+
+    buckets.forEach((bucket) => {
+        const row = bucketMap.get(bucket.key) || {
+            label: bucket.label,
+            recharge: 0,
+            shop: 0,
+            mock: 0,
+            ledgerNet: 0
+        };
+
+        runningBalance += normalizeNumber(row.ledgerNet, 0);
+
+        rechargePoints.push({
+            label: row.label,
+            value: roundNumber(row.recharge, 2)
+        });
+        shopPoints.push({
+            label: row.label,
+            value: roundNumber(row.shop, 1)
+        });
+        mockPoints.push({
+            label: row.label,
+            value: roundNumber(row.mock, 1)
+        });
+        balancePoints.push({
+            label: row.label,
+            value: roundNumber(runningBalance, 1)
+        });
+    });
+
+    return [
+        {
+            key: 'recharge',
+            tone: 'recharge',
+            metric_kind: 'currency',
+            points: rechargePoints
+        },
+        {
+            key: 'shop',
+            tone: 'shop',
+            metric_kind: 'points',
+            points: shopPoints
+        },
+        {
+            key: 'mock',
+            tone: 'mock',
+            metric_kind: 'count',
+            points: mockPoints
+        },
+        {
+            key: 'balance',
+            tone: 'balance',
+            metric_kind: 'points',
+            points: balancePoints
+        }
+    ];
+}
+
+function getBusinessBreakdownTrendPoints(trendSeries, key) {
+    const series = normalizeBusinessBreakdownTrendSeries(trendSeries)
+        .find((item) => item.key === String(key || '').trim().toLowerCase());
+    return series ? series.points : [];
+}
+
+function buildBusinessBreakdown({ paymentOrders, shopOrders, balanceRows, sitewideSummary, trendSeries }) {
     const mockOrders = (paymentOrders || []).filter((order) => order.provider === 'mock');
     const successfulMockOrders = mockOrders.filter(isSuccessOrder);
     const orderCount = (paymentOrders || []).length;
 
     return [
         {
+            key: 'recharge',
+            tone: 'recharge',
+            metric_kind: 'currency',
             title: '充值收入',
             description: `近期开出的支付订单 ${orderCount} 笔，成功 ${sitewideSummary.recharge_order_count} 笔。`,
-            metric: `¥${sitewideSummary.recharge_amount.toLocaleString('zh-CN', { minimumFractionDigits: sitewideSummary.recharge_amount % 1 ? 2 : 0, maximumFractionDigits: 2 })}`,
+            metric: formatBusinessCurrency(sitewideSummary.recharge_amount),
             meta: `${sitewideSummary.recharge_points.toLocaleString('zh-CN')} 已入账`,
-            help: '统计标准支付订单的成功入账金额和对应到账点数。'
+            help: '统计标准支付订单的成功入账金额和对应到账点数。',
+            trend: getBusinessBreakdownTrendPoints(trendSeries, 'recharge')
         },
         {
+            key: 'shop',
+            tone: 'shop',
+            metric_kind: 'points',
             title: '商城消费',
             description: `商城已消费 ${sitewideSummary.shop_order_count} 笔，退款 ${sitewideSummary.refunded_shop_order_count} 笔。`,
             metric: sitewideSummary.shop_points_spent.toLocaleString('zh-CN'),
             meta: sitewideSummary.refunded_shop_points > 0
                 ? `已退款 ${sitewideSummary.refunded_shop_points.toLocaleString('zh-CN')}`
                 : '当前无退款冲销',
-            help: '统计商城订单消耗的点数，不含已退款冲销部分。'
+            help: '统计商城订单消耗的点数，不含已退款冲销部分。',
+            trend: getBusinessBreakdownTrendPoints(trendSeries, 'shop')
         },
         {
+            key: 'mock',
+            tone: 'mock',
+            metric_kind: 'count',
             title: '模拟支付',
             description: '用于临时直到账的充值记录，也会进入标准支付订单。',
             metric: `${successfulMockOrders.length.toLocaleString('zh-CN')} 笔`,
             meta: `${roundNumber(successfulMockOrders.reduce((sum, order) => sum + normalizeNumber(order.points_amount, 0), 0), 1).toLocaleString('zh-CN')} 已入账`,
-            help: '用于统计当前启用的模拟充值通道，方便和真实支付分开核对。'
+            help: '用于统计当前启用的模拟充值通道，方便和真实支付分开核对。',
+            trend: getBusinessBreakdownTrendPoints(trendSeries, 'mock')
         },
         {
+            key: 'balance',
+            tone: 'balance',
+            metric_kind: 'points',
             title: '当前积分存量',
             description: `活跃余额分布在 ${(balanceRows || []).length.toLocaleString('zh-CN')} 个用户/站点账户中。`,
             metric: sitewideSummary.circulating_points.toLocaleString('zh-CN'),
             meta: `付费 ${sitewideSummary.paid_balance.toLocaleString('zh-CN')} · 奖励 ${sitewideSummary.bonus_balance.toLocaleString('zh-CN')}`,
-            help: '展示当前仍在用户账户中流通的总余额，以及付费与奖励余额的拆分。'
+            help: '展示当前仍在用户账户中流通的总余额，以及付费与奖励余额的拆分。',
+            trend: getBusinessBreakdownTrendPoints(trendSeries, 'balance')
         }
     ];
 }
 
-function buildBusinessBreakdownFromFinanceSummary({ overview, sitewideSummary }) {
+function buildBusinessBreakdownFromFinanceSummary({ overview, sitewideSummary, trendSeries }) {
     const normalizedOverview = normalizeJsonObject(overview);
     const summary = normalizeJsonObject(sitewideSummary);
     const rechargeAmount = normalizeNumber(summary.recharge_amount, 0);
@@ -2006,34 +2579,50 @@ function buildBusinessBreakdownFromFinanceSummary({ overview, sitewideSummary })
 
     return [
         {
+            key: 'recharge',
+            tone: 'recharge',
+            metric_kind: 'currency',
             title: '充值收入',
             description: `近期开出的支付订单 ${totalOrderCount.toLocaleString('zh-CN')} 笔，成功 ${rechargeOrderCount.toLocaleString('zh-CN')} 笔。`,
-            metric: `¥${rechargeAmount.toLocaleString('zh-CN', { minimumFractionDigits: rechargeAmount % 1 ? 2 : 0, maximumFractionDigits: 2 })}`,
+            metric: formatBusinessCurrency(rechargeAmount),
             meta: `${rechargePoints.toLocaleString('zh-CN')} 已入账`,
-            help: '统计标准支付订单的成功入账金额和对应到账点数。'
+            help: '统计标准支付订单的成功入账金额和对应到账点数。',
+            trend: getBusinessBreakdownTrendPoints(trendSeries, 'recharge')
         },
         {
+            key: 'shop',
+            tone: 'shop',
+            metric_kind: 'points',
             title: '商城消费',
             description: `商城已消费 ${shopOrderCount.toLocaleString('zh-CN')} 笔，退款 ${refundedShopOrderCount.toLocaleString('zh-CN')} 笔。`,
             metric: shopPointsSpent.toLocaleString('zh-CN'),
             meta: refundedShopPoints > 0
                 ? `已退款 ${refundedShopPoints.toLocaleString('zh-CN')}`
                 : '当前无退款冲销',
-            help: '统计商城订单消耗的点数，不含已退款冲销部分。'
+            help: '统计商城订单消耗的点数，不含已退款冲销部分。',
+            trend: getBusinessBreakdownTrendPoints(trendSeries, 'shop')
         },
         {
+            key: 'mock',
+            tone: 'mock',
+            metric_kind: 'count',
             title: '模拟支付',
             description: '用于临时直到账的充值记录，也会进入标准支付订单。',
             metric: `${mockRechargeOrderCount.toLocaleString('zh-CN')} 笔`,
             meta: `${mockRechargePoints.toLocaleString('zh-CN')} 已入账`,
-            help: '用于统计当前启用的模拟充值通道，方便和真实支付分开核对。'
+            help: '用于统计当前启用的模拟充值通道，方便和真实支付分开核对。',
+            trend: getBusinessBreakdownTrendPoints(trendSeries, 'mock')
         },
         {
+            key: 'balance',
+            tone: 'balance',
+            metric_kind: 'points',
             title: '当前积分存量',
             description: `活跃余额分布在 ${balanceAccountCount.toLocaleString('zh-CN')} 个用户/站点账户中。`,
             metric: circulatingPoints.toLocaleString('zh-CN'),
             meta: `付费 ${paidBalance.toLocaleString('zh-CN')} · 奖励 ${bonusBalance.toLocaleString('zh-CN')}`,
-            help: '展示当前仍在用户账户中流通的总余额，以及付费与奖励余额的拆分。'
+            help: '展示当前仍在用户账户中流通的总余额，以及付费与奖励余额的拆分。',
+            trend: getBusinessBreakdownTrendPoints(trendSeries, 'balance')
         }
     ];
 }
@@ -2090,6 +2679,16 @@ module.exports = async function handler(req, res) {
             ? await fetchPaymentFinanceAggregate(adminSupabase || null, sinceIso, untilIso, site)
             : null;
         const useFinanceAggregate = needsFinance && Boolean(financeAggregate);
+        const financeAggregateHasBusinessTrend = useFinanceAggregate
+            && Array.isArray(financeAggregate?.business_breakdown_trend);
+        const financeAggregateHasPointsTrend = useFinanceAggregate
+            && Array.isArray(financeAggregate?.points_breakdown_trend);
+        const needsBusinessTrendFallback = needsFinance && (!useFinanceAggregate || !financeAggregateHasBusinessTrend);
+        const needsPointsTrendFallback = needsFinance && (!useFinanceAggregate || !financeAggregateHasPointsTrend);
+        const shouldFetchPointsLedgerTrendRows = needsFinance && (
+            (needsBusinessTrendFallback && (useFinanceAggregate || Boolean(untilIso)))
+            || (useFinanceAggregate && needsPointsTrendFallback)
+        );
 
         const [
             orderRows,
@@ -2099,18 +2698,22 @@ module.exports = async function handler(req, res) {
             rawOpsAlertJobs,
             shopOrders,
             pointsLedgerRows,
-            pointsBalanceRows
+            pointsBalanceRows,
+            pointsLedgerTrendRows
         ] = await Promise.all([
-            !needsOrders || useFinanceAggregate || useOverviewAggregate
+            !needsOrders || useOverviewAggregate || (useFinanceAggregate && !needsBusinessTrendFallback)
                 ? Promise.resolve([])
                 : fetchPaymentOrders(scopedClient, sinceIso, untilIso, site, view),
             needsEvents && !useOverviewAggregate ? fetchPaymentEvents(scopedClient, sinceIso, untilIso) : Promise.resolve([]),
             needsQueries && !useOverviewAggregate ? fetchPaymentQueryAttempts(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
             needsSessions && !useOverviewAggregate ? fetchCheckoutSessions(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
             needsOpsAlerts ? fetchOpsAlertJobs(scopedClient, sinceIso, untilIso, view) : Promise.resolve([]),
-            needsFinance && !useFinanceAggregate ? fetchShopOrders(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
+            needsBusinessTrendFallback ? fetchShopOrders(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
             needsFinance && !useFinanceAggregate ? fetchPointsLedger(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
-            needsFinance && !useFinanceAggregate ? fetchPointsBalances(scopedClient, site) : Promise.resolve([])
+            needsBusinessTrendFallback ? fetchPointsBalances(scopedClient, site) : Promise.resolve([]),
+            shouldFetchPointsLedgerTrendRows
+                ? fetchPointsLedger(scopedClient, sinceIso, needsBusinessTrendFallback ? null : untilIso, site)
+                : Promise.resolve([])
         ]);
 
         const checkoutSessions = needsSessions
@@ -2171,12 +2774,54 @@ module.exports = async function handler(req, res) {
         const recentOrderCandidates = view === 'ops'
             ? (visibleOrders || []).slice(0, 20)
             : [];
+        const recentCheckoutSessionCandidates = view === 'ops'
+            ? (checkoutSessions || [])
+                .filter((session) => {
+                    const status = String(session?.status || '').trim().toLowerCase();
+                    return (
+                        !session?.payment_order_id
+                        || SESSION_OPEN_STATUSES.has(status)
+                        || SESSION_FAILURE_STATUSES.has(status)
+                    );
+                })
+                .sort((left, right) => getSessionSortValue(right) - getSessionSortValue(left))
+                .slice(0, 20)
+            : [];
+        const recentProfileMap = view === 'ops'
+            ? await fetchProfilesByIds(scopedClient, [
+                ...recentOrderCandidates.map((order) => order?.user_id),
+                ...recentCheckoutSessionCandidates.map((session) => session?.user_id)
+            ])
+            : new Map();
         const recentOrders = view === 'ops'
             ? (await enrichRecentOrdersWithGatewayRefundHints(recentOrderCandidates, adminSupabase || scopedClient, process.env))
                 .map((order) => ({
                     ...order,
+                    user_email: (() => {
+                        const userId = String(order?.user_id || '').trim();
+                        const profile = userId ? recentProfileMap.get(userId) || null : null;
+                        const email = String(profile?.email || '').trim();
+                        return email || null;
+                    })(),
                     order_available_actions: getOrderAvailableActions(order)
                 }))
+            : [];
+        const recentCheckoutSessions = view === 'ops'
+            ? recentCheckoutSessionCandidates
+                .map((session) => {
+                    const trace = buildCheckoutSessionTrace(session);
+                    if (!trace) {
+                        return null;
+                    }
+                    const userId = String(trace.user_id || '').trim();
+                    const profile = userId ? recentProfileMap.get(userId) || null : null;
+                    const email = String(profile?.email || '').trim();
+                    return {
+                        ...trace,
+                        user_email: email || null
+                    };
+                })
+                .filter(Boolean)
             : [];
         const recentOrderAnomalies = view === 'ops'
             ? (visibleOrders || [])
@@ -2185,17 +2830,7 @@ module.exports = async function handler(req, res) {
                 .map(buildOrderAnomaly)
             : [];
 
-        const duplicateMap = new Map();
-        scopedEvents.forEach((event) => {
-            const orderNo = String(event.provider_order_no || '').trim();
-            if (!orderNo) return;
-            duplicateMap.set(orderNo, (duplicateMap.get(orderNo) || 0) + 1);
-        });
-        const duplicateWebhookOrders = Array.from(duplicateMap.values()).filter((count) => count > 1).length;
-        const refundGatewayFailures = scopedEvents.filter((event) => String(event.processing_result || '').trim() === 'admin_refund_failed').length;
-        const refundReclaimFailures = scopedEvents.filter((event) => String(event.processing_result || '').trim() === 'admin_refund_reclaim_failed').length;
-        const refundCompensationFailures = scopedEvents.filter((event) => String(event.processing_result || '').trim() === 'admin_refund_compensation_failed').length;
-
+        const duplicateWebhookTopicItems = buildDuplicateWebhookTopicItems(scopedEvents || []);
         const recentEventAnomalies = needsEvents
             ? (
                 useOverviewAggregate
@@ -2217,31 +2852,42 @@ module.exports = async function handler(req, res) {
                 useOverviewAggregate
                     ? {
                         topics: normalizeJsonArray(overviewAggregate?.refund_alert_topics),
-                        items: normalizeJsonArray(overviewAggregate?.refund_alert_items)
+                        items: normalizeJsonArray(overviewAggregate?.refund_alert_items),
+                        countItems: normalizeJsonArray(overviewAggregate?.refund_alert_items)
                     }
                     : buildRefundExceptionTopics(scopedEvents || [])
             )
-            : { topics: [], items: [] };
+            : { topics: [], items: [], countItems: [] };
         const exceptionTopics = view === 'ops'
             ? buildExceptionTopics({
                 orders: visibleOrders || [],
                 events: scopedEvents || [],
-                queryAttempts: queryRows || []
+                queryAttempts: queryRows || [],
+                sessions: checkoutSessions || []
             })
-            : { topics: [], items: [] };
+            : { topics: [], items: [], countItems: [] };
 
         const combinedRecentAnomalies = view === 'ops'
             ? [...recentOrderAnomalies, ...recentEventAnomalies, ...recentSessionAnomalies]
                 .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
             : [];
         const anomalyCaseTargets = view === 'ops'
-            ? [...combinedRecentAnomalies, ...(exceptionTopics.items || [])]
-            : (refundAlertSummary.items || []);
+            ? [...combinedRecentAnomalies, ...(exceptionTopics.countItems || exceptionTopics.items || [])]
+            : [
+                ...(refundAlertSummary.countItems || refundAlertSummary.items || []),
+                ...duplicateWebhookTopicItems
+            ];
         const anomalyCases = anomalyCaseTargets.length
             ? await fetchAnomalyCasesByTargets(scopedClient, anomalyCaseTargets)
             : [];
         const enrichedRefundAlertItems = needsEvents
             ? enrichAnomaliesWithCases(refundAlertSummary.items || [], anomalyCases)
+            : [];
+        const enrichedRefundAlertCountItems = needsEvents
+            ? enrichAnomaliesWithCases(refundAlertSummary.countItems || refundAlertSummary.items || [], anomalyCases)
+            : [];
+        const enrichedDuplicateWebhookCountItems = needsEvents && duplicateWebhookTopicItems.length
+            ? enrichAnomaliesWithCases(duplicateWebhookTopicItems, anomalyCases)
             : [];
         const enrichedRecentAnomalies = view === 'ops'
             ? enrichAnomaliesWithCases(combinedRecentAnomalies, anomalyCases)
@@ -2249,10 +2895,40 @@ module.exports = async function handler(req, res) {
         const enrichedExceptionTopicItems = view === 'ops'
             ? enrichAnomaliesWithCases(exceptionTopics.items || [], anomalyCases)
             : [];
+        const enrichedExceptionTopicCountItems = view === 'ops'
+            ? enrichAnomaliesWithCases(exceptionTopics.countItems || exceptionTopics.items || [], anomalyCases)
+            : [];
+        const displayExceptionTopicItems = view === 'ops'
+            ? buildDisplayExceptionTopicItems(enrichedExceptionTopicCountItems)
+            : [];
+        const unarchivedExceptionTopicCountItems = filterUnarchivedAnomalyItems(enrichedExceptionTopicCountItems);
+        const visibleExceptionTopics = view === 'ops'
+            ? recalculateTopicCounts(exceptionTopics.topics || [], unarchivedExceptionTopicCountItems)
+            : [];
+        const activeRefundAlertItems = needsEvents
+            ? filterActiveAnomalyItems(enrichedRefundAlertItems)
+            : [];
+        const activeRefundAlertCountItems = needsEvents
+            ? filterActiveAnomalyItems(enrichedRefundAlertCountItems)
+            : [];
+        const aggregateAnomalySummary = normalizeJsonObject(overviewAggregate?.anomaly_summary);
+        const duplicateWebhookOrders = useOverviewAggregate
+            ? Math.max(0, Number(aggregateAnomalySummary.duplicate_webhook_orders || 0) || 0)
+            : filterUnarchivedAnomalyItems(enrichedDuplicateWebhookCountItems).length;
+        const shouldTrustAggregateRefundCounts = useOverviewAggregate && !normalizeJsonArray(refundAlertSummary.items).length;
+        const activeRefundFailureCount = shouldTrustAggregateRefundCounts
+            ? Number(aggregateAnomalySummary.refund_failures || 0)
+            : countTopicItems(activeRefundAlertCountItems, 'refund_failures');
+        const activeRefundReclaimFailureCount = shouldTrustAggregateRefundCounts
+            ? Number(aggregateAnomalySummary.refund_reclaim_failures || 0)
+            : countTopicItems(activeRefundAlertCountItems, 'refund_reclaim_failures');
+        const activeRefundCompensationFailureCount = shouldTrustAggregateRefundCounts
+            ? Number(aggregateAnomalySummary.refund_compensation_failures || 0)
+            : countTopicItems(activeRefundAlertCountItems, 'refund_compensation_failures');
         const refundAlertTopics = needsEvents
             ? (refundAlertSummary.topics || []).map((topic) => ({
                 ...topic,
-                count: enrichedRefundAlertItems.filter((item) => item.topic_key === topic.key).length
+                count: countTopicItems(activeRefundAlertCountItems, topic.key)
             })).filter((topic) => Number(topic.count || 0) > 0)
             : [];
         const recentAnomalies = view === 'ops'
@@ -2274,7 +2950,10 @@ module.exports = async function handler(req, res) {
                     : useOverviewAggregate
                         ? {
                             ...normalizeJsonObject(overviewAggregate?.anomaly_summary),
-                            open_cases: Number(normalizeJsonObject(overviewAggregate?.anomaly_summary).open_cases || (refundAlertSummary.items || []).length || 0),
+                            refund_failures: activeRefundFailureCount,
+                            refund_reclaim_failures: activeRefundReclaimFailureCount,
+                            refund_compensation_failures: activeRefundCompensationFailureCount,
+                            open_cases: activeRefundAlertItems.length,
                             handled_cases: handledCaseCount,
                             ignored_cases: ignoredCaseCount,
                             retry_requested_cases: retryRequestedCaseCount
@@ -2285,9 +2964,9 @@ module.exports = async function handler(req, res) {
                             unclaimed_paid_orders: (visibleOrders || []).filter((order) => order.status === 'paid' && !order.user_id).length,
                             recent_event_anomalies: recentEventAnomalies.length,
                             duplicate_webhook_orders: duplicateWebhookOrders,
-                            refund_failures: refundGatewayFailures,
-                            refund_reclaim_failures: refundReclaimFailures,
-                            refund_compensation_failures: refundCompensationFailures,
+                            refund_failures: activeRefundFailureCount,
+                            refund_reclaim_failures: activeRefundReclaimFailureCount,
+                            refund_compensation_failures: activeRefundCompensationFailureCount,
                             query_failures: Number(querySummary?.failed_attempts || 0),
                             stale_checkout_sessions: Number(sessionSummary?.stale_sessions || 0),
                             failed_checkout_sessions: Number(sessionSummary?.failed_sessions || 0),
@@ -2296,7 +2975,7 @@ module.exports = async function handler(req, res) {
                             webhook_linked_sessions: Number(sessionSummary?.webhook_linked_sessions || 0),
                             fallback_linked_sessions: Number(sessionSummary?.fallback_linked_sessions || 0),
                             session_anomalies: Number(sessionSummary?.anomaly_count || 0),
-                            open_cases: openAnomalyCount,
+                            open_cases: view === 'ops' ? openAnomalyCount : activeRefundAlertItems.length,
                             handled_cases: handledCaseCount,
                             ignored_cases: ignoredCaseCount,
                             retry_requested_cases: retryRequestedCaseCount
@@ -2331,11 +3010,41 @@ module.exports = async function handler(req, res) {
                     : buildFinanceSummary(visibleOrders || [], shopOrders || [], pointsLedgerRows || [], pointsBalanceRows || [])
             )
             : undefined;
+        const pointsBreakdownTrend = needsFinance
+            ? (
+                useFinanceAggregate && financeAggregateHasPointsTrend
+                    ? normalizePointsBreakdownTrendSeries(financeAggregate?.points_breakdown_trend)
+                    : buildPointsBreakdownTrend({
+                        pointsLedgerRows: useFinanceAggregate
+                            ? (pointsLedgerTrendRows || [])
+                            : ((pointsLedgerTrendRows && pointsLedgerTrendRows.length) ? pointsLedgerTrendRows : (pointsLedgerRows || [])),
+                        sinceIso,
+                        untilIso
+                    })
+            )
+            : undefined;
         const points_breakdown = needsFinance
             ? (
                 useFinanceAggregate
-                    ? normalizeJsonArray(financeAggregate?.points_breakdown)
-                    : buildPointsBreakdown(pointsLedgerRows || [])
+                    ? attachPointsBreakdownTrend(financeAggregate?.points_breakdown, pointsBreakdownTrend)
+                    : buildPointsBreakdown(pointsLedgerRows || [], pointsBreakdownTrend)
+            )
+            : undefined;
+        const businessBreakdownTrend = needsFinance
+            ? (
+                useFinanceAggregate && financeAggregateHasBusinessTrend
+                    ? normalizeBusinessBreakdownTrendSeries(financeAggregate?.business_breakdown_trend)
+                    : buildBusinessBreakdownTrend({
+                        paymentOrders: visibleOrders || [],
+                        shopOrders: shopOrders || [],
+                        pointsLedgerRows: useFinanceAggregate
+                            ? (pointsLedgerTrendRows || [])
+                            : ((pointsLedgerTrendRows && pointsLedgerTrendRows.length) ? pointsLedgerTrendRows : (pointsLedgerRows || [])),
+                        pointsBalanceRows: pointsBalanceRows || [],
+                        sitewideSummary: sitewide_summary,
+                        sinceIso,
+                        untilIso
+                    })
             )
             : undefined;
         const business_breakdown = needsFinance
@@ -2343,13 +3052,15 @@ module.exports = async function handler(req, res) {
                 useFinanceAggregate
                     ? buildBusinessBreakdownFromFinanceSummary({
                         overview,
-                        sitewideSummary: sitewide_summary
+                        sitewideSummary: sitewide_summary,
+                        trendSeries: businessBreakdownTrend
                     })
                     : buildBusinessBreakdown({
                         paymentOrders: visibleOrders || [],
                         shopOrders: shopOrders || [],
                         balanceRows: pointsBalanceRows || [],
-                        sitewideSummary: sitewide_summary
+                        sitewideSummary: sitewide_summary,
+                        trendSeries: businessBreakdownTrend
                     })
             )
             : undefined;
@@ -2382,12 +3093,13 @@ module.exports = async function handler(req, res) {
             points_breakdown,
             business_breakdown,
             refund_alert_topics: needsEvents ? refundAlertTopics : (isOverviewCoreScope ? null : undefined),
-            refund_alert_items: needsEvents ? enrichedRefundAlertItems : (isOverviewCoreScope ? null : undefined),
+            refund_alert_items: needsEvents ? activeRefundAlertItems : (isOverviewCoreScope ? null : undefined),
             ops_alert_summary: needsOpsAlerts ? opsAlertSummary : (isOverviewCoreScope ? null : undefined),
             ops_alert_items: needsOpsAlerts ? opsAlertItems : (isOverviewCoreScope ? null : undefined),
-            exception_topics: exceptionTopics.topics || [],
-            exception_topic_items: enrichedExceptionTopicItems,
+            exception_topics: visibleExceptionTopics,
+            exception_topic_items: displayExceptionTopicItems,
             recent_anomalies: recentAnomalies,
+            recent_checkout_sessions: recentCheckoutSessions,
             recent_orders: recentOrders || []
         });
     } catch (error) {

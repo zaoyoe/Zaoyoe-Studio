@@ -80,6 +80,11 @@ function normalizeWorkflowKey(value = '') {
     return Object.prototype.hasOwnProperty.call(WORKFLOW_DEFAULTS, normalized) ? normalized : '';
 }
 
+function normalizeOverviewLoadMode(value = '') {
+    const normalized = normalizeText(value, 40).toLowerCase();
+    return normalized === 'summary' ? 'summary' : 'full';
+}
+
 function isMissingSchemaObjectError(error, relationName = '') {
     const message = normalizeText(error?.message, 500).toLowerCase();
     const normalizedRelation = normalizeText(relationName, 120).toLowerCase();
@@ -745,6 +750,8 @@ module.exports = async function marketingAssetsCenterHandler(req, res) {
             const { supabase } = await requireAdmin(req, { permission: 'analytics.view' });
             const url = new URL(req.url || '', 'http://localhost');
             const site = normalizeSite(url.searchParams.get('site') || req.adminSite, 'all');
+            const loadMode = normalizeOverviewLoadMode(url.searchParams.get('mode'));
+            const includeDetails = loadMode !== 'summary';
 
             const [discounts, packages, batches, workflows] = await Promise.all([
                 loadDiscountRows(supabase),
@@ -753,11 +760,13 @@ module.exports = async function marketingAssetsCenterHandler(req, res) {
                 loadWorkflowRows(supabase, now)
             ]);
 
-            const [orders, assets, workflowRuns] = await Promise.all([
-                loadRecentDiscountOrders(supabase, discounts.map((row) => row.code), site),
-                loadDiscountAssetRows(supabase, discounts.map((row) => row.id)),
-                loadWorkflowRuns(supabase, workflows.map((row) => row.id))
-            ]);
+            const [orders, assets, workflowRuns] = includeDetails
+                ? await Promise.all([
+                    loadRecentDiscountOrders(supabase, discounts.map((row) => row.code), site),
+                    loadDiscountAssetRows(supabase, discounts.map((row) => row.id)),
+                    loadWorkflowRuns(supabase, workflows.map((row) => row.id))
+                ])
+                : [[], [], []];
 
             const discountState = buildDiscountFamilyState({
                 discounts,
@@ -776,6 +785,8 @@ module.exports = async function marketingAssetsCenterHandler(req, res) {
                 site,
                 now
             });
+            payload.load_mode = loadMode;
+            payload.details_pending = !includeDetails;
             return sendJson(res, 200, payload);
         }
 

@@ -255,9 +255,31 @@ function buildHomepageDraftResponse(site, draft, releases, publishedRows, merged
                 updated_at: null,
                 updated_by: null
             },
-        releases,
+        releases: sanitizeHomepageReleaseList(releases),
         health
     };
+}
+
+function sanitizeHomepageReleaseMeta(release = null) {
+    if (!release || typeof release !== 'object') {
+        return null;
+    }
+
+    return {
+        id: release.id || null,
+        site: release.site || null,
+        source: release.source || null,
+        note: release.note || null,
+        published_at: release.published_at || null,
+        published_by: release.published_by || null,
+        rollback_from_release_id: release.rollback_from_release_id || null
+    };
+}
+
+function sanitizeHomepageReleaseList(releases = []) {
+    return (Array.isArray(releases) ? releases : [])
+        .map((release) => sanitizeHomepageReleaseMeta(release))
+        .filter(Boolean);
 }
 
 function buildDraftUpsertPayload(site, sections, userId) {
@@ -577,8 +599,8 @@ async function handlePublish(req, res, supabase, user, body) {
             updated_at: null,
             updated_by: null
         },
-        releases,
-        release,
+        releases: sanitizeHomepageReleaseList(releases),
+        release: sanitizeHomepageReleaseMeta(release),
         health
     });
 }
@@ -653,8 +675,8 @@ async function handleRollback(req, res, supabase, user, body) {
             updated_at: null,
             updated_by: null
         },
-        releases: nextReleases,
-        release,
+        releases: sanitizeHomepageReleaseList(nextReleases),
+        release: sanitizeHomepageReleaseMeta(release),
         rolled_back_to: {
             id: targetRelease.id || null,
             published_at: targetRelease.published_at || null

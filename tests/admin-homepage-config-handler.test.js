@@ -510,6 +510,9 @@ test('homepage config handler publishes merged draft rows and snapshots a releas
         assert.ok(state.homepageUpsertPayload.some((row) => row.section === 'hero' && row.content.title === 'Draft Hero'));
         assert.deepEqual(state.homepageUpsertOptions, { onConflict: 'site,section' });
         assert.equal(state.releaseInsertPayload.source, 'publish');
+        assert.equal(Object.prototype.hasOwnProperty.call(res.json().release || {}, 'payload'), false);
+        assert.equal(Array.isArray(res.json().releases), true);
+        assert.equal(Object.prototype.hasOwnProperty.call(res.json().releases[0] || {}, 'payload'), false);
         assert.equal(state.draftDeleteFilters[0]?.value, 'cn');
         assert.equal(state.auditCalls.at(-1)?.actionType, 'homepage.publish');
     });

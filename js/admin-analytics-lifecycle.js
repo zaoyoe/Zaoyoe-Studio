@@ -121,6 +121,46 @@ function syncAnalyticsChromeVisibility(tabId = '') {
     setAnalyticsChromeSectionHidden('analyticsOperatingFocusWorkspace', hideGlobalChrome);
 }
 
+function normalizeAnalyticsTabId(tabId = '') {
+    return String(tabId || 'overview').trim().toLowerCase() || 'overview';
+}
+
+function getActiveAnalyticsTabId() {
+    return normalizeAnalyticsTabId(document.querySelector('#analyticsTabsNav .admin-tab.active')?.dataset?.tab);
+}
+
+function getAnalyticsLoadedTabSet(contextKey = getAnalyticsAIContextKey()) {
+    const normalizedContextKey = String(contextKey || '').trim();
+    if (!normalizedContextKey) {
+        return new Set();
+    }
+
+    if (!analyticsRuntime.loadedTabsByContext || typeof analyticsRuntime.loadedTabsByContext !== 'object') {
+        analyticsRuntime.loadedTabsByContext = {};
+    }
+    if (!Array.isArray(analyticsRuntime.loadedTabsByContext[normalizedContextKey])) {
+        analyticsRuntime.loadedTabsByContext[normalizedContextKey] = [];
+    }
+
+    return new Set(analyticsRuntime.loadedTabsByContext[normalizedContextKey]);
+}
+
+function markAnalyticsTabLoaded(tabId = '', contextKey = getAnalyticsAIContextKey()) {
+    const normalizedContextKey = String(contextKey || '').trim();
+    const normalizedTabId = normalizeAnalyticsTabId(tabId);
+    if (!normalizedContextKey || !normalizedTabId) {
+        return;
+    }
+
+    const loadedTabs = getAnalyticsLoadedTabSet(normalizedContextKey);
+    loadedTabs.add(normalizedTabId);
+    analyticsRuntime.loadedTabsByContext[normalizedContextKey] = Array.from(loadedTabs);
+}
+
+function isAnalyticsTabLoaded(tabId = '', contextKey = getAnalyticsAIContextKey()) {
+    return getAnalyticsLoadedTabSet(contextKey).has(normalizeAnalyticsTabId(tabId));
+}
+
 function canReuseRecentAnalyticsDashboard(reason = '') {
     const normalizedReason = String(reason || '').trim().toLowerCase();
     if (normalizedReason !== 're-enter') {
@@ -136,6 +176,10 @@ function canReuseRecentAnalyticsDashboard(reason = '') {
         return false;
     }
 
+    if (!isAnalyticsTabLoaded(getActiveAnalyticsTabId(), contextKey)) {
+        return false;
+    }
+
     return (Date.now() - analyticsRuntime.lastLoadedAt) <= ANALYTICS_REENTRY_REFRESH_TTL_MS;
 }
 
@@ -148,7 +192,12 @@ async function initAnalyticsModule() {
         : {};
     const initialView = String(routeState?.view || '').trim().toLowerCase();
     if (initialView && typeof switchAnalyticsTab === 'function') {
-        switchAnalyticsTab(initialView, { syncRoute: false, sectionId: routeState?.sectionId || '' });
+        switchAnalyticsTab(initialView, {
+            syncRoute: false,
+            sectionId: routeState?.sectionId || '',
+            ensureTabLoad: false,
+            ensureProductDetailLoad: false
+        });
     }
     if (initialView === 'product-detail' && routeState?.productId) {
         window.primeAnalyticsProductDetailFromRouteState?.(routeState);
@@ -291,7 +340,7 @@ function setupAnalyticsEvents() {
 function switchAnalyticsTab(tabId, options = {}) {
     const nav = document.getElementById('analyticsTabsNav');
     if (!nav) return;
-    const normalizedTabId = String(tabId || 'overview').trim().toLowerCase() || 'overview';
+    const normalizedTabId = normalizeAnalyticsTabId(tabId);
     const previousActiveTabId = String(nav.querySelector('.admin-tab.active')?.dataset?.tab || '').trim().toLowerCase();
     if (normalizedTabId === 'product-detail') {
         window.primeAnalyticsProductDetailSkeletonOnEntry?.({
@@ -364,6 +413,19 @@ function switchAnalyticsTab(tabId, options = {}) {
         }
     }
 
+    if (
+        normalizedTabId !== 'product-detail'
+        && options.ensureTabLoad !== false
+        && analyticsRuntime.initialized
+        && !isAnalyticsTabLoaded(normalizedTabId)
+        && typeof window.reloadAnalyticsDashboard === 'function'
+    ) {
+        void window.reloadAnalyticsDashboard({
+            reason: `${normalizedTabId}-tab-focus`,
+            activeTabId: normalizedTabId
+        });
+    }
+
     window.renderAnalyticsBusinessCenterShell?.();
     window.refreshAnalyticsSectionNavigatorActiveState?.();
     window.renderAnalyticsOperatingFocusWorkspace?.();
@@ -413,6 +475,71 @@ function destroyAnalyticsCharts() {
     geoChart = null;
 }
 
+function buildAnalyticsTaskPhases(phaseTaskIds = [], taskFactories = {}, seenTaskIds = new Set()) {
+    return (Array.isArray(phaseTaskIds) ? phaseTaskIds : [])
+        .map((taskIds) => (Array.isArray(taskIds) ? taskIds : [])
+            .filter((taskId) => Object.prototype.hasOwnProperty.call(taskFactories, taskId))
+            .filter((taskId) => {
+                if (seenTaskIds.has(taskId)) {
+                    return false;
+                }
+                seenTaskIds.add(taskId);
+                return true;
+            })
+            .map((taskId) => taskFactories[taskId]))
+        .filter((phase) => phase.length > 0);
+}
+
+async function runAnalyticsTaskPhases(phases = [], options = {}) {
+    const requestId = Number(options.requestId || 0);
+    const contextKey = String(options.contextKey || '').trim();
+    const activeTabId = normalizeAnalyticsTabId(options.activeTabId || '');
+    const stopIfStale = options.stopIfStale === true;
+
+    for (let index = 0; index < phases.length; index += 1) {
+        if (
+            stopIfStale
+            && (
+                requestId !== analyticsRuntime.reloadRequestId
+                || (contextKey && analyticsRuntime.reloadContextKey !== contextKey)
+                || (activeTabId && getActiveAnalyticsTabId() !== activeTabId)
+            )
+        ) {
+            return false;
+        }
+
+        const phasePromises = phases[index].map((runTask) => Promise.resolve().then(runTask));
+        await Promise.allSettled(phasePromises);
+        updateLastUpdateTime();
+        if (index < phases.length - 1) {
+            await waitForAnalyticsPaint(2);
+        }
+    }
+
+    return true;
+}
+
+function scheduleAnalyticsDeferredTaskPhases(options = {}) {
+    const phases = Array.isArray(options.phases) ? options.phases : [];
+    if (!phases.length) {
+        return;
+    }
+
+    window.setTimeout(() => {
+        void (async () => {
+            await waitForAnalyticsPaint(2);
+            await runAnalyticsTaskPhases(phases, {
+                requestId: options.requestId,
+                contextKey: options.contextKey,
+                activeTabId: options.activeTabId,
+                stopIfStale: true
+            });
+        })().catch((error) => {
+            console.warn('[Analytics] Deferred analytics panels failed:', error);
+        });
+    }, 0);
+}
+
 async function reloadAnalyticsDashboard() {
     const options = arguments[0] || {};
     const reason = String(options?.reason || '').trim().toLowerCase();
@@ -420,25 +547,31 @@ async function reloadAnalyticsDashboard() {
     const days = getAnalyticsRangeDays();
     const cohortWeeks = getAnalyticsCohortWeeks(days);
     const contextKey = getAnalyticsAIContextKey();
+    const activeTabId = normalizeAnalyticsTabId(
+        options?.activeTabId
+        || document.querySelector('#analyticsTabsNav .admin-tab.active')?.dataset?.tab
+        || ''
+    );
 
-    if (!force && analyticsRuntime.reloadPromise && analyticsRuntime.reloadContextKey === contextKey) {
+    if (
+        !force
+        && analyticsRuntime.reloadPromise
+        && analyticsRuntime.reloadContextKey === contextKey
+        && analyticsRuntime.reloadTabId === activeTabId
+    ) {
         return analyticsRuntime.reloadPromise;
     }
 
     const requestId = analyticsRuntime.reloadRequestId + 1;
     analyticsRuntime.reloadRequestId = requestId;
     analyticsRuntime.reloadContextKey = contextKey;
+    analyticsRuntime.reloadTabId = activeTabId;
 
     const reloadPromise = (async () => {
         resetAnalyticsDerivedContext(contextKey);
 
-        const activeTabId = String(
-            options?.activeTabId
-            || document.querySelector('#analyticsTabsNav .admin-tab.active')?.dataset?.tab
-            || ''
-        ).trim().toLowerCase() || 'overview';
         const taskFactories = {
-            updateOnlineUsers: () => updateOnlineUsers(),
+            updateOnlineUsers: () => updateOnlineUsers({ force }),
             loadOverviewStats: () => loadOverviewStats(),
             loadOverviewDutyBoard: () => loadOverviewDutyBoard(),
             loadOverviewOperatingNavigator: () => loadOverviewOperatingNavigator(),
@@ -469,113 +602,88 @@ async function reloadAnalyticsDashboard() {
             loadGrowthSummary: () => loadGrowthSummary(),
             loadEventFunnelPanels: () => loadEventFunnelPanels()
         };
-        const phaseTaskIds = (() => {
+        const phaseTaskConfig = (() => {
             switch (activeTabId) {
                 case 'product':
-                    return [
-                        ['updateOnlineUsers', 'loadProductAlerts', 'loadProductOverview', 'loadProductRankings', 'loadProductFunnel', 'loadProductHealth'],
-                        ['loadProductDetailPanel', 'loadOverviewOperatingNavigator', 'loadOperationsCockpit'],
-                        ['loadOverviewStats', 'loadOverviewDutyBoard', 'loadOverviewBusinessMix', 'loadUserTrendChart', 'loadChannelChart', 'loadGeoDistribution'],
-                        ['loadTopContent', 'loadContentTrendChart', 'loadActivityHeatmap', 'loadConversionFunnel'],
-                        ['loadGrowthSummary', 'loadTopContributors', 'loadCommunityChart', 'loadRetentionCohort'],
-                        ['loadPointsFlow', 'loadPointsStats', 'loadPointsDistribution', 'loadPointsLeaderboard', 'loadRedemptionFunnel'],
-                        ['loadVerifyServiceSummary', 'loadEventFunnelPanels']
-                    ];
+                    return {
+                        critical: [
+                            ['updateOnlineUsers', 'loadProductAlerts', 'loadProductOverview', 'loadProductRankings'],
+                            ['loadProductFunnel', 'loadProductHealth']
+                        ]
+                    };
                 case 'product-detail':
-                    return [
-                        ['loadProductDetailPanel'],
-                        ['updateOnlineUsers', 'loadProductAlerts', 'loadProductOverview', 'loadProductRankings', 'loadProductFunnel', 'loadProductHealth'],
-                        ['loadOverviewOperatingNavigator', 'loadOperationsCockpit'],
-                        ['loadOverviewStats', 'loadOverviewDutyBoard', 'loadOverviewBusinessMix', 'loadUserTrendChart', 'loadChannelChart', 'loadGeoDistribution'],
-                        ['loadTopContent', 'loadContentTrendChart', 'loadActivityHeatmap', 'loadConversionFunnel'],
-                        ['loadGrowthSummary', 'loadTopContributors', 'loadCommunityChart', 'loadRetentionCohort'],
-                        ['loadPointsFlow', 'loadPointsStats', 'loadPointsDistribution', 'loadPointsLeaderboard', 'loadRedemptionFunnel'],
-                        ['loadVerifyServiceSummary', 'loadEventFunnelPanels']
-                    ];
+                    return {
+                        critical: [
+                            ['loadProductDetailPanel']
+                        ]
+                    };
                 case 'ops':
-                    return [
-                        ['updateOnlineUsers', 'loadOperationsCockpit'],
-                        ['loadOverviewOperatingNavigator', 'loadProductAlerts', 'loadProductOverview', 'loadProductRankings', 'loadProductFunnel', 'loadProductHealth'],
-                        ['loadOverviewStats', 'loadOverviewDutyBoard', 'loadOverviewBusinessMix', 'loadUserTrendChart', 'loadChannelChart', 'loadGeoDistribution'],
-                        ['loadTopContent', 'loadContentTrendChart', 'loadActivityHeatmap', 'loadConversionFunnel'],
-                        ['loadGrowthSummary', 'loadTopContributors', 'loadCommunityChart', 'loadRetentionCohort'],
-                        ['loadPointsFlow', 'loadPointsStats', 'loadPointsDistribution', 'loadPointsLeaderboard', 'loadRedemptionFunnel'],
-                        ['loadVerifyServiceSummary', 'loadEventFunnelPanels', 'loadProductDetailPanel']
-                    ];
+                    return {
+                        critical: [
+                            ['updateOnlineUsers', 'loadOverviewOperatingNavigator', 'loadOperationsCockpit']
+                        ]
+                    };
                 case 'content':
-                    return [
-                        ['updateOnlineUsers', 'loadTopContent', 'loadContentTrendChart', 'loadActivityHeatmap', 'loadConversionFunnel'],
-                        ['loadOverviewOperatingNavigator'],
-                        ['loadOverviewStats', 'loadOverviewDutyBoard', 'loadOverviewBusinessMix', 'loadUserTrendChart', 'loadChannelChart', 'loadGeoDistribution'],
-                        ['loadProductAlerts', 'loadProductOverview', 'loadProductRankings', 'loadProductFunnel', 'loadProductHealth', 'loadProductDetailPanel'],
-                        ['loadGrowthSummary', 'loadTopContributors', 'loadCommunityChart', 'loadRetentionCohort'],
-                        ['loadOperationsCockpit', 'loadVerifyServiceSummary'],
-                        ['loadPointsFlow', 'loadPointsStats', 'loadPointsDistribution', 'loadPointsLeaderboard', 'loadRedemptionFunnel', 'loadEventFunnelPanels']
-                    ];
+                    return {
+                        critical: [
+                            ['updateOnlineUsers', 'loadTopContent', 'loadContentTrendChart'],
+                            ['loadActivityHeatmap', 'loadConversionFunnel']
+                        ]
+                    };
                 case 'growth':
-                    return [
-                        ['updateOnlineUsers', 'loadUserTrendChart', 'loadGrowthSummary', 'loadTopContributors', 'loadCommunityChart', 'loadRetentionCohort', 'loadEventFunnelPanels'],
-                        ['loadOverviewOperatingNavigator'],
-                        ['loadOverviewStats', 'loadOverviewDutyBoard', 'loadOverviewBusinessMix', 'loadChannelChart', 'loadGeoDistribution'],
-                        ['loadTopContent', 'loadContentTrendChart', 'loadActivityHeatmap', 'loadConversionFunnel'],
-                        ['loadProductAlerts', 'loadProductOverview', 'loadProductRankings', 'loadProductFunnel', 'loadProductHealth', 'loadProductDetailPanel'],
-                        ['loadOperationsCockpit', 'loadVerifyServiceSummary'],
-                        ['loadPointsFlow', 'loadPointsStats', 'loadPointsDistribution', 'loadPointsLeaderboard', 'loadRedemptionFunnel']
-                    ];
+                    return {
+                        critical: [
+                            ['updateOnlineUsers', 'loadGrowthSummary']
+                        ],
+                        deferred: [
+                            ['loadUserTrendChart'],
+                            ['loadEventFunnelPanels'],
+                            ['loadTopContributors', 'loadCommunityChart', 'loadRetentionCohort']
+                        ]
+                    };
                 case 'monetization':
-                    return [
-                        ['updateOnlineUsers', 'loadPointsFlow', 'loadPointsStats', 'loadPointsDistribution', 'loadPointsLeaderboard', 'loadRedemptionFunnel', 'loadEventFunnelPanels'],
-                        ['loadOverviewOperatingNavigator'],
-                        ['loadOverviewStats', 'loadOverviewDutyBoard', 'loadOverviewBusinessMix', 'loadUserTrendChart', 'loadChannelChart', 'loadGeoDistribution'],
-                        ['loadTopContent', 'loadContentTrendChart', 'loadActivityHeatmap', 'loadConversionFunnel'],
-                        ['loadProductAlerts', 'loadProductOverview', 'loadProductRankings', 'loadProductFunnel', 'loadProductHealth', 'loadProductDetailPanel'],
-                        ['loadGrowthSummary', 'loadTopContributors', 'loadCommunityChart', 'loadRetentionCohort'],
-                        ['loadOperationsCockpit', 'loadVerifyServiceSummary']
-                    ];
+                    return {
+                        critical: [
+                            ['updateOnlineUsers', 'loadPointsFlow', 'loadPointsStats', 'loadEventFunnelPanels'],
+                            ['loadPointsDistribution', 'loadPointsLeaderboard', 'loadRedemptionFunnel']
+                        ]
+                    };
                 case 'verify':
-                    return [
-                        ['updateOnlineUsers', 'loadVerifyServiceSummary', 'loadEventFunnelPanels'],
-                        ['loadOverviewOperatingNavigator', 'loadOperationsCockpit'],
-                        ['loadOverviewStats', 'loadOverviewDutyBoard', 'loadOverviewBusinessMix', 'loadUserTrendChart', 'loadChannelChart', 'loadGeoDistribution'],
-                        ['loadTopContent', 'loadContentTrendChart', 'loadActivityHeatmap', 'loadConversionFunnel'],
-                        ['loadProductAlerts', 'loadProductOverview', 'loadProductRankings', 'loadProductFunnel', 'loadProductHealth', 'loadProductDetailPanel'],
-                        ['loadGrowthSummary', 'loadTopContributors', 'loadCommunityChart', 'loadRetentionCohort'],
-                        ['loadPointsFlow', 'loadPointsStats', 'loadPointsDistribution', 'loadPointsLeaderboard', 'loadRedemptionFunnel']
-                    ];
+                    return {
+                        critical: [
+                            ['updateOnlineUsers', 'loadVerifyServiceSummary', 'loadEventFunnelPanels']
+                        ]
+                    };
                 case 'overview':
                 default:
-                    return [
-                        ['updateOnlineUsers', 'loadOverviewStats', 'loadOverviewDutyBoard', 'loadOverviewOperatingNavigator', 'loadOverviewBusinessMix'],
-                        ['loadUserTrendChart', 'loadChannelChart', 'loadGeoDistribution'],
-                        ['loadTopContent', 'loadContentTrendChart', 'loadActivityHeatmap', 'loadConversionFunnel'],
-                        ['loadProductAlerts', 'loadProductOverview', 'loadProductRankings', 'loadProductFunnel', 'loadProductHealth', 'loadProductDetailPanel'],
-                        ['loadOperationsCockpit', 'loadVerifyServiceSummary'],
-                        ['loadGrowthSummary', 'loadTopContributors', 'loadCommunityChart', 'loadRetentionCohort'],
-                        ['loadPointsFlow', 'loadPointsStats', 'loadPointsDistribution', 'loadPointsLeaderboard', 'loadRedemptionFunnel', 'loadEventFunnelPanels']
-                    ];
+                    return {
+                        critical: [
+                            ['updateOnlineUsers', 'loadOverviewStats', 'loadOverviewDutyBoard', 'loadOverviewOperatingNavigator', 'loadOverviewBusinessMix'],
+                            ['loadUserTrendChart', 'loadChannelChart', 'loadGeoDistribution']
+                        ]
+                    };
             }
         })();
         const seenTaskIds = new Set();
-        const phases = phaseTaskIds
-            .map((taskIds) => taskIds
-                .filter((taskId) => Object.prototype.hasOwnProperty.call(taskFactories, taskId))
-                .filter((taskId) => {
-                    if (seenTaskIds.has(taskId)) {
-                        return false;
-                    }
-                    seenTaskIds.add(taskId);
-                    return true;
-                })
-                .map((taskId) => taskFactories[taskId]))
-            .filter((phase) => phase.length > 0);
+        const phaseTaskIds = Array.isArray(phaseTaskConfig) ? phaseTaskConfig : phaseTaskConfig.critical;
+        const deferredPhaseTaskIds = Array.isArray(phaseTaskConfig) ? [] : phaseTaskConfig.deferred;
+        const phases = buildAnalyticsTaskPhases(phaseTaskIds, taskFactories, seenTaskIds);
+        const deferredPhases = buildAnalyticsTaskPhases(deferredPhaseTaskIds, taskFactories, seenTaskIds);
 
-        for (let index = 0; index < phases.length; index += 1) {
-            const phasePromises = phases[index].map((runTask) => Promise.resolve().then(runTask));
-            await Promise.allSettled(phasePromises);
-            updateLastUpdateTime();
-            if (index < phases.length - 1) {
-                await waitForAnalyticsPaint(2);
-            }
+        await runAnalyticsTaskPhases(phases, {
+            requestId,
+            contextKey,
+            activeTabId,
+            stopIfStale: true
+        });
+
+        if (deferredPhases.length > 0) {
+            scheduleAnalyticsDeferredTaskPhases({
+                phases: deferredPhases,
+                requestId,
+                contextKey,
+                activeTabId
+            });
         }
 
         if (activeTabId === 'product-detail') {
@@ -590,6 +698,7 @@ async function reloadAnalyticsDashboard() {
             analyticsRuntime.lastLoadedAt = Date.now();
             analyticsRuntime.lastLoadedContextKey = contextKey;
             analyticsRuntime.lastReloadReason = reason;
+            markAnalyticsTabLoaded(activeTabId, contextKey);
         }
 
         return true;
@@ -602,6 +711,7 @@ async function reloadAnalyticsDashboard() {
     } finally {
         if (analyticsRuntime.reloadPromise === reloadPromise) {
             analyticsRuntime.reloadPromise = null;
+            analyticsRuntime.reloadTabId = '';
         }
     }
 }

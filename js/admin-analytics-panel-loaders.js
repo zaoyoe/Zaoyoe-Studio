@@ -1571,21 +1571,84 @@ function renderAnalyticsProductRankingsSkeleton() {
     return `
         <div class="analytics-product-dashboard analytics-product-dashboard--skeleton" aria-hidden="true">
             ${renderAnalyticsProductSkeletonNotice()}
-            <div class="analytics-product-rank-grid">
-                ${['accent', 'success', 'warning', 'danger', 'warning', 'success'].map((tone) => `
-                    <article class="analytics-product-rank-card analytics-product-rank-card--${escapeHtml(tone)} analytics-product-skeleton__list-card">
-                        <div class="analytics-product-rank-card__head">
+            <div class="analytics-product-rank-board analytics-product-rank-board--skeleton">
+                <div class="analytics-product-rank-board__metric-tabs">
+                    ${['admin-skeleton-w-chip-sm', 'admin-skeleton-w-chip-sm', 'admin-skeleton-w-chip-sm', 'admin-skeleton-w-chip-md', 'admin-skeleton-w-chip-sm'].map((width) => renderAnalyticsProductSkeletonPill(width)).join('')}
+                </div>
+                <div class="analytics-product-rank-board__body">
+                    <section class="analytics-product-rank-board__chart">
+                        <div class="analytics-product-rank-board__panel-head">
+                            <div class="analytics-product-skeleton__stack analytics-product-skeleton__stack--tight">
+                                ${renderAnalyticsProductDetailSkeletonBlock('admin-skeleton-block--title admin-skeleton-w-30')}
+                                ${renderAnalyticsProductDetailSkeletonBlock('admin-skeleton-block--line admin-skeleton-w-70')}
+                            </div>
+                            ${renderAnalyticsProductSkeletonPill('admin-skeleton-w-chip-xs')}
+                        </div>
+                        <div class="analytics-product-rank-board__panel-note">
+                            ${renderAnalyticsProductDetailSkeletonBlock('admin-skeleton-block--line admin-skeleton-w-full')}
+                        </div>
+                        <div class="analytics-product-rank-board__bars">
+                            ${Array.from({ length: 6 }, () => `
+                                <div class="analytics-product-rank-board__bar-row analytics-product-rank-board__bar-row--success analytics-product-rank-board__bar-row--skeleton">
+                                    <span class="analytics-product-rank-board__bar-rank">
+                                        ${renderAnalyticsProductDetailSkeletonBlock('admin-skeleton-block--tiny admin-skeleton-w-20')}
+                                    </span>
+                                    <span class="analytics-product-rank-board__bar-main analytics-product-skeleton__stack analytics-product-skeleton__stack--tight">
+                                        <span class="analytics-product-rank-board__bar-top">
+                                            ${renderAnalyticsProductDetailSkeletonBlock('admin-skeleton-block--title admin-skeleton-w-40')}
+                                            ${renderAnalyticsProductDetailSkeletonBlock('admin-skeleton-block--line admin-skeleton-w-20')}
+                                        </span>
+                                        <span class="analytics-product-rank-board__bar-track">
+                                            <span class="analytics-product-rank-board__bar-fill analytics-product-rank-board__bar-fill--skeleton"></span>
+                                        </span>
+                                        ${renderAnalyticsProductDetailSkeletonBlock('admin-skeleton-block--line admin-skeleton-w-60')}
+                                    </span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </section>
+                    <aside class="analytics-product-rank-board__inspector">
+                        <div class="analytics-product-rank-board__panel-head analytics-product-rank-board__panel-head--stack analytics-product-skeleton__stack analytics-product-skeleton__stack--tight">
+                            ${renderAnalyticsProductDetailSkeletonBlock('admin-skeleton-block--line admin-skeleton-w-20')}
+                            ${renderAnalyticsProductDetailSkeletonBlock('admin-skeleton-block--title admin-skeleton-w-40')}
+                            ${renderAnalyticsProductDetailSkeletonBlock('admin-skeleton-block--line admin-skeleton-w-30')}
+                        </div>
+                        <div class="analytics-product-rank-board__hero">
+                            <div class="analytics-product-rank-board__hero-top">
+                                ${renderAnalyticsProductSkeletonPill('admin-skeleton-w-chip-xs')}
+                                ${renderAnalyticsProductDetailSkeletonBlock('admin-skeleton-block--line admin-skeleton-w-20')}
+                            </div>
                             ${renderAnalyticsProductDetailSkeletonBlock('admin-skeleton-block--title admin-skeleton-w-30')}
+                            ${renderAnalyticsProductDetailSkeletonBlock('admin-skeleton-block--line admin-skeleton-w-70')}
                         </div>
-                        <div class="analytics-product-rank-list">
-                            ${Array.from({ length: 4 }, () => renderAnalyticsProductSkeletonRankRow()).join('')}
+                        <div class="analytics-product-rank-board__chip-list">
+                            ${['admin-skeleton-w-chip-sm', 'admin-skeleton-w-chip-sm', 'admin-skeleton-w-chip-sm'].map((width) => renderAnalyticsProductSkeletonPill(width)).join('')}
                         </div>
-                    </article>
-                `).join('')}
-            </div>
-            <div class="analytics-product-actions analytics-product-skeleton__actions">
-                ${renderAnalyticsProductSkeletonAction('admin-skeleton-w-chip-sm')}
-                ${renderAnalyticsProductSkeletonAction('admin-skeleton-w-chip-sm')}
+                        <div class="analytics-product-rank-board__guidance analytics-product-skeleton__guidance">
+                            ${renderAnalyticsProductDetailSkeletonBlock('admin-skeleton-block--line admin-skeleton-w-30')}
+                            ${renderAnalyticsProductDetailSkeletonBlock('admin-skeleton-block--line admin-skeleton-w-full')}
+                            ${renderAnalyticsProductDetailSkeletonBlock('admin-skeleton-block--line admin-skeleton-w-70')}
+                        </div>
+                        <div class="analytics-product-rank-board__compare-list">
+                            ${Array.from({ length: 5 }, () => `
+                                <div class="analytics-product-rank-board__compare-row analytics-product-rank-board__compare-row--success">
+                                    <span class="analytics-product-rank-board__compare-rank">
+                                        ${renderAnalyticsProductDetailSkeletonBlock('admin-skeleton-block--tiny admin-skeleton-w-20')}
+                                    </span>
+                                    <span class="analytics-product-rank-board__compare-main analytics-product-skeleton__stack analytics-product-skeleton__stack--tight">
+                                        ${renderAnalyticsProductDetailSkeletonBlock('admin-skeleton-block--title admin-skeleton-w-40')}
+                                        ${renderAnalyticsProductDetailSkeletonBlock('admin-skeleton-block--line admin-skeleton-w-30')}
+                                    </span>
+                                    ${renderAnalyticsProductDetailSkeletonBlock('admin-skeleton-block--line admin-skeleton-w-20')}
+                                </div>
+                            `).join('')}
+                        </div>
+                        <div class="analytics-product-actions analytics-product-skeleton__actions">
+                            ${renderAnalyticsProductSkeletonAction('admin-skeleton-w-chip-sm')}
+                            ${renderAnalyticsProductSkeletonAction('admin-skeleton-w-chip-sm')}
+                        </div>
+                    </aside>
+                </div>
             </div>
         </div>
     `;
@@ -3761,6 +3824,46 @@ function destroyAnalyticsProductOverviewChart(key = '') {
     state[key] = null;
 }
 
+function getAnalyticsProductRankingBoardState() {
+    if (!globalThis.__analyticsProductRankingBoardState || typeof globalThis.__analyticsProductRankingBoardState !== 'object') {
+        globalThis.__analyticsProductRankingBoardState = {
+            metricKey: '',
+            focusedRowKeysByMetric: {}
+        };
+    }
+
+    const state = globalThis.__analyticsProductRankingBoardState;
+    if (!state.focusedRowKeysByMetric || typeof state.focusedRowKeysByMetric !== 'object' || Array.isArray(state.focusedRowKeysByMetric)) {
+        state.focusedRowKeysByMetric = {};
+    }
+    return state;
+}
+
+function setActiveAnalyticsProductRankingMetric(metricKey = '') {
+    const state = getAnalyticsProductRankingBoardState();
+    state.metricKey = String(metricKey || '').trim();
+    return state;
+}
+
+function toggleActiveAnalyticsProductRankingFocus(metricKey = '', focusKey = '') {
+    const state = getAnalyticsProductRankingBoardState();
+    const normalizedMetricKey = String(metricKey || '').trim();
+    const normalizedFocusKey = String(focusKey || '').trim();
+    if (!normalizedMetricKey) {
+        return state;
+    }
+
+    if (!normalizedFocusKey) {
+        delete state.focusedRowKeysByMetric[normalizedMetricKey];
+        return state;
+    }
+
+    state.focusedRowKeysByMetric[normalizedMetricKey] = state.focusedRowKeysByMetric[normalizedMetricKey] === normalizedFocusKey
+        ? ''
+        : normalizedFocusKey;
+    return state;
+}
+
 function renderAnalyticsProductCategoryBreakdown(payload = {}) {
     const rows = Array.isArray(payload?.rows) ? payload.rows : [];
     const visibleRows = rows.slice(0, 6);
@@ -4333,6 +4436,472 @@ function buildAnalyticsProductRankMetaItems(row = {}, metaFormatter = null) {
         .filter(Boolean);
 }
 
+const ANALYTICS_PRODUCT_RANK_METRIC_ORDER = [
+    'gmvTop',
+    'salesTop',
+    'conversionTop',
+    'contentDrivenTop',
+    'refundRateTop',
+    'deliveryRiskRateTop',
+    'highExposureLowConversion'
+];
+
+function getAnalyticsProductRankMetricCatalog() {
+    return {
+        gmvTop: {
+            key: 'gmvTop',
+            shortLabel: '收入',
+            title: '收入 Top',
+            tone: 'success',
+            emptyMessage: '当前窗口暂无收入榜',
+            description: '按商品贡献 GMV 排序，先看当前窗口真正的营收主力。',
+            ctaLabel: '查看单品详情',
+            metricValue: (row) => Number(row?.gmv_points || 0),
+            metricText: (row) => `${formatNumber(row?.gmv_points || 0)} 积分`,
+            summaryText: (row) => `销量 ${formatNumber(row?.units_sold || 0)} 件 · 买家 ${formatNumber(row?.buyer_count || 0)}`,
+            metaFormatter: (row) => [
+                row.category || '未分类',
+                `订单 ${formatNumber(row?.order_count || 0)} 单`,
+                `买家 ${formatNumber(row?.buyer_count || 0)}`,
+                `转化 ${formatPercent(row?.conversion_rate || 0)}`
+            ],
+            guidanceBuilder: (row) => buildAnalyticsProductListGuidance(row, {
+                tone: 'success',
+                reason: () => `当前贡献 GMV ${formatNumber(row?.gmv_points || 0)}，同时成交 ${formatNumber(row?.order_count || 0)} 单，是当前窗口的主力收入商品。`,
+                recommendation: () => '先看单品详情里的来源、漏斗和订单承接，确认这波放量是稳定成交，还是依赖某个临时入口。',
+                verification: () => '继续回看收入榜和单品趋势，确认 GMV 与订单是否还保持在高位。'
+            }),
+            detailContext: () => ({})
+        },
+        salesTop: {
+            key: 'salesTop',
+            shortLabel: '销量',
+            title: '销量 Top',
+            tone: 'accent',
+            emptyMessage: '当前窗口暂无销量榜',
+            description: '按成交件数排序，适合看最近放量最快的商品。',
+            ctaLabel: '查看单品详情',
+            metricValue: (row) => Number(row?.units_sold || 0),
+            metricText: (row) => `${formatNumber(row?.units_sold || 0)} 件`,
+            summaryText: (row) => `支付 ${formatNumber(row?.order_count || 0)} 单 · GMV ${formatNumber(row?.gmv_points || 0)} 积分`,
+            metaFormatter: (row) => [
+                row.category || '未分类',
+                `订单 ${formatNumber(row?.order_count || 0)} 单`,
+                `GMV ${formatNumber(row?.gmv_points || 0)} 积分`,
+                `买家 ${formatNumber(row?.buyer_count || 0)}`
+            ],
+            guidanceBuilder: (row) => buildAnalyticsProductListGuidance(row, {
+                tone: 'accent',
+                reason: () => `当前销量 ${formatNumber(row?.units_sold || 0)} 件，支付 ${formatNumber(row?.order_count || 0)} 单，是当前窗口最明显的放量商品之一。`,
+                recommendation: () => '先确认是曝光扩量带来的自然增长，还是短时活动推高了成交，再决定要不要继续放量。',
+                verification: () => '继续回看销量榜、订单量和单品趋势，确认放量是否能持续而不是瞬时冲高。'
+            }),
+            detailContext: () => ({})
+        },
+        conversionTop: {
+            key: 'conversionTop',
+            shortLabel: '转化',
+            title: '转化 Top',
+            tone: 'warning',
+            emptyMessage: '当前窗口暂无转化榜',
+            description: '按浏览到购买转化率排序，适合看成交效率最强的商品。',
+            ctaLabel: '查看转化详情',
+            metricValue: (row) => Number(row?.conversion_rate || 0),
+            metricText: (row) => `${formatPercent(row?.conversion_rate || 0)}`,
+            summaryText: (row) => `浏览用户 ${formatNumber(row?.view_user_count || 0)} · 买家 ${formatNumber(row?.buyer_count || 0)}`,
+            metaFormatter: (row) => [
+                row.category || '未分类',
+                `浏览用户 ${formatNumber(row?.view_user_count || 0)}`,
+                `买家 ${formatNumber(row?.buyer_count || 0)}`,
+                `GMV ${formatNumber(row?.gmv_points || 0)} 积分`
+            ],
+            guidanceBuilder: (row) => buildAnalyticsProductListGuidance(row, {
+                tone: 'warning',
+                reason: () => `当前转化 ${formatPercent(row?.conversion_rate || 0)}，浏览用户 ${formatNumber(row?.view_user_count || 0)}，这件商品的成交效率明显更高。`,
+                recommendation: () => '适合继续看流量来源和商品页承接，确认高转化是否来自稳定人群，便于复制到同类商品。',
+                verification: () => '后续回看转化榜和浏览到支付漏斗，确认转化率能否继续稳定。'
+            }),
+            detailContext: () => ({})
+        },
+        contentDrivenTop: {
+            key: 'contentDrivenTop',
+            shortLabel: '带货',
+            title: '内容带货 Top',
+            tone: 'success',
+            emptyMessage: '当前窗口暂无内容带货商品',
+            description: '按内容归因 GMV 排序，适合看当前最会带货的商品。',
+            ctaLabel: '查看带货拆解',
+            metricValue: (row) => Number(row?.content_assisted_gmv_points || 0),
+            metricText: (row) => `${formatNumber(row?.content_assisted_gmv_points || 0)} 积分`,
+            summaryText: (row) => `归因支付 ${formatNumber(row?.content_assisted_purchase_success_count || 0)} 单 · Prompt ${String(row?.top_prompt_id || '暂无归因').trim() || '暂无归因'}`,
+            metaFormatter: (row) => [
+                row.category || '未分类',
+                row.top_prompt_id ? `主 Prompt ${row.top_prompt_id}` : '暂无 Prompt 归因',
+                `归因支付 ${formatNumber(row?.content_assisted_purchase_success_count || 0)} 单`,
+                `详情触达 ${formatNumber(row?.content_assisted_detail_view_count || 0)} 次`
+            ],
+            guidanceBuilder: (row) => buildAnalyticsProductListGuidance(row, {
+                tone: 'success',
+                reason: () => `当前内容带货 GMV ${formatNumber(row?.content_assisted_gmv_points || 0)}，归因支付 ${formatNumber(row?.content_assisted_purchase_success_count || 0)} 单。`,
+                recommendation: () => '先看来源 Prompt 与带货链路，确认是单一爆款内容带动，还是多个内容入口都在稳定承接。',
+                verification: () => '继续回看内容带货榜与单品详情，确认归因 GMV 和归因支付是否还在持续。'
+            }),
+            detailContext: () => ({
+                detailFocus: 'content-attribution',
+                focusTargetId: 'productContentBreakdownSection'
+            })
+        },
+        refundRateTop: {
+            key: 'refundRateTop',
+            shortLabel: '退款',
+            title: '退款率 Top',
+            tone: 'danger',
+            emptyMessage: '当前窗口暂无退款风险商品',
+            description: '按退款率排序，适合优先复查售后风险最高的商品。',
+            ctaLabel: '查看退款拆解',
+            metricValue: (row) => Number(row?.refund_rate || 0),
+            metricText: (row) => `${formatPercent(row?.refund_rate || 0)}`,
+            summaryText: (row) => `退款 ${formatNumber(row?.refunded_order_count || 0)} 单 · 总单 ${formatNumber((row?.order_count || 0) + (row?.refunded_order_count || 0))} 单`,
+            metaFormatter: (row) => [
+                row.category || '未分类',
+                `退款 ${formatNumber(row?.refunded_order_count || 0)} 单`,
+                `总单 ${formatNumber((row?.order_count || 0) + (row?.refunded_order_count || 0))} 单`,
+                `转化 ${formatPercent(row?.conversion_rate || 0)}`
+            ],
+            guidanceBuilder: (row) => buildAnalyticsProductListGuidance(row, {
+                tone: 'danger',
+                reason: () => `退款率 ${formatPercent(row?.refund_rate || 0)}，退款 ${formatNumber(row?.refunded_order_count || 0)} 单，当前属于售后风险最高的一批商品。`,
+                recommendation: () => '先看退款状态拆解和近期订单，确认问题是商品本身、支付链路还是履约体验引起的。',
+                verification: () => '处理后回到榜单与单品详情，确认退款率、退款单量是否同步回落。'
+            }),
+            detailContext: () => ({
+                detailFocus: 'refund-risk',
+                focusTargetId: 'productRiskBreakdownSection'
+            })
+        },
+        deliveryRiskRateTop: {
+            key: 'deliveryRiskRateTop',
+            shortLabel: '履约',
+            title: '履约异常率 Top',
+            tone: 'warning',
+            emptyMessage: '当前窗口暂无履约异常商品',
+            description: '按履约异常率排序，适合优先看交付压力最大的商品。',
+            ctaLabel: '查看履约拆解',
+            metricValue: (row) => Number(row?.delivery_risk_rate || 0),
+            metricText: (row) => `${formatPercent(row?.delivery_risk_rate || 0)}`,
+            summaryText: (row) => `风险 ${formatNumber(row?.delivery_risk_count || 0)} 单 · 支付 ${formatNumber(row?.order_count || 0)} 单`,
+            metaFormatter: (row) => [
+                row.category || '未分类',
+                `风险 ${formatNumber(row?.delivery_risk_count || 0)} 单`,
+                `支付 ${formatNumber(row?.order_count || 0)} 单`,
+                `发货成功 ${formatPercent(row?.delivery_success_rate || 0)}`
+            ],
+            guidanceBuilder: (row) => buildAnalyticsProductListGuidance(row, {
+                tone: 'warning',
+                reason: () => `履约风险率 ${formatPercent(row?.delivery_risk_rate || 0)}，风险 ${formatNumber(row?.delivery_risk_count || 0)} 单，当前交付压力最明显。`,
+                recommendation: () => '先看履约状态拆解和订单链路，确认是待重试、死信还是待解锁拉高了风险。',
+                verification: () => '处理后继续回看履约异常榜与单品详情，确认风险率和风险单量是否一起回落。'
+            }),
+            detailContext: () => ({
+                detailFocus: 'delivery-risk',
+                focusTargetId: 'productRiskBreakdownSection'
+            })
+        },
+        highExposureLowConversion: {
+            key: 'highExposureLowConversion',
+            shortLabel: '低转化',
+            title: '高曝光低转化',
+            tone: 'danger',
+            emptyMessage: '当前窗口暂无结构风险商品',
+            description: '按低转化分排序，适合看曝光被浪费最明显的商品。',
+            ctaLabel: '查看漏斗详情',
+            metricValue: (row) => Number(row?.low_conversion_score || 0),
+            metricText: (row) => `低转化分 ${formatNumber(row?.low_conversion_score || 0)}`,
+            summaryText: (row) => `浏览用户 ${formatNumber(row?.view_user_count || 0)} · 转化 ${formatPercent(row?.conversion_rate || 0)}`,
+            metaFormatter: (row) => [
+                row.category || '未分类',
+                `浏览用户 ${formatNumber(row?.view_user_count || 0)}`,
+                `转化 ${formatPercent(row?.conversion_rate || 0)}`,
+                `买家 ${formatNumber(row?.buyer_count || 0)}`
+            ],
+            guidanceBuilder: (row) => buildAnalyticsProductListGuidance(row, {
+                tone: 'danger',
+                reason: () => `浏览用户 ${formatNumber(row?.view_user_count || 0)}、转化 ${formatPercent(row?.conversion_rate || 0)}，这件商品当前是最典型的高曝光低转化样本。`,
+                recommendation: () => '先看详情到意图、意图到支付哪一段掉得最明显，再决定是优化商品页、内容入口还是支付承接。',
+                verification: () => '处理后确认它是否脱离高曝光低转化榜，同时转化率出现明确回升。'
+            }),
+            detailContext: () => ({})
+        }
+    };
+}
+
+function buildAnalyticsProductRankFocusKey(row = {}, index = 0) {
+    return String(row?.product_id || row?.productId || row?.product_name || row?.productName || `row-${index + 1}`).trim();
+}
+
+function getResolvedAnalyticsProductRankMetricKey(payloads = {}, metricOptions = []) {
+    const boardState = getAnalyticsProductRankingBoardState();
+    const normalizedMetricKey = String(boardState.metricKey || '').trim();
+    if (normalizedMetricKey && metricOptions.some((item) => item.key === normalizedMetricKey && item.hasData)) {
+        return normalizedMetricKey;
+    }
+
+    const firstAvailable = metricOptions.find((item) => item.hasData);
+    return firstAvailable?.key || metricOptions[0]?.key || 'gmvTop';
+}
+
+function getResolvedAnalyticsProductRankFocusKey(metricKey = '', rows = []) {
+    const boardState = getAnalyticsProductRankingBoardState();
+    const currentFocusKey = String(boardState.focusedRowKeysByMetric?.[metricKey] || '').trim();
+    return currentFocusKey && rows.some((row) => row.focusKey === currentFocusKey)
+        ? currentFocusKey
+        : '';
+}
+
+function buildAnalyticsProductRankMetricOptions(payloads = {}) {
+    const catalog = getAnalyticsProductRankMetricCatalog();
+    return ANALYTICS_PRODUCT_RANK_METRIC_ORDER.map((key) => {
+        const rows = Array.isArray(payloads?.[key]) ? payloads[key] : [];
+        return {
+            ...catalog[key],
+            count: rows.length,
+            hasData: rows.length > 0
+        };
+    });
+}
+
+function buildAnalyticsProductRankingsModel(payloads = {}) {
+    const metricOptions = buildAnalyticsProductRankMetricOptions(payloads);
+    const metricKey = getResolvedAnalyticsProductRankMetricKey(payloads, metricOptions);
+    const activeMetric = metricOptions.find((item) => item.key === metricKey) || metricOptions[0] || null;
+    const sourceRows = activeMetric && Array.isArray(payloads?.[activeMetric.key])
+        ? payloads[activeMetric.key].slice(0, 8)
+        : [];
+    const resolvedFocusKey = getResolvedAnalyticsProductRankFocusKey(activeMetric?.key || '', sourceRows.map((row, index) => ({
+        focusKey: buildAnalyticsProductRankFocusKey(row, index)
+    })));
+    const hasFocus = Boolean(resolvedFocusKey);
+    const maxMetricValue = Math.max(
+        1,
+        ...sourceRows.map((row) => Math.max(0, Number(activeMetric?.metricValue?.(row) || 0)))
+    );
+    const rows = sourceRows.map((row, index) => {
+        const focusKey = buildAnalyticsProductRankFocusKey(row, index);
+        const metricValue = Math.max(0, Number(activeMetric?.metricValue?.(row) || 0));
+        const barWidth = metricValue > 0
+            ? Math.max((metricValue / maxMetricValue) * 100, 8)
+            : 0;
+        const metaItems = buildAnalyticsProductRankMetaItems(row, activeMetric?.metaFormatter).slice(0, 4);
+        return {
+            raw: row,
+            focusKey,
+            productId: String(row?.product_id || '').trim(),
+            productName: String(row?.product_name || '未命名商品').trim() || '未命名商品',
+            rank: index + 1,
+            metricValue,
+            metricText: activeMetric?.metricText?.(row) || '--',
+            summaryText: activeMetric?.summaryText?.(row) || '',
+            metaItems,
+            barWidth,
+            isActive: hasFocus && focusKey === resolvedFocusKey,
+            isMuted: hasFocus && focusKey !== resolvedFocusKey
+        };
+    });
+    const activeRow = rows.find((row) => row.focusKey === resolvedFocusKey) || rows[0] || null;
+    const guidance = activeRow ? activeMetric?.guidanceBuilder?.(activeRow.raw) : null;
+    const hasOrderBackedRows = [
+        payloads?.salesTop,
+        payloads?.gmvTop,
+        payloads?.refundRateTop,
+        payloads?.deliveryRiskRateTop,
+        payloads?.contentDrivenTop
+    ].some((segmentRows) => Array.isArray(segmentRows) && segmentRows.length > 0);
+
+    return {
+        metricOptions,
+        activeMetric,
+        rows,
+        activeRow,
+        guidance,
+        hasFocus,
+        note: activeRow
+            ? (
+                hasFocus
+                    ? `已聚焦 ${activeRow.productName}，其它商品保留排序但会淡化，便于看清当前主角。`
+                    : `当前按 ${activeMetric?.title || '商品榜单'} 排序，点击条形或右侧榜单即可聚焦单个商品。`
+            )
+            : '当前窗口暂无商品榜单数据。',
+        notice: hasOrderBackedRows
+            ? ''
+            : '当前窗口暂无成交订单，因此销量、收入、退款率与履约异常榜为空；可优先查看商品漏斗和高曝光低转化商品。'
+    };
+}
+
+function buildAnalyticsProductRankDetailContext(metricKey = '', row = {}) {
+    const catalog = getAnalyticsProductRankMetricCatalog();
+    const metricConfig = catalog[metricKey] || {};
+    return Object.assign({
+        productId: String(row?.product_id || '').trim(),
+        productName: String(row?.product_name || '').trim(),
+        sectionId: 'productDetailPanelSection',
+        focusTargetId: 'productDetailPanelSection'
+    }, typeof metricConfig.detailContext === 'function' ? metricConfig.detailContext(row) : {});
+}
+
+function renderAnalyticsProductRankingMetricTabs(model = {}) {
+    return `
+        <div class="analytics-product-rank-board__metric-tabs">
+            ${(Array.isArray(model.metricOptions) ? model.metricOptions : []).map((metric) => `
+                <button
+                    type="button"
+                    class="analytics-product-rank-board__metric-btn analytics-product-rank-board__metric-btn--${escapeHtml(metric.tone || 'neutral')}${model.activeMetric?.key === metric.key ? ' is-active' : ''}${metric.hasData ? '' : ' is-disabled'}"
+                    data-analytics-product-rank-metric="${escapeHtml(metric.key)}"
+                    ${metric.hasData ? '' : 'disabled'}
+                >
+                    <span>${escapeHtml(metric.shortLabel || metric.title || '榜单')}</span>
+                    <span class="analytics-product-rank-board__metric-count">${escapeHtml(formatNumber(metric.count || 0))}</span>
+                </button>
+            `).join('')}
+        </div>
+    `;
+}
+
+function renderAnalyticsProductRankingBars(model = {}) {
+    const activeMetric = model.activeMetric || {};
+    return `
+        <div class="analytics-product-rank-board__bars">
+            ${(Array.isArray(model.rows) ? model.rows : []).map((row) => `
+                <button
+                    type="button"
+                    class="analytics-product-rank-board__bar-row analytics-product-rank-board__bar-row--${escapeHtml(activeMetric.tone || 'neutral')}${row.isActive ? ' is-active' : ''}${row.isMuted ? ' is-muted' : ''}"
+                    data-analytics-product-rank-focus-key="${escapeHtml(row.focusKey)}"
+                    data-analytics-product-rank-focus-metric="${escapeHtml(activeMetric.key || '')}"
+                    style="--analytics-product-rank-bar-width:${Math.min(100, Math.max(0, row.barWidth || 0)).toFixed(2)}%;"
+                    aria-pressed="${row.isActive ? 'true' : 'false'}"
+                >
+                    <span class="analytics-product-rank-board__bar-rank">#${escapeHtml(formatNumber(row.rank || 0))}</span>
+                    <span class="analytics-product-rank-board__bar-main">
+                        <span class="analytics-product-rank-board__bar-top">
+                            <strong title="${escapeHtml(row.productName)}">${escapeHtml(row.productName)}</strong>
+                            <span>${escapeHtml(row.metricText)}</span>
+                        </span>
+                        <span class="analytics-product-rank-board__bar-track">
+                            <span class="analytics-product-rank-board__bar-fill"></span>
+                        </span>
+                        <span class="analytics-product-rank-board__bar-meta">${escapeHtml(row.summaryText)}</span>
+                    </span>
+                </button>
+            `).join('')}
+        </div>
+    `;
+}
+
+function renderAnalyticsProductRankingCompareList(model = {}) {
+    const activeMetric = model.activeMetric || {};
+    return `
+        <div class="analytics-product-rank-board__compare-list">
+            ${(Array.isArray(model.rows) ? model.rows : []).map((row) => `
+                <button
+                    type="button"
+                    class="analytics-product-rank-board__compare-row analytics-product-rank-board__compare-row--${escapeHtml(activeMetric.tone || 'neutral')}${row.isActive ? ' is-active' : ''}${row.isMuted ? ' is-muted' : ''}"
+                    data-analytics-product-rank-focus-key="${escapeHtml(row.focusKey)}"
+                    data-analytics-product-rank-focus-metric="${escapeHtml(activeMetric.key || '')}"
+                    aria-pressed="${row.isActive ? 'true' : 'false'}"
+                >
+                    <span class="analytics-product-rank-board__compare-rank">#${escapeHtml(formatNumber(row.rank || 0))}</span>
+                    <span class="analytics-product-rank-board__compare-main">
+                        <strong title="${escapeHtml(row.productName)}">${escapeHtml(row.productName)}</strong>
+                        <span>${escapeHtml(row.metaItems[0] || row.summaryText || '当前榜单商品')}</span>
+                    </span>
+                    <span class="analytics-product-rank-board__compare-metric">${escapeHtml(row.metricText)}</span>
+                </button>
+            `).join('')}
+        </div>
+    `;
+}
+
+function renderAnalyticsProductRankings(payloads = {}) {
+    const model = buildAnalyticsProductRankingsModel(payloads);
+    const activeMetric = model.activeMetric || {};
+    const activeRow = model.activeRow || null;
+    const detailContext = activeRow ? buildAnalyticsProductRankDetailContext(activeMetric.key, activeRow.raw) : null;
+    const detailButtonAttrs = detailContext
+        ? buildAnalyticsProductDestinationAttrs('analytics-product-detail', detailContext)
+        : '';
+    const activeGuidance = model.guidance || null;
+
+    return `
+        ${renderAnalyticsProductWindowStatusNotice(model.notice, 'warning')}
+        <div class="analytics-product-rank-board">
+            ${renderAnalyticsProductRankingMetricTabs(model)}
+            <div class="analytics-product-rank-board__body">
+                <section class="analytics-product-rank-board__chart analytics-product-rank-board__chart--${escapeHtml(activeMetric.tone || 'neutral')}">
+                    <div class="analytics-product-rank-board__panel-head">
+                        <div>
+                            <strong>${escapeHtml(activeMetric.title || '商品榜单')}</strong>
+                            <p>${escapeHtml(activeMetric.description || '按当前窗口排序展示商品表现。')}</p>
+                        </div>
+                        <span class="analytics-product-rank-board__meta">Top ${escapeHtml(formatNumber(model.rows.length || 0))}</span>
+                    </div>
+                    <div class="analytics-product-rank-board__panel-note">${escapeHtml(model.note || '')}</div>
+                    ${renderAnalyticsProductRankingBars(model)}
+                </section>
+                <aside class="analytics-product-rank-board__inspector analytics-product-rank-board__inspector--${escapeHtml(activeMetric.tone || 'neutral')}">
+                    <div class="analytics-product-rank-board__panel-head analytics-product-rank-board__panel-head--stack">
+                        <div>
+                            <span class="analytics-product-rank-board__eyebrow">${escapeHtml(model.hasFocus ? '聚焦商品' : '榜首商品')}</span>
+                            <strong>${escapeHtml(activeRow?.productName || '当前商品')}</strong>
+                            <p>${escapeHtml(activeMetric.title || '商品榜单')}</p>
+                        </div>
+                    </div>
+                    ${activeRow ? `
+                        <div class="analytics-product-rank-board__hero analytics-product-rank-board__hero--${escapeHtml(activeMetric.tone || 'neutral')}">
+                            <div class="analytics-product-rank-board__hero-top">
+                                <span class="analytics-status-chip analytics-status-chip--${escapeHtml(activeMetric.tone || 'neutral')}">#${escapeHtml(formatNumber(activeRow.rank || 0))}</span>
+                                <span>${escapeHtml(activeMetric.shortLabel || activeMetric.title || '当前指标')}</span>
+                            </div>
+                            <strong>${escapeHtml(activeRow.metricText)}</strong>
+                            <span>${escapeHtml(activeRow.summaryText || '当前榜单暂无补充说明')}</span>
+                        </div>
+                        <div class="analytics-product-rank-board__chip-list">
+                            ${activeRow.metaItems.map((item) => `<span class="analytics-product-rank-board__chip">${escapeHtml(item)}</span>`).join('')}
+                        </div>
+                    ` : ''}
+                    ${activeGuidance ? `
+                        <div class="analytics-product-rank-board__guidance">
+                            <div class="analytics-product-rank-board__guidance-item">
+                                <span>经营判断</span>
+                                <p>${escapeHtml(activeGuidance.reason || '当前商品在这组榜单里排位靠前，值得继续观察。')}</p>
+                            </div>
+                            <div class="analytics-product-rank-board__guidance-item">
+                                <span>下一步建议</span>
+                                <p>${escapeHtml(activeGuidance.recommendation || '建议进入单品详情继续拆解来源、漏斗和订单承接。')}</p>
+                            </div>
+                        </div>
+                    ` : ''}
+                    <div class="analytics-product-rank-board__compare">
+                        <div class="analytics-product-rank-board__compare-head">
+                            <strong>同榜对比</strong>
+                            <span>点击任一商品切换聚焦</span>
+                        </div>
+                        ${renderAnalyticsProductRankingCompareList(model)}
+                    </div>
+                    <div class="analytics-product-rank-board__actions">
+                        ${detailButtonAttrs ? `
+                            <button type="button" class="btn-sm btn-secondary" ${detailButtonAttrs}>
+                                <i class="fas fa-up-right-from-square"></i> ${escapeHtml(activeMetric.ctaLabel || '查看单品详情')}
+                            </button>
+                        ` : ''}
+                        <button type="button" class="btn-sm btn-secondary" ${buildAnalyticsProductDestinationAttrs('shop-products', { tab: 'products' })}>
+                            <i class="fas fa-boxes-stacked"></i> 看商品池
+                        </button>
+                    </div>
+                </aside>
+            </div>
+        </div>
+    `;
+}
+
 function getAnalyticsProductDetailFocusConfig(detailFocus = '', summary = {}) {
     const normalizedFocus = String(detailFocus || '').trim().toLowerCase();
     if (!normalizedFocus) {
@@ -4574,133 +5143,6 @@ function renderAnalyticsProductRankSection(title = '', rows = [], emptyMessage =
                 }).join('')}
             </div>
         </article>
-    `;
-}
-
-function renderAnalyticsProductRankings(payloads = {}) {
-    const hasOrderBackedRows = [
-        payloads.salesTop,
-        payloads.gmvTop,
-        payloads.refundRateTop,
-        payloads.deliveryRiskRateTop,
-        payloads.contentDrivenTop
-    ].some((rows) => Array.isArray(rows) && rows.length > 0);
-
-    const rankingNotice = hasOrderBackedRows
-        ? ''
-        : '当前窗口暂无成交订单，因此销量、收入、退款率与履约异常榜为空；可优先查看商品漏斗和高曝光低转化商品。';
-
-    return `
-        ${renderAnalyticsProductWindowStatusNotice(rankingNotice, 'warning')}
-        <div class="analytics-product-rank-grid">
-            ${renderAnalyticsProductRankSection('销量 Top', payloads.salesTop, '当前窗口暂无销量榜', (row) => `${formatNumber(row.units_sold || 0)} 件`, 'accent')}
-            ${renderAnalyticsProductRankSection('收入 Top', payloads.gmvTop, '当前窗口暂无收入榜', (row) => `${formatNumber(row.gmv_points || 0)} 积分`, 'success')}
-            ${renderAnalyticsProductRankSection('转化 Top', payloads.conversionTop, '当前窗口暂无转化榜', (row) => `${formatPercent(row.conversion_rate || 0)}`, 'warning')}
-            ${renderAnalyticsProductRankSection(
-                '退款率 Top',
-                payloads.refundRateTop,
-                '当前窗口暂无退款风险商品',
-                (row) => `${formatPercent(row.refund_rate || 0)}`,
-                'danger',
-                {
-                    nameButtonOptions: (row) => ({
-                        detailContext: {
-                            detailFocus: 'refund-risk',
-                            focusTargetId: 'productRiskBreakdownSection'
-                        },
-                        title: `查看 ${row.product_name || '商品'} 的退款风险拆解`
-                    }),
-                    guidanceBuilder: (row) => buildAnalyticsProductListGuidance(row, {
-                        tone: 'danger',
-                        reason: () => `退款率 ${formatPercent(row.refund_rate || 0)}，退款 ${formatNumber(row.refunded_order_count || 0)} 单，当前是退款风险最高的一批商品。`,
-                        recommendation: () => '先看退款状态拆解和售后问题摘要，确认是商品问题、支付问题还是履约问题引发退款。',
-                        verification: () => '处理后回到榜单和单品详情，确认退款率、退款单量以及售后回写是否同步回落。'
-                    }),
-                    metaFormatter: (row) => [
-                        row.category || '未分类',
-                        `退款 ${formatNumber(row.refunded_order_count || 0)} 单`,
-                        `总单量 ${formatNumber((row.order_count || 0) + (row.refunded_order_count || 0))} 单`
-                    ]
-                }
-            )}
-            ${renderAnalyticsProductRankSection(
-                '履约异常率 Top',
-                payloads.deliveryRiskRateTop,
-                '当前窗口暂无履约异常商品',
-                (row) => `${formatPercent(row.delivery_risk_rate || 0)}`,
-                'warning',
-                {
-                    nameButtonOptions: (row) => ({
-                        detailContext: {
-                            detailFocus: 'delivery-risk',
-                            focusTargetId: 'productRiskBreakdownSection'
-                        },
-                        title: `查看 ${row.product_name || '商品'} 的履约异常拆解`
-                    }),
-                    guidanceBuilder: (row) => buildAnalyticsProductListGuidance(row, {
-                        tone: 'warning',
-                        reason: () => `履约风险率 ${formatPercent(row.delivery_risk_rate || 0)}，风险 ${formatNumber(row.delivery_risk_count || 0)} 单，当前是履约压力最高的一批商品。`,
-                        recommendation: () => '先看履约状态拆解和履约问题列表，确认是死信、待重试还是待解锁拉高了风险。',
-                        verification: () => '处理后确认履约风险率、风险订单数和履约回写是否一起回落。'
-                    }),
-                    metaFormatter: (row) => [
-                        row.category || '未分类',
-                        `风险 ${formatNumber(row.delivery_risk_count || 0)} 单`,
-                        `支付 ${formatNumber(row.order_count || 0)} 单`
-                    ]
-                }
-            )}
-            ${renderAnalyticsProductRankSection(
-                '内容带货 Top',
-                payloads.contentDrivenTop,
-                '当前窗口暂无内容带货商品',
-                (row) => `${formatNumber(row.content_assisted_gmv_points || 0)} 积分`,
-                'success',
-                {
-                    nameButtonOptions: (row) => ({
-                        detailContext: {
-                            detailFocus: 'content-attribution',
-                            focusTargetId: 'productContentBreakdownSection'
-                        },
-                        title: `查看 ${row.product_name || '商品'} 的内容带货拆解`
-                    }),
-                    guidanceBuilder: (row) => buildAnalyticsProductListGuidance(row, {
-                        tone: 'success',
-                        reason: () => `当前内容带货 GMV ${formatNumber(row.content_assisted_gmv_points || 0)}，归因支付 ${formatNumber(row.content_assisted_purchase_success_count || 0)} 单。`,
-                        recommendation: () => '先看来源 Prompt 归因明细，确认当前最能带货的内容是否还能继续放量或复用。',
-                        verification: () => '后续观察内容带货 GMV、归因支付和主 Prompt 是否仍保持在榜单前列。'
-                    }),
-                    metaFormatter: (row) => [
-                        row.category || '未分类',
-                        row.top_prompt_id ? `主 Prompt ${row.top_prompt_id}` : '暂无 Prompt 归因',
-                        `归因支付 ${formatNumber(row.content_assisted_purchase_success_count || 0)} 单`
-                    ]
-                }
-            )}
-            ${renderAnalyticsProductRankSection(
-                '高曝光低转化',
-                payloads.highExposureLowConversion,
-                '当前窗口暂无结构风险商品',
-                (row) => `低转化分 ${formatNumber(row.low_conversion_score || 0)}`,
-                'danger',
-                {
-                    guidanceBuilder: (row) => buildAnalyticsProductListGuidance(row, {
-                        tone: 'danger',
-                        reason: () => `浏览用户 ${formatNumber(row.view_user_count || 0)}、转化 ${formatPercent(row.conversion_rate || 0)}，这件商品当前是最典型的高曝光低转化样本。`,
-                        recommendation: () => '先看详情到意图和意图到支付哪一段掉得最明显，再决定是优化商品页、支付链路还是内容入口。',
-                        verification: () => '处理后确认这件商品是否脱离高曝光低转化榜，同时转化率出现明确回升。'
-                    })
-                }
-            )}
-        </div>
-        <div class="analytics-product-actions">
-            <button type="button" class="btn-sm btn-secondary" ${buildAnalyticsProductDestinationAttrs('shop-products', { tab: 'products' })}>
-                <i class="fas fa-boxes-stacked"></i> 看商品池
-            </button>
-            <button type="button" class="btn-sm btn-secondary" ${buildAnalyticsProductDestinationAttrs('shop-orders', { tab: 'orders' })}>
-                <i class="fas fa-arrow-trend-up"></i> 看订单转化
-            </button>
-        </div>
     `;
 }
 
@@ -6013,11 +6455,77 @@ async function loadProductOverview() {
     }
 }
 
+function syncAnalyticsProductRankingsMeta(model = {}) {
+    const meta = document.getElementById('productRankingsMeta');
+    if (!meta) {
+        return;
+    }
+
+    const activeMetric = model.activeMetric || null;
+    const activeRow = model.activeRow || null;
+    if (!activeMetric) {
+        meta.textContent = '销量 / 收入 / 转化 / 风险榜';
+        return;
+    }
+
+    meta.textContent = model.hasFocus && activeRow
+        ? `${activeMetric.title || '商品榜单'} · 已聚焦 ${activeRow.productName || '当前商品'}`
+        : `${activeMetric.title || '商品榜单'} · 点击商品聚焦`;
+}
+
+function renderAnalyticsProductRankingsInto(container, payloads = {}) {
+    if (!container) {
+        return;
+    }
+
+    container.__analyticsProductRankingsPayloads = payloads;
+    const model = buildAnalyticsProductRankingsModel(payloads);
+    container.innerHTML = renderAnalyticsProductRankings(payloads);
+    syncAnalyticsProductRankingsMeta(model);
+    bindAnalyticsProductRankingsInteractions(container);
+}
+
+function bindAnalyticsProductRankingsInteractions(container) {
+    if (!container || container.dataset.analyticsProductRankingsBound === 'true') {
+        return;
+    }
+
+    container.addEventListener('click', (event) => {
+        const payloads = container.__analyticsProductRankingsPayloads || {};
+        if (event.target.closest('[data-admin-action="analytics-open-destination"]')) {
+            return;
+        }
+
+        const metricButton = event.target.closest('[data-analytics-product-rank-metric]');
+        if (metricButton && container.contains(metricButton) && !metricButton.hasAttribute('disabled')) {
+            setActiveAnalyticsProductRankingMetric(metricButton.dataset.analyticsProductRankMetric || '');
+            renderAnalyticsProductRankingsInto(container, payloads);
+            return;
+        }
+
+        const focusButton = event.target.closest('[data-analytics-product-rank-focus-key]');
+        if (focusButton && container.contains(focusButton)) {
+            toggleActiveAnalyticsProductRankingFocus(
+                focusButton.dataset.analyticsProductRankFocusMetric || '',
+                focusButton.dataset.analyticsProductRankFocusKey || ''
+            );
+            renderAnalyticsProductRankingsInto(container, payloads);
+        }
+    });
+
+    container.dataset.analyticsProductRankingsBound = 'true';
+}
+
 async function loadProductRankings() {
     const container = document.getElementById('productRankings');
+    const meta = document.getElementById('productRankingsMeta');
     if (!container) return;
 
+    container.__analyticsProductRankingsPayloads = null;
     container.innerHTML = renderAnalyticsProductCommerceSkeleton('rankings');
+    if (meta) {
+        meta.textContent = '商品榜单加载中';
+    }
 
     try {
         const bundle = await getAnalyticsProductDashboardBundle({ limit: 10 });
@@ -6033,26 +6541,35 @@ async function loadProductRankings() {
 
         const hasSignal = Object.values(payloads).some((rows) => Array.isArray(rows) && rows.length > 0);
         if (!hasSignal) {
+            container.__analyticsProductRankingsPayloads = null;
             container.innerHTML = renderHintState('fas fa-ranking-star', '当前窗口暂无商品榜单数据');
+            if (meta) {
+                meta.textContent = '当前窗口暂无榜单数据';
+            }
             return;
         }
 
-        container.innerHTML = renderAnalyticsProductRankings(payloads);
+        renderAnalyticsProductRankingsInto(container, payloads);
         maybePrimeAnalyticsProductDetail([
             ...(Array.isArray(payloads.gmvTop) ? payloads.gmvTop : []),
             ...(Array.isArray(payloads.salesTop) ? payloads.salesTop : []),
             ...(Array.isArray(payloads.conversionTop) ? payloads.conversionTop : []),
             ...(Array.isArray(payloads.refundRateTop) ? payloads.refundRateTop : []),
             ...(Array.isArray(payloads.deliveryRiskRateTop) ? payloads.deliveryRiskRateTop : []),
-            ...(Array.isArray(payloads.contentDrivenTop) ? payloads.contentDrivenTop : [])
+            ...(Array.isArray(payloads.contentDrivenTop) ? payloads.contentDrivenTop : []),
+            ...(Array.isArray(payloads.highExposureLowConversion) ? payloads.highExposureLowConversion : [])
         ]);
     } catch (err) {
         console.error('[Analytics] Failed to load product rankings:', err);
+        container.__analyticsProductRankingsPayloads = null;
         container.innerHTML = renderHintState(
             'fas fa-ranking-star',
             getAnalyticsProductLoadFailureMessage(err, '商品榜单加载失败'),
             'error'
         );
+        if (meta) {
+            meta.textContent = '商品榜单加载失败';
+        }
     }
 }
 
@@ -10163,28 +10680,135 @@ function syncAnalyticsGrowthNewUsersTodayFromSources(options = {}) {
     return syncAnalyticsGrowthNewUsersTodayDisplays(snapshot);
 }
 
-async function loadUserTrendChart(days = 30) {
-    try {
-        const [data, productSummaryBundle, summaryWindow] = await Promise.all([
-            fetchUserTrendData(days),
-            getAnalyticsProductSummaryBundle({ days }).catch(() => null),
-            getAnalyticsSummaryWindowData().catch(() => null)
-        ]);
+function renderAnalyticsUserTrendValuePanels({ productSummary = {}, trendRows = [] } = {}) {
+    const commerceImpactContainer = document.getElementById('userGrowthCommerceImpact');
+    const userValueContainer = document.getElementById(ANALYTICS_USER_VALUE_OVERVIEW_PANEL_ID);
+    const userValueStandaloneContainer = document.getElementById(ANALYTICS_USER_VALUE_STANDALONE_PANEL_ID);
+    const userValueStandaloneMeta = document.getElementById('userValueCockpitStandaloneMeta');
 
-        const ctx = document.getElementById('userTrendChart');
-        if (!ctx) return;
-        const commerceImpactContainer = document.getElementById('userGrowthCommerceImpact');
-        const userValueContainer = document.getElementById(ANALYTICS_USER_VALUE_OVERVIEW_PANEL_ID);
-        const userValueStandaloneContainer = document.getElementById(ANALYTICS_USER_VALUE_STANDALONE_PANEL_ID);
-        const userValueStandaloneMeta = document.getElementById('userValueCockpitStandaloneMeta');
+    if (commerceImpactContainer) {
+        const commerceImpactSummary = buildAnalyticsUserCommerceImpactSummary(productSummary, trendRows);
+        commerceImpactContainer.innerHTML = renderAnalyticsUserCommerceImpactSummary(commerceImpactSummary);
+    }
+
+    const userValueSummary = buildAnalyticsUserValueCockpitSummary(productSummary, trendRows);
+    if (userValueContainer) {
+        userValueContainer.innerHTML = renderAnalyticsUserValueCockpitSummary(userValueSummary);
+    }
+    if (userValueStandaloneContainer) {
+        userValueStandaloneContainer.innerHTML = renderAnalyticsUserValueCockpitSummary(userValueSummary);
+    }
+    if (userValueStandaloneMeta) {
+        userValueStandaloneMeta.textContent = userValueSummary?.hasSignal
+            ? [
+                userValueSummary.stateLabel || '',
+                `成交 ${formatNumber(userValueSummary.buyerUsers || 0)}`,
+                `复购 ${formatNumber(userValueSummary.repeatBuyers || 0)}`,
+                `跨商品 ${formatNumber(userValueSummary.crossProductBuyers || 0)}`
+            ].filter(Boolean).join(' · ')
+            : '当前窗口暂无用户价值层信号';
+    }
+}
+
+function renderAnalyticsUserTrendValuePanelsLoading() {
+    const commerceImpactContainer = document.getElementById('userGrowthCommerceImpact');
+    const userValueContainer = document.getElementById(ANALYTICS_USER_VALUE_OVERVIEW_PANEL_ID);
+    const userValueStandaloneContainer = document.getElementById(ANALYTICS_USER_VALUE_STANDALONE_PANEL_ID);
+    const userValueStandaloneMeta = document.getElementById('userValueCockpitStandaloneMeta');
+
+    if (commerceImpactContainer) {
+        commerceImpactContainer.innerHTML = renderHintState('fas fa-users-viewfinder', '用户趋势已加载，商品影响用户层正在补齐...');
+    }
+    if (userValueContainer) {
+        userValueContainer.innerHTML = renderHintState('fas fa-user-group', '用户趋势已加载，用户价值驾驶舱正在补齐...');
+    }
+    if (userValueStandaloneContainer) {
+        userValueStandaloneContainer.innerHTML = renderHintState('fas fa-user-group', '用户趋势已加载，用户价值驾驶舱正在补齐...');
+    }
+    if (userValueStandaloneMeta) {
+        userValueStandaloneMeta.textContent = '用户价值驾驶舱正在补齐...';
+    }
+}
+
+function hasAnalyticsUserTrendValuePanelTargets() {
+    return Boolean(
+        document.getElementById('userGrowthCommerceImpact')
+        || document.getElementById(ANALYTICS_USER_VALUE_OVERVIEW_PANEL_ID)
+        || document.getElementById(ANALYTICS_USER_VALUE_STANDALONE_PANEL_ID)
+        || document.getElementById('userValueCockpitStandaloneMeta')
+    );
+}
+
+async function hydrateAnalyticsUserTrendValuePanels({ days = 30, trendRows = [], requestId = 0 } = {}) {
+    if (!hasAnalyticsUserTrendValuePanelTargets()) {
+        return;
+    }
+
+    renderAnalyticsUserTrendValuePanelsLoading();
+
+    const productSummaryBundle = await getAnalyticsProductSummaryBundle({ days }).catch(() => null);
+    if (requestId !== analyticsUserTrendRequestId) {
+        return;
+    }
+
+    let productSummary = {};
+    if (productSummaryBundle) {
+        try {
+            productSummary = getAnalyticsProductBundlePayloadOrThrow(
+                productSummaryBundle,
+                'summary',
+                'Product summary unavailable'
+            ) || {};
+        } catch (error) {
+            console.warn('[Analytics] Failed to read product summary for user value cockpit:', error);
+        }
+    }
+
+    renderAnalyticsUserTrendValuePanels({
+        productSummary,
+        trendRows
+    });
+}
+
+async function hydrateAnalyticsUserTrendSummaryWindow({ trendRows = [], requestId = 0 } = {}) {
+    try {
+        const summaryWindow = await getAnalyticsSummaryWindowData().catch(() => null);
+        if (requestId !== analyticsUserTrendRequestId) {
+            return;
+        }
+
         const overview = summaryWindow?.overview && typeof summaryWindow.overview === 'object'
             ? summaryWindow.overview
             : {};
+        if (!Object.keys(overview).length) {
+            return;
+        }
 
         syncAnalyticsGrowthNewUsersTodayFromSources({
             overview,
+            trendRows
+        });
+    } catch (error) {
+        console.warn('[Analytics] Failed to hydrate user trend summary window:', error);
+    }
+}
+
+async function loadUserTrendChart(days = 30) {
+    try {
+        const requestId = ++analyticsUserTrendRequestId;
+        const data = await fetchUserTrendData(days);
+
+        if (requestId !== analyticsUserTrendRequestId) {
+            return;
+        }
+
+        const ctx = document.getElementById('userTrendChart');
+        if (!ctx) return;
+
+        syncAnalyticsGrowthNewUsersTodayFromSources({
             trendRows: data
         });
+        void hydrateAnalyticsUserTrendSummaryWindow({ trendRows: data, requestId });
 
         const theme = getChartTheme();
         const activeUserLabels = getAnalyticsActiveUserLabels();
@@ -10261,41 +10885,7 @@ async function loadUserTrendChart(days = 30) {
             }
         });
 
-        let productSummary = {};
-        if (productSummaryBundle) {
-            try {
-                productSummary = getAnalyticsProductBundlePayloadOrThrow(
-                    productSummaryBundle,
-                    'summary',
-                    'Product summary unavailable'
-                ) || {};
-            } catch (error) {
-                console.warn('[Analytics] Failed to read product summary for user value cockpit:', error);
-            }
-        }
-
-        if (commerceImpactContainer) {
-            const commerceImpactSummary = buildAnalyticsUserCommerceImpactSummary(productSummary, data);
-            commerceImpactContainer.innerHTML = renderAnalyticsUserCommerceImpactSummary(commerceImpactSummary);
-        }
-
-        const userValueSummary = buildAnalyticsUserValueCockpitSummary(productSummary, data);
-        if (userValueContainer) {
-            userValueContainer.innerHTML = renderAnalyticsUserValueCockpitSummary(userValueSummary);
-        }
-        if (userValueStandaloneContainer) {
-            userValueStandaloneContainer.innerHTML = renderAnalyticsUserValueCockpitSummary(userValueSummary);
-        }
-        if (userValueStandaloneMeta) {
-            userValueStandaloneMeta.textContent = userValueSummary?.hasSignal
-                ? [
-                    userValueSummary.stateLabel || '',
-                    `成交 ${formatNumber(userValueSummary.buyerUsers || 0)}`,
-                    `复购 ${formatNumber(userValueSummary.repeatBuyers || 0)}`,
-                    `跨商品 ${formatNumber(userValueSummary.crossProductBuyers || 0)}`
-                ].filter(Boolean).join(' · ')
-                : '当前窗口暂无用户价值层信号';
-        }
+        void hydrateAnalyticsUserTrendValuePanels({ days, trendRows: data, requestId });
     } catch (err) {
         console.error('[Analytics] Failed to load user trend:', err);
         syncAnalyticsGrowthNewUsersTodayDisplays({
@@ -12905,6 +13495,75 @@ async function fetchPointsLeaderboardData(limit = 10) {
     });
 }
 
+function normalizeAnalyticsAvatarImageUrl(value = '') {
+    const raw = String(value || '').trim();
+    if (!raw) {
+        return '';
+    }
+
+    if (/^(https?:|blob:|\/|\.\.?\/)/i.test(raw)) {
+        return raw;
+    }
+
+    return '';
+}
+
+function getAnalyticsAvatarInitials(label = '') {
+    const normalized = String(label || '').trim();
+    if (!normalized) {
+        return 'U';
+    }
+
+    const letters = Array.from(normalized.replace(/[\s@._-]+/g, ' ').trim())
+        .filter((char) => /\S/.test(char));
+    return letters.slice(0, 2).join('').toUpperCase() || 'U';
+}
+
+function bindPointsLeaderboardAvatarFallbacks(container = null) {
+    if (!container || container.dataset.pointsLeaderboardAvatarFallbackBound === '1') {
+        return;
+    }
+
+    container.dataset.pointsLeaderboardAvatarFallbackBound = '1';
+    container.addEventListener('error', (event) => {
+        const image = event.target instanceof HTMLImageElement ? event.target : null;
+        if (!image || !image.matches('[data-analytics-avatar-fallback]')) {
+            return;
+        }
+
+        const shell = image.closest('.leaderboard-avatar-shell');
+        if (shell) {
+            shell.classList.add('leaderboard-avatar-shell--fallback');
+        }
+        image.remove();
+    }, true);
+}
+
+function renderPointsLeaderboardAvatar(user = {}) {
+    const displayName = String(user?.username || user?.user_id || '匿名用户').trim() || '匿名用户';
+    const initials = getAnalyticsAvatarInitials(displayName);
+    const avatarUrl = normalizeAnalyticsAvatarImageUrl(user?.avatar_url);
+    const fallback = `<span class="leaderboard-avatar-initials" aria-hidden="true">${escapeHtml(initials)}</span>`;
+
+    if (!avatarUrl) {
+        return `<span class="avatar leaderboard-avatar-shell leaderboard-avatar-shell--fallback" title="${escapeHtml(displayName)}">${fallback}</span>`;
+    }
+
+    return `
+        <span class="avatar leaderboard-avatar-shell" title="${escapeHtml(displayName)}">
+            ${fallback}
+            <img
+                src="${escapeHtml(avatarUrl)}"
+                class="leaderboard-avatar-image"
+                alt="${escapeHtml(displayName)} 头像"
+                loading="lazy"
+                decoding="async"
+                referrerpolicy="no-referrer"
+                data-analytics-avatar-fallback="${escapeHtml(initials)}">
+        </span>
+    `;
+}
+
 async function loadPointsStats(days = getAnalyticsRangeDays()) {
     try {
         const [data, weeklyFlow] = await Promise.all([
@@ -13016,6 +13675,7 @@ async function loadPointsLeaderboard() {
         const data = await fetchPointsLeaderboardData(10);
         const container = document.getElementById('pointsLeaderboard');
         if (!container) return;
+        bindPointsLeaderboardAvatarFallbacks(container);
 
         if (!data || data.length === 0) {
             container.innerHTML = renderHintState('fas fa-trophy', '暂无积分排行榜数据');
@@ -13026,7 +13686,7 @@ async function loadPointsLeaderboard() {
             <div class="leaderboard-item">
                 <div class="rank rank-${index + 1}">${index + 1}</div>
                 <div class="user-info">
-                    <img src="${user.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.user_id}`}" class="avatar">
+                    ${renderPointsLeaderboardAvatar(user)}
                     <div class="details">
                         <div class="name">
                             ${user.user_id
@@ -15355,112 +16015,126 @@ function enrichAnalyticsGrowthSummaryWithProductSignals(summary = {}, productSum
     return result;
 }
 
-async function loadGrowthSummary() {
+function applyGrowthSummaryPanelState(summary = {}, options = {}) {
     const breakdownContainer = document.getElementById('growthBreakdownList');
     const recommendations = document.getElementById('growthActionRecommendations');
-    if (!breakdownContainer) return;
+    if (!breakdownContainer) {
+        return false;
+    }
 
-    try {
-        const [summary, productSummaryBundle, summaryWindow] = await Promise.all([
-            getGrowthSummaryData(),
-            getAnalyticsProductSummaryBundle().catch(() => null),
-            getAnalyticsSummaryWindowData().catch(() => null)
-        ]);
-        const overview = summaryWindow?.overview && typeof summaryWindow.overview === 'object'
-            ? summaryWindow.overview
-            : {};
-        syncAnalyticsGrowthNewUsersTodayFromSources({
-            overview
+    const summaryWindow = options?.summaryWindow && typeof options.summaryWindow === 'object'
+        ? options.summaryWindow
+        : {};
+    const overview = summaryWindow?.overview && typeof summaryWindow.overview === 'object'
+        ? summaryWindow.overview
+        : {};
+    syncAnalyticsGrowthNewUsersTodayFromSources({
+        overview
+    });
+
+    const metrics = summary?.metrics && typeof summary.metrics === 'object'
+        ? summary.metrics
+        : {};
+
+    const messagesEl = document.getElementById('kpiGrowthMessagesValue');
+    const interactionsEl = document.getElementById('kpiGrowthInteractionsValue');
+    const referralEl = document.getElementById('kpiGrowthReferralRewardsValue');
+    const checkinEl = document.getElementById('kpiGrowthCheckinRewardsValue');
+
+    if (messagesEl) messagesEl.textContent = formatNumber(metrics.guestbookMessageCount || 0);
+    if (interactionsEl) interactionsEl.textContent = formatNumber(metrics.interactionCount || 0);
+    if (referralEl) referralEl.textContent = formatNumber(metrics.referralRewardPoints || 0);
+    if (checkinEl) checkinEl.textContent = formatNumber(metrics.checkinRewardPoints || 0);
+
+    breakdownContainer.innerHTML = renderAnalyticsCompactItems(summary?.breakdownItems, {
+        iconClass: 'fas fa-bullhorn',
+        message: '当前窗口暂无裂变与激励数据'
+    });
+
+    if (recommendations) {
+        recommendations.innerHTML = renderAnalyticsRecommendationItems(summary?.recommendations, {
+            iconClass: 'fas fa-list-check',
+            message: '当前窗口暂无建议动作'
         });
-        let productSummary = {};
-        if (productSummaryBundle) {
+    }
+
+    return true;
+}
+
+function scheduleGrowthSummaryProductSignalsWarm(summary = {}, options = {}) {
+    const requestId = Number(options?.requestId || 0);
+    const summaryWindow = options?.summaryWindow && typeof options.summaryWindow === 'object'
+        ? options.summaryWindow
+        : {};
+
+    window.setTimeout(() => {
+        void (async () => {
+            if (requestId !== analyticsGrowthSummaryRequestId) {
+                return;
+            }
+
+            const productSummaryBundle = await getAnalyticsProductSummaryBundle().catch(() => null);
+            if (requestId !== analyticsGrowthSummaryRequestId || !productSummaryBundle) {
+                return;
+            }
+
             try {
-                productSummary = getAnalyticsProductBundlePayloadOrThrow(
+                const productSummary = getAnalyticsProductBundlePayloadOrThrow(
                     productSummaryBundle,
                     'summary',
                     'Product summary unavailable'
                 ) || {};
+                if (requestId !== analyticsGrowthSummaryRequestId) {
+                    return;
+                }
+                applyGrowthSummaryPanelState(
+                    enrichAnalyticsGrowthSummaryWithProductSignals(summary, productSummary),
+                    { summaryWindow }
+                );
             } catch (error) {
                 console.warn('[Analytics] Failed to read product summary for growth summary:', error);
             }
-        }
-        const enhancedSummary = enrichAnalyticsGrowthSummaryWithProductSignals(summary, productSummary);
-        const metrics = enhancedSummary.metrics || {};
-
-        const messagesEl = document.getElementById('kpiGrowthMessagesValue');
-        const interactionsEl = document.getElementById('kpiGrowthInteractionsValue');
-        const referralEl = document.getElementById('kpiGrowthReferralRewardsValue');
-        const checkinEl = document.getElementById('kpiGrowthCheckinRewardsValue');
-
-        if (messagesEl) messagesEl.textContent = formatNumber(metrics.guestbookMessageCount || 0);
-        if (interactionsEl) interactionsEl.textContent = formatNumber(metrics.interactionCount || 0);
-        if (referralEl) referralEl.textContent = formatNumber(metrics.referralRewardPoints || 0);
-        if (checkinEl) checkinEl.textContent = formatNumber(metrics.checkinRewardPoints || 0);
-
-        breakdownContainer.innerHTML = renderAnalyticsCompactItems(enhancedSummary.breakdownItems, {
-            iconClass: 'fas fa-bullhorn',
-            message: '当前窗口暂无裂变与激励数据'
+        })().catch((error) => {
+            console.warn('[Analytics] Growth summary product warm failed:', error);
         });
+    }, 0);
+}
 
-        if (recommendations) {
-            recommendations.innerHTML = renderAnalyticsRecommendationItems(enhancedSummary.recommendations, {
-                iconClass: 'fas fa-list-check',
-                message: '当前窗口暂无建议动作'
-            });
+async function loadGrowthSummary() {
+    const breakdownContainer = document.getElementById('growthBreakdownList');
+    if (!breakdownContainer) return;
+    const requestId = ++analyticsGrowthSummaryRequestId;
+
+    try {
+        const [summary, summaryWindow] = await Promise.all([
+            getGrowthSummaryData(),
+            getAnalyticsSummaryWindowData().catch(() => null)
+        ]);
+        if (requestId !== analyticsGrowthSummaryRequestId) {
+            return;
         }
+        applyGrowthSummaryPanelState(summary, { summaryWindow });
+        scheduleGrowthSummaryProductSignalsWarm(summary, { requestId, summaryWindow });
     } catch (err) {
         console.error('[Analytics] Failed to load growth summary:', err);
         try {
-            const [summaryWindow, commentsSummary, productSummaryBundle] = await Promise.all([
+            const [summaryWindow, commentsSummary] = await Promise.all([
                 loadAnalyticsSummaryWindowFallbackData({ forceRefresh: true }).catch(() => ({})),
-                getAnalyticsCommentsSummaryData({ forceRefresh: true }).catch(() => null),
-                getAnalyticsProductSummaryBundle({ forceRefresh: true }).catch(() => null)
+                getAnalyticsCommentsSummaryData({ forceRefresh: true }).catch(() => null)
             ]);
-            const fallbackOverview = summaryWindow?.overview && typeof summaryWindow.overview === 'object'
-                ? summaryWindow.overview
-                : {};
-            syncAnalyticsGrowthNewUsersTodayFromSources({
-                overview: fallbackOverview
-            });
+            if (requestId !== analyticsGrowthSummaryRequestId) {
+                return;
+            }
             const fallbackSummary = buildGrowthSummaryFallback({
                 summaryWindow,
                 commentsSummary
             });
-            let productSummary = {};
-            if (productSummaryBundle) {
-                try {
-                    productSummary = getAnalyticsProductBundlePayloadOrThrow(
-                        productSummaryBundle,
-                        'summary',
-                        'Product summary unavailable'
-                    ) || {};
-                } catch (error) {
-                    console.warn('[Analytics] Failed to read product summary for growth fallback:', error);
-                }
-            }
-            const enhancedFallbackSummary = enrichAnalyticsGrowthSummaryWithProductSignals(fallbackSummary, productSummary);
-            const metrics = enhancedFallbackSummary.metrics || {};
-            const messagesEl = document.getElementById('kpiGrowthMessagesValue');
-            const interactionsEl = document.getElementById('kpiGrowthInteractionsValue');
-            const referralEl = document.getElementById('kpiGrowthReferralRewardsValue');
-            const checkinEl = document.getElementById('kpiGrowthCheckinRewardsValue');
-
-            if (messagesEl) messagesEl.textContent = formatNumber(metrics.guestbookMessageCount || 0);
-            if (interactionsEl) interactionsEl.textContent = formatNumber(metrics.interactionCount || 0);
-            if (referralEl) referralEl.textContent = formatNumber(metrics.referralRewardPoints || 0);
-            if (checkinEl) checkinEl.textContent = formatNumber(metrics.checkinRewardPoints || 0);
-
-            breakdownContainer.innerHTML = renderAnalyticsCompactItems(enhancedFallbackSummary.breakdownItems, {
-                iconClass: 'fas fa-bullhorn',
-                message: '当前窗口暂无裂变与激励数据'
-            });
-            if (recommendations) {
-                recommendations.innerHTML = renderAnalyticsRecommendationItems(enhancedFallbackSummary.recommendations, {
-                    iconClass: 'fas fa-list-check',
-                    message: '当前窗口暂无建议动作'
-                });
-            }
+            applyGrowthSummaryPanelState(fallbackSummary, { summaryWindow });
+            scheduleGrowthSummaryProductSignalsWarm(fallbackSummary, { requestId, summaryWindow });
         } catch (fallbackErr) {
+            if (requestId !== analyticsGrowthSummaryRequestId) {
+                return;
+            }
             console.error('[Analytics] Growth summary fallback failed:', fallbackErr);
             syncAnalyticsGrowthNewUsersTodayDisplays({
                 hasValue: false,
@@ -15468,6 +16142,7 @@ async function loadGrowthSummary() {
                 tooltip: '今日新增用户加载失败'
             });
             breakdownContainer.innerHTML = renderHintState('fas fa-bullhorn', '裂变与激励摘要加载失败', 'error');
+            const recommendations = document.getElementById('growthActionRecommendations');
             if (recommendations) recommendations.innerHTML = renderHintState('fas fa-list-check', '建议动作加载失败', 'error');
         }
     }

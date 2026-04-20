@@ -209,8 +209,10 @@ test('gallery analysis payload is slimmed and single-image analysis is normalize
 
     assert.match(callAdminVisionSource, /ADMIN_VISION_ANALYSIS_MAX_OUTPUT_TOKENS/);
     assert.doesNotMatch(callAdminVisionSource, /"prompt_suggestion_en"/);
-    assert.doesNotMatch(callAdminVisionSource, /"useCase"/);
-    assert.doesNotMatch(callAdminVisionSource, /"commercial"/);
+    assert.match(callAdminVisionSource, /"objects": \{\s+"en": \["6-10 visible objects or subjects"\]/);
+    assert.match(callAdminVisionSource, /"useCase"/);
+    assert.match(callAdminVisionSource, /"commercial"/);
+    assert.match(callAdminVisionSource, /"difficulty": "beginner \| intermediate \| advanced"/);
     assert.match(createImageGridSource, /return normalizeImageForAnalysis\(images\[0\]\);/);
 });
 

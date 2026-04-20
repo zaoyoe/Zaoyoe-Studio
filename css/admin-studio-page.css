@@ -7082,19 +7082,62 @@ body.admin-access-pending,
                         box-shadow: var(--admin-studio-list-press-shadow);
                     }
 
-#paymentsOrdersTable .payments-table {
-                        table-layout: auto;
-                        min-width: 960px;
+#paymentsOrdersTable .payments-orders-grid-table {
+                        table-layout: fixed;
+                        min-width: 1160px;
                     }
 
-#paymentsOrdersTable .payments-table th:nth-child(1),
-#paymentsOrdersTable .payments-table td:nth-child(1) {
-                        width: 220px;
+#paymentsOrdersTable .payments-orders-grid-table th,
+#paymentsOrdersTable .payments-orders-grid-table td {
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        vertical-align: middle;
                     }
 
-#paymentsOrdersTable .payments-table th:nth-child(2),
-#paymentsOrdersTable .payments-table td:nth-child(2) {
-                        width: 168px;
+#paymentsOrdersTable .payments-orders-grid-table th:nth-child(1),
+#paymentsOrdersTable .payments-orders-grid-table td:nth-child(1) {
+                        width: 13%;
+                    }
+
+#paymentsOrdersTable .payments-orders-grid-table th:nth-child(2),
+#paymentsOrdersTable .payments-orders-grid-table td:nth-child(2) {
+                        width: 11%;
+                    }
+
+#paymentsOrdersTable .payments-orders-grid-table th:nth-child(3),
+#paymentsOrdersTable .payments-orders-grid-table td:nth-child(3) {
+                        width: 10%;
+                    }
+
+#paymentsOrdersTable .payments-orders-grid-table th:nth-child(4),
+#paymentsOrdersTable .payments-orders-grid-table td:nth-child(4),
+#paymentsOrdersTable .payments-orders-grid-table th:nth-child(5),
+#paymentsOrdersTable .payments-orders-grid-table td:nth-child(5) {
+                        width: 7%;
+                    }
+
+#paymentsOrdersTable .payments-orders-grid-table th:nth-child(6),
+#paymentsOrdersTable .payments-orders-grid-table td:nth-child(6),
+#paymentsOrdersTable .payments-orders-grid-table th:nth-child(7),
+#paymentsOrdersTable .payments-orders-grid-table td:nth-child(7) {
+                        width: 9%;
+                    }
+
+#paymentsOrdersTable .payments-orders-grid-table th:nth-child(8),
+#paymentsOrdersTable .payments-orders-grid-table td:nth-child(8) {
+                        width: 5%;
+                    }
+
+#paymentsOrdersTable .payments-orders-grid-table th:nth-child(9),
+#paymentsOrdersTable .payments-orders-grid-table td:nth-child(9),
+#paymentsOrdersTable .payments-orders-grid-table th:nth-child(10),
+#paymentsOrdersTable .payments-orders-grid-table td:nth-child(10) {
+                        width: 10%;
+                    }
+
+#paymentsOrdersTable .payments-orders-grid-table th:nth-child(11),
+#paymentsOrdersTable .payments-orders-grid-table td:nth-child(11) {
+                        width: 9%;
                     }
 
 #paymentsOrdersTable .payments-table td:nth-child(1),
@@ -7104,13 +7147,24 @@ body.admin-access-pending,
                         word-break: break-word;
                     }
 
-#paymentsOrdersTable .payments-order-no {
+#paymentsOrdersTable .payments-user-link,
+#paymentsOrdersTable .payments-user-text {
                         display: block;
                         max-width: 100%;
                         white-space: normal;
-                        line-height: 1.45;
                         overflow-wrap: anywhere;
-                        word-break: break-all;
+                        word-break: break-word;
+                    }
+
+#paymentsOrdersTable .payments-order-no {
+                        display: block;
+                        max-width: 100%;
+                        white-space: nowrap;
+                        line-height: 1.45;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        overflow-wrap: normal;
+                        word-break: normal;
                     }
 
 #paymentsOrdersTable .payments-order-provider {

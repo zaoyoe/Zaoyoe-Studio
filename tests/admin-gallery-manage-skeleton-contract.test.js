@@ -7,6 +7,14 @@ function readRepoFile(relativePath) {
     return fs.readFileSync(path.resolve(__dirname, '..', relativePath), 'utf8');
 }
 
+function readCssRuleBlock(source, selector) {
+    const start = source.indexOf(`${selector} {`);
+    assert.notEqual(start, -1, `admin-studio.css should contain ${selector}`);
+    const end = source.indexOf('\n}', start);
+    assert.notEqual(end, -1, `admin-studio.css should close ${selector}`);
+    return source.slice(start, end);
+}
+
 test('gallery manage loading keeps top chrome live and limits skeletons to cards', () => {
     const adminStudioSource = readRepoFile('admin-studio.js');
     const adminStudioCss = readRepoFile('admin-studio.css');
@@ -62,4 +70,16 @@ test('gallery manage loading keeps top chrome live and limits skeletons to cards
     for (const marker of forbiddenCssMarkers) {
         assert.equal(adminStudioCss.includes(marker), false, `admin-studio.css should not contain ${marker}`);
     }
+
+    const mediaSkeletonBlock = readCssRuleBlock(adminStudioCss, '.admin-card-media-skeleton');
+    assert.equal(
+        mediaSkeletonBlock.includes('background: #1f2941;'),
+        true,
+        'gallery manage card media skeleton should use a solid color background'
+    );
+    assert.equal(
+        /(?:linear|radial)-gradient/.test(mediaSkeletonBlock),
+        false,
+        'gallery manage card media skeleton background should not use gradients'
+    );
 });

@@ -10,6 +10,22 @@ const TEST_EMAIL_PATTERNS = [
     /^codex\..+@example\.com$/i,
     /^smoke-payment-.+@zaoyoe\.invalid$/i
 ];
+const AUTH_USERS_PER_PAGE = 1000;
+const SUPABASE_RETRY_ATTEMPTS = 2;
+const SUPABASE_RETRY_DELAY_MS = 80;
+const RETRYABLE_STATUS_CODES = new Set([0, 408, 429, 500, 502, 503, 504]);
+const TRANSIENT_ERROR_PATTERNS = [
+    'fetch failed',
+    'failed to fetch',
+    'network request failed',
+    'networkerror',
+    'load failed',
+    'socket hang up',
+    'timed out',
+    'econnreset',
+    'etimedout',
+    'und_err_'
+];
 
 function isMissingRelationError(error) {
     const message = String(error?.message || '').toLowerCase();
@@ -25,20 +41,69 @@ function matchesTestUserEmail(value) {
     return TEST_EMAIL_PATTERNS.some((pattern) => pattern.test(email));
 }
 
+function isTransientSupabaseError(error) {
+    const normalizedMessage = String(error?.message || error || '').trim().toLowerCase();
+    const normalizedName = String(error?.name || '').trim();
+    const normalizedCode = String(error?.code || '').trim().toUpperCase();
+    const statusCode = Number(error?.status || error?.statusCode || 0);
+
+    if (normalizedName === 'AbortError' || normalizedName === 'AuthRetryableFetchError') {
+        return true;
+    }
+
+    if (RETRYABLE_STATUS_CODES.has(statusCode)) {
+        return true;
+    }
+
+    if (['ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'ECONNREFUSED'].includes(normalizedCode)) {
+        return true;
+    }
+
+    return TRANSIENT_ERROR_PATTERNS.some((pattern) => normalizedMessage.includes(pattern));
+}
+
+async function waitForRetry(delayMs) {
+    const safeDelay = Math.max(0, Number(delayMs || 0));
+    if (!safeDelay) return;
+    await new Promise((resolve) => setTimeout(resolve, safeDelay));
+}
+
+// Cleanup preview/delete fans out into many Supabase calls, so retry once on
+// transient fetch/network errors before surfacing a failure to the UI.
+async function executeSupabaseOperation(operation, options = {}) {
+    const attempts = Math.max(1, Number.parseInt(options.attempts, 10) || SUPABASE_RETRY_ATTEMPTS);
+    const baseDelayMs = Math.max(0, Number.parseInt(options.baseDelayMs, 10) || SUPABASE_RETRY_DELAY_MS);
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+        try {
+            const result = await operation();
+            if (result?.error) {
+                throw result.error;
+            }
+            return result;
+        } catch (error) {
+            lastError = error;
+            if (attempt >= attempts || !isTransientSupabaseError(error)) {
+                throw error;
+            }
+            await waitForRetry(baseDelayMs * attempt);
+        }
+    }
+
+    throw lastError || new Error('Supabase operation failed');
+}
+
 async function listTestUsers(supabaseAdmin) {
     const matchedUsers = [];
     let page = 1;
-    const perPage = 200;
+    const perPage = AUTH_USERS_PER_PAGE;
 
     while (true) {
-        const { data, error } = await supabaseAdmin.auth.admin.listUsers({
+        const { data } = await executeSupabaseOperation(() => supabaseAdmin.auth.admin.listUsers({
             page,
             perPage
-        });
-
-        if (error) {
-            throw new Error(error.message || 'Failed to list auth users');
-        }
+        }));
 
         const users = data?.users || [];
         matchedUsers.push(
@@ -53,19 +118,19 @@ async function listTestUsers(supabaseAdmin) {
 }
 
 async function countLike(supabase, table, column, pattern) {
-    const { count, error } = await supabase
-        .from(table)
-        .select('*', { count: 'exact', head: true })
-        .like(column, pattern);
+    try {
+        const { count } = await executeSupabaseOperation(() => supabase
+            .from(table)
+            .select('*', { count: 'exact', head: true })
+            .like(column, pattern));
 
-    if (error) {
+        return Number(count || 0);
+    } catch (error) {
         const wrapped = new Error(error.message || `Failed to count ${table}`);
         wrapped.code = error.code;
         wrapped.details = error.details;
         throw wrapped;
     }
-
-    return Number(count || 0);
 }
 
 async function countLikeOptional(supabase, table, column, pattern) {
@@ -94,19 +159,19 @@ async function countLikePatterns(supabase, table, column, prefixes, { optional =
 async function countIn(supabase, table, column, ids) {
     if (!Array.isArray(ids) || !ids.length) return 0;
 
-    const { count, error } = await supabase
-        .from(table)
-        .select('*', { count: 'exact', head: true })
-        .in(column, ids);
+    try {
+        const { count } = await executeSupabaseOperation(() => supabase
+            .from(table)
+            .select('*', { count: 'exact', head: true })
+            .in(column, ids));
 
-    if (error) {
+        return Number(count || 0);
+    } catch (error) {
         const wrapped = new Error(error.message || `Failed to count ${table}`);
         wrapped.code = error.code;
         wrapped.details = error.details;
         throw wrapped;
     }
-
-    return Number(count || 0);
 }
 
 async function countInOptional(supabase, table, column, ids) {
@@ -123,20 +188,20 @@ async function countInOptional(supabase, table, column, ids) {
 async function safeDeleteIn(supabase, table, column, values) {
     if (!Array.isArray(values) || !values.length) return 0;
 
-    const { data, error } = await supabase
-        .from(table)
-        .delete()
-        .in(column, values)
-        .select('*');
+    try {
+        const { data } = await executeSupabaseOperation(() => supabase
+            .from(table)
+            .delete()
+            .in(column, values)
+            .select('*'));
 
-    if (error) {
+        return Array.isArray(data) ? data.length : 0;
+    } catch (error) {
         const wrapped = new Error(error.message || `Failed to delete ${table}`);
         wrapped.code = error.code;
         wrapped.details = error.details;
         throw wrapped;
     }
-
-    return Array.isArray(data) ? data.length : 0;
 }
 
 async function safeDeleteInOptional(supabase, table, column, values) {
@@ -151,20 +216,20 @@ async function safeDeleteInOptional(supabase, table, column, values) {
 }
 
 async function safeDeleteLike(supabase, table, column, pattern) {
-    const { data, error } = await supabase
-        .from(table)
-        .delete()
-        .like(column, pattern)
-        .select('*');
+    try {
+        const { data } = await executeSupabaseOperation(() => supabase
+            .from(table)
+            .delete()
+            .like(column, pattern)
+            .select('*'));
 
-    if (error) {
+        return Array.isArray(data) ? data.length : 0;
+    } catch (error) {
         const wrapped = new Error(error.message || `Failed to delete ${table}`);
         wrapped.code = error.code;
         wrapped.details = error.details;
         throw wrapped;
     }
-
-    return Array.isArray(data) ? data.length : 0;
 }
 
 async function safeDeleteLikeOptional(supabase, table, column, pattern) {
@@ -208,14 +273,16 @@ async function selectLikePatterns(supabase, table, column, prefixes, options = {
         .map((prefix) => String(prefix || '').trim())
         .filter(Boolean)
         .map(async (prefix) => {
-            const { data, error } = await supabase
-                .from(table)
-                .select(select)
-                .like(column, `${prefix}%`)
-                .order(orderColumn, { ascending })
-                .limit(safeLimit);
+            try {
+                const { data } = await executeSupabaseOperation(() => supabase
+                    .from(table)
+                    .select(select)
+                    .like(column, `${prefix}%`)
+                    .order(orderColumn, { ascending })
+                    .limit(safeLimit));
 
-            if (error) {
+                return Array.isArray(data) ? data : [];
+            } catch (error) {
                 if (optional && isMissingRelationError(error)) {
                     return [];
                 }
@@ -224,8 +291,6 @@ async function selectLikePatterns(supabase, table, column, prefixes, options = {
                 wrapped.details = error.details;
                 throw wrapped;
             }
-
-            return Array.isArray(data) ? data : [];
         });
 
     const rows = (await Promise.all(queries)).flat().sort(compareDescendingByCreatedAt);
@@ -372,14 +437,14 @@ async function handler(req, res) {
             deleted.admin_audit_logs_admin = await safeDeleteInOptional(supabaseAdmin, 'admin_audit_logs', 'admin_id', preview.test_user_ids);
 
             for (const testUserId of preview.test_user_ids) {
-                const { error: deleteUserError } = await supabaseAdmin.auth.admin.deleteUser(testUserId);
-                if (deleteUserError) {
+                try {
+                    await executeSupabaseOperation(() => supabaseAdmin.auth.admin.deleteUser(testUserId));
+                    deleted.auth_users += 1;
+                } catch (deleteUserError) {
                     warnings.push({
                         user_id: testUserId,
                         message: deleteUserError.message || 'Failed to delete auth user'
                     });
-                } else {
-                    deleted.auth_users += 1;
                 }
             }
         }
@@ -419,6 +484,8 @@ module.exports._private = {
     TEST_EMAIL_PATTERNS,
     buildCleanupPreview,
     countLikePatterns,
+    executeSupabaseOperation,
+    isTransientSupabaseError,
     listTestUsers,
     matchesTestUserEmail,
     safeDeleteLikePatternsOptional,
