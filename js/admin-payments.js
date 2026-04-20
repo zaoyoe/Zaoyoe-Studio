@@ -39,6 +39,7 @@
         workbenchContext: null,
         pagination: {
             anomalies: 1,
+            sessions: 1,
             orders: 1,
             cleanupOrders: 1,
             cleanupUsers: 1
@@ -1558,7 +1559,7 @@
         }
 
         if (status === 'redirect_ready') {
-            return '二维码或支付页已生成，但用户尚未完成付款或中途关闭。';
+            return '二维码/支付页已生成，但用户尚未完成付款或中途关闭。';
         }
 
         if (status === 'created') {
@@ -2129,6 +2130,7 @@
         state.pointsBreakdownHoverIndex = null;
         state.pagination = {
             anomalies: 1,
+            sessions: 1,
             orders: 1,
             cleanupOrders: 1,
             cleanupUsers: 1
@@ -3269,7 +3271,7 @@
                 anomalyTarget.innerHTML = `<div class="payments-anomaly-items">${Array.from({ length: 3 }, () => buildPaymentsAnomalySkeleton()).join('')}</div>`;
             }
             if (sessionsTarget) {
-                sessionsTarget.innerHTML = Array.from({ length: 3 }, () => buildPaymentsProviderRowSkeleton()).join('');
+                sessionsTarget.innerHTML = Array.from({ length: 4 }, () => buildPaymentsProviderRowSkeleton()).join('');
             }
             if (ordersTarget) {
                 ordersTarget.innerHTML = buildPaymentsOrdersSkeleton();
@@ -6189,7 +6191,7 @@
         (bundle.recent_anomalies || []).forEach((item) => {
             csv += `${(item.title || '').replace(/,/g, '，')},${getSeverityLabel(item.severity)},${getProviderLabel(item.provider)},${(item.provider_order_no || '').replace(/,/g, '，')},${formatDateTime(item.created_at)}\n`;
         });
-        csv += '\n=== 支付意图会话 ===\n';
+        csv += '\n=== 最近支付意图会话 ===\n';
         csv += '发起人邮箱,通道,套餐,会话Key,参考单号,站点,应付金额,到账积分,状态,匹配状态,创建时间\n';
         (bundle.recent_checkout_sessions || []).forEach((item) => {
             const matchInfo = getCheckoutSessionTraceMatchInfo(item);

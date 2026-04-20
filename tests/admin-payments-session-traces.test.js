@@ -14,7 +14,7 @@ test('payments ops workspace exposes checkout session traces', () => {
     const paymentsSource = readRepoFile('js/admin-payments.js');
 
     const htmlMarkers = [
-        '支付意图会话',
+        '最近支付意图会话',
         'id="paymentsCheckoutSessionsList"',
         'js/admin-payments.js?v=20260419_ADMIN_PAYMENTS_SESSION_TRACE_1'
     ];
