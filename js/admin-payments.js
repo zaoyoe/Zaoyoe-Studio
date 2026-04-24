@@ -31,6 +31,7 @@
         pointsBreakdownHoverIndex: null,
         exceptionTopicFilter: 'all',
         focusOrderId: '',
+        lastFocusResult: null,
         tabPrefetchHandle: 0,
         tabPrefetchMode: '',
         tabPrefetchTaskKey: '',
@@ -47,6 +48,7 @@
     };
 
     const PAYMENTS_PAGE_SIZE = 5;
+    const PAYMENTS_TABS = new Set(['overview', 'finance', 'ops']);
     const PAYMENTS_PREFETCH_TABS = [];
     const NOTE_REQUIRED_ACTIONS = new Set([
         'approve_review',
@@ -219,6 +221,15 @@
             : '0';
     }
 
+    function normalizePaymentsContextObject(value) {
+        return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    }
+
+    function normalizePaymentsTabId(tabId = '') {
+        const normalizedTab = String(tabId || '').trim().toLowerCase();
+        return PAYMENTS_TABS.has(normalizedTab) ? normalizedTab : 'overview';
+    }
+
     function formatSignedPoints(value) {
         const num = Number(value || 0);
         if (!Number.isFinite(num)) return '0';
@@ -236,15 +247,44 @@
             return false;
         }
 
+        const normalizedContext = normalizePaymentsContextObject(context);
+        const payload = normalizePaymentsContextObject(normalizedContext.payload);
+        const raw = normalizePaymentsContextObject(normalizedContext.raw);
+        const focus = normalizePaymentsContextObject(normalizedContext.focus);
+
         return Boolean(String(
-            context.referenceValue
-            || context.referenceLabel
-            || context.query
-            || context.queryLabel
-            || context.productId
-            || context.productName
-            || context.topicKey
-            || context.exceptionTopic
+            normalizedContext.referenceValue
+            || normalizedContext.referenceLabel
+            || normalizedContext.query
+            || normalizedContext.queryLabel
+            || normalizedContext.productId
+            || normalizedContext.productName
+            || normalizedContext.topicKey
+            || normalizedContext.exceptionTopic
+            || normalizedContext.paymentOrderId
+            || normalizedContext.providerOrderNo
+            || payload.referenceValue
+            || payload.referenceLabel
+            || payload.query
+            || payload.queryLabel
+            || payload.productId
+            || payload.productName
+            || payload.topicKey
+            || payload.exceptionTopic
+            || payload.paymentOrderId
+            || payload.providerOrderNo
+            || raw.referenceValue
+            || raw.referenceLabel
+            || raw.query
+            || raw.queryLabel
+            || raw.productId
+            || raw.productName
+            || raw.topicKey
+            || raw.exceptionTopic
+            || raw.paymentOrderId
+            || raw.providerOrderNo
+            || focus.paymentOrderId
+            || focus.payment_order_id
             || ''
         ).trim());
     }
@@ -493,17 +533,55 @@
             return null;
         }
 
+        const normalizedContext = normalizePaymentsContextObject(context);
+        const contextFocus = normalizePaymentsContextObject(normalizedContext.focus);
+        const contextPayload = normalizePaymentsContextObject(normalizedContext.payload);
+        const contextRaw = normalizePaymentsContextObject(normalizedContext.raw);
         const anomaly = data?.anomaly_summary || {};
         const ops = data?.ops_alert_summary || {};
         const referenceValue = String(
-            context?.referenceValue
-            || context?.queryLabel
-            || context?.query
-            || context?.productName
-            || context?.productId
-            || context?.referenceLabel
+            normalizedContext.referenceValue
+            || contextPayload.referenceValue
+            || contextRaw.referenceValue
+            || normalizedContext.queryLabel
+            || contextPayload.queryLabel
+            || contextRaw.queryLabel
+            || normalizedContext.query
+            || contextPayload.query
+            || contextRaw.query
+            || normalizedContext.productName
+            || contextPayload.productName
+            || contextRaw.productName
+            || normalizedContext.productId
+            || contextPayload.productId
+            || contextRaw.productId
+            || normalizedContext.referenceLabel
+            || contextPayload.referenceLabel
+            || contextRaw.referenceLabel
             || ''
         ).trim();
+        const focusedPaymentOrderId = String(
+            contextFocus.paymentOrderId
+            || contextFocus.payment_order_id
+            || contextPayload.paymentOrderId
+            || contextPayload.payment_order_id
+            || contextRaw.paymentOrderId
+            || contextRaw.payment_order_id
+            || normalizedContext.paymentOrderId
+            || normalizedContext.payment_order_id
+            || normalizedContext.providerOrderNo
+            || normalizedContext.provider_order_no
+            || state.focusOrderId
+            || ''
+        ).trim();
+        const focusedOrder = focusedPaymentOrderId
+            ? (Array.isArray(data?.recent_orders) ? data.recent_orders : []).find((order) => (
+                [order?.id, order?.provider_order_no]
+                    .map((value) => String(value || '').trim())
+                    .filter(Boolean)
+                    .includes(focusedPaymentOrderId)
+            )) || null
+            : null;
         const reviewCount = Math.max(0, Number(anomaly.review_orders || 0) || 0);
         const failedCount = Math.max(0, Number(anomaly.failed_orders || 0) || 0);
         const refundIssueCount = getRefundIssueCount(data);
@@ -531,7 +609,21 @@
             summary: referenceValue
                 ? `当前支付页仍按全站汇总展示，但已围绕“${referenceValue}”聚焦支付异常、退款售后与站外告警。`
                 : '当前支付页会沿用分析来源，把待审核、失败订单、退款售后与站外告警压成一屏问题摘要。',
-            chips: chips.filter((item) => String(item?.value || '').trim())
+            chips: chips.filter((item) => String(item?.value || '').trim()),
+            focusItem: focusedOrder
+                ? {
+                    title: String(focusedOrder.provider_order_no || focusedOrder.id || focusedPaymentOrderId).trim() || focusedPaymentOrderId,
+                    meta: [
+                        String(focusedOrder.package_name || '未匹配套餐').trim() || '未匹配套餐',
+                        formatCurrency(focusedOrder.paid_amount),
+                        getStatusLabel(focusedOrder.status),
+                        String(focusedOrder.site || 'cn').trim().toUpperCase()
+                    ],
+                    recommendation: '这笔支付单已经定位到最近订单列表，继续审核、放行或回到订单承接链会更顺手。',
+                    actionLabel: '重新定位',
+                    targetId: String(focusedOrder.id || focusedPaymentOrderId).trim() || focusedPaymentOrderId
+                }
+                : null
         };
     }
 
@@ -948,6 +1040,32 @@
                     : ''
                 }
             </div>
+            ${summaryState.focusItem ? `
+                <div class="admin-workbench-priority-list">
+                    <div class="admin-workbench-priority-item">
+                        <div class="admin-workbench-priority-item__top">
+                            <div class="admin-workbench-priority-item__title">${escapeHtml(summaryState.focusItem.title || '当前支付单')}</div>
+                            <span class="admin-workbench-priority-item__rank">已聚焦</span>
+                        </div>
+                        <div class="admin-workbench-priority-item__meta">
+                            ${(Array.isArray(summaryState.focusItem.meta) ? summaryState.focusItem.meta : []).filter(Boolean).map((entry) => `
+                                <span>${escapeHtml(entry)}</span>
+                            `).join('')}
+                        </div>
+                        ${summaryState.focusItem.recommendation ? `<div class="admin-workbench-priority-item__recommendation">${escapeHtml(summaryState.focusItem.recommendation)}</div>` : ''}
+                        ${summaryState.focusItem.targetId ? `
+                            <div class="admin-workbench-priority-item__actions">
+                                <button
+                                    type="button"
+                                    class="admin-workbench-priority-item__btn"
+                                    data-admin-action="payments-priority-focus-order"
+                                    data-payments-order-id="${escapeHtml(summaryState.focusItem.targetId || '')}"
+                                >${escapeHtml(summaryState.focusItem.actionLabel || '重新定位')}</button>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            ` : ''}
         `;
         target.hidden = false;
         renderAnalyticsPrioritySummary(data, context);
@@ -1345,6 +1463,209 @@
 
     function getOverviewIssueCount(data = {}) {
         return getOverviewIssueBreakdown(data).total;
+    }
+
+    function getPaymentsCommandCenterTimestamp(...values) {
+        for (const value of values) {
+            const timestamp = Date.parse(value || '');
+            if (Number.isFinite(timestamp) && timestamp > 0) {
+                return timestamp;
+            }
+        }
+        return 0;
+    }
+
+    function getPaymentsCommandCenterToneFromSeverity(severity = '') {
+        const normalized = String(severity || '').trim().toLowerCase();
+        if (['critical', 'danger', 'error', 'high'].includes(normalized)) {
+            return 'alert';
+        }
+        if (normalized) {
+            return 'warn';
+        }
+        return '';
+    }
+
+    function getPaymentsCommandCenterToneFromQueueStatus(status = '') {
+        const normalized = String(status || '').trim().toLowerCase();
+        if (normalized === 'dead_letter') {
+            return 'alert';
+        }
+        if (normalized) {
+            return 'warn';
+        }
+        return '';
+    }
+
+    function getPaymentsCommandCenterRecentItems(data = state.summary) {
+        const recentAnomalies = Array.isArray(data?.recent_anomalies) ? data.recent_anomalies : [];
+        const recentOrders = Array.isArray(data?.recent_orders) ? data.recent_orders : [];
+        const opsItems = Array.isArray(data?.ops_alert_items) ? data.ops_alert_items : [];
+
+        const anomalyItems = recentAnomalies.map((item) => {
+            const title = String(item?.title || item?.message || '').trim();
+            const referenceValue = String(getAnomalyReferenceValue(item) || '').trim();
+            const topicKey = String(item?.topic_key || '').trim().toLowerCase();
+            const paymentOrderId = String(item?.payment_order_id || item?.order_id || '').trim();
+            const copy = title
+                ? (referenceValue && !title.includes(referenceValue) ? `${title} · ${referenceValue}` : title)
+                : `${getAnomalyReferenceLabel(item)} ${referenceValue || '待复核'}`.trim();
+            return {
+                label: getAnomalyTypeLabel(item),
+                copy,
+                timestamp: getPaymentsCommandCenterTimestamp(item?.updated_at, item?.created_at),
+                tone: getPaymentsCommandCenterToneFromSeverity(item?.severity),
+                moduleId: 'payments',
+                stateKey: `payments-anomaly-${String(item?.id || paymentOrderId || topicKey || referenceValue || title || 'recent').trim() || 'recent'}`,
+                feedbackLabel: getAnomalyTypeLabel(item),
+                intent: topicKey
+                    ? `打开支付异常专题 ${topicKey}。`
+                    : `打开支付异常列表并定位 ${referenceValue || '该异常'}。`,
+                context: {
+                    ...(!topicKey && paymentOrderId
+                        ? {
+                            focus: {
+                                paymentOrderId
+                            }
+                        }
+                        : {}),
+                    payload: {
+                        defaultTab: 'ops',
+                        tab: 'ops',
+                        ...(topicKey ? { exceptionTopic: topicKey } : {}),
+                        ...(!topicKey ? { focusTargetId: 'paymentsAnomalyList' } : {})
+                    }
+                },
+                options: {
+                    defaultTab: 'ops',
+                    tab: 'ops'
+                }
+            };
+        });
+
+        const orderItems = recentOrders
+            .map((order) => {
+                const actions = Array.isArray(order?.order_available_actions) ? order.order_available_actions : [];
+                const isReview = actions.includes('approve_review') || actions.includes('reject_review');
+                const isAmountMismatch = actions.includes('approve_amount_mismatch') || actions.includes('reject_amount_mismatch');
+                if (!isReview && !isAmountMismatch) {
+                    return null;
+                }
+                const paymentOrderId = String(order?.id || '').trim();
+                const referenceValue = String(order?.provider_order_no || order?.id || '').trim() || '未匹配单号';
+                const copy = [
+                    String(order?.package_name || '支付订单').trim() || '支付订单',
+                    referenceValue,
+                    getStatusLabel(order?.status)
+                ].filter(Boolean).join(' · ');
+                return {
+                    label: isReview ? '待审核订单' : '异常订单',
+                    copy,
+                    timestamp: getPaymentsCommandCenterTimestamp(order?.updated_at, order?.paid_at, order?.created_at),
+                    tone: isAmountMismatch ? 'alert' : 'warn',
+                    moduleId: 'payments',
+                    stateKey: `payments-order-${paymentOrderId || referenceValue}`,
+                    feedbackLabel: referenceValue,
+                    intent: `打开支付订单 ${referenceValue}。`,
+                    context: {
+                        ...(paymentOrderId
+                            ? {
+                                focus: {
+                                    paymentOrderId
+                                }
+                            }
+                            : {}),
+                        payload: {
+                            defaultTab: 'ops',
+                            tab: 'ops',
+                            ...(!paymentOrderId ? { issueSummary: isReview ? 'review' : 'failed' } : {})
+                        }
+                    },
+                    options: {
+                        defaultTab: 'ops',
+                        tab: 'ops'
+                    }
+                };
+            })
+            .filter(Boolean);
+
+        const opsRecentItems = opsItems
+            .filter((item) => ACTIVE_OPS_ALERT_STATUSES.has(normalizeStatusValue(item?.queue_status)))
+            .map((item) => {
+                const copy = String(item?.title || item?.message || '').trim()
+                    || `${getAnomalyReferenceLabel(item)} ${getAnomalyReferenceValue(item)}`.trim();
+                return {
+                    label: '回调队列',
+                    copy,
+                    timestamp: getPaymentsCommandCenterTimestamp(item?.updated_at, item?.created_at),
+                    tone: getPaymentsCommandCenterToneFromQueueStatus(item?.queue_status),
+                    moduleId: 'payments',
+                    stateKey: `payments-ops-${String(item?.id || item?.provider_order_no || item?.created_at || 'queue').trim() || 'queue'}`,
+                    feedbackLabel: '回调队列',
+                    intent: '打开支付运维页的回调队列。',
+                    context: {
+                        payload: {
+                            defaultTab: 'ops',
+                            tab: 'ops',
+                            focusTargetId: 'paymentsOpsAlertQueue'
+                        }
+                    },
+                    options: {
+                        defaultTab: 'ops',
+                        tab: 'ops'
+                    }
+                };
+            });
+
+        return [...anomalyItems, ...orderItems, ...opsRecentItems]
+            .filter((item) => item && item.copy)
+            .sort((left, right) => Number(right?.timestamp || 0) - Number(left?.timestamp || 0))
+            .slice(0, 3);
+    }
+
+    function getPaymentsCommandCenterSummary() {
+        const data = state.summary || {};
+        const overview = data?.overview || {};
+        const anomaly = data?.anomaly_summary || {};
+        const ops = data?.ops_alert_summary || {};
+        const retryCount = Math.max(0, Number(ops.retry || 0) || 0);
+        const pendingCount = Math.max(0, Number(ops.pending || 0) || 0);
+        const processingCount = Math.max(0, Number(ops.processing || 0) || 0);
+        const deadLetterCount = Math.max(0, Number(ops.dead_letter || 0) || 0);
+        const actionableOpsCount = ops.actionable_count != null
+            ? Math.max(0, Number(ops.actionable_count || 0) || 0)
+            : pendingCount + retryCount + processingCount + deadLetterCount;
+        const reviewOrders = Math.max(0, Number(anomaly.review_orders || 0) || 0);
+        const failedOrders = Math.max(0, Number(anomaly.failed_orders || 0) || 0);
+
+        return {
+            ready: Boolean(state.summary),
+            status: state.loading ? 'loading' : (state.summary ? 'ready' : 'idle'),
+            paidRate: Number.isFinite(Number(overview.paid_rate)) ? Number(overview.paid_rate) : null,
+            retryCount,
+            pendingCount,
+            processingCount,
+            deadLetterCount,
+            actionableOpsCount,
+            reviewOrders,
+            failedOrders,
+            actionableCount: actionableOpsCount + reviewOrders + failedOrders,
+            recentItems: getPaymentsCommandCenterRecentItems(data)
+        };
+    }
+
+    function emitPaymentsCommandCenterSummaryUpdate() {
+        if (typeof window.dispatchEvent !== 'function' || typeof CustomEvent !== 'function') {
+            return;
+        }
+
+        try {
+            window.dispatchEvent(new CustomEvent('admin-payments-command-summary-updated', {
+                detail: getPaymentsCommandCenterSummary()
+            }));
+        } catch (_) {
+            // Summary sync should never block the payments workbench itself.
+        }
     }
 
     function splitItemsByResolution(items, getStatus) {
@@ -2176,7 +2497,10 @@
     }
 
     function scrollFocusedOrderIntoView() {
-        window.requestAnimationFrame(() => {
+        const schedule = typeof window.requestAnimationFrame === 'function'
+            ? window.requestAnimationFrame.bind(window)
+            : ((callback) => window.setTimeout(callback, 16));
+        schedule(() => {
             const focused = document.querySelector('[data-payments-focused-order="1"]');
             if (focused instanceof HTMLElement && typeof focused.scrollIntoView === 'function') {
                 focused.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -2249,23 +2573,29 @@
     }
 
     async function fetchAdminJson(url, options = {}) {
-        const token = await getAccessToken();
-        const headers = {
+        const baseHeaders = {
             ...(options.headers || {})
         };
 
-        if (token) {
-            headers.Authorization = `Bearer ${token}`;
+        if (options.body && !baseHeaders['Content-Type']) {
+            baseHeaders['Content-Type'] = 'application/json';
         }
 
-        if (options.body && !headers['Content-Type']) {
-            headers['Content-Type'] = 'application/json';
-        }
+        const requestInit = window.AdminApi?.buildRequestInit
+            ? await window.AdminApi.buildRequestInit({
+                ...options,
+                headers: baseHeaders
+            })
+            : (() => {
+                const fallbackInit = {
+                    ...options,
+                    headers: baseHeaders
+                };
 
-        const response = await fetch(url, {
-            ...options,
-            headers
-        });
+                return fallbackInit;
+            })();
+
+        const response = await fetch(url, requestInit);
 
         let rawText = '';
         let payload = {};
@@ -2357,6 +2687,7 @@
                     Object.entries(preservedOpsPayload).filter(([, value]) => value !== undefined)
                 )
             };
+            emitPaymentsCommandCenterSummaryUpdate();
             return state.summary;
         }
 
@@ -2365,6 +2696,7 @@
             ...incoming
         };
 
+        emitPaymentsCommandCenterSummaryUpdate();
         return state.summary;
     }
 
@@ -5503,25 +5835,27 @@
             return null;
         }
 
+        const normalizedTargetType = String(targetType || '').trim().toLowerCase();
+        const normalizedTargetId = String(targetId || '').trim();
         const target = resolvePaymentsActionFeedbackTarget(targetType, targetId) || {};
         const actionLabel = getAnomalyActionLabel(action);
         const referenceLabel = String(
             state.workbenchContext?.referenceLabel
-            || (String(targetType || '').trim().toLowerCase() === 'order' ? '支付订单' : getAnomalyReferenceLabel(target))
+            || (normalizedTargetType === 'order' ? '支付订单' : getAnomalyReferenceLabel(target))
             || '支付问题'
         ).trim();
         const referenceValue = String(
             state.workbenchContext?.referenceValue
             || state.workbenchContext?.queryLabel
             || state.workbenchContext?.query
-            || (String(targetType || '').trim().toLowerCase() === 'order'
+            || (normalizedTargetType === 'order'
                 ? (target?.provider_order_no || target?.package_name || targetId)
                 : getAnomalyReferenceValue(target))
             || targetId
         ).trim();
         const title = `${actionLabel} · ${referenceValue || state.workbenchContext?.productName || '支付异常'}`;
         const summary = String(
-            String(targetType || '').trim().toLowerCase() === 'order'
+            normalizedTargetType === 'order'
                 ? `已在支付页处理 ${referenceLabel}“${referenceValue || targetId}”，建议回到商品分析确认订单或转化信号是否回落。`
                 : `已围绕 ${referenceLabel}“${referenceValue || targetId}”执行 ${actionLabel}，建议回到商品分析确认预警是否收口。`
         ).trim();
@@ -5567,6 +5901,89 @@
             statusKey,
             statusLabel
         });
+    }
+
+    function emitPaymentsCommandFeedback(message = '', feedbackState = 'saved', options = {}) {
+        const normalizedMessage = String(message || '').trim();
+        if (!normalizedMessage) {
+            return null;
+        }
+
+        const detail = {
+            kind: 'module-result',
+            source: String(options?.source || 'payments-ops').trim().toLowerCase() || 'payments-ops',
+            module: 'payments',
+            state: String(feedbackState || options?.state || 'saved').trim().toLowerCase() || 'saved',
+            tone: String(options?.tone || '').trim().toLowerCase(),
+            message: normalizedMessage,
+            persistent: options?.persistent === true,
+            timestamp: Date.now()
+        };
+
+        if (typeof window.dispatchAdminStudioFeedbackSignal === 'function') {
+            return window.dispatchAdminStudioFeedbackSignal(detail);
+        }
+
+        if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+            try {
+                window.dispatchEvent(new CustomEvent('admin-feedback-signal', { detail }));
+            } catch (_) {
+                // Feedback must never block the payment operation itself.
+            }
+        }
+
+        return detail;
+    }
+
+    function getPaymentsIssueSummaryFocusMessage(kind = '') {
+        const normalizedKind = String(kind || '').trim().toLowerCase();
+        if (normalizedKind === 'refund') {
+            return '支付分析已切换到退款异常主题';
+        }
+        if (normalizedKind === 'ops') {
+            return '支付分析已切换到运维告警队列';
+        }
+        if (normalizedKind === 'dead_letter') {
+            return '支付分析已切换到死信告警队列';
+        }
+        if (normalizedKind === 'retry') {
+            return '支付分析已切换到重试告警队列';
+        }
+        if (normalizedKind === 'review') {
+            return '支付分析已切换到人工复核队列';
+        }
+        if (normalizedKind === 'failed') {
+            return '支付分析已切换到失败订单队列';
+        }
+        return '支付分析聚焦视图已打开';
+    }
+
+    function getPaymentsPriorityFocusMessage(action = '', target = '') {
+        const normalizedAction = String(action || '').trim().toLowerCase();
+        const normalizedTarget = String(target || '').trim();
+        if (normalizedAction === 'topic' && normalizedTarget) {
+            return `支付优先级已切换到异常主题 ${normalizedTarget}`;
+        }
+        if (normalizedAction === 'ops') {
+            return '支付优先级已切换到运维告警队列';
+        }
+        return '';
+    }
+
+    function emitPaymentsOrderFocusResult(orderId = '', focusResult = null) {
+        const normalizedOrderId = String(orderId || '').trim();
+        if (!normalizedOrderId) {
+            return null;
+        }
+
+        const normalizedResult = focusResult && typeof focusResult === 'object' ? focusResult : {};
+        return emitPaymentsCommandFeedback(
+            normalizedResult?.matched
+                ? `支付订单 ${normalizedOrderId} 已定位`
+                : `支付订单 ${normalizedOrderId} 已打开，最近订单列表未匹配`,
+            normalizedResult?.matched ? 'saved' : 'partial',
+            { source: 'payments-focus' }
+        );
     }
 
     async function loadSummary(requestToken, targetTab = state.activeTab) {
@@ -5688,8 +6105,18 @@
                 note: note || undefined
             });
 
-            window.showToast?.(payload?.message || `${getAnomalyActionLabel(normalizedAction)}成功`, 'success');
-            recordPaymentsResolutionFeedback(normalizedTargetType, normalizedTargetId, normalizedAction);
+            const successMessage = payload?.message || `${getAnomalyActionLabel(normalizedAction)}成功`;
+            window.showToast?.(successMessage, 'success');
+            try {
+                recordPaymentsResolutionFeedback(normalizedTargetType, normalizedTargetId, normalizedAction);
+            } catch (feedbackError) {
+                console.warn('[AdminPayments] Failed to record resolution feedback:', feedbackError);
+            }
+            try {
+                emitPaymentsCommandFeedback(successMessage, 'saved', { source: 'payments-ops' });
+            } catch (feedbackError) {
+                console.warn('[AdminPayments] Failed to emit command feedback:', feedbackError);
+            }
             if (payload?.reload !== false) {
                 clearTabPrefetch();
                 state.viewCache = {};
@@ -5698,7 +6125,9 @@
             return payload;
         } catch (error) {
             console.error('[AdminPayments] Failed to handle anomaly action:', error);
-            window.showToast?.(getFriendlyErrorMessage(error, '异常操作执行失败，请稍后重试。'), 'error');
+            const failureMessage = getFriendlyErrorMessage(error, '异常操作执行失败，请稍后重试。');
+            window.showToast?.(failureMessage, 'error');
+            emitPaymentsCommandFeedback(failureMessage, 'failed', { source: 'payments-ops' });
             throw error;
         } finally {
             delete state.anomalyActionLoading[actionKey];
@@ -5756,7 +6185,9 @@
 
         const targets = getBatchAnomalyTargets(normalizedScope, normalizedAction);
         if (!targets.length) {
-            window.showToast?.('当前专题下暂无可归档的已处理项。', 'warning');
+            const emptyMessage = '当前专题下暂无可归档的已处理项。';
+            window.showToast?.(emptyMessage, 'warning');
+            emitPaymentsCommandFeedback(emptyMessage, 'partial', { source: 'payments-batch' });
             return;
         }
 
@@ -5790,7 +6221,9 @@
             }
 
             if (failCount === 0) {
-                window.showToast?.(`已批量归档 ${successCount} 条异常。`, 'success');
+                const successMessage = `已批量归档 ${successCount} 条异常。`;
+                window.showToast?.(successMessage, 'success');
+                emitPaymentsCommandFeedback(successMessage, 'saved', { source: 'payments-batch' });
                 return results;
             }
 
@@ -5798,16 +6231,17 @@
             const failureMessage = firstFailure?.reason
                 ? getFriendlyErrorMessage(firstFailure.reason, '部分异常归档失败，请稍后重试。')
                 : '部分异常归档失败，请稍后重试。';
-            window.showToast?.(
-                successCount > 0
-                    ? `已归档 ${successCount} 条，另有 ${failCount} 条失败：${failureMessage}`
-                    : failureMessage,
-                successCount > 0 ? 'warning' : 'error'
-            );
+            const resultMessage = successCount > 0
+                ? `已归档 ${successCount} 条，另有 ${failCount} 条失败：${failureMessage}`
+                : failureMessage;
+            window.showToast?.(resultMessage, successCount > 0 ? 'warning' : 'error');
+            emitPaymentsCommandFeedback(resultMessage, successCount > 0 ? 'partial' : 'failed', { source: 'payments-batch' });
             return results;
         } catch (error) {
             console.error('[AdminPayments] Failed to handle batch anomaly action:', error);
-            window.showToast?.(getFriendlyErrorMessage(error, '批量异常操作执行失败，请稍后重试。'), 'error');
+            const failureMessage = getFriendlyErrorMessage(error, '批量异常操作执行失败，请稍后重试。');
+            window.showToast?.(failureMessage, 'error');
+            emitPaymentsCommandFeedback(failureMessage, 'failed', { source: 'payments-batch' });
             throw error;
         } finally {
             delete state.batchAnomalyActionLoading[batchKey];
@@ -6004,7 +6438,23 @@
             if (requestToken === state.requestToken) {
                 setLoading(false);
             }
+            emitPaymentsCommandCenterSummaryUpdate();
         }
+    }
+
+    async function primePaymentsCommandCenterSummary(options = {}) {
+        const shouldForce = options?.force === true;
+
+        if (!state.initialized || !state.summary) {
+            await init();
+            return getPaymentsCommandCenterSummary();
+        }
+
+        if (shouldForce) {
+            await reload();
+        }
+
+        return getPaymentsCommandCenterSummary();
     }
 
     async function previewCleanup() {
@@ -6345,16 +6795,19 @@
     async function focusOrder(orderId, options = {}) {
         const normalizedOrderId = String(orderId || '').trim();
         if (!normalizedOrderId) {
-            return { opened: false, matched: false };
+            state.lastFocusResult = { opened: false, matched: false };
+            return { ...state.lastFocusResult };
         }
 
         state.focusOrderId = normalizedOrderId;
+        const focusTab = normalizePaymentsTabId(options.focusTab || options.tab || 'ops');
+        const needsFocusedTabData = focusTab === 'ops' && !hasCachedDataForTab('ops');
 
         if (options.switchTab !== false) {
-            switchTab('overview', { reload: false });
+            switchTab(focusTab, { reload: false });
         }
 
-        if (options.reload !== false || !state.summary) {
+        if (options.reload !== false || !state.summary || needsFocusedTabData) {
             await reload();
         } else if (state.summary) {
             renderOrders(state.summary);
@@ -6364,10 +6817,186 @@
         if (matched) {
             scrollFocusedOrderIntoView();
         }
-        return { opened: true, matched };
+        state.lastFocusResult = { opened: true, matched };
+        renderAnalyticsIssueSummary(state.summary, state.workbenchContext);
+        return { ...state.lastFocusResult };
     }
 
-    window.addEventListener('admin-site-changed', () => {
+    function resolvePaymentsActivationTab(context = {}, options = {}) {
+        const normalizedContext = normalizePaymentsContextObject(context);
+        const payload = normalizePaymentsContextObject(normalizedContext.payload);
+        const raw = normalizePaymentsContextObject(normalizedContext.raw);
+        const focusTargetId = String(
+            payload.focusTargetId
+            || payload.focus_target_id
+            || raw.focusTargetId
+            || raw.focus_target_id
+            || normalizedContext.focusTargetId
+            || normalizedContext.focus_target_id
+            || ''
+        ).trim();
+
+        if (focusTargetId === 'paymentsExceptionTopics') {
+            return 'ops';
+        }
+
+        return normalizePaymentsTabId(
+            payload.defaultTab
+            || payload.tab
+            || raw.defaultTab
+            || raw.tab
+            || options.defaultTab
+            || options.tab
+            || state.activeTab
+            || 'overview'
+        );
+    }
+
+    function scrollPaymentsFocusTarget(targetId = '') {
+        const normalizedTargetId = String(targetId || '').trim();
+        if (!normalizedTargetId) {
+            return false;
+        }
+
+        const target = document.getElementById(normalizedTargetId);
+        if (!target || typeof target.scrollIntoView !== 'function') {
+            return false;
+        }
+
+        window.setTimeout(() => {
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 40);
+        return true;
+    }
+
+    async function activatePaymentsModule(context = {}, options = {}) {
+        const nextTab = resolvePaymentsActivationTab(context, options);
+        switchTab(nextTab, { reload: false });
+        await init();
+        return true;
+    }
+
+    async function handlePaymentsModuleContext(context = {}, options = {}) {
+        const normalizedContext = normalizePaymentsContextObject(context);
+        const focus = normalizePaymentsContextObject(normalizedContext.focus);
+        const payload = normalizePaymentsContextObject(normalizedContext.payload);
+        const raw = normalizePaymentsContextObject(normalizedContext.raw);
+        const paymentOrderId = String(
+            focus.paymentOrderId
+            || focus.payment_order_id
+            || payload.paymentOrderId
+            || payload.payment_order_id
+            || raw.paymentOrderId
+            || raw.payment_order_id
+            || ''
+        ).trim();
+        const issueSummaryKind = String(
+            payload.issueSummary
+            || payload.issue_summary
+            || raw.issueSummary
+            || raw.issue_summary
+            || ''
+        ).trim().toLowerCase();
+        const priorityAction = String(
+            payload.priorityAction
+            || payload.priority_action
+            || raw.priorityAction
+            || raw.priority_action
+            || normalizedContext.priorityAction
+            || normalizedContext.priority_action
+            || ''
+        ).trim().toLowerCase();
+        const exceptionTopic = String(
+            payload.exceptionTopic
+            || payload.exception_topic
+            || raw.exceptionTopic
+            || raw.exception_topic
+            || ''
+        ).trim();
+        const focusTargetId = String(
+            payload.focusTargetId
+            || payload.focus_target_id
+            || raw.focusTargetId
+            || raw.focus_target_id
+            || normalizedContext.focusTargetId
+            || normalizedContext.focus_target_id
+            || ''
+        ).trim();
+
+        showWorkbenchContext(normalizedContext);
+
+        if (
+            (priorityAction === 'order' && paymentOrderId)
+            || (priorityAction === 'topic' && exceptionTopic)
+            || priorityAction === 'ops'
+        ) {
+            const focusResult = await focusAnalyticsPrioritySummary(
+                priorityAction,
+                priorityAction === 'order'
+                    ? paymentOrderId
+                    : (priorityAction === 'topic' ? exceptionTopic : '')
+            );
+
+            if (priorityAction === 'order' && paymentOrderId) {
+                emitPaymentsOrderFocusResult(paymentOrderId, focusResult);
+            } else {
+                const priorityMessage = getPaymentsPriorityFocusMessage(priorityAction, exceptionTopic);
+                if (priorityMessage) {
+                    emitPaymentsCommandFeedback(priorityMessage, 'saved', { source: 'payments-focus' });
+                }
+            }
+
+            if (focusTargetId) {
+                scrollPaymentsFocusTarget(focusTargetId);
+            }
+            return true;
+        }
+
+        if (paymentOrderId) {
+            const focusResult = await focusOrder(paymentOrderId, {
+                switchTab: true,
+                reload: !state.summary || options.force === true
+            });
+            emitPaymentsOrderFocusResult(paymentOrderId, focusResult);
+
+            if (!focusResult.matched && focusTargetId) {
+                scrollPaymentsFocusTarget(focusTargetId);
+            }
+            return true;
+        }
+
+        if (issueSummaryKind) {
+            await focusAnalyticsIssueSummary(issueSummaryKind);
+            emitPaymentsCommandFeedback(getPaymentsIssueSummaryFocusMessage(issueSummaryKind), 'saved', {
+                source: 'payments-focus'
+            });
+            return true;
+        }
+
+        if (exceptionTopic) {
+            await focusExceptionTopic(exceptionTopic);
+            emitPaymentsCommandFeedback(`支付异常主题 ${exceptionTopic} 已定位`, 'saved', {
+                source: 'payments-focus'
+            });
+            return true;
+        }
+
+        if (!state.summary && state.initialized) {
+            await reload();
+        }
+
+        if (focusTargetId) {
+            scrollPaymentsFocusTarget(focusTargetId);
+        }
+        return true;
+    }
+
+    async function openAdminPaymentsShellContext(context = {}, options = {}) {
+        await activatePaymentsModule(context, options);
+        return handlePaymentsModuleContext(context, options);
+    }
+
+    function handlePaymentsSiteChange() {
         resetViewState();
 
         if (!state.initialized || !isPaymentsModuleActive()) {
@@ -6375,11 +7004,44 @@
         }
 
         void reload();
+    }
+
+    function activateVisiblePaymentsModuleOnAccess() {
+        if (!isPaymentsModuleActive()) {
+            return;
+        }
+
+        void activatePaymentsModule();
+    }
+
+    window.handleAdminPaymentsSiteChange = handlePaymentsSiteChange;
+    window.openAdminPaymentsShellContext = openAdminPaymentsShellContext;
+
+    if (window.AdminShell?.registerModule) {
+        window.AdminShell.registerModule('payments', {
+            activate: activatePaymentsModule,
+            handleContext: handlePaymentsModuleContext,
+            onSiteChange: handlePaymentsSiteChange,
+            reload: handlePaymentsSiteChange
+        });
+    } else {
+        window.addEventListener('admin-site-changed', window.handleAdminPaymentsSiteChange);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        if (window.adminStudioAccessGranted) {
+            activateVisiblePaymentsModuleOnAccess();
+            return;
+        }
+
+        window.addEventListener('adminStudioAccessGranted', activateVisiblePaymentsModuleOnAccess, { once: true });
     });
 
     window.AdminPayments = {
         init,
         reload,
+        getCommandCenterSummary: getPaymentsCommandCenterSummary,
+        primeCommandCenterSummary: primePaymentsCommandCenterSummary,
         switchTab,
         scheduleTabPrefetch,
         getActiveTab: () => state.activeTab,
@@ -6399,6 +7061,7 @@
         focusAnalyticsIssueSummary,
         focusAnalyticsPrioritySummary,
         focusOrder,
+        getLastFocusResult: () => (state.lastFocusResult ? { ...state.lastFocusResult } : null),
         showWorkbenchContext
     };
 })();

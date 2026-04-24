@@ -13,6 +13,7 @@ test('gallery p1 workflow and cross-module linkage surfaces prompt ops, homepage
     const adminStudioCss = readRepoFile('admin-studio.css');
     const homepageSource = readRepoFile('admin-homepage.js');
     const commentsSource = readRepoFile('admin-comments.js');
+    const growthCenterSource = readRepoFile('js/admin-growth-center.js');
     const sidebarCss = readRepoFile('admin-sidebar.css');
     const analyticsPanelLoaders = readRepoFile('js/admin-analytics-panel-loaders.js');
 
@@ -55,6 +56,10 @@ test('gallery p1 workflow and cross-module linkage surfaces prompt ops, homepage
         'nextAiTags.useCase = analysisData.useCase || {};',
         'nextAiTags.commercial = analysisData.commercial || {};',
         'nextAiTags.difficulty = analysisData.difficulty || \'\';',
+        'async function openAdminStudioPromptGalleryContext(promptId = \'\', options = {}) {',
+        'async function openAdminStudioPromptCommentsContext(context = {}) {',
+        'async function openAdminStudioPromptHomepageContext(promptId = \'\', options = {}) {',
+        'async function openAdminStudioPromptAnalyticsContext(promptId = \'\', options = {}) {',
         "promptText: promptHasVisibleCopy(currentForm?.prompt) ? currentForm.prompt : ''",
         "const nextLabel = isEditMode ? '重新分析元数据' : 'Analyze';",
         'currentEditingPromptAiTags = clonePromptAiTags(data.ai_tags || {});',
@@ -68,6 +73,10 @@ test('gallery p1 workflow and cross-module linkage surfaces prompt ops, homepage
         "case 'analytics-open-prompt-gallery':",
         "case 'analytics-open-prompt-comments':",
         "case 'analytics-open-prompt-homepage':",
+        'void openAdminStudioPromptGalleryContext(',
+        'void openAdminStudioPromptCommentsContext({',
+        'void openAdminStudioPromptHomepageContext(',
+        'void openAdminStudioPromptAnalyticsContext(',
         "homepageBtn.setAttribute('data-admin-action', featureState.currentSite ? 'gallery-open-prompt-homepage' : 'gallery-add-prompt-homepage');",
         "opsNote.className = 'admin-card-ops-note';"
     ];
@@ -82,14 +91,23 @@ test('gallery p1 workflow and cross-module linkage surfaces prompt ops, homepage
         'function isPromptFeatured(promptId = \'\', options = {})',
         'async function moveFeaturedPrompt(promptId, direction, options = {})',
         'async function openPromptSectionContext(promptId = \'\', options = {})',
+        'async function activateHomepageModule(context = {}, options = {}) {',
+        'async function handleHomepageShellContext(context = {}, options = {}) {',
+        'async function handleHomepageSiteChange(detail = {}) {',
         'data-admin-action="homepage-move-featured-prompt"',
         'data-homepage-direction="top"',
         'data-admin-action="homepage-open-featured-gallery"',
         'data-admin-action="homepage-open-featured-comments"',
         'data-admin-action="homepage-open-featured-analytics"',
         'ensureLoaded: ensureHomepageConfigLoaded,',
+        'activate: activateHomepageModule,',
         'moveFeaturedPrompt,',
-        'openPromptSectionContext,'
+        'openPromptSectionContext,',
+        'openShellContext: openAdminHomepageShellContext,',
+        'handleShellContext: handleHomepageShellContext,',
+        'handleSiteChange: handleHomepageSiteChange,',
+        'window.openAdminHomepageShellContext = (context = {}, options = {}) => window.HomepageAdmin?.openShellContext?.(context, options);',
+        "window.AdminShell.registerModule('homepage', {"
     ];
 
     for (const marker of homepageMarkers) {
@@ -105,11 +123,31 @@ test('gallery p1 workflow and cross-module linkage surfaces prompt ops, homepage
         "case 'open-prompt-gallery':",
         "case 'open-prompt-homepage':",
         "case 'open-prompt-analytics':",
+        'async function openAdminCommentsPromptGalleryContext() {',
+        'async function openAdminCommentsPromptHomepageContext() {',
+        'async function openAdminCommentsPromptAnalyticsContext() {',
+        "typeof window.openAdminHomepageShellContext === 'function'",
+        "typeof window.openAdminGrowthCenterShellContext === 'function'",
+        "await window.AdminShell.openContext('growth-center'",
         'renderCommentsPromptContextBar();'
     ];
 
     for (const marker of commentsMarkers) {
         assert.equal(commentsSource.includes(marker), true, `admin-comments.js should contain ${marker}`);
+    }
+
+    const growthCenterMarkers = [
+        'handleContext(context = {}, options = {}) {',
+        "window.openAnalyticsDestination(analyticsDestination, destinationContext)",
+        'window.syncAnalyticsRouteState({',
+        'window.switchAnalyticsTab(requestedTab, {',
+        'async function openAdminGrowthCenterShellContext(context = {}, options = {}) {',
+        'window.openAdminGrowthCenterShellContext = openAdminGrowthCenterShellContext;',
+        'handleContext: (context = {}, options = {}) => window.AdminGrowthCenter?.handleContext?.(context, options)'
+    ];
+
+    for (const marker of growthCenterMarkers) {
+        assert.equal(growthCenterSource.includes(marker), true, `js/admin-growth-center.js should contain ${marker}`);
     }
 
     const analyticsMarkers = [

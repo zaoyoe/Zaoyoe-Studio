@@ -191,12 +191,43 @@ const SHOP_GRID_EAGER_IMAGE_COUNT = 4;
 const SHOP_PRODUCT_SKELETON_COUNT = 5;
 const SHOP_CARD_BREATHE_DURATION_MS = 5800;
 const SHOP_CARD_BREATHE_AMPLITUDE_PX = 6;
-const SHOP_PREFETCH_SCHEMA_VERSION = '20260413_PURCHASE_GUIDANCE_2';
+const SHOP_PREFETCH_SCHEMA_VERSION = '20260423_PRODUCT_DESCRIPTION_VISIBILITY_1';
 const SHOP_PURCHASE_PREFILL_SCHEMA_VERSION = '20260415_SHOP_PURCHASE_PREFILL_1';
 const SHOP_PURCHASE_PREFILL_STORAGE_KEY = 'shop_purchase_prefill';
 const SHOP_DISCOUNT_ASSETS_CACHE_TTL_MS = 2 * 60 * 1000;
 const SHOP_DISCOUNT_ASSETS_PREFETCH_LIMIT = 4;
+const SHOP_DEFERRED_TASK_TIMEOUT_MS = 1400;
+const SHOP_POST_RENDER_TASK_TIMEOUT_MS = 900;
 const shopCardImageWarmCache = new Set();
+
+async function ensureShopWalletModal(options = {}) {
+    if (window.WalletModal) {
+        if (options.prefetch === true && typeof window.WalletModal.prefetchData === 'function') {
+            window.WalletModal.prefetchData();
+        }
+        return window.WalletModal;
+    }
+
+    const loader = window.ZaoyoeWalletModalBootstrap;
+    if (!loader) {
+        return null;
+    }
+
+    try {
+        return options.prefetch === true && typeof loader.warm === 'function'
+            ? await loader.warm({ prefetch: true })
+            : await loader.ensure();
+    } catch (error) {
+        console.warn('[ShopClient] Failed to load wallet modal runtime:', error?.message || error);
+        return null;
+    }
+}
+
+async function openShopWalletModal(view = 'balance', context = {}) {
+    const walletModal = await ensureShopWalletModal();
+    walletModal?.open?.(view, context);
+    return walletModal;
+}
 
 const ShopClient = {
     currentAgentId: null,
@@ -231,6 +262,7 @@ const ShopClient = {
     cartItemDisclosureState: {},
     cartOpen: false,
     cartCheckoutProcessing: false,
+    purchaseProcessing: false,
     cartBackdropCloseGuardUntil: 0,
     productsRequestToken: 0,
     productsCacheEpoch: 0,
@@ -243,8 +275,11 @@ const ShopClient = {
     cartAnchorFeedbackTimer: null,
     lastSkeletonCount: SHOP_PRODUCT_SKELETON_COUNT,
     staticUiBindingsBound: false,
+    deferredUiBindingsBound: false,
+    deferredUiBindingsHandle: null,
     pendingProductSpotlight: null,
     productSpotlightTimer: null,
+    postRenderEnhancementHandle: null,
     discountAssetsCache: new Map(),
     discountAssetsRequestCache: new Map(),
     discountAssetsPrefetchHandle: null,
@@ -428,6 +463,10 @@ const ShopClient = {
         return (isEn && product.description_en)
             ? product.description_en
             : (product.description || (window.i18n?.t('shop.noDescription') || '暂无描述'));
+    },
+
+    shouldShowProductCardDescription: function (product) {
+        return product?.show_product_description !== false;
     },
 
     formatShopPoints: function (value) {
@@ -1464,12 +1503,26 @@ const ShopClient = {
         const normalizedMessage = String(message || '').trim();
         if (!normalizedMessage) return;
 
-        if (window.WalletModal?.showToast) {
-            window.WalletModal.showToast(normalizedMessage, variant);
+        const toast = this.ensureShopToastElement();
+        if (!toast) {
+            if (window.WalletModal?.showToast) {
+                window.WalletModal.showToast(normalizedMessage, variant);
+                return;
+            }
+            console.info(`[ShopToast:${variant}]`, normalizedMessage);
             return;
         }
 
-        console.info(`[ShopToast:${variant}]`, normalizedMessage);
+        toast.textContent = normalizedMessage;
+        toast.dataset.variant = variant;
+        toast.classList.add('is-visible');
+
+        if (toast.__hideTimer) {
+            clearTimeout(toast.__hideTimer);
+        }
+        toast.__hideTimer = setTimeout(() => {
+            toast.classList.remove('is-visible');
+        }, 1800);
     },
 
     getCachedProductById: function (productId) {
@@ -1508,6 +1561,7 @@ const ShopClient = {
             name_en: product.name_en || '',
             description: product.description || '',
             description_en: product.description_en || '',
+            show_product_description: product.show_product_description !== false,
             icon_url: product.icon_url || '',
             category: product.category || '',
             stock_count: Number(product.stock_count || 0) || 0,
@@ -2687,6 +2741,7 @@ const ShopClient = {
         const nextBtn = document.getElementById('nextPurchaseStepBtn');
         const confirmBtn = document.getElementById('confirmPurchaseBtn');
         const copy = this.getPurchaseStageCopy(nextStage);
+        const isPurchaseProcessing = this.purchaseProcessing === true;
 
         this.currentPurchase.stage = nextStage;
 
@@ -2708,25 +2763,29 @@ const ShopClient = {
         if (backBtn) {
             backBtn.innerHTML = `<i class="fas fa-arrow-left"></i> <span>${this.escapeHtml(copy.backLabel)}</span>`;
             this.setElementHidden(backBtn, nextStage !== 'confirm');
-            backBtn.disabled = false;
+            backBtn.disabled = isPurchaseProcessing;
         }
 
         if (addToCartBtn) {
             addToCartBtn.innerHTML = `<i class="fas fa-basket-shopping"></i> <span>${this.escapeHtml(this.getCartCopy().addLabel)}</span>`;
             this.setElementHidden(addToCartBtn, nextStage !== 'configure' || Boolean(this.currentPurchase?.cartOrigin?.productId));
-            addToCartBtn.disabled = false;
+            addToCartBtn.disabled = isPurchaseProcessing;
         }
 
         if (nextBtn) {
-            nextBtn.innerHTML = `<span>${this.escapeHtml(copy.nextLabel)}</span>`;
+            nextBtn.innerHTML = isPurchaseProcessing
+                ? `<i class="fas fa-spinner fa-spin"></i> <span>${this.escapeHtml(window.i18n?.t('shop.processing') || '处理中...')}</span>`
+                : `<span>${this.escapeHtml(copy.nextLabel)}</span>`;
             this.setElementHidden(nextBtn, nextStage !== 'configure');
-            nextBtn.disabled = false;
+            nextBtn.disabled = isPurchaseProcessing;
         }
 
         if (confirmBtn) {
-            confirmBtn.innerHTML = `<i class="fas fa-shopping-cart"></i> <span>${this.escapeHtml(copy.confirmLabel)}</span>`;
+            confirmBtn.innerHTML = isPurchaseProcessing
+                ? `<i class="fas fa-spinner fa-spin"></i> <span>${this.escapeHtml(window.i18n?.t('shop.processing') || '处理中...')}</span>`
+                : `<i class="fas fa-shopping-cart"></i> <span>${this.escapeHtml(copy.confirmLabel)}</span>`;
             this.setElementHidden(confirmBtn, nextStage !== 'confirm');
-            confirmBtn.disabled = false;
+            confirmBtn.disabled = isPurchaseProcessing;
         }
 
     },
@@ -4131,35 +4190,16 @@ const ShopClient = {
     init: async function () {
         console.log('🛍️ Shop Client Initialized');
         this.bindStaticUiHandlers();
+        this.scheduleDeferredUiBindings();
         this.restoreCartState();
         this.renderCart();
 
         // Read URL parameters
         const urlParams = new URLSearchParams(window.location.search);
 
-        // Agent Store Logic
-        const agentParam = urlParams.get('agent');
-        if (agentParam) {
-            try {
-                const { data } = await window.supabaseClient.from('profiles').select('id, username').eq('username', agentParam).single();
-                if (data && data.id) {
-                    this.currentAgentId = data.id;
-                    this.currentAgentName = data.username;
-                    console.log(`🛍️ Welcome to Agent Store: ${this.currentAgentName}`);
-
-                    // Update Page Title and Hero Title if exists
-                    document.title = `${this.currentAgentName} ${window.i18n?.t('shop.agentStore') || '的专属福利商店'}`;
-                    const heroTitle = document.querySelector('.hero-title');
-                    if (heroTitle) {
-                        heroTitle.innerHTML = `<span class="shop-inline-store-title-icon"><i class="fas fa-store" aria-hidden="true"></i></span>${this.escapeHtml(this.currentAgentName)} ${window.i18n?.t('shop.agentStore') || '的专属福利商店'}`;
-                    }
-
-                    void this.ensureAgentPricesReadyInBackground();
-                }
-            } catch (err) {
-                console.warn('Agent lookup failed:', err);
-            }
-        }
+        this.scheduleDeferredInitTasks({
+            agentParam: urlParams.get('agent')
+        });
 
         const categoryParam = urlParams.get('category');
         if (categoryParam) {
@@ -4238,11 +4278,10 @@ const ShopClient = {
                     }
                 } catch (e) { /* ignore */ }
 
-                // Load category filters and products in parallel to avoid serial first-paint delays
-                await Promise.all([
-                    this.loadCategoryFilters(),
-                    this.loadProducts()
-                ]);
+                // Keep the storefront order stable: resolve category pills first,
+                // then let the first product batch replace the server skeletons.
+                await this.loadCategoryFilters();
+                await this.loadProducts();
 
                 // Clear prefetch references
                 this._prefetchedCategories = null;
@@ -4278,11 +4317,124 @@ const ShopClient = {
         // Listen for language change to reload products in real-time
         window.addEventListener('languageChanged', () => {
             console.log('🌐 Language changed, reloading shop content...');
-            this.loadCategoryFilters();
-            this.loadProducts();
+            void (async () => {
+                await this.loadCategoryFilters();
+                await this.loadProducts();
+            })();
             this.renderCart();
             this.renderCartCheckoutModal();
         });
+    },
+
+    scheduleDeferredInitTasks: function ({ agentParam = '' } = {}) {
+        const run = () => {
+            void this.hydrateAgentStorefront(agentParam);
+        };
+
+        if (typeof window.requestIdleCallback === 'function') {
+            window.requestIdleCallback(run, { timeout: SHOP_DEFERRED_TASK_TIMEOUT_MS });
+        } else {
+            window.setTimeout(run, 220);
+        }
+    },
+
+    schedulePostRenderEnhancements: function ({ products = [], requestToken = 0 } = {}) {
+        const normalizedProducts = Array.isArray(products) ? products.filter(Boolean) : [];
+        if (!normalizedProducts.length) {
+            return;
+        }
+
+        if (this.postRenderEnhancementHandle?.id != null) {
+            if (this.postRenderEnhancementHandle.kind === 'idle' && typeof window.cancelIdleCallback === 'function') {
+                window.cancelIdleCallback(this.postRenderEnhancementHandle.id);
+            } else {
+                window.clearTimeout(this.postRenderEnhancementHandle.id);
+            }
+            this.postRenderEnhancementHandle = null;
+        }
+
+        const run = () => {
+            this.postRenderEnhancementHandle = null;
+
+            if (requestToken && requestToken !== this.productsRequestToken) {
+                return;
+            }
+
+            this.warmShopCardLeadImages(normalizedProducts);
+            this.scheduleVisibleDiscountAssetsPrefetch(normalizedProducts);
+        };
+
+        if (typeof window.requestIdleCallback === 'function') {
+            this.postRenderEnhancementHandle = {
+                kind: 'idle',
+                id: window.requestIdleCallback(run, {
+                    timeout: SHOP_POST_RENDER_TASK_TIMEOUT_MS
+                })
+            };
+        } else {
+            this.postRenderEnhancementHandle = {
+                kind: 'timeout',
+                id: window.setTimeout(run, 160)
+            };
+        }
+    },
+
+    scheduleDeferredUiBindings: function () {
+        if (this.deferredUiBindingsBound || this.deferredUiBindingsHandle?.id != null) {
+            return;
+        }
+
+        const run = () => {
+            this.deferredUiBindingsHandle = null;
+            this.bindDeferredUiHandlers();
+        };
+
+        if (typeof window.requestIdleCallback === 'function') {
+            this.deferredUiBindingsHandle = {
+                kind: 'idle',
+                id: window.requestIdleCallback(run, { timeout: SHOP_POST_RENDER_TASK_TIMEOUT_MS })
+            };
+        } else {
+            this.deferredUiBindingsHandle = {
+                kind: 'timeout',
+                id: window.setTimeout(run, 180)
+            };
+        }
+    },
+
+    hydrateAgentStorefront: async function (agentParam = '') {
+        const normalizedAgent = String(agentParam || '').trim();
+        if (!normalizedAgent || !window.supabaseClient) {
+            return null;
+        }
+
+        try {
+            const { data } = await window.supabaseClient
+                .from('profiles')
+                .select('id, username')
+                .eq('username', normalizedAgent)
+                .single();
+
+            if (!data?.id) {
+                return null;
+            }
+
+            this.currentAgentId = data.id;
+            this.currentAgentName = data.username;
+            console.log(`🛍️ Welcome to Agent Store: ${this.currentAgentName}`);
+
+            document.title = `${this.currentAgentName} ${window.i18n?.t('shop.agentStore') || '的专属福利商店'}`;
+            const heroTitle = document.querySelector('.hero-title');
+            if (heroTitle) {
+                heroTitle.innerHTML = `<span class="shop-inline-store-title-icon"><i class="fas fa-store" aria-hidden="true"></i></span>${this.escapeHtml(this.currentAgentName)} ${window.i18n?.t('shop.agentStore') || '的专属福利商店'}`;
+            }
+
+            void this.ensureAgentPricesReadyInBackground();
+            return data;
+        } catch (error) {
+            console.warn('Agent lookup failed:', error);
+            return null;
+        }
     },
 
     bindStaticUiHandlers: function () {
@@ -4543,6 +4695,14 @@ const ShopClient = {
             }
         });
 
+        this.staticUiBindingsBound = true;
+    },
+
+    bindDeferredUiHandlers: function () {
+        if (this.deferredUiBindingsBound) {
+            return;
+        }
+
         document.addEventListener('keydown', (event) => {
             if (event.key !== 'Escape') return;
 
@@ -4637,7 +4797,7 @@ const ShopClient = {
             this.viewOrderContent(target.dataset.shopOrderId || '', target.dataset.shopOrderContent || '');
         });
 
-        this.staticUiBindingsBound = true;
+        this.deferredUiBindingsBound = true;
     },
 
     escapeAttribute: function (text) {
@@ -4862,6 +5022,23 @@ const ShopClient = {
 
     buildSuccessToastMarkup: function () {
         return '<div id="shopSuccessToast" class="shop-success-toast" aria-live="polite"></div>';
+    },
+
+    ensureShopToastElement: function () {
+        const existing = document.getElementById('shopStorefrontToast');
+        if (existing) {
+            return existing;
+        }
+
+        const toast = document.createElement('div');
+        toast.id = 'shopStorefrontToast';
+        toast.className = 'shop-success-toast';
+        toast.dataset.shopToastGlobal = '1';
+        toast.setAttribute('aria-live', 'polite');
+        toast.setAttribute('aria-atomic', 'true');
+        toast.setAttribute('role', 'status');
+        document.body.appendChild(toast);
+        return toast;
     },
 
     parseSuccessWarning: function (warning = '') {
@@ -5566,9 +5743,14 @@ const ShopClient = {
         const safeIconClass = this.escapeAttribute(product.icon_url || '');
         const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
         const displayName = (currentLang === 'en' && product.name_en) ? product.name_en : product.name;
-        const displayDesc = (currentLang === 'en' && product.description_en)
-            ? product.description_en
-            : (product.description || (window.i18n?.t('shop.noDescription') || '暂无描述'));
+        const showDescriptionOnCard = this.shouldShowProductCardDescription(product);
+        const displayDesc = showDescriptionOnCard
+            ? (
+                (currentLang === 'en' && product.description_en)
+                    ? product.description_en
+                    : (product.description || (window.i18n?.t('shop.noDescription') || '暂无描述'))
+            )
+            : '';
         const safeCardImageAlt = this.escapeAttribute(displayName || (window.i18n?.t('shop.productImage') || '商品封面'));
         const safeIconUrl = this.escapeAttribute(product.icon_url || '');
         const hasCoverImage = this.isShopImageSource(product.icon_url);
@@ -5617,7 +5799,7 @@ const ShopClient = {
 
             <div class="shop-content-padding">
                 <h3 class="shop-card-title">${this.escapeHtml(displayName)}</h3>
-                <p class="shop-card-desc">${this.escapeHtml(displayDesc)}</p>
+                ${showDescriptionOnCard ? `<p class="shop-card-desc">${this.escapeHtml(displayDesc)}</p>` : ''}
 
                 <div class="shop-card-footer">
                     <div class="shop-card-price">${pricingState.priceHtml}</div>
@@ -7402,12 +7584,12 @@ const ShopClient = {
         if (errorMessage.includes('积分') || errorMessage.includes('余额') || errorMessage.includes('nsufficient') || errorMessage.includes('balance')) {
             this.closeCartCheckoutModal();
             this.showShopToast(window.i18n?.t('shop.insufficientPoints') || '积分不足，请先充值', 'error');
-            if (window.WalletModal?.open) {
-                setTimeout(() => window.WalletModal.open('recharge', {
+            setTimeout(() => {
+                void openShopWalletModal('recharge', {
                     entry: 'shop_cart_insufficient_points',
                     sourceModule: 'shop_client'
-                }), 300);
-            }
+                });
+            }, 300);
             return;
         }
 
@@ -7420,6 +7602,7 @@ const ShopClient = {
             this.promptLoginForPurchase(window.i18n?.t('shop.loginRequired') || '请先登录再进行兑换');
             return;
         }
+        if (this.purchaseProcessing) return;
 
         // Disable button
         const btn = document.getElementById('confirmPurchaseBtn') || document.getElementById('nextPurchaseStepBtn');
@@ -7429,6 +7612,7 @@ const ShopClient = {
         }
         const originalText = btn.innerHTML;
         const processingText = window.i18n?.t('shop.processing') || '处理中...';
+        this.purchaseProcessing = true;
         btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>${processingText}</span>`;
         btn.disabled = true;
         if (backBtn) {
@@ -7547,7 +7731,9 @@ const ShopClient = {
                 }
                 this.renderCart();
             }
-            await this.loadProducts({ forceRefresh: true }); // Always refresh stock first
+            const refreshProductsPromise = this.loadProducts({ forceRefresh: true }).catch((error) => {
+                console.warn('Failed to refresh shop products after purchase:', error);
+            });
 
             const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
             const successItems = [
@@ -7567,12 +7753,14 @@ const ShopClient = {
             ];
 
             this.showSuccessModal(finalContent, null, usageInstructions, successItems);
+            this.purchaseProcessing = false;
 
             // Update Points UI
             if (window.updateUserPointsUI && remainingPoints != null) {
                 window.updateUserPointsUI(remainingPoints);
                 if (window.checkAuthState) window.checkAuthState();
             }
+            await refreshProductsPromise;
 
         } catch (err) {
             console.error(err);
@@ -7583,28 +7771,24 @@ const ShopClient = {
             if (errMsg.includes('积分') || errMsg.includes('余额') || errMsg.includes('nsufficient') || errMsg.includes('balance')) {
                 this.closePurchaseModal();
                 // Show a visible toast notification instead of native alert
-                if (window.WalletModal && window.WalletModal.showToast) {
-                    window.WalletModal.showToast(`❌ ${window.i18n?.t('shop.insufficientPoints') || '积分不足，请先充值'}`, 'error');
-                }
+                this.showShopToast(`❌ ${window.i18n?.t('shop.insufficientPoints') || '积分不足，请先充值'}`, 'error');
                 // Open wallet modal for recharging
-                if (window.WalletModal && window.WalletModal.open) {
-                    setTimeout(() => window.WalletModal.open('recharge', {
+                setTimeout(() => {
+                    void openShopWalletModal('recharge', {
                         entry: 'shop_insufficient_points',
                         sourceModule: 'shop_client'
-                    }), 300);
-                }
+                    });
+                }, 300);
             } else {
                 // For other errors, show toast in the purchase modal
-                if (window.WalletModal && window.WalletModal.showToast) {
-                    const redeemFailedLabel = window.i18n?.t('shop.redeemFailed') || '兑换失败';
-                    const normalizedErrMsg = String(errMsg || '').trim();
-                    const toastMessage = !normalizedErrMsg || normalizedErrMsg === redeemFailedLabel
-                        ? `❌ ${redeemFailedLabel}`
-                        : (normalizedErrMsg.startsWith(`${redeemFailedLabel}:`)
-                            ? `❌ ${normalizedErrMsg}`
-                            : `❌ ${redeemFailedLabel}: ${normalizedErrMsg}`);
-                    window.WalletModal.showToast(toastMessage, 'error');
-                }
+                const redeemFailedLabel = window.i18n?.t('shop.redeemFailed') || '兑换失败';
+                const normalizedErrMsg = String(errMsg || '').trim();
+                const toastMessage = !normalizedErrMsg || normalizedErrMsg === redeemFailedLabel
+                    ? `❌ ${redeemFailedLabel}`
+                    : (normalizedErrMsg.startsWith(`${redeemFailedLabel}:`)
+                        ? `❌ ${normalizedErrMsg}`
+                        : `❌ ${redeemFailedLabel}: ${normalizedErrMsg}`);
+                this.showShopToast(toastMessage, 'error');
             }
 
             if (!isDuplicateSubmission) {
@@ -7612,6 +7796,7 @@ const ShopClient = {
             }
 
             // Re-enable button on error
+            this.purchaseProcessing = false;
             btn.innerHTML = originalText;
             btn.disabled = false;
             if (backBtn) {
@@ -7769,19 +7954,7 @@ const ShopClient = {
     },
 
     showShopSuccessToast: function (message) {
-        if (window.WalletModal?.showToast) {
-            window.WalletModal.showToast(message, 'success');
-            return;
-        }
-
-        const toast = document.getElementById('shopSuccessToast');
-        if (!toast) return;
-
-        toast.textContent = message;
-        toast.classList.add('is-visible');
-        setTimeout(() => {
-            toast.classList.remove('is-visible');
-        }, 1500);
+        this.showShopToast(message, 'success');
     },
 
     copySuccessCardContent: async function (encodedText) {
@@ -7823,6 +7996,7 @@ const ShopClient = {
     },
 
     showSuccessModal: function (content, warning, usageInstructions, successItems = []) {
+        this.bindDeferredUiHandlers();
         this.injectPremiumStyles();
         const modal = document.getElementById('shopSuccessModal');
         const contentBox = document.getElementById('purchasedContent');
@@ -8072,6 +8246,7 @@ const ShopClient = {
     },
 
     loadMyOrders: async function () {
+        this.bindDeferredUiHandlers();
         const list = document.getElementById('ordersList');
         if (!list) return;
 
@@ -8140,17 +8315,30 @@ const ShopClient = {
     },
 
     viewOrderContent: function (id, encodedContent) {
-        // Use unified WalletModal order detail view (premium glass style)
-        if (window.WalletModal && window.WalletModal.showOrderDetail) {
-            WalletModal.showOrderDetail(id);
-        } else {
-            // Fallback to old modal if WalletModal not loaded
+        const fallbackToLegacySuccessModal = () => {
             const content = decodeURIComponent(encodedContent);
             this.showSuccessModal(content);
             const modal = document.getElementById('shopSuccessModal');
             const title = modal.querySelector('.card-title');
             if (title) title.textContent = window.i18n?.t('shop.orderDetails') || "订单详情";
+        };
+
+        if (window.WalletModal && window.WalletModal.showOrderDetail) {
+            WalletModal.showOrderDetail(id);
+            return;
         }
+
+        void ensureShopWalletModal().then((walletModal) => {
+            if (walletModal?.showOrderDetail) {
+                walletModal.showOrderDetail(id);
+                return;
+            }
+
+            fallbackToLegacySuccessModal();
+        }).catch((error) => {
+            console.warn('[ShopClient] Failed to open wallet order detail:', error?.message || error);
+            fallbackToLegacySuccessModal();
+        });
     },
 
     copyContent: function () {
@@ -8174,9 +8362,7 @@ const ShopClient = {
             }, 2000);
 
             // Also trigger the elegant success toast
-            if (window.WalletModal && window.WalletModal.showToast) {
-                window.WalletModal.showToast(window.i18n?.t('common.copied') || '已复制', 'success');
-            }
+            this.showShopToast(window.i18n?.t('common.copied') || '已复制', 'success');
         });
     },
 

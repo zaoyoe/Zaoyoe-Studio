@@ -27,6 +27,7 @@
     <!-- Preconnect for performance -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://cdn.zaoyoe.com" crossorigin>
 
     <!-- Google Fonts -->
     <link
@@ -51,21 +52,23 @@
 
     <!-- Internationalization -->
     <script src="./js/i18n.js"></script>
+    <script src="./js/theme-preload.js"></script>
 
     <!-- Cache Utility -->
     <script src="./js/cache.js"></script>
 
     <!-- Prompts Data -->
     <script src="./prompts-data.js?v=20260205"></script>
+    <script src="./js/deferred-styles.js" defer></script>
 
     <!-- Framer Home Styles -->
-    <link rel="stylesheet" href="./verify-widget.css?v=20260415_HOME_VERIFY_DEMO_1">
-    <link rel="stylesheet" href="./css/framer_home.css?v=20260415_HOME_VERIFY_DEMO_1">
+    <link rel="stylesheet" href="./css/framer_home.css?v=20260424_HOME_LIGHT_HERO_ENTRY_OPAQUE_1">
     <link rel="stylesheet" href="css/section-visibility.css?v=20260324_SECTION_VISIBILITY_RUNTIME_STYLE_1">
     <!-- Core Styles (for modals, profile, etc) -->
-    <link rel="stylesheet" href="style.css?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_STYLE_1">
-    <link rel="stylesheet" href="css/auth-sheet.css?v=20260324_AUTH_INJECT_RUNTIME_STYLE_HELPERS_2">
-    <link rel="stylesheet" href="avatar-fix.css?v=20260316_AVATAR_NAV_STABLE_2">
+    <link rel="stylesheet" href="./verify-widget.css?v=20260415_HOME_VERIFY_DEMO_1" media="print" data-deferred-style="1">
+    <link rel="stylesheet" href="css/homepage-overlays.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1" media="print" data-deferred-style="1" data-deferred-style-mode="manual" data-deferred-style-group="homepage-overlays">
+    <link rel="stylesheet" href="css/auth-sheet.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1" media="print" data-deferred-style="1">
+    <link rel="stylesheet" href="avatar-fix.css?v=20260424_SOLID_GUEST_AVATAR_1">
 
     <!-- Disable browser scroll restoration -->
     <script src="./js/index-scroll-bootstrap.js"></script>
@@ -74,7 +77,7 @@
     <link rel="stylesheet" href="./css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1">
 </head>
 
-<body>
+<body class="home-page">
     <!-- Navigation Bar -->
     <nav class="framer-nav">
         <div class="nav-container">
@@ -252,29 +255,25 @@
 
     <!-- Auth System (integrated from inject-auth.js) -->
     <script src="./js/avatar-uploader.js" defer></script>
-    <script src="./js/admin-access.js?v=20260403_ADMIN_ENTRY_WARMUP_1" defer></script>
-    <script src="./supabase-auth-functions.js?v=20260324_AUTH_RUNTIME_STYLE_HELPERS_1" defer></script>
+    <script src="./js/admin-access.js?v=20260421_ADMIN_ACCESS_SESSION_PRIORITY_P0" defer></script>
+    <script src="./supabase-auth-functions.js?v=20260422_AUTH_DROPDOWN_STUDIO_FIX_1" defer></script>
+    <script src="./js/public-scrollbar-auto-hide.js?v=20260424_PUBLIC_SCROLLBAR_AUTO_HIDE_1" defer></script>
     <script src="./js/ios-scroll-lock.js?v=20260324_IOS_SCROLL_LOCK_RUNTIME_STYLE_2" defer></script>
-    <script src="./inject-auth.js?v=20260413_AUTH_LOGIN_MESSAGE_HELPER_1" defer></script>
-    <link rel="stylesheet" href="./css/notification-client.css?v=20260331_NOTIFICATION_FILTER_MEMORY_1">
-    <script src="./notification-client.js?v=20260410_NOTIFICATION_ADMIN_PERSONAL_FIX_1" defer></script>
+    <script src="./inject-auth.js?v=20260424_SOLID_GUEST_AVATAR_1" defer></script>
+    <link rel="stylesheet" href="./css/notification-client.css?v=20260331_NOTIFICATION_FILTER_MEMORY_1" media="print" data-deferred-style="1" data-deferred-style-mode="manual" data-deferred-style-group="homepage-engagement">
+    <script src="./js/engagement-runtime-loader.js?v=20260421_PUBLIC_ENGAGEMENT_LAZY_BOOTSTRAP_P1" data-load-notification="1" data-load-announcement="1" defer></script>
 
     <!-- Supabase Guestbook Functions (for modal form) -->
     <script src="./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1" defer></script>
-    <script src="./announcement-loader.js?v=20260410_ANNOUNCEMENT_BACKDROP_DISMISS_FIX_1" defer></script>
 
     <!--  Framer Home Engine -->
-    <script src="./js/framer_home.js?v=20260419_HOME_LIVE_PROMPT_REFRESH_3"></script>
+    <script src="./js/framer_home.js?v=20260424_HOME_HERO_GUESTBOOK_TRIGGER_6" defer></script>
 
-
-    <!-- Points Service (required by WalletModal) -->
-    <script src="./js/services/PointsService.js?v=20260416_WALLET_SERVICE_READ_PATH_4"></script>
-    <script src="./js/user-event-tracker.js?v=20260405_USER_EVENT_TRACKER_2"></script>
-    <!-- Wallet Modal Component -->
-            <script src="./js/components/WalletModal.js?v=20260418_WALLET_PAYMENT_QR_POLL_2"></script>
+    <script src="./js/user-event-tracker.js?v=20260405_USER_EVENT_TRACKER_2" defer></script>
+    <script src="./js/wallet-modal-loader.js?v=20260423_WALLET_ORDER_DETAIL_FASTPATH_1" defer></script>
 
     <!-- Homepage Bootstrap -->
-    <script src="./js/index-home-bootstrap.js"></script>
+    <script src="./js/index-home-bootstrap.js" defer></script>
 
     <!-- Guestbook Modal -->
     <div class="modal-overlay" id="guestbookModal">
@@ -318,17 +317,13 @@
     </div>
 
     <!-- Guestbook Modal Script -->
-    <script src="./js/homepage-guestbook-modal.js?v=20260324_HOMEPAGE_GUESTBOOK_MODAL_RUNTIME_STYLE_2"></script>
+    <script src="./js/homepage-guestbook-modal.js?v=20260324_HOMEPAGE_GUESTBOOK_MODAL_RUNTIME_STYLE_2" defer></script>
     <!-- Profile Modal (for user profile/security settings) -->
-    <script src="security-cards.js?v=20260315_PROFILE_MODAL_REWRITE_4" defer></script>
-    <script src="./js/profile-modal-template.js?v=20260324_PROFILE_MODAL_RUNTIME_STYLE_1" defer></script>
+    <script src="./js/profile-modal-loader.js?v=20260423_PROFILE_MODAL_LAZY_BOOTSTRAP_P3" defer></script>
 
     <!-- Chat Widget -->
-    <link rel="stylesheet" href="css/chat-widget.css?v=20260324_CHAT_RUNTIME_STYLE_2">
-    <script src="js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1"></script>
-    <script src="js/admin-workbench.js?v=20260402_ADMIN_WORKBENCH_ACCESS_4"></script>
-    <script src="js/components/ChatWidget.js?v=20260402_CHAT_WIDGET_PREWARM_5"></script>
-    <script src="js/chat-widget-loader.js?v=20260323_CHAT_WIDGET_BOOTSTRAP_1"></script>
+    <link rel="stylesheet" href="css/chat-widget.css?v=20260423_CHAT_OPS_ALERT_LIGHT_GLASS_11" media="print" data-deferred-style="1" data-deferred-style-mode="manual" data-deferred-style-group="homepage-chat">
+    <script src="js/chat-widget-loader.js?v=20260423_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_LOADER_11"></script>
 </body>
 
 </html>

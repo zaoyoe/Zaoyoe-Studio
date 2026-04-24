@@ -4,6 +4,8 @@
     const ADMIN_STUDIO_SESSION_CACHE_KEY = 'zaoyoe_admin_studio_session_cache_v1';
     const ADMIN_STUDIO_SESSION_SKEW_MS = 20 * 1000;
     const ADMIN_STUDIO_SESSION_ENDPOINT = '/api/admin/access/session';
+    const DEFAULT_ADMIN_ACCESS_REST_TIMEOUT_MS = 6000;
+    const DEFAULT_ADMIN_STUDIO_SESSION_TIMEOUT_MS = 6000;
     let pendingAdminStudioSessionPromise = null;
     let pendingAdminStudioSessionUserId = '';
     let pendingWarmAdminStudioPromise = null;
@@ -15,6 +17,14 @@
             isSuperAdmin: Boolean(payload?.is_super_admin),
             permissions: Array.isArray(payload?.permissions) ? payload.permissions : []
         };
+    }
+
+    function getAdminAccessTimeout(name = '', fallbackMs = 4000) {
+        const override = Number(globalScope?.__adminAccessTimeouts?.[name]);
+        if (Number.isFinite(override) && override > 0) {
+            return override;
+        }
+        return Math.max(250, Number(fallbackMs) || 4000);
     }
 
     function sanitizeAdminStudioTarget(rawTarget = 'admin-studio.html') {
@@ -100,6 +110,50 @@
         };
     }
 
+    async function fetchWithTimeout(input, init = {}, timeoutMs = DEFAULT_ADMIN_ACCESS_REST_TIMEOUT_MS) {
+        if (typeof fetch !== 'function') {
+            return null;
+        }
+
+        const controller = typeof globalScope.AbortController === 'function'
+            ? new globalScope.AbortController()
+            : typeof AbortController === 'function'
+                ? new AbortController()
+                : null;
+        const nextInit = {
+            ...(init || {})
+        };
+        if (controller && !nextInit.signal) {
+            nextInit.signal = controller.signal;
+        }
+
+        let timeoutId = 0;
+        try {
+            return await Promise.race([
+                Promise.resolve().then(() => fetch(input, nextInit)),
+                new Promise((resolve) => {
+                    timeoutId = globalScope.setTimeout(() => {
+                        try {
+                            controller?.abort?.();
+                        } catch (_) {
+                            // ignore abort failures
+                        }
+                        resolve(null);
+                    }, Math.max(250, Number(timeoutMs) || DEFAULT_ADMIN_ACCESS_REST_TIMEOUT_MS));
+                })
+            ]);
+        } catch (error) {
+            if (error?.name === 'AbortError') {
+                return null;
+            }
+            throw error;
+        } finally {
+            if (timeoutId && typeof globalScope.clearTimeout === 'function') {
+                globalScope.clearTimeout(timeoutId);
+            }
+        }
+    }
+
     async function fetchPersistedAdminAccess(session = null, user = null) {
         const accessToken = String(session?.access_token || '').trim();
         const userId = String(user?.id || '').trim();
@@ -109,19 +163,23 @@
             return null;
         }
 
-        const response = await fetch(`${runtimeConfig.url.replace(/\/+$/, '')}/rest/v1/rpc/get_user_permissions`, {
-            method: 'POST',
-            headers: {
-                apikey: runtimeConfig.publishableKey,
-                Authorization: `Bearer ${accessToken}`,
-                'Content-Type': 'application/json'
+        const response = await fetchWithTimeout(
+            `${runtimeConfig.url.replace(/\/+$/, '')}/rest/v1/rpc/get_user_permissions`,
+            {
+                method: 'POST',
+                headers: {
+                    apikey: runtimeConfig.publishableKey,
+                    Authorization: `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    p_user_id: userId
+                })
             },
-            body: JSON.stringify({
-                p_user_id: userId
-            })
-        });
+            getAdminAccessTimeout('restFallbackMs', DEFAULT_ADMIN_ACCESS_REST_TIMEOUT_MS)
+        );
 
-        if (!response.ok) {
+        if (!response?.ok) {
             return null;
         }
 
@@ -242,6 +300,10 @@
         };
     }
 
+    function hasActiveAdminStudioSession(userId = '') {
+        return Boolean(getCachedAdminStudioSessionResult(userId));
+    }
+
     function hasWarmAdminStudioRoute() {
         const cachedAccess = readAccessCache();
         const cachedSession = readAdminStudioSessionCache();
@@ -281,15 +343,20 @@
     }
 
     async function resolveWithTimeout(factory, timeoutMs = 4000, fallback = null) {
+        let timeoutId = 0;
         try {
             return await Promise.race([
                 Promise.resolve().then(factory),
                 new Promise((resolve) => {
-                    globalScope.setTimeout(() => resolve(fallback), timeoutMs);
+                    timeoutId = globalScope.setTimeout(() => resolve(fallback), timeoutMs);
                 })
             ]);
         } catch (_) {
             return fallback;
+        } finally {
+            if (timeoutId && typeof globalScope.clearTimeout === 'function') {
+                globalScope.clearTimeout(timeoutId);
+            }
         }
     }
 
@@ -341,14 +408,27 @@
         const resolvedUserId = explicitUserId || String(session?.user?.id || buildPersistedSessionUser(persistedSession)?.id || '').trim();
         const sessionRequest = (async () => {
             try {
-                const response = await fetch(ADMIN_STUDIO_SESSION_ENDPOINT, {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: {
-                        Authorization: `Bearer ${accessToken}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
+                const response = await fetchWithTimeout(
+                    ADMIN_STUDIO_SESSION_ENDPOINT,
+                    {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: {
+                            Authorization: `Bearer ${accessToken}`,
+                            'Content-Type': 'application/json'
+                        }
+                    },
+                    getAdminAccessTimeout('sessionIssueMs', DEFAULT_ADMIN_STUDIO_SESSION_TIMEOUT_MS)
+                );
+
+                if (!response) {
+                    clearCachedAdminStudioSession();
+                    return {
+                        ok: false,
+                        status: 0,
+                        reason: 'request_timeout'
+                    };
+                }
 
                 const payload = await response.json().catch(() => ({}));
                 const result = {
@@ -392,10 +472,14 @@
     async function clearAdminStudioSession() {
         clearCachedAdminStudioSession();
         try {
-            const response = await fetch(ADMIN_STUDIO_SESSION_ENDPOINT, {
-                method: 'DELETE',
-                credentials: 'same-origin'
-            });
+            const response = await fetchWithTimeout(
+                ADMIN_STUDIO_SESSION_ENDPOINT,
+                {
+                    method: 'DELETE',
+                    credentials: 'same-origin'
+                },
+                getAdminAccessTimeout('sessionClearMs', DEFAULT_ADMIN_STUDIO_SESSION_TIMEOUT_MS)
+            );
             return response.ok;
         } catch (_) {
             return false;
@@ -576,6 +660,7 @@
         clearAdminStudioSession,
         createAdminStudioSession,
         getCurrentAdminAccess,
+        hasActiveAdminStudioSession,
         normalizeAccessPayload,
         openAdminStudio,
         sanitizeAdminStudioTarget,

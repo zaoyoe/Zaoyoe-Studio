@@ -365,7 +365,10 @@ function buildAdminAuditWorkspaceSummary(items = []) {
     const rows = Array.isArray(items) ? items : [];
     return {
         visible_count: rows.length,
-        active_problem_count: rows.filter((item) => item.alert_state === 'problem').length,
+        active_problem_count: rows.filter((item) => (
+            item.alert_state === 'problem'
+            && normalizeText(item.case_status).toLowerCase() !== 'resolved'
+        )).length,
         claimed_count: rows.filter((item) => normalizeText(item.case_status).toLowerCase() === 'claimed').length,
         pending_recovery_count: rows.filter((item) => item.alert_state === 'recovered' && normalizeText(item.case_status).toLowerCase() !== 'resolved').length
     };

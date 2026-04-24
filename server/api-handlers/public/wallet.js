@@ -72,6 +72,29 @@ function isMissingColumnError(error) {
     return message.includes('column') && message.includes('does not exist');
 }
 
+function isMissingRelationError(error, relationName = '') {
+    const normalizedMessage = String(error?.message || '').trim().toLowerCase();
+    const normalizedRelation = String(relationName || '').trim().toLowerCase();
+    if (!normalizedMessage) return false;
+    const mentionsRelation = normalizedRelation
+        ? normalizedMessage.includes(normalizedRelation)
+        : normalizedMessage.includes('relation') || normalizedMessage.includes('table');
+    return mentionsRelation && (
+        normalizedMessage.includes('does not exist')
+        || normalizedMessage.includes('not exist')
+        || normalizedMessage.includes('could not find')
+        || normalizedMessage.includes('undefined table')
+    );
+}
+
+function normalizeGuidanceText(value) {
+    return typeof value === 'string' ? value.trim() : '';
+}
+
+function isUuid(value) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim());
+}
+
 async function loadPromptTitles(client, promptIds = []) {
     const normalizedPromptIds = [...new Set(
         (promptIds || []).map((item) => normalizeText(item, 160)).filter(Boolean)
@@ -630,11 +653,181 @@ async function findWalletVerifyLog(client, {
     };
 }
 
+async function loadWalletShopOrderDetail(client, { orderId = '', userId = '' } = {}) {
+    const normalizedOrderId = normalizeText(orderId, 160);
+    const normalizedUserId = normalizeText(userId, 160);
+
+    const { data: order, error: orderError } = await client
+        .from('shop_orders')
+        .select('id, user_id, product_id, inventory_id, snapshot_product_name, created_at, price_paid, total_price, discount_code, discount_amount, discount_snapshot, item_count')
+        .eq('id', normalizedOrderId)
+        .eq('user_id', normalizedUserId)
+        .single();
+
+    if (orderError || !order) {
+        const error = new Error(orderError?.message || '订单不存在或无权访问');
+        error.statusCode = orderError?.code === 'PGRST116' ? 404 : (orderError?.statusCode || 404);
+        throw error;
+    }
+
+    const normalizedProductId = String(order?.product_id || '').trim();
+    const normalizedItemCount = Math.max(1, Number(order?.item_count || 1) || 1);
+    const needsOrderItems = normalizedItemCount > 1 || !String(order?.inventory_id || '').trim();
+
+    const orderItemsPromise = needsOrderItems
+        ? (async () => {
+            try {
+                const { data, error } = await client
+                    .from('shop_order_items')
+                    .select('id, inventory_id, snapshot_product_name, price_paid')
+                    .eq('order_id', normalizedOrderId)
+                    .order('id', { ascending: true });
+
+                if (error) throw error;
+                return Array.isArray(data) ? data : [];
+            } catch (error) {
+                if (!isMissingRelationError(error, 'shop_order_items')) {
+                    throw error;
+                }
+                return [];
+            }
+        })()
+        : Promise.resolve([]);
+
+    const guidancePromise = (async () => {
+        let purchaseNotes = '';
+        let usageInstructions = '';
+
+        if (!isUuid(normalizedProductId)) {
+            return { purchaseNotes, usageInstructions };
+        }
+
+        let productGuidanceRow = null;
+        const { data: guidanceData, error: productGuidanceError } = await client
+            .from('shop_products')
+            .select('show_purchase_notes, purchase_notes, show_usage_instructions, usage_instructions')
+            .eq('id', normalizedProductId)
+            .maybeSingle();
+
+        if (productGuidanceError) {
+            if (
+                isMissingColumnError(productGuidanceError)
+                && (
+                    String(productGuidanceError?.message || '').includes('purchase_notes')
+                    || String(productGuidanceError?.message || '').includes('show_purchase_notes')
+                )
+            ) {
+                const { data: legacyGuidanceData, error: legacyGuidanceError } = await client
+                    .from('shop_products')
+                    .select('show_usage_instructions, usage_instructions')
+                    .eq('id', normalizedProductId)
+                    .maybeSingle();
+
+                if (legacyGuidanceError) {
+                    throw legacyGuidanceError;
+                }
+                productGuidanceRow = legacyGuidanceData;
+            } else {
+                throw productGuidanceError;
+            }
+        } else {
+            productGuidanceRow = guidanceData;
+        }
+
+        purchaseNotes = productGuidanceRow?.show_purchase_notes
+            ? normalizeGuidanceText(productGuidanceRow?.purchase_notes)
+            : '';
+        usageInstructions = productGuidanceRow?.show_usage_instructions
+            ? normalizeGuidanceText(productGuidanceRow?.usage_instructions)
+            : '';
+
+        return { purchaseNotes, usageInstructions };
+    })();
+
+    const [orderItems, guidance] = await Promise.all([
+        orderItemsPromise,
+        guidancePromise
+    ]);
+
+    const inventoryIds = [...new Set(
+        [
+            ...orderItems.map((item) => String(item?.inventory_id || '').trim()).filter(Boolean),
+            String(order?.inventory_id || '').trim()
+        ].filter(Boolean)
+    )];
+
+    const inventoryContentMap = new Map();
+    if (inventoryIds.length) {
+        const { data: inventoryRows, error: inventoryError } = await client
+            .from('shop_inventory')
+            .select('id, content')
+            .in('id', inventoryIds);
+
+        if (inventoryError) {
+            throw inventoryError;
+        }
+
+        for (const row of inventoryRows || []) {
+            const inventoryId = String(row?.id || '').trim();
+            if (!inventoryId) continue;
+            inventoryContentMap.set(inventoryId, String(row?.content || ''));
+        }
+    }
+
+    const purchaseNotes = guidance?.purchaseNotes || '';
+    const usageInstructions = guidance?.usageInstructions || '';
+
+    const items = orderItems.length
+        ? orderItems.map((item) => {
+            const inventoryId = String(item?.inventory_id || '').trim();
+            return {
+                id: item?.id || null,
+                inventory_id: inventoryId || null,
+                name: item?.snapshot_product_name || order?.snapshot_product_name || '未知商品',
+                content: inventoryId ? (inventoryContentMap.get(inventoryId) || '') : '',
+                price: Number(item?.price_paid || 0) || 0
+            };
+        })
+        : [{
+            id: null,
+            inventory_id: String(order?.inventory_id || '').trim() || null,
+            name: order?.snapshot_product_name || '未知商品',
+            content: inventoryContentMap.get(String(order?.inventory_id || '').trim()) || '',
+            price: Number(order?.price_paid || 0) || 0
+        }];
+
+    return {
+        order: {
+            id: order.id,
+            created_at: order.created_at || null,
+            product_id: order.product_id || null,
+            inventory_id: order.inventory_id || null,
+            snapshot_product_name: order.snapshot_product_name || '',
+            price_paid: Number(order.price_paid || 0) || 0,
+            total_price: order.total_price == null ? null : (Number(order.total_price) || 0),
+            discount_code: order.discount_code || null,
+            discount_amount: Number(order.discount_amount || 0) || 0,
+            applied_discounts: Array.isArray(order?.discount_snapshot?.applied_discounts)
+                ? order.discount_snapshot.applied_discounts
+                : [],
+            item_count: Math.max(1, Number(order.item_count || items.length || 1) || 1)
+        },
+        items,
+        guidance: {
+            purchase_notes: purchaseNotes || null,
+            has_purchase_notes: purchaseNotes.length > 0,
+            usage_instructions: usageInstructions || null,
+            has_usage_instructions: usageInstructions.length > 0
+        }
+    };
+}
+
 function createWalletHandlers({
     admin,
     site
 }) {
     const {
+        parseJsonBody,
         requireAuthenticatedUser,
         sendJson
     } = admin;
@@ -834,6 +1027,50 @@ function createWalletHandlers({
                 return sendJson(res, error?.statusCode || 500, {
                     success: false,
                     message: error?.message || '加载核销记录失败'
+                });
+            }
+        },
+
+        async orderDetail(req, res) {
+            if (req.method !== 'POST') {
+                res.setHeader('Allow', 'POST');
+                return sendJson(res, 405, {
+                    success: false,
+                    message: 'Method not allowed'
+                });
+            }
+
+            try {
+                const {
+                    user,
+                    requestSupabase,
+                    adminSupabase,
+                    supabase
+                } = await requireAuthenticatedUser(req);
+                const client = adminSupabase || requestSupabase || supabase;
+                const body = typeof parseJsonBody === 'function'
+                    ? await parseJsonBody(req)
+                    : (req?.body && typeof req.body === 'object' ? req.body : {});
+                const orderId = normalizeText(body?.orderId || body?.order_id || '', 160);
+
+                if (!isUuid(orderId)) {
+                    return sendJson(res, 400, {
+                        success: false,
+                        message: '订单号格式不正确'
+                    });
+                }
+
+                return sendJson(res, 200, {
+                    success: true,
+                    data: await loadWalletShopOrderDetail(client, {
+                        orderId,
+                        userId: user.id
+                    })
+                });
+            } catch (error) {
+                return sendJson(res, error?.statusCode || 500, {
+                    success: false,
+                    message: error?.message || '加载订单详情失败'
                 });
             }
         }

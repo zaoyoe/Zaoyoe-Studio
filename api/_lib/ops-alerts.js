@@ -3699,6 +3699,14 @@ function buildOpsAlertSummaryContent(summaryConfig, itemCount, bucket) {
     return `当前固定时点汇总窗口内累计 ${itemCount} ${summaryConfig.unit}，将按 ${getOpsAlertSummaryScheduleLabel(summaryConfig)} 统一外发。窗口：${windowLabel}`;
 }
 
+function buildOpsAlertSummaryTargetId({ alertType = '' } = {}) {
+    const normalizedAlertType = normalizeText(alertType, 120).toLowerCase();
+    if (!normalizedAlertType || !normalizedAlertType.endsWith('_summary')) {
+        return '';
+    }
+    return `ops_summary:${normalizedAlertType}`;
+}
+
 async function loadExistingOpsAlertSummaryJob(supabase, alertType, dedupeKey) {
     const query = supabase
         .from('ops_alert_jobs')
@@ -3783,6 +3791,9 @@ async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
             bucket.end_at
         ].join(':'))
         .digest('hex');
+    const summaryTargetId = buildOpsAlertSummaryTargetId({
+        alertType: summaryConfig.summary_alert_type
+    });
     const channels = resolveEnabledChannels(runtime, input.severity, summaryConfig.summary_alert_type, {
         now: referenceDate,
         ignoreQuietHours: true
@@ -3849,6 +3860,7 @@ async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
             work_hours_timezone: summaryConfig.work_hours?.timezone,
             window_start_at: bucket.start_at,
             window_end_at: bucket.end_at,
+            target_id: summaryTargetId,
             item_count: existingItems.length,
             items: existingItems,
             entry_path: normalizeText(existingPayload.entry_path || input.payload?.entry_path)
@@ -3905,6 +3917,7 @@ async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
             work_hours_timezone: summaryConfig.work_hours?.timezone,
             window_start_at: bucket.start_at,
             window_end_at: bucket.end_at,
+            target_id: summaryTargetId,
             item_count: 1,
             items: [newItem],
             entry_path: normalizeText(input.payload?.entry_path)
@@ -6404,6 +6417,7 @@ module.exports = {
     sweepOpsAlertJobs,
     __testUtils: {
         buildExternalAlertText,
+        buildOpsAlertSummaryTargetId,
         getOpsAlertSecretKeys,
         getNextRetryAt,
         getRetryDelayMs,

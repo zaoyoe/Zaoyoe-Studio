@@ -24,7 +24,6 @@ const {
 } = require('./_ops-alert-cases');
 
 const VALID_ACTIONS = new Set(['claim', 'assign', 'add_note', 'resolve', 'reopen']);
-const NOTE_REQUIRED_ACTIONS = new Set(['add_note', 'resolve']);
 
 function buildActionMessage(action, results = [], skippedCount = 0) {
     const processedCount = Array.isArray(results) ? results.length : 0;
@@ -207,10 +206,17 @@ module.exports = async (req, res) => {
             });
         }
 
-        if (NOTE_REQUIRED_ACTIONS.has(action) && !note) {
+        if (action === 'add_note' && !note) {
             return sendJson(res, 400, {
                 success: false,
-                message: action === 'resolve' ? '关闭告警时需要填写处理结论' : '请先填写备注内容'
+                message: '请先填写备注内容'
+            });
+        }
+
+        if (action === 'resolve' && !resolution) {
+            return sendJson(res, 400, {
+                success: false,
+                message: '关闭告警时需要填写处理结论'
             });
         }
 

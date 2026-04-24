@@ -5,7 +5,7 @@
         return;
     }
 
-    const ADMIN_SHELL_VERSION = '20260410_ADMIN_SHELL_P1_1';
+    const ADMIN_SHELL_VERSION = '20260421_ADMIN_SHELL_COMMENTS_OPS_HELPERS_P2';
     const MODULE_ALIASES = Object.freeze({
         analytics: 'analytics',
         'analytics-center': 'analytics',
@@ -13,16 +13,7 @@
         'growth-center': 'growth-center',
         'commerce-center': 'commerce-center'
     });
-    const NATIVE_SITE_EVENT_MODULES = new Set([
-        'comments',
-        'gallery',
-        'homepage',
-        'points',
-        'shop',
-        'payments',
-        'growth-center',
-        'commerce-center'
-    ]);
+    const NATIVE_SITE_EVENT_MODULES = new Set([]);
 
     const registeredModules = new Map();
     const registeredSiteHandlers = new Map();
@@ -46,6 +37,28 @@
 
     function normalizePayloadObject(value) {
         return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    }
+
+    function normalizeDeliveryResult(result, options = {}) {
+        const payload = normalizePayloadObject(result);
+        const hasCustomHandler = options?.hasCustomHandler === true;
+        const handled = result === false
+            ? false
+            : hasCustomHandler
+                || result === true
+                || payload.handled === true
+                || payload.opened === true
+                || payload.matched === true
+                || payload.ok === true;
+
+        return {
+            handled,
+            status: handled ? 'delivered' : 'unhandled',
+            opened: payload.opened === true,
+            matched: payload.matched === true,
+            reason: sanitizeText(payload.reason || payload.message || '', 180),
+            at: Date.now()
+        };
     }
 
     function getActiveModuleId() {
@@ -135,6 +148,24 @@
         return handler(...args);
     }
 
+    async function activateLegacyModuleRuntime(moduleRuntime, context = {}, options = {}) {
+        if (!moduleRuntime || typeof moduleRuntime !== 'object') {
+            return false;
+        }
+
+        if (typeof moduleRuntime.activate === 'function') {
+            await moduleRuntime.activate(context, options);
+            return true;
+        }
+
+        if (typeof moduleRuntime.init === 'function') {
+            await moduleRuntime.init(options);
+            return true;
+        }
+
+        return false;
+    }
+
     async function deliverModuleContext(moduleId, context = {}, options = {}) {
         const normalizedModuleId = normalizeModuleId(moduleId);
         const normalizedContext = normalizeContext(normalizedModuleId, context, options);
@@ -142,6 +173,8 @@
 
         try {
             const module = registeredModules.get(normalizedModuleId);
+            const hasCustomHandler = module && typeof module.handleContext === 'function';
+            let deliveryResult = false;
             if (module && !initializedModules.has(normalizedModuleId) && typeof module.init === 'function') {
                 initializedModules.add(normalizedModuleId);
                 await module.init(normalizedContext, options);
@@ -149,21 +182,35 @@
 
             await runModuleLifecycle(normalizedModuleId, 'activate', normalizedContext, options);
 
-            if (module && typeof module.handleContext === 'function') {
-                await module.handleContext(normalizedContext, options);
+            if (hasCustomHandler) {
+                deliveryResult = await module.handleContext(normalizedContext, options);
             } else {
-                await handleDefaultModuleContext(normalizedModuleId, normalizedContext, options);
+                deliveryResult = await handleDefaultModuleContext(normalizedModuleId, normalizedContext, options);
             }
 
+            const delivery = normalizeDeliveryResult(deliveryResult, { hasCustomHandler });
             window.dispatchEvent(new CustomEvent('admin-shell-context', {
                 detail: {
                     moduleId: normalizedModuleId,
-                    context: normalizedContext
+                    context: normalizedContext,
+                    delivery
                 }
             }));
             return true;
         } catch (error) {
             console.warn(`[AdminShell] Failed to deliver context to ${normalizedModuleId}:`, error);
+            window.dispatchEvent(new CustomEvent('admin-shell-context', {
+                detail: {
+                    moduleId: normalizedModuleId,
+                    context: normalizedContext,
+                    delivery: {
+                        handled: false,
+                        status: 'failed',
+                        reason: 'context-handler-failed',
+                        at: Date.now()
+                    }
+                }
+            }));
             return false;
         }
     }
@@ -321,6 +368,26 @@
                 commentId: focus.commentId || raw.commentId || raw.comment_id,
                 site: context.site
             };
+            const openCommentsShellContext = await waitFor(() => window.openAdminCommentsShellContext, options);
+            if (typeof openCommentsShellContext === 'function') {
+                await openCommentsShellContext({
+                    source: context.source,
+                    entity: context.entity || 'comment',
+                    action: context.action || (commentContext.focusCommentId ? 'focus-comment' : 'open-comments'),
+                    site: context.site,
+                    focus: {
+                        commentId: commentContext.focusCommentId,
+                        comment_id: commentContext.focusCommentId,
+                        promptId: commentContext.promptId,
+                        prompt_id: commentContext.promptId
+                    },
+                    payload: {
+                        ...commentContext,
+                        commentView: commentContext.view
+                    }
+                }, options);
+                return true;
+            }
             const openUserCommentContext = await waitFor(() => window.openAdminUserCommentContext || window.openAnalyticsCommentContext, options);
             if (typeof openUserCommentContext === 'function') {
                 openUserCommentContext({
@@ -331,12 +398,48 @@
             }
         }
 
+        if (moduleId === 'shop') {
+            const orderId = sanitizeText(focus.orderId || raw.orderId || raw.order_id, 160);
+            const inventoryId = sanitizeText(focus.inventoryId || raw.inventoryId || raw.inventory_id, 160);
+            const productId = sanitizeText(focus.productId || raw.productId || raw.product_id, 160);
+            const shopWorkspace = sanitizeText(
+                payload.workspace
+                || raw.workspace
+                || payload.defaultTab
+                || payload.tab
+                || raw.defaultTab
+                || raw.tab
+                || 'products',
+                60
+            ) || 'products';
+            const adminShop = await waitFor(() => window.ShopAdmin, options);
+            await activateLegacyModuleRuntime(adminShop, context, {
+                defaultTab: shopWorkspace,
+                tab: shopWorkspace
+            });
+            if (orderId && adminShop?.focusOrder) {
+                await adminShop.focusOrder(orderId, {
+                    openDetails: payload.openDetails !== false,
+                    context: Object.keys(payload).length ? payload : raw
+                });
+                return true;
+            }
+            if (inventoryId && adminShop?.showInventoryDetail) {
+                await adminShop.showInventoryDetail(inventoryId);
+                return true;
+            }
+            if (productId && adminShop?.editProduct) {
+                await adminShop.editProduct(productId);
+                return true;
+            }
+        }
+
         if (moduleId === 'tickets') {
             const ticketId = sanitizeText(focus.ticketId || raw.ticketId || raw.ticket_id, 160);
             const adminTickets = await waitFor(() => window.AdminTickets, options);
-            if (adminTickets?.init) {
-                await adminTickets.init();
-            }
+            await activateLegacyModuleRuntime(adminTickets, context, {
+                workspace: payload.workspace || raw.workspace || 'queue'
+            });
             if (ticketId && adminTickets?.focusTicket) {
                 await adminTickets.focusTicket(ticketId, {
                     status: sanitizeText(payload.status || raw.status || 'all', 40) || 'all'
@@ -348,9 +451,10 @@
         if (moduleId === 'payments') {
             const paymentOrderId = sanitizeText(focus.paymentOrderId || raw.paymentOrderId || raw.payment_order_id, 160);
             const adminPayments = await waitFor(() => window.AdminPayments, options);
-            if (adminPayments?.init) {
-                await adminPayments.init();
-            }
+            await activateLegacyModuleRuntime(adminPayments, context, {
+                defaultTab: payload.defaultTab || payload.tab || raw.defaultTab || raw.tab || 'overview',
+                tab: payload.tab || payload.defaultTab || raw.tab || raw.defaultTab || 'overview'
+            });
             if (paymentOrderId && adminPayments?.focusOrder) {
                 await adminPayments.focusOrder(paymentOrderId, { switchTab: true, reload: true });
                 return true;
@@ -370,7 +474,42 @@
             return true;
         }
 
-        if (normalizedModuleId === 'analytics' || normalizedModuleId === 'business-overview') {
+        if (normalizedModuleId === 'comments') {
+            if (typeof window.handleAdminCommentsSiteChange === 'function') {
+                void Promise.resolve(window.handleAdminCommentsSiteChange(detail)).catch((error) => {
+                    console.warn('[AdminShell] Comments site change handler failed:', error);
+                });
+            } else {
+                if (typeof window.loadComments === 'function') {
+                    const view = window.currentCommentView || 'guestbook';
+                    window.loadComments(view);
+                }
+                window.loadCommentStats?.();
+            }
+            return true;
+        }
+
+        if (normalizedModuleId === 'gallery') {
+            if (typeof window.handleAdminGallerySiteChange === 'function') {
+                void Promise.resolve(window.handleAdminGallerySiteChange(detail)).catch((error) => {
+                    console.warn('[AdminShell] Gallery site change handler failed:', error);
+                });
+            } else if (typeof window.loadAdminPrompts === 'function') {
+                window.loadAdminPrompts();
+            }
+            return true;
+        }
+
+        if (normalizedModuleId === 'analytics' || normalizedModuleId === 'business-overview' || normalizedModuleId === 'commerce-center') {
+            if (typeof window.handleAdminAnalyticsSiteChange === 'function') {
+                void Promise.resolve(window.handleAdminAnalyticsSiteChange({
+                    ...detail,
+                    activeModuleId: normalizedModuleId
+                })).catch((error) => {
+                    console.warn('[AdminShell] Analytics site change handler failed:', error);
+                });
+                return true;
+            }
             if (typeof window.reloadAnalyticsDashboard === 'function') {
                 window.reloadAnalyticsDashboard({ reason: 'site-change' });
             } else if (typeof window.initAnalyticsModule === 'function') {
@@ -380,41 +519,139 @@
         }
 
         if (normalizedModuleId === 'users') {
-            window.loadUsers?.();
+            if (typeof window.handleAdminUsersSiteChange === 'function') {
+                void Promise.resolve(window.handleAdminUsersSiteChange()).catch((error) => {
+                    console.warn('[AdminShell] Users site change handler failed:', error);
+                });
+            } else {
+                window.loadUsers?.();
+            }
+            return true;
+        }
+
+        if (normalizedModuleId === 'homepage') {
+            if (typeof window.handleAdminHomepageSiteChange === 'function') {
+                void Promise.resolve(window.handleAdminHomepageSiteChange(detail)).catch((error) => {
+                    console.warn('[AdminShell] Homepage site change handler failed:', error);
+                });
+                return true;
+            }
+            return false;
+        }
+
+        if (normalizedModuleId === 'points') {
+            if (typeof window.handleAdminPointsSiteChange === 'function') {
+                void Promise.resolve(window.handleAdminPointsSiteChange(detail)).catch((error) => {
+                    console.warn('[AdminShell] Points site change handler failed:', error);
+                });
+                return true;
+            }
+            return false;
+        }
+
+        if (normalizedModuleId === 'shop') {
+            if (typeof window.handleAdminShopSiteChange === 'function') {
+                void Promise.resolve(window.handleAdminShopSiteChange(detail)).catch((error) => {
+                    console.warn('[AdminShell] Shop site change handler failed:', error);
+                });
+            } else if (window.ShopAdmin) {
+                if (typeof window.ShopAdmin.handleSiteChange === 'function') {
+                    window.ShopAdmin.handleSiteChange(detail);
+                } else {
+                    if (typeof window.ShopAdmin.searchOrders === 'function') window.ShopAdmin.searchOrders();
+                    if (typeof window.ShopAdmin.loadProducts === 'function') window.ShopAdmin.loadProducts();
+                }
+            }
+            return true;
+        }
+
+        if (normalizedModuleId === 'payments') {
+            if (typeof window.handleAdminPaymentsSiteChange === 'function') {
+                void Promise.resolve(window.handleAdminPaymentsSiteChange(detail)).catch((error) => {
+                    console.warn('[AdminShell] Payments site change handler failed:', error);
+                });
+            } else if (window.AdminPayments && typeof window.AdminPayments.reload === 'function') {
+                window.AdminPayments.reload();
+            }
             return true;
         }
 
         if (normalizedModuleId === 'tickets') {
-            if (window.AdminTickets?.loadTickets) {
+            if (typeof window.handleAdminTicketsSiteChange === 'function') {
+                void Promise.resolve(window.handleAdminTicketsSiteChange(detail)).catch((error) => {
+                    console.warn('[AdminShell] Tickets site change handler failed:', error);
+                });
+            } else if (typeof window.AdminTickets?.handleShellSiteChange === 'function') {
+                void window.AdminTickets.handleShellSiteChange(detail);
+            } else if (window.AdminTickets?.loadTickets) {
                 void window.AdminTickets.loadTickets({
                     page: window.AdminTickets.currentPage || 1,
                     status: window.AdminTickets.currentStatus || 'all',
                     searchQuery: window.AdminTickets.searchQuery || ''
                 });
-            } else {
-                void window.AdminTickets?.init?.({ force: true });
             }
             return true;
         }
 
         if (normalizedModuleId === 'chat') {
-            if (window.AdminChat) {
-                const chatContainer = document.getElementById('chat-admin-container');
-                if (chatContainer) {
-                    window.adminChatInstance = new window.AdminChat(chatContainer);
-                }
+            if (typeof window.handleAdminChatModuleSiteChange === 'function') {
+                void Promise.resolve(window.handleAdminChatModuleSiteChange()).catch((error) => {
+                    console.warn('[AdminShell] Chat site change handler failed:', error);
+                });
+                return true;
             }
-            return true;
+
+            const chatInstance = typeof window.ensureAdminChatInstance === 'function'
+                ? window.ensureAdminChatInstance({ ensureLayout: true })
+                : window.adminChatInstance;
+            if (chatInstance?.fetchSessions) {
+                void Promise.resolve(chatInstance.fetchSessions()).catch((error) => {
+                    console.warn('[AdminShell] Chat session refresh failed:', error);
+                });
+                return true;
+            }
+
+            return false;
         }
 
-        if (normalizedModuleId === 'settings' || normalizedModuleId === 'discounts' || normalizedModuleId === 'ops-alerts') {
-            window.dispatchEvent(new CustomEvent('admin-shell-site-reload-requested', {
-                detail: {
-                    moduleId: normalizedModuleId,
-                    site: detail?.site || getCurrentSite()
-                }
-            }));
-            return true;
+        if (normalizedModuleId === 'growth-center') {
+            if (typeof window.handleAdminGrowthCenterSiteChange === 'function') {
+                void Promise.resolve(window.handleAdminGrowthCenterSiteChange(detail)).catch((error) => {
+                    console.warn('[AdminShell] Growth center site change handler failed:', error);
+                });
+                return true;
+            }
+            return false;
+        }
+
+        if (normalizedModuleId === 'discounts') {
+            if (typeof window.handleAdminDiscountsSiteChange === 'function') {
+                void Promise.resolve(window.handleAdminDiscountsSiteChange(detail)).catch((error) => {
+                    console.warn('[AdminShell] Discounts site change handler failed:', error);
+                });
+                return true;
+            }
+            return false;
+        }
+
+        if (normalizedModuleId === 'settings') {
+            if (typeof window.handleAdminSettingsSiteChange === 'function') {
+                void Promise.resolve(window.handleAdminSettingsSiteChange(detail)).catch((error) => {
+                    console.warn('[AdminShell] Settings site change handler failed:', error);
+                });
+                return true;
+            }
+            return false;
+        }
+
+        if (normalizedModuleId === 'ops-alerts') {
+            if (typeof window.handleAdminOpsAlertsSiteChange === 'function') {
+                void Promise.resolve(window.handleAdminOpsAlertsSiteChange(detail)).catch((error) => {
+                    console.warn('[AdminShell] Ops alerts site change handler failed:', error);
+                });
+                return true;
+            }
+            return false;
         }
 
         return false;
@@ -460,6 +697,7 @@
         },
         handleSiteChange,
         normalizeContext,
+        normalizeDeliveryResult,
         normalizeModuleId,
         openContext,
         registerModule,

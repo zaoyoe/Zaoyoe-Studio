@@ -412,6 +412,25 @@
             .replace(/'/g, '&#39;');
     }
 
+    async function openVerifyWalletBalance() {
+        const context = {
+            entry: 'verify_balance',
+            sourceModule: 'verify_widget'
+        };
+
+        const loader = window.ZaoyoeWalletModalBootstrap;
+        if (loader?.open) {
+            try {
+                await loader.open('balance', context);
+                return;
+            } catch (error) {
+                console.warn('[VerifyWidget] Failed to lazy load wallet modal:', error?.message || error);
+            }
+        }
+
+        window.WalletModal?.open?.('balance', context);
+    }
+
     function bindDelegatedUi(container) {
         if (!container || container.dataset.verifyDelegatesBound === '1') {
             return;
@@ -426,10 +445,7 @@
 
             switch (actionEl.dataset.verifyAction) {
                 case 'wallet-open':
-                    window.WalletModal?.open?.('balance', {
-                        entry: 'verify_balance',
-                        sourceModule: 'verify_widget'
-                    });
+                    void openVerifyWalletBalance();
                     break;
                 case 'switch-extract-mode':
                     setSelectedTaskType('extract');

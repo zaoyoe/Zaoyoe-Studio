@@ -1,0 +1,850 @@
+.modal-overlay,
+#guestbookModal {
+    --public-light-modal-backdrop: rgba(34, 41, 52, 0.48);
+    --public-light-modal-backdrop-filter: blur(12px) saturate(106%);
+}
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    height: auto;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    z-index: 9999;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: opacity 0.3s ease, visibility 0s linear 0.3s;
+    will-change: opacity;
+    transform: translateZ(0);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+.modal-overlay.active {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto !important;
+    transition: opacity 0.3s ease, visibility 0s linear 0s;
+}
+
+/* 20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1 */
+html[data-theme="light"] .modal-overlay,
+html:not([data-theme="dark"]) .modal-overlay,
+html[data-theme="light"] #guestbookModal,
+html:not([data-theme="dark"]) #guestbookModal {
+    background: var(--public-light-modal-backdrop) !important;
+    backdrop-filter: var(--public-light-modal-backdrop-filter) !important;
+    -webkit-backdrop-filter: var(--public-light-modal-backdrop-filter) !important;
+    overscroll-behavior: contain !important;
+    overscroll-behavior-y: contain !important;
+}
+
+html[data-theme="light"] #guestbookModal .guestbook-composer-sheet,
+html:not([data-theme="dark"]) #guestbookModal .guestbook-composer-sheet {
+    background: rgba(252, 253, 255, 0.98) !important;
+    border: 1px solid rgba(148, 163, 184, 0.18) !important;
+    box-shadow:
+        0 28px 70px rgba(148, 163, 184, 0.2),
+        0 8px 24px rgba(15, 23, 42, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.94) !important;
+}
+
+html[data-theme="light"] #guestbookModal .guestbook-composer-handle,
+html:not([data-theme="dark"]) #guestbookModal .guestbook-composer-handle {
+    background: rgba(107, 158, 206, 0.24);
+}
+
+html[data-theme="light"] #guestbookModal:focus-within .guestbook-composer-handle,
+html[data-theme="light"] #guestbookModal.keyboard-docked .guestbook-composer-handle,
+html:not([data-theme="dark"]) #guestbookModal:focus-within .guestbook-composer-handle,
+html:not([data-theme="dark"]) #guestbookModal.keyboard-docked .guestbook-composer-handle {
+    background: rgba(126, 184, 239, 0.82);
+    box-shadow:
+        0 0 0 1px rgba(107, 158, 206, 0.1),
+        0 0 18px rgba(126, 184, 239, 0.2);
+}
+
+html[data-theme="light"] #guestbookModal .guestbook-composer-title,
+html:not([data-theme="dark"]) #guestbookModal .guestbook-composer-title {
+    color: rgba(15, 23, 42, 0.92);
+}
+
+html[data-theme="light"] #guestbookModal .guestbook-composer-editor,
+html:not([data-theme="dark"]) #guestbookModal .guestbook-composer-editor {
+    border: 1px solid rgba(148, 163, 184, 0.18) !important;
+    background: rgba(243, 247, 251, 0.96) !important;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.86),
+        inset 0 -10px 20px rgba(148, 163, 184, 0.08) !important;
+}
+
+html[data-theme="light"] #guestbookModal .guestbook-composer-editor:focus-within,
+html:not([data-theme="dark"]) #guestbookModal .guestbook-composer-editor:focus-within {
+    border-color: rgba(107, 158, 206, 0.26) !important;
+    background: rgba(248, 251, 255, 0.98) !important;
+}
+
+html[data-theme="light"] #guestbookModal .guestbook-composer-empty-placeholder,
+html:not([data-theme="dark"]) #guestbookModal .guestbook-composer-empty-placeholder {
+    color: rgba(100, 116, 139, 0.62);
+}
+
+html[data-theme="light"] #guestbookModal #guestMessage,
+html:not([data-theme="dark"]) #guestbookModal #guestMessage {
+    color: rgba(15, 23, 42, 0.92) !important;
+    caret-color: rgba(107, 158, 206, 0.96) !important;
+}
+
+html[data-theme="light"] #guestbookModal .guestbook-composer-preview,
+html:not([data-theme="dark"]) #guestbookModal .guestbook-composer-preview {
+    border: 1px solid rgba(148, 163, 184, 0.16) !important;
+    background: rgba(243, 247, 251, 0.94) !important;
+}
+
+html[data-theme="light"] #guestbookModal .guestbook-composer-preview img,
+html:not([data-theme="dark"]) #guestbookModal .guestbook-composer-preview img {
+    background: rgba(255, 255, 255, 0.78);
+}
+
+html[data-theme="light"] #guestbookModal .guestbook-composer-preview-remove,
+html:not([data-theme="dark"]) #guestbookModal .guestbook-composer-preview-remove {
+    background: rgba(255, 255, 255, 0.92);
+    color: rgba(15, 23, 42, 0.84);
+    box-shadow:
+        0 10px 20px rgba(148, 163, 184, 0.16),
+        inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+html[data-theme="light"] #guestbookModal .guestbook-composer-actions,
+html:not([data-theme="dark"]) #guestbookModal .guestbook-composer-actions {
+    border-top-color: rgba(148, 163, 184, 0.14) !important;
+}
+
+html[data-theme="light"] #guestbookModal .guestbook-composer-more,
+html[data-theme="light"] #guestbookModal .guestbook-composer-more:visited,
+html:not([data-theme="dark"]) #guestbookModal .guestbook-composer-more,
+html:not([data-theme="dark"]) #guestbookModal .guestbook-composer-more:visited {
+    color: rgba(107, 158, 206, 0.96) !important;
+}
+
+html[data-theme="light"] #guestbookModal .guestbook-composer-more:hover,
+html:not([data-theme="dark"]) #guestbookModal .guestbook-composer-more:hover {
+    color: rgba(82, 127, 168, 0.98) !important;
+}
+
+html[data-theme="light"] #guestbookModal .guestbook-composer-upload,
+html:not([data-theme="dark"]) #guestbookModal .guestbook-composer-upload {
+    border-color: rgba(148, 163, 184, 0.16) !important;
+    background: rgba(255, 255, 255, 0.78) !important;
+    color: rgba(71, 85, 105, 0.82) !important;
+}
+
+html[data-theme="light"] #guestbookModal .guestbook-composer-upload-inline,
+html:not([data-theme="dark"]) #guestbookModal .guestbook-composer-upload-inline {
+    background: rgba(255, 255, 255, 0.92) !important;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.92),
+        0 10px 20px rgba(148, 163, 184, 0.14);
+}
+
+html[data-theme="light"] #guestbookModal .guestbook-composer-upload.has-image,
+html:not([data-theme="dark"]) #guestbookModal .guestbook-composer-upload.has-image {
+    color: rgba(82, 127, 168, 0.98) !important;
+    border-color: rgba(107, 158, 206, 0.28) !important;
+    background: rgba(107, 158, 206, 0.1) !important;
+}
+
+html[data-theme="light"] #guestbookModal .guestbook-submit-btn.guestbook-composer-send,
+html:not([data-theme="dark"]) #guestbookModal .guestbook-submit-btn.guestbook-composer-send {
+    background: rgba(107, 158, 206, 0.96) !important;
+    border: 1px solid rgba(82, 127, 168, 0.36) !important;
+    color: #08131f !important;
+    box-shadow: none !important;
+    filter: none;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}
+
+html[data-theme="light"] #guestbookModal .guestbook-submit-btn.guestbook-composer-send:hover,
+html[data-theme="light"] #guestbookModal .guestbook-submit-btn.guestbook-composer-send:focus-visible,
+html:not([data-theme="dark"]) #guestbookModal .guestbook-submit-btn.guestbook-composer-send:hover,
+html:not([data-theme="dark"]) #guestbookModal .guestbook-submit-btn.guestbook-composer-send:focus-visible {
+    transform: translate3d(0, -1px, 0) !important;
+    background: rgba(112, 166, 216, 0.96) !important;
+    border-color: rgba(82, 127, 168, 0.5) !important;
+    box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+        inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
+    filter: none;
+}
+
+html[data-theme="light"] #guestbookModal .guestbook-submit-btn.guestbook-composer-send.is-submitting,
+html:not([data-theme="dark"]) #guestbookModal .guestbook-submit-btn.guestbook-composer-send.is-submitting {
+    background: linear-gradient(135deg, rgba(203, 236, 216, 0.96), rgba(179, 226, 197, 0.96)) !important;
+    color: rgba(11, 42, 24, 0.82) !important;
+}
+
+html[data-theme="light"] #guestbookModal .guestbook-submit-btn.guestbook-composer-send.is-success,
+html:not([data-theme="dark"]) #guestbookModal .guestbook-submit-btn.guestbook-composer-send.is-success {
+    background: linear-gradient(135deg, rgba(110, 226, 148, 0.98), rgba(63, 212, 113, 0.96)) !important;
+    color: #0b2a18 !important;
+}
+
+.modal-overlay::-webkit-scrollbar,
+.modal-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.modal-overlay::-webkit-scrollbar-track,
+.modal-content::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.modal-overlay::-webkit-scrollbar-thumb,
+.modal-content::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+}
+
+.modal-overlay::-webkit-scrollbar-thumb:hover,
+.modal-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.modal-content {
+    position: relative;
+    z-index: 1;
+    width: 480px;
+    max-width: 90%;
+    padding: 50px;
+    overflow-y: auto;
+    color: white;
+    text-align: center;
+    background: rgba(255, 255, 255, 0.03) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.2) !important;
+    border-radius: 24px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(20px) saturate(150%) !important;
+    -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
+    transform: scale(0.95);
+    transition: transform 0.3s ease-out;
+    will-change: transform;
+    backface-visibility: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+.modal-overlay.active .modal-content {
+    transform: scale(1);
+    pointer-events: auto !important;
+}
+
+.modal-content input,
+.modal-content textarea {
+    cursor: text !important;
+}
+
+.modal-content button,
+.modal-content a {
+    cursor: pointer !important;
+}
+
+.guestbook-content,
+.guestbook-content *,
+.guestbook-form,
+.guestbook-form * {
+    pointer-events: auto !important;
+}
+
+#guestbookModal:not(.active) * {
+    pointer-events: none !important;
+}
+
+#guestbookModal {
+    --guestbook-modal-overlay-height: 100dvh;
+    --guestbook-modal-translate-y: 0px;
+    --guestbook-modal-card-height: 420px;
+    --guestbook-modal-card-max-height: calc(100svh - 56px);
+    height: var(--guestbook-modal-overlay-height) !important;
+    min-height: var(--guestbook-modal-overlay-height) !important;
+    padding: 24px 18px 18px !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
+    overscroll-behavior: none !important;
+    transform: none !important;
+    will-change: opacity !important;
+    isolation: isolate !important;
+    background: rgba(7, 9, 12, 0.28) !important;
+    backdrop-filter: blur(14px) saturate(108%) !important;
+    -webkit-backdrop-filter: blur(14px) saturate(108%) !important;
+}
+
+#guestbookModal.active,
+#guestbookModal.guestbook-modal-interactive {
+    pointer-events: auto !important;
+}
+
+.guestbook-modal-viewport-probe {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 0;
+    height: 100svh;
+    pointer-events: none;
+    visibility: hidden;
+    opacity: 0;
+    z-index: -1;
+}
+
+@keyframes guestbookComposerSectionRise {
+    from {
+        opacity: 0;
+        transform: translate3d(0, 22px, 0) scale(0.985);
+    }
+
+    to {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1);
+    }
+}
+
+@keyframes guestbookComposerHandleRise {
+    from {
+        opacity: 0;
+        transform: translate3d(0, 10px, 0) scaleX(0.88);
+    }
+
+    to {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scaleX(1);
+    }
+}
+
+@keyframes guestbookComposerSheetFadeIn {
+    from {
+        opacity: 0;
+        transform: translate3d(0, calc(var(--guestbook-modal-translate-y, 0px) + 18px), 0) scale(0.985);
+    }
+
+    to {
+        opacity: 1;
+        transform: translate3d(0, var(--guestbook-modal-translate-y, 0px), 0) scale(1);
+    }
+}
+
+#guestbookModal .guestbook-composer-sheet {
+    position: relative !important;
+    z-index: 4 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+    width: min(calc(100vw - 40px), 620px) !important;
+    max-width: 620px !important;
+    height: var(--guestbook-modal-card-height, 420px);
+    min-height: 320px;
+    max-height: var(--guestbook-modal-card-max-height, calc(100svh - 56px));
+    margin: 0 auto !important;
+    padding: 14px 18px calc(18px + env(safe-area-inset-bottom)) !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
+    text-align: left !important;
+    background: rgba(11, 14, 20, 0.94) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 32px !important;
+    box-shadow:
+        0 26px 70px rgba(0, 0, 0, 0.28),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    transform: translate3d(0, calc(var(--guestbook-modal-translate-y, 0px) + 18px), 0) scale(0.985) !important;
+    opacity: 0 !important;
+    will-change: transform, height !important;
+    transition: none !important;
+    pointer-events: auto !important;
+    isolation: isolate !important;
+}
+
+#guestbookModal #imageUpload {
+    display: none !important;
+}
+
+#guestbookModal.active .guestbook-composer-sheet,
+#guestbookModal.active:focus-within .guestbook-composer-sheet,
+#guestbookModal.ios-focus-lock .guestbook-composer-sheet,
+#guestbookModal.keyboard-docked .guestbook-composer-sheet,
+#guestbookModal.keyboard-docked.active .guestbook-composer-sheet,
+#guestbookModal.keyboard-docked.active:focus-within .guestbook-composer-sheet {
+    transform: translate3d(0, var(--guestbook-modal-translate-y, 0px), 0) scale(1) !important;
+    opacity: 1 !important;
+}
+
+#guestbookModal.active .guestbook-composer-sheet,
+#guestbookModal.active .guestbook-composer-sheet * {
+    pointer-events: auto !important;
+}
+
+#guestbookModal.guestbook-entrying .guestbook-composer-sheet {
+    animation: guestbookComposerSheetFadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+#guestbookModal.active:focus-within .guestbook-composer-sheet,
+#guestbookModal.ios-focus-lock .guestbook-composer-sheet,
+#guestbookModal.keyboard-docked .guestbook-composer-sheet {
+    animation: none !important;
+}
+
+#guestbookModal .guestbook-composer-sheet.guestbook-sheet-animating {
+    transition:
+        transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+        height 220ms cubic-bezier(0.22, 1, 0.36, 1),
+        max-height 220ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+
+#guestbookModal .guestbook-composer-sheet > * {
+    flex-shrink: 0;
+}
+
+#guestbookModal .guestbook-composer-handle,
+#guestbookModal .guestbook-composer-header,
+#guestbookModal .guestbook-composer-form,
+#guestbookModal .guestbook-composer-editor,
+#guestbookModal .guestbook-composer-preview,
+#guestbookModal .guestbook-composer-actions {
+    position: relative;
+    z-index: 1;
+    pointer-events: auto !important;
+    backface-visibility: hidden;
+    will-change: transform, opacity;
+}
+
+#guestbookModal.guestbook-entrying .guestbook-composer-handle {
+    animation: guestbookComposerHandleRise 0.38s cubic-bezier(0.22, 1, 0.36, 1) 0.03s both;
+}
+
+#guestbookModal.guestbook-entrying .guestbook-composer-header {
+    animation: guestbookComposerSectionRise 0.42s cubic-bezier(0.22, 1, 0.36, 1) 0.08s both;
+}
+
+#guestbookModal.guestbook-entrying .guestbook-composer-editor {
+    animation: guestbookComposerSectionRise 0.46s cubic-bezier(0.22, 1, 0.36, 1) 0.14s both;
+}
+
+#guestbookModal.guestbook-entrying .guestbook-composer-preview {
+    animation: guestbookComposerSectionRise 0.44s cubic-bezier(0.22, 1, 0.36, 1) 0.18s both;
+}
+
+#guestbookModal.guestbook-entrying .guestbook-composer-actions {
+    animation: guestbookComposerSectionRise 0.48s cubic-bezier(0.22, 1, 0.36, 1) 0.21s both;
+}
+
+#guestbookModal .guestbook-composer-handle {
+    width: 42px;
+    height: 4px;
+    margin: 0 auto 4px;
+    border-radius: 999px;
+    background: rgba(107, 158, 206, 0.24);
+    transition:
+        background-color 300ms cubic-bezier(0.22, 1, 0.36, 1),
+        opacity 220ms ease,
+        box-shadow 300ms cubic-bezier(0.22, 1, 0.36, 1),
+        transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+#guestbookModal .guestbook-composer-header {
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+    gap: 16px !important;
+    margin: 0 !important;
+}
+
+#guestbookModal .guestbook-composer-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+#guestbookModal .guestbook-composer-kicker {
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+html[lang^="zh"] #guestbookModal .guestbook-composer-kicker {
+    display: none;
+}
+
+#guestbookModal .guestbook-composer-title {
+    margin: 0;
+    font-size: clamp(1.04rem, 2.05vw, 1.22rem);
+    font-weight: 520;
+    letter-spacing: -0.02em;
+    color: rgba(241, 245, 249, 0.82);
+}
+
+#guestbookModal .guestbook-composer-form {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+}
+
+#guestbookModal .guestbook-composer-editor {
+    position: relative !important;
+    z-index: 2;
+    display: flex !important;
+    align-items: stretch !important;
+    justify-content: stretch !important;
+    flex: 1 1 auto !important;
+    min-height: 140px !important;
+    margin: 0 !important;
+    padding: 18px !important;
+    overflow: hidden !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 24px !important;
+    background: rgba(255, 255, 255, 0.025) !important;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        inset 0 -12px 24px rgba(0, 0, 0, 0.08) !important;
+    cursor: text !important;
+}
+
+#guestbookModal .guestbook-composer-empty-placeholder {
+    position: absolute;
+    inset: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 48px 20px 24px;
+    text-align: center;
+    color: rgba(200, 206, 216, 0.46);
+    font-size: 15px;
+    line-height: 1.72;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0;
+    transition: opacity 160ms ease;
+}
+
+#guestbookModal .guestbook-composer-editor.is-empty .guestbook-composer-empty-placeholder {
+    opacity: 1;
+}
+
+#guestbookModal #guestMessage {
+    position: relative;
+    z-index: 2;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 100% !important;
+    max-height: 100% !important;
+    flex: 1 1 auto !important;
+    margin: 0 !important;
+    padding: 0 44px 18px 0 !important;
+    resize: none !important;
+    overflow-y: auto !important;
+    border: none !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: rgba(241, 245, 249, 0.96) !important;
+    font-size: 17px !important;
+    line-height: 1.82 !important;
+    cursor: text !important;
+    pointer-events: auto !important;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+#guestbookModal #guestMessage:focus {
+    outline: none !important;
+}
+
+#guestbookModal.keyboard-settling #guestMessage,
+#guestbookModal.keyboard-settling #guestMessage:focus {
+    caret-color: transparent !important;
+}
+
+#guestbookModal #guestMessage::placeholder,
+#guestbookModal #guestMessage::-webkit-input-placeholder,
+#guestbookModal #guestMessage::-moz-placeholder,
+#guestbookModal #guestMessage:-ms-input-placeholder {
+    color: transparent !important;
+}
+
+#guestbookModal .guestbook-composer-preview {
+    flex: 0 0 auto;
+    margin: 0 !important;
+    overflow: hidden !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 18px !important;
+    background: rgba(255, 255, 255, 0.03) !important;
+}
+
+#guestbookModal .guestbook-composer-preview img {
+    display: block;
+    width: 100%;
+    max-height: 160px;
+    object-fit: contain;
+    background: rgba(0, 0, 0, 0.28);
+}
+
+#guestbookModal .guestbook-composer-preview-remove {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 3;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    background: rgba(11, 14, 20, 0.82);
+    color: rgba(241, 245, 249, 0.92);
+    pointer-events: auto !important;
+    transition:
+        transform 180ms ease,
+        background-color 180ms ease,
+        box-shadow 180ms ease,
+        color 180ms ease;
+}
+
+#guestbookModal .guestbook-composer-actions {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: 12px !important;
+    margin-top: auto !important;
+    padding-top: 6px !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+    z-index: 3;
+}
+
+body:not(.guestbook-page) #guestbookModal .guestbook-composer-actions {
+    justify-content: space-between !important;
+}
+
+#guestbookModal .guestbook-composer-more,
+#guestbookModal .guestbook-composer-more:visited {
+    position: relative;
+    z-index: 3;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 4px 0 0;
+    border: none !important;
+    border-radius: 0;
+    background: transparent !important;
+    color: rgba(126, 184, 239, 0.96) !important;
+    font-size: 0.9rem;
+    font-weight: 560;
+    white-space: nowrap;
+    text-decoration: none !important;
+    box-shadow: none !important;
+    transition: color 160ms ease, transform 160ms ease, opacity 160ms ease;
+    pointer-events: auto !important;
+}
+
+#guestbookModal .guestbook-composer-upload {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex: 0 0 auto;
+    padding: 0 !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    background: rgba(255, 255, 255, 0.03) !important;
+    color: rgba(230, 234, 241, 0.82) !important;
+    pointer-events: auto !important;
+    transition:
+        transform 180ms ease,
+        background-color 180ms ease,
+        border-color 180ms ease,
+        box-shadow 180ms ease,
+        color 180ms ease,
+        opacity 180ms ease;
+}
+
+#guestbookModal .guestbook-composer-upload-inline {
+    position: absolute;
+    right: 14px;
+    bottom: 14px;
+    z-index: 3;
+    width: 38px;
+    height: 38px;
+    border-radius: 13px !important;
+    background: rgba(21, 24, 31, 0.82) !important;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        0 8px 20px rgba(0, 0, 0, 0.18);
+    font-size: 0.92rem !important;
+}
+
+#guestbookModal .guestbook-composer-upload.has-image {
+    color: rgba(126, 184, 239, 0.96) !important;
+    border-color: rgba(126, 184, 239, 0.28) !important;
+    background: rgba(126, 184, 239, 0.08) !important;
+}
+
+#guestbookModal .guestbook-submit-btn.guestbook-composer-send {
+    position: relative;
+    z-index: 3;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    min-width: 108px;
+    height: 46px;
+    margin: 0 !important;
+    padding: 0 24px !important;
+    border: none !important;
+    border-radius: 999px !important;
+    background: rgba(224, 230, 240, 0.92) !important;
+    color: #12161d !important;
+    font-size: 1rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.01em !important;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14) !important;
+    pointer-events: auto !important;
+    transition:
+        transform 180ms ease,
+        background-color 180ms ease,
+        box-shadow 180ms ease,
+        color 180ms ease,
+        opacity 180ms ease;
+}
+
+#guestbookModal .guestbook-submit-btn.guestbook-composer-send span {
+    color: inherit !important;
+}
+
+#guestbookModal .guestbook-submit-btn.guestbook-composer-send[disabled] {
+    cursor: default !important;
+}
+
+#guestbookModal .guestbook-submit-btn.guestbook-composer-send.is-submitting {
+    background: linear-gradient(135deg, rgba(214, 220, 230, 0.96), rgba(193, 202, 215, 0.96)) !important;
+    color: #18202c !important;
+}
+
+#guestbookModal .guestbook-submit-btn.guestbook-composer-send.is-success {
+    background: linear-gradient(135deg, rgba(116, 220, 166, 0.98), rgba(92, 201, 146, 0.96)) !important;
+    color: #082313 !important;
+}
+
+#guestbookModal .guestbook-composer-more:hover,
+#guestbookModal .guestbook-composer-upload:hover,
+#guestbookModal .guestbook-composer-upload:focus-visible,
+#guestbookModal .guestbook-composer-preview-remove:hover,
+#guestbookModal .guestbook-composer-preview-remove:focus-visible,
+#guestbookModal .guestbook-submit-btn.guestbook-composer-send:hover,
+#guestbookModal .guestbook-submit-btn.guestbook-composer-send:focus-visible {
+    transform: translateY(-1px);
+}
+
+#guestbookModal .guestbook-composer-upload:active,
+#guestbookModal .guestbook-composer-preview-remove:active,
+#guestbookModal .guestbook-submit-btn.guestbook-composer-send:active {
+    transform: translateY(0) scale(0.98);
+}
+
+@media (max-width: 768px) {
+    .modal-overlay.active:not(.login-overlay):not(#guestbookModal) {
+        align-items: center !important;
+        padding-top: calc(20px + env(safe-area-inset-top)) !important;
+        padding-bottom: calc(20px + env(safe-area-inset-bottom)) !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+    }
+
+    .modal-content:not(.guestbook-composer-sheet) {
+        max-height: calc(100vh - 40px) !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+        margin-top: 0 !important;
+        position: relative !important;
+    }
+
+    .modal-overlay.active:focus-within,
+    .modal-overlay.ios-focus-lock {
+        transform: none !important;
+        will-change: auto !important;
+    }
+
+    #guestbookModal {
+        padding: calc(env(safe-area-inset-top, 0px) + 12px) 20px calc(env(safe-area-inset-bottom, 0px) + 12px) !important;
+        -webkit-overflow-scrolling: auto !important;
+    }
+
+    #guestbookModal.active {
+        overflow: hidden !important;
+        -webkit-overflow-scrolling: auto !important;
+    }
+
+    #guestbookModal .guestbook-composer-sheet,
+    #guestbookModal.active .guestbook-composer-sheet,
+    #guestbookModal.active:focus-within .guestbook-composer-sheet,
+    #guestbookModal.ios-focus-lock .guestbook-composer-sheet {
+        width: calc(100vw - 40px) !important;
+        max-width: 620px !important;
+        height: var(--guestbook-modal-card-height, min(400px, calc(var(--guestbook-modal-overlay-height, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px)));
+        min-height: 300px;
+        max-height: var(--guestbook-modal-card-max-height, calc(var(--guestbook-modal-overlay-height, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px));
+        padding: 14px 16px calc(16px + env(safe-area-inset-bottom)) !important;
+        border-radius: 20px !important;
+    }
+
+    #guestbookModal.active:focus-within .guestbook-composer-sheet > *,
+    #guestbookModal.ios-focus-lock .guestbook-composer-sheet > *,
+    #guestbookModal.keyboard-docked .guestbook-composer-sheet > *,
+    #guestbookModal.active:focus-within .guestbook-composer-form > *,
+    #guestbookModal.ios-focus-lock .guestbook-composer-form > *,
+    #guestbookModal.keyboard-docked .guestbook-composer-form > * {
+        opacity: 1 !important;
+        transform: none !important;
+        animation: none !important;
+        transition: none !important;
+        transition-delay: 0s !important;
+        will-change: auto !important;
+    }
+
+    #guestbookModal .guestbook-composer-header {
+        gap: 12px !important;
+    }
+
+    #guestbookModal .guestbook-composer-title {
+        font-size: clamp(1rem, 5vw, 1.18rem) !important;
+    }
+
+    #guestbookModal .guestbook-composer-editor {
+        min-height: 140px !important;
+    }
+
+    #guestbookModal #guestMessage {
+        font-size: 16px !important;
+        line-height: 1.78 !important;
+    }
+}
+
+html[data-theme="light"] #guestbookModal,
+html:not([data-theme="dark"]) #guestbookModal {
+    background: var(--public-light-modal-backdrop) !important;
+    backdrop-filter: var(--public-light-modal-backdrop-filter) !important;
+    -webkit-backdrop-filter: var(--public-light-modal-backdrop-filter) !important;
+    overscroll-behavior: contain !important;
+    overscroll-behavior-y: contain !important;
+}

@@ -129,7 +129,12 @@ Text: ${text}`;
         try {
             const translation = await window.AdminAI.generateText(prompt, {
                 model: window.AdminAI?.defaultModel || 'gemini-2.0-flash',
-                generationConfig: { temperature: 0.1, maxOutputTokens: 1000 }
+                generationConfig: { temperature: 0.1, maxOutputTokens: 1000 },
+                budget: {
+                    tier: 'lean',
+                    maxInputChars: 5000,
+                    maxOutputTokens: 1000
+                }
             });
             const normalized = translation?.trim() || null;
             console.log('[PromptTranslator] EN translation:', normalized);
@@ -160,7 +165,12 @@ Text: ${text}`;
         try {
             const translation = await window.AdminAI.generateText(prompt, {
                 model: window.AdminAI?.defaultModel || 'gemini-2.0-flash',
-                generationConfig: { temperature: 0.1, maxOutputTokens: 1000 }
+                generationConfig: { temperature: 0.1, maxOutputTokens: 1000 },
+                budget: {
+                    tier: 'lean',
+                    maxInputChars: 5000,
+                    maxOutputTokens: 1000
+                }
             });
             const normalized = translation?.trim() || null;
             console.log('[PromptTranslator] ZH translation:', normalized);
@@ -278,7 +288,12 @@ ${JSON.stringify({
         try {
             const text = await window.AdminAI.generateText(jsonPrompt, {
                 model: window.AdminAI?.defaultModel || 'gemini-2.0-flash',
-                generationConfig: { temperature: 0.1, maxOutputTokens: 2200 }
+                generationConfig: { temperature: 0.1, maxOutputTokens: 2200 },
+                budget: {
+                    tier: 'balanced',
+                    maxInputChars: 12000,
+                    maxOutputTokens: 1200
+                }
             });
             const parsed = this.parseJsonResponse(text);
 

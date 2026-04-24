@@ -194,41 +194,38 @@ async function parseJsonBody(req) {
 }
 
 async function getAuthenticatedUser(req) {
+    let cookiePayload = null;
+    let cookieLookupError = null;
+    let cookieAuthError = null;
+
+    try {
+        cookiePayload = await getAdminStudioCookiePayload(req);
+    } catch (error) {
+        cookieLookupError = createAuthServiceUnavailableError(error, 'Admin studio session unavailable');
+    }
+
+    if (cookiePayload?.sub && getSupabaseServiceRoleKey()) {
+        const adminSupabase = getSupabaseAdmin();
+        if (adminSupabase?.auth?.admin?.getUserById) {
+            try {
+                const { data, error } = await adminSupabase.auth.admin.getUserById(cookiePayload.sub);
+                if (!error && data?.user) {
+                    return {
+                        token: '',
+                        user: data.user,
+                        viaAdminStudioCookie: true,
+                        adminStudioPayload: cookiePayload
+                    };
+                }
+            } catch (error) {
+                cookieAuthError = createAuthServiceUnavailableError(error);
+            }
+        }
+    }
+
     const token = getBearerToken(req);
     if (!token) {
-        const cookiePayload = await getAdminStudioCookiePayload(req);
-        if (!cookiePayload?.sub) {
-            return { token: '', user: null };
-        }
-
-        if (!getSupabaseServiceRoleKey()) {
-            return { token: '', user: null };
-        }
-
-        const adminSupabase = getSupabaseAdmin();
-        if (!adminSupabase?.auth?.admin?.getUserById) {
-            return { token: '', user: null };
-        }
-
-        try {
-            const { data, error } = await adminSupabase.auth.admin.getUserById(cookiePayload.sub);
-            if (error || !data?.user) {
-                return { token: '', user: null, error };
-            }
-
-            return {
-                token: '',
-                user: data.user,
-                viaAdminStudioCookie: true,
-                adminStudioPayload: cookiePayload
-            };
-        } catch (error) {
-            return {
-                token: '',
-                user: null,
-                error: createAuthServiceUnavailableError(error)
-            };
-        }
+        return { token: '', user: null, error: cookieAuthError || cookieLookupError };
     }
 
     let requestError = null;
@@ -438,7 +435,7 @@ async function requireAdmin(req, options = {}) {
         throw authError;
     }
 
-    const requestClient = hasSupabasePublicClientConfig()
+    const requestClient = token && hasSupabasePublicClientConfig()
         ? createSupabaseRequestClient(req)
         : null;
     const hasServiceRole = Boolean(getSupabaseServiceRoleKey());

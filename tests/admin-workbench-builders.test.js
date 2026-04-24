@@ -25,12 +25,14 @@ function loadAdminWorkbenchRuntime() {
         removeEventListener() {},
         showToast() {}
     };
+    function HTMLElement() {}
     const context = {
         console: {
             log() {},
             warn() {},
             error() {}
         },
+        HTMLElement,
         document: {
             readyState: 'loading',
             getElementById() {
@@ -46,6 +48,7 @@ function loadAdminWorkbenchRuntime() {
 
     window.window = window;
     window.document = context.document;
+    window.HTMLElement = HTMLElement;
     window.localStorage = {
         getItem() {
             return null;
@@ -79,6 +82,27 @@ test('shared admin workbench builds payment user focus payloads', () => {
             referenceValue: 'pay_456',
             defaultTab: 'payments',
             tab: 'payments'
+        }
+    });
+});
+
+test('shared admin workbench builds payment focus payloads from provider order numbers', () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const entry = runtime.buildPaymentWorkbenchEntry({
+        providerOrderNo: 'ZPAY-1029',
+        referenceLabel: '订单号',
+        referenceValue: 'ZPAY-1029'
+    });
+
+    assert.deepEqual(JSON.parse(JSON.stringify(entry)), {
+        workspaceKey: 'payments-overview',
+        context: {
+            paymentOrderId: 'ZPAY-1029',
+            providerOrderNo: 'ZPAY-1029',
+            targetId: 'ZPAY-1029',
+            target_id: 'ZPAY-1029',
+            referenceLabel: '订单号',
+            referenceValue: 'ZPAY-1029'
         }
     });
 });
@@ -446,6 +470,51 @@ test('shared admin workbench derives monitor batch items and mute module keys fr
     assert.deepEqual(JSON.parse(JSON.stringify(muteModuleKeys)), ['payments', 'shop_risk']);
 });
 
+test('shared admin workbench payment focus prefers AdminShell and preserves focus match state', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const openCalls = [];
+
+    runtime.AdminShell = {
+        async openContext(moduleName, context, options) {
+            openCalls.push({
+                moduleName,
+                context: JSON.parse(JSON.stringify(context)),
+                options: JSON.parse(JSON.stringify(options))
+            });
+            return true;
+        }
+    };
+    runtime.AdminPayments = {
+        getLastFocusResult() {
+            return {
+                opened: true,
+                matched: false
+            };
+        }
+    };
+
+    const result = await runtime.focusOpsAlertWorkspacePaymentOrder('PAY_123', {
+        site: 'cn',
+        referenceLabel: '支付单',
+        referenceValue: 'PAY_123'
+    });
+
+    assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+        opened: true,
+        matched: false
+    });
+    assert.equal(openCalls.length, 1);
+    assert.equal(openCalls[0].moduleName, 'payments');
+    assert.equal(openCalls[0].context.source, 'ops-alerts');
+    assert.equal(openCalls[0].context.entity, 'payment-order');
+    assert.equal(openCalls[0].context.action, 'focus-order');
+    assert.equal(openCalls[0].context.focus.paymentOrderId, 'PAY_123');
+    assert.equal(openCalls[0].context.payload.paymentOrderId, 'PAY_123');
+    assert.equal(openCalls[0].context.payload.defaultTab, 'ops');
+    assert.equal(openCalls[0].context.payload.focusTargetId, 'paymentsOrdersTable');
+    assert.equal(openCalls[0].options.silentDenied, true);
+});
+
 test('shared admin workbench builds ops alert monitor checklist rows and copy text', () => {
     const runtime = loadAdminWorkbenchRuntime();
     const categories = [
@@ -631,6 +700,58 @@ test('shared admin workbench builds ops alert monitor filter summary, category v
             critical_count: 0
         }
     ]);
+});
+
+test('shared admin workbench keeps resolved ops alert records out of actionable monitor counts', () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const filters = {
+        scope: 'all',
+        severity: 'critical',
+        category: 'verify'
+    };
+    const categoryView = runtime.buildAdminWorkbenchOpsAlertMonitorCategoryView({
+        key: 'verify',
+        label: '验证服务',
+        latest_state: 'open',
+        active_count: 1,
+        critical_count: 1,
+        items: [{
+            severity: 'critical',
+            title: '验证服务不可用',
+            message: '新的验证请求无法正常创建',
+            target_id: 'verify:api-base',
+            case_status: 'resolved',
+            case_owner_label: '值班管理员'
+        }]
+    }, filters, {
+        formatCount: (value) => `#${value}`
+    });
+
+    assert.equal(categoryView.display_active_count, 0);
+    assert.equal(categoryView.display_critical_count, 0);
+    assert.equal(categoryView.visible_items.length, 1);
+    assert.equal(categoryView.visible_items[0].case_status, 'resolved');
+
+    const panelState = runtime.buildAdminWorkbenchOpsAlertMonitorPanelState({
+        status: 'ready',
+        summary: {
+            lookback_hours: 168
+        }
+    }, filters, [categoryView], {
+        formatCount: (value) => `#${value}`,
+        getFilterSummaryLabel: () => '全部状态 · 仅 critical · 验证服务'
+    });
+    assert.equal(panelState.filteredActiveCount, 0);
+    assert.equal(panelState.filteredCriticalCount, 0);
+    assert.equal(
+        panelState.metaText,
+        '当前筛选：全部状态 · 仅 critical · 验证服务。最近 #168 小时内没有持续中的待关注告警，下面保留可复核的恢复轨迹。'
+    );
+
+    const batchCloseItems = runtime.buildAdminWorkbenchOpsAlertMonitorBatchItems([categoryView], 'resolve');
+    const batchNoteItems = runtime.buildAdminWorkbenchOpsAlertMonitorBatchItems([categoryView], 'add_note');
+    assert.equal(batchCloseItems.length, 0);
+    assert.equal(batchNoteItems.length, 1);
 });
 
 test('shared admin workbench builds ops alert monitor card, panel, and batch mute modal state', () => {
@@ -995,6 +1116,13 @@ test('shared admin workbench derives ops alert monitor action protocol helpers',
         ticketStatus: '',
         userId: 'user_1',
         paymentOrderId: '',
+        providerOrderNo: '',
+        verificationId: '',
+        productId: '',
+        productName: '',
+        taskId: '',
+        adminId: '',
+        adminEmail: '',
         clientIp: '1.2.3.4',
         discountCode: 'SPRING-2026',
         signalType: 'coupon',
@@ -1579,6 +1707,43 @@ test('shared admin workbench fetches ops alert monitor payloads with timeout-awa
     assert.equal(calls[1].init.headers.authorization, 'Bearer test');
     assert.ok(calls[1].init.signal);
     assert.equal(clearedTimeoutId, 42);
+});
+
+test('shared admin workbench retries transient ops alert monitor fetch failures', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const calls = [];
+    const payload = await runtime.fetchAdminWorkbenchOpsAlertMonitor(
+        { authorization: 'Bearer retry' },
+        {
+            endpoint: '/custom/ops-alert-monitor',
+            retryCount: 2,
+            retryDelayMs: 25,
+            setTimeout(handler, delay) {
+                calls.push({ type: 'retry-delay', delay });
+                if (typeof handler === 'function') {
+                    handler();
+                }
+                return 7;
+            },
+            clearTimeout() {},
+            fetch: async (url, init) => {
+                calls.push({ type: 'fetch', url, init });
+                if (calls.filter((item) => item.type === 'fetch').length < 3) {
+                    throw new TypeError('fetch failed');
+                }
+                return {
+                    ok: true,
+                    async json() {
+                        return { success: true, fetched_at: '2026-04-01T12:05:00.000Z' };
+                    }
+                };
+            }
+        }
+    );
+
+    assert.equal(payload.fetched_at, '2026-04-01T12:05:00.000Z');
+    assert.equal(calls.filter((item) => item.type === 'fetch').length, 3);
+    assert.deepEqual(calls.filter((item) => item.type === 'retry-delay').map((item) => item.delay), [25, 50]);
 });
 
 test('shared admin workbench normalizes ops alert monitor payloads into state-friendly snapshots', () => {
@@ -4148,6 +4313,836 @@ test('shared admin workbench opens user modal after switching users module', asy
         }
     }]);
     assert.equal(toasts.some((entry) => String(entry.message || '').includes('已打开用户详情')), true);
+});
+
+test('shared admin workbench prefers the shared users context helper before direct modal fallback', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    let switchCalls = 0;
+    const helperCalls = [];
+
+    runtime.showToast = () => {};
+    runtime.switchModule = () => {
+        switchCalls += 1;
+        return true;
+    };
+    runtime.openAdminUsersShellContext = async (context = {}, options = {}) => {
+        helperCalls.push({ context, options });
+        return true;
+    };
+    runtime.openUserModal = () => {
+        throw new Error('direct user modal fallback should not run');
+    };
+
+    const opened = await runtime.openAdminWorkbenchEntry('shop-risk-users', {
+        userId: 'user-123',
+        email: 'ops@example.com',
+        paymentOrderId: 'pay-456',
+        tab: 'payments'
+    });
+
+    assert.equal(opened, true);
+    assert.equal(switchCalls, 1);
+    assert.deepEqual(JSON.parse(JSON.stringify(helperCalls)), [{
+        context: {
+            source: 'ops-alerts',
+            entity: 'user',
+            action: 'open-user',
+            focus: {
+                userId: 'user-123',
+                user_id: 'user-123',
+                paymentOrderId: 'pay-456',
+                payment_order_id: 'pay-456'
+            },
+            payload: {
+                defaultTab: 'payments',
+                tab: 'payments',
+                email: 'ops@example.com',
+                fallbackEmail: 'ops@example.com',
+                paymentOrderId: 'pay-456',
+                payment_order_id: 'pay-456',
+                analyticsContext: null,
+                search: 'user-123',
+                searchQuery: 'user-123',
+                query: 'user-123'
+            }
+        },
+        options: {
+            silentOnNotFound: true
+        }
+    }]);
+});
+
+test('shared admin workbench prefers the shared comments context helper before direct comments runtime control', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    let switchCalls = 0;
+    const helperCalls = [];
+
+    runtime.showToast = () => {};
+    runtime.switchModule = () => {
+        switchCalls += 1;
+        return true;
+    };
+    runtime.openAdminCommentsShellContext = async (context = {}, options = {}) => {
+        helperCalls.push({ context, options });
+        return true;
+    };
+    runtime.openAdminUserCommentContext = () => {
+        throw new Error('direct comments user context fallback should not run');
+    };
+    runtime.openAnalyticsCommentContext = () => {
+        throw new Error('direct analytics comments fallback should not run');
+    };
+
+    const opened = await runtime.openAdminWorkbenchEntry('comments', {
+        view: 'gallery',
+        queue: 'escalated',
+        search: 'comment-123',
+        promptId: 'prompt-456',
+        promptTitle: '春季活动',
+        commentId: 'comment-123',
+        site: 'cn'
+    });
+
+    assert.equal(opened, true);
+    assert.equal(switchCalls, 1);
+    assert.deepEqual(JSON.parse(JSON.stringify(helperCalls)), [{
+        context: {
+            source: 'ops-alerts',
+            entity: 'comment',
+            action: 'focus-comment',
+            focus: {
+                commentId: 'comment-123',
+                comment_id: 'comment-123'
+            },
+            payload: {
+                view: 'gallery',
+                queue: 'escalated',
+                search: 'comment-123',
+                promptId: 'prompt-456',
+                promptTitle: '春季活动',
+                focusCommentId: 'comment-123',
+                commentId: 'comment-123',
+                site: 'cn',
+                commentView: 'gallery'
+            }
+        },
+        options: {}
+    }]);
+});
+
+test('shared admin workbench prefers the shared payments context helper before direct payments runtime control', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    let switchCalls = 0;
+    const helperCalls = [];
+
+    runtime.showToast = () => {};
+    runtime.switchModule = () => {
+        switchCalls += 1;
+        return true;
+    };
+    runtime.openAdminPaymentsShellContext = async (context = {}, options = {}) => {
+        helperCalls.push({ context, options });
+        return true;
+    };
+    runtime.AdminPayments = {
+        getLastFocusResult() {
+            return { matched: true };
+        },
+        activate() {
+            throw new Error('direct payments activation should not run');
+        },
+        focusOrder() {
+            throw new Error('direct payments focus should not run');
+        }
+    };
+
+    const opened = await runtime.openAdminWorkbenchEntry('payments-overview', {
+        paymentOrderId: 'pay-456',
+        referenceLabel: '支付单',
+        referenceValue: 'pay-456'
+    });
+
+    assert.equal(opened, true);
+    assert.equal(switchCalls, 1);
+    assert.equal(helperCalls.length, 1);
+    assert.equal(helperCalls[0].context.source, 'ops-alerts');
+    assert.equal(helperCalls[0].context.entity, 'payment-order');
+    assert.equal(helperCalls[0].context.action, 'focus-order');
+    assert.equal(helperCalls[0].context.focus.paymentOrderId, 'pay-456');
+    assert.equal(helperCalls[0].context.payload.paymentOrderId, 'pay-456');
+    assert.equal(helperCalls[0].context.payload.referenceLabel, '支付单');
+    assert.equal(helperCalls[0].context.payload.focusTargetId, 'paymentsOrdersTable');
+    assert.deepEqual(JSON.parse(JSON.stringify(helperCalls[0].options)), {
+        defaultTab: 'ops',
+        tab: 'ops'
+    });
+});
+
+test('shared admin workbench prefers the shared shop context helper before direct shop runtime control', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    let switchCalls = 0;
+    const helperCalls = [];
+
+    runtime.showToast = () => {};
+    runtime.switchModule = () => {
+        switchCalls += 1;
+        return true;
+    };
+    runtime.openAdminShopShellContext = async (context = {}, options = {}) => {
+        helperCalls.push({ context, options });
+        return true;
+    };
+    runtime.ShopAdmin = {
+        activate() {
+            throw new Error('direct shop activation should not run');
+        },
+        focusOrder() {
+            throw new Error('direct shop order focus should not run');
+        }
+    };
+
+    const opened = await runtime.openAdminWorkbenchEntry('shop-risk-orders', {
+        orderId: 'ORDER-1',
+        referenceLabel: '订单号',
+        referenceValue: 'ORDER-1'
+    });
+
+    assert.equal(opened, true);
+    assert.equal(switchCalls, 1);
+    assert.equal(helperCalls.length, 1);
+    assert.equal(helperCalls[0].context.source, 'ops-alerts');
+    assert.equal(helperCalls[0].context.entity, 'shop-order');
+    assert.equal(helperCalls[0].context.action, 'focus-order');
+    assert.equal(helperCalls[0].context.focus.orderId, 'ORDER-1');
+    assert.equal(helperCalls[0].context.payload.workspace, 'orders');
+    assert.equal(helperCalls[0].context.payload.query, 'ORDER-1');
+    assert.equal(helperCalls[0].context.payload.openDetails, true);
+    assert.deepEqual(JSON.parse(JSON.stringify(helperCalls[0].options)), {
+        defaultTab: 'orders',
+        tab: 'orders',
+        load: false
+    });
+});
+
+test('shared admin workbench prefers the shared discounts context helper before direct discounts runtime control', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    let switchCalls = 0;
+    const helperCalls = [];
+
+    runtime.showToast = () => {};
+    runtime.switchModule = () => {
+        switchCalls += 1;
+        return true;
+    };
+    runtime.openAdminDiscountsShellContext = async (context = {}, options = {}) => {
+        helperCalls.push({ context, options });
+        return true;
+    };
+    runtime.AdminDiscounts = {
+        loadDiscounts() {
+            throw new Error('direct discounts load should not run');
+        }
+    };
+
+    const opened = await runtime.openAdminWorkbenchEntry('shop-risk-discounts', {
+        referenceLabel: '券码',
+        referenceValue: 'DISC-123'
+    });
+
+    assert.equal(opened, true);
+    assert.equal(switchCalls, 1);
+    assert.equal(helperCalls.length, 1);
+    assert.equal(helperCalls[0].context.source, 'ops-alerts');
+    assert.equal(helperCalls[0].context.entity, 'discount');
+    assert.equal(helperCalls[0].context.action, 'focus-discount');
+    assert.equal(helperCalls[0].context.focus.discountCode, 'DISC-123');
+    assert.equal(helperCalls[0].context.payload.workspace, 'shop-risk-discounts');
+    assert.equal(helperCalls[0].context.payload.search, 'DISC-123');
+    assert.deepEqual(JSON.parse(JSON.stringify(helperCalls[0].options)), {});
+});
+
+test('shared admin workbench prefers the shared settings context helper before direct settings runtime control', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    let switchCalls = 0;
+    const helperCalls = [];
+
+    runtime.showToast = () => {};
+    runtime.switchModule = () => {
+        switchCalls += 1;
+        return true;
+    };
+    runtime.openAdminSettingsShellContext = async (context = {}, options = {}) => {
+        helperCalls.push({ context, options });
+        return true;
+    };
+    runtime.switchSettingsView = () => {
+        throw new Error('direct settings view switch should not run');
+    };
+    runtime.refreshVerifyMonitor = () => {
+        throw new Error('direct verify monitor refresh should not run');
+    };
+
+    const opened = await runtime.openAdminWorkbenchEntry('verify-monitor', {
+        targetId: 'verify-job-123',
+        referenceLabel: '验证任务',
+        referenceValue: 'verify-job-123'
+    });
+
+    assert.equal(opened, true);
+    assert.equal(switchCalls, 1);
+    assert.equal(helperCalls.length, 1);
+    assert.equal(helperCalls[0].context.source, 'ops-alerts');
+    assert.equal(helperCalls[0].context.entity, 'verify-monitor');
+    assert.equal(helperCalls[0].context.action, 'focus-monitor');
+    assert.equal(helperCalls[0].context.payload.workspace, 'verify-monitor');
+    assert.equal(helperCalls[0].context.payload.defaultTab, 'google-one');
+    assert.deepEqual(JSON.parse(JSON.stringify(helperCalls[0].options)), {
+        viewName: 'google-one',
+        settingsView: 'google-one'
+    });
+});
+
+test('shared admin workbench prefers the shared verify helper when only verificationId is available', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    let switchCalls = 0;
+    const helperCalls = [];
+
+    runtime.showToast = () => {};
+    runtime.switchModule = () => {
+        switchCalls += 1;
+        return true;
+    };
+    runtime.openAdminSettingsShellContext = async (context = {}, options = {}) => {
+        helperCalls.push({ context, options });
+        return true;
+    };
+
+    const opened = await runtime.openAdminWorkbenchEntry('verify-monitor', {
+        verificationId: 'verify-job-456',
+        referenceLabel: '验证单号',
+        referenceValue: 'verify-job-456'
+    });
+
+    assert.equal(opened, true);
+    assert.equal(switchCalls, 1);
+    assert.equal(helperCalls.length, 1);
+    assert.equal(helperCalls[0].context.action, 'focus-monitor');
+    assert.equal(helperCalls[0].context.payload.targetId, 'verify-job-456');
+    assert.equal(helperCalls[0].context.payload.verificationId, 'verify-job-456');
+});
+
+test('shared admin workbench prefers the shared tickets context helper before direct tickets runtime control', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    let switchCalls = 0;
+    const helperCalls = [];
+
+    runtime.showToast = () => {};
+    runtime.switchModule = () => {
+        switchCalls += 1;
+        return true;
+    };
+    runtime.openAdminTicketsShellContext = async (context = {}, options = {}) => {
+        helperCalls.push({ context, options });
+        return true;
+    };
+    runtime.AdminTickets = {
+        activate() {
+            throw new Error('direct tickets activation should not run');
+        },
+        focusTicket() {
+            throw new Error('direct ticket focus should not run');
+        },
+        filter() {
+            throw new Error('direct ticket filter should not run');
+        },
+        search() {
+            throw new Error('direct ticket search should not run');
+        }
+    };
+
+    const opened = await runtime.openAdminWorkbenchEntry('tickets-pending', {
+        ticketId: 'ticket-123',
+        referenceLabel: '工单号',
+        referenceValue: 'ticket-123'
+    });
+
+    assert.equal(opened, true);
+    assert.equal(switchCalls, 1);
+    assert.equal(helperCalls.length, 1);
+    assert.equal(helperCalls[0].context.source, 'ops-alerts');
+    assert.equal(helperCalls[0].context.entity, 'ticket');
+    assert.equal(helperCalls[0].context.action, 'focus-ticket');
+    assert.equal(helperCalls[0].context.focus.ticketId, 'ticket-123');
+    assert.equal(helperCalls[0].context.payload.workspace, 'queue');
+    assert.equal(helperCalls[0].context.payload.status, 'pending');
+    assert.equal(helperCalls[0].context.payload.searchQuery, 'ticket-123');
+    assert.deepEqual(JSON.parse(JSON.stringify(helperCalls[0].options)), {
+        workspace: 'queue'
+    });
+});
+
+test('shared admin workbench opens admin audit monitor with precise audit identity context', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const shellCalls = [];
+
+    runtime.AdminShell = {
+        async openContext(moduleName, context = {}, options = {}) {
+            shellCalls.push({ moduleName, context, options });
+            return true;
+        }
+    };
+    runtime.switchModule = () => {
+        throw new Error('settings fallback should not run');
+    };
+
+    const opened = await runtime.openAdminWorkbenchEntry('admin-audit-monitor', {
+        adminId: 'admin_42',
+        adminEmail: 'ops@example.com',
+        clientIp: '1.2.3.4',
+        category: 'access',
+        referenceLabel: '管理员',
+        referenceValue: 'ops@example.com',
+        site: 'cn'
+    });
+
+    assert.equal(opened, true);
+    assert.equal(shellCalls.length, 1);
+    assert.equal(shellCalls[0].moduleName, 'settings');
+    assert.equal(shellCalls[0].context.action, 'focus-monitor');
+    assert.equal(shellCalls[0].context.payload.workspace, 'admin-audit-monitor');
+    assert.equal(shellCalls[0].context.payload.adminId, 'admin_42');
+    assert.equal(shellCalls[0].context.payload.adminEmail, 'ops@example.com');
+    assert.equal(shellCalls[0].context.payload.clientIp, '1.2.3.4');
+    assert.equal(shellCalls[0].context.payload.focusTargetId, 'adminAuditMonitorRecentAccess');
+    assert.equal(shellCalls[0].options.silentDenied, true);
+});
+
+test('shared admin workbench opens chat sessions through AdminShell context routing', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const shellCalls = [];
+
+    runtime.AdminShell = {
+        async openContext(moduleName, context = {}, options = {}) {
+            shellCalls.push({ moduleName, context, options });
+            return true;
+        }
+    };
+
+    const opened = await runtime.openAdminWorkbenchEntry('chat-session', {
+        sessionId: 'session-123',
+        userId: 'user-456',
+        email: 'ops@example.com',
+        ticketId: 'ticket-789',
+        ticketStatus: 'pending',
+        site: 'cn',
+        referenceLabel: '会话ID',
+        referenceValue: 'session-123'
+    });
+
+    assert.equal(opened, true);
+    assert.deepEqual(JSON.parse(JSON.stringify(shellCalls)), [{
+        moduleName: 'chat',
+        context: {
+            source: 'ops-alerts',
+            entity: 'chat-session',
+            action: 'focus-session',
+            site: 'cn',
+            focus: {
+                sessionId: 'session-123',
+                session_id: 'session-123',
+                userId: 'user-456',
+                user_id: 'user-456'
+            },
+            payload: {
+                search: 'session-123',
+                searchQuery: 'session-123',
+                email: 'ops@example.com',
+                referenceLabel: '会话ID',
+                referenceValue: 'session-123',
+                ticketId: 'ticket-789',
+                ticketStatus: 'pending'
+            }
+        },
+        options: {
+            settleMs: 0,
+            silentDenied: true
+        }
+    }]);
+});
+
+test('shared admin workbench opens comments workspaces through AdminShell context routing', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const shellCalls = [];
+
+    runtime.AdminShell = {
+        async openContext(moduleName, context = {}, options = {}) {
+            shellCalls.push({ moduleName, context, options });
+            return true;
+        }
+    };
+    runtime.switchModule = () => {
+        throw new Error('comments fallback should not run');
+    };
+
+    const opened = await runtime.openAdminWorkbenchEntry('comments', {
+        view: 'gallery',
+        queue: 'escalated',
+        search: 'comment-123',
+        promptId: 'prompt-456',
+        promptTitle: '春季活动',
+        commentId: 'comment-123',
+        site: 'cn'
+    });
+
+    assert.equal(opened, true);
+    assert.equal(shellCalls.length, 1);
+    assert.equal(shellCalls[0].moduleName, 'comments');
+    assert.equal(shellCalls[0].context.action, 'focus-comment');
+    assert.equal(shellCalls[0].context.site, 'cn');
+    assert.deepEqual(JSON.parse(JSON.stringify(shellCalls[0].context.focus)), {
+        commentId: 'comment-123',
+        comment_id: 'comment-123'
+    });
+    assert.equal(shellCalls[0].context.payload.commentView, 'gallery');
+    assert.equal(shellCalls[0].context.payload.queue, 'escalated');
+    assert.equal(shellCalls[0].options.silentDenied, true);
+});
+
+test('shared admin workbench opens payments overview through AdminShell context routing', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const shellCalls = [];
+
+    runtime.AdminShell = {
+        async openContext(moduleName, context = {}, options = {}) {
+            shellCalls.push({ moduleName, context, options });
+            return true;
+        }
+    };
+    runtime.switchModule = () => {
+        throw new Error('payments fallback should not run');
+    };
+
+    const opened = await runtime.openAdminWorkbenchEntry('payments-overview', {
+        paymentOrderId: 'pay-123',
+        referenceLabel: '支付单',
+        referenceValue: 'pay-123',
+        site: 'us'
+    });
+
+    assert.equal(opened, true);
+    assert.equal(shellCalls.length, 1);
+    assert.equal(shellCalls[0].moduleName, 'payments');
+    assert.equal(shellCalls[0].context.action, 'focus-order');
+    assert.equal(shellCalls[0].context.site, 'us');
+    assert.deepEqual(JSON.parse(JSON.stringify(shellCalls[0].context.focus)), {
+        paymentOrderId: 'pay-123',
+        payment_order_id: 'pay-123'
+    });
+    assert.equal(shellCalls[0].context.payload.defaultTab, 'ops');
+    assert.equal(shellCalls[0].context.payload.focusTargetId, 'paymentsOrdersTable');
+});
+
+test('shared admin workbench opens payments overview from provider order numbers through AdminShell context routing', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const shellCalls = [];
+
+    runtime.AdminShell = {
+        async openContext(moduleName, context = {}, options = {}) {
+            shellCalls.push({ moduleName, context, options });
+            return true;
+        }
+    };
+    runtime.switchModule = () => {
+        throw new Error('payments fallback should not run');
+    };
+
+    const opened = await runtime.openAdminWorkbenchEntry('payments-overview', {
+        providerOrderNo: 'ZPAY-1029',
+        referenceLabel: '订单号',
+        referenceValue: 'ZPAY-1029',
+        site: 'cn'
+    });
+
+    assert.equal(opened, true);
+    assert.equal(shellCalls.length, 1);
+    assert.equal(shellCalls[0].moduleName, 'payments');
+    assert.equal(shellCalls[0].context.action, 'focus-order');
+    assert.deepEqual(JSON.parse(JSON.stringify(shellCalls[0].context.focus)), {
+        paymentOrderId: 'ZPAY-1029',
+        payment_order_id: 'ZPAY-1029'
+    });
+    assert.equal(shellCalls[0].context.payload.paymentOrderId, 'ZPAY-1029');
+    assert.equal(shellCalls[0].context.payload.defaultTab, 'ops');
+    assert.equal(shellCalls[0].context.payload.focusTargetId, 'paymentsOrdersTable');
+    assert.equal(shellCalls[0].context.payload.referenceValue, 'ZPAY-1029');
+});
+
+test('shared admin workbench opens ticket queues through AdminShell context routing', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const shellCalls = [];
+
+    runtime.AdminShell = {
+        async openContext(moduleName, context = {}, options = {}) {
+            shellCalls.push({ moduleName, context, options });
+            return true;
+        }
+    };
+    runtime.switchModule = () => {
+        throw new Error('tickets fallback should not run');
+    };
+
+    const opened = await runtime.openAdminWorkbenchEntry('tickets-pending', {
+        ticketId: 'ticket-123',
+        ticketStatus: 'pending',
+        referenceLabel: '工单号',
+        referenceValue: 'ticket-123',
+        site: 'cn'
+    });
+
+    assert.equal(opened, true);
+    assert.equal(shellCalls.length, 1);
+    assert.equal(shellCalls[0].moduleName, 'tickets');
+    assert.equal(shellCalls[0].context.action, 'focus-ticket');
+    assert.equal(shellCalls[0].context.site, 'cn');
+    assert.deepEqual(JSON.parse(JSON.stringify(shellCalls[0].context.focus)), {
+        ticketId: 'ticket-123',
+        ticket_id: 'ticket-123'
+    });
+    assert.equal(shellCalls[0].context.payload.workspace, 'queue');
+    assert.equal(shellCalls[0].context.payload.status, 'pending');
+});
+
+test('shared admin workbench opens shop inventory alerts as focused import targets', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const helperCalls = [];
+    let switchCalls = 0;
+
+    runtime.showToast = () => {};
+    runtime.switchModule = () => {
+        switchCalls += 1;
+        return true;
+    };
+    runtime.openAdminShopShellContext = async (context = {}, options = {}) => {
+        helperCalls.push({ context, options });
+        return true;
+    };
+    runtime.ShopAdmin = {
+        activate() {
+            throw new Error('direct shop activation should not run');
+        }
+    };
+
+    const opened = await runtime.openAdminWorkbenchEntry('shop-inventory', {
+        productId: 'product_google_one',
+        productName: 'Google One 月卡',
+        referenceLabel: '商品',
+        referenceValue: 'Google One 月卡'
+    });
+
+    assert.equal(opened, true);
+    assert.equal(switchCalls, 1);
+    assert.equal(helperCalls.length, 1);
+    assert.equal(helperCalls[0].context.source, 'ops-alerts');
+    assert.equal(helperCalls[0].context.action, 'focus-import-product');
+    assert.deepEqual(JSON.parse(JSON.stringify(helperCalls[0].context.focus)), {
+        productId: 'product_google_one',
+        product_id: 'product_google_one'
+    });
+    assert.equal(helperCalls[0].context.payload.workspace, 'import');
+    assert.equal(helperCalls[0].context.payload.productId, 'product_google_one');
+    assert.equal(helperCalls[0].context.payload.productName, 'Google One 月卡');
+    assert.deepEqual(JSON.parse(JSON.stringify(helperCalls[0].options)), {
+        defaultTab: 'import',
+        tab: 'import'
+    });
+});
+
+test('shared admin workbench opens shop risk orders through AdminShell context routing', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const shellCalls = [];
+
+    runtime.AdminShell = {
+        async openContext(moduleName, context = {}, options = {}) {
+            shellCalls.push({ moduleName, context, options });
+            return true;
+        }
+    };
+    runtime.switchModule = () => {
+        throw new Error('shop fallback should not run');
+    };
+
+    const opened = await runtime.openAdminWorkbenchEntry('shop-risk-orders', {
+        orderId: 'ORDER-123',
+        referenceLabel: '订单号',
+        referenceValue: 'ORDER-123',
+        site: 'cn'
+    });
+
+    assert.equal(opened, true);
+    assert.equal(shellCalls.length, 1);
+    assert.equal(shellCalls[0].moduleName, 'shop');
+    assert.equal(shellCalls[0].context.action, 'focus-order');
+    assert.equal(shellCalls[0].context.site, 'cn');
+    assert.deepEqual(JSON.parse(JSON.stringify(shellCalls[0].context.focus)), {
+        orderId: 'ORDER-123',
+        order_id: 'ORDER-123'
+    });
+    assert.equal(shellCalls[0].context.payload.workspace, 'orders');
+    assert.equal(shellCalls[0].context.payload.openDetails, true);
+});
+
+test('shared admin workbench opens verify monitor through settings shell context routing', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const shellCalls = [];
+
+    runtime.AdminShell = {
+        async openContext(moduleName, context = {}, options = {}) {
+            shellCalls.push({ moduleName, context, options });
+            return true;
+        }
+    };
+    runtime.switchModule = () => {
+        throw new Error('settings fallback should not run');
+    };
+
+    const opened = await runtime.openAdminWorkbenchEntry('verify-monitor', {
+        targetId: 'verify-job-123',
+        referenceLabel: '验证任务',
+        referenceValue: 'verify-job-123',
+        category: 'verify',
+        alertType: 'verify_queue_backlog',
+        site: 'cn'
+    });
+
+    assert.equal(opened, true);
+    assert.equal(shellCalls.length, 1);
+    assert.equal(shellCalls[0].moduleName, 'settings');
+    assert.equal(shellCalls[0].context.entity, 'verify-monitor');
+    assert.equal(shellCalls[0].context.site, 'cn');
+    assert.equal(shellCalls[0].context.payload.workspace, 'verify-monitor');
+    assert.equal(shellCalls[0].context.payload.defaultTab, 'google-one');
+    assert.equal(shellCalls[0].options.silentDenied, true);
+});
+
+test('shared admin workbench opens discount workspaces through AdminShell context routing', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const shellCalls = [];
+
+    runtime.AdminShell = {
+        async openContext(moduleName, context = {}, options = {}) {
+            shellCalls.push({ moduleName, context, options });
+            return true;
+        }
+    };
+    runtime.switchModule = () => {
+        throw new Error('discounts fallback should not run');
+    };
+
+    const opened = await runtime.openAdminWorkbenchEntry('shop-risk-discounts', {
+        discountCode: 'SPRING2026',
+        referenceLabel: '优惠码',
+        referenceValue: 'SPRING2026',
+        site: 'cn'
+    });
+
+    assert.equal(opened, true);
+    assert.equal(shellCalls.length, 1);
+    assert.equal(shellCalls[0].moduleName, 'discounts');
+    assert.equal(shellCalls[0].context.action, 'focus-discount');
+    assert.equal(shellCalls[0].context.site, 'cn');
+    assert.deepEqual(JSON.parse(JSON.stringify(shellCalls[0].context.focus)), {
+        discountCode: 'SPRING2026',
+        discount_code: 'SPRING2026'
+    });
+    assert.equal(shellCalls[0].context.payload.search, 'SPRING2026');
+    assert.equal(shellCalls[0].options.silentDenied, true);
+});
+
+test('shared admin workbench opens risk users through AdminShell context routing before modal fallback', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const shellCalls = [];
+
+    runtime.AdminShell = {
+        async openContext(moduleName, context = {}, options = {}) {
+            shellCalls.push({ moduleName, context, options });
+            return true;
+        }
+    };
+    runtime.openUserModal = () => {
+        throw new Error('user modal fallback should not run');
+    };
+    runtime.switchModule = () => {
+        throw new Error('users fallback should not run');
+    };
+
+    const opened = await runtime.openAdminWorkbenchEntry('shop-risk-users', {
+        userId: 'user-123',
+        email: 'ops@example.com',
+        paymentOrderId: 'pay-456',
+        tab: 'payments',
+        site: 'us'
+    });
+
+    assert.equal(opened, true);
+    assert.equal(shellCalls.length, 1);
+    assert.equal(shellCalls[0].moduleName, 'users');
+    assert.equal(shellCalls[0].context.action, 'open-user');
+    assert.equal(shellCalls[0].context.site, 'us');
+    assert.deepEqual(JSON.parse(JSON.stringify(shellCalls[0].context.focus)), {
+        userId: 'user-123',
+        user_id: 'user-123',
+        email: 'ops@example.com',
+        paymentOrderId: 'pay-456',
+        payment_order_id: 'pay-456'
+    });
+    assert.equal(shellCalls[0].context.payload.defaultTab, 'payments');
+    assert.equal(shellCalls[0].context.payload.search, 'user-123');
+});
+
+test('shared admin workbench user detail helper prefers AdminShell context routing when analytics asks for a user detail modal', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const shellCalls = [];
+
+    runtime.AdminShell = {
+        async openContext(moduleName, context = {}, options = {}) {
+            shellCalls.push({ moduleName, context, options });
+            return true;
+        }
+    };
+    runtime.openUserModal = () => {
+        throw new Error('user modal fallback should not run');
+    };
+    runtime.switchModule = () => {
+        throw new Error('users module fallback should not run');
+    };
+
+    const result = await runtime.tryOpenOpsAlertWorkspaceUserModal('user-analytics-1', {
+        email: 'analytics@example.com',
+        paymentOrderId: 'pay-analytics-1',
+        tab: 'payments',
+        analyticsContext: {
+            referenceLabel: '分析榜单',
+            referenceValue: '高价值用户'
+        }
+    });
+
+    assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+        opened: true,
+        denied: false
+    });
+    assert.equal(shellCalls.length, 1);
+    assert.equal(shellCalls[0].moduleName, 'users');
+    assert.equal(shellCalls[0].context.source, 'analytics');
+    assert.equal(shellCalls[0].context.action, 'open-user');
+    assert.deepEqual(JSON.parse(JSON.stringify(shellCalls[0].context.focus)), {
+        userId: 'user-analytics-1',
+        user_id: 'user-analytics-1',
+        paymentOrderId: 'pay-analytics-1',
+        payment_order_id: 'pay-analytics-1'
+    });
+    assert.equal(shellCalls[0].context.payload.analyticsContext.referenceValue, '高价值用户');
+    assert.equal(shellCalls[0].context.payload.search, 'user-analytics-1');
+    assert.equal(shellCalls[0].options.silentDenied, true);
 });
 
 test('shared admin workbench exposes workspace access checks for modal-first user actions', () => {

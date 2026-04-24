@@ -15,7 +15,7 @@ test('admin studio exposes the marketing asset center workspace inside the growt
         'id="marketingAssetCenterWorkspace"',
         'id="marketingAssetCenterMeta"',
         '营销资产中心',
-        'js/admin-growth-center.js?v=20260409_MARKETING_ASSET_CENTER_P2_1'
+        'js/admin-growth-center.js?v=20260421_GROWTH_CENTER_CONTEXT_ROUTING_P3'
     ];
 
     for (const marker of htmlMarkers) {
@@ -46,6 +46,14 @@ test('growth center runtime and styles expose unified asset and workflow surface
         '明细补齐中',
         "data-growth-center-action=\"run-workflow\"",
         "data-growth-center-action=\"open-asset\"",
+        "async openModule(moduleId = '', context = {}) {",
+        "async openAsset(moduleId = '', assetType = '', id = '') {",
+        'async function openAdminGrowthCenterShellContext(context = {}, options = {}) {',
+        'window.openAdminGrowthCenterShellContext = openAdminGrowthCenterShellContext;',
+        "return window.AdminShell.activateModule(normalizedModuleId, {",
+        "reason: 'growth-center-open-module'",
+        "typeof window.openAdminPointsShellContext === 'function'",
+        "typeof window.openAdminDiscountsShellContext === 'function'",
         'window.AdminGrowthCenter = AdminGrowthCenter;'
     ];
 

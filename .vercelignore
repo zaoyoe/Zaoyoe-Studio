@@ -23,6 +23,7 @@ api/shop/purchase.js
 api/shop/remove-discount-asset.js
 api/shop/validate-discount.js
 api/wallet/checkin.js
+api/wallet/order-detail.js
 api/wallet/overview.js
 api/wallet/prompt-titles.js
 api/wallet/transactions.js

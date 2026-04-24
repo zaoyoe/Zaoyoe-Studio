@@ -70,6 +70,12 @@ function setAuthStyleState(target, styles = {}) {
 }
 
 function setAuthDisplayState(target, hidden, visibleDisplay = 'block') {
+    if (target?.classList) {
+        target.classList.toggle('auth-display-none', !!hidden);
+    }
+    if (typeof target?.setAttribute === 'function') {
+        target.setAttribute('aria-hidden', hidden ? 'true' : 'false');
+    }
     setAuthStyleState(target, {
         display: hidden ? 'none' : visibleDisplay
     });
@@ -78,6 +84,7 @@ function setAuthDisplayState(target, hidden, visibleDisplay = 'block') {
 function setAuthAvatarVisualState(target, visible) {
     if (!target) return;
     target.classList.toggle('show', !!visible);
+    target.classList.toggle('auth-display-none', !visible);
     setAuthStyleState(target, {
         display: visible ? 'inline-block' : 'none',
         visibility: visible ? 'visible' : 'hidden',
@@ -112,6 +119,8 @@ const AUTH_ORIGIN_CACHE_KEY = 'zaoyoe_auth_origin_cache_v1';
 const PENDING_AUTH_ORIGIN_KEY = 'zaoyoe_pending_auth_origin_v1';
 const AUTH_ORIGIN_CACHE_TTL = 10 * 60 * 1000;
 const REMEMBERED_LOGIN_EMAIL_KEY = 'zaoyoe_remembered_login_email_v1';
+const POST_LOGIN_REDIRECT_STORAGE_KEY = 'zaoyoe_post_login_redirect_v1';
+const POST_LOGIN_REDIRECT_TTL_MS = 15 * 60 * 1000;
 const LEGACY_AUTH_SECRET_KEYS = Object.freeze([
     'remembered_credentials',
     'saved_passwords'
@@ -886,6 +895,87 @@ async function handleLogout(event) {
 
 window.handleLogout = handleLogout;
 
+async function ensureSupabaseAuthWalletModalRuntime(options = {}) {
+    if (window.WalletModal) {
+        if (options.prefetch === true && typeof window.WalletModal.prefetchData === 'function') {
+            window.WalletModal.prefetchData();
+        }
+        return window.WalletModal;
+    }
+
+    const loader = window.ZaoyoeWalletModalBootstrap;
+    if (!loader) {
+        return null;
+    }
+
+    try {
+        return options.prefetch === true && typeof loader.warm === 'function'
+            ? await loader.warm({ prefetch: true })
+            : await loader.ensure();
+    } catch (error) {
+        console.warn('⚠️ Failed to load wallet modal runtime:', error?.message || error);
+        return null;
+    }
+}
+
+let walletWarmPrefetchHandle = null;
+
+function scheduleSupabaseAuthWalletWarmPrefetch(reason = 'auth-ready') {
+    if (walletWarmPrefetchHandle) {
+        return;
+    }
+
+    const runWarmPrefetch = () => {
+        walletWarmPrefetchHandle = null;
+
+        const loader = window.ZaoyoeWalletModalBootstrap;
+        if (!loader) {
+            return;
+        }
+
+        const warmTask = reason === 'dropdown-open'
+            ? ensureSupabaseAuthWalletModalRuntime({ prefetch: true })
+            : (typeof loader.warmOverview === 'function'
+                ? loader.warmOverview({ prefetch: true })
+                : ensureSupabaseAuthWalletModalRuntime({ prefetch: true }));
+
+        void Promise.resolve(warmTask).catch((error) => {
+            console.warn(`⚠️ Wallet warm prefetch failed (${reason}):`, error?.message || error);
+        });
+    };
+
+    if (typeof window.requestIdleCallback === 'function') {
+        walletWarmPrefetchHandle = window.requestIdleCallback(runWarmPrefetch, { timeout: 900 });
+    } else {
+        walletWarmPrefetchHandle = window.setTimeout(runWarmPrefetch, 160);
+    }
+}
+
+async function openSupabaseAuthWalletView(view = 'balance', context = {}) {
+    const walletModal = await ensureSupabaseAuthWalletModalRuntime();
+    walletModal?.open?.(view, context);
+    return walletModal;
+}
+
+async function ensureProfileModalRuntime() {
+    if (document.getElementById('profileModal') && typeof window.switchProfileSecurityPanel === 'function') {
+        return true;
+    }
+
+    const loader = window.ZaoyoeProfileModalBootstrap;
+    if (!loader || typeof loader.ensure !== 'function') {
+        return false;
+    }
+
+    try {
+        await loader.ensure();
+        return true;
+    } catch (error) {
+        console.warn('⚠️ Failed to load profile modal runtime:', error?.message || error);
+        return false;
+    }
+}
+
 // ==================== 处理 Auth 按钮点击 ====================
 async function handleAuthClick(event) {
     if (event) {
@@ -937,11 +1027,12 @@ async function handleAuthClick(event) {
                     });
                 }
                 setUserDropdownOpen(true);
+                void refreshAdminEntryUiState({
+                    source: 'dropdown-open'
+                });
 
                 // Pre-fetch wallet data so 'My Orders' opens instantly
-                if (window.WalletModal && window.WalletModal.prefetchData) {
-                    window.WalletModal.prefetchData();
-                }
+                scheduleSupabaseAuthWalletWarmPrefetch('dropdown-open');
             }
         }
 
@@ -1381,6 +1472,156 @@ function normalizeUserForAdminAccess(user) {
     };
 }
 
+function readCachedAuthUserProfile() {
+    try {
+        const raw = localStorage.getItem('cached_user_profile');
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return normalizeUserForAdminAccess(parsed);
+    } catch (error) {
+        console.warn('Failed to read cached auth user profile:', error);
+        return null;
+    }
+}
+
+function waitForAuthSupabaseClientReady(timeoutMs = 4000) {
+    if (window.supabaseClient) {
+        return Promise.resolve(true);
+    }
+
+    const currentState = window.__ZAOYOE_SUPABASE_CLIENT_STATE__ || null;
+    if (String(currentState?.status || '').trim().toLowerCase() === 'error') {
+        return Promise.resolve(false);
+    }
+
+    return new Promise((resolve) => {
+        let settled = false;
+        let timer = null;
+
+        const cleanup = () => {
+            if (timer) {
+                window.clearTimeout(timer);
+            }
+            window.removeEventListener('zaoyoe:supabase-client-state', handleStateChange);
+        };
+
+        const finish = (value) => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            cleanup();
+            resolve(value);
+        };
+
+        const handleStateChange = (event) => {
+            const status = String(event?.detail?.status || '').trim().toLowerCase();
+            if (status === 'ready' && window.supabaseClient) {
+                finish(true);
+                return;
+            }
+            if (status === 'error') {
+                finish(false);
+            }
+        };
+
+        window.addEventListener('zaoyoe:supabase-client-state', handleStateChange);
+        timer = window.setTimeout(() => finish(Boolean(window.supabaseClient)), timeoutMs);
+    });
+}
+
+async function refreshAdminEntryUiState(options = {}) {
+    const normalizedUser = normalizeUserForAdminAccess(
+        options.user ||
+        window.__ZAOYOE_LAST_AUTH_USER__ ||
+        readCachedAuthUserProfile()
+    );
+    const displayName = options.displayName ||
+        window.__ZAOYOE_LAST_AUTH_DISPLAY_NAME__ ||
+        normalizedUser?.nickname ||
+        normalizedUser?.username ||
+        'User';
+    const enterStudioBtn = document.getElementById('enterStudioBtn');
+
+    if (!normalizedUser?.id) {
+        applyAdminEntryUiState(displayName, false);
+        return {
+            isAdmin: false,
+            isSuperAdmin: false,
+            permissions: [],
+            error: new Error('No authenticated user available')
+        };
+    }
+
+    window.__ZAOYOE_LAST_AUTH_USER__ = normalizedUser;
+    window.__ZAOYOE_LAST_AUTH_DISPLAY_NAME__ = displayName;
+
+    const requestId = `${normalizedUser.id}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+    if (enterStudioBtn) {
+        enterStudioBtn.dataset.adminAccessRequest = requestId;
+    }
+
+    if (!window.supabaseClient) {
+        await waitForAuthSupabaseClientReady(options.timeoutMs || 4000);
+    }
+
+    try {
+        const access = await resolveAdminEntryAccess(normalizedUser, {
+            forceRefresh: options.forceRefresh === true
+        });
+        if (enterStudioBtn && enterStudioBtn.dataset.adminAccessRequest !== requestId) {
+            return access;
+        }
+
+        applyAdminEntryUiState(displayName, Boolean(access?.isAdmin));
+
+        if (access?.isAdmin) {
+            void window.AdminAccess?.warmAdminStudioEntry?.({
+                user: normalizedUser,
+                access,
+                defer: true,
+                timeoutMs: 1800
+            });
+        }
+
+        return access;
+    } catch (error) {
+        if (enterStudioBtn && enterStudioBtn.dataset.adminAccessRequest !== requestId) {
+            return {
+                isAdmin: false,
+                isSuperAdmin: false,
+                permissions: [],
+                error
+            };
+        }
+        applyAdminEntryUiState(displayName, false);
+        return {
+            isAdmin: false,
+            isSuperAdmin: false,
+            permissions: [],
+            error
+        };
+    }
+}
+
+if (!window.__zaoyoeAdminEntryUiRetryBound) {
+    window.addEventListener('zaoyoe:supabase-client-state', (event) => {
+        const status = String(event?.detail?.status || '').trim().toLowerCase();
+        if (status !== 'ready') {
+            return;
+        }
+        if (!window.__ZAOYOE_LAST_AUTH_USER__) {
+            return;
+        }
+        void refreshAdminEntryUiState({
+            source: 'supabase-ready'
+        });
+    });
+    window.__zaoyoeAdminEntryUiRetryBound = true;
+}
+
+window.refreshAdminEntryUi = refreshAdminEntryUiState;
+
 function applyAdminEntryUiState(displayName, isAdmin) {
     const dropdownUsername = document.getElementById('dropdownUsername');
     const enterStudioBtn = document.getElementById('enterStudioBtn');
@@ -1500,6 +1741,8 @@ function updateUserUI(user, options = {}) {
         }
 
         const displayName = user.nickname || user.username || 'User';
+        window.__ZAOYOE_LAST_AUTH_USER__ = normalizeUserForAdminAccess(user);
+        window.__ZAOYOE_LAST_AUTH_DISPLAY_NAME__ = displayName;
         applyAdminEntryUiState(displayName, false);
 
         if (authBtn) authBtn.classList.add('logged-in');
@@ -1545,36 +1788,15 @@ function updateUserUI(user, options = {}) {
 
         localStorage.setItem('cached_user_profile', JSON.stringify(userForCache));
 
-        const accessRequestId = `${user.id || user.objectId || user.email || 'guest'}:${Date.now()}`;
-        if (enterStudioBtn) enterStudioBtn.dataset.adminAccessRequest = accessRequestId;
-
-        void (async () => {
-            try {
-                const access = await resolveAdminEntryAccess(user);
-                if (enterStudioBtn && enterStudioBtn.dataset.adminAccessRequest !== accessRequestId) {
-                    return;
-                }
-                applyAdminEntryUiState(displayName, Boolean(access?.isAdmin));
-
-                if (access?.isAdmin) {
-                    void window.AdminAccess?.warmAdminStudioEntry?.({
-                        user: normalizeUserForAdminAccess(user),
-                        access,
-                        defer: true,
-                        timeoutMs: 1800
-                    });
-                }
-            } catch (error) {
-                console.warn('Failed to resolve admin entry access:', error);
-                if (enterStudioBtn && enterStudioBtn.dataset.adminAccessRequest !== accessRequestId) {
-                    return;
-                }
-                applyAdminEntryUiState(displayName, false);
-            }
-        })();
+        void refreshAdminEntryUiState({
+            user,
+            displayName,
+            source: 'update-user-ui'
+        }).catch((error) => {
+            console.warn('Failed to resolve admin entry access:', error);
+        });
     } else {
         if (defaultIcon) {
-            defaultIcon.className = 'fas fa-user-circle'; // Ensure spinner is cleared
             setAuthDisplayState(defaultIcon, false, 'inline');
         }
         if (navAvatar) {
@@ -1587,6 +1809,8 @@ function updateUserUI(user, options = {}) {
         if (authBtn) {
             authBtn.classList.remove('logged-in');
         }
+        window.__ZAOYOE_LAST_AUTH_USER__ = null;
+        window.__ZAOYOE_LAST_AUTH_DISPLAY_NAME__ = '';
         applyAdminEntryUiState('User', false);
         window.AdminAccess?.clearAccessCache?.();
         window.AdminAccess?.clearCachedAdminStudioSession?.();
@@ -1925,6 +2149,9 @@ function ensureGooglePopupMessageBridge() {
                 if (payload.userId) {
                     flushPendingAuthOrigin(payload.userId);
                 }
+                if (redirectToPendingPostLoginTarget()) {
+                    return;
+                }
             } catch (err) {
                 console.warn('Failed to refresh auth state after popup login:', err);
             }
@@ -2081,11 +2308,97 @@ function getCurrentPageRedirectUrl() {
     return url.toString();
 }
 
+function normalizePostLoginRedirectTarget(rawTarget, fallback = '') {
+    const raw = String(rawTarget || '').trim();
+    if (!raw) {
+        return fallback;
+    }
+
+    try {
+        const targetUrl = new URL(raw, window.location.origin);
+        if (targetUrl.origin !== window.location.origin || /\/auth-callback\.html$/i.test(targetUrl.pathname)) {
+            return fallback;
+        }
+        return `${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`;
+    } catch (error) {
+        return fallback;
+    }
+}
+
+function storePendingPostLoginRedirectTarget(target) {
+    const safeTarget = normalizePostLoginRedirectTarget(target);
+    if (!safeTarget) {
+        return null;
+    }
+
+    try {
+        localStorage.setItem(POST_LOGIN_REDIRECT_STORAGE_KEY, JSON.stringify({
+            target: safeTarget,
+            savedAt: Date.now(),
+            ttlMs: POST_LOGIN_REDIRECT_TTL_MS
+        }));
+        return safeTarget;
+    } catch (err) {
+        console.warn('Failed to store post-login redirect target:', err);
+        return null;
+    }
+}
+
+function readPendingPostLoginRedirectTarget() {
+    try {
+        const raw = localStorage.getItem(POST_LOGIN_REDIRECT_STORAGE_KEY);
+        if (!raw) {
+            return null;
+        }
+
+        const parsed = JSON.parse(raw);
+        const savedAt = Number(parsed?.savedAt || 0);
+        const ttlMs = Number(parsed?.ttlMs || POST_LOGIN_REDIRECT_TTL_MS);
+        const safeTarget = normalizePostLoginRedirectTarget(parsed?.target);
+
+        if (!safeTarget || !Number.isFinite(savedAt) || !Number.isFinite(ttlMs) || savedAt + ttlMs <= Date.now()) {
+            localStorage.removeItem(POST_LOGIN_REDIRECT_STORAGE_KEY);
+            return null;
+        }
+
+        return safeTarget;
+    } catch (err) {
+        console.warn('Failed to read post-login redirect target:', err);
+        localStorage.removeItem(POST_LOGIN_REDIRECT_STORAGE_KEY);
+        return null;
+    }
+}
+
+function consumePendingPostLoginRedirectTarget() {
+    const target = readPendingPostLoginRedirectTarget();
+    try {
+        localStorage.removeItem(POST_LOGIN_REDIRECT_STORAGE_KEY);
+    } catch (err) {
+        console.warn('Failed to clear post-login redirect target:', err);
+    }
+    return target;
+}
+
+function redirectToPendingPostLoginTarget() {
+    const target = consumePendingPostLoginRedirectTarget();
+    if (!target) {
+        return false;
+    }
+
+    if (typeof window.location?.replace === 'function') {
+        window.location.replace(target);
+    } else {
+        window.location.href = target;
+    }
+    return true;
+}
+
 async function triggerGoogleOAuthRedirectFallback() {
     if (!shouldUseOAuthRedirectFallback()) {
         throw new Error('OAuth redirect fallback disabled');
     }
     const currentPage = getCurrentPageRedirectUrl();
+    storePendingPostLoginRedirectTarget(currentPage);
     localStorage.setItem('oauth_post_login_redirect', currentPage);
     const redirectTo = `${window.location.origin}/auth-callback.html`;
     const { data, error } = await window.supabaseClient.auth.signInWithOAuth({
@@ -2270,6 +2583,9 @@ async function handleGoogleCredentialResponse(response, options = {}) {
         }
         if (typeof checkAuthState === 'function') {
             await checkAuthState();
+        }
+        if (redirectToPendingPostLoginTarget()) {
+            return;
         }
     } catch (error) {
         console.error('❌ Google ID Token login error:', error);
@@ -2843,6 +3159,7 @@ async function initializeAuthPageBoot() {
                 console.log('🔔 INITIAL_SESSION has session, updating UI...');
                 checkAuthState();
                 flushPendingAuthOrigin(session.user.id);
+                scheduleSupabaseAuthWalletWarmPrefetch('initial-session');
             } else if (window._localJwtRestored) {
                 console.log('🔔 INITIAL_SESSION is null, but local JWT already restored. Ignored.');
             }
@@ -2868,6 +3185,7 @@ async function initializeAuthPageBoot() {
                             queueOnFailure: true
                         });
                     }
+                    scheduleSupabaseAuthWalletWarmPrefetch('signed-in');
                 }
             } else if (event === 'SIGNED_OUT') {
                 // 🛡️ Guard: Suppress SIGNED_OUT during initialization period.
@@ -3586,14 +3904,15 @@ async function openProfileModal(event) {
     // 关闭下拉菜单
     closeUserDropdown();
 
-    // 检查是否在主页
-    const modal = document.getElementById('profileModal');
+    let modal = document.getElementById('profileModal');
     if (!modal) {
-        // 不在主页，跳转到主页并设置标记打开模态框
-        sessionStorage.setItem('openProfileModal', 'true');
-        window.location.href = 'index.html';
-        profileModalOpenLock = false;
-        return;
+        const loaded = await ensureProfileModalRuntime();
+        modal = document.getElementById('profileModal');
+        if (!loaded || !modal) {
+            alert('个人中心加载失败，请稍后重试');
+            profileModalOpenLock = false;
+            return;
+        }
     }
 
     const wasActive = modal.classList.contains('active');
@@ -3832,12 +4151,16 @@ function openProfileWalletView(view = 'balance', event) {
     }
 
     window.setTimeout(() => {
-        if (window.WalletModal && typeof window.WalletModal.open === 'function') {
-            window.WalletModal.open(targetView);
-            return;
-        }
+        void openSupabaseAuthWalletView(targetView, {
+            entry: `profile_${targetView}`,
+            sourceModule: 'profile_modal'
+        }).then((walletModal) => {
+            if (walletModal?.open) {
+                return;
+            }
 
-        alert(window.i18n?.t('wallet.loading') || '钱包模块加载中，请稍后重试');
+            alert(window.i18n?.t('wallet.loading') || '钱包模块加载中，请稍后重试');
+        });
     }, 180);
 }
 

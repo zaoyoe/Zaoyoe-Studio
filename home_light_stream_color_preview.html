@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Light Stream Color Preview</title>
+    <link rel="stylesheet" href="css/home-light-stream-color-preview.css?v=20260423_INLINE_EXTERNALIZED_1">
+    <script src="js/home-light-stream-color-preview.js?v=20260423_INLINE_EXTERNALIZED_1" defer></script>
+</head>
+<body>
+    <main class="preview-shell">
+        <nav class="preview-nav" aria-label="preview navigation">
+            <div class="brand-mark" aria-label="logo">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+            <div class="nav-links" aria-hidden="true">
+                <span>提示词</span>
+                <span>商城</span>
+                <span>验证</span>
+                <span>支持</span>
+            </div>
+            <div class="avatar-dot" aria-hidden="true"></div>
+        </nav>
+
+        <section class="preview-stage" data-palette="cyan">
+            <div class="hero-layout">
+                <div class="hero-copy">
+                    <div class="eyebrow">Light Theme Stream</div>
+                    <h1>浅色主题流光预览</h1>
+                    <p>推荐把亮色模式的流光从暗红系换成青蓝到湖绿的高可见色。它在白底上更清楚，但不会压过导航、搜索和卡片内容。</p>
+                    <div class="search-preview">
+                        <span class="search-icon" aria-hidden="true"></span>
+                        <span>搜索提示词...</span>
+                    </div>
+                </div>
+
+                <div class="palette-panel">
+                    <div class="panel-preview">
+                        <p class="preview-card-title">推荐效果：青蓝流光</p>
+                        <div class="stream-card">
+                            <div class="metric">
+                                <strong>V2</strong>
+                                <span>visible on light</span>
+                            </div>
+                            <div class="stream-line"><span></span></div>
+                        </div>
+                        <div class="sample-grid" aria-hidden="true">
+                            <div class="sample-tile"></div>
+                            <div class="sample-tile"></div>
+                            <div class="sample-tile"></div>
+                        </div>
+                    </div>
+                    <div class="palette-controls" aria-label="palette controls">
+                        <button class="palette-button palette-button--cyan is-active" type="button" data-palette="cyan">
+                            <span class="swatch"></span>
+                            <span>青蓝湖绿</span>
+                        </button>
+                        <button class="palette-button palette-button--indigo" type="button" data-palette="indigo">
+                            <span class="swatch"></span>
+                            <span>冷靛蓝</span>
+                        </button>
+                        <button class="palette-button palette-button--green" type="button" data-palette="green">
+                            <span class="swatch"></span>
+                            <span>翡翠绿</span>
+                        </button>
+                        <button class="palette-button palette-button--coral" type="button" data-palette="coral">
+                            <span class="swatch"></span>
+                            <span>珊瑚金</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="comparison">
+                <article class="compare-card compare-card--old">
+                    <h2>当前红系在浅色背景里容易变灰</h2>
+                    <p>原本深色主题的红紫流光适合黑底，在浅色模式下需要降低混合强度，结果会显得脏、弱，流动感不明显。</p>
+                </article>
+                <article class="compare-card compare-card--new">
+                    <h2>新色用高亮青蓝保持可见</h2>
+                    <p>青蓝和湖绿在白底上有更好的边缘感，配合 multiply 和较低透明度，能保留高级感，同时不变成刺眼的霓虹。</p>
+                </article>
+            </div>
+
+            <pre class="code-hint">建议接入值：
+ray-1: rgba(37, 99, 235, 0.28)
+ray-2: rgba(14, 165, 233, 0.32)
+ray-3: rgba(20, 184, 166, 0.26)
+ray-4: rgba(79, 70, 229, 0.16)</pre>
+        </section>
+    </main>
+</body>
+</html>

@@ -1216,3 +1216,230 @@ test('payments cleanup preview fallback hides raw fetch-failed errors', async ()
     assert.match(elements['paymentsCleanupPreview'].innerHTML, /测试数据扫描失败/);
     assert.doesNotMatch(elements['paymentsCleanupPreview'].innerHTML, /TypeError: fetch failed/);
 });
+
+test('payments issue summary renders a focused order spotlight for deep-linked orders', async () => {
+    const fetchImpl = async (url) => {
+        const parsedUrl = new URL(url, 'https://example.com');
+        if (parsedUrl.pathname !== '/api/admin/payments/summary') {
+            throw new Error(`Unexpected fetch: ${url}`);
+        }
+
+        return createJsonResponse({
+            success: true,
+            anomaly_summary: {
+                review_orders: 1,
+                failed_orders: 0
+            },
+            ops_alert_summary: {
+                total: 0,
+                pending: 0,
+                retry: 0,
+                processing: 0,
+                dead_letter: 0,
+                handled: 0,
+                ignored: 0
+            },
+            refund_alert_topics: [],
+            refund_alert_items: [],
+            ops_alert_items: [],
+            exception_topics: [],
+            exception_topic_items: [],
+            recent_anomalies: [],
+            recent_checkout_sessions: [],
+            recent_orders: [
+                {
+                    id: 'pay_123',
+                    provider_order_no: 'ZPAY-123',
+                    package_name: 'Google One 月卡',
+                    paid_amount: 29,
+                    points_amount: 2900,
+                    status: 'pending_review',
+                    provider: 'zpay',
+                    site: 'cn',
+                    created_at: '2026-04-22T06:20:00.000Z',
+                    claimed_at: '2026-04-22T06:25:00.000Z',
+                    order_available_actions: ['approve_review', 'reject_review']
+                }
+            ]
+        });
+    };
+
+    const { window, elements } = createAdminPaymentsRuntime(fetchImpl);
+    window.buildOpsAlertWorkspaceAnalyticsSignalContextState = () => ({
+        eyebrow: 'Payments Focus',
+        title: '当前来自分析信号联动',
+        summary: '支付工作台已按当前支付单聚焦。',
+        chips: []
+    });
+
+    await window.openAdminPaymentsShellContext({
+        focus: {
+            paymentOrderId: 'pay_123'
+        },
+        payload: {
+            paymentOrderId: 'pay_123',
+            referenceLabel: '支付单',
+            referenceValue: 'ZPAY-123',
+            defaultTab: 'overview',
+            tab: 'overview'
+        }
+    }, {
+        defaultTab: 'overview',
+        tab: 'overview'
+    });
+    await flushMicrotasks();
+
+    assert.match(elements.paymentsIssueSummary.innerHTML, /已聚焦/);
+    assert.match(elements.paymentsIssueSummary.innerHTML, /ZPAY-123/);
+    assert.match(elements.paymentsIssueSummary.innerHTML, /Google One 月卡/);
+    assert.match(elements.paymentsIssueSummary.innerHTML, /待审核/);
+});
+
+test('payments reopen keeps success feedback stable when workbench analytics context is active', async () => {
+    const toasts = [];
+    const recordedFeedback = [];
+    const fetchImpl = async (url, options = {}) => {
+        const parsedUrl = new URL(url, 'https://example.com');
+
+        if (parsedUrl.pathname === '/api/admin/payments/actions') {
+            const body = JSON.parse(options.body || '{}');
+            assert.equal(body.targetType, 'session');
+            assert.equal(body.targetId, 'topic_1');
+            assert.equal(body.action, 'reopen');
+            return createJsonResponse({
+                success: true,
+                message: '重新打开成功',
+                reload: false
+            });
+        }
+
+        if (parsedUrl.pathname === '/api/admin/payments/cleanup') {
+            return createJsonResponse({
+                success: true,
+                preview: {
+                    counts: {
+                        payment_orders: 0,
+                        payment_events: 0,
+                        afdian_orders: 0,
+                        auth_users: 0
+                    },
+                    samples: {
+                        orders: [],
+                        users: []
+                    }
+                }
+            });
+        }
+
+        const view = parsedUrl.searchParams.get('view') || 'overview';
+        const scope = parsedUrl.searchParams.get('scope') || 'full';
+
+        if (view === 'overview' && scope === 'core') {
+            return createJsonResponse({
+                success: true,
+                overview: {
+                    total_orders: 1,
+                    paid_orders: 1,
+                    paid_rate: 100,
+                    total_amount: 92,
+                    total_points: 920
+                },
+                anomaly_summary: {
+                    review_orders: 0,
+                    failed_orders: 0,
+                    unclaimed_paid_orders: 0
+                },
+                session_summary: {
+                    total_sessions: 1,
+                    match_rate: 100
+                },
+                query_summary: {
+                    total_attempts: 0,
+                    failed_attempts: 0
+                }
+            });
+        }
+
+        if (view === 'overview' && scope === 'secondary') {
+            return createJsonResponse({
+                success: true,
+                anomaly_summary: {
+                    review_orders: 0,
+                    failed_orders: 0,
+                    open_cases: 1
+                },
+                provider_stats: [],
+                trend_24h: [],
+                refund_alert_topics: [],
+                refund_alert_items: []
+            });
+        }
+
+        if (view === 'overview' && scope === 'ops') {
+            return createJsonResponse({
+                success: true,
+                ops_alert_summary: {
+                    total: 0,
+                    pending: 0,
+                    retry: 0,
+                    processing: 0,
+                    dead_letter: 0,
+                    handled: 0,
+                    ignored: 0
+                },
+                ops_alert_items: [],
+                exception_topics: [
+                    {
+                        key: 'checkout_unlinked',
+                        label: '未回填专题',
+                        severity: 'warning',
+                        description: '支付意图已完成但没有关联订单。',
+                        count: 1
+                    }
+                ],
+                exception_topic_items: [
+                    {
+                        type: 'session',
+                        id: 'topic_1',
+                        topic_key: 'checkout_unlinked',
+                        title: '支付意图已完成但未回填',
+                        message: '需要重新打开后继续核查。',
+                        severity: 'warning',
+                        created_at: '2026-04-23T07:44:00.000Z',
+                        ops_status: 'handled',
+                        ops_available_actions: ['reopen']
+                    }
+                ],
+                recent_anomalies: [],
+                recent_orders: []
+            });
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+    };
+
+    const { window } = createAdminPaymentsRuntime(fetchImpl);
+    window.showToast = (message, tone) => {
+        toasts.push({ message, tone });
+    };
+    window.recordAnalyticsResolutionFeedback = (payload) => {
+        recordedFeedback.push(payload);
+        return payload;
+    };
+
+    await window.AdminPayments.init();
+    window.AdminPayments.showWorkbenchContext({
+        productId: 'product_1',
+        productName: '支付异常商品'
+    });
+
+    const result = await window.AdminPayments.handleAnomalyAction('session', 'topic_1', 'reopen');
+
+    assert.equal(result?.message, '重新打开成功');
+    assert.deepEqual(toasts, [
+        { message: '重新打开成功', tone: 'success' }
+    ]);
+    assert.equal(recordedFeedback.length, 1);
+    assert.equal(recordedFeedback[0].entityId, 'topic_1');
+    assert.equal(recordedFeedback[0].statusKey, 'abnormal');
+});

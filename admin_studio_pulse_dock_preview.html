@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin Studio - 右侧状态 Dock 预览</title>
+  <link rel="stylesheet" href="css/admin-studio-pulse-dock-preview.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Admin navigation">
+      <button class="nav-logo" aria-label="Menu">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h15l-2 3H4V6Zm0 5h12l-2 3H4v-3Zm0 5h9l-2 3H4v-3Z"/></svg>
+      </button>
+      <button class="nav-item" aria-label="Studio">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a8 8 0 0 0-8 8c0 4.42 3.58 8 8 8h1.3c.93 0 1.7-.77 1.7-1.7 0-.43-.17-.84-.47-1.15-.31-.3-.72-.47-1.15-.47H12a1.7 1.7 0 0 1 0-3.4h2a7 7 0 0 0 6-3.42A8 8 0 0 0 12 3Zm-4 8.2a1.4 1.4 0 1 1 0-2.8 1.4 1.4 0 0 1 0 2.8Zm3-3.7a1.4 1.4 0 1 1 0-2.8 1.4 1.4 0 0 1 0 2.8Zm4.8 1.1a1.4 1.4 0 1 1 0-2.8 1.4 1.4 0 0 1 0 2.8Z"/></svg>
+      </button>
+      <button class="nav-item" aria-label="Messages">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h13a4 4 0 0 1 4 4v4a4 4 0 0 1-4 4H9l-5 4v-4a4 4 0 0 1-4-4V9a4 4 0 0 1 4-4Z"/></svg>
+      </button>
+      <button class="nav-item" aria-label="Orders">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v4H4V6Zm1 6h14v7H5v-7Zm3 2v3h8v-3H8Z"/></svg>
+      </button>
+      <button class="nav-item" aria-label="Users">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm8.5 1a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7ZM2 20c.5-4 2.8-6 6-6s5.5 2 6 6H2Zm11.5 0a7.5 7.5 0 0 0-1.7-3.9 6.3 6.3 0 0 1 4.7-2.1c2.8 0 4.8 1.9 5.3 6h-8.3Z"/></svg>
+      </button>
+      <button class="nav-item" aria-label="Wallet">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v4H4V5Zm0 6h16v8H4v-8Zm11 2v4h4v-4h-4Z"/></svg>
+      </button>
+      <div class="nav-spacer"></div>
+      <button class="nav-settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m19.4 13.5 1.6 1.2-2 3.5-1.9-.8a7 7 0 0 1-1.9 1.1L15 20.6h-4l-.3-2.1a7 7 0 0 1-1.9-1.1l-1.9.8-2-3.5 1.6-1.2a6 6 0 0 1 0-2.2L4.9 10l2-3.5 1.9.8c.58-.45 1.22-.82 1.9-1.1L11 4h4l.3 2.2c.68.28 1.32.65 1.9 1.1l1.9-.8 2 3.5-1.6 1.2a6 6 0 0 1 0 2.3ZM13 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/></svg>
+      </button>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="brand">
+          <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3a8 8 0 0 0-8 8c0 4.42 3.58 8 8 8h1.3c.93 0 1.7-.77 1.7-1.7 0-.43-.17-.84-.47-1.15-.31-.3-.72-.47-1.15-.47H12a1.7 1.7 0 0 1 0-3.4h2a7 7 0 0 0 6-3.42A8 8 0 0 0 12 3Z"/></svg>
+          <span>Admin Studio</span>
+        </div>
+        <div class="status-actions">
+          <button class="chip" type="button">CN</button>
+          <div class="status-pill"><span class="dot"></span><span>Codex Relay Ready</span></div>
+        </div>
+      </header>
+
+      <nav class="tabs" aria-label="Studio sections">
+        <button class="tab" type="button">定价配置</button>
+        <button class="tab" type="button" aria-selected="true">安全设置</button>
+        <button class="tab" type="button">系统公告</button>
+        <button class="tab" type="button">内容设置</button>
+        <button class="tab" type="button">Google One API</button>
+        <button class="tab" type="button">推广返现</button>
+        <button class="tab" type="button">其它设置</button>
+      </nav>
+
+      <section class="workspace" aria-label="Security settings workspace">
+        <article class="section-panel">
+          <header class="section-head">
+            <h2 class="section-title">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 20 5v6c0 5.2-3.4 9.6-8 11-4.6-1.4-8-5.8-8-11V5l8-3Z"/></svg>
+              登录安全
+            </h2>
+            <button class="save-button" type="button">保存登录规则</button>
+          </header>
+          <div class="section-body">
+            <p class="body-copy">常用阈值在一行里，方便快速核对失败上限、锁定时长和会话超时。</p>
+            <p class="body-copy"><strong>登录规则</strong><br>统一保存失败上限、锁定时长和会话超时，避免和黑名单配置混在一起。</p>
+            <div class="setting-grid">
+              <div class="setting-tile">
+                <p class="tile-label">登录失败锁定</p>
+                <p class="tile-copy">连续失败 N 次后锁定账户</p>
+                <div class="number-row">
+                  <input class="number-field" value="5" aria-label="登录失败锁定次数">
+                  <span class="tile-copy">次</span>
+                </div>
+              </div>
+              <div class="setting-tile">
+                <p class="tile-label">锁定时长</p>
+                <p class="tile-copy">账户锁定后的解锁等待时间</p>
+                <div class="number-row">
+                  <input class="number-field" value="15" aria-label="锁定时长">
+                  <span class="tile-copy">分钟</span>
+                </div>
+              </div>
+              <div class="setting-tile">
+                <p class="tile-label">会话超时</p>
+                <p class="tile-copy">用户无操作后自动登出时间</p>
+                <div class="number-row">
+                  <input class="number-field" value="60" aria-label="会话超时">
+                  <span class="tile-copy">分钟</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="section-panel">
+          <header class="section-head">
+            <h2 class="section-title">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm11 9h-5.5a7.5 7.5 0 0 0-1.7-3.9 6.3 6.3 0 0 1 4.7-2.1c2.8 0 4.8 1.9 5.3 6H19ZM2 20c.5-4 2.8-6 6-6s5.5 2 6 6H2Z"/></svg>
+              管理员访问
+            </h2>
+            <button class="ghost-button" type="button">刷新</button>
+          </header>
+          <div class="section-body">
+            <p class="body-copy">集中查看最近后台访问、异常登录信号和支付配置审计，给管理员异常登录、支付配置变更类告警提供真实落点。</p>
+            <div class="metrics">
+              <div class="metric">
+                <p class="metric-label">最近后台访问</p>
+                <p class="metric-value">200 次访问</p>
+                <p class="metric-copy">2 位管理员 · 5 个 IP</p>
+              </div>
+              <div class="metric">
+                <p class="metric-label">异常登录信号</p>
+                <p class="metric-value">暂无异常信号</p>
+                <p class="metric-copy">最近窗口内没有发现新的 IP / 设备漂移。</p>
+              </div>
+              <div class="metric">
+                <p class="metric-label">支付配置审计</p>
+                <p class="metric-value">2 条配置审计</p>
+                <p class="metric-copy">删密钥 0 次 · mock 切换 0 次</p>
+              </div>
+            </div>
+
+            <div class="audit-list">
+              <div class="audit-row">
+                <p class="audit-label">安全设置</p>
+                <p class="audit-value">登录规则保存成功</p>
+                <span class="audit-state">Saved</span>
+              </div>
+              <div class="audit-row">
+                <p class="audit-label">站外告警</p>
+                <p class="audit-value">企业微信渠道等待下一次探测</p>
+                <span class="audit-state">Ready</span>
+              </div>
+              <div class="audit-row">
+                <p class="audit-label">商品经营</p>
+                <p class="audit-value">上下文联动已送达</p>
+                <span class="audit-state">Synced</span>
+              </div>
+            </div>
+          </div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <aside class="pulse-dock" aria-label="运营状态" id="pulseDock">
+    <div class="pulse-stack">
+      <button class="pulse-tab" type="button" data-pulse="overview" aria-selected="true">
+        <span class="pulse-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4V4Zm9 0h7v7h-7V4ZM4 13h7v7H4v-7Zm9 0h7v7h-7v-7Z"/></svg>
+        </span>
+        <span class="pulse-badge" data-badge></span>
+        <span class="pulse-label"><span class="pulse-title">待办总览</span><span class="pulse-state">11 项待处理</span></span>
+      </button>
+      <button class="pulse-tab is-alert" type="button" data-pulse="notifications" aria-selected="false">
+        <span class="pulse-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22a2.6 2.6 0 0 0 2.45-1.75h-4.9A2.6 2.6 0 0 0 12 22Zm7-6.4V11a7 7 0 0 0-5.5-6.83V3a1.5 1.5 0 0 0-3 0v1.17A7 7 0 0 0 5 11v4.6L3.4 18v1h17.2v-1L19 15.6ZM7.2 17l.8-1.2V11a4 4 0 1 1 8 0v4.8l.8 1.2H7.2Z"/></svg>
+        </span>
+        <span class="pulse-badge" data-badge></span>
+        <span class="pulse-label"><span class="pulse-title">站内通知</span><span class="pulse-state">5 条待处理</span></span>
+      </button>
+      <button class="pulse-tab is-warn" type="button" data-pulse="payments" aria-selected="false">
+        <span class="pulse-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm0 4h16V7H4v2Zm0 3v5h16v-5H4Zm2 3h5v1H6v-1Z"/></svg>
+        </span>
+        <span class="pulse-badge" data-badge></span>
+        <span class="pulse-label"><span class="pulse-title">支付回调</span><span class="pulse-state">2 条需复核</span></span>
+      </button>
+      <button class="pulse-tab is-warn" type="button" data-pulse="inventory" aria-selected="false">
+        <span class="pulse-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 8 4v12l-8 4-8-4V6l8-4Zm0 2.2L7.4 6.5 12 8.8l4.6-2.3L12 4.2ZM6 8.1v8.7l5 2.5v-8.7L6 8.1Zm12 0-5 2.5v8.7l5-2.5V8.1Z"/></svg>
+        </span>
+        <span class="pulse-badge" data-badge></span>
+        <span class="pulse-label"><span class="pulse-title">订单库存</span><span class="pulse-state">3 个提醒</span></span>
+      </button>
+      <button class="pulse-tab is-ai" type="button" data-pulse="budget" aria-selected="false">
+        <span class="pulse-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <g transform="translate(0 1.1)">
+              <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8.2 8.4 12 5.8l3.8 2.6v7.2L12 18.2l-3.8-2.6V8.4Zm0 0 7.6 7.2m0-7.2-7.6 7.2"/>
+              <path d="M12 3.6a2.1 2.1 0 1 1 0 4.2 2.1 2.1 0 0 1 0-4.2Zm-3.8 8.3a2.1 2.1 0 1 1 0 4.2 2.1 2.1 0 0 1 0-4.2Zm7.6 0a2.1 2.1 0 1 1 0 4.2 2.1 2.1 0 0 1 0-4.2Z"/>
+            </g>
+          </svg>
+        </span>
+        <span class="pulse-badge" data-badge></span>
+        <span class="pulse-label"><span class="pulse-title">AI 预算</span><span class="pulse-state">待检测</span></span>
+      </button>
+      <button class="pulse-tab" type="button" data-pulse="security" aria-selected="false">
+        <span class="pulse-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 20 5v6c0 5.2-3.4 9.6-8 11-4.6-1.4-8-5.8-8-11V5l8-3Zm3.7 7.7-1.4-1.4L11 11.6 9.7 10.3 8.3 11.7l2.7 2.7 4.7-4.7Z"/></svg>
+        </span>
+        <span class="pulse-badge" data-badge></span>
+        <span class="pulse-label"><span class="pulse-title">安全</span><span class="pulse-state">权限已确认</span></span>
+      </button>
+    </div>
+
+    <section class="pulse-panel" id="pulsePanel" aria-live="polite">
+      <header class="pulse-panel-head">
+        <div>
+          <p class="pulse-eyebrow" id="pulseEyebrow">COMMAND CENTER</p>
+          <h2 class="pulse-panel-title" id="pulseTitle">当前模块</h2>
+          <p class="pulse-panel-subtitle" id="pulseSubtitle">设置 Saved，登录规则已写入，操作区不再被运营信息占位。</p>
+        </div>
+      </header>
+      <div class="pulse-panel-body">
+        <div class="pulse-summary">
+          <div class="pulse-status-row">
+            <span class="pulse-priority" id="pulsePriority">正常</span>
+            <span class="pulse-route" id="pulseRoute">安全设置</span>
+          </div>
+        </div>
+        <div class="mini-grid" id="pulseMetrics"></div>
+        <p class="pulse-note" id="pulseNote"></p>
+        <div class="quick-actions" id="pulseActions"></div>
+        <div class="action-toast" id="pulseToast">选择一个入口，直接回到对应页面处理。</div>
+        <h3 class="tiny-title">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2v8h7A8 8 0 1 1 13 2Zm2 0a8 8 0 0 1 7 7h-7V2Z"/></svg>
+          即时记录
+        </h3>
+        <div class="pulse-timeline" id="pulseTimeline"></div>
+        <div class="panel-actions">
+          <button class="ghost-button" type="button" id="pulsePrev">上一项</button>
+          <button class="save-button" type="button" id="pulseNext">下一项</button>
+        </div>
+      </div>
+    </section>
+  </aside>
+
+  <script src="js/admin-studio-pulse-dock-preview.js"></script>
+</body>
+</html>

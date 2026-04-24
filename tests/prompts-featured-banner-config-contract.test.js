@@ -28,7 +28,9 @@ test('prompts featured banner prefers homepage manual featured items before dail
         'String(item?.supabaseId || item?.id || \'\').trim() === normalizedId',
         'function resolveHomepageFeaturedBannerPrompt(config = null)',
         'config?.prompts?.featured_items',
-        'const featured = resolveHomepageFeaturedBannerPrompt(homepageConfig) || resolveDailyFeaturedPrompt();',
+        'const prefetchedConfiguredFeatured = resolveHomepageFeaturedBannerPrompt(prefetchedHomepageConfig);',
+        'const immediateFeatured = prefetchedConfiguredFeatured || resolveDailyFeaturedPrompt();',
+        'const configuredFeatured = resolveHomepageFeaturedBannerPrompt(homepageConfig);',
         "const localizedDescription = String(getLocalizedField(featured, 'description') || '').trim();",
         "title.textContent = getLocalizedField(featured, 'title') || featured.title || '';",
         'const currentLanguage = getCurrentLanguage();',
@@ -44,7 +46,7 @@ test('prompts featured banner prefers homepage manual featured items before dail
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.js?v=20260420_PROMPT_RICH_TAGS_1'),
+        promptsHtml.includes('prompts-poetry.js?v=20260420_PROMPT_DETAIL_TAGS_REMOVED_1'),
         true,
         'prompts.html should reference the featured-banner homepage-config bundle version'
     );

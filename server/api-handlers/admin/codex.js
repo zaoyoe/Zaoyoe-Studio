@@ -4,11 +4,280 @@ const {
     sendJson
 } = require('../../../api/_lib/admin');
 const { resolveCodexRuntimeConfig } = require('../../../api/_lib/secrets');
+const {
+    applyBudgetToGeminiContents: applySharedBudgetToGeminiContents,
+    applyBudgetToMessages: applySharedBudgetToMessages,
+    buildBudgetMeta: buildSharedBudgetMeta,
+    hasExplicitBudgetTier,
+    mergeBudgetStates: mergeSharedBudgetStates,
+    redactSensitiveText: redactSharedSensitiveText,
+    redactSensitiveValue: redactSharedSensitiveValue,
+    resolveRequestBudget
+} = require('./_ai-shared');
+
+const CODEX_REQUEST_BODY_CHAR_LIMIT = 6_000_000;
+const CODEX_MAX_OUTPUT_TOKENS = 4096;
+const CODEX_BUDGET_PRESETS = Object.freeze({
+    lean: {
+        tier: 'lean',
+        maxInputChars: 6000,
+        maxOutputTokens: 600
+    },
+    balanced: {
+        tier: 'balanced',
+        maxInputChars: 12000,
+        maxOutputTokens: 900
+    },
+    expanded: {
+        tier: 'expanded',
+        maxInputChars: 24000,
+        maxOutputTokens: 1600
+    }
+});
+const CODEX_BUDGET_ALIASES = Object.freeze({
+    compact: 'lean',
+    concise: 'lean',
+    low: 'lean',
+    lean: 'lean',
+    normal: 'balanced',
+    balanced: 'balanced',
+    standard: 'balanced',
+    deep: 'expanded',
+    expanded: 'expanded'
+});
+const RESPONSES_REASONING_EFFORTS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh']);
 
 function normalizeCodexApiFormat(value) {
     return String(value || '').trim().toLowerCase() === 'responses'
         ? 'responses'
         : 'chat.completions';
+}
+
+function clampInteger(value, min, max, fallback = min) {
+    const numberValue = Number(value);
+    if (!Number.isFinite(numberValue)) {
+        return fallback;
+    }
+
+    return Math.min(max, Math.max(min, Math.floor(numberValue)));
+}
+
+function estimateTokenCountFromChars(charCount = 0) {
+    return Math.max(0, Math.ceil((Number(charCount) || 0) / 4));
+}
+
+function getSerializedBodySize(body = {}) {
+    try {
+        return JSON.stringify(body || {}).length;
+    } catch (_) {
+        return 0;
+    }
+}
+
+function resolveCodexRequestBudget(body = {}) {
+    const rawBudget = body?.budget || body?.tokenBudget || null;
+    if (!rawBudget) {
+        return null;
+    }
+
+    const rawTier = typeof rawBudget === 'string'
+        ? rawBudget
+        : (rawBudget.tier || rawBudget.mode || rawBudget.level || rawBudget.preset);
+    const tier = CODEX_BUDGET_ALIASES[String(rawTier || '').trim().toLowerCase()] || 'balanced';
+    const preset = CODEX_BUDGET_PRESETS[tier] || CODEX_BUDGET_PRESETS.balanced;
+    const requestedMaxInputChars = typeof rawBudget === 'object' && rawBudget
+        ? rawBudget.maxInputChars || rawBudget.max_input_chars
+        : undefined;
+    const requestedMaxOutputTokens = typeof rawBudget === 'object' && rawBudget
+        ? rawBudget.maxOutputTokens || rawBudget.max_output_tokens
+        : undefined;
+
+    return {
+        tier,
+        maxInputChars: clampInteger(
+            requestedMaxInputChars,
+            1000,
+            preset.maxInputChars,
+            preset.maxInputChars
+        ),
+        maxOutputTokens: clampInteger(
+            requestedMaxOutputTokens,
+            64,
+            preset.maxOutputTokens,
+            preset.maxOutputTokens
+        )
+    };
+}
+
+function createBudgetState(budget) {
+    return {
+        maxInputChars: budget?.maxInputChars || 0,
+        inputChars: 0,
+        truncatedChars: 0,
+        truncated: false
+    };
+}
+
+function applyTextBudget(value, state) {
+    const source = String(value || '');
+    if (!source || !state?.maxInputChars) {
+        return source;
+    }
+
+    const remainingChars = Math.max(0, state.maxInputChars - state.inputChars);
+    const nextValue = source.slice(0, remainingChars);
+    state.inputChars += nextValue.length;
+
+    if (source.length > nextValue.length) {
+        state.truncated = true;
+        state.truncatedChars += source.length - nextValue.length;
+    }
+
+    return nextValue;
+}
+
+function applyBudgetToContent(content, state) {
+    if (typeof content === 'string') {
+        return applyTextBudget(content, state);
+    }
+
+    if (!Array.isArray(content)) {
+        return content;
+    }
+
+    return content.map((part) => {
+        if (!part || typeof part !== 'object' || Array.isArray(part)) {
+            return part;
+        }
+
+        const nextPart = { ...part };
+        if (typeof nextPart.text === 'string') {
+            nextPart.text = applyTextBudget(nextPart.text, state);
+        } else if (typeof nextPart.output_text === 'string') {
+            nextPart.output_text = applyTextBudget(nextPart.output_text, state);
+        } else if (typeof nextPart.content === 'string') {
+            nextPart.content = applyTextBudget(nextPart.content, state);
+        }
+
+        return nextPart;
+    });
+}
+
+function applyBudgetToMessages(messages = [], budget = null) {
+    if (!budget) {
+        return {
+            items: messages,
+            state: null
+        };
+    }
+
+    const state = createBudgetState(budget);
+    const items = messages.map((message) => ({
+        ...message,
+        content: applyBudgetToContent(message?.content, state)
+    }));
+
+    return {
+        items,
+        state
+    };
+}
+
+function applyBudgetToGeminiContents(contents = [], budget = null) {
+    if (!budget) {
+        return {
+            items: contents,
+            state: null
+        };
+    }
+
+    const state = createBudgetState(budget);
+    const items = contents.map((message) => ({
+        ...message,
+        parts: (Array.isArray(message.parts) ? message.parts : []).map((part) => {
+            if (!part || typeof part !== 'object' || Array.isArray(part)) {
+                return part;
+            }
+
+            if (part.type !== 'text') {
+                return part;
+            }
+
+            return {
+                ...part,
+                text: applyTextBudget(part.text, state)
+            };
+        })
+    }));
+
+    return {
+        items,
+        state
+    };
+}
+
+function mergeBudgetStates(...states) {
+    return states
+        .filter(Boolean)
+        .reduce((accumulator, state) => ({
+            inputChars: accumulator.inputChars + (Number(state.inputChars) || 0),
+            truncatedChars: accumulator.truncatedChars + (Number(state.truncatedChars) || 0),
+            truncated: accumulator.truncated || state.truncated === true
+        }), {
+            inputChars: 0,
+            truncatedChars: 0,
+            truncated: false
+        });
+}
+
+function buildBudgetMeta(budget = null, state = null) {
+    if (!budget) {
+        return null;
+    }
+
+    const inputChars = Number(state?.inputChars) || 0;
+    return {
+        tier: budget.tier,
+        maxInputChars: budget.maxInputChars,
+        maxOutputTokens: budget.maxOutputTokens,
+        inputChars,
+        estimatedInputTokens: estimateTokenCountFromChars(inputChars),
+        truncated: state?.truncated === true,
+        truncatedChars: Number(state?.truncatedChars) || 0
+    };
+}
+
+function redactSensitiveText(value = '') {
+    return String(value || '')
+        .replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[redacted]')
+        .replace(/sk-[A-Za-z0-9._-]{8,}/gi, 'sk-[redacted]');
+}
+
+function redactSensitiveValue(value, depth = 0) {
+    if (depth > 4) {
+        return '[redacted-depth]';
+    }
+
+    if (typeof value === 'string') {
+        return redactSensitiveText(value);
+    }
+
+    if (Array.isArray(value)) {
+        return value.map((item) => redactSensitiveValue(item, depth + 1));
+    }
+
+    if (value && typeof value === 'object') {
+        return Object.entries(value).reduce((accumulator, [key, item]) => {
+            if (/authorization|api[_-]?key|token|secret/i.test(key)) {
+                accumulator[key] = '[redacted]';
+            } else {
+                accumulator[key] = redactSensitiveValue(item, depth + 1);
+            }
+            return accumulator;
+        }, {});
+    }
+
+    return value;
 }
 
 function normalizeMessages(messages = []) {
@@ -379,6 +648,57 @@ function applyGenerationConfig(upstreamBody, generationConfig = {}, apiFormat = 
     return upstreamBody;
 }
 
+function normalizeReasoningEffort(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    return RESPONSES_REASONING_EFFORTS.has(normalized) ? normalized : '';
+}
+
+function applyReasoningConfig(upstreamBody, body = {}, apiFormat = 'chat.completions') {
+    if (apiFormat !== 'responses') {
+        if (typeof body.reasoning_effort !== 'undefined' && typeof upstreamBody.reasoning_effort === 'undefined') {
+            upstreamBody.reasoning_effort = body.reasoning_effort;
+        }
+        if (typeof body.reasoning !== 'undefined' && typeof upstreamBody.reasoning === 'undefined') {
+            upstreamBody.reasoning = body.reasoning;
+        }
+        return upstreamBody;
+    }
+
+    const rawReasoning = isPlainObject(body.reasoning)
+        ? body.reasoning
+        : {};
+    const effort = normalizeReasoningEffort(rawReasoning.effort || body.reasoning_effort);
+    if (effort) {
+        upstreamBody.reasoning = {
+            ...rawReasoning,
+            effort
+        };
+    } else if (Object.keys(rawReasoning).length) {
+        upstreamBody.reasoning = rawReasoning;
+    }
+
+    delete upstreamBody.reasoning_effort;
+    return upstreamBody;
+}
+
+function capOutputTokens(upstreamBody, budget = null, apiFormat = 'chat.completions') {
+    const field = apiFormat === 'responses' ? 'max_output_tokens' : 'max_tokens';
+    const alternateField = apiFormat === 'responses' ? 'max_tokens' : 'max_output_tokens';
+    const maxAllowed = budget?.maxOutputTokens || CODEX_MAX_OUTPUT_TOKENS;
+    const currentValue = upstreamBody[field];
+
+    if (typeof currentValue === 'undefined' || currentValue === null || currentValue === '') {
+        if (budget?.maxOutputTokens) {
+            upstreamBody[field] = budget.maxOutputTokens;
+        }
+    } else {
+        upstreamBody[field] = clampInteger(currentValue, 1, maxAllowed, maxAllowed);
+    }
+
+    delete upstreamBody[alternateField];
+    return upstreamBody;
+}
+
 module.exports = async (req, res) => {
     try {
         const { supabase, user } = await requireAdmin(req, {
@@ -406,10 +726,44 @@ module.exports = async (req, res) => {
         const runtimeConfig = await resolveCodexRuntimeConfig(supabase);
         const apiKey = String(runtimeConfig.apiKey || '').trim();
         const body = await parseJsonBody(req);
+        const requestBodyChars = getSerializedBodySize(body);
+        if (requestBodyChars > CODEX_REQUEST_BODY_CHAR_LIMIT) {
+            return sendJson(res, 413, {
+                success: false,
+                message: 'Codex 请求体过大，请减少上下文或图片数量后重试',
+                budget: {
+                    requestBodyChars,
+                    maxRequestBodyChars: CODEX_REQUEST_BODY_CHAR_LIMIT
+                }
+            });
+        }
+
         const model = String(body.model || runtimeConfig.model || 'gpt-5.4').trim() || 'gpt-5.4';
         const apiFormat = normalizeCodexApiFormat(body.apiFormat || runtimeConfig.apiFormat || 'responses');
-        const messages = buildMessagesFromBody(body);
-        const contents = normalizeGeminiContents(body.contents);
+        let messages = buildMessagesFromBody(body);
+        let contents = normalizeGeminiContents(body.contents);
+        const rawRequestBudget = body?.budget || body?.tokenBudget || body?.generationConfig?.budget || null;
+        const hasInput = messages.length > 0 || contents.length > 0;
+
+        if (hasInput && !hasExplicitBudgetTier(rawRequestBudget)) {
+            return sendJson(res, 400, {
+                success: false,
+                message: 'AI budget tier is required for Codex admin requests'
+            });
+        }
+
+        const requestBudget = hasInput
+            ? resolveRequestBudget(rawRequestBudget)
+            : null;
+        let budgetState = null;
+        if (requestBudget) {
+            const budgetedMessages = applySharedBudgetToMessages(messages, requestBudget);
+            const budgetedContents = applySharedBudgetToGeminiContents(contents, requestBudget);
+            messages = budgetedMessages.items;
+            contents = budgetedContents.items;
+            budgetState = mergeSharedBudgetStates(budgetedMessages.state, budgetedContents.state);
+        }
+        const budgetMeta = buildSharedBudgetMeta(requestBudget, budgetState);
         const upstreamUrl = resolveUpstreamUrl(runtimeConfig.baseUrl, apiFormat);
 
         if (!apiKey) {
@@ -455,7 +809,6 @@ module.exports = async (req, res) => {
             'presence_penalty',
             'max_tokens',
             'max_output_tokens',
-            'reasoning_effort',
             'response_format',
             'metadata',
             'tools',
@@ -480,7 +833,12 @@ module.exports = async (req, res) => {
             if (isPlainObject(body.text)) {
                 upstreamBody.text = body.text;
             }
+        } else {
+            delete upstreamBody.max_output_tokens;
         }
+
+        applyReasoningConfig(upstreamBody, body, apiFormat);
+        capOutputTokens(upstreamBody, requestBudget, apiFormat);
 
         const upstreamResponse = await fetch(upstreamUrl, {
             method: 'POST',
@@ -499,8 +857,9 @@ module.exports = async (req, res) => {
         if (!upstreamResponse.ok) {
             return sendJson(res, upstreamResponse.status, {
                 success: false,
-                message: payload?.error?.message || rawText || `Codex request failed (${upstreamResponse.status})`,
-                error: payload?.error || payload || null
+                message: redactSharedSensitiveText(payload?.error?.message || rawText || `Codex request failed (${upstreamResponse.status})`),
+                error: redactSharedSensitiveValue(payload?.error || payload || null),
+                budget: budgetMeta
             });
         }
 
@@ -512,12 +871,14 @@ module.exports = async (req, res) => {
             apiFormat,
             text: resolvedText,
             result: payload,
-            rawText: rawText && rawText !== resolvedText ? rawText : ''
+            rawText: rawText && rawText !== resolvedText ? rawText : '',
+            budget: budgetMeta
         });
     } catch (error) {
         return sendJson(res, error.statusCode || 500, {
             success: false,
-            message: error.message || 'Codex proxy failed'
+            message: redactSharedSensitiveText(error.message || 'Codex proxy failed'),
+            error: redactSharedSensitiveValue(error.details || null)
         });
     }
 };

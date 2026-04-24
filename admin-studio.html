@@ -19,19 +19,21 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css?v=20260420_ADMIN_CACHE_BUST_1">
-    <link rel="stylesheet" href="admin-studio.css?v=20260420_POINTS_LEADERBOARD_AVATAR_1">
+    <link rel="stylesheet" href="admin-studio.css?v=20260424_ADMIN_LIGHT_FLAT_CARDS_2">
     <link rel="stylesheet" href="admin-sidebar.css?v=20260412_SIDEBAR_HEX_182634_1">
-    <link rel="stylesheet" href="css/admin-chat.css?v=20260402_ADMIN_CHAT_INPUT_UI_13">
+    <link rel="stylesheet" href="css/admin-command-center.css?v=20260422_ADMIN_PULSE_DOCK_V2">
+    <link rel="stylesheet" href="css/admin-chat.css?v=20260424_ADMIN_CHAT_LIGHT_THEME_FROSTED_CONTEXT_FLAT_ALERTS_1" media="print" data-deferred-style="1">
 
 
     <!-- Cropper.js CSS -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css" media="print" data-deferred-style="1">
     <!-- Flatpickr CSS (Base) -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" media="print" data-deferred-style="1">
 
     <!-- Prevent flash of wrong theme -->
-    <link rel="stylesheet" href="css/admin-studio-page.css?v=20260416_DISCOUNT_TRIGGER_PRESET_BOX_FIX_10">
+    <link rel="stylesheet" href="css/admin-studio-page.css?v=20260424_ADMIN_LIGHT_THEME_SETTINGS_CARDS_NO_LIFT_1">
     <script src="./js/theme-preload.js?v=20260420_ADMIN_CACHE_BUST_1"></script>
+    <script src="./js/deferred-styles.js?v=20260423_ADMIN_DEFERRED_STYLES_1" defer></script>
 
 </head>
 
@@ -821,7 +823,7 @@
                                         <i class="fas fa-check-square"></i>
                                     </button>
                                     <div class="batch-menu-container comments-batch-menu-container" id="commentsBatchMenuContainer" hidden>
-                                        <button class="batch-btn" id="commentsBatchMenuTrigger" data-admin-action="comments-toggle-batch-menu" title="批量处理" aria-expanded="false">
+                                        <button class="batch-btn" id="commentsBatchMenuTrigger" data-admin-action="comments-toggle-batch-menu" title="批量处理" aria-haspopup="menu" aria-expanded="false">
                                             <i class="fas fa-ellipsis-h"></i>
                                         </button>
                                         <div class="batch-dropdown-menu" id="commentsBatchDropdownMenu">
@@ -1517,7 +1519,7 @@
                                     </div>
 
                                     <div class="payment-channel-save-row discount-trigger-save-row">
-                                        <span class="discount-trigger-save-row__meta" id="discountTriggerRechargeStatusText">修改后记得保存，规则会立即影响后续充值、签到和推广奖励发券。</span>
+                                        <span class="discount-trigger-save-row__meta" id="discountTriggerRechargeStatusText" hidden></span>
                                         <button type="button" class="btn-add-config" id="discountTriggerRechargeSaveBtn">
                                             保存卡券联动规则
                                         </button>
@@ -4587,37 +4589,93 @@
             <div id="shopRiskCaseComposerModal" class="modal-overlay admin-shop-risk-case-modal" data-admin-overlay-close="shop-risk-case-modal" aria-hidden="true">
                 <div class="admin-shop-risk-case-modal__dialog">
                     <div class="admin-shop-risk-case-modal__header">
-                        <div class="admin-shop-risk-case-modal__icon">
-                            <i class="fas fa-shield-halved"></i>
-                        </div>
                         <div class="admin-shop-risk-case-modal__copy">
+                            <div class="admin-shop-risk-case-modal__eyebrow">告警工作台</div>
                             <h2 id="shopRiskCaseComposerTitle">处理集中告警</h2>
-                            <p id="shopRiskCaseComposerSummary">集中告警记录</p>
+                            <p>统一记录负责人、处理备注和关闭结论，不会影响筛选外的告警。</p>
                         </div>
                         <button type="button" class="modal-close-btn" data-admin-action="settings-close-shop-risk-case-modal" aria-label="关闭">
                             <i class="fas fa-times"></i>
                         </button>
                     </div>
                     <form id="shopRiskCaseComposerForm" class="admin-shop-risk-case-modal__form">
-                        <div class="admin-shop-risk-case-modal__note" id="shopRiskCaseComposerDescription">
-                            记录处理备注、交接说明或关闭结论。
-                        </div>
-                        <div class="admin-shop-risk-case-modal__field" id="shopRiskCaseComposerOwnerField" hidden>
-                            <label for="shopRiskCaseComposerOwnerSelect">负责人</label>
-                            <select id="shopRiskCaseComposerOwnerSelect" class="config-input" data-shop-custom-select="true"></select>
-                            <div class="admin-shop-risk-case-modal__hint" id="shopRiskCaseComposerOwnerHint"></div>
-                        </div>
-                        <div class="admin-shop-risk-case-modal__field">
-                            <label for="shopRiskCaseComposerTextarea" id="shopRiskCaseComposerLabel">备注内容</label>
-                            <textarea id="shopRiskCaseComposerTextarea" rows="6" class="config-input" placeholder="请输入内容"></textarea>
-                        </div>
-                        <div class="admin-shop-risk-case-modal__actions">
-                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-close-shop-risk-case-modal">
-                                <i class="fas fa-xmark"></i> 取消
-                            </button>
-                            <button type="submit" class="btn-add-config btn-add-config--compact btn-add-config--primary" id="shopRiskCaseComposerSubmit" data-admin-action="settings-submit-shop-risk-case-modal">
-                                保存备注
-                            </button>
+                        <div class="admin-shop-risk-case-modal__layout">
+                            <aside class="admin-shop-risk-case-modal__aside">
+                                <section class="admin-shop-risk-case-modal__hero">
+                                    <div class="admin-shop-risk-case-modal__hero-copy">
+                                        <span>当前筛选</span>
+                                        <strong id="shopRiskCaseComposerSummary">集中告警记录</strong>
+                                        <em id="shopRiskCaseComposerScopeHint">处理结果会同步写入处置记录。</em>
+                                    </div>
+                                </section>
+                                <div class="admin-shop-risk-case-modal__overview">
+                                    <div class="admin-shop-risk-case-modal__overview-card">
+                                        <div class="admin-shop-risk-case-modal__overview-icon">
+                                            <i class="fas fa-list-check"></i>
+                                        </div>
+                                        <div>
+                                            <span>写入范围</span>
+                                            <strong id="shopRiskCaseComposerModeValue">当前筛选</strong>
+                                            <em id="shopRiskCaseComposerCountValue">待处理告警</em>
+                                        </div>
+                                    </div>
+                                    <div class="admin-shop-risk-case-modal__overview-card admin-shop-risk-case-modal__overview-card--accent">
+                                        <div class="admin-shop-risk-case-modal__overview-icon">
+                                            <i class="fas fa-pen-nib"></i>
+                                        </div>
+                                        <div>
+                                            <span>处理动作</span>
+                                            <strong id="shopRiskCaseComposerActionValue">备注</strong>
+                                            <em>会保留操作轨迹</em>
+                                        </div>
+                                    </div>
+                                    <div class="admin-shop-risk-case-modal__overview-card admin-shop-risk-case-modal__overview-card--green">
+                                        <div class="admin-shop-risk-case-modal__overview-icon">
+                                            <i class="fas fa-user-check"></i>
+                                        </div>
+                                        <div>
+                                            <span>负责人</span>
+                                            <strong id="shopRiskCaseComposerOwnerPreview">保持现状</strong>
+                                            <em>可在指派动作中更新</em>
+                                        </div>
+                                    </div>
+                                    <div class="admin-shop-risk-case-modal__overview-card admin-shop-risk-case-modal__overview-card--slate">
+                                        <div class="admin-shop-risk-case-modal__overview-icon">
+                                            <i class="fas fa-shield-halved"></i>
+                                        </div>
+                                        <div>
+                                            <span>记录状态</span>
+                                            <strong id="shopRiskCaseComposerStatusValue">待写入</strong>
+                                            <em>提交后刷新工作台</em>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="admin-shop-risk-case-modal__context-note">
+                                    当前只会处理命中筛选的未关闭告警；关闭、备注或指派都会落入同一条集中告警处置记录。
+                                </div>
+                            </aside>
+                            <section class="admin-shop-risk-case-modal__editor">
+                                <div class="admin-shop-risk-case-modal__note" id="shopRiskCaseComposerDescription">
+                                    记录处理备注、交接说明或关闭结论。
+                                </div>
+                                <div class="admin-shop-risk-case-modal__field" id="shopRiskCaseComposerOwnerField" hidden>
+                                    <label for="shopRiskCaseComposerOwnerSelect">负责人</label>
+                                    <select id="shopRiskCaseComposerOwnerSelect" class="config-input" data-shop-custom-select="true"></select>
+                                    <div class="admin-shop-risk-case-modal__hint" id="shopRiskCaseComposerOwnerHint"></div>
+                                </div>
+                                <div class="admin-shop-risk-case-modal__field">
+                                    <label for="shopRiskCaseComposerTextarea" id="shopRiskCaseComposerLabel">备注内容</label>
+                                    <textarea id="shopRiskCaseComposerTextarea" rows="6" class="config-input" placeholder="请输入内容"></textarea>
+                                </div>
+                                <div class="admin-shop-risk-case-modal__actions">
+                                    <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-close-shop-risk-case-modal">
+                                        <i class="fas fa-xmark"></i> 取消
+                                    </button>
+                                    <button type="submit" class="btn-add-config btn-add-config--compact btn-add-config--primary" id="shopRiskCaseComposerSubmit" data-admin-action="settings-submit-shop-risk-case-modal">
+                                        <i class="fas fa-floppy-disk"></i> <span id="shopRiskCaseComposerSubmitLabel">保存备注</span>
+                                    </button>
+                                </div>
+                            </section>
                         </div>
                     </form>
                 </div>
@@ -4833,6 +4891,8 @@
                                     </button>
                                 </div>
                             </div>
+
+                            <div class="admin-workbench-context-note" id="adminAuditMonitorFocusContext" hidden></div>
 
                             <div class="admin-audit-monitor-grid">
                                 <div class="admin-audit-monitor-card admin-audit-monitor-card--neutral" id="adminAuditMonitorAccessCard">
@@ -6153,7 +6213,7 @@
                                     <!-- Batch Actions Menu (moved here, next to checkbox toggle) -->
                                     <div class="batch-menu-container admin-studio-inline-style-attr-3" id="pointsBatchMenuContainer"
                                        >
-                                        <button class="btn-icon" data-admin-action="points-toggle-actions-menu">
+                                        <button class="btn-icon" id="pointsBatchMenuTrigger" data-admin-action="points-toggle-actions-menu" aria-haspopup="menu" aria-expanded="false">
                                             <i class="fas fa-ellipsis-h"></i>
                                         </button>
                                         <div class="batch-menu-popup glass-popup" id="pointsBatchActionsMenu">
@@ -6397,7 +6457,7 @@
                                 <i class="fas fa-cog"></i> 配置参数
                             </div>
                             <div class="points-site-context points-site-context--generate" id="pointsGenerateWriteContext"></div>
-                            <form id="generateCodesForm" class="prompt-form">
+                            <form id="generateCodesForm" class="prompt-form" data-points-submit="generate-codes">
                                 <div class="form-group">
                                     <label>批次名称</label>
                                     <input type="text" id="batchName" placeholder="如: 闲鱼1月活动" required>
@@ -6701,7 +6761,7 @@
                             </button>
                             <div class="batch-menu-container admin-studio-inline-style-attr-3" id="userBatchMenuContainer">
                                 <button class="batch-btn" id="userBatchMenuTrigger" data-admin-action="users-toggle-batch-menu"
-                                    title="批量操作">
+                                    title="批量操作" aria-haspopup="menu" aria-expanded="false">
                                     <i class="fas fa-ellipsis-h"></i>
                                 </button>
                                 <div class="batch-dropdown-menu" id="userBatchDropdownMenu">
@@ -7346,7 +7406,8 @@
                                 <div class="import-status">
                                     <div class="admin-studio-inline-style-attr-119">检测到 <span id="lineCount"
                                             class="admin-studio-inline-style-attr-120">0</span> 条数据</div>
-                                    <button class="btn btn-primary" data-shop-action="inventory-import-submit">
+                                    <button class="btn btn-primary" data-shop-action="inventory-import-submit"
+                                        data-admin-action-feedback="导入中..." data-admin-action-feedback-manual="true">
                                         <i class="fas fa-check"></i> 确认导入
                                     </button>
                                 </div>
@@ -7424,7 +7485,8 @@
                         </div>
                         <div class="admin-studio-inline-style-attr-130">
                             <button data-shop-action="inventory-close-import-modal" class="btn btn-secondary">取消</button>
-                            <button data-shop-action="inventory-do-import" class="btn btn-primary"><i class="fas fa-upload"></i>
+                            <button data-shop-action="inventory-do-import" class="btn btn-primary"
+                                data-admin-action-feedback="导入中..." data-admin-action-feedback-manual="true"><i class="fas fa-upload"></i>
                                 导入</button>
                         </div>
                     </div>
@@ -7620,7 +7682,8 @@
                                         <button class="btn btn-secondary" type="button" data-shop-action="delivery-reload-tasks" data-delivery-page-mode="current">
                                             <i class="fas fa-sync-alt"></i> 重新加载
                                         </button>
-                                        <button id="deliveryStrategySaveBtn" class="btn btn-primary shop-theme-primary-btn" type="button" data-shop-action="delivery-save-strategy">
+                                        <button id="deliveryStrategySaveBtn" class="btn btn-primary shop-theme-primary-btn" type="button" data-shop-action="delivery-save-strategy"
+                                            data-admin-action-feedback="保存中..." data-admin-action-feedback-manual="true">
                                             <i class="fas fa-save"></i> 保存策略
                                         </button>
                                     </div>
@@ -11167,9 +11230,21 @@
                     </div>
 
                     <div class="modern-form-group">
-                        <label class="modern-label" id="prodDescLabel">商品描述</label>
+                        <div
+                            class="admin-studio-inline-style-attr-226">
+                            <label class="modern-label admin-studio-inline-style-attr-227" id="prodDescLabel">商品描述</label>
+                            <label class="toggle-switch admin-studio-inline-style-attr-229"
+                               >
+                                <input type="checkbox" id="prodShowProductDescription"
+                                    data-shop-change="product-toggle-description-visibility"
+                                    class="admin-studio-inline-style-attr-230"
+                                    checked>
+                                <span class="toggle-slider admin-studio-inline-style-attr-231"></span>
+                            </label>
+                        </div>
                         <textarea id="prodDesc" class="modern-input" placeholder="商品简介..."
                             data-shop-input="product-update-preview"></textarea>
+                        <small class="form-hint">关闭后，商城页面的商品卡片不显示商品描述。</small>
                     </div>
 
                     <!-- Marketing Config (Phase 2) -->
@@ -11303,7 +11378,8 @@
 
                     <div class="action-bar">
                         <button class="btn-cancel" type="button" data-shop-action="product-close-modal">取消</button>
-                        <button class="btn-save" type="submit">保存商品</button>
+                        <button class="btn-save" id="productSaveBtn" type="submit"
+                            data-admin-action-feedback="保存中..." data-admin-action-feedback-manual="true">保存商品</button>
                     </div>
                 </form>
             </div>
@@ -11315,33 +11391,30 @@
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="/api/runtime/supabase-config"></script>
     <script src="./js/runtime-supabase-config.js?v=20260420_ADMIN_CACHE_BUST_1"></script>
-    <!-- Cropper.js -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
     <!-- SheetJS for Excel export -->
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <!-- Chart.js for Analytics -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="js/admin-studio-bootstrap.js?v=20260416_PRODUCT_DETAIL_TAB_1"></script>
-    <script src="js/admin-shell.js?v=20260410_ADMIN_SHELL_P1_1"></script>
+    <script src="js/admin-studio-bootstrap.js?v=20260421_BOOTSTRAP_NO_CHAT_PREWARM_P2"></script>
+    <script src="js/admin-vendor-loader.js?v=20260421_ADMIN_VENDOR_LOADER_P2"></script>
+    <script src="js/admin-shell.js?v=20260421_ADMIN_SHELL_COMMENTS_OPS_HELPERS_P2"></script>
     <script src="js/ios-scroll-lock.js?v=20260420_ADMIN_CACHE_BUST_1"></script>
-    <script src="admin-users.js?v=20260420_ADMIN_USERS_SCOPE_HINT_1"></script>
-    <script src="admin-points.js?v=20260418_ADMIN_POINTS_DECIMAL_PRECISION_1"></script>
-    <script src="admin-discounts.js?v=20260416_DISCOUNT_STACKING_REAL_MULTI_14"></script>
-    <script src="js/admin-growth-center.js?v=20260409_MARKETING_ASSET_CENTER_P2_1"></script>
+    <script src="admin-users.js?v=20260421_ADMIN_USERS_CONTEXT_HELPER_P2"></script>
+    <script src="admin-points.js?v=20260421_ADMIN_POINTS_GENERATE_SUBMIT_BRIDGE_P2"></script>
+    <script src="admin-discounts.js?v=20260421_DISCOUNTS_CONTEXT_HELPER_P2"></script>
+    <script src="js/admin-growth-center.js?v=20260421_GROWTH_CENTER_CONTEXT_ROUTING_P3"></script>
     <script src="starry-sky.js?v=20260420_ADMIN_CACHE_BUST_1"></script>
-    <!-- Flatpickr JS -->
-    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh.js"></script>
-    <script src="js/admin-api-auth.js?v=20260402_ADMIN_API_AUTH_5"></script>
-    <script src="js/admin-ai.js?v=20260420_ADMIN_CACHE_BUST_1"></script>
-    <script src="admin-comments.js?v=20260416_COMMENTS_PAGE_SIZE_15_1"></script>
+    <script src="js/admin-api-auth.js?v=20260421_ADMIN_API_COOKIE_RETRY_P0"></script>
+    <script src="js/admin-ai.js?v=20260421_ADMIN_AI_SESSION_PRIORITY_P0"></script>
+    <script src="js/admin-command-center.js?v=20260422_ADMIN_PULSE_DOCK_V2"></script>
+    <script src="admin-comments.js?v=20260421_COMMENTS_MODULE_BRIDGE_HELPERS_P3"></script>
     <script src="js/admin-analytics-metric-context.js?v=20260405_ANALYTICS_METRIC_CONTEXT_HELPERS_6"></script>
-    <script src="admin-analytics.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1"></script>
+    <script src="admin-analytics.js?v=20260421_ANALYTICS_RUNTIME_AUTH_FALLBACK_P0"></script>
     <script src="js/admin-analytics-derived-bundles.js?v=20260420_DERIVED_VARIANT_CACHE_1"></script>
     <script src="js/admin-analytics-runtime-controls.js?v=20260420_ANALYTICS_ONLINE_USERS_RPC_1"></script>
     <script src="js/admin-analytics-panel-loaders.js?v=20260420_POINTS_LEADERBOARD_AVATAR_1"></script>
-    <script src="js/admin-analytics-lifecycle.js?v=20260420_ANALYTICS_LIFECYCLE_STALE_GUARD_1"></script>
-    <script src="js/admin-analytics-workbench.js?v=20260416_PRODUCT_DETAIL_WORKBENCH_1"></script>
+    <script src="js/admin-analytics-lifecycle.js?v=20260421_ANALYTICS_SITE_CHANGE_HELPER_P2"></script>
+    <script src="js/admin-analytics-workbench.js?v=20260421_ANALYTICS_DESTINATION_ACTIVATE_FALLBACKS_P4"></script>
     <script src="js/admin-analytics-insight-cards.js?v=20260407_ANALYTICS_INSIGHT_CARDS_HELPERS_5"></script>
     <script src="js/admin-analytics-ai-state.js?v=20260405_ANALYTICS_AI_STATE_1"></script>
     <script src="js/admin-analytics-ai-dom.js?v=20260405_ANALYTICS_AI_DOM_1"></script>
@@ -11349,23 +11422,25 @@
     <script src="js/admin-analytics-ai-prompt-builders.js?v=20260405_ANALYTICS_AI_PROMPT_BUILDERS_1"></script>
     <script src="js/admin-analytics-ai-controller.js?v=20260405_ANALYTICS_AI_CONTROLLER_1"></script>
     <script src="js/admin-analytics-export-builders.js?v=20260405_ANALYTICS_EXPORT_BUILDERS_1"></script>
-    <script src="js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9"></script>
-    <script src="js/admin-payments.js?v=20260419_ADMIN_PAYMENTS_SESSION_TRACE_1"></script>
+    <script src="js/admin-analytics-ai-export.js?v=20260421_ANALYTICS_AI_BUDGET_P0"></script>
+    <script src="js/admin-payments.js?v=20260421_ADMIN_PAYMENTS_CONTEXT_HELPER_P2"></script>
     <script src="js/admin-smoke-loader.js?v=20260420_ADMIN_SMOKE_LOADER_1"></script>
-    <script src="js/admin-workbench.js?v=20260410_ADMIN_SHELL_CONTEXT_P1_1"></script>
+    <script src="js/admin-workbench.js?v=20260422_OPS_ALERT_RESOLVED_COUNT_P13"></script>
     <script src="js/admin-ticket-links.js?v=20260410_ADMIN_SHELL_CONTEXT_P1_1"></script>
-    <script src="admin-config.js?v=20260416_PAYMENT_PROVIDER_NEUTRALITY_1"></script>
+    <script src="js/admin-config-ops-alert-reports.js?v=20260421_OPS_ALERT_REPORT_ACTIONS_P2"></script>
+    <script src="admin-config.js?v=20260422_OPS_ALERT_BATCH_ERROR_VISIBLE_P4"></script>
     <script src="js/homepage-contract.js?v=20260415_HOME_VERIFY_DEMO_1"></script>
-    <script src="admin-homepage.js?v=20260415_HOME_VERIFY_DEMO_1"></script>
-    <script src="js/admin-studio-translate.js?v=20260409_GALLERY_BATCH_LOCALIZE_7"></script>
-    <script src="js/admin-site-filter.js?v=20260410_ADMIN_SHELL_SITE_BUS_P1_1"></script>
-    <script src="js/admin-tickets.js?v=20260410_ADMIN_SHELL_CONTEXT_P1_1"></script>
-    <script src="js/admin-access.js?v=20260403_ADMIN_ENTRY_WARMUP_1"></script>
-<script src="admin-studio.js?v=20260420_ANALYTICS_USER_TREND_REQUEST_1"></script>
-    <script src="js/admin-shop.js?v=20260410_SHOP_ORDER_UUID_SEARCH_1"></script>
+    <script src="admin-homepage.js?v=20260421_HOMEPAGE_FEEDBACK_BRIDGE_P4"></script>
+    <script src="js/admin-studio-translate.js?v=20260421_TRANSLATE_BUDGET_P0"></script>
+    <script src="js/admin-site-filter.js?v=20260421_ADMIN_SITE_FILTER_CONTENT_SITE_HELPERS_P2"></script>
+    <script src="js/admin-tickets.js?v=20260421_TICKETS_OPS_ALERTS_HELPER_P2"></script>
+    <script src="js/admin-access.js?v=20260421_ADMIN_ACCESS_TIMEOUT_P0"></script>
+<script src="admin-studio.js?v=20260424_ADMIN_MODAL_SCROLL_LOCK_SOFT_BACKDROP_1"></script>
+    <script src="js/admin-scrollbar-auto-hide-helper.js?v=20260424_ADMIN_SCROLLBAR_AUTO_HIDE_HELPER_1"></script>
+    <script src="js/admin-shop.js?v=20260423_SHOP_PRODUCT_DESCRIPTION_VISIBILITY_1"></script>
 </body>
 
 <!-- Admin Chat Script -->
-<script src="js/admin-chat.js?v=20260402_ADMIN_CHAT_INPUT_UI_13"></script>
+<script src="js/admin-chat.js?v=20260421_ADMIN_CHAT_SITE_CHANGE_P2"></script>
 <script src="js/admin-real-smoke-loader.js?v=20260420_ADMIN_REAL_SMOKE_LOADER_1"></script>
 </html>

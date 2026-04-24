@@ -123,6 +123,9 @@ function createSupabaseStub(state = {}) {
     const pointsBalance = state.pointsBalance || [];
     const pointsLedger = state.pointsLedger || [];
     const shopOrders = state.shopOrders || [];
+    const shopOrderItems = state.shopOrderItems || [];
+    const shopInventory = state.shopInventory || [];
+    const shopProducts = state.shopProducts || [];
     const prompts = state.prompts || [];
     const verificationLogs = state.verificationLogs || [];
     const missingColumns = state.missingColumns || {};
@@ -168,6 +171,9 @@ function createSupabaseStub(state = {}) {
                 if (table === 'points_balance') return selectRows(pointsBalance);
                 if (table === 'points_ledger') return selectRows(pointsLedger);
                 if (table === 'shop_orders') return selectRows(shopOrders);
+                if (table === 'shop_order_items') return selectRows(shopOrderItems);
+                if (table === 'shop_inventory') return selectRows(shopInventory);
+                if (table === 'shop_products') return selectRows(shopProducts);
                 if (table === 'prompts') return selectRows(prompts);
                 if (table === 'verification_logs') return selectRows(verificationLogs);
 
@@ -476,4 +482,57 @@ test('wallet verify log handler resolves and normalizes the matching verify reco
     assert.equal(payload.verify_log.points_deducted, 2);
     assert.equal(payload.verify_log.payload.email, 'wallet@example.com');
     assert.equal(payload.verify_log.payload.job_id, 'verify-job-77');
+});
+
+test('wallet order detail handler returns purchased content and guidance through the wallet route', async () => {
+    const handlers = createHandlers({
+        shopOrders: [
+            {
+                id: '341186be-1111-4222-8333-4444444423e8',
+                user_id: 'user-wallet-1',
+                product_id: '6f8468aa-2222-4333-8444-555555555555',
+                inventory_id: 'inv-1',
+                snapshot_product_name: '满两年带2FA随机地区gmail',
+                created_at: '2026-04-14T03:42:00.000Z',
+                price_paid: 1,
+                total_price: 1,
+                discount_code: null,
+                discount_amount: 0,
+                discount_snapshot: null,
+                item_count: 1
+            }
+        ],
+        shopInventory: [
+            {
+                id: 'inv-1',
+                content: 'sdf'
+            }
+        ],
+        shopProducts: [
+            {
+                id: '6f8468aa-2222-4333-8444-555555555555',
+                show_purchase_notes: true,
+                purchase_notes: '注意事项 A',
+                show_usage_instructions: true,
+                usage_instructions: '使用说明 B'
+            }
+        ]
+    });
+    const res = createMockResponse();
+
+    await handlers.orderDetail({
+        method: 'POST',
+        body: {
+            orderId: '341186be-1111-4222-8333-4444444423e8'
+        }
+    }, res);
+
+    const payload = res.json();
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.success, true);
+    assert.equal(payload.data.order.snapshot_product_name, '满两年带2FA随机地区gmail');
+    assert.equal(payload.data.items.length, 1);
+    assert.equal(payload.data.items[0].content, 'sdf');
+    assert.equal(payload.data.guidance.purchase_notes, '注意事项 A');
+    assert.equal(payload.data.guidance.usage_instructions, '使用说明 B');
 });

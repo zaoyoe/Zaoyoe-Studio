@@ -228,6 +228,135 @@ test('AdminAI.getAuthHeaders falls back to runtime accessToken when sdk session 
     assert.equal(headers.Authorization, 'Bearer persisted-access-token');
 });
 
+test('AdminAI.generateText sends compact token budget metadata to Codex relay', async () => {
+    const source = readRepoFile('js/admin-ai.js');
+    const fetchCalls = [];
+    const events = [];
+    const context = {
+        performance: {
+            now() {
+                return 100;
+            }
+        },
+        CustomEvent: function CustomEvent(type, init) {
+            this.type = type;
+            this.detail = init?.detail;
+        },
+        fetch: async (input, init = {}) => {
+            fetchCalls.push({ input, init });
+            return {
+                ok: true,
+                status: 200,
+                async text() {
+                    return JSON.stringify({
+                        success: true,
+                        model: 'gpt-5.4',
+                        apiFormat: 'responses',
+                        text: 'ok',
+                        budget: {
+                            tier: 'lean',
+                            inputChars: 40,
+                            estimatedInputTokens: 10
+                        }
+                    });
+                }
+            };
+        },
+        window: {
+            ADMIN_AI_SERVICE: 'codex',
+            dispatchEvent(event) {
+                events.push(event);
+            },
+            supabaseClient: {
+                auth: {
+                    async getSession() {
+                        return {
+                            data: {
+                                session: {
+                                    access_token: 'token'
+                                }
+                            }
+                        };
+                    }
+                }
+            }
+        }
+    };
+
+    vm.runInNewContext(source, context);
+
+    const text = await context.window.AdminAI.generateText('x'.repeat(1200), {
+        model: 'gpt-5.4',
+        budget: {
+            tier: 'lean',
+            maxInputChars: 1000,
+            maxOutputTokens: 120
+        }
+    });
+
+    assert.equal(text, 'ok');
+    assert.equal(fetchCalls.length, 1);
+    assert.equal(fetchCalls[0].input, '/api/admin?route=codex');
+
+    const body = JSON.parse(fetchCalls[0].init.body);
+    assert.equal(body.prompt, '');
+    assert.equal(body.contents[0].parts[0].text, 'x'.repeat(1000));
+    assert.deepEqual(body.budget, {
+        tier: 'lean',
+        maxInputChars: 1000,
+        maxOutputTokens: 120
+    });
+    assert.equal(body.generationConfig.maxOutputTokens, 120);
+    assert.equal(events.some((event) => event.type === 'admin-ai-budget'), true);
+    assert.equal(events.some((event) => event.type === 'admin-ai-response' && event.detail.ok === true), true);
+});
+
+test('AdminAI.generateText requires an explicit budget tier before sending admin relay requests', async () => {
+    const source = readRepoFile('js/admin-ai.js');
+    const fetchCalls = [];
+    const context = {
+        fetch: async (input, init = {}) => {
+            fetchCalls.push({ input, init });
+            return {
+                ok: true,
+                status: 200,
+                async text() {
+                    return JSON.stringify({
+                        success: true,
+                        text: 'ok'
+                    });
+                }
+            };
+        },
+        window: {
+            ADMIN_AI_SERVICE: 'codex',
+            supabaseClient: {
+                auth: {
+                    async getSession() {
+                        return {
+                            data: {
+                                session: {
+                                    access_token: 'token'
+                                }
+                            }
+                        };
+                    }
+                }
+            }
+        }
+    };
+
+    vm.runInNewContext(source, context);
+
+    const error = await context.window.AdminAI.generateText('missing budget', {
+        model: 'gpt-5.4'
+    }).catch((err) => err);
+
+    assert.equal(error?.code, 'ADMIN_AI_BUDGET_REQUIRED');
+    assert.match(error?.message || '', /budget tier is required/i);
+    assert.equal(fetchCalls.length, 0);
+});
+
 test('checkApiKey keeps existing Gemini source when health probe is temporarily unavailable', async () => {
     const source = readRepoFile('admin-studio.js');
     const helperSource = extractFunction(source, 'getAIHealthFailureStatusText');

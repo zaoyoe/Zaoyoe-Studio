@@ -4,6 +4,31 @@ const fs = require('node:fs');
 const path = require('node:path');
 const Module = require('node:module');
 
+const RealDate = Date;
+const PAYMENT_SUMMARY_TEST_NOW = new RealDate('2026-03-25T12:00:00.000Z');
+
+class FixedPaymentSummaryDate extends RealDate {
+    constructor(...args) {
+        if (args.length === 0) {
+            super(PAYMENT_SUMMARY_TEST_NOW.getTime());
+            return;
+        }
+        super(...args);
+    }
+
+    static now() {
+        return PAYMENT_SUMMARY_TEST_NOW.getTime();
+    }
+
+    static parse(value) {
+        return RealDate.parse(value);
+    }
+
+    static UTC(...args) {
+        return RealDate.UTC(...args);
+    }
+}
+
 function createQueryBuilder(executor) {
     const state = {
         mode: 'select',
@@ -361,6 +386,7 @@ async function withPaymentsSummaryHandler(state, callback) {
     const originalLoad = Module._load;
     const mockAdminModule = createMockAdminModule(state);
     const mockProviderAdaptersModule = state.providerAdaptersModule || null;
+    const originalDate = global.Date;
 
     delete require.cache[handlerPath];
     Module._load = function patchedLoad(request, parent, isMain) {
@@ -382,8 +408,10 @@ async function withPaymentsSummaryHandler(state, callback) {
     }
 
     try {
+        global.Date = FixedPaymentSummaryDate;
         return await callback(handler);
     } finally {
+        global.Date = originalDate;
         delete require.cache[handlerPath];
     }
 }

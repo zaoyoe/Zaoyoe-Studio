@@ -16,7 +16,20 @@ function loadAdminSiteFilter(options = {}) {
     const analyticsReloads = [];
     const usersReloads = [];
     const paymentsReloads = [];
+    const shopSiteChangeCalls = [];
+    const paymentsSiteChangeCalls = [];
     const shellSiteChanges = [];
+    const chatSiteChangeCalls = [];
+    const usersSiteChangeCalls = [];
+    const commentsSiteChangeCalls = [];
+    const homepageSiteChangeCalls = [];
+    const pointsSiteChangeCalls = [];
+    const growthCenterSiteChangeCalls = [];
+    const analyticsSiteChangeCalls = [];
+    const settingsSiteChangeCalls = [];
+    const discountsSiteChangeCalls = [];
+    const opsAlertsSiteChangeCalls = [];
+    const pointsBatchReloads = [];
     const activeModuleId = String(options.activeModuleId || '').trim();
     const context = {
         console: {
@@ -67,12 +80,87 @@ function loadAdminSiteFilter(options = {}) {
         loadUsers() {
             usersReloads.push(true);
         },
+        loadBatches() {
+            pointsBatchReloads.push(true);
+        },
         AdminPayments: {
             reload() {
                 paymentsReloads.push(true);
             }
         }
     };
+    if (options.withChatSiteChangeHelper) {
+        context.window.handleAdminChatModuleSiteChange = async () => {
+            chatSiteChangeCalls.push(true);
+            return true;
+        };
+    }
+    if (options.withUsersSiteChangeHelper) {
+        context.window.handleAdminUsersSiteChange = async () => {
+            usersSiteChangeCalls.push(true);
+            return true;
+        };
+    }
+    if (options.withCommentsSiteChangeHelper) {
+        context.window.handleAdminCommentsSiteChange = async () => {
+            commentsSiteChangeCalls.push(true);
+            return true;
+        };
+    }
+    if (options.withHomepageSiteChangeHelper) {
+        context.window.handleAdminHomepageSiteChange = async (detail = {}) => {
+            homepageSiteChangeCalls.push(detail);
+            return true;
+        };
+    }
+    if (options.withPointsSiteChangeHelper) {
+        context.window.handleAdminPointsSiteChange = async (detail = {}) => {
+            pointsSiteChangeCalls.push(detail);
+            return true;
+        };
+    }
+    if (options.withGrowthCenterSiteChangeHelper) {
+        context.window.handleAdminGrowthCenterSiteChange = async (detail = {}) => {
+            growthCenterSiteChangeCalls.push(detail);
+            return true;
+        };
+    }
+    if (options.withAnalyticsSiteChangeHelper) {
+        context.window.handleAdminAnalyticsSiteChange = async (detail = {}) => {
+            analyticsSiteChangeCalls.push(detail);
+            return true;
+        };
+    }
+    if (options.withSettingsSiteChangeHelper) {
+        context.window.handleAdminSettingsSiteChange = async (detail = {}) => {
+            settingsSiteChangeCalls.push(detail);
+            return true;
+        };
+    }
+    if (options.withDiscountsSiteChangeHelper) {
+        context.window.handleAdminDiscountsSiteChange = async (detail = {}) => {
+            discountsSiteChangeCalls.push(detail);
+            return true;
+        };
+    }
+    if (options.withOpsAlertsSiteChangeHelper) {
+        context.window.handleAdminOpsAlertsSiteChange = async (detail = {}) => {
+            opsAlertsSiteChangeCalls.push(detail);
+            return true;
+        };
+    }
+    if (options.withShopSiteChangeHelper) {
+        context.window.handleAdminShopSiteChange = async (detail = {}) => {
+            shopSiteChangeCalls.push(detail);
+            return true;
+        };
+    }
+    if (options.withPaymentsSiteChangeHelper) {
+        context.window.handleAdminPaymentsSiteChange = async (detail = {}) => {
+            paymentsSiteChangeCalls.push(detail);
+            return true;
+        };
+    }
     if (options.withAdminShell) {
         context.window.AdminShell = {
             handleSiteChange(detail) {
@@ -93,7 +181,20 @@ function loadAdminSiteFilter(options = {}) {
         analyticsReloads,
         usersReloads,
         paymentsReloads,
-        shellSiteChanges
+        shopSiteChangeCalls,
+        paymentsSiteChangeCalls,
+        shellSiteChanges,
+        chatSiteChangeCalls,
+        usersSiteChangeCalls,
+        commentsSiteChangeCalls,
+        homepageSiteChangeCalls,
+        pointsSiteChangeCalls,
+        growthCenterSiteChangeCalls,
+        analyticsSiteChangeCalls,
+        settingsSiteChangeCalls,
+        discountsSiteChangeCalls,
+        opsAlertsSiteChangeCalls,
+        pointsBatchReloads
     };
 }
 
@@ -144,7 +245,7 @@ test('admin site filter requireWritableSite warns in all mode and resolves when 
 });
 
 test('admin site filter reloads analytics aliases through the shared analytics dashboard refresher', () => {
-    const analyticsAliases = ['analytics', 'business-overview', 'growth-center', 'commerce-center'];
+    const analyticsAliases = ['analytics', 'business-overview', 'commerce-center'];
 
     analyticsAliases.forEach((activeModuleId) => {
         const { AdminSiteFilter, analyticsReloads, usersReloads, paymentsReloads } = loadAdminSiteFilter({
@@ -161,6 +262,35 @@ test('admin site filter reloads analytics aliases through the shared analytics d
         assert.equal(usersReloads.length, 0, `${activeModuleId} should not trigger user reloads`);
         assert.equal(paymentsReloads.length, 0, `${activeModuleId} should not trigger payment reloads`);
     });
+});
+
+test('admin site filter refreshes analytics containers through the shared analytics site-change helper in legacy fallback mode', () => {
+    const overviewRuntime = loadAdminSiteFilter({
+        activeModuleId: 'business-overview',
+        withAnalyticsSiteChangeHelper: true,
+        localStorage: {
+            admin_site_filter: 'all'
+        }
+    });
+    const commerceRuntime = loadAdminSiteFilter({
+        activeModuleId: 'commerce-center',
+        withAnalyticsSiteChangeHelper: true,
+        localStorage: {
+            admin_site_filter: 'all'
+        }
+    });
+
+    overviewRuntime.AdminSiteFilter.select('intl');
+    commerceRuntime.AdminSiteFilter.select('cn');
+
+    assert.equal(overviewRuntime.analyticsSiteChangeCalls.length, 1);
+    assert.equal(overviewRuntime.analyticsSiteChangeCalls[0].activeModuleId, 'business-overview');
+    assert.equal(overviewRuntime.analyticsSiteChangeCalls[0].site, 'intl');
+    assert.equal(overviewRuntime.analyticsReloads.length, 0);
+    assert.equal(commerceRuntime.analyticsSiteChangeCalls.length, 1);
+    assert.equal(commerceRuntime.analyticsSiteChangeCalls[0].activeModuleId, 'commerce-center');
+    assert.equal(commerceRuntime.analyticsSiteChangeCalls[0].site, 'cn');
+    assert.equal(commerceRuntime.analyticsReloads.length, 0);
 });
 
 test('admin site filter delegates site reloads to the admin shell when available', () => {
@@ -183,6 +313,147 @@ test('admin site filter delegates site reloads to the admin shell when available
     assert.equal(analyticsReloads.length, 0);
     assert.equal(usersReloads.length, 0);
     assert.equal(paymentsReloads.length, 0);
+});
+
+test('admin site filter refreshes chat through the shared chat site-change helper in legacy fallback mode', () => {
+    const { AdminSiteFilter, chatSiteChangeCalls } = loadAdminSiteFilter({
+        activeModuleId: 'chat',
+        withChatSiteChangeHelper: true,
+        localStorage: {
+            admin_site_filter: 'all'
+        }
+    });
+
+    AdminSiteFilter.select('intl');
+
+    assert.equal(chatSiteChangeCalls.length, 1);
+});
+
+test('admin site filter refreshes users through the shared users site-change helper in legacy fallback mode', () => {
+    const { AdminSiteFilter, usersSiteChangeCalls, usersReloads } = loadAdminSiteFilter({
+        activeModuleId: 'users',
+        withUsersSiteChangeHelper: true,
+        localStorage: {
+            admin_site_filter: 'all'
+        }
+    });
+
+    AdminSiteFilter.select('intl');
+
+    assert.equal(usersSiteChangeCalls.length, 1);
+    assert.equal(usersReloads.length, 0);
+});
+
+test('admin site filter refreshes comments through the shared comments site-change helper in legacy fallback mode', () => {
+    const { AdminSiteFilter, commentsSiteChangeCalls } = loadAdminSiteFilter({
+        activeModuleId: 'comments',
+        withCommentsSiteChangeHelper: true,
+        localStorage: {
+            admin_site_filter: 'all'
+        }
+    });
+
+    AdminSiteFilter.select('intl');
+
+    assert.equal(commentsSiteChangeCalls.length, 1);
+});
+
+test('admin site filter refreshes homepage, points, and growth center through shared site-change helpers in legacy fallback mode', () => {
+    const homepageRuntime = loadAdminSiteFilter({
+        activeModuleId: 'homepage',
+        withHomepageSiteChangeHelper: true,
+        localStorage: {
+            admin_site_filter: 'all'
+        }
+    });
+    const pointsRuntime = loadAdminSiteFilter({
+        activeModuleId: 'points',
+        withPointsSiteChangeHelper: true,
+        localStorage: {
+            admin_site_filter: 'all'
+        }
+    });
+    const growthRuntime = loadAdminSiteFilter({
+        activeModuleId: 'growth-center',
+        withGrowthCenterSiteChangeHelper: true,
+        localStorage: {
+            admin_site_filter: 'all'
+        }
+    });
+
+    homepageRuntime.AdminSiteFilter.select('intl');
+    pointsRuntime.AdminSiteFilter.select('cn');
+    growthRuntime.AdminSiteFilter.select('intl');
+
+    assert.equal(homepageRuntime.homepageSiteChangeCalls.length, 1);
+    assert.equal(homepageRuntime.homepageSiteChangeCalls[0].site, 'intl');
+    assert.equal(pointsRuntime.pointsSiteChangeCalls.length, 1);
+    assert.equal(pointsRuntime.pointsSiteChangeCalls[0].site, 'cn');
+    assert.equal(pointsRuntime.pointsBatchReloads.length, 0);
+    assert.equal(growthRuntime.growthCenterSiteChangeCalls.length, 1);
+    assert.equal(growthRuntime.growthCenterSiteChangeCalls[0].site, 'intl');
+    assert.equal(growthRuntime.analyticsReloads.length, 0);
+});
+
+test('admin site filter refreshes shop and payments through shared site-change helpers in legacy fallback mode', () => {
+    const shopRuntime = loadAdminSiteFilter({
+        activeModuleId: 'shop',
+        withShopSiteChangeHelper: true,
+        localStorage: {
+            admin_site_filter: 'all'
+        }
+    });
+    const paymentsRuntime = loadAdminSiteFilter({
+        activeModuleId: 'payments',
+        withPaymentsSiteChangeHelper: true,
+        localStorage: {
+            admin_site_filter: 'all'
+        }
+    });
+
+    shopRuntime.AdminSiteFilter.select('intl');
+    paymentsRuntime.AdminSiteFilter.select('cn');
+
+    assert.equal(shopRuntime.shopSiteChangeCalls.length, 1);
+    assert.equal(shopRuntime.shopSiteChangeCalls[0].site, 'intl');
+    assert.equal(paymentsRuntime.paymentsSiteChangeCalls.length, 1);
+    assert.equal(paymentsRuntime.paymentsSiteChangeCalls[0].site, 'cn');
+    assert.equal(paymentsRuntime.paymentsReloads.length, 0);
+});
+
+test('admin site filter refreshes settings, discounts, and ops alerts through shared site-change helpers in legacy fallback mode', () => {
+    const settingsRuntime = loadAdminSiteFilter({
+        activeModuleId: 'settings',
+        withSettingsSiteChangeHelper: true,
+        localStorage: {
+            admin_site_filter: 'all'
+        }
+    });
+    const discountsRuntime = loadAdminSiteFilter({
+        activeModuleId: 'discounts',
+        withDiscountsSiteChangeHelper: true,
+        localStorage: {
+            admin_site_filter: 'all'
+        }
+    });
+    const opsAlertsRuntime = loadAdminSiteFilter({
+        activeModuleId: 'ops-alerts',
+        withOpsAlertsSiteChangeHelper: true,
+        localStorage: {
+            admin_site_filter: 'all'
+        }
+    });
+
+    settingsRuntime.AdminSiteFilter.select('intl');
+    discountsRuntime.AdminSiteFilter.select('intl');
+    opsAlertsRuntime.AdminSiteFilter.select('cn');
+
+    assert.equal(settingsRuntime.settingsSiteChangeCalls.length, 1);
+    assert.equal(settingsRuntime.settingsSiteChangeCalls[0].site, 'intl');
+    assert.equal(discountsRuntime.discountsSiteChangeCalls.length, 1);
+    assert.equal(discountsRuntime.discountsSiteChangeCalls[0].site, 'intl');
+    assert.equal(opsAlertsRuntime.opsAlertsSiteChangeCalls.length, 1);
+    assert.equal(opsAlertsRuntime.opsAlertsSiteChangeCalls[0].site, 'cn');
 });
 
 test('admin studio delegated controls and bootstrap use shared writable site guard', () => {

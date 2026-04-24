@@ -205,18 +205,32 @@
 
         // Prefer the P1 Admin Shell site-change bus; keep the legacy reload path as a safe fallback.
         if (window.AdminShell?.handleSiteChange?.(changeDetail) !== true) {
-            reloadCurrentModule();
+            reloadCurrentModule(changeDetail);
         }
     }
 
-    function reloadCurrentModule() {
+    function reloadCurrentModule(detail = {}) {
         const activeModule = document.querySelector('.module-container.active');
         if (!activeModule) return;
 
         const moduleId = activeModule.id.replace('module-', '');
 
+        if (moduleId === 'growth-center' && typeof window.handleAdminGrowthCenterSiteChange === 'function') {
+            void Promise.resolve(window.handleAdminGrowthCenterSiteChange(detail)).catch((error) => {
+                console.warn('Failed to refresh growth center after site change:', error);
+            });
+            return;
+        }
+
         if (isAnalyticsModuleId(moduleId)) {
-            if (typeof window.reloadAnalyticsDashboard === 'function') {
+            if (typeof window.handleAdminAnalyticsSiteChange === 'function') {
+                void Promise.resolve(window.handleAdminAnalyticsSiteChange({
+                    ...detail,
+                    activeModuleId: moduleId
+                })).catch((error) => {
+                    console.warn('Failed to refresh analytics after site change:', error);
+                });
+            } else if (typeof window.reloadAnalyticsDashboard === 'function') {
                 window.reloadAnalyticsDashboard({ reason: 'site-change' });
             } else if (typeof window.initAnalyticsModule === 'function') {
                 window.initAnalyticsModule();
@@ -226,13 +240,30 @@
 
         // Call appropriate reload function based on active module
         switch (moduleId) {
+            case 'homepage':
+                if (typeof window.handleAdminHomepageSiteChange === 'function') {
+                    void Promise.resolve(window.handleAdminHomepageSiteChange(detail)).catch((error) => {
+                        console.warn('Failed to refresh homepage after site change:', error);
+                    });
+                }
+                break;
             case 'users':
-                if (typeof window.loadUsers === 'function') window.loadUsers();
+                if (typeof window.handleAdminUsersSiteChange === 'function') {
+                    void Promise.resolve(window.handleAdminUsersSiteChange()).catch((error) => {
+                        console.warn('Failed to refresh users after site change:', error);
+                    });
+                } else if (typeof window.loadUsers === 'function') {
+                    window.loadUsers();
+                }
                 break;
             case 'shop':
-                if (window.ShopAdmin) {
+                if (typeof window.handleAdminShopSiteChange === 'function') {
+                    void Promise.resolve(window.handleAdminShopSiteChange(detail)).catch((error) => {
+                        console.warn('Failed to refresh shop after site change:', error);
+                    });
+                } else if (window.ShopAdmin) {
                     if (typeof window.ShopAdmin.handleSiteChange === 'function') {
-                        window.ShopAdmin.handleSiteChange();
+                        window.ShopAdmin.handleSiteChange(detail);
                     } else {
                         if (typeof ShopAdmin.searchOrders === 'function') ShopAdmin.searchOrders();
                         if (typeof ShopAdmin.loadProducts === 'function') ShopAdmin.loadProducts();
@@ -240,25 +271,41 @@
                 }
                 break;
             case 'points':
-                if (typeof window.clearPendingPointsBatchOpen === 'function') {
-                    window.clearPendingPointsBatchOpen();
+                if (typeof window.handleAdminPointsSiteChange === 'function') {
+                    void Promise.resolve(window.handleAdminPointsSiteChange(detail)).catch((error) => {
+                        console.warn('Failed to refresh points after site change:', error);
+                    });
+                } else {
+                    if (typeof window.clearPendingPointsBatchOpen === 'function') {
+                        window.clearPendingPointsBatchOpen();
+                    }
+                    if (typeof window.closeCodesModal === 'function' && String(window.currentViewBatchId || '').trim()) {
+                        window.closeCodesModal();
+                    }
+                    if (typeof window.loadBatches === 'function') window.loadBatches();
                 }
-                if (typeof window.closeCodesModal === 'function' && String(window.currentViewBatchId || '').trim()) {
-                    window.closeCodesModal();
-                }
-                if (typeof window.loadBatches === 'function') window.loadBatches();
                 break;
             case 'payments':
-                if (window.AdminPayments && typeof window.AdminPayments.reload === 'function') {
+                if (typeof window.handleAdminPaymentsSiteChange === 'function') {
+                    void Promise.resolve(window.handleAdminPaymentsSiteChange(detail)).catch((error) => {
+                        console.warn('Failed to refresh payments after site change:', error);
+                    });
+                } else if (window.AdminPayments && typeof window.AdminPayments.reload === 'function') {
                     window.AdminPayments.reload();
                 }
                 break;
             case 'comments':
-                if (typeof window.loadComments === 'function') {
-                    const view = window.currentCommentView || 'guestbook';
-                    window.loadComments(view);
+                if (typeof window.handleAdminCommentsSiteChange === 'function') {
+                    void Promise.resolve(window.handleAdminCommentsSiteChange()).catch((error) => {
+                        console.warn('Failed to refresh comments after site change:', error);
+                    });
+                } else {
+                    if (typeof window.loadComments === 'function') {
+                        const view = window.currentCommentView || 'guestbook';
+                        window.loadComments(view);
+                    }
+                    if (typeof window.loadCommentStats === 'function') window.loadCommentStats();
                 }
-                if (typeof window.loadCommentStats === 'function') window.loadCommentStats();
                 break;
             case 'gallery':
                 if (typeof window.handleAdminGallerySiteChange === 'function') {
@@ -267,11 +314,41 @@
                     window.loadAdminPrompts();
                 }
                 break;
+            case 'settings':
+                if (typeof window.handleAdminSettingsSiteChange === 'function') {
+                    void Promise.resolve(window.handleAdminSettingsSiteChange(detail)).catch((error) => {
+                        console.warn('Failed to refresh settings after site change:', error);
+                    });
+                }
+                break;
+            case 'discounts':
+                if (typeof window.handleAdminDiscountsSiteChange === 'function') {
+                    void Promise.resolve(window.handleAdminDiscountsSiteChange(detail)).catch((error) => {
+                        console.warn('Failed to refresh discounts after site change:', error);
+                    });
+                }
+                break;
+            case 'ops-alerts':
+                if (typeof window.handleAdminOpsAlertsSiteChange === 'function') {
+                    void Promise.resolve(window.handleAdminOpsAlertsSiteChange(detail)).catch((error) => {
+                        console.warn('Failed to refresh ops alerts after site change:', error);
+                    });
+                }
+                break;
             case 'chat':
-                // Re-initialize chat to reload sessions with new filter
-                if (window.AdminChat) {
-                    const chatContainer = document.getElementById('chat-admin-container');
-                    if (chatContainer) new AdminChat(chatContainer);
+                if (typeof window.handleAdminChatModuleSiteChange === 'function') {
+                    void Promise.resolve(window.handleAdminChatModuleSiteChange()).catch((error) => {
+                        console.warn('Failed to refresh chat after site change:', error);
+                    });
+                } else {
+                    const chatInstance = typeof window.ensureAdminChatInstance === 'function'
+                        ? window.ensureAdminChatInstance({ ensureLayout: true })
+                        : window.adminChatInstance;
+                    if (chatInstance?.fetchSessions) {
+                        void Promise.resolve(chatInstance.fetchSessions()).catch((error) => {
+                            console.warn('Failed to refresh chat sessions after site change:', error);
+                        });
+                    }
                 }
                 break;
         }

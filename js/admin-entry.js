@@ -1,4 +1,7 @@
 (function initAdminEntry(globalScope) {
+    const POST_LOGIN_REDIRECT_STORAGE_KEY = 'zaoyoe_post_login_redirect_v1';
+    const POST_LOGIN_REDIRECT_TTL_MS = 15 * 60 * 1000;
+
     function setEntryState(state, options = {}) {
         const body = globalScope.document?.body;
         if (body) {
@@ -42,6 +45,51 @@
         return globalScope.AdminAccess?.sanitizeAdminStudioTarget?.(requested) || 'admin-studio.html';
     }
 
+    function normalizePostLoginRedirectTarget(rawTarget = '') {
+        const raw = String(rawTarget || '').trim();
+        if (!raw) {
+            return '';
+        }
+
+        try {
+            const baseUrl = new URL(globalScope.location?.href || 'https://www.zaoyoe.com/');
+            const targetUrl = new URL(raw, baseUrl);
+            if (targetUrl.origin !== baseUrl.origin || /\/auth-callback\.html$/i.test(targetUrl.pathname)) {
+                return '';
+            }
+
+            return `${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`;
+        } catch (_) {
+            return '';
+        }
+    }
+
+    function buildPostLoginRedirectTarget(target = 'admin-studio.html') {
+        const safeTarget = globalScope.AdminAccess?.sanitizeAdminStudioTarget?.(target) || 'admin-studio.html';
+        const entryUrl = new URL('admin-entry.html', globalScope.location?.href || 'https://www.zaoyoe.com/');
+        entryUrl.searchParams.set('next', safeTarget);
+        return normalizePostLoginRedirectTarget(`${entryUrl.pathname}${entryUrl.search}${entryUrl.hash}`);
+    }
+
+    function persistPendingPostLoginRedirectTarget(target = '') {
+        const safeTarget = normalizePostLoginRedirectTarget(target);
+        if (!safeTarget || !globalScope.localStorage?.setItem) {
+            return null;
+        }
+
+        try {
+            globalScope.localStorage.setItem(POST_LOGIN_REDIRECT_STORAGE_KEY, JSON.stringify({
+                target: safeTarget,
+                savedAt: Date.now(),
+                ttlMs: POST_LOGIN_REDIRECT_TTL_MS
+            }));
+            return safeTarget;
+        } catch (error) {
+            console.warn('[AdminEntry] Failed to persist post-login redirect target:', error);
+            return null;
+        }
+    }
+
     async function bootAdminEntry() {
         const safeTarget = getSafeTarget();
 
@@ -61,9 +109,10 @@
 
             const access = await globalScope.AdminAccess.getCurrentAdminAccess();
             if (!access?.user) {
+                persistPendingPostLoginRedirectTarget(buildPostLoginRedirectTarget(safeTarget));
                 setEntryState('denied', {
                     title: '请先登录管理员账号',
-                    message: '当前浏览器里没有有效登录态。请先返回首页登录，再从管理员入口进入后台。'
+                    message: '当前浏览器里没有有效登录态。请先返回首页登录，登录完成后会自动返回后台入口继续验证。'
                 });
                 return;
             }

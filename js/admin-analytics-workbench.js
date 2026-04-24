@@ -570,11 +570,581 @@ function scheduleAnalyticsWorkbenchOpen(workspaceKey = '', context = {}, delay =
     return true;
 }
 
-async function openAnalyticsPaymentsContext(mode = 'overview', context = {}) {
-    const normalizedMode = String(mode || 'overview').trim().toLowerCase();
-    const normalizedContext = context && typeof context === 'object' && !Array.isArray(context)
+function normalizeAnalyticsDestinationContextObject(context = {}) {
+    return context && typeof context === 'object' && !Array.isArray(context)
         ? context
         : {};
+}
+
+async function tryOpenAnalyticsShellContext(moduleName = '', context = {}, options = {}) {
+    const normalizedModuleName = String(moduleName || '').trim().toLowerCase();
+    if (!normalizedModuleName || !window.AdminShell?.openContext) {
+        return false;
+    }
+
+    try {
+        const opened = await window.AdminShell.openContext(normalizedModuleName, context, {
+            settleMs: 0,
+            silentDenied: true,
+            ...normalizeAnalyticsDestinationContextObject(options)
+        });
+        return opened === true;
+    } catch (error) {
+        console.warn(`[Analytics] Failed to open ${normalizedModuleName} through AdminShell:`, error);
+        return false;
+    }
+}
+
+function activateAnalyticsDestinationModule(moduleName = '', context = {}, options = {}) {
+    const normalizedModuleName = String(moduleName || '').trim().toLowerCase();
+    if (!normalizedModuleName) {
+        return false;
+    }
+
+    const normalizedOptions = normalizeAnalyticsDestinationContextObject(options);
+    const activationOptions = {
+        ...normalizedOptions,
+        context,
+        deferContext: true,
+        reason: normalizedOptions.reason || 'analytics-destination-fallback'
+    };
+
+    if (typeof window.AdminShell?.activateModule === 'function') {
+        return window.AdminShell.activateModule(normalizedModuleName, activationOptions) !== false;
+    }
+
+    return window.switchModule?.(normalizedModuleName, activationOptions) !== false;
+}
+
+function buildAnalyticsShopDrilldownContext(context = {}) {
+    const normalizedContext = normalizeAnalyticsDestinationContextObject(context);
+    return {
+        site: normalizedContext.site || '',
+        referenceLabel: normalizedContext.referenceLabel || '',
+        referenceValue: normalizedContext.referenceValue || '',
+        refundStatus: normalizedContext.refundStatus || '',
+        deliveryStatus: normalizedContext.deliveryStatus || '',
+        productId: normalizedContext.productId || '',
+        productName: normalizedContext.productName || '',
+        userId: normalizedContext.userId || '',
+        email: normalizedContext.email || '',
+        signalSourceName: normalizedContext.signalSourceName || '',
+        signalLabel: normalizedContext.signalLabel || normalizedContext.targetMetric || '',
+        signalValue: normalizedContext.signalValue || '',
+        rangeLabel: normalizedContext.rangeLabel || '',
+        query: String(
+            normalizedContext.query
+            || normalizedContext.productName
+            || normalizedContext.productId
+            || ''
+        ).trim(),
+        queryLabel: String(normalizedContext.queryLabel || '').trim()
+    };
+}
+
+async function openAnalyticsShopContext(tab = 'products', context = {}) {
+    const requestedTab = String(tab || 'products').trim().toLowerCase() || 'products';
+    const normalizedContext = normalizeAnalyticsDestinationContextObject(context);
+    const shopDrilldownContext = buildAnalyticsShopDrilldownContext(normalizedContext);
+    const query = String(
+        normalizedContext.query
+        || normalizedContext.productName
+        || normalizedContext.productId
+        || ''
+    ).trim();
+    const productId = String(normalizedContext.productId || '').trim();
+    const inventoryId = String(normalizedContext.inventoryId || '').trim();
+    const orderId = String(normalizedContext.orderId || '').trim();
+    const taskId = String(normalizedContext.taskId || '').trim();
+    const shellEntity = requestedTab === 'orders'
+        ? 'shop-order'
+        : (requestedTab === 'inventory'
+            ? 'inventory'
+            : (requestedTab === 'fulfillment' ? 'delivery-task' : 'product'));
+    const shellAction = requestedTab === 'products'
+        ? (productId ? 'edit-product' : 'open-products')
+        : (requestedTab === 'inventory'
+            ? (inventoryId ? 'focus-inventory' : 'open-inventory')
+            : (requestedTab === 'orders'
+                ? (orderId ? 'focus-order' : (query ? 'search-orders' : 'open-orders'))
+                : ((taskId || orderId || query) ? 'focus-fulfillment' : 'open-fulfillment')));
+
+    const shopContext = {
+        source: 'analytics',
+        entity: shellEntity,
+        action: shellAction,
+        site: normalizedContext.site,
+        focus: {
+            productId,
+            product_id: productId,
+            inventoryId,
+            inventory_id: inventoryId,
+            orderId,
+            order_id: orderId,
+            taskId,
+            task_id: taskId
+        },
+        payload: {
+            ...normalizedContext,
+            ...shopDrilldownContext,
+            workspace: requestedTab,
+            defaultTab: requestedTab,
+            tab: requestedTab,
+            query,
+            search: query,
+            searchQuery: query,
+            taskId,
+            task_id: taskId,
+            openDetails: requestedTab === 'orders'
+        }
+    };
+    const shellOpened = await tryOpenAnalyticsShellContext('shop', shopContext);
+
+    if (shellOpened) {
+        return true;
+    }
+
+    const activated = activateAnalyticsDestinationModule('shop', shopContext);
+    if (activated === false) return false;
+    if (typeof window.openAdminShopShellContext === 'function') {
+        try {
+            const opened = await window.openAdminShopShellContext(shopContext, {
+                defaultTab: requestedTab,
+                tab: requestedTab,
+                load: !orderId && !productId && !inventoryId && !taskId
+            });
+            if (opened !== false) {
+                return true;
+            }
+        } catch (error) {
+            console.warn('[Analytics] Failed to open shop context through shared helper:', error);
+        }
+    }
+    scheduleAnalyticsNavigationStep(() => {
+        window.ShopAdmin?.switchTab?.(requestedTab);
+
+        if (requestedTab === 'products' && productId && typeof window.ShopAdmin?.editProduct === 'function') {
+            window.setTimeout(() => {
+                void window.ShopAdmin.editProduct(productId).catch((error) => {
+                    console.warn('[Analytics] Failed to open shop product from analytics:', error);
+                });
+            }, 180);
+        }
+
+        if (requestedTab === 'orders' && orderId && typeof window.ShopAdmin?.focusOrder === 'function') {
+            window.ShopAdmin?.setOrderSearchContext?.(shopDrilldownContext);
+            window.setTimeout(() => {
+                void window.ShopAdmin.focusOrder(orderId, {
+                    openDetails: true,
+                    context: shopDrilldownContext
+                }).catch((error) => {
+                    console.warn('[Analytics] Failed to focus shop order from analytics:', error);
+                });
+            }, 180);
+        } else if (requestedTab === 'orders' && typeof window.ShopAdmin?.searchOrders === 'function') {
+            window.ShopAdmin?.setOrderSearchContext?.(query || shopDrilldownContext.referenceValue
+                ? {
+                    ...shopDrilldownContext,
+                    query
+                }
+                : null);
+            if (query) {
+                window.setTimeout(() => {
+                    window.ShopAdmin.focusedOrderId = '';
+                    window.ShopAdmin.pendingOpenOrderDetails = false;
+                    void window.ShopAdmin.searchOrders(1, {
+                        queryOverride: query,
+                        openDetails: false,
+                        context: {
+                            ...shopDrilldownContext,
+                            query
+                        }
+                    }).catch((error) => {
+                        console.warn('[Analytics] Failed to search shop orders from analytics:', error);
+                    });
+                }, 180);
+            }
+        }
+
+        if (requestedTab === 'inventory' && inventoryId && typeof window.ShopAdmin?.showInventoryDetail === 'function') {
+            window.setTimeout(() => {
+                void window.ShopAdmin.showInventoryDetail(inventoryId).catch((error) => {
+                    console.warn('[Analytics] Failed to open inventory detail from analytics:', error);
+                });
+            }, 180);
+        }
+
+        if (requestedTab === 'fulfillment' && typeof window.ShopAdmin?.loadDeliveryTasks === 'function') {
+            const queryType = String(normalizedContext.deliveryQueryType || 'manual').trim().toLowerCase();
+            const deliveryTaskStatus = String(normalizedContext.deliveryTaskStatus || 'all').trim().toLowerCase() || 'all';
+            const deliveryDeadLetterReason = String(normalizedContext.deliveryDeadLetterReason || 'all').trim().toLowerCase() || 'all';
+            window.ShopAdmin?.setDeliveryWorkbenchContext?.(query || shopDrilldownContext.referenceValue
+                ? {
+                    ...shopDrilldownContext,
+                    query,
+                    queryLabel: String(normalizedContext.queryLabel || query).trim() || query
+                }
+                : null);
+
+            window.setTimeout(() => {
+                window.ShopAdmin.deliveryTaskQuery = query;
+                window.ShopAdmin.deliveryTaskQueryContext = query
+                    ? {
+                        type: ['target', 'channel', 'manual'].includes(queryType) ? queryType : 'manual',
+                        label: String(normalizedContext.queryLabel || query).trim() || query
+                    }
+                    : null;
+                window.ShopAdmin.deliveryTaskStatusFilter = deliveryTaskStatus;
+                window.ShopAdmin.deliveryDeadLetterReasonFilter = deliveryDeadLetterReason;
+                window.ShopAdmin.deliveryLockStateFilter = 'all';
+                window.ShopAdmin.deliveryConflictBucketFilter = null;
+                window.ShopAdmin.deliveryConflictAuditSelection = null;
+                window.ShopAdmin.deliveryConflictAuditReasonFilter = 'all';
+                window.ShopAdmin.deliveryConflictAuditTargetFilter = '';
+                window.ShopAdmin.deliveryConflictAuditChannelFilter = '';
+                window.ShopAdmin.deliveryPendingTaskReveal = null;
+                window.ShopAdmin.deliveryPendingAuditReveal = null;
+                window.ShopAdmin.deliveryTaskIdentityFilter = taskId || orderId
+                    ? {
+                        taskId,
+                        orderId
+                    }
+                    : null;
+                void window.ShopAdmin.loadDeliveryTasks(1).catch((error) => {
+                    console.warn('[Analytics] Failed to open fulfillment queue from analytics:', error);
+                });
+            }, 180);
+        }
+    }, 120);
+    return true;
+}
+
+async function openAnalyticsCommentsContext(view = 'guestbook', context = {}) {
+    const normalizedView = String(view || 'guestbook').trim().toLowerCase() === 'gallery' ? 'gallery' : 'guestbook';
+    const normalizedContext = normalizeAnalyticsDestinationContextObject(context);
+    const promptId = String(normalizedContext.promptId || '').trim();
+    const focusCommentId = String(
+        normalizedContext.focusCommentId
+        || normalizedContext.commentId
+        || ''
+    ).trim();
+
+    const commentsContext = {
+        source: 'analytics',
+        entity: 'comment',
+        action: focusCommentId ? 'focus-comment' : 'open-comments',
+        site: normalizedContext.site,
+        focus: {
+            promptId,
+            prompt_id: promptId,
+            commentId: focusCommentId,
+            comment_id: focusCommentId
+        },
+        payload: {
+            ...normalizedContext,
+            view: normalizedView,
+            commentView: normalizedView,
+            queue: normalizedContext.queue || 'pending',
+            search: normalizedContext.search || focusCommentId,
+            promptTitle: normalizedContext.promptTitle || ''
+        }
+    };
+
+    const shellOpened = await tryOpenAnalyticsShellContext('comments', commentsContext);
+
+    if (shellOpened) {
+        return true;
+    }
+
+    const activated = activateAnalyticsDestinationModule('comments', commentsContext);
+    if (activated === false) return false;
+    scheduleAnalyticsNavigationStep(() => {
+        if (typeof window.openAdminCommentsShellContext === 'function') {
+            void Promise.resolve(window.openAdminCommentsShellContext(commentsContext)).catch((error) => {
+                console.warn('[Analytics] Failed to open comments context through shared helper:', error);
+            });
+            return;
+        }
+
+        if (typeof window.openAnalyticsCommentContext === 'function') {
+            window.openAnalyticsCommentContext({
+                ...normalizedContext,
+                view: normalizedView
+            });
+        } else {
+            window.switchCommentView?.(normalizedView);
+        }
+    });
+    return true;
+}
+
+async function openAnalyticsOpsAlertsContext(view = 'overview', context = {}) {
+    const normalizedContext = normalizeAnalyticsDestinationContextObject(context);
+    const requestedView = String(view || normalizedContext.view || 'overview').trim().toLowerCase() || 'overview';
+    const allowedViews = new Set(['overview', 'strategy', 'channels', 'monitors', 'workspace', 'health']);
+    const targetView = allowedViews.has(requestedView) ? requestedView : 'overview';
+    const focusSectionId = String(
+        normalizedContext.sectionId
+        || normalizedContext.focusTargetId
+        || normalizedContext.targetId
+        || ''
+    ).trim();
+
+    const opsAlertsContext = {
+        source: 'analytics',
+        entity: `ops-alerts-${targetView}`,
+        action: `open-${targetView}`,
+        site: normalizedContext.site,
+        payload: {
+            ...normalizedContext,
+            view: targetView,
+            focusTargetId: focusSectionId,
+            focus_target_id: focusSectionId
+        }
+    };
+
+    const shellOpened = await tryOpenAnalyticsShellContext('ops-alerts', opsAlertsContext);
+
+    if (shellOpened) {
+        return true;
+    }
+
+    const activated = activateAnalyticsDestinationModule('ops-alerts', opsAlertsContext);
+    if (activated === false) {
+        return false;
+    }
+
+    scheduleAnalyticsNavigationStep(() => {
+        if (typeof window.openAdminOpsAlertsShellContext === 'function') {
+            void Promise.resolve(window.openAdminOpsAlertsShellContext(opsAlertsContext, {
+                viewName: targetView
+            })).catch((error) => {
+                console.warn('[Analytics] Failed to open ops alerts context through shared helper:', error);
+            });
+            return;
+        }
+
+        window.switchOpsAlertsView?.(targetView);
+        if (focusSectionId) {
+            scheduleAnalyticsNavigationStep(() => {
+                focusAnalyticsDestinationTarget(focusSectionId, { block: 'start' });
+            }, 140);
+        }
+    }, 120);
+    return true;
+}
+
+async function openAnalyticsUsersContext(context = {}) {
+    const normalizedContext = normalizeAnalyticsDestinationContextObject(context);
+    const userId = String(normalizedContext.userId || normalizedContext.targetId || '').trim();
+    const email = String(normalizedContext.email || normalizedContext.userEmail || '').trim();
+    const searchValue = String(
+        normalizedContext.search
+        || normalizedContext.searchQuery
+        || normalizedContext.query
+        || userId
+        || email
+        || normalizedContext.referenceValue
+        || ''
+    ).trim();
+    const analyticsContext = normalizedContext.analyticsContext || null;
+
+    const usersContext = {
+        source: 'analytics',
+        entity: 'user',
+        action: userId || email ? 'open-user' : 'open-users',
+        site: normalizedContext.site,
+        focus: {
+            userId,
+            user_id: userId
+        },
+        payload: {
+            ...normalizedContext,
+            analyticsContext,
+            search: searchValue,
+            searchQuery: searchValue,
+            query: searchValue,
+            email
+        }
+    };
+
+    const shellOpened = await tryOpenAnalyticsShellContext('users', usersContext);
+
+    if (shellOpened) {
+        return true;
+    }
+
+    const activated = activateAnalyticsDestinationModule('users', usersContext);
+    if (activated === false) {
+        return false;
+    }
+
+    scheduleAnalyticsNavigationStep(() => {
+        if (typeof window.openAdminUsersShellContext === 'function') {
+            void Promise.resolve(window.openAdminUsersShellContext(usersContext, {
+                silentOnNotFound: true
+            })).catch((error) => {
+                console.warn('[Analytics] Failed to open users context through shared helper:', error);
+            });
+            return;
+        }
+
+        if (userId && typeof window.openUserModal === 'function') {
+            void Promise.resolve(window.openUserModal(userId, {
+                analyticsContext,
+                fallbackEmail: email,
+                silentOnNotFound: true
+            })).catch((error) => {
+                console.warn('[Analytics] Failed to open user modal from analytics:', error);
+            });
+        }
+    });
+
+    return true;
+}
+
+async function openAnalyticsPointsModuleContext(context = {}) {
+    const normalizedContext = normalizeAnalyticsDestinationContextObject(context);
+    const batchId = String(normalizedContext.batchId || '').trim();
+    const code = String(normalizedContext.code || normalizedContext.focusCode || '').trim();
+    const requestedView = String(normalizedContext.view || '').trim().toLowerCase();
+    const lookupValue = String(
+        normalizedContext.lookupValue
+        || normalizedContext.ledgerId
+        || normalizedContext.referenceId
+        || ''
+    ).trim();
+    const searchValue = String(
+        normalizedContext.search
+        || normalizedContext.searchQuery
+        || normalizedContext.query
+        || normalizedContext.batchName
+        || ''
+    ).trim();
+
+    const pointsContext = {
+        source: 'analytics',
+        entity: batchId ? 'points-batch' : 'points',
+        action: batchId
+            ? 'open-batch'
+            : ((lookupValue || requestedView === 'lookup')
+                ? 'lookup-code'
+                : `open-${requestedView || 'batches'}`),
+        site: normalizedContext.site,
+        payload: {
+            ...normalizedContext,
+            batchId,
+            code,
+            view: requestedView,
+            lookupValue,
+            search: searchValue
+        }
+    };
+
+    const shellOpened = await tryOpenAnalyticsShellContext('points', pointsContext);
+
+    if (shellOpened) {
+        return true;
+    }
+
+    const activated = activateAnalyticsDestinationModule('points', pointsContext);
+    if (activated === false) {
+        return false;
+    }
+
+    scheduleAnalyticsNavigationStep(() => {
+        if (typeof window.openAdminPointsShellContext === 'function') {
+            void Promise.resolve(window.openAdminPointsShellContext(pointsContext)).catch((error) => {
+                console.warn('[Analytics] Failed to open points context through shared helper:', error);
+            });
+            return;
+        }
+
+        if (typeof window.openAnalyticsPointsContext === 'function') {
+            window.openAnalyticsPointsContext({
+                ...normalizedContext,
+                batchId,
+                code,
+                view: requestedView,
+                lookupValue,
+                search: searchValue
+            });
+            return;
+        }
+
+        if (batchId && typeof window.navigateToBatch === 'function') {
+            window.navigateToBatch(batchId, code ? { code } : {});
+        }
+    }, 120);
+
+    return true;
+}
+
+async function openAnalyticsSettingsContext(workspace = 'verify-monitor', context = {}) {
+    const normalizedWorkspace = String(workspace || '').trim().toLowerCase() || 'verify-monitor';
+    const normalizedContext = normalizeAnalyticsDestinationContextObject(context);
+    const settingsView = normalizedWorkspace === 'affiliate'
+        ? 'affiliate'
+        : (normalizedWorkspace === 'admin-audit-monitor' ? 'security' : 'google-one');
+
+    const settingsContext = {
+        source: 'analytics',
+        entity: normalizedWorkspace,
+        action: `open-${normalizedWorkspace}`,
+        site: normalizedContext.site,
+        payload: {
+            ...normalizedContext,
+            workspace: normalizedWorkspace,
+            defaultTab: settingsView,
+            tab: settingsView
+        }
+    };
+
+    const shellOpened = await tryOpenAnalyticsShellContext('settings', settingsContext);
+
+    if (shellOpened) {
+        return true;
+    }
+
+    const activated = activateAnalyticsDestinationModule('settings', settingsContext);
+    if (activated === false) return false;
+    scheduleAnalyticsNavigationStep(() => {
+        if (typeof window.openAdminSettingsShellContext === 'function') {
+            void Promise.resolve(window.openAdminSettingsShellContext(settingsContext, {
+                viewName: settingsView,
+                settingsView
+            })).catch((error) => {
+                console.warn('[Analytics] Failed to open settings context through shared helper:', error);
+            });
+            return;
+        }
+
+        window.switchSettingsView?.(settingsView);
+        if (normalizedWorkspace === 'affiliate') {
+            if (Object.keys(normalizedContext).length > 0) {
+                window.setTimeout(() => {
+                    window.focusAffiliateSettingsContext?.(normalizedContext);
+                }, 140);
+            }
+            return;
+        }
+
+        void window.refreshVerifyMonitor?.(true)?.catch?.((error) => {
+            console.warn('[Analytics] Failed to refresh verify monitor from analytics:', error);
+        });
+        window.renderVerifyMonitorWorkbenchContext?.(normalizedContext);
+        if (Object.keys(normalizedContext).length > 0) {
+            window.setTimeout(() => {
+                window.focusVerifyMonitorWorkspace?.(normalizedContext);
+            }, 160);
+        }
+    });
+    return true;
+}
+
+async function openAnalyticsPaymentsContext(mode = 'overview', context = {}) {
+    const normalizedMode = String(mode || 'overview').trim().toLowerCase();
+    const normalizedContext = normalizeAnalyticsDestinationContextObject(context);
     const targetTab = normalizedMode === 'finance'
         ? 'finance'
         : (normalizedMode === 'ops' || normalizedMode === 'queue' ? 'ops' : 'overview');
@@ -597,13 +1167,63 @@ async function openAnalyticsPaymentsContext(mode = 'overview', context = {}) {
             ? 'paymentsOpsAlertQueuePanel'
             : (targetTab === 'ops' ? 'paymentsExceptionTopics' : (targetTab === 'finance' ? 'paymentsSitewideGrid' : 'paymentsOverviewGrid')))
     ).trim();
+    const paymentsContext = {
+        source: 'analytics',
+        entity: paymentOrderId ? 'payment-order' : 'payments-overview',
+        action: paymentOrderId
+            ? 'focus-order'
+            : (normalizedMode === 'queue'
+                ? 'focus-queue'
+                : ((normalizedMode === 'ops' || topicKey) ? 'focus-exception-topic' : 'open-overview')),
+        site: normalizedContext.site,
+        focus: {
+            paymentOrderId,
+            payment_order_id: paymentOrderId
+        },
+        payload: {
+            ...normalizedContext,
+            workspace: normalizedMode === 'queue' ? 'queue' : targetTab,
+            defaultTab: targetTab,
+            tab: targetTab,
+            exceptionTopic: topicKey,
+            exception_topic: topicKey,
+            focusTargetId,
+            focus_target_id: focusTargetId
+        }
+    };
+    const shellOpened = await tryOpenAnalyticsShellContext('payments', paymentsContext);
 
-    const switched = window.switchModule?.('payments');
-    if (switched === false) {
+    if (shellOpened) {
+        return true;
+    }
+
+    const activated = activateAnalyticsDestinationModule('payments', paymentsContext);
+    if (activated === false) {
         return false;
     }
 
-    await window.AdminPayments?.init?.();
+    if (typeof window.openAdminPaymentsShellContext === 'function') {
+        try {
+            const opened = await window.openAdminPaymentsShellContext(paymentsContext, {
+                defaultTab: targetTab,
+                tab: targetTab
+            });
+            if (opened !== false) {
+                return true;
+            }
+        } catch (error) {
+            console.warn('[Analytics] Failed to open payments context through shared helper:', error);
+        }
+    }
+
+    await window.AdminPayments?.activate?.({
+        ...normalizedContext,
+        defaultTab: targetTab,
+        tab: targetTab
+    }, {
+        defaultTab: targetTab,
+        tab: targetTab
+    });
     window.AdminPayments?.showWorkbenchContext?.(normalizedContext);
 
     if (paymentOrderId && typeof window.AdminPayments?.focusOrder === 'function') {
@@ -635,9 +1255,7 @@ async function openAnalyticsPaymentsContext(mode = 'overview', context = {}) {
 
 async function openAnalyticsTicketsContext(mode = 'pending', context = {}) {
     const normalizedMode = String(mode || 'pending').trim().toLowerCase();
-    const normalizedContext = context && typeof context === 'object' && !Array.isArray(context)
-        ? context
-        : {};
+    const normalizedContext = normalizeAnalyticsDestinationContextObject(context);
     const workspace = ['overview', 'summary', 'queue'].includes(String(normalizedContext.workspace || '').trim().toLowerCase())
         ? String(normalizedContext.workspace || '').trim().toLowerCase()
         : (['overview', 'summary'].includes(normalizedMode) ? normalizedMode : 'queue');
@@ -657,13 +1275,74 @@ async function openAnalyticsTicketsContext(mode = 'pending', context = {}) {
             ? 'ticketsOverviewPanel'
             : (workspace === 'summary' ? 'ticketsOverviewReminderSection' : 'ticketsQueueControls'))
     ).trim();
+    const ticketsContext = {
+        source: 'analytics',
+        entity: ticketId ? 'ticket' : 'tickets',
+        action: ticketId && workspace === 'queue'
+            ? 'focus-ticket'
+            : (workspace === 'overview'
+                ? 'open-overview'
+                : (workspace === 'summary' ? 'open-summary' : 'open-queue')),
+        site: normalizedContext.site,
+        focus: {
+            ticketId,
+            ticket_id: ticketId
+        },
+        payload: {
+            ...normalizedContext,
+            workspace,
+            mode: normalizedMode,
+            status,
+            search: searchQuery,
+            searchQuery,
+            query: searchQuery,
+            quickFilter,
+            assignee: assigneeFilter,
+            replyAction,
+            focusTargetId,
+            focus_target_id: focusTargetId
+        }
+    };
+    const shellOpened = await tryOpenAnalyticsShellContext('tickets', ticketsContext);
 
-    const switched = window.switchModule?.('tickets');
-    if (switched === false) {
+    if (shellOpened) {
+        return true;
+    }
+
+    const activated = activateAnalyticsDestinationModule('tickets', ticketsContext);
+    if (activated === false) {
         return false;
     }
 
-    await window.AdminTickets?.init?.();
+    if (typeof window.openAdminTicketsShellContext === 'function') {
+        try {
+            const opened = await window.openAdminTicketsShellContext(ticketsContext, {
+                workspace
+            });
+            if (opened !== false) {
+                return true;
+            }
+        } catch (error) {
+            console.warn('[Analytics] Failed to open tickets context through shared helper:', error);
+        }
+    }
+
+    await window.AdminTickets?.activate?.({
+        ...normalizedContext,
+        workspace,
+        mode: normalizedMode,
+        status,
+        search: searchQuery,
+        searchQuery,
+        query: searchQuery,
+        quickFilter,
+        assignee: assigneeFilter,
+        replyAction,
+        focusTargetId,
+        focus_target_id: focusTargetId
+    }, {
+        workspace
+    });
     window.AdminTickets?.showWorkbenchContext?.(normalizedContext);
 
     if (ticketId && workspace === 'queue' && typeof window.AdminTickets?.focusTicket === 'function') {
@@ -870,29 +1549,12 @@ function openAnalyticsDestination(destination = '', context = null) {
         case 'ops-alerts-monitors':
         case 'ops-alerts-workspace':
         case 'ops-alerts-health': {
-            const switched = window.switchModule?.('ops-alerts');
-            if (switched === false) return false;
-
             const requestedView = normalized === 'ops-alerts'
                 ? String(normalizedContext.view || 'overview').trim().toLowerCase() || 'overview'
                 : normalized.replace('ops-alerts-', '') || 'overview';
-            const allowedViews = new Set(['overview', 'strategy', 'channels', 'monitors', 'workspace', 'health']);
-            const targetView = allowedViews.has(requestedView) ? requestedView : 'overview';
-            const focusSectionId = String(
-                normalizedContext.sectionId
-                || normalizedContext.focusTargetId
-                || normalizedContext.targetId
-                || ''
-            ).trim();
-
-            scheduleAnalyticsNavigationStep(() => {
-                window.switchOpsAlertsView?.(targetView);
-                if (focusSectionId) {
-                    scheduleAnalyticsNavigationStep(() => {
-                        focusAnalyticsDestinationTarget(focusSectionId, { block: 'start' });
-                    }, 140);
-                }
-            }, 120);
+            void openAnalyticsOpsAlertsContext(requestedView, normalizedContext).catch((error) => {
+                console.warn('[Analytics] Failed to open ops alerts destination:', error);
+            });
             return true;
         }
         case 'payments-overview':
@@ -959,29 +1621,34 @@ function openAnalyticsDestination(destination = '', context = null) {
             }
             if (normalized === 'shop') {
                 const requestedTab = String(normalizedContext.tab || normalizedContext.mode || 'products').trim().toLowerCase() || 'products';
-                const switched = window.switchModule?.('shop');
-                if (switched === false) return false;
                 scheduleAnalyticsNavigationStep(() => {
-                    window.ShopAdmin?.switchTab?.(requestedTab);
+                    void openAnalyticsShopContext(requestedTab, normalizedContext).catch((error) => {
+                        console.warn('[Analytics] Failed to open shop context:', error);
+                    });
+                }, 120);
+                return true;
+            }
+
+            if (normalized === 'users') {
+                scheduleAnalyticsNavigationStep(() => {
+                    void openAnalyticsUsersContext(normalizedContext).catch((error) => {
+                        console.warn('[Analytics] Failed to open users context:', error);
+                    });
+                }, 120);
+                return true;
+            }
+
+            if (normalized === 'points') {
+                scheduleAnalyticsNavigationStep(() => {
+                    void openAnalyticsPointsModuleContext(normalizedContext).catch((error) => {
+                        console.warn('[Analytics] Failed to open points context:', error);
+                    });
                 }, 120);
                 return true;
             }
 
             const switched = window.switchModule?.(normalized);
-            if (switched === false) return false;
-            if (normalized === 'points' && typeof window.openAnalyticsPointsContext === 'function') {
-                scheduleAnalyticsNavigationStep(() => {
-                    window.openAnalyticsPointsContext?.(normalizedContext);
-                }, 120);
-            } else if (normalized === 'points' && normalizedContext.batchId && typeof window.navigateToBatch === 'function') {
-                scheduleAnalyticsNavigationStep(() => {
-                    window.navigateToBatch?.(
-                        normalizedContext.batchId,
-                        normalizedContext.code ? { code: normalizedContext.code } : {}
-                    );
-                }, 120);
-            }
-            return true;
+            return switched !== false;
         }
         case 'shop-products':
         case 'shop-import':
@@ -989,139 +1656,10 @@ function openAnalyticsDestination(destination = '', context = null) {
         case 'shop-orders':
         case 'shop-fulfillment': {
             const requestedTab = normalized.replace('shop-', '') || 'products';
-            const switched = window.switchModule?.('shop');
-            if (switched === false) return false;
             scheduleAnalyticsNavigationStep(() => {
-                window.ShopAdmin?.switchTab?.(requestedTab);
-                const shopDrilldownContext = {
-                    site: normalizedContext.site || '',
-                    referenceLabel: normalizedContext.referenceLabel || '',
-                    referenceValue: normalizedContext.referenceValue || '',
-                    refundStatus: normalizedContext.refundStatus || '',
-                    deliveryStatus: normalizedContext.deliveryStatus || '',
-                    productId: normalizedContext.productId || '',
-                    productName: normalizedContext.productName || '',
-                    userId: normalizedContext.userId || '',
-                    email: normalizedContext.email || '',
-                    signalSourceName: normalizedContext.signalSourceName || '',
-                    signalLabel: normalizedContext.signalLabel || normalizedContext.targetMetric || '',
-                    signalValue: normalizedContext.signalValue || '',
-                    rangeLabel: normalizedContext.rangeLabel || '',
-                    query: String(
-                        normalizedContext.query
-                        || normalizedContext.productName
-                        || normalizedContext.productId
-                        || ''
-                    ).trim(),
-                    queryLabel: String(normalizedContext.queryLabel || '').trim()
-                };
-
-                if (requestedTab === 'products' && normalizedContext.productId && typeof window.ShopAdmin?.editProduct === 'function') {
-                    window.setTimeout(() => {
-                        void window.ShopAdmin.editProduct(normalizedContext.productId).catch((error) => {
-                            console.warn('[Analytics] Failed to open shop product from analytics:', error);
-                        });
-                    }, 180);
-                }
-
-                if (requestedTab === 'orders' && normalizedContext.orderId && typeof window.ShopAdmin?.focusOrder === 'function') {
-                    window.ShopAdmin?.setOrderSearchContext?.(shopDrilldownContext);
-                    window.setTimeout(() => {
-                        void window.ShopAdmin.focusOrder(normalizedContext.orderId, {
-                            openDetails: true,
-                            context: shopDrilldownContext
-                        }).catch((error) => {
-                            console.warn('[Analytics] Failed to focus shop order from analytics:', error);
-                        });
-                    }, 180);
-                } else if (requestedTab === 'orders' && typeof window.ShopAdmin?.searchOrders === 'function') {
-                    const query = String(
-                        normalizedContext.query
-                        || normalizedContext.productName
-                        || normalizedContext.productId
-                        || ''
-                    ).trim();
-                    window.ShopAdmin?.setOrderSearchContext?.(query || shopDrilldownContext.referenceValue
-                        ? {
-                            ...shopDrilldownContext,
-                            query
-                        }
-                        : null);
-                    if (query) {
-                        window.setTimeout(() => {
-                            window.ShopAdmin.focusedOrderId = '';
-                            window.ShopAdmin.pendingOpenOrderDetails = false;
-                            void window.ShopAdmin.searchOrders(1, {
-                                queryOverride: query,
-                                openDetails: false,
-                                context: {
-                                    ...shopDrilldownContext,
-                                    query
-                                }
-                            }).catch((error) => {
-                                console.warn('[Analytics] Failed to search shop orders from analytics:', error);
-                            });
-                        }, 180);
-                    }
-                }
-
-                if (requestedTab === 'inventory' && normalizedContext.inventoryId && typeof window.ShopAdmin?.showInventoryDetail === 'function') {
-                    window.setTimeout(() => {
-                        void window.ShopAdmin.showInventoryDetail(normalizedContext.inventoryId).catch((error) => {
-                            console.warn('[Analytics] Failed to open inventory detail from analytics:', error);
-                        });
-                    }, 180);
-                }
-
-                if (requestedTab === 'fulfillment' && typeof window.ShopAdmin?.loadDeliveryTasks === 'function') {
-                    const query = String(
-                        normalizedContext.query
-                        || normalizedContext.productName
-                        || normalizedContext.productId
-                        || ''
-                    ).trim();
-                    const queryType = String(normalizedContext.deliveryQueryType || 'manual').trim().toLowerCase();
-                    const deliveryTaskStatus = String(normalizedContext.deliveryTaskStatus || 'all').trim().toLowerCase() || 'all';
-                    const deliveryDeadLetterReason = String(normalizedContext.deliveryDeadLetterReason || 'all').trim().toLowerCase() || 'all';
-                    const taskId = String(normalizedContext.taskId || '').trim();
-                    const orderId = String(normalizedContext.orderId || '').trim();
-                    window.ShopAdmin?.setDeliveryWorkbenchContext?.(query || shopDrilldownContext.referenceValue
-                        ? {
-                            ...shopDrilldownContext,
-                            query,
-                            queryLabel: String(normalizedContext.queryLabel || query).trim() || query
-                        }
-                        : null);
-
-                    window.setTimeout(() => {
-                        window.ShopAdmin.deliveryTaskQuery = query;
-                        window.ShopAdmin.deliveryTaskQueryContext = query
-                            ? {
-                                type: ['target', 'channel', 'manual'].includes(queryType) ? queryType : 'manual',
-                                label: String(normalizedContext.queryLabel || query).trim() || query
-                            }
-                            : null;
-                        window.ShopAdmin.deliveryTaskStatusFilter = deliveryTaskStatus;
-                        window.ShopAdmin.deliveryDeadLetterReasonFilter = deliveryDeadLetterReason;
-                        window.ShopAdmin.deliveryLockStateFilter = 'all';
-                        window.ShopAdmin.deliveryConflictBucketFilter = null;
-                        window.ShopAdmin.deliveryConflictAuditSelection = null;
-                        window.ShopAdmin.deliveryConflictAuditReasonFilter = 'all';
-                        window.ShopAdmin.deliveryConflictAuditTargetFilter = '';
-                        window.ShopAdmin.deliveryConflictAuditChannelFilter = '';
-                        window.ShopAdmin.deliveryPendingTaskReveal = null;
-                        window.ShopAdmin.deliveryPendingAuditReveal = null;
-                        window.ShopAdmin.deliveryTaskIdentityFilter = taskId || orderId
-                            ? {
-                                taskId,
-                                orderId
-                            }
-                            : null;
-                        void window.ShopAdmin.loadDeliveryTasks(1).catch((error) => {
-                            console.warn('[Analytics] Failed to open fulfillment queue from analytics:', error);
-                        });
-                    }, 180);
-                }
+                void openAnalyticsShopContext(requestedTab, normalizedContext).catch((error) => {
+                    console.warn('[Analytics] Failed to open shop destination:', error);
+                });
             }, 120);
             return true;
         }
@@ -1147,85 +1685,42 @@ function openAnalyticsDestination(destination = '', context = null) {
             return true;
         }
         case 'comments-guestbook': {
-            const switched = window.switchModule?.('comments');
-            if (switched === false) return false;
             scheduleAnalyticsNavigationStep(() => {
-                if (typeof window.openAnalyticsCommentContext === 'function') {
-                    window.openAnalyticsCommentContext({
-                        ...normalizedContext,
-                        view: 'guestbook'
-                    });
-                } else {
-                    window.switchCommentView?.('guestbook');
-                }
+                void openAnalyticsCommentsContext('guestbook', normalizedContext).catch((error) => {
+                    console.warn('[Analytics] Failed to open guestbook comments destination:', error);
+                });
             });
             return true;
         }
         case 'comments-gallery': {
-            const switched = window.switchModule?.('comments');
-            if (switched === false) return false;
             scheduleAnalyticsNavigationStep(() => {
-                if (typeof window.openAnalyticsCommentContext === 'function') {
-                    window.openAnalyticsCommentContext({
-                        ...normalizedContext,
-                        view: 'gallery'
-                    });
-                } else {
-                    window.switchCommentView?.('gallery');
-                }
+                void openAnalyticsCommentsContext('gallery', normalizedContext).catch((error) => {
+                    console.warn('[Analytics] Failed to open gallery comments destination:', error);
+                });
             });
             return true;
         }
         case 'settings-google-one': {
-            const switched = window.switchModule?.('settings');
-            if (switched === false) return false;
             scheduleAnalyticsNavigationStep(() => {
-                window.switchSettingsView?.('google-one');
-                void window.refreshVerifyMonitor?.(true)?.catch?.((error) => {
-                    console.warn('[Analytics] Failed to refresh verify monitor from analytics:', error);
+                void openAnalyticsSettingsContext('verify-monitor', normalizedContext).catch((error) => {
+                    console.warn('[Analytics] Failed to open verify monitor destination:', error);
                 });
-                window.renderVerifyMonitorWorkbenchContext?.(normalizedContext);
-                if (Object.keys(normalizedContext).length > 0) {
-                    window.setTimeout(() => {
-                        window.focusVerifyMonitorWorkspace?.(normalizedContext);
-                    }, 160);
-                }
             });
             return true;
         }
         case 'settings-affiliate': {
-            const switched = window.switchModule?.('settings');
-            if (switched === false) return false;
             scheduleAnalyticsNavigationStep(() => {
-                window.switchSettingsView?.('affiliate');
-                if (Object.keys(normalizedContext).length > 0) {
-                    window.setTimeout(() => {
-                        window.focusAffiliateSettingsContext?.(normalizedContext);
-                    }, 140);
-                }
+                void openAnalyticsSettingsContext('affiliate', normalizedContext).catch((error) => {
+                    console.warn('[Analytics] Failed to open affiliate settings destination:', error);
+                });
             });
             return true;
         }
         case 'verify-monitor': {
-            const switched = window.switchModule?.('settings');
-            if (switched === false) return false;
             scheduleAnalyticsNavigationStep(() => {
-                window.switchSettingsView?.('google-one');
-                if (typeof window.openOpsAlertWorkspace === 'function') {
-                    void Promise.resolve(window.openOpsAlertWorkspace('verify-monitor', normalizedContext)).catch((error) => {
-                        console.warn('[Analytics] Failed to open verify monitor workspace:', error);
-                    });
-                } else {
-                    void window.refreshVerifyMonitor?.(true)?.catch?.((error) => {
-                        console.warn('[Analytics] Failed to refresh verify monitor from analytics:', error);
-                    });
-                    window.renderVerifyMonitorWorkbenchContext?.(normalizedContext);
-                    if (Object.keys(normalizedContext).length > 0) {
-                        window.setTimeout(() => {
-                            window.focusVerifyMonitorWorkspace?.(normalizedContext);
-                        }, 160);
-                    }
-                }
+                void openAnalyticsSettingsContext('verify-monitor', normalizedContext).catch((error) => {
+                    console.warn('[Analytics] Failed to open verify monitor workspace:', error);
+                });
             }, 120);
             return true;
         }

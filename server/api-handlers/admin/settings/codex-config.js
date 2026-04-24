@@ -10,6 +10,10 @@ const {
     resolveCodexRuntimeConfig,
     upsertStoredAdminSecret
 } = require('../../../../api/_lib/secrets');
+const {
+    redactSensitiveText,
+    redactSensitiveValue
+} = require('../_ai-shared');
 
 function normalizeBaseUrl(value) {
     return String(value || '').trim().replace(/\/+$/, '');
@@ -171,9 +175,9 @@ async function runConnectivityProbe({ apiKey, baseUrl, model, apiFormat }) {
 
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-        const error = new Error(payload?.error?.message || `Codex request failed (${response.status})`);
+        const error = new Error(redactSensitiveText(payload?.error?.message || `Codex request failed (${response.status})`));
         error.statusCode = response.status;
-        error.details = payload?.error || payload || null;
+        error.details = redactSensitiveValue(payload?.error || payload || null);
         throw error;
     }
 
@@ -359,7 +363,8 @@ module.exports = async (req, res) => {
     } catch (error) {
         return sendJson(res, error.statusCode || 500, {
             success: false,
-            message: error.message || 'Codex config management failed'
+            message: redactSensitiveText(error.message || 'Codex config management failed'),
+            error: redactSensitiveValue(error.details || null)
         });
     }
 };

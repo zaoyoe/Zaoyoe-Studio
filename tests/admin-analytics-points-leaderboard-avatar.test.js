@@ -68,7 +68,7 @@ test('points leaderboard avatars use escaped urls and local initials fallback', 
     }
 
     assert.equal(
-        htmlSource.includes('admin-studio.css?v=20260420_POINTS_LEADERBOARD_AVATAR_1'),
+        htmlSource.includes('admin-studio.css?v=20260424_ADMIN_LIGHT_FLAT_CARDS_2'),
         true,
         'admin-studio.html should bump the stylesheet version for immutable cache safety'
     );

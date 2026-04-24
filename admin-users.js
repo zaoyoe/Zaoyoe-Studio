@@ -30,6 +30,60 @@ let usersLoadRequestId = 0;
 let usersEnrichmentLoadPromise = null;
 let usersEnrichmentLoadRequestId = 0;
 
+function emitUsersCommandFeedback(message = '', feedbackState = 'saved', options = {}) {
+    const normalizedMessage = String(message || '').trim();
+    if (!normalizedMessage) {
+        return null;
+    }
+
+    const detail = {
+        kind: 'module-result',
+        source: String(options?.source || 'users-batch').trim().toLowerCase() || 'users-batch',
+        module: 'users',
+        state: String(feedbackState || options?.state || 'saved').trim().toLowerCase() || 'saved',
+        tone: String(options?.tone || '').trim().toLowerCase(),
+        message: normalizedMessage,
+        persistent: options?.persistent === true,
+        timestamp: Date.now()
+    };
+
+    if (typeof window.dispatchAdminStudioFeedbackSignal === 'function') {
+        return window.dispatchAdminStudioFeedbackSignal(detail);
+    }
+
+    if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+        try {
+            window.dispatchEvent(new CustomEvent('admin-feedback-signal', { detail }));
+        } catch (_) {
+            // User management feedback should never block the underlying action.
+        }
+    }
+
+    return detail;
+}
+
+function notifyUsersBatchRecovery(message = '', source = 'users-batch', tone = 'error') {
+    const normalizedMessage = String(message || '').trim();
+    if (!normalizedMessage) {
+        return [];
+    }
+
+    const normalizedTone = String(tone || 'error').trim().toLowerCase() || 'error';
+    const feedbackState = normalizedTone === 'warning' || normalizedTone === 'info' ? 'partial' : 'failed';
+    showToast?.(normalizedMessage, normalizedTone);
+    emitUsersCommandFeedback(normalizedMessage, feedbackState, { source });
+    return [];
+}
+
+function getSelectedUserIdsForBatch(source = 'users-batch', label = '用户') {
+    const userIds = Array.from(userState.selectedUsers);
+    if (userIds.length > 0) {
+        return userIds;
+    }
+
+    return notifyUsersBatchRecovery(`请先选择${label}，可先开启选择模式并使用“全选当前页”。`, source, 'error');
+}
+
 // Prompt Cache for History Display
 let promptCache = {};
 let promptCacheLoaded = false;
@@ -501,7 +555,11 @@ function ensureUsersTableEmptyState() {
 
 // Initialize Module
 function initUserModule() {
-    console.log('👥 Initializing User Module...');
+    return activateUsersModule();
+}
+
+function activateUsersModule(context = {}, options = {}) {
+    console.log('👥 Activating User Module...');
 
     bindUserModuleControls();
 
@@ -519,6 +577,125 @@ function initUserModule() {
     if (tablePanel && window.enableHorizontalScroll) {
         window.enableHorizontalScroll(tablePanel);
     }
+
+    return refreshUsersOnActivate({
+        force: options?.force === true
+    });
+}
+
+function normalizeAdminUsersShellContextObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function resolveAdminUsersShellContextState(context = {}) {
+    const normalizedContext = normalizeAdminUsersShellContextObject(context);
+    const focus = normalizeAdminUsersShellContextObject(normalizedContext.focus);
+    const payload = normalizeAdminUsersShellContextObject(normalizedContext.payload);
+    const raw = normalizeAdminUsersShellContextObject(normalizedContext.raw);
+    const userId = String(
+        focus.userId
+        || focus.user_id
+        || payload.userId
+        || payload.user_id
+        || raw.userId
+        || raw.user_id
+        || normalizedContext.userId
+        || normalizedContext.user_id
+        || ''
+    ).trim();
+    const email = String(
+        focus.email
+        || payload.email
+        || payload.userEmail
+        || payload.user_email
+        || raw.email
+        || raw.userEmail
+        || raw.user_email
+        || normalizedContext.email
+        || normalizedContext.userEmail
+        || normalizedContext.user_email
+        || ''
+    ).trim();
+    const searchValue = String(
+        payload.search
+        || payload.searchQuery
+        || payload.query
+        || raw.search
+        || raw.searchQuery
+        || raw.query
+        || normalizedContext.search
+        || normalizedContext.searchQuery
+        || normalizedContext.query
+        || userId
+        || email
+        || normalizedContext.referenceValue
+        || normalizedContext.reference_value
+        || ''
+    ).trim();
+
+    return {
+        userId,
+        email,
+        searchValue,
+        defaultTab: String(
+            payload.defaultTab
+            || payload.tab
+            || raw.defaultTab
+            || raw.tab
+            || normalizedContext.defaultTab
+            || normalizedContext.tab
+            || ''
+        ).trim().toLowerCase(),
+        paymentOrderId: String(
+            focus.paymentOrderId
+            || focus.payment_order_id
+            || payload.paymentOrderId
+            || payload.payment_order_id
+            || raw.paymentOrderId
+            || raw.payment_order_id
+            || normalizedContext.paymentOrderId
+            || normalizedContext.payment_order_id
+            || ''
+        ).trim(),
+        analyticsContext: payload.analyticsContext
+            || raw.analyticsContext
+            || normalizedContext.analyticsContext
+            || null
+    };
+}
+
+async function handleAdminUsersShellContext(context = {}, options = {}) {
+    const state = resolveAdminUsersShellContextState(context);
+
+    if (state.userId || state.email) {
+        const opened = await openUserModal(state.userId, {
+            defaultTab: state.defaultTab,
+            paymentOrderId: state.paymentOrderId,
+            analyticsContext: state.analyticsContext,
+            fallbackEmail: state.email,
+            silentOnNotFound: options?.silentOnNotFound === true
+        });
+
+        if (!opened) {
+            throw new Error('未找到该用户，无法打开详情');
+        }
+
+        return true;
+    }
+
+    if (state.searchValue) {
+        userState.filters.search = state.searchValue.toLowerCase();
+        userState.currentPage = 1;
+        syncUserModuleControls();
+        renderUsersTable();
+        return true;
+    }
+
+    return true;
+}
+
+async function openAdminUsersShellContext(context = {}, options = {}) {
+    return handleAdminUsersShellContext(context, options);
 }
 
 // Initialize Filter Dropdowns (Custom Component)
@@ -1449,6 +1626,9 @@ function updateSelectModeUI() {
 
     setUsersHiddenState(batchMenuContainer, !userState.selectMode);
     setUsersHiddenState(selectedCountWrapper, !(userState.selectMode && userState.selectedUsers.size > 0));
+    if (!userState.selectMode) {
+        closeUserBatchMenu();
+    }
 }
 
 // Update selection count display
@@ -1476,9 +1656,20 @@ function selectAllUsersOnPage() {
 // Toggle batch menu dropdown
 function toggleUserBatchMenu() {
     const menu = document.getElementById('userBatchDropdownMenu');
+    const trigger = document.getElementById('userBatchMenuTrigger');
     if (menu) {
-        menu.classList.toggle('open');
+        const isOpen = menu.classList.toggle('open');
+        trigger?.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
     }
+}
+
+function closeUserBatchMenu() {
+    const menu = document.getElementById('userBatchDropdownMenu');
+    const trigger = document.getElementById('userBatchMenuTrigger');
+    if (menu) {
+        menu.classList.remove('open');
+    }
+    trigger?.setAttribute('aria-expanded', 'false');
 }
 
 // Close batch menu when clicking outside
@@ -1487,7 +1678,7 @@ document.addEventListener('click', (e) => {
     const trigger = document.getElementById('userBatchMenuTrigger');
 
     if (menu && trigger && !menu.contains(e.target) && !trigger.contains(e.target)) {
-        menu.classList.remove('open');
+        closeUserBatchMenu();
     }
 });
 
@@ -1499,9 +1690,8 @@ document.addEventListener('click', (e) => {
 let batchNotificationUserIds = [];
 
 async function batchSendNotification() {
-    const userIds = Array.from(userState.selectedUsers);
+    const userIds = getSelectedUserIdsForBatch('users-notification', '要通知的用户');
     if (userIds.length === 0) {
-        showToast('请先选择用户', 'error');
         return;
     }
 
@@ -1646,7 +1836,9 @@ async function executeBatchNotification() {
             category
         });
 
-        showToast(`成功发送通知给 ${batchNotificationUserIds.length} 位用户`, 'success');
+        const successMessage = `成功发送通知给 ${batchNotificationUserIds.length} 位用户`;
+        showToast(successMessage, 'success');
+        emitUsersCommandFeedback(successMessage, 'saved', { source: 'users-notification' });
 
         // Close modal
         closeNotificationModal();
@@ -1655,7 +1847,9 @@ async function executeBatchNotification() {
         clearAllSelections();
     } catch (err) {
         console.error('Batch notification failed:', err);
-        showToast('批量发送通知失败: ' + err.message, 'error');
+        const failureMessage = '批量发送通知失败: ' + err.message;
+        showToast(failureMessage, 'error');
+        emitUsersCommandFeedback(failureMessage, 'failed', { source: 'users-notification' });
     } finally {
         if (btn) {
             btn.innerHTML = '<i class="fas fa-paper-plane"></i>';
@@ -1666,9 +1860,8 @@ async function executeBatchNotification() {
 
 // Batch ban users - reuses existing ban modal
 async function batchBanUsers() {
-    const userIds = Array.from(userState.selectedUsers);
+    const userIds = getSelectedUserIdsForBatch('users-ban', '要处理封禁的用户');
     if (userIds.length === 0) {
-        showToast('请先选择用户', 'error');
         return;
     }
 
@@ -1707,7 +1900,7 @@ async function openBanModalBatch(count) {
 
 // Batch unban users
 async function batchUnbanUsers() {
-    const userIds = Array.from(userState.selectedUsers);
+    const userIds = getSelectedUserIdsForBatch('users-ban', '要解封的用户');
     if (userIds.length === 0) return;
 
     if (!confirm(`确定要解封选中的 ${userIds.length} 位用户吗？`)) return;
@@ -1719,12 +1912,16 @@ async function batchUnbanUsers() {
             action: 'clear_all',
             userIds
         });
-        showToast(`成功解封 ${userIds.length} 位用户`, 'success');
+        const successMessage = `成功解封 ${userIds.length} 位用户`;
+        showToast(successMessage, 'success');
+        emitUsersCommandFeedback(successMessage, 'saved', { source: 'users-ban' });
         clearAllSelections();
         loadUsers();
     } catch (err) {
         console.error('Batch unban failed:', err);
-        showToast('批量解封失败: ' + err.message, 'error');
+        const failureMessage = '批量解封失败: ' + err.message;
+        showToast(failureMessage, 'error');
+        emitUsersCommandFeedback(failureMessage, 'failed', { source: 'users-ban' });
     }
 }
 
@@ -1732,9 +1929,8 @@ async function batchUnbanUsers() {
 let batchPointsUserIds = [];
 
 async function batchAdjustPoints() {
-    const userIds = Array.from(userState.selectedUsers);
+    const userIds = getSelectedUserIdsForBatch('users-points', '要调整积分的用户');
     if (userIds.length === 0) {
-        showToast('请先选择用户', 'error');
         return;
     }
 
@@ -1784,6 +1980,7 @@ async function executeBatchPointsAdjustment() {
     try {
         const site = requireWritableUsersPointsSite({ label: '批量调整积分' });
         if (!site) {
+            notifyUsersBatchRecovery('批量调整积分需要先在站点筛选中选择 CN 或 INTL，all 视图仅用于查看。', 'users-points', 'error');
             return;
         }
 
@@ -1808,7 +2005,9 @@ async function executeBatchPointsAdjustment() {
             }
         });
 
-        showToast(`成功为 ${batchPointsUserIds.length} 位用户${amount > 0 ? '增加' : '扣除'} ${Math.abs(amount)} 积分`, 'success');
+        const successMessage = `成功为 ${batchPointsUserIds.length} 位用户${amount > 0 ? '增加' : '扣除'} ${Math.abs(amount)} 积分`;
+        showToast(successMessage, 'success');
+        emitUsersCommandFeedback(successMessage, 'saved', { source: 'users-points' });
 
         closePointsModal();
         batchPointsUserIds = [];
@@ -1816,7 +2015,9 @@ async function executeBatchPointsAdjustment() {
         loadUsers();
     } catch (err) {
         console.error('Batch points adjustment failed:', err);
-        showToast('批量调整积分失败: ' + err.message, 'error');
+        const failureMessage = '批量调整积分失败: ' + err.message;
+        showToast(failureMessage, 'error');
+        emitUsersCommandFeedback(failureMessage, 'failed', { source: 'users-points' });
     } finally {
         confirmBtn.disabled = false;
         confirmBtn.textContent = '确认调整';
@@ -2001,9 +2202,8 @@ function showBatchAdminExpiryModal({ selectedCount, eligibleCount, skippedCount 
 }
 
 async function batchRenewAdminAccess() {
-    const selectedUserIds = Array.from(userState.selectedUsers);
+    const selectedUserIds = getSelectedUserIdsForBatch('users-access', '要续期权限的用户');
     if (selectedUserIds.length === 0) {
-        showToast('请先选择用户', 'error');
         return;
     }
 
@@ -2012,7 +2212,7 @@ async function batchRenewAdminAccess() {
     const skippedCount = selectedUsers.length - eligibleUsers.length;
 
     if (eligibleUsers.length === 0) {
-        showToast('所选用户中没有可续期的管理员权限', 'warning');
+        notifyUsersBatchRecovery('所选用户中没有可续期的管理员权限，请重新选择有到期时间的管理员。', 'users-access', 'warning');
         return;
     }
 
@@ -2052,10 +2252,14 @@ async function batchRenewAdminAccess() {
         renderUsersTable();
         renderBatchActionBar();
         syncCurrentModalRoleInfoFromUserState(eligibleUsers.map((user) => user.id));
-        showToast(`已为 ${eligibleUsers.length} 位管理员顺延 ${renewDays} 天${skippedCount > 0 ? `，跳过 ${skippedCount} 位非目标账号` : ''}`, 'success');
+        const successMessage = `已为 ${eligibleUsers.length} 位管理员顺延 ${renewDays} 天${skippedCount > 0 ? `，跳过 ${skippedCount} 位非目标账号` : ''}`;
+        showToast(successMessage, 'success');
+        emitUsersCommandFeedback(successMessage, skippedCount > 0 ? 'partial' : 'saved', { source: 'users-access' });
     } catch (error) {
         console.error('Batch renew admin access failed:', error);
-        showToast(`批量续期失败: ${error.message}`, 'error');
+        const failureMessage = `批量续期失败: ${error.message}`;
+        showToast(failureMessage, 'error');
+        emitUsersCommandFeedback(failureMessage, 'failed', { source: 'users-access' });
         return;
     }
 
@@ -2063,9 +2267,8 @@ async function batchRenewAdminAccess() {
 }
 
 async function batchSetAdminExpiry() {
-    const selectedUserIds = Array.from(userState.selectedUsers);
+    const selectedUserIds = getSelectedUserIdsForBatch('users-access', '要设置权限到期的用户');
     if (selectedUserIds.length === 0) {
-        showToast('请先选择用户', 'error');
         return;
     }
 
@@ -2074,7 +2277,7 @@ async function batchSetAdminExpiry() {
     const skippedCount = selectedUsers.length - eligibleUsers.length;
 
     if (eligibleUsers.length === 0) {
-        showToast('所选用户中没有可设置到期时间的管理员', 'warning');
+        notifyUsersBatchRecovery('所选用户中没有可设置到期时间的管理员，请重新选择管理员账号。', 'users-access', 'warning');
         return;
     }
 
@@ -2121,10 +2324,14 @@ async function batchSetAdminExpiry() {
         renderUsersTable();
         renderBatchActionBar();
         syncCurrentModalRoleInfoFromUserState(eligibleUsers.map((user) => user.id));
-        showToast(`已为 ${eligibleUsers.length} 位管理员${actionLabel}${skippedCount > 0 ? `，跳过 ${skippedCount} 位非目标账号` : ''}`, 'success');
+        const successMessage = `已为 ${eligibleUsers.length} 位管理员${actionLabel}${skippedCount > 0 ? `，跳过 ${skippedCount} 位非目标账号` : ''}`;
+        showToast(successMessage, 'success');
+        emitUsersCommandFeedback(successMessage, skippedCount > 0 ? 'partial' : 'saved', { source: 'users-access' });
     } catch (error) {
         console.error('Batch set admin expiry failed:', error);
-        showToast(`批量设置到期时间失败: ${error.message}`, 'error');
+        const failureMessage = `批量设置到期时间失败: ${error.message}`;
+        showToast(failureMessage, 'error');
+        emitUsersCommandFeedback(failureMessage, 'failed', { source: 'users-access' });
         return;
     }
 
@@ -2133,7 +2340,7 @@ async function batchSetAdminExpiry() {
 
 // Batch add tags
 async function batchAddTags() {
-    const userIds = Array.from(userState.selectedUsers);
+    const userIds = getSelectedUserIdsForBatch('users-batch', '要添加标签的用户');
     if (userIds.length === 0) return;
 
     // Show tag selection modal
@@ -2147,12 +2354,16 @@ async function batchAddTags() {
             userIds,
             tag
         });
-        showToast(`成功为 ${userIds.length} 位用户添加标签 "${getTagLabel(tag)}"`, 'success');
+        const successMessage = `成功为 ${userIds.length} 位用户添加标签 "${getTagLabel(tag)}"`;
+        showToast(successMessage, 'success');
+        emitUsersCommandFeedback(successMessage, 'saved', { source: 'users-batch' });
         clearAllSelections();
         loadUsers();
     } catch (err) {
         console.error('Batch add tags failed:', err);
-        showToast('批量添加标签失败: ' + err.message, 'error');
+        const failureMessage = '批量添加标签失败: ' + err.message;
+        showToast(failureMessage, 'error');
+        emitUsersCommandFeedback(failureMessage, 'failed', { source: 'users-batch' });
     }
 }
 
@@ -2242,7 +2453,7 @@ function showBatchTagModal(count) {
 
 // Batch export users
 async function batchExportUsers() {
-    const userIds = Array.from(userState.selectedUsers);
+    const userIds = getSelectedUserIdsForBatch('users-export', '要导出的用户');
     if (userIds.length === 0) return;
 
     // Show export options modal
@@ -2264,10 +2475,14 @@ async function batchExportUsers() {
             await exportUsersToExcel(selectedUserData, options);
         }
 
-        showToast(`成功导出 ${userIds.length} 位用户数据`, 'success');
+        const successMessage = `成功导出 ${userIds.length} 位用户数据`;
+        showToast(successMessage, 'success');
+        emitUsersCommandFeedback(successMessage, 'saved', { source: 'users-export' });
     } catch (err) {
         console.error('Batch export failed:', err);
-        showToast('导出失败: ' + err.message, 'error');
+        const failureMessage = '导出失败: ' + err.message;
+        showToast(failureMessage, 'error');
+        emitUsersCommandFeedback(failureMessage, 'failed', { source: 'users-export' });
     }
 }
 
@@ -5405,10 +5620,23 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
     primeModalAdminPermissionsState(user.id, roleInfo);
 
     // Initialize Flatpickr for expiry date after DOM is updated
-    setTimeout(() => {
+    setTimeout(async () => {
         destroyModalRoleExpiryPicker();
         const expiryInput = document.getElementById('modalRoleExpiry');
-        if (expiryInput && typeof flatpickr !== 'undefined') {
+        if (!expiryInput) {
+            return;
+        }
+
+        if (typeof flatpickr === 'undefined' && typeof window.ensureAdminFlatpickr === 'function') {
+            try {
+                await window.ensureAdminFlatpickr();
+            } catch (error) {
+                console.error('[AdminUsers] Failed to load Flatpickr runtime:', error);
+                return;
+            }
+        }
+
+        if (typeof flatpickr !== 'undefined') {
             const initialValue = expiryInput.dataset.initialValue;
             const modalLeft = document.querySelector('.user-modal-left');
             flatpickr(expiryInput, {
@@ -7276,22 +7504,28 @@ async function removeUserDiscountAsset(assetId) {
         }
 
         if (refreshed) {
-            showToast?.('优惠券已删除并记录审计', 'success');
+            const successMessage = '优惠券已删除并记录审计';
+            showToast?.(successMessage, 'success');
+            emitUsersCommandFeedback(successMessage, 'saved', { source: 'users-coupons' });
         } else {
-            showToast?.('优惠券已删除，列表稍后可手动刷新', 'warning');
+            const partialMessage = '优惠券已删除，列表稍后可手动刷新';
+            showToast?.(partialMessage, 'warning');
+            emitUsersCommandFeedback(partialMessage, 'partial', { source: 'users-coupons' });
         }
     } catch (err) {
+        const failureMessage = `优惠券删除失败: ${err.message || '未知错误'}`;
         patchUserModalTabState('coupons', {
             pendingDiscountAssetId: '',
             pendingDiscountAssetAction: '',
-            feedbackMessage: `优惠券删除失败: ${err.message || '未知错误'}`,
+            feedbackMessage: failureMessage,
             feedbackTone: 'error',
             feedbackAt: Date.now(),
             feedbackClosing: false
         });
         scheduleUserModalTabFeedbackDismiss('coupons', 'error');
         renderUserTab('coupons');
-        showToast?.(`优惠券删除失败: ${err.message || '未知错误'}`, 'error');
+        showToast?.(failureMessage, 'error');
+        emitUsersCommandFeedback(failureMessage, 'failed', { source: 'users-coupons' });
     }
 }
 
@@ -7357,22 +7591,28 @@ async function restoreUserDiscountAsset(assetId) {
         }
 
         if (refreshed) {
-            showToast?.('优惠券已恢复并写入审计', 'success');
+            const successMessage = '优惠券已恢复并写入审计';
+            showToast?.(successMessage, 'success');
+            emitUsersCommandFeedback(successMessage, 'saved', { source: 'users-coupons' });
         } else {
-            showToast?.('优惠券已恢复，列表稍后可手动刷新', 'warning');
+            const partialMessage = '优惠券已恢复，列表稍后可手动刷新';
+            showToast?.(partialMessage, 'warning');
+            emitUsersCommandFeedback(partialMessage, 'partial', { source: 'users-coupons' });
         }
     } catch (err) {
+        const failureMessage = `优惠券恢复失败: ${err.message || '未知错误'}`;
         patchUserModalTabState('coupons', {
             pendingDiscountAssetId: '',
             pendingDiscountAssetAction: '',
-            feedbackMessage: `优惠券恢复失败: ${err.message || '未知错误'}`,
+            feedbackMessage: failureMessage,
             feedbackTone: 'error',
             feedbackAt: Date.now(),
             feedbackClosing: false
         });
         scheduleUserModalTabFeedbackDismiss('coupons', 'error');
         renderUserTab('coupons');
-        showToast?.(`优惠券恢复失败: ${err.message || '未知错误'}`, 'error');
+        showToast?.(failureMessage, 'error');
+        emitUsersCommandFeedback(failureMessage, 'failed', { source: 'users-coupons' });
     }
 }
 
@@ -8193,12 +8433,25 @@ function filterTabByDate(tabName, range, label) {
 }
 
 // Open custom date picker
-function openCustomDatePicker(tabName) {
+async function openCustomDatePicker(tabName) {
     const normalized = normalizeUserModalTab(tabName);
     document.getElementById(`${normalized}TimeDropdown`)?.classList.remove('open');
 
     const pickerEl = document.getElementById(`${normalized}DatePicker`);
     if (!pickerEl) return;
+
+    if (typeof flatpickr === 'undefined' && typeof window.ensureAdminFlatpickr === 'function') {
+        try {
+            await window.ensureAdminFlatpickr();
+        } catch (error) {
+            console.error('[AdminUsers] Failed to load Flatpickr runtime:', error);
+            return;
+        }
+    }
+
+    if (typeof flatpickr === 'undefined') {
+        return;
+    }
 
     // Destroy previous instance if any
     if (pickerEl._flatpickr) {
@@ -9547,18 +9800,24 @@ async function executeBanSelection() {
         });
 
         if (isBatchMode) {
-            showToast(`成功处理 ${userIds.length} 位用户的封禁状态`, 'success');
+            const successMessage = `成功处理 ${userIds.length} 位用户的封禁状态`;
+            showToast(successMessage, 'success');
+            emitUsersCommandFeedback(successMessage, 'saved', { source: 'users-ban' });
             batchBanUserIds = []; // Clear batch state
             clearAllSelections();
             loadUsers();
         } else {
             // Refresh single user drawer
             await openUserDrawer(targetId);
-            showToast('操作执行成功', 'success');
+            const successMessage = '用户封禁状态已更新';
+            showToast(successMessage, 'success');
+            emitUsersCommandFeedback(successMessage, 'saved', { source: 'users-ban' });
         }
     } catch (err) {
         console.error('Ban exec failed', err);
-        showToast('部分操作可能失败: ' + err.message, 'error');
+        const failureMessage = '部分操作可能失败: ' + err.message;
+        showToast(failureMessage, 'error');
+        emitUsersCommandFeedback(failureMessage, 'failed', { source: 'users-ban' });
     }
 }
 
@@ -9610,10 +9869,14 @@ async function resetUserAvatar(userId) {
         await openUserDrawer(userId);
         renderUsersTable();
 
+        const successMessage = '用户头像已重置';
+        emitUsersCommandFeedback(successMessage, 'saved', { source: 'users-profile' });
         alert('头像已重置');
     } catch (err) {
         console.error('Avatar reset failed:', err);
-        alert('操作失败: ' + err.message);
+        const failureMessage = '操作失败: ' + err.message;
+        emitUsersCommandFeedback(failureMessage, 'failed', { source: 'users-profile' });
+        alert(failureMessage);
     }
 
 }
@@ -9806,11 +10069,16 @@ async function adjustUserPoints(userId) {
 
             // Close and Reset
             closePointsModal();
+            const successMessage = `用户积分已调整 ${changeStr}，当前 ${nextTotal}`;
+            showToast?.(successMessage, 'success');
+            emitUsersCommandFeedback(successMessage, 'saved', { source: 'users-points' });
             console.log(`✅ Points adjusted for ${userId}: ${changeStr}, new balance: ${nextTotal} `);
 
         } catch (err) {
             console.error('Points adjustment failed:', err);
-            alert('操作失败: ' + err.message);
+            const failureMessage = '操作失败: ' + err.message;
+            emitUsersCommandFeedback(failureMessage, 'failed', { source: 'users-points' });
+            alert(failureMessage);
         } finally {
             confirmBtn.disabled = false;
             confirmBtn.textContent = '确认调整';
@@ -9992,13 +10260,21 @@ async function clearAllUserContent(userId) {
             renderUsersTable();
 
             closeClearContentModal();
+            const successMessage = results.length
+                ? `用户危险清理已完成：${results.join('、')}`
+                : '用户危险清理已完成';
+            showToast?.(successMessage, 'success');
+            emitUsersCommandFeedback(successMessage, 'saved', { source: 'users-danger' });
             console.log(`✅ Cleared content for user ${userId}: ${results.join(', ')} `);
 
         } catch (err) {
             console.error('Clear content failed:', err);
-            alert('操作失败: ' + err.message);
+            const failureMessage = '操作失败: ' + err.message;
+            emitUsersCommandFeedback(failureMessage, 'failed', { source: 'users-danger' });
+            alert(failureMessage);
         } finally {
             confirmBtn.textContent = '确认清空';
+            validateState();
         }
     };
 }
@@ -10023,10 +10299,15 @@ async function addUserTag(userId, tag) {
 
         await openUserDrawer(userId);
         renderUsersTable();
+        const successMessage = `用户标签已添加：${tag}`;
+        showToast?.(successMessage, 'success');
+        emitUsersCommandFeedback(successMessage, 'saved', { source: 'users-profile' });
         console.log(`✅ Tag "${tag}" added to user ${userId} `);
     } catch (err) {
         console.error('Add tag failed:', err);
-        alert('添加标签失败: ' + err.message);
+        const failureMessage = '添加标签失败: ' + err.message;
+        emitUsersCommandFeedback(failureMessage, 'failed', { source: 'users-profile' });
+        alert(failureMessage);
     }
 }
 
@@ -10046,10 +10327,15 @@ async function removeUserTag(userId, tag) {
 
         await openUserDrawer(userId);
         renderUsersTable();
+        const successMessage = `用户标签已移除：${tag}`;
+        showToast?.(successMessage, 'success');
+        emitUsersCommandFeedback(successMessage, 'saved', { source: 'users-profile' });
         console.log(`✅ Tag "${tag}" removed from user ${userId} `);
     } catch (err) {
         console.error('Remove tag failed:', err);
-        alert('移除标签失败: ' + err.message);
+        const failureMessage = '移除标签失败: ' + err.message;
+        emitUsersCommandFeedback(failureMessage, 'failed', { source: 'users-profile' });
+        alert(failureMessage);
     }
 }
 
@@ -10325,15 +10611,36 @@ window.filterTabByDate = filterTabByDate;
 window.openCustomDatePicker = openCustomDatePicker;
 window.batchRenewAdminAccess = batchRenewAdminAccess;
 window.batchSetAdminExpiry = batchSetAdminExpiry;
+window.handleAdminUsersSiteChange = handleAdminUsersSiteChange;
+window.openAdminUsersShellContext = openAdminUsersShellContext;
+
+function activateVisibleUsersModuleOnAccess() {
+    if (!isUsersModuleActive()) {
+        return;
+    }
+
+    void activateUsersModule();
+}
 
 if (window.AdminShell?.registerModule) {
     window.AdminShell.registerModule('users', {
+        activate: activateUsersModule,
+        handleContext: handleAdminUsersShellContext,
         onSiteChange: handleAdminUsersSiteChange,
         reload: handleAdminUsersSiteChange
     });
 } else {
-    window.addEventListener('admin-site-changed', handleAdminUsersSiteChange);
+    window.addEventListener?.('admin-site-changed', handleAdminUsersSiteChange);
 }
+
+document.addEventListener?.('DOMContentLoaded', () => {
+    if (window.adminStudioAccessGranted) {
+        activateVisibleUsersModuleOnAccess();
+        return;
+    }
+
+    window.addEventListener?.('adminStudioAccessGranted', activateVisibleUsersModuleOnAccess, { once: true });
+});
 
 function bindAdminUsersRuntimeDelegates() {
     if (document.documentElement.dataset.adminUsersRuntimeDelegatesBound === '1') {

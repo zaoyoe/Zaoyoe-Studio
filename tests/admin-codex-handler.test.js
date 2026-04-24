@@ -210,7 +210,10 @@ test('codex handler POST proxies prompt to an OpenAI-compatible chat completions
             body: {
                 prompt: 'Write a quick product description.',
                 temperature: 0.2,
-                maxTokens: 300
+                maxTokens: 300,
+                budget: {
+                    tier: 'balanced'
+                }
             }
         }, res);
 
@@ -266,7 +269,10 @@ test('codex handler supports responses-format relays', async () => {
                     role: 'user',
                     content: 'Summarize this issue.'
                 }],
-                maxTokens: 128
+                maxTokens: 128,
+                budget: {
+                    tier: 'balanced'
+                }
             }
         }, res);
 
@@ -322,7 +328,10 @@ test('codex handler extracts chat-style text even when a responses relay returns
                 messages: [{
                     role: 'user',
                     content: 'Describe this image.'
-                }]
+                }],
+                budget: {
+                    tier: 'balanced'
+                }
             }
         }, res);
 
@@ -354,7 +363,10 @@ test('codex handler falls back to plain-text bodies when relay returns non-JSON 
                 messages: [{
                     role: 'user',
                     content: 'Describe this image.'
-                }]
+                }],
+                budget: {
+                    tier: 'balanced'
+                }
             }
         }, res);
 
@@ -402,6 +414,9 @@ test('codex handler converts Gemini-style multimodal contents into responses inp
                 generationConfig: {
                     temperature: 0.7,
                     maxOutputTokens: 512
+                },
+                budget: {
+                    tier: 'balanced'
                 }
             }
         }, res);
@@ -421,5 +436,128 @@ test('codex handler converts Gemini-style multimodal contents into responses inp
             max_output_tokens: 512
         });
         assert.equal(res.json().text, '{"title":"Sample"}');
+    });
+});
+
+test('codex handler applies lean request budgets and Responses reasoning config', async () => {
+    await withCodexHandler({
+        runtimeConfig: {
+            apiKey: 'sk-test-codex-1234567890',
+            baseUrl: 'https://relay.example.com',
+            model: 'gpt-5.4',
+            apiFormat: 'responses'
+        },
+        fetchImpl: async () => ({
+            ok: true,
+            status: 200,
+            async json() {
+                return {
+                    id: 'resp_budget_123',
+                    output_text: 'budget ok'
+                };
+            }
+        })
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+        const longPrompt = 'x'.repeat(1200);
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                prompt: longPrompt,
+                reasoning_effort: 'low',
+                budget: {
+                    tier: 'lean',
+                    maxInputChars: 1000,
+                    maxOutputTokens: 100
+                }
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        const upstreamBody = JSON.parse(state.fetchCalls[0].init.body);
+        assert.deepEqual(upstreamBody, {
+            model: 'gpt-5.4',
+            input: [{
+                role: 'user',
+                content: 'x'.repeat(1000)
+            }],
+            reasoning: {
+                effort: 'low'
+            },
+            max_output_tokens: 100
+        });
+        assert.equal(res.json().budget.tier, 'lean');
+        assert.equal(res.json().budget.inputChars, 1000);
+        assert.equal(res.json().budget.truncated, true);
+        assert.equal(res.json().budget.truncatedChars, 200);
+    });
+});
+
+test('codex handler redacts upstream secrets from error payloads', async () => {
+    await withCodexHandler({
+        runtimeConfig: {
+            apiKey: 'sk-test-codex-1234567890',
+            baseUrl: 'https://relay.example.com',
+            model: 'gpt-5.4',
+            apiFormat: 'responses'
+        },
+        fetchImpl: async () => ({
+            ok: false,
+            status: 502,
+            async json() {
+                return {
+                    error: {
+                        message: 'relay failed for Bearer abc.def.ghi and sk-test-secret-1234567890',
+                        apiKey: 'sk-test-secret-1234567890'
+                    }
+                };
+            }
+        })
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                prompt: 'hello',
+                budget: {
+                    tier: 'lean'
+                }
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 502);
+        assert.match(payload.message, /Bearer \[redacted\]/);
+        assert.doesNotMatch(JSON.stringify(payload), /sk-test-secret/);
+        assert.equal(payload.error.apiKey, '[redacted]');
+    });
+});
+
+test('codex handler rejects admin requests without an explicit budget tier', async () => {
+    await withCodexHandler({
+        runtimeConfig: {
+            apiKey: 'sk-test-codex-1234567890',
+            baseUrl: 'https://relay.example.com',
+            model: 'gpt-5.4',
+            apiFormat: 'responses'
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                prompt: 'hello without budget'
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 400);
+        assert.equal(state.fetchCalls.length, 0);
+        assert.match(res.json().message, /budget tier is required/i);
     });
 });

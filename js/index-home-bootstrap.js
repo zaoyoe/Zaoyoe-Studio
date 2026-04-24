@@ -1,7 +1,14 @@
 (function () {
     'use strict';
 
-    const SHOP_PREFETCH_SCHEMA_VERSION = '20260413_PURCHASE_GUIDANCE_2';
+    const SHOP_PREFETCH_SCHEMA_VERSION = '20260423_PRODUCT_DESCRIPTION_VISIBILITY_1';
+    const HOMEPAGE_DEFERRED_STYLE_GROUP = 'homepage-overlays';
+
+    function activateHomepageDeferredOverlays() {
+        if (typeof window.activateDeferredStyleGroup === 'function') {
+            window.activateDeferredStyleGroup(HOMEPAGE_DEFERRED_STYLE_GROUP);
+        }
+    }
 
     document.addEventListener('DOMContentLoaded', () => {
         const checkAuth = setInterval(() => {
@@ -16,6 +23,22 @@
                 authContainer.appendChild(authBtn);
             }
         }, 100);
+
+        document.addEventListener('click', (event) => {
+            const target = event.target;
+            if (!(target instanceof Element)) {
+                return;
+            }
+
+            if (
+                target.closest('[data-home-open-guestbook="1"]')
+                || target.closest('#guestbookComposerUploadBtn')
+                || target.closest('#guestbookSubmitBtn')
+                || target.closest('#removeImageBtn')
+            ) {
+                activateHomepageDeferredOverlays();
+            }
+        }, { passive: true });
     });
 
     const prefetched = {};

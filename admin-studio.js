@@ -13,6 +13,43 @@ const ADMIN_VISION_SINGLE_IMAGE_MAX_WIDTH = 1024;
 const ADMIN_VISION_SINGLE_IMAGE_QUALITY = 0.8;
 const ADMIN_VISION_GRID_CELL_SIZE = 448;
 const ADMIN_VISION_RETRYABLE_STATUS_CODES = new Set([500, 502, 503, 504]);
+const ADMIN_STUDIO_ACCESS_RESTORE_TIMEOUT_MS = 7000;
+const ADMIN_STUDIO_ACCESS_GATE_TIMEOUT_MS = 10000;
+const ADMIN_STUDIO_SESSION_WARM_TIMEOUT_MS = 1800;
+const ADMIN_GALLERY_HOMEPAGE_WARM_TIMEOUT_MS = 5000;
+let allPrompts = []; // Cache all prompts for local search
+const ADMIN_GALLERY_PAGE_SIZE = 10;
+const ADMIN_GALLERY_EAGER_IMAGE_COUNT = 4;
+const adminGalleryPrefetchState = {
+    site: '',
+    loaded: false,
+    promise: null
+};
+const ADMIN_GALLERY_BILINGUAL_BATCH_SIZE = 12;
+const adminGalleryLoadState = {
+    site: '',
+    loaded: false,
+    loadedAt: 0,
+    promise: null,
+    requestId: 0
+};
+const adminGalleryViewState = {
+    page: 1,
+    pageSize: ADMIN_GALLERY_PAGE_SIZE,
+    searchQuery: '',
+    searchMatchedIds: null,
+    sortValue: 'updated-desc',
+    filteredPromptIds: []
+};
+
+function getPendingAdminGalleryFocusPromptId() {
+    return String(window.__pendingAdminGalleryFocusPromptId || '').trim();
+}
+
+function setPendingAdminGalleryFocusPromptId(promptId = '') {
+    window.__pendingAdminGalleryFocusPromptId = String(promptId || '').trim();
+    return window.__pendingAdminGalleryFocusPromptId;
+}
 
 // State
 let uploadedFiles = [];
@@ -37,11 +74,18 @@ const ADMIN_MODAL_SCROLL_LOCK_SELECTORS = [
     '.batch-action-modal-overlay.active',
     '.codes-modal-overlay.is-visible',
     '.edit-modal-overlay.is-visible',
+    '.comment-detail-drawer.is-open',
+    '.admin-discount-detail-overlay.is-visible',
+    '.admin-discount-restore-overlay.is-visible',
+    '.admin-shop-risk-case-modal.is-visible',
+    '.drawer-overlay.active',
+    '.lightbox-overlay.active',
     '#ticketReplyModal.is-visible',
     '#ticketBulkProcessModal.is-visible',
     '.shop-refund-modal-overlay.is-visible',
     '.shop-order-content-overlay.is-visible',
-    '.shop-inventory-detail-overlay.is-visible'
+    '.shop-inventory-detail-overlay.is-visible',
+    '.shop-inventory-fault-overlay.is-visible'
 ].join(', ');
 const ADMIN_SCROLLBAR_AUTO_HIDE_SELECTOR = [
     '.select-options',
@@ -1080,24 +1124,25 @@ async function deleteAdminPrompts({ site, id, ids = [] } = {}) {
 // ========================================
 // THEME INITIALIZATION - Sync with Gallery
 // ========================================
+function applyAdminStudioThemePreference(themePreference) {
+    const nextTheme = themePreference === 'dark' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', nextTheme);
+}
+
 (function initTheme() {
     const savedTheme = localStorage.getItem('theme');
-    // Default to dark if not set, or use saved preference
-    if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-        document.documentElement.setAttribute('data-theme', 'dark');
-    } else {
-        document.documentElement.removeAttribute('data-theme');
+    if (savedTheme === 'dark' || savedTheme === 'light') {
+        applyAdminStudioThemePreference(savedTheme);
+        return;
     }
+
+    applyAdminStudioThemePreference(window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
 })();
 
 // Listen for theme changes from other tabs (Gallery)
 window.addEventListener('storage', (e) => {
     if (e.key === 'theme') {
-        if (e.newValue === 'dark') {
-            document.documentElement.setAttribute('data-theme', 'dark');
-        } else {
-            document.documentElement.removeAttribute('data-theme');
-        }
+        applyAdminStudioThemePreference(e.newValue);
     }
 });
 
@@ -1171,12 +1216,64 @@ function applyResolvedAdminAccess(access = {}) {
 }
 
 async function requireAdminStudioAccess() {
+    window.adminStudioAccessGranted = false;
     renderAdminStudioAccessGate('pending');
 
+    const resolveGateTimeoutMs = () => {
+        const override = Number(window.__adminStudioAccessGateTimeoutMs);
+        if (Number.isFinite(override) && override > 0) {
+            return override;
+        }
+        return ADMIN_STUDIO_ACCESS_GATE_TIMEOUT_MS;
+    };
+
+    const resolveSessionWarmTimeoutMs = () => {
+        const override = Number(window.__adminStudioSessionWarmTimeoutMs);
+        if (Number.isFinite(override) && override > 0) {
+            return override;
+        }
+        return typeof ADMIN_STUDIO_SESSION_WARM_TIMEOUT_MS === 'number'
+            ? ADMIN_STUDIO_SESSION_WARM_TIMEOUT_MS
+            : 1800;
+    };
+
+    const waitWithTimeout = async (promise, timeoutMs, fallback = null) => {
+        let timeoutId = 0;
+        try {
+            return await Promise.race([
+                Promise.resolve(promise),
+                new Promise((resolve) => {
+                    timeoutId = window.setTimeout(() => resolve(fallback), Math.max(250, Number(timeoutMs) || 1000));
+                })
+            ]);
+        } finally {
+            if (timeoutId) {
+                window.clearTimeout(timeoutId);
+            }
+        }
+    };
+
+    let sessionRestoreState = {
+        restored: false,
+        reason: 'not_started'
+    };
+
     try {
-        await Promise.resolve(window.__adminStudioSessionRestoreReady);
+        sessionRestoreState = await waitWithTimeout(
+            window.__adminStudioSessionRestoreReady,
+            ADMIN_STUDIO_ACCESS_RESTORE_TIMEOUT_MS,
+            {
+                restored: false,
+                reason: 'restore_timeout'
+            }
+        );
     } catch (error) {
         console.warn('[AdminStudio] Supabase session restore wait failed:', error);
+        sessionRestoreState = {
+            restored: false,
+            reason: 'restore_exception',
+            error
+        };
     }
 
     const accessClient = window.AdminAccess;
@@ -1190,9 +1287,85 @@ async function requireAdminStudioAccess() {
         return null;
     }
 
-    const access = await accessClient.getCurrentAdminAccess({
-        forceRefresh: false
+    const buildTimedOutAccessResult = () => ({
+        user: null,
+        isAdmin: false,
+        isSuperAdmin: false,
+        permissions: [],
+        timedOut: true,
+        error: new Error('Admin Studio access check timed out')
     });
+
+    const lookupAdminAccess = async (forceRefresh = false) => {
+        try {
+            const result = await waitWithTimeout(
+                accessClient.getCurrentAdminAccess({
+                    forceRefresh: forceRefresh === true
+                }),
+                resolveGateTimeoutMs(),
+                buildTimedOutAccessResult()
+            );
+
+            if (result) {
+                return result;
+            }
+
+            return {
+                user: null,
+                isAdmin: false,
+                isSuperAdmin: false,
+                permissions: [],
+                lookupFailed: true,
+                error: new Error('Admin Studio access returned an empty result')
+            };
+        } catch (error) {
+            console.warn('[AdminStudio] Admin access lookup failed:', error);
+            return {
+                user: null,
+                isAdmin: false,
+                isSuperAdmin: false,
+                permissions: [],
+                lookupFailed: true,
+                error
+            };
+        }
+    };
+
+    let access = await lookupAdminAccess(false);
+    const shouldRetryAccessLookup = !access?.timedOut && (
+        access?.lookupFailed === true
+        || (access?.error && access?.user)
+        || (access?.cached === true && !access?.isAdmin)
+        || (!access?.user && sessionRestoreState?.restored === true)
+    );
+
+    if (shouldRetryAccessLookup) {
+        access = await lookupAdminAccess(true);
+    }
+
+    if (access?.timedOut) {
+        renderAdminStudioAccessGate('denied', {
+            title: '后台权限校验超时',
+            message: '权限服务响应时间过长，页面已停止等待以避免一直卡在加载状态。请刷新重试；如果仍然出现，请先回到首页重新进入后台。',
+            primaryLabel: '刷新重试',
+            primaryHref: 'admin-studio.html',
+            secondaryLabel: '返回首页',
+            secondaryHref: 'index.html'
+        });
+        return null;
+    }
+
+    if (access?.lookupFailed || (access?.error && !access?.isAdmin)) {
+        renderAdminStudioAccessGate('denied', {
+            title: '后台权限校验失败',
+            message: '登录态已识别，但管理员权限服务暂时没有返回有效结果。页面已停止等待，避免一直卡在加载状态。请刷新重试；如果仍然出现，请回到首页重新进入后台。',
+            primaryLabel: '刷新重试',
+            primaryHref: 'admin-studio.html',
+            secondaryLabel: '返回首页',
+            secondaryHref: 'index.html'
+        });
+        return null;
+    }
 
     if (!access?.user) {
         renderAdminStudioAccessGate('denied', {
@@ -1214,18 +1387,68 @@ async function requireAdminStudioAccess() {
         return null;
     }
 
+    const issueAdminStudioCookieSession = async (forceRefresh = false) => {
+        if (!accessClient?.createAdminStudioSession || !access?.user?.id) {
+            return {
+                ok: false,
+                skipped: true,
+                reason: 'session_issue_unavailable'
+            };
+        }
+
+        try {
+            const sessionResult = await waitWithTimeout(
+                accessClient.createAdminStudioSession({
+                    supabaseClient: window.supabaseClient,
+                    userId: access.user.id,
+                    forceRefresh: forceRefresh === true
+                }),
+                resolveSessionWarmTimeoutMs(),
+                {
+                    ok: false,
+                    timedOut: true,
+                    reason: 'session_issue_timeout'
+                }
+            );
+
+            return sessionResult || {
+                ok: false,
+                reason: 'session_issue_empty'
+            };
+        } catch (sessionError) {
+            return {
+                ok: false,
+                reason: 'session_issue_failed',
+                error: sessionError
+            };
+        }
+    };
+
+    let sessionResult = await issueAdminStudioCookieSession(false);
+    window.adminStudioSessionGranted = Boolean(sessionResult?.ok);
+
     applyResolvedAdminAccess(access);
     renderAdminStudioAccessGate('granted');
+    window.AdminCommandCenter?.setSecurityStatus?.('管理员权限已确认');
+
+    if (!sessionResult?.ok) {
+        console.warn('[AdminStudio] Admin Studio cookie session was not ready before shell startup:', sessionResult);
+    }
 
     Promise.resolve()
-        .then(() => accessClient.createAdminStudioSession?.({
-            supabaseClient: window.supabaseClient,
-            userId: access.user.id
-        }))
-        .then((sessionResult) => {
-            window.adminStudioSessionGranted = Boolean(sessionResult?.ok);
-            if (!sessionResult?.ok) {
-                console.warn('[AdminStudio] Failed to issue admin studio cookie session:', sessionResult);
+        .then(async () => {
+            if (sessionResult?.ok) {
+                return sessionResult;
+            }
+
+            const retryResult = await issueAdminStudioCookieSession(true);
+            sessionResult = retryResult;
+            return retryResult;
+        })
+        .then((retryResult) => {
+            window.adminStudioSessionGranted = Boolean(retryResult?.ok);
+            if (!retryResult?.ok) {
+                console.warn('[AdminStudio] Failed to issue admin studio cookie session:', retryResult);
             }
         })
         .catch((sessionError) => {
@@ -1287,6 +1510,363 @@ function bindAdminStudioDelegatedControls() {
         return false;
     }
 
+    function readOpsAlertWorkspaceContextFromActionElement(actionEl) {
+        if (typeof window.readOpsAlertWorkspaceContextDataset === 'function') {
+            return window.readOpsAlertWorkspaceContextDataset(actionEl?.dataset || {});
+        }
+
+        const dataset = actionEl?.dataset || {};
+        return {
+            title: dataset.workspaceTitle,
+            alertType: dataset.workspaceAlertType,
+            category: dataset.workspaceCategory,
+            referenceLabel: dataset.workspaceReferenceLabel,
+            referenceValue: dataset.workspaceReferenceValue,
+            targetId: dataset.workspaceTargetId,
+            userId: dataset.workspaceUserId,
+            clientIp: dataset.workspaceClientIp,
+            discountCode: dataset.workspaceDiscountCode,
+            signalType: dataset.workspaceSignalType,
+            caseStatus: dataset.workspaceCaseStatus,
+            caseOwnerAdminId: dataset.workspaceCaseOwnerAdminId,
+            caseOwnerLabel: dataset.workspaceCaseOwnerLabel
+        };
+    }
+
+    function setAdminStudioDelegatedActionBusy(actionEl, busy = false) {
+        if (!actionEl?.classList) {
+            return;
+        }
+
+        actionEl.classList.toggle('is-running', busy);
+        actionEl.setAttribute('aria-busy', busy ? 'true' : 'false');
+        if (busy) {
+            actionEl.dataset.adminActionRunning = 'true';
+            return;
+        }
+        delete actionEl.dataset.adminActionRunning;
+    }
+
+    function waitForAdminStudioActionModal(modalId = '', options = {}) {
+        const normalizedModalId = String(modalId || '').trim();
+        if (!normalizedModalId) {
+            return Promise.resolve(true);
+        }
+
+        const timeoutMs = Math.max(120, Number(options.timeoutMs || 480));
+        const stepMs = Math.max(24, Number(options.stepMs || 40));
+        const failureMessage = String(options.failureMessage || '').trim();
+
+        return new Promise((resolve) => {
+            const startedAt = Date.now();
+
+            const inspect = () => {
+                const modal = document.getElementById(normalizedModalId);
+                if (modal?.classList?.contains('is-visible')) {
+                    resolve(true);
+                    return;
+                }
+
+                if (Date.now() - startedAt >= timeoutMs) {
+                    if (modal) {
+                        modal.classList.add('is-visible');
+                        modal.setAttribute('aria-hidden', 'false');
+                    }
+
+                    const isVisible = modal?.classList?.contains('is-visible') === true;
+                    if (!isVisible && failureMessage) {
+                        window.showToast?.(failureMessage, 'error');
+                    }
+                    resolve(isVisible);
+                    return;
+                }
+
+                window.setTimeout(inspect, stepMs);
+            };
+
+            inspect();
+        });
+    }
+
+    function runAdminStudioDelegatedAction(actionEl, runner, options = {}) {
+        if (!actionEl || typeof runner !== 'function') {
+            return false;
+        }
+
+        if (actionEl.dataset.adminActionRunning === 'true') {
+            pulseAdminStudioDelegatedAction(actionEl);
+            return true;
+        }
+
+        const normalizedOptions = options && typeof options === 'object' && !Array.isArray(options) ? options : {};
+        const expectModalId = String(normalizedOptions.expectModalId || '').trim();
+        const modalFailureMessage = String(normalizedOptions.modalFailureMessage || '').trim();
+        const cleanupDelayMs = Math.max(120, Number(normalizedOptions.cleanupDelayMs || 220));
+
+        setAdminStudioDelegatedActionBusy(actionEl, true);
+        pulseAdminStudioDelegatedAction(actionEl);
+
+        void Promise.resolve()
+            .then(() => runner())
+            .then(async (result) => {
+                if (result === false) {
+                    console.warn('[AdminStudio] Delegated action returned false:', {
+                        action: actionEl?.dataset?.adminAction || '',
+                        expectedModal: expectModalId
+                    });
+                    if (normalizedOptions.suppressFalseResultToast === true) {
+                        return;
+                    }
+                    if (modalFailureMessage) {
+                        window.showToast?.(modalFailureMessage, 'error');
+                    } else if (normalizedOptions.errorMessage) {
+                        window.showToast?.(normalizedOptions.errorMessage, 'error');
+                    }
+                    return;
+                }
+
+                if (expectModalId) {
+                    await waitForAdminStudioActionModal(expectModalId, {
+                        failureMessage: modalFailureMessage
+                    });
+                }
+            })
+            .catch((error) => {
+                console.warn('[AdminStudio] Delegated action failed:', error);
+                if (normalizedOptions.silentErrors !== true) {
+                    window.showToast?.(
+                        normalizedOptions.errorMessage || `操作失败: ${error?.message || '未知错误'}`,
+                        'error'
+                    );
+                }
+            })
+            .finally(() => {
+                window.setTimeout(() => {
+                    setAdminStudioDelegatedActionBusy(actionEl, false);
+                }, cleanupDelayMs);
+            });
+
+        return true;
+    }
+
+    function queueAdminStudioDelegatedAction(actionEl, runner, options = {}) {
+        if (!actionEl || typeof runner !== 'function') {
+            return false;
+        }
+
+        const queuedAt = Date.now();
+        actionEl.dataset.adminActionQueuedAt = String(queuedAt);
+        window.clearTimeout(actionEl._adminStudioQueuedActionTimer);
+        actionEl._adminStudioQueuedActionTimer = window.setTimeout(() => {
+            actionEl._adminStudioQueuedActionTimer = null;
+            runAdminStudioDelegatedAction(actionEl, runner, options);
+        }, 0);
+        return true;
+    }
+
+    function consumeQueuedAdminStudioAction(actionEl, thresholdMs = 900) {
+        if (!actionEl?.dataset) {
+            return false;
+        }
+
+        const queuedAt = Number(actionEl.dataset.adminActionQueuedAt || 0);
+        delete actionEl.dataset.adminActionQueuedAt;
+        if (!queuedAt) {
+            return false;
+        }
+
+        return Date.now() - queuedAt < Math.max(120, Number(thresholdMs || 900));
+    }
+
+    async function runOpsAlertMonitorBatchCaseAction(action) {
+        const canOpenBatchComposerDirectly = typeof window.openOpsAlertBatchCaseComposer === 'function';
+        if (typeof window.handleOpsAlertMonitorBatchCaseAction === 'function') {
+            return Promise.resolve(window.handleOpsAlertMonitorBatchCaseAction(action)).catch((error) => {
+                console.warn('[AdminStudio] Ops alert monitor batch action failed:', error);
+                window.showToast?.(`集中告警批处理失败: ${error?.message || '未知错误'}`, 'error');
+                return false;
+            });
+        }
+        if (canOpenBatchComposerDirectly) {
+            return Promise.resolve().then(() => {
+                return window.openOpsAlertBatchCaseComposer(action);
+            }).catch((error) => {
+                console.warn('[AdminStudio] Ops alert monitor batch composer fallback failed:', error);
+                window.showToast?.(`集中告警批处理失败: ${error?.message || '未知错误'}`, 'error');
+                return false;
+            });
+        }
+        window.showToast?.('集中告警处理入口还在加载，请刷新面板后重试。', 'warning');
+        return false;
+    }
+
+    async function runOpsAlertCaseAction(actionEl) {
+        const caseAction = String(actionEl?.dataset?.opsAlertCaseAction || '').trim().toLowerCase();
+        if (!caseAction) {
+            return false;
+        }
+
+        const context = readOpsAlertWorkspaceContextFromActionElement(actionEl);
+        const canOpenComposerDirectly = ['assign', 'add_note', 'resolve'].includes(caseAction)
+            && typeof window.openOpsAlertCaseComposer === 'function';
+        if (typeof window.handleOpsAlertCaseAction === 'function') {
+            return Promise.resolve(window.handleOpsAlertCaseAction(caseAction, context)).catch((error) => {
+                console.warn('[AdminStudio] Ops alert case action failed:', error);
+                window.showToast?.(`集中告警动作失败: ${error?.message || '未知错误'}`, 'error');
+                return false;
+            });
+        }
+        if (canOpenComposerDirectly) {
+            return Promise.resolve().then(() => {
+                return window.openOpsAlertCaseComposer(caseAction, context);
+            }).catch((error) => {
+                console.warn('[AdminStudio] Ops alert case composer fallback failed:', error);
+                window.showToast?.(`集中告警动作失败: ${error?.message || '未知错误'}`, 'error');
+                return false;
+            });
+        }
+        window.showToast?.('集中告警动作入口还在加载，请刷新面板后重试。', 'warning');
+        return false;
+    }
+
+    async function openOpsAlertMonitorBatchMuteModal() {
+        if (typeof window.openOpsAlertBatchMuteModal !== 'function') {
+            window.showToast?.('集中告警静默入口还在加载，请刷新面板后重试。', 'warning');
+            return false;
+        }
+        window.openOpsAlertBatchMuteModal();
+        return true;
+    }
+
+    function handleOpsAlertCaseActionElement(actionEl, event) {
+        const actionName = String(actionEl?.dataset?.adminAction || '').trim();
+        if (actionName !== 'settings-handle-ops-alert-case-action') {
+            return false;
+        }
+
+        const caseAction = String(actionEl?.dataset?.opsAlertCaseAction || '').trim().toLowerCase();
+        if (!caseAction) {
+            return false;
+        }
+
+        const expectModalId = ['assign', 'add_note', 'resolve'].includes(caseAction)
+            ? 'shopRiskCaseComposerModal'
+            : '';
+
+        const actionRunner = () => runOpsAlertCaseAction(actionEl);
+        const actionOptions = {
+            expectModalId,
+            modalFailureMessage: '集中告警处理弹窗没有成功打开，请刷新后台后重试。',
+            errorMessage: '集中告警动作执行失败，请刷新后台后重试。',
+            silentErrors: true,
+            suppressFalseResultToast: true
+        };
+
+        if (event?.type === 'pointerdown') {
+            return queueAdminStudioDelegatedAction(actionEl, actionRunner, actionOptions);
+        }
+
+        if (event?.type === 'click' && consumeQueuedAdminStudioAction(actionEl)) {
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            return true;
+        }
+
+        event?.preventDefault?.();
+        event?.stopPropagation?.();
+        return runAdminStudioDelegatedAction(actionEl, actionRunner, actionOptions);
+    }
+
+    function handleOpsAlertMonitorBatchActionElement(actionEl, event) {
+        const actionName = String(actionEl?.dataset?.adminAction || '').trim();
+        const batchActionMap = {
+            'settings-batch-claim-ops-alert-monitor': 'assign',
+            'settings-batch-note-ops-alert-monitor': 'add_note',
+            'settings-batch-resolve-ops-alert-monitor': 'resolve'
+        };
+        const batchAction = batchActionMap[actionName] || '';
+        const isBatchMuteAction = actionName === 'settings-batch-mute-ops-alert-monitor';
+        if (!batchAction && !isBatchMuteAction) {
+            return false;
+        }
+
+        const actionRunner = () => {
+            if (isBatchMuteAction) {
+                return openOpsAlertMonitorBatchMuteModal();
+            }
+            return runOpsAlertMonitorBatchCaseAction(batchAction);
+        };
+        const actionOptions = {
+            expectModalId: isBatchMuteAction ? 'opsAlertBatchMuteModal' : 'shopRiskCaseComposerModal',
+            modalFailureMessage: isBatchMuteAction
+                ? '集中告警静默弹窗没有成功打开，请刷新后台后重试。'
+                : '集中告警处理弹窗没有成功打开，请刷新后台后重试。',
+            errorMessage: '集中告警批处理执行失败，请刷新后台后重试。',
+            silentErrors: true,
+            suppressFalseResultToast: true
+        };
+
+        if (event?.type === 'pointerdown') {
+            return queueAdminStudioDelegatedAction(actionEl, actionRunner, actionOptions);
+        }
+
+        if (event?.type === 'click' && consumeQueuedAdminStudioAction(actionEl)) {
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            return true;
+        }
+
+        event?.preventDefault?.();
+        event?.stopPropagation?.();
+        return runAdminStudioDelegatedAction(actionEl, actionRunner, actionOptions);
+    }
+
+    const OPS_ALERT_DIRECT_ACTION_SELECTOR = [
+        '.btn-add-config[data-admin-action="settings-batch-claim-ops-alert-monitor"]',
+        '.btn-add-config[data-admin-action="settings-batch-note-ops-alert-monitor"]',
+        '.btn-add-config[data-admin-action="settings-batch-resolve-ops-alert-monitor"]',
+        '.btn-add-config[data-admin-action="settings-batch-mute-ops-alert-monitor"]',
+        '.btn-add-config[data-admin-action="settings-handle-ops-alert-case-action"]'
+    ].join(', ');
+
+    function bindAdminStudioOpsAlertDirectActionButtons(root = document) {
+        const scope = root && typeof root.querySelectorAll === 'function' ? root : document;
+        scope.querySelectorAll(OPS_ALERT_DIRECT_ACTION_SELECTOR).forEach((actionEl) => {
+            if (!(actionEl instanceof HTMLElement) || actionEl.dataset.adminOpsAlertDirectBound === '1') {
+                return;
+            }
+
+            actionEl.dataset.adminOpsAlertDirectBound = '1';
+            actionEl.addEventListener('pointerdown', () => {
+                if (actionEl.dataset.adminActionRunning !== 'true') {
+                    pulseAdminStudioDelegatedAction(actionEl);
+                }
+            });
+            actionEl.addEventListener('click', (event) => {
+                const handled = handleOpsAlertMonitorBatchActionElement(actionEl, event)
+                    || handleOpsAlertCaseActionElement(actionEl, event);
+                if (handled) {
+                    event.stopImmediatePropagation?.();
+                }
+            });
+        });
+
+        return true;
+    }
+
+    function triggerAdminStudioOpsAlertAction(actionEl, nativeEvent = null) {
+        const handled = handleOpsAlertMonitorBatchActionElement(actionEl, nativeEvent)
+            || handleOpsAlertCaseActionElement(actionEl, nativeEvent);
+        if (!handled) {
+            pulseAdminStudioDelegatedAction(actionEl);
+        }
+        return false;
+    }
+
+    window.bindAdminStudioOpsAlertDirectActionButtons = bindAdminStudioOpsAlertDirectActionButtons;
+    window.triggerAdminStudioOpsAlertAction = triggerAdminStudioOpsAlertAction;
+    bindAdminStudioOpsAlertDirectActionButtons(document);
+
     function guardAdminStudioWritableForm(form, event) {
         const formId = String(form?.id || '').trim();
         if (!formId || !window.AdminSiteFilter?.formRequiresWritableSite?.(formId)) {
@@ -1309,10 +1889,659 @@ function bindAdminStudioDelegatedControls() {
             return;
         }
 
-        actionEl.classList.add('is-pressed');
-        window.setTimeout(() => {
-            actionEl.classList?.remove('is-pressed');
-        }, 180);
+        window.clearTimeout(actionEl._adminStudioActionPulseTimer);
+        actionEl.classList.remove('is-pressed', 'is-click-feedback');
+        void actionEl.offsetWidth;
+        actionEl.classList.add('is-pressed', 'is-click-feedback');
+        actionEl._adminStudioActionPulseTimer = window.setTimeout(() => {
+            actionEl.classList?.remove('is-pressed', 'is-click-feedback');
+        }, 360);
+    }
+
+    document.addEventListener('pointerdown', (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        const actionEl = target?.closest?.('.btn-add-config[data-admin-action], .ops-alert-monitor-filter-btn[data-admin-action]');
+        if (!actionEl) {
+            return;
+        }
+
+        pulseAdminStudioDelegatedAction(actionEl);
+    }, { capture: true });
+
+    document.addEventListener('click', (event) => {
+        const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+        const actionEl = target?.closest?.('[data-admin-action]');
+        if (!actionEl) {
+            return;
+        }
+
+        if (handleOpsAlertMonitorBatchActionElement(actionEl, event)) {
+            event.stopImmediatePropagation?.();
+            return;
+        }
+        if (handleOpsAlertCaseActionElement(actionEl, event)) {
+            event.stopImmediatePropagation?.();
+        }
+    }, { capture: true });
+
+    async function tryOpenAdminStudioShellContext(moduleName = '', context = {}, options = {}) {
+        const normalizedModuleName = String(moduleName || '').trim().toLowerCase();
+        if (!normalizedModuleName || !window.AdminShell?.openContext) {
+            return false;
+        }
+
+        try {
+            const opened = await window.AdminShell.openContext(normalizedModuleName, context, {
+                settleMs: 0,
+                silentDenied: true,
+                ...(options && typeof options === 'object' && !Array.isArray(options) ? options : {})
+            });
+            return opened === true;
+        } catch (error) {
+            console.warn(`[AdminStudio] Failed to open ${normalizedModuleName} through AdminShell:`, error);
+            return false;
+        }
+    }
+
+    async function openAdminStudioPromptGalleryContext(promptId = '', options = {}) {
+        const normalizedPromptId = String(promptId || '').trim();
+        if (!normalizedPromptId) {
+            return false;
+        }
+
+        const context = {
+            source: getAdminStudioActiveModuleId(),
+            entity: 'prompt',
+            action: 'open-prompt-gallery',
+            focus: {
+                promptId: normalizedPromptId,
+                prompt_id: normalizedPromptId
+            },
+            payload: {
+                ...(options && typeof options === 'object' && !Array.isArray(options) ? options : {}),
+                promptId: normalizedPromptId,
+                prompt_id: normalizedPromptId
+            }
+        };
+
+        if (await tryOpenAdminStudioShellContext('gallery', context)) {
+            return true;
+        }
+
+        if (typeof window.openAdminGalleryShellContext === 'function') {
+            try {
+                return await window.openAdminGalleryShellContext(context);
+            } catch (error) {
+                console.warn('[AdminStudio] Failed to open gallery prompt context through shared helper:', error);
+            }
+        }
+
+        return window.openAdminGalleryPromptContext?.(normalizedPromptId, { ensureModule: true }) === true;
+    }
+
+    async function openAdminStudioPromptCommentsContext(context = {}) {
+        const normalizedContext = context && typeof context === 'object' && !Array.isArray(context) ? context : {};
+        const promptId = String(normalizedContext.promptId || normalizedContext.prompt_id || '').trim();
+        const promptTitle = String(normalizedContext.promptTitle || normalizedContext.prompt_title || '').trim();
+        const focusCommentId = String(
+            normalizedContext.focusCommentId
+            || normalizedContext.commentId
+            || normalizedContext.comment_id
+            || ''
+        ).trim();
+        const queue = String(normalizedContext.queue || '').trim().toLowerCase() || 'pending';
+        const view = String(
+            normalizedContext.view
+            || normalizedContext.commentView
+            || normalizedContext.comment_view
+            || (promptId ? 'gallery' : 'guestbook')
+        ).trim().toLowerCase() === 'gallery'
+            ? 'gallery'
+            : 'guestbook';
+        const search = String(normalizedContext.search || '').trim();
+        const shellContext = {
+            source: String(normalizedContext.source || getAdminStudioActiveModuleId()).trim().toLowerCase(),
+            entity: 'comment',
+            action: focusCommentId ? 'focus-comment' : (promptId ? 'open-prompt-comments' : 'open-comments'),
+            focus: {
+                promptId,
+                prompt_id: promptId,
+                commentId: focusCommentId,
+                comment_id: focusCommentId
+            },
+            payload: {
+                ...normalizedContext,
+                view,
+                queue,
+                search,
+                promptId,
+                prompt_id: promptId,
+                promptTitle,
+                prompt_title: promptTitle,
+                focusCommentId,
+                commentId: focusCommentId,
+                comment_id: focusCommentId
+            }
+        };
+
+        if (await tryOpenAdminStudioShellContext('comments', shellContext)) {
+            return true;
+        }
+
+        if (view === 'gallery' && promptId && !focusCommentId && !search && queue === 'pending') {
+            return window.openAdminPromptCommentContext?.({
+                promptId,
+                promptTitle,
+                ensureModule: true
+            }) === true;
+        }
+
+        return window.openAdminUserCommentContext?.({
+            ...normalizedContext,
+            view,
+            queue,
+            search,
+            promptId,
+            promptTitle,
+            focusCommentId,
+            commentId: focusCommentId,
+            ensureModule: true
+        }) === true;
+    }
+
+    async function openAdminStudioPromptHomepageContext(promptId = '', options = {}) {
+        const normalizedPromptId = String(promptId || '').trim();
+        const normalizedOptions = options && typeof options === 'object' && !Array.isArray(options) ? options : {};
+        const requestedSection = String(
+            normalizedOptions.section
+            || normalizedOptions.homepageSection
+            || normalizedOptions.homepage_section
+            || (normalizedPromptId ? 'prompts' : '')
+        ).trim().toLowerCase();
+        const context = {
+            source: getAdminStudioActiveModuleId(),
+            entity: 'homepage',
+            action: normalizedPromptId ? 'open-prompt-homepage' : 'open-homepage-section',
+            focus: {
+                promptId: normalizedPromptId,
+                prompt_id: normalizedPromptId
+            },
+            payload: {
+                ...normalizedOptions,
+                section: requestedSection || (normalizedPromptId ? 'prompts' : ''),
+                promptId: normalizedPromptId,
+                prompt_id: normalizedPromptId
+            }
+        };
+
+        if (await tryOpenAdminStudioShellContext('homepage', context)) {
+            return true;
+        }
+
+        if (typeof window.openAdminHomepageShellContext === 'function') {
+            try {
+                return await window.openAdminHomepageShellContext(context);
+            } catch (error) {
+                console.warn('[AdminStudio] Failed to open homepage prompt context through shared helper:', error);
+            }
+        }
+
+        if (normalizedPromptId) {
+            return window.HomepageAdmin?.openPromptSectionContext?.(
+                normalizedPromptId,
+                { ensureModule: true }
+            ) === true;
+        }
+
+        const switched = window.switchModule?.('homepage');
+        if (switched === false) {
+            return false;
+        }
+        if (requestedSection) {
+            window.HomepageAdmin?.switchSection?.(requestedSection);
+        }
+        return true;
+    }
+
+    async function openAdminStudioPromptAnalyticsContext(promptId = '', options = {}) {
+        const normalizedPromptId = String(promptId || '').trim();
+        if (!normalizedPromptId) {
+            return false;
+        }
+
+        const normalizedOptions = options && typeof options === 'object' && !Array.isArray(options) ? options : {};
+        const promptTitle = String(normalizedOptions.promptTitle || normalizedOptions.prompt_title || '').trim();
+        const context = {
+            source: getAdminStudioActiveModuleId(),
+            entity: 'prompt',
+            action: 'open-prompt-analytics',
+            focus: {
+                promptId: normalizedPromptId,
+                prompt_id: normalizedPromptId
+            },
+            payload: {
+                ...normalizedOptions,
+                analyticsTab: 'content',
+                tab: 'content',
+                sectionId: normalizedOptions.sectionId || normalizedOptions.focusTargetId || 'contentCommerceDetailSection',
+                focusTargetId: normalizedOptions.focusTargetId || normalizedOptions.sectionId || 'contentCommerceDetailSection',
+                promptId: normalizedPromptId,
+                prompt_id: normalizedPromptId,
+                promptTitle,
+                prompt_title: promptTitle
+            }
+        };
+
+        if (await tryOpenAdminStudioShellContext('growth-center', context, {
+            switchOptions: {
+                analyticsTab: 'content',
+                analyticsPromptId: normalizedPromptId
+            }
+        })) {
+            return true;
+        }
+
+        if (typeof window.openAdminGrowthCenterShellContext === 'function') {
+            try {
+                return await window.openAdminGrowthCenterShellContext(context, {
+                    switchOptions: {
+                        analyticsTab: 'content',
+                        analyticsPromptId: normalizedPromptId
+                    }
+                });
+            } catch (error) {
+                console.warn('[AdminStudio] Failed to open growth center prompt context through shared helper:', error);
+            }
+        }
+
+        const switched = window.switchModule?.('growth-center', {
+            analyticsTab: 'content',
+            analyticsPromptId: normalizedPromptId
+        });
+        return switched !== false;
+    }
+
+    async function openAdminStudioPaymentsFocusContext(action = '', value = '') {
+        const normalizedAction = String(action || '').trim().toLowerCase();
+        const normalizedValue = String(value || '').trim();
+        const sourceModule = getAdminStudioActiveModuleId();
+        let context = null;
+
+        const emitPaymentsFocusFallbackFeedback = (message = '', state = 'saved') => {
+            const normalizedMessage = String(message || '').trim();
+            if (!normalizedMessage) {
+                return null;
+            }
+
+            return dispatchAdminStudioFeedbackSignal({
+                kind: 'module-result',
+                module: 'payments',
+                source: 'payments-focus',
+                state,
+                message: normalizedMessage
+            });
+        };
+
+        const getPaymentsIssueSummaryFallbackMessage = (kind = '') => {
+            const normalizedKind = String(kind || '').trim().toLowerCase();
+            if (normalizedKind === 'refund') {
+                return '支付分析已切换到退款异常主题';
+            }
+            if (normalizedKind === 'ops') {
+                return '支付分析已切换到运维告警队列';
+            }
+            if (normalizedKind === 'dead_letter') {
+                return '支付分析已切换到死信告警队列';
+            }
+            if (normalizedKind === 'retry') {
+                return '支付分析已切换到重试告警队列';
+            }
+            if (normalizedKind === 'review') {
+                return '支付分析已切换到人工复核队列';
+            }
+            if (normalizedKind === 'failed') {
+                return '支付分析已切换到失败订单队列';
+            }
+            return '支付分析聚焦视图已打开';
+        };
+
+        if (
+            ['focus-exception-topic', 'issue-summary-focus', 'priority-focus-order', 'priority-focus-topic'].includes(normalizedAction)
+            && !normalizedValue
+        ) {
+            emitPaymentsFocusFallbackFeedback('支付聚焦入口缺少目标标识，请刷新当前卡片后重试。', 'failed');
+            return false;
+        }
+
+        if (normalizedAction === 'focus-exception-topic' && normalizedValue) {
+            context = {
+                source: sourceModule,
+                entity: 'payments-ops',
+                action: 'focus-exception-topic',
+                payload: {
+                    workspace: 'ops',
+                    defaultTab: 'ops',
+                    tab: 'ops',
+                    exceptionTopic: normalizedValue,
+                    exception_topic: normalizedValue,
+                    focusTargetId: 'paymentsExceptionTopics',
+                    focus_target_id: 'paymentsExceptionTopics'
+                }
+            };
+        } else if (normalizedAction === 'focus-ops-alert-queue') {
+            context = {
+                source: sourceModule,
+                entity: 'payments-ops',
+                action: 'focus-queue',
+                payload: {
+                    workspace: 'ops',
+                    defaultTab: 'ops',
+                    tab: 'ops',
+                    issueSummary: 'ops',
+                    issue_summary: 'ops',
+                    focusTargetId: 'paymentsOpsAlertQueuePanel',
+                    focus_target_id: 'paymentsOpsAlertQueuePanel'
+                }
+            };
+        } else if (normalizedAction === 'issue-summary-focus' && normalizedValue) {
+            context = {
+                source: sourceModule,
+                entity: 'payments-ops',
+                action: 'focus-issue-summary',
+                payload: {
+                    workspace: 'ops',
+                    defaultTab: 'ops',
+                    tab: 'ops',
+                    issueSummary: normalizedValue,
+                    issue_summary: normalizedValue,
+                    focusTargetId: ['refund'].includes(normalizedValue)
+                        ? 'paymentsExceptionTopics'
+                        : (['ops', 'dead_letter', 'retry'].includes(normalizedValue)
+                            ? 'paymentsOpsAlertQueuePanel'
+                            : 'paymentsOrdersTable'),
+                    focus_target_id: ['refund'].includes(normalizedValue)
+                        ? 'paymentsExceptionTopics'
+                        : (['ops', 'dead_letter', 'retry'].includes(normalizedValue)
+                            ? 'paymentsOpsAlertQueuePanel'
+                            : 'paymentsOrdersTable')
+                }
+            };
+        } else if (normalizedAction === 'priority-focus-order' && normalizedValue) {
+            context = {
+                source: sourceModule,
+                entity: 'payment-order',
+                action: 'focus-order',
+                focus: {
+                    paymentOrderId: normalizedValue,
+                    payment_order_id: normalizedValue
+                },
+                payload: {
+                    paymentOrderId: normalizedValue,
+                    payment_order_id: normalizedValue,
+                    priorityAction: 'order',
+                    priority_action: 'order',
+                    defaultTab: 'overview',
+                    tab: 'overview'
+                }
+            };
+        } else if (normalizedAction === 'priority-focus-topic' && normalizedValue) {
+            context = {
+                source: sourceModule,
+                entity: 'payments-ops',
+                action: 'focus-priority-topic',
+                payload: {
+                    workspace: 'ops',
+                    defaultTab: 'ops',
+                    tab: 'ops',
+                    priorityAction: 'topic',
+                    priority_action: 'topic',
+                    exceptionTopic: normalizedValue,
+                    exception_topic: normalizedValue,
+                    focusTargetId: 'paymentsExceptionTopics',
+                    focus_target_id: 'paymentsExceptionTopics'
+                }
+            };
+        } else if (normalizedAction === 'priority-focus-ops') {
+            context = {
+                source: sourceModule,
+                entity: 'payments-ops',
+                action: 'focus-priority-ops',
+                payload: {
+                    workspace: 'ops',
+                    defaultTab: 'ops',
+                    tab: 'ops',
+                    priorityAction: 'ops',
+                    priority_action: 'ops',
+                    focusTargetId: 'paymentsOpsAlertQueuePanel',
+                    focus_target_id: 'paymentsOpsAlertQueuePanel'
+                }
+            };
+        }
+
+        if (context && await tryOpenAdminStudioShellContext('payments', context)) {
+            return true;
+        }
+
+        if (normalizedAction === 'focus-exception-topic') {
+            if (typeof window.AdminPayments?.focusExceptionTopic !== 'function') {
+                emitPaymentsFocusFallbackFeedback('支付异常主题暂时无法打开，请稍后重试。', 'failed');
+                return false;
+            }
+            await window.AdminPayments.focusExceptionTopic(normalizedValue);
+            emitPaymentsFocusFallbackFeedback(`支付异常主题 ${normalizedValue} 已定位`);
+            return true;
+        }
+        if (normalizedAction === 'focus-ops-alert-queue') {
+            if (typeof window.AdminPayments?.focusOpsAlertQueue !== 'function') {
+                emitPaymentsFocusFallbackFeedback('支付运维告警队列暂时无法打开，请稍后重试。', 'failed');
+                return false;
+            }
+            await window.AdminPayments.focusOpsAlertQueue();
+            emitPaymentsFocusFallbackFeedback('支付运维告警队列已打开');
+            return true;
+        }
+        if (normalizedAction === 'issue-summary-focus') {
+            if (typeof window.AdminPayments?.focusAnalyticsIssueSummary !== 'function') {
+                emitPaymentsFocusFallbackFeedback('支付分析聚焦暂时不可用，请稍后重试。', 'failed');
+                return false;
+            }
+            await window.AdminPayments.focusAnalyticsIssueSummary(normalizedValue);
+            emitPaymentsFocusFallbackFeedback(getPaymentsIssueSummaryFallbackMessage(normalizedValue));
+            return true;
+        }
+        if (normalizedAction === 'priority-focus-order') {
+            if (typeof window.AdminPayments?.focusAnalyticsPrioritySummary !== 'function') {
+                emitPaymentsFocusFallbackFeedback('支付订单聚焦暂时不可用，请稍后重试。', 'failed');
+                return false;
+            }
+            const focusResult = await window.AdminPayments.focusAnalyticsPrioritySummary('order', normalizedValue);
+            const normalizedResult = focusResult && typeof focusResult === 'object'
+                ? focusResult
+                : window.AdminPayments?.getLastFocusResult?.();
+            emitPaymentsFocusFallbackFeedback(
+                normalizedResult?.matched
+                    ? `支付订单 ${normalizedValue} 已定位`
+                    : `支付订单 ${normalizedValue} 已打开，最近订单列表未匹配`,
+                normalizedResult?.matched ? 'saved' : 'partial'
+            );
+            return true;
+        }
+        if (normalizedAction === 'priority-focus-topic') {
+            if (typeof window.AdminPayments?.focusAnalyticsPrioritySummary !== 'function') {
+                emitPaymentsFocusFallbackFeedback('支付优先级主题暂时不可用，请稍后重试。', 'failed');
+                return false;
+            }
+            await window.AdminPayments.focusAnalyticsPrioritySummary('topic', normalizedValue);
+            emitPaymentsFocusFallbackFeedback(`支付优先级已切换到异常主题 ${normalizedValue}`);
+            return true;
+        }
+        if (normalizedAction === 'priority-focus-ops') {
+            if (typeof window.AdminPayments?.focusAnalyticsPrioritySummary !== 'function') {
+                emitPaymentsFocusFallbackFeedback('支付优先级运维队列暂时不可用，请稍后重试。', 'failed');
+                return false;
+            }
+            await window.AdminPayments.focusAnalyticsPrioritySummary('ops');
+            emitPaymentsFocusFallbackFeedback('支付优先级已切换到运维告警队列');
+            return true;
+        }
+
+        emitPaymentsFocusFallbackFeedback('支付聚焦入口暂未识别，请刷新后台后重试。', 'failed');
+        return false;
+    }
+
+    async function openAdminStudioTicketsFocusContext(action = '', value = '') {
+        const normalizedAction = String(action || '').trim().toLowerCase();
+        const normalizedValue = String(value || '').trim();
+        const sourceModule = getAdminStudioActiveModuleId();
+        let context = null;
+
+        const emitTicketsFocusFallbackFeedback = (message = '', state = 'saved') => {
+            const normalizedMessage = String(message || '').trim();
+            if (!normalizedMessage) {
+                return null;
+            }
+
+            return dispatchAdminStudioFeedbackSignal({
+                kind: 'module-result',
+                module: 'tickets',
+                source: 'tickets-focus',
+                state,
+                message: normalizedMessage
+            });
+        };
+
+        const getTicketsIssueSummaryFallbackMessage = (kind = '') => {
+            const normalizedKind = String(kind || '').trim().toLowerCase();
+            if (normalizedKind === 'status') {
+                return '工单队列已切换到当前状态视图';
+            }
+            if (normalizedKind === 'overdue') {
+                return '超时工单队列已打开';
+            }
+            if (normalizedKind === 'priority') {
+                return '工单队列已切换到高优先级视图';
+            }
+            if (normalizedKind === 'refund') {
+                return '工单队列已聚焦退款问题';
+            }
+            if (normalizedKind === 'delivery') {
+                return '工单队列已聚焦发货问题';
+            }
+            if (normalizedKind === 'payment') {
+                return '工单队列已聚焦支付问题';
+            }
+            return '工单队列已更新筛选视图';
+        };
+
+        if (
+            ['issue-summary-focus', 'priority-open', 'priority-resolve', 'priority-reject'].includes(normalizedAction)
+            && !normalizedValue
+        ) {
+            emitTicketsFocusFallbackFeedback('工单聚焦入口缺少目标标识，请刷新当前卡片后重试。', 'failed');
+            return false;
+        }
+
+        if (normalizedAction === 'issue-summary-focus' && normalizedValue) {
+            context = {
+                source: sourceModule,
+                entity: 'tickets',
+                action: 'focus-issue-summary',
+                payload: {
+                    workspace: 'queue',
+                    mode: 'pending',
+                    status: 'pending',
+                    issueSummary: normalizedValue,
+                    issue_summary: normalizedValue,
+                    focusTargetId: 'ticketsQueueControls',
+                    focus_target_id: 'ticketsQueueControls'
+                }
+            };
+        } else if (['priority-open', 'priority-resolve', 'priority-reject'].includes(normalizedAction) && normalizedValue) {
+            const priorityAction = normalizedAction.replace(/^priority-/, '');
+            context = {
+                source: sourceModule,
+                entity: 'ticket',
+                action: `focus-${priorityAction}`,
+                focus: {
+                    ticketId: normalizedValue,
+                    ticket_id: normalizedValue
+                },
+                payload: {
+                    workspace: 'queue',
+                    mode: 'pending',
+                    status: 'pending',
+                    priorityAction,
+                    priority_action: priorityAction,
+                    replyAction: priorityAction === 'open' ? '' : priorityAction,
+                    ticketId: normalizedValue,
+                    ticket_id: normalizedValue,
+                    focusTargetId: 'ticketsQueueControls',
+                    focus_target_id: 'ticketsQueueControls'
+                }
+            };
+        } else if (normalizedAction === 'open-overdue-queue') {
+            context = {
+                source: sourceModule,
+                entity: 'tickets',
+                action: 'open-overdue-queue',
+                payload: {
+                    workspace: 'queue',
+                    mode: 'pending',
+                    status: 'pending',
+                    overdueOnly: true,
+                    overdue_only: true,
+                    focusTargetId: 'ticketsQueueControls',
+                    focus_target_id: 'ticketsQueueControls'
+                }
+            };
+        }
+
+        if (context && await tryOpenAdminStudioShellContext('tickets', context)) {
+            return true;
+        }
+
+        if (normalizedAction === 'issue-summary-focus') {
+            if (typeof window.AdminTickets?.focusAnalyticsIssueSummary !== 'function') {
+                emitTicketsFocusFallbackFeedback('工单分析聚焦暂时不可用，请稍后重试。', 'failed');
+                return false;
+            }
+            await window.AdminTickets.focusAnalyticsIssueSummary(normalizedValue);
+            emitTicketsFocusFallbackFeedback(getTicketsIssueSummaryFallbackMessage(normalizedValue));
+            return true;
+        }
+        if (normalizedAction === 'priority-open') {
+            if (typeof window.AdminTickets?.focusAnalyticsPrioritySummary !== 'function') {
+                emitTicketsFocusFallbackFeedback('工单定位暂时不可用，请稍后重试。', 'failed');
+                return false;
+            }
+            return window.AdminTickets.focusAnalyticsPrioritySummary('open', normalizedValue) !== false;
+        }
+        if (normalizedAction === 'priority-resolve') {
+            if (typeof window.AdminTickets?.focusAnalyticsPrioritySummary !== 'function') {
+                emitTicketsFocusFallbackFeedback('工单定位暂时不可用，请稍后重试。', 'failed');
+                return false;
+            }
+            return window.AdminTickets.focusAnalyticsPrioritySummary('resolve', normalizedValue) !== false;
+        }
+        if (normalizedAction === 'priority-reject') {
+            if (typeof window.AdminTickets?.focusAnalyticsPrioritySummary !== 'function') {
+                emitTicketsFocusFallbackFeedback('工单定位暂时不可用，请稍后重试。', 'failed');
+                return false;
+            }
+            return window.AdminTickets.focusAnalyticsPrioritySummary('reject', normalizedValue) !== false;
+        }
+        if (normalizedAction === 'open-overdue-queue') {
+            if (typeof window.AdminTickets?.openOverdueQueue !== 'function') {
+                emitTicketsFocusFallbackFeedback('超时工单队列暂时无法打开，请稍后重试。', 'failed');
+                return false;
+            }
+            await window.AdminTickets.openOverdueQueue();
+            emitTicketsFocusFallbackFeedback('超时工单队列已打开');
+            return true;
+        }
+
+        emitTicketsFocusFallbackFeedback('工单聚焦入口暂未识别，请刷新后台后重试。', 'failed');
+        return false;
     }
 
     document.addEventListener('click', (event) => {
@@ -1356,24 +2585,26 @@ function bindAdminStudioDelegatedControls() {
                 break;
             }
             case 'gallery-open-prompt-comments':
-                window.openAdminPromptCommentContext?.({
+                void openAdminStudioPromptCommentsContext({
                     promptId: decodeURIComponent(actionEl.dataset.promptId || ''),
                     promptTitle: decodeURIComponent(actionEl.dataset.promptTitle || '')
                 });
                 break;
             case 'gallery-open-prompt-analytics':
-                window.switchModule?.('growth-center', {
-                    analyticsTab: 'content',
-                    analyticsPromptId: decodeURIComponent(actionEl.dataset.promptId || '')
-                });
+                void openAdminStudioPromptAnalyticsContext(
+                    decodeURIComponent(actionEl.dataset.promptId || ''),
+                    {
+                        promptTitle: decodeURIComponent(actionEl.dataset.promptTitle || '')
+                    }
+                );
                 break;
             case 'gallery-add-prompt-homepage':
                 window.addPromptToHomepagePromptsSection?.(decodeURIComponent(actionEl.dataset.promptId || ''));
                 break;
             case 'gallery-open-prompt-homepage':
-                window.HomepageAdmin?.openPromptSectionContext?.(
+                void openAdminStudioPromptHomepageContext(
                     decodeURIComponent(actionEl.dataset.promptId || ''),
-                    { ensureModule: true }
+                    { section: 'prompts' }
                 );
                 break;
             case 'gallery-set-status-filter':
@@ -1449,8 +2680,43 @@ function bindAdminStudioDelegatedControls() {
                 window.switchSettingsView?.(actionEl.dataset.settingsView);
                 break;
             case 'settings-open-points-catalog':
-                window.switchModule?.('points');
-                window.switchPointsView?.('catalog');
+                void (async () => {
+                    if (window.AdminShell?.openContext) {
+                        const opened = await window.AdminShell.openContext('points', {
+                            source: 'settings',
+                            entity: 'points',
+                            action: 'open-catalog',
+                            payload: {
+                                view: 'catalog'
+                            }
+                        }, {
+                            settleMs: 0,
+                            silentDenied: true
+                        });
+                        if (opened) {
+                            return;
+                        }
+                    }
+
+                    const switched = window.switchModule?.('points');
+                    if (switched === false) {
+                        return;
+                    }
+
+                    if (typeof window.openAdminPointsShellContext === 'function') {
+                        await window.openAdminPointsShellContext({
+                            source: 'settings',
+                            entity: 'points',
+                            action: 'open-catalog',
+                            view: 'catalog'
+                        });
+                        return;
+                    }
+
+                    window.switchPointsView?.('catalog');
+                })().catch((error) => {
+                    console.warn('[AdminStudio] Failed to open points catalog from settings:', error);
+                });
                 break;
             case 'switch-ops-alerts-view':
                 window.switchOpsAlertsView?.(actionEl.dataset.opsAlertsView);
@@ -1866,16 +3132,16 @@ function bindAdminStudioDelegatedControls() {
                 window.refreshOpsAlertMonitorPanel?.();
                 break;
             case 'settings-batch-claim-ops-alert-monitor':
-                window.handleOpsAlertMonitorBatchCaseAction?.('assign');
+                runOpsAlertMonitorBatchCaseAction('assign');
                 break;
             case 'settings-batch-note-ops-alert-monitor':
-                window.handleOpsAlertMonitorBatchCaseAction?.('add_note');
+                runOpsAlertMonitorBatchCaseAction('add_note');
                 break;
             case 'settings-batch-resolve-ops-alert-monitor':
-                window.handleOpsAlertMonitorBatchCaseAction?.('resolve');
+                runOpsAlertMonitorBatchCaseAction('resolve');
                 break;
             case 'settings-batch-mute-ops-alert-monitor':
-                window.openOpsAlertBatchMuteModal?.();
+                openOpsAlertMonitorBatchMuteModal();
                 break;
             case 'settings-toggle-ops-alert-batch-mute-allow-critical':
                 window.toggleOpsAlertBatchMuteAllowCritical?.();
@@ -1990,22 +3256,23 @@ function bindAdminStudioDelegatedControls() {
                 );
                 break;
             case 'homepage-open-featured-gallery':
-                window.openAdminGalleryPromptContext?.(
-                    decodeURIComponent(actionEl.dataset.homepagePromptId || ''),
-                    { ensureModule: true }
+                void openAdminStudioPromptGalleryContext(
+                    decodeURIComponent(actionEl.dataset.homepagePromptId || '')
                 );
                 break;
             case 'homepage-open-featured-comments':
-                window.openAdminPromptCommentContext?.({
+                void openAdminStudioPromptCommentsContext({
                     promptId: decodeURIComponent(actionEl.dataset.homepagePromptId || ''),
                     promptTitle: decodeURIComponent(actionEl.dataset.homepagePromptTitle || '')
                 });
                 break;
             case 'homepage-open-featured-analytics':
-                window.switchModule?.('growth-center', {
-                    analyticsTab: 'content',
-                    analyticsPromptId: decodeURIComponent(actionEl.dataset.homepagePromptId || '')
-                });
+                void openAdminStudioPromptAnalyticsContext(
+                    decodeURIComponent(actionEl.dataset.homepagePromptId || ''),
+                    {
+                        promptTitle: decodeURIComponent(actionEl.dataset.homepagePromptTitle || '')
+                    }
+                );
                 break;
             case 'homepage-toggle-config-card':
                 window.toggleConfigCard?.(actionEl);
@@ -2073,22 +3340,22 @@ function bindAdminStudioDelegatedControls() {
                 window.AdminPayments?.setExceptionTopicFilter?.(actionEl.dataset.paymentsTopicKey);
                 break;
             case 'payments-focus-exception-topic':
-                window.AdminPayments?.focusExceptionTopic?.(actionEl.dataset.paymentsTopicKey);
+                void openAdminStudioPaymentsFocusContext('focus-exception-topic', actionEl.dataset.paymentsTopicKey);
                 break;
             case 'payments-focus-ops-alert-queue':
-                window.AdminPayments?.focusOpsAlertQueue?.();
+                void openAdminStudioPaymentsFocusContext('focus-ops-alert-queue');
                 break;
             case 'payments-issue-summary-focus':
-                window.AdminPayments?.focusAnalyticsIssueSummary?.(actionEl.dataset.paymentsIssueFocus);
+                void openAdminStudioPaymentsFocusContext('issue-summary-focus', actionEl.dataset.paymentsIssueFocus);
                 break;
             case 'payments-priority-focus-order':
-                window.AdminPayments?.focusAnalyticsPrioritySummary?.('order', actionEl.dataset.paymentsOrderId);
+                void openAdminStudioPaymentsFocusContext('priority-focus-order', actionEl.dataset.paymentsOrderId);
                 break;
             case 'payments-priority-focus-topic':
-                window.AdminPayments?.focusAnalyticsPrioritySummary?.('topic', actionEl.dataset.paymentsTopicKey);
+                void openAdminStudioPaymentsFocusContext('priority-focus-topic', actionEl.dataset.paymentsTopicKey);
                 break;
             case 'payments-priority-focus-ops':
-                window.AdminPayments?.focusAnalyticsPrioritySummary?.('ops');
+                void openAdminStudioPaymentsFocusContext('priority-focus-ops');
                 break;
             case 'payments-preview-cleanup':
                 window.AdminPayments?.previewCleanup?.();
@@ -2167,21 +3434,20 @@ function bindAdminStudioDelegatedControls() {
                 window.viewPromptContext?.(actionEl.dataset.promptId);
                 break;
             case 'analytics-open-prompt-gallery':
-                window.openAdminGalleryPromptContext?.(
-                    decodeURIComponent(actionEl.dataset.promptId || ''),
-                    { ensureModule: true }
+                void openAdminStudioPromptGalleryContext(
+                    decodeURIComponent(actionEl.dataset.promptId || '')
                 );
                 break;
             case 'analytics-open-prompt-comments':
-                window.openAdminPromptCommentContext?.({
+                void openAdminStudioPromptCommentsContext({
                     promptId: decodeURIComponent(actionEl.dataset.promptId || ''),
                     promptTitle: decodeURIComponent(actionEl.dataset.promptTitle || '')
                 });
                 break;
             case 'analytics-open-prompt-homepage':
-                window.HomepageAdmin?.openPromptSectionContext?.(
+                void openAdminStudioPromptHomepageContext(
                     decodeURIComponent(actionEl.dataset.promptId || ''),
-                    { ensureModule: true }
+                    { section: 'prompts' }
                 );
                 break;
             case 'analytics-open-content-commerce-detail':
@@ -2210,12 +3476,61 @@ function bindAdminStudioDelegatedControls() {
                     break;
                 }
 
-                window.switchModule?.('users');
-                setTimeout(() => {
+                void (async () => {
+                    if (window.AdminShell?.openContext) {
+                        const opened = await window.AdminShell.openContext('users', {
+                            source: 'analytics',
+                            entity: 'user',
+                            action: 'open-user',
+                            focus: {
+                                userId,
+                                user_id: userId
+                            },
+                            payload: {
+                                analyticsContext,
+                                search: userId,
+                                searchQuery: userId,
+                                query: userId
+                            }
+                        }, {
+                            settleMs: 0,
+                            silentDenied: true
+                        });
+                        if (opened) {
+                            return;
+                        }
+                    }
+
+                    const switched = window.switchModule?.('users');
+                    if (switched === false) {
+                        return;
+                    }
+
+                    if (typeof window.openAdminUsersShellContext === 'function') {
+                        await window.openAdminUsersShellContext({
+                            source: 'analytics',
+                            entity: 'user',
+                            action: 'open-user',
+                            focus: {
+                                userId,
+                                user_id: userId
+                            },
+                            payload: {
+                                analyticsContext,
+                                search: userId,
+                                searchQuery: userId,
+                                query: userId
+                            }
+                        });
+                        return;
+                    }
+
                     window.openUserModal?.(userId, {
                         analyticsContext
                     });
-                }, 0);
+                })().catch((error) => {
+                    console.warn('[AdminStudio] Failed to open analytics user detail:', error);
+                });
                 break;
             }
             case 'analytics-open-destination':
@@ -2383,7 +3698,7 @@ function bindAdminStudioDelegatedControls() {
                             return;
                         }
                     }
-                    window.openAdminUserCommentContext?.(commentContext);
+                    await openAdminStudioPromptCommentsContext(commentContext);
                 })();
                 break;
             }
@@ -2540,6 +3855,29 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-refresh-verify-monitor':
                 window.refreshVerifyMonitor?.();
                 break;
+            case 'settings-refocus-verify-monitor': {
+                const focusContext = typeof window.readOpsAlertWorkspaceContextDataset === 'function'
+                    ? window.readOpsAlertWorkspaceContextDataset(actionEl.dataset)
+                    : {};
+                window.focusVerifyMonitorWorkspace?.(focusContext);
+                break;
+            }
+            case 'settings-scroll-focus-target': {
+                const focusTargetId = String(actionEl.dataset.focusTargetId || '').trim();
+                const focusTarget = focusTargetId ? document.getElementById(focusTargetId) : null;
+                const scrollTarget = focusTarget?.closest?.('section, .settings-section, .admin-audit-monitor-panel, .verify-monitor-card') || focusTarget;
+                if (scrollTarget instanceof HTMLElement) {
+                    scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    scrollTarget.classList.remove('admin-workbench-focus-target--active');
+                    void scrollTarget.offsetWidth;
+                    scrollTarget.classList.add('admin-workbench-focus-target--active');
+                    window.clearTimeout(scrollTarget._adminWorkbenchFocusTargetTimer);
+                    scrollTarget._adminWorkbenchFocusTargetTimer = window.setTimeout(() => {
+                        scrollTarget.classList.remove('admin-workbench-focus-target--active');
+                    }, 1800);
+                }
+                break;
+            }
             case 'settings-change-verify-monitor-task-page': {
                 const page = parseInt(actionEl.dataset.verifyMonitorPage || '', 10);
                 if (!Number.isNaN(page)) {
@@ -2557,6 +3895,13 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-refresh-admin-audit-monitor':
                 window.refreshAdminAuditMonitor?.();
                 break;
+            case 'settings-refocus-admin-audit-monitor': {
+                const focusContext = typeof window.readOpsAlertWorkspaceContextDataset === 'function'
+                    ? window.readOpsAlertWorkspaceContextDataset(actionEl.dataset)
+                    : {};
+                window.focusAdminAuditMonitorWorkspace?.(focusContext);
+                break;
+            }
             case 'settings-change-admin-audit-access-page': {
                 const page = parseInt(actionEl.dataset.adminAuditPage || '', 10);
                 if (!Number.isNaN(page)) {
@@ -2799,16 +4144,16 @@ function bindAdminStudioDelegatedControls() {
                 window.AdminTickets?.toggleQuickFilter?.('unassigned');
                 break;
             case 'tickets-issue-summary-focus':
-                window.AdminTickets?.focusAnalyticsIssueSummary?.(actionEl.dataset.ticketIssueFocus);
+                void openAdminStudioTicketsFocusContext('issue-summary-focus', actionEl.dataset.ticketIssueFocus);
                 break;
             case 'tickets-priority-open':
-                window.AdminTickets?.focusAnalyticsPrioritySummary?.('open', actionEl.dataset.ticketId);
+                void openAdminStudioTicketsFocusContext('priority-open', actionEl.dataset.ticketId);
                 break;
             case 'tickets-priority-resolve':
-                window.AdminTickets?.focusAnalyticsPrioritySummary?.('resolve', actionEl.dataset.ticketId);
+                void openAdminStudioTicketsFocusContext('priority-resolve', actionEl.dataset.ticketId);
                 break;
             case 'tickets-priority-reject':
-                window.AdminTickets?.focusAnalyticsPrioritySummary?.('reject', actionEl.dataset.ticketId);
+                void openAdminStudioTicketsFocusContext('priority-reject', actionEl.dataset.ticketId);
                 break;
             case 'tickets-toggle-select-mode':
                 window.AdminTickets?.toggleSelectionMode?.();
@@ -2820,7 +4165,7 @@ function bindAdminStudioDelegatedControls() {
                 window.AdminTickets?.selectAllCurrentPage?.();
                 break;
             case 'tickets-open-overdue-queue':
-                window.AdminTickets?.openOverdueQueue?.();
+                void openAdminStudioTicketsFocusContext('open-overdue-queue');
                 break;
             case 'tickets-open-sla-settings':
                 window.AdminTickets?.openSlaSettings?.();
@@ -3253,12 +4598,6 @@ function bindAdminStudioDelegatedControls() {
     });
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
-    const access = await requireAdminStudioAccess();
-    if (!access) return;
-    await initializeAdminStudioShell();
-});
-
 // ========================================
 // ADMIN STATE
 // ========================================
@@ -3342,8 +4681,8 @@ const OPS_ALERTS_MODULE_VIEW_CARD_ASSIGNMENTS = Object.freeze([
     { configId: 'ops-alerts-verify-quota', bucket: 'monitors-side' },
     { configId: 'ops-alerts-verify-failure', bucket: 'monitors-side' },
     { configId: 'ops-alerts-shop-risk', bucket: 'monitors-side' },
-    { configId: 'ops-alerts-workspace', bucket: 'workspace-main' },
     { configId: 'ops-alerts-monitor', bucket: 'workspace-main' },
+    { configId: 'ops-alerts-workspace', bucket: 'workspace-main' },
     { configId: 'ops-alerts-health', bucket: 'health-main' }
 ]);
 
@@ -3393,7 +4732,7 @@ function switchView(viewName) {
     syncAdminGalleryRouteState({
         view: normalizedView,
         promptId: normalizedView === 'manage'
-            ? (pendingAdminGalleryFocusPromptId || getAdminGalleryRouteState().promptId || '')
+            ? (getPendingAdminGalleryFocusPromptId() || getAdminGalleryRouteState().promptId || '')
             : ''
     });
 
@@ -3407,13 +4746,17 @@ function switchView(viewName) {
 }
 
 // Switch between Settings sub-views (Pricing / General)
-function switchSettingsView(viewName) {
+function switchSettingsView(viewName, options = {}) {
+    const normalizedViewName = typeof window.normalizeSettingsViewName === 'function'
+        ? window.normalizeSettingsViewName(viewName)
+        : String(viewName || '').trim().toLowerCase();
+
     // Update active tab in settings module only
     const settingsModule = document.getElementById('module-settings');
     if (!settingsModule) return;
 
     settingsModule.querySelectorAll('.admin-tab').forEach(tab => {
-        const isActive = tab.dataset.settingsView === viewName;
+        const isActive = tab.dataset.settingsView === normalizedViewName;
         tab.classList.toggle('active', isActive);
 
         if (isActive) {
@@ -3426,15 +4769,20 @@ function switchSettingsView(viewName) {
         section.classList.remove('active');
     });
 
-    const targetView = document.getElementById(`settings-view-${viewName}`);
+    const targetView = document.getElementById(`settings-view-${normalizedViewName}`);
     if (targetView) targetView.classList.add('active');
 
     // Load API keys when switching to general
-    if (viewName === 'general') {
+    if (normalizedViewName === 'general') {
         renderApiKeySelector();
     }
 
-    void window.warmSettingsViewConfigInBackground?.({ viewName });
+    if (options?.warm !== false) {
+        void window.warmSettingsViewConfigInBackground?.({
+            viewName: normalizedViewName,
+            force: options?.force === true
+        });
+    }
 }
 
 window.switchSettingsView = switchSettingsView;
@@ -3507,35 +4855,6 @@ function updateAdminTabIndicator(activeTab) {
     if (!activeTab) return;
 }
 
-// ========================================
-// LOAD ADMIN PROMPTS
-// ========================================
-let allPrompts = []; // Cache all prompts for local search
-const ADMIN_GALLERY_PAGE_SIZE = 10;
-const ADMIN_GALLERY_EAGER_IMAGE_COUNT = 4;
-const adminGalleryPrefetchState = {
-    site: '',
-    loaded: false,
-    promise: null
-};
-const ADMIN_GALLERY_BILINGUAL_BATCH_SIZE = 12;
-const adminGalleryLoadState = {
-    site: '',
-    loaded: false,
-    loadedAt: 0,
-    promise: null,
-    requestId: 0
-};
-const adminGalleryViewState = {
-    page: 1,
-    pageSize: ADMIN_GALLERY_PAGE_SIZE,
-    searchQuery: '',
-    searchMatchedIds: null,
-    sortValue: 'updated-desc',
-    filteredPromptIds: []
-};
-let pendingAdminGalleryFocusPromptId = '';
-
 function getGalleryActiveViewName() {
     return document.querySelector('#module-gallery .view-section.active')?.id === 'view-manage'
         ? 'manage'
@@ -3605,7 +4924,7 @@ function resetAdminGalleryManageFilters() {
 }
 
 function queueAdminGalleryPromptFocus(promptId = '') {
-    pendingAdminGalleryFocusPromptId = String(promptId || '').trim();
+    setPendingAdminGalleryFocusPromptId(promptId);
 }
 
 function renderGallerySiteContextBanner(site = getAdminPromptsReadSite()) {
@@ -4072,7 +5391,7 @@ function focusAdminGalleryPromptCard(promptId = '', options = {}) {
     }, {
         ensureGalleryModule: true
     });
-    pendingAdminGalleryFocusPromptId = '';
+    setPendingAdminGalleryFocusPromptId('');
     return true;
 }
 
@@ -4139,7 +5458,7 @@ async function renderLoadedAdminPromptRows(rows = [], { siteContext = getAdminPr
             applyAdminGalleryFilters({ resetPage });
         }
 
-        const routePromptId = pendingAdminGalleryFocusPromptId || getAdminGalleryRouteState().promptId;
+        const routePromptId = getPendingAdminGalleryFocusPromptId() || getAdminGalleryRouteState().promptId;
         if (routePromptId && isGalleryModuleActive() && isGalleryManageViewActive()) {
             window.requestAnimationFrame(() => {
                 focusAdminGalleryPromptCard(routePromptId, {
@@ -4410,7 +5729,7 @@ async function resolveAdminGalleryPromptForHomepageAction(promptId = '', options
 async function addPromptToHomepagePromptsSection(promptId = '', options = {}) {
     const prompt = await resolveAdminGalleryPromptForHomepageAction(promptId, options);
     if (!prompt) {
-        showToast('未找到要加入首页的 Prompt', 'error');
+        showAdminStudioToast('未找到要加入首页的 Prompt', 'error');
         return false;
     }
 
@@ -4426,7 +5745,7 @@ async function addPromptToHomepagePromptsSection(promptId = '', options = {}) {
         return true;
     } catch (error) {
         console.error('[Gallery] Failed to add prompt to homepage:', error);
-        showToast(`加入首页失败: ${error.message || '未知错误'}`, 'error');
+        showAdminStudioToast(`加入首页失败: ${error.message || '未知错误'}`, 'error');
         return false;
     }
 }
@@ -4691,6 +6010,12 @@ function handleAdminGalleryShellContext(context = {}) {
     const rawContext = normalizedContext.raw && typeof normalizedContext.raw === 'object' ? normalizedContext.raw : {};
     const payload = normalizedContext.payload && typeof normalizedContext.payload === 'object' ? normalizedContext.payload : {};
     const focus = normalizedContext.focus && typeof normalizedContext.focus === 'object' ? normalizedContext.focus : {};
+    const action = String(
+        normalizedContext.action
+        || rawContext.action
+        || payload.action
+        || ''
+    ).trim().toLowerCase();
     const promptId = String(
         focus.promptId
         || rawContext.promptId
@@ -4702,11 +6027,34 @@ function handleAdminGalleryShellContext(context = {}) {
     ).trim();
 
     if (promptId) {
-        return openAdminGalleryPromptContext(promptId, { ensureModule: false });
+        const opened = openAdminGalleryPromptContext(promptId, { ensureModule: false });
+        if (opened && action === 'edit-prompt' && typeof window.editPrompt === 'function') {
+            window.setTimeout(() => {
+                window.editPrompt?.(promptId);
+            }, 120);
+        }
+        return opened;
     }
 
     return false;
 }
+
+async function openAdminGalleryShellContext(context = {}, options = {}) {
+    const normalizedContext = context && typeof context === 'object' && !Array.isArray(context) ? context : {};
+    const normalizedOptions = options && typeof options === 'object' && !Array.isArray(options) ? options : {};
+    if (normalizedOptions.ensureModule !== false && !isGalleryModuleActive()) {
+        const switched = window.AdminShell?.activateModule
+            ? window.AdminShell.activateModule('gallery', { reason: 'gallery-shared-context', deferContext: true })
+            : window.switchModule?.('gallery');
+        if (switched === false) {
+            return false;
+        }
+    }
+
+    return handleAdminGalleryShellContext(normalizedContext, normalizedOptions);
+}
+
+window.openAdminGalleryShellContext = openAdminGalleryShellContext;
 
 if (window.AdminShell?.registerModule) {
     window.AdminShell.registerModule('gallery', {
@@ -4812,7 +6160,11 @@ async function loadAdminPrompts(options = {}) {
             if (preferFastRender) {
                 homepageWarmPromise = typeof window.HomepageAdmin?.ensureLoaded === 'function'
                     ? Promise.resolve()
-                        .then(() => window.HomepageAdmin.ensureLoaded())
+                        .then(() => withTimeout(
+                            window.HomepageAdmin.ensureLoaded(),
+                            ADMIN_GALLERY_HOMEPAGE_WARM_TIMEOUT_MS,
+                            'Homepage prompt state warm timed out'
+                        ))
                         .catch((homepageError) => {
                             console.warn('[Gallery] Failed to warm homepage featured state:', homepageError);
                             return false;
@@ -4820,7 +6172,11 @@ async function loadAdminPrompts(options = {}) {
                     : null;
             } else if (typeof window.HomepageAdmin?.ensureLoaded === 'function') {
                 try {
-                    await window.HomepageAdmin.ensureLoaded();
+                    await withTimeout(
+                        window.HomepageAdmin.ensureLoaded(),
+                        ADMIN_GALLERY_HOMEPAGE_WARM_TIMEOUT_MS,
+                        'Homepage prompt state warm timed out'
+                    );
                 } catch (homepageError) {
                     console.warn('[Gallery] Failed to warm homepage featured state:', homepageError);
                 }
@@ -4866,7 +6222,7 @@ async function loadAdminPrompts(options = {}) {
             }
             setAdminGalleryLoadingChrome(false);
             console.error('Error loading prompts:', err);
-            showToast(`Failed to load prompts: ${err.message || 'Unknown error'}`, 'error');
+            showAdminStudioToast(`Failed to load prompts: ${err.message || 'Unknown error'}`, 'error');
             throw err;
         }
     })();
@@ -5239,7 +6595,7 @@ async function editPrompt(id) {
 
     } catch (err) {
         console.error('Error loading prompt for edit:', err);
-        showToast('Failed to load prompt', 'error');
+        showAdminStudioToast('Failed to load prompt', 'error');
     }
 }
 
@@ -5337,18 +6693,18 @@ async function deletePrompt(id) {
                         promptId: ''
                     });
                 }
-                if (pendingAdminGalleryFocusPromptId === String(id)) {
-                    pendingAdminGalleryFocusPromptId = '';
+                if (getPendingAdminGalleryFocusPromptId() === String(id)) {
+                    setPendingAdminGalleryFocusPromptId('');
                 }
                 applyAdminGalleryFilters();
                 updateBatchButtonStates();
             }, 300);
         }
 
-        showToast('Prompt deleted successfully!', 'success');
+        showAdminStudioToast('Prompt deleted successfully!', 'success');
     } catch (err) {
         console.error('Delete operation failed:', err);
-        showToast(`Delete failed: ${err.message || 'Unknown error'}`, 'error');
+        showAdminStudioToast(`Delete failed: ${err.message || 'Unknown error'}`, 'error');
     }
 }
 
@@ -5682,7 +7038,7 @@ async function activateCodexAsCurrentAIService(options = {}) {
         }
 
         if (options.showToast !== false) {
-            showToast('已自动切换 AI 分析服务到 Codex Relay。', 'success');
+            showAdminStudioToast('已自动切换 AI 分析服务到 Codex Relay。', 'success');
         }
     }
 
@@ -5736,12 +7092,12 @@ async function promptForApiKey() {
 
     const apiKey = String(input || '').trim();
     if (!apiKey) {
-        showToast('未输入 Gemini API Key', 'warning');
+        showAdminStudioToast('未输入 Gemini API Key', 'warning');
         return;
     }
 
     try {
-        showToast('正在安全保存 Gemini Key...', 'info');
+        showAdminStudioToast('正在安全保存 Gemini Key...', 'info');
         const payload = await saveServerManagedGeminiKey(apiKey);
         window.GEMINI_API_KEY = payload.configured ? '__server_proxy__' : '';
         window.GEMINI_API_SOURCE = payload.source || 'stored';
@@ -5749,15 +7105,15 @@ async function promptForApiKey() {
         window.AdminAI.source = window.GEMINI_API_SOURCE;
         renderApiKeySelector();
         updateAnalyzeButton();
-        showToast(payload.message || 'Gemini Key 已安全保存到服务端。', 'success');
+        showAdminStudioToast(payload.message || 'Gemini Key 已安全保存到服务端。', 'success');
     } catch (err) {
         console.error('Failed to save Gemini key:', err);
-        showToast(err.message || '保存 Gemini Key 失败', 'error');
+        showAdminStudioToast(err.message || '保存 Gemini Key 失败', 'error');
     }
 }
 
 function switchApiKey() {
-    showToast('当前始终优先使用后台安全存储，其次才是 Vercel 环境变量。', 'info');
+    showAdminStudioToast('当前始终优先使用后台安全存储，其次才是 Vercel 环境变量。', 'info');
 }
 
 function addNewApiKey() {
@@ -5768,7 +7124,7 @@ window.addNewApiKey = addNewApiKey;
 
 async function deleteApiKey() {
     if ((window.GEMINI_API_SOURCE || 'missing') !== 'stored') {
-        showToast('当前没有可删除的后台存储 Gemini Key。', 'info');
+        showAdminStudioToast('当前没有可删除的后台存储 Gemini Key。', 'info');
         return;
     }
 
@@ -5784,10 +7140,10 @@ async function deleteApiKey() {
         window.AdminAI.source = window.GEMINI_API_SOURCE;
         renderApiKeySelector();
         updateAnalyzeButton();
-        showToast(payload.message || 'Gemini Key 已删除', 'success');
+        showAdminStudioToast(payload.message || 'Gemini Key 已删除', 'success');
     } catch (err) {
         console.error('Failed to delete Gemini key:', err);
-        showToast(err.message || '删除 Gemini Key 失败', 'error');
+        showAdminStudioToast(err.message || '删除 Gemini Key 失败', 'error');
     }
 }
 
@@ -5825,7 +7181,7 @@ async function promptForCodexKey(options = {}) {
     const validationMessage = validateCodexDraftConfig(draft);
 
     if (validationMessage) {
-        showToast(validationMessage, 'warning');
+        showAdminStudioToast(validationMessage, 'warning');
         focusCodexConfigPanel();
         return false;
     }
@@ -5845,12 +7201,12 @@ async function promptForCodexKey(options = {}) {
 
     const apiKey = String(input || '').trim();
     if (!apiKey) {
-        showToast('未输入 Codex API Key', 'warning');
+        showAdminStudioToast('未输入 Codex API Key', 'warning');
         return false;
     }
 
     try {
-        showToast('正在安全保存 Codex 配置...', 'info');
+        showAdminStudioToast('正在安全保存 Codex 配置...', 'info');
         const payload = await saveServerManagedCodexConfig({
             apiKey,
             ...draft
@@ -5859,11 +7215,11 @@ async function promptForCodexKey(options = {}) {
         await activateCodexAsCurrentAIService();
         renderApiKeySelector();
         renderCodexConfigPanel();
-        showToast(payload.message || 'Codex 配置已安全保存到服务端。', 'success');
+        showAdminStudioToast(payload.message || 'Codex 配置已安全保存到服务端。', 'success');
         return true;
     } catch (err) {
         console.error('Failed to save Codex config:', err);
-        showToast(err.message || '保存 Codex 配置失败', 'error');
+        showAdminStudioToast(err.message || '保存 Codex 配置失败', 'error');
         return false;
     }
 }
@@ -5873,7 +7229,7 @@ async function saveCodexConfig() {
     const validationMessage = validateCodexDraftConfig(draft);
 
     if (validationMessage) {
-        showToast(validationMessage, 'warning');
+        showAdminStudioToast(validationMessage, 'warning');
         focusCodexConfigPanel();
         return;
     }
@@ -5888,16 +7244,16 @@ async function saveCodexConfig() {
     }
 
     try {
-        showToast('正在保存 Codex 配置...', 'info');
+        showAdminStudioToast('正在保存 Codex 配置...', 'info');
         const payload = await saveServerManagedCodexConfig(draft);
         setCodexRuntimeConfig(payload);
         await activateCodexAsCurrentAIService();
         renderApiKeySelector();
         renderCodexConfigPanel();
-        showToast(payload.message || 'Codex 配置已更新。', 'success');
+        showAdminStudioToast(payload.message || 'Codex 配置已更新。', 'success');
     } catch (err) {
         console.error('Failed to update Codex config:', err);
-        showToast(err.message || '保存 Codex 配置失败', 'error');
+        showAdminStudioToast(err.message || '保存 Codex 配置失败', 'error');
     }
 }
 
@@ -5905,7 +7261,7 @@ async function deleteCodexConfig() {
     const config = getCodexRuntimeConfig();
 
     if ((config.source || 'missing') !== 'stored') {
-        showToast('当前没有可删除的后台存储 Codex 配置。', 'info');
+        showAdminStudioToast('当前没有可删除的后台存储 Codex 配置。', 'info');
         return;
     }
 
@@ -5918,10 +7274,10 @@ async function deleteCodexConfig() {
         setCodexRuntimeConfig(payload);
         renderApiKeySelector();
         renderCodexConfigPanel();
-        showToast(payload.message || 'Codex 配置已删除', 'success');
+        showAdminStudioToast(payload.message || 'Codex 配置已删除', 'success');
     } catch (err) {
         console.error('Failed to delete Codex config:', err);
-        showToast(err.message || '删除 Codex 配置失败', 'error');
+        showAdminStudioToast(err.message || '删除 Codex 配置失败', 'error');
     }
 }
 
@@ -5930,7 +7286,7 @@ async function testCodexConnectivity() {
     const validationMessage = validateCodexDraftConfig(draft);
 
     if (validationMessage) {
-        showToast(validationMessage, 'warning');
+        showAdminStudioToast(validationMessage, 'warning');
         focusCodexConfigPanel();
         return;
     }
@@ -5954,23 +7310,23 @@ async function testCodexConnectivity() {
 
         transientApiKey = String(input || '').trim();
         if (!transientApiKey) {
-            showToast('未输入可用于测试的 Codex API Key', 'warning');
+            showAdminStudioToast('未输入可用于测试的 Codex API Key', 'warning');
             return;
         }
     }
 
     try {
-        showToast('正在测试 Codex 连通性...', 'info');
+        showAdminStudioToast('正在测试 Codex 连通性...', 'info');
         const payload = await testServerManagedCodexConnectivity({
             ...draft,
             ...(transientApiKey ? { apiKey: transientApiKey } : {})
         });
         const responsePreview = String(payload.text || '').trim();
         const detail = responsePreview ? ` 返回：${responsePreview.slice(0, 80)}` : '';
-        showToast((payload.message || 'Codex Relay 连通性测试通过。') + detail, 'success');
+        showAdminStudioToast((payload.message || 'Codex Relay 连通性测试通过。') + detail, 'success');
     } catch (err) {
         console.error('Failed to test Codex connectivity:', err);
-        showToast(err.message || '测试 Codex 连通性失败', 'error');
+        showAdminStudioToast(err.message || '测试 Codex 连通性失败', 'error');
     }
 }
 
@@ -6125,7 +7481,7 @@ function renderApiKeySelector() {
 
 // Edit API key name
 function editApiKeyName() {
-    showToast('当前仅支持一个 Gemini 服务端代理密钥。', 'info');
+    showAdminStudioToast('当前仅支持一个 Gemini 服务端代理密钥。', 'info');
 }
 
 
@@ -6151,7 +7507,7 @@ function openCurrentAIConfigEntry() {
     }
 
     if (currentService === 'claude') {
-        showToast('Claude 暂未接入后台代理，请先切换到 Gemini 或 Codex Relay。', 'info');
+        showAdminStudioToast('Claude 暂未接入后台代理，请先切换到 Gemini 或 Codex Relay。', 'info');
         return;
     }
 
@@ -6479,7 +7835,7 @@ async function handleFiles(files) {
     );
 
     if (validFiles.length === 0) {
-        showToast('请上传图片文件', 'error');
+        showAdminStudioToast('请上传图片文件', 'error');
         return;
     }
 
@@ -6650,13 +8006,13 @@ async function analyzeImages(options = {}) {
     }
     if (uploadedFiles.length === 0) {
         if (currentMode === 'edit') {
-            showToast('无法读取当前图片用于重分析，请重新上传图片后再试', 'error');
+            showAdminStudioToast('无法读取当前图片用于重分析，请重新上传图片后再试', 'error');
         }
         return;
     }
 
     if (!window.AdminAI?.configured) {
-        showToast(getCurrentAIMissingConfigMessage(), 'error');
+        showAdminStudioToast(getCurrentAIMissingConfigMessage(), 'error');
         await checkApiKey();
         return;
     }
@@ -6695,14 +8051,14 @@ async function analyzeImages(options = {}) {
         setAdminStudioVisibility(formEl, true);
         updateStatus(settings.completeStatusText || 'Analysis Complete', 'ready');
         if (!settings.silentSuccessToast) {
-            showToast(`AI 分析完成！(${imageCount} 张图片)`, 'success');
+            showAdminStudioToast(`AI 分析完成！(${imageCount} 张图片)`, 'success');
         }
         return result;
 
     } catch (error) {
         console.error('Analysis error:', error);
         setAdminStudioVisibility(loadingEl, false);
-        showToast(`分析失败: ${error.message}`, 'error');
+        showAdminStudioToast(`分析失败: ${error.message}`, 'error');
         await checkApiKey();
         if (settings.rethrow) {
             throw error;
@@ -6776,6 +8132,11 @@ Rules:
         }],
         generationConfig: {
             temperature: 0.35,
+            maxOutputTokens: ADMIN_VISION_ANALYSIS_MAX_OUTPUT_TOKENS
+        },
+        budget: {
+            tier: 'balanced',
+            maxInputChars: 12000,
             maxOutputTokens: ADMIN_VISION_ANALYSIS_MAX_OUTPUT_TOKENS
         }
     };
@@ -7349,11 +8710,11 @@ async function savePrompt(e) {
     // For new prompts, auto-analyze on save when needed. For editing, just need images.
     if (currentMode === 'create') {
         if (uploadedFiles.length === 0) {
-            showToast('请先上传图片', 'error');
+            showAdminStudioToast('请先上传图片', 'error');
             return;
         }
         if (!activeAnalysisResult) {
-            showToast('未检测到分析结果，正在自动分析并保存...', 'warning');
+            showAdminStudioToast('未检测到分析结果，正在自动分析并保存...', 'warning');
             activeAnalysisResult = await analyzeImages({
                 preserveExisting: true,
                 silentSuccessToast: true,
@@ -7368,7 +8729,7 @@ async function savePrompt(e) {
     } else if (currentMode === 'edit') {
         // When editing, we don't need new analysis - just images
         if (uploadedFiles.length === 0 && currentEditingPromptImageUrls.length === 0) {
-            showToast('请确保有图片', 'error');
+            showAdminStudioToast('请确保有图片', 'error');
             return;
         }
     }
@@ -7616,7 +8977,7 @@ async function savePrompt(e) {
         markHomepagePromptPoolUpdated();
 
         const successMsg = currentMode === 'edit' ? 'Prompt updated!' : 'Prompt saved!';
-        showToast(successMsg, 'success');
+        showAdminStudioToast(successMsg, 'success');
 
         const savedCoverage = getPromptLanguageCoverage(savedRow);
         const bilingualPersistenceWarning = buildPromptBilingualPersistenceWarningMessage(
@@ -7624,9 +8985,9 @@ async function savePrompt(e) {
             bilingualPersistenceState
         );
         if (bilingualPersistenceWarning) {
-            showToast(bilingualPersistenceWarning, 'warning');
+            showAdminStudioToast(bilingualPersistenceWarning, 'warning');
         } else if (!savedCoverage.zh || !savedCoverage.en || translationSoftFailed) {
-            showToast('Prompt 已保存，但双语仍未补全。可在高级语言字段中继续校对补齐。', 'warning');
+            showAdminStudioToast('Prompt 已保存，但双语仍未补全。可在高级语言字段中继续校对补齐。', 'warning');
         }
 
         // Reset edit mode
@@ -7642,7 +9003,7 @@ async function savePrompt(e) {
             saveBtn.setAttribute('aria-label', 'Saved');
             saveBtn.querySelector('.btn-text').innerHTML = buildGallerySaveButtonMarkup('Saved!', 'fas fa-check');
             updateStatus('Saved', 'ready');
-            showToast('Prompt 已保存到数据库！', 'success');
+            showAdminStudioToast('Prompt 已保存到数据库！', 'success');
 
             // Reset button after delay
             setTimeout(() => {
@@ -7654,7 +9015,7 @@ async function savePrompt(e) {
 
     } catch (error) {
         console.error('Save error:', error);
-        showToast(`保存失败: ${error.message}`, 'error');
+        showAdminStudioToast(`保存失败: ${error.message}`, 'error');
         updateStatus('Error', 'error');
 
         // Reset button
@@ -7857,25 +9218,86 @@ function generateCodeSnippet(promptData) {
 
     // Copy to clipboard
     navigator.clipboard.writeText(snippet).then(() => {
-        showToast('代码已复制到剪贴板！可粘贴到 prompts-data.js', 'success');
+        showAdminStudioToast('代码已复制到剪贴板！可粘贴到 prompts-data.js', 'success');
     });
 }
 
 // ========================================
 // UTILITIES
 // ========================================
+function normalizeAdminStudioFeedbackState(value = '') {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'processing' || normalized === 'loading' || normalized === 'info' || normalized === 'pending') {
+        return 'loading';
+    }
+    if (normalized === 'success' || normalized === 'saved' || normalized === 'done' || normalized === 'complete') {
+        return 'saved';
+    }
+    if (normalized === 'warning' || normalized === 'partial') {
+        return 'partial';
+    }
+    if (normalized === 'error' || normalized === 'failed' || normalized === 'danger') {
+        return 'failed';
+    }
+    return 'ready';
+}
+
+function getAdminStudioActiveModuleId() {
+    return String(
+        window.AdminShell?.getActiveModuleId?.()
+        || document.querySelector('.module-container.active')?.id?.replace(/^module-/, '')
+        || document.querySelector('.sidebar-item.active[data-module]')?.dataset?.module
+        || 'gallery'
+    ).trim().toLowerCase() || 'gallery';
+}
+
+function dispatchAdminStudioFeedbackSignal(detail = {}) {
+    const payload = {
+        kind: String(detail?.kind || 'status').trim().toLowerCase() || 'status',
+        source: String(detail?.source || 'admin-studio').trim().toLowerCase() || 'admin-studio',
+        state: normalizeAdminStudioFeedbackState(detail?.state || detail?.tone || detail?.type || ''),
+        tone: String(detail?.tone || detail?.type || '').trim().toLowerCase() || '',
+        message: String(detail?.message ?? '').trim(),
+        module: String(detail?.module || getAdminStudioActiveModuleId()).trim().toLowerCase() || 'gallery',
+        persistent: Boolean(detail?.persistent),
+        timestamp: Number(detail?.timestamp || Date.now()) || Date.now()
+    };
+
+    if (!payload.message) {
+        return payload;
+    }
+
+    if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+        try {
+            window.dispatchEvent(new CustomEvent('admin-feedback-signal', {
+                detail: payload
+            }));
+        } catch (_) {
+            // Ignore event bus failures so the UI flow can continue.
+        }
+    }
+
+    return payload;
+}
+
+window.dispatchAdminStudioFeedbackSignal = dispatchAdminStudioFeedbackSignal;
+
 function updateStatus(text, state) {
     const statusEl = document.getElementById('studioStatus');
+    if (!statusEl) return;
     const dot = statusEl.querySelector('.status-dot');
     const textEl = statusEl.querySelector('.status-text');
+    const normalizedState = normalizeAdminStudioFeedbackState(state);
 
     textEl.textContent = text;
     dot.className = 'status-dot';
-    if (state === 'processing') dot.classList.add('processing');
-    if (state === 'error') dot.classList.add('error');
+    statusEl.dataset.feedbackState = normalizedState;
+    if (normalizedState === 'loading') dot.classList.add('processing');
+    if (normalizedState === 'partial') dot.classList.add('warning');
+    if (normalizedState === 'failed') dot.classList.add('error');
 
     // Make status clickable when AI proxy is unavailable
-    if (state === 'error' && /missing$/i.test(String(text || ''))) {
+    if (normalizedState === 'failed' && /missing$/i.test(String(text || ''))) {
         statusEl.classList.add('clickable');
         statusEl.title = '点击查看当前 AI 服务配置';
         statusEl.onclick = () => openCurrentAIConfigEntry();
@@ -7884,16 +9306,59 @@ function updateStatus(text, state) {
         statusEl.title = '';
         statusEl.onclick = null;
     }
+
+    dispatchAdminStudioFeedbackSignal({
+        kind: 'status',
+        source: 'studio-header',
+        state: normalizedState,
+        message: String(text || '').trim(),
+        module: getAdminStudioActiveModuleId()
+    });
 }
 
 function setToastContent(toast, message, type = 'info') {
     if (!toast) return;
-    toast.className = `toast ${type}`;
+    const toastTypeClasses = ['info', 'success', 'warning', 'error'];
+    const normalizedType = toastTypeClasses.includes(type) ? type : 'info';
+    const shouldAnimateContent = toast.isConnected && toast.childElementCount > 0 && toast.dataset?.dismissing !== 'true';
+    const feedbackState = normalizeAdminStudioFeedbackState(normalizedType);
+
+    if (toast.classList) {
+        toast.classList.add('toast');
+        toastTypeClasses.forEach((typeClass) => {
+            toast.classList.toggle(typeClass, typeClass === normalizedType);
+        });
+    } else {
+        toast.className = `toast ${normalizedType}`;
+    }
+    if (toast.dataset) {
+        toast.dataset.toastType = normalizedType;
+        toast.dataset.feedbackState = feedbackState;
+    }
+
     const icon = document.createElement('i');
-    icon.className = `fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : type === 'warning' ? 'triangle-exclamation' : 'info-circle'}`;
+    icon.className = `fas fa-${normalizedType === 'success' ? 'check-circle' : normalizedType === 'error' ? 'exclamation-circle' : normalizedType === 'warning' ? 'triangle-exclamation' : 'info-circle'}`;
+    const content = document.createElement('div');
+    content.className = 'toast__content';
+
     const text = document.createElement('span');
+    text.className = 'toast__message';
     text.textContent = String(message ?? '');
-    toast.replaceChildren(icon, text);
+
+    content.append(text);
+    toast.replaceChildren(icon, content);
+    toast.title = String(message ?? '');
+
+    if (shouldAnimateContent) {
+        toast.classList.remove('is-content-entering');
+        void toast.offsetWidth;
+        toast.classList.add('is-content-entering');
+        clearTimeout(toast._contentAnimationTimer);
+        toast._contentAnimationTimer = setTimeout(() => {
+            toast.classList.remove('is-content-entering');
+            toast._contentAnimationTimer = null;
+        }, 240);
+    }
 }
 
 function dismissToast(toast) {
@@ -7902,6 +9367,10 @@ function dismissToast(toast) {
     if (toast._dismissTimer) {
         clearTimeout(toast._dismissTimer);
         toast._dismissTimer = null;
+    }
+    if (toast._contentAnimationTimer) {
+        clearTimeout(toast._contentAnimationTimer);
+        toast._contentAnimationTimer = null;
     }
     toast.classList.add('is-dismissing');
     setTimeout(() => toast.remove(), 300);
@@ -7920,15 +9389,169 @@ function scheduleToastDismiss(toast, durationMs = 3000) {
     toast._dismissTimer = setTimeout(() => dismissToast(toast), normalizedDuration);
 }
 
-function showToast(message, type = 'info', options = {}) {
+function showAdminStudioToast(message, type = 'info', options = {}) {
     const container = document.getElementById('toastContainer');
-    const toast = document.createElement('div');
+    const normalizedType = ['info', 'success', 'warning', 'error'].includes(type) ? type : 'info';
     const durationMs = Number.isFinite(Number(options?.durationMs)) ? Number(options.durationMs) : 3000;
-    setToastContent(toast, message, type);
+
+    if (options?.feedback !== false) {
+        dispatchAdminStudioFeedbackSignal({
+            kind: 'toast',
+            source: 'toast',
+            state: normalizeAdminStudioFeedbackState(normalizedType),
+            tone: normalizedType,
+            message: String(message ?? '').trim(),
+            module: getAdminStudioActiveModuleId(),
+            persistent: durationMs <= 0
+        });
+    }
+
+    if (!container) {
+        return null;
+    }
+
+    const toast = document.createElement('div');
+    setToastContent(toast, message, normalizedType);
     container.appendChild(toast);
     scheduleToastDismiss(toast, durationMs);
     return toast;
 }
+
+window.showToast = showAdminStudioToast;
+
+function isAdminStudioActionFeedbackButton(button) {
+    return Boolean(button && typeof button === 'object' && button.nodeType === 1 && button.tagName === 'BUTTON');
+}
+
+function normalizeAdminStudioActionFeedbackText(value = '', fallback = '处理中...') {
+    const normalized = String(value || '').trim();
+    return normalized || fallback;
+}
+
+function clearAdminStudioActionFeedbackTimer(button) {
+    if (!button?._adminStudioActionFeedbackRestoreTimer) {
+        return;
+    }
+    window.clearTimeout(button._adminStudioActionFeedbackRestoreTimer);
+    button._adminStudioActionFeedbackRestoreTimer = null;
+}
+
+function ensureAdminStudioActionFeedbackSnapshot(button) {
+    if (!isAdminStudioActionFeedbackButton(button)) {
+        return null;
+    }
+
+    if (!button._adminStudioActionFeedbackSnapshot) {
+        button._adminStudioActionFeedbackSnapshot = {
+            html: button.innerHTML,
+            disabled: button.disabled
+        };
+    }
+
+    return button._adminStudioActionFeedbackSnapshot;
+}
+
+function renderAdminStudioActionFeedbackContent(button, state, text) {
+    if (!isAdminStudioActionFeedbackButton(button)) {
+        return;
+    }
+
+    const icon = document.createElement('span');
+    icon.setAttribute('aria-hidden', 'true');
+    if (state === 'loading') {
+        icon.className = 'admin-action-feedback__spinner';
+    } else {
+        icon.className = `admin-action-feedback__icon ${state === 'failed' ? 'is-failed' : 'is-saved'}`;
+        icon.textContent = state === 'failed' ? '!' : '✓';
+    }
+
+    const label = document.createElement('span');
+    label.className = 'admin-action-feedback__label';
+    label.textContent = text;
+
+    button.replaceChildren(icon, label);
+}
+
+function setAdminStudioActionButtonState(button, state = 'loading', options = {}) {
+    if (!isAdminStudioActionFeedbackButton(button)) {
+        return null;
+    }
+
+    clearAdminStudioActionFeedbackTimer(button);
+    const normalizedState = ['loading', 'saved', 'failed'].includes(state) ? state : 'loading';
+    const fallbackText = normalizedState === 'loading' ? '处理中...' : normalizedState === 'failed' ? '失败' : '已完成';
+    const text = normalizeAdminStudioActionFeedbackText(
+        options?.text || options?.loadingText || options?.successText || options?.errorText,
+        fallbackText
+    );
+
+    ensureAdminStudioActionFeedbackSnapshot(button);
+    button.classList.remove('is-loading', 'is-saved', 'is-failed');
+    button.classList.add(`is-${normalizedState}`);
+    button.dataset.actionFeedbackState = normalizedState;
+    button.disabled = true;
+    button.setAttribute('aria-busy', normalizedState === 'loading' ? 'true' : 'false');
+    renderAdminStudioActionFeedbackContent(button, normalizedState, text);
+
+    return button;
+}
+
+function restoreAdminStudioActionButton(button) {
+    if (!isAdminStudioActionFeedbackButton(button)) {
+        return null;
+    }
+
+    clearAdminStudioActionFeedbackTimer(button);
+    const snapshot = button._adminStudioActionFeedbackSnapshot || null;
+    button.classList.remove('is-loading', 'is-saved', 'is-failed');
+    button.removeAttribute('data-action-feedback-state');
+    button.removeAttribute('aria-busy');
+
+    if (snapshot) {
+        button.innerHTML = snapshot.html;
+        button.disabled = Boolean(snapshot.disabled);
+        button._adminStudioActionFeedbackSnapshot = null;
+    }
+
+    return button;
+}
+
+function finishAdminStudioActionButton(button, options = {}) {
+    const target = setAdminStudioActionButtonState(button, 'saved', {
+        successText: options?.successText || options?.text || '已完成'
+    });
+    const restoreDelayMs = Number.isFinite(Number(options?.restoreDelayMs)) ? Number(options.restoreDelayMs) : 900;
+    if (target && restoreDelayMs >= 0) {
+        target._adminStudioActionFeedbackRestoreTimer = window.setTimeout(() => {
+            restoreAdminStudioActionButton(target);
+        }, restoreDelayMs);
+    }
+    return target;
+}
+
+function failAdminStudioActionButton(button, options = {}) {
+    const target = setAdminStudioActionButtonState(button, 'failed', {
+        errorText: options?.errorText || options?.text || '失败'
+    });
+    const restoreDelayMs = Number.isFinite(Number(options?.restoreDelayMs)) ? Number(options.restoreDelayMs) : 1200;
+    if (target && restoreDelayMs >= 0) {
+        target._adminStudioActionFeedbackRestoreTimer = window.setTimeout(() => {
+            restoreAdminStudioActionButton(target);
+        }, restoreDelayMs);
+    }
+    return target;
+}
+
+window.AdminStudioActionFeedback = {
+    setLoading(button, options = {}) {
+        return setAdminStudioActionButtonState(button, 'loading', {
+            loadingText: options?.loadingText || options?.text || '处理中...'
+        });
+    },
+    finish: finishAdminStudioActionButton,
+    fail: failAdminStudioActionButton,
+    restore: restoreAdminStudioActionButton
+};
 
 function withTimeout(promise, timeoutMs = 20000, timeoutMessage = '操作超时') {
     const normalizedTimeout = Number(timeoutMs);
@@ -8388,7 +10011,7 @@ function requireSelectedPromptsForBatch(label = '批量操作') {
         return selected;
     }
 
-    showToast(`请先选择要执行「${label}」的 Prompt`, 'error');
+    showAdminStudioToast(`请先选择要执行「${label}」的 Prompt`, 'error');
     return null;
 }
 
@@ -8438,11 +10061,11 @@ async function batchSetSelectedPromptStatus(nextStatus = '') {
     }
 
     if (failureCount > 0) {
-        showToast(`${statusLabel} 已更新 ${successCount} 条，失败 ${failureCount} 条`, successCount > 0 ? 'warning' : 'error');
+        showAdminStudioToast(`${statusLabel} 已更新 ${successCount} 条，失败 ${failureCount} 条`, successCount > 0 ? 'warning' : 'error');
         return false;
     }
 
-    showToast(`${statusLabel} 已更新 ${successCount} 条 Prompt`, 'success');
+    showAdminStudioToast(`${statusLabel} 已更新 ${successCount} 条 Prompt`, 'success');
     return true;
 }
 
@@ -8458,7 +10081,7 @@ async function batchAddSelectedPromptsToHomepage() {
         return true;
     } catch (error) {
         console.error('[Gallery] Failed to batch add prompts to homepage:', error);
-        showToast(`批量加入首页失败: ${error.message || '未知错误'}`, 'error');
+        showAdminStudioToast(`批量加入首页失败: ${error.message || '未知错误'}`, 'error');
         return false;
     }
 }
@@ -8474,14 +10097,14 @@ async function batchCompleteSelectedPromptBilingualFields() {
         return false;
     }
 
-    const progressToast = showToast(`正在为 ${selected.length} 条 Prompt 补全双语...`, 'info', { durationMs: 0 });
+    const progressToast = showAdminStudioToast(`正在为 ${selected.length} 条 Prompt 补全双语...`, 'info', { durationMs: 0 });
     const finalizeProgressToast = (message, type = 'info', durationMs = 4200) => {
         if (progressToast && progressToast.isConnected) {
             setToastContent(progressToast, message, type);
             scheduleToastDismiss(progressToast, durationMs);
             return;
         }
-        showToast(message, type, { durationMs });
+        showAdminStudioToast(message, type, { durationMs });
     };
 
     if (!window.PromptTranslator || !window.AdminAI?.configured) {
@@ -8646,7 +10269,7 @@ function switchCommentView(viewName) {
 function startBatchEdit() {
     const selected = getSelectedPromptsData();
     if (selected.length === 0) {
-        showToast('请先选择要编辑的提示词', 'error');
+        showAdminStudioToast('请先选择要编辑的提示词', 'error');
         return;
     }
 
@@ -8729,14 +10352,14 @@ async function startBatchReanalyze() {
 
     // Check API key first
     if (!window.AdminAI?.configured) {
-        showToast(getCurrentAIMissingConfigMessage(), 'error');
+        showAdminStudioToast(getCurrentAIMissingConfigMessage(), 'error');
         await checkApiKey();
         return;
     }
 
     const selected = getSelectedPromptsData();
     if (selected.length === 0) {
-        showToast('请先选择要重分析的提示词', 'error');
+        showAdminStudioToast('请先选择要重分析的提示词', 'error');
         return;
     }
 
@@ -8758,7 +10381,7 @@ async function analyzeUntaggedPrompts() {
     const untagged = allPrompts.filter(p => !p.ai_tags || Object.keys(p.ai_tags).length === 0);
 
     if (untagged.length === 0) {
-        showToast('所有提示词都已有 AI 标签', 'success');
+        showAdminStudioToast('所有提示词都已有 AI 标签', 'success');
         return;
     }
 
@@ -8810,9 +10433,9 @@ async function executeBatchReanalyze(prompts, options = {}) {
     hideBatchProgressModal();
 
     if (batchCancelled) {
-        showToast(`已取消。成功 ${success} 个，失败 ${failed} 个`, 'warning');
+        showAdminStudioToast(`已取消。成功 ${success} 个，失败 ${failed} 个`, 'warning');
     } else {
-        showToast(`完成！成功 ${success} 个，失败 ${failed} 个`, success > 0 ? 'success' : 'error');
+        showAdminStudioToast(`完成！成功 ${success} 个，失败 ${failed} 个`, success > 0 ? 'success' : 'error');
     }
 
     // Refresh grid
@@ -8926,7 +10549,7 @@ async function executeBatchDelete() {
             ids
         });
 
-        showToast(`成功删除 ${ids.length} 个提示词`, 'success');
+        showAdminStudioToast(`成功删除 ${ids.length} 个提示词`, 'success');
         await loadAdminPrompts();
 
         // Exit select mode
@@ -8935,7 +10558,7 @@ async function executeBatchDelete() {
 
     } catch (err) {
         console.error('Batch delete error:', err);
-        showToast('删除失败: ' + err.message, 'error');
+        showAdminStudioToast('删除失败: ' + err.message, 'error');
     }
 }
 
@@ -9046,17 +10669,34 @@ function closeLightbox() {
 let cropImageIndex = null;
 let cropperInstance = null;
 
-function openCropModal(index) {
+async function openCropModal(index) {
     cropImageIndex = index;
     const file = uploadedFiles[index];
     if (!file?.dataUrl) {
-        showToast('图片仍在加载中，请稍后再试', 'warning');
+        showAdminStudioToast('图片仍在加载中，请稍后再试', 'warning');
         return;
     }
 
     const cropImage = document.getElementById('cropImage');
     cropImage.src = file.dataUrl;
     showAdminStudioOverlay(document.getElementById('cropModalOverlay'));
+
+    if (typeof window.ensureAdminCropper === 'function') {
+        try {
+            await window.ensureAdminCropper();
+        } catch (error) {
+            console.error('Failed to load Cropper runtime:', error);
+            closeCropModal();
+            showAdminStudioToast('裁切工具加载失败，请稍后重试', 'error');
+            return;
+        }
+    }
+
+    if (typeof Cropper === 'undefined') {
+        closeCropModal();
+        showAdminStudioToast('裁切工具暂不可用，请稍后重试', 'error');
+        return;
+    }
 
     // Wait for image to load before initializing Cropper
     cropImage.onload = function () {
@@ -9105,7 +10745,7 @@ function closeCropModal() {
 
 function applyCrop() {
     if (!cropperInstance || cropImageIndex === null) {
-        showToast('请先选择裁切区域', 'error');
+        showAdminStudioToast('请先选择裁切区域', 'error');
         return;
     }
 
@@ -9119,7 +10759,7 @@ function applyCrop() {
         });
 
         if (!croppedCanvas) {
-            showToast('裁切失败，请重试', 'error');
+            showAdminStudioToast('裁切失败，请重试', 'error');
             return;
         }
 
@@ -9145,12 +10785,12 @@ function applyCrop() {
             previewItems[cropImageIndex].src = croppedDataUrl;
         }
 
-        showToast('裁切成功！', 'success');
+        showAdminStudioToast('裁切成功！', 'success');
         closeCropModal();
 
     } catch (err) {
         console.error('Crop error:', err);
-        showToast('裁切失败: ' + err.message, 'error');
+        showAdminStudioToast('裁切失败: ' + err.message, 'error');
     }
 }
 
@@ -9724,6 +11364,11 @@ Return ONLY a JSON array of lowercase tags, no explanation:
             generationConfig: {
                 temperature: 0.3,
                 maxOutputTokens: 256
+            },
+            budget: {
+                tier: 'lean',
+                maxInputChars: 4000,
+                maxOutputTokens: 256
             }
         });
         text = text?.trim();
@@ -10063,4 +11708,38 @@ function setupAdminSearch() {
     }
 
     console.log('✅ Admin search setup complete');
+}
+
+async function bootAdminStudio() {
+    try {
+        const access = await requireAdminStudioAccess();
+        if (!access) return;
+        await initializeAdminStudioShell();
+    } catch (error) {
+        console.error('[AdminStudio] Failed to boot Admin Studio:', error);
+        window.adminStudioAccessGranted = false;
+        renderAdminStudioAccessGate('denied', {
+            title: '后台初始化失败',
+            message: '后台启动时发生异常，页面已停止等待以避免一直卡在加载状态。请刷新重试；如果仍然出现，请回到首页重新进入后台。',
+            primaryLabel: '刷新重试',
+            primaryHref: 'admin-studio.html',
+            secondaryLabel: '返回首页',
+            secondaryHref: 'index.html'
+        });
+    }
+}
+
+function scheduleAdminStudioBoot() {
+    window.setTimeout(() => {
+        void bootAdminStudio();
+    }, 0);
+}
+
+window.__adminStudioRuntimeReady = true;
+bindAdminStudioDelegatedControls();
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', scheduleAdminStudioBoot, { once: true });
+} else {
+    scheduleAdminStudioBoot();
 }

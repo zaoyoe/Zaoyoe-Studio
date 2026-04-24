@@ -458,6 +458,56 @@ test('admin audit monitor handler paginates access, anomaly, and config lists fr
     });
 });
 
+test('admin audit monitor handler excludes resolved problem alerts from actionable summary counts', async () => {
+    await withHandler({
+        opsAlertJobs: [
+            buildAuditAlertJob('security_admin_login_anomaly', {
+                id: 'audit-alert-resolved-security',
+                severity: 'critical',
+                title: '管理员异常登录（resolved@example.com）',
+                content: '管理员异常登录\n登录 IP：203.0.113.17',
+                payload: {
+                    target_id: 'admin-user-resolved',
+                    admin_id: 'admin-user-resolved',
+                    admin_email: 'resolved@example.com',
+                    client_ip: '203.0.113.17',
+                    detected_reasons: ['最近窗口内出现 2 个登录设备指纹']
+                },
+                created_at: minutesAgo(3)
+            })
+        ],
+        opsAlertCases: [
+            {
+                category_key: 'security',
+                target_id: 'admin-user-resolved',
+                alert_type: 'security_admin_login_anomaly',
+                status: 'resolved',
+                owner_admin_id: 'admin-user-1',
+                owner_label: 'admin@example.com',
+                note: '已完成复核。',
+                resolution: '确认本人操作，无需继续跟进。',
+                metadata: {},
+                last_action: 'resolved',
+                last_action_at: minutesAgo(2),
+                updated_at: minutesAgo(2)
+            }
+        ]
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {} };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.alert_summary.visible_count, 1);
+        assert.equal(payload.alert_summary.active_problem_count, 0);
+        assert.equal(payload.alert_summary.claimed_count, 0);
+        assert.equal(payload.alert_items[0].case_status, 'resolved');
+    });
+});
+
 test('admin audit monitor handler rejects non-GET methods', async () => {
     await withHandler({}, async (handler) => {
         const req = { method: 'POST', headers: {} };

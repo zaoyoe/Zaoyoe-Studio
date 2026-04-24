@@ -249,3 +249,46 @@ test('codex config handler can test connectivity without saving config', async (
         assert.equal(state.auditCalls[0]?.actionType, 'admin.codex_config.test');
     });
 });
+
+test('codex config handler redacts upstream secrets from failed connectivity probes', async () => {
+    await withCodexConfigHandler({
+        runtimeConfig: {
+            source: 'environment',
+            apiKey: 'sk-existing-codex-key-1234567890',
+            baseUrl: 'https://api.cisct.xyz',
+            model: 'gpt-5.4',
+            apiFormat: 'responses'
+        },
+        fetchImpl: async () => ({
+            ok: false,
+            status: 502,
+            async json() {
+                return {
+                    error: {
+                        message: 'relay failed for Bearer abc.def.ghi and sk-live-secret-1234567890',
+                        apiKey: 'sk-live-secret-1234567890'
+                    }
+                };
+            }
+        })
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                testOnly: true,
+                baseUrl: 'https://api.cisct.xyz',
+                model: 'gpt-5.4',
+                apiFormat: 'responses'
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 502);
+        assert.match(payload.message, /Bearer \[redacted\]/);
+        assert.doesNotMatch(JSON.stringify(payload), /sk-live-secret/);
+        assert.equal(payload.error.apiKey, '[redacted]');
+    });
+});

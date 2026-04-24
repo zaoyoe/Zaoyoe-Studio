@@ -39,6 +39,7 @@ const HOME_GUESTBOOK_CARD_SLOTS = ['l1', 'l2', 'l3', 'r1', 'r2', 'r3'];
 const HOME_GUESTBOOK_PARTICLE_COUNT = 24;
 const HOME_GUESTBOOK_PARTICLE_SEED = 20260409;
 const HOME_GUESTBOOK_PARTICLE_RESET_SEED = 9090909;
+const HOMEPAGE_DEFERRED_OVERLAY_STYLE_GROUP = 'homepage-overlays';
 const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
 const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
 const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';
@@ -102,6 +103,52 @@ function readHomepagePrefetchCache(site = getHomepageRuntimeSite()) {
 function clearHomepagePrefetchCache(site = getHomepageRuntimeSite()) {
   sessionStorage.removeItem(getHomepagePrefetchCacheKey(site));
   sessionStorage.removeItem(HOMEPAGE_PREFETCH_CACHE_KEY);
+}
+
+function waitForHomepageSupabaseClientReady(timeoutMs = 4000) {
+  if (window.supabaseClient) {
+    return Promise.resolve(true);
+  }
+
+  const currentState = window.__ZAOYOE_SUPABASE_CLIENT_STATE__ || null;
+  if (String(currentState?.status || '').trim().toLowerCase() === 'error') {
+    return Promise.resolve(false);
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let timer = null;
+
+    const cleanup = () => {
+      if (timer) {
+        window.clearTimeout(timer);
+      }
+      window.removeEventListener('zaoyoe:supabase-client-state', handleStateChange);
+    };
+
+    const finish = (value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve(value);
+    };
+
+    const handleStateChange = (event) => {
+      const status = String(event?.detail?.status || '').trim().toLowerCase();
+      if (status === 'ready' && window.supabaseClient) {
+        finish(true);
+        return;
+      }
+      if (status === 'error') {
+        finish(false);
+      }
+    };
+
+    window.addEventListener('zaoyoe:supabase-client-state', handleStateChange);
+    timer = window.setTimeout(() => finish(Boolean(window.supabaseClient)), timeoutMs);
+  });
 }
 
 function writeHomepagePrefetchCache(payload, site = getHomepageRuntimeSite()) {
@@ -532,6 +579,10 @@ window.closeActiveMobileMenu = function () {
 };
 
 function openHomepageGuestbookModal(trigger) {
+  if (typeof window.activateDeferredStyleGroup === 'function') {
+    window.activateDeferredStyleGroup(HOMEPAGE_DEFERRED_OVERLAY_STYLE_GROUP);
+  }
+
   if (typeof window.openGuestbookModal !== 'function') {
     return false;
   }
@@ -545,6 +596,54 @@ function openHomepageGuestbookModal(trigger) {
   return true;
 }
 
+function shouldIgnoreHomepageDelegatedClick(event) {
+  return Boolean(
+    event.defaultPrevented
+    || event.button !== 0
+    || event.metaKey
+    || event.ctrlKey
+    || event.shiftKey
+    || event.altKey
+  );
+}
+
+function centerHomepageHeroEntryCardIfNeeded(card, threshold = 50) {
+  if (!(card instanceof Element)) {
+    return false;
+  }
+
+  const carousel = card.closest('.hero-carousel');
+  if (!(carousel instanceof HTMLElement)) {
+    return false;
+  }
+
+  const rect = card.getBoundingClientRect();
+  const carouselRect = carousel.getBoundingClientRect();
+  const cardCenter = rect.left + rect.width / 2;
+  const viewportCenter = carouselRect.left + carouselRect.width / 2;
+  const distanceFromCenter = Math.abs(cardCenter - viewportCenter);
+
+  if (distanceFromCenter <= threshold) {
+    return false;
+  }
+
+  carousel.scrollTo({
+    left: carousel.scrollLeft + (cardCenter - viewportCenter),
+    behavior: 'smooth'
+  });
+
+  return true;
+}
+
+function clearHomepageHeroGuestbookArmedState(exceptCard = null) {
+  document.querySelectorAll('.hero-carousel .entry-card[data-home-guestbook-armed="1"]').forEach((card) => {
+    if (exceptCard && card === exceptCard) {
+      return;
+    }
+    card.removeAttribute('data-home-guestbook-armed');
+  });
+}
+
 function bindHomepageStaticDelegates() {
   if (document.documentElement.dataset.homepageStaticDelegatesBound === '1') {
     return;
@@ -554,17 +653,49 @@ function bindHomepageStaticDelegates() {
 
   document.addEventListener('click', (event) => {
     const eventTarget = event.target instanceof Element ? event.target : event.target?.parentElement;
-    if (!eventTarget) {
+    if (!eventTarget || shouldIgnoreHomepageDelegatedClick(event)) {
       return;
     }
 
     const guestbookTrigger = eventTarget.closest('[data-home-open-guestbook="1"]');
     if (guestbookTrigger) {
+      const heroGuestbookCard = guestbookTrigger.closest('.hero-carousel .entry-card');
+      const isHeroGuestbookArmed = heroGuestbookCard?.getAttribute('data-home-guestbook-armed') === '1';
+
+      if (heroGuestbookCard && !isHeroGuestbookArmed) {
+        const didCenterHeroGuestbookCard = centerHomepageHeroEntryCardIfNeeded(heroGuestbookCard);
+        if (didCenterHeroGuestbookCard) {
+          clearHomepageHeroGuestbookArmedState(heroGuestbookCard);
+          heroGuestbookCard.setAttribute('data-home-guestbook-armed', '1');
+          event.preventDefault();
+          return;
+        }
+      }
+
+      clearHomepageHeroGuestbookArmedState();
+
+      if (heroGuestbookCard) {
+        trackHomepageAnalyticsEvent('homepage_entry_click', {
+          entityType: 'hero_entry',
+          entityId: heroGuestbookCard.dataset.homeEntryId || null,
+          metadata: {
+            section: 'hero',
+            entry_id: heroGuestbookCard.dataset.homeEntryId || null,
+            entry_label: heroGuestbookCard.dataset.homeEntryTitle || '',
+            link: heroGuestbookCard.dataset.homeEntryLink || '',
+            target_section: heroGuestbookCard.dataset.homeEntrySection || '',
+            action: heroGuestbookCard.getAttribute('data-action') || ''
+          }
+        });
+      }
+
       if (openHomepageGuestbookModal(guestbookTrigger)) {
         event.preventDefault();
       }
       return;
     }
+
+    clearHomepageHeroGuestbookArmedState();
 
     const uploadTrigger = eventTarget.closest('[data-home-trigger-upload="1"]');
     if (uploadTrigger) {
@@ -761,6 +892,16 @@ const FramerHome = {
   guestbookRuntime: null,
   gongyiTerminalRuntime: null,
   verifyDemoRuntime: null,
+  supplementalDataScheduled: false,
+  supplementalDataPromise: null,
+  masonryParallaxCleanup: null,
+  masonryParallaxHandle: null,
+  scrollAnimationObserver: null,
+  scrollAnimationHandle: null,
+  navDropdownsInitialized: false,
+  navDropdownInitHandle: null,
+  navDropdownIntentPrimed: false,
+  navDropdownLanguageListener: null,
   sectionExperimentAssignments: {},
   activeExperiments: [],
 
@@ -911,15 +1052,17 @@ const FramerHome = {
    * Initialize the homepage
    */
   async init() {
+    if (this._initPromise) {
+      return this._initPromise;
+    }
+
+    this._initPromise = (async () => {
     console.log('🚀 Initializing Framer Home...');
 
     // Scroll to top on page load
     window.scrollTo(0, 0);
     // Check performance and apply degradation if needed
     this.checkPerformance();
-
-    // First paint Hero immediately to avoid blank first screen on slow networks
-    this.renderHeroFirstPaint();
 
     // Wait for i18n to be ready before loading data
     if (window.i18n?.ready) {
@@ -934,14 +1077,15 @@ const FramerHome = {
 
     bindHomepageStaticDelegates();
 
-    // Initialize navigation dropdowns
-    this.initNavDropdowns();
+    // Navigation dropdowns are not first-paint critical; prime on intent and warm shortly after.
+    this.primeNavDropdownInitOnIntent();
+    this.scheduleNavDropdownsInit();
 
     // Initialize interactions
     this.initInteractions();
 
-    // Initialize scroll animations
-    this.initScrollAnimations();
+    // Scroll-triggered reveal animations are secondary polish; defer them slightly.
+    this.scheduleScrollAnimationsInit();
 
     // Listen for language changes and re-render all content
     window.addEventListener('languageChanged', async (e) => {
@@ -994,14 +1138,16 @@ const FramerHome = {
       // Re-render everything (but DON'T re-init dropdowns)
       this.renderAll();
 
-      // CRITICAL: Re-initialize scroll animations for new DOM elements
-      // Without this, new .fade-in-up elements stay at opacity: 0
-      this.initScrollAnimations();
+      // Re-initialize delayed reveal observers for the new DOM elements.
+      this.scheduleScrollAnimationsInit();
 
       console.log('✅ Homepage content re-rendered with new language');
     });
 
     console.log('✅ Framer Home initialized successfully');
+    })();
+
+    return this._initPromise;
   },
 
   /**
@@ -1045,44 +1191,244 @@ const FramerHome = {
     }
   },
 
+  persistHomepagePrefetch(cacheKind = 'complete') {
+    try {
+      writeHomepagePrefetchCache({
+        cachedData: this.cachedData,
+        config: this.config,
+        promptPool: this.promptPool,
+        sectionRows: this.sectionRows,
+        sectionOrder: this.sectionOrder,
+        cacheKind,
+        timestamp: Date.now()
+      });
+    } catch (e) {
+      // sessionStorage might be full, ignore
+    }
+  },
+
+  scheduleSupplementalHomepageDataLoad() {
+    if (this.supplementalDataScheduled) {
+      return this.supplementalDataPromise || Promise.resolve();
+    }
+
+    this.supplementalDataScheduled = true;
+    this.supplementalDataPromise = new Promise((resolve) => {
+      const kickoff = async () => {
+        try {
+          const [guestbook, shopCategories] = await Promise.all([
+            this.aggregateGuestbook(this.config.guestbook || {}),
+            this.fetchShopCategories()
+          ]);
+
+          this.cachedData = this.cachedData || {};
+          this.cachedData.guestbook = guestbook;
+          this.cachedData.shopCategories = shopCategories;
+          this.cachedData.ticker = await this.buildTickerData(this.config.ticker || {});
+
+          this.renderGuestbook();
+          this.renderTicker();
+          this.scheduleScrollAnimationsInit();
+          this.initNavDropdowns();
+          this.persistHomepagePrefetch('complete');
+        } catch (error) {
+          console.warn('Failed to load supplemental homepage data:', error);
+          if (String(error?.message || '').includes('supabase_client_unavailable')) {
+            this.supplementalDataScheduled = false;
+            this.supplementalDataPromise = null;
+
+            const retryOnReady = (event) => {
+              if (String(event?.detail?.status || '').trim().toLowerCase() !== 'ready') {
+                return;
+              }
+              window.removeEventListener('zaoyoe:supabase-client-state', retryOnReady);
+              void this.scheduleSupplementalHomepageDataLoad();
+            };
+
+            window.addEventListener('zaoyoe:supabase-client-state', retryOnReady);
+          }
+        } finally {
+          resolve();
+        }
+      };
+
+      if (typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(() => {
+          void kickoff();
+        }, { timeout: 1500 });
+      } else {
+        window.setTimeout(() => {
+          void kickoff();
+        }, 180);
+      }
+    });
+
+    return this.supplementalDataPromise;
+  },
+
+  scheduleMasonryParallaxInit() {
+    if (this.masonryParallaxHandle?.id != null) {
+      if (this.masonryParallaxHandle.kind === 'idle' && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(this.masonryParallaxHandle.id);
+      } else {
+        window.clearTimeout(this.masonryParallaxHandle.id);
+      }
+      this.masonryParallaxHandle = null;
+    }
+
+    const kickoff = () => {
+      this.masonryParallaxHandle = null;
+      this.initMasonryParallax();
+    };
+
+    if (typeof window.requestIdleCallback === 'function') {
+      this.masonryParallaxHandle = {
+        kind: 'idle',
+        id: window.requestIdleCallback(kickoff, { timeout: 1400 })
+      };
+    } else {
+      this.masonryParallaxHandle = {
+        kind: 'timeout',
+        id: window.setTimeout(kickoff, 180)
+      };
+    }
+  },
+
+  scheduleScrollAnimationsInit() {
+    if (this.scrollAnimationHandle?.id != null) {
+      if (this.scrollAnimationHandle.kind === 'idle' && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(this.scrollAnimationHandle.id);
+      } else {
+        window.clearTimeout(this.scrollAnimationHandle.id);
+      }
+      this.scrollAnimationHandle = null;
+    }
+
+    const kickoff = () => {
+      this.scrollAnimationHandle = null;
+      this.initScrollAnimations();
+    };
+
+    if (typeof window.requestIdleCallback === 'function') {
+      this.scrollAnimationHandle = {
+        kind: 'idle',
+        id: window.requestIdleCallback(kickoff, { timeout: 1200 })
+      };
+    } else {
+      this.scrollAnimationHandle = {
+        kind: 'timeout',
+        id: window.setTimeout(kickoff, 160)
+      };
+    }
+  },
+
+  scheduleNavDropdownsInit() {
+    if (this.navDropdownInitHandle?.id != null) {
+      if (this.navDropdownInitHandle.kind === 'timeout') {
+        window.clearTimeout(this.navDropdownInitHandle.id);
+      } else if (typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(this.navDropdownInitHandle.id);
+      }
+      this.navDropdownInitHandle = null;
+    }
+
+    const kickoff = () => {
+      this.navDropdownInitHandle = null;
+      this.initNavDropdowns();
+    };
+
+    this.navDropdownInitHandle = {
+      kind: 'timeout',
+      id: window.setTimeout(kickoff, 80)
+    };
+  },
+
+  primeNavDropdownInitOnIntent() {
+    if (this.navDropdownIntentPrimed) {
+      return;
+    }
+
+    this.navDropdownIntentPrimed = true;
+    const triggers = document.querySelectorAll('.nav-trigger[data-dropdown]');
+    triggers.forEach((trigger) => {
+      if (trigger.dataset.homeNavDropdownPrimeBound === '1') {
+        return;
+      }
+
+      const ensureDropdownsReady = () => {
+        if (!this.navDropdownsInitialized) {
+          this.initNavDropdowns();
+        }
+      };
+
+      trigger.dataset.homeNavDropdownPrimeBound = '1';
+      trigger.addEventListener('pointerenter', ensureDropdownsReady, { once: true, passive: true });
+      trigger.addEventListener('focus', ensureDropdownsReady, { once: true, passive: true });
+      trigger.addEventListener('touchstart', ensureDropdownsReady, { once: true, passive: true });
+    });
+  },
+
   /**
    * Render Hero immediately from prefetched/session/fallback data.
-   * [DISABLED] - To prevent raw i18n keys from flashing on first load.
+   * Only uses already-translated cache so we avoid raw i18n key flashes.
    */
   renderHeroFirstPaint() {
-    // Disabled. Wait for full data & i18n load in init() instead.
-    return;
     try {
       const section = document.getElementById('hero-section');
       if (!section) return;
+      if (section.childElementCount > 0 || section.dataset.renderSignature) return;
 
       const sv = window.SectionVisibility;
       if (sv && !sv.isVisible('hero')) return;
 
       let heroData = null;
+      let allowTextOnlyFallback = true;
+      try {
+        const navEntry = performance.getEntriesByType?.('navigation')?.[0];
+        const navigationType = String(
+          navEntry?.type
+          || (performance.navigation?.type === 1 ? 'reload' : 'navigate')
+        ).trim().toLowerCase();
+        if (navigationType === 'reload') {
+          allowTextOnlyFallback = false;
+        }
+      } catch (_) {
+        // Ignore Navigation Timing access failures and keep the default fallback behavior.
+      }
+
       try {
         const prefetch = readHomepagePrefetchCache();
         if (prefetch) {
           const age = Date.now() - prefetch.timestamp;
-          if (age < 300000 && prefetch.cacheKind === 'complete') {
-            heroData = prefetch.cachedData?.hero || this.buildHeroData(prefetch.config?.hero || {});
+          const prefetchedHero = prefetch.cachedData?.hero || null;
+          const isCompletePrefetch = String(prefetch.cacheKind || '').trim().toLowerCase() === 'complete';
+          const hasTranslatedTitle = prefetchedHero?.title && !String(prefetchedHero.title).includes('home.hero');
+          const hasStableHeroPayload = Array.isArray(prefetchedHero?.entries) && prefetchedHero.entries.length > 0;
+          if (age < 300000 && isCompletePrefetch && hasTranslatedTitle && hasStableHeroPayload) {
+            heroData = {
+              ...prefetchedHero,
+              entries: Array.isArray(prefetchedHero?.entries) ? prefetchedHero.entries : []
+            };
           }
         }
       } catch (e) {
         // Ignore parse errors and fallback below
       }
 
-      if (!heroData) {
+      if (!heroData && allowTextOnlyFallback) {
         const heroTextCache = this.readHeroTextCache();
         if (heroTextCache) {
-          heroData = this.buildHeroData({});
-          heroData.title = heroTextCache.title;
-          heroData.subtitle = heroTextCache.subtitle || heroData.subtitle;
+          heroData = {
+            title: heroTextCache.title,
+            subtitle: heroTextCache.subtitle || '',
+            customImage: null,
+            entries: []
+          };
         }
       }
 
       if (!heroData) {
-        heroData = this.buildHeroData({});
+        return;
       }
 
       this.cachedData = this.cachedData || {};
@@ -1138,10 +1484,18 @@ const FramerHome = {
             this.resolveSectionExperiments('gongyi', this.config.gongyi || {});
             this.resolveSectionExperiments('verify', this.config.verify || {});
             this.resolveSectionExperiments('guestbook', this.config.guestbook || {});
+            if ((!Array.isArray(this.cachedData.prompts) || this.cachedData.prompts.length === 0) && this.promptPool.length > 0) {
+              try {
+                this.cachedData.prompts = await this.aggregatePrompts(this.config.prompts || {});
+              } catch (error) {
+                console.warn('Failed to rebuild homepage prompts from cached prompt pool:', error);
+                this.cachedData.prompts = this.promptPool.slice(0, Math.min(Number(this.config.prompts?.max_items) || 24, 24));
+              }
+            }
             this.cachedData.gongyi = this.cachedData.gongyi || this.buildGongyiData(this.config.gongyi || {});
-            this.cachedData.ticker = await this.buildTickerData(this.config.ticker || {});
             this.writeHeroTextCache(this.cachedData.hero);
             void this.syncPromptPoolFromLiveSourceInBackground({ reason: 'prefetch-cache' });
+            void this.scheduleSupplementalHomepageDataLoad();
             console.log(`⚡ Using prefetched homepage data (${Math.round(age / 1000)}s old)`);
             return;
           } else {
@@ -1164,11 +1518,9 @@ const FramerHome = {
       this.resetActiveExperiments();
 
       // Aggregate section data in parallel to reduce initial waiting time
-      const [prompts, shop, guestbook, shopCategories] = await Promise.all([
+      const [prompts, shop] = await Promise.all([
         this.aggregatePrompts(this.config.prompts || {}),
-        this.aggregateShop(this.config.shop || {}),
-        this.aggregateGuestbook(this.config.guestbook || {}),
-        this.fetchShopCategories()
+        this.aggregateShop(this.config.shop || {})
       ]);
 
       this.cachedData = {
@@ -1177,30 +1529,15 @@ const FramerHome = {
         shop,
         gongyi: this.buildGongyiData(this.config.gongyi || {}),
         verify: this.buildVerifyData(this.config.verify || {}),
-        guestbook,
-        shopCategories
+        guestbook: [],
+        shopCategories: [],
+        ticker: null
       };
-
-      // Build ticker data AFTER cachedData is assigned so it can access shop data
-      this.cachedData.ticker = await this.buildTickerData(this.config.ticker || {});
       this.writeHeroTextCache(this.cachedData.hero);
 
       console.log('📦 Data aggregated:', this.cachedData);
-
-      // Save to sessionStorage so sub-page prefetch can serve it on next visit
-      try {
-        writeHomepagePrefetchCache({
-          cachedData: this.cachedData,
-          config: this.config,
-          promptPool: this.promptPool,
-          sectionRows: this.sectionRows,
-          sectionOrder: this.sectionOrder,
-          cacheKind: 'complete',
-          timestamp: Date.now()
-        });
-      } catch (e) {
-        // sessionStorage might be full, ignore
-      }
+      this.persistHomepagePrefetch('partial');
+      void this.scheduleSupplementalHomepageDataLoad();
     } catch (error) {
       console.error('❌ Failed to load data:', error);
       // Use fallback default data
@@ -1260,6 +1597,18 @@ const FramerHome = {
     return normalizedId === 'gongyi' || normalizedSection === 'gongyi' || normalizedLink.includes('gongyi.zaoyoe.com');
   },
 
+  isGuestbookHeroEntry(item) {
+    const normalizedId = String(item?.id || '').trim().toLowerCase();
+    const normalizedSection = String(item?.section || '').trim().toLowerCase();
+    const normalizedLink = String(item?.link || '').trim().toLowerCase();
+    const normalizedAction = String(item?.action || '').trim();
+    return normalizedId === 'guestbook'
+      || normalizedSection === 'guestbook'
+      || normalizedAction === 'openGuestbookModal'
+      || normalizedLink.includes('/guestbook.html')
+      || normalizedLink.endsWith('guestbook.html');
+  },
+
   ensureGongyiHeroEntry(entries = []) {
     const sourceEntries = Array.isArray(entries) ? entries.map((item) => ({ ...item })) : [];
     const defaultEntry = this.buildDefaultHeroEntries().find((item) => item.id === 'gongyi');
@@ -1305,15 +1654,28 @@ const FramerHome = {
       customImage: config.custom_image || null,
       entries: normalizedEntries
         .filter((item) => item?.enabled !== false)
-        .map((item, index) => ({
-          id: String(item?.id || item?.section || item?.action || item?.link || `hero_entry_${index + 1}`).trim(),
-          icon: String(item?.icon || 'fa-star').trim(),
-          text: this.getLocalizedField(item, 'text') || item?.text || `入口 ${index + 1}`,
-          link: String(item?.link || (item?.section ? `#${item.section}` : '#')).trim() || '#',
-          color: String(item?.color || '#ffffff').trim() || '#ffffff',
-          action: String(item?.action || '').trim(),
-          section: String(item?.section || '').trim()
-        }))
+        .map((item, index) => {
+          const normalizedId = String(item?.id || item?.section || item?.action || item?.link || `hero_entry_${index + 1}`).trim();
+          const normalizedSection = String(item?.section || '').trim();
+          const normalizedLink = String(item?.link || (item?.section ? `#${item.section}` : '#')).trim() || '#';
+          const normalizedAction = String(item?.action || '').trim();
+          const isGuestbookEntry = this.isGuestbookHeroEntry({
+            id: normalizedId,
+            section: normalizedSection,
+            link: normalizedLink,
+            action: normalizedAction
+          });
+
+          return {
+            id: normalizedId,
+            icon: String(item?.icon || 'fa-star').trim(),
+            text: this.getLocalizedField(item, 'text') || item?.text || `入口 ${index + 1}`,
+            link: normalizedLink,
+            color: String(item?.color || '#ffffff').trim() || '#ffffff',
+            action: normalizedAction || (isGuestbookEntry ? 'openGuestbookModal' : ''),
+            section: normalizedSection
+          };
+        })
         .slice(0, 8)
     };
   },
@@ -1776,8 +2138,15 @@ const FramerHome = {
    */
   async fetchGuestbookMessages() {
     try {
-      return await Cache.loadWithCache('guestbook_messages', async () => {
-        const currentSite = window.SiteConfig?.site || 'cn';
+      if (!window.supabaseClient) {
+        const runtimeReady = await waitForHomepageSupabaseClientReady();
+        if (!runtimeReady || !window.supabaseClient) {
+          throw new Error('supabase_client_unavailable');
+        }
+      }
+
+      const currentSite = window.SiteConfig?.site || 'cn';
+      const directFetch = async () => {
         const { data, error } = await window.supabaseClient
           .from('guestbook_messages')
           .select(`
@@ -1794,8 +2163,30 @@ const FramerHome = {
           .limit(24);
 
         if (error) throw error;
-        return data || [];
-      }, 10);
+        return Array.isArray(data) ? data : [];
+      };
+
+      try {
+        const prefetchRaw = sessionStorage.getItem('guestbook_prefetch');
+        if (prefetchRaw) {
+          const prefetch = JSON.parse(prefetchRaw);
+          const age = Date.now() - Number(prefetch?.timestamp || 0);
+          const prefetchData = Array.isArray(prefetch?.data) ? prefetch.data : [];
+          if (age < 300000 && (!prefetch?.site || prefetch.site === currentSite) && prefetchData.length > 0) {
+            return prefetchData;
+          }
+        }
+      } catch (_) {
+        // Ignore prefetch parsing failures and fall through to live fetch.
+      }
+
+      const cachedMessages = await Cache.loadWithCache('guestbook_messages', directFetch, 10);
+      if (Array.isArray(cachedMessages) && cachedMessages.length > 0) {
+        return cachedMessages;
+      }
+
+      window.Cache?.invalidateCache?.('guestbook_messages');
+      return await directFetch();
     } catch (error) {
       console.error('Failed to fetch guestbook:', error);
       return [];
@@ -2010,6 +2401,20 @@ const FramerHome = {
       ticker: document.getElementById('ticker-section')
     };
 
+    const targetOrder = (Array.isArray(this.sectionOrder) && this.sectionOrder.length ? this.sectionOrder : HOME_DEFAULT_SECTION_ORDER)
+      .map((sectionKey) => sectionMap[sectionKey]?.id || null)
+      .filter(Boolean);
+    const currentOrder = Array.from(main.children)
+      .filter((child) => targetOrder.includes(child.id))
+      .map((child) => child.id);
+
+    if (
+      currentOrder.length === targetOrder.length
+      && currentOrder.every((sectionId, index) => sectionId === targetOrder[index])
+    ) {
+      return;
+    }
+
     const fragment = document.createDocumentFragment();
     (Array.isArray(this.sectionOrder) && this.sectionOrder.length ? this.sectionOrder : HOME_DEFAULT_SECTION_ORDER).forEach((sectionKey) => {
       const section = sectionMap[sectionKey];
@@ -2140,6 +2545,7 @@ const FramerHome = {
    * Dropdowns are appended to body (outside nav) to enable backdrop-filter
    */
   initNavDropdowns() {
+    this.navDropdownsInitialized = true;
     const self = this;
 
     // Get top 6 tags from prompts data
@@ -2218,6 +2624,18 @@ const FramerHome = {
       }
     };
 
+    if (this.navDropdownLanguageListener) {
+      window.removeEventListener('languageChanged', this.navDropdownLanguageListener);
+      this.navDropdownLanguageListener = null;
+    }
+
+    const forceDropdownCursor = (dropdown) => {
+      dropdown.style.setProperty('cursor', 'pointer', 'important');
+      dropdown.querySelectorAll('*').forEach(node => {
+        node.style.setProperty('cursor', 'pointer', 'important');
+      });
+    };
+
     // FIRST: Remove any existing portals to prevent duplicates from multiple inits
     document.querySelectorAll('.nav-dropdown-portal').forEach(el => el.remove());
 
@@ -2225,6 +2643,11 @@ const FramerHome = {
     const triggers = document.querySelectorAll('.nav-trigger[data-dropdown]');
 
     triggers.forEach(trigger => {
+      if (trigger._homeDropdownHandlers) {
+        trigger.removeEventListener('mouseenter', trigger._homeDropdownHandlers.mouseenter);
+        trigger.removeEventListener('mouseleave', trigger._homeDropdownHandlers.mouseleave);
+      }
+
       const dropdownType = trigger.dataset.dropdown;
       const data = dropdownData[dropdownType];
       if (!data) return;
@@ -2241,6 +2664,7 @@ const FramerHome = {
           `<a href="${data.urlPrefix}${encodeURIComponent(item)}">${item}</a>`
         ).join('');
       }
+      forceDropdownCursor(dropdown);
 
       // Append to body (safe because old ones were cleared)
       document.body.appendChild(dropdown);
@@ -2261,13 +2685,14 @@ const FramerHome = {
         });
 
         // Listen for language changes to trigger re-render
-        window.addEventListener('languageChanged', (e) => {
+        this.navDropdownLanguageListener = () => {
           // Always re-render Settings dropdown to keep highlight in sync
           // (even when not visible, so mobile menu can clone updated HTML)
           if (data.render) {
             dropdown.innerHTML = data.render();
           }
-        });
+        };
+        window.addEventListener('languageChanged', this.navDropdownLanguageListener);
       }
 
       const showDropdown = () => {
@@ -2276,6 +2701,7 @@ const FramerHome = {
         // Re-render settings dropdown to reflect current language
         if (dropdownType === 'settings' && data.type === 'custom' && data.render) {
           dropdown.innerHTML = data.render();
+          forceDropdownCursor(dropdown);
         }
 
         // Position dropdown perfectly flush with visual bottom of the nav bar
@@ -2327,11 +2753,11 @@ const FramerHome = {
       };
 
       // Events - attach to the trigger
-      trigger.addEventListener('mouseenter', () => {
+      const handleMouseEnter = () => {
         isHoveringTrigger = true;
         showDropdown();
-      });
-      trigger.addEventListener('mouseleave', (e) => {
+      };
+      const handleMouseLeave = (e) => {
         isHoveringTrigger = false;
 
         // Intelligent gap traversal check
@@ -2348,7 +2774,13 @@ const FramerHome = {
         }
 
         hideDropdown();
-      });
+      };
+      trigger.addEventListener('mouseenter', handleMouseEnter);
+      trigger.addEventListener('mouseleave', handleMouseLeave);
+      trigger._homeDropdownHandlers = {
+        mouseenter: handleMouseEnter,
+        mouseleave: handleMouseLeave
+      };
 
       // Events - attach to the precise dropdown element
       dropdown.addEventListener('mouseenter', () => {
@@ -2441,9 +2873,10 @@ const FramerHome = {
               data-home-entry-title="${escapeHomeHtml(entry.text || '')}"
               data-home-entry-link="${escapeHomeHtml(entry.link || '#')}"
               data-home-entry-section="${escapeHomeHtml(entry.section || '')}"
+              ${entry.action === 'openGuestbookModal' ? 'data-home-open-guestbook="1"' : ''}
               ${entry.action ? `data-action="${escapeHomeHtml(entry.action)}"` : ''}>
               <span class="entry-card-ui">
-                <i class="fas ${entry.icon} home-entry-card-icon" data-home-entry-color="${entry.color}"></i>
+                <i class="fas ${escapeHomeHtml(entry.icon || 'fa-circle')} home-entry-card-icon" data-home-entry-color="${entry.color}"></i>
                 <span>${escapeHomeHtml(entry.text || '')}</span>
               </span>
             </a>
@@ -2499,12 +2932,18 @@ const FramerHome = {
    * Render Prompts section with masonry layout
    */
   renderPrompts() {
-    const prompts = this.cachedData.prompts;
+    const prompts = Array.isArray(this.cachedData.prompts) ? this.cachedData.prompts : [];
     const config = this.config.prompts;
     const section = document.getElementById('prompts-section');
     if (!section) {
       return;
     }
+
+    if (!prompts.length) {
+      setHomeSectionVisibility(section, false);
+      return;
+    }
+    setHomeSectionVisibility(section, true);
 
     // Change section class to masonry style
     section.className = 'prompts-masonry-section';
@@ -2512,6 +2951,8 @@ const FramerHome = {
     // Match the number of columns to the actual card count to avoid empty tracks.
     const columnCount = Math.min(5, Math.max(1, prompts.length || 1));
     const columns = this.distributeCardsToColumns(prompts, columnCount);
+
+    let promptRenderIndex = 0;
 
     section.innerHTML = `
       <div class="section-header fade-in-up">
@@ -2524,6 +2965,9 @@ const FramerHome = {
           ${columns.map((columnCards, columnIndex) => `
             <div class="masonry-column" data-column="${columnIndex}">
                 ${columnCards.map(prompt => {
+      const shouldLoadImageEagerly = promptRenderIndex < 12;
+      const shouldPromoteImagePriority = promptRenderIndex < 8;
+      promptRenderIndex += 1;
       const promptImage = Array.isArray(prompt.images) ? prompt.images[0] : (prompt.image || '');
       const promptImageSrc = this.getVersionedPromptImageUrl(promptImage, prompt);
       const promptFallbackSrc = this.getVersionedPromptImageUrl(promptImage, {
@@ -2531,23 +2975,23 @@ const FramerHome = {
         created_at: prompt?.updated_at || prompt?.created_at || ''
       });
       const promptTitle = this.getLocalizedField(prompt, 'title') || prompt.title || prompt.title_zh || prompt.title_en || 'Prompt';
-      const promptId = this.normalizeFeaturedPromptLookupId(prompt?.supabaseId ?? prompt?.id);
-      const promptHref = promptId ? `/prompts.html?id=${encodeURIComponent(promptId)}` : '/prompts.html';
       const cardMedia = promptImage
         ? `<img src="${promptImageSrc}"
                          alt="${escapeHomeHtml(promptTitle)}" 
-                         loading="lazy"
+                         loading="${shouldLoadImageEagerly ? 'eager' : 'lazy'}"
+                         fetchpriority="${shouldPromoteImagePriority ? 'high' : 'auto'}"
+                         decoding="async"
+                         draggable="false"
                          data-home-fallback-src="${encodeURIComponent(promptFallbackSrc)}" />`
         : `<div class="masonry-card-placeholder" aria-hidden="true"></div>`;
 
       return `
-                  <a
-                    href="${promptHref}"
-                    class="masonry-card masonry-card-link"
-                    data-home-prompt-id="${escapeHomeHtml(promptId || '')}"
-                    data-home-prompt-title="${escapeHomeHtml(promptTitle)}">
+                  <div
+                    class="masonry-card masonry-card-preview"
+                    data-home-prompt-preview="1"
+                    aria-label="${escapeHomeHtml(promptTitle)}">
                     ${cardMedia}
-                  </a>
+                  </div>
                 `;
     }).join('')}
             </div>
@@ -2582,7 +3026,7 @@ const FramerHome = {
 
         return `
           <div class="prompts-gradient-mask">
-            <a href="/prompts.html" class="mask-labels-container">
+            <a href="/prompts.html" class="mask-labels-container" data-home-prompts-mask-link="1" data-home-prompts-mask-tags="${escapeHomeHtml(shuffled.join('|'))}">
               <div class="mask-labels-row">
                 ${row1.map(tag => `<span class="mask-tag">${tag}</span>`).join('')}
               </div>
@@ -2610,20 +3054,26 @@ const FramerHome = {
       image.src = decodeURIComponent(fallbackSrc);
     });
 
-    // Initialize parallax after render
-    this.initMasonryParallax();
-    section.querySelectorAll('[data-home-prompt-id]').forEach((card) => {
-      card.addEventListener('click', () => {
+    // Parallax is a visual enhancement; let first paint win and attach it slightly later.
+    this.scheduleMasonryParallaxInit();
+    const maskLink = section.querySelector('[data-home-prompts-mask-link="1"]');
+    if (maskLink) {
+      maskLink.addEventListener('click', () => {
+        const tags = String(maskLink.dataset.homePromptsMaskTags || '')
+          .split('|')
+          .map((tag) => tag.trim())
+          .filter(Boolean);
         trackHomepageAnalyticsEvent('homepage_prompt_click', {
-          entityType: 'prompt',
-          entityId: card.dataset.homePromptId || null,
+          entityType: 'prompt_collection',
+          entityId: 'prompts_view_more',
           metadata: {
-            prompt_id: card.dataset.homePromptId || null,
-            title: card.dataset.homePromptTitle || ''
+            section: 'prompts',
+            action: 'view_more',
+            tags
           }
         });
       });
-    });
+    }
     observeHomepageSectionImpression(section, 'prompts');
   },
 
@@ -2952,7 +3402,7 @@ const FramerHome = {
     const balance = escapeHomeHtml(demo.balance || '7.6');
 
     return `
-      <article class="verify-widget home-verify-live-card ring-idle" data-home-verify-widget="1" data-phase="draft">
+      <article class="verify-widget home-verify-live-card ring-idle" data-home-verify-widget="1" data-phase="draft" data-bottom-state="primary">
         <div class="verify-widget-topline" aria-hidden="true">
           <div class="verify-orbit-trail"></div>
         </div>
@@ -3003,77 +3453,83 @@ const FramerHome = {
               </label>
             </div>
 
-            <div class="verify-form-field">
-              <span class="verify-field-label">业务模式</span>
-              <div class="verify-mode-selector">
-                <label class="verify-mode-option">
-                  <input type="radio" name="homeVerifyTaskType" value="extract" checked tabindex="-1">
-                  <span class="verify-mode-option__body">
-                    <span class="verify-mode-option__title">仅提链</span>
-                    <span class="verify-mode-option__meta">${costPoints} 积分 · 只拿可用订阅链接</span>
-                  </span>
-                </label>
-                <label class="verify-mode-option verify-mode-option--accent">
-                  <input type="radio" name="homeVerifyTaskType" value="full" tabindex="-1">
-                  <span class="verify-mode-option__body">
-                    <span class="verify-mode-option__title">全流程包绑卡</span>
-                    <span class="verify-mode-option__meta">${costPoints * 2} 积分 · 完成 Google One 订阅流程</span>
-                  </span>
-                </label>
-              </div>
-              <div class="verify-mode-note">提链模式成功后，请自行打开链接完成绑卡订阅；没有卡可前往商城购卡。</div>
-            </div>
-
-            <div class="verify-form-meta">
-              <label class="verify-priority-pill">
-                <input type="checkbox" tabindex="-1">
-                <span>高优先级任务</span>
-              </label>
-              <div class="verify-price-info verify-form-price">
-                <i class="fas fa-coins" aria-hidden="true"></i>
-                本次提交消耗 <span class="price" data-home-verify-cost>${costPoints}</span> 积分
-              </div>
-            </div>
-
-            <div class="verify-form-actions">
-              <button class="verify-reset-btn" type="button" tabindex="-1">
-                <i class="fas fa-rotate-left" aria-hidden="true"></i>
-                清空
-              </button>
-              <button class="verify-submit-btn" data-home-verify-submit type="button" tabindex="-1">
-                <span class="spinner" aria-hidden="true"></span>
-                <i class="fas fa-paper-plane" data-home-verify-submit-icon aria-hidden="true"></i>
-                <span data-home-verify-submit-label>提交提链任务</span>
-              </button>
-            </div>
-
-            <div class="verify-batch-results" data-home-verify-results>
-              <div class="verify-batch-results-header">
-                <div class="verify-batch-results-title">
-                  <i class="fas fa-list-check" aria-hidden="true"></i>
-                  任务状态
+            <div class="home-verify-bottom-zone">
+              <div class="home-verify-bottom-panel home-verify-bottom-panel--primary" data-home-verify-panel="primary">
+                <div class="verify-form-field home-verify-mode-field">
+                  <span class="verify-field-label">业务模式</span>
+                  <div class="verify-mode-selector">
+                    <label class="verify-mode-option">
+                      <input type="radio" name="homeVerifyTaskType" value="extract" checked tabindex="-1">
+                      <span class="verify-mode-option__body">
+                        <span class="verify-mode-option__title">仅提链</span>
+                        <span class="verify-mode-option__meta">${costPoints} 积分 · 只拿可用订阅链接</span>
+                      </span>
+                    </label>
+                    <label class="verify-mode-option verify-mode-option--accent">
+                      <input type="radio" name="homeVerifyTaskType" value="full" tabindex="-1">
+                      <span class="verify-mode-option__body">
+                        <span class="verify-mode-option__title">全流程包绑卡</span>
+                        <span class="verify-mode-option__meta">${costPoints * 2} 积分 · 完成 Google One 订阅流程</span>
+                      </span>
+                    </label>
+                  </div>
+                  <div class="verify-mode-note">提链模式成功后，请自行打开链接完成绑卡订阅；没有卡可前往商城购卡。</div>
                 </div>
-                <div class="verify-batch-progress">
-                  进度: <span class="current" data-home-verify-current>0</span>/<span class="total">1</span>
+
+                <div class="verify-form-meta">
+                  <label class="verify-priority-pill">
+                    <input type="checkbox" tabindex="-1">
+                    <span>高优先级任务</span>
+                  </label>
+                  <div class="verify-price-info verify-form-price">
+                    <i class="fas fa-coins" aria-hidden="true"></i>
+                    本次提交消耗 <span class="price" data-home-verify-cost>${costPoints}</span> 积分
+                  </div>
+                </div>
+
+                <div class="verify-form-actions">
+                  <button class="verify-reset-btn" type="button" tabindex="-1">
+                    <i class="fas fa-rotate-left" aria-hidden="true"></i>
+                    清空
+                  </button>
+                  <button class="verify-submit-btn" data-home-verify-submit type="button" tabindex="-1">
+                    <span class="spinner" aria-hidden="true"></span>
+                    <i class="fas fa-paper-plane" data-home-verify-submit-icon aria-hidden="true"></i>
+                    <span data-home-verify-submit-label>提交提链任务</span>
+                  </button>
                 </div>
               </div>
-              <div>
-                <div class="verify-result-item info" data-home-verify-result-item>
-                  <div class="verify-result-item-content">
-                    <div class="verify-result-item-id">#1: <span data-home-verify-result-email>${email}</span></div>
-                    <div class="verify-result-item-message">
-                      <span data-home-verify-message>等待提交任务</span>
-                      <div class="verify-result-link-row" data-home-verify-link-row hidden>
-                        <a class="verify-result-link" href="${successLink}" target="_blank" rel="noopener noreferrer" data-home-verify-link>${successLink}</a>
+
+              <div class="home-verify-bottom-panel home-verify-bottom-panel--results" data-home-verify-panel="results">
+                <div class="verify-batch-results" data-home-verify-results>
+                  <div class="verify-batch-results-header">
+                    <div class="verify-batch-results-title">
+                      <i class="fas fa-list-check" aria-hidden="true"></i>
+                      任务状态
+                    </div>
+                    <div class="verify-batch-progress">
+                      进度: <span class="current" data-home-verify-current>0</span>/<span class="total">1</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div class="verify-result-item info" data-home-verify-result-item>
+                      <div class="verify-result-item-content">
+                        <div class="verify-result-item-id">#1: <span data-home-verify-result-email>${email}</span></div>
+                        <div class="verify-result-item-message">
+                          <span data-home-verify-message>等待提交任务</span>
+                          <div class="verify-result-link-row" data-home-verify-link-row hidden>
+                            <a class="verify-result-link" href="${successLink}" target="_blank" rel="noopener noreferrer" data-home-verify-link>${successLink}</a>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
+                  <div class="verify-batch-summary" data-home-verify-summary hidden>
+                    <div class="verify-batch-stat success">成功: <span data-home-verify-success-count>0</span></div>
+                    <div class="verify-batch-stat error">失败: <span>0</span></div>
+                    <div class="verify-batch-stat total">总计: <span>1</span></div>
+                  </div>
                 </div>
-              </div>
-              <div class="verify-batch-summary" data-home-verify-summary hidden>
-                <div class="verify-batch-stat success">成功: <span data-home-verify-success-count>0</span></div>
-                <div class="verify-batch-stat error">失败: <span>0</span></div>
-                <div class="verify-batch-stat total">总计: <span>1</span></div>
               </div>
             </div>
           </div>
@@ -3090,6 +3546,7 @@ const FramerHome = {
 
     runtime.cancelled = true;
     (runtime.timers || []).forEach((timer) => window.clearTimeout(timer));
+    runtime.bottomZoneObserver?.disconnect?.();
     this.verifyDemoRuntime = null;
   },
 
@@ -3117,7 +3574,10 @@ const FramerHome = {
       message: widget.querySelector('[data-home-verify-message]'),
       linkRow: widget.querySelector('[data-home-verify-link-row]'),
       link: widget.querySelector('[data-home-verify-link]'),
-      successCount: widget.querySelector('[data-home-verify-success-count]')
+      successCount: widget.querySelector('[data-home-verify-success-count]'),
+      bottomZone: widget.querySelector('.home-verify-bottom-zone'),
+      primaryPanel: widget.querySelector('[data-home-verify-panel="primary"]'),
+      resultsPanel: widget.querySelector('[data-home-verify-panel="results"]')
     };
 
     const phases = [
@@ -3251,7 +3711,8 @@ const FramerHome = {
 
     const runtime = {
       cancelled: false,
-      timers: []
+      timers: [],
+      bottomZoneObserver: null
     };
     this.verifyDemoRuntime = runtime;
 
@@ -3259,6 +3720,37 @@ const FramerHome = {
       const timer = window.setTimeout(callback, delayMs);
       runtime.timers.push(timer);
       return timer;
+    };
+
+    const syncBottomZoneHeight = () => {
+      if (runtime.cancelled || !fields.bottomZone) {
+        return;
+      }
+
+      if (!fields.primaryPanel) {
+        return;
+      }
+
+      const height = Math.ceil(fields.primaryPanel.scrollHeight || fields.primaryPanel.getBoundingClientRect().height || 0);
+      if (height > 0) {
+        fields.bottomZone.style.setProperty('--home-verify-bottom-height', `${height}px`);
+      }
+    };
+
+    const scheduleBottomZoneHeightSync = () => {
+      if (runtime.cancelled || !fields.bottomZone) {
+        return;
+      }
+
+      if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(() => {
+          syncBottomZoneHeight();
+          window.requestAnimationFrame(syncBottomZoneHeight);
+        });
+        return;
+      }
+
+      scheduleTimer(syncBottomZoneHeight, 0);
     };
 
     const setActiveField = (activeField) => {
@@ -3272,8 +3764,13 @@ const FramerHome = {
         return;
       }
 
+      const previousBottomState = widget.dataset.bottomState || 'primary';
+      const nextBottomState = phase.resultsOpen ? 'results' : 'primary';
+      const shouldSoftReset = previousBottomState === 'results' && nextBottomState === 'primary';
+
       widget.dataset.phase = phase.phase;
       widget.className = `verify-widget home-verify-live-card ${phase.ring}`;
+      widget.dataset.bottomState = nextBottomState;
       widget.style.setProperty('--verify-progress', phase.progress);
       widget.style.setProperty('--verify-progress-opacity', String(phase.progressVisible));
 
@@ -3299,7 +3796,25 @@ const FramerHome = {
         fields.submitIcon.hidden = !phase.icon;
       }
       if (fields.submitLabel) fields.submitLabel.textContent = phase.submit;
+
+      scheduleBottomZoneHeightSync();
+
+      if (shouldSoftReset) {
+        widget.classList.add('home-verify-soft-reset');
+        scheduleTimer(() => {
+          if (!runtime.cancelled) {
+            widget.classList.remove('home-verify-soft-reset');
+          }
+        }, 460);
+      }
     };
+
+    if (typeof window.ResizeObserver === 'function' && fields.bottomZone) {
+      runtime.bottomZoneObserver = new ResizeObserver(syncBottomZoneHeight);
+      if (fields.primaryPanel) {
+        runtime.bottomZoneObserver.observe(fields.primaryPanel);
+      }
+    }
 
     const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
     if (prefersReducedMotion) {
@@ -3753,10 +4268,6 @@ const FramerHome = {
     const config = this.config.guestbook || {};
     const section = document.getElementById('guestbook-section');
 
-    if (!messages || messages.length === 0) {
-      setHomeSectionVisibility(section, false);
-      return;
-    }
     setHomeSectionVisibility(section, true);
 
     const title = escapeHomeHtml(this.getLocalizedField(config, 'section_title') || window.i18n?.t('home.guestbook.title') || '留言板');
@@ -3764,6 +4275,11 @@ const FramerHome = {
     const cardsMarkup = messages
       .map((message, index) => this.createGuestbookCardMarkup(message, HOME_GUESTBOOK_CARD_SLOTS[index]))
       .join('');
+    const emptyMarkup = !messages.length
+      ? `<div class="home-guestbook-empty">
+          <p>${window.i18n?.t('home.guestbook.empty') || '留言正在同步中，稍后会在这里出现。'}</p>
+        </div>`
+      : '';
 
     section.innerHTML = `
       <div class="home-guestbook-stage fade-in-up" data-home-guestbook-stage>
@@ -3795,9 +4311,14 @@ const FramerHome = {
           <div class="home-guestbook-cards">
             ${cardsMarkup}
           </div>
+          ${emptyMarkup}
         </div>
       </div>
     `;
+
+    section.querySelectorAll('.fade-in-up').forEach((el) => {
+      el.classList.add('visible');
+    });
 
     bindImageFallbacks(section, 'img[data-home-avatar-fallback]', (image) => {
       const fallbackSrc = image.dataset.homeAvatarFallback;
@@ -3954,6 +4475,11 @@ const FramerHome = {
     };
     const triggerCardAction = (card, event) => {
       const action = card.getAttribute('data-action');
+
+      if (action === 'openGuestbookModal') {
+        event.preventDefault();
+        return openHomepageGuestbookModal(card);
+      }
 
       if (action && typeof window[action] === 'function') {
         event.preventDefault();
@@ -4115,13 +4641,22 @@ const FramerHome = {
 
     cards.forEach((card) => {
       card.addEventListener('click', (e) => {
+        const isDelegatedGuestbookTrigger = card.getAttribute('data-home-open-guestbook') === '1';
+        if (isDelegatedGuestbookTrigger) {
+          return;
+        }
+
         const viewportCenter = getCarouselViewportCenter();
         const rect = card.getBoundingClientRect();
         const cardCenter = rect.left + rect.width / 2;
         const distanceFromCenter = Math.abs(cardCenter - viewportCenter);
+        const shouldTriggerActionImmediately = Boolean(
+          card.getAttribute('data-action')
+          && !isDelegatedGuestbookTrigger
+        );
 
         // If card is not centered, scroll to center it and prevent navigation
-        if (distanceFromCenter > centerThreshold) {
+        if (!shouldTriggerActionImmediately && distanceFromCenter > centerThreshold) {
           e.preventDefault();
           e.stopPropagation();
 
@@ -4290,6 +4825,15 @@ const FramerHome = {
    * Initialize parallax scroll effect for masonry columns
    */
     initMasonryParallax() {
+      if (typeof this.masonryParallaxCleanup === 'function') {
+        try {
+          this.masonryParallaxCleanup();
+        } catch (error) {
+          console.warn('Failed to cleanup previous masonry parallax runtime:', error);
+        }
+        this.masonryParallaxCleanup = null;
+      }
+
       const columns = document.querySelectorAll('.masonry-column');
       if (columns.length === 0) return;
 
@@ -4351,12 +4895,21 @@ const FramerHome = {
 
     window.addEventListener('scroll', requestTick, { passive: true });
     updateParallax(); // Initial position
+
+    this.masonryParallaxCleanup = () => {
+      window.removeEventListener('scroll', requestTick);
+    };
   },
 
   /**
    * Initialize scroll-triggered animations
    */
   initScrollAnimations() {
+    if (this.scrollAnimationObserver) {
+      this.scrollAnimationObserver.disconnect();
+      this.scrollAnimationObserver = null;
+    }
+
     const observer = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
         if (entry.isIntersecting) {
@@ -4368,7 +4921,13 @@ const FramerHome = {
       rootMargin: '0px 0px -100px 0px'
     });
 
+    this.scrollAnimationObserver = observer;
     document.querySelectorAll('.fade-in-up').forEach(el => {
+      const rect = el.getBoundingClientRect();
+      if (rect.top <= window.innerHeight * 0.9) {
+        el.classList.add('visible');
+        return;
+      }
       observer.observe(el);
     });
   }
@@ -4381,29 +4940,17 @@ function scheduleHomepageInit() {
 
   document.documentElement.dataset.homepageInitScheduled = '1';
 
-  const startTime = Date.now();
-  const maxWaitMs = 2500;
   const waitForDeps = setInterval(() => {
     const promptsReady = Boolean(window.PROMPTS);
-    const clientReady = Boolean(window.supabaseClient);
-    const timedOut = Date.now() - startTime >= maxWaitMs;
 
     if (!promptsReady) {
       return;
     }
 
-    if (!clientReady && !timedOut) {
-      return;
-    }
-
     clearInterval(waitForDeps);
 
-    if (!clientReady) {
-      console.warn('⚠️ Supabase client not ready after 2500ms, initializing homepage with fallback-capable mode');
-    }
-
     FramerHome.init();
-  }, 100);
+  }, 40);
 }
 
 // Auto-initialize when DOM is ready and dependencies are loaded

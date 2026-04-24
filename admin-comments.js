@@ -16,6 +16,7 @@ let commentsData = [];
 let commentsById = new Map();
 let commentsLoading = false;
 let commentsInitialized = false;
+let commentsSkipNextActivateReload = false;
 let filteredComments = []; // Global filtered data for export
 let commentsSummaryState = null;
 const COMMENTS_DEFAULT_PAGE_SIZE = 15;
@@ -75,6 +76,49 @@ function getCommentsReadSite() {
 
 function requireWritableCommentsSite(options = {}) {
     return window.AdminSiteFilter?.requireWritableSite?.(options) || null;
+}
+
+function emitCommentsCommandFeedback(message = '', feedbackState = 'saved', options = {}) {
+    const normalizedMessage = String(message || '').trim();
+    if (!normalizedMessage) {
+        return null;
+    }
+
+    const detail = {
+        kind: 'module-result',
+        source: String(options?.source || 'comments-batch').trim().toLowerCase() || 'comments-batch',
+        module: 'comments',
+        state: String(feedbackState || options?.state || 'saved').trim().toLowerCase() || 'saved',
+        tone: String(options?.tone || '').trim().toLowerCase(),
+        message: normalizedMessage,
+        persistent: options?.persistent === true,
+        timestamp: Date.now()
+    };
+
+    if (typeof window.dispatchAdminStudioFeedbackSignal === 'function') {
+        return window.dispatchAdminStudioFeedbackSignal(detail);
+    }
+
+    if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+        try {
+            window.dispatchEvent(new CustomEvent('admin-feedback-signal', { detail }));
+        } catch (_) {
+            // Comments feedback is advisory and should not block governance actions.
+        }
+    }
+
+    return detail;
+}
+
+function notifyCommentsBatchRecovery(message = '', feedbackState = 'failed') {
+    const normalizedMessage = String(message || '').trim();
+    if (!normalizedMessage) {
+        return;
+    }
+
+    const state = String(feedbackState || 'failed').trim().toLowerCase() || 'failed';
+    showToast(normalizedMessage, state === 'partial' ? 'warning' : 'error');
+    emitCommentsCommandFeedback(normalizedMessage, state, { source: 'comments-batch' });
 }
 
 function buildAdminCommentsUrl(route, params = {}) {
@@ -505,6 +549,27 @@ function renderCommentsPromptContextBar() {
     `;
 }
 
+function ensureCommentsModuleActive(options = {}) {
+    const normalizedOptions = options && typeof options === 'object' && !Array.isArray(options) ? options : {};
+
+    if (window.AdminShell?.activateModule) {
+        return window.AdminShell.activateModule('comments', {
+            fallback: normalizedOptions.fallback === true,
+            silentDenied: normalizedOptions.silentDenied,
+            reason: normalizedOptions.reason || 'comments-ensure-module'
+        });
+    }
+
+    const moduleSwitcher = typeof window.switchModule === 'function'
+        ? window.switchModule
+        : null;
+    if (moduleSwitcher) {
+        return moduleSwitcher('comments');
+    }
+
+    return false;
+}
+
 function openAdminPromptCommentContext(context = {}) {
     const normalizedContext = context && typeof context === 'object' && !Array.isArray(context) ? context : {};
     const promptId = String(normalizedContext.promptId || normalizedContext.id || '').trim();
@@ -537,8 +602,13 @@ function openAdminPromptCommentContext(context = {}) {
         ensureCommentsModule: true
     });
 
-    if (normalizedContext.ensureModule !== false && typeof window.switchModule === 'function') {
-        window.switchModule('comments');
+    if (normalizedContext.ensureModule !== false) {
+        const switched = ensureCommentsModuleActive({
+            reason: 'comments-prompt-context'
+        });
+        if (switched === false) {
+            return false;
+        }
     }
     switchCommentView('gallery');
     return true;
@@ -601,11 +671,147 @@ function openAdminUserCommentContext(context = {}) {
         ensureCommentsModule: true
     });
 
-    if (normalizedContext.ensureModule !== false && typeof window.switchModule === 'function') {
-        window.switchModule('comments');
+    if (normalizedContext.ensureModule !== false) {
+        const switched = ensureCommentsModuleActive({
+            reason: 'comments-user-context'
+        });
+        if (switched === false) {
+            return false;
+        }
     }
     switchCommentView(targetView);
     return true;
+}
+
+function buildAdminCommentsPromptShellContext(action = 'open-prompt-gallery') {
+    const promptId = String(filterState.promptId || '').trim();
+    const promptTitle = String(filterState.promptTitle || '').trim();
+    return {
+        source: 'comments',
+        entity: 'prompt',
+        action,
+        site: getCommentsReadSite(),
+        focus: {
+            promptId,
+            prompt_id: promptId
+        },
+        payload: {
+            view: currentCommentView,
+            queue: activeCommentQueue || filterState.queue || 'pending',
+            promptId,
+            prompt_id: promptId,
+            promptTitle,
+            prompt_title: promptTitle,
+            sectionId: action === 'open-prompt-analytics' ? 'contentCommerceDetailSection' : '',
+            focusTargetId: action === 'open-prompt-analytics' ? 'contentCommerceDetailSection' : ''
+        },
+        returnTo: {
+            module: 'comments',
+            view: currentCommentView,
+            promptId,
+            promptTitle
+        }
+    };
+}
+
+async function openAdminCommentsPromptGalleryContext() {
+    const promptId = String(filterState.promptId || '').trim();
+    if (!promptId) {
+        return false;
+    }
+
+    const promptContext = buildAdminCommentsPromptShellContext('open-prompt-gallery');
+
+    if (window.AdminShell?.openContext) {
+        const opened = await window.AdminShell.openContext('gallery', promptContext, {
+            settleMs: 0,
+            silentDenied: true
+        });
+        if (opened) {
+            return true;
+        }
+    }
+
+    if (typeof window.openAdminGalleryShellContext === 'function') {
+        try {
+            return await window.openAdminGalleryShellContext(promptContext);
+        } catch (error) {
+            console.warn('[Comments] Failed to open gallery prompt context through shared helper:', error);
+        }
+    }
+
+    return window.openAdminGalleryPromptContext?.(promptId, { ensureModule: true }) === true;
+}
+
+async function openAdminCommentsPromptHomepageContext() {
+    const promptId = String(filterState.promptId || '').trim();
+    if (!promptId) {
+        return false;
+    }
+
+    const promptContext = buildAdminCommentsPromptShellContext('open-prompt-homepage');
+
+    if (window.AdminShell?.openContext) {
+        const opened = await window.AdminShell.openContext('homepage', promptContext, {
+            settleMs: 0,
+            silentDenied: true
+        });
+        if (opened) {
+            return true;
+        }
+    }
+
+    if (typeof window.openAdminHomepageShellContext === 'function') {
+        try {
+            return await window.openAdminHomepageShellContext(promptContext);
+        } catch (error) {
+            console.warn('[Comments] Failed to open homepage prompt context through shared helper:', error);
+        }
+    }
+
+    return window.HomepageAdmin?.openPromptSectionContext?.(promptId, { ensureModule: true }) === true;
+}
+
+async function openAdminCommentsPromptAnalyticsContext() {
+    const promptId = String(filterState.promptId || '').trim();
+    if (!promptId) {
+        return false;
+    }
+
+    const promptContext = buildAdminCommentsPromptShellContext('open-prompt-analytics');
+
+    if (window.AdminShell?.openContext) {
+        const opened = await window.AdminShell.openContext('growth-center', promptContext, {
+            settleMs: 0,
+            silentDenied: true,
+            switchOptions: {
+                analyticsTab: 'content',
+                analyticsPromptId: promptId
+            }
+        });
+        if (opened) {
+            return true;
+        }
+    }
+
+    if (typeof window.openAdminGrowthCenterShellContext === 'function') {
+        try {
+            return await window.openAdminGrowthCenterShellContext(promptContext, {
+                switchOptions: {
+                    analyticsTab: 'content',
+                    analyticsPromptId: promptId
+                }
+            });
+        } catch (error) {
+            console.warn('[Comments] Failed to open growth center prompt context through shared helper:', error);
+        }
+    }
+
+    const switched = window.switchModule?.('growth-center', {
+        analyticsTab: 'content',
+        analyticsPromptId: promptId
+    });
+    return switched !== false;
 }
 
 function restoreAdminCommentsRouteContext() {
@@ -730,6 +936,8 @@ function initCommentsModule() {
     // Prevent double initialization
     if (commentsInitialized) {
         console.log('Comments module already initialized');
+        commentsSkipNextActivateReload = true;
+        switchLayoutView(currentViewLayout, { loadIfNeeded: false });
         syncAdminCommentsFilterUi();
         syncCommentsSelectModeUi();
         loadComments(routeState.view || currentCommentView, {
@@ -740,14 +948,38 @@ function initCommentsModule() {
         return;
     }
     commentsInitialized = true;
+    commentsSkipNextActivateReload = true;
     currentCommentView = routeState.view || currentCommentView;
     window.currentCommentView = currentCommentView;
 
+    switchLayoutView(currentViewLayout, { loadIfNeeded: false });
     syncAdminCommentsFilterUi();
     syncCommentsSelectModeUi(0);
     loadComments(currentCommentView, { resetPage: true });
     scheduleCommentStatsRefresh(currentCommentView, { showLoading: true });
     setupCommentEventHandlers();
+}
+
+function activateCommentsModule() {
+    switchLayoutView(currentViewLayout, { loadIfNeeded: false });
+    if (!commentsInitialized) {
+        return;
+    }
+
+    syncAdminCommentsFilterUi();
+    syncCommentsSelectModeUi();
+
+    if (commentsSkipNextActivateReload) {
+        commentsSkipNextActivateReload = false;
+        return;
+    }
+
+    loadComments(currentCommentView, {
+        resetPage: true,
+        preserveSelection: true,
+        focusCommentId: pendingFocusedCommentId
+    });
+    scheduleCommentStatsRefresh(currentCommentView, { showLoading: true });
 }
 
 /**
@@ -903,13 +1135,19 @@ function setupFilterDropdowns() {
     };
 
     // Check if flatpickr is loaded, if not wait a bit
-    const initFlatpickr = () => {
+    const initFlatpickr = async () => {
+        if (!window.flatpickr && typeof window.ensureAdminFlatpickr === 'function') {
+            try {
+                await window.ensureAdminFlatpickr();
+            } catch (error) {
+                console.error('[AdminComments] Failed to load Flatpickr runtime:', error);
+                return;
+            }
+        }
+
         if (window.flatpickr) {
             if (dateFromInput) flatpickr(dateFromInput, flatpickrConfig);
             if (dateToInput) flatpickr(dateToInput, flatpickrConfig);
-        } else {
-            console.warn('Flatpickr not loaded yed, retrying...');
-            setTimeout(initFlatpickr, 100);
         }
     };
 
@@ -2649,32 +2887,48 @@ async function openCommentUser(commentId) {
             }
         }
     };
+    const userContext = {
+        source: 'comments',
+        entity: 'user',
+        action: 'open-user-modal',
+        site: comment.site || getCommentsReadSite(),
+        focus: {
+            userId: comment.user_id,
+            commentId: comment.id
+        },
+        payload: {
+            modalOptions
+        },
+        returnTo: {
+            module: 'comments',
+            view: currentCommentView,
+            focusCommentId: comment.id
+        }
+    };
 
     if (window.AdminShell?.openContext) {
-        const opened = await window.AdminShell.openContext('users', {
-            source: 'comments',
-            entity: 'user',
-            action: 'open-user-modal',
-            site: comment.site || getCommentsReadSite(),
-            focus: {
-                userId: comment.user_id,
-                commentId: comment.id
-            },
-            payload: {
-                modalOptions
-            },
-            returnTo: {
-                module: 'comments',
-                view: currentCommentView,
-                focusCommentId: comment.id
-            }
-        });
+        const opened = await window.AdminShell.openContext('users', userContext);
         if (opened) {
             return;
         }
     }
 
-    window.switchModule?.('users');
+    const switched = window.AdminShell?.activateModule
+        ? window.AdminShell.activateModule('users', { reason: 'comments-open-user', deferContext: true })
+        : window.switchModule?.('users');
+    if (switched === false) {
+        return;
+    }
+
+    if (typeof window.openAdminUsersShellContext === 'function') {
+        try {
+            await window.openAdminUsersShellContext(userContext);
+            return;
+        } catch (error) {
+            console.warn('Failed to open comment user through shared users helper:', error);
+        }
+    }
+
     window.setTimeout(() => {
         window.openUserModal?.(comment.user_id, {
             defaultTab: 'content',
@@ -2689,29 +2943,45 @@ async function openCommentPromptAdmin(commentId) {
         showToast('当前评论没有可编辑的 Prompt', 'info');
         return;
     }
+    const galleryContext = {
+        source: 'comments',
+        entity: 'prompt',
+        action: 'edit-prompt',
+        site: comment.site || getCommentsReadSite(),
+        focus: {
+            promptId: comment.context,
+            commentId: comment.id
+        },
+        returnTo: {
+            module: 'comments',
+            view: currentCommentView,
+            focusCommentId: comment.id
+        }
+    };
 
     if (window.AdminShell?.openContext) {
-        const opened = await window.AdminShell.openContext('gallery', {
-            source: 'comments',
-            entity: 'prompt',
-            action: 'edit-prompt',
-            site: comment.site || getCommentsReadSite(),
-            focus: {
-                promptId: comment.context,
-                commentId: comment.id
-            },
-            returnTo: {
-                module: 'comments',
-                view: currentCommentView,
-                focusCommentId: comment.id
-            }
-        });
+        const opened = await window.AdminShell.openContext('gallery', galleryContext);
         if (opened) {
             return;
         }
     }
 
-    window.switchModule?.('gallery');
+    if (typeof window.openAdminGalleryShellContext === 'function') {
+        try {
+            await window.openAdminGalleryShellContext(galleryContext);
+            return;
+        } catch (error) {
+            console.warn('Failed to open comment prompt through shared gallery helper:', error);
+        }
+    }
+
+    const switched = window.AdminShell?.activateModule
+        ? window.AdminShell.activateModule('gallery', { reason: 'comments-open-prompt', deferContext: true })
+        : window.switchModule?.('gallery');
+    if (switched === false) {
+        return;
+    }
+
     window.setTimeout(() => {
         window.editPrompt?.(comment.context);
     }, 180);
@@ -2727,35 +2997,59 @@ async function openCommentTicket(ticketId, commentId = '') {
     if (commentId) {
         activeCommentDetailId = commentId;
     }
+    const ticketContext = {
+        source: 'comments',
+        entity: 'ticket',
+        action: 'focus-ticket',
+        site: getCommentsReadSite(),
+        focus: {
+            ticketId: normalizedTicketId,
+            commentId
+        },
+        payload: {
+            status: 'all'
+        },
+        returnTo: {
+            module: 'comments',
+            view: currentCommentView,
+            focusCommentId: commentId
+        }
+    };
 
     if (window.AdminShell?.openContext) {
-        const opened = await window.AdminShell.openContext('tickets', {
-            source: 'comments',
-            entity: 'ticket',
-            action: 'focus-ticket',
-            site: getCommentsReadSite(),
-            focus: {
-                ticketId: normalizedTicketId,
-                commentId
-            },
-            payload: {
-                status: 'all'
-            },
-            returnTo: {
-                module: 'comments',
-                view: currentCommentView,
-                focusCommentId: commentId
-            }
-        });
+        const opened = await window.AdminShell.openContext('tickets', ticketContext);
         if (opened) {
             return;
         }
     }
 
-    window.switchModule?.('tickets');
+    const switched = window.AdminShell?.activateModule
+        ? window.AdminShell.activateModule('tickets', { reason: 'comments-open-ticket', deferContext: true })
+        : window.switchModule?.('tickets');
+    if (switched === false) {
+        return;
+    }
+
+    if (typeof window.openAdminTicketsShellContext === 'function') {
+        try {
+            await window.openAdminTicketsShellContext(ticketContext, {
+                workspace: 'queue'
+            });
+            return;
+        } catch (error) {
+            console.warn('Failed to open linked ticket through shared tickets helper:', error);
+        }
+    }
+
     window.setTimeout(async () => {
         try {
-            await window.AdminTickets?.init?.();
+            await window.AdminTickets?.activate?.({
+                ticketId: normalizedTicketId,
+                workspace: 'queue',
+                status: 'all'
+            }, {
+                workspace: 'queue'
+            });
             await window.AdminTickets?.focusTicket?.(normalizedTicketId, { status: 'all' });
         } catch (error) {
             console.warn('Failed to open linked ticket:', error);
@@ -2781,7 +3075,9 @@ async function createCommentTicket(commentId) {
             comment
         });
         setCommentGovernanceBusyState(true, '工单已创建，正在同步评论列表...');
-        showToast(payload?.message || '已创建工单', 'success');
+        const successMessage = payload?.message || '已创建工单';
+        showToast(successMessage, 'success');
+        emitCommentsCommandFeedback(successMessage, 'saved', { source: 'comments-governance' });
         prepareCommentReloadState({
             preserveSelection: true,
             focusCommentId: comment.id
@@ -2800,7 +3096,9 @@ async function createCommentTicket(commentId) {
         }
     } catch (error) {
         console.error('Failed to create comment ticket:', error);
-        showToast(error.message || '创建工单失败', 'error');
+        const failureMessage = error.message || '创建工单失败';
+        showToast(failureMessage, 'error');
+        emitCommentsCommandFeedback(failureMessage, 'failed', { source: 'comments-governance' });
     } finally {
         setCommentGovernanceBusyState(false);
     }
@@ -2821,7 +3119,10 @@ async function updateCommentWorkflowStatus(commentId, status) {
             entityId: comment.id,
             status
         });
+        const statusLabel = getCommentWorkflowStatusMeta(status).label || '新状态';
+        const successMessage = `评论状态已更新为 ${statusLabel}`;
         showToast('状态已更新', 'success');
+        emitCommentsCommandFeedback(successMessage, 'saved', { source: 'comments-governance' });
         prepareCommentReloadState({
             preserveSelection: true,
             focusCommentId: comment.id
@@ -2834,7 +3135,9 @@ async function updateCommentWorkflowStatus(commentId, status) {
         await openCommentDetail(comment.id);
     } catch (error) {
         console.error('Failed to update comment workflow status:', error);
-        showToast(error.message || '状态更新失败', 'error');
+        const failureMessage = error.message || '状态更新失败';
+        showToast(failureMessage, 'error');
+        emitCommentsCommandFeedback(failureMessage, 'failed', { source: 'comments-governance' });
     } finally {
         setCommentWorkflowBusyState(false);
     }
@@ -2854,7 +3157,9 @@ async function assignCommentWorkflowSelf(commentId) {
             entityType: comment.entity_type,
             entityId: comment.id
         });
+        const successMessage = '评论已指派给当前管理员';
         showToast('已指派给当前管理员', 'success');
+        emitCommentsCommandFeedback(successMessage, 'saved', { source: 'comments-governance' });
         await loadComments(currentCommentView, {
             preserveSelection: true,
             focusCommentId: comment.id
@@ -2862,7 +3167,9 @@ async function assignCommentWorkflowSelf(commentId) {
         await openCommentDetail(comment.id);
     } catch (error) {
         console.error('Failed to assign comment workflow:', error);
-        showToast(error.message || '指派失败', 'error');
+        const failureMessage = error.message || '指派失败';
+        showToast(failureMessage, 'error');
+        emitCommentsCommandFeedback(failureMessage, 'failed', { source: 'comments-governance' });
     } finally {
         setCommentWorkflowBusyState(false);
     }
@@ -2886,7 +3193,9 @@ async function toggleCommentWorkflowPriority(commentId) {
             entityId: comment.id,
             priority: nextPriority
         });
+        const successMessage = nextPriority === 'high' ? '评论已标记高优先' : '评论已恢复常规优先级';
         showToast(nextPriority === 'high' ? '已标记高优先' : '已恢复常规优先级', 'success');
+        emitCommentsCommandFeedback(successMessage, 'saved', { source: 'comments-governance' });
         await loadComments(currentCommentView, {
             preserveSelection: true,
             focusCommentId: comment.id
@@ -2894,7 +3203,9 @@ async function toggleCommentWorkflowPriority(commentId) {
         await openCommentDetail(comment.id);
     } catch (error) {
         console.error('Failed to toggle comment priority:', error);
-        showToast(error.message || '优先级更新失败', 'error');
+        const failureMessage = error.message || '优先级更新失败';
+        showToast(failureMessage, 'error');
+        emitCommentsCommandFeedback(failureMessage, 'failed', { source: 'comments-governance' });
     } finally {
         setCommentWorkflowBusyState(false);
     }
@@ -2926,7 +3237,9 @@ async function editCommentWorkflowTags(commentId) {
                 .map((item) => item.trim())
                 .filter(Boolean)
         });
+        const successMessage = '评论标签已更新';
         showToast('标签已更新', 'success');
+        emitCommentsCommandFeedback(successMessage, 'saved', { source: 'comments-governance' });
         await loadComments(currentCommentView, {
             preserveSelection: true,
             focusCommentId: comment.id
@@ -2934,7 +3247,9 @@ async function editCommentWorkflowTags(commentId) {
         await openCommentDetail(comment.id);
     } catch (error) {
         console.error('Failed to update comment tags:', error);
-        showToast(error.message || '标签更新失败', 'error');
+        const failureMessage = error.message || '标签更新失败';
+        showToast(failureMessage, 'error');
+        emitCommentsCommandFeedback(failureMessage, 'failed', { source: 'comments-governance' });
     } finally {
         setCommentWorkflowBusyState(false);
     }
@@ -2965,7 +3280,9 @@ async function addCommentWorkflowNote(commentId) {
         if (input) {
             input.value = '';
         }
+        const successMessage = '评论备注已添加';
         showToast('备注已添加', 'success');
+        emitCommentsCommandFeedback(successMessage, 'saved', { source: 'comments-governance' });
         await loadComments(currentCommentView, {
             preserveSelection: true,
             focusCommentId: comment.id
@@ -2973,7 +3290,9 @@ async function addCommentWorkflowNote(commentId) {
         await openCommentDetail(comment.id);
     } catch (error) {
         console.error('Failed to add comment note:', error);
-        showToast(error.message || '备注保存失败', 'error');
+        const failureMessage = error.message || '备注保存失败';
+        showToast(failureMessage, 'error');
+        emitCommentsCommandFeedback(failureMessage, 'failed', { source: 'comments-governance' });
     } finally {
         setCommentWorkflowBusyState(false);
     }
@@ -3557,12 +3876,19 @@ async function batchSetCommentWorkflowStatus(status = '', actionEl = null) {
         ignored: '已忽略'
     };
 
-    if (!selectedComments.length || !statusLabels[normalizedStatus]) {
+    if (!selectedComments.length) {
+        notifyCommentsBatchRecovery('请先勾选要处理的评论，或在批量菜单中使用“全选当前页”。');
+        return;
+    }
+
+    if (!statusLabels[normalizedStatus]) {
+        notifyCommentsBatchRecovery('批量状态无效，请重新打开批量菜单后再试。');
         return;
     }
 
     const writableSite = requireWritableCommentsSite({ label: `批量评论设为${statusLabels[normalizedStatus]}` });
     if (!writableSite) {
+        notifyCommentsBatchRecovery('批量评论治理需要先在站点筛选中选择 CN 或 INTL，all 视图仅用于查看。');
         return;
     }
 
@@ -3593,11 +3919,15 @@ async function batchSetCommentWorkflowStatus(status = '', actionEl = null) {
         loadCommentStats(currentCommentView, { showLoading: false });
 
         if (failedCount > 0) {
-            showToast(`批量处理完成：成功 ${successCount} 条，失败 ${failedCount} 条`, successCount > 0 ? 'warning' : 'error');
+            const resultMessage = `批量处理完成：成功 ${successCount} 条，失败 ${failedCount} 条`;
+            showToast(resultMessage, successCount > 0 ? 'warning' : 'error');
+            emitCommentsCommandFeedback(resultMessage, successCount > 0 ? 'partial' : 'failed', { source: 'comments-batch' });
             return;
         }
 
-        showToast(`已批量设为${statusLabels[normalizedStatus]}（${successCount} 条）`, 'success');
+        const successMessage = `已批量设为${statusLabels[normalizedStatus]}（${successCount} 条）`;
+        showToast(successMessage, 'success');
+        emitCommentsCommandFeedback(successMessage, 'saved', { source: 'comments-batch' });
     } finally {
         finishInteraction({ closeMenu: true });
     }
@@ -3606,11 +3936,13 @@ async function batchSetCommentWorkflowStatus(status = '', actionEl = null) {
 async function batchAssignCommentWorkflowSelf(actionEl = null) {
     const selectedComments = getSelectedComments();
     if (!selectedComments.length) {
+        notifyCommentsBatchRecovery('请先勾选要指派的评论，或在批量菜单中使用“全选当前页”。');
         return;
     }
 
     const writableSite = requireWritableCommentsSite({ label: '批量评论指派给我' });
     if (!writableSite) {
+        notifyCommentsBatchRecovery('批量评论指派需要先在站点筛选中选择 CN 或 INTL，all 视图仅用于查看。');
         return;
     }
 
@@ -3639,11 +3971,15 @@ async function batchAssignCommentWorkflowSelf(actionEl = null) {
         await loadComments(currentCommentView, { resetPage: true });
 
         if (failedCount > 0) {
-            showToast(`批量指派完成：成功 ${successCount} 条，失败 ${failedCount} 条`, successCount > 0 ? 'warning' : 'error');
+            const resultMessage = `批量指派完成：成功 ${successCount} 条，失败 ${failedCount} 条`;
+            showToast(resultMessage, successCount > 0 ? 'warning' : 'error');
+            emitCommentsCommandFeedback(resultMessage, successCount > 0 ? 'partial' : 'failed', { source: 'comments-batch' });
             return;
         }
 
-        showToast(`已批量指派给我（${successCount} 条）`, 'success');
+        const successMessage = `已批量指派给我（${successCount} 条）`;
+        showToast(successMessage, 'success');
+        emitCommentsCommandFeedback(successMessage, 'saved', { source: 'comments-batch' });
     } finally {
         finishInteraction({ closeMenu: true });
     }
@@ -3766,10 +4102,14 @@ function generateCSV(data) {
  */
 async function batchDeleteComments(actionEl = null) {
     const checked = document.querySelectorAll('.comment-checkbox:checked');
-    if (checked.length === 0) return;
+    if (checked.length === 0) {
+        notifyCommentsBatchRecovery('请先勾选要删除的评论，或在批量菜单中使用“全选当前页”。');
+        return;
+    }
 
     const writableSite = requireWritableCommentsSite({ action: 'comments-batch-delete' });
     if (!writableSite) {
+        notifyCommentsBatchRecovery('批量删除评论需要先在站点筛选中选择 CN 或 INTL，all 视图仅用于查看。');
         return;
     }
 
@@ -3797,15 +4137,19 @@ async function batchDeleteComments(actionEl = null) {
             preserveSelection: true,
             removeSelectionIds: deletedIds
         });
-        showToast(cascadeDeleted > 0
+        const successMessage = cascadeDeleted > 0
             ? `成功删除 ${deleted} 条内容（含级联 ${cascadeDeleted} 条）`
-            : `成功删除 ${deleted} 条评论`, 'success');
+            : `成功删除 ${deleted} 条评论`;
+        showToast(successMessage, 'success');
+        emitCommentsCommandFeedback(successMessage, 'saved', { source: 'comments-batch' });
         clearSelectedComments({ closeMenu: false });
         loadComments(currentCommentView, { preserveSelection: true });
         loadCommentStats(currentCommentView, { showLoading: false });
     } catch (error) {
         console.error('Batch delete error:', error);
-        showToast('批量删除失败: ' + error.message, 'error');
+        const failureMessage = '批量删除失败: ' + error.message;
+        showToast(failureMessage, 'error');
+        emitCommentsCommandFeedback(failureMessage, 'failed', { source: 'comments-batch' });
     } finally {
         finishInteraction({ closeMenu: true });
     }
@@ -3856,13 +4200,17 @@ async function deleteComment(id, type, recordType = '') {
         loadCommentStats(currentCommentView, { showLoading: false });
         const cascadeDeleted = Number(payload?.cascadeDeletedCount || 0);
         const deleted = Number(payload?.deletedCount || 0);
-        showToast(cascadeDeleted > 0
+        const successMessage = cascadeDeleted > 0
             ? `已删除 ${deleted} 条内容（含级联 ${cascadeDeleted} 条）`
-            : '评论已删除', 'success');
+            : '评论已删除';
+        showToast(successMessage, 'success');
+        emitCommentsCommandFeedback(successMessage, 'saved', { source: 'comments-governance' });
 
     } catch (error) {
         console.error('Error deleting comment:', error);
-        showToast('删除失败: ' + error.message, 'error');
+        const failureMessage = '删除失败: ' + error.message;
+        showToast(failureMessage, 'error');
+        emitCommentsCommandFeedback(failureMessage, 'failed', { source: 'comments-governance' });
     }
 }
 
@@ -3906,15 +4254,48 @@ function escapeHtml(text) {
 /**
  * Show toast notification
  */
-function showToast(message, type = 'info') {
+const showToast = (message, type = 'info') => {
+    const normalizedMessage = String(message ?? '').trim();
+    const normalizedType = ['info', 'success', 'warning', 'error'].includes(type) ? type : 'info';
+
+    if (!normalizedMessage) return null;
+
+    if (typeof window.showToast === 'function' && window.showToast !== showToast) {
+        return window.showToast(normalizedMessage, normalizedType, {
+            module: 'comments'
+        });
+    }
+
+    if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+        try {
+            window.dispatchEvent(new CustomEvent('admin-feedback-signal', {
+                detail: {
+                    kind: 'toast',
+                    source: 'admin-comments',
+                    state: normalizedType === 'success'
+                        ? 'saved'
+                        : (normalizedType === 'warning'
+                            ? 'partial'
+                            : (normalizedType === 'error' ? 'failed' : 'loading')),
+                    tone: normalizedType,
+                    message: normalizedMessage,
+                    module: 'comments',
+                    timestamp: Date.now()
+                }
+            }));
+        } catch (_) {
+            // Ignore feedback bus failures so the local toast still renders.
+        }
+    }
+
     const container = document.getElementById('toastContainer');
-    if (!container) return;
+    if (!container) return null;
 
     const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
+    toast.className = `toast toast-${normalizedType}`;
     toast.innerHTML = `
-        <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
-        <span>${message}</span>
+        <i class="fas fa-${normalizedType === 'success' ? 'check-circle' : normalizedType === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
+        <span>${normalizedMessage}</span>
     `;
 
     container.appendChild(toast);
@@ -3923,7 +4304,9 @@ function showToast(message, type = 'info') {
         toast.classList.add('toast-fade-out');
         setTimeout(() => toast.remove(), 300);
     }, 3000);
-}
+
+    return toast;
+};
 
 // Current source filter state
 let currentSourceFilter = 'all';
@@ -3934,14 +4317,14 @@ let currentViewLayout = localStorage.getItem('admin_comment_layout') || 'grid';
 /**
  * Switch Layout View (Grid/List)
  */
-function switchLayoutView(layout) {
-    currentViewLayout = layout;
-    localStorage.setItem('admin_comment_layout', layout);
+function switchLayoutView(layout, options = {}) {
+    currentViewLayout = layout === 'list' ? 'list' : 'grid';
+    localStorage.setItem('admin_comment_layout', currentViewLayout);
 
     // Update container class
     const container = document.getElementById('adminCommentList');
     if (container) {
-        if (layout === 'list') {
+        if (currentViewLayout === 'list') {
             container.classList.add('list-view');
         } else {
             container.classList.remove('list-view');
@@ -3957,14 +4340,14 @@ function switchLayoutView(layout) {
             focusCommentCard(pendingFocusedCommentId);
             pendingFocusedCommentId = '';
         }
-    } else if (!commentsLoading) {
+    } else if (options?.loadIfNeeded !== false && !commentsLoading) {
         loadComments(currentCommentView);
     }
 
     // Update button states
     const btns = document.querySelectorAll('.view-btn');
     btns.forEach(btn => {
-        if (btn.dataset.view === layout) {
+        if (btn.dataset.view === currentViewLayout) {
             btn.classList.add('active');
         } else {
             btn.classList.remove('active');
@@ -3973,7 +4356,7 @@ function switchLayoutView(layout) {
 }
 // Initialize layout on load
 document.addEventListener('DOMContentLoaded', () => {
-    const initCommentsLayout = () => switchLayoutView(currentViewLayout);
+    const initCommentsLayout = () => switchLayoutView(currentViewLayout, { loadIfNeeded: false });
     if (window.adminStudioAccessGranted) {
         initCommentsLayout();
         return;
@@ -4022,6 +4405,7 @@ window.changeCommentsPage = changeCommentsPage;
 window.toggleCommentSelection = toggleCommentSelection;
 window.prefetchCommentsModule = prefetchCommentsModule;
 window.copyCommentId = window.copyCommentId;
+window.handleAdminCommentsSiteChange = handleAdminCommentsSiteChange;
 
 function handleAdminCommentsSiteChange() {
     invalidateCommentsViewCache();
@@ -4082,8 +4466,22 @@ function handleAdminCommentsShellContext(context = {}) {
     });
 }
 
+async function openAdminCommentsShellContext(context = {}, options = {}) {
+    if (!commentsInitialized) {
+        initCommentsModule();
+    } else {
+        activateCommentsModule();
+    }
+
+    return handleAdminCommentsShellContext(context, options);
+}
+
+window.openAdminCommentsShellContext = openAdminCommentsShellContext;
+
 if (window.AdminShell?.registerModule) {
     window.AdminShell.registerModule('comments', {
+        init: initCommentsModule,
+        activate: activateCommentsModule,
         onSiteChange: handleAdminCommentsSiteChange,
         handleContext: handleAdminCommentsShellContext,
         reload: handleAdminCommentsSiteChange
@@ -4122,16 +4520,13 @@ function bindAdminCommentsRuntimeDelegates() {
                 loadComments(currentCommentView, { resetPage: true });
                 break;
             case 'open-prompt-gallery':
-                window.openAdminGalleryPromptContext?.(filterState.promptId, { ensureModule: true });
+                void openAdminCommentsPromptGalleryContext();
                 break;
             case 'open-prompt-homepage':
-                window.HomepageAdmin?.openPromptSectionContext?.(filterState.promptId, { ensureModule: true });
+                void openAdminCommentsPromptHomepageContext();
                 break;
             case 'open-prompt-analytics':
-                window.switchModule?.('growth-center', {
-                    analyticsTab: 'content',
-                    analyticsPromptId: filterState.promptId
-                });
+                void openAdminCommentsPromptAnalyticsContext();
                 break;
             case 'toggle-selection':
                 toggleCommentSelection(event, actionEl.dataset.checkboxId || '');
@@ -4323,11 +4718,15 @@ window.togglePin = async function (id, currentStatus, promptId) {
             preserveSelection: true,
             focusCommentId: id
         });
+        const successMessage = currentStatus ? '已取消评论置顶' : '评论已置顶';
         showToast(currentStatus ? '已取消置顶' : '评论已置顶', 'success');
+        emitCommentsCommandFeedback(successMessage, 'saved', { source: 'comments-governance' });
         loadComments(currentCommentView, { preserveSelection: true, focusCommentId: id }); // Refresh list
     } catch (err) {
         console.error('Error toggling pin:', err);
+        const failureMessage = '评论置顶操作失败';
         showToast('操作失败', 'error');
+        emitCommentsCommandFeedback(failureMessage, 'failed', { source: 'comments-governance' });
     }
 };
 
@@ -4508,10 +4907,14 @@ window.blockUser = async function (userId, scope, days) {
         }
 
         refreshCommentsForUserStatus(userId);
-        showToast(`已${durationStr}封禁用户 ${scopeStr} 权限（全站生效）`, 'success');
+        const successMessage = `已${durationStr}封禁用户 ${scopeStr} 权限（全站生效）`;
+        showToast(successMessage, 'success');
+        emitCommentsCommandFeedback(successMessage, 'saved', { source: 'comments-governance' });
     } catch (err) {
         console.error('Block user error:', err);
-        showToast('操作失败: ' + err.message, 'error');
+        const failureMessage = '操作失败: ' + err.message;
+        showToast(failureMessage, 'error');
+        emitCommentsCommandFeedback(failureMessage, 'failed', { source: 'comments-governance' });
     }
 };
 
@@ -4571,9 +4974,13 @@ window.unblockUser = async function (userId, scope) {
         }
 
         refreshCommentsForUserStatus(userId);
-        showToast(`已解封用户 ${scopeLabel} 权限`, 'success');
+        const successMessage = `已解封用户 ${scopeLabel} 权限`;
+        showToast(successMessage, 'success');
+        emitCommentsCommandFeedback(successMessage, 'saved', { source: 'comments-governance' });
     } catch (err) {
         console.error('Unblock user error:', err);
-        showToast('操作失败: ' + err.message, 'error');
+        const failureMessage = '操作失败: ' + err.message;
+        showToast(failureMessage, 'error');
+        emitCommentsCommandFeedback(failureMessage, 'failed', { source: 'comments-governance' });
     }
 };

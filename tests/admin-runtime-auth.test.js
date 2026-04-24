@@ -64,6 +64,10 @@ async function withAdminModule(createClientImpl, callback) {
     }
 }
 
+async function loadAdminStudioAccessHelpers() {
+    return import('../api/_lib/admin-studio-access.mjs');
+}
+
 function createMockResponse() {
     const state = {
         statusCode: 200,
@@ -355,6 +359,228 @@ test('requireAdmin also falls back to admin client when no public client config 
             assert.equal(result.supabase.kind, 'admin');
             assert.equal(result.adminSupabase.kind, 'admin');
             assert.equal(result.roles[0].role_name, 'admin');
+        });
+    });
+});
+
+test('requireAdmin prefers an admin studio cookie session before bearer token fallback', async () => {
+    await withEnv({
+        SUPABASE_URL: 'https://example.supabase.co',
+        SUPABASE_PUBLISHABLE_KEY: undefined,
+        SUPABASE_ANON_KEY: undefined,
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: undefined,
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: undefined,
+        SUPABASE_SERVICE_ROLE_KEY: 'service-key',
+        ADMIN_STUDIO_ACCESS_SECRET: 'runtime-auth-cookie-secret'
+    }, async () => {
+        const accessHelpers = await loadAdminStudioAccessHelpers();
+        const cookieToken = await accessHelpers.issueAdminStudioToken({ sub: 'cookie-admin-1' });
+        let adminLookupCalls = 0;
+        let bearerLookupCalls = 0;
+
+        await withAdminModule(({ key }) => {
+            if (key === 'service-key') {
+                return {
+                    kind: 'admin',
+                    auth: {
+                        admin: {
+                            async getUserById(userId) {
+                                adminLookupCalls += 1;
+                                assert.equal(userId, 'cookie-admin-1');
+                                return {
+                                    data: {
+                                        user: {
+                                            id: 'cookie-admin-1',
+                                            email: 'cookie-admin@example.com'
+                                        }
+                                    },
+                                    error: null
+                                };
+                            }
+                        },
+                        async getUser() {
+                            bearerLookupCalls += 1;
+                            throw new Error('bearer fallback should not run when cookie auth is available');
+                        }
+                    },
+                    async rpc(name, args) {
+                        assert.equal(name, 'get_user_permissions');
+                        assert.deepEqual(args, { p_user_id: 'cookie-admin-1' });
+                        return {
+                            data: {
+                                is_admin: true,
+                                is_super_admin: false,
+                                role: 'admin',
+                                permissions: ['*'],
+                                expires_at: null
+                            },
+                            error: null
+                        };
+                    }
+                };
+            }
+
+            throw new Error(`Unexpected key: ${key}`);
+        }, async ({ adminModule }) => {
+            const result = await adminModule.requireAdmin({
+                headers: {
+                    cookie: `${accessHelpers.getAdminStudioCookieName()}=${encodeURIComponent(cookieToken)}`,
+                    authorization: 'Bearer stale-admin-token'
+                }
+            });
+
+            assert.equal(result.user.id, 'cookie-admin-1');
+            assert.equal(result.token, '');
+            assert.equal(adminLookupCalls, 1);
+            assert.equal(bearerLookupCalls, 0);
+            assert.equal(result.requestSupabase, null);
+            assert.equal(result.supabase.kind, 'admin');
+        });
+    });
+});
+
+test('requireAdmin falls back to bearer auth when the admin studio cookie is invalid', async () => {
+    await withEnv({
+        SUPABASE_URL: 'https://example.supabase.co',
+        SUPABASE_PUBLISHABLE_KEY: undefined,
+        SUPABASE_ANON_KEY: undefined,
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: undefined,
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: undefined,
+        SUPABASE_SERVICE_ROLE_KEY: 'service-key',
+        ADMIN_STUDIO_ACCESS_SECRET: 'runtime-auth-cookie-secret'
+    }, async () => {
+        let adminLookupCalls = 0;
+        let bearerLookupCalls = 0;
+
+        await withAdminModule(({ key }) => {
+            if (key === 'service-key') {
+                return {
+                    kind: 'admin',
+                    auth: {
+                        admin: {
+                            async getUserById() {
+                                adminLookupCalls += 1;
+                                return {
+                                    data: { user: null },
+                                    error: null
+                                };
+                            }
+                        },
+                        async getUser(token) {
+                            bearerLookupCalls += 1;
+                            assert.equal(token, 'fallback-admin-token');
+                            return {
+                                data: {
+                                    user: {
+                                        id: 'bearer-admin-1',
+                                        email: 'bearer-admin@example.com'
+                                    }
+                                },
+                                error: null
+                            };
+                        }
+                    },
+                    async rpc(name, args) {
+                        assert.equal(name, 'get_user_permissions');
+                        assert.deepEqual(args, { p_user_id: 'bearer-admin-1' });
+                        return {
+                            data: {
+                                is_admin: true,
+                                is_super_admin: false,
+                                role: 'admin',
+                                permissions: ['*'],
+                                expires_at: null
+                            },
+                            error: null
+                        };
+                    }
+                };
+            }
+
+            throw new Error(`Unexpected key: ${key}`);
+        }, async ({ adminModule }) => {
+            const result = await adminModule.requireAdmin({
+                headers: {
+                    cookie: 'zaoyoe_admin_studio=invalid-cookie-value',
+                    authorization: 'Bearer fallback-admin-token'
+                }
+            });
+
+            assert.equal(result.user.id, 'bearer-admin-1');
+            assert.equal(result.token, 'fallback-admin-token');
+            assert.equal(adminLookupCalls, 0);
+            assert.equal(bearerLookupCalls, 1);
+        });
+    });
+});
+
+test('requireAdmin falls back to bearer auth when admin studio cookie user lookup fails transiently', async () => {
+    await withEnv({
+        SUPABASE_URL: 'https://example.supabase.co',
+        SUPABASE_PUBLISHABLE_KEY: undefined,
+        SUPABASE_ANON_KEY: undefined,
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: undefined,
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: undefined,
+        SUPABASE_SERVICE_ROLE_KEY: 'service-key',
+        ADMIN_STUDIO_ACCESS_SECRET: 'runtime-auth-cookie-secret'
+    }, async () => {
+        const accessHelpers = await loadAdminStudioAccessHelpers();
+        const cookieToken = await accessHelpers.issueAdminStudioToken({ sub: 'cookie-admin-2' });
+        let bearerLookupCalls = 0;
+
+        await withAdminModule(({ key }) => {
+            if (key === 'service-key') {
+                return {
+                    kind: 'admin',
+                    auth: {
+                        admin: {
+                            async getUserById() {
+                                throw new Error('lookup temporarily unavailable');
+                            }
+                        },
+                        async getUser(token) {
+                            bearerLookupCalls += 1;
+                            assert.equal(token, 'fallback-admin-token');
+                            return {
+                                data: {
+                                    user: {
+                                        id: 'bearer-admin-2',
+                                        email: 'bearer-admin-2@example.com'
+                                    }
+                                },
+                                error: null
+                            };
+                        }
+                    },
+                    async rpc(name, args) {
+                        assert.equal(name, 'get_user_permissions');
+                        assert.deepEqual(args, { p_user_id: 'bearer-admin-2' });
+                        return {
+                            data: {
+                                is_admin: true,
+                                is_super_admin: false,
+                                role: 'admin',
+                                permissions: ['*'],
+                                expires_at: null
+                            },
+                            error: null
+                        };
+                    }
+                };
+            }
+
+            throw new Error(`Unexpected key: ${key}`);
+        }, async ({ adminModule }) => {
+            const result = await adminModule.requireAdmin({
+                headers: {
+                    cookie: `${accessHelpers.getAdminStudioCookieName()}=${encodeURIComponent(cookieToken)}`,
+                    authorization: 'Bearer fallback-admin-token'
+                }
+            });
+
+            assert.equal(result.user.id, 'bearer-admin-2');
+            assert.equal(result.token, 'fallback-admin-token');
+            assert.equal(bearerLookupCalls, 1);
         });
     });
 });

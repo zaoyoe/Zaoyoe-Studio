@@ -165,7 +165,6 @@ function getLocalizedField(item, field) {
     return item[field] || '';
 }
 
-const PROMPT_MODAL_TAG_GROUP_LIMIT = 12;
 const PROMPT_HOT_TAG_LIMIT = 10;
 const PROMPT_AI_PAIRED_TAG_FIELDS = Object.freeze(['objects', 'scenes', 'styles', 'mood']);
 
@@ -229,99 +228,6 @@ function getPromptDifficultyLabel(value = '') {
         advanced: isZh ? '专业级' : 'Advanced'
     };
     return labels[key] || normalizePromptTagText(value);
-}
-
-function getPromptContentTagGroupLabels() {
-    const isZh = getCurrentLanguage() === 'zh';
-    return {
-        objects: isZh ? '画面主体' : 'Subjects',
-        scenes: isZh ? '场景环境' : 'Scenes',
-        styles: isZh ? '视觉风格' : 'Styles',
-        mood: isZh ? '情绪氛围' : 'Mood',
-        useCase: isZh ? '适用场景' : 'Use cases',
-        commercial: isZh ? '商业方向' : 'Commercial',
-        difficulty: isZh ? '创作难度' : 'Difficulty'
-    };
-}
-
-function buildPromptModalContentTagGroups(item = {}) {
-    const aiTags = getPromptAiTags(item);
-    const labels = getPromptContentTagGroupLabels();
-    const groups = [];
-
-    PROMPT_AI_PAIRED_TAG_FIELDS.forEach((field) => {
-        const tags = getLocalizedPromptPairedTags(aiTags[field]).slice(0, PROMPT_MODAL_TAG_GROUP_LIMIT);
-        if (tags.length > 0) {
-            groups.push({ key: field, label: labels[field], tags });
-        }
-    });
-
-    const useCaseTags = [
-        ...getPromptPlainTagList(aiTags.useCase?.platform),
-        ...getPromptPlainTagList(aiTags.useCase?.purpose),
-        ...getPromptPlainTagList(aiTags.useCase?.format)
-    ].slice(0, PROMPT_MODAL_TAG_GROUP_LIMIT);
-    if (useCaseTags.length > 0) {
-        groups.push({ key: 'useCase', label: labels.useCase, tags: useCaseTags });
-    }
-
-    const commercialTags = [
-        ...getPromptPlainTagList(aiTags.commercial?.niche),
-        ...getPromptPlainTagList(aiTags.commercial?.targetAudience)
-    ].slice(0, PROMPT_MODAL_TAG_GROUP_LIMIT);
-    if (commercialTags.length > 0) {
-        groups.push({ key: 'commercial', label: labels.commercial, tags: commercialTags });
-    }
-
-    const difficultyLabel = getPromptDifficultyLabel(aiTags.difficulty);
-    if (difficultyLabel) {
-        groups.push({ key: 'difficulty', label: labels.difficulty, tags: [difficultyLabel] });
-    }
-
-    return groups;
-}
-
-function renderPromptModalContentTags(item = {}) {
-    const section = document.getElementById('modalContentTagsSection');
-    const container = document.getElementById('modalContentTags');
-    if (!section || !container) {
-        return;
-    }
-
-    const groups = buildPromptModalContentTagGroups(item);
-    container.replaceChildren();
-    const title = section.querySelector('.modal-content-tags-title');
-    if (title) {
-        title.textContent = getCurrentLanguage() === 'zh' ? '内容标签' : 'Content tags';
-    }
-
-    if (groups.length === 0) {
-        section.hidden = true;
-        return;
-    }
-
-    groups.forEach((group) => {
-        const groupEl = document.createElement('div');
-        groupEl.className = `modal-content-tag-group modal-content-tag-group--${group.key}`;
-
-        const label = document.createElement('div');
-        label.className = 'modal-content-tag-label';
-        label.textContent = group.label;
-        groupEl.appendChild(label);
-
-        const list = document.createElement('div');
-        list.className = 'modal-content-tag-list';
-        group.tags.forEach((tag) => {
-            const chip = document.createElement('span');
-            chip.className = 'modal-content-tag-chip';
-            chip.textContent = tag;
-            list.appendChild(chip);
-        });
-        groupEl.appendChild(list);
-        container.appendChild(groupEl);
-    });
-
-    section.hidden = false;
 }
 
 function collectPromptAiHotTags(prompt = {}) {
@@ -2732,9 +2638,127 @@ function filterVisiblePromptsForPromptsPage(prompts = []) {
     return (Array.isArray(prompts) ? prompts : []).filter((prompt) => isPromptVisibleOnPromptsPage(prompt));
 }
 
+async function waitForPromptSupabaseClientReady(timeoutMs = 2200) {
+    if (window.supabaseClient) {
+        return true;
+    }
+
+    const currentState = window.__ZAOYOE_SUPABASE_CLIENT_STATE__ || null;
+    if (currentState?.status === 'error') {
+        return false;
+    }
+
+    return new Promise((resolve) => {
+        let settled = false;
+        let timer = null;
+
+        const cleanup = () => {
+            if (timer) {
+                window.clearTimeout(timer);
+            }
+            window.removeEventListener('zaoyoe:supabase-client-state', handleStateChange);
+        };
+
+        const finish = (value) => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            cleanup();
+            resolve(value);
+        };
+
+        const handleStateChange = (event) => {
+            const status = String(event?.detail?.status || '').trim().toLowerCase();
+            if (status === 'ready' && window.supabaseClient) {
+                finish(true);
+                return;
+            }
+
+            if (status === 'error') {
+                finish(false);
+            }
+        };
+
+        window.addEventListener('zaoyoe:supabase-client-state', handleStateChange);
+        timer = window.setTimeout(() => finish(Boolean(window.supabaseClient)), timeoutMs);
+    });
+}
+
+const STATIC_PROMPTS_FALLBACK_SRC = 'prompts-data.js?v=20260302_G_AUTH';
+let staticPromptsFallbackPromise = null;
+
+function replacePromptDataset(nextPrompts = []) {
+    const visiblePrompts = filterVisiblePromptsForPromptsPage(nextPrompts).map((prompt, index) => ({
+        ...prompt,
+        id: index,
+        supabaseId: prompt?.supabaseId || prompt?.id || null
+    }));
+
+    while (PROMPTS.length > 0) {
+        PROMPTS.pop();
+    }
+
+    visiblePrompts.forEach((prompt) => PROMPTS.push(prompt));
+    window.PROMPTS = PROMPTS;
+    return visiblePrompts;
+}
+
+async function loadStaticPromptFallbackData() {
+    if (Array.isArray(window.__STATIC_PROMPTS__) && window.__STATIC_PROMPTS__.length > 0) {
+        return replacePromptDataset(window.__STATIC_PROMPTS__);
+    }
+
+    if (staticPromptsFallbackPromise) {
+        return staticPromptsFallbackPromise;
+    }
+
+    staticPromptsFallbackPromise = new Promise((resolve, reject) => {
+        const existingScript = document.querySelector('script[data-prompt-static-fallback="1"]');
+        if (existingScript) {
+            existingScript.addEventListener('load', () => {
+                resolve(replacePromptDataset(window.__STATIC_PROMPTS__ || []));
+            }, { once: true });
+            existingScript.addEventListener('error', reject, { once: true });
+            return;
+        }
+
+        const script = document.createElement('script');
+        script.src = STATIC_PROMPTS_FALLBACK_SRC;
+        script.async = true;
+        script.dataset.promptStaticFallback = '1';
+        script.addEventListener('load', () => {
+            resolve(replacePromptDataset(window.__STATIC_PROMPTS__ || []));
+        }, { once: true });
+        script.addEventListener('error', () => {
+            reject(new Error('Failed to load static prompts fallback'));
+        }, { once: true });
+        document.head.appendChild(script);
+    }).catch((error) => {
+        staticPromptsFallbackPromise = null;
+        throw error;
+    });
+
+    return staticPromptsFallbackPromise;
+}
+
 async function loadPromptsFromSupabase() {
     if (!window.supabaseClient) {
-        console.log('Supabase client not available, using static data');
+        const runtimeReady = await waitForPromptSupabaseClientReady();
+        if (!runtimeReady || !window.supabaseClient) {
+            console.log('Supabase client not available, loading static fallback data');
+            await loadStaticPromptFallbackData().catch((fallbackError) => {
+                console.warn('Failed to load static prompts fallback:', fallbackError?.message || fallbackError);
+            });
+            return false;
+        }
+    }
+
+    if (!window.supabaseClient) {
+        console.log('Supabase client not available, loading static fallback data');
+        await loadStaticPromptFallbackData().catch((fallbackError) => {
+            console.warn('Failed to load static prompts fallback:', fallbackError?.message || fallbackError);
+        });
         return false;
     }
 
@@ -2746,6 +2770,9 @@ async function loadPromptsFromSupabase() {
 
         if (error) {
             console.error('Supabase fetch error:', error);
+            await loadStaticPromptFallbackData().catch((fallbackError) => {
+                console.warn('Failed to load static prompts fallback:', fallbackError?.message || fallbackError);
+            });
             return false;
         }
 
@@ -2770,26 +2797,18 @@ async function loadPromptsFromSupabase() {
                 aiTags: item.ai_tags || {}
             }));
             const visibleSupabasePrompts = filterVisiblePromptsForPromptsPage(supabasePrompts);
+            const normalizedSupabasePrompts = replacePromptDataset(visibleSupabasePrompts);
 
-            // REPLACE PROMPTS with only Supabase data (ignore local prompts-data.js)
-            if (typeof PROMPTS !== 'undefined') {
-                // Completely clear and replace with Supabase data
-                while (PROMPTS.length > 0) {
-                    PROMPTS.pop();
-                }
-                visibleSupabasePrompts.forEach(p => PROMPTS.push(p));
-            } else {
-                // If PROMPTS doesn't exist, create it
-                window.PROMPTS = visibleSupabasePrompts;
-            }
-
-            console.log(`Loaded ${visibleSupabasePrompts.length} visible prompts from Supabase (filtered ${Math.max(0, supabasePrompts.length - visibleSupabasePrompts.length)} hidden prompts)`);
+            console.log(`Loaded ${normalizedSupabasePrompts.length} visible prompts from Supabase (filtered ${Math.max(0, supabasePrompts.length - visibleSupabasePrompts.length)} hidden prompts)`);
             return true;
         }
 
         return false;
     } catch (err) {
         console.error('Error loading from Supabase:', err);
+        await loadStaticPromptFallbackData().catch((fallbackError) => {
+            console.warn('Failed to load static prompts fallback:', fallbackError?.message || fallbackError);
+        });
         return false;
     }
 }
@@ -2915,6 +2934,68 @@ function setPromptCardImageSource(cardImage, originalUrl) {
     cardImage.src = primaryUrl;
 }
 
+const PROMPTS_DEFERRED_TASK_TIMEOUT_MS = 1600;
+let promptsDeferredEnhancementsScheduled = false;
+let promptsDeferredEnhancementsExecuted = false;
+
+function runPromptDeferredTask(taskName, task) {
+    try {
+        return Promise.resolve(task()).catch((error) => {
+            console.warn(`[PromptsDeferred] ${taskName} failed:`, error?.message || error);
+        });
+    } catch (error) {
+        console.warn(`[PromptsDeferred] ${taskName} failed:`, error?.message || error);
+        return Promise.resolve();
+    }
+}
+
+function executePromptsDeferredEnhancements() {
+    if (promptsDeferredEnhancementsExecuted) {
+        return;
+    }
+    promptsDeferredEnhancementsExecuted = true;
+
+    const tasks = [
+        ['search-index', () => {
+            if (!SEARCH_INDEX) {
+                buildSearchIndex();
+            }
+        }],
+        ['comment-count-prefetch', () => preloadPromptCommentCounts()],
+        ['spotlight', () => initSpotlight()],
+        ['ambient-light', () => initAmbientLight()],
+        ['starry-sky', () => initStarrySky()],
+        ['scroll-reveal', () => setupScrollReveal()],
+        ['announcement', () => loadAnnouncement()]
+    ];
+
+    void tasks.reduce(
+        (chain, [taskName, task]) => chain.then(() => runPromptDeferredTask(taskName, task)),
+        Promise.resolve()
+    );
+}
+
+function schedulePromptsDeferredEnhancements() {
+    if (promptsDeferredEnhancementsScheduled) {
+        return;
+    }
+    promptsDeferredEnhancementsScheduled = true;
+
+    const kickoff = () => {
+        executePromptsDeferredEnhancements();
+    };
+
+    if (typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(kickoff, { timeout: PROMPTS_DEFERRED_TASK_TIMEOUT_MS });
+    } else {
+        window.setTimeout(kickoff, 700);
+    }
+
+    ['pointerdown', 'keydown', 'touchstart', 'scroll'].forEach((eventName) => {
+        window.addEventListener(eventName, kickoff, { once: true, passive: true });
+    });
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     initializePromptStaticControls();
     syncPromptNavOffset();
@@ -2938,18 +3019,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Assign IDs to PROMPTS for favorites to work
     PROMPTS.forEach((p, i) => p.id = i);
 
-    // Build search index for fast lookups
-    buildSearchIndex();
-    void preloadPromptCommentCounts();
-
-    initSpotlight();
-    initAmbientLight(); // New: Living background
-    initStarrySky(); // New: Starry background for dark mode
     generateDynamicNav(); // New: AI-driven navigation
     void renderFeaturedBanner(); // New: Today's featured artwork
-
-    // Load gallery config (items per page, default sort) before rendering
-    await loadGalleryConfig();
 
     // Read URL parameters to set initial tag filter
     const urlParams = new URLSearchParams(window.location.search);
@@ -2974,9 +3045,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupFilters();
     setupInfiniteScroll();
     setupSearch(); // Pinterest-style search
-    setupScrollReveal(); // New: Wave scroll animation
     checkAuthState(); // New: Check if admin is logged in
-    loadAnnouncement(); // Load system announcement from config
+    void loadGalleryConfig().then((configResult) => {
+        applyLoadedGalleryConfig(configResult);
+    });
+    schedulePromptsDeferredEnhancements();
 
     // Fade in nav after fonts load (or timeout)
     if (document.fonts && document.fonts.ready) {
@@ -3853,20 +3926,36 @@ function applyFeaturedBannerPrompt(featured = null) {
     if (!featured) {
         banner.classList.remove('featured-banner--visible', 'featured-banner--revealed', 'featured-banner--interactive');
         banner.onclick = null;
+        banner.dataset.promptId = '';
         return;
     }
 
-    // Show banner with fade-in + float-up animation
+    const nextPromptId = String(featured?.supabaseId || featured?.id || '').trim();
+    const currentPromptId = String(banner.dataset.promptId || '').trim();
+    const isSamePrompt = currentPromptId && nextPromptId && currentPromptId === nextPromptId;
+
     banner.classList.add('featured-banner--visible', 'featured-banner--interactive');
-    banner.classList.remove('featured-banner--revealed');
-    requestAnimationFrame(() => {
+    banner.dataset.promptId = nextPromptId;
+
+    if (!isSamePrompt) {
+        banner.classList.remove('featured-banner--revealed');
+        requestAnimationFrame(() => {
+            banner.classList.add('featured-banner--revealed');
+            forcePromptPageTop();
+        });
+    } else {
         banner.classList.add('featured-banner--revealed');
-        forcePromptPageTop();
-    });
+    }
 
     // Set image (use first image from the array)
     if (image && featured.images && featured.images.length > 0) {
         image.src = featured.images[0];
+        image.loading = 'eager';
+        image.decoding = 'async';
+        image.setAttribute('fetchpriority', 'high');
+        if ('fetchPriority' in image) {
+            image.fetchPriority = 'high';
+        }
     }
 
     // Set title
@@ -3891,9 +3980,19 @@ async function renderFeaturedBanner() {
         return;
     }
 
+    const prefetchedHomepageConfig = readPromptHomepagePrefetchConfig();
+    const prefetchedConfiguredFeatured = resolveHomepageFeaturedBannerPrompt(prefetchedHomepageConfig);
+    const immediateFeatured = prefetchedConfiguredFeatured || resolveDailyFeaturedPrompt();
+    applyFeaturedBannerPrompt(immediateFeatured);
+
     const homepageConfig = await loadHomepagePromptsConfigForBanner();
-    const featured = resolveHomepageFeaturedBannerPrompt(homepageConfig) || resolveDailyFeaturedPrompt();
-    applyFeaturedBannerPrompt(featured);
+    const configuredFeatured = resolveHomepageFeaturedBannerPrompt(homepageConfig);
+    if (configuredFeatured) {
+        applyFeaturedBannerPrompt(configuredFeatured);
+        return;
+    }
+
+    applyFeaturedBannerPrompt(immediateFeatured);
 }
 
 // ========================================
@@ -3959,7 +4058,10 @@ let DEFAULT_SORT = 'newest'; // Default sort order
 
 async function loadGalleryConfig() {
     try {
-        if (!window.supabaseClient) return;
+        if (!window.supabaseClient) return null;
+
+        const previousCardsPerPage = CARDS_PER_PAGE;
+        const previousSort = DEFAULT_SORT;
 
         const { data, error } = await window.supabaseClient
             .from('system_config')
@@ -3979,10 +4081,29 @@ async function loadGalleryConfig() {
 
             // Apply initial sorting to PROMPTS
             sortPrompts(DEFAULT_SORT);
+
+            return {
+                cardsPerPageChanged: previousCardsPerPage !== CARDS_PER_PAGE,
+                defaultSortChanged: previousSort !== DEFAULT_SORT
+            };
         }
+
+        return {
+            cardsPerPageChanged: false,
+            defaultSortChanged: false
+        };
     } catch (e) {
         console.warn('加载画廊配置失败:', e);
+        return null;
     }
+}
+
+function applyLoadedGalleryConfig(configResult) {
+    if (!configResult || (!configResult.cardsPerPageChanged && !configResult.defaultSortChanged)) {
+        return;
+    }
+
+    renderGallery(currentFilter || 'all', true);
 }
 
 // Sort PROMPTS array based on sort type
@@ -4134,6 +4255,7 @@ function renderGallery(filter, reset = true) {
     }
 
     renderCurrentPage();
+    document.documentElement.classList.remove('prompts-gallery-pending');
 }
 
 function renderCurrentPage() {
@@ -6048,7 +6170,6 @@ function openPromptModal(id) {
     // Tags hidden as per user request
     const tagsContainer = document.getElementById('modalTags');
     tagsContainer.innerHTML = ''; // Hidden
-    renderPromptModalContentTags(item);
 
     // Show/hide navigation arrows and counter
     const hasMultipleImages = currentModalImages.length > 1;
@@ -6336,6 +6457,30 @@ async function loadUnlockPrice() {
 // 页面加载时预加载价格
 loadUnlockPrice();
 
+async function openPromptUnlockRecharge(context = {}) {
+    const loader = window.ZaoyoeWalletModalBootstrap;
+    if (loader?.open) {
+        try {
+            await loader.open('recharge', context);
+            return true;
+        } catch (error) {
+            console.warn('[Unlock] Failed to lazy load wallet modal:', error?.message || error);
+        }
+    }
+
+    if (typeof WalletModal !== 'undefined' && WalletModal.open) {
+        WalletModal.open('recharge', context);
+        return true;
+    }
+
+    if (window.WalletModal && window.WalletModal.open) {
+        window.WalletModal.open('recharge', context);
+        return true;
+    }
+
+    return false;
+}
+
 async function handleUnlockPrompt() {
     // 单一全局锁
     if (_unlockInProgress) {
@@ -6416,21 +6561,12 @@ async function handleUnlockPrompt() {
             alert(errMsg);
             // If insufficient points, open wallet modal for recharging
             if (errMsg.includes('积分不足') || errMsg.includes('Insufficient')) {
-                if (typeof WalletModal !== 'undefined' && WalletModal.open) {
-                    WalletModal.open('recharge', {
-                        entry: 'unlock_insufficient_points',
-                        sourceModule: 'prompt_gallery',
-                        promptId: String(currentPromptId || '').trim(),
-                        category: promptMetadata.category || null
-                    });
-                } else if (window.WalletModal && window.WalletModal.open) {
-                    window.WalletModal.open('recharge', {
-                        entry: 'unlock_insufficient_points',
-                        sourceModule: 'prompt_gallery',
-                        promptId: String(currentPromptId || '').trim(),
-                        category: promptMetadata.category || null
-                    });
-                }
+                await openPromptUnlockRecharge({
+                    entry: 'unlock_insufficient_points',
+                    sourceModule: 'prompt_gallery',
+                    promptId: String(currentPromptId || '').trim(),
+                    category: promptMetadata.category || null
+                });
             }
             if (btn) {
                 btn.innerHTML = originalHTML;

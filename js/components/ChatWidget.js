@@ -48,6 +48,8 @@ class ChatWidget {
         this.replyTemplateConfigPromise = null;
         this._replyTemplateRenderToken = 0;
         this.handleOpsAlertConfigUpdated = this.handleOpsAlertConfigUpdated.bind(this);
+        this._adminFloatingPanelOffsetFrame = null;
+        this._adminFloatingPanelResizeHandler = () => this.scheduleAdminFloatingPanelOffsetSync();
         this._userContextRequestId = 0;
         this._adminSessionLoadRequestId = 0;
         this._sessionLoadRequestId = 0;
@@ -82,11 +84,17 @@ class ChatWidget {
         this.opsAlertBatchAssignBusy = false;
         this.opsAlertViewFilter = 'active';
         this.opsAlertOwnerFilter = 'all';
+        this.opsAlertReadCategoryFilter = 'all';
+        this.opsAlertReadTimeFilter = 'visible';
+        this.opsAlertReadReceipts = new Map();
+        this.pendingPaymentReadReceipts = new Map();
         this.opsAlertAssignableAdmins = [];
         this.opsAlertCurrentAdminId = '';
         this.opsAlertCurrentAdminLabel = '';
         this.opsAlertModuleMuteRules = {};
         this.restoreAdminSessionQueuePreferences();
+        this.restoreOpsAlertReadReceipts();
+        this.restorePendingPaymentReadReceipts();
 
         // Preload configuration - lock scroll until messages are loaded
         this.isPreloading = false;
@@ -159,8 +167,112 @@ class ChatWidget {
         return fallback || key;
     }
 
+    formatCompactCount(value) {
+        const count = Number(value || 0);
+        if (!Number.isFinite(count) || count <= 0) return '0';
+        return count > 99 ? '99+' : String(Math.round(count));
+    }
+
     getAdminSessionQueuePreferenceStorageKey() {
         return 'zaoyoe_admin_support_queue_preferences_v1';
+    }
+
+    getPendingPaymentReadReceiptStorageKey() {
+        const site = typeof window !== 'undefined' && window.SiteConfig?.site === 'intl' ? 'intl' : 'cn';
+        return `zaoyoe_admin_chat_pending_payment_read_receipts_v1:${site}`;
+    }
+
+    getOpsAlertReadReceiptStorageKey() {
+        return 'zaoyoe_admin_ops_alert_read_receipts_v1:all';
+    }
+
+    restoreOpsAlertReadReceipts() {
+        this.opsAlertReadReceipts = new Map();
+        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+            return;
+        }
+
+        try {
+            const rawValue = window.localStorage.getItem(this.getOpsAlertReadReceiptStorageKey());
+            if (!rawValue) return;
+            const parsed = JSON.parse(rawValue);
+            const entries = Array.isArray(parsed)
+                ? parsed.map((id) => [id, new Date().toISOString()])
+                : Object.entries(parsed?.receipts || parsed || {});
+            entries.forEach(([id, readAt]) => {
+                const normalizedId = String(id || '').trim();
+                const normalizedReadAt = String(readAt || '').trim();
+                if (!normalizedId || !Number.isFinite(Date.parse(normalizedReadAt))) {
+                    return;
+                }
+                this.opsAlertReadReceipts.set(normalizedId, normalizedReadAt);
+            });
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to restore ops alert read receipts:', error);
+        }
+    }
+
+    persistOpsAlertReadReceipts() {
+        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+            return;
+        }
+
+        try {
+            const receipts = Object.fromEntries(Array.from(this.opsAlertReadReceipts.entries()).slice(-1000));
+            window.localStorage.setItem(this.getOpsAlertReadReceiptStorageKey(), JSON.stringify({
+                updatedAt: new Date().toISOString(),
+                receipts
+            }));
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to persist ops alert read receipts:', error);
+        }
+    }
+
+    restorePendingPaymentReadReceipts() {
+        this.pendingPaymentReadReceipts = new Map();
+        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+            return;
+        }
+
+        try {
+            [
+                this.getPendingPaymentReadReceiptStorageKey(),
+                'zaoyoe_admin_chat_pending_payment_read_receipts_v1:all'
+            ].forEach((storageKey) => {
+                const rawValue = window.localStorage.getItem(storageKey);
+                if (!rawValue) return;
+                const parsed = JSON.parse(rawValue);
+                const entries = Array.isArray(parsed)
+                    ? parsed.map((id) => [id, new Date().toISOString()])
+                    : Object.entries(parsed?.receipts || parsed || {});
+                entries.forEach(([id, readAt]) => {
+                    const normalizedId = String(id || '').trim();
+                    const normalizedReadAt = String(readAt || '').trim();
+                    if (!normalizedId || !Number.isFinite(Date.parse(normalizedReadAt))) {
+                        return;
+                    }
+                    this.pendingPaymentReadReceipts.set(normalizedId, normalizedReadAt);
+                });
+            });
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to restore pending payment read receipts:', error);
+        }
+    }
+
+    persistPendingPaymentReadReceipts() {
+        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+            return;
+        }
+
+        try {
+            const receipts = Object.fromEntries(Array.from(this.pendingPaymentReadReceipts.entries()).slice(-1000));
+            window.localStorage.setItem(this.getPendingPaymentReadReceiptStorageKey(), JSON.stringify({
+                updatedAt: new Date().toISOString(),
+                receipts
+            }));
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to persist pending payment read receipts:', error);
+        }
     }
 
     normalizeAdminSessionQueueView(value = 'all') {
@@ -2011,6 +2123,40 @@ class ChatWidget {
         target.classList.toggle(className, enabled);
     }
 
+    scheduleAdminFloatingPanelOffsetSync() {
+        if (!this.isAdmin || !this.chatWindow) return;
+
+        if (this._adminFloatingPanelOffsetFrame) {
+            if (typeof window.cancelAnimationFrame === 'function') {
+                window.cancelAnimationFrame(this._adminFloatingPanelOffsetFrame);
+            } else {
+                clearTimeout(this._adminFloatingPanelOffsetFrame);
+            }
+            this._adminFloatingPanelOffsetFrame = null;
+        }
+
+        const sync = () => {
+            this._adminFloatingPanelOffsetFrame = null;
+            this.updateAdminFloatingPanelOffsets();
+        };
+
+        this._adminFloatingPanelOffsetFrame = typeof window.requestAnimationFrame === 'function'
+            ? window.requestAnimationFrame(sync)
+            : setTimeout(sync, 0);
+    }
+
+    updateAdminFloatingPanelOffsets() {
+        const chatArea = this.chatWindow?.querySelector('.admin-chat-area');
+        const header = this.chatHeader || this.chatWindow?.querySelector('#adminChatHeader');
+        if (!chatArea || !header) return;
+
+        const headerRect = typeof header.getBoundingClientRect === 'function'
+            ? header.getBoundingClientRect()
+            : null;
+        const headerHeight = Math.max(72, Math.ceil(headerRect?.height || header.offsetHeight || 0));
+        this._setRuntimeStyle(chatArea, '--chat-admin-context-top', `${headerHeight + 12}px`);
+    }
+
     _shouldUseDesktopEdgeSafeInset() {
         if (this._isNarrowViewport() || this._isTouchPrimaryInput()) return false;
 
@@ -2408,9 +2554,25 @@ class ChatWidget {
     }
 
     renderFAB() {
+        const existingPlaceholder = document.querySelector('.chat-widget-fab[data-chat-widget-placeholder="1"]');
+        if (existingPlaceholder) {
+            const reusedFab = existingPlaceholder.cloneNode(true);
+            reusedFab.removeAttribute('data-chat-widget-placeholder');
+            reusedFab.removeAttribute('data-chat-widget-loading');
+            reusedFab.removeAttribute('aria-busy');
+            reusedFab.classList.remove('chat-widget-fab--disabled');
+            reusedFab.setAttribute('aria-label', this.t('chat.openChat', '打开支持助手'));
+            existingPlaceholder.replaceWith(reusedFab);
+            this.fab = reusedFab;
+            return;
+        }
+
         // Create FAB with Custom Mascot (CSS Art)
         this.fab = document.createElement('div');
         this.fab.className = 'chat-widget-fab chat-widget-fab--peek';
+        this.fab.setAttribute('role', 'button');
+        this.fab.setAttribute('tabindex', '0');
+        this.fab.setAttribute('aria-label', this.t('chat.openChat', '打开支持助手'));
         this.fab.innerHTML = `
             <div class="chat-widget-fab__robot" aria-hidden="true">
                 <span class="chat-widget-fab__glow"></span>
@@ -2457,6 +2619,18 @@ class ChatWidget {
         this.fab.addEventListener('click', () => {
             this.toggleChat();
             // Clear unread count when opening chat
+            if (this.isOpen) {
+                this.clearUnread();
+            }
+        });
+
+        this.fab.addEventListener('keydown', (event) => {
+            const key = String(event.key || '');
+            if (key !== 'Enter' && key !== ' ') {
+                return;
+            }
+            event.preventDefault();
+            this.toggleChat();
             if (this.isOpen) {
                 this.clearUnread();
             }
@@ -2714,7 +2888,7 @@ class ChatWidget {
                     </div>
                 </div>
             </div>
-            
+
             <!-- Right Panel: Chat Area -->
             <div class="admin-chat-area">
                 <div class="admin-chat-header" id="adminChatHeader">
@@ -2762,6 +2936,7 @@ class ChatWidget {
         this.chatHeader = this.chatWindow.querySelector('#adminChatHeader');
         this.userContextPanel = this.chatWindow.querySelector('#chatContextPanel');
         this.replyTemplateBar = this.chatWindow.querySelector('#chatReplyTemplateBar');
+        this.scheduleAdminFloatingPanelOffsetSync();
 
         // Inject admin layout styles
         this.injectAdminLayoutStyles();
@@ -2943,14 +3118,14 @@ class ChatWidget {
                 flex-direction: row;
                 border-radius: 20px;
                 overflow: hidden;
-                /* Keep the visual weight, but avoid backdrop-filter on the scrolling shell.
-                   WebKit can desync native scrollbar paint inside blurred, clipped containers. */
-                background: linear-gradient(180deg, rgba(24, 24, 34, 0.96), rgba(18, 18, 28, 0.94)) !important;
+                background: rgba(8, 10, 16, 0.98) !important;
+                background-image: none !important;
                 backdrop-filter: none !important;
                 -webkit-backdrop-filter: none !important;
-                border: 1px solid rgba(255, 255, 255, 0.08) !important;
+                border: 1px solid rgba(255, 255, 255, 0.16) !important;
                 box-shadow: 
-                    0 25px 50px -12px rgba(0, 0, 0, 0.6) !important;
+                    0 24px 60px rgba(0, 0, 0, 0.24),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
             }
 
             .chat-window.admin-mode-layout.chat-window--desktop-edge-safe {
@@ -2971,8 +3146,11 @@ class ChatWidget {
                 max-width: 35%;
                 display: flex;
                 flex-direction: column;
-                background: rgba(0, 0, 0, 0.15);
+                background: rgba(12, 15, 22, 0.98);
+                background-image: none;
                 border-right: 1px solid rgba(255, 255, 255, 0.1);
+                backdrop-filter: none;
+                -webkit-backdrop-filter: none;
                 min-height: 0;
                 overflow: hidden;
             }
@@ -3202,7 +3380,7 @@ class ChatWidget {
             }
             .session-queue-suggestion--calm {
                 border-color: rgba(107, 158, 206, 0.24);
-                background: rgba(30, 64, 175, 0.16);
+                background: rgba(107, 158, 206, 0.16);
             }
             .session-queue-suggestion__eyebrow {
                 color: rgba(255, 255, 255, 0.6);
@@ -3374,7 +3552,7 @@ class ChatWidget {
             .session-filter-btn.is-active {
                 background: rgba(107, 158, 206, 0.18);
                 border-color: rgba(107, 158, 206, 0.3);
-                color: #dbeafe;
+                color: #d9e8f4;
             }
             .chat-window.admin-mode-layout .admin-search:focus-within {
                 border-color: transparent !important;
@@ -3395,20 +3573,20 @@ class ChatWidget {
             .chat-window.admin-mode-layout .admin-search input:-webkit-autofill:focus,
             .chat-window.admin-mode-layout .admin-search input:-webkit-autofill:focus-visible {
                 outline: none;
-                border-color: #9fcaff !important;
+                border-color: #6b9ece !important;
                 background: rgba(255, 255, 255, 0.042) !important;
-                box-shadow: 0 0 0 3px rgba(159, 202, 255, 0.14) !important;
-                caret-color: #9fcaff !important;
+                box-shadow: 0 0 0 3px rgba(107, 158, 206, 0.14) !important;
+                caret-color: #6b9ece !important;
             }
             .admin-mode-layout .chat-input:focus,
             .admin-mode-layout .chat-input:focus-visible,
             .admin-mode-layout .chat-input:-webkit-autofill:focus,
             .admin-mode-layout .chat-input:-webkit-autofill:focus-visible {
-                border-color: #9fcaff !important;
+                border-color: #6b9ece !important;
                 background: rgba(255, 255, 255, 0.042) !important;
-                box-shadow: 0 0 0 3px rgba(159, 202, 255, 0.14) !important;
+                box-shadow: 0 0 0 3px rgba(107, 158, 206, 0.14) !important;
                 outline: none !important;
-                caret-color: #9fcaff !important;
+                caret-color: #6b9ece !important;
             }
             .admin-search input::placeholder {
                 color: rgba(255, 255, 255, 0.4);
@@ -3486,28 +3664,28 @@ class ChatWidget {
                 background: rgba(255, 255, 255, 0.08);
             }
             .session-item.active {
-                background: rgba(159, 202, 255, 0.16);
-                border-left: 3px solid #9fcaff;
+                background: rgba(107, 158, 206, 0.16);
+                border-left: 3px solid #6b9ece;
             }
             .session-item--ops {
-                background: linear-gradient(180deg, rgba(82, 120, 172, 0.16), rgba(82, 120, 172, 0.08));
+                background: linear-gradient(180deg, rgba(107, 158, 206, 0.16), rgba(107, 158, 206, 0.08));
             }
             .session-item--ops:hover {
-                background: linear-gradient(180deg, rgba(108, 150, 207, 0.2), rgba(82, 120, 172, 0.14));
+                background: linear-gradient(180deg, rgba(107, 158, 206, 0.2), rgba(95, 143, 188, 0.14));
             }
             .session-item--ops .session-name {
-                color: #d9ecff;
+                color: #d9e8f4;
                 font-weight: 600;
             }
             .session-item--ops .session-badge {
                 background: rgba(255, 255, 255, 0.14);
-                color: #eff6ff;
+                color: #d9e8f4;
             }
             .session-item--ops .session-email {
-                color: rgba(217, 236, 255, 0.72);
+                color: rgba(217, 232, 244, 0.72);
             }
             .session-item--ops .session-preview {
-                color: rgba(225, 239, 255, 0.82);
+                color: rgba(217, 232, 244, 0.82);
             }
             
             /* Unread session - attention-grabbing style */
@@ -3556,7 +3734,7 @@ class ChatWidget {
                 width: 36px;
                 height: 36px;
                 border-radius: 50%;
-                background: linear-gradient(135deg, rgba(159, 202, 255, 0.95) 0%, rgba(107, 158, 206, 0.92) 100%);
+                background: linear-gradient(135deg, rgba(107, 158, 206, 0.95) 0%, rgba(95, 143, 188, 0.92) 100%);
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -3576,8 +3754,8 @@ class ChatWidget {
                 display: block;
             }
             .session-avatar--ops {
-                background: linear-gradient(135deg, rgba(107, 158, 206, 0.98) 0%, rgba(63, 112, 164, 0.98) 100%);
-                box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 14px 24px rgba(39, 68, 109, 0.32);
+                background: linear-gradient(135deg, rgba(107, 158, 206, 0.98) 0%, rgba(95, 143, 188, 0.98) 100%);
+                box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 14px 24px rgba(107, 158, 206, 0.32);
             }
             .session-avatar--ops i {
                 font-size: 14px;
@@ -3609,7 +3787,7 @@ class ChatWidget {
                 padding: 2px 8px;
                 border-radius: 999px;
                 background: rgba(107, 158, 206, 0.18);
-                color: #d8e9fb;
+                color: #d9e8f4;
                 font-size: 10px;
                 line-height: 1.2;
                 letter-spacing: 0.02em;
@@ -3650,7 +3828,7 @@ class ChatWidget {
             
             /* Search match count badge */
             .search-match-count {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                background: linear-gradient(135deg, #6b9ece 0%, #5f8fbc 100%);
                 color: white;
                 font-size: 10px;
                 font-weight: 600;
@@ -3737,9 +3915,16 @@ class ChatWidget {
                 color: #ffd9d9;
             }
             .chat-context-panel {
-                padding: 12px 16px 0;
+                position: absolute;
+                left: 16px;
+                right: 16px;
+                top: var(--chat-admin-context-top, 128px);
+                z-index: 4;
+                padding: 0;
                 flex: 0 0 auto;
                 min-height: 0;
+                background: transparent;
+                pointer-events: auto;
             }
             .chat-context-panel[hidden] {
                 display: none !important;
@@ -3747,11 +3932,13 @@ class ChatWidget {
             .chat-context-panel__state {
                 padding: 12px 14px;
                 border-radius: 14px;
-                background: rgba(255, 255, 255, 0.04);
-                border: 1px solid rgba(148, 163, 184, 0.14);
+                background: rgba(12, 16, 24, 0.72);
+                border: 1px solid rgba(255, 255, 255, 0.1);
                 color: rgba(255, 255, 255, 0.62);
                 font-size: 12px;
                 line-height: 1.6;
+                backdrop-filter: blur(14px) saturate(165%);
+                -webkit-backdrop-filter: blur(14px) saturate(165%);
             }
             .chat-context-panel--error .chat-context-panel__state {
                 color: #fecaca;
@@ -3759,11 +3946,33 @@ class ChatWidget {
                 border-color: rgba(248, 113, 113, 0.2);
             }
             .user-context-shell {
+                position: relative;
                 border-radius: 18px;
-                background: rgba(255, 255, 255, 0.04);
-                border: 1px solid rgba(148, 163, 184, 0.14);
+                background: rgba(12, 16, 24, 0.72);
+                background-image: none;
+                border: 1px solid rgba(255, 255, 255, 0.12);
                 overflow: hidden;
-                box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
+                box-shadow: 0 18px 38px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 -1px 0 rgba(255, 255, 255, 0.025);
+                backdrop-filter: blur(14px) saturate(165%);
+                -webkit-backdrop-filter: blur(14px) saturate(165%);
+            }
+            .user-context-shell::before,
+            .chat-reply-templates::before {
+                content: "";
+                position: absolute;
+                inset: 0;
+                z-index: 0;
+                pointer-events: none;
+                border-radius: inherit;
+                background: none;
+                opacity: 0;
+            }
+            .user-context-shell__toggle,
+            .user-context-shell__body,
+            .chat-reply-templates__label,
+            .chat-reply-templates__list {
+                position: relative;
+                z-index: 1;
             }
             .user-context-shell__toggle {
                 appearance: none;
@@ -3780,7 +3989,7 @@ class ChatWidget {
                 cursor: pointer;
             }
             .user-context-shell__toggle:hover {
-                background: rgba(255, 255, 255, 0.02);
+                background: transparent;
             }
             .user-context-shell__toggle-copy {
                 display: flex;
@@ -3815,12 +4024,12 @@ class ChatWidget {
                 flex-shrink: 0;
             }
             .user-context-shell__toggle-text {
-                color: rgba(219, 234, 254, 0.88);
+                color: rgba(217, 232, 244, 0.88);
                 font-size: 12px;
                 font-weight: 600;
             }
             .user-context-shell__toggle-icon {
-                color: rgba(219, 234, 254, 0.72);
+                color: rgba(217, 232, 244, 0.72);
                 font-size: 12px;
                 transition: transform 0.2s ease;
             }
@@ -3828,7 +4037,7 @@ class ChatWidget {
                 max-height: min(320px, 42vh);
                 opacity: 1;
                 overflow: hidden;
-                border-top: 1px solid rgba(148, 163, 184, 0.1);
+                border-top: 1px solid rgba(148, 163, 184, 0.07);
                 transition: max-height 0.24s ease, opacity 0.2s ease, border-color 0.2s ease;
             }
             .user-context-shell__body-inner {
@@ -3845,10 +4054,24 @@ class ChatWidget {
                 transform: rotate(-90deg);
             }
             .chat-reply-templates {
-                padding: 12px 16px 0;
+                position: absolute;
+                left: 16px;
+                right: 16px;
+                bottom: 84px;
+                margin: 0;
+                padding: 12px;
+                border-radius: 18px;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                background: rgba(12, 16, 24, 0.72);
+                background-image: none;
+                box-shadow: 0 18px 38px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 -1px 0 rgba(255, 255, 255, 0.025);
+                backdrop-filter: blur(14px) saturate(165%);
+                -webkit-backdrop-filter: blur(14px) saturate(165%);
+                z-index: 4;
                 display: flex;
                 flex-direction: column;
                 gap: 8px;
+                pointer-events: auto;
             }
             .chat-reply-templates[hidden] {
                 display: none !important;
@@ -3866,8 +4089,9 @@ class ChatWidget {
             }
             .chat-reply-template-btn {
                 appearance: none;
-                border: 1px solid rgba(107, 158, 206, 0.18);
-                background: rgba(107, 158, 206, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                background: rgba(255, 255, 255, 0.065);
+                background-image: none;
                 color: rgba(255, 255, 255, 0.92);
                 border-radius: 14px;
                 padding: 10px 12px;
@@ -3880,9 +4104,9 @@ class ChatWidget {
             }
             .chat-reply-template-btn:hover {
                 transform: translateY(-1px);
-                border-color: rgba(107, 158, 206, 0.28);
-                background: rgba(107, 158, 206, 0.14);
-                box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+                border-color: rgba(255, 255, 255, 0.18);
+                background: rgba(255, 255, 255, 0.11);
+                box-shadow: 0 10px 20px rgba(0, 0, 0, 0.14);
             }
             .chat-reply-template-btn__label {
                 color: rgba(255, 255, 255, 0.92);
@@ -3909,8 +4133,8 @@ class ChatWidget {
             .user-context-pill {
                 padding: 10px 12px;
                 border-radius: 14px;
-                background: rgba(255, 255, 255, 0.04);
-                border: 1px solid rgba(148, 163, 184, 0.12);
+                background: rgba(255, 255, 255, 0.06);
+                border: 1px solid rgba(255, 255, 255, 0.09);
                 display: flex;
                 flex-direction: column;
                 gap: 4px;
@@ -3936,8 +4160,8 @@ class ChatWidget {
                 gap: 8px;
                 padding: 12px;
                 border-radius: 16px;
-                background: rgba(255, 255, 255, 0.04);
-                border: 1px solid rgba(148, 163, 184, 0.12);
+                background: rgba(255, 255, 255, 0.06);
+                border: 1px solid rgba(255, 255, 255, 0.09);
             }
             .user-context-headline__label {
                 color: rgba(255, 255, 255, 0.82);
@@ -3955,8 +4179,8 @@ class ChatWidget {
                 gap: 6px;
                 padding: 6px 10px;
                 border-radius: 999px;
-                background: rgba(148, 163, 184, 0.12);
-                border: 1px solid rgba(148, 163, 184, 0.12);
+                background: rgba(255, 255, 255, 0.065);
+                border: 1px solid rgba(255, 255, 255, 0.08);
             }
             .user-context-headline__item-label {
                 color: rgba(255, 255, 255, 0.52);
@@ -3969,21 +4193,21 @@ class ChatWidget {
             }
             .user-context-headline__item--success {
                 background: rgba(74, 222, 128, 0.12);
-                border-color: rgba(74, 222, 128, 0.18);
+                border-color: rgba(74, 222, 128, 0.14);
             }
             .user-context-headline__item--success .user-context-headline__item-value {
                 color: #dcfce7;
             }
             .user-context-headline__item--warning {
                 background: rgba(244, 195, 99, 0.14);
-                border-color: rgba(244, 195, 99, 0.2);
+                border-color: rgba(244, 195, 99, 0.15);
             }
             .user-context-headline__item--warning .user-context-headline__item-value {
                 color: #fff1cc;
             }
             .user-context-headline__item--danger {
                 background: rgba(255, 107, 107, 0.14);
-                border-color: rgba(255, 107, 107, 0.2);
+                border-color: rgba(255, 107, 107, 0.15);
             }
             .user-context-headline__item--danger .user-context-headline__item-value {
                 color: #ffd9d9;
@@ -3991,8 +4215,8 @@ class ChatWidget {
             .user-context-recent-action {
                 appearance: none;
                 width: 100%;
-                border: 1px solid rgba(107, 158, 206, 0.22);
-                background: rgba(107, 158, 206, 0.1);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                background: rgba(255, 255, 255, 0.065);
                 border-radius: 16px;
                 padding: 12px 14px;
                 display: flex;
@@ -4004,12 +4228,12 @@ class ChatWidget {
             }
             .user-context-recent-action:hover {
                 transform: translateY(-1px);
-                border-color: rgba(107, 158, 206, 0.32);
-                background: rgba(107, 158, 206, 0.16);
-                box-shadow: 0 12px 24px rgba(15, 23, 42, 0.14);
+                border-color: rgba(255, 255, 255, 0.18);
+                background: rgba(255, 255, 255, 0.11);
+                box-shadow: 0 10px 20px rgba(0, 0, 0, 0.14);
             }
             .user-context-recent-action__label {
-                color: #dbeafe;
+                color: rgba(255, 255, 255, 0.76);
                 font-size: 11px;
                 font-weight: 700;
                 white-space: nowrap;
@@ -4035,8 +4259,8 @@ class ChatWidget {
             }
             .user-context-action-btn {
                 appearance: none;
-                border: 1px solid rgba(107, 158, 206, 0.22);
-                background: rgba(107, 158, 206, 0.1);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                background: rgba(255, 255, 255, 0.065);
                 color: rgba(255, 255, 255, 0.92);
                 border-radius: 14px;
                 padding: 10px 12px;
@@ -4049,14 +4273,14 @@ class ChatWidget {
             }
             .user-context-action-btn:hover {
                 transform: translateY(-1px);
-                border-color: rgba(107, 158, 206, 0.34);
-                background: rgba(107, 158, 206, 0.16);
-                box-shadow: 0 12px 24px rgba(15, 23, 42, 0.18);
+                border-color: rgba(255, 255, 255, 0.18);
+                background: rgba(255, 255, 255, 0.11);
+                box-shadow: 0 10px 20px rgba(0, 0, 0, 0.14);
             }
             .user-context-action-btn--recent {
-                border-color: rgba(74, 222, 128, 0.28);
+                border-color: rgba(74, 222, 128, 0.18);
                 background: rgba(74, 222, 128, 0.12);
-                box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.1);
+                box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.05);
             }
             .user-context-action-btn__icon {
                 width: 28px;
@@ -4066,8 +4290,16 @@ class ChatWidget {
                 align-items: center;
                 justify-content: center;
                 background: rgba(255, 255, 255, 0.08);
-                color: #dbeafe;
+                color: rgba(255, 255, 255, 0.86);
                 flex-shrink: 0;
+            }
+            .user-context-action-btn--payment_read {
+                border-color: rgba(74, 222, 128, 0.16);
+                background: rgba(22, 101, 52, 0.18);
+            }
+            .user-context-action-btn--payment_read .user-context-action-btn__icon {
+                background: rgba(74, 222, 128, 0.16);
+                color: #bbf7d0;
             }
             .user-context-action-btn__text {
                 display: flex;
@@ -4090,8 +4322,8 @@ class ChatWidget {
             .user-context-section {
                 padding: 12px;
                 border-radius: 14px;
-                background: rgba(255, 255, 255, 0.03);
-                border: 1px solid rgba(148, 163, 184, 0.1);
+                background: rgba(255, 255, 255, 0.06);
+                border: 1px solid rgba(255, 255, 255, 0.09);
                 display: flex;
                 flex-direction: column;
                 gap: 8px;
@@ -4141,8 +4373,8 @@ class ChatWidget {
                 min-width: 0;
                 padding: 10px 12px;
                 border-radius: 14px;
-                background: rgba(255, 255, 255, 0.03);
-                border: 1px solid rgba(148, 163, 184, 0.1);
+                background: rgba(255, 255, 255, 0.012);
+                border: 1px solid rgba(255, 255, 255, 0.1);
             }
             .user-context-timeline-item--actionable {
                 appearance: none;
@@ -4154,9 +4386,9 @@ class ChatWidget {
             }
             .user-context-timeline-item--actionable:hover {
                 transform: translateY(-1px);
-                border-color: rgba(107, 158, 206, 0.28);
-                background: rgba(107, 158, 206, 0.08);
-                box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+                border-color: rgba(255, 255, 255, 0.24);
+                background: rgba(255, 255, 255, 0.08);
+                box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
             }
             .user-context-timeline-item--actionable:focus-visible {
                 outline: 2px solid rgba(107, 158, 206, 0.52);
@@ -4174,22 +4406,22 @@ class ChatWidget {
                 min-width: 42px;
                 padding: 4px 8px;
                 border-radius: 999px;
-                background: rgba(107, 158, 206, 0.16);
-                color: #dbeafe;
+                background: rgba(255, 255, 255, 0.1);
+                color: rgba(255, 255, 255, 0.86);
                 font-size: 11px;
                 font-weight: 700;
                 letter-spacing: 0.02em;
             }
             .user-context-timeline-item--order .user-context-timeline-item__badge {
-                background: rgba(79, 129, 200, 0.18);
+                background: rgba(255, 255, 255, 0.1);
             }
             .user-context-timeline-item--payment .user-context-timeline-item__badge {
                 background: rgba(244, 195, 99, 0.18);
                 color: #fff1cc;
             }
             .user-context-timeline-item--verify .user-context-timeline-item__badge {
-                background: rgba(99, 102, 241, 0.18);
-                color: #e0e7ff;
+                background: rgba(255, 255, 255, 0.1);
+                color: rgba(255, 255, 255, 0.86);
             }
             .user-context-timeline-item--ticket .user-context-timeline-item__badge {
                 background: rgba(74, 222, 128, 0.16);
@@ -4227,17 +4459,20 @@ class ChatWidget {
             
             /* Right Chat Area */
             .admin-chat-area {
+                position: relative;
                 flex: 1;
                 display: flex;
                 flex-direction: column;
                 min-width: 0;
                 min-height: 0;
+                background: rgba(8, 10, 16, 0.98);
             }
             
             .admin-chat-header {
                 padding: 15px 20px;
                 border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-                background: rgba(255, 255, 255, 0.03);
+                background: rgba(8, 10, 16, 0.98);
+                background-image: none;
             }
             .chat-user-name {
                 color: white;
@@ -4255,18 +4490,31 @@ class ChatWidget {
                 border-radius: 12px;
                 background: rgba(107, 158, 206, 0.12);
                 border: 1px solid rgba(107, 158, 206, 0.2);
-                color: rgba(224, 238, 255, 0.92);
+                color: rgba(217, 232, 244, 0.92);
                 font-size: 12px;
                 line-height: 1.5;
             }
             
             .admin-mode-layout .chat-messages {
+                position: relative;
+                z-index: 1;
                 flex: 1;
                 min-height: 0;
                 overflow-y: auto;
                 padding: 20px;
+                background: rgba(8, 10, 16, 0.98) !important;
+                background-image: none !important;
+                box-shadow: none !important;
                 scroll-behavior: auto !important; /* Force instant scrolling */
                 overscroll-behavior-y: contain; /* Prevent scroll chaining */
+            }
+
+            .admin-chat-area.has-user-context .chat-messages {
+                padding-top: 148px;
+            }
+
+            .admin-chat-area.has-reply-templates .chat-messages {
+                padding-bottom: 148px;
             }
             
             .empty-state {
@@ -4391,7 +4639,7 @@ class ChatWidget {
                 letter-spacing: 0.02em;
             }
             .ops-alert-card-badge--info {
-                color: #d6ebff;
+                color: #d9e8f4;
                 background: rgba(107, 158, 206, 0.22);
             }
             .ops-alert-card-badge--warning {
@@ -4420,7 +4668,7 @@ class ChatWidget {
                 border-color: rgba(244, 195, 99, 0.26);
             }
             .ops-alert-card-status--claimed {
-                color: #d4e7ff;
+                color: #d9e8f4;
                 background: rgba(107, 158, 206, 0.18);
                 border-color: rgba(107, 158, 206, 0.28);
             }
@@ -4508,62 +4756,308 @@ class ChatWidget {
                 gap: 10px;
             }
             .ops-alert-toolbar {
-                width: min(540px, 92%);
-                margin: 0 auto 12px;
+                width: fit-content;
+                max-width: calc(100% - 56px);
+                margin: 0 auto 18px;
                 display: flex;
+                flex-wrap: nowrap;
                 align-items: center;
-                justify-content: space-between;
-                gap: 12px;
-                padding: 10px 14px;
-                border-radius: 16px;
-                border: 1px solid rgba(255, 255, 255, 0.08);
-                background: rgba(255, 255, 255, 0.04);
+                justify-content: center;
+                gap: 8px;
+                padding: 10px 12px;
+                border-radius: 20px;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                background: rgba(0, 0, 0, 0.56);
+                box-sizing: border-box;
+                position: sticky;
+                top: 4px;
+                z-index: 8;
+                overflow: visible;
+                box-shadow: 0 18px 48px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+                backdrop-filter: blur(22px) saturate(118%);
+                -webkit-backdrop-filter: blur(22px) saturate(118%);
             }
             .ops-alert-toolbar-copy {
-                color: rgba(255, 255, 255, 0.7);
+                color: rgba(226, 232, 240, 0.64);
                 font-size: 12px;
                 font-weight: 600;
-            }
-            .ops-alert-toolbar-actions {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 8px;
+                flex: 0 0 auto;
             }
             .ops-alert-toolbar-filter {
                 display: inline-flex;
                 align-items: center;
+                justify-content: flex-start;
+                gap: 0;
+                flex: 0 0 auto;
+                min-width: 0;
+                min-height: 34px;
+                padding: 0;
+                border-radius: 999px;
+                background: transparent;
+                border: 0;
+            }
+            .ops-alert-toolbar-filter--scope {
+                justify-content: flex-start;
+            }
+            .ops-alert-toolbar-read {
+                display: inline-flex;
+                align-items: center;
+                flex-wrap: nowrap;
                 gap: 8px;
+                flex: 0 0 auto;
+                min-width: 0;
+                min-height: 34px;
+                padding: 0;
+                border-radius: 0;
+                background: transparent;
+                border: 0;
+            }
+            .ops-alert-toolbar-read .ops-alert-toolbar-filter {
+                min-width: 0;
+                min-height: 0;
+                padding: 0;
+                border: 0;
+                background: transparent;
+                justify-content: flex-start;
+            }
+            .ops-alert-toolbar-read .ops-alert-toolbar-copy:empty {
+                display: none;
+            }
+            .ops-alert-toolbar-actions {
+                display: inline-flex;
+                align-items: center;
+                justify-content: flex-end;
+                gap: 8px;
+                flex: 0 0 auto;
+                min-width: 0;
             }
             .ops-alert-toolbar-btn {
-                border: 1px solid rgba(255, 255, 255, 0.12);
-                background: rgba(255, 255, 255, 0.05);
-                color: rgba(255, 255, 255, 0.82);
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: 6px;
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                background: rgba(0, 0, 0, 0.18);
+                color: #e2e8f0;
                 font-size: 12px;
-                font-weight: 600;
+                font-weight: 700;
                 border-radius: 999px;
-                padding: 6px 12px;
+                min-height: 34px;
+                padding: 6px 11px;
                 cursor: pointer;
-                transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+                transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
             }
             .ops-alert-toolbar-btn.is-active {
-                border-color: rgba(107, 158, 206, 0.32);
-                background: rgba(107, 158, 206, 0.18);
-                color: #e5f2ff;
+                border-color: rgba(255, 255, 255, 0.22);
+                background: rgba(255, 255, 255, 0.1);
+                color: #d9e8f4;
+            }
+            .ops-alert-toolbar-btn--read {
+                border-color: rgba(74, 222, 128, 0.24);
+                background: rgba(22, 101, 52, 0.18);
+                color: #bbf7d0;
+            }
+            .ops-alert-toolbar-btn--read-standalone {
+                min-width: 58px;
             }
             .ops-alert-toolbar-btn:hover {
                 transform: translateY(-1px);
             }
+            .ops-alert-toolbar-btn:disabled {
+                cursor: not-allowed;
+                opacity: 0.48;
+                transform: none;
+            }
             .ops-alert-toolbar-select {
                 min-width: 132px;
-                border: 1px solid rgba(255, 255, 255, 0.12);
-                background: rgba(255, 255, 255, 0.05);
-                color: rgba(255, 255, 255, 0.82);
+                max-width: 100%;
+                box-sizing: border-box;
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                background: rgba(0, 0, 0, 0.18);
+                color: #e2e8f0;
                 font-size: 12px;
                 font-weight: 600;
                 border-radius: 999px;
                 padding: 6px 28px 6px 12px;
                 outline: none;
                 cursor: pointer;
+            }
+            .ops-alert-toolbar-select--compact {
+                min-width: 118px;
+                flex: 1 1 118px;
+            }
+            .ops-alert-toolbar-filter--scope .ops-alert-toolbar-select {
+                min-width: 148px;
+            }
+            .ops-alert-toolbar-dropdown {
+                position: relative;
+                width: 100%;
+                min-width: 0;
+                max-width: 100%;
+            }
+            .ops-alert-toolbar-dropdown--compact {
+                flex: 0 0 108px;
+                width: 108px;
+            }
+            .ops-alert-toolbar-filter--scope .ops-alert-toolbar-dropdown {
+                width: 112px;
+            }
+            .ops-alert-toolbar-filter--owner .ops-alert-toolbar-dropdown {
+                width: 118px;
+            }
+            .ops-alert-toolbar-dropdown-trigger {
+                width: 100%;
+                min-height: 34px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                background: rgba(0, 0, 0, 0.18);
+                color: #e2e8f0;
+                font-size: 12px;
+                font-weight: 700;
+                letter-spacing: 0.01em;
+                border-radius: 999px;
+                padding: 6px 12px 6px 14px;
+                outline: none;
+                cursor: pointer;
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+                transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+            }
+            .ops-alert-toolbar-dropdown-trigger:hover,
+            .ops-alert-toolbar-dropdown.is-open .ops-alert-toolbar-dropdown-trigger {
+                border-color: rgba(255, 255, 255, 0.24);
+                background: rgba(255, 255, 255, 0.08);
+                box-shadow: none;
+            }
+            .ops-alert-toolbar-dropdown-value {
+                min-width: 0;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            .ops-alert-toolbar-dropdown-icon {
+                flex: 0 0 auto;
+                color: #94a3b8;
+                font-size: 11px;
+                transition: transform 0.2s ease, color 0.2s ease;
+            }
+            .ops-alert-toolbar-dropdown.is-open .ops-alert-toolbar-dropdown-icon {
+                color: #d9e8f4;
+                transform: rotate(180deg);
+            }
+            .ops-alert-toolbar-dropdown-menu {
+                position: absolute;
+                top: calc(100% + 8px);
+                left: 0;
+                z-index: 30;
+                min-width: 100%;
+                width: max-content;
+                max-width: min(320px, calc(100vw - 48px));
+                max-height: 280px;
+                overflow: auto;
+                display: grid;
+                gap: 4px;
+                padding: 7px;
+                border: 1px solid rgba(148, 163, 184, 0.22);
+                border-radius: 16px;
+                background: rgba(15, 23, 42, 0.96);
+                box-shadow: 0 22px 50px rgba(2, 6, 23, 0.46), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+                backdrop-filter: blur(18px) saturate(145%);
+                -webkit-backdrop-filter: blur(18px) saturate(145%);
+                opacity: 0;
+                pointer-events: none;
+                transform: translateY(-6px) scale(0.98);
+                transform-origin: top left;
+                transition: opacity 0.16s ease, transform 0.16s ease;
+            }
+            .ops-alert-toolbar-dropdown.is-open .ops-alert-toolbar-dropdown-menu {
+                opacity: 1;
+                pointer-events: auto;
+                transform: translateY(0) scale(1);
+            }
+            .ops-alert-toolbar-dropdown-option {
+                width: 100%;
+                min-width: 132px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 16px;
+                border: 0;
+                border-radius: 12px;
+                background: transparent;
+                color: #cbd5e1;
+                font-size: 12px;
+                font-weight: 700;
+                line-height: 1.35;
+                text-align: left;
+                white-space: nowrap;
+                padding: 9px 10px;
+                cursor: pointer;
+                transition: background 0.16s ease, color 0.16s ease, transform 0.16s ease;
+            }
+            .ops-alert-toolbar-dropdown-option:hover,
+            .ops-alert-toolbar-dropdown-option:focus-visible {
+                background: rgba(255, 255, 255, 0.08);
+                color: #d9e8f4;
+                outline: none;
+            }
+            .ops-alert-toolbar-dropdown-option.is-selected {
+                background: rgba(255, 255, 255, 0.1);
+                color: #d9e8f4;
+            }
+            .ops-alert-toolbar-dropdown-option:disabled {
+                cursor: not-allowed;
+                color: rgba(148, 163, 184, 0.48);
+                background: transparent;
+            }
+            .ops-alert-toolbar-dropdown-check {
+                opacity: 0;
+                color: #6b9ece;
+                font-size: 11px;
+            }
+            .ops-alert-toolbar-dropdown-option.is-selected .ops-alert-toolbar-dropdown-check {
+                opacity: 1;
+            }
+            .message--ops-alert-read {
+                opacity: 0.72;
+            }
+            @media (max-width: 1180px) {
+                .ops-alert-toolbar {
+                    max-width: calc(100% - 40px);
+                    justify-content: flex-start;
+                }
+                .ops-alert-toolbar-filter--owner {
+                    order: 3;
+                }
+                .ops-alert-toolbar-actions {
+                    order: 4;
+                    justify-content: flex-end;
+                }
+            }
+            @media (max-width: 980px) {
+                .ops-alert-toolbar {
+                    width: calc(100% - 32px);
+                    max-width: calc(100% - 32px);
+                }
+                .ops-alert-toolbar-filter,
+                .ops-alert-toolbar-read,
+                .ops-alert-toolbar-actions {
+                    width: auto;
+                    min-width: 0;
+                    flex-wrap: nowrap;
+                    justify-content: flex-start;
+                }
+                .ops-alert-toolbar-filter--scope .ops-alert-toolbar-dropdown,
+                .ops-alert-toolbar-filter--owner .ops-alert-toolbar-dropdown,
+                .ops-alert-toolbar-dropdown--compact {
+                    flex-basis: auto;
+                }
+                .ops-alert-toolbar-btn--read-standalone,
+                .ops-alert-toolbar-btn--accent {
+                    width: auto;
+                }
             }
             .ops-alert-card-entry {
                 flex: 1;
@@ -4592,7 +5086,7 @@ class ChatWidget {
             .ops-alert-card-action--primary {
                 border-color: rgba(107, 158, 206, 0.32);
                 background: rgba(107, 158, 206, 0.18);
-                color: #e5f2ff;
+                color: #d9e8f4;
             }
             .ops-alert-card-action--danger {
                 border-color: rgba(255, 107, 107, 0.28);
@@ -4606,13 +5100,13 @@ class ChatWidget {
             }
             .ops-alert-card-action:hover:not(:disabled) {
                 transform: translateY(-1px);
-                border-color: rgba(159, 202, 255, 0.4);
+                border-color: rgba(107, 158, 206, 0.4);
             }
             .ops-alert-card-action:disabled {
                 opacity: 0.45;
                 cursor: not-allowed;
             }
-            
+
             /* Back button - hidden on desktop, visible on mobile */
             .back-to-list-btn {
                 display: none;
@@ -4628,6 +5122,556 @@ class ChatWidget {
             }
             .back-to-list-btn:hover {
                 background: rgba(255, 255, 255, 0.1);
+            }
+
+            /* Admin Mode Light Theme */
+            html[data-theme="light"] .chat-window.admin-mode-layout {
+                --chat-admin-light-bg: rgba(255, 255, 255, 0.98);
+                --chat-admin-light-panel: rgba(248, 250, 252, 0.98);
+                --chat-admin-light-sidebar: rgba(241, 245, 249, 0.98);
+                --chat-admin-light-soft: rgba(248, 250, 252, 0.98);
+                --chat-admin-light-card: rgba(255, 255, 255, 0.72);
+                --chat-admin-light-border: rgba(15, 23, 42, 0.1);
+                --chat-admin-light-border-soft: rgba(148, 163, 184, 0.18);
+                --chat-admin-light-text: #0f172a;
+                --chat-admin-light-text-strong: #1e293b;
+                --chat-admin-light-muted: #64748b;
+                --chat-admin-light-faint: #94a3b8;
+                --chat-admin-light-accent: #6b9ece;
+                --chat-admin-light-accent-soft: rgba(107, 158, 206, 0.1);
+                --chat-admin-light-accent-softer: rgba(107, 158, 206, 0.06);
+                --chat-admin-light-warning-bg: rgba(245, 158, 11, 0.14);
+                --chat-admin-light-warning-text: #92400e;
+                --chat-admin-light-danger-bg: rgba(239, 68, 68, 0.1);
+                --chat-admin-light-danger-text: #b91c1c;
+                --chat-admin-light-success-bg: rgba(34, 197, 94, 0.12);
+                --chat-admin-light-success-text: #166534;
+                background: var(--chat-admin-light-bg) !important;
+                background-image: none !important;
+                border: 1px solid var(--chat-admin-light-border) !important;
+                box-shadow: 0 22px 56px rgba(15, 23, 42, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.42) !important;
+                color: var(--chat-admin-light-text);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .admin-sidebar {
+                background: var(--chat-admin-light-sidebar);
+                border-right: 1px solid var(--chat-admin-light-border);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .admin-sidebar-header,
+            html[data-theme="light"] .chat-window.admin-mode-layout .admin-chat-header,
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-input-area {
+                background: var(--chat-admin-light-panel);
+                border-color: var(--chat-admin-light-border);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .admin-chat-area,
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-messages {
+                background: var(--chat-admin-light-soft) !important;
+                background-image: none !important;
+                box-shadow: none !important;
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .admin-sidebar-header h3,
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-user-name,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-name,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-card__value,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-card__label,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-snapshot__summary,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-suggestion__title,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-suggestion__list-title,
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-reply-template-btn__label,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-shell__title,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-pill__value,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-headline__label,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-headline__item-value,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-recent-action__value,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-action-btn__title,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-section__title,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-item__main,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-timeline-item__main,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-card-title,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-card-content {
+                color: var(--chat-admin-light-text-strong);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .admin-sidebar-insights__eyebrow,
+            html[data-theme="light"] .chat-window.admin-mode-layout .admin-sidebar-insights__toggle-text,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-preview,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-time,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-email,
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-user-id,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-status-indicator .status-text,
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-user-status-chip__label,
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-reply-templates__label,
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-reply-template-btn__hint,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-shell__eyebrow,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-shell__summary,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-pill__label,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-headline__item-label,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-recent-action__time,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-action-btn__hint,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-section__empty,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-item__sub,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-timeline-item__sub,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-timeline-item__jump,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-card-meta,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-card-entry,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-card-history-item,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-copy,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-loading {
+                color: var(--chat-admin-light-muted);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .admin-sidebar-insights,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-card,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-snapshot,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-suggestion,
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-context-panel__state,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-shell,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-pill,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-headline,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-section,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-timeline-item,
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-reply-template-btn,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-recent-action,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-action-btn,
+            html[data-theme="light"] .chat-window.admin-mode-layout .message--ops-alert,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-card-case-summary {
+                background: var(--chat-admin-light-card);
+                border-color: var(--chat-admin-light-border-soft);
+                box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar {
+                background: rgba(255, 255, 255, 0.78);
+                border-color: rgba(255, 255, 255, 0.42);
+                box-shadow: 0 18px 38px rgba(148, 163, 184, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.72), inset 0 -1px 0 rgba(255, 255, 255, 0.26);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-filter {
+                background: transparent;
+                border: 0;
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-read,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-read .ops-alert-toolbar-filter {
+                background: transparent;
+                border: 0;
+                box-shadow: none;
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .admin-sidebar-insights__summary,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-card__hint,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-snapshot__title,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-snapshot__mode,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-snapshot__meta,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-snapshot__hint,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-suggestion__eyebrow,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-suggestion__desc,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-suggestion__hint,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-suggestion__list-detail,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-card-case-summary {
+                color: var(--chat-admin-light-muted);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .admin-search input,
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-input {
+                background: #ffffff;
+                border-color: var(--chat-admin-light-border-soft);
+                color: var(--chat-admin-light-text);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .admin-search input::placeholder,
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-input::placeholder {
+                color: var(--chat-admin-light-faint);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .admin-search input:focus,
+            html[data-theme="light"] .chat-window.admin-mode-layout .admin-search input:focus-visible,
+            html[data-theme="light"] .chat-window.admin-mode-layout .admin-search input:-webkit-autofill:focus,
+            html[data-theme="light"] .chat-window.admin-mode-layout .admin-search input:-webkit-autofill:focus-visible,
+            html[data-theme="light"] .admin-mode-layout .chat-input:focus,
+            html[data-theme="light"] .admin-mode-layout .chat-input:focus-visible,
+            html[data-theme="light"] .admin-mode-layout .chat-input:-webkit-autofill:focus,
+            html[data-theme="light"] .admin-mode-layout .chat-input:-webkit-autofill:focus-visible {
+                background: #ffffff !important;
+                border-color: var(--chat-admin-light-accent) !important;
+                box-shadow: 0 0 0 3px var(--chat-admin-light-accent-soft) !important;
+                caret-color: var(--chat-admin-light-accent) !important;
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-item {
+                border-bottom-color: rgba(15, 23, 42, 0.06);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-item:hover {
+                background: #f1f5f9;
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-item.active {
+                background: var(--chat-admin-light-accent-soft);
+                border-left-color: var(--chat-admin-light-accent);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-item--ops {
+                background: var(--chat-admin-light-accent-softer);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-item--ops:hover {
+                background: var(--chat-admin-light-accent-soft);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-item--ops .session-name,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-item--ops .session-preview,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-item--ops .session-email {
+                color: var(--chat-admin-light-text-strong);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-item.unread {
+                background: var(--chat-admin-light-danger-bg);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-item.unread .session-name {
+                color: var(--chat-admin-light-text-strong);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-item.unread .session-preview {
+                color: var(--chat-admin-light-muted);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-badge,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-item--ops .session-badge,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-timeline-item__badge,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-card-badge--info,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-card-status--claimed {
+                background: rgba(107, 158, 206, 0.12);
+                color: #5f8fbc;
+                border-color: rgba(107, 158, 206, 0.18);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-badge--ticket,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-badge--warning,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-snapshot__capacity-badge--warning,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-card-badge--warning,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-card-status--open {
+                background: var(--chat-admin-light-warning-bg);
+                color: var(--chat-admin-light-warning-text);
+                border-color: rgba(245, 158, 11, 0.2);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-badge--danger,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-snapshot__capacity-badge--danger,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-card-badge--critical,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-card-error {
+                background: var(--chat-admin-light-danger-bg);
+                color: var(--chat-admin-light-danger-text);
+                border-color: rgba(239, 68, 68, 0.18);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-card-status--resolved,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-card-action--ghost,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-action-btn--recent,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-timeline-item--recent {
+                background: var(--chat-admin-light-success-bg);
+                color: var(--chat-admin-light-success-text);
+                border-color: rgba(34, 197, 94, 0.2);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-suggestion--danger,
+            html[data-theme="light"] .chat-window.admin-mode-layout .message--ops-alert-critical {
+                background: rgba(254, 242, 242, 0.9);
+                border-color: rgba(239, 68, 68, 0.18);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-suggestion--warning,
+            html[data-theme="light"] .chat-window.admin-mode-layout .message--ops-alert-warning {
+                background: rgba(255, 251, 235, 0.92);
+                border-color: rgba(245, 158, 11, 0.2);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-suggestion--calm,
+            html[data-theme="light"] .chat-window.admin-mode-layout .message--ops-alert-info {
+                background: rgba(235, 243, 250, 0.92);
+                border-color: rgba(107, 158, 206, 0.18);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-suggestion__index,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-action-btn__icon {
+                background: var(--chat-admin-light-accent-soft);
+                color: var(--chat-admin-light-accent);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-reply-templates,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-shell,
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-context-panel__state {
+                background: rgba(255, 255, 255, 0.78);
+                background-image: none;
+                border-color: rgba(255, 255, 255, 0.42);
+                box-shadow: 0 18px 38px rgba(148, 163, 184, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.72), inset 0 -1px 0 rgba(255, 255, 255, 0.26);
+                backdrop-filter: blur(14px) saturate(165%);
+                -webkit-backdrop-filter: blur(14px) saturate(165%);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-reply-templates::before,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-shell::before {
+                background: none;
+                opacity: 0;
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-context-panel__state {
+                color: var(--chat-admin-light-muted);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-context-panel--error .chat-context-panel__state {
+                color: var(--chat-admin-light-danger-text);
+                background: rgba(254, 242, 242, 0.82);
+                border-color: rgba(248, 113, 113, 0.28);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-reply-template-btn,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-pill,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-headline,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-section,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-timeline-item,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-recent-action,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-action-btn {
+                background: rgba(255, 255, 255, 0.56);
+                border-color: rgba(148, 163, 184, 0.2);
+                color: var(--chat-admin-light-text-strong);
+                box-shadow: none;
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-reply-template-btn:hover,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-recent-action:hover,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-action-btn:hover,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-timeline-item--actionable:hover {
+                background: rgba(255, 255, 255, 0.68);
+                border-color: rgba(107, 158, 206, 0.22);
+                color: var(--chat-admin-light-text-strong);
+                box-shadow: 0 10px 20px rgba(148, 163, 184, 0.12);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-reply-template-btn__label,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-shell__title,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-pill__value,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-headline__label,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-headline__item-value,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-recent-action__value,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-action-btn__title,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-section__title,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-item__main,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-timeline-item__main {
+                color: var(--chat-admin-light-text-strong);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-reply-templates__label,
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-reply-template-btn__hint,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-shell__eyebrow,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-shell__summary,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-pill__label,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-headline__item-label,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-recent-action__time,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-action-btn__hint,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-section__empty,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-item__sub,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-timeline-item__sub,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-timeline-item__jump {
+                color: var(--chat-admin-light-muted);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-headline__item,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-timeline-item__badge {
+                background: rgba(241, 245, 249, 0.84);
+                border-color: rgba(148, 163, 184, 0.18);
+                color: var(--chat-admin-light-muted);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-action-btn__icon {
+                background: rgba(107, 158, 206, 0.12);
+                border-color: rgba(107, 158, 206, 0.18);
+                color: var(--chat-admin-light-accent);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-action-btn--payment_read {
+                background: rgba(220, 252, 231, 0.54);
+                border-color: rgba(34, 197, 94, 0.22);
+                color: var(--chat-admin-light-success-text);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-action-btn--payment_read .user-context-action-btn__icon {
+                background: rgba(34, 197, 94, 0.14);
+                color: var(--chat-admin-light-success-text);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-snapshot__action,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-suggestion__action,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-preset,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-filter-btn,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-btn,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-select,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-dropdown-trigger,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-card-action {
+                background: rgba(255, 255, 255, 0.56);
+                border-color: rgba(148, 163, 184, 0.2);
+                color: var(--chat-admin-light-text-strong);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-btn,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-dropdown-trigger {
+                background: rgba(255, 255, 255, 0.56);
+                border-color: rgba(148, 163, 184, 0.2);
+                color: var(--chat-admin-light-text-strong);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-btn--read {
+                background: rgba(220, 252, 231, 0.78);
+                border-color: rgba(34, 197, 94, 0.22);
+                color: var(--chat-admin-light-success-text);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-snapshot__action--ghost,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-card-status--muted {
+                color: var(--chat-admin-light-muted);
+                background: rgba(241, 245, 249, 0.86);
+                border-color: var(--chat-admin-light-border-soft);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-preset:hover,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-filter-btn:hover,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-btn:hover,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-dropdown-trigger:hover,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-dropdown.is-open .ops-alert-toolbar-dropdown-trigger,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-card-action:hover:not(:disabled) {
+                background: rgba(255, 255, 255, 0.68);
+                border-color: rgba(107, 158, 206, 0.22);
+                color: var(--chat-admin-light-text-strong);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-preset.is-active,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-filter-btn.is-active,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-btn.is-active,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-card-action--primary {
+                background: var(--chat-admin-light-accent);
+                border-color: var(--chat-admin-light-accent);
+                color: #ffffff;
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-card-action--danger {
+                background: var(--chat-admin-light-danger-bg);
+                border-color: rgba(239, 68, 68, 0.22);
+                color: var(--chat-admin-light-danger-text);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-dropdown-icon,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-dropdown-check,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-shell__toggle-text,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-shell__toggle-icon {
+                color: var(--chat-admin-light-accent);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-shell__toggle-text,
+            html[data-theme="light"] .chat-window.admin-mode-layout .user-context-shell__toggle-icon {
+                color: var(--chat-admin-light-muted);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-dropdown-menu {
+                background: #ffffff;
+                border-color: var(--chat-admin-light-border-soft);
+                box-shadow: 0 24px 48px rgba(15, 23, 42, 0.16);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-dropdown-option {
+                color: var(--chat-admin-light-muted);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-dropdown-option:hover,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-dropdown-option:focus-visible,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-dropdown-option.is-selected {
+                background: var(--chat-admin-light-accent-soft);
+                color: var(--chat-admin-light-accent);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-dropdown-option:disabled {
+                color: var(--chat-admin-light-faint);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar .ops-alert-toolbar-btn,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar .ops-alert-toolbar-dropdown-trigger {
+                background: rgba(255, 255, 255, 0.56);
+                border-color: rgba(148, 163, 184, 0.2);
+                color: var(--chat-admin-light-text-strong);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar .ops-alert-toolbar-btn:hover,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar .ops-alert-toolbar-dropdown-trigger:hover,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar .ops-alert-toolbar-dropdown.is-open .ops-alert-toolbar-dropdown-trigger {
+                background: rgba(255, 255, 255, 0.68);
+                border-color: rgba(107, 158, 206, 0.22);
+                color: var(--chat-admin-light-text-strong);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar .ops-alert-toolbar-btn--read {
+                background: rgba(220, 252, 231, 0.78);
+                border-color: rgba(34, 197, 94, 0.22);
+                color: var(--chat-admin-light-success-text);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-action-btn {
+                background: #ffffff;
+                border-color: var(--chat-admin-light-border-soft);
+                color: var(--chat-admin-light-muted);
+                box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout #chatEmojiBtn.chat-action-btn {
+                background: transparent;
+                border: none;
+                box-shadow: none;
+                color: var(--chat-admin-light-muted);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-action-btn:hover,
+            html[data-theme="light"] .chat-window.admin-mode-layout #chatEmojiBtn.chat-action-btn:hover,
+            html[data-theme="light"] .chat-window.admin-mode-layout .back-to-list-btn:hover {
+                background: var(--chat-admin-light-accent-soft);
+                color: var(--chat-admin-light-accent);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-send-btn {
+                color: var(--chat-admin-light-accent);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-close,
+            html[data-theme="light"] .chat-window.admin-mode-layout .back-to-list-btn {
+                color: var(--chat-admin-light-muted);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-close:hover,
+            html[data-theme="light"] .chat-window.admin-mode-layout .back-to-list-btn:hover {
+                color: var(--chat-admin-light-text-strong);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .empty-state {
+                color: var(--chat-admin-light-muted);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .empty-state i {
+                color: var(--chat-admin-light-faint);
+                opacity: 0.8;
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .message-time,
+            html[data-theme="light"] .chat-window.admin-mode-layout .message.user .message-time {
+                color: var(--chat-admin-light-faint);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-skeleton,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-skeleton__avatar,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-skeleton__line,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-skeleton {
+                background: linear-gradient(90deg, rgba(226, 232, 240, 0.62), rgba(248, 250, 252, 0.96), rgba(226, 232, 240, 0.62));
+                border-bottom-color: rgba(15, 23, 42, 0.06);
             }
             
             /* Mobile/Narrow: Slide Navigation Pattern */
@@ -4667,7 +5711,7 @@ class ChatWidget {
                     left: 0;
                     width: 100%;
                     height: 100%;
-                    background: transparent;
+                    background: rgba(12, 15, 22, 0.98);
                     z-index: 2;
                     transition: transform 0.3s ease-out;
                     display: flex;
@@ -4722,11 +5766,64 @@ class ChatWidget {
                     flex: 1;
                     overflow-y: auto;
                 }
+                .chat-reply-templates {
+                    left: 12px;
+                    right: 12px;
+                    bottom: 68px;
+                }
+                .chat-context-panel {
+                    left: 12px;
+                    right: 12px;
+                    top: var(--chat-admin-context-top, 92px);
+                }
+                .admin-chat-area.has-user-context .chat-messages {
+                    padding-top: 132px;
+                }
+                .admin-chat-area.has-reply-templates .chat-messages {
+                    padding-bottom: 132px;
+                }
+                .ops-alert-toolbar {
+                    width: calc(100% - 24px);
+                    justify-content: flex-start;
+                }
+                .ops-alert-toolbar-filter,
+                .ops-alert-toolbar-read,
+                .ops-alert-toolbar-dropdown {
+                    flex-wrap: wrap;
+                    justify-content: flex-start;
+                    width: 100%;
+                    min-width: 0;
+                }
+                .ops-alert-toolbar-dropdown,
+                .ops-alert-toolbar-dropdown--compact {
+                    width: 100%;
+                    min-width: 0;
+                }
+                .ops-alert-toolbar-dropdown-menu {
+                    width: 100%;
+                    max-width: 100%;
+                }
+                .ops-alert-toolbar-filter--owner {
+                    margin-left: 0;
+                }
+                .ops-alert-toolbar-btn--read-standalone {
+                    justify-self: stretch;
+                    width: 100%;
+                }
                 
                 /* Input always at bottom */
                 .admin-mode-layout .chat-input-area {
                     flex: 0 0 auto;
                     padding: 10px 12px;
+                }
+                html[data-theme="light"] .chat-window.admin-mode-layout .admin-sidebar {
+                    background: var(--chat-admin-light-sidebar);
+                }
+                html[data-theme="light"] .chat-window.admin-mode-layout .admin-chat-area {
+                    background: var(--chat-admin-light-soft);
+                }
+                html[data-theme="light"] .chat-window.admin-mode-layout .chat-input-area {
+                    background: var(--chat-admin-light-panel);
                 }
             }
             
@@ -4744,7 +5841,7 @@ class ChatWidget {
                 width: 32px;
                 height: 32px;
                 border: 3px solid rgba(255, 255, 255, 0.2);
-                border-top-color: rgba(102, 126, 234, 0.8);
+                border-top-color: rgba(107, 158, 206, 0.8);
                 border-radius: 50%;
                 animation: spin 0.8s linear infinite;
             }
@@ -5579,7 +6676,8 @@ class ChatWidget {
         }
     }
 
-    getFilteredOpsAlertMessages() {
+    getFilteredOpsAlertMessages(options = {}) {
+        const ignoreReadView = Boolean(options.ignoreReadView);
         let alerts = Array.isArray(this.opsAlertMessages) ? this.opsAlertMessages : [];
         if (this.opsAlertViewFilter === 'mine') {
             if (!this.opsAlertCurrentAdminId) {
@@ -5589,6 +6687,12 @@ class ChatWidget {
         }
         if (this.opsAlertViewFilter === 'active') {
             alerts = alerts.filter((alert) => !this.isOpsAlertClosed(alert));
+        }
+        if (!ignoreReadView && this.opsAlertViewFilter === 'unread') {
+            alerts = alerts.filter((alert) => !this.isOpsAlertClosed(alert) && !this.isOpsAlertRead(alert));
+        }
+        if (!ignoreReadView && this.opsAlertViewFilter === 'read') {
+            alerts = alerts.filter((alert) => !this.isOpsAlertClosed(alert) && this.isOpsAlertRead(alert));
         }
         const ownerFilter = String(this.opsAlertOwnerFilter || 'all').trim();
         if (!ownerFilter || ownerFilter === 'all') {
@@ -5602,7 +6706,7 @@ class ChatWidget {
 
     setOpsAlertViewFilter(filter = 'all') {
         const normalizedRaw = String(filter || '').trim().toLowerCase();
-        const normalized = ['mine', 'active'].includes(normalizedRaw) ? normalizedRaw : 'all';
+        const normalized = ['mine', 'active', 'unread', 'read'].includes(normalizedRaw) ? normalizedRaw : 'all';
         if (normalized === this.opsAlertViewFilter) {
             return;
         }
@@ -5626,7 +6730,7 @@ class ChatWidget {
             ownerMap.set(ownerId, ownerLabel);
         });
 
-        const options = [{ value: 'all', label: '全部负责人' }];
+        const options = [{ value: 'all', label: '负责人' }];
         if (hasUnassigned) {
             options.push({ value: 'unassigned', label: '未认领' });
         }
@@ -5651,6 +6755,149 @@ class ChatWidget {
         if (this.isOpen && this.currentSessionKey === this.opsAlertSessionId) {
             this.renderOpsAlertMessages();
         }
+    }
+
+    getOpsAlertReadIdentity(alert = {}) {
+        return String(
+            alert.id
+            || alert.caseTargetId
+            || alert.target_id
+            || `${alert.alertType || alert.alert_type || 'alert'}:${alert.created_at || alert.createdAt || alert.timestamp || ''}`
+        ).trim();
+    }
+
+    getOpsAlertTimestampMs(alert = {}) {
+        const timestamp = alert.sortTimestamp || alert.timestamp || alert.updated_at || alert.created_at || alert.createdAt;
+        if (timestamp instanceof Date) {
+            return timestamp.getTime();
+        }
+        const parsed = Date.parse(timestamp || '');
+        return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    getOpsAlertUpdatedMs(alert = {}) {
+        const parsed = Date.parse(alert.updated_at || alert.updatedAt || '');
+        return Number.isFinite(parsed) ? parsed : this.getOpsAlertTimestampMs(alert);
+    }
+
+    isOpsAlertRead(alert = {}) {
+        const alertId = this.getOpsAlertReadIdentity(alert);
+        if (!alertId || !this.opsAlertReadReceipts.has(alertId)) {
+            return false;
+        }
+
+        const readAt = Date.parse(this.opsAlertReadReceipts.get(alertId) || '');
+        if (!Number.isFinite(readAt)) {
+            return false;
+        }
+
+        const updatedAt = this.getOpsAlertUpdatedMs(alert);
+        return !updatedAt || readAt + 1000 >= updatedAt;
+    }
+
+    getOpsAlertUnreadCount(alerts = this.opsAlertMessages) {
+        return (Array.isArray(alerts) ? alerts : [])
+            .filter((alert) => !this.isOpsAlertClosed(alert) && !this.isOpsAlertRead(alert))
+            .length;
+    }
+
+    getOpsAlertReadCategoryOptions(alerts = this.getFilteredOpsAlertMessages({ ignoreReadView: true })) {
+        const categoryMap = new Map();
+        (Array.isArray(alerts) ? alerts : []).forEach((alert) => {
+            const key = String(alert.caseCategoryKey || alert.category_key || '').trim().toLowerCase();
+            if (!key || categoryMap.has(key)) {
+                return;
+            }
+            categoryMap.set(key, this.getOpsAlertMuteModuleLabel(key) || key);
+        });
+
+        return [
+            { value: 'all', label: '分类' },
+            ...Array.from(categoryMap.entries())
+                .sort((left, right) => left[1].localeCompare(right[1], 'zh-Hans-CN'))
+                .map(([value, label]) => ({ value, label }))
+        ];
+    }
+
+    syncOpsAlertReadCategoryFilter(options = []) {
+        if (!Array.isArray(options) || !options.some((option) => option.value === this.opsAlertReadCategoryFilter)) {
+            this.opsAlertReadCategoryFilter = 'all';
+        }
+    }
+
+    getOpsAlertReadTimeOptions() {
+        return [
+            { value: 'visible', label: '当前' },
+            { value: 'hour', label: '1h' },
+            { value: 'today', label: '今天' },
+            { value: 'all', label: '全部' }
+        ];
+    }
+
+    matchesOpsAlertReadTimeFilter(alert = {}, filter = this.opsAlertReadTimeFilter) {
+        const normalized = String(filter || 'visible').trim().toLowerCase();
+        if (normalized === 'visible' || normalized === 'all') {
+            return true;
+        }
+
+        const timestamp = this.getOpsAlertTimestampMs(alert);
+        if (!timestamp) {
+            return false;
+        }
+        if (normalized === 'hour') {
+            return timestamp >= Date.now() - 60 * 60 * 1000;
+        }
+        if (normalized === 'today') {
+            const startOfToday = new Date();
+            startOfToday.setHours(0, 0, 0, 0);
+            return timestamp >= startOfToday.getTime();
+        }
+        return true;
+    }
+
+    getOpsAlertReadTargetAlerts() {
+        const categoryFilter = String(this.opsAlertReadCategoryFilter || 'all').trim().toLowerCase();
+        return this.getFilteredOpsAlertMessages({ ignoreReadView: true })
+            .filter((alert) => !this.isOpsAlertClosed(alert))
+            .filter((alert) => categoryFilter === 'all' || String(alert.caseCategoryKey || '').trim().toLowerCase() === categoryFilter)
+            .filter((alert) => this.matchesOpsAlertReadTimeFilter(alert))
+            .filter((alert) => !this.isOpsAlertRead(alert));
+    }
+
+    handleOpsAlertReadCategoryChange(value = 'all') {
+        this.opsAlertReadCategoryFilter = String(value || 'all').trim().toLowerCase() || 'all';
+        if (this.isOpen && this.currentSessionKey === this.opsAlertSessionId) {
+            this.renderOpsAlertMessages();
+        }
+    }
+
+    handleOpsAlertReadTimeChange(value = 'visible') {
+        const normalized = String(value || 'visible').trim().toLowerCase();
+        const allowed = new Set(this.getOpsAlertReadTimeOptions().map((item) => item.value));
+        this.opsAlertReadTimeFilter = allowed.has(normalized) ? normalized : 'visible';
+        if (this.isOpen && this.currentSessionKey === this.opsAlertSessionId) {
+            this.renderOpsAlertMessages();
+        }
+    }
+
+    markFilteredOpsAlertsRead() {
+        const targets = this.getOpsAlertReadTargetAlerts();
+        if (!targets.length) {
+            this.showNotification('无未读', '📌 站内代办', true);
+            return false;
+        }
+
+        const readAt = new Date().toISOString();
+        targets.forEach((alert) => {
+            const alertId = this.getOpsAlertReadIdentity(alert);
+            if (alertId) {
+                this.opsAlertReadReceipts.set(alertId, readAt);
+            }
+        });
+        this.persistOpsAlertReadReceipts();
+        this.refreshOpsAlertUi();
+        this.showNotification(`已读 ${this.formatCompactCount(targets.length)}`, '📌 站内代办', true);
+        return true;
     }
 
     getBatchAssignableOpsAlerts() {
@@ -5697,7 +6944,7 @@ class ChatWidget {
 
         const alerts = this.getBatchAssignableOpsAlerts();
         if (!alerts.length) {
-            this.showNotification('当前筛选下没有可转交的站内代办', '📌 站内代办', true);
+            this.showNotification('无可转交', '📌 站内代办', true);
             return false;
         }
 
@@ -5714,9 +6961,9 @@ class ChatWidget {
                 return false;
             }
 
-            const note = String(window.prompt(`可选：填写交接备注（将同步到 ${alerts.length} 条代办）`, '') || '').trim();
-            const label = this.opsAlertOwnerFilter === 'unassigned' ? '批量指派' : '批量接力';
-            if (!window.confirm(`确定将当前筛选下的 ${alerts.length} 条代办${label}给 ${selectedOwner.label} 吗？`)) {
+            const note = String(window.prompt(`备注（可选，${alerts.length} 条）`, '') || '').trim();
+            const label = this.opsAlertOwnerFilter === 'unassigned' ? '指派' : '接力';
+            if (!window.confirm(`确认${label} ${alerts.length} 条给 ${selectedOwner.label}？`)) {
                 return false;
             }
 
@@ -5771,80 +7018,268 @@ class ChatWidget {
         }
     }
 
+    closeOpsAlertToolbarDropdowns(root = document) {
+        const scope = root && typeof root.querySelectorAll === 'function' ? root : document;
+        scope.querySelectorAll('.ops-alert-toolbar-dropdown.is-open').forEach((dropdown) => {
+            if (typeof dropdown._closeOpsAlertToolbarDropdown === 'function') {
+                dropdown._closeOpsAlertToolbarDropdown();
+                return;
+            }
+            dropdown.classList.remove('is-open');
+            dropdown.querySelector('.ops-alert-toolbar-dropdown-trigger')?.setAttribute('aria-expanded', 'false');
+        });
+    }
+
+    createOpsAlertToolbarDropdown({
+        label = '',
+        ariaLabel = '',
+        options = [],
+        value = '',
+        onChange = () => {},
+        fieldClassName = '',
+        compact = false
+    } = {}) {
+        const normalizedOptions = Array.isArray(options) ? options : [];
+        const normalizedValue = String(value || '').trim();
+        const selectedOption = normalizedOptions.find((option) => String(option.value || '').trim() === normalizedValue)
+            || normalizedOptions.find((option) => !option.disabled)
+            || normalizedOptions[0]
+            || { value: '', label: '请选择' };
+
+        const field = document.createElement('div');
+        field.className = `ops-alert-toolbar-filter${fieldClassName ? ` ${fieldClassName}` : ''}`;
+
+        if (label) {
+            const labelEl = document.createElement('span');
+            labelEl.className = 'ops-alert-toolbar-copy';
+            labelEl.textContent = label;
+            field.appendChild(labelEl);
+        }
+
+        const dropdown = document.createElement('div');
+        dropdown.className = `ops-alert-toolbar-dropdown${compact ? ' ops-alert-toolbar-dropdown--compact' : ''}`;
+
+        const trigger = document.createElement('button');
+        trigger.type = 'button';
+        trigger.className = 'ops-alert-toolbar-dropdown-trigger';
+        trigger.setAttribute('aria-haspopup', 'listbox');
+        trigger.setAttribute('aria-expanded', 'false');
+        trigger.setAttribute('aria-label', ariaLabel || label || '筛选');
+
+        const triggerText = document.createElement('span');
+        triggerText.className = 'ops-alert-toolbar-dropdown-value';
+        triggerText.textContent = selectedOption.label || selectedOption.value || '请选择';
+        trigger.appendChild(triggerText);
+
+        const triggerIcon = document.createElement('i');
+        triggerIcon.className = 'fas fa-chevron-down ops-alert-toolbar-dropdown-icon';
+        triggerIcon.setAttribute('aria-hidden', 'true');
+        trigger.appendChild(triggerIcon);
+
+        const menu = document.createElement('div');
+        menu.className = 'ops-alert-toolbar-dropdown-menu';
+        menu.setAttribute('role', 'listbox');
+
+        let removeOutsideClick = () => {};
+        const closeDropdown = () => {
+            dropdown.classList.remove('is-open');
+            trigger.setAttribute('aria-expanded', 'false');
+            removeOutsideClick();
+            removeOutsideClick = () => {};
+        };
+        dropdown._closeOpsAlertToolbarDropdown = closeDropdown;
+
+        const openDropdown = () => {
+            this.closeOpsAlertToolbarDropdowns();
+            dropdown.classList.add('is-open');
+            trigger.setAttribute('aria-expanded', 'true');
+            const handleOutsideClick = (event) => {
+                if (!dropdown.contains(event.target)) {
+                    closeDropdown();
+                }
+            };
+            window.setTimeout(() => {
+                document.addEventListener('click', handleOutsideClick);
+                removeOutsideClick = () => document.removeEventListener('click', handleOutsideClick);
+            }, 0);
+        };
+
+        normalizedOptions.forEach((option) => {
+            const optionValue = String(option.value || '').trim();
+            const isSelected = optionValue === String(selectedOption.value || '').trim();
+            const optionButton = document.createElement('button');
+            optionButton.type = 'button';
+            optionButton.className = `ops-alert-toolbar-dropdown-option${isSelected ? ' is-selected' : ''}`;
+            optionButton.setAttribute('role', 'option');
+            optionButton.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+            optionButton.dataset.value = optionValue;
+            optionButton.disabled = Boolean(option.disabled);
+
+            const optionText = document.createElement('span');
+            optionText.textContent = option.label || optionValue || '未命名';
+            optionButton.appendChild(optionText);
+
+            const checkIcon = document.createElement('i');
+            checkIcon.className = 'fas fa-check ops-alert-toolbar-dropdown-check';
+            checkIcon.setAttribute('aria-hidden', 'true');
+            optionButton.appendChild(checkIcon);
+
+            optionButton.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (optionButton.disabled) return;
+                closeDropdown();
+                if (optionValue !== normalizedValue) {
+                    onChange(optionValue);
+                }
+            });
+            menu.appendChild(optionButton);
+        });
+
+        const focusEnabledOption = (step = 1) => {
+            const enabledOptions = Array.from(menu.querySelectorAll('.ops-alert-toolbar-dropdown-option:not(:disabled)'));
+            if (!enabledOptions.length) return;
+            const activeIndex = enabledOptions.indexOf(document.activeElement);
+            const nextIndex = activeIndex >= 0
+                ? (activeIndex + step + enabledOptions.length) % enabledOptions.length
+                : (step > 0 ? 0 : enabledOptions.length - 1);
+            enabledOptions[nextIndex]?.focus();
+        };
+
+        trigger.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (dropdown.classList.contains('is-open')) {
+                closeDropdown();
+            } else {
+                openDropdown();
+            }
+        });
+        trigger.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                closeDropdown();
+                return;
+            }
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                if (!dropdown.classList.contains('is-open')) {
+                    openDropdown();
+                }
+                focusEnabledOption(event.key === 'ArrowDown' ? 1 : -1);
+            }
+        });
+        menu.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                closeDropdown();
+                trigger.focus();
+            } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                focusEnabledOption(event.key === 'ArrowDown' ? 1 : -1);
+            }
+        });
+
+        dropdown.appendChild(trigger);
+        dropdown.appendChild(menu);
+        field.appendChild(dropdown);
+        return field;
+    }
+
     createOpsAlertToolbarElement() {
         const wrapper = document.createElement('div');
         wrapper.className = 'ops-alert-toolbar';
 
-        const title = document.createElement('div');
-        title.className = 'ops-alert-toolbar-copy';
-        title.textContent = '筛选范围';
-        wrapper.appendChild(title);
-
-        const actions = document.createElement('div');
-        actions.className = 'ops-alert-toolbar-actions';
-
-        [
+        const unreadCount = this.getOpsAlertUnreadCount();
+        const viewOptions = [
             { key: 'all', label: '全部' },
-            { key: 'active', label: '未关闭' },
-            { key: 'mine', label: '我认领的' }
-        ].forEach((item) => {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = `ops-alert-toolbar-btn${this.opsAlertViewFilter === item.key ? ' is-active' : ''}`;
-            button.textContent = item.label;
-            if (item.key === 'mine' && !this.opsAlertCurrentAdminId) {
-                button.disabled = true;
-            }
-            button.addEventListener('click', () => this.setOpsAlertViewFilter(item.key));
-            actions.appendChild(button);
+            { key: 'active', label: '未关' },
+            { key: 'unread', label: unreadCount > 0 ? `未读 ${this.formatCompactCount(unreadCount)}` : '未读' },
+            { key: 'read', label: '已读' },
+            { key: 'mine', label: '我的' }
+        ];
+        const scopeFilterWrap = this.createOpsAlertToolbarDropdown({
+            label: '',
+            ariaLabel: '范围',
+            options: viewOptions.map((item) => ({
+                value: item.key,
+                label: item.label,
+                disabled: item.key === 'mine' && !this.opsAlertCurrentAdminId
+            })),
+            value: this.opsAlertViewFilter,
+            onChange: (nextValue) => this.setOpsAlertViewFilter(nextValue),
+            fieldClassName: 'ops-alert-toolbar-filter--scope'
         });
+        wrapper.appendChild(scopeFilterWrap);
 
-        wrapper.appendChild(actions);
+        const readOptions = this.getOpsAlertReadCategoryOptions();
+        this.syncOpsAlertReadCategoryFilter(readOptions);
+        const readTargetCount = this.getOpsAlertReadTargetAlerts().length;
+        const readWrap = document.createElement('div');
+        readWrap.className = 'ops-alert-toolbar-read';
+
+        readWrap.appendChild(this.createOpsAlertToolbarDropdown({
+            label: '',
+            ariaLabel: '分类',
+            options: readOptions,
+            value: this.opsAlertReadCategoryFilter,
+            onChange: (nextValue) => this.handleOpsAlertReadCategoryChange(nextValue),
+            compact: true
+        }));
+
+        readWrap.appendChild(this.createOpsAlertToolbarDropdown({
+            label: '',
+            ariaLabel: '时间',
+            options: this.getOpsAlertReadTimeOptions(),
+            value: this.opsAlertReadTimeFilter,
+            onChange: (nextValue) => this.handleOpsAlertReadTimeChange(nextValue),
+            compact: true
+        }));
 
         const ownerOptions = this.getOpsAlertOwnerFilterOptions();
         this.syncOpsAlertOwnerFilter(ownerOptions);
+        wrapper.appendChild(readWrap);
+
         if (ownerOptions.length > 1) {
-            const ownerFilterWrap = document.createElement('label');
-            ownerFilterWrap.className = 'ops-alert-toolbar-filter';
-
-            const ownerFilterLabel = document.createElement('span');
-            ownerFilterLabel.className = 'ops-alert-toolbar-copy';
-            ownerFilterLabel.textContent = '负责人';
-            ownerFilterWrap.appendChild(ownerFilterLabel);
-
-            const ownerSelect = document.createElement('select');
-            ownerSelect.className = 'ops-alert-toolbar-select';
-            ownerOptions.forEach((option) => {
-                const optionEl = document.createElement('option');
-                optionEl.value = option.value;
-                optionEl.textContent = option.label;
-                if (option.value === this.opsAlertOwnerFilter) {
-                    optionEl.selected = true;
-                }
-                ownerSelect.appendChild(optionEl);
+            const ownerFilterWrap = this.createOpsAlertToolbarDropdown({
+                label: '',
+                ariaLabel: '负责人',
+                options: ownerOptions,
+                value: this.opsAlertOwnerFilter,
+                onChange: (nextValue) => this.setOpsAlertOwnerFilter(nextValue),
+                fieldClassName: 'ops-alert-toolbar-filter--owner'
             });
-            ownerSelect.addEventListener('change', (event) => {
-                this.setOpsAlertOwnerFilter(event.target.value);
-            });
-            ownerFilterWrap.appendChild(ownerSelect);
             wrapper.appendChild(ownerFilterWrap);
         }
+
+        const actionsWrap = document.createElement('div');
+        actionsWrap.className = 'ops-alert-toolbar-actions';
+
+        const readButton = document.createElement('button');
+        readButton.type = 'button';
+        readButton.className = 'ops-alert-toolbar-btn ops-alert-toolbar-btn--read ops-alert-toolbar-btn--read-standalone';
+        readButton.disabled = readTargetCount <= 0;
+        readButton.setAttribute('aria-label', '已读');
+        readButton.innerHTML = `<i class="fas fa-check-double" aria-hidden="true"></i><span>${readTargetCount > 0 ? this.formatCompactCount(readTargetCount) : '0'}</span>`;
+        readButton.addEventListener('click', () => {
+            this.markFilteredOpsAlertsRead();
+        });
+        actionsWrap.appendChild(readButton);
 
         if (this.shouldShowOpsAlertBatchAssign()) {
             const batchButton = document.createElement('button');
             batchButton.type = 'button';
             batchButton.className = 'ops-alert-toolbar-btn ops-alert-toolbar-btn--accent';
             const count = this.getBatchAssignableOpsAlerts().length;
-            batchButton.textContent = `${this.opsAlertOwnerFilter === 'unassigned' ? '批量指派' : '批量接力'} ${this.formatCompactCount(count)} 条`;
+            batchButton.textContent = `${this.opsAlertOwnerFilter === 'unassigned' ? '指派' : '接力'} ${this.formatCompactCount(count)}`;
             batchButton.disabled = this.opsAlertBatchAssignBusy;
             if (this.opsAlertBatchAssignBusy) {
-                batchButton.textContent = '处理中...';
+                batchButton.textContent = '处理中';
             }
             batchButton.addEventListener('click', () => {
                 this.handleOpsAlertBatchAssign();
             });
-            wrapper.appendChild(batchButton);
+            actionsWrap.appendChild(batchButton);
         }
+        wrapper.appendChild(actionsWrap);
 
         return wrapper;
     }
@@ -6839,6 +8274,9 @@ class ChatWidget {
     createOpsAlertMessageElement(alert = {}) {
         const msgDiv = document.createElement('div');
         msgDiv.className = `message admin message--ops-alert message--ops-alert-${this.escapeHtml(alert.severity || 'warning')}`;
+        if (this.isOpsAlertRead(alert)) {
+            msgDiv.classList.add('message--ops-alert-read');
+        }
         msgDiv.dataset.alertId = alert.id || '';
 
         const header = document.createElement('div');
@@ -6993,17 +8431,21 @@ class ChatWidget {
 
         if (!alerts.length) {
             let emptyMessage = this.opsAlertViewFilter === 'mine'
-                ? '当前还没有你认领的站内代办'
+                ? '暂无我的'
                 : this.opsAlertViewFilter === 'active'
-                    ? '当前没有未关闭的站内代办'
-                    : this.t('chat.noOpsAlerts', '当前还没有同步过来的站外告警');
+                    ? '暂无未关'
+                    : this.opsAlertViewFilter === 'unread'
+                        ? '暂无未读'
+                        : this.opsAlertViewFilter === 'read'
+                            ? '暂无已读'
+                            : this.t('chat.noOpsAlerts', '暂无代办');
             if (this.opsAlertOwnerFilter === 'unassigned') {
-                emptyMessage = '当前没有未认领的站内代办';
+                emptyMessage = '暂无未认领';
             } else if (this.opsAlertOwnerFilter !== 'all') {
                 const ownerOption = this.getOpsAlertOwnerFilterOptions()
                     .find((option) => option.value === this.opsAlertOwnerFilter);
                 if (ownerOption?.label) {
-                    emptyMessage = `当前没有分配给${ownerOption.label}的站内代办`;
+                    emptyMessage = `暂无 ${ownerOption.label}`;
                 }
             }
             this.messagesContainer.insertAdjacentHTML('beforeend', `<div class="message admin">${this.escapeHtml(emptyMessage)}</div>`);
@@ -7044,6 +8486,7 @@ class ChatWidget {
         const sendBtn = this.chatWindow?.querySelector('#chatSendBtn');
         const imageInput = this.chatWindow?.querySelector('#chatImageInput');
         const templateBar = this.replyTemplateBar;
+        const chatArea = this.chatWindow?.querySelector('.admin-chat-area');
 
         if (inputArea) {
             inputArea.hidden = readonly;
@@ -7051,6 +8494,9 @@ class ChatWidget {
         }
         if (templateBar) {
             templateBar.hidden = readonly;
+        }
+        if (chatArea && readonly) {
+            chatArea.classList.remove('has-reply-templates');
         }
         if (this.input) {
             this.input.disabled = readonly;
@@ -7791,6 +9237,9 @@ class ChatWidget {
 
         const processingStatuses = ['pending', 'processing', 'queued', 'retry_waiting', 'created', 'waiting', 'open', 'unpaid'];
         if (processingStatuses.includes(status)) {
+            if (this.isPendingPaymentRead(latestPayment)) {
+                return null;
+            }
             return {
                 key: 'payment',
                 label: '待支付',
@@ -7801,6 +9250,78 @@ class ChatWidget {
         }
 
         return null;
+    }
+
+    isPendingPaymentStatus(status = '') {
+        const normalized = String(status || '').trim().toLowerCase();
+        return ['pending', 'processing', 'queued', 'retry_waiting', 'created', 'waiting', 'open', 'unpaid'].includes(normalized);
+    }
+
+    getPendingPaymentReadIdentity(payment = {}) {
+        const paymentId = String(payment?.id || '').trim();
+        if (paymentId) return `payment:${paymentId}`;
+        return [
+            'payment',
+            String(payment?.user_id || '').trim(),
+            String(payment?.status || '').trim().toLowerCase(),
+            String(payment?.created_at || '').trim(),
+            String(payment?.package_name || '').trim(),
+            String(payment?.expected_amount || '').trim()
+        ].join(':');
+    }
+
+    isPendingPaymentRead(payment = {}) {
+        const identity = this.getPendingPaymentReadIdentity(payment);
+        return Boolean(identity && this.pendingPaymentReadReceipts.has(identity));
+    }
+
+    getPendingPaymentReadTarget(context = {}) {
+        return (Array.isArray(context.payments) ? context.payments : [])
+            .find((payment) => this.isPendingPaymentStatus(payment?.status) && !this.isPendingPaymentRead(payment)) || null;
+    }
+
+    markPendingPaymentRead(payment = {}, context = {}) {
+        const identity = this.getPendingPaymentReadIdentity(payment);
+        if (!identity) {
+            this.showNotification('未找到可标记的待支付记录', '💬 客服', true);
+            return false;
+        }
+
+        const readAt = new Date().toISOString();
+        this.pendingPaymentReadReceipts.set(identity, readAt);
+        this.persistPendingPaymentReadReceipts();
+
+        const updatePayment = (item = {}) => (
+            this.getPendingPaymentReadIdentity(item) === identity
+                ? { ...item, support_read_at: readAt }
+                : item
+        );
+
+        if (context.cacheKey) {
+            const nextContext = {
+                ...context,
+                payments: (Array.isArray(context.payments) ? context.payments : []).map(updatePayment)
+            };
+            this.userContextCache.set(context.cacheKey, nextContext);
+            this.currentUserContext = nextContext;
+            this.renderUser360Context(nextContext);
+        }
+
+        const opsSession = (Array.isArray(this.sessions) ? this.sessions : []).find((session) => this.isOpsAlertSession(session)) || null;
+        const chatSessions = (Array.isArray(this.sessions) ? this.sessions : [])
+            .filter((session) => !this.isOpsAlertSession(session))
+            .map((session) => {
+                const paymentSummary = session.paymentSummary && typeof session.paymentSummary === 'object'
+                    ? updatePayment(session.paymentSummary)
+                    : session.paymentSummary;
+                return paymentSummary === session.paymentSummary ? session : { ...session, paymentSummary };
+            });
+        this.sessions = opsSession
+            ? [opsSession, ...this.sortAdminSessions(chatSessions)]
+            : this.sortAdminSessions(chatSessions);
+        this.renderAdminSessionList();
+        this.showNotification('已将这笔待支付标记为已读', '💬 客服', true);
+        return true;
     }
 
     getAdminSessionVerificationSignal(summary = null) {
@@ -8783,6 +10304,7 @@ class ChatWidget {
         const items = context ? this.getUserContextHeaderStatusItems(context) : [];
         if (!items.length) {
             container.hidden = true;
+            this.scheduleAdminFloatingPanelOffsetSync();
             return;
         }
 
@@ -8797,6 +10319,7 @@ class ChatWidget {
         });
 
         container.hidden = false;
+        this.scheduleAdminFloatingPanelOffsetSync();
     }
 
     getUserContextPanelSummaryText(context = {}) {
@@ -9040,11 +10563,15 @@ class ChatWidget {
         if (!text) {
             this.userContextPanel.hidden = true;
             this.userContextPanel.replaceChildren();
+            this.userContextPanel.closest('.admin-chat-area')?.classList.remove('has-user-context');
+            this.scheduleAdminFloatingPanelOffsetSync();
             return;
         }
         this.userContextPanel.hidden = false;
         this.userContextPanel.className = `chat-context-panel chat-context-panel--${variant}`;
         this.userContextPanel.innerHTML = `<div class="chat-context-panel__state">${this.escapeHtml(text)}</div>`;
+        this.userContextPanel.closest('.admin-chat-area')?.classList.add('has-user-context');
+        this.scheduleAdminFloatingPanelOffsetSync();
     }
 
     createUserContextSection(title, rows = [], emptyText = '暂无记录') {
@@ -9234,6 +10761,11 @@ class ChatWidget {
     }
 
     canAccessWorkbenchAction(action = {}) {
+        const normalizedAction = String(action.action || action.key || '').trim().toLowerCase();
+        if (normalizedAction === 'payment_read') {
+            return true;
+        }
+
         const workspaceKey = String(action.workspaceKey || this.getImplicitWorkbenchWorkspaceKey(action) || '').trim();
         if (!workspaceKey) {
             return false;
@@ -9316,6 +10848,17 @@ class ChatWidget {
                 label: '转售后',
                 hint: '将当前会话转成工单',
                 action: 'create_ticket'
+            });
+        }
+
+        const pendingPaymentReadTarget = this.getPendingPaymentReadTarget(context);
+        if (pendingPaymentReadTarget) {
+            actions.push({
+                key: 'payment_read',
+                label: '待支付已读',
+                hint: '不再在列表提示这笔待支付',
+                action: 'payment_read',
+                paymentIdentity: this.getPendingPaymentReadIdentity(pendingPaymentReadTarget)
             });
         }
 
@@ -9682,6 +11225,7 @@ class ChatWidget {
 
         if (!templates.length) {
             bar.hidden = true;
+            bar.closest('.admin-chat-area')?.classList.remove('has-reply-templates');
         } else {
             const label = document.createElement('div');
             label.className = 'chat-reply-templates__label';
@@ -9705,6 +11249,7 @@ class ChatWidget {
 
             bar.appendChild(list);
             bar.hidden = false;
+            bar.closest('.admin-chat-area')?.classList.add('has-reply-templates');
         }
 
         this.ensureReplyTemplateConfigLoaded()
@@ -9727,6 +11272,7 @@ class ChatWidget {
             order: 'fa-bag-shopping',
             ticket: 'fa-life-ring',
             create_ticket: 'fa-ticket',
+            payment_read: 'fa-check-double',
             payment: 'fa-wallet',
             verify: 'fa-shield-halved'
         };
@@ -9746,6 +11292,7 @@ class ChatWidget {
             const button = document.createElement('button');
             button.type = 'button';
             button.className = `user-context-action-btn user-context-action-btn--${action.key}${this.isUserContextActionRecent(context, action) ? ' user-context-action-btn--recent' : ''}`;
+            button.dataset.userContextAction = action.key;
             button.innerHTML = `
                 <span class="user-context-action-btn__icon"><i class="fas ${iconMap[action.key] || 'fa-arrow-up-right-from-square'}"></i></span>
                 <span class="user-context-action-btn__text">
@@ -9767,6 +11314,12 @@ class ChatWidget {
     }
 
     async handleUserContextAction(action = {}) {
+        if (String(action.action || action.key || '').trim().toLowerCase() === 'payment_read') {
+            const context = this.currentUserContext || {};
+            const target = this.getPendingPaymentReadTarget(context);
+            return this.markPendingPaymentRead(target || {}, context);
+        }
+
         if (String(action.action || action.key || '').trim().toLowerCase() === 'create_ticket') {
             try {
                 return await this.handleCreateUserContextTicket(this.currentUserContext || {});
@@ -10038,16 +11591,20 @@ class ChatWidget {
         if (!context) {
             this.userContextPanel.hidden = true;
             this.userContextPanel.replaceChildren();
+            this.userContextPanel.closest('.admin-chat-area')?.classList.remove('has-user-context');
             this.renderUserContextHeaderStatus(null);
             this.renderReplyTemplateBar(null);
+            this.scheduleAdminFloatingPanelOffsetSync();
             return;
         }
 
         this.userContextPanel.hidden = false;
         this.userContextPanel.className = 'chat-context-panel';
         this.userContextPanel.replaceChildren();
+        this.userContextPanel.closest('.admin-chat-area')?.classList.add('has-user-context');
         this.renderUserContextHeaderStatus(context);
         this.renderReplyTemplateBar(context);
+        this.scheduleAdminFloatingPanelOffsetSync();
 
         const shell = document.createElement('section');
         shell.className = 'user-context-shell';
@@ -10372,6 +11929,7 @@ class ChatWidget {
                 this.chatHeader.querySelector('.chat-user-info').appendChild(statusContainer);
             }
             statusContainer.innerHTML = '<span class="status-dot online"></span><span class="status-text">固定系统联系人</span>';
+            this.scheduleAdminFloatingPanelOffsetSync();
 
             this.chatWindow.classList.add('chat-active');
             this.setAdminReplyReadonly(true);
@@ -10431,6 +11989,7 @@ class ChatWidget {
         }
 
         statusContainer.innerHTML = `<span class="status-dot ${statusClass}"></span><span class="status-text">${statusText}</span>`;
+        this.scheduleAdminFloatingPanelOffsetSync();
 
         // Slide to chat view on mobile
         this.chatWindow.classList.add('chat-active');
@@ -10694,6 +12253,11 @@ class ChatWidget {
         // Overlay click to close
         if (this.overlay) {
             this.overlay.addEventListener('click', () => this.toggleChat());
+        }
+
+        window.addEventListener('resize', this._adminFloatingPanelResizeHandler, { passive: true });
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', this._adminFloatingPanelResizeHandler, { passive: true });
         }
 
         // Back to list button (mobile slide navigation)
@@ -11124,38 +12688,41 @@ class ChatWidget {
         style.textContent = `
             /* User Mode Glassmorphism Enhancement */
             .chat-window:not(.admin-mode-layout) {
-                background: var(--chat-shell-bg, rgba(11, 14, 20, 0.94)) !important;
-                backdrop-filter: none !important;
-                -webkit-backdrop-filter: none !important;
-                border: 1px solid var(--chat-shell-border, rgba(255, 255, 255, 0.08)) !important;
-                box-shadow: 0 26px 70px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+                background: var(--chat-shell-bg, rgba(10, 13, 20, 0.98)) !important;
+                background-image: none !important;
+                backdrop-filter: var(--chat-shell-filter, none) !important;
+                -webkit-backdrop-filter: var(--chat-shell-filter, none) !important;
+                border: 1px solid var(--chat-shell-border, rgba(255, 255, 255, 0.16)) !important;
+                box-shadow: var(--chat-shell-shadow, 0 26px 70px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06)) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-header {
-                background: transparent !important;
+                background: var(--chat-shell-bg, rgba(10, 13, 20, 0.98)) !important;
                 border-bottom: 1px solid var(--chat-panel-border, rgba(255, 255, 255, 0.08)) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-messages {
-                background: var(--chat-panel-bg, rgba(255, 255, 255, 0.025)) !important;
-                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 -12px 24px rgba(0, 0, 0, 0.08) !important;
+                background: var(--chat-panel-bg, rgba(12, 15, 22, 0.98)) !important;
+                background-image: none !important;
+                box-shadow: var(--chat-panel-shadow, inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 -12px 24px rgba(0, 0, 0, 0.08)) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input-area {
-                background: transparent !important;
+                background: var(--chat-shell-bg, rgba(10, 13, 20, 0.98)) !important;
                 border-top: 1px solid var(--chat-panel-border, rgba(255, 255, 255, 0.08)) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input,
             .chat-window:not(.admin-mode-layout) .chat-action-btn {
-                backdrop-filter: none !important;
-                -webkit-backdrop-filter: none !important;
+                backdrop-filter: var(--chat-panel-filter, none) !important;
+                -webkit-backdrop-filter: var(--chat-panel-filter, none) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-action-btn {
-                background: var(--chat-panel-bg, rgba(255, 255, 255, 0.025)) !important;
+                background: var(--chat-panel-bg, rgba(12, 15, 22, 0.98)) !important;
+                background-image: none !important;
                 border: 1px solid var(--chat-panel-border, rgba(255, 255, 255, 0.08)) !important;
-                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 -12px 24px rgba(0, 0, 0, 0.08) !important;
+                box-shadow: var(--chat-panel-shadow, inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 -12px 24px rgba(0, 0, 0, 0.08)) !important;
                 min-width: 36px !important;
                 min-height: 36px !important;
                 flex: 0 0 36px !important;
@@ -11187,43 +12754,46 @@ class ChatWidget {
                 border-radius: 50% !important;
                 box-shadow: none !important;
                 outline: none !important;
-                color: rgba(255, 255, 255, 0.7) !important;
+                color: var(--chat-action-color, rgba(255, 255, 255, 0.7)) !important;
             }
 
             .chat-window:not(.admin-mode-layout) #chatEmojiBtn.chat-action-btn:hover {
                 background: transparent !important;
-                color: white !important;
+                color: var(--chat-action-hover-color, white) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input {
                 background: var(--chat-input-bg, rgba(0, 0, 0, 0.2)) !important;
+                background-image: none !important;
                 border: 1px solid var(--chat-input-border, rgba(255, 255, 255, 0.1)) !important;
                 box-shadow: none !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input:focus {
                 background: var(--chat-input-bg-focus, rgba(0, 0, 0, 0.4)) !important;
-                border-color: var(--chat-accent-blue, rgba(126, 184, 239, 0.96)) !important;
-                box-shadow: 0 0 0 3px var(--chat-accent-blue-soft, rgba(126, 184, 239, 0.12)) !important;
+                border-color: var(--chat-accent-blue, rgba(107, 158, 206, 0.96)) !important;
+                box-shadow: 0 0 0 3px var(--chat-accent-blue-soft, rgba(107, 158, 206, 0.12)) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-send-btn {
-                color: var(--chat-accent-blue, rgba(126, 184, 239, 0.96)) !important;
+                color: var(--chat-accent-blue, rgba(107, 158, 206, 0.96)) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .emoji-picker-popover {
-                background: var(--chat-shell-bg, rgba(11, 14, 20, 0.94)) !important;
-                backdrop-filter: none !important;
-                -webkit-backdrop-filter: none !important;
+                background: var(--chat-shell-bg, rgba(10, 13, 20, 0.98)) !important;
+                background-image: none !important;
+                backdrop-filter: var(--chat-shell-filter, none) !important;
+                -webkit-backdrop-filter: var(--chat-shell-filter, none) !important;
                 border: 1px solid var(--chat-panel-border, rgba(255, 255, 255, 0.08)) !important;
-                box-shadow: 0 26px 70px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+                box-shadow: var(--chat-shell-shadow, 0 26px 70px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06)) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .message.admin {
-                background: rgba(255, 255, 255, 0.12) !important;
-                color: rgba(255, 255, 255, 0.92) !important;
-                border: 1px solid rgba(255, 255, 255, 0.08) !important;
-                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 -12px 24px rgba(0, 0, 0, 0.08) !important;
+                background: var(--chat-admin-bubble, rgba(255, 255, 255, 0.12)) !important;
+                background-image: none !important;
+                color: var(--chat-admin-text, rgba(255, 255, 255, 0.92)) !important;
+                border: 1px solid var(--chat-admin-border, rgba(255, 255, 255, 0.08)) !important;
+                box-shadow: var(--chat-admin-shadow, inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 -12px 24px rgba(0, 0, 0, 0.08)) !important;
             }
 
             body.chat-spotlight-suspended .spotlight-overlay,
@@ -11345,11 +12915,10 @@ class ChatWidget {
                     max-width: 400px !important;
                     height: 70vh !important;
                     max-height: 600px !important;
-                    /* Force opaque — rely on visibility:hidden + scale for animation, not opacity */
+                    /* Keep position stable; visibility and scale handle the open state. */
                     opacity: 1 !important;
-                    /* Disable backdrop-filter during animation to avoid Chromium flash bug */
-                    backdrop-filter: none !important;
-                    -webkit-backdrop-filter: none !important;
+                    backdrop-filter: var(--chat-shell-filter, none) !important;
+                    -webkit-backdrop-filter: var(--chat-shell-filter, none) !important;
                 }
 
                 .chat-window:not(.admin-mode-layout).chat-opening {
@@ -11365,8 +12934,8 @@ class ChatWidget {
                 }
                 
                 .chat-window:not(.admin-mode-layout).active {
-                    backdrop-filter: none !important;
-                    -webkit-backdrop-filter: none !important;
+                    backdrop-filter: var(--chat-shell-filter, none) !important;
+                    -webkit-backdrop-filter: var(--chat-shell-filter, none) !important;
                 }
 
                 .chat-window:not(.admin-mode-layout).chat-opening.active {
@@ -12817,6 +14386,10 @@ class ChatWidget {
             this.unlockScroll();
         }
     }
+}
+
+if (typeof window !== 'undefined') {
+    window.ChatWidget = ChatWidget;
 }
 
 // Auto-init specific styling for mobile viewport handling (optional)

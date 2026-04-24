@@ -193,6 +193,11 @@ async function generateAIInsight() {
             generationConfig: {
                 temperature: 0.3,
                 maxOutputTokens: 1024
+            },
+            budget: {
+                tier: 'balanced',
+                maxInputChars: 12000,
+                maxOutputTokens: 1024
             }
         });
 
@@ -238,6 +243,11 @@ async function loadAIPrediction() {
             model: window.AdminAI?.defaultModel || 'gemini-2.0-flash',
             generationConfig: {
                 temperature: 0.2,
+                maxOutputTokens: 256
+            },
+            budget: {
+                tier: 'lean',
+                maxInputChars: 4000,
                 maxOutputTokens: 256
             }
         });

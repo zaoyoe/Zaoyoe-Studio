@@ -748,22 +748,14 @@
             target.hidden = false;
             target.classList.add('active');
 
-            if (normalizedModuleId === 'users') window.initUserModule?.();
             if (normalizedModuleId === 'analytics' && !switchingBetweenAnalyticsContainers) window.initAnalyticsModule?.();
-            if (normalizedModuleId === 'payments' && window.AdminPayments?.init) window.AdminPayments.init();
-            if (normalizedModuleId === 'shop') window.ShopAdmin?.init?.();
             if (normalizedModuleId === 'ops-alerts') {
                 window.initSettingsModule?.({ bindListeners: true, loadConfig: false });
                 window.initOpsAlertsModule?.();
                 warmOpsAlertsModuleData();
             }
-            if (normalizedModuleId === 'discounts' && typeof window.AdminDiscounts !== 'undefined') window.AdminDiscounts.init();
             if (normalizedModuleId === 'comments') {
                 window.initCommentsModule?.();
-            } else if (normalizedModuleId === 'settings') {
-                window.initSettingsModule?.();
-            } else if (normalizedModuleId === 'points') {
-                window.loadBatches?.();
             }
         }
 
@@ -909,20 +901,8 @@
             return false;
         }
 
-        if (normalizedModuleName === 'chat' && !window.adminChatInstance && typeof window.AdminChat === 'function') {
-            window.adminChatInstance = new window.AdminChat();
-        }
-
         if (normalizedModuleName === 'homepage' && typeof window.HomepageAdmin?.init === 'function') {
             window.HomepageAdmin.init();
-        }
-
-        if (normalizedModuleName === 'tickets' && typeof window.AdminTickets?.init === 'function') {
-            window.AdminTickets.init();
-        }
-
-        if (normalizedModuleName === 'shop' && typeof window.ShopAdmin?.init === 'function') {
-            window.ShopAdmin.init();
         }
 
         syncAdminStudioModuleUrl(requestedModuleName, {
@@ -1201,56 +1181,6 @@
         window.schedulePendingOpsAlertWorkspaceRestore();
     }
 
-    function prewarmAdminChatModule() {
-        if (window.adminChatInstance || typeof window.AdminChat !== 'function') {
-            return false;
-        }
-
-        if (!hasModulePermission('chat')) {
-            return false;
-        }
-
-        const chatContainer = document.getElementById('chat-admin-container');
-        if (!chatContainer) {
-            return false;
-        }
-
-        window.adminChatInstance = new window.AdminChat();
-        return true;
-    }
-
-    function scheduleAdminChatPrewarm() {
-        if (window.__adminChatPrewarmScheduled || window.adminChatInstance) {
-            return;
-        }
-
-        if (!(window.adminStudioAccessGranted === true || window.isAdmin === true || window.isSuperAdmin === true)) {
-            return;
-        }
-
-        if (!hasModulePermission('chat')) {
-            return;
-        }
-
-        const runPrewarm = () => {
-            window.__adminChatPrewarmScheduled = false;
-            if (!prewarmAdminChatModule()) {
-                window.setTimeout(() => {
-                    scheduleAdminChatPrewarm();
-                }, 240);
-            }
-        };
-
-        window.__adminChatPrewarmScheduled = true;
-
-        if (typeof window.requestIdleCallback === 'function') {
-            window.requestIdleCallback(runPrewarm, { timeout: 1200 });
-            return;
-        }
-
-        window.setTimeout(runPrewarm, 280);
-    }
-
     function prewarmHomepageModule() {
         if (typeof window.HomepageAdmin?.prefetch !== 'function') {
             return false;
@@ -1472,20 +1402,6 @@
             preferredModule: initialModule,
             enforceActiveModule: true
         });
-
-        console.log('Window loaded, checking shop module...');
-        if (typeof window.ShopAdmin?.init === 'function') {
-            if (hasModulePermission('shop') && initialModule === 'shop') {
-                console.log('Auto-initializing ShopAdmin on page load...');
-                window.ShopAdmin.init();
-            } else if (hasModulePermission('shop')) {
-                console.log('Skipping ShopAdmin auto-init because shop is not the active startup module.');
-            } else {
-                console.info('Skipping ShopAdmin auto-init because current admin lacks shop module access.');
-            }
-        } else {
-            console.warn('ShopAdmin not found on window load');
-        }
 
         if (window.adminStudioAccessGranted === true || window.isAdmin === true || window.isSuperAdmin === true) {
             scheduleAdminStudioPendingWorkspaceRestore();

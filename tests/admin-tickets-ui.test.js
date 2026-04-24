@@ -908,6 +908,92 @@ test('admin tickets openOverdueQueue forces the pending overdue view without tog
     assert.equal(loadCalls[0].searchQuery, 'ticket-123');
 });
 
+test('admin tickets handleShellContext routes issue summary actions through shell payloads', async () => {
+    const { AdminTickets } = loadAdminTicketsRuntime();
+    const viewCalls = [];
+    const issueSummaryCalls = [];
+
+    AdminTickets.showWorkbenchContext = () => true;
+    AdminTickets.setWorkspaceView = (workspace, options = {}) => {
+        viewCalls.push({ workspace, options });
+        return workspace;
+    };
+    AdminTickets.focusAnalyticsIssueSummary = async (kind = '') => {
+        issueSummaryCalls.push(kind);
+        return true;
+    };
+
+    await AdminTickets.handleShellContext({
+        payload: {
+            workspace: 'queue',
+            issueSummary: 'refund',
+            focusTargetId: 'ticketsQueueControls'
+        }
+    });
+
+    assert.deepEqual(issueSummaryCalls, ['refund']);
+    assert.equal(viewCalls.length, 2);
+    assert.deepEqual(JSON.parse(JSON.stringify(viewCalls[0])), {
+        workspace: 'queue',
+        options: {
+            scroll: false,
+            highlight: false
+        }
+    });
+    assert.deepEqual(JSON.parse(JSON.stringify(viewCalls[1])), {
+        workspace: 'queue',
+        options: {
+            targetId: 'ticketsQueueControls',
+            scroll: true,
+            highlight: true
+        }
+    });
+});
+
+test('admin tickets handleShellContext routes priority actions through shell payloads', async () => {
+    const { AdminTickets } = loadAdminTicketsRuntime();
+    const viewCalls = [];
+    const priorityCalls = [];
+
+    AdminTickets.showWorkbenchContext = () => true;
+    AdminTickets.setWorkspaceView = (workspace, options = {}) => {
+        viewCalls.push({ workspace, options });
+        return workspace;
+    };
+    AdminTickets.focusAnalyticsPrioritySummary = async (action = '', ticketId = '') => {
+        priorityCalls.push({ action, ticketId });
+        return {
+            opened: true,
+            matched: true
+        };
+    };
+
+    await AdminTickets.handleShellContext({
+        focus: {
+            ticketId: 'ticket-shell-1'
+        },
+        payload: {
+            workspace: 'queue',
+            priorityAction: 'resolve',
+            focusTargetId: 'ticketsQueueControls'
+        }
+    });
+
+    assert.deepEqual(priorityCalls, [{
+        action: 'resolve',
+        ticketId: 'ticket-shell-1'
+    }]);
+    assert.equal(viewCalls.length, 1);
+    assert.deepEqual(JSON.parse(JSON.stringify(viewCalls[0])), {
+        workspace: 'queue',
+        options: {
+            targetId: 'ticketsQueueControls',
+            scroll: true,
+            highlight: true
+        }
+    });
+});
+
 test('admin tickets fall back to client-side loading when the admin list route is unavailable', async () => {
     const { AdminTickets } = loadAdminTicketsRuntime({
         fetchImpl: async () => ({
@@ -1707,6 +1793,49 @@ test('admin tickets openReminderTicket focuses the target ticket through ticket 
     assert.equal(captured.options.status, 'pending');
 });
 
+test('admin tickets openReminderTicket prefers AdminShell context routing when available', async () => {
+    const { AdminTickets, window } = loadAdminTicketsRuntime();
+    const shellCalls = [];
+    AdminTickets.filteredTickets = [{
+        id: 'ticket-shell-1'
+    }];
+    AdminTickets.focusTicket = async () => {
+        throw new Error('focusTicket fallback should not run');
+    };
+    window.AdminShell = {
+        async openContext(moduleName, context = {}, options = {}) {
+            shellCalls.push({ moduleName, context, options });
+            return true;
+        }
+    };
+
+    const result = await AdminTickets.openReminderTicket('ticket-shell-1');
+
+    assert.equal(result, true);
+    assert.deepEqual(JSON.parse(JSON.stringify(shellCalls)), [{
+        moduleName: 'tickets',
+        context: {
+            source: 'tickets',
+            entity: 'ticket',
+            action: 'focus-ticket',
+            focus: {
+                ticketId: 'ticket-shell-1',
+                ticket_id: 'ticket-shell-1'
+            },
+            payload: {
+                workspace: 'queue',
+                status: 'pending',
+                focusTargetId: 'ticketsQueueControls',
+                focus_target_id: 'ticketsQueueControls'
+            }
+        },
+        options: {
+            settleMs: 0,
+            silentDenied: true
+        }
+    }]);
+});
+
 test('admin tickets openSlaSummarySettings routes to the summary-focused reminder settings view', () => {
     const { AdminTickets } = loadAdminTicketsRuntime();
     let capturedOptions = null;
@@ -1764,6 +1893,47 @@ test('admin tickets openSlaSettings jumps into ops alerts monitors and focuses t
     assert.equal(generalScrollCount, 1);
     assert.equal(summaryScrollCount, 1);
     assert.equal(toasts.length, 0);
+});
+
+test('admin tickets openSlaSettings prefers the shared ops alerts helper when available', async () => {
+    const { AdminTickets, window } = loadAdminTicketsRuntime({
+        elements: {
+            'module-ops-alerts': createElementStub()
+        }
+    });
+    const helperCalls = [];
+
+    window.switchModule = () => true;
+    window.switchOpsAlertsView = () => {
+        throw new Error('legacy ops alerts view fallback should not run');
+    };
+    window.openAdminOpsAlertsShellContext = async (context = {}, options = {}) => {
+        helperCalls.push({ context, options });
+        return true;
+    };
+
+    const result = AdminTickets.openSlaSettings({ focus: 'summary' });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(result, true);
+    assert.deepEqual(JSON.parse(JSON.stringify(helperCalls)), [{
+        context: {
+            source: 'tickets',
+            entity: 'ops-alerts',
+            action: 'open-ticket-summary-monitor',
+            payload: {
+                view: 'monitors',
+                focusTargetId: 'opsAlertTicketsSummaryEnabledToggle',
+                focus_target_id: 'opsAlertTicketsSummaryEnabledToggle'
+            }
+        },
+        options: {
+            viewName: 'monitors',
+            focusTargetId: 'opsAlertTicketsSummaryEnabledToggle'
+        }
+    }]);
 });
 
 test('admin tickets getTicketsSummaryHistoryUrl builds the central admin route for summary history', () => {

@@ -10,6 +10,8 @@
     const GOOGLE_POPUP_MESSAGE_TYPE = 'zaoyoe:google-auth-popup';
     const GOOGLE_POPUP_WINDOW_NAME = 'google_login';
     const GOOGLE_POPUP_RESULT_STORAGE_KEY = 'zaoyoe_google_popup_auth_result_v1';
+    const POST_LOGIN_REDIRECT_STORAGE_KEY = 'zaoyoe_post_login_redirect_v1';
+    const POST_LOGIN_REDIRECT_TTL_MS = 15 * 60 * 1000;
     const { url: SUPABASE_URL, publishableKey: SUPABASE_KEY } = window.requireZaoyoeSupabaseConfig();
     const client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
         auth: {
@@ -20,27 +22,64 @@
         }
     });
 
-    const resolveSafeRedirectTarget = (rawTarget = '/') => {
+    function resolveSafeRedirectTarget(rawTarget = '/') {
         let target = String(rawTarget || '').trim() || '/';
         try {
             const url = new URL(target, window.location.origin);
             if (url.origin !== window.location.origin || /\/auth-callback\.html$/i.test(url.pathname)) {
                 target = '/';
+            } else {
+                target = `${url.pathname}${url.search}${url.hash}`;
             }
         } catch (error) {
             target = '/';
         }
         return target;
-    };
+    }
 
-    const redirectBack = () => {
+    function readPendingPostLoginRedirectTarget() {
+        try {
+            const raw = localStorage.getItem(POST_LOGIN_REDIRECT_STORAGE_KEY);
+            if (!raw) {
+                return null;
+            }
+
+            const parsed = JSON.parse(raw);
+            const savedAt = Number(parsed?.savedAt || 0);
+            const ttlMs = Number(parsed?.ttlMs || POST_LOGIN_REDIRECT_TTL_MS);
+            const safeTarget = resolveSafeRedirectTarget(parsed?.target || '');
+
+            if (!safeTarget || !Number.isFinite(savedAt) || !Number.isFinite(ttlMs) || savedAt + ttlMs <= Date.now()) {
+                localStorage.removeItem(POST_LOGIN_REDIRECT_STORAGE_KEY);
+                return null;
+            }
+
+            return safeTarget;
+        } catch (error) {
+            localStorage.removeItem(POST_LOGIN_REDIRECT_STORAGE_KEY);
+            return null;
+        }
+    }
+
+    function consumePendingPostLoginRedirectTarget() {
+        const target = readPendingPostLoginRedirectTarget();
+        try {
+            localStorage.removeItem(POST_LOGIN_REDIRECT_STORAGE_KEY);
+        } catch (error) {
+            // ignore cleanup failure
+        }
+        return target;
+    }
+
+    function redirectBack() {
         const url = new URL(window.location.href);
         const nextTarget = url.searchParams.get('next') || '';
-        let target = nextTarget || localStorage.getItem('oauth_post_login_redirect') || '/';
+        const pendingTarget = consumePendingPostLoginRedirectTarget();
+        let target = nextTarget || pendingTarget || localStorage.getItem('oauth_post_login_redirect') || '/';
         localStorage.removeItem('oauth_post_login_redirect');
         target = resolveSafeRedirectTarget(target);
         window.location.replace(target);
-    };
+    }
 
     const isPopupWindow = () => Boolean(
         (window.opener && window.opener !== window)
