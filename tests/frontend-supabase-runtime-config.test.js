@@ -538,9 +538,9 @@ test('public pages wire wallet modal through the shared bootstrap loader', () =>
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260423_WALLET_ORDER_DETAIL_FASTPATH_1';",
-        "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260423_WALLET_ORDER_DETAIL_FASTPATH_1';",
-        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260423_WALLET_ORDER_DETAIL_FASTPATH_1';",
+        "const VERSION = '20260425_WALLET_MOBILE_CHECKOUT_REDIRECT_1';",
+        "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260425_WALLET_MOBILE_CHECKOUT_REDIRECT_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260425_WALLET_MOBILE_CHECKOUT_REDIRECT_1';",
         'function ensureWalletModalReady() {',
         'function warmWalletModal(options = {}) {',
         "function openWalletModal(view = 'balance', context = {}) {",
@@ -11430,7 +11430,7 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index_old.html should load the latest guestbook runtime');
     assert.equal(shopSource.includes('js/shop-client.js?v=20260423_SHOP_SUCCESS_MODAL_FAST_FEEDBACK_1'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260412_SHOP_CARD_IMAGE_OPT_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
-    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260423_WALLET_ORDER_DETAIL_FASTPATH_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
+    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260425_WALLET_MOBILE_CHECKOUT_REDIRECT_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
 });
 
 test('analytics phase 3 prefers real event rpc v2 for ai summary and conversion funnel', () => {
