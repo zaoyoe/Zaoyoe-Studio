@@ -33,6 +33,16 @@ test('wallet recharge UI exposes pending feedback hooks for package and custom r
     assert.match(script, /qrcode_url/);
 });
 
+test('wallet mobile checkout uses same-tab redirect instead of popup-blocker error path', () => {
+    const script = fs.readFileSync(walletScriptPath, 'utf8');
+
+    assert.match(script, /openPaymentCheckoutUrl\(checkoutUrl, options = \{\}\)/);
+    assert.match(script, /options\.sameTab === true \|\| this\.isMobilePaymentBrowser\(\)/);
+    assert.match(script, /window\.location\.assign\(url\)/);
+    assert.match(script, /this\.openPaymentCheckoutUrl\(paymentResult\.checkout_url\)/);
+    assert.doesNotMatch(script, /支付页面被浏览器拦截，请允许弹窗后重试/);
+});
+
 test('wallet recharge styles include visible processing states', () => {
     const styles = fs.readFileSync(walletStylesPath, 'utf8');
 
