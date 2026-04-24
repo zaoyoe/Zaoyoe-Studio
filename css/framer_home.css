@@ -76,15 +76,35 @@ Inspired by Framer.com design aesthetics
     box-sizing: border-box;
 }
 
+html {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    overscroll-behavior-x: none;
+}
+
 body {
     background-color: var(--bg-black);
     color: var(--text-primary);
     font-family: var(--font-body);
     font-size: 16px;
     line-height: 1.6;
+    width: 100%;
+    max-width: 100%;
     overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+}
+
+body.home-page {
+    position: relative;
+}
+
+body.home-page #main-content {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    overscroll-behavior-x: none;
 }
 
 html.mobile-menu-open,
