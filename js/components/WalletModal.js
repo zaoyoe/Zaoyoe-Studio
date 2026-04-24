@@ -1703,6 +1703,32 @@
             return !window.matchMedia('(max-width: 760px)').matches;
         },
 
+        openPaymentCheckoutUrl(checkoutUrl, options = {}) {
+            const url = String(checkoutUrl || '').trim();
+            if (!url) {
+                throw new Error('缺少支付链接');
+            }
+
+            const useSameTab = options.sameTab === true || this.isMobilePaymentBrowser();
+            if (useSameTab) {
+                window.location.assign(url);
+                return 'same-tab';
+            }
+
+            const popup = window.open(url, '_blank');
+            if (popup) {
+                try {
+                    popup.opener = null;
+                } catch (_) {
+                    // Best effort only; some browsers expose a read-only opener.
+                }
+                return 'popup';
+            }
+
+            window.location.assign(url);
+            return 'same-tab-fallback';
+        },
+
         resolveFriendlyRechargeErrorMessage(error, fallback = '充值发起失败，请稍后重试。') {
             const rawMessage = String(error?.message || '').trim();
             if (!rawMessage) {
@@ -2208,7 +2234,7 @@
             });
             detailOverlay.querySelector('.js-wallet-open-payment-qr')?.addEventListener('click', () => {
                 if (!openUrl) return;
-                window.open(openUrl, '_blank', 'noopener,noreferrer');
+                this.openPaymentCheckoutUrl(openUrl);
             });
 
             document.body.appendChild(detailOverlay);
@@ -5654,8 +5680,8 @@
                         return;
                     }
 
-                    window.open(paymentResult.checkout_url, '_blank', 'noopener,noreferrer');
                     this.rememberPendingPaymentClaim(paymentResult);
+                    this.openPaymentCheckoutUrl(paymentResult.checkout_url);
                     this.showToast(
                         paymentResult.message
                             || `${paymentResult.display_name || activeProvider.display_name || '当前支付通道'}已准备就绪，请完成支付后按页面提示继续操作。`,
@@ -5774,13 +5800,9 @@
                         return;
                     }
 
-                    const popup = window.open(paymentResult.checkout_url, '_blank', 'noopener,noreferrer');
-                    if (!popup) {
-                        throw new Error('支付页面被浏览器拦截，请允许弹窗后重试');
-                    }
-
                     this.rememberPendingPaymentClaim(paymentResult);
                     this.rememberPendingCustomRechargeQuote(paymentResult);
+                    this.openPaymentCheckoutUrl(paymentResult.checkout_url);
 
                     this.showToast(
                         paymentResult.message
