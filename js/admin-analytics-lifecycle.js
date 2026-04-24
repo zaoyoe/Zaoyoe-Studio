@@ -237,6 +237,37 @@ async function initAnalyticsModule() {
     }
 }
 
+async function handleAdminAnalyticsSiteChange(detail = {}) {
+    const normalizedDetail = detail && typeof detail === 'object' && !Array.isArray(detail) ? detail : {};
+    const activeTabId = normalizeAnalyticsTabId(
+        normalizedDetail.activeTabId
+        || normalizedDetail.analyticsTab
+        || normalizedDetail.tab
+        || document.querySelector('#analyticsTabsNav .admin-tab.active')?.dataset?.tab
+        || ''
+    );
+    const preferredModuleId = String(
+        normalizedDetail.activeModuleId
+        || getActiveAnalyticsSidebarModuleId()
+        || ''
+    ).trim().toLowerCase();
+
+    analyticsRuntime.moduleActive = true;
+    syncAnalyticsTabScope(activeTabId, { preferredModuleId });
+
+    if (analyticsRuntime.initialized) {
+        await reloadAnalyticsDashboard({
+            reason: 'site-change',
+            activeTabId,
+            force: true
+        });
+        return true;
+    }
+
+    await initAnalyticsModule();
+    return true;
+}
+
 function setupRealtimeSubscriptions() {
     if (analyticsRuntime.realtimeBound) {
         return;
@@ -701,6 +732,10 @@ async function reloadAnalyticsDashboard() {
             markAnalyticsTabLoaded(activeTabId, contextKey);
         }
 
+        if (typeof window.emitAnalyticsCommandCenterInventorySummaryUpdate === 'function') {
+            window.emitAnalyticsCommandCenterInventorySummaryUpdate();
+        }
+
         return true;
     })();
 
@@ -854,6 +889,7 @@ if (typeof window !== 'undefined') {
 
 window.switchAnalyticsTab = switchAnalyticsTab;
 window.initAnalyticsModule = initAnalyticsModule;
+window.handleAdminAnalyticsSiteChange = handleAdminAnalyticsSiteChange;
 window.toggleAnalyticsAdvancedTools = toggleAnalyticsAdvancedTools;
 window.reloadAnalyticsDashboard = reloadAnalyticsDashboard;
 window.teardownAnalyticsModule = teardownAnalyticsModule;

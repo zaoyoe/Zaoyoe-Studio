@@ -37,6 +37,38 @@ const AdminTickets = {
     analyticsWorkbenchContext: null,
     analyticsIssueFocusKind: '',
 
+    emitCommandFeedback: function (message = '', feedbackState = 'saved', options = {}) {
+        const normalizedMessage = String(message || '').trim();
+        if (!normalizedMessage) {
+            return null;
+        }
+
+        const detail = {
+            kind: 'module-result',
+            source: String(options?.source || 'tickets-process').trim().toLowerCase() || 'tickets-process',
+            module: 'tickets',
+            state: String(feedbackState || options?.state || 'saved').trim().toLowerCase() || 'saved',
+            tone: String(options?.tone || '').trim().toLowerCase(),
+            message: normalizedMessage,
+            persistent: options?.persistent === true,
+            timestamp: Date.now()
+        };
+
+        if (typeof window.dispatchAdminStudioFeedbackSignal === 'function') {
+            return window.dispatchAdminStudioFeedbackSignal(detail);
+        }
+
+        if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+            try {
+                window.dispatchEvent(new CustomEvent('admin-feedback-signal', { detail }));
+            } catch (_) {
+                // Command Center feedback is non-critical for ticket processing.
+            }
+        }
+
+        return detail;
+    },
+
     settleWorkspace: async function (delayMs = 60) {
         await new Promise((resolve) => {
             window.requestAnimationFrame(() => {
@@ -82,6 +114,29 @@ const AdminTickets = {
         target.hidden = false;
         this.renderAnalyticsIssueSummary();
         return true;
+    },
+
+    getIssueSummaryFocusMessage: function (kind = '') {
+        const normalizedKind = this.safeText(kind).trim().toLowerCase();
+        if (normalizedKind === 'status') {
+            return '工单队列已切换到当前状态视图';
+        }
+        if (normalizedKind === 'overdue') {
+            return '超时工单队列已打开';
+        }
+        if (normalizedKind === 'priority') {
+            return '工单队列已切换到高优先级视图';
+        }
+        if (normalizedKind === 'refund') {
+            return '工单队列已聚焦退款问题';
+        }
+        if (normalizedKind === 'delivery') {
+            return '工单队列已聚焦发货问题';
+        }
+        if (normalizedKind === 'payment') {
+            return '工单队列已聚焦支付问题';
+        }
+        return '工单队列已更新筛选视图';
     },
 
     hasAnalyticsWorkbenchContext: function (context = this.analyticsWorkbenchContext) {
@@ -846,6 +901,310 @@ const AdminTickets = {
             id: this.safeText(cachedIdentity.id || window.__adminUserId).trim(),
             email: this.safeText(cachedIdentity.email || window.__adminUserEmail).trim()
         };
+    },
+
+    normalizeShellContextObject: function (value) {
+        return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    },
+
+    isTicketsModuleVisible: function () {
+        return document.getElementById('module-tickets')?.classList.contains('active') === true;
+    },
+
+    resolveActivationWorkspace: function (context = {}, options = {}) {
+        const normalizedContext = this.normalizeShellContextObject(context);
+        const focus = this.normalizeShellContextObject(normalizedContext.focus);
+        const payload = this.normalizeShellContextObject(normalizedContext.payload);
+        const raw = this.normalizeShellContextObject(normalizedContext.raw);
+        const ticketId = this.safeText(
+            focus.ticketId
+            || focus.ticket_id
+            || payload.ticketId
+            || payload.ticket_id
+            || raw.ticketId
+            || raw.ticket_id
+            || normalizedContext.ticketId
+            || normalizedContext.ticket_id
+        ).trim();
+
+        if (ticketId) {
+            return 'queue';
+        }
+
+        return this.normalizeTicketWorkspaceView(
+            payload.workspace
+            || raw.workspace
+            || normalizedContext.workspace
+            || payload.mode
+            || raw.mode
+            || normalizedContext.mode
+            || options.workspace
+            || options.defaultWorkspace
+            || this.currentWorkspaceView
+            || 'queue'
+        );
+    },
+
+    buildShellQueueState: function (context = {}, options = {}) {
+        const normalizedContext = this.normalizeShellContextObject(context);
+        const payload = this.normalizeShellContextObject(normalizedContext.payload);
+        const raw = this.normalizeShellContextObject(normalizedContext.raw);
+        const mode = this.safeText(
+            payload.mode
+            || raw.mode
+            || normalizedContext.mode
+        ).trim().toLowerCase();
+        const quickFilter = this.safeText(
+            payload.quickFilter
+            || raw.quickFilter
+            || normalizedContext.quickFilter
+        ).trim().toLowerCase();
+        const explicitOverdue = payload.overdueOnly ?? raw.overdueOnly ?? normalizedContext.overdueOnly;
+        const derivedStatus = mode === 'resolved'
+            ? 'resolved'
+            : (mode === 'rejected'
+                ? 'rejected'
+                : ((mode === 'pending' || mode === 'open' || mode === 'all') ? mode : (mode === 'overdue' ? 'pending' : '')));
+        const priority = quickFilter === 'priority'
+            ? 'high'
+            : this.normalizePriorityFilter(
+                payload.priority
+                || raw.priority
+                || normalizedContext.priority
+                || this.quickFilters?.priority
+                || 'all'
+            );
+        const assignee = ['mine', 'unassigned'].includes(quickFilter)
+            ? quickFilter
+            : this.normalizeAssigneeFilter(
+                payload.assignee
+                || raw.assignee
+                || normalizedContext.assignee
+                || this.quickFilters?.assignee
+                || 'all'
+            );
+
+        return {
+            page: Math.max(1, Number.parseInt(
+                payload.page
+                || raw.page
+                || normalizedContext.page
+                || options.page
+                || 1,
+                10
+            ) || 1),
+            status: this.normalizeStatusFilter(
+                payload.status
+                || raw.status
+                || normalizedContext.status
+                || derivedStatus
+                || this.currentStatus
+                || 'all'
+            ),
+            searchQuery: this.safeText(
+                payload.searchQuery
+                || payload.search
+                || payload.query
+                || raw.searchQuery
+                || raw.search
+                || raw.query
+                || normalizedContext.searchQuery
+                || normalizedContext.search
+                || normalizedContext.query
+                || normalizedContext.referenceValue
+                || ''
+            ).trim(),
+            overdueOnly: explicitOverdue === undefined
+                ? (mode === 'overdue' || quickFilter === 'overdue')
+                : this.normalizeBooleanFlag(explicitOverdue),
+            priority,
+            assignee
+        };
+    },
+
+    activate: async function (context = {}, options = {}) {
+        const workspace = this.resolveActivationWorkspace(context, options);
+        this.setWorkspaceView(workspace, {
+            scroll: false,
+            highlight: false
+        });
+
+        await this.init({
+            force: options?.force === true,
+            showOverviewSkeleton: workspace !== 'queue'
+        });
+
+        if (workspace !== 'queue' && !this.overview && !this._overviewPromise) {
+            await this.loadOverview({
+                showSkeleton: true
+            });
+        }
+
+        return true;
+    },
+
+    handleShellContext: async function (context = {}, options = {}) {
+        const normalizedContext = this.normalizeShellContextObject(context);
+        const focus = this.normalizeShellContextObject(normalizedContext.focus);
+        const payload = this.normalizeShellContextObject(normalizedContext.payload);
+        const raw = this.normalizeShellContextObject(normalizedContext.raw);
+        const workspace = this.resolveActivationWorkspace(normalizedContext, options);
+        const ticketId = this.safeText(
+            focus.ticketId
+            || focus.ticket_id
+            || payload.ticketId
+            || payload.ticket_id
+            || raw.ticketId
+            || raw.ticket_id
+            || normalizedContext.ticketId
+            || normalizedContext.ticket_id
+        ).trim();
+        const replyAction = this.safeText(
+            payload.replyAction
+            || raw.replyAction
+            || normalizedContext.replyAction
+        ).trim().toLowerCase();
+        const issueSummaryKind = this.safeText(
+            payload.issueSummary
+            || payload.issue_summary
+            || raw.issueSummary
+            || raw.issue_summary
+            || normalizedContext.issueSummary
+            || normalizedContext.issue_summary
+        ).trim().toLowerCase();
+        const priorityAction = this.safeText(
+            payload.priorityAction
+            || payload.priority_action
+            || raw.priorityAction
+            || raw.priority_action
+            || normalizedContext.priorityAction
+            || normalizedContext.priority_action
+        ).trim().toLowerCase();
+        const focusTargetId = this.safeText(
+            payload.focusTargetId
+            || payload.focus_target_id
+            || raw.focusTargetId
+            || raw.focus_target_id
+            || normalizedContext.focusTargetId
+            || normalizedContext.focus_target_id
+            || ''
+        ).trim();
+        const contextAction = this.safeText(normalizedContext.action || '').trim().toLowerCase();
+
+        this.showWorkbenchContext(normalizedContext);
+
+        if (issueSummaryKind) {
+            this.setWorkspaceView('queue', {
+                scroll: false,
+                highlight: false
+            });
+            await this.focusAnalyticsIssueSummary(issueSummaryKind);
+            this.emitCommandFeedback(this.getIssueSummaryFocusMessage(issueSummaryKind), 'saved', {
+                source: 'tickets-focus'
+            });
+
+            if (focusTargetId) {
+                this.setWorkspaceView('queue', {
+                    targetId: focusTargetId,
+                    scroll: true,
+                    highlight: true
+                });
+            }
+            return true;
+        }
+
+        if (priorityAction && ticketId) {
+            await this.focusAnalyticsPrioritySummary(priorityAction, ticketId);
+
+            if (focusTargetId) {
+                this.setWorkspaceView('queue', {
+                    targetId: focusTargetId,
+                    scroll: true,
+                    highlight: true
+                });
+            }
+            return true;
+        }
+
+        if (ticketId && workspace === 'queue') {
+            const focusResult = await this.focusTicket(ticketId, {
+                status: this.safeText(
+                    payload.status
+                    || raw.status
+                    || normalizedContext.status
+                    || 'all'
+                ).trim().toLowerCase() || 'all'
+            });
+
+            if (focusResult?.matched && replyAction && typeof this.openReplyModal === 'function') {
+                this.openReplyModal(ticketId, replyAction === 'rejected' ? 'REJECTED' : 'RESOLVED');
+            }
+
+            if (focusTargetId) {
+                this.setWorkspaceView('queue', {
+                    targetId: focusTargetId,
+                    scroll: true,
+                    highlight: true
+                });
+            }
+            return true;
+        }
+
+        if (workspace !== 'queue') {
+            if (!this.overview || options?.force === true) {
+                await this.loadOverview({
+                    force: options?.force === true,
+                    showSkeleton: false
+                });
+            }
+
+            this.setWorkspaceView(workspace, {
+                targetId: focusTargetId || this.getTicketWorkspaceTargetId(workspace),
+                scroll: true,
+                highlight: true
+            });
+            return true;
+        }
+
+        const queueState = this.buildShellQueueState(normalizedContext, options);
+
+        this.focusedTicketId = '';
+        this.currentStatus = queueState.status;
+        this.currentPage = queueState.page;
+        this.quickFilters = {
+            overdueOnly: queueState.overdueOnly,
+            priority: queueState.priority,
+            assignee: queueState.assignee
+        };
+        this.searchQuery = queueState.searchQuery;
+        this.syncSearchInput();
+        this.syncFilterButtons();
+
+        await this.loadTickets({
+            page: queueState.page,
+            status: queueState.status,
+            searchQuery: queueState.searchQuery,
+            overdueOnly: queueState.overdueOnly,
+            priority: queueState.priority,
+            assignee: queueState.assignee,
+            showSkeleton: false
+        });
+
+        if (focusTargetId) {
+            this.setWorkspaceView('queue', {
+                targetId: focusTargetId,
+                scroll: true,
+                highlight: true
+            });
+        }
+
+        if (contextAction === 'open-overdue-queue') {
+            this.emitCommandFeedback('超时工单队列已打开', 'saved', {
+                source: 'tickets-focus'
+            });
+        }
+
+        return true;
     },
 
     init: async function (options = {}) {
@@ -4318,6 +4677,40 @@ const AdminTickets = {
         });
     },
 
+    handleShellSiteChange: function () {
+        this.showWorkbenchContext({});
+        this.focusedTicketId = '';
+
+        if (!this._initialized || !this.isTicketsModuleVisible()) {
+            return;
+        }
+
+        const reloadListOptions = {
+            page: this.currentPage || 1,
+            status: this.currentStatus || 'all',
+            searchQuery: this.searchQuery || '',
+            overdueOnly: this.quickFilters?.overdueOnly === true,
+            priority: this.normalizePriorityFilter(this.quickFilters?.priority || 'all'),
+            assignee: this.normalizeAssigneeFilter(this.quickFilters?.assignee || 'all'),
+            showSkeleton: false
+        };
+
+        if (this.currentWorkspaceView === 'queue') {
+            void this.loadTickets(reloadListOptions);
+            return;
+        }
+
+        void Promise.all([
+            this.loadOverview({
+                force: true,
+                showSkeleton: false
+            }),
+            this.loadTickets(reloadListOptions)
+        ]).catch((error) => {
+            console.warn('[AdminTickets] failed to reload after site change:', error);
+        });
+    },
+
     openOverdueQueue: function () {
         this.setWorkspaceView('queue');
         this.cancelPendingSearch();
@@ -4351,6 +4744,28 @@ const AdminTickets = {
             return false;
         }
 
+        const focusTargetId = focus === 'summary'
+            ? 'opsAlertTicketsSummaryEnabledToggle'
+            : 'opsAlertTicketsEnabledToggle';
+        if (typeof window.openAdminOpsAlertsShellContext === 'function') {
+            void Promise.resolve(window.openAdminOpsAlertsShellContext({
+                source: 'tickets',
+                entity: 'ops-alerts',
+                action: focus === 'summary' ? 'open-ticket-summary-monitor' : 'open-ticket-monitor',
+                payload: {
+                    view: 'monitors',
+                    focusTargetId,
+                    focus_target_id: focusTargetId
+                }
+            }, {
+                viewName: 'monitors',
+                focusTargetId
+            })).catch((error) => {
+                console.warn('[AdminTickets] Failed to open ops alerts reminder settings through shared helper:', error);
+            });
+            return true;
+        }
+
         const switchOpsAlertsView = typeof window.switchOpsAlertsView === 'function'
             ? window.switchOpsAlertsView
             : (viewName) => {
@@ -4381,7 +4796,7 @@ const AdminTickets = {
                 : null;
             const focusIds = focus === 'summary'
                 ? [
-                    'opsAlertTicketsSummaryEnabledToggle',
+                    focusTargetId,
                     'opsAlertTicketsSummaryScheduleMode',
                     'opsAlertTicketsSummaryDailyHour',
                     'opsAlertTicketsSummaryDailyMinute',
@@ -4389,7 +4804,7 @@ const AdminTickets = {
                     'opsAlertTicketsSummaryMaxItems'
                 ]
                 : [
-                    'opsAlertTicketsEnabledToggle',
+                    focusTargetId,
                     'opsAlertTicketsPendingOverdueMinutes',
                     'opsAlertTicketsCriticalOverdueMinutes',
                     'opsAlertTicketsSweepIntervalMinutes'
@@ -4644,6 +5059,42 @@ const AdminTickets = {
         if (!normalizedTicketId) {
             this.notify('当前提醒记录没有关联可定位的工单', 'warning');
             return false;
+        }
+
+        if (window.AdminShell?.openContext) {
+            try {
+                const opened = await window.AdminShell.openContext('tickets', {
+                    source: 'tickets',
+                    entity: 'ticket',
+                    action: 'focus-ticket',
+                    focus: {
+                        ticketId: normalizedTicketId,
+                        ticket_id: normalizedTicketId
+                    },
+                    payload: {
+                        workspace: 'queue',
+                        status: 'pending',
+                        focusTargetId: 'ticketsQueueControls',
+                        focus_target_id: 'ticketsQueueControls'
+                    }
+                }, {
+                    settleMs: 0,
+                    silentDenied: true
+                });
+
+                if (opened) {
+                    const matched = this.getFocusedTicketIndex(this.filteredTickets, normalizedTicketId) >= 0;
+                    if (!matched) {
+                        this.notify(`已切到工单检索，但没有在当前列表中找到 ${normalizedTicketId}`, 'warning');
+                        return false;
+                    }
+
+                    this.notify(`已定位到工单 ${normalizedTicketId}`, 'success');
+                    return true;
+                }
+            } catch (error) {
+                console.warn('[AdminTickets] Failed to open reminder ticket through AdminShell:', error);
+            }
         }
 
         const result = await this.focusTicket(normalizedTicketId, {
@@ -5856,10 +6307,20 @@ const AdminTickets = {
         });
 
         const matched = this.getFocusedTicketIndex(this.filteredTickets, normalizedTicketId) >= 0;
-        return {
+        const result = {
             opened: true,
             matched
         };
+        if (options?.feedback !== false) {
+            this.emitCommandFeedback(
+                matched
+                    ? `工单 ${normalizedTicketId} 已定位`
+                    : `工单 ${normalizedTicketId} 已打开，当前队列未匹配`,
+                matched ? 'saved' : 'partial',
+                { source: 'tickets-focus' }
+            );
+        }
+        return result;
     },
 
     safeText: function (value, fallback = '') {
@@ -7501,11 +7962,11 @@ const AdminTickets = {
             this.selectedTicketIds = [];
             this.syncSelectionControls();
 
-            if (normalizedOperation === 'clear') {
-                this.notify(`已取消 ${Math.max(0, Number(result.changedCount || 0))} 个工单的负责人`, 'success');
-            } else {
-                this.notify(`已将 ${Math.max(0, Number(result.changedCount || 0))} 个工单指派给你`, 'success');
-            }
+            const successMessage = normalizedOperation === 'clear'
+                ? `已取消 ${Math.max(0, Number(result.changedCount || 0))} 个工单的负责人`
+                : `已将 ${Math.max(0, Number(result.changedCount || 0))} 个工单指派给你`;
+            this.notify(successMessage, 'success');
+            this.emitCommandFeedback(successMessage, 'saved', { source: 'tickets-batch' });
 
             await this.refreshQueueListFirst({
                 listOptions: {
@@ -7518,7 +7979,9 @@ const AdminTickets = {
                 }
             });
         } catch (error) {
-            this.notify(`批量处理失败: ${this.safeText(error?.message, '未知错误')}`, 'error');
+            const failureMessage = `批量处理失败: ${this.safeText(error?.message, '未知错误')}`;
+            this.notify(failureMessage, 'error');
+            this.emitCommandFeedback(failureMessage, 'failed', { source: 'tickets-batch' });
         }
     },
 
@@ -7688,8 +8151,12 @@ const AdminTickets = {
         const btn = document.getElementById('ticketBulkProcessSubmitBtn');
         const originText = btn?.innerHTML || '';
         if (btn) {
-            btn.disabled = true;
-            btn.innerHTML = '处理中...';
+            if (window.AdminStudioActionFeedback?.setLoading) {
+                window.AdminStudioActionFeedback.setLoading(btn, { loadingText: '处理中...' });
+            } else {
+                btn.disabled = true;
+                btn.innerHTML = '处理中...';
+            }
         }
 
         try {
@@ -7724,6 +8191,11 @@ const AdminTickets = {
                 successMessage += `，失败 ${failedCount} 个`;
             }
             this.notify(successMessage, failedCount > 0 ? 'warning' : 'success');
+            this.emitCommandFeedback(
+                successMessage,
+                failedCount > 0 || skippedCount > 0 ? 'partial' : 'saved',
+                { source: 'tickets-batch' }
+            );
 
             await this.refreshQueueListFirst({
                 listOptions: {
@@ -7736,11 +8208,17 @@ const AdminTickets = {
                 }
             });
         } catch (error) {
-            this.notify(`批量处理失败: ${this.safeText(error?.message, '未知错误')}`, 'error');
+            const failureMessage = `批量处理失败: ${this.safeText(error?.message, '未知错误')}`;
+            this.notify(failureMessage, 'error');
+            this.emitCommandFeedback(failureMessage, 'failed', { source: 'tickets-batch' });
         } finally {
             if (btn) {
-                btn.disabled = false;
-                btn.innerHTML = originText;
+                if (window.AdminStudioActionFeedback?.restore) {
+                    window.AdminStudioActionFeedback.restore(btn);
+                } else {
+                    btn.disabled = false;
+                    btn.innerHTML = originText;
+                }
             }
         }
     },
@@ -8027,11 +8505,43 @@ const AdminTickets = {
             return window.AdminAI.getAuthHeaders();
         }
 
-        const { data: { session } = {} } = await window.supabaseClient.auth.getSession();
-        return {
+        const baseHeaders = {
             'Content-Type': 'application/json',
-            ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
         };
+
+        if (window.AdminApi?.buildRequestInit) {
+            try {
+                const requestInit = await window.AdminApi.buildRequestInit({
+                    headers: baseHeaders
+                });
+                return requestInit?.headers || baseHeaders;
+            } catch (_) {
+                // Fall through to direct token resolution.
+            }
+        }
+
+        let accessToken = '';
+
+        try {
+            const { data: { session } = {} } = await window.supabaseClient.auth.getSession();
+            accessToken = String(session?.access_token || '').trim();
+        } catch (_) {
+            accessToken = '';
+        }
+
+        if (!accessToken && typeof window.supabaseClient?.accessToken === 'function') {
+            try {
+                accessToken = String(await window.supabaseClient.accessToken() || '').trim();
+            } catch (_) {
+                accessToken = '';
+            }
+        }
+
+        if (accessToken) {
+            baseHeaders.Authorization = `Bearer ${accessToken}`;
+        }
+
+        return baseHeaders;
     },
 
     submitReply: async function () {
@@ -8065,8 +8575,12 @@ const AdminTickets = {
         const btn = document.querySelector('#ticketReplyModal .btn-primary');
         const originText = btn?.innerHTML || '';
         if (btn) {
-            btn.disabled = true;
-            btn.innerHTML = '处理中...';
+            if (window.AdminStudioActionFeedback?.setLoading) {
+                window.AdminStudioActionFeedback.setLoading(btn, { loadingText: '处理中...' });
+            } else {
+                btn.disabled = true;
+                btn.innerHTML = '处理中...';
+            }
         }
 
         try {
@@ -8090,23 +8604,30 @@ const AdminTickets = {
 
             // Close modal
             this.closeReplyModal();
+            let successMessage = '已完成工单处理';
             if (result.refundDuplicate) {
-                this.notify('已完成工单处理，关联订单此前已退款，无需重复退回积分', 'success');
+                successMessage = '已完成工单处理，关联订单此前已退款，无需重复退回积分';
             } else if (result.refundAmount > 0) {
-                this.notify(`已完成工单处理，并退回 ${Math.max(0, Math.round(Number(result.refundAmount || 0)))} 积分`, 'success');
-            } else {
-                this.notify('已完成工单处理', 'success');
+                successMessage = `已完成工单处理，并退回 ${Math.max(0, Math.round(Number(result.refundAmount || 0)))} 积分`;
             }
+            this.notify(successMessage, 'success');
             this.recordAnalyticsResolutionFeedback(ticket, newStatus, result, doRefund);
+            this.emitCommandFeedback(`${successMessage}：${ticketId}`, 'saved', { source: 'tickets-process' });
 
             await this.refreshQueueListFirst();
 
         } catch (err) {
-            this.notify(`处理失败: ${this.safeText(err?.message, '未知错误')}`, 'error');
+            const failureMessage = `处理失败: ${this.safeText(err?.message, '未知错误')}`;
+            this.notify(failureMessage, 'error');
+            this.emitCommandFeedback(failureMessage, 'failed', { source: 'tickets-process' });
         } finally {
             if (btn) {
-                btn.disabled = false;
-                btn.innerHTML = originText;
+                if (window.AdminStudioActionFeedback?.restore) {
+                    window.AdminStudioActionFeedback.restore(btn);
+                } else {
+                    btn.disabled = false;
+                    btn.innerHTML = originText;
+                }
             }
         }
     },
@@ -8186,6 +8707,46 @@ const AdminTickets = {
 
 window.AdminTickets = AdminTickets;
 window.AdminTickets?.syncTicketWorkspaceView?.();
+window.handleAdminTicketsSiteChange = handleAdminTicketsSiteChange;
+window.openAdminTicketsShellContext = openAdminTicketsShellContext;
+
+function handleAdminTicketsSiteChange(detail = {}) {
+    return window.AdminTickets?.handleShellSiteChange?.(detail);
+}
+
+async function openAdminTicketsShellContext(context = {}, options = {}) {
+    await window.AdminTickets?.activate?.(context, options);
+    return window.AdminTickets?.handleShellContext?.(context, options);
+}
+
+function activateVisibleTicketsModuleOnAccess() {
+    if (!window.AdminTickets?.isTicketsModuleVisible?.()) {
+        return;
+    }
+
+    void window.AdminTickets.activate();
+}
+
+if (window.AdminShell?.registerModule) {
+    window.AdminShell.registerModule('tickets', {
+        activate: (context = {}, options = {}) => window.AdminTickets?.activate?.(context, options),
+        handleContext: (context = {}, options = {}) => window.AdminTickets?.handleShellContext?.(context, options),
+        onSiteChange: handleAdminTicketsSiteChange,
+        reload: handleAdminTicketsSiteChange
+    });
+} else {
+    window.addEventListener?.('admin-site-changed', handleAdminTicketsSiteChange);
+}
+
+document.addEventListener?.('DOMContentLoaded', () => {
+    if (window.adminStudioAccessGranted) {
+        activateVisibleTicketsModuleOnAccess();
+        return;
+    }
+
+    window.addEventListener?.('adminStudioAccessGranted', activateVisibleTicketsModuleOnAccess, { once: true });
+});
+
 document.addEventListener?.('click', (event) => {
     const target = event?.target instanceof Element ? event.target : null;
     if (target?.closest?.('#ticketsBatchMenuContainer')) {

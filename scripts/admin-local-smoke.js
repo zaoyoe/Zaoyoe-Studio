@@ -5,12 +5,30 @@ const http = require('http');
 const https = require('https');
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
 const { spawn } = require('child_process');
 
 const DEFAULT_BASE_URL = 'http://127.0.0.1:8000';
 const DEFAULT_PAGE = 'admin-studio.html';
 const DEFAULT_TIMEOUT_MS = 45000;
 const DEFAULT_VIRTUAL_TIME_BUDGET = 60000;
+const ADMIN_SMOKE_MODULE_PROFILES = Object.freeze({
+    gallery: { label: 'Gallery', timeoutMs: 150000, virtualTimeBudgetMs: 220000 },
+    shop: { label: 'Shop', timeoutMs: 120000, virtualTimeBudgetMs: 180000 },
+    payments: { label: 'Payments', timeoutMs: 150000, virtualTimeBudgetMs: 220000 },
+    analytics: { label: 'Analytics', timeoutMs: 300000, virtualTimeBudgetMs: 420000 },
+    'growth-center': { label: 'Growth Center', timeoutMs: 240000, virtualTimeBudgetMs: 340000 },
+    points: { label: 'Points', timeoutMs: 150000, virtualTimeBudgetMs: 220000 },
+    homepage: { label: 'Homepage', timeoutMs: 90000, virtualTimeBudgetMs: 120000 },
+    comments: { label: 'Comments', timeoutMs: 120000, virtualTimeBudgetMs: 180000 },
+    settings: { label: 'Settings', timeoutMs: 180000, virtualTimeBudgetMs: 260000 },
+    tickets: { label: 'Tickets', timeoutMs: 120000, virtualTimeBudgetMs: 180000 },
+    chat: { label: 'Chat', timeoutMs: 120000, virtualTimeBudgetMs: 180000 }
+});
+const ADMIN_SMOKE_SUITES = Object.freeze({
+    core: ['gallery', 'shop', 'analytics'],
+    all: ['homepage', 'gallery', 'comments', 'shop', 'payments', 'points', 'growth-center', 'analytics', 'settings', 'tickets', 'chat']
+});
 const DEFAULT_CHROME_CANDIDATES = Object.freeze([
     process.env.CHROME_BIN || '',
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -25,6 +43,8 @@ function parseArgs(argv = []) {
         baseUrl: DEFAULT_BASE_URL,
         page: DEFAULT_PAGE,
         module: '',
+        suite: '',
+        modules: [],
         smokeDom: 'minimal',
         smokeViewport: '',
         timeoutMs: DEFAULT_TIMEOUT_MS,
@@ -48,6 +68,16 @@ function parseArgs(argv = []) {
         }
         if (value === '--module') {
             options.module = String(argv[index + 1] || '').trim();
+            index += 1;
+            continue;
+        }
+        if (value === '--suite') {
+            options.suite = String(argv[index + 1] || '').trim();
+            index += 1;
+            continue;
+        }
+        if (value === '--modules') {
+            options.modules = parseSmokeModuleList(argv[index + 1]);
             index += 1;
             continue;
         }
@@ -85,6 +115,73 @@ function parseArgs(argv = []) {
     }
 
     return options;
+}
+
+function normalizeSmokeModuleName(value = '') {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'business-center' || normalized === 'analytics-center' || normalized === 'business-overview' || normalized === 'commerce-center') {
+        return 'analytics';
+    }
+    return normalized;
+}
+
+function parseSmokeModuleList(value = '') {
+    return String(value || '')
+        .split(',')
+        .map((item) => normalizeSmokeModuleName(item))
+        .filter(Boolean)
+        .filter((item, index, list) => list.indexOf(item) === index);
+}
+
+function resolveSmokeSuiteModules(options = {}) {
+    if (String(options.module || '').trim()) {
+        return [];
+    }
+
+    if (Array.isArray(options.modules) && options.modules.length) {
+        return options.modules.map((item) => normalizeSmokeModuleName(item)).filter(Boolean);
+    }
+
+    const suiteName = String(options.suite || '').trim().toLowerCase();
+    if (!suiteName) {
+        return [];
+    }
+
+    if (ADMIN_SMOKE_SUITES[suiteName]) {
+        return [...ADMIN_SMOKE_SUITES[suiteName]];
+    }
+
+    return parseSmokeModuleList(suiteName);
+}
+
+function getSmokeModuleProfile(moduleName = '') {
+    const normalized = normalizeSmokeModuleName(moduleName);
+    return ADMIN_SMOKE_MODULE_PROFILES[normalized] || {
+        label: normalized || 'Admin Studio',
+        timeoutMs: DEFAULT_TIMEOUT_MS,
+        virtualTimeBudgetMs: DEFAULT_VIRTUAL_TIME_BUDGET
+    };
+}
+
+function buildSmokeModuleOptions(options = {}, moduleName = '') {
+    const normalizedModule = normalizeSmokeModuleName(moduleName);
+    const profile = getSmokeModuleProfile(normalizedModule);
+    return {
+        ...options,
+        module: normalizedModule,
+        suite: '',
+        modules: [],
+        timeoutMs: Math.max(
+            DEFAULT_TIMEOUT_MS,
+            Number(options.timeoutMs || DEFAULT_TIMEOUT_MS),
+            Number(profile.timeoutMs || DEFAULT_TIMEOUT_MS)
+        ),
+        virtualTimeBudgetMs: Math.max(
+            DEFAULT_VIRTUAL_TIME_BUDGET,
+            Number(options.virtualTimeBudgetMs || DEFAULT_VIRTUAL_TIME_BUDGET),
+            Number(profile.virtualTimeBudgetMs || DEFAULT_VIRTUAL_TIME_BUDGET)
+        )
+    };
 }
 
 function normalizeBaseUrl(value = '') {
@@ -159,6 +256,12 @@ function tailLines(value = '', maxLines = 20) {
         .join('\n');
 }
 
+function delay(ms = 0) {
+    return new Promise((resolve) => {
+        setTimeout(resolve, Math.max(0, Number(ms) || 0));
+    });
+}
+
 function createSmokeRunId() {
     if (typeof crypto.randomUUID === 'function') {
         return `local-smoke-${crypto.randomUUID()}`;
@@ -188,7 +291,7 @@ function resolveChromePath(preferredPath = '') {
 }
 
 function buildChromeArgs(options = {}) {
-    return [
+    const args = [
         '--headless=new',
         '--no-sandbox',
         '--disable-dev-shm-usage',
@@ -200,9 +303,32 @@ function buildChromeArgs(options = {}) {
         '--metrics-recording-only',
         '--disable-default-apps',
         '--mute-audio',
-        `--virtual-time-budget=${Math.max(1000, Number(options.virtualTimeBudgetMs || DEFAULT_VIRTUAL_TIME_BUDGET))}`,
-        buildTargetUrl(options)
+        `--virtual-time-budget=${Math.max(1000, Number(options.virtualTimeBudgetMs || DEFAULT_VIRTUAL_TIME_BUDGET))}`
     ];
+
+    if (String(options.chromeUserDataDir || '').trim()) {
+        args.push(`--user-data-dir=${String(options.chromeUserDataDir).trim()}`);
+    }
+
+    args.push(buildTargetUrl(options));
+    return args;
+}
+
+function createChromeUserDataDir() {
+    return fs.mkdtempSync(path.join(os.tmpdir(), 'admin-smoke-chrome-'));
+}
+
+function cleanupChromeUserDataDir(dir = '') {
+    const resolved = String(dir || '').trim();
+    if (!resolved || !path.resolve(resolved).startsWith(path.resolve(os.tmpdir()))) {
+        return;
+    }
+
+    try {
+        fs.rmSync(resolved, { recursive: true, force: true });
+    } catch (_) {
+        // ignore cleanup failures; the next smoke run gets an isolated profile
+    }
 }
 
 function requestJson(urlString = '') {
@@ -243,11 +369,18 @@ function requestJson(urlString = '') {
 async function pollSmokeResult(resultUrl = '', options = {}) {
     const timeoutMs = Math.max(1000, Number(options.timeoutMs || DEFAULT_TIMEOUT_MS));
     const intervalMs = Math.max(100, Number(options.intervalMs || 500));
+    const isCancelled = typeof options.isCancelled === 'function' ? options.isCancelled : () => false;
     const deadline = Date.now() + timeoutMs;
     let lastError = null;
     let lastResult = null;
 
     while (Date.now() <= deadline) {
+        if (isCancelled()) {
+            const cancelledError = new Error('Smoke result polling cancelled');
+            cancelledError.cancelled = true;
+            throw cancelledError;
+        }
+
         try {
             const payload = await requestJson(resultUrl);
             const result = payload && typeof payload === 'object' ? payload.result : null;
@@ -276,6 +409,8 @@ async function pollSmokeResult(resultUrl = '', options = {}) {
 async function runSmoke(options = {}) {
     const chromePath = resolveChromePath(options.chromePath);
     const smokeRunId = createSmokeRunId();
+    const chromeUserDataDir = String(options.chromeUserDataDir || '').trim() || createChromeUserDataDir();
+    const shouldCleanupChromeUserDataDir = !String(options.chromeUserDataDir || '').trim();
     const targetUrl = buildTargetUrl({
         ...options,
         smokeRunId
@@ -283,7 +418,8 @@ async function runSmoke(options = {}) {
     const resultUrl = buildSmokeResultUrl(options, smokeRunId);
     const chromeArgs = buildChromeArgs({
         ...options,
-        smokeRunId
+        smokeRunId,
+        chromeUserDataDir
     });
     const timeoutMs = Math.max(1000, Number(options.timeoutMs || DEFAULT_TIMEOUT_MS));
 
@@ -295,11 +431,37 @@ async function runSmoke(options = {}) {
         let stderr = '';
         let finished = false;
         let forceKillHandle = null;
+        let childClosed = false;
+        let expectedClose = false;
+        let exitCode = null;
+        let exitSignal = null;
+        const closeWaiters = [];
+
+        function waitForChildClose(timeoutMsForClose = 3000) {
+            if (childClosed) {
+                return Promise.resolve();
+            }
+
+            return new Promise((resolveClose) => {
+                const timer = setTimeout(resolveClose, timeoutMsForClose);
+                closeWaiters.push(() => {
+                    clearTimeout(timer);
+                    resolveClose();
+                });
+            });
+        }
+
+        function cleanupRunResources() {
+            if (shouldCleanupChromeUserDataDir) {
+                cleanupChromeUserDataDir(chromeUserDataDir);
+            }
+        }
 
         function finish(callback, payload) {
             if (finished) return;
             finished = true;
             if (forceKillHandle) clearTimeout(forceKillHandle);
+            cleanupRunResources();
             callback(payload);
         }
 
@@ -334,7 +496,14 @@ async function runSmoke(options = {}) {
         });
 
         child.on('close', (code, signal) => {
+            childClosed = true;
+            exitCode = code;
+            exitSignal = signal;
+            closeWaiters.splice(0).forEach((resolveClose) => resolveClose());
             if (finished) {
+                return;
+            }
+            if (expectedClose) {
                 return;
             }
 
@@ -372,9 +541,14 @@ async function runSmoke(options = {}) {
             })();
         });
 
-        pollSmokeResult(resultUrl, { timeoutMs })
-            .then((result) => {
+        pollSmokeResult(resultUrl, {
+            timeoutMs,
+            isCancelled: () => finished
+        })
+            .then(async (result) => {
+                expectedClose = true;
                 requestShutdown();
+                await waitForChildClose(3000);
                 finish(resolve, {
                     chromePath,
                     targetUrl,
@@ -383,11 +557,18 @@ async function runSmoke(options = {}) {
                     result: {
                         status: String(result.status || '').toLowerCase(),
                         text: String(result.text || '')
-                    }
+                    },
+                    exitCode,
+                    signal: exitSignal
                 });
             })
-            .catch((error) => {
+            .catch(async (error) => {
+                if (error?.cancelled && finished) {
+                    return;
+                }
+                expectedClose = true;
                 requestShutdown();
+                await waitForChildClose(3000);
                 finish(reject, new Error([
                     error?.message || String(error),
                     `URL: ${targetUrl}`,
@@ -401,15 +582,147 @@ async function runSmoke(options = {}) {
     });
 }
 
+function countSmokeChecks(text = '') {
+    const lines = String(text || '').split(/\r?\n/);
+    return {
+        pass: lines.filter((line) => /^PASS\s+/i.test(line)).length,
+        fail: lines.filter((line) => /^FAIL\s+/i.test(line)).length
+    };
+}
+
+function buildSmokeSuiteText(summary = {}) {
+    const results = Array.isArray(summary.results) ? summary.results : [];
+    const lines = [
+        `Admin Local Smoke Suite: ${String(summary.suiteName || 'custom').toUpperCase()}`,
+        `Status: ${String(summary.status || 'unknown').toUpperCase()}`,
+        `Modules: ${results.map((item) => item.module).filter(Boolean).join(', ') || '<none>'}`,
+        `Duration: ${Math.round(Number(summary.durationMs || 0))}ms`,
+        ''
+    ];
+
+    results.forEach((item) => {
+        const status = String(item.status || 'unknown').toUpperCase();
+        const checks = item.summary?.result?.text ? countSmokeChecks(item.summary.result.text) : { pass: 0, fail: 0 };
+        const profile = getSmokeModuleProfile(item.module);
+        lines.push(`${status === 'PASSED' ? 'PASS' : 'FAIL'} ${profile.label} (${item.module})`);
+        lines.push(`  duration=${Math.round(Number(item.durationMs || 0))}ms / checks=${checks.pass} pass, ${checks.fail} fail${Number(item.attempts || 1) > 1 ? ` / attempts=${item.attempts}` : ''}`);
+
+        if (status !== 'PASSED') {
+            const detail = item.error
+                ? String(item.error.message || item.error)
+                : String(item.summary?.result?.text || '');
+            const trimmedDetail = tailLines(detail, 28);
+            if (trimmedDetail) {
+                lines.push(trimmedDetail.split(/\r?\n/).map((line) => `  ${line}`).join('\n'));
+            }
+        }
+    });
+
+    return lines.join('\n');
+}
+
+async function runSmokeSuite(options = {}, reporter = null) {
+    const modules = resolveSmokeSuiteModules(options);
+    if (!modules.length) {
+        return runSmoke(options);
+    }
+
+    const suiteName = String(options.suite || '').trim() || (Array.isArray(options.modules) && options.modules.length ? 'custom' : 'custom');
+    const suiteStartedAt = Date.now();
+    const results = [];
+
+    for (const moduleName of modules) {
+        const runOptions = buildSmokeModuleOptions(options, moduleName);
+        const startedAt = Date.now();
+        if (typeof reporter === 'function') {
+            reporter({
+                type: 'module-start',
+                module: moduleName,
+                timeoutMs: runOptions.timeoutMs,
+                virtualTimeBudgetMs: runOptions.virtualTimeBudgetMs
+            });
+        }
+
+        let outcome = null;
+        for (let attempt = 1; attempt <= 2; attempt += 1) {
+            if (attempt > 1) {
+                if (typeof reporter === 'function') {
+                    reporter({ type: 'module-retry', module: moduleName, attempt });
+                }
+                await delay(2000);
+            }
+
+            try {
+                const summary = await runSmoke(runOptions);
+                const status = String(summary?.result?.status || 'unknown').toLowerCase();
+                outcome = {
+                    module: moduleName,
+                    status,
+                    summary,
+                    attempts: attempt,
+                    durationMs: Date.now() - startedAt
+                };
+                if (status === 'passed') {
+                    break;
+                }
+            } catch (error) {
+                outcome = {
+                    module: moduleName,
+                    status: 'failed',
+                    error,
+                    attempts: attempt,
+                    durationMs: Date.now() - startedAt
+                };
+            }
+
+            if (attempt < 2) {
+                await delay(1500);
+            }
+        }
+
+        results.push(outcome);
+        if (typeof reporter === 'function') {
+            reporter({ type: 'module-end', ...outcome });
+        }
+        await delay(1200);
+    }
+
+    const suiteSummary = {
+        suite: true,
+        suiteName,
+        modules,
+        results,
+        durationMs: Date.now() - suiteStartedAt,
+        status: results.every((item) => item.status === 'passed') ? 'passed' : 'failed'
+    };
+    suiteSummary.result = {
+        status: suiteSummary.status,
+        text: buildSmokeSuiteText(suiteSummary)
+    };
+    return suiteSummary;
+}
+
 async function main() {
     const options = parseArgs(process.argv.slice(2));
-    const summary = await runSmoke(options);
+    const suiteModules = resolveSmokeSuiteModules(options);
+    const reporter = suiteModules.length
+        ? (event) => {
+            if (event.type === 'module-start') {
+                process.stdout.write(`[admin-smoke] RUN ${event.module} timeout=${event.timeoutMs}ms virtual=${event.virtualTimeBudgetMs}ms\n`);
+            } else if (event.type === 'module-retry') {
+                process.stdout.write(`[admin-smoke] RETRY ${event.module} attempt=${event.attempt}\n`);
+            } else if (event.type === 'module-end') {
+                process.stdout.write(`[admin-smoke] ${String(event.status || 'unknown').toUpperCase()} ${event.module} duration=${Math.round(Number(event.durationMs || 0))}ms\n`);
+            }
+        }
+        : null;
+    const summary = await runSmokeSuite(options, reporter);
     const status = summary?.result?.status || 'unknown';
     const text = String(summary?.result?.text || '').trim();
 
     process.stdout.write([
-        `Local smoke status: ${status.toUpperCase()}`,
-        `Target: ${summary.targetUrl}`,
+        summary?.suite ? `Local smoke suite status: ${status.toUpperCase()}` : `Local smoke status: ${status.toUpperCase()}`,
+        summary?.targetUrl ? `Target: ${summary.targetUrl}` : '',
         text
     ].filter(Boolean).join('\n') + '\n');
 
@@ -428,15 +741,23 @@ if (require.main === module) {
 module.exports = {
     buildSmokeResultUrl,
     buildChromeArgs,
+    buildSmokeModuleOptions,
+    buildSmokeSuiteText,
     buildTargetUrl,
+    countSmokeChecks,
     createSmokeRunId,
     decodeHtml,
     extractSmokeResult,
+    getSmokeModuleProfile,
     normalizeBaseUrl,
+    normalizeSmokeModuleName,
     parseArgs,
+    parseSmokeModuleList,
     pollSmokeResult,
     requestJson,
+    resolveSmokeSuiteModules,
     resolveChromePath,
     runSmoke,
+    runSmokeSuite,
     tailLines
 };

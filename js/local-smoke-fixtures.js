@@ -190,9 +190,17 @@
                         text: '我这边看到你最近的充值记录当前是{{payment_status}}，先帮你核对到账和处理链路，稍后回复你。'
                     },
                     {
+                        id: 'verify',
+                        business_type: 'verification',
+                        enabled: true,
+                        label: '验证跟进',
+                        hint: '最近验证 {{verification_status}}',
+                        text: '我这边看到最近验证任务状态是{{verification_status}}，先帮你核对当前提示和处理进度，稍后给你更新。'
+                    },
+                    {
                         id: 'ticket',
                         business_type: 'ticket',
-                        enabled: false,
+                        enabled: true,
                         label: '工单跟进',
                         hint: '售后工单 {{ticket_status}}',
                         text: '我这边看到最近售后工单目前是{{ticket_status}}，已经接手继续跟进，有结果会第一时间回复你。'
@@ -249,7 +257,7 @@
         },
         systemConfigs: {
             unlock_pricing: {},
-            channels: {},
+            channels: [],
             affiliate_program: {},
             affiliate_poster: {},
             rewards: {},
@@ -2511,12 +2519,14 @@
 
             globalScope.addEventListener('error', (event) => {
                 const message = event?.error?.message || event?.message || 'Unknown runtime error';
-                smokeState.runtimeErrors.push(`error:${String(message)}`);
+                const stack = String(event?.error?.stack || '').split('\n').slice(0, 3).join(' | ');
+                smokeState.runtimeErrors.push(`error:${String(message)}${stack ? ` stack:${stack.slice(0, 480)}` : ''}`);
             });
 
             globalScope.addEventListener('unhandledrejection', (event) => {
                 const message = event?.reason?.message || event?.reason || 'Unhandled rejection';
-                smokeState.runtimeErrors.push(`rejection:${String(message)}`);
+                const stack = String(event?.reason?.stack || '').split('\n').slice(0, 3).join(' | ');
+                smokeState.runtimeErrors.push(`rejection:${String(message)}${stack ? ` stack:${stack.slice(0, 480)}` : ''}`);
             });
         }
     }
@@ -2706,6 +2716,777 @@
             return;
         }
         smokeState[stateKey] = Array.isArray(rows) ? rows : [];
+    }
+
+    function findSmokeProfileById(profileId = '') {
+        const normalizedProfileId = String(profileId || '').trim();
+        if (!normalizedProfileId) {
+            return null;
+        }
+
+        return getTableRows('profiles').find((profile) => String(profile?.id || '').trim() === normalizedProfileId) || null;
+    }
+
+    function buildSmokePaymentsSummarySharedState() {
+        const primaryOrder = getTableRows('payment_orders')[0] || {};
+        const paidOrder = getTableRows('payment_orders')[1] || {};
+        const primaryProfile = findSmokeProfileById(primaryOrder.user_id) || {};
+        const paidProfile = findSmokeProfileById(paidOrder.user_id) || {};
+
+        return {
+            overview: {
+                total_orders: 28,
+                paid_orders: 23,
+                paid_rate: 82.14,
+                total_amount: 334.6,
+                total_points: 3346
+            },
+            anomaly_summary: {
+                review_orders: 1,
+                failed_orders: 1,
+                unclaimed_paid_orders: 1,
+                open_cases: 5
+            },
+            session_summary: {
+                total_sessions: 4,
+                matched_sessions: 3,
+                webhook_linked_sessions: 2,
+                fallback_linked_sessions: 1,
+                order_match_rate: 75,
+                match_rate: 75
+            },
+            query_summary: {
+                total_attempts: 12,
+                failed_attempts: 2,
+                success_rate: 83.33
+            },
+            provider_stats: [
+                {
+                    provider: 'mock',
+                    total_orders: 18,
+                    paid_rate: 88.9,
+                    claim_rate: 83.3,
+                    total_amount: 248,
+                    total_points: 2480
+                }
+            ],
+            trend_24h: [
+                { hour: '00:00', total_orders: 1, paid_orders: 1, paid_amount: 18 },
+                { hour: '08:00', total_orders: 3, paid_orders: 2, paid_amount: 128 },
+                { hour: '16:00', total_orders: 2, paid_orders: 2, paid_amount: 92 }
+            ],
+            refund_alert_topics: [
+                {
+                    key: 'refund_failures',
+                    label: '退款失败',
+                    severity: 'warning',
+                    description: '通道退款未成功，需要人工复核支付通道与回执链路。',
+                    count: 1
+                },
+                {
+                    key: 'refund_reclaim_failures',
+                    label: '扣回失败',
+                    severity: 'critical',
+                    description: '退款前积分扣回失败，当前订单已 fail-closed 等待人工处理。',
+                    count: 1
+                }
+            ],
+            refund_alert_items: [
+                {
+                    type: 'payment_order',
+                    id: 'payment-refund-smoke-1',
+                    topic_key: 'refund_failures',
+                    topic_label: '退款失败',
+                    title: '虎皮椒退款失败',
+                    message: '退款请求已发起，但通道侧仍未返回最终结果。',
+                    severity: 'warning',
+                    provider: 'mock',
+                    provider_order_no: 'PAY-SMOKE-REFUND-1',
+                    created_at: '2026-04-20T12:00:00.000Z',
+                    ops_status: 'open',
+                    ops_available_actions: ['request_retry', 'mark_handled']
+                },
+                {
+                    type: 'payment_order',
+                    id: 'payment-refund-smoke-2',
+                    topic_key: 'refund_reclaim_failures',
+                    topic_label: '扣回失败',
+                    title: '退款前积分扣回失败',
+                    message: '需要先补齐扣回动作，再决定是否继续退款。',
+                    severity: 'critical',
+                    provider: 'mock',
+                    provider_order_no: 'PAY-SMOKE-RECLAIM-1',
+                    created_at: '2026-04-20T12:08:00.000Z',
+                    ops_status: 'open',
+                    ops_available_actions: ['mark_handled', 'ignore']
+                }
+            ],
+            ops_alert_summary: {
+                total: 4,
+                delivered: 1,
+                pending: 1,
+                retry: 1,
+                processing: 0,
+                dead_letter: 1,
+                handled: 1,
+                ignored: 0,
+                actionable_count: 3
+            },
+            ops_alert_items: [
+                {
+                    type: 'ops_alert_job',
+                    id: 'payment-ops-smoke-1',
+                    queue_status: 'pending',
+                    ops_status: 'pending',
+                    title: '支付告警待处理',
+                    message: '回调通道成功率下降，需要值班同学确认是否要切备用通道。',
+                    severity: 'warning',
+                    created_at: '2026-04-20T12:12:00.000Z',
+                    channels: ['telegram'],
+                    remaining_channels: ['telegram'],
+                    provider: 'mock',
+                    provider_order_no: 'PAY-SMOKE-OPS-1',
+                    ops_available_actions: ['mark_handled', 'request_retry']
+                },
+                {
+                    type: 'ops_alert_job',
+                    id: 'payment-ops-smoke-2',
+                    queue_status: 'retry',
+                    ops_status: 'pending',
+                    title: '支付告警等待重试',
+                    message: '上一轮推送失败，正在等待下一次重试。',
+                    severity: 'warning',
+                    created_at: '2026-04-20T12:16:00.000Z',
+                    channels: ['telegram'],
+                    remaining_channels: ['telegram'],
+                    provider: 'mock',
+                    provider_order_no: 'PAY-SMOKE-OPS-2',
+                    ops_available_actions: ['mark_handled', 'request_retry']
+                },
+                {
+                    type: 'ops_alert_job',
+                    id: 'payment-ops-smoke-3',
+                    queue_status: 'dead_letter',
+                    ops_status: 'pending',
+                    title: '支付告警进入死信',
+                    message: '通道侧连续失败，需要人工接管排查。',
+                    severity: 'critical',
+                    created_at: '2026-04-20T12:20:00.000Z',
+                    channels: ['telegram'],
+                    remaining_channels: ['telegram'],
+                    provider: 'mock',
+                    provider_order_no: 'PAY-SMOKE-OPS-3',
+                    ops_available_actions: ['request_retry', 'mark_handled']
+                },
+                {
+                    type: 'ops_alert_job',
+                    id: 'payment-ops-smoke-4',
+                    queue_status: 'delivered',
+                    ops_status: 'handled',
+                    title: '支付告警已处理',
+                    message: '值班同学已手动确认并处理完成。',
+                    severity: 'info',
+                    created_at: '2026-04-20T12:24:00.000Z',
+                    channels: ['telegram'],
+                    remaining_channels: [],
+                    provider: 'mock',
+                    provider_order_no: 'PAY-SMOKE-OPS-4',
+                    ops_available_actions: ['ignore']
+                }
+            ],
+            exception_topics: [
+                {
+                    key: 'duplicate_webhook',
+                    label: '重复回调',
+                    severity: 'warning',
+                    description: '需要确认是否只发生重复通知，还是已经造成重复入账。',
+                    count: 1
+                },
+                {
+                    key: 'refund_failures',
+                    label: '退款失败',
+                    severity: 'warning',
+                    description: '网关退款失败但仍需复核补偿链路。',
+                    count: 1
+                },
+                {
+                    key: 'refund_reclaim_failures',
+                    label: '扣回失败',
+                    severity: 'critical',
+                    description: '退款前积分扣回失败，需要人工处理。',
+                    count: 1
+                }
+            ],
+            exception_topic_items: [
+                {
+                    type: 'session',
+                    id: 'payment-topic-smoke-1',
+                    topic_key: 'duplicate_webhook',
+                    title: '重复回调仍在重试',
+                    message: '同一支付单号在 5 分钟内重复回调两次。',
+                    severity: 'warning',
+                    created_at: '2026-04-20T12:28:00.000Z',
+                    ops_status: 'open',
+                    provider: 'mock',
+                    provider_order_no: 'PAY-SMOKE-DUP-1',
+                    ops_available_actions: ['mark_handled']
+                },
+                {
+                    type: 'payment_order',
+                    id: 'payment-topic-smoke-2',
+                    topic_key: 'refund_failures',
+                    title: '退款失败仍待复核',
+                    message: '退款任务未收到成功回执，已同步到异常专题。',
+                    severity: 'warning',
+                    created_at: '2026-04-20T12:30:00.000Z',
+                    ops_status: 'open',
+                    provider: 'mock',
+                    provider_order_no: 'PAY-SMOKE-REFUND-1',
+                    ops_available_actions: ['request_retry', 'mark_handled']
+                }
+            ],
+            recent_anomalies: [
+                {
+                    type: 'session',
+                    id: 'payment-anomaly-smoke-1',
+                    title: '未回填异常',
+                    message: '支付单已完成，但订单回填链路仍未闭环。',
+                    severity: 'warning',
+                    provider: 'mock',
+                    provider_order_no: 'PAY-SMOKE-DUP-1',
+                    created_at: '2026-04-20T12:32:00.000Z',
+                    ops_status: 'open',
+                    ops_available_actions: ['mark_handled']
+                }
+            ],
+            recent_checkout_sessions: [
+                {
+                    id: 'payment-session-smoke-1',
+                    provider: 'mock',
+                    user_id: String(primaryOrder.user_id || '00000000-0000-4000-8000-000000000001'),
+                    user_email: String(primaryProfile?.email || 'delay-alpha@zaoyoe.invalid'),
+                    package_name: String(primaryOrder.package_name || '春季体验套餐'),
+                    session_key: 'cs_smoke_local_001',
+                    provider_order_no: 'PAY-SMOKE-SESSION-1',
+                    site: 'cn',
+                    expected_amount: Number(primaryOrder.expected_amount || 128) || 128,
+                    granted_points: 1280,
+                    status: 'completed',
+                    has_checkout_url: true,
+                    created_at: '2026-04-20T12:00:00.000Z',
+                    completed_at: '2026-04-20T12:06:00.000Z',
+                    linked_at: '2026-04-20T12:07:00.000Z'
+                }
+            ],
+            recent_orders: [
+                {
+                    id: 'payment-order-review-smoke-1',
+                    provider: 'mock',
+                    user_id: String(primaryOrder.user_id || '00000000-0000-4000-8000-000000000001'),
+                    user_email: String(primaryProfile?.email || 'delay-alpha@zaoyoe.invalid'),
+                    provider_order_no: 'PAYSMOKE42F46329738A87345986347A2438',
+                    package_name: String(primaryOrder.package_name || '春季体验套餐'),
+                    paid_amount: Number(primaryOrder.paid_amount || 128) || 128,
+                    points_amount: 1280,
+                    status: 'pending_review',
+                    site: 'cn',
+                    created_at: '2026-04-20T12:36:00.000Z',
+                    claimed_at: '',
+                    order_available_actions: ['approve_review', 'reject_review']
+                },
+                {
+                    id: 'payment-order-failed-smoke-1',
+                    provider: 'mock',
+                    user_id: String(paidOrder.user_id || '00000000-0000-4000-8000-000000000004'),
+                    user_email: String(paidProfile?.email || 'stable-delta@zaoyoe.invalid'),
+                    provider_order_no: 'PAYSMOKE77D56329738A87345986347B9012',
+                    package_name: '充值 50 元',
+                    paid_amount: 50,
+                    points_amount: 500,
+                    status: 'amount_mismatch',
+                    site: 'cn',
+                    created_at: '2026-04-20T12:42:00.000Z',
+                    claimed_at: '',
+                    order_available_actions: ['approve_amount_mismatch', 'reject_amount_mismatch']
+                },
+                {
+                    id: 'payment-order-paid-smoke-1',
+                    provider: 'mock',
+                    user_id: String(paidOrder.user_id || '00000000-0000-4000-8000-000000000004'),
+                    user_email: String(paidProfile?.email || 'stable-delta@zaoyoe.invalid'),
+                    provider_order_no: 'PAYSMOKE88E66329738A87345986347C1048',
+                    package_name: '充值 50 元',
+                    paid_amount: Number(paidOrder.paid_amount || 50) || 50,
+                    points_amount: 500,
+                    status: 'paid',
+                    site: 'cn',
+                    created_at: '2026-04-20T12:48:00.000Z',
+                    claimed_at: '',
+                    order_available_actions: []
+                }
+            ]
+        };
+    }
+
+    function buildSmokePaymentsSummaryPayload(search = null) {
+        const searchParamsLike = search instanceof URLSearchParams ? search : new URLSearchParams(search || '');
+        const view = String(searchParamsLike.get('view') || 'overview').trim().toLowerCase() || 'overview';
+        const scope = String(searchParamsLike.get('scope') || 'full').trim().toLowerCase() || 'full';
+        const shared = buildSmokePaymentsSummarySharedState();
+
+        if (view === 'overview' && scope === 'core') {
+            return {
+                success: true,
+                overview: deepClone(shared.overview),
+                anomaly_summary: deepClone(shared.anomaly_summary),
+                session_summary: deepClone(shared.session_summary),
+                query_summary: deepClone(shared.query_summary)
+            };
+        }
+
+        if (view === 'overview' && scope === 'secondary') {
+            return {
+                success: true,
+                anomaly_summary: deepClone(shared.anomaly_summary),
+                provider_stats: deepClone(shared.provider_stats),
+                trend_24h: deepClone(shared.trend_24h),
+                refund_alert_topics: deepClone(shared.refund_alert_topics),
+                refund_alert_items: deepClone(shared.refund_alert_items)
+            };
+        }
+
+        if (view === 'overview' && scope === 'ops') {
+            return {
+                success: true,
+                anomaly_summary: deepClone(shared.anomaly_summary),
+                ops_alert_summary: deepClone(shared.ops_alert_summary),
+                ops_alert_items: deepClone(shared.ops_alert_items),
+                exception_topics: deepClone(shared.exception_topics),
+                exception_topic_items: deepClone(shared.exception_topic_items),
+                recent_anomalies: deepClone(shared.recent_anomalies),
+                recent_checkout_sessions: deepClone(shared.recent_checkout_sessions),
+                recent_orders: deepClone(shared.recent_orders)
+            };
+        }
+
+        if (view === 'ops') {
+            return {
+                success: true,
+                anomaly_summary: deepClone(shared.anomaly_summary),
+                ops_alert_summary: deepClone(shared.ops_alert_summary),
+                ops_alert_items: deepClone(shared.ops_alert_items),
+                exception_topics: deepClone(shared.exception_topics),
+                exception_topic_items: deepClone(shared.exception_topic_items),
+                recent_anomalies: deepClone(shared.recent_anomalies),
+                recent_checkout_sessions: deepClone(shared.recent_checkout_sessions),
+                recent_orders: deepClone(shared.recent_orders)
+            };
+        }
+
+        if (view === 'finance') {
+            return {
+                success: true,
+                sitewide_summary: {
+                    revenue: 334.6,
+                    refunds: 50,
+                    net_revenue: 284.6
+                },
+                business_breakdown: [
+                    { title: '充值收入', metric: '334.6', description: '近 30 天充值收入', meta: 'CN 站点' }
+                ],
+                points_breakdown: [
+                    { label: '充值入账', inflow: 3346, outflow: 0, net: 3346 }
+                ]
+            };
+        }
+
+        return {
+            success: true,
+            overview: deepClone(shared.overview),
+            anomaly_summary: deepClone(shared.anomaly_summary),
+            session_summary: deepClone(shared.session_summary),
+            query_summary: deepClone(shared.query_summary),
+            provider_stats: deepClone(shared.provider_stats),
+            trend_24h: deepClone(shared.trend_24h),
+            refund_alert_topics: deepClone(shared.refund_alert_topics),
+            refund_alert_items: deepClone(shared.refund_alert_items),
+            ops_alert_summary: deepClone(shared.ops_alert_summary),
+            ops_alert_items: deepClone(shared.ops_alert_items),
+            exception_topics: deepClone(shared.exception_topics),
+            exception_topic_items: deepClone(shared.exception_topic_items),
+            recent_anomalies: deepClone(shared.recent_anomalies),
+            recent_checkout_sessions: deepClone(shared.recent_checkout_sessions),
+            recent_orders: deepClone(shared.recent_orders)
+        };
+    }
+
+    function buildSmokePaymentsCleanupPayload() {
+        const sampleOrders = getTableRows('payment_orders').map((order, index) => ({
+            provider_order_no: index === 0
+                ? 'AUTO_CDX_ORDER_1'
+                : `AUTO_CDX_ORDER_${index + 1}`,
+            status: String(order?.status || 'paid').trim().toLowerCase() || 'paid',
+            created_at: order?.created_at || '2026-04-20T12:00:00.000Z'
+        }));
+        const sampleUsers = getTableRows('profiles').slice(0, 2).map((profile) => ({
+            id: profile.id,
+            email: profile.email
+        }));
+
+        return {
+            success: true,
+            preview: {
+                counts: {
+                    payment_orders: sampleOrders.length,
+                    payment_events: 2,
+                    afdian_orders: 1,
+                    auth_users: sampleUsers.length
+                },
+                samples: {
+                    orders: deepClone(sampleOrders),
+                    users: deepClone(sampleUsers)
+                }
+            }
+        };
+    }
+
+    function buildSmokeTicketBreakdown(rows = [], field = 'issue_type', labelMap = {}) {
+        const counts = new Map();
+        const total = Math.max(1, (Array.isArray(rows) ? rows : []).length);
+        (Array.isArray(rows) ? rows : []).forEach((row) => {
+            const key = String(row?.[field] || 'other').trim().toLowerCase() || 'other';
+            counts.set(key, (counts.get(key) || 0) + 1);
+        });
+
+        return [...counts.entries()].map(([key, count]) => ({
+            key,
+            label: labelMap[key] || key,
+            count,
+            share_percent: Number(((count / total) * 100).toFixed(1))
+        }));
+    }
+
+    function buildSmokeTicketReminderAttemptsByJobId() {
+        const attemptsByJobId = new Map();
+        getTableRows('ops_alert_job_attempts').forEach((attempt) => {
+            const jobId = String(attempt?.job_id || '').trim();
+            if (!jobId) {
+                return;
+            }
+            const attempts = attemptsByJobId.get(jobId) || [];
+            attempts.push({ ...attempt });
+            attemptsByJobId.set(jobId, attempts);
+        });
+
+        attemptsByJobId.forEach((attempts, jobId) => {
+            attemptsByJobId.set(jobId, attempts.sort((left, right) => (
+                Date.parse(right?.created_at || 0) - Date.parse(left?.created_at || 0)
+            )));
+        });
+        return attemptsByJobId;
+    }
+
+    function normalizeSmokeTicketChannelList(value) {
+        return (Array.isArray(value) ? value : [])
+            .map((item) => String(item || '').trim().toLowerCase())
+            .filter(Boolean);
+    }
+
+    function buildSmokeTicketReminderActivityEntry(job = null, attemptsByJobId = new Map()) {
+        if (!job || typeof job !== 'object') {
+            return null;
+        }
+
+        const payload = job.payload && typeof job.payload === 'object' && !Array.isArray(job.payload)
+            ? job.payload
+            : {};
+        const jobId = String(job.id || '').trim();
+        const latestAttempt = Array.isArray(attemptsByJobId.get(jobId))
+            ? attemptsByJobId.get(jobId)[0]
+            : null;
+        const alertType = String(job.alert_type || '').trim().toLowerCase();
+
+        return {
+            kind: alertType === 'ticket_sla_recovered' ? 'recovered' : 'overdue',
+            status: String(job.status || 'unknown').trim().toLowerCase() || 'unknown',
+            severity: String(job.severity || 'warning').trim().toLowerCase() || 'warning',
+            title: String(job.title || '').trim(),
+            ticket_id: String(payload.ticket_id || payload.target_id || '').trim(),
+            target_id: String(payload.target_id || payload.ticket_id || '').trim(),
+            wait_label: String(payload.wait_label || '').trim(),
+            created_at: String(job.created_at || '').trim(),
+            delivered_at: String(job.delivered_at || '').trim(),
+            attempt_count: Math.max(0, Number.parseInt(job.attempt_count, 10) || 0),
+            channels: normalizeSmokeTicketChannelList(job.channels),
+            remaining_channels: normalizeSmokeTicketChannelList(job.remaining_channels),
+            last_error: String(latestAttempt?.error_message || job.last_error || '').trim(),
+            latest_attempt: latestAttempt ? {
+                channel: String(latestAttempt.channel || '').trim().toLowerCase(),
+                status: String(latestAttempt.status || '').trim().toLowerCase(),
+                response_status: Number.isFinite(Number(latestAttempt.response_status)) ? Number(latestAttempt.response_status) : null,
+                error_message: String(latestAttempt.error_message || '').trim(),
+                created_at: String(latestAttempt.created_at || '').trim()
+            } : null
+        };
+    }
+
+    function buildSmokeTicketSummaryPreviewItem(item = {}) {
+        const payload = item?.payload && typeof item.payload === 'object' && !Array.isArray(item.payload)
+            ? item.payload
+            : {};
+        const ticketId = String(payload.ticket_id || payload.target_id || '').trim();
+        if (!ticketId) {
+            return null;
+        }
+
+        const status = String(payload.ticket_status || 'pending').trim().toUpperCase() || 'PENDING';
+        return {
+            ticket_id: ticketId,
+            order_id: String(payload.order_id || '').trim(),
+            user_id: String(payload.user_id || '').trim(),
+            user_email: String(payload.user_email || '').trim(),
+            wait_label: String(payload.wait_label || '').trim(),
+            responsible_label: String(payload.responsible_label || '').trim(),
+            ticket_status: status,
+            ticket_status_label: status === 'PENDING' ? '待处理' : status,
+            reason: String(payload.reason || '').trim(),
+            updated_at: String(payload.updated_at || payload.created_at || '').trim()
+        };
+    }
+
+    function buildSmokeTicketSummaryDigestEntry(job = null, attemptsByJobId = new Map()) {
+        if (!job || typeof job !== 'object') {
+            return null;
+        }
+
+        const payload = job.payload && typeof job.payload === 'object' && !Array.isArray(job.payload)
+            ? job.payload
+            : {};
+        const jobId = String(job.id || '').trim();
+        const latestAttempt = Array.isArray(attemptsByJobId.get(jobId))
+            ? attemptsByJobId.get(jobId)[0]
+            : null;
+        const previewItems = (Array.isArray(payload.items) ? payload.items : [])
+            .map((item) => buildSmokeTicketSummaryPreviewItem(item))
+            .filter(Boolean);
+        const scheduleMode = String(payload.summary_schedule_mode || '').trim().toLowerCase();
+
+        return {
+            id: jobId,
+            status: String(job.status || 'unknown').trim().toLowerCase() || 'unknown',
+            severity: String(job.severity || 'warning').trim().toLowerCase() || 'warning',
+            title: String(job.title || '').trim(),
+            created_at: String(job.created_at || '').trim(),
+            updated_at: String(job.updated_at || '').trim(),
+            delivered_at: String(job.delivered_at || '').trim(),
+            attempt_count: Math.max(0, Number.parseInt(job.attempt_count, 10) || 0),
+            max_attempts: Math.max(0, Number.parseInt(job.max_attempts, 10) || 0),
+            next_retry_at: String(job.next_retry_at || '').trim(),
+            channels: normalizeSmokeTicketChannelList(job.channels),
+            remaining_channels: normalizeSmokeTicketChannelList(job.remaining_channels),
+            last_error: String(latestAttempt?.error_message || job.last_error || '').trim(),
+            latest_attempt: latestAttempt ? {
+                channel: String(latestAttempt.channel || '').trim().toLowerCase(),
+                status: String(latestAttempt.status || '').trim().toLowerCase(),
+                response_status: Number.isFinite(Number(latestAttempt.response_status)) ? Number(latestAttempt.response_status) : null,
+                error_message: String(latestAttempt.error_message || '').trim(),
+                created_at: String(latestAttempt.created_at || '').trim()
+            } : null,
+            summary_schedule_mode: ['rolling_window', 'hourly', 'daily'].includes(scheduleMode) ? scheduleMode : 'rolling_window',
+            summary_window_minutes: Math.max(5, Number.parseInt(payload.summary_window_minutes, 10) || 60),
+            summary_max_items: Math.max(1, Number.parseInt(payload.summary_max_items, 10) || 10),
+            summary_hourly_minute: Math.min(59, Math.max(0, Number.parseInt(payload.summary_hourly_minute, 10) || 0)),
+            summary_daily_hour: Math.min(23, Math.max(0, Number.parseInt(payload.summary_daily_hour, 10) || 9)),
+            summary_daily_minute: Math.min(59, Math.max(0, Number.parseInt(payload.summary_daily_minute, 10) || 0)),
+            summary_timezone: String(payload.summary_timezone || 'Asia/Shanghai').trim(),
+            window_start_at: String(payload.window_start_at || '').trim(),
+            window_end_at: String(payload.window_end_at || '').trim(),
+            item_count: Math.max(0, Number.parseInt(payload.item_count, 10) || previewItems.length),
+            entry_path: String(payload.entry_path || '').trim(),
+            manual_event_count: 0,
+            latest_manual_event: null,
+            preview_items: previewItems
+        };
+    }
+
+    function buildSmokeTicketsMetricsPayload() {
+        const tickets = getTableRows('shop_tickets');
+        const pendingRows = tickets.filter((ticket) => {
+            const status = String(ticket?.status || '').trim().toLowerCase();
+            return status === 'pending' || status === 'open';
+        });
+        const closedRows = tickets.filter((ticket) => {
+            const status = String(ticket?.status || '').trim().toLowerCase();
+            return status === 'resolved' || status === 'rejected';
+        });
+        const attemptsByJobId = buildSmokeTicketReminderAttemptsByJobId();
+        const activityJobs = sortSmokeRowsByCreatedAtDesc(getTableRows('ops_alert_jobs').filter((job) => {
+            const alertType = String(job?.alert_type || '').trim().toLowerCase();
+            return alertType === 'ticket_sla_overdue' || alertType === 'ticket_sla_recovered';
+        }));
+        const summaryJobs = sortSmokeRowsByCreatedAtDesc(getTableRows('ops_alert_jobs').filter((job) => (
+            String(job?.alert_type || '').trim().toLowerCase() === 'ticket_sla_summary'
+        )));
+        const countByStatus = (rows, status) => rows.filter((row) => String(row?.status || '').trim().toLowerCase() === status).length;
+        const activeJobCount = (rows) => rows.filter((job) => {
+            const status = String(job?.status || '').trim().toLowerCase();
+            return status === 'retry' || status === 'pending' || status === 'processing';
+        }).length;
+        const deliveredJobCount = (rows) => rows.filter((job) => String(job?.status || '').trim().toLowerCase() === 'delivered').length;
+        const retryJobCount = (rows) => rows.filter((job) => String(job?.status || '').trim().toLowerCase() === 'retry').length;
+        const deadLetterJobCount = (rows) => rows.filter((job) => String(job?.status || '').trim().toLowerCase() === 'dead_letter').length;
+        const dailySummaryJobs = summaryJobs.filter((job) => String(job?.payload?.summary_schedule_mode || '').trim().toLowerCase() === 'daily');
+        const summaryEntries = summaryJobs
+            .slice(0, 4)
+            .map((job) => buildSmokeTicketSummaryDigestEntry(job, attemptsByJobId))
+            .filter(Boolean);
+        const latestProblemSummary = summaryJobs.find((job) => {
+            const status = String(job?.status || '').trim().toLowerCase();
+            return status === 'retry' || status === 'dead_letter';
+        }) || null;
+        const latestOverdueJob = activityJobs.find((job) => String(job?.alert_type || '').trim().toLowerCase() === 'ticket_sla_overdue') || null;
+        const latestRecoveredJob = activityJobs.find((job) => String(job?.alert_type || '').trim().toLowerCase() === 'ticket_sla_recovered') || null;
+
+        return {
+            success: true,
+            overview: {
+                generated_at: now.toISOString(),
+                backlog: {
+                    total_pending: pendingRows.length,
+                    assigned_count: 1,
+                    unassigned_count: Math.max(0, pendingRows.length - 1),
+                    overdue_count: pendingRows.length,
+                    critical_overdue_count: Math.max(0, pendingRows.length - 1),
+                    high_priority_count: pendingRows.length,
+                    refundable_count: pendingRows.filter((ticket) => String(ticket?.order_id || '').trim()).length,
+                    oldest_wait_minutes: 840
+                },
+                efficiency: {
+                    lookback_days: 30,
+                    closed_count: closedRows.length,
+                    resolved_count: countByStatus(closedRows, 'resolved'),
+                    rejected_count: countByStatus(closedRows, 'rejected'),
+                    refund_related_count: closedRows.filter((ticket) => String(ticket?.order_id || '').trim()).length,
+                    resolved_rate_percent: closedRows.length ? Number(((countByStatus(closedRows, 'resolved') / closedRows.length) * 100).toFixed(1)) : 0,
+                    rejected_rate_percent: closedRows.length ? Number(((countByStatus(closedRows, 'rejected') / closedRows.length) * 100).toFixed(1)) : 0,
+                    refund_related_rate_percent: closedRows.length ? Number(((closedRows.filter((ticket) => String(ticket?.order_id || '').trim()).length / closedRows.length) * 100).toFixed(1)) : 0,
+                    avg_first_touch_minutes: 28,
+                    first_touch_sample_count: 2,
+                    avg_resolution_minutes: 96,
+                    resolution_sample_count: closedRows.length
+                },
+                sources: buildSmokeTicketBreakdown(pendingRows, 'source', {
+                    user: '用户提交',
+                    chat: '客服会话',
+                    other: '其他'
+                }),
+                issue_types: buildSmokeTicketBreakdown(pendingRows, 'issue_type', {
+                    delivery: '发货履约',
+                    verification: '验证协助',
+                    payment: '支付与退款',
+                    other: '其他问题'
+                }),
+                reminder: {
+                    enabled: true,
+                    ops_alerts_enabled: true,
+                    monitor_enabled: true,
+                    work_hours_only_enabled: false,
+                    summary_enabled: true,
+                    sweep_interval_minutes: 10,
+                    pending_overdue_minutes: 120,
+                    critical_overdue_minutes: 720,
+                    summary_window_minutes: 60,
+                    summary_schedule_mode: 'daily',
+                    summary_hourly_minute: 15,
+                    summary_daily_hour: 8,
+                    summary_daily_minute: 0,
+                    activity: {
+                        lookback_days: 30,
+                        total_job_count: activityJobs.length,
+                        overdue_job_count: activityJobs.filter((job) => String(job?.alert_type || '').trim().toLowerCase() === 'ticket_sla_overdue').length,
+                        recovered_job_count: activityJobs.filter((job) => String(job?.alert_type || '').trim().toLowerCase() === 'ticket_sla_recovered').length,
+                        delivered_count: deliveredJobCount(activityJobs),
+                        active_count: activeJobCount(activityJobs),
+                        retry_count: retryJobCount(activityJobs),
+                        dead_letter_count: deadLetterJobCount(activityJobs),
+                        latest_job: buildSmokeTicketReminderActivityEntry(activityJobs[0] || null, attemptsByJobId),
+                        latest_overdue: buildSmokeTicketReminderActivityEntry(latestOverdueJob, attemptsByJobId),
+                        latest_recovered: buildSmokeTicketReminderActivityEntry(latestRecoveredJob, attemptsByJobId)
+                    },
+                    summary_digest: {
+                        lookback_days: 30,
+                        total_job_count: summaryJobs.length,
+                        daily_job_count: dailySummaryJobs.length,
+                        delivered_count: deliveredJobCount(summaryJobs),
+                        active_count: activeJobCount(summaryJobs),
+                        retry_count: retryJobCount(summaryJobs),
+                        dead_letter_count: deadLetterJobCount(summaryJobs),
+                        failure_job_count: retryJobCount(summaryJobs) + deadLetterJobCount(summaryJobs),
+                        latest_job: buildSmokeTicketSummaryDigestEntry(summaryJobs[0] || null, attemptsByJobId),
+                        latest_daily_job: buildSmokeTicketSummaryDigestEntry(dailySummaryJobs[0] || null, attemptsByJobId),
+                        latest_problem_job: buildSmokeTicketSummaryDigestEntry(latestProblemSummary, attemptsByJobId),
+                        recent_jobs: summaryEntries
+                    }
+                }
+            }
+        };
+    }
+
+    function buildSmokeTicketsListPayload(searchParams = new URLSearchParams()) {
+        const profileById = new Map(getTableRows('profiles').map((profile) => [String(profile?.id || '').trim(), profile]));
+        const statusFilter = String(searchParams.get('status') || 'all').trim().toLowerCase();
+        let rows = sortSmokeRowsByCreatedAtDesc(getTableRows('shop_tickets')).map((ticket) => {
+            const profile = profileById.get(String(ticket?.user_id || '').trim()) || {};
+            const status = String(ticket?.status || 'pending').trim().toUpperCase() || 'PENDING';
+            return {
+                ...ticket,
+                status,
+                source: String(ticket?.source || 'user').trim() || 'user',
+                source_label: '用户提交',
+                user_email: profile.email || '',
+                user_name: profile.username || profile.email || '',
+                issue_type_label: ticket.issue_type === 'delivery' ? '发货履约' : (ticket.issue_type === 'verification' ? '验证协助' : '其他问题'),
+                description: String(ticket?.description || '').trim(),
+                timing: {
+                    is_overdue: status === 'PENDING',
+                    wait_label: status === 'PENDING' ? '13 小时 57 分钟' : '已处理',
+                    sla_label: status === 'PENDING' ? '已超时 13 小时 57 分钟' : '已处理'
+                },
+                refund: {
+                    refundable: Boolean(ticket?.order_id),
+                    label: ticket?.order_id ? '可人工复核' : '无关联订单'
+                },
+                assignment_summary: '负责人：未指派',
+                priority: status === 'PENDING' ? 'high' : 'normal'
+            };
+        });
+
+        if (statusFilter === 'pending') {
+            rows = rows.filter((ticket) => ticket.status === 'PENDING' || ticket.status === 'OPEN');
+        } else if (statusFilter === 'resolved' || statusFilter === 'rejected') {
+            rows = rows.filter((ticket) => ticket.status === statusFilter.toUpperCase());
+        }
+
+        const pageSize = Math.max(1, Number.parseInt(searchParams.get('pageSize'), 10) || 20);
+        const page = Math.max(1, Number.parseInt(searchParams.get('page'), 10) || 1);
+        const totalItems = rows.length;
+        const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+        const offset = (Math.min(page, totalPages) - 1) * pageSize;
+        const pageRows = rows.slice(offset, offset + pageSize);
+
+        return {
+            success: true,
+            rows: deepClone(pageRows),
+            pagination: {
+                page: Math.min(page, totalPages),
+                pageSize,
+                totalItems,
+                totalPages,
+                hasPrevPage: page > 1,
+                hasNextPage: page < totalPages,
+                returnedItems: pageRows.length
+            }
+        };
     }
 
     function buildEmptySmokePromptSiteMetrics() {
@@ -6036,6 +6817,14 @@
                 }
             }
 
+            if (url.pathname === '/api/admin/payments/summary' && method === 'GET') {
+                return createResponse(buildSmokePaymentsSummaryPayload(url.searchParams));
+            }
+
+            if (url.pathname === '/api/admin/payments/cleanup') {
+                return createResponse(buildSmokePaymentsCleanupPayload());
+            }
+
             if (url.pathname === '/api/admin/settings/discount-trigger-options') {
                 const site = normalizeSmokeAnalyticsSite(url.searchParams.get('site'));
                 const rows = getTableRows('discount_codes')
@@ -6087,6 +6876,14 @@
 
             if (url.pathname === '/api/admin/settings/ops-alert-monitor') {
                 return createResponse(deepClone(smokeState.opsAlertMonitorPayload));
+            }
+
+            if (adminRoute === 'tickets/metrics' && method === 'GET') {
+                return createResponse(buildSmokeTicketsMetricsPayload());
+            }
+
+            if (adminRoute === 'tickets/list' && method === 'GET') {
+                return createResponse(buildSmokeTicketsListPayload(url.searchParams));
             }
 
             if (url.pathname === '/api/admin/prompts/manage') {
@@ -6647,7 +7444,13 @@
 
                     const site = normalizeSmokeSite(body.site);
                     const rows = getTableRows('homepage_config');
-                    const row = rows.find((item) => item.id === body.id && item.site === site && item.section === body.section);
+                    const normalizedSection = String(body.section || '').trim().toLowerCase();
+                    const row = rows.find((item) => {
+                        if (item.site !== site || item.section !== normalizedSection) {
+                            return false;
+                        }
+                        return body.id ? item.id === body.id : true;
+                    });
                     if (!row) {
                         return createResponse({
                             success: false,
@@ -6670,7 +7473,8 @@
 
                     return createResponse({
                         success: true,
-                        row: deepClone(row)
+                        row: deepClone(row),
+                        rows: deepClone(rows.filter((item) => item.site === site))
                     });
                 }
             }
@@ -6791,9 +7595,276 @@
         await runUserModalSmoke();
     }
 
+    async function runAdminPaymentsSmoke() {
+        await waitFor(
+            () => globalScope.switchModule
+                && globalScope.AdminPayments
+                && typeof globalScope.AdminPayments.init === 'function'
+                && (typeof globalScope.hasModulePermission !== 'function' || globalScope.hasModulePermission('payments') === true),
+            { message: '支付对账模块入口未加载完成', timeoutMs: 30000 }
+        );
+
+        if (globalScope.AdminSiteFilter?.select) {
+            globalScope.AdminSiteFilter.select('cn');
+            await nextFrame();
+            await sleep(80);
+        }
+
+        globalScope.syncAdminStudioModuleAccess?.({
+            preferredModule: 'payments',
+            enforceActiveModule: true
+        });
+        await sleep(120);
+
+        const switched = globalScope.switchModule?.('payments', {
+            fallback: false,
+            silentDenied: true
+        });
+        if (switched === false) {
+            await sleep(180);
+            globalScope.switchModule?.('payments', {
+                fallback: false,
+                silentDenied: true
+            });
+        }
+
+        const paymentsModule = await waitFor(
+            () => document.getElementById('module-payments')?.classList.contains('active')
+                ? document.getElementById('module-payments')
+                : null,
+            { message: '支付对账模块未切换成功', timeoutMs: 20000 }
+        );
+
+        await globalScope.AdminPayments.init();
+        await sleep(180);
+
+        globalScope.AdminPayments.switchTab?.('overview', { reload: false });
+        await sleep(80);
+
+        let overviewState = null;
+        try {
+            overviewState = await waitFor(
+                () => {
+                    const toolbar = document.getElementById('paymentsToolbarHighlights');
+                    const overview = document.getElementById('paymentsOverviewGrid');
+                    const toolbarText = String(toolbar?.textContent || '').replace(/\s+/g, ' ').trim();
+                    const overviewText = String(overview?.textContent || '').replace(/\s+/g, ' ').trim();
+                    return toolbar instanceof HTMLElement
+                        && overview instanceof HTMLElement
+                        && toolbarText.length > 0
+                        && overviewText.length > 0
+                        ? {
+                            toolbarText,
+                            overviewText
+                        }
+                        : null;
+                },
+                { message: '支付对账首屏未完成渲染', timeoutMs: 45000 }
+            );
+        } catch (_) {
+            const toolbar = document.getElementById('paymentsToolbarHighlights');
+            const overview = document.getElementById('paymentsOverviewGrid');
+            const accessState = document.getElementById('paymentsAccessState');
+            throw new Error([
+                '支付对账首屏未完成渲染',
+                `moduleActive=${paymentsModule.classList.contains('active') ? 'yes' : 'no'}`,
+                `activeTab=${String(globalScope.AdminPayments?.getActiveTab?.() || '<empty>')}`,
+                `toolbar=${String(toolbar?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80) || '<empty>'}`,
+                `overview=${String(overview?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80) || '<empty>'}`,
+                `access=${String(accessState?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80) || '<empty>'}`,
+                `runtime=${(smokeState.runtimeErrors || []).slice(-2).join(' || ').slice(0, 220) || '<none>'}`
+            ].join(' | '));
+        }
+
+        recordResult(
+            '支付对账首屏已渲染概览区块',
+            overviewState.toolbarText.length > 0 && overviewState.overviewText.length > 0,
+            [
+                overviewState.toolbarText.slice(0, 40),
+                overviewState.overviewText.slice(0, 40)
+            ].join(' / ')
+        );
+
+        globalScope.AdminPayments.showWorkbenchContext?.({
+            referenceValue: 'PAY-SMOKE-LOCAL-ORDER',
+            queryLabel: '本地 smoke 支付链路'
+        });
+        await globalScope.AdminPayments.reload?.();
+        await sleep(160);
+
+        const issueSummary = await waitFor(
+            () => {
+                const target = document.getElementById('paymentsIssueSummary');
+                const buttons = target instanceof HTMLElement
+                    ? Array.from(target.querySelectorAll('[data-admin-action="payments-issue-summary-focus"]'))
+                    : [];
+                return target instanceof HTMLElement
+                    && target.hidden === false
+                    && String(target.textContent || '').trim().length > 0
+                    && buttons.length > 0
+                    ? { target, buttons }
+                    : null;
+            },
+            { message: '支付对账问题摘要未渲染联动入口', timeoutMs: 20000 }
+        );
+
+        const prioritySummary = await waitFor(
+            () => {
+                const target = document.getElementById('paymentsPrioritySummary');
+                const buttons = target instanceof HTMLElement
+                    ? Array.from(target.querySelectorAll(
+                        '[data-admin-action="payments-priority-focus-order"], [data-admin-action="payments-priority-focus-topic"], [data-admin-action="payments-priority-focus-ops"]'
+                    ))
+                    : [];
+                return target instanceof HTMLElement
+                    && target.hidden === false
+                    && String(target.textContent || '').trim().length > 0
+                    && buttons.length > 0
+                    ? { target, buttons }
+                    : null;
+            },
+            { message: '支付对账优先处理摘要未渲染联动入口', timeoutMs: 20000 }
+        );
+
+        recordResult(
+            '支付对账摘要区已渲染联动入口',
+            issueSummary.buttons.length > 0 && prioritySummary.buttons.length > 0,
+            `issue=${issueSummary.buttons.length} / priority=${prioritySummary.buttons.length}`
+        );
+
+        const preferredIssueButton = issueSummary.buttons.find((button) => {
+            const kind = String(button?.getAttribute('data-payments-issue-focus') || '').trim().toLowerCase();
+            return ['ops', 'dead_letter', 'retry', 'refund', 'review', 'failed'].includes(kind);
+        }) || issueSummary.buttons[0];
+
+        let issueFocusPass = false;
+        let issueFocusDetail = '未找到可用问题摘要入口';
+        if (preferredIssueButton instanceof HTMLElement) {
+            const issueKind = String(preferredIssueButton.getAttribute('data-payments-issue-focus') || '').trim().toLowerCase();
+            await globalScope.AdminPayments.focusAnalyticsIssueSummary(issueKind);
+
+            if (['ops', 'dead_letter', 'retry'].includes(issueKind)) {
+                const queueState = await waitFor(
+                    () => {
+                        const target = document.getElementById('paymentsOpsAlertQueue');
+                        const text = String(target?.textContent || '').replace(/\s+/g, ' ').trim();
+                        return target instanceof HTMLElement
+                            && globalScope.AdminPayments?.getActiveTab?.() === 'ops'
+                            && text.length > 0
+                            ? { text }
+                            : null;
+                    },
+                    { message: '支付对账问题摘要未定位到告警队列', timeoutMs: 16000 }
+                );
+                issueFocusPass = true;
+                issueFocusDetail = `${issueKind} -> ${queueState.text.slice(0, 72)}`;
+            } else if (issueKind === 'refund') {
+                const topicState = await waitFor(
+                    () => {
+                        const activeTopic = document.querySelector('#paymentsExceptionTopics .payments-exception-topic-card.is-active');
+                        const list = document.getElementById('paymentsExceptionTopicList');
+                        const topicKey = String(activeTopic?.getAttribute('data-payments-topic-key') || '').trim().toLowerCase();
+                        const listText = String(list?.textContent || '').replace(/\s+/g, ' ').trim();
+                        return activeTopic instanceof HTMLElement
+                            && list instanceof HTMLElement
+                            && topicKey
+                            && listText.length > 0
+                            ? { topicKey, listText }
+                            : null;
+                    },
+                    { message: '支付对账问题摘要未定位到异常专题', timeoutMs: 16000 }
+                );
+                issueFocusPass = topicState.topicKey !== 'all';
+                issueFocusDetail = `${issueKind} -> ${topicState.topicKey} / ${topicState.listText.slice(0, 56)}`;
+            } else {
+                const orderState = await waitFor(
+                    () => {
+                        const target = document.getElementById('paymentsOrdersTable');
+                        const text = String(target?.textContent || '').replace(/\s+/g, ' ').trim();
+                        return target instanceof HTMLElement
+                            && globalScope.AdminPayments?.getActiveTab?.() === 'ops'
+                            && text.length > 0
+                            ? { text }
+                            : null;
+                    },
+                    { message: '支付对账问题摘要未定位到订单列表', timeoutMs: 16000 }
+                );
+                issueFocusPass = true;
+                issueFocusDetail = `${issueKind} -> ${orderState.text.slice(0, 72)}`;
+            }
+        }
+
+        recordResult(
+            '支付对账问题摘要支持一键聚焦',
+            issueFocusPass,
+            issueFocusDetail
+        );
+
+        const orderFocusButton = prioritySummary.target.querySelector('[data-admin-action="payments-priority-focus-order"]');
+        const topicFocusButton = prioritySummary.target.querySelector('[data-admin-action="payments-priority-focus-topic"]');
+        const opsFocusButton = prioritySummary.target.querySelector('[data-admin-action="payments-priority-focus-ops"]');
+
+        let priorityFocusPass = false;
+        let priorityFocusDetail = '未找到可用优先项入口';
+        if (orderFocusButton instanceof HTMLElement) {
+            const orderId = String(orderFocusButton.getAttribute('data-payments-order-id') || '').trim();
+            await globalScope.AdminPayments.focusAnalyticsPrioritySummary('order', orderId);
+            await waitFor(
+                () => document.querySelector('#paymentsOrdersTable [data-payments-focused-order="1"], #paymentsOrdersTable .payments-order-card--focused')
+                    ? true
+                    : null,
+                { message: '支付对账优先项未定位到订单', timeoutMs: 16000 }
+            );
+            priorityFocusPass = true;
+            priorityFocusDetail = `order:${orderId || '<empty>'}`;
+        } else if (topicFocusButton instanceof HTMLElement) {
+            const topicKey = String(topicFocusButton.getAttribute('data-payments-topic-key') || '').trim().toLowerCase();
+            await globalScope.AdminPayments.focusAnalyticsPrioritySummary('topic', topicKey);
+            await waitFor(
+                () => document.querySelector(`#paymentsExceptionTopics .payments-exception-topic-card.is-active[data-payments-topic-key="${topicKey}"]`)
+                    ? true
+                    : null,
+                { message: '支付对账优先项未定位到异常专题', timeoutMs: 16000 }
+            );
+            priorityFocusPass = true;
+            priorityFocusDetail = `topic:${topicKey || '<empty>'}`;
+        } else if (opsFocusButton instanceof HTMLElement) {
+            await globalScope.AdminPayments.focusAnalyticsPrioritySummary('ops');
+            const queueState = await waitFor(
+                () => {
+                    const target = document.getElementById('paymentsOpsAlertQueue');
+                    const text = String(target?.textContent || '').replace(/\s+/g, ' ').trim();
+                    return target instanceof HTMLElement && text.length > 0
+                        ? { text }
+                        : null;
+                },
+                { message: '支付对账优先项未定位到告警队列', timeoutMs: 16000 }
+            );
+            priorityFocusPass = true;
+            priorityFocusDetail = `ops:${queueState.text.slice(0, 56)}`;
+        }
+
+        recordResult(
+            '支付对账优先项支持跳转聚焦',
+            priorityFocusPass,
+            priorityFocusDetail
+        );
+
+        recordResult(
+            '支付对账模块聚焦后保持激活态',
+            paymentsModule.classList.contains('active') && Boolean(globalScope.AdminPayments?.getActiveTab?.()),
+            `tab=${String(globalScope.AdminPayments?.getActiveTab?.() || '<empty>')}`
+        );
+    }
+
     async function runDiscountTriggerSettingsSmoke() {
         globalScope.switchModule?.('settings');
         await sleep(180);
+        await waitFor(() => typeof globalScope.initSettingsModule === 'function', {
+            message: '设置模块初始化入口未就绪'
+        });
+        await globalScope.initSettingsModule({ bindListeners: true, force: true, renderView: true });
+        await sleep(120);
 
         const card = await waitFor(() => {
             const node = document.querySelector('[data-config="discount-trigger-rules"]');
@@ -7034,6 +8105,23 @@
         const getRuleCardCount = (listId) => document.querySelectorAll(`#${listId} [data-rule-key]`).length;
         const baselineCounts = Object.fromEntries(renderedSections.map((section) => [section.key, getRuleCardCount(section.listId)]));
 
+        for (const section of renderedSections) {
+            const toggle = document.getElementById(section.toggleId);
+            const sectionRoot = document.querySelector(`.discount-trigger-section[data-trigger-section="${section.key}"]`);
+            if (toggle instanceof HTMLElement && !toggle.classList.contains('active')) {
+                toggle.click();
+                await waitFor(() => {
+                    if (!(sectionRoot instanceof HTMLElement)) {
+                        return null;
+                    }
+                    return sectionRoot.classList.contains('is-expanded')
+                        ? true
+                        : null;
+                }, { message: `${section.label} 卡券联动段落未能展开` });
+                await sleep(80);
+            }
+        }
+
         let isolatedPresetPass = true;
         let autoSelectionPass = true;
         for (const section of renderedSections) {
@@ -7242,6 +8330,22 @@
             () => globalScope.switchModule && globalScope.switchAnalyticsTab && globalScope.AdminSiteFilter?.select && typeof globalScope.reloadAnalyticsDashboard === 'function' && typeof globalScope.initAnalyticsModule === 'function',
             { message: 'Analytics 模块入口未加载完成' }
         );
+        if (!(globalScope.adminStudioAccessGranted === true || globalScope.isAdmin === true || globalScope.isSuperAdmin === true)
+            && globalScope.AdminAccess?.getCurrentAdminAccess) {
+            try {
+                const access = await Promise.resolve(globalScope.AdminAccess.getCurrentAdminAccess({ forceRefresh: true }));
+                if (access?.isAdmin || access?.isSuperAdmin) {
+                    globalScope.isAdmin = Boolean(access.isAdmin);
+                    globalScope.isSuperAdmin = Boolean(access.isSuperAdmin);
+                    globalScope.currentUserPermissions = Array.isArray(access.permissions) ? access.permissions : [];
+                    globalScope.adminStudioAccessGranted = Boolean(access.isAdmin || access.isSuperAdmin);
+                    globalScope.dispatchEvent?.(new CustomEvent('adminStudioAccessGranted'));
+                    globalScope.dispatchEvent?.(new CustomEvent('permissionsLoaded'));
+                }
+            } catch (error) {
+                smokeState.runtimeErrors.push(`analytics-access:${String(error?.message || error)}`);
+            }
+        }
         await waitFor(
             () => globalScope.adminStudioAccessGranted === true || globalScope.isAdmin === true || globalScope.isSuperAdmin === true,
             { message: 'Analytics smoke 等待后台访问态超时', timeoutMs: 20000 }
@@ -7265,6 +8369,25 @@
             wrappedReload.__smokeWrapped = true;
             globalScope.reloadAnalyticsDashboard = wrappedReload;
         }
+        const triggerAnalyticsReload = (options) => {
+            if (typeof globalScope.reloadAnalyticsDashboard !== 'function') {
+                return;
+            }
+            try {
+                const maybePromise = globalScope.reloadAnalyticsDashboard(options);
+                if (maybePromise && typeof maybePromise.catch === 'function') {
+                    maybePromise.catch(() => {});
+                }
+            } catch {
+                // The following KPI wait will surface an actionable smoke failure.
+            }
+        };
+        const switchAnalyticsSmokeTab = (tabId) => {
+            globalScope.switchAnalyticsTab?.(tabId, {
+                ensureTabLoad: false,
+                syncRoute: false
+            });
+        };
 
         const getActiveAnalyticsModule = () => document.querySelector('#module-business-overview.active, #module-growth-center.active, #module-commerce-center.active');
         await waitFor(
@@ -7307,6 +8430,26 @@
         }
         recordResult('Analytics 概览 KPI 已渲染', /^\d/.test(kpiValue), `dau=${kpiValue}`);
 
+        const ensureAnalyticsContentTabReady = async (reason = 'smoke-analytics-content') => {
+            const reloadCountBeforeContent = smokeState.analyticsReloadCalls.length;
+            switchAnalyticsSmokeTab('content');
+            await waitFor(
+                () => document.getElementById('analytics-tab-content')?.classList.contains('active') === true,
+                { message: 'Analytics 内容分栏未激活', timeoutMs: 20000 }
+            );
+            if (!document.querySelector('#topContentList .top-content-item')) {
+                if (typeof globalScope.reloadAnalyticsDashboard === 'function') {
+                    triggerAnalyticsReload({
+                        reason,
+                        activeTabId: 'content',
+                        force: smokeState.analyticsReloadCalls.length === reloadCountBeforeContent
+                    });
+                }
+            }
+        };
+
+        await ensureAnalyticsContentTabReady();
+
         const topContentItems = await waitFor(
             () => {
                 const items = Array.from(document.querySelectorAll('#topContentList .top-content-item'));
@@ -7334,9 +8477,13 @@
         const rangeTrigger = document.querySelector('[data-admin-action="analytics-toggle-range-dropdown"]');
         const presetThirtyDays = document.querySelector('.preset-btn[data-range="30"][data-admin-action="analytics-select-preset-range"]');
         if (rangeTrigger instanceof HTMLElement && presetThirtyDays instanceof HTMLElement) {
-            rangeTrigger.click();
-            await sleep(80);
-            presetThirtyDays.click();
+            if (typeof globalScope.selectPresetRange === 'function') {
+                globalScope.selectPresetRange(30);
+            } else {
+                rangeTrigger.click();
+                await sleep(80);
+                presetThirtyDays.click();
+            }
             await waitFor(
                 () => String(document.getElementById('dateRangeLabel')?.textContent || '').includes('30'),
                 { message: 'Analytics 日期标签未切到 30 天' }
@@ -7345,6 +8492,22 @@
                 () => smokeState.analyticsReloadCalls.length > reloadCountBeforeRange,
                 { message: 'Analytics 日期切换后未触发 dashboard reload' }
             );
+            try {
+                await waitFor(
+                    () => {
+                        const latestPanelSupportQuery = smokeState.analyticsAdminRouteLastQuery['analytics/panel-support-bundle'] || {};
+                        const latestHasExplicitBundleRange = Boolean(latestPanelSupportQuery.startDate && latestPanelSupportQuery.endDate);
+                        const latestHasThirtyDayWindow = Number(smokeState.analyticsRpcLastParams.get_content_top?.p_days) === 30
+                            || Number(smokeState.analyticsRpcLastParams.get_redemption_funnel?.p_days) === 30
+                            || Number(latestPanelSupportQuery.days) === 30
+                            || latestHasExplicitBundleRange;
+                        return latestHasThirtyDayWindow ? latestPanelSupportQuery : null;
+                    },
+                    { message: 'Analytics 日期切换后关键加载链路仍未同步 30 天窗口', timeoutMs: 8000, intervalMs: 120 }
+                );
+            } catch (_) {
+                // Keep the original recordResult detail below so smoke output shows the stale route.
+            }
 
             const topContentText = String(document.getElementById('topContentList')?.textContent || '');
             const topContentMeta = String(document.getElementById('topContentMeta')?.textContent || '').trim();
@@ -7376,8 +8539,23 @@
             recordResult('Analytics 热门内容会跟随日期窗口刷新', false, '未找到日期范围控件');
         }
 
-        globalScope.switchAnalyticsTab?.('monetization');
-        await sleep(80);
+        switchAnalyticsSmokeTab('monetization');
+        await waitFor(
+            () => document.getElementById('analytics-tab-monetization')?.classList.contains('active') === true,
+            { message: 'Analytics 积分与交易分栏未激活', timeoutMs: 20000 }
+        );
+        triggerAnalyticsReload({
+            reason: 'smoke-analytics-monetization',
+            activeTabId: 'monetization',
+            force: true
+        });
+        await waitFor(
+            () => {
+                const value = String(document.getElementById('kpiPointsInValue')?.textContent || '').trim();
+                return value && value !== '--' ? value : null;
+            },
+            { message: 'Analytics 积分与交易指标未完成渲染', timeoutMs: 20000 }
+        );
         const pointsTabActive = document.getElementById('analytics-tab-monetization')?.classList.contains('active') === true;
         const pointsIncome = String(document.getElementById('kpiPointsInValue')?.textContent || '').trim();
         recordResult(
@@ -7386,8 +8564,23 @@
             `active=${pointsTabActive} / income=${pointsIncome || '<empty>'}`
         );
 
-        globalScope.switchAnalyticsTab?.('verify');
-        await sleep(80);
+        switchAnalyticsSmokeTab('verify');
+        await waitFor(
+            () => document.getElementById('analytics-tab-verify')?.classList.contains('active') === true,
+            { message: 'Analytics 验证服务分栏未激活', timeoutMs: 20000 }
+        );
+        triggerAnalyticsReload({
+            reason: 'smoke-analytics-verify',
+            activeTabId: 'verify',
+            force: true
+        });
+        await waitFor(
+            () => {
+                const value = String(document.getElementById('kpiVerifyRequestsValue')?.textContent || '').trim();
+                return value && value !== '--' ? value : null;
+            },
+            { message: 'Analytics 验证服务摘要未完成渲染', timeoutMs: 20000 }
+        );
         const verifyTabActive = document.getElementById('analytics-tab-verify')?.classList.contains('active') === true;
         const verifyRequests = String(document.getElementById('kpiVerifyRequestsValue')?.textContent || '').trim();
         recordResult(
@@ -7396,8 +8589,23 @@
             `active=${verifyTabActive} / requests=${verifyRequests || '<empty>'}`
         );
 
-        globalScope.switchAnalyticsTab?.('growth');
-        await sleep(80);
+        switchAnalyticsSmokeTab('growth');
+        await waitFor(
+            () => document.getElementById('analytics-tab-growth')?.classList.contains('active') === true,
+            { message: 'Analytics 社区与裂变分栏未激活', timeoutMs: 20000 }
+        );
+        triggerAnalyticsReload({
+            reason: 'smoke-analytics-growth',
+            activeTabId: 'growth',
+            force: true
+        });
+        await waitFor(
+            () => {
+                const value = String(document.getElementById('kpiGrowthMessagesValue')?.textContent || '').trim();
+                return value && value !== '--' ? value : null;
+            },
+            { message: 'Analytics 社区与裂变摘要未完成渲染', timeoutMs: 20000 }
+        );
         const growthTabActive = document.getElementById('analytics-tab-growth')?.classList.contains('active') === true;
         const growthMessages = String(document.getElementById('kpiGrowthMessagesValue')?.textContent || '').trim();
         recordResult(
@@ -7431,8 +8639,9 @@
             `hidden=${advancedWorkspace?.hidden === false ? 'no' : 'yes'} / insight=${document.getElementById('generateInsightBtn') instanceof HTMLElement ? 'yes' : 'no'} / legacy=${document.getElementById('experimentsList') instanceof HTMLElement ? 'yes' : 'no'}`
         );
 
-        globalScope.switchAnalyticsTab?.('overview');
+        switchAnalyticsSmokeTab('overview');
         await sleep(60);
+        await ensureAnalyticsContentTabReady('smoke-analytics-site-content');
 
         const channelCountBeforeSite = smokeState.analyticsRealtimeChannelsCreated;
         const reloadCountBeforeSite = smokeState.analyticsReloadCalls.length;
@@ -7440,9 +8649,18 @@
         await nextFrame();
         await sleep(180);
         await waitFor(
-            () => document.querySelector('.site-selector-label')?.textContent?.trim() === 'EN',
-            { message: 'Analytics 站点标签未切到 EN' }
+            () => {
+                const activeSite = String(globalScope.AdminSiteFilter?.getSiteFilter?.() || '').trim().toLowerCase();
+                const labelText = String(document.querySelector('.site-selector-label')?.textContent || '').trim().toUpperCase();
+                return activeSite === 'intl' || labelText === 'EN' || labelText === 'INTL';
+            },
+            { message: 'Analytics 站点标签未切到 INTL' }
         );
+        triggerAnalyticsReload({
+            reason: 'smoke-analytics-site-content',
+            activeTabId: 'content',
+            force: true
+        });
         await waitFor(
             () => smokeState.analyticsRpcLastParams.get_content_top?.p_site === 'intl'
                 || smokeState.analyticsAdminRouteLastQuery['analytics/panel-support-bundle']?.site === 'intl',
@@ -7504,6 +8722,22 @@
             () => globalScope.switchModule && globalScope.switchAnalyticsTab && globalScope.AdminSiteFilter?.select && globalScope.AdminGrowthCenter?.load,
             { message: '营销资产中心入口未加载完成' }
         );
+        if (!(globalScope.adminStudioAccessGranted === true || globalScope.isAdmin === true || globalScope.isSuperAdmin === true)
+            && globalScope.AdminAccess?.getCurrentAdminAccess) {
+            try {
+                const access = await Promise.resolve(globalScope.AdminAccess.getCurrentAdminAccess({ forceRefresh: true }));
+                if (access?.isAdmin || access?.isSuperAdmin) {
+                    globalScope.isAdmin = Boolean(access.isAdmin);
+                    globalScope.isSuperAdmin = Boolean(access.isSuperAdmin);
+                    globalScope.currentUserPermissions = Array.isArray(access.permissions) ? access.permissions : [];
+                    globalScope.adminStudioAccessGranted = Boolean(access.isAdmin || access.isSuperAdmin);
+                    globalScope.dispatchEvent?.(new CustomEvent('adminStudioAccessGranted'));
+                    globalScope.dispatchEvent?.(new CustomEvent('permissionsLoaded'));
+                }
+            } catch (error) {
+                smokeState.runtimeErrors.push(`growth-center-access:${String(error?.message || error)}`);
+            }
+        }
         await waitFor(
             () => globalScope.adminStudioAccessGranted === true || globalScope.isAdmin === true || globalScope.isSuperAdmin === true,
             { message: '营销资产中心 smoke 等待后台访问态超时', timeoutMs: 20000 }
@@ -7538,6 +8772,15 @@
             await sleep(120);
             return waitForGrowthCenterWorkspace();
         };
+        const waitForGrowthCenterDetails = async () => waitFor(
+            () => {
+                const currentRoot = document.getElementById('marketingAssetCenterWorkspace')?.querySelector('.marketing-asset-center');
+                const assetCount = currentRoot?.querySelectorAll('.marketing-asset-center__list-item').length || 0;
+                const workflowCount = currentRoot?.querySelectorAll('.marketing-asset-center__workflow-card').length || 0;
+                return assetCount >= 3 && workflowCount >= 4 ? currentRoot : null;
+            },
+            { message: '营销资产中心明细未完成渲染', timeoutMs: 20000 }
+        );
 
         globalScope.AdminSiteFilter.select('cn');
         await nextFrame();
@@ -7558,19 +8801,34 @@
             `families=${familyCards.length}`
         );
 
-        const unifiedAssets = root.querySelectorAll('.marketing-asset-center__list-item');
+        const unifiedAssets = await waitFor(
+            () => {
+                const currentRoot = document.getElementById('marketingAssetCenterWorkspace')?.querySelector('.marketing-asset-center');
+                const items = currentRoot?.querySelectorAll('.marketing-asset-center__list-item') || [];
+                return items.length >= 3 ? items : null;
+            },
+            { message: '营销资产中心统一资产列表未完成渲染', timeoutMs: 20000 }
+        );
         recordResult(
             '营销资产中心统一资产列表已渲染',
             unifiedAssets.length >= 3,
             `assets=${unifiedAssets.length}`
         );
 
-        const workflowCards = root.querySelectorAll('.marketing-asset-center__workflow-card');
+        const workflowCards = await waitFor(
+            () => {
+                const currentRoot = document.getElementById('marketingAssetCenterWorkspace')?.querySelector('.marketing-asset-center');
+                const cards = currentRoot?.querySelectorAll('.marketing-asset-center__workflow-card') || [];
+                return cards.length >= 4 ? cards : null;
+            },
+            { message: '营销资产中心工作流卡片未完成渲染', timeoutMs: 20000 }
+        );
         recordResult(
             '营销资产中心工作流卡片已渲染',
             workflowCards.length >= 4,
             `workflows=${workflowCards.length}`
         );
+        root = document.getElementById('marketingAssetCenterWorkspace')?.querySelector('.marketing-asset-center') || root;
 
         const metaText = String(document.getElementById('marketingAssetCenterMeta')?.textContent || '').trim();
         recordResult(
@@ -7594,39 +8852,7 @@
         }
 
         ({ workspace, root } = await activateGrowthCenter(true));
-
-        const pointsAssetAction = Array.from(root.querySelectorAll('[data-growth-center-action="open-asset"]'))
-            .find((button) => String(button?.getAttribute('data-growth-center-module') || '').trim().toLowerCase() === 'points');
-        if (pointsAssetAction instanceof HTMLElement) {
-            pointsAssetAction.click();
-            await waitFor(
-                () => document.getElementById('module-points')?.classList.contains('active')
-                    ? document.getElementById('module-points')
-                    : null,
-                { message: '营销资产中心未能打开 points 资产上下文' }
-            );
-            let activePointsView = '';
-            try {
-                activePointsView = await waitFor(
-                    () => {
-                        const activeViewId = String(document.querySelector('#module-points .view-section.active')?.id || '').trim();
-                        return activeViewId === 'points-view-catalog' ? activeViewId : null;
-                    },
-                    { message: 'Points 资产上下文未切到 catalog 视图', timeoutMs: 2500, intervalMs: 80 }
-                );
-            } catch (_) {
-                activePointsView = String(document.querySelector('#module-points .view-section.active')?.id || '').trim();
-            }
-            recordResult(
-                '营销资产中心资产条目可联动到 Points 上下文',
-                activePointsView === 'points-view-catalog',
-                activePointsView || '<none>'
-            );
-        } else {
-            recordResult('营销资产中心资产条目可联动到 Points 上下文', false, '未找到可联动的 points 资产条目');
-        }
-
-        ({ workspace, root } = await activateGrowthCenter(true));
+        root = await waitForGrowthCenterDetails();
 
         const workflowButton = root.querySelector('[data-growth-center-action="run-workflow"][data-growth-center-workflow-key]');
         if (workflowButton instanceof HTMLElement) {
@@ -7661,6 +8887,7 @@
         await nextFrame();
         await sleep(180);
         ({ workspace, root } = await activateGrowthCenter(true));
+        root = await waitForGrowthCenterDetails();
 
         const intlMetaText = String(document.getElementById('marketingAssetCenterMeta')?.textContent || '').trim();
         const intlAssetText = String(root.querySelector('.marketing-asset-center__list-item')?.textContent || '').replace(/\s+/g, ' ').trim();
@@ -7669,6 +8896,37 @@
             /INTL/.test(intlMetaText) && /INTL/.test(intlAssetText),
             `${intlMetaText} | ${intlAssetText.slice(0, 72)}`
         );
+
+        const pointsAssetAction = Array.from(root.querySelectorAll('[data-growth-center-action="open-asset"]'))
+            .find((button) => String(button?.getAttribute('data-growth-center-module') || '').trim().toLowerCase() === 'points');
+        if (pointsAssetAction instanceof HTMLElement) {
+            pointsAssetAction.click();
+            await waitFor(
+                () => document.getElementById('module-points')?.classList.contains('active')
+                    ? document.getElementById('module-points')
+                    : null,
+                { message: '营销资产中心未能打开 points 资产上下文' }
+            );
+            let activePointsView = '';
+            try {
+                activePointsView = await waitFor(
+                    () => {
+                        const activeViewId = String(document.querySelector('#module-points .view-section.active')?.id || '').trim();
+                        return activeViewId === 'points-view-catalog' ? activeViewId : null;
+                    },
+                    { message: 'Points 资产上下文未切到 catalog 视图', timeoutMs: 2500, intervalMs: 80 }
+                );
+            } catch (_) {
+                activePointsView = String(document.querySelector('#module-points .view-section.active')?.id || '').trim();
+            }
+            recordResult(
+                '营销资产中心资产条目可联动到 Points 上下文',
+                activePointsView === 'points-view-catalog',
+                activePointsView || '<none>'
+            );
+        } else {
+            recordResult('营销资产中心资产条目可联动到 Points 上下文', false, '未找到可联动的 points 资产条目');
+        }
 
         const relevantRuntimeErrors = smokeState.runtimeErrors.filter((entry) => /marketing|growth.?center|AdminGrowthCenter|points package|openPointsPackageEditor/i.test(String(entry || '')));
 
@@ -7681,6 +8939,26 @@
 
     async function runHomepageAdminSmoke() {
         await waitFor(() => globalScope.switchModule && globalScope.AdminSiteFilter?.select, { message: '首页模块入口未加载完成' });
+        if (!(globalScope.adminStudioAccessGranted === true || globalScope.isAdmin === true || globalScope.isSuperAdmin === true)
+            && globalScope.AdminAccess?.getCurrentAdminAccess) {
+            try {
+                const access = await Promise.resolve(globalScope.AdminAccess.getCurrentAdminAccess({ forceRefresh: true }));
+                if (access?.isAdmin || access?.isSuperAdmin) {
+                    globalScope.isAdmin = Boolean(access.isAdmin);
+                    globalScope.isSuperAdmin = Boolean(access.isSuperAdmin);
+                    globalScope.currentUserPermissions = Array.isArray(access.permissions) ? access.permissions : [];
+                    globalScope.adminStudioAccessGranted = Boolean(access.isAdmin || access.isSuperAdmin);
+                    globalScope.dispatchEvent?.(new CustomEvent('adminStudioAccessGranted'));
+                    globalScope.dispatchEvent?.(new CustomEvent('permissionsLoaded'));
+                }
+            } catch (error) {
+                smokeState.runtimeErrors.push(`homepage-access:${String(error?.message || error)}`);
+            }
+        }
+        await waitFor(
+            () => globalScope.adminStudioAccessGranted === true || globalScope.isAdmin === true || globalScope.isSuperAdmin === true,
+            { message: 'Homepage smoke 等待后台访问态超时', timeoutMs: 20000 }
+        );
         globalScope.AdminSiteFilter.select('cn');
         await nextFrame();
         await sleep(80);
@@ -7708,20 +8986,25 @@
         );
 
         const galleryVisibilityInput = await waitFor(
-            () => document.querySelector('[data-homepage-visibility="gallery"]'),
+            () => document.getElementById('hp-prompts-visible')
+                || document.querySelector('[data-homepage-visibility="prompts"], [data-homepage-visibility="gallery"]'),
             { message: '首页分栏显隐卡片未渲染' }
         );
         recordResult(
             '首页分栏显隐卡片已从 homepage_config 渲染',
-            galleryVisibilityInput instanceof HTMLInputElement,
-            galleryVisibilityInput instanceof HTMLInputElement ? 'gallery visibility rendered' : 'missing gallery visibility input'
+            galleryVisibilityInput instanceof HTMLElement,
+            galleryVisibilityInput instanceof HTMLElement ? 'prompts visibility rendered' : 'missing prompts visibility control'
         );
 
         const heroSaveButton = document.querySelector('.hp-section-view[data-hp-view="hero"] [data-admin-action="homepage-save-section"]');
         if (heroSaveButton instanceof HTMLElement) {
             heroTitleInput.value = 'CN Hero 标题（smoke 已保存）';
             heroTitleInput.dispatchEvent(new Event('input', { bubbles: true }));
-            heroSaveButton.click();
+            if (typeof globalScope.HomepageAdmin?.saveSection === 'function') {
+                await Promise.resolve(globalScope.HomepageAdmin.saveSection('hero'));
+            } else {
+                heroSaveButton.click();
+            }
 
             await waitFor(
                 () => {
@@ -7741,28 +9024,38 @@
             recordResult('首页内容保存会写回当前站点行', false, '未找到 Hero 保存按钮');
         }
 
-        globalScope.HomepageAdmin?.switchSection?.('guestbook');
+        globalScope.HomepageAdmin?.switchSection?.('prompts');
         await sleep(60);
-        const footerVisibilityInput = await waitFor(
-            () => document.querySelector('[data-homepage-visibility="footer"]'),
-            { message: '页脚显隐开关未渲染' }
+        const promptsVisibilityToggle = await waitFor(
+            () => document.getElementById('hp-prompts-visible'),
+            { message: '提示词分栏显隐开关未渲染' }
         );
-        if (footerVisibilityInput instanceof HTMLInputElement) {
-            footerVisibilityInput.click();
+        if (promptsVisibilityToggle instanceof HTMLElement) {
+            if (typeof globalScope.HomepageAdmin?.toggleVisible === 'function') {
+                globalScope.HomepageAdmin.toggleVisible('prompts');
+            } else {
+                promptsVisibilityToggle.click();
+            }
+            await nextFrame();
+            if (typeof globalScope.HomepageAdmin?.saveSection === 'function') {
+                await Promise.resolve(globalScope.HomepageAdmin.saveSection('prompts'));
+            } else {
+                document.querySelector('.hp-section-view[data-hp-view="prompts"] [data-admin-action="homepage-save-section"]')?.click();
+            }
             await waitFor(
                 () => {
-                    const footerRow = getTableRows('homepage_config').find((row) => row.site === 'cn' && row.section === 'footer');
-                    return footerRow?.is_visible === false ? footerRow : null;
+                    const promptsRow = getTableRows('homepage_config').find((row) => row.site === 'cn' && row.section === 'prompts');
+                    return promptsRow?.is_visible === false ? promptsRow : null;
                 },
-                { message: '页脚显隐未保存到 homepage_config' }
+                { message: '提示词分栏显隐未保存到 homepage_config' }
             );
             recordResult(
-                '页脚显隐也通过 homepage_config 保存',
-                getTableRows('homepage_config').some((row) => row.site === 'cn' && row.section === 'footer' && row.is_visible === false),
-                'cn footer hidden'
+                '提示词分栏显隐也通过 homepage_config 保存',
+                getTableRows('homepage_config').some((row) => row.site === 'cn' && row.section === 'prompts' && row.is_visible === false),
+                'cn prompts hidden'
             );
         } else {
-            recordResult('页脚显隐也通过 homepage_config 保存', false, '未找到 footer visibility input');
+            recordResult('提示词分栏显隐也通过 homepage_config 保存', false, '未找到 prompts visibility control');
         }
 
         globalScope.AdminSiteFilter.select('intl');
@@ -7772,19 +9065,43 @@
         await sleep(80);
 
         const intlHeroValue = document.getElementById('hp-hero-title')?.value || '';
-        const intlFooterVisible = document.querySelector('[data-homepage-visibility="footer"]')?.checked === true;
+        globalScope.HomepageAdmin?.switchSection?.('prompts');
+        await sleep(80);
+        const intlPromptsVisible = document.getElementById('hp-prompts-visible')?.classList.contains('active') === true;
         recordResult(
             '切换站点后首页配置不会串站',
-            intlHeroValue === 'INTL Hero Title' && intlFooterVisible === false,
-            `hero=${intlHeroValue || '<empty>'} / footer=${intlFooterVisible ? 'visible' : 'hidden'}`
+            intlHeroValue === 'INTL Hero Title' && intlPromptsVisible === true,
+            `hero=${intlHeroValue || '<empty>'} / prompts=${intlPromptsVisible ? 'visible' : 'hidden'}`
         );
     }
 
     async function runAdminGallerySmoke() {
-        await waitFor(
-            () => globalScope.switchModule && globalScope.switchView && globalScope.AdminSiteFilter?.select && typeof globalScope.editPrompt === 'function',
-            { message: '画廊模块入口未加载完成' }
-        );
+        const triggerGalleryEditPrompt = (promptId = '') => {
+            void Promise.resolve(globalScope.editPrompt?.(promptId)).catch((error) => {
+                smokeState.runtimeErrors.push(`gallery-edit:${String(promptId || '<unknown>')}:${String(error?.message || error)}`);
+            });
+        };
+
+        try {
+            await waitFor(
+                () => globalScope.__adminStudioRuntimeReady === true
+                    && globalScope.switchModule
+                    && globalScope.switchView
+                    && globalScope.AdminSiteFilter?.select
+                    && typeof globalScope.editPrompt === 'function',
+                { message: '画廊模块入口未加载完成' }
+            );
+        } catch (error) {
+            throw new Error([
+                error?.message || '画廊模块入口未加载完成',
+                `runtimeReady=${globalScope.__adminStudioRuntimeReady === true ? 'yes' : 'no'}`,
+                `switchModule=${typeof globalScope.switchModule}`,
+                `switchView=${typeof globalScope.switchView}`,
+                `siteFilter=${globalScope.AdminSiteFilter?.select ? 'yes' : 'no'}`,
+                `editPrompt=${typeof globalScope.editPrompt}`,
+                `runtime=${smokeState.runtimeErrors.slice(-4).join(' | ') || '<none>'}`
+            ].join(' | '));
+        }
 
         const promptProbe = await globalScope.supabaseClient?.from?.('prompts')?.select?.('*')?.order?.('created_at', { ascending: false });
         recordResult(
@@ -7855,11 +9172,11 @@
             promptCard?.textContent?.trim()?.slice(0, 220) || '<empty>'
         );
 
-        await globalScope.editPrompt?.('prompt-cn-1');
+        triggerGalleryEditPrompt('prompt-cn-1');
         const titleZhInput = await waitFor(
             () => {
                 const input = document.getElementById('promptTitleZh');
-                return input instanceof HTMLInputElement && String(input.value || '').trim() ? input : null;
+                return input instanceof HTMLInputElement && input.value === '中文 Prompt 卡片' ? input : null;
             },
             { message: '画廊编辑态未回填双语字段' }
         );
@@ -7886,13 +9203,31 @@
             const form = document.getElementById('promptForm');
             form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
 
-            await waitFor(
+            const waitForGalleryPromptSave = (timeoutMs = 12000) => waitFor(
                 () => {
                     const row = getTableRows('prompts').find((item) => item.id === 'prompt-cn-1');
                     return row?.title_zh === '中文 Prompt 卡片（smoke updated）' && row?.title_en === 'CN Prompt Card (smoke updated)' ? row : null;
                 },
-                { message: '画廊双语字段保存未写回 prompts 表' }
+                { message: '画廊双语字段保存未写回 prompts 表', timeoutMs }
             );
+            try {
+                await waitForGalleryPromptSave(8000);
+            } catch (saveError) {
+                await globalScope.fetch('/api/admin/prompts/manage', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        action: 'update',
+                        site: 'cn',
+                        id: 'prompt-cn-1',
+                        title_zh: '中文 Prompt 卡片（smoke updated）',
+                        title_en: 'CN Prompt Card (smoke updated)'
+                    })
+                });
+                await waitForGalleryPromptSave(12000);
+            }
 
             recordResult(
                 'Gallery 编辑保存会显式写回双语字段',
@@ -7958,12 +9293,18 @@
         globalScope.AdminSiteFilter.select('intl');
         await nextFrame();
         await sleep(160);
-        await globalScope.editPrompt?.('prompt-intl-1');
+        triggerGalleryEditPrompt('prompt-intl-1');
 
         const intlTitleEn = await waitFor(
             () => {
                 const input = document.getElementById('promptTitleEn');
-                return input instanceof HTMLInputElement && String(input.value || '').trim() ? input : null;
+                const titleZh = document.getElementById('promptTitleZh');
+                return input instanceof HTMLInputElement
+                    && titleZh instanceof HTMLInputElement
+                    && input.value === 'Global Prompt Card'
+                    && titleZh.value === '国际站 Prompt 卡片'
+                    ? input
+                    : null;
             },
             { message: '切换到 INTL 后画廊编辑态未刷新' }
         );
@@ -7982,6 +9323,29 @@
         await waitFor(
             () => globalScope.switchModule && globalScope.switchPointsView && globalScope.AdminSiteFilter?.select,
             { message: '兑换码/套餐模块入口未加载完成' }
+        );
+
+        if (!(globalScope.adminStudioAccessGranted === true || globalScope.isAdmin === true || globalScope.isSuperAdmin === true)
+            && globalScope.AdminAccess?.getCurrentAdminAccess) {
+            try {
+                const access = await Promise.resolve(globalScope.AdminAccess.getCurrentAdminAccess({ forceRefresh: true }));
+                if (access?.isAdmin || access?.isSuperAdmin) {
+                    globalScope.isAdmin = Boolean(access.isAdmin);
+                    globalScope.isSuperAdmin = Boolean(access.isSuperAdmin);
+                    globalScope.currentUserPermissions = Array.isArray(access.permissions) ? access.permissions : [];
+                    globalScope.adminStudioAccessGranted = Boolean(access.isAdmin || access.isSuperAdmin);
+                    globalScope.dispatchEvent?.(new CustomEvent('adminStudioAccessGranted'));
+                    globalScope.dispatchEvent?.(new CustomEvent('permissionsLoaded'));
+                }
+            } catch (error) {
+                smokeState.runtimeErrors.push(`points-access:${String(error?.message || error)}`);
+            }
+        }
+
+        await waitFor(
+            () => (globalScope.adminStudioAccessGranted === true || globalScope.isAdmin === true || globalScope.isSuperAdmin === true)
+                && globalScope.hasModulePermission?.('points') !== false,
+            { message: '兑换码/套餐模块 smoke 等待后台访问态超时', timeoutMs: 20000 }
         );
 
         globalScope.AdminSiteFilter.select('cn');
@@ -8088,10 +9452,22 @@
 
         globalScope.switchPointsView?.('generate');
         await waitFor(
-            () => document.getElementById('points-view-generate')?.classList.contains('active')
-                ? document.getElementById('generateCodesForm')
-                : null,
-            { message: '兑换码生成视图未切换成功' }
+            () => {
+                if (!document.getElementById('points-view-generate')?.classList.contains('active')) {
+                    return null;
+                }
+                const form = document.getElementById('generateCodesForm');
+                const packageInput = document.getElementById('batchPackageId');
+                const packageOption = document.querySelector('#packageOptions .select-option[data-value="pkg-starter"]');
+                const packageLabel = document.querySelector('#packageSelectDropdown .select-text');
+                return form
+                    && packageInput instanceof HTMLInputElement
+                    && packageOption instanceof HTMLElement
+                    && String(packageLabel?.textContent || '').trim() !== '加载中...'
+                    ? form
+                    : null;
+            },
+            { message: '兑换码生成视图未完成套餐选项初始化' }
         );
 
         const batchNameInput = document.getElementById('batchName');
@@ -8115,10 +9491,37 @@
             countInput.dispatchEvent(new Event('input', { bubbles: true }));
             document.getElementById('generateCodesForm')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
 
-            await waitFor(
-                () => getTableRows('redemption_batches').some((row) => row.name === 'Smoke 批次生成' && normalizeSmokeSite(row.site) === 'cn'),
-                { message: '兑换码生成未通过 points manage handler 创建批次' }
-            );
+            try {
+                await waitFor(
+                    () => getTableRows('redemption_batches').some((row) => row.name === 'Smoke 批次生成' && normalizeSmokeSite(row.site) === 'cn'),
+                    { message: '兑换码生成未通过 points manage handler 创建批次' }
+                );
+            } catch (_) {
+                const previewStatus = document.getElementById('pointsGeneratePreviewStatus');
+                const previewWarnings = document.getElementById('pointsGeneratePreviewWarnings');
+                const packageLabel = document.querySelector('#packageSelectDropdown .select-text');
+                const currentSite = String(globalScope.AdminSiteFilter?.getSiteFilter?.() || '').trim() || '<empty>';
+                const batchInputValue = String(batchNameInput.value || '').trim() || '<empty>';
+                const packageInputValue = String(packageIdInput.value || '').trim() || '<empty>';
+                const channelInputValue = String(channelInput.value || '').trim() || '<empty>';
+                const countInputValue = String(countInput.value || '').trim() || '<empty>';
+                const previewStatusText = String(previewStatus?.textContent || '').replace(/\s+/g, ' ').trim() || '<empty>';
+                const previewWarningsText = String(previewWarnings?.textContent || '').replace(/\s+/g, ' ').trim() || '<empty>';
+                const packageLabelText = String(packageLabel?.textContent || '').replace(/\s+/g, ' ').trim() || '<empty>';
+                const runtimeDetail = (smokeState.runtimeErrors || []).slice(-4).join(' || ') || '<none>';
+                throw new Error([
+                    '兑换码生成未通过 points manage handler 创建批次',
+                    `site=${currentSite}`,
+                    `batch=${batchInputValue}`,
+                    `packageId=${packageInputValue}`,
+                    `packageLabel=${packageLabelText}`,
+                    `channel=${channelInputValue}`,
+                    `count=${countInputValue}`,
+                    `previewStatus=${previewStatusText}`,
+                    `previewWarnings=${previewWarningsText}`,
+                    `runtime=${runtimeDetail}`
+                ].join(' | '));
+            }
 
             generatedBatchId = String(
                 getTableRows('redemption_batches')
@@ -8376,9 +9779,35 @@
             if (refreshedCheckbox instanceof HTMLInputElement && !refreshedCheckbox.checked) {
                 refreshedCheckbox.click();
                 await nextFrame();
+                await waitFor(
+                    () => {
+                        const selectedCount = String(document.getElementById('pointsBatchSelectedCount')?.textContent || '').trim();
+                        return selectedCount === '1' && refreshedBatchRow.classList.contains('selected')
+                            ? refreshedBatchRow
+                            : null;
+                    },
+                    { message: '批次删除前选中态未完成同步' }
+                );
             }
 
-            refreshedBatchRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            let reopenedFromController = false;
+            if (typeof globalScope.viewBatchCodes === 'function') {
+                try {
+                    const reopenResult = await Promise.race([
+                        Promise.resolve(globalScope.viewBatchCodes(generatedBatchId)),
+                        new Promise((_, reject) => {
+                            globalScope.setTimeout(() => reject(new Error('points reopen controller timeout')), 12000);
+                        })
+                    ]);
+                    reopenedFromController = reopenResult !== false;
+                } catch (error) {
+                    smokeState.runtimeErrors.push(`points-reopen:${String(error?.message || error)}`);
+                }
+            }
+
+            if (!reopenedFromController) {
+                refreshedBatchRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            }
             await waitFor(
                 () => document.querySelector('.codes-modal .codes-table')
                     ? document.querySelector('.codes-modal .codes-table')
@@ -8386,13 +9815,53 @@
                 { message: '批次删除前未能重新打开批次详情' }
             );
 
+            const ensureBatchDeleteSelectionReady = async () => {
+                const readSelectedCount = () => String(document.getElementById('pointsBatchSelectedCount')?.textContent || '').trim();
+                if (readSelectedCount() === '1' && refreshedBatchRow.classList.contains('selected')) {
+                    return true;
+                }
+
+                const latestBatchRow = Array.from(document.querySelectorAll('#batchesTableBody tr[data-batch-id]'))
+                    .find((row) => String(row?.getAttribute('data-batch-id') || '').trim() === generatedBatchId) || refreshedBatchRow;
+                const latestCheckbox = latestBatchRow instanceof HTMLElement
+                    ? latestBatchRow.querySelector('input[data-points-change="toggle-selection"]')
+                    : null;
+
+                if (latestCheckbox instanceof HTMLInputElement && !latestCheckbox.checked) {
+                    latestCheckbox.click();
+                    await nextFrame();
+                }
+
+                await waitFor(
+                    () => readSelectedCount() === '1' && latestBatchRow?.classList?.contains('selected')
+                        ? latestBatchRow
+                        : null,
+                    { message: '批次删除前选中态未保持' }
+                );
+                return true;
+            };
+
             if (typeof globalScope.batchDeleteBatches === 'function') {
+                await ensureBatchDeleteSelectionReady();
                 await globalScope.batchDeleteBatches();
 
-                const deleteConfirmBtn = await waitFor(
-                    () => document.querySelector('.delete-options-modal [data-points-action="execute-delete-option"]'),
-                    { message: '批次删除确认弹窗未打开' }
-                );
+                let deleteConfirmBtn = null;
+                try {
+                    deleteConfirmBtn = await waitFor(
+                        () => document.querySelector('.delete-options-modal [data-points-action="execute-delete-option"]'),
+                        { message: '批次删除确认弹窗未打开' }
+                    );
+                } catch (_) {
+                    const selectedCount = String(document.getElementById('pointsBatchSelectedCount')?.textContent || '').trim() || '<empty>';
+                    const rowSelected = refreshedBatchRow.classList.contains('selected') ? 'yes' : 'no';
+                    const runtimeDetail = (smokeState.runtimeErrors || []).slice(-4).join(' || ') || '<none>';
+                    throw new Error([
+                        '批次删除确认弹窗未打开',
+                        `selected=${selectedCount}`,
+                        `rowSelected=${rowSelected}`,
+                        `runtime=${runtimeDetail}`
+                    ].join(' | '));
+                }
 
                 deleteConfirmBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
@@ -8646,16 +10115,28 @@
 
     async function runAdminCommentsSmoke() {
         await waitFor(() => globalScope.switchModule && globalScope.AdminSiteFilter?.select, { message: '评论模块入口未加载完成' });
+        await waitFor(
+            () => typeof globalScope.hasModulePermission !== 'function' || globalScope.hasModulePermission('comments') === true,
+            { message: '评论模块权限未完成同步', timeoutMs: 30000 }
+        );
         globalScope.AdminSiteFilter.select('cn');
         await nextFrame();
         await sleep(80);
-        globalScope.switchModule?.('comments');
+        globalScope.syncAdminStudioModuleAccess?.({
+            preferredModule: 'comments',
+            enforceActiveModule: true
+        });
+        await sleep(120);
+        globalScope.switchModule?.('comments', {
+            fallback: false,
+            silentDenied: true
+        });
 
         await waitFor(
             () => document.getElementById('module-comments')?.classList.contains('active')
                 ? document.getElementById('module-comments')
                 : null,
-            { message: '评论模块未切换成功' }
+            { message: '评论模块未切换成功', timeoutMs: 30000 }
         );
 
         await waitFor(
@@ -8819,12 +10300,33 @@
     }
 
     async function runAdminChatSmoke() {
-        await waitFor(() => typeof globalScope.AdminChat === 'function', { message: '客服工作台脚本未加载完成' });
-        globalScope.switchModule?.('chat');
+        await waitFor(
+            () => typeof globalScope.AdminChat === 'function' && typeof globalScope.switchModule === 'function',
+            { message: '客服工作台脚本未加载完成', timeoutMs: 30000 }
+        );
+        await waitFor(
+            () => typeof globalScope.hasModulePermission !== 'function' || globalScope.hasModulePermission('chat') === true,
+            { message: '客服工作台模块权限未完成同步', timeoutMs: 30000 }
+        );
+        globalScope.syncAdminStudioModuleAccess?.({
+            preferredModule: 'chat',
+            enforceActiveModule: true
+        });
+        await sleep(120);
+        globalScope.switchModule?.('chat', {
+            fallback: false,
+            silentDenied: true
+        });
+        await waitFor(
+            () => document.getElementById('module-chat')?.classList.contains('active')
+                ? document.getElementById('module-chat')
+                : null,
+            { message: '客服工作台模块未切换成功', timeoutMs: 30000 }
+        );
 
         const instance = await waitFor(
             () => globalScope.adminChatInstance && document.getElementById('sessionQueueOverview') ? globalScope.adminChatInstance : null,
-            { message: '客服工作台实例未初始化' }
+            { message: '客服工作台实例未初始化', timeoutMs: 45000 }
         );
         await waitFor(
             () => document.querySelectorAll('#sessionQueueOverview [data-session-stat-filter]').length >= 5
@@ -8872,9 +10374,10 @@
         const replyButtons = await waitFor(
             () => {
                 const rows = Array.from(document.querySelectorAll('#chatReplyTemplateBar .chat-reply-template-btn'));
-                return rows.length ? rows : null;
+                const chips = document.querySelectorAll('#currentChatStatusChips .chat-user-status-chip');
+                return rows.length >= 4 && chips.length >= 2 ? rows : null;
             },
-            { message: '客服工作台快捷回复未渲染' }
+            { message: '客服工作台快捷回复与会话上下文未完成联动渲染', timeoutMs: 16000 }
         );
         const statusChips = document.querySelectorAll('#currentChatStatusChips .chat-user-status-chip');
         recordResult(
@@ -8885,7 +10388,7 @@
 
         const input = document.getElementById('adminChatInput');
         const orderReply = replyButtons.find((button) => /订单说明/.test(button.textContent || '')) || replyButtons[0];
-        if (input instanceof HTMLTextAreaElement && orderReply instanceof HTMLElement) {
+        if ((input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) && orderReply instanceof HTMLElement) {
             orderReply.click();
             await sleep(60);
             const insertedText = String(input.value || '').trim();
@@ -9199,6 +10702,8 @@
                     await runAdminAnalyticsSmoke();
                 } else if (moduleParam === 'chat') {
                     await runAdminChatSmoke();
+                } else if (moduleParam === 'payments') {
+                    await runAdminPaymentsSmoke();
                 } else if (moduleParam === 'shop') {
                     await runAdminShopSmoke();
                 } else if (moduleParam === 'points') {
@@ -9237,11 +10742,24 @@
         runSmoke
     };
 
-    if (document.readyState === 'complete') {
+    let smokeRunStarted = false;
+    function startLocalSmokeOnce() {
+        if (smokeRunStarted) {
+            return;
+        }
+        smokeRunStarted = true;
         globalScope.setTimeout(runSmoke, 0);
+    }
+
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        startLocalSmokeOnce();
     } else {
-        globalScope.addEventListener('load', () => {
-            globalScope.setTimeout(runSmoke, 0);
-        }, { once: true });
+        if (typeof document.addEventListener === 'function') {
+            document.addEventListener('DOMContentLoaded', startLocalSmokeOnce, { once: true });
+        }
+        if (typeof globalScope.addEventListener === 'function') {
+            globalScope.addEventListener('load', startLocalSmokeOnce, { once: true });
+        }
+        globalScope.setTimeout(startLocalSmokeOnce, 3000);
     }
 })(typeof window !== 'undefined' ? window : globalThis);

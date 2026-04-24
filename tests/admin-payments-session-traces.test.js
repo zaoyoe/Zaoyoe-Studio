@@ -16,7 +16,7 @@ test('payments ops workspace exposes checkout session traces', () => {
     const htmlMarkers = [
         '最近支付意图会话',
         'id="paymentsCheckoutSessionsList"',
-        'js/admin-payments.js?v=20260419_ADMIN_PAYMENTS_SESSION_TRACE_1'
+        'js/admin-payments.js?v=20260421_ADMIN_PAYMENTS_CONTEXT_HELPER_P2'
     ];
 
     for (const marker of htmlMarkers) {

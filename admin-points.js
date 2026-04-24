@@ -124,6 +124,69 @@ function announcePointsAction(message = '', tone = 'success') {
     alert(normalizedMessage);
 }
 
+function normalizePointsCommandFeedbackState(tone = '') {
+    const normalized = String(tone || '').trim().toLowerCase();
+    if (normalized === 'success' || normalized === 'saved') return 'saved';
+    if (normalized === 'warning' || normalized === 'partial') return 'partial';
+    if (normalized === 'error' || normalized === 'danger' || normalized === 'failed') return 'failed';
+    if (normalized === 'info' || normalized === 'loading' || normalized === 'pending') return 'loading';
+    return 'ready';
+}
+
+function emitPointsCommandFeedback(message = '', feedbackState = 'saved', options = {}) {
+    const normalizedMessage = String(message || '').trim();
+    if (!normalizedMessage) {
+        return null;
+    }
+
+    const detail = {
+        kind: 'module-result',
+        source: String(options?.source || 'points-batch').trim().toLowerCase() || 'points-batch',
+        module: 'points',
+        state: normalizePointsCommandFeedbackState(feedbackState || options?.tone || ''),
+        tone: String(options?.tone || '').trim().toLowerCase(),
+        message: normalizedMessage,
+        persistent: options?.persistent === true,
+        timestamp: Date.now()
+    };
+
+    if (typeof window.dispatchAdminStudioFeedbackSignal === 'function') {
+        return window.dispatchAdminStudioFeedbackSignal(detail);
+    }
+
+    if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+        try {
+            window.dispatchEvent(new CustomEvent('admin-feedback-signal', { detail }));
+        } catch (_) {
+            // Points inline feedback must remain best-effort.
+        }
+    }
+
+    return detail;
+}
+
+function buildPointsGenerateFeedbackMessage({
+    batchName = '',
+    count = 0,
+    site = '',
+    failed = false,
+    reason = ''
+} = {}) {
+    const normalizedBatchName = String(batchName || '').trim() || '未命名批次';
+    const normalizedCount = Math.max(0, Number.parseInt(count, 10) || 0);
+    const normalizedSite = String(site || '').trim().toLowerCase();
+    const siteLabel = normalizedSite === 'intl'
+        ? 'INTL'
+        : (normalizedSite === 'cn' ? 'CN' : '当前站点');
+
+    if (failed) {
+        const normalizedReason = String(reason || '').trim() || '请稍后重试';
+        return `兑换码生成失败：${normalizedReason}`;
+    }
+
+    return `批次「${normalizedBatchName}」已在 ${siteLabel} 站点生成 ${normalizedCount || 0} 个兑换码`;
+}
+
 async function copyPointsTextToClipboard(text = '', {
     successMessage = '已复制',
     emptyMessage = '没有可复制的内容',
@@ -156,6 +219,8 @@ async function copyPointsTextToClipboard(text = '', {
 let pointsCatalogSnapshot = null;
 let pointsCatalogSite = '';
 let pointsCatalogRows = [];
+let pointsModuleInitialized = false;
+let pointsPendingActivationSync = false;
 let pointsPackageEditorState = {
     mode: 'create',
     packageId: ''
@@ -326,12 +391,20 @@ function clearPointsBatchCodesFeedback(batchId = '') {
 }
 
 function setPointsBatchCodesFeedback(message = '', tone = 'info', batchId = '') {
+    const normalizedMessage = String(message || '').trim();
+    const normalizedTone = String(tone || 'info').trim().toLowerCase() || 'info';
     pointsBatchCodesFeedbackState = {
         batchId: String(batchId || window.currentViewBatchId || pointsBatchCodesUiState.batchId || '').trim(),
-        message: String(message || '').trim(),
-        tone: String(tone || 'info').trim().toLowerCase() || 'info'
+        message: normalizedMessage,
+        tone: normalizedTone
     };
     renderPointsBatchCodesFeedback();
+    if (normalizedMessage) {
+        emitPointsCommandFeedback(normalizedMessage, normalizePointsCommandFeedbackState(normalizedTone), {
+            source: 'points-codes',
+            tone: normalizedTone
+        });
+    }
 }
 
 function renderPointsBatchListFeedback() {
@@ -362,6 +435,8 @@ function clearPointsBatchListFeedback(kind = '') {
 
 function setPointsBatchListFeedback(message = '', tone = 'info', kind = 'action') {
     const options = arguments[3] && typeof arguments[3] === 'object' ? arguments[3] : {};
+    const normalizedMessage = String(message || '').trim();
+    const normalizedTone = String(tone || 'info').trim().toLowerCase() || 'info';
     const stats = Array.isArray(options.stats)
         ? options.stats
             .map((item) => {
@@ -375,13 +450,19 @@ function setPointsBatchListFeedback(message = '', tone = 'info', kind = 'action'
             .filter(Boolean)
         : [];
     pointsBatchListFeedbackState = {
-        message: String(message || '').trim(),
-        tone: String(tone || 'info').trim().toLowerCase() || 'info',
+        message: normalizedMessage,
+        tone: normalizedTone,
         kind: String(kind || 'action').trim().toLowerCase() || 'action',
         detail: String(options.detail || '').trim(),
         stats
     };
     renderPointsBatchListFeedback();
+    if (normalizedMessage && pointsBatchListFeedbackState.kind === 'action') {
+        emitPointsCommandFeedback(normalizedMessage, normalizePointsCommandFeedbackState(normalizedTone), {
+            source: 'points-batch',
+            tone: normalizedTone
+        });
+    }
 }
 
 function clearPointsLookupResult({ renderEmptyState = false } = {}) {
@@ -687,6 +768,31 @@ async function fetchPointsCatalogSnapshot({ site = getPointsReadSite(), force = 
     return payload;
 }
 
+async function ensurePointsPackageCatalogReady(packageId = '', { site = getPointsReadSite() } = {}) {
+    const normalizedPackageId = String(packageId || '').trim();
+    if (!normalizedPackageId || normalizedPackageId === 'custom') {
+        return true;
+    }
+
+    if (getPointsSelectedPackageData(normalizedPackageId)) {
+        return true;
+    }
+
+    const syncRowsFromPayload = (payload = {}) => {
+        const rows = Array.isArray(payload?.packages) ? payload.packages : [];
+        setPointsCatalogRows(rows);
+        return Boolean(getPointsSelectedPackageData(normalizedPackageId));
+    };
+
+    const cachedPayload = await fetchPointsCatalogSnapshot({ site, force: false });
+    if (syncRowsFromPayload(cachedPayload)) {
+        return true;
+    }
+
+    const refreshedPayload = await fetchPointsCatalogSnapshot({ site, force: true });
+    return syncRowsFromPayload(refreshedPayload);
+}
+
 function buildEmptyPointsPackageMetrics() {
     return {
         cn: { batch_count: 0, generated_count: 0, used_count: 0 },
@@ -968,6 +1074,8 @@ function buildPointsGeneratePreviewModel() {
     const packageId = String(packageInput?.value || '').trim();
     const isCustomPoints = packageId === 'custom';
     const selectedPackage = getPointsSelectedPackageData(packageId);
+    const catalogRows = getPointsCatalogRows();
+    const hasCatalogRows = Array.isArray(catalogRows) && catalogRows.length > 0;
     const customPointsAmount = normalizePointAmount(customPointsInput?.value, 0);
     const pointsPerCode = isCustomPoints
         ? customPointsAmount
@@ -980,7 +1088,7 @@ function buildPointsGeneratePreviewModel() {
         ? (customPointsAmount > 0 ? `自定义积分 (${formatPointAmount(customPointsAmount)} 积分)` : '自定义积分')
         : (selectedPackage
             ? `${selectedPackage.name}${selectedPackage.total_points ? ` (${formatPointAmount(selectedPackage.total_points)} 积分)` : ''}`
-            : '未选择套餐');
+            : (packageId ? '套餐信息同步中' : '未选择套餐'));
     const batchLabel = batchName || '未命名批次';
     const totalPoints = pointsPerCode > 0 && count > 0 ? pointsPerCode * count : 0;
 
@@ -999,8 +1107,10 @@ function buildPointsGeneratePreviewModel() {
     if (isCustomPoints && customPointsAmount <= 0) {
         blockers.push('自定义积分模式下，需要填写大于 0 的积分数量。');
     }
-    if (!isCustomPoints && packageId && !selectedPackage) {
+    if (!isCustomPoints && packageId && hasCatalogRows && !selectedPackage) {
         blockers.push('当前套餐不存在或尚未加载完成，请重新选择。');
+    } else if (!isCustomPoints && packageId && !selectedPackage) {
+        warnings.push('套餐目录仍在同步，提交前会自动补齐一次校验。');
     }
     if (count <= 0) {
         blockers.push('生成数量至少为 1。');
@@ -1035,6 +1145,45 @@ function buildPointsGeneratePreviewModel() {
         statusTone,
         statusLabel
     };
+}
+
+function getPointsGenerateSubmitBlockers({
+    currentSite = '',
+    batchName = '',
+    packageId = '',
+    count = 0,
+    isCustomPoints = false,
+    customPointsAmount = 0,
+    selectedPackage = null
+} = {}) {
+    const blockers = [];
+    const normalizedSite = String(currentSite || '').trim().toLowerCase();
+    const normalizedBatchName = String(batchName || '').trim();
+    const normalizedPackageId = String(packageId || '').trim();
+    const normalizedCount = Math.max(0, Number.parseInt(count, 10) || 0);
+    const normalizedCustomPointsAmount = normalizePointAmount(customPointsAmount, 0);
+    const hasCatalogRows = getPointsCatalogRows().length > 0;
+
+    if (normalizedSite !== 'cn' && normalizedSite !== 'intl') {
+        blockers.push('顶部站点筛选仍是“全部”，先切到 CN 或 INTL 后才能真正写入生成。');
+    }
+    if (!normalizedBatchName) {
+        blockers.push('请先填写批次名称，便于后续在批次管理里快速定位。');
+    }
+    if (!normalizedPackageId) {
+        blockers.push('请选择一个套餐，或者切换到“自定义积分”。');
+    }
+    if (isCustomPoints && normalizedCustomPointsAmount <= 0) {
+        blockers.push('自定义积分模式下，需要填写大于 0 的积分数量。');
+    }
+    if (!isCustomPoints && normalizedPackageId && hasCatalogRows && !selectedPackage) {
+        blockers.push('当前套餐不存在或尚未加载完成，请重新选择。');
+    }
+    if (normalizedCount <= 0) {
+        blockers.push('生成数量至少为 1。');
+    }
+
+    return blockers;
 }
 
 function renderPointsGeneratePreview() {
@@ -1536,27 +1685,16 @@ function focusPointsAnalyticsTarget(target, block = 'center') {
 }
 
 function openAnalyticsPointsContext(context = {}) {
-    const normalizedContext = context && typeof context === 'object' && !Array.isArray(context)
-        ? context
-        : {};
-    const batchId = String(normalizedContext.batchId || '').trim();
-    const code = String(normalizedContext.code || normalizedContext.focusCode || '').trim();
-    const requestedView = String(normalizedContext.view || '').trim().toLowerCase();
-    const lookupValue = String(
-        normalizedContext.lookupValue
-        || normalizedContext.ledgerId
-        || normalizedContext.referenceId
-        || ''
-    ).trim();
-    const search = String(
-        normalizedContext.search
-        || normalizedContext.batchName
-        || ''
-    ).trim();
-    const quick = String(normalizedContext.quick || '').trim().toLowerCase();
-    const channel = String(normalizedContext.channel || '').trim().toLowerCase();
-    const packageId = String(normalizedContext.packageId || '').trim();
-    const date = String(normalizedContext.date || '').trim().toLowerCase();
+    const normalizedContext = resolvePointsShellContext(context);
+    const batchId = normalizedContext.batchId;
+    const code = normalizedContext.code;
+    const requestedView = normalizedContext.view;
+    const lookupValue = normalizedContext.lookupValue;
+    const search = normalizedContext.search;
+    const quick = normalizedContext.quick;
+    const channel = normalizedContext.channel;
+    const packageId = normalizedContext.packageId;
+    const date = normalizedContext.date;
 
     if (batchId) {
         navigateToBatch(batchId, code ? { code } : {});
@@ -1649,9 +1787,111 @@ function openAnalyticsPointsContext(context = {}) {
     return true;
 }
 
+function normalizePointsShellContextObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function resolvePointsShellContext(context = {}) {
+    const normalizedContext = normalizePointsShellContextObject(context);
+    const payload = normalizePointsShellContextObject(normalizedContext.payload);
+    const raw = normalizePointsShellContextObject(normalizedContext.raw);
+
+    return {
+        batchId: String(
+            normalizedContext.batchId
+            || normalizedContext.batch_id
+            || payload.batchId
+            || payload.batch_id
+            || raw.batchId
+            || raw.batch_id
+            || ''
+        ).trim(),
+        code: String(
+            normalizedContext.code
+            || normalizedContext.focusCode
+            || normalizedContext.focus_code
+            || payload.code
+            || payload.focusCode
+            || payload.focus_code
+            || raw.code
+            || raw.focusCode
+            || raw.focus_code
+            || ''
+        ).trim(),
+        view: String(
+            normalizedContext.view
+            || payload.view
+            || raw.view
+            || ''
+        ).trim().toLowerCase(),
+        lookupValue: String(
+            normalizedContext.lookupValue
+            || normalizedContext.ledgerId
+            || normalizedContext.referenceId
+            || payload.lookupValue
+            || payload.ledgerId
+            || payload.referenceId
+            || raw.lookupValue
+            || raw.ledgerId
+            || raw.referenceId
+            || ''
+        ).trim(),
+        search: String(
+            normalizedContext.search
+            || normalizedContext.searchQuery
+            || normalizedContext.query
+            || normalizedContext.batchName
+            || payload.search
+            || payload.searchQuery
+            || payload.query
+            || payload.batchName
+            || raw.search
+            || raw.searchQuery
+            || raw.query
+            || raw.batchName
+            || ''
+        ).trim(),
+        quick: String(
+            normalizedContext.quick
+            || payload.quick
+            || raw.quick
+            || ''
+        ).trim().toLowerCase(),
+        channel: String(
+            normalizedContext.channel
+            || payload.channel
+            || raw.channel
+            || ''
+        ).trim().toLowerCase(),
+        packageId: String(
+            normalizedContext.packageId
+            || normalizedContext.package_id
+            || payload.packageId
+            || payload.package_id
+            || raw.packageId
+            || raw.package_id
+            || ''
+        ).trim(),
+        date: String(
+            normalizedContext.date
+            || payload.date
+            || raw.date
+            || ''
+        ).trim().toLowerCase()
+    };
+}
+
+async function openAdminPointsShellContext(context = {}, options = {}) {
+    return activatePointsModule(
+        normalizePointsShellContextObject(context),
+        normalizePointsShellContextObject(options)
+    );
+}
+
 window.switchPointsView = switchPointsView;
 window.navigateToBatch = navigateToBatch;
 window.openAnalyticsPointsContext = openAnalyticsPointsContext;
+window.openAdminPointsShellContext = openAdminPointsShellContext;
 window.openPointsPackageEditor = openPointsPackageEditor;
 window.loadBatches = loadBatches;
 window.closeCodesModal = closeCodesModal;
@@ -1663,13 +1903,31 @@ window.prefetchPointsModule = prefetchPointsModule;
 // ========================================
 let batchExpiresPickerInstance = null;
 
-function initBatchExpiresPicker() {
+async function ensurePointsFlatpickrRuntime() {
+    if (typeof flatpickr !== 'undefined') {
+        return true;
+    }
+
+    if (typeof window.ensureAdminFlatpickr !== 'function') {
+        return false;
+    }
+
+    try {
+        await window.ensureAdminFlatpickr();
+        return typeof flatpickr !== 'undefined';
+    } catch (error) {
+        console.error('[AdminPoints] Failed to load Flatpickr runtime:', error);
+        showToast('日期选择器加载失败，请稍后重试', 'error');
+        return false;
+    }
+}
+
+async function initBatchExpiresPicker() {
     const input = document.getElementById('batchExpires');
     if (!input || batchExpiresPickerInstance) return;
 
-    // Check if Flatpickr is loaded
-    if (typeof flatpickr === 'undefined') {
-        console.warn('Flatpickr not loaded yet');
+    const runtimeReady = await ensurePointsFlatpickrRuntime();
+    if (!runtimeReady) {
         return;
     }
 
@@ -2675,10 +2933,14 @@ async function savePointsPackageForm(event) {
             nextPackageId: result.row?.id || pointsPackageEditorState.packageId
         });
 
+        const successMessage = isCreate ? '积分套餐已创建' : '积分套餐已保存';
         announcePointsAction(isCreate ? '套餐已创建' : '套餐已保存', 'success');
+        emitPointsCommandFeedback(successMessage, 'saved', { source: 'points-packages' });
     } catch (error) {
         console.error('Failed to save points package:', error);
+        const failureMessage = `保存积分套餐失败: ${error.message}`;
         announcePointsAction(`保存套餐失败: ${error.message}`, 'error');
+        emitPointsCommandFeedback(failureMessage, 'failed', { source: 'points-packages' });
     } finally {
         setPointsPackageSaveButtonState(
             false,
@@ -2845,12 +3107,16 @@ async function submitPointsPackageDelete(event) {
 
         closePointsPackageDeleteModal();
         await reloadPointsCatalogAfterMutation({ nextMode: 'create' });
+        const successMessage = '积分套餐已删除';
         announcePointsAction('套餐已删除', 'success');
+        emitPointsCommandFeedback(successMessage, 'saved', { source: 'points-packages' });
     } catch (error) {
         console.error('Failed to delete points package:', error);
         pointsPackageDeleteModalState.submitting = false;
         syncPointsPackageDeleteModalState();
+        const failureMessage = `删除积分套餐失败: ${error.message}`;
         announcePointsAction(`删除套餐失败: ${error.message}`, 'error');
+        emitPointsCommandFeedback(failureMessage, 'failed', { source: 'points-packages' });
     }
 }
 
@@ -3142,10 +3408,23 @@ function initPointsDropdowns() {
 let generatedCodes = [];
 
 async function generateCodes(event) {
-    event.preventDefault();
+    if (event?.__pointsGenerateHandled === true) {
+        return;
+    }
+    if (event && typeof event === 'object') {
+        try {
+            event.__pointsGenerateHandled = true;
+        } catch (_) {
+            // Native submit events may reject extension in some runtimes.
+        }
+    }
+    event?.preventDefault?.();
 
     const currentSite = requireWritablePointsSite({ formId: 'generateCodesForm' });
     if (!currentSite) {
+        emitPointsCommandFeedback('生成兑换码需要先在站点筛选中选择 CN 或 INTL，all 视图仅用于查看。', 'failed', {
+            source: 'points-generate'
+        });
         return;
     }
 
@@ -3155,16 +3434,36 @@ async function generateCodes(event) {
     const channel = document.getElementById('batchChannel').value;
     const expiresInput = document.getElementById('batchExpires').value;
     const expiresAt = expiresInput ? new Date(expiresInput).toISOString() : null;
-    const selectedPackage = getPointsSelectedPackageData(packageIdValue);
-    const previewModel = buildPointsGeneratePreviewModel();
 
     const isCustomPoints = packageIdValue === 'custom';
     const customPointsAmount = isCustomPoints
         ? normalizePointAmount(document.getElementById('customPointsAmount')?.value, 0)
         : null;
 
-    if (previewModel.blockers.length > 0) {
-        announcePointsAction(previewModel.blockers[0], 'error');
+    try {
+        await ensurePointsPackageCatalogReady(packageIdValue, { site: currentSite });
+    } catch (err) {
+        console.warn('[AdminPoints] Failed to sync package catalog before code generation:', err);
+    }
+
+    const selectedPackage = getPointsSelectedPackageData(packageIdValue);
+    const previewModel = buildPointsGeneratePreviewModel();
+    const submitBlockers = getPointsGenerateSubmitBlockers({
+        currentSite,
+        batchName,
+        packageId: packageIdValue,
+        count,
+        isCustomPoints,
+        customPointsAmount,
+        selectedPackage
+    });
+
+    if (submitBlockers.length > 0) {
+        const blockerMessage = submitBlockers[0];
+        announcePointsAction(blockerMessage, 'error');
+        emitPointsCommandFeedback(blockerMessage, 'failed', {
+            source: 'points-generate'
+        });
         renderPointsGeneratePreview();
         return;
     }
@@ -3201,10 +3500,24 @@ async function generateCodes(event) {
         };
         displayGeneratedCodes();
         invalidatePointsCatalogSnapshot();
+        emitPointsCommandFeedback(buildPointsGenerateFeedbackMessage({
+            batchName: generatedBatchContext.batchName,
+            count: generatedBatchContext.count,
+            site: generatedBatchContext.site
+        }), 'saved', {
+            source: 'points-generate'
+        });
 
     } catch (err) {
         console.error('Failed to generate codes:', err);
+        const failureMessage = buildPointsGenerateFeedbackMessage({
+            failed: true,
+            reason: err.message
+        });
         announcePointsAction(`生成失败: ${err.message}`, 'error');
+        emitPointsCommandFeedback(failureMessage, 'failed', {
+            source: 'points-generate'
+        });
     } finally {
         btn.dataset.loading = '0';
         btn.innerHTML = originalText;
@@ -3984,6 +4297,9 @@ function bindAdminPointsRuntimeDelegates() {
         }
 
         switch (form.dataset.pointsSubmit) {
+            case 'generate-codes':
+                generateCodes(event);
+                break;
             case 'save-package':
                 savePointsPackageForm(event);
                 break;
@@ -4422,6 +4738,7 @@ function closeAllBatchDropdowns() {
     ['batchDateFilter', 'batchChannelFilter', 'batchPackageFilter'].forEach(id => {
         document.getElementById(id)?.classList.remove('open');
     });
+    closePointsBatchActionsMenu();
 }
 
 // ========================================
@@ -4528,7 +4845,21 @@ function toggleBatchSelectMode() {
 
 function togglePointsBatchActionsMenu() {
     const menu = document.getElementById('pointsBatchActionsMenu');
-    menu.classList.toggle('show');
+    const trigger = document.getElementById('pointsBatchMenuTrigger');
+    if (!menu) {
+        return;
+    }
+    const isOpen = menu.classList.toggle('show');
+    trigger?.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+}
+
+function closePointsBatchActionsMenu() {
+    const menu = document.getElementById('pointsBatchActionsMenu');
+    const trigger = document.getElementById('pointsBatchMenuTrigger');
+    if (menu) {
+        menu.classList.remove('show');
+    }
+    trigger?.setAttribute('aria-expanded', 'false');
 }
 
 // Close batch menu when clicking outside
@@ -4536,7 +4867,7 @@ document.addEventListener('click', (e) => {
     const container = document.getElementById('pointsBatchMenuContainer');
     const menu = document.getElementById('pointsBatchActionsMenu');
     if (container && menu && !container.contains(e.target)) {
-        menu.classList.remove('show');
+        closePointsBatchActionsMenu();
     }
 });
 
@@ -4616,8 +4947,7 @@ async function batchDeleteBatches() {
     }
 
     // Close the batch menu
-    const menu = document.getElementById('pointsBatchActionsMenu');
-    if (menu) menu.classList.remove('show');
+    closePointsBatchActionsMenu();
 
     // First, check if any selected batches have used codes
     const idsArray = Array.from(selectedBatchIds);
@@ -4711,6 +5041,7 @@ function closeDeleteOptionsModal(event) {
 async function executeDeleteWithOption(batchIdsStr) {
     const writableSite = requireWritablePointsSite({ action: 'points-batch-delete' });
     if (!writableSite) {
+        announcePointsScopedAction('批量删除需要先在站点筛选中选择 CN 或 INTL，all 视图仅用于查看。', 'error', { batchList: true });
         return;
     }
 
@@ -4765,8 +5096,9 @@ async function executeDeleteWithOption(batchIdsStr) {
     }
 }
 
-function initBatchDatePickers() {
-    if (typeof flatpickr === 'undefined') return;
+async function initBatchDatePickers() {
+    const runtimeReady = await ensurePointsFlatpickrRuntime();
+    if (!runtimeReady) return;
 
     const fromInput = document.getElementById('batchDateFrom');
     const toInput = document.getElementById('batchDateTo');
@@ -5233,6 +5565,7 @@ async function submitPointsBatchInvalidate(event) {
 
     const writableSite = requireWritablePointsSite({ action: 'points-batch-invalidate' });
     if (!writableSite) {
+        announcePointsScopedAction('批量作废需要先在站点筛选中选择 CN 或 INTL，all 视图仅用于查看。', 'error', { batchList: true });
         syncPointsBatchInvalidateModalState();
         return;
     }
@@ -5401,7 +5734,7 @@ function closePointsCodeActionModal(event) {
     }
 }
 
-function openPointsCodeActionModal({ mode = '', code = '', currentExpiry = '', source = '' } = {}) {
+async function openPointsCodeActionModal({ mode = '', code = '', currentExpiry = '', source = '' } = {}) {
     const normalizedCode = String(code || '').trim();
     if (!normalizedCode) {
         return;
@@ -5466,7 +5799,7 @@ function openPointsCodeActionModal({ mode = '', code = '', currentExpiry = '', s
         });
     }
 
-    if (config.submitMode === 'expiry' && typeof flatpickr !== 'undefined') {
+    if (config.submitMode === 'expiry' && await ensurePointsFlatpickrRuntime()) {
         flatpickr('#pointsCodeActionExpiry', {
             locale: 'zh',
             dateFormat: 'Y-m-d',
@@ -5515,6 +5848,12 @@ async function submitPointsCodeAction(event) {
 
     const writableSite = requireWritablePointsCodeActionSite(mode);
     if (!writableSite) {
+        renderPointsCodeActionModalError('请先在站点筛选中选择 CN 或 INTL 后再处理兑换码。');
+        announcePointsScopedAction('兑换码处理需要先选择 CN 或 INTL 站点。', 'error', {
+            batch: pointsCodeActionModalState.source === 'batch-codes',
+            lookup: pointsCodeActionModalState.source === 'lookup',
+            batchId: window.currentViewBatchId
+        });
         syncPointsCodeActionModalState();
         return;
     }
@@ -5923,7 +6262,7 @@ function syncPointsBatchEditModalState() {
 }
 
 // Open batch edit modal
-function openBatchEditModal(batchId, { returnToCodes = false } = {}) {
+async function openBatchEditModal(batchId, { returnToCodes = false } = {}) {
     const normalizedBatchId = String(batchId || '').trim();
     const batch = allBatches.find((b) => String(b?.id || '').trim() === normalizedBatchId);
     if (!batch) return;
@@ -6060,7 +6399,7 @@ function openBatchEditModal(batchId, { returnToCodes = false } = {}) {
     }
 
     // Initialize flatpickr for expires input
-    if (typeof flatpickr !== 'undefined') {
+    if (await ensurePointsFlatpickrRuntime()) {
         flatpickr('#editBatchExpires', {
             enableTime: true,
             dateFormat: "Y-m-d H:i",
@@ -6177,22 +6516,54 @@ async function batchInvalidateCodes() {
 }
 
 // Navigate to user from redemption record
-function navigateToUser(userId) {
-    if (!userId) return;
+async function navigateToUser(userId) {
+    const normalizedUserId = String(userId || '').trim();
+    if (!normalizedUserId) return false;
 
     // Close the codes modal first
     document.querySelector('.codes-modal-overlay')?.remove();
 
+    if (window.AdminShell?.openContext) {
+        const opened = await window.AdminShell.openContext('users', {
+            source: 'points',
+            entity: 'user',
+            action: 'navigate-user',
+            focus: {
+                userId: normalizedUserId
+            },
+            payload: {
+                modalOptions: {
+                    defaultTab: 'overview'
+                }
+            }
+        }, {
+            settleMs: 0,
+            silentDenied: true
+        });
+        if (opened) {
+            return true;
+        }
+    }
+
     // Switch to users module and open the user
-    if (typeof switchModule === 'function') {
-        switchModule('users');
+    const moduleSwitcher = typeof switchModule === 'function'
+        ? switchModule
+        : null;
+    if (moduleSwitcher) {
+        const switched = moduleSwitcher('users');
+        if (switched === false) {
+            return false;
+        }
         // Wait for module switch then open user modal
         setTimeout(() => {
             if (typeof openUserModal === 'function') {
-                openUserModal(userId);
+                openUserModal(normalizedUserId);
             }
         }, 300);
+        return true;
     }
+
+    return false;
 }
 
 // ========================================
@@ -6693,19 +7064,77 @@ function navigateToBatch(batchId, options = {}) {
     }
 }
 
+function syncPointsModuleIndicator() {
+    window.setTimeout(() => {
+        const activeTab = document.querySelector('#module-points .admin-tab.active');
+        const indicator = document.querySelector('#module-points .admin-tab-indicator');
+        syncPointsTabIndicator(indicator, activeTab);
+    }, 100);
+}
+
+function hasPointsShellContext(context = {}) {
+    const normalizedContext = resolvePointsShellContext(context);
+    return Boolean(
+        normalizedContext.batchId
+        || normalizedContext.code
+        || normalizedContext.lookupValue
+        || normalizedContext.packageId
+        || normalizedContext.search
+        || normalizedContext.quick
+        || normalizedContext.channel
+        || normalizedContext.date
+        || normalizedContext.view
+    );
+}
+
+function initPointsModule() {
+    pointsModuleInitialized = true;
+    pointsPendingActivationSync = false;
+    syncPointsModuleIndicator();
+    renderPointsSiteContexts();
+    switchPointsView(getActivePointsViewName());
+}
+
+function activatePointsModule(context = {}) {
+    const normalizedContext = context && typeof context === 'object' && !Array.isArray(context) ? context : {};
+
+    syncPointsModuleIndicator();
+    renderPointsSiteContexts();
+
+    if (!pointsModuleInitialized) {
+        if (hasPointsShellContext(normalizedContext)) {
+            pointsModuleInitialized = true;
+            pointsPendingActivationSync = false;
+            openAnalyticsPointsContext(normalizedContext);
+            return true;
+        }
+
+        initPointsModule();
+        return true;
+    }
+
+    if (hasPointsShellContext(normalizedContext)) {
+        pointsPendingActivationSync = false;
+        openAnalyticsPointsContext(normalizedContext);
+        return true;
+    }
+
+    if (pointsPendingActivationSync) {
+        pointsPendingActivationSync = false;
+        switchPointsView(getActivePointsViewName());
+        return true;
+    }
+
+    schedulePointsViewPrefetch(getActivePointsViewName());
+    return true;
+}
+
 // ========================================
 // INIT
 // ========================================
 // Triggered when points module is activated
 document.addEventListener('DOMContentLoaded', () => {
-    const initPointsIndicator = () => {
-        // Initialize tab indicator position for Points module
-        setTimeout(() => {
-            const activeTab = document.querySelector('#module-points .admin-tab.active');
-            const indicator = document.querySelector('#module-points .admin-tab-indicator');
-            syncPointsTabIndicator(indicator, activeTab);
-        }, 100);
-    };
+    const initPointsIndicator = () => syncPointsModuleIndicator();
 
     if (window.adminStudioAccessGranted) {
         initPointsIndicator();
@@ -6714,7 +7143,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('adminStudioAccessGranted', initPointsIndicator, { once: true });
 });
 
-window.addEventListener('admin-site-changed', async () => {
+async function handleAdminPointsSiteChange() {
     invalidatePointsCatalogSnapshot();
     clearPointsViewPrefetch();
     clearPointsBatchListFeedback();
@@ -6723,6 +7152,7 @@ window.addEventListener('admin-site-changed', async () => {
 
     const pointsModule = document.getElementById('module-points');
     if (!pointsModule?.classList.contains('active')) {
+        pointsPendingActivationSync = pointsModuleInitialized;
         return;
     }
 
@@ -6782,4 +7212,15 @@ window.addEventListener('admin-site-changed', async () => {
     }
 
     schedulePointsViewPrefetch(activeView.replace(/^points-view-/, '') || 'batches');
-});
+}
+
+window.handleAdminPointsSiteChange = handleAdminPointsSiteChange;
+
+if (window.AdminShell?.registerModule) {
+    window.AdminShell.registerModule('points', {
+        activate: activatePointsModule,
+        onSiteChange: handleAdminPointsSiteChange
+    });
+} else {
+    window.addEventListener('admin-site-changed', handleAdminPointsSiteChange);
+}

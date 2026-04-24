@@ -1,5 +1,6 @@
 // Profile security actions for the unified profile modal layout
 let phoneCooldownSeconds = 0;
+let profileSecurityIndicatorRafId = 0;
 
 function getExistingElements(ids) {
     return ids
@@ -33,6 +34,45 @@ function setPhoneButtonsState() {
     });
 }
 
+function updateProfileSecurityIndicatorPosition() {
+    const overlay = document.getElementById('profileModal');
+    const sidebar = overlay?.querySelector('.profile-security-desktop-sidebar');
+    const activeItem = sidebar?.querySelector('.profile-security-desktop-item.active');
+    const indicator = sidebar?.querySelector('.profile-security-desktop-indicator');
+
+    if (!sidebar || !activeItem || !indicator) {
+        sidebar?.classList.remove('profile-security-desktop-sidebar--indicator-ready');
+        return;
+    }
+
+    const sidebarRect = sidebar.getBoundingClientRect();
+    const itemRect = activeItem.getBoundingClientRect();
+    const top = itemRect.top - sidebarRect.top;
+    const height = itemRect.height;
+
+    if (!Number.isFinite(top) || !Number.isFinite(height) || height <= 0) {
+        sidebar.classList.remove('profile-security-desktop-sidebar--indicator-ready');
+        return;
+    }
+
+    indicator.style.top = `${top}px`;
+    indicator.style.height = `${height}px`;
+    indicator.style.opacity = '1';
+    indicator.classList.toggle('is-danger', activeItem.classList.contains('profile-security-desktop-item--danger'));
+    sidebar.classList.add('profile-security-desktop-sidebar--indicator-ready');
+}
+
+function scheduleProfileSecurityIndicatorUpdate() {
+    if (profileSecurityIndicatorRafId) {
+        cancelAnimationFrame(profileSecurityIndicatorRafId);
+    }
+
+    profileSecurityIndicatorRafId = requestAnimationFrame(() => {
+        profileSecurityIndicatorRafId = 0;
+        updateProfileSecurityIndicatorPosition();
+    });
+}
+
 function switchProfileSecurityPanel(panelKey = 'change-password', event) {
     if (event) {
         if (typeof event.preventDefault === 'function') event.preventDefault();
@@ -59,6 +99,8 @@ function switchProfileSecurityPanel(panelKey = 'change-password', event) {
             panel.classList.add('is-entering');
         }
     });
+
+    scheduleProfileSecurityIndicatorUpdate();
 }
 
 function sanitizePhoneDigits(value) {
@@ -317,6 +359,12 @@ window.bindPhone = bindPhone;
 window.changePassword = changePassword;
 window.deleteAccount = deleteAccount;
 window.switchProfileSecurityPanel = switchProfileSecurityPanel;
+window.refreshProfileSecurityIndicator = scheduleProfileSecurityIndicatorUpdate;
+
+if (!window.__zaoyoeProfileSecurityIndicatorResizeBound) {
+    window.addEventListener('resize', scheduleProfileSecurityIndicatorUpdate, { passive: true });
+    window.__zaoyoeProfileSecurityIndicatorResizeBound = true;
+}
 
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {

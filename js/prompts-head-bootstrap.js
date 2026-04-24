@@ -1,6 +1,11 @@
 (function () {
     'use strict';
 
+    const root = document.documentElement;
+    if (root) {
+        root.classList.add('prompts-gallery-pending');
+    }
+
     const THEME_COLOR = '#000000';
 
     function ensureThemeColorBlack() {

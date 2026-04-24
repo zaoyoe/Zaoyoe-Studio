@@ -12,6 +12,7 @@ let discountTriggerSettingsState = getDefaultDiscountTriggerSettingsState();
 let opsAlertSecretStatus = getDefaultOpsAlertSecretStatus();
 let opsAlertHealthState = getDefaultOpsAlertHealthState();
 let opsAlertMonitorState = getDefaultOpsAlertMonitorState();
+let opsAlertMonitorLastReadyState = null;
 let opsAlertMonitorViewState = getDefaultOpsAlertMonitorViewState();
 let opsAlertMonitorShiftReportViewState = getDefaultOpsAlertMonitorShiftReportViewState();
 let shopRiskCaseComposerState = getDefaultShopRiskCaseComposerState();
@@ -22,9 +23,12 @@ let opsAlertStrategyBeforeUnloadReady = false;
 let verifyMonitorState = getDefaultVerifyMonitorState();
 let verifyKeyPoolCleanupInFlight = false;
 let adminAuditMonitorState = getDefaultAdminAuditMonitorState();
+let verifyMonitorWorkbenchContext = null;
+let adminAuditMonitorWorkbenchContext = null;
 let verifyMonitorFocusTimeoutId = 0;
 let adminAuditMonitorFocusTimeoutId = 0;
 let affiliateSettingsFocusTimeoutId = 0;
+let settingsViewFocusTimeoutId = 0;
 let paymentChannelAccordionState = {
     mock: false,
     afdian: false,
@@ -364,6 +368,8 @@ const OPS_ALERT_MONITOR_CARD_CONFIG_IDS = Object.freeze([
 ]);
 const OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS = 25000;
 const OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS = 20000;
+const OPS_ALERT_MONITOR_FETCH_RETRY_COUNT = 2;
+const OPS_ALERT_MONITOR_FETCH_RETRY_DELAY_MS = 450;
 const VERIFY_MONITOR_FETCH_TIMEOUT_MS = 8000;
 const ADMIN_CONFIG_RICH_TEXT_COLOR_SWATCH_CLASS_MAP = Object.freeze({
     '#ffffff': 'color-swatch--white',
@@ -388,6 +394,17 @@ function pulseAdminConfigToggle(toggleEl) {
     toggleEl._adminConfigPulseTimer = setTimeout(() => {
         toggleEl.classList.remove(ADMIN_CONFIG_TOGGLE_PULSE_CLASS);
     }, 160);
+}
+
+function pulseAdminConfigButton(buttonEl) {
+    if (!buttonEl || buttonEl.disabled) return;
+    buttonEl.classList.remove('is-pressed');
+    void buttonEl.offsetWidth;
+    buttonEl.classList.add('is-pressed');
+    clearTimeout(buttonEl._adminConfigPulseTimer);
+    buttonEl._adminConfigPulseTimer = setTimeout(() => {
+        buttonEl.classList.remove('is-pressed');
+    }, 180);
 }
 
 function setAdminConfigHiddenState(target, hidden) {
@@ -1224,6 +1241,7 @@ function renderVerifyMonitorPanel() {
     renderVerifyMonitorFacts();
     renderVerifyMonitorWorkspace();
     renderVerifyMonitorLists();
+    renderVerifyMonitorWorkbenchContext();
     syncVerifyKeyPoolMaintenanceState();
 }
 
@@ -1557,9 +1575,19 @@ function buildAdminAuditAccessRowMarkup(row) {
             })
             : ''
     ].filter(Boolean);
+    const focusAttrs = [
+        ['data-admin-audit-target-id', String(row.id || row.target_id || '').trim()],
+        ['data-admin-audit-admin-id', String(row.admin_id || '').trim()],
+        ['data-admin-audit-admin-email', String(row.admin_email || '').trim().toLowerCase()],
+        ['data-admin-audit-client-ip', String(row.client_ip || '').trim().toLowerCase()],
+        ['data-ops-alert-workspace-category', 'access']
+    ]
+        .filter(([, value]) => value)
+        .map(([name, value]) => `${name}="${escapeConfigHtml(value)}"`)
+        .join(' ');
 
     return `
-        <article class="admin-audit-monitor-item">
+        <article class="admin-audit-monitor-item" ${focusAttrs}>
             <div class="admin-audit-monitor-item__top">
                 ${buildAdminAuditMonitorBadge(row.granted ? '已签发' : '记录', row.granted ? 'success' : 'neutral')}
                 <strong class="admin-audit-monitor-item__title">${escapeConfigHtml(row.admin_email || row.admin_id || 'unknown-admin')}</strong>
@@ -1577,9 +1605,19 @@ function buildAdminAuditAnomalyRowMarkup(row) {
     if (row.client_ip) detailParts.push(`登录 IP：${escapeConfigHtml(row.client_ip)}`);
     if (row.user_agent_summary) detailParts.push(`设备：${escapeConfigHtml(row.user_agent_summary)}`);
     if (row.origin) detailParts.push(`Origin：${escapeConfigHtml(row.origin)}`);
+    const focusAttrs = [
+        ['data-admin-audit-target-id', String(row.id || row.target_id || '').trim()],
+        ['data-admin-audit-admin-id', String(row.admin_id || '').trim()],
+        ['data-admin-audit-admin-email', String(row.admin_email || '').trim().toLowerCase()],
+        ['data-admin-audit-client-ip', String(row.client_ip || '').trim().toLowerCase()],
+        ['data-ops-alert-workspace-category', 'security']
+    ]
+        .filter(([, value]) => value)
+        .map(([name, value]) => `${name}="${escapeConfigHtml(value)}"`)
+        .join(' ');
 
     return `
-        <article class="admin-audit-monitor-item">
+        <article class="admin-audit-monitor-item" ${focusAttrs}>
             <div class="admin-audit-monitor-item__top">
                 ${buildAdminAuditMonitorBadge('异常登录', 'danger')}
                 <strong class="admin-audit-monitor-item__title">${escapeConfigHtml(row.admin_email || row.admin_id || 'unknown-admin')}</strong>
@@ -1626,9 +1664,19 @@ function buildAdminAuditConfigRowMarkup(row) {
     const tone = getAdminAuditMonitorBadgeTone(
         row.risk_flags?.length ? 'warning' : row.severity
     );
+    const focusAttrs = [
+        ['data-admin-audit-target-id', String(row.id || row.target_id || '').trim()],
+        ['data-admin-audit-admin-id', String(row.admin_id || '').trim()],
+        ['data-admin-audit-admin-email', String(row.admin_email || '').trim().toLowerCase()],
+        ['data-admin-audit-client-ip', String(row.client_ip || '').trim().toLowerCase()],
+        ['data-ops-alert-workspace-category', 'config']
+    ]
+        .filter(([, value]) => value)
+        .map(([name, value]) => `${name}="${escapeConfigHtml(value)}"`)
+        .join(' ');
 
     return `
-        <article class="admin-audit-monitor-item">
+        <article class="admin-audit-monitor-item" ${focusAttrs}>
             <div class="admin-audit-monitor-item__top">
                 ${buildAdminAuditMonitorBadge(row.action_label || '配置变更', tone)}
                 <strong class="admin-audit-monitor-item__title">${escapeConfigHtml(row.admin_email || row.admin_id || 'unknown-admin')}</strong>
@@ -1778,6 +1826,502 @@ function renderAdminAuditMonitorPanel() {
     renderAdminAuditMonitorFacts();
     renderAdminAuditMonitorWorkspace();
     renderAdminAuditMonitorLists();
+    renderAdminAuditMonitorWorkbenchContext();
+}
+
+function buildSettingsWorkbenchFocusItemActionAttrs(focusItem = {}) {
+    const normalizedFocusItem = focusItem && typeof focusItem === 'object' && !Array.isArray(focusItem)
+        ? focusItem
+        : {};
+    const actionName = String(normalizedFocusItem.actionName || '').trim();
+    const context = normalizedFocusItem.context && typeof normalizedFocusItem.context === 'object' && !Array.isArray(normalizedFocusItem.context)
+        ? normalizedFocusItem.context
+        : null;
+    if (!actionName || !context) {
+        return '';
+    }
+
+    const contextAttrs = typeof window.buildOpsAlertWorkspaceContextAttrs === 'function'
+        ? window.buildOpsAlertWorkspaceContextAttrs(context)
+        : {};
+    return [
+        ['data-admin-action', actionName],
+        ...Object.entries(contextAttrs)
+    ]
+        .filter(([, value]) => String(value || '').trim())
+        .map(([name, value]) => `${name}="${escapeConfigHtml(String(value))}"`)
+        .join(' ');
+}
+
+function buildSettingsWorkbenchFocusTargetActionAttrs(action = {}) {
+    const normalizedAction = action && typeof action === 'object' && !Array.isArray(action)
+        ? action
+        : {};
+    const actionName = String(normalizedAction.actionName || 'settings-scroll-focus-target').trim();
+    const targetId = String(normalizedAction.targetId || '').trim();
+    if (!actionName || !targetId) {
+        return '';
+    }
+
+    return [
+        ['data-admin-action', actionName],
+        ['data-focus-target-id', targetId]
+    ]
+        .filter(([, value]) => String(value || '').trim())
+        .map(([name, value]) => `${name}="${escapeConfigHtml(String(value))}"`)
+        .join(' ');
+}
+
+function buildSettingsWorkbenchFocusItemMarkup(focusItem = {}) {
+    const normalizedFocusItem = focusItem && typeof focusItem === 'object' && !Array.isArray(focusItem)
+        ? focusItem
+        : {};
+    const title = String(normalizedFocusItem.title || '').trim();
+    if (!title) {
+        return '';
+    }
+
+    const rankLabel = String(normalizedFocusItem.rankLabel || '已聚焦').trim() || '已聚焦';
+    const metaItems = (Array.isArray(normalizedFocusItem.meta) ? normalizedFocusItem.meta : [])
+        .map((item) => String(item || '').trim())
+        .filter(Boolean);
+    const recommendation = String(normalizedFocusItem.recommendation || '').trim();
+    const actionLabel = String(normalizedFocusItem.actionLabel || '').trim();
+    const actionAttrs = actionLabel ? buildSettingsWorkbenchFocusItemActionAttrs(normalizedFocusItem) : '';
+    const secondaryActionButtons = (Array.isArray(normalizedFocusItem.secondaryActions) ? normalizedFocusItem.secondaryActions : [])
+        .map((action) => {
+            const label = String(action?.label || '').trim();
+            const attrs = label ? buildSettingsWorkbenchFocusTargetActionAttrs(action) : '';
+            if (!label || !attrs) {
+                return '';
+            }
+            return `<button type="button" class="admin-workbench-priority-item__btn" ${attrs}>${escapeConfigHtml(label)}</button>`;
+        })
+        .filter(Boolean);
+    const actionButtons = [
+        actionLabel && actionAttrs
+            ? `<button type="button" class="admin-workbench-priority-item__btn" ${actionAttrs}>${escapeConfigHtml(actionLabel)}</button>`
+            : '',
+        ...secondaryActionButtons
+    ].filter(Boolean);
+
+    return `
+        <div class="admin-workbench-priority-list">
+            <div class="admin-workbench-priority-item">
+                <div class="admin-workbench-priority-item__top">
+                    <div class="admin-workbench-priority-item__title">${escapeConfigHtml(title)}</div>
+                    <span class="admin-workbench-priority-item__rank">${escapeConfigHtml(rankLabel)}</span>
+                </div>
+                ${metaItems.length ? `
+                    <div class="admin-workbench-priority-item__meta">
+                        ${metaItems.map((item) => `<span>${escapeConfigHtml(item)}</span>`).join('')}
+                    </div>
+                ` : ''}
+                ${recommendation ? `<div class="admin-workbench-priority-item__recommendation">${escapeConfigHtml(recommendation)}</div>` : ''}
+                ${actionButtons.length ? `
+                    <div class="admin-workbench-priority-item__actions">
+                        ${actionButtons.join('')}
+                    </div>
+                ` : ''}
+            </div>
+        </div>
+    `;
+}
+
+function buildSettingsWorkbenchPanelAction(label, targetId) {
+    const normalizedLabel = String(label || '').trim();
+    const normalizedTargetId = String(targetId || '').trim();
+    if (!normalizedLabel || !normalizedTargetId) {
+        return null;
+    }
+    return {
+        label: normalizedLabel,
+        targetId: normalizedTargetId
+    };
+}
+
+function dedupeSettingsWorkbenchPanelActions(actions = []) {
+    const seen = new Set();
+    return (Array.isArray(actions) ? actions : [])
+        .filter((action) => action && typeof action === 'object' && !Array.isArray(action))
+        .filter((action) => {
+            const key = `${String(action.label || '').trim()}::${String(action.targetId || '').trim()}`;
+            if (!key.trim() || seen.has(key)) {
+                return false;
+            }
+            seen.add(key);
+            return true;
+        });
+}
+
+function getVerifyMonitorFocusPanelActions(matched = null, context = {}) {
+    const sourceKey = String(matched?.sourceKey || '').trim().toLowerCase();
+    const row = matched?.row && typeof matched.row === 'object' && !Array.isArray(matched.row)
+        ? matched.row
+        : {};
+    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
+    const alertType = String(row.alert_type || normalizedContext.alertType || '').trim().toLowerCase();
+    const actionKeys = [sourceKey, alertType, normalizedContext.category]
+        .join(' ')
+        .toLowerCase();
+    const actions = [];
+
+    if (sourceKey === 'workspace') {
+        actions.push(buildSettingsWorkbenchPanelAction('看告警工作区', 'verifyMonitorCasePanel'));
+    }
+
+    if (sourceKey === 'task' || actionKeys.includes('queue')) {
+        actions.push(buildSettingsWorkbenchPanelAction('看队列状态', 'verifyMonitorQueuePanel'));
+        actions.push(buildSettingsWorkbenchPanelAction('看最近任务', 'verifyMonitorTasksPanel'));
+    }
+
+    if (sourceKey === 'failure' || actionKeys.includes('failure') || actionKeys.includes('incident')) {
+        actions.push(buildSettingsWorkbenchPanelAction('看失败列表', 'verifyMonitorFailuresPanel'));
+        actions.push(buildSettingsWorkbenchPanelAction('看运行画像', 'verifyMonitorFactsPanel'));
+    }
+
+    if (actionKeys.includes('quota')) {
+        actions.push(buildSettingsWorkbenchPanelAction('看额度状态', 'verifyMonitorQuotaPanel'));
+        actions.push(buildSettingsWorkbenchPanelAction('看队列状态', 'verifyMonitorQueuePanel'));
+    }
+
+    if (!actions.length) {
+        actions.push(buildSettingsWorkbenchPanelAction('看运行画像', 'verifyMonitorFactsPanel'));
+        actions.push(buildSettingsWorkbenchPanelAction('看最近任务', 'verifyMonitorTasksPanel'));
+    }
+
+    return dedupeSettingsWorkbenchPanelActions(actions).slice(0, 3);
+}
+
+function getAdminAuditMonitorFocusPanelActions(matched = null, context = {}) {
+    const sourceKey = String(matched?.sourceKey || '').trim().toLowerCase();
+    const row = matched?.row && typeof matched.row === 'object' && !Array.isArray(matched.row)
+        ? matched.row
+        : {};
+    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
+    const categoryKey = String(row.category_key || matched?.category || normalizedContext.category || '').trim().toLowerCase();
+    const alertType = String(row.alert_type || normalizedContext.alertType || '').trim().toLowerCase();
+    const actionKeys = [sourceKey, categoryKey, alertType]
+        .join(' ')
+        .toLowerCase();
+    const actions = [];
+
+    if (sourceKey === 'workspace') {
+        actions.push(buildSettingsWorkbenchPanelAction('看审计告警', 'adminAuditMonitorWorkspacePanel'));
+    }
+
+    if (sourceKey === 'access' || actionKeys.includes('access')) {
+        actions.push(buildSettingsWorkbenchPanelAction('看访问样本', 'adminAuditMonitorRecentAccess'));
+    }
+
+    if (sourceKey === 'anomaly' || actionKeys.includes('security') || actionKeys.includes('login') || actionKeys.includes('anomaly')) {
+        actions.push(buildSettingsWorkbenchPanelAction('看异常来源', 'adminAuditMonitorAnomalyList'));
+        actions.push(buildSettingsWorkbenchPanelAction('看访问样本', 'adminAuditMonitorRecentAccess'));
+    }
+
+    if (sourceKey === 'config' || actionKeys.includes('config') || actionKeys.includes('payment')) {
+        actions.push(buildSettingsWorkbenchPanelAction('看配置审计', 'adminAuditMonitorConfigList'));
+        actions.push(buildSettingsWorkbenchPanelAction('看审计画像', 'adminAuditMonitorFactsPanel'));
+    }
+
+    if (!actions.length) {
+        actions.push(buildSettingsWorkbenchPanelAction('看审计画像', 'adminAuditMonitorFactsPanel'));
+        actions.push(buildSettingsWorkbenchPanelAction('看访问样本', 'adminAuditMonitorRecentAccess'));
+    }
+
+    return dedupeSettingsWorkbenchPanelActions(actions).slice(0, 3);
+}
+
+function renderSettingsWorkbenchContextNote(target, contextState = null, focusItem = null, options = {}) {
+    if (!(target instanceof HTMLElement)) {
+        return false;
+    }
+
+    const normalizedContextState = contextState && typeof contextState === 'object' && !Array.isArray(contextState)
+        ? contextState
+        : null;
+    const normalizedFocusItem = focusItem && typeof focusItem === 'object' && !Array.isArray(focusItem)
+        ? focusItem
+        : null;
+
+    if (!normalizedContextState && !normalizedFocusItem) {
+        setAdminConfigHiddenState(target, true);
+        target.innerHTML = '';
+        return false;
+    }
+
+    const eyebrow = String(
+        normalizedContextState?.eyebrow
+        || normalizedFocusItem?.eyebrow
+        || options.eyebrow
+        || 'Analytics Context'
+    ).trim() || 'Analytics Context';
+    const title = String(
+        normalizedContextState?.title
+        || normalizedFocusItem?.contextTitle
+        || options.title
+        || '分析信号聚焦上下文'
+    ).trim() || '分析信号聚焦上下文';
+    const summary = String(
+        normalizedContextState?.summary
+        || normalizedFocusItem?.summary
+        || options.summary
+        || ''
+    ).trim();
+    const chips = (Array.isArray(normalizedContextState?.chips) ? normalizedContextState.chips : [])
+        .map((item) => ({
+            label: String(item?.label || '').trim(),
+            value: String(item?.value || '').trim()
+        }))
+        .filter((item) => item.label || item.value);
+
+    target.innerHTML = `
+        <div class="admin-workbench-context-note__eyebrow">${escapeConfigHtml(eyebrow)}</div>
+        <div class="admin-workbench-context-note__title">${escapeConfigHtml(title)}</div>
+        ${summary ? `<div class="admin-workbench-context-note__summary">${escapeConfigHtml(summary)}</div>` : ''}
+        ${chips.length ? `
+            <div class="admin-workbench-context-note__chips">
+                ${chips.map((item) => `
+                    <span class="admin-workbench-context-note__chip">${item.label && item.value
+                        ? `${escapeConfigHtml(item.label)} · ${escapeConfigHtml(item.value)}`
+                        : escapeConfigHtml(item.label || item.value)}</span>
+                `).join('')}
+            </div>
+        ` : ''}
+        ${normalizedFocusItem ? buildSettingsWorkbenchFocusItemMarkup(normalizedFocusItem) : ''}
+    `;
+    setAdminConfigHiddenState(target, false);
+    return true;
+}
+
+function resolveVerifyMonitorFocusCandidate(context = {}) {
+    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
+    const focusTargetId = String(
+        normalizedContext.targetId
+        || normalizedContext.verificationId
+        || normalizedContext.referenceValue
+        || ''
+    ).trim();
+    if (!focusTargetId) {
+        return null;
+    }
+
+    const alertState = verifyMonitorState.alerts || getDefaultVerifyMonitorState().alerts;
+    const recentState = verifyMonitorState.recent || getDefaultVerifyMonitorState().recent;
+    const candidates = [
+        ...(Array.isArray(alertState.items) ? alertState.items : []).map((item) => ({ row: item, sourceKey: 'workspace', sourceLabel: '告警工作区' })),
+        ...(Array.isArray(recentState.recent_failures) ? recentState.recent_failures : []).map((row) => ({ row, sourceKey: 'failure', sourceLabel: '失败记录' })),
+        ...(Array.isArray(recentState.recent_tasks) ? recentState.recent_tasks : []).map((row) => ({ row, sourceKey: 'task', sourceLabel: '最近任务' }))
+    ];
+
+    return candidates.find(({ row }) => (
+        [
+            row?.target_id,
+            row?.verification_id,
+            row?.id,
+            row?.reference_value
+        ].map((value) => String(value || '').trim()).filter(Boolean).includes(focusTargetId)
+    )) || null;
+}
+
+function buildVerifyMonitorFocusItem(context = {}) {
+    const matched = resolveVerifyMonitorFocusCandidate(context);
+    if (!matched) {
+        return null;
+    }
+
+    const row = matched.row || {};
+    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
+    const secondaryActions = getVerifyMonitorFocusPanelActions(matched, normalizedContext);
+    if (matched.sourceKey === 'workspace') {
+        const displayState = resolveOpsAlertMonitorItemDisplayState(row, { key: 'verify' });
+        const recommendation = String(
+            displayState.progressText
+            || displayState.message
+            || row.note
+            || ''
+        ).trim() || '已在下方验证告警工作区高亮，可继续认领、观察或关闭。';
+        return {
+            rankLabel: matched.sourceLabel,
+            title: String(displayState.title || row.reference_value || row.target_id || '验证告警').trim() || '验证告警',
+            meta: [
+                String(displayState.metaText || '').trim(),
+                String(row.case_owner_label ? `负责人 ${row.case_owner_label}` : '').trim()
+            ].filter(Boolean),
+            recommendation,
+            actionLabel: '回到该记录',
+            actionName: 'settings-refocus-verify-monitor',
+            context: normalizedContext,
+            secondaryActions
+        };
+    }
+
+    const statusMeta = getVerifyMonitorStatusMeta(row.status);
+    const stageLabel = String(row.stage_label || '').trim();
+    const summaryText = String(row.summary || row.error_message || '这条验证任务已在下方列表高亮。').trim() || '这条验证任务已在下方列表高亮。';
+    return {
+        rankLabel: matched.sourceLabel,
+        title: String(row.verification_id || row.id || '验证任务').trim() || '验证任务',
+        meta: [
+            statusMeta.label,
+            stageLabel,
+            String(row.email || row.user_id || '').trim(),
+            String(row.site || '').trim().toUpperCase(),
+            row.created_at ? formatVerifyMonitorDateTime(row.created_at) : ''
+        ].filter(Boolean),
+        recommendation: summaryText,
+        actionLabel: '回到该记录',
+        actionName: 'settings-refocus-verify-monitor',
+        context: normalizedContext,
+        secondaryActions
+    };
+}
+
+function resolveAdminAuditMonitorFocusCandidate(context = {}) {
+    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
+    const targetId = String(normalizedContext.targetId || '').trim();
+    const categoryKey = String(normalizedContext.category || '').trim().toLowerCase();
+    const adminId = String(normalizedContext.adminId || '').trim();
+    const adminEmail = String(normalizedContext.adminEmail || normalizedContext.email || '').trim().toLowerCase();
+    const clientIp = String(normalizedContext.clientIp || '').trim().toLowerCase();
+    const state = adminAuditMonitorState || getDefaultAdminAuditMonitorState();
+    const candidates = [
+        ...(Array.isArray(state.alert_items) ? state.alert_items : []).map((row) => ({
+            row,
+            sourceKey: 'workspace',
+            sourceLabel: '审计告警',
+            category: String(row?.category_key || '').trim().toLowerCase()
+        })),
+        ...(Array.isArray(state.recent_accesses) ? state.recent_accesses : []).map((row) => ({
+            row,
+            sourceKey: 'access',
+            sourceLabel: '后台访问',
+            category: 'access'
+        })),
+        ...(Array.isArray(state.access_anomalies) ? state.access_anomalies : []).map((row) => ({
+            row,
+            sourceKey: 'anomaly',
+            sourceLabel: '异常登录',
+            category: 'security'
+        })),
+        ...(Array.isArray(state.payment_config_events) ? state.payment_config_events : []).map((row) => ({
+            row,
+            sourceKey: 'config',
+            sourceLabel: '配置审计',
+            category: 'config'
+        }))
+    ];
+    const matchesCategory = (entry) => !categoryKey || entry.category === categoryKey;
+    const matchesIdentity = (row) => (
+        (adminId && String(row?.admin_id || '').trim() === adminId)
+        || (adminEmail && String(row?.admin_email || '').trim().toLowerCase() === adminEmail)
+        || (clientIp && String(row?.client_ip || '').trim().toLowerCase() === clientIp)
+    );
+
+    return candidates.find((entry) => (
+        targetId
+        && String(entry.row?.id || entry.row?.target_id || '').trim() === targetId
+        && matchesCategory(entry)
+    )) || candidates.find((entry) => (
+        targetId
+        && String(entry.row?.id || entry.row?.target_id || '').trim() === targetId
+    )) || candidates.find((entry) => (
+        matchesCategory(entry)
+        && matchesIdentity(entry.row)
+    )) || candidates.find((entry) => matchesIdentity(entry.row)) || null;
+}
+
+function buildAdminAuditMonitorFocusItem(context = {}) {
+    const matched = resolveAdminAuditMonitorFocusCandidate(context);
+    if (!matched) {
+        return null;
+    }
+
+    const row = matched.row || {};
+    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
+    const secondaryActions = getAdminAuditMonitorFocusPanelActions(matched, normalizedContext);
+    if (matched.sourceKey === 'workspace') {
+        const displayState = resolveOpsAlertMonitorItemDisplayState(row, { key: String(row.category_key || matched.category || 'security').trim().toLowerCase() || 'security' });
+        const recommendation = String(
+            displayState.progressText
+            || displayState.message
+            || row.note
+            || ''
+        ).trim() || '已在下方审计告警工作区高亮，可继续认领、备注或关闭。';
+        return {
+            rankLabel: matched.sourceLabel,
+            title: String(displayState.title || row.reference_value || row.target_id || '审计告警').trim() || '审计告警',
+            meta: [
+                String(displayState.metaText || '').trim(),
+                String(row.case_owner_label ? `负责人 ${row.case_owner_label}` : '').trim()
+            ].filter(Boolean),
+            recommendation,
+            actionLabel: '回到该记录',
+            actionName: 'settings-refocus-admin-audit-monitor',
+            context: normalizedContext,
+            secondaryActions
+        };
+    }
+
+    if (matched.sourceKey === 'access') {
+        return {
+            rankLabel: matched.sourceLabel,
+            title: String(row.admin_email || row.admin_id || '后台访问').trim() || '后台访问',
+            meta: [
+                row.granted ? '凭证已签发' : '仅记录访问',
+                String(row.client_ip || '').trim(),
+                row.created_at ? formatVerifyMonitorDateTime(row.created_at) : ''
+            ].filter(Boolean),
+            recommendation: [
+                row.origin ? `来源 ${row.origin}` : '',
+                row.user_agent_summary ? `设备 ${row.user_agent_summary}` : ''
+            ].filter(Boolean).join(' · ') || '已在下方后台访问列表高亮，可继续核对来源、设备和签发结果。',
+            actionLabel: '回到该记录',
+            actionName: 'settings-refocus-admin-audit-monitor',
+            context: normalizedContext,
+            secondaryActions
+        };
+    }
+
+    if (matched.sourceKey === 'anomaly') {
+        return {
+            rankLabel: matched.sourceLabel,
+            title: String(row.title || row.admin_email || row.admin_id || '管理员异常登录').trim() || '管理员异常登录',
+            meta: [
+                String(row.admin_email || row.admin_id || '').trim(),
+                String(row.client_ip || '').trim(),
+                row.created_at ? formatVerifyMonitorDateTime(row.created_at) : ''
+            ].filter(Boolean),
+            recommendation: (Array.isArray(row.anomaly_reasons) ? row.anomaly_reasons : [])
+                .map((item) => String(item || '').trim())
+                .filter(Boolean)
+                .join('；') || '已在下方异常登录列表高亮，可继续核对风险原因和来源指纹。',
+            actionLabel: '回到该记录',
+            actionName: 'settings-refocus-admin-audit-monitor',
+            context: normalizedContext,
+            secondaryActions
+        };
+    }
+
+    return {
+        rankLabel: matched.sourceLabel,
+        title: String(row.title || row.action_label || '支付配置审计').trim() || '支付配置审计',
+        meta: [
+            String(row.admin_email || row.admin_id || '').trim(),
+            String(row.action_label || '').trim(),
+            row.created_at ? formatVerifyMonitorDateTime(row.created_at) : ''
+        ].filter(Boolean),
+        recommendation: [
+            Array.isArray(row.risk_flags) && row.risk_flags.length ? `风险 ${row.risk_flags.join('；')}` : '',
+            row.active_provider_label ? `当前通道 ${row.active_provider_label}` : '',
+            Array.isArray(row.updated_provider_labels) && row.updated_provider_labels.length ? `变更通道 ${row.updated_provider_labels.join('、')}` : '',
+            row.secret_name ? `涉及密钥 ${row.secret_name}` : ''
+        ].filter(Boolean).join(' · ') || '已在下方配置审计列表高亮，可继续核对通道、密钥和风险标记。',
+        actionLabel: '回到该记录',
+        actionName: 'settings-refocus-admin-audit-monitor',
+        context: normalizedContext,
+        secondaryActions
+    };
 }
 
 function clearWorkspaceFocusState(selector = '') {
@@ -1806,39 +2350,59 @@ function applyWorkspaceFocusState(target, selector, timeoutId, fallbackTargetId 
     return true;
 }
 
-function renderVerifyMonitorWorkbenchContext(context = {}) {
+function renderVerifyMonitorWorkbenchContext(context = verifyMonitorWorkbenchContext) {
     const target = document.getElementById('verifyMonitorFocusContext');
     if (!target) return false;
 
-    const state = window.buildOpsAlertWorkspaceAnalyticsSignalContextState?.(context, {
+    if (arguments.length > 0) {
+        verifyMonitorWorkbenchContext = context && typeof context === 'object' && !Array.isArray(context) && Object.keys(context).length
+            ? { ...context }
+            : null;
+    }
+
+    const activeContext = verifyMonitorWorkbenchContext;
+    const state = window.buildOpsAlertWorkspaceAnalyticsSignalContextState?.(activeContext || {}, {
         title: '当前来自分析信号联动',
         eyebrow: 'Verify Monitor Focus'
     }) || null;
+    const focusItem = buildVerifyMonitorFocusItem(activeContext || {});
+    return renderSettingsWorkbenchContextNote(target, state, focusItem, {
+        eyebrow: 'Verify Monitor Focus',
+        title: '当前来自分析信号联动'
+    });
+}
 
-    if (!state) {
-        setAdminConfigHiddenState(target, true);
-        target.innerHTML = '';
-        return false;
+function renderAdminAuditMonitorWorkbenchContext(context = adminAuditMonitorWorkbenchContext) {
+    const target = document.getElementById('adminAuditMonitorFocusContext');
+    if (!target) return false;
+
+    if (arguments.length > 0) {
+        adminAuditMonitorWorkbenchContext = context && typeof context === 'object' && !Array.isArray(context) && Object.keys(context).length
+            ? { ...context }
+            : null;
     }
 
-    target.innerHTML = `
-        <div class="admin-workbench-context-note__eyebrow">${escapeConfigHtml(state.eyebrow || 'Analytics Context')}</div>
-        <div class="admin-workbench-context-note__title">${escapeConfigHtml(state.title || '分析信号聚焦上下文')}</div>
-        <div class="admin-workbench-context-note__summary">${escapeConfigHtml(state.summary || '')}</div>
-        <div class="admin-workbench-context-note__chips">
-            ${(Array.isArray(state.chips) ? state.chips : []).map((item) => `
-                <span class="admin-workbench-context-note__chip">${escapeConfigHtml(item.label || '')} · ${escapeConfigHtml(item.value || '')}</span>
-            `).join('')}
-        </div>
-    `;
-    setAdminConfigHiddenState(target, false);
-    return true;
+    const activeContext = adminAuditMonitorWorkbenchContext;
+    const state = window.buildOpsAlertWorkspaceAnalyticsSignalContextState?.(activeContext || {}, {
+        title: '当前来自分析信号联动',
+        eyebrow: 'Admin Audit Focus'
+    }) || null;
+    const focusItem = buildAdminAuditMonitorFocusItem(activeContext || {});
+    return renderSettingsWorkbenchContextNote(target, state, focusItem, {
+        eyebrow: 'Admin Audit Focus',
+        title: '当前来自分析信号联动'
+    });
 }
 
 function focusVerifyMonitorWorkspace(context = {}) {
     const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
     renderVerifyMonitorWorkbenchContext(normalizedContext);
-    const targetId = String(normalizedContext.targetId || normalizedContext.referenceValue || '').trim();
+    const targetId = String(
+        normalizedContext.targetId
+        || normalizedContext.verificationId
+        || normalizedContext.referenceValue
+        || ''
+    ).trim();
     const candidates = Array.from(document.querySelectorAll('[data-verify-monitor-target-id], [data-verify-monitor-log-id]'));
     const matched = candidates.find((element) => (
         String(element.dataset.verifyMonitorTargetId || '').trim() === targetId
@@ -1862,18 +2426,39 @@ function focusVerifyMonitorWorkspace(context = {}) {
 
 function focusAdminAuditMonitorWorkspace(context = {}) {
     const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
+    renderAdminAuditMonitorWorkbenchContext(normalizedContext);
     const targetId = String(normalizedContext.targetId || '').trim();
     const categoryKey = String(normalizedContext.category || '').trim().toLowerCase();
-    const candidates = Array.from(document.querySelectorAll('[data-admin-audit-target-id]'));
+    const adminId = String(normalizedContext.adminId || '').trim();
+    const adminEmail = String(normalizedContext.adminEmail || normalizedContext.email || '').trim().toLowerCase();
+    const clientIp = String(normalizedContext.clientIp || '').trim().toLowerCase();
+    const fallbackTargetId = categoryKey === 'config'
+        ? 'adminAuditMonitorConfigList'
+        : (categoryKey === 'access' ? 'adminAuditMonitorRecentAccess' : 'adminAuditMonitorAnomalyList');
+    const candidates = Array.from(document.querySelectorAll('[data-admin-audit-target-id], [data-admin-audit-admin-id], [data-admin-audit-admin-email], [data-admin-audit-client-ip]'));
+    const matchesCategory = (element) => (
+        !categoryKey
+        || String(element?.dataset?.opsAlertWorkspaceCategory || '').trim().toLowerCase() === categoryKey
+    );
+    const matchesIdentity = (element) => (
+        (adminId && String(element.dataset.adminAuditAdminId || '').trim() === adminId)
+        || (adminEmail && String(element.dataset.adminAuditAdminEmail || '').trim().toLowerCase() === adminEmail)
+        || (clientIp && String(element.dataset.adminAuditClientIp || '').trim().toLowerCase() === clientIp)
+    );
     const matched = candidates.find((element) => (
-        String(element.dataset.adminAuditTargetId || '').trim() === targetId
-        && (!categoryKey || String(element.dataset.opsAlertWorkspaceCategory || '').trim().toLowerCase() === categoryKey)
-    )) || candidates.find((element) => String(element.dataset.adminAuditTargetId || '').trim() === targetId) || null;
+        targetId
+        && String(element.dataset.adminAuditTargetId || '').trim() === targetId
+        && matchesCategory(element)
+    )) || candidates.find((element) => (
+        targetId && String(element.dataset.adminAuditTargetId || '').trim() === targetId
+    )) || candidates.find((element) => (
+        matchesCategory(element) && matchesIdentity(element)
+    )) || candidates.find((element) => matchesIdentity(element)) || null;
     const focused = applyWorkspaceFocusState(
         matched,
-        '[data-admin-audit-target-id]',
+        '[data-admin-audit-target-id], [data-admin-audit-admin-id], [data-admin-audit-admin-email], [data-admin-audit-client-ip]',
         adminAuditMonitorFocusTimeoutId,
-        targetId ? 'adminAuditMonitorWorkspacePanel' : 'adminAuditMonitorSection'
+        targetId || adminId || adminEmail || clientIp ? fallbackTargetId : 'adminAuditMonitorSection'
     );
 
     if (focused) {
@@ -1959,6 +2544,74 @@ function focusAffiliateSettingsContext(context = {}) {
     }
 
     affiliateSettingsFocusTimeoutId = window.setTimeout(() => {
+        target.classList.remove('analytics-nav-focus-target--active');
+    }, 2600);
+
+    if (fieldEl instanceof HTMLElement && typeof fieldEl.focus === 'function') {
+        window.setTimeout(() => {
+            try {
+                fieldEl.focus({ preventScroll: true });
+            } catch (_) {
+                fieldEl.focus();
+            }
+        }, 90);
+    }
+
+    return true;
+}
+
+function resolveSettingsShellFocusTargetId(context = {}, options = {}) {
+    const normalizedContext = normalizeSettingsContextObject(context);
+    const payload = normalizeSettingsContextObject(normalizedContext.payload);
+    const raw = normalizeSettingsContextObject(normalizedContext.raw);
+
+    return String(
+        payload.focusTargetId
+        || payload.focus_target_id
+        || payload.sectionId
+        || payload.section_id
+        || raw.focusTargetId
+        || raw.focus_target_id
+        || raw.sectionId
+        || raw.section_id
+        || normalizedContext.focusTargetId
+        || normalizedContext.focus_target_id
+        || normalizedContext.sectionId
+        || normalizedContext.section_id
+        || normalizedContext.targetId
+        || normalizedContext.target_id
+        || options.focusTargetId
+        || ''
+    ).trim();
+}
+
+function focusSettingsViewContext(context = {}, options = {}) {
+    const viewName = resolveSettingsModuleViewName(context, options);
+    const focusTargetId = resolveSettingsShellFocusTargetId(context, options);
+    const viewRoot = document.getElementById(`settings-view-${viewName}`);
+    const fieldEl = focusTargetId ? document.getElementById(focusTargetId) : null;
+    const target = fieldEl?.closest?.(
+        '.config-card, .settings-section, .settings-google-one-card, .admin-audit-monitor-card, .verify-monitor-card, .api-relay-config-panel, .chart-card, .glass-panel'
+    ) || fieldEl || viewRoot;
+
+    if (viewRoot?.querySelectorAll) {
+        viewRoot.querySelectorAll('.analytics-nav-focus-target--active').forEach((element) => {
+            element.classList.remove('analytics-nav-focus-target--active');
+        });
+    }
+
+    if (!(target instanceof HTMLElement)) {
+        return false;
+    }
+
+    target.classList.add('analytics-nav-focus-target--active');
+    target.scrollIntoView({ behavior: 'smooth', block: fieldEl && target !== fieldEl ? 'center' : 'start' });
+
+    if (settingsViewFocusTimeoutId) {
+        window.clearTimeout(settingsViewFocusTimeoutId);
+    }
+
+    settingsViewFocusTimeoutId = window.setTimeout(() => {
         target.classList.remove('analytics-nav-focus-target--active');
     }, 2600);
 
@@ -2289,6 +2942,175 @@ function getDefaultAdminAuditMonitorState() {
         config_event_pagination: emptyPagination(8),
         message: '等待加载'
     };
+}
+
+function getAdminAuditMonitorCommandCenterTimestamp(...values) {
+    for (const value of values) {
+        const timestamp = Date.parse(value || '');
+        if (Number.isFinite(timestamp) && timestamp > 0) {
+            return timestamp;
+        }
+    }
+    return 0;
+}
+
+function getAdminAuditMonitorCommandCenterTone(value = '') {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (['danger', 'critical', 'error', 'high'].includes(normalized)) {
+        return 'alert';
+    }
+    if (['warning', 'warn', 'medium'].includes(normalized)) {
+        return 'warn';
+    }
+    if (normalized) {
+        return 'ok';
+    }
+    return '';
+}
+
+function getAdminAuditMonitorCommandCenterRecentItems() {
+    const state = adminAuditMonitorState || getDefaultAdminAuditMonitorState();
+    const anomalies = Array.isArray(state.access_anomalies) ? state.access_anomalies : [];
+    const configEvents = Array.isArray(state.payment_config_events) ? state.payment_config_events : [];
+    const recentAccesses = Array.isArray(state.recent_accesses) ? state.recent_accesses : [];
+    const securityActionOptions = {
+        viewName: 'security',
+        settingsView: 'security',
+        workspace: 'admin-audit-monitor'
+    };
+
+    const anomalyItems = anomalies.map((row) => ({
+        label: '异常登录',
+        copy: String(row?.title || '').trim()
+            || [
+                row?.admin_email || row?.admin_id || 'unknown-admin',
+                Array.isArray(row?.anomaly_reasons) && row.anomaly_reasons.length
+                    ? row.anomaly_reasons[0]
+                    : (row?.client_ip || '待复核')
+            ].filter(Boolean).join(' · '),
+        timestamp: getAdminAuditMonitorCommandCenterTimestamp(row?.created_at),
+        tone: 'alert',
+        moduleId: 'settings',
+        stateKey: `security-anomaly-${String(row?.id || row?.admin_id || row?.created_at || 'audit').trim() || 'audit'}`,
+        feedbackLabel: '异常登录',
+        intent: '打开安全审计中的异常登录列表。',
+        context: {
+            action: 'security',
+            payload: {
+                defaultTab: 'security',
+                workspace: 'admin-audit-monitor',
+                focusTargetId: 'adminAuditMonitorAnomalyList',
+                targetId: String(row?.id || row?.target_id || '').trim(),
+                adminId: String(row?.admin_id || '').trim(),
+                adminEmail: String(row?.admin_email || '').trim(),
+                clientIp: String(row?.client_ip || '').trim(),
+                category: 'security'
+            }
+        },
+        options: securityActionOptions
+    }));
+
+    const configItems = configEvents.map((row) => ({
+        label: String(row?.action_label || '配置变更').trim() || '配置变更',
+        copy: [
+            String(row?.title || '支付配置审计').trim() || '支付配置审计',
+            String(row?.admin_email || row?.admin_id || '').trim()
+        ].filter(Boolean).join(' · '),
+        timestamp: getAdminAuditMonitorCommandCenterTimestamp(row?.created_at),
+        tone: Array.isArray(row?.risk_flags) && row.risk_flags.length
+            ? 'alert'
+            : getAdminAuditMonitorCommandCenterTone(row?.severity),
+        moduleId: 'settings',
+        stateKey: `security-config-${String(row?.id || row?.admin_id || row?.created_at || 'config').trim() || 'config'}`,
+        feedbackLabel: '配置审计',
+        intent: '打开安全审计中的配置变更记录。',
+        context: {
+            action: 'security',
+            payload: {
+                defaultTab: 'security',
+                workspace: 'admin-audit-monitor',
+                focusTargetId: 'adminAuditMonitorConfigList',
+                targetId: String(row?.id || row?.target_id || '').trim(),
+                adminId: String(row?.admin_id || '').trim(),
+                adminEmail: String(row?.admin_email || '').trim(),
+                clientIp: String(row?.client_ip || '').trim(),
+                category: 'config'
+            }
+        },
+        options: securityActionOptions
+    }));
+
+    const accessItems = recentAccesses.map((row) => ({
+        label: '管理员访问',
+        copy: [
+            String(row?.admin_email || row?.admin_id || 'unknown-admin').trim() || 'unknown-admin',
+            row?.client_ip || '未知 IP',
+            row?.granted ? '凭证已签发' : '仅记录访问'
+        ].filter(Boolean).join(' · '),
+        timestamp: getAdminAuditMonitorCommandCenterTimestamp(row?.created_at),
+        tone: row?.granted ? 'ok' : 'warn',
+        moduleId: 'settings',
+        stateKey: `security-access-${String(row?.id || row?.admin_id || row?.created_at || 'access').trim() || 'access'}`,
+        feedbackLabel: '访问审计',
+        intent: '打开安全审计中的管理员访问记录。',
+        context: {
+            action: 'security',
+            payload: {
+                defaultTab: 'security',
+                workspace: 'admin-audit-monitor',
+                focusTargetId: 'adminAuditMonitorRecentAccess',
+                targetId: String(row?.id || row?.target_id || '').trim(),
+                adminId: String(row?.admin_id || '').trim(),
+                adminEmail: String(row?.admin_email || '').trim(),
+                clientIp: String(row?.client_ip || '').trim(),
+                category: 'access'
+            }
+        },
+        options: securityActionOptions
+    }));
+
+    return [...anomalyItems, ...configItems, ...accessItems]
+        .filter((item) => item.copy)
+        .sort((left, right) => Number(right?.timestamp || 0) - Number(left?.timestamp || 0))
+        .slice(0, 3);
+}
+
+function getAdminAuditMonitorCommandCenterSummary() {
+    const state = adminAuditMonitorState || getDefaultAdminAuditMonitorState();
+    const accessSummary = state.access_summary || getDefaultAdminAuditMonitorState().access_summary;
+    const configSummary = state.config_summary || getDefaultAdminAuditMonitorState().config_summary;
+    const alertSummary = state.alert_summary || getDefaultAdminAuditMonitorState().alert_summary;
+    const anomalyCount = Math.max(0, Number(accessSummary.anomaly_count || 0) || 0);
+    const activeProblemCount = Math.max(0, Number(alertSummary.active_problem_count || 0) || 0);
+
+    return {
+        ready: state.status === 'ready',
+        status: String(state.status || 'idle').trim().toLowerCase() || 'idle',
+        accessCount: Math.max(0, Number(accessSummary.access_count || 0) || 0),
+        anomalyCount,
+        configChangeCount: Math.max(0, Number(configSummary.config_change_count || 0) || 0),
+        secretDeleteCount: Math.max(0, Number(configSummary.secret_delete_count || 0) || 0),
+        mockSwitchCount: Math.max(0, Number(configSummary.mock_switch_count || 0) || 0),
+        distinctAdminCount: Math.max(0, Number(accessSummary.distinct_admin_count || 0) || 0),
+        distinctIpCount: Math.max(0, Number(accessSummary.distinct_ip_count || 0) || 0),
+        activeProblemCount,
+        actionableCount: activeProblemCount,
+        recentItems: getAdminAuditMonitorCommandCenterRecentItems()
+    };
+}
+
+function emitAdminAuditMonitorCommandCenterSummaryUpdate() {
+    if (typeof window.dispatchEvent !== 'function' || typeof CustomEvent !== 'function') {
+        return;
+    }
+
+    try {
+        window.dispatchEvent(new CustomEvent('admin-audit-command-summary-updated', {
+            detail: getAdminAuditMonitorCommandCenterSummary()
+        }));
+    } catch (_) {
+        // Summary sync should never block the settings module itself.
+    }
 }
 
 function getDefaultOpsAlertConfig() {
@@ -3477,7 +4299,8 @@ function getDefaultDiscountTriggerSettingsState() {
         optionsLoaded: false,
         optionsLoading: false,
         optionsError: '',
-        saving: false
+        saving: false,
+        feedbackToast: null
     };
 }
 
@@ -6100,6 +6923,350 @@ async function initSettingsModule(options = {}) {
     }
 }
 
+function resolveSettingsModuleViewName(context = {}, options = {}) {
+    const normalizedContext = context && typeof context === 'object' && !Array.isArray(context) ? context : {};
+    const payload = normalizedContext.payload && typeof normalizedContext.payload === 'object' ? normalizedContext.payload : {};
+    const raw = normalizedContext.raw && typeof normalizedContext.raw === 'object' ? normalizedContext.raw : {};
+
+    return normalizeSettingsViewName(
+        payload.defaultTab
+        || raw.defaultTab
+        || options.viewName
+        || options.settingsView
+        || getActiveSettingsViewName()
+    );
+}
+
+async function activateSettingsModule(context = {}, options = {}) {
+    const viewName = resolveSettingsModuleViewName(context, options);
+
+    if (typeof window.switchSettingsView === 'function') {
+        window.switchSettingsView(viewName, { warm: false });
+    } else {
+        renderSettingsViewSections(viewName);
+    }
+
+    await initSettingsModule({
+        bindListeners: true,
+        loadConfig: false,
+        renderView: true,
+        viewName
+    });
+
+    void warmSettingsViewConfigInBackground({
+        force: options.force === true,
+        viewName
+    });
+    return true;
+}
+
+function normalizeSettingsContextObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function resolveSettingsModuleWorkspace(context = {}, options = {}) {
+    const normalizedContext = normalizeSettingsContextObject(context);
+    const payload = normalizeSettingsContextObject(normalizedContext.payload);
+    const raw = normalizeSettingsContextObject(normalizedContext.raw);
+
+    return String(
+        payload.workspace
+        || raw.workspace
+        || normalizedContext.workspace
+        || payload.mode
+        || raw.mode
+        || normalizedContext.mode
+        || options.workspace
+        || ''
+    ).trim().toLowerCase();
+}
+
+function buildSettingsOpsAlertWorkspaceContext(context = {}) {
+    const normalizedContext = normalizeSettingsContextObject(context);
+    const payload = normalizeSettingsContextObject(normalizedContext.payload);
+    const raw = normalizeSettingsContextObject(normalizedContext.raw);
+
+    return normalizeOpsAlertWorkspaceContext({
+        ...raw,
+        ...payload,
+        site: normalizedContext.site || raw.site || payload.site || ''
+    });
+}
+
+async function settleSettingsWorkspaceRefresh(task, timeoutMs = 1200) {
+    const normalizedTask = typeof task?.then === 'function'
+        ? task.catch((error) => {
+            console.warn('[Config] Failed to refresh settings workspace context:', error);
+            return null;
+        })
+        : Promise.resolve(null);
+
+    await Promise.race([
+        normalizedTask,
+        new Promise((resolve) => {
+            window.setTimeout(resolve, Math.max(0, Number(timeoutMs) || 0));
+        })
+    ]);
+}
+
+async function handleSettingsModuleContext(context = {}, options = {}) {
+    const normalizedContext = normalizeSettingsContextObject(context);
+    const workspace = resolveSettingsModuleWorkspace(normalizedContext, options);
+    const workspaceContext = buildSettingsOpsAlertWorkspaceContext(normalizedContext);
+    const focusTargetId = resolveSettingsShellFocusTargetId(normalizedContext, options);
+
+    if (workspace === 'verify-monitor') {
+        await settleSettingsWorkspaceRefresh(
+            typeof refreshVerifyMonitor === 'function'
+                ? refreshVerifyMonitor(options.force === true)
+                : Promise.resolve(null)
+        );
+        renderVerifyMonitorWorkbenchContext(workspaceContext);
+        const focused = focusVerifyMonitorWorkspace(workspaceContext);
+        if (!focused && focusTargetId) {
+            focusSettingsViewContext(normalizedContext, options);
+        }
+        return true;
+    }
+
+    if (workspace === 'admin-audit-monitor') {
+        await settleSettingsWorkspaceRefresh(
+            typeof refreshAdminAuditMonitor === 'function'
+                ? refreshAdminAuditMonitor(options.force === true)
+                : Promise.resolve(null)
+        );
+        const focused = focusAdminAuditMonitorWorkspace(workspaceContext);
+        if (!focused && focusTargetId) {
+            focusSettingsViewContext(normalizedContext, options);
+        }
+        return true;
+    }
+
+    if (workspace === 'affiliate') {
+        focusAffiliateSettingsContext({
+            ...normalizeSettingsContextObject(normalizedContext.raw),
+            ...normalizeSettingsContextObject(normalizedContext.payload),
+            site: normalizedContext.site || ''
+        });
+        return true;
+    }
+
+    if (focusTargetId) {
+        focusSettingsViewContext(normalizedContext, options);
+    }
+
+    return true;
+}
+
+async function openAdminSettingsShellContext(context = {}, options = {}) {
+    await activateSettingsModule(context, options);
+    return handleSettingsModuleContext(context, options);
+}
+
+function resolveOpsAlertsShellContextObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function resolveOpsAlertsModuleViewName(context = {}, options = {}) {
+    const normalizedContext = resolveOpsAlertsShellContextObject(context);
+    const payload = resolveOpsAlertsShellContextObject(normalizedContext.payload);
+    const raw = resolveOpsAlertsShellContextObject(normalizedContext.raw);
+    const allowedViews = new Set(['overview', 'strategy', 'channels', 'monitors', 'workspace', 'health']);
+    const requestedView = String(
+        payload.view
+        || payload.defaultTab
+        || payload.tab
+        || raw.view
+        || raw.defaultTab
+        || raw.tab
+        || normalizedContext.view
+        || normalizedContext.defaultTab
+        || normalizedContext.tab
+        || normalizedContext.workspace
+        || options.viewName
+        || ''
+    ).trim().toLowerCase();
+
+    return allowedViews.has(requestedView) ? requestedView : 'overview';
+}
+
+function resolveOpsAlertsShellFocusTargetId(context = {}, options = {}) {
+    const normalizedContext = resolveOpsAlertsShellContextObject(context);
+    const payload = resolveOpsAlertsShellContextObject(normalizedContext.payload);
+    const raw = resolveOpsAlertsShellContextObject(normalizedContext.raw);
+
+    return String(
+        payload.focusTargetId
+        || payload.focus_target_id
+        || payload.sectionId
+        || payload.section_id
+        || raw.focusTargetId
+        || raw.focus_target_id
+        || raw.sectionId
+        || raw.section_id
+        || normalizedContext.focusTargetId
+        || normalizedContext.focus_target_id
+        || normalizedContext.sectionId
+        || normalizedContext.section_id
+        || normalizedContext.targetId
+        || normalizedContext.target_id
+        || options.focusTargetId
+        || ''
+    ).trim();
+}
+
+async function activateOpsAlertsModule(context = {}, options = {}) {
+    const viewName = resolveOpsAlertsModuleViewName(context, options);
+    await initSettingsModule({
+        bindListeners: true,
+        loadConfig: false
+    });
+    window.initOpsAlertsModule?.();
+    const switchView = resolveOpsAlertsViewSwitcher();
+    if (typeof switchView === 'function' && switchView(viewName) === false) {
+        return false;
+    }
+    return true;
+}
+
+async function handleAdminOpsAlertsShellContext(context = {}, options = {}) {
+    const viewName = resolveOpsAlertsModuleViewName(context, options);
+    const focusTargetId = resolveOpsAlertsShellFocusTargetId(context, options);
+    const normalizedContext = resolveOpsAlertsShellContextObject(context);
+    const payload = resolveOpsAlertsShellContextObject(normalizedContext.payload);
+    const raw = resolveOpsAlertsShellContextObject(normalizedContext.raw);
+    const strategyPanel = String(
+        payload.strategyPanel
+        || payload.strategy_panel
+        || raw.strategyPanel
+        || raw.strategy_panel
+        || normalizedContext.strategyPanel
+        || normalizedContext.strategy_panel
+        || ''
+    ).trim();
+    const strategyTab = String(
+        payload.strategyTab
+        || payload.strategy_tab
+        || raw.strategyTab
+        || raw.strategy_tab
+        || normalizedContext.strategyTab
+        || normalizedContext.strategy_tab
+        || ''
+    ).trim();
+
+    const switchView = resolveOpsAlertsViewSwitcher();
+    if (typeof switchView === 'function' && switchView(viewName) === false) {
+        return false;
+    }
+
+    if (viewName === 'strategy' && strategyPanel && typeof window.openOpsAlertStrategyPanel === 'function') {
+        window.openOpsAlertStrategyPanel(strategyPanel, strategyTab);
+    }
+
+    if (focusTargetId) {
+        await settleOpsAlertWorkspace(80);
+        scrollToOpsAlertWorkspaceTarget(focusTargetId);
+    }
+
+    return true;
+}
+
+async function openAdminOpsAlertsShellContext(context = {}, options = {}) {
+    if (!isOpsAlertsModuleVisible()) {
+        const activatedModule = window.AdminShell?.activateModule
+            ? window.AdminShell.activateModule('ops-alerts', {
+                deferContext: true,
+                fallback: false,
+                silentDenied: true,
+                reason: 'ops-alerts-context-helper'
+            })
+            : window.switchModule?.('ops-alerts', {
+                fallback: false,
+                silentDenied: true,
+                reason: 'ops-alerts-context-helper'
+            });
+        if (activatedModule === false) {
+            return false;
+        }
+        await settleOpsAlertWorkspace(80);
+    }
+
+    const activated = await activateOpsAlertsModule(context, options);
+    if (activated === false) {
+        return false;
+    }
+
+    return handleAdminOpsAlertsShellContext(context, options);
+}
+
+function isSettingsModuleVisible() {
+    const module = document.getElementById('module-settings');
+    return Boolean(module && module.classList.contains('active') && !module.hidden);
+}
+
+function isOpsAlertsModuleVisible() {
+    const module = document.getElementById('module-ops-alerts');
+    return Boolean(module && module.classList.contains('active') && !module.hidden);
+}
+
+function getActiveOpsAlertsViewName() {
+    const opsAlertsModule = document.getElementById('module-ops-alerts');
+    const activeTab = opsAlertsModule?.querySelector('.admin-tab[data-ops-alerts-view].active');
+    return String(activeTab?.dataset?.opsAlertsView || '').trim().toLowerCase() || 'overview';
+}
+
+async function handleAdminSettingsSiteChange(detail = {}) {
+    const viewName = getActiveSettingsViewName();
+
+    if (!isSettingsModuleVisible()) {
+        return false;
+    }
+
+    await activateSettingsModule({
+        site: detail?.site || '',
+        payload: {
+            defaultTab: viewName
+        }
+    }, {
+        force: true,
+        viewName
+    });
+
+    if (viewName === 'google-one' && typeof refreshVerifyMonitor === 'function') {
+        void refreshVerifyMonitor(true);
+    } else if (viewName === 'security' && typeof refreshAdminAuditMonitor === 'function') {
+        void refreshAdminAuditMonitor(true);
+    }
+
+    return true;
+}
+
+async function handleAdminOpsAlertsSiteChange(detail = {}) {
+    if (!isOpsAlertsModuleVisible()) {
+        return false;
+    }
+
+    const activeView = getActiveOpsAlertsViewName();
+    const tasks = [];
+
+    if (['overview', 'strategy', 'channels', 'monitors'].includes(activeView)) {
+        tasks.push(loadOpsAlertSettings(true));
+    }
+    if (activeView === 'overview' || activeView === 'health') {
+        tasks.push(loadOpsAlertHealth(true));
+    }
+    if (activeView === 'overview' || activeView === 'workspace') {
+        tasks.push(loadOpsAlertMonitor(true));
+    }
+
+    if (!tasks.length) {
+        return false;
+    }
+
+    await Promise.allSettled(tasks);
+    return true;
+}
+
 async function initSystemConfig() {
     console.log('[Config] Initializing system config...');
     try {
@@ -6578,6 +7745,37 @@ function hasDiscountTriggerUnsavedChanges(config = null) {
         normalizeDiscountTriggerRulesConfig(config || discountTriggerSettingsState.draft, { allowEmptyDiscounts: true })
     );
     return savedSnapshot !== draftSnapshot;
+}
+
+function showDiscountTriggerFeedback(message, type = 'info', options = {}) {
+    if (typeof showToast === 'function') {
+        const durationMs = Number.isFinite(Number(options.durationMs)) ? Number(options.durationMs) : 3000;
+        const reuseSaveToast = options.reuseSaveToast === true;
+        const existingToast = reuseSaveToast
+            && discountTriggerSettingsState.feedbackToast?.isConnected
+            && discountTriggerSettingsState.feedbackToast?.dataset?.dismissing !== 'true'
+            ? discountTriggerSettingsState.feedbackToast
+            : null;
+
+        if (existingToast) {
+            if (typeof setToastContent === 'function') {
+                setToastContent(existingToast, message, type);
+            } else {
+                existingToast.textContent = message;
+            }
+            if (typeof scheduleToastDismiss === 'function') {
+                scheduleToastDismiss(existingToast, durationMs);
+            }
+            return existingToast;
+        }
+
+        const toast = showToast(message, type, { durationMs });
+        if (reuseSaveToast) {
+            discountTriggerSettingsState.feedbackToast = toast;
+        }
+        return toast;
+    }
+    return null;
 }
 
 function getDiscountTriggerRuleWarning(rule = {}, option = null) {
@@ -7203,6 +8401,8 @@ function updateDiscountTriggerSettingsIndicators(config = null) {
         return;
     }
 
+    statusEl.hidden = true;
+
     if (discountTriggerSettingsState.saving) {
         statusEl.textContent = '正在保存卡券联动规则。';
         return;
@@ -7229,7 +8429,8 @@ function updateDiscountTriggerSettingsIndicators(config = null) {
     }
 
     if (!totalRules) {
-        statusEl.textContent = '当前还没配置卡券联动规则。';
+        statusEl.textContent = '';
+        statusEl.hidden = true;
         return;
     }
 
@@ -7490,24 +8691,41 @@ async function saveDiscountTriggerSettings(options = {}) {
     ));
     if (hasIncompleteRule) {
         updateDiscountTriggerSettingsIndicators(draftConfig);
-        showToast('请先为每条规则选择到账型卡券', 'warning');
+        showDiscountTriggerFeedback('请先为每条规则选择到账型卡券', 'warning');
+        return false;
+    }
+
+    if (!hasDiscountTriggerUnsavedChanges(draftConfig)) {
+        updateDiscountTriggerSettingsIndicators(draftConfig);
+        showDiscountTriggerFeedback('当前没有需要保存的卡券联动改动', 'info');
         return false;
     }
 
     const normalizedConfig = normalizeDiscountTriggerRulesConfig(draftConfig);
     discountTriggerSettingsState.saving = true;
     updateDiscountTriggerSettingsIndicators(normalizedConfig);
+    showDiscountTriggerFeedback('正在保存卡券联动规则...', 'info', {
+        reuseSaveToast: true,
+        durationMs: 0
+    });
 
     try {
         const success = await saveConfig('discount_trigger_rules', normalizedConfig);
         if (!success) {
+            showDiscountTriggerFeedback('卡券联动规则保存失败，请稍后重试', 'error', {
+                reuseSaveToast: true,
+                durationMs: 4200
+            });
             return false;
         }
 
         discountTriggerSettingsState.draft = normalizeDiscountTriggerRulesConfig(normalizedConfig, { allowEmptyDiscounts: true });
         systemConfigCache['discount_trigger_rules'] = normalizedConfig;
         renderDiscountTriggerSettings();
-        showConfigSavedToast(options.successMessage || '卡券联动规则已保存');
+        showDiscountTriggerFeedback(options.successMessage || '卡券联动规则已保存', 'success', {
+            reuseSaveToast: true,
+            durationMs: 3000
+        });
         return true;
     } finally {
         discountTriggerSettingsState.saving = false;
@@ -7532,6 +8750,7 @@ function setupDiscountTriggerSettingsEventListeners() {
         if (addButton && addButton.dataset.configBound !== '1') {
             addButton.dataset.configBound = '1';
             addButton.addEventListener('click', () => {
+                pulseAdminConfigButton(addButton);
                 const nextConfig = collectDiscountTriggerSettingsFromForm({
                     allowEmptyRules: true,
                     syncState: true
@@ -7539,6 +8758,7 @@ function setupDiscountTriggerSettingsEventListeners() {
                 nextConfig[sectionKey].rules.push(meta.createDraft());
                 discountTriggerSettingsState.draft = normalizeDiscountTriggerRulesConfig(nextConfig, { allowEmptyDiscounts: true });
                 renderDiscountTriggerSettings();
+                showDiscountTriggerFeedback(`已新增${meta.label}规则草稿，选择到账型卡券后保存生效。`, 'info');
             });
         }
 
@@ -7551,13 +8771,16 @@ function setupDiscountTriggerSettingsEventListeners() {
                 }
                 buttonEl.dataset.configBound = '1';
                 buttonEl.addEventListener('click', () => {
+                    pulseAdminConfigButton(buttonEl);
                     const presetId = buttonEl.getAttribute('data-discount-trigger-preset') || '';
+                    const presetTitle = buttonEl.querySelector('.discount-trigger-preset-btn__title')?.textContent?.trim() || '推荐模板';
                     const presetRule = applyDiscountTriggerPresetAutoSelection(
                         createDiscountTriggerPresetRule(sectionKey, presetId),
                         sectionKey,
                         presetId
                     );
                     if (!presetRule) {
+                        showDiscountTriggerFeedback('当前模板暂时无法生成规则，请稍后再试。', 'warning');
                         return;
                     }
 
@@ -7569,6 +8792,7 @@ function setupDiscountTriggerSettingsEventListeners() {
                     nextConfig[sectionKey].rules.push(presetRule);
                     discountTriggerSettingsState.draft = normalizeDiscountTriggerRulesConfig(nextConfig, { allowEmptyDiscounts: true });
                     renderDiscountTriggerSettings();
+                    showDiscountTriggerFeedback(`已套用“${presetTitle}”模板，保存后生效。`, 'success');
                 });
             });
         }
@@ -7609,6 +8833,9 @@ function setupDiscountTriggerSettingsEventListeners() {
                 if (action !== 'remove-rule') {
                     return;
                 }
+                if (actionEl instanceof HTMLButtonElement) {
+                    pulseAdminConfigButton(actionEl);
+                }
 
                 const ruleCard = actionEl.closest('[data-rule-key]');
                 const ruleKey = ruleCard?.getAttribute('data-rule-key') || '';
@@ -7619,6 +8846,7 @@ function setupDiscountTriggerSettingsEventListeners() {
                 nextConfig[sectionKey].rules = nextConfig[sectionKey].rules.filter((rule) => rule.rule_key !== ruleKey);
                 discountTriggerSettingsState.draft = normalizeDiscountTriggerRulesConfig(nextConfig, { allowEmptyDiscounts: true });
                 renderDiscountTriggerSettings();
+                showDiscountTriggerFeedback(`已删除${meta.label}规则草稿，保存后生效。`, 'info');
             });
         }
     });
@@ -7627,6 +8855,7 @@ function setupDiscountTriggerSettingsEventListeners() {
     if (saveButton && saveButton.dataset.configBound !== '1') {
         saveButton.dataset.configBound = '1';
         saveButton.addEventListener('click', async () => {
+            pulseAdminConfigButton(saveButton);
             await saveDiscountTriggerSettings();
         });
     }
@@ -13412,6 +14641,16 @@ function getOpsAlertCaseStatusLabel(status) {
     return resolveOpsAlertCaseStatusLabel(status);
 }
 
+function isOpsAlertCaseUnresolved(item = {}) {
+    const status = String(
+        item?.case_status
+        || item?.caseStatus
+        || item?.caseRecord?.status
+        || ''
+    ).trim().toLowerCase() || 'open';
+    return status !== 'resolved';
+}
+
 function buildLocalOpsAlertMonitorAssignableAdmins(state = opsAlertMonitorState || getDefaultOpsAlertMonitorState()) {
     const normalizedState = state && typeof state === 'object' && !Array.isArray(state)
         ? state
@@ -14040,15 +15279,30 @@ function buildLocalOpsAlertMonitorCategoryView(category = {}, filters = getOpsAl
     const latestState = String(normalizedCategory.latest_state || '').trim().toLowerCase() || 'idle';
     const allItems = Array.isArray(normalizedCategory.items) ? normalizedCategory.items : [];
     const categoryMatches = normalizedFilters.category === 'all' || normalizedFilters.category === normalizedCategoryKey;
+    const hasExplicitActiveCount = normalizedCategory.active_count !== undefined
+        && normalizedCategory.active_count !== null
+        && String(normalizedCategory.active_count).trim() !== '';
+    const hasExplicitCriticalCount = normalizedCategory.critical_count !== undefined
+        && normalizedCategory.critical_count !== null
+        && String(normalizedCategory.critical_count).trim() !== '';
     const activeCount = Number(normalizedCategory.active_count || 0);
     const criticalCount = Number(normalizedCategory.critical_count || 0);
-    const isRecoveredOnly = activeCount === 0 && latestState === 'recovered';
+    const unresolvedItems = allItems.filter((item) => isOpsAlertCaseUnresolved(item));
+    const actionableActiveCount = allItems.length
+        ? (hasExplicitActiveCount ? Math.min(activeCount, unresolvedItems.length) : unresolvedItems.length)
+        : activeCount;
+    const actionableCriticalCount = allItems.length
+        ? (hasExplicitCriticalCount
+            ? Math.min(criticalCount, unresolvedItems.filter((item) => String(item.severity || '').trim().toLowerCase() === 'critical').length)
+            : unresolvedItems.filter((item) => String(item.severity || '').trim().toLowerCase() === 'critical').length)
+        : criticalCount;
+    const isRecoveredOnly = actionableActiveCount === 0 && latestState === 'recovered';
 
     if (!categoryMatches) {
         return null;
     }
 
-    if (normalizedFilters.scope === 'active' && activeCount <= 0) {
+    if (normalizedFilters.scope === 'active' && actionableActiveCount <= 0) {
         return null;
     }
 
@@ -14070,19 +15324,20 @@ function buildLocalOpsAlertMonitorCategoryView(category = {}, filters = getOpsAl
                 ? true
                 : String(item.severity || '').trim().toLowerCase() === normalizedFilters.severity
         ));
+    const unresolvedVisibleItems = visibleItems.filter((item) => isOpsAlertCaseUnresolved(item));
     const previewItems = visibleItems.slice(0, 3);
     const displayActiveCount = normalizedFilters.scope === 'recovered'
         ? 0
-        : (normalizedFilters.severity === 'all' ? activeCount : visibleItems.length);
+        : (normalizedFilters.severity === 'all' ? actionableActiveCount : unresolvedVisibleItems.length);
     const displayCriticalCount = normalizedFilters.scope === 'recovered'
         ? 0
         : (normalizedFilters.severity === 'all'
-            ? criticalCount
-            : visibleItems.filter((item) => String(item.severity || '').trim().toLowerCase() === 'critical').length);
+            ? actionableCriticalCount
+            : unresolvedVisibleItems.filter((item) => String(item.severity || '').trim().toLowerCase() === 'critical').length);
     const filteredNote = !isRecoveredOnly
         && normalizedFilters.severity !== 'all'
-        && activeCount > visibleItems.length
-        ? `当前筛出 ${formatVerifyMonitorInteger(visibleItems.length)} 项 ${normalizedFilters.severity} 告警；模块原始待关注共 ${formatVerifyMonitorInteger(activeCount)} 项。`
+        && actionableActiveCount > unresolvedVisibleItems.length
+        ? `当前筛出 ${formatVerifyMonitorInteger(unresolvedVisibleItems.length)} 项未关闭 ${normalizedFilters.severity} 告警；模块原始未关闭共 ${formatVerifyMonitorInteger(actionableActiveCount)} 项。`
         : '';
 
     return {
@@ -14244,94 +15499,16 @@ function resolveOpsAlertMonitorBatchRowsBuilder() {
 }
 
 async function writeAdminConfigClipboard(text) {
-    const normalizedText = String(text || '');
-    if (!normalizedText) {
-        throw new Error('没有可复制的内容');
-    }
-
-    if (navigator?.clipboard?.writeText) {
-        await navigator.clipboard.writeText(normalizedText);
-        return true;
-    }
-
-    const textarea = document.createElement('textarea');
-    textarea.value = normalizedText;
-    textarea.setAttribute('readonly', 'readonly');
-    textarea.style.position = 'fixed';
-    textarea.style.opacity = '0';
-    textarea.style.left = '-9999px';
-    document.body.appendChild(textarea);
-    textarea.select();
-    textarea.setSelectionRange(0, normalizedText.length);
-
-    try {
-        const succeeded = document.execCommand('copy');
-        if (!succeeded) {
-            throw new Error('浏览器不支持复制到剪贴板');
-        }
-        return true;
-    } finally {
-        document.body.removeChild(textarea);
-    }
-}
-
-function buildLocalOpsAlertMonitorChecklistText(rows = [], filters = getOpsAlertMonitorViewFilters(), categoryKey = '') {
-    const normalizedCategoryKey = String(categoryKey || '').trim().toLowerCase();
-    const categoryLabelMap = {
-        payments: '支付与退款',
-        tickets: '工单与售后',
-        inventory: '库存与补货',
-        fulfillment: '履约与死信',
-        shop_risk: '商城风控'
-    };
-    const lines = [
-        '第一阶段集中告警处理清单',
-        `生成时间：${formatVerifyMonitorDateTime(new Date().toISOString())}`,
-        `当前筛选：${getOpsAlertMonitorFilterSummaryLabel(filters)}`
-    ];
-
-    if (normalizedCategoryKey && categoryLabelMap[normalizedCategoryKey]) {
-        lines.push(`当前模块：${categoryLabelMap[normalizedCategoryKey]}`);
-    }
-
-    lines.push(`命中记录：${formatVerifyMonitorInteger(rows.length)} 条`, '');
-
-    rows.forEach((row, index) => {
-        lines.push(`${index + 1}. [${row.模块}] ${row.标题}`);
-        lines.push(`   状态：${row.状态} · 级别：${row.级别 || 'warning'} · 类型：${row.告警类型 || 'unknown'}`);
-        if (row.引用标签 && row.引用值) {
-            lines.push(`   ${row.引用标签}：${row.引用值}`);
-        }
-        if (row.摘要) {
-            lines.push(`   摘要：${row.摘要}`);
-        }
-        if (row.处理入口 || row.处理动作) {
-            lines.push(`   处理入口：${row.处理入口 || '—'}${row.处理动作 ? ` · ${row.处理动作}` : ''}`);
-        }
-        if (row.创建时间) {
-            lines.push(`   时间：${formatVerifyMonitorDateTime(row.创建时间)}`);
-        }
-        lines.push('');
-    });
-
-    return lines.join('\n').trim();
-}
-
-function resolveOpsAlertMonitorChecklistText(rows = [], filters = getOpsAlertMonitorViewFilters(), categoryKey = '') {
-    return resolveOpsAlertSharedCallable(
-        'buildAdminWorkbenchOpsAlertMonitorChecklistText',
-        buildLocalOpsAlertMonitorChecklistText,
-        () => ({
-            now: new Date().toISOString(),
-            formatDateTime: formatVerifyMonitorDateTime,
-            formatCount: formatVerifyMonitorInteger,
-            getFilterSummaryLabel: getOpsAlertMonitorFilterSummaryLabel
-        })
-    )(rows, filters, categoryKey);
+    return requireAdminConfigOpsAlertReportsRuntime().writeAdminConfigClipboard(text);
 }
 
 function buildOpsAlertMonitorChecklistText(rows = [], filters = getOpsAlertMonitorViewFilters(), categoryKey = '') {
-    return resolveOpsAlertMonitorChecklistText(rows, filters, categoryKey);
+    return requireAdminConfigOpsAlertReportsRuntime().buildOpsAlertMonitorChecklistText(
+        rows,
+        filters,
+        categoryKey,
+        getAdminConfigOpsAlertReportsDeps()
+    );
 }
 
 function getOpsAlertRiskSpotlightCategory(filters = getOpsAlertMonitorViewFilters()) {
@@ -15284,100 +16461,28 @@ function buildOpsAlertMonitorShiftReportMarkup(report = normalizeOpsAlertMonitor
     `;
 }
 
-function buildLocalOpsAlertMonitorShiftReportSummaryText(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
-    const normalizedReport = normalizeOpsAlertMonitorShiftReport(report);
-    const shiftRuntimeState = buildOpsAlertMonitorShiftSharedRuntimeState(currentAdminLabel, {
-        includeGeneratedAt: true
-    });
-    const lines = [
-        '第一阶段集中告警交班摘要',
-        `生成时间：${formatVerifyMonitorDateTime(shiftRuntimeState.generatedAt)}`,
-        `交班视角：${getOpsAlertMonitorShiftResolvedViewLabel(shiftRuntimeState.currentView)}`,
-        `班次时长：${formatVerifyMonitorInteger(Math.max(1, Number(normalizedReport.shift_hours || 0)))} 小时`
-    ];
-    if (shiftRuntimeState.currentAdminLabel) {
-        lines.push(`当前值班：${shiftRuntimeState.currentAdminLabel}`);
-    }
-    if (normalizedReport.window_start || normalizedReport.window_end) {
-        lines.push(`班次区间：${formatVerifyMonitorDateTime(normalizedReport.window_start)} 至 ${formatVerifyMonitorDateTime(normalizedReport.window_end)}`);
-    }
-    return lines.join('\n');
-}
-
-function resolveOpsAlertMonitorShiftReportSummaryTextBuilder() {
-    return resolveOpsAlertMonitorShiftRuntimeSharedBuilder(
-        'buildAdminWorkbenchOpsAlertMonitorShiftReportSummaryText',
-        buildLocalOpsAlertMonitorShiftReportSummaryText,
-        () => buildOpsAlertMonitorShiftSharedOptions({
-            formatDateTime: formatVerifyMonitorDateTime,
-            formatCount: formatVerifyMonitorInteger,
-            formatMinutes: formatVerifyMonitorMinutes,
-            formatSignedCount: formatOpsAlertMonitorSignedCount,
-            formatTimeShort: formatOpsAlertMonitorTimeShort
-        }),
-        (report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') => buildOpsAlertMonitorShiftSharedRuntimeState(currentAdminLabel, {
-            includeGeneratedAt: true
-        })
-    );
-}
-
-function resolveOpsAlertMonitorShiftReportSummaryText(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
-    return resolveOpsAlertMonitorShiftReportSummaryTextBuilder()(report, currentAdminLabel);
-}
-
 function buildOpsAlertMonitorShiftReportSummaryText(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
-    return resolveOpsAlertMonitorShiftReportSummaryText(report, currentAdminLabel);
-}
-
-function buildLocalOpsAlertMonitorShiftReportCsvRows(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
-    const normalizedReport = normalizeOpsAlertMonitorShiftReport(report);
-    const shiftRuntimeState = buildOpsAlertMonitorShiftSharedRuntimeState(currentAdminLabel);
-    return [{
-        section: 'summary',
-        item: '班次概览',
-        current_admin: shiftRuntimeState.currentAdminLabel || '',
-        view_mode: normalizeOpsAlertMonitorShiftReportView(shiftRuntimeState.currentView),
-        view_label: getOpsAlertMonitorShiftResolvedViewLabel(shiftRuntimeState.currentView),
-        shift_hours: Math.max(1, Number(normalizedReport.shift_hours || 0)),
-        bucket_hours: Math.max(1, Number(normalizedReport.bucket_hours || 0)),
-        window_start: normalizedReport.window_start || '',
-        window_end: normalizedReport.window_end || ''
-    }];
-}
-
-function resolveOpsAlertMonitorShiftReportCsvRowsBuilder() {
-    return resolveOpsAlertMonitorShiftRuntimeSharedBuilder(
-        'buildAdminWorkbenchOpsAlertMonitorShiftReportCsvRows',
-        buildLocalOpsAlertMonitorShiftReportCsvRows,
-        () => buildOpsAlertMonitorShiftSharedOptions({
-            formatTimeShort: formatOpsAlertMonitorTimeShort
-        }),
-        (report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') => buildOpsAlertMonitorShiftSharedRuntimeState(currentAdminLabel)
+    return requireAdminConfigOpsAlertReportsRuntime().buildOpsAlertMonitorShiftReportSummaryText(
+        report,
+        currentAdminLabel,
+        getAdminConfigOpsAlertReportsDeps()
     );
-}
-
-function resolveOpsAlertMonitorShiftReportCsvRows(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
-    return resolveOpsAlertMonitorShiftReportCsvRowsBuilder()(report, currentAdminLabel);
 }
 
 function buildOpsAlertMonitorShiftReportCsvRows(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
-    return resolveOpsAlertMonitorShiftReportCsvRows(report, currentAdminLabel);
-}
-
-function buildLocalOpsAlertMonitorShiftExportState(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
-    const normalizedReport = normalizeOpsAlertMonitorShiftReport(report);
-    const currentView = normalizeOpsAlertMonitorShiftReportView(opsAlertMonitorShiftReportViewState);
-    const currentViewLabel = getOpsAlertMonitorShiftResolvedViewLabel(currentView);
-    return {
-        currentView,
-        currentViewLabel,
-        summaryText: buildOpsAlertMonitorShiftReportSummaryText(normalizedReport, currentAdminLabel),
-        csvRows: buildOpsAlertMonitorShiftReportCsvRows(normalizedReport, currentAdminLabel)
-    };
+    return requireAdminConfigOpsAlertReportsRuntime().buildOpsAlertMonitorShiftReportCsvRows(
+        report,
+        currentAdminLabel,
+        getAdminConfigOpsAlertReportsDeps()
+    );
 }
 
 function resolveOpsAlertMonitorShiftExportState(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
-    return buildLocalOpsAlertMonitorShiftExportState(report, currentAdminLabel);
+    return requireAdminConfigOpsAlertReportsRuntime().resolveOpsAlertMonitorShiftExportState(
+        report,
+        currentAdminLabel,
+        getAdminConfigOpsAlertReportsDeps()
+    );
 }
 
 function setOpsAlertMonitorShiftReportView(value = 'all') {
@@ -15452,22 +16557,26 @@ function buildLocalOpsAlertMonitorPanelState(state = {}, filters = getOpsAlertMo
     const filteredActiveCount = normalizedCategories.reduce((sum, category) => sum + Number(category.display_active_count || 0), 0);
     const filteredCriticalCount = normalizedCategories.reduce((sum, category) => sum + Number(category.display_critical_count || 0), 0);
     const filteredSummaryLabel = getOpsAlertMonitorFilterSummaryLabel(normalizedFilters);
+    const staleMessage = normalizedState.stale === true
+        ? String(normalizedState.message || '刷新失败，继续显示上一份告警快照').trim()
+        : '';
 
     if (!normalizedCategories.length) {
         return {
             status: 'empty',
             metaIcon: 'fas fa-filter-circle-xmark',
-            metaText: `当前筛选：${filteredSummaryLabel}。这组条件下没有命中的集中告警，请调整筛选后重试。`,
+            metaText: `${staleMessage ? `${staleMessage}；` : ''}当前筛选：${filteredSummaryLabel}。这组条件下没有命中的集中告警，请调整筛选后重试。`,
             emptyMessage: '当前筛选条件下没有可展示的集中告警卡片。'
         };
     }
 
+    const readyMetaText = filteredActiveCount > 0
+        ? `当前筛选：${filteredSummaryLabel}。命中 ${formatVerifyMonitorInteger(filteredActiveCount)} 项待关注告警，覆盖 ${formatVerifyMonitorInteger(normalizedCategories.length)} 个模块，其中 ${formatVerifyMonitorInteger(filteredCriticalCount)} 项为 critical。`
+        : `当前筛选：${filteredSummaryLabel}。最近 ${formatVerifyMonitorInteger(summary.lookback_hours || 0)} 小时内没有持续中的待关注告警，下面保留可复核的恢复轨迹。`;
     return {
         status: 'ready',
         metaIcon: filteredActiveCount > 0 ? 'fas fa-siren-on' : 'fas fa-circle-check',
-        metaText: filteredActiveCount > 0
-            ? `当前筛选：${filteredSummaryLabel}。命中 ${formatVerifyMonitorInteger(filteredActiveCount)} 项待关注告警，覆盖 ${formatVerifyMonitorInteger(normalizedCategories.length)} 个模块，其中 ${formatVerifyMonitorInteger(filteredCriticalCount)} 项为 critical。`
-            : `当前筛选：${filteredSummaryLabel}。最近 ${formatVerifyMonitorInteger(summary.lookback_hours || 0)} 小时内没有持续中的待关注告警，下面保留可复核的恢复轨迹。`,
+        metaText: `${staleMessage ? `${staleMessage}；` : ''}${readyMetaText}`,
         emptyMessage: ''
     };
 }
@@ -15866,7 +16975,10 @@ function applyOpsAlertMonitorBatchActionStates(buttonStates = [], filters = getO
     const setButtonState = (actionName, disabled, title) => {
         const button = document.querySelector(`[data-admin-action="${actionName}"]`);
         if (!button) return;
-        button.disabled = disabled;
+        // Keep batch controls clickable so empty or stale states can surface a toast instead of failing silently.
+        button.disabled = false;
+        button.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+        button.dataset.opsAlertMonitorBatchDisabled = disabled ? 'true' : 'false';
         button.title = title;
     };
 
@@ -15901,6 +17013,7 @@ function applyOpsAlertMonitorPanelMarkupState(markupState = {}, elements = {}) {
 function renderOpsAlertMonitorPanel() {
     const shiftReport = document.getElementById('opsAlertMonitorShiftReport');
     if (!shiftReport) return;
+    const panel = document.getElementById('opsAlertMonitorPanel');
 
     renderOpsAlertPanelMarkupTarget({
         panelId: 'opsAlertMonitorPanel',
@@ -15915,95 +17028,38 @@ function renderOpsAlertMonitorPanel() {
         },
         applyMarkupState: applyOpsAlertMonitorPanelMarkupState
     });
+
+    window.bindAdminStudioOpsAlertDirectActionButtons?.(panel);
 }
 
 async function copyOpsAlertMonitorChecklist(categoryKey = '') {
-    const filters = getOpsAlertMonitorViewFilters();
-    const categories = getOpsAlertMonitorPreparedCategories(filters);
-    const rows = buildOpsAlertMonitorBatchRows(categories, filters, categoryKey);
-    if (!rows.length) {
-        showToast('当前筛选条件下没有可复制的告警清单', 'info');
-        return false;
-    }
-
-    try {
-        const text = buildOpsAlertMonitorChecklistText(rows, filters, categoryKey);
-        await writeAdminConfigClipboard(text);
-        showToast(`已复制 ${rows.length} 条集中告警清单`, 'success');
-        return true;
-    } catch (error) {
-        console.error('[Config] Copy ops alert checklist failed:', error);
-        showToast('复制失败，请稍后重试', 'error');
-        return false;
-    }
+    return requireAdminConfigOpsAlertReportsRuntime().copyOpsAlertMonitorChecklist(
+        categoryKey,
+        getAdminConfigOpsAlertReportsDeps()
+    );
 }
 
 async function copyOpsAlertMonitorShiftReportSummary() {
-    const state = opsAlertMonitorState || getDefaultOpsAlertMonitorState();
-    if (state.status !== 'ready') {
-        showToast('交班报表仍在加载，请稍后再试', 'info');
-        return false;
-    }
-
-    try {
-        const exportState = resolveOpsAlertMonitorShiftExportState(state.summary?.shift_report, state.current_admin_label || '');
-        await writeAdminConfigClipboard(exportState.summaryText);
-        showToast(`已复制${exportState.currentViewLabel}交班摘要`, 'success');
-        return true;
-    } catch (error) {
-        console.error('[Config] Copy ops alert shift report failed:', error);
-        showToast('复制交班摘要失败，请稍后重试', 'error');
-        return false;
-    }
+    return requireAdminConfigOpsAlertReportsRuntime().copyOpsAlertMonitorShiftReportSummary(
+        getAdminConfigOpsAlertReportsDeps()
+    );
 }
 
 function exportOpsAlertMonitorCsv(categoryKey = '') {
-    const filters = getOpsAlertMonitorViewFilters();
-    const categories = getOpsAlertMonitorPreparedCategories(filters);
-    const rows = buildOpsAlertMonitorBatchRows(categories, filters, categoryKey);
-    if (!rows.length) {
-        showToast('当前筛选条件下没有可导出的集中告警', 'info');
-        return false;
-    }
-
-    const timestamp = new Date().toISOString().slice(0, 10);
-    const suffix = String(categoryKey || '').trim().toLowerCase() || 'all';
-    const csv = convertRowsToCsv(rows);
-    downloadExportBlob(
-        new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' }),
-        `ops_alert_monitor_${suffix}_${timestamp}.csv`
+    return requireAdminConfigOpsAlertReportsRuntime().exportOpsAlertMonitorCsv(
+        categoryKey,
+        getAdminConfigOpsAlertReportsDeps()
     );
-    showToast(`已导出 ${rows.length} 条集中告警清单`, 'success');
-    return true;
 }
 
 function exportOpsAlertMonitorShiftReportCsv() {
-    const state = opsAlertMonitorState || getDefaultOpsAlertMonitorState();
-    if (state.status !== 'ready') {
-        showToast('交班报表仍在加载，请稍后再试', 'info');
-        return false;
-    }
-
-    const exportState = resolveOpsAlertMonitorShiftExportState(state.summary?.shift_report, state.current_admin_label || '');
-    const rows = exportState.csvRows;
-    if (!rows.length) {
-        showToast('当前没有可导出的交班报表', 'info');
-        return false;
-    }
-
-    const timestamp = new Date().toISOString().slice(0, 10);
-    const viewKey = exportState.currentView;
-    const csv = convertRowsToCsv(rows);
-    downloadExportBlob(
-        new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' }),
-        `ops_alert_shift_report_${viewKey}_${timestamp}.csv`
+    return requireAdminConfigOpsAlertReportsRuntime().exportOpsAlertMonitorShiftReportCsv(
+        getAdminConfigOpsAlertReportsDeps()
     );
-    showToast(`已导出${exportState.currentViewLabel}交班报表`, 'success');
-    return true;
 }
 
 function renderChannelsConfig() {
-    const channels = systemConfigCache['channels'] || [];
+    const channels = getSavedChannelListConfig();
     const container = document.getElementById('channelTags');
     if (!container) return;
 
@@ -16013,6 +17069,10 @@ function renderChannelsConfig() {
             <button class="remove-tag" type="button" data-admin-action="settings-delete-channel" data-channel-index="${index}">✕</button>
         </div>
     `).join('');
+}
+
+function getSavedChannelListConfig() {
+    return Array.isArray(systemConfigCache['channels']) ? systemConfigCache['channels'] : [];
 }
 
 function renderRewardsConfig() {
@@ -16211,16 +17271,27 @@ async function resolveAdminConfigAccessToken() {
 }
 
 async function getAdminConfigApiHeaders() {
-    const headers = {
+    const baseHeaders = {
         'Content-Type': 'application/json'
     };
 
-    const accessToken = await resolveAdminConfigAccessToken();
-    if (accessToken) {
-        headers.Authorization = `Bearer ${accessToken}`;
+    if (window.AdminApi?.buildRequestInit) {
+        try {
+            const requestInit = await window.AdminApi.buildRequestInit({
+                headers: baseHeaders
+            });
+            return requestInit?.headers || baseHeaders;
+        } catch (_) {
+            // Fall through to direct token resolution.
+        }
     }
 
-    return headers;
+    const accessToken = await resolveAdminConfigAccessToken();
+    if (accessToken) {
+        baseHeaders.Authorization = `Bearer ${accessToken}`;
+    }
+
+    return baseHeaders;
 }
 
 async function loadPaymentChannelSettings(force = false) {
@@ -16460,6 +17531,8 @@ async function loadOpsAlertHealth(force = false) {
 async function fetchOpsAlertMonitorPayload(headers = {}) {
     return requireOpsAlertWorkbenchMethod('fetchAdminWorkbenchOpsAlertMonitor')(headers, {
         timeoutMs: OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS,
+        retryCount: OPS_ALERT_MONITOR_FETCH_RETRY_COUNT,
+        retryDelayMs: OPS_ALERT_MONITOR_FETCH_RETRY_DELAY_MS,
         errorMessage: '加载集中告警处理面板失败'
     });
 }
@@ -16487,13 +17560,74 @@ function resolveOpsAlertMonitorReadyState(payload = {}) {
     };
 }
 
-function buildLocalOpsAlertMonitorErrorState(error = null) {
+function getOpsAlertMonitorLoadErrorMessage(error = null) {
+    const rawMessage = String(error?.message || '').trim();
+    const normalizedMessage = rawMessage.toLowerCase();
+    if (error?.name === 'AbortError') {
+        return '加载集中告警处理面板超时，请稍后重试';
+    }
+    if (normalizedMessage.includes('fetch failed')
+        || normalizedMessage.includes('failed to fetch')
+        || normalizedMessage.includes('network')) {
+        return '网络请求没有完成，已自动重试；请稍后刷新面板';
+    }
+    return rawMessage || '加载集中告警处理面板失败';
+}
+
+function hasOpsAlertMonitorSnapshotData(state = {}) {
+    if (!state || typeof state !== 'object' || Array.isArray(state)) {
+        return false;
+    }
+    if (Array.isArray(state.categories) && state.categories.length > 0) {
+        return true;
+    }
+    const summary = state.summary && typeof state.summary === 'object' && !Array.isArray(state.summary)
+        ? state.summary
+        : {};
+    const shiftReport = summary.shift_report && typeof summary.shift_report === 'object' && !Array.isArray(summary.shift_report)
+        ? summary.shift_report
+        : {};
+    return Number(summary.total_job_count || 0) > 0
+        || Number(summary.total_active_count || 0) > 0
+        || Number(summary.total_critical_count || 0) > 0
+        || (Array.isArray(shiftReport.categories) && shiftReport.categories.length > 0)
+        || (Array.isArray(shiftReport.admin_stats) && shiftReport.admin_stats.length > 0)
+        || (Array.isArray(shiftReport.trend) && shiftReport.trend.length > 0);
+}
+
+function getOpsAlertMonitorFallbackSnapshot(currentState = opsAlertMonitorState || getDefaultOpsAlertMonitorState()) {
+    if (hasOpsAlertMonitorSnapshotData(currentState)) {
+        return currentState;
+    }
+    if (hasOpsAlertMonitorSnapshotData(opsAlertMonitorLastReadyState)) {
+        return opsAlertMonitorLastReadyState;
+    }
+    return null;
+}
+
+function rememberOpsAlertMonitorReadyState(state = {}) {
+    if (state?.status === 'ready' && state.stale !== true && hasOpsAlertMonitorSnapshotData(state)) {
+        opsAlertMonitorLastReadyState = state;
+    }
+}
+
+function buildLocalOpsAlertMonitorErrorState(error = null, currentState = opsAlertMonitorState || getDefaultOpsAlertMonitorState()) {
+    const message = getOpsAlertMonitorLoadErrorMessage(error);
+    const fallbackState = getOpsAlertMonitorFallbackSnapshot(currentState);
+    if (fallbackState) {
+        return {
+            ...fallbackState,
+            status: 'ready',
+            stale: true,
+            load_error_message: message,
+            message: `刷新失败，继续显示上一份告警快照：${message}`
+        };
+    }
+
     return {
         ...getDefaultOpsAlertMonitorState(),
         status: 'error',
-        message: error?.name === 'AbortError'
-            ? '加载集中告警处理面板超时，请稍后重试'
-            : (error?.message || '加载集中告警处理面板失败')
+        message
     };
 }
 
@@ -16509,6 +17643,7 @@ function applyOpsAlertMonitorRuntimeState(nextState = getDefaultOpsAlertMonitorS
     return applyLocalOpsAlertRuntimeState(nextState, {
         applyState: (state = {}) => {
             opsAlertMonitorState = state;
+            rememberOpsAlertMonitorReadyState(state);
         },
         render: () => renderOpsAlertMonitorPanel()
     });
@@ -16523,7 +17658,7 @@ async function loadOpsAlertMonitor(force = false) {
             applyOpsAlertMonitorRuntimeState(resolveOpsAlertMonitorRuntimeState('ready', payload));
             return payload;
         } catch (error) {
-            const errorState = resolveOpsAlertMonitorRuntimeState('error', error);
+            const errorState = buildLocalOpsAlertMonitorErrorState(error, opsAlertMonitorState);
             console.warn('[Config] Ops alert monitor load failed:', errorState.message);
             applyOpsAlertMonitorRuntimeState(errorState);
             return null;
@@ -16531,10 +17666,88 @@ async function loadOpsAlertMonitor(force = false) {
     });
 }
 
-function showConfigSavedToast(message) {
+function normalizeAdminConfigFeedbackState(value = '') {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'success' || normalized === 'saved') return 'saved';
+    if (normalized === 'warning' || normalized === 'partial') return 'partial';
+    if (normalized === 'error' || normalized === 'danger' || normalized === 'failed') return 'failed';
+    if (normalized === 'info' || normalized === 'loading' || normalized === 'pending') return 'loading';
+    return 'ready';
+}
+
+function emitAdminConfigCommandFeedback(message = '', feedbackState = 'saved', options = {}) {
+    const normalizedMessage = String(message || '').trim();
+    if (!normalizedMessage) {
+        return null;
+    }
+
+    const source = String(options?.source || 'settings-config').trim().toLowerCase() || 'settings-config';
+    const moduleId = String(options?.module || (source.startsWith('ops-alerts') ? 'ops-alerts' : 'settings')).trim().toLowerCase() || 'settings';
+    const detail = {
+        kind: 'module-result',
+        source,
+        module: moduleId,
+        state: normalizeAdminConfigFeedbackState(feedbackState || options?.tone || ''),
+        tone: String(options?.tone || '').trim().toLowerCase(),
+        message: normalizedMessage,
+        persistent: options?.persistent === true,
+        timestamp: Date.now()
+    };
+
+    if (typeof window.dispatchAdminStudioFeedbackSignal === 'function') {
+        return window.dispatchAdminStudioFeedbackSignal(detail);
+    }
+
+    if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+        try {
+            window.dispatchEvent(new CustomEvent('admin-feedback-signal', { detail }));
+        } catch (_) {
+            // Keep settings feedback best-effort.
+        }
+    }
+
+    return detail;
+}
+
+function showConfigSavedToast(message, options = {}) {
     if (typeof showToast === 'function') {
         showToast(message, 'success');
     }
+    if (options?.feedback !== false) {
+        emitAdminConfigCommandFeedback(message, options?.feedbackState || 'saved', options);
+    }
+}
+
+function requireAdminConfigOpsAlertReportsRuntime() {
+    const runtime = window.AdminConfigOpsAlertReports;
+    if (!runtime) {
+        throw new Error('AdminConfigOpsAlertReports runtime unavailable');
+    }
+    return runtime;
+}
+
+function getAdminConfigOpsAlertReportsDeps() {
+    return {
+        showToast,
+        emitAdminConfigCommandFeedback,
+        resolveOpsAlertSharedCallable,
+        resolveOpsAlertMonitorShiftRuntimeSharedBuilder,
+        formatVerifyMonitorDateTime,
+        formatVerifyMonitorInteger,
+        formatVerifyMonitorMinutes,
+        formatOpsAlertMonitorSignedCount,
+        formatOpsAlertMonitorTimeShort,
+        getOpsAlertMonitorFilterSummaryLabel,
+        normalizeOpsAlertMonitorShiftReport,
+        buildOpsAlertMonitorShiftSharedRuntimeState,
+        getOpsAlertMonitorShiftResolvedViewLabel,
+        normalizeOpsAlertMonitorShiftReportView,
+        getOpsAlertMonitorShiftReportViewState: () => opsAlertMonitorShiftReportViewState,
+        getOpsAlertMonitorViewFilters,
+        getOpsAlertMonitorPreparedCategories,
+        buildOpsAlertMonitorBatchRows,
+        getOpsAlertMonitorState: () => opsAlertMonitorState || getDefaultOpsAlertMonitorState()
+    };
 }
 
 async function saveAffiliateSetting(field, rawValue) {
@@ -17000,11 +18213,16 @@ async function savePaymentChannelSettings(options = {}) {
         renderPaymentChannelsConfig();
         renderPackagesConfig();
         clearPaymentChannelSecretInputs();
-        showConfigSavedToast(options.successMessage || payload.message || '支付通道配置已保存');
+        showConfigSavedToast(options.successMessage || payload.message || '支付通道配置已保存', {
+            source: 'settings-payment'
+        });
         return true;
     } catch (err) {
         console.error('[Config] Save payment channels failed:', err);
         showToast('保存失败: ' + (err.message || '未知错误'), 'error');
+        emitAdminConfigCommandFeedback(`支付通道配置保存失败: ${err.message || '未知错误'}`, 'failed', {
+            source: 'settings-payment'
+        });
         renderPaymentChannelsConfig();
         renderPackagesConfig();
         return false;
@@ -18225,7 +19443,9 @@ function resolveOpsAlertSettingsSubmissionState(config, options = {}) {
         config: normalizedConfig,
         body: buildOpsAlertSettingsRequestBody(normalizedConfig, options),
         successMessage: options.successMessage || '',
-        errorMessage: options.errorMessage || '保存站外告警配置失败'
+        errorMessage: options.errorMessage || '保存站外告警配置失败',
+        feedbackSource: String(options.feedbackSource || 'ops-alerts-settings').trim().toLowerCase() || 'ops-alerts-settings',
+        feedbackModule: String(options.feedbackModule || 'ops-alerts').trim().toLowerCase() || 'ops-alerts'
     };
 }
 
@@ -18251,17 +19471,28 @@ function applyOpsAlertSettingsSavedState(savedState = {}) {
     }));
     renderOpsAlertSettings();
     clearOpsAlertSecretInputs();
-    showConfigSavedToast(savedState.toastMessage || '站外退款告警配置已保存');
+    showConfigSavedToast(savedState.toastMessage || '站外退款告警配置已保存', {
+        source: savedState.feedbackSource || 'ops-alerts-settings',
+        module: savedState.feedbackModule || 'ops-alerts'
+    });
     return savedState;
 }
 
 function applyOpsAlertSettingsSavedPayload(payload = {}, submissionState = {}) {
-    return applyOpsAlertSettingsSavedState(buildLocalOpsAlertSettingsSavedState(payload, submissionState));
+    return applyOpsAlertSettingsSavedState({
+        ...buildLocalOpsAlertSettingsSavedState(payload, submissionState),
+        feedbackSource: submissionState.feedbackSource || 'ops-alerts-settings',
+        feedbackModule: submissionState.feedbackModule || 'ops-alerts'
+    });
 }
 
-function handleOpsAlertSettingsSaveError(error) {
+function handleOpsAlertSettingsSaveError(error, options = {}) {
     console.error('[Config] Save ops alert settings failed:', error);
     showToast('保存失败: ' + (error.message || '未知错误'), 'error');
+    emitAdminConfigCommandFeedback(`站外告警配置保存失败: ${error.message || '未知错误'}`, 'failed', {
+        source: String(options.feedbackSource || 'ops-alerts-settings').trim().toLowerCase() || 'ops-alerts-settings',
+        module: String(options.feedbackModule || 'ops-alerts').trim().toLowerCase() || 'ops-alerts'
+    });
     renderOpsAlertSettings();
     return false;
 }
@@ -18291,7 +19522,7 @@ async function saveOpsAlertConfigOverride(config, options = {}) {
         applyOpsAlertSettingsSavedPayload(payload, submissionState);
         return true;
     } catch (error) {
-        return handleOpsAlertSettingsSaveError(error);
+        return handleOpsAlertSettingsSaveError(error, submissionState);
     } finally {
         setOpsAlertStrategySaveBusy(false);
     }
@@ -18746,11 +19977,49 @@ function resolveOpsAlertCaseComposerMetaResolver() {
     );
 }
 
+function ensureOpsAlertFloatingModal(modalOrId) {
+    const modal = typeof modalOrId === 'string'
+        ? document.getElementById(modalOrId)
+        : modalOrId;
+    if (!(modal instanceof HTMLElement) || !(document.body instanceof HTMLElement)) {
+        return modal || null;
+    }
+
+    if (modal.parentElement !== document.body) {
+        document.body.appendChild(modal);
+    }
+
+    return modal;
+}
+
 function setOpsAlertCaseComposerVisible(visible) {
-    const modal = document.getElementById('shopRiskCaseComposerModal');
+    const modal = ensureOpsAlertFloatingModal('shopRiskCaseComposerModal');
     if (!modal) return;
     modal.classList.toggle('is-visible', visible);
     modal.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
+function getOpsAlertCaseComposerOwnerOptionLabel(admin = {}) {
+    const label = String(admin?.label || '').trim();
+    const email = String(admin?.email || '').trim();
+    const id = String(admin?.id || '').trim();
+    const primaryLabel = label || email || id || '管理员';
+    return admin?.isCurrent ? `${primaryLabel}（我）` : primaryLabel;
+}
+
+function getOpsAlertCaseComposerOwnerOptionTitle(admin = {}) {
+    return [
+        String(admin?.label || '').trim(),
+        String(admin?.email || '').trim()
+    ]
+        .filter(Boolean)
+        .filter((item, index, list) => list.indexOf(item) === index)
+        .join(' · ');
+}
+
+function syncOpsAlertCaseComposerOwnerSelect(ownerSelectEl) {
+    if (!(ownerSelectEl instanceof HTMLSelectElement)) return;
+    window.ShopAdmin?.scheduleShopCustomSelectSync?.(ownerSelectEl);
 }
 
 function buildLocalOpsAlertCaseComposerViewState(state = shopRiskCaseComposerState || getDefaultShopRiskCaseComposerState()) {
@@ -18758,9 +20027,32 @@ function buildLocalOpsAlertCaseComposerViewState(state = shopRiskCaseComposerSta
         ? state
         : getDefaultShopRiskCaseComposerState();
     const meta = getLocalOpsAlertCaseComposerMeta(normalizedState);
+    const normalizedAction = String(normalizedState.action || '').trim().toLowerCase();
+    const isBatchMode = String(normalizedState.mode || 'single').trim().toLowerCase() === 'batch';
     const isAssignAction = String(normalizedState.action || '').trim().toLowerCase() === 'assign';
     const ownerOptions = getOpsAlertMonitorAssignableAdmins();
     const selectedOwner = getDefaultOpsAlertCaseComposerOwner(normalizedState);
+    const itemCount = Array.isArray(normalizedState.items) ? normalizedState.items.length : 0;
+    const actionOverviewMap = {
+        assign: {
+            label: isBatchMode ? '批量指派' : '指派负责人',
+            status: '负责人待更新'
+        },
+        claim: {
+            label: isBatchMode ? '批量认领' : '认领告警',
+            status: '负责人待写入'
+        },
+        resolve: {
+            label: isBatchMode ? '批量关闭' : '关闭告警',
+            status: '结论待写入'
+        },
+        add_note: {
+            label: isBatchMode ? '批量备注' : '记录备注',
+            status: '备注待写入'
+        }
+    };
+    const actionOverview = actionOverviewMap[normalizedAction] || actionOverviewMap.add_note;
+    const currentOwnerLabel = selectedOwner.label || normalizedState.selectedOwnerLabel || normalizedState.context?.caseOwnerLabel || '';
 
     return {
         open: normalizedState.open === true,
@@ -18768,13 +20060,21 @@ function buildLocalOpsAlertCaseComposerViewState(state = shopRiskCaseComposerSta
         title: meta.title,
         summary: meta.summary,
         description: meta.description,
+        scopeHint: isBatchMode
+            ? `当前筛选下 ${formatVerifyMonitorInteger(itemCount)} 条告警会一起写入处置记录。`
+            : '只处理当前这一条告警记录。',
+        modeValue: isBatchMode ? '当前筛选' : '单条告警',
+        countValue: isBatchMode ? `${formatVerifyMonitorInteger(itemCount)} 条告警` : '1 条告警',
+        actionValue: actionOverview.label,
+        ownerPreview: currentOwnerLabel || (isAssignAction ? '等待选择负责人' : '保持现有负责人'),
+        statusValue: normalizedState.submitting ? '正在提交' : actionOverview.status,
         fieldLabel: meta.fieldLabel,
         placeholder: meta.placeholder,
         submitLabel: normalizedState.submitting ? '提交中...' : meta.submitLabel,
         isAssignAction,
         ownerOptionsMarkup: ownerOptions.length
             ? ownerOptions.map((admin) => `
-                <option value="${escapeConfigHtml(admin.id)}">${escapeConfigHtml(admin.label)}${admin.email ? ` · ${escapeConfigHtml(admin.email)}` : ''}${admin.isCurrent ? '（我）' : ''}</option>
+                <option value="${escapeConfigHtml(admin.id)}" title="${escapeConfigHtml(getOpsAlertCaseComposerOwnerOptionTitle(admin))}">${escapeConfigHtml(getOpsAlertCaseComposerOwnerOptionLabel(admin))}</option>
             `).join('')
             : '<option value="">暂无可选管理员</option>',
         selectedOwnerId: selectedOwner.id || '',
@@ -18797,17 +20097,30 @@ function applyOpsAlertCaseComposerViewState(viewState = {}, elements = {}) {
     const {
         titleEl,
         summaryEl,
+        scopeHintEl,
+        modeValueEl,
+        countValueEl,
+        actionValueEl,
+        ownerPreviewEl,
+        statusValueEl,
         descEl,
         ownerFieldEl,
         ownerSelectEl,
         ownerHintEl,
         labelEl,
         textareaEl,
-        submitBtn
+        submitBtn,
+        submitLabelEl
     } = elements;
 
     titleEl.textContent = viewState.title || '';
     summaryEl.textContent = viewState.summary || '';
+    if (scopeHintEl) scopeHintEl.textContent = viewState.scopeHint || '';
+    if (modeValueEl) modeValueEl.textContent = viewState.modeValue || '';
+    if (countValueEl) countValueEl.textContent = viewState.countValue || '';
+    if (actionValueEl) actionValueEl.textContent = viewState.actionValue || '';
+    if (ownerPreviewEl) ownerPreviewEl.textContent = viewState.ownerPreview || '';
+    if (statusValueEl) statusValueEl.textContent = viewState.statusValue || '';
     descEl.textContent = viewState.description || '';
     ownerFieldEl.hidden = viewState.isAssignAction !== true;
 
@@ -18816,15 +20129,22 @@ function applyOpsAlertCaseComposerViewState(viewState = {}, elements = {}) {
         ownerSelectEl.value = viewState.selectedOwnerId || ownerSelectEl.value || '';
         ownerSelectEl.disabled = viewState.ownerSelectDisabled === true;
         ownerHintEl.textContent = viewState.ownerHintText || '';
+        syncOpsAlertCaseComposerOwnerSelect(ownerSelectEl);
     } else {
         ownerSelectEl.innerHTML = '';
         ownerSelectEl.disabled = false;
         ownerHintEl.textContent = '';
+        window.ShopAdmin?.closeShopCustomSelects?.();
+        syncOpsAlertCaseComposerOwnerSelect(ownerSelectEl);
     }
 
     labelEl.textContent = viewState.fieldLabel || '';
     textareaEl.placeholder = viewState.placeholder || '';
-    submitBtn.textContent = viewState.submitLabel || '提交';
+    if (submitLabelEl) {
+        submitLabelEl.textContent = viewState.submitLabel || '提交';
+    } else {
+        submitBtn.textContent = viewState.submitLabel || '提交';
+    }
     submitBtn.disabled = viewState.submitDisabled === true;
 }
 
@@ -18832,6 +20152,12 @@ function renderOpsAlertCaseComposer() {
     const modal = document.getElementById('shopRiskCaseComposerModal');
     const titleEl = document.getElementById('shopRiskCaseComposerTitle');
     const summaryEl = document.getElementById('shopRiskCaseComposerSummary');
+    const scopeHintEl = document.getElementById('shopRiskCaseComposerScopeHint');
+    const modeValueEl = document.getElementById('shopRiskCaseComposerModeValue');
+    const countValueEl = document.getElementById('shopRiskCaseComposerCountValue');
+    const actionValueEl = document.getElementById('shopRiskCaseComposerActionValue');
+    const ownerPreviewEl = document.getElementById('shopRiskCaseComposerOwnerPreview');
+    const statusValueEl = document.getElementById('shopRiskCaseComposerStatusValue');
     const descEl = document.getElementById('shopRiskCaseComposerDescription');
     const ownerFieldEl = document.getElementById('shopRiskCaseComposerOwnerField');
     const ownerSelectEl = document.getElementById('shopRiskCaseComposerOwnerSelect');
@@ -18839,6 +20165,7 @@ function renderOpsAlertCaseComposer() {
     const labelEl = document.getElementById('shopRiskCaseComposerLabel');
     const textareaEl = document.getElementById('shopRiskCaseComposerTextarea');
     const submitBtn = document.getElementById('shopRiskCaseComposerSubmit');
+    const submitLabelEl = document.getElementById('shopRiskCaseComposerSubmitLabel');
 
     if (!modal || !titleEl || !summaryEl || !descEl || !ownerFieldEl || !ownerSelectEl || !ownerHintEl || !labelEl || !textareaEl || !submitBtn) {
         return;
@@ -18849,13 +20176,20 @@ function renderOpsAlertCaseComposer() {
     applyOpsAlertCaseComposerViewState(viewState, {
         titleEl,
         summaryEl,
+        scopeHintEl,
+        modeValueEl,
+        countValueEl,
+        actionValueEl,
+        ownerPreviewEl,
+        statusValueEl,
         descEl,
         ownerFieldEl,
         ownerSelectEl,
         ownerHintEl,
         labelEl,
         textareaEl,
-        submitBtn
+        submitBtn,
+        submitLabelEl
     });
 
     setOpsAlertCaseComposerVisible(viewState.open === true);
@@ -18904,6 +20238,57 @@ function openOpsAlertCaseComposer(action, context = {}, options = {}) {
     }
 
     renderOpsAlertCaseComposer();
+
+    const modal = document.getElementById('shopRiskCaseComposerModal');
+    if (!modal) {
+        showToast('集中告警处理弹窗未加载，请刷新后台后重试。', 'error');
+        return;
+    }
+    if (!modal.classList.contains('is-visible')) {
+        modal.classList.add('is-visible');
+        modal.setAttribute('aria-hidden', 'false');
+    }
+}
+
+function openOpsAlertBatchCaseComposer(action, categoryKey = '') {
+    const normalizedAction = String(action || '').trim().toLowerCase();
+    const filters = getOpsAlertMonitorViewFilters();
+    const items = getOpsAlertMonitorBatchItems(filters, normalizedAction, categoryKey);
+
+    if (!items.length) {
+        const emptyMessageMap = {
+            claim: '当前筛选条件下没有可指派的告警',
+            assign: '当前筛选条件下没有可指派的告警',
+            add_note: '当前筛选条件下没有可备注的告警',
+            resolve: '当前筛选条件下没有可关闭的告警'
+        };
+        showToast(emptyMessageMap[normalizedAction] || '当前筛选条件下没有可处理的告警', 'info');
+        return false;
+    }
+
+    if (normalizedAction === 'claim' || normalizedAction === 'assign') {
+        openOpsAlertCaseComposer('assign', {
+            category: categoryKey || filters.category || ''
+        }, {
+            mode: 'batch',
+            items,
+            categoryKey
+        });
+        return true;
+    }
+
+    if (normalizedAction === 'add_note' || normalizedAction === 'resolve') {
+        openOpsAlertCaseComposer(normalizedAction, {
+            category: categoryKey || filters.category || ''
+        }, {
+            mode: 'batch',
+            items,
+            categoryKey
+        });
+        return true;
+    }
+
+    throw new Error('未识别的批量告警动作');
 }
 
 function buildLocalOpsAlertCaseComposerSubmissionState(state = shopRiskCaseComposerState || getDefaultShopRiskCaseComposerState(), options = {}) {
@@ -19114,7 +20499,10 @@ async function handleOpsAlertCaseAction(action, context = {}) {
                 refreshOpsAlertMonitorPanel?.(),
                 refreshRelatedOpsAlertWorkspaces(normalizedContext)
             ]);
-            showToast(payload.message || '集中告警已更新', 'success');
+            showConfigSavedToast(payload.message || '集中告警已更新', {
+                source: 'ops-alerts-case',
+                module: 'ops-alerts'
+            });
             return true;
         }
 
@@ -19127,49 +20515,19 @@ async function handleOpsAlertCaseAction(action, context = {}) {
     } catch (error) {
         console.error('[Config] Handle ops alert case action failed:', error);
         showToast('处理失败: ' + (error.message || '未知错误'), 'error');
+        emitAdminConfigCommandFeedback(`集中告警处理失败: ${error.message || '未知错误'}`, 'failed', {
+            source: 'ops-alerts-case',
+            module: 'ops-alerts'
+        });
         return false;
     }
 }
 
 async function handleOpsAlertMonitorBatchCaseAction(action, categoryKey = '') {
     const normalizedAction = String(action || '').trim().toLowerCase();
-    const items = getOpsAlertMonitorBatchItems(getOpsAlertMonitorViewFilters(), normalizedAction, categoryKey);
-
-    if (!items.length) {
-        const emptyMessageMap = {
-            claim: '当前筛选条件下没有可指派的告警',
-            assign: '当前筛选条件下没有可指派的告警',
-            add_note: '当前筛选条件下没有可备注的告警',
-            resolve: '当前筛选条件下没有可关闭的告警'
-        };
-        showToast(emptyMessageMap[normalizedAction] || '当前筛选条件下没有可处理的告警', 'info');
-        return false;
-    }
 
     try {
-        if (normalizedAction === 'claim' || normalizedAction === 'assign') {
-            openOpsAlertCaseComposer('assign', {
-                category: categoryKey || getOpsAlertMonitorViewFilters().category || ''
-            }, {
-                mode: 'batch',
-                items,
-                categoryKey
-            });
-            return true;
-        }
-
-        if (normalizedAction === 'add_note' || normalizedAction === 'resolve') {
-            openOpsAlertCaseComposer(normalizedAction, {
-                category: categoryKey || getOpsAlertMonitorViewFilters().category || ''
-            }, {
-                mode: 'batch',
-                items,
-                categoryKey
-            });
-            return true;
-        }
-
-        throw new Error('未识别的批量告警动作');
+        return openOpsAlertBatchCaseComposer(normalizedAction, categoryKey);
     } catch (error) {
         console.error('[Config] Handle ops alert batch action failed:', error);
         showToast('处理失败: ' + (error.message || '未知错误'), 'error');
@@ -19178,7 +20536,7 @@ async function handleOpsAlertMonitorBatchCaseAction(action, categoryKey = '') {
 }
 
 function setOpsAlertBatchMuteModalVisible(visible) {
-    const modal = document.getElementById('opsAlertBatchMuteModal');
+    const modal = ensureOpsAlertFloatingModal('opsAlertBatchMuteModal');
     if (!modal) return;
     modal.classList.toggle('is-visible', visible);
     modal.setAttribute('aria-hidden', visible ? 'false' : 'true');
@@ -19443,7 +20801,9 @@ async function submitOpsAlertBatchMuteModal() {
 
         const success = await saveOpsAlertConfigOverride(nextConfig, {
             successMessage: `已将 ${submissionContext.moduleLabels.join('、')} 静默至 ${formatVerifyMonitorDateTime(submissionContext.normalizedUntil)}`,
-            caseEvents
+            caseEvents,
+            feedbackSource: 'ops-alerts-mute',
+            feedbackModule: 'ops-alerts'
         });
         if (!success) {
             applyOpsAlertBatchMuteSubmissionState(buildLocalOpsAlertBatchMuteSubmissionState(state, {
@@ -19463,6 +20823,10 @@ async function submitOpsAlertBatchMuteModal() {
             submitting: false
         }));
         showToast('静默失败: ' + (error.message || '未知错误'), 'error');
+        emitAdminConfigCommandFeedback(`集中告警静默失败: ${error.message || '未知错误'}`, 'failed', {
+            source: 'ops-alerts-mute',
+            module: 'ops-alerts'
+        });
         return false;
     }
 }
@@ -19495,7 +20859,10 @@ async function submitOpsAlertCaseComposer() {
             refreshOpsAlertMonitorPanel?.(),
             refreshRelatedOpsAlertWorkspaces(state.context)
         ]);
-        showToast(payload.message || '集中告警已更新', 'success');
+        showConfigSavedToast(payload.message || '集中告警已更新', {
+            source: 'ops-alerts-case',
+            module: 'ops-alerts'
+        });
         return true;
     } catch (error) {
         console.error('[Config] Submit ops alert case composer failed:', error);
@@ -19505,6 +20872,10 @@ async function submitOpsAlertCaseComposer() {
             submitting: false
         }));
         showToast('处理失败: ' + (error.message || '未知错误'), 'error');
+        emitAdminConfigCommandFeedback(`集中告警处理失败: ${error.message || '未知错误'}`, 'failed', {
+            source: 'ops-alerts-case',
+            module: 'ops-alerts'
+        });
         return false;
     }
 }
@@ -19996,7 +21367,7 @@ const handleOpsAlertPaymentGatewaySummaryScheduleModeChange = createOpsAlertSect
 // ============================================
 
 async function deleteChannel(index) {
-    const channels = systemConfigCache['channels'] || [];
+    const channels = [...getSavedChannelListConfig()];
     channels.splice(index, 1);
     await saveConfig('channels', channels);
     renderChannelsConfig();
@@ -20007,7 +21378,7 @@ async function addChannel() {
     const name = input?.value.trim();
     if (!name) return;
 
-    const channels = systemConfigCache['channels'] || [];
+    const channels = [...getSavedChannelListConfig()];
     const newId = Math.max(...channels.map(c => c.id || 0), 0) + 1;
 
     channels.push({
@@ -20128,15 +21499,18 @@ async function saveLoginSecuritySettings() {
             if (indicator) {
                 showAdminConfigSaveIndicator(indicator, '✓ 已保存', 2000);
             }
-            if (typeof showToast === 'function') {
-                showToast('登录安全设置已保存', 'success');
-            }
+            showConfigSavedToast('登录安全设置已保存', {
+                source: 'settings-security'
+            });
         }
     } catch (err) {
         console.error('保存登录安全设置失败:', err);
         if (typeof showToast === 'function') {
             showToast('保存失败: ' + err.message, 'error');
         }
+        emitAdminConfigCommandFeedback(`登录安全设置保存失败: ${err.message}`, 'failed', {
+            source: 'settings-security'
+        });
     }
 }
 
@@ -20447,15 +21821,22 @@ async function saveAnnouncement() {
     const saveBtn = document.querySelector('.editor-actions .btn-primary');
 
     if (!success) {
+        emitAdminConfigCommandFeedback('公告保存失败，请稍后重试', 'failed', {
+            source: 'settings-announcement'
+        });
         return;
     }
 
     if (saveBtn) {
+        const successMessage = config.announcement_enabled ? '公告已发布' : '公告设置已保存';
         if (typeof showToast === 'function') {
-            showToast(config.announcement_enabled ? '公告已发布' : '公告设置已保存', 'success');
+            showToast(successMessage, 'success');
         } else {
             console.warn('showToast function not found');
         }
+        emitAdminConfigCommandFeedback(successMessage, 'saved', {
+            source: 'settings-announcement'
+        });
     }
 }
 
@@ -21312,8 +22693,18 @@ async function saveVerifyConfig(options = {}) {
 
     const success = await saveConfig('verify_settings', config);
 
-    if (success && options?.toast !== false && typeof showToast === 'function') {
-        showToast(options?.successMessage || 'Google One / aidone 配置已保存', 'success');
+    if (success) {
+        const successMessage = options?.successMessage || 'Google One / aidone 配置已保存';
+        if (options?.toast !== false && typeof showToast === 'function') {
+            showToast(successMessage, 'success');
+        }
+        emitAdminConfigCommandFeedback(successMessage, 'saved', {
+            source: 'settings-verify'
+        });
+    } else {
+        emitAdminConfigCommandFeedback('Google One / aidone 配置保存失败，请稍后重试', 'failed', {
+            source: 'settings-verify'
+        });
     }
 
     // Update cache
@@ -21400,44 +22791,6 @@ function showStandaloneSaveIndicator(elementId, text = '✓ 已保存') {
     if (!indicator) return;
 
     showAdminConfigSaveIndicator(indicator, text, 1500);
-}
-
-function downloadExportBlob(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-}
-
-function escapeCsvCell(value) {
-    const normalized = value == null
-        ? ''
-        : (typeof value === 'string'
-            ? value
-            : JSON.stringify(value));
-    return `"${String(normalized).replace(/"/g, '""')}"`;
-}
-
-function convertRowsToCsv(rows) {
-    if (!Array.isArray(rows) || rows.length === 0) {
-        return '';
-    }
-
-    const headers = [...rows.reduce((keys, row) => {
-        Object.keys(row || {}).forEach((key) => keys.add(key));
-        return keys;
-    }, new Set())];
-
-    const lines = [
-        headers.join(','),
-        ...rows.map((row) => headers.map((key) => escapeCsvCell(row?.[key])).join(','))
-    ];
-
-    return lines.join('\n');
 }
 
 async function checkVerifyQuota() {
@@ -21777,6 +23130,7 @@ async function loadAdminAuditMonitor(force = false) {
         status: 'loading',
         message: '正在加载...'
     };
+    emitAdminAuditMonitorCommandCenterSummaryUpdate();
     renderAdminAuditMonitorPanel();
 
     loadAdminAuditMonitor._loadingPromise = (async () => {
@@ -21815,6 +23169,7 @@ async function loadAdminAuditMonitor(force = false) {
                 config_event_pagination: payload.config_event_pagination || getDefaultAdminAuditMonitorState().config_event_pagination,
                 message: ''
             };
+            emitAdminAuditMonitorCommandCenterSummaryUpdate();
             renderAdminAuditMonitorPanel();
             return payload;
         } catch (error) {
@@ -21824,6 +23179,7 @@ async function loadAdminAuditMonitor(force = false) {
                 status: 'error',
                 message: error.message || '加载管理员访问审计失败'
             };
+            emitAdminAuditMonitorCommandCenterSummaryUpdate();
             renderAdminAuditMonitorPanel();
             return null;
         }
@@ -21927,6 +23283,12 @@ async function refreshAdminAuditMonitor(force = false) {
     }
 }
 
+async function primeAdminAuditMonitorCommandCenterSummary(options = {}) {
+    const force = options?.force === true;
+    await loadAdminAuditMonitor(force ? { force: true } : false);
+    return getAdminAuditMonitorCommandCenterSummary();
+}
+
 window.checkVerifyQuota = checkVerifyQuota;
 window.loadVerifyMonitor = loadVerifyMonitor;
 window.refreshVerifyMonitor = refreshVerifyMonitor;
@@ -21934,6 +23296,8 @@ window.changeVerifyMonitorTaskPage = changeVerifyMonitorTaskPage;
 window.changeVerifyMonitorFailurePage = changeVerifyMonitorFailurePage;
 window.loadAdminAuditMonitor = loadAdminAuditMonitor;
 window.refreshAdminAuditMonitor = refreshAdminAuditMonitor;
+window.getAdminAuditMonitorCommandCenterSummary = getAdminAuditMonitorCommandCenterSummary;
+window.primeAdminAuditMonitorCommandCenterSummary = primeAdminAuditMonitorCommandCenterSummary;
 window.changeAdminAuditMonitorAccessPage = changeAdminAuditMonitorAccessPage;
 window.changeAdminAuditMonitorAnomalyPage = changeAdminAuditMonitorAnomalyPage;
 window.changeAdminAuditMonitorConfigPage = changeAdminAuditMonitorConfigPage;
@@ -22265,6 +23629,7 @@ window.initSettingsModule = initSettingsModule;
 window.initSystemConfig = initSystemConfig;
 window.warmSettingsDomainsInBackground = warmSettingsDomainsInBackground;
 window.warmSettingsViewConfigInBackground = warmSettingsViewConfigInBackground;
+window.normalizeSettingsViewName = normalizeSettingsViewName;
 window.applyAdminAIServicePreference = applyAdminAIServicePreference;
 window.toggleConfigCard = toggleConfigCard;
 window.toggleCustomRechargeEntryStatus = toggleCustomRechargeEntryStatus;
@@ -22387,6 +23752,8 @@ Object.assign(window, {
 window.schedulePendingOpsAlertWorkspaceRestore?.();
 
 Object.assign(window, {
+    openOpsAlertCaseComposer,
+    openOpsAlertBatchCaseComposer,
     handleOpsAlertCaseAction,
     handleOpsAlertMonitorBatchCaseAction,
     openOpsAlertBatchMuteModal,
@@ -22403,6 +23770,7 @@ Object.assign(window, {
     handleShopRiskCaseAction,
     closeShopRiskCaseComposer,
     submitShopRiskCaseComposer,
+    renderAdminAuditMonitorWorkbenchContext,
     deleteOpsAlertSecret
 });
 window.loadVerifyMonitor = loadVerifyMonitor;
@@ -22428,3 +23796,20 @@ window.saveAffiliatePosterField = saveAffiliatePosterField;
 window.selectAffiliatePosterTemplate = selectAffiliatePosterTemplate;
 window.handleAffiliatePosterUpload = handleAffiliatePosterUpload;
 window.resetAffiliatePosterBackground = resetAffiliatePosterBackground;
+window.handleAdminSettingsSiteChange = handleAdminSettingsSiteChange;
+window.handleAdminOpsAlertsSiteChange = handleAdminOpsAlertsSiteChange;
+window.openAdminOpsAlertsShellContext = openAdminOpsAlertsShellContext;
+window.openAdminSettingsShellContext = openAdminSettingsShellContext;
+
+if (window.AdminShell?.registerModule) {
+    window.AdminShell.registerModule('settings', {
+        activate: activateSettingsModule,
+        handleContext: handleSettingsModuleContext,
+        onSiteChange: handleAdminSettingsSiteChange
+    });
+    window.AdminShell.registerModule('ops-alerts', {
+        activate: activateOpsAlertsModule,
+        handleContext: handleAdminOpsAlertsShellContext,
+        onSiteChange: handleAdminOpsAlertsSiteChange
+    });
+}

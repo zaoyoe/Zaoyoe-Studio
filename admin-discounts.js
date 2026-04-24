@@ -10,6 +10,38 @@ const AdminDiscounts = {
         return window.AdminSiteFilter?.requireWritableSite?.(options) || null;
     },
 
+    emitCommandFeedback: function (message = '', feedbackState = 'saved', options = {}) {
+        const normalizedMessage = String(message || '').trim();
+        if (!normalizedMessage) {
+            return null;
+        }
+
+        const detail = {
+            kind: 'module-result',
+            source: String(options?.source || 'discounts-generate').trim().toLowerCase() || 'discounts-generate',
+            module: 'discounts',
+            state: String(feedbackState || options?.state || 'saved').trim().toLowerCase() || 'saved',
+            tone: String(options?.tone || '').trim().toLowerCase(),
+            message: normalizedMessage,
+            persistent: options?.persistent === true,
+            timestamp: Date.now()
+        };
+
+        if (typeof window.dispatchAdminStudioFeedbackSignal === 'function') {
+            return window.dispatchAdminStudioFeedbackSignal(detail);
+        }
+
+        if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+            try {
+                window.dispatchEvent(new CustomEvent('admin-feedback-signal', { detail }));
+            } catch (_) {
+                // Discount operations should not depend on Command Center rendering.
+            }
+        }
+
+        return detail;
+    },
+
     discounts: [],
     filteredDiscounts: [],
     scopeSummary: null,
@@ -60,6 +92,69 @@ const AdminDiscounts = {
     isVisible: function () {
         const module = document.getElementById('module-discounts');
         return Boolean(module && module.classList.contains('active') && !module.hidden);
+    },
+
+    normalizeShellContextObject: function (value) {
+        return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    },
+
+    resolveShellDiscountSearchValue: function (context = {}) {
+        const normalizedContext = this.normalizeShellContextObject(context);
+        const focus = this.normalizeShellContextObject(normalizedContext.focus);
+        const payload = this.normalizeShellContextObject(normalizedContext.payload);
+        const raw = this.normalizeShellContextObject(normalizedContext.raw);
+        const referenceLabel = this.safeText(
+            payload.referenceLabel
+            || payload.reference_label
+            || raw.referenceLabel
+            || raw.reference_label
+            || normalizedContext.referenceLabel
+            || normalizedContext.reference_label
+        ).trim();
+
+        return this.safeText(
+            focus.discountCode
+            || focus.discount_code
+            || payload.discountCode
+            || payload.discount_code
+            || raw.discountCode
+            || raw.discount_code
+            || normalizedContext.discountCode
+            || normalizedContext.discount_code
+            || ((referenceLabel === '优惠码' || referenceLabel === '优惠券码')
+                ? (payload.referenceValue || payload.reference_value || raw.referenceValue || raw.reference_value || normalizedContext.referenceValue || normalizedContext.reference_value)
+                : '')
+            || payload.search
+            || payload.searchQuery
+            || payload.query
+            || raw.search
+            || raw.searchQuery
+            || raw.query
+            || normalizedContext.search
+            || normalizedContext.searchQuery
+            || normalizedContext.query
+            || ''
+        ).trim();
+    },
+
+    buildShellWorkbenchContext: function (context = {}) {
+        const normalizedContext = this.normalizeShellContextObject(context);
+        const payload = this.normalizeShellContextObject(normalizedContext.payload);
+        const raw = this.normalizeShellContextObject(normalizedContext.raw);
+        const focus = this.normalizeShellContextObject(normalizedContext.focus);
+
+        return {
+            ...raw,
+            ...payload,
+            title: payload.title || raw.title || normalizedContext.title || '',
+            alertType: payload.alertType || payload.alert_type || raw.alertType || raw.alert_type || normalizedContext.alertType || normalizedContext.alert_type || '',
+            referenceLabel: payload.referenceLabel || payload.reference_label || raw.referenceLabel || raw.reference_label || normalizedContext.referenceLabel || normalizedContext.reference_label || '',
+            referenceValue: payload.referenceValue || payload.reference_value || raw.referenceValue || raw.reference_value || normalizedContext.referenceValue || normalizedContext.reference_value || '',
+            targetId: payload.targetId || payload.target_id || raw.targetId || raw.target_id || normalizedContext.targetId || normalizedContext.target_id || '',
+            discountCode: focus.discountCode || focus.discount_code || payload.discountCode || payload.discount_code || raw.discountCode || raw.discount_code || normalizedContext.discountCode || normalizedContext.discount_code || '',
+            signalType: payload.signalType || payload.signal_type || raw.signalType || raw.signal_type || normalizedContext.signalType || normalizedContext.signal_type || '',
+            site: normalizedContext.site || payload.site || raw.site || ''
+        };
     },
 
     shouldReloadListOnActivate: function ({ force = false } = {}) {
@@ -3928,11 +4023,15 @@ const AdminDiscounts = {
                 this.closeDetailModal();
             }
             await this.loadDiscounts();
-            alert(caseSyncWarning
+            const successMessage = caseSyncWarning
                 ? `已恢复优惠码 ${this.safeText(discount.code).toUpperCase()}，但未能同步关闭风险 case：${caseSyncWarning}`
-                : `已恢复优惠码 ${this.safeText(discount.code).toUpperCase()}`);
+                : `已恢复优惠码 ${this.safeText(discount.code).toUpperCase()}`;
+            alert(successMessage);
+            this.emitCommandFeedback(successMessage, caseSyncWarning ? 'partial' : 'saved', { source: 'discounts-restore' });
         } catch (err) {
-            alert(`恢复失败: ${err.message || '未知错误'}`);
+            const failureMessage = `恢复失败: ${err.message || '未知错误'}`;
+            alert(failureMessage);
+            this.emitCommandFeedback(failureMessage, 'failed', { source: 'discounts-restore' });
         } finally {
             if (submitButton instanceof HTMLButtonElement) {
                 submitButton.disabled = false;
@@ -4009,8 +4108,21 @@ const AdminDiscounts = {
             }
 
             this.openBatchRestoreResultModal(mergedResult);
+            const restoredCount = Array.isArray(mergedResult.restored) ? mergedResult.restored.length : 0;
+            const failedCount = Array.isArray(mergedResult.failed) ? mergedResult.failed.length : 0;
+            const truncatedCount = Math.max(0, Number(mergedResult.truncated_count || 0) || 0);
+            const resultMessage = failedCount > 0 || truncatedCount > 0 || this.safeText(mergedResult.case_sync_warning)
+                ? `批量恢复完成：成功 ${restoredCount} 张，待处理 ${failedCount + truncatedCount} 张`
+                : `批量恢复完成：成功 ${restoredCount} 张`;
+            this.emitCommandFeedback(
+                resultMessage,
+                failedCount > 0 || truncatedCount > 0 || this.safeText(mergedResult.case_sync_warning) ? 'partial' : 'saved',
+                { source: 'discounts-batch' }
+            );
         } catch (err) {
-            alert(`批量恢复失败: ${err.message || '未知错误'}`);
+            const failureMessage = `批量恢复失败: ${err.message || '未知错误'}`;
+            alert(failureMessage);
+            this.emitCommandFeedback(failureMessage, 'failed', { source: 'discounts-batch' });
         } finally {
             if (submitButton instanceof HTMLButtonElement) {
                 submitButton.disabled = false;
@@ -4114,11 +4226,21 @@ const AdminDiscounts = {
             };
             await this.loadDiscounts();
             this.rerenderBatchRestoreResultModal();
-            this.showFeedbackToast(result.restored.length
+            const successMessage = result.restored.length
                 ? `已重试 ${result.restored.length} 张失败项`
-                : '失败项重试完成');
+                : '失败项重试完成';
+            this.showFeedbackToast(successMessage);
+            this.emitCommandFeedback(
+                result.failed.length
+                    ? `${successMessage}，仍有 ${result.failed.length} 张失败`
+                    : successMessage,
+                result.failed.length ? 'partial' : 'saved',
+                { source: 'discounts-retry' }
+            );
         } catch (error) {
-            alert(`重试失败项时出错: ${error.message || '未知错误'}`);
+            const failureMessage = `重试失败项时出错: ${error.message || '未知错误'}`;
+            alert(failureMessage);
+            this.emitCommandFeedback(failureMessage, 'failed', { source: 'discounts-retry' });
         } finally {
             if (retryButton instanceof HTMLButtonElement) {
                 retryButton.disabled = false;
@@ -4328,22 +4450,59 @@ const AdminDiscounts = {
         return `<div class="admin-discount-status-stack">${policyLines.join('')}</div>`;
     },
 
-    init: function () {
+    activate: async function (context = {}, options = {}) {
         console.log('🎟️ Initializing Discounts Module...');
         this.bindStaticControls();
         void this.ensureRestrictionOptionsLoaded();
-        const shouldReload = this.shouldReloadListOnActivate();
+        const shouldReload = this.shouldReloadListOnActivate({
+            force: options?.force === true
+        });
         this.moduleInitialized = true;
 
         if (!shouldReload) {
             this.renderScopeHint({ status: 'ready', scopeSummary: this.scopeSummary });
             this.render();
-            return;
+            return true;
         }
 
-        void this.loadDiscounts({
+        await this.loadDiscounts({
+            force: options?.force === true,
             showLoading: !this.discounts.length || this.lastListSite !== this.getReadSite()
         });
+        return true;
+    },
+
+    handleShellContext: async function (context = {}, options = {}) {
+        const searchValue = this.resolveShellDiscountSearchValue(context);
+        this.showWorkbenchContext(this.buildShellWorkbenchContext(context));
+
+        if (searchValue) {
+            this.filters = {
+                ...(this.filters || {}),
+                search: searchValue.toLowerCase()
+            };
+            this.currentPage = 1;
+
+            const searchInput = document.getElementById('discountSearchInput');
+            if (searchInput) {
+                searchInput.value = searchValue;
+            }
+        }
+
+        if (!this.discounts.length || options?.force === true) {
+            await this.loadDiscounts({
+                force: options?.force === true,
+                showLoading: false
+            });
+        } else {
+            this.render();
+        }
+
+        return true;
+    },
+
+    init: function () {
+        void this.activate();
     },
 
     bindStaticControls: function () {
@@ -5431,14 +5590,20 @@ const AdminDiscounts = {
                 ? `已更新优惠码: ${code}`
                 : `成功生成优惠码: ${code}`;
             if (assignmentError) {
-                alert(`${baseMessage}；但立即发券失败：${assignmentError}`);
+                const partialMessage = `${baseMessage}；但立即发券失败：${assignmentError}`;
+                alert(partialMessage);
+                this.emitCommandFeedback(partialMessage, 'partial', { source: 'discounts-generate' });
                 return;
             }
 
-            alert(assignmentSummary ? `${baseMessage}；${assignmentSummary}` : baseMessage);
+            const successMessage = assignmentSummary ? `${baseMessage}；${assignmentSummary}` : baseMessage;
+            alert(successMessage);
+            this.emitCommandFeedback(successMessage, 'saved', { source: 'discounts-generate' });
 
         } catch (err) {
-            alert((this.modalMode === 'edit' ? '更新失败: ' : '生成失败: ') + err.message);
+            const failureMessage = (this.modalMode === 'edit' ? '更新失败: ' : '生成失败: ') + err.message;
+            alert(failureMessage);
+            this.emitCommandFeedback(failureMessage, 'failed', { source: 'discounts-generate' });
         } finally {
             this.generateSubmitInFlight = false;
             this.setGenerateSubmitBusyState(false);
@@ -5448,9 +5613,16 @@ const AdminDiscounts = {
 
 // Auto-attach to window so admin-studio.html can find it
 window.AdminDiscounts = AdminDiscounts;
+window.handleAdminDiscountsSiteChange = () => AdminDiscounts.handleSiteChange();
+window.openAdminDiscountsShellContext = async (context = {}, options = {}) => {
+    await AdminDiscounts.activate(context, options);
+    return AdminDiscounts.handleShellContext(context, options);
+};
 
 if (window.AdminShell?.registerModule) {
     window.AdminShell.registerModule('discounts', {
+        activate: (context = {}, options = {}) => AdminDiscounts.activate(context, options),
+        handleContext: (context = {}, options = {}) => AdminDiscounts.handleShellContext(context, options),
         onSiteChange: () => AdminDiscounts.handleSiteChange(),
         reload: () => AdminDiscounts.handleSiteChange()
     });

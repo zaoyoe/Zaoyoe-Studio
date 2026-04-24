@@ -42,10 +42,22 @@ test('admin pricing settings expose discount trigger rule controls and wiring', 
     for (const marker of requiredHtmlMarkers) {
         assert.equal(html.includes(marker), true, `admin-studio.html should contain ${marker}`);
     }
+    assert.equal(
+        html.includes('修改后记得保存，规则会立即影响后续充值、签到和推广奖励发券。'),
+        false,
+        'admin-studio.html should not render save-row helper copy beside the discount trigger save button'
+    );
+    assert.equal(
+        html.includes('id="discountTriggerRechargeStatusText" hidden'),
+        true,
+        'admin-studio.html should keep the discount trigger status node hidden from the save-row layout'
+    );
 
     const requiredJsMarkers = [
         "let discountTriggerSettingsState = getDefaultDiscountTriggerSettingsState();",
         'async function initSettingsModule(options = {}) {',
+        'function resolveSettingsModuleViewName(context = {}, options = {}) {',
+        'async function activateSettingsModule(context = {}, options = {}) {',
         'await initSettingsModule({ bindListeners: true });',
         'const SETTINGS_VIEW_DOMAIN_MAP = Object.freeze({',
         "pricing: ['commerce', 'affiliate'],",
@@ -57,6 +69,8 @@ test('admin pricing settings expose discount trigger rule controls and wiring', 
         'async function warmSettingsSecondaryPanelsInBackground({ force = false, viewName = \'\' } = {}) {',
         'function normalizeDiscountTriggerRulesConfig(raw, options = {}) {',
         'function getDiscountTriggerSectionMeta(sectionKey) {',
+        'function pulseAdminConfigButton(buttonEl) {',
+        'function showDiscountTriggerFeedback(message, type = \'info\', options = {}) {',
         'function createDiscountTriggerCheckinRuleDraft(overrides = {}) {',
         'function createDiscountTriggerAffiliateRuleDraft(overrides = {}) {',
         'function createDiscountTriggerPresetRule(sectionKey, presetId) {',
@@ -77,14 +91,30 @@ test('admin pricing settings expose discount trigger rule controls and wiring', 
         'void loadDiscountTriggerDiscountOptions(true);',
         'window.initSettingsModule = initSettingsModule;',
         'window.warmSettingsViewConfigInBackground = warmSettingsViewConfigInBackground;',
+        'window.normalizeSettingsViewName = normalizeSettingsViewName;',
+        "window.AdminShell.registerModule('settings', {",
+        'activate: activateSettingsModule',
         "getDiscountTriggerSectionKeys().forEach((sectionKey) => {",
         "discountTriggerAddCheckinRuleBtn",
-        "discountTriggerAddAffiliateRuleBtn"
+        "discountTriggerAddAffiliateRuleBtn",
+        'feedbackToast: null',
+        "showDiscountTriggerFeedback('正在保存卡券联动规则...', 'info', {",
+        'reuseSaveToast: true',
+        "showDiscountTriggerFeedback('当前没有需要保存的卡券联动改动', 'info');",
+        "showDiscountTriggerFeedback('卡券联动规则保存失败，请稍后重试', 'error', {",
+        'showDiscountTriggerFeedback(`已新增${meta.label}规则草稿，选择到账型卡券后保存生效。`, \'info\');',
+        'showDiscountTriggerFeedback(`已套用“${presetTitle}”模板，保存后生效。`, \'success\');',
+        'showDiscountTriggerFeedback(`已删除${meta.label}规则草稿，保存后生效。`, \'info\');'
     ];
 
     for (const marker of requiredJsMarkers) {
         assert.equal(js.includes(marker), true, `admin-config.js should contain ${marker}`);
     }
+    assert.equal(
+        js.includes('当前还没配置卡券联动规则。'),
+        false,
+        'admin-config.js should not show the removed empty discount trigger status copy'
+    );
 
     assert.equal(
         studioJs.includes('initSystemConfig();'),
@@ -93,7 +123,7 @@ test('admin pricing settings expose discount trigger rule controls and wiring', 
     );
     assert.match(
         studioJs,
-        /function switchSettingsView\(viewName\) \{[\s\S]*warmSettingsViewConfigInBackground\?\.\(\{ viewName \}\);[\s\S]*\}/,
+        /function switchSettingsView\(viewName, options = \{\}\) \{[\s\S]*window\.warmSettingsViewConfigInBackground\?\.\(\{[\s\S]*viewName: normalizedViewName[\s\S]*\}\);[\s\S]*\}/,
         'admin-studio.js should warm the active settings view lazily when switching tabs'
     );
 
@@ -105,8 +135,13 @@ test('admin pricing settings expose discount trigger rule controls and wiring', 
         '.discount-trigger-preset-btn__recommendation {',
         '.discount-trigger-rule-grid {',
         '.discount-trigger-save-row {',
+        'justify-content: flex-start;',
+        '.discount-trigger-save-row .btn-add-config {',
+        'margin-left: 0;',
         '.discount-trigger-rule-card__warning {',
-        '.discount-trigger-remove-btn {'
+        '.discount-trigger-remove-btn {',
+        '.toast.is-content-entering i,',
+        '@keyframes toastContentIn'
     ];
 
     for (const marker of requiredCssMarkers) {

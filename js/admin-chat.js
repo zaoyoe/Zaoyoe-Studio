@@ -30,6 +30,10 @@ class AdminChat {
         this.opsAlertBatchAssignBusy = false;
         this.opsAlertViewFilter = 'active';
         this.opsAlertOwnerFilter = 'all';
+        this.opsAlertReadCategoryFilter = 'all';
+        this.opsAlertReadTimeFilter = 'visible';
+        this.opsAlertReadReceipts = new Map();
+        this.pendingPaymentReadReceipts = new Map();
         this.opsAlertAssignableAdmins = [];
         this.opsAlertCurrentAdminId = '';
         this.opsAlertCurrentAdminLabel = '';
@@ -43,6 +47,8 @@ class AdminChat {
         this.currentAdminUserPromise = null;
         this.isSessionBootstrapPending = false;
         this.sessionBootstrapPromise = null;
+        this.hasBootstrappedSessions = false;
+        this.hasHydratedSessionSidebarData = false;
         this.sessionDeferredHydrationPromise = null;
         this.sessionDeferredHydrationHandle = null;
         this.sessionHistoryConsistencyPromise = null;
@@ -68,6 +74,8 @@ class AdminChat {
         this.handleWindowResize = this.updateChatContextPanelLayout.bind(this);
         this.restoreSessionQueuePreferences();
         this.restoreSidebarInsightsPreference();
+        this.restoreOpsAlertReadReceipts();
+        this.restorePendingPaymentReadReceipts();
         window.addEventListener('ops-alerts-config-updated', this.handleOpsAlertConfigUpdated);
         window.addEventListener('resize', this.handleWindowResize);
 
@@ -190,6 +198,14 @@ class AdminChat {
 
     getChatSessionCacheStorageKey() {
         return `zaoyoe_admin_support_session_cache_v1:${this.getActiveSiteFilter()}`;
+    }
+
+    getOpsAlertReadReceiptStorageKey() {
+        return `zaoyoe_admin_ops_alert_read_receipts_v1:${this.getActiveSiteFilter()}`;
+    }
+
+    getPendingPaymentReadReceiptStorageKey() {
+        return `zaoyoe_admin_chat_pending_payment_read_receipts_v1:${this.getActiveSiteFilter()}`;
     }
 
     getChatSessionCacheMaxAgeMs() {
@@ -385,6 +401,98 @@ class AdminChat {
             }));
         } catch (error) {
             console.warn('[AdminChat] Failed to persist chat session cache:', error);
+        }
+    }
+
+    restoreOpsAlertReadReceipts() {
+        this.opsAlertReadReceipts = new Map();
+        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+            return;
+        }
+
+        try {
+            const rawValue = window.localStorage.getItem(this.getOpsAlertReadReceiptStorageKey());
+            if (!rawValue) return;
+            const parsed = JSON.parse(rawValue);
+            const entries = Array.isArray(parsed)
+                ? parsed.map((id) => [id, new Date().toISOString()])
+                : Object.entries(parsed?.receipts || parsed || {});
+
+            entries.forEach(([id, readAt]) => {
+                const normalizedId = String(id || '').trim();
+                const normalizedReadAt = String(readAt || '').trim();
+                if (!normalizedId || !Number.isFinite(Date.parse(normalizedReadAt))) {
+                    return;
+                }
+                this.opsAlertReadReceipts.set(normalizedId, normalizedReadAt);
+            });
+        } catch (error) {
+            console.warn('[AdminChat] Failed to restore ops alert read receipts:', error);
+        }
+    }
+
+    persistOpsAlertReadReceipts() {
+        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+            return;
+        }
+
+        try {
+            const receipts = Object.fromEntries(
+                Array.from(this.opsAlertReadReceipts.entries())
+                    .slice(-1000)
+            );
+            window.localStorage.setItem(this.getOpsAlertReadReceiptStorageKey(), JSON.stringify({
+                updatedAt: new Date().toISOString(),
+                receipts
+            }));
+        } catch (error) {
+            console.warn('[AdminChat] Failed to persist ops alert read receipts:', error);
+        }
+    }
+
+    restorePendingPaymentReadReceipts() {
+        this.pendingPaymentReadReceipts = new Map();
+        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+            return;
+        }
+
+        try {
+            const rawValue = window.localStorage.getItem(this.getPendingPaymentReadReceiptStorageKey());
+            if (!rawValue) return;
+            const parsed = JSON.parse(rawValue);
+            const entries = Array.isArray(parsed)
+                ? parsed.map((id) => [id, new Date().toISOString()])
+                : Object.entries(parsed?.receipts || parsed || {});
+
+            entries.forEach(([id, readAt]) => {
+                const normalizedId = String(id || '').trim();
+                const normalizedReadAt = String(readAt || '').trim();
+                if (!normalizedId || !Number.isFinite(Date.parse(normalizedReadAt))) {
+                    return;
+                }
+                this.pendingPaymentReadReceipts.set(normalizedId, normalizedReadAt);
+            });
+        } catch (error) {
+            console.warn('[AdminChat] Failed to restore pending payment read receipts:', error);
+        }
+    }
+
+    persistPendingPaymentReadReceipts() {
+        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+            return;
+        }
+
+        try {
+            const receipts = Object.fromEntries(
+                Array.from(this.pendingPaymentReadReceipts.entries())
+                    .slice(-1000)
+            );
+            window.localStorage.setItem(this.getPendingPaymentReadReceiptStorageKey(), JSON.stringify({
+                updatedAt: new Date().toISOString(),
+                receipts
+            }));
+        } catch (error) {
+            console.warn('[AdminChat] Failed to persist pending payment read receipts:', error);
         }
     }
 
@@ -855,6 +963,10 @@ class AdminChat {
     }
 
     handleDocumentClick(event) {
+        if (!event.target.closest('.admin-alert-toolbar-dropdown')) {
+            this.closeOpsAlertToolbarDropdowns();
+        }
+
         const emojiPicker = document.getElementById('adminEmojiPicker');
         if (!emojiPicker) return;
 
@@ -1279,6 +1391,9 @@ class AdminChat {
 
         const processingStatuses = ['pending', 'processing', 'queued', 'retry_waiting', 'created', 'waiting', 'open', 'unpaid'];
         if (processingStatuses.includes(status)) {
+            if (this.isPendingPaymentRead(latestPayment)) {
+                return null;
+            }
             return {
                 key: 'payment',
                 label: '待支付',
@@ -1289,6 +1404,74 @@ class AdminChat {
         }
 
         return null;
+    }
+
+    isPendingPaymentStatus(status = '') {
+        const normalized = String(status || '').trim().toLowerCase();
+        return ['pending', 'processing', 'queued', 'retry_waiting', 'created', 'waiting', 'open', 'unpaid'].includes(normalized);
+    }
+
+    getPendingPaymentReadIdentity(payment = {}) {
+        const paymentId = String(payment?.id || '').trim();
+        if (paymentId) return `payment:${paymentId}`;
+        return [
+            'payment',
+            String(payment?.user_id || '').trim(),
+            String(payment?.status || '').trim().toLowerCase(),
+            String(payment?.created_at || '').trim(),
+            String(payment?.package_name || '').trim(),
+            String(payment?.expected_amount || '').trim()
+        ].join(':');
+    }
+
+    isPendingPaymentRead(payment = {}) {
+        const identity = this.getPendingPaymentReadIdentity(payment);
+        return Boolean(identity && this.pendingPaymentReadReceipts.has(identity));
+    }
+
+    getPendingPaymentReadTarget(context = {}) {
+        return (Array.isArray(context.payments) ? context.payments : [])
+            .find((payment) => this.isPendingPaymentStatus(payment?.status) && !this.isPendingPaymentRead(payment)) || null;
+    }
+
+    markPendingPaymentRead(payment = {}, context = {}) {
+        const identity = this.getPendingPaymentReadIdentity(payment);
+        if (!identity) {
+            window.showToast?.('未找到可标记的待支付记录', 'warning');
+            return false;
+        }
+
+        const readAt = new Date().toISOString();
+        this.pendingPaymentReadReceipts.set(identity, readAt);
+        this.persistPendingPaymentReadReceipts();
+
+        const updatePayment = (item = {}) => (
+            this.getPendingPaymentReadIdentity(item) === identity
+                ? { ...item, support_read_at: readAt }
+                : item
+        );
+
+        if (context.cacheKey) {
+            const nextContext = {
+                ...context,
+                payments: (Array.isArray(context.payments) ? context.payments : []).map(updatePayment)
+            };
+            this.userContextCache.set(context.cacheKey, nextContext);
+            this.currentUserContext = nextContext;
+            this.renderUser360Context(nextContext);
+        }
+
+        this.chatSessions = (Array.isArray(this.chatSessions) ? this.chatSessions : []).map((session) => {
+            const paymentSummary = session.paymentSummary && typeof session.paymentSummary === 'object'
+                ? updatePayment(session.paymentSummary)
+                : session.paymentSummary;
+            return paymentSummary === session.paymentSummary ? session : { ...session, paymentSummary };
+        });
+        this.composeSessions();
+        this.renderSessionQueueControls();
+        this.renderSessionList(this.searchQuery);
+        window.showToast?.('已将这笔待支付标记为已读', 'success');
+        return true;
     }
 
     getSessionVerificationSignal(summary = null) {
@@ -1616,6 +1799,201 @@ class AdminChat {
             filter: 'all',
             respectSearch: false
         });
+    }
+
+    getCommandCenterRecentItems() {
+        const buildOpsAlertRecentAction = (alert = {}) => {
+            const alertId = String(alert?.id || alert?.created_at || 'ops-alert').trim() || 'ops-alert';
+            const workspace = alert?.workspace && typeof alert.workspace === 'object' ? alert.workspace : {};
+            const workspaceContext = workspace.context && typeof workspace.context === 'object' ? workspace.context : {};
+            const workspaceKind = String(workspace.kind || '').trim().toLowerCase();
+            const workspaceKey = String(workspace.workspaceKey || '').trim().toLowerCase();
+            const actionLabel = this.getOpsAlertActionLabel(alert);
+
+            if (workspaceKind === 'chat-session') {
+                const sessionId = String(
+                    workspaceContext.sessionId
+                    || workspaceContext.session_id
+                    || alert?.sessionId
+                    || alert?.session_id
+                    || ''
+                ).trim();
+                if (sessionId) {
+                    return {
+                        moduleId: 'chat',
+                        stateKey: `notifications-alert-${alertId}`,
+                        feedbackLabel: '系统告警',
+                        intent: '打开这条告警关联的消息会话。',
+                        context: {
+                            payload: {
+                                sessionId
+                            }
+                        }
+                    };
+                }
+            }
+
+            if (workspaceKind === 'shop-orders') {
+                return {
+                    moduleId: 'ops-workspace',
+                    stateKey: `notifications-alert-${alertId}`,
+                    feedbackLabel: actionLabel || '查看订单',
+                    intent: '打开这条告警关联的订单处理位。',
+                    context: {
+                        ...workspaceContext
+                    },
+                    options: {
+                        workspaceKey: 'shop-risk-orders'
+                    }
+                };
+            }
+
+            if (workspaceKind === 'ops-workspace' && workspaceKey) {
+                return {
+                    moduleId: 'ops-workspace',
+                    stateKey: `notifications-alert-${alertId}`,
+                    feedbackLabel: actionLabel || '前往处理',
+                    intent: `打开这条告警对应的${actionLabel || '处理'}工作位。`,
+                    context: {
+                        ...workspaceContext
+                    },
+                    options: {
+                        workspaceKey
+                    }
+                };
+            }
+
+            return {
+                moduleId: 'chat',
+                stateKey: `notifications-alert-${alertId}`,
+                feedbackLabel: '系统告警',
+                intent: '打开消息中心里的系统告警流。',
+                context: {
+                    payload: {
+                        workspace: 'ops-alerts'
+                    }
+                }
+            };
+        };
+
+        const sessionItems = (Array.isArray(this.chatSessions) ? this.chatSessions : [])
+            .filter((session) => !this.isOpsAlertSession(session))
+            .map((session) => {
+                const display = this.getSessionDisplayInfo(session);
+                const topSignal = this.getSessionPrioritySignals(session)[0] || null;
+                const sessionId = String(session?.sessionId || session?.id || '').trim();
+                const timestamp = Date.parse(
+                    session?.lastUserMessageAt
+                    || session?.lastAdminMessageAt
+                    || session?.updatedAt
+                    || ''
+                ) || 0;
+                const preview = String(display.preview || '').trim();
+                const detail = [
+                    topSignal?.label || '',
+                    preview || display.subtext || ''
+                ].filter(Boolean).join(' · ');
+                const tone = topSignal?.badgeClass === 'session-badge--danger'
+                    ? 'alert'
+                    : (topSignal ? 'warn' : '');
+
+                if (!detail) {
+                    return null;
+                }
+
+                return {
+                    label: String(display.name || '用户消息').trim() || '用户消息',
+                    copy: detail,
+                    timestamp,
+                    tone,
+                    moduleId: sessionId ? 'chat' : '',
+                    stateKey: sessionId ? `notifications-session-${sessionId}` : '',
+                    feedbackLabel: String(display.name || '用户消息').trim() || '用户消息',
+                    intent: sessionId
+                        ? `打开 ${String(display.name || '用户消息').trim() || '用户消息'} 会话。`
+                        : '',
+                    context: sessionId
+                        ? {
+                            payload: {
+                                sessionId
+                            }
+                        }
+                        : {}
+                };
+            })
+            .filter(Boolean)
+            .sort((left, right) => Number(right?.timestamp || 0) - Number(left?.timestamp || 0))
+            .slice(0, 2);
+
+        const alertItems = (Array.isArray(this.opsAlertMessages) ? this.opsAlertMessages : [])
+            .filter((alert) => !this.isOpsAlertClosed(alert) && !this.isOpsAlertRead(alert))
+            .map((alert) => {
+                const timestamp = alert?.sortTimestamp instanceof Date
+                    ? alert.sortTimestamp.getTime()
+                    : (Date.parse(alert?.updated_at || alert?.created_at || '') || 0);
+                const preview = String(this.buildOpsAlertPreview(alert) || '').trim();
+                if (!preview) {
+                    return null;
+                }
+                const normalizedSeverity = String(alert?.severity || '').trim().toLowerCase();
+                return {
+                    label: '系统告警',
+                    copy: preview,
+                    timestamp,
+                    tone: ['critical', 'danger', 'error'].includes(normalizedSeverity) ? 'alert' : 'warn',
+                    ...buildOpsAlertRecentAction(alert)
+                };
+            })
+            .filter(Boolean)
+            .sort((left, right) => Number(right?.timestamp || 0) - Number(left?.timestamp || 0))
+            .slice(0, 2);
+
+        return [...sessionItems, ...alertItems]
+            .sort((left, right) => Number(right?.timestamp || 0) - Number(left?.timestamp || 0))
+            .slice(0, 3);
+    }
+
+    getCommandCenterSummary() {
+        const backlog = this.getSessionQueueBacklogSnapshot();
+        const unreadMessages = (Array.isArray(this.chatSessions) ? this.chatSessions : [])
+            .reduce((sum, session) => sum + Math.max(0, Number(session?.unread || 0) || 0), 0);
+        const pendingReply = Math.max(0, Number(backlog.pendingReply || 0) || 0);
+        const systemAlerts = Math.max(0, Number(this.getOpsAlertActiveCount() || 0) || 0);
+        const unreadSystemAlerts = Math.max(0, Number(this.getOpsAlertUnreadCount() || 0) || 0);
+        const actionableCount = pendingReply + unreadSystemAlerts;
+        const hasLoaded = this.hasBootstrappedSessions || this.hasHydratedSessionSidebarData;
+        const status = this.isSessionBootstrapPending
+            ? 'loading'
+            : (this.opsAlertLoadError ? 'partial' : (hasLoaded ? 'ready' : 'idle'));
+
+        return {
+            ready: hasLoaded,
+            status,
+            unreadMessages,
+            pendingReply,
+            staleReply: Math.max(0, Number(backlog.staleReply || 0) || 0),
+            openTickets: Math.max(0, Number(backlog.openTickets || 0) || 0),
+            verificationAlerts: Math.max(0, Number(backlog.verificationAlerts || 0) || 0),
+            paymentFollowups: Math.max(0, Number(backlog.paymentFollowups || 0) || 0),
+            systemAlerts,
+            unreadSystemAlerts,
+            actionableCount,
+            recentItems: this.getCommandCenterRecentItems()
+        };
+    }
+
+    emitCommandCenterSummaryUpdate() {
+        if (typeof window.dispatchEvent !== 'function' || typeof CustomEvent !== 'function') {
+            return;
+        }
+
+        try {
+            window.dispatchEvent(new CustomEvent('admin-chat-command-summary-updated', {
+                detail: this.getCommandCenterSummary()
+            }));
+        } catch (_) {
+            // Summary sync should never block the chat module itself.
+        }
     }
 
     getSessionQueueCapacityAlerts(snapshot = {}) {
@@ -2718,6 +3096,17 @@ class AdminChat {
             });
         }
 
+        const pendingPaymentReadTarget = this.getPendingPaymentReadTarget(context);
+        if (pendingPaymentReadTarget) {
+            actions.push({
+                key: 'payment_read',
+                label: '待支付已读',
+                hint: '不再在列表提示这笔待支付',
+                action: 'payment_read',
+                paymentIdentity: this.getPendingPaymentReadIdentity(pendingPaymentReadTarget)
+            });
+        }
+
         if (latestPayment) {
             const paymentId = String(latestPayment.id || '').trim();
             const paymentUserId = String(latestPayment.user_id || context.userId || '').trim();
@@ -3128,6 +3517,7 @@ class AdminChat {
             order: 'fa-bag-shopping',
             ticket: 'fa-life-ring',
             create_ticket: 'fa-ticket',
+            payment_read: 'fa-check-double',
             payment: 'fa-wallet',
             verify: 'fa-shield-halved'
         };
@@ -3168,6 +3558,12 @@ class AdminChat {
     }
 
     async handleUserContextAction(action = {}) {
+        if (String(action.action || action.key || '').trim().toLowerCase() === 'payment_read') {
+            const context = this.currentUserContext || {};
+            const target = this.getPendingPaymentReadTarget(context);
+            return this.markPendingPaymentRead(target || {}, context);
+        }
+
         if (String(action.action || action.key || '').trim().toLowerCase() === 'create_ticket') {
             try {
                 return await this.handleCreateUserContextTicket(this.currentUserContext || {});
@@ -3765,10 +4161,14 @@ class AdminChat {
         if (payload.ticket_id) return '工单号';
         if (payload.order_id) return '订单号';
         if (payload.payment_order_id) return '充值单号';
+        if (payload.verification_id) return '验证任务';
+        if (payload.product_id) return '商品';
         if (payload.provider_order_no) return '支付单号';
         if (payload.message_id) return '消息ID';
         if (payload.session_id) return '会话ID';
         if (payload.user_id) return '用户ID';
+        if (payload.admin_id || payload.admin_email) return '管理员';
+        if (payload.email || payload.user_email || payload.sender_email) return '邮箱';
         if (payload.target_id) return '目标';
         return '';
     }
@@ -3778,22 +4178,55 @@ class AdminChat {
             payload.ticket_id
             || payload.order_id
             || payload.payment_order_id
+            || payload.verification_id
+            || payload.product_id
             || payload.provider_order_no
             || payload.message_id
             || payload.session_id
             || payload.user_id
+            || payload.admin_email
+            || payload.admin_id
+            || payload.email
+            || payload.user_email
+            || payload.sender_email
             || payload.target_id
             || ''
         ).trim();
     }
 
-    getOpsAlertTargetId(payload = {}) {
+    buildOpsAlertSummaryTargetId(payload = {}, options = {}) {
+        const summaryAlertType = String(options.alertType || payload.summary_type || '').trim().toLowerCase();
+        if (!summaryAlertType || !summaryAlertType.endsWith('_summary')) {
+            return '';
+        }
+        return `ops_summary:${summaryAlertType}`;
+    }
+
+    buildOpsAlertLegacySummaryTargetId(payload = {}, options = {}) {
+        const summaryAlertType = String(options.alertType || payload.summary_type || '').trim().toLowerCase();
+        const summaryDedupeKey = String(options.dedupeKey || payload.summary_dedupe_key || payload.dedupe_key || '').trim();
+        if (!summaryAlertType || !summaryDedupeKey || !summaryAlertType.endsWith('_summary')) {
+            return '';
+        }
+        return `ops_summary:${summaryAlertType}:${summaryDedupeKey}`;
+    }
+
+    getOpsAlertTargetId(payload = {}, options = {}) {
+        const summaryTargetId = this.buildOpsAlertSummaryTargetId(payload, options);
+        const payloadTargetId = String(payload.target_id || '').trim();
+        if (summaryTargetId && (!payloadTargetId || payloadTargetId === summaryTargetId || payloadTargetId.startsWith(`${summaryTargetId}:`))) {
+            return summaryTargetId;
+        }
         return String(
-            payload.target_id
+            payloadTargetId
             || payload.order_id
             || payload.payment_order_id
             || payload.ticket_id
+            || payload.verification_id
+            || payload.product_id
+            || payload.admin_id
             || payload.message_id
+            || summaryTargetId
             || payload.id
             || ''
         ).trim();
@@ -3854,6 +4287,80 @@ class AdminChat {
 
     buildOpsAlertCaseKey(categoryKey = '', targetId = '') {
         return `${String(categoryKey || '').trim().toLowerCase()}::${String(targetId || '').trim()}`;
+    }
+
+    getOpsAlertCaseTargetIds(alert = {}) {
+        const targetIds = [String(alert.caseTargetId || '').trim()];
+        const legacySummaryTargetId = this.buildOpsAlertLegacySummaryTargetId(alert.payload || {}, {
+            alertType: alert.alertType || alert.alert_type || '',
+            dedupeKey: alert.dedupe_key || alert.dedupeKey || ''
+        });
+        if (legacySummaryTargetId) {
+            targetIds.push(legacySummaryTargetId);
+        }
+        return Array.from(new Set(targetIds.filter(Boolean)));
+    }
+
+    getOpsAlertSummaryCaseGroupKey(alert = {}) {
+        const alertType = String(alert.alertType || alert.alert_type || alert.payload?.summary_type || '').trim().toLowerCase();
+        if (!alertType || !alertType.endsWith('_summary')) {
+            return '';
+        }
+        return `${String(alert.caseCategoryKey || '').trim().toLowerCase()}::${alertType}`;
+    }
+
+    pickPreferredOpsAlertCaseRecord(current = null, candidate = null) {
+        if (!candidate) {
+            return current || null;
+        }
+        if (!current) {
+            return candidate;
+        }
+        const currentResolved = String(current.status || '').trim().toLowerCase() === 'resolved';
+        const candidateResolved = String(candidate.status || '').trim().toLowerCase() === 'resolved';
+        if (candidateResolved !== currentResolved) {
+            return candidateResolved ? candidate : current;
+        }
+        const currentTime = Date.parse(current.updated_at || current.last_action_at || current.created_at || '') || 0;
+        const candidateTime = Date.parse(candidate.updated_at || candidate.last_action_at || candidate.created_at || '') || 0;
+        return candidateTime >= currentTime ? candidate : current;
+    }
+
+    buildOpsAlertSummaryFallbackCaseMap(alerts = [], caseMap = new Map()) {
+        const summaryCaseByGroup = new Map();
+        (Array.isArray(alerts) ? alerts : []).forEach((alert) => {
+            const groupKey = this.getOpsAlertSummaryCaseGroupKey(alert);
+            if (!groupKey) {
+                return;
+            }
+            this.getOpsAlertCaseTargetIds(alert)
+                .filter((targetId) => targetId && targetId !== alert.caseTargetId)
+                .forEach((targetId) => {
+                    const legacyCase = caseMap.get(this.buildOpsAlertCaseKey(alert.caseCategoryKey, targetId));
+                    if (!legacyCase) {
+                        return;
+                    }
+                    summaryCaseByGroup.set(
+                        groupKey,
+                        this.pickPreferredOpsAlertCaseRecord(summaryCaseByGroup.get(groupKey), legacyCase)
+                    );
+                });
+        });
+
+        const fallbackMap = new Map();
+        (Array.isArray(alerts) ? alerts : []).forEach((alert) => {
+            const groupKey = this.getOpsAlertSummaryCaseGroupKey(alert);
+            const fallbackCase = groupKey ? summaryCaseByGroup.get(groupKey) : null;
+            if (!fallbackCase || !alert.caseCategoryKey || !alert.caseTargetId) {
+                return;
+            }
+            fallbackMap.set(this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId), {
+                ...fallbackCase,
+                category_key: String(alert.caseCategoryKey || '').trim().toLowerCase(),
+                target_id: String(alert.caseTargetId || '').trim()
+            });
+        });
+        return fallbackMap;
     }
 
     isMissingOpsAlertCasesTableError(error) {
@@ -4485,10 +4992,10 @@ class AdminChat {
 
         const status = String(alert.case_status || '').trim().toLowerCase() || 'open';
         const linkedTicketId = this.getOpsAlertLinkedTicketId(alert);
-        if (status === 'resolved') {
+        if (this.isOpsAlertClosed(alert)) {
             const actions = [
                 ...(linkedTicketId ? [{ action: 'open_ticket', label: '查看工单', style: 'secondary' }] : []),
-                { action: 'reopen', label: '重新打开', style: 'ghost' },
+                ...(status === 'resolved' ? [{ action: 'reopen', label: '重新打开', style: 'ghost' }] : []),
                 { action: 'add_note', label: '补充备注', style: 'secondary' }
             ];
             return actions;
@@ -4561,7 +5068,8 @@ class AdminChat {
         }
     }
 
-    getFilteredOpsAlertMessages() {
+    getFilteredOpsAlertMessages(options = {}) {
+        const ignoreReadView = Boolean(options.ignoreReadView);
         let alerts = Array.isArray(this.opsAlertMessages) ? this.opsAlertMessages : [];
         if (this.opsAlertViewFilter === 'mine') {
             if (!this.opsAlertCurrentAdminId) {
@@ -4571,6 +5079,12 @@ class AdminChat {
         }
         if (this.opsAlertViewFilter === 'active') {
             alerts = alerts.filter((alert) => !this.isOpsAlertClosed(alert));
+        }
+        if (!ignoreReadView && this.opsAlertViewFilter === 'unread') {
+            alerts = alerts.filter((alert) => !this.isOpsAlertClosed(alert) && !this.isOpsAlertRead(alert));
+        }
+        if (!ignoreReadView && this.opsAlertViewFilter === 'read') {
+            alerts = alerts.filter((alert) => !this.isOpsAlertClosed(alert) && this.isOpsAlertRead(alert));
         }
         const ownerFilter = String(this.opsAlertOwnerFilter || 'all').trim();
         if (!ownerFilter || ownerFilter === 'all') {
@@ -4584,7 +5098,7 @@ class AdminChat {
 
     setOpsAlertViewFilter(filter = 'all') {
         const normalizedRaw = String(filter || '').trim().toLowerCase();
-        const normalized = ['mine', 'active'].includes(normalizedRaw) ? normalizedRaw : 'all';
+        const normalized = ['mine', 'active', 'unread', 'read'].includes(normalizedRaw) ? normalizedRaw : 'all';
         if (normalized === this.opsAlertViewFilter) {
             return;
         }
@@ -4633,6 +5147,149 @@ class AdminChat {
         if (this.isOpsAlertSessionId(this.currentSessionId)) {
             this.renderOpsAlertMessages();
         }
+    }
+
+    getOpsAlertReadIdentity(alert = {}) {
+        return String(
+            alert.id
+            || alert.caseTargetId
+            || alert.target_id
+            || `${alert.alertType || alert.alert_type || 'alert'}:${alert.created_at || alert.createdAt || alert.timestamp || ''}`
+        ).trim();
+    }
+
+    getOpsAlertTimestampMs(alert = {}) {
+        const timestamp = alert.sortTimestamp || alert.timestamp || alert.updated_at || alert.created_at || alert.createdAt;
+        if (timestamp instanceof Date) {
+            return timestamp.getTime();
+        }
+        const parsed = Date.parse(timestamp || '');
+        return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    getOpsAlertUpdatedMs(alert = {}) {
+        const parsed = Date.parse(alert.updated_at || alert.updatedAt || '');
+        return Number.isFinite(parsed) ? parsed : this.getOpsAlertTimestampMs(alert);
+    }
+
+    isOpsAlertRead(alert = {}) {
+        const alertId = this.getOpsAlertReadIdentity(alert);
+        if (!alertId || !this.opsAlertReadReceipts.has(alertId)) {
+            return false;
+        }
+
+        const readAt = Date.parse(this.opsAlertReadReceipts.get(alertId) || '');
+        if (!Number.isFinite(readAt)) {
+            return false;
+        }
+
+        const updatedAt = this.getOpsAlertUpdatedMs(alert);
+        return !updatedAt || readAt + 1000 >= updatedAt;
+    }
+
+    getOpsAlertUnreadCount(alerts = this.opsAlertMessages) {
+        return (Array.isArray(alerts) ? alerts : [])
+            .filter((alert) => !this.isOpsAlertClosed(alert) && !this.isOpsAlertRead(alert))
+            .length;
+    }
+
+    getOpsAlertReadCategoryOptions(alerts = this.getFilteredOpsAlertMessages({ ignoreReadView: true })) {
+        const categoryMap = new Map();
+        (Array.isArray(alerts) ? alerts : []).forEach((alert) => {
+            const key = String(alert.caseCategoryKey || alert.category_key || '').trim().toLowerCase();
+            if (!key || categoryMap.has(key)) {
+                return;
+            }
+            categoryMap.set(key, this.getOpsAlertMuteModuleLabel(key) || key);
+        });
+
+        return [
+            { value: 'all', label: '全部分类' },
+            ...Array.from(categoryMap.entries())
+                .sort((left, right) => left[1].localeCompare(right[1], 'zh-Hans-CN'))
+                .map(([value, label]) => ({ value, label }))
+        ];
+    }
+
+    syncOpsAlertReadCategoryFilter(options = []) {
+        if (!Array.isArray(options) || !options.some((option) => option.value === this.opsAlertReadCategoryFilter)) {
+            this.opsAlertReadCategoryFilter = 'all';
+        }
+    }
+
+    getOpsAlertReadTimeOptions() {
+        return [
+            { value: 'visible', label: '当前筛选' },
+            { value: 'hour', label: '近 1 小时' },
+            { value: 'today', label: '今天' },
+            { value: 'all', label: '全部时间' }
+        ];
+    }
+
+    matchesOpsAlertReadTimeFilter(alert = {}, filter = this.opsAlertReadTimeFilter) {
+        const normalized = String(filter || 'visible').trim().toLowerCase();
+        if (normalized === 'visible' || normalized === 'all') {
+            return true;
+        }
+
+        const timestamp = this.getOpsAlertTimestampMs(alert);
+        if (!timestamp) {
+            return false;
+        }
+        if (normalized === 'hour') {
+            return timestamp >= Date.now() - 60 * 60 * 1000;
+        }
+        if (normalized === 'today') {
+            const startOfToday = new Date();
+            startOfToday.setHours(0, 0, 0, 0);
+            return timestamp >= startOfToday.getTime();
+        }
+        return true;
+    }
+
+    getOpsAlertReadTargetAlerts() {
+        const categoryFilter = String(this.opsAlertReadCategoryFilter || 'all').trim().toLowerCase();
+        return this.getFilteredOpsAlertMessages({ ignoreReadView: true })
+            .filter((alert) => !this.isOpsAlertClosed(alert))
+            .filter((alert) => categoryFilter === 'all' || String(alert.caseCategoryKey || '').trim().toLowerCase() === categoryFilter)
+            .filter((alert) => this.matchesOpsAlertReadTimeFilter(alert))
+            .filter((alert) => !this.isOpsAlertRead(alert));
+    }
+
+    handleOpsAlertReadCategoryChange(value = 'all') {
+        this.opsAlertReadCategoryFilter = String(value || 'all').trim().toLowerCase() || 'all';
+        if (this.isOpsAlertSessionId(this.currentSessionId)) {
+            this.renderOpsAlertMessages();
+        }
+    }
+
+    handleOpsAlertReadTimeChange(value = 'visible') {
+        const normalized = String(value || 'visible').trim().toLowerCase();
+        const allowed = new Set(this.getOpsAlertReadTimeOptions().map((item) => item.value));
+        this.opsAlertReadTimeFilter = allowed.has(normalized) ? normalized : 'visible';
+        if (this.isOpsAlertSessionId(this.currentSessionId)) {
+            this.renderOpsAlertMessages();
+        }
+    }
+
+    markFilteredOpsAlertsRead() {
+        const targets = this.getOpsAlertReadTargetAlerts();
+        if (!targets.length) {
+            window.showToast?.('当前范围没有未读代办', 'info');
+            return false;
+        }
+
+        const readAt = new Date().toISOString();
+        targets.forEach((alert) => {
+            const alertId = this.getOpsAlertReadIdentity(alert);
+            if (alertId) {
+                this.opsAlertReadReceipts.set(alertId, readAt);
+            }
+        });
+        this.persistOpsAlertReadReceipts();
+        this.refreshOpsAlertViews();
+        window.showToast?.(`已标记 ${this.formatCompactCount(targets.length)} 条代办为已读`, 'success');
+        return true;
     }
 
     getBatchAssignableOpsAlerts() {
@@ -4738,64 +5395,249 @@ class AdminChat {
         }
     }
 
+    closeOpsAlertToolbarDropdowns(root = document) {
+        const scope = root && typeof root.querySelectorAll === 'function' ? root : document;
+        scope.querySelectorAll('.admin-alert-toolbar-dropdown.is-open').forEach((dropdown) => {
+            if (typeof dropdown._closeOpsAlertToolbarDropdown === 'function') {
+                dropdown._closeOpsAlertToolbarDropdown();
+                return;
+            }
+            dropdown.classList.remove('is-open');
+            dropdown.querySelector('.admin-alert-toolbar-dropdown-trigger')?.setAttribute('aria-expanded', 'false');
+        });
+    }
+
+    createOpsAlertToolbarDropdown({
+        label = '',
+        ariaLabel = '',
+        options = [],
+        value = '',
+        onChange = () => {},
+        fieldClassName = '',
+        compact = false
+    } = {}) {
+        const normalizedOptions = Array.isArray(options) ? options : [];
+        const normalizedValue = String(value || '').trim();
+        const selectedOption = normalizedOptions.find((option) => String(option.value || '').trim() === normalizedValue)
+            || normalizedOptions.find((option) => !option.disabled)
+            || normalizedOptions[0]
+            || { value: '', label: '请选择' };
+
+        const field = document.createElement('div');
+        field.className = `admin-alert-toolbar-filter${fieldClassName ? ` ${fieldClassName}` : ''}`;
+
+        const labelEl = document.createElement('span');
+        labelEl.className = 'admin-alert-toolbar-copy';
+        labelEl.textContent = label;
+        field.appendChild(labelEl);
+
+        const dropdown = document.createElement('div');
+        dropdown.className = `admin-alert-toolbar-dropdown${compact ? ' admin-alert-toolbar-dropdown--compact' : ''}`;
+
+        const trigger = document.createElement('button');
+        trigger.type = 'button';
+        trigger.className = 'admin-alert-toolbar-dropdown-trigger';
+        trigger.setAttribute('aria-haspopup', 'listbox');
+        trigger.setAttribute('aria-expanded', 'false');
+        trigger.setAttribute('aria-label', ariaLabel || label || '选择筛选项');
+
+        const triggerText = document.createElement('span');
+        triggerText.className = 'admin-alert-toolbar-dropdown-value';
+        triggerText.textContent = selectedOption.label || selectedOption.value || '请选择';
+        trigger.appendChild(triggerText);
+
+        const triggerIcon = document.createElement('i');
+        triggerIcon.className = 'fas fa-chevron-down admin-alert-toolbar-dropdown-icon';
+        triggerIcon.setAttribute('aria-hidden', 'true');
+        trigger.appendChild(triggerIcon);
+
+        const menu = document.createElement('div');
+        menu.className = 'admin-alert-toolbar-dropdown-menu';
+        menu.setAttribute('role', 'listbox');
+
+        let removeOutsideClick = () => {};
+        const closeDropdown = () => {
+            dropdown.classList.remove('is-open');
+            trigger.setAttribute('aria-expanded', 'false');
+            removeOutsideClick();
+            removeOutsideClick = () => {};
+        };
+        dropdown._closeOpsAlertToolbarDropdown = closeDropdown;
+
+        const openDropdown = () => {
+            this.closeOpsAlertToolbarDropdowns();
+            dropdown.classList.add('is-open');
+            trigger.setAttribute('aria-expanded', 'true');
+            const handleOutsideClick = (event) => {
+                if (!dropdown.contains(event.target)) {
+                    closeDropdown();
+                }
+            };
+            window.setTimeout(() => {
+                document.addEventListener('click', handleOutsideClick);
+                removeOutsideClick = () => document.removeEventListener('click', handleOutsideClick);
+            }, 0);
+        };
+
+        normalizedOptions.forEach((option) => {
+            const optionValue = String(option.value || '').trim();
+            const isSelected = optionValue === String(selectedOption.value || '').trim();
+            const optionButton = document.createElement('button');
+            optionButton.type = 'button';
+            optionButton.className = `admin-alert-toolbar-dropdown-option${isSelected ? ' is-selected' : ''}`;
+            optionButton.setAttribute('role', 'option');
+            optionButton.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+            optionButton.dataset.value = optionValue;
+            optionButton.disabled = Boolean(option.disabled);
+
+            const optionText = document.createElement('span');
+            optionText.textContent = option.label || optionValue || '未命名';
+            optionButton.appendChild(optionText);
+
+            const checkIcon = document.createElement('i');
+            checkIcon.className = 'fas fa-check admin-alert-toolbar-dropdown-check';
+            checkIcon.setAttribute('aria-hidden', 'true');
+            optionButton.appendChild(checkIcon);
+
+            optionButton.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (optionButton.disabled) return;
+                closeDropdown();
+                if (optionValue !== normalizedValue) {
+                    onChange(optionValue);
+                }
+            });
+            menu.appendChild(optionButton);
+        });
+
+        const focusEnabledOption = (step = 1) => {
+            const enabledOptions = Array.from(menu.querySelectorAll('.admin-alert-toolbar-dropdown-option:not(:disabled)'));
+            if (!enabledOptions.length) return;
+            const activeIndex = enabledOptions.indexOf(document.activeElement);
+            const nextIndex = activeIndex >= 0
+                ? (activeIndex + step + enabledOptions.length) % enabledOptions.length
+                : (step > 0 ? 0 : enabledOptions.length - 1);
+            enabledOptions[nextIndex]?.focus();
+        };
+
+        trigger.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (dropdown.classList.contains('is-open')) {
+                closeDropdown();
+            } else {
+                openDropdown();
+            }
+        });
+        trigger.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                closeDropdown();
+                return;
+            }
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                if (!dropdown.classList.contains('is-open')) {
+                    openDropdown();
+                }
+                focusEnabledOption(event.key === 'ArrowDown' ? 1 : -1);
+            }
+        });
+        menu.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                closeDropdown();
+                trigger.focus();
+            } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                focusEnabledOption(event.key === 'ArrowDown' ? 1 : -1);
+            }
+        });
+
+        dropdown.appendChild(trigger);
+        dropdown.appendChild(menu);
+        field.appendChild(dropdown);
+        return field;
+    }
+
     createOpsAlertToolbarElement() {
         const wrapper = document.createElement('div');
         wrapper.className = 'admin-alert-toolbar';
 
-        const title = document.createElement('div');
-        title.className = 'admin-alert-toolbar-copy';
-        title.textContent = '筛选范围';
-        wrapper.appendChild(title);
-
-        const actions = document.createElement('div');
-        actions.className = 'admin-alert-toolbar-actions';
-
-        [
+        const unreadCount = this.getOpsAlertUnreadCount();
+        const viewOptions = [
             { key: 'all', label: '全部' },
             { key: 'active', label: '未关闭' },
+            { key: 'unread', label: unreadCount > 0 ? `未读 ${this.formatCompactCount(unreadCount)}` : '未读' },
+            { key: 'read', label: '已读' },
             { key: 'mine', label: '我认领的' }
-        ].forEach((item) => {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = `admin-alert-toolbar-btn${this.opsAlertViewFilter === item.key ? ' is-active' : ''}`;
-            button.textContent = item.label;
-            if (item.key === 'mine' && !this.opsAlertCurrentAdminId) {
-                button.disabled = true;
-            }
-            button.addEventListener('click', () => this.setOpsAlertViewFilter(item.key));
-            actions.appendChild(button);
+        ];
+        const scopeFilterWrap = this.createOpsAlertToolbarDropdown({
+            label: '筛选范围',
+            ariaLabel: '选择站内代办筛选范围',
+            options: viewOptions.map((item) => ({
+                value: item.key,
+                label: item.label,
+                disabled: item.key === 'mine' && !this.opsAlertCurrentAdminId
+            })),
+            value: this.opsAlertViewFilter,
+            onChange: (nextValue) => this.setOpsAlertViewFilter(nextValue),
+            fieldClassName: 'admin-alert-toolbar-filter--scope'
         });
+        wrapper.appendChild(scopeFilterWrap);
 
-        wrapper.appendChild(actions);
+        const readOptions = this.getOpsAlertReadCategoryOptions();
+        this.syncOpsAlertReadCategoryFilter(readOptions);
+        const readTargetCount = this.getOpsAlertReadTargetAlerts().length;
+        const readWrap = document.createElement('div');
+        readWrap.className = 'admin-alert-toolbar-read';
+
+        const readLabel = document.createElement('span');
+        readLabel.className = 'admin-alert-toolbar-copy';
+        readLabel.textContent = '已读';
+        readWrap.appendChild(readLabel);
+
+        readWrap.appendChild(this.createOpsAlertToolbarDropdown({
+            label: '',
+            ariaLabel: '选择已读分类',
+            options: readOptions,
+            value: this.opsAlertReadCategoryFilter,
+            onChange: (nextValue) => this.handleOpsAlertReadCategoryChange(nextValue),
+            compact: true
+        }));
+
+        readWrap.appendChild(this.createOpsAlertToolbarDropdown({
+            label: '',
+            ariaLabel: '选择已读时间范围',
+            options: this.getOpsAlertReadTimeOptions(),
+            value: this.opsAlertReadTimeFilter,
+            onChange: (nextValue) => this.handleOpsAlertReadTimeChange(nextValue),
+            compact: true
+        }));
 
         const ownerOptions = this.getOpsAlertOwnerFilterOptions();
         this.syncOpsAlertOwnerFilter(ownerOptions);
         if (ownerOptions.length > 1) {
-            const ownerFilterWrap = document.createElement('label');
-            ownerFilterWrap.className = 'admin-alert-toolbar-filter';
-
-            const ownerFilterLabel = document.createElement('span');
-            ownerFilterLabel.className = 'admin-alert-toolbar-copy';
-            ownerFilterLabel.textContent = '负责人';
-            ownerFilterWrap.appendChild(ownerFilterLabel);
-
-            const ownerSelect = document.createElement('select');
-            ownerSelect.className = 'admin-alert-toolbar-select';
-            ownerOptions.forEach((option) => {
-                const optionEl = document.createElement('option');
-                optionEl.value = option.value;
-                optionEl.textContent = option.label;
-                if (option.value === this.opsAlertOwnerFilter) {
-                    optionEl.selected = true;
-                }
-                ownerSelect.appendChild(optionEl);
+            const ownerFilterWrap = this.createOpsAlertToolbarDropdown({
+                label: '负责人',
+                ariaLabel: '选择站内代办负责人',
+                options: ownerOptions,
+                value: this.opsAlertOwnerFilter,
+                onChange: (nextValue) => this.setOpsAlertOwnerFilter(nextValue),
+                fieldClassName: 'admin-alert-toolbar-filter--owner'
             });
-            ownerSelect.addEventListener('change', (event) => {
-                this.setOpsAlertOwnerFilter(event.target.value);
-            });
-            ownerFilterWrap.appendChild(ownerSelect);
-            wrapper.appendChild(ownerFilterWrap);
+            readWrap.appendChild(ownerFilterWrap);
         }
+        wrapper.appendChild(readWrap);
+
+        const readButton = document.createElement('button');
+        readButton.type = 'button';
+        readButton.className = 'admin-alert-toolbar-btn admin-alert-toolbar-btn--read admin-alert-toolbar-btn--read-standalone';
+        readButton.disabled = readTargetCount <= 0;
+        readButton.innerHTML = `<i class="fas fa-check-double" aria-hidden="true"></i><span>${readTargetCount > 0 ? `标记 ${this.formatCompactCount(readTargetCount)}` : '无未读'}</span>`;
+        readButton.addEventListener('click', () => {
+            this.markFilteredOpsAlertsRead();
+        });
+        wrapper.appendChild(readButton);
 
         if (this.shouldShowOpsAlertBatchAssign()) {
             const batchButton = document.createElement('button');
@@ -5056,7 +5898,7 @@ class AdminChat {
 
     async fetchOpsAlertCasesForAlerts(alerts = []) {
         const normalizedAlerts = Array.isArray(alerts) ? alerts : [];
-        const targetIds = [...new Set(normalizedAlerts.map((alert) => String(alert.caseTargetId || '').trim()).filter(Boolean))];
+        const targetIds = [...new Set(normalizedAlerts.flatMap((alert) => this.getOpsAlertCaseTargetIds(alert)))];
         const categoryKeys = [...new Set(normalizedAlerts.map((alert) => String(alert.caseCategoryKey || '').trim().toLowerCase()).filter(Boolean))];
 
         if (!targetIds.length || !categoryKeys.length || !this.supabase?.from) {
@@ -5097,14 +5939,14 @@ class AdminChat {
 
         const groupedTargets = normalizedAlerts.reduce((accumulator, alert) => {
             const categoryKey = String(alert.caseCategoryKey || '').trim().toLowerCase();
-            const targetId = String(alert.caseTargetId || '').trim();
-            if (!categoryKey || !targetId) {
+            const targetIds = this.getOpsAlertCaseTargetIds(alert);
+            if (!categoryKey || !targetIds.length) {
                 return accumulator;
             }
             if (!accumulator.has(categoryKey)) {
                 accumulator.set(categoryKey, []);
             }
-            accumulator.get(categoryKey).push(targetId);
+            accumulator.get(categoryKey).push(...targetIds);
             return accumulator;
         }, new Map());
 
@@ -5151,9 +5993,10 @@ class AdminChat {
             this.fetchOpsAlertCasesForAlerts(alerts),
             this.fetchOpsAlertCaseEventsForAlerts(alerts)
         ]);
+        const summaryFallbackCaseMap = this.buildOpsAlertSummaryFallbackCaseMap(alerts, caseMap);
         return (Array.isArray(alerts) ? alerts : []).map((alert) => {
             const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId);
-            this.applyOpsAlertCaseRecord(alert, caseMap.get(caseKey) || null);
+            this.applyOpsAlertCaseRecord(alert, caseMap.get(caseKey) || summaryFallbackCaseMap.get(caseKey) || null);
             return this.applyOpsAlertCaseEvents(alert, eventMap.get(caseKey) || []);
         });
     }
@@ -5172,10 +6015,11 @@ class AdminChat {
             this.fetchOpsAlertCasesForAlerts(uniqueAlerts),
             this.fetchOpsAlertCaseEventsForAlerts(uniqueAlerts)
         ]);
+        const summaryFallbackCaseMap = this.buildOpsAlertSummaryFallbackCaseMap(uniqueAlerts, caseMap);
 
         uniqueAlerts.forEach((alert) => {
             const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId);
-            this.applyOpsAlertCaseRecord(alert, caseMap.get(caseKey) || null);
+            this.applyOpsAlertCaseRecord(alert, caseMap.get(caseKey) || summaryFallbackCaseMap.get(caseKey) || null);
             this.applyOpsAlertCaseEvents(alert, eventMap.get(caseKey) || []);
         });
         return uniqueAlerts;
@@ -5186,13 +6030,42 @@ class AdminChat {
             return window.getAdminConfigApiHeaders();
         }
 
-        const { data: { session } = { session: null } } = await this.supabase.auth.getSession();
         const headers = {
             'Content-Type': 'application/json'
         };
-        if (session?.access_token) {
-            headers.Authorization = `Bearer ${session.access_token}`;
+
+        if (window.AdminApi?.buildRequestInit) {
+            try {
+                const requestInit = await window.AdminApi.buildRequestInit({
+                    headers
+                });
+                return requestInit?.headers || headers;
+            } catch (_) {
+                // Fall through to direct token resolution.
+            }
         }
+
+        let accessToken = '';
+
+        try {
+            const { data: { session } = { session: null } } = await this.supabase.auth.getSession();
+            accessToken = String(session?.access_token || '').trim();
+        } catch (_) {
+            accessToken = '';
+        }
+
+        if (!accessToken && typeof this.supabase?.accessToken === 'function') {
+            try {
+                accessToken = String(await this.supabase.accessToken() || '').trim();
+            } catch (_) {
+                accessToken = '';
+            }
+        }
+
+        if (accessToken) {
+            headers.Authorization = `Bearer ${accessToken}`;
+        }
+
         return headers;
     }
 
@@ -5265,6 +6138,11 @@ class AdminChat {
         if (this.isOpsAlertCaseActionBusy(alert.id, normalizedAction)) {
             return false;
         }
+        if (normalizedAction === 'resolve' && this.isOpsAlertClosed(alert)) {
+            this.refreshOpsAlertViews();
+            window.showToast?.('这条代办已经关闭，无需重复关闭', 'info');
+            return false;
+        }
 
         try {
             this.markOpsAlertCaseActionBusy(alert.id, normalizedAction, true);
@@ -5313,19 +6191,41 @@ class AdminChat {
         }
     }
 
-    buildOpsAlertContext(alertType = '', payload = {}, title = '') {
-        const targetId = this.getOpsAlertTargetId(payload);
+    buildOpsAlertContext(alertType = '', payload = {}, title = '', options = {}) {
+        const targetId = this.getOpsAlertTargetId(payload, {
+            ...options,
+            alertType
+        });
         const categoryKey = this.getOpsAlertCaseCategoryKey(alertType, targetId);
+        const referenceLabel = this.getOpsAlertReferenceLabel(payload);
+        const referenceValue = this.getOpsAlertReferenceValue(payload);
+        const email = String(
+            payload.email
+            || payload.user_email
+            || payload.sender_email
+            || payload.admin_email
+            || ''
+        ).trim();
+        const orderId = String(payload.order_id || '').trim();
+        const paymentOrderId = String(payload.payment_order_id || '').trim();
+        const ticketId = String(payload.ticket_id || '').trim();
+        const ticketStatus = String(payload.ticket_status || '').trim().toLowerCase();
+        const verificationId = String(payload.verification_id || '').trim();
+        const productId = String(payload.product_id || '').trim();
+        const adminId = String(payload.admin_id || '').trim();
+        const adminEmail = String(payload.admin_email || '').trim();
+        const providerOrderNo = String(payload.provider_order_no || '').trim();
 
         return {
             title: String(title || '').trim(),
             alertType,
             alert_type: alertType,
             category: categoryKey,
-            referenceLabel: this.getOpsAlertReferenceLabel(payload),
-            referenceValue: this.getOpsAlertReferenceValue(payload),
+            referenceLabel,
+            referenceValue,
             targetId,
             target_id: targetId,
+            email,
             userId: String(payload.user_id || '').trim(),
             user_id: String(payload.user_id || '').trim(),
             clientIp: String(payload.client_ip || '').trim(),
@@ -5335,7 +6235,28 @@ class AdminChat {
             sessionId: String(payload.session_id || '').trim(),
             session_id: String(payload.session_id || '').trim(),
             messageId: String(payload.message_id || '').trim(),
-            message_id: String(payload.message_id || '').trim()
+            message_id: String(payload.message_id || '').trim(),
+            orderId,
+            order_id: orderId,
+            paymentOrderId,
+            payment_order_id: paymentOrderId,
+            providerOrderNo,
+            provider_order_no: providerOrderNo,
+            ticketId,
+            ticket_id: ticketId,
+            ticketStatus,
+            ticket_status: ticketStatus,
+            verificationId,
+            verification_id: verificationId,
+            productId,
+            product_id: productId,
+            adminId,
+            admin_id: adminId,
+            adminEmail,
+            admin_email: adminEmail,
+            site: String(payload.site || '').trim().toLowerCase(),
+            signalType: String(payload.signal_type || '').trim().toLowerCase(),
+            signal_type: String(payload.signal_type || '').trim().toLowerCase()
         };
     }
 
@@ -5374,7 +6295,7 @@ class AdminChat {
         const entryPath = String(payload.entry_path || '').trim() || this.extractEntryPathFromContent(content);
         const createdAt = row.created_at || row.updated_at || new Date().toISOString();
         const updatedAt = row.updated_at || createdAt;
-        const targetId = this.getOpsAlertTargetId(payload);
+        const targetId = this.getOpsAlertTargetId(payload, { alertType, dedupeKey: row.dedupe_key || '' });
         const caseCategoryKey = this.getOpsAlertCaseCategoryKey(alertType, targetId);
         const alert = {
             id: String(row.id || `ops-alert-${createdAt}`),
@@ -5396,6 +6317,8 @@ class AdminChat {
             timestamp: new Date(createdAt),
             sortTimestamp: new Date(updatedAt),
             preview: '',
+            dedupeKey: String(row.dedupe_key || '').trim(),
+            dedupe_key: String(row.dedupe_key || '').trim(),
             caseCategoryKey,
             caseTargetId: targetId,
             referenceLabel: this.getOpsAlertReferenceLabel(payload),
@@ -5438,6 +6361,7 @@ class AdminChat {
         const latestActive = (Array.isArray(this.opsAlertMessages) ? this.opsAlertMessages : [])
             .find((alert) => !this.isOpsAlertClosed(alert)) || null;
         const activeCount = this.getOpsAlertActiveCount();
+        const unreadCount = this.getOpsAlertUnreadCount();
         const mutedModuleCount = this.getOpsAlertMutedModuleCount();
         const ownerSummary = this.getOpsAlertOwnerSummary();
         const preview = this.opsAlertLoadError
@@ -5457,13 +6381,18 @@ class AdminChat {
         if (activeCount > 0) {
             subtextParts.push(`未关闭 ${this.formatCompactCount(activeCount)}`);
         }
+        if (unreadCount > 0) {
+            subtextParts.push(`未读 ${this.formatCompactCount(unreadCount)}`);
+        }
         if (mutedModuleCount > 0) {
             subtextParts.push(`静音 ${this.formatCompactCount(mutedModuleCount)} 组`);
         }
         const subtext = subtextParts.join(' · ');
         const badge = this.opsAlertLoadError
             ? '异常'
-            : activeCount > 0
+            : unreadCount > 0
+                ? `${this.formatCompactCount(unreadCount)}未读`
+                : activeCount > 0
                 ? `${this.formatCompactCount(activeCount)}待办`
                 : mutedModuleCount > 0
                     ? `${this.formatCompactCount(mutedModuleCount)}静音`
@@ -5496,6 +6425,7 @@ class AdminChat {
             this.buildOpsAlertSession(),
             ...sortedChatSessions
         ];
+        this.emitCommandCenterSummaryUpdate();
     }
 
     async bootstrapSessions() {
@@ -5520,9 +6450,10 @@ class AdminChat {
                 this.chatSessions = [];
             }
 
+            this.hasBootstrappedSessions = true;
+            this.isSessionBootstrapPending = false;
             this.composeSessions();
             this.syncCurrentSessionFromSessions();
-            this.isSessionBootstrapPending = false;
             this.renderSessionList(this.searchQuery);
             this.startBackgroundServices();
             this.scheduleDeferredSessionHydration();
@@ -5588,6 +6519,7 @@ class AdminChat {
             console.warn('Failed to fetch ops alert mute rules:', opsAlertConfigResult.reason);
         }
 
+        this.hasHydratedSessionSidebarData = true;
         this.composeSessions();
         this.syncCurrentSessionFromSessions();
         this.renderSessionList(this.searchQuery);
@@ -5847,7 +6779,7 @@ class AdminChat {
     async fetchOpsAlertJobs() {
         const { data, error } = await this.supabase
             .from('ops_alert_jobs')
-            .select('id, alert_type, severity, title, content, payload, status, last_error, created_at, updated_at, delivered_at')
+            .select('id, dedupe_key, alert_type, severity, title, content, payload, status, last_error, created_at, updated_at, delivered_at')
             .order('created_at', { ascending: false })
             .limit(160);
 
@@ -5894,6 +6826,8 @@ class AdminChat {
             console.warn('Failed to fetch ops alert mute rules:', opsAlertConfigResult.reason);
         }
 
+        this.hasBootstrappedSessions = true;
+        this.hasHydratedSessionSidebarData = true;
         this.composeSessions();
         this.syncCurrentSessionFromSessions();
         this.renderSessionList(this.searchQuery);
@@ -6269,7 +7203,12 @@ class AdminChat {
         const interfaceEl = document.getElementById('chatInterface');
         this.setElementHidden(interfaceEl, false);
 
-        const session = this.sessions.find((item) => item.sessionId === sessionId);
+        const normalizedRequestedSessionId = String(sessionId || '').trim();
+        const session = this.sessions.find((item) => item.sessionId === normalizedRequestedSessionId)
+            || this.sessions.find((item) => (
+                Array.isArray(item?.sessionIds)
+                && item.sessionIds.some((value) => String(value || '').trim() === normalizedRequestedSessionId)
+            ));
         this.currentSessionInfo = session || null;
         const sessionIds = Array.from(new Set(
             (Array.isArray(session?.sessionIds) && session.sessionIds.length ? session.sessionIds : [sessionId])
@@ -6365,11 +7304,16 @@ class AdminChat {
         });
 
         if (!alerts.length) {
-            let message = this.opsAlertViewFilter === 'mine'
-                ? '当前还没有你认领的站内代办。'
-                : this.opsAlertViewFilter === 'active'
-                    ? '当前没有未关闭的站内代办。'
-                    : '当前筛选下还没有同步过来的站外告警。';
+            let message = '当前筛选下还没有同步过来的站外告警。';
+            if (this.opsAlertViewFilter === 'mine') {
+                message = '当前还没有你认领的站内代办。';
+            } else if (this.opsAlertViewFilter === 'unread') {
+                message = '当前筛选下没有未读代办。';
+            } else if (this.opsAlertViewFilter === 'read') {
+                message = '当前筛选下没有已读代办。';
+            } else if (this.opsAlertViewFilter === 'active') {
+                message = '当前没有未关闭的站内代办。';
+            }
             if (this.opsAlertOwnerFilter === 'unassigned') {
                 message = '当前没有未认领的站内代办。';
             } else if (this.opsAlertOwnerFilter !== 'all') {
@@ -6404,7 +7348,8 @@ class AdminChat {
 
     createOpsAlertMessageElement(alert = {}) {
         const wrapper = document.createElement('div');
-        wrapper.className = `admin-message received admin-message--ops-alert admin-message--severity-${this.escapeHtml(alert.severity || 'warning')}`;
+        const isRead = this.isOpsAlertRead(alert) && !this.isOpsAlertClosed(alert);
+        wrapper.className = `admin-message received admin-message--ops-alert admin-message--severity-${this.escapeHtml(alert.severity || 'warning')}${isRead ? ' admin-message--ops-alert-read' : ''}`;
         wrapper.dataset.id = alert.id || '';
 
         const card = document.createElement('div');
@@ -6436,6 +7381,12 @@ class AdminChat {
             muteBadge.className = 'admin-alert-case-badge admin-alert-case-badge--muted';
             muteBadge.textContent = `已静音至 ${this.formatDetailTime(alert.moduleMuteUntil)}`;
             titleWrap.appendChild(muteBadge);
+        }
+        if (isRead) {
+            const readBadge = document.createElement('span');
+            readBadge.className = 'admin-alert-case-badge admin-alert-case-badge--read';
+            readBadge.textContent = '已读';
+            titleWrap.appendChild(readBadge);
         }
         titleWrap.appendChild(title);
 
@@ -7034,6 +7985,37 @@ class AdminChat {
             || context.reference_value
             || ''
         ).trim();
+        if (window.AdminShell?.openContext) {
+            const opened = await window.AdminShell.openContext('chat', {
+                source: 'ops-alerts',
+                entity: 'chat-session',
+                action: sessionId ? 'focus-session' : 'search-session',
+                site: context.site,
+                focus: {
+                    sessionId,
+                    session_id: sessionId,
+                    userId: context.userId || context.user_id || '',
+                    user_id: context.user_id || context.userId || ''
+                },
+                payload: {
+                    search: searchValue,
+                    searchQuery: searchValue,
+                    email: context.email || '',
+                    referenceLabel: context.referenceLabel || context.reference_label || '',
+                    referenceValue: context.referenceValue || context.reference_value || '',
+                    ticketId: context.ticketId || context.ticket_id || '',
+                    ticketStatus: context.ticketStatus || context.ticket_status || ''
+                }
+            }, {
+                settleMs: 0,
+                silentDenied: true
+            });
+
+            if (opened) {
+                return true;
+            }
+        }
+
         window.switchModule?.('chat');
         await this.settleWorkspace(80);
 
@@ -7074,6 +8056,11 @@ class AdminChat {
     }
 
     canAccessWorkbenchAction(action = {}) {
+        const normalizedAction = String(action.action || action.key || '').trim().toLowerCase();
+        if (normalizedAction === 'payment_read') {
+            return true;
+        }
+
         const workspaceKey = String(action.workspaceKey || this.getImplicitWorkbenchWorkspaceKey(action) || '').trim();
         if (!workspaceKey) {
             return false;
@@ -7105,14 +8092,70 @@ class AdminChat {
         }
 
         const searchValue = this.getContextSearchValue(context);
+        const referenceLabel = String(
+            context.referenceLabel
+            || context.reference_label
+            || ''
+        ).trim();
+        const orderId = String(
+            context.orderId
+            || context.order_id
+            || ((referenceLabel === '订单号' || referenceLabel === '订单')
+                ? (context.referenceValue || context.reference_value || '')
+                : '')
+            || ''
+        ).trim();
+
+        if (window.AdminShell?.openContext) {
+            const opened = await window.AdminShell.openContext('shop', {
+                source: 'ops-alerts',
+                entity: 'shop-order',
+                action: orderId ? 'focus-order' : 'search-orders',
+                site: context.site,
+                focus: {
+                    orderId,
+                    order_id: orderId
+                },
+                payload: {
+                    workspace: 'orders',
+                    defaultTab: 'orders',
+                    tab: 'orders',
+                    query: searchValue,
+                    search: searchValue,
+                    searchQuery: searchValue,
+                    referenceLabel,
+                    referenceValue: context.referenceValue || context.reference_value || ''
+                },
+                userId: context.userId || context.user_id || '',
+                user_id: context.user_id || context.userId || '',
+                email: context.email || ''
+            }, {
+                settleMs: 0,
+                silentDenied: true
+            });
+
+            if (opened) {
+                this.scrollToElement('shop-view-orders');
+                window.showToast?.('已打开商城订单列表', 'success');
+                return true;
+            }
+        }
+
         const opened = window.switchModule?.('shop');
         if (opened === false) {
             return false;
         }
         await this.settleWorkspace(80);
 
-        await window.ShopAdmin?.init?.();
-        window.ShopAdmin?.switchTab?.('orders');
+        await window.ShopAdmin?.activate?.({
+            ...context,
+            workspace: 'orders',
+            defaultTab: 'orders',
+            tab: 'orders'
+        }, {
+            defaultTab: 'orders',
+            tab: 'orders'
+        });
         await this.settleWorkspace(80);
 
         const searchInput = document.getElementById('orderSearchInput');
@@ -7132,14 +8175,67 @@ class AdminChat {
             return this.openWorkbenchEntry('payments-overview', context);
         }
 
+        const paymentOrderId = String(
+            context.paymentOrderId
+            || context.payment_order_id
+            || ((context.referenceLabel === '支付订单号' || context.reference_label === '支付订单号')
+                ? (context.referenceValue || context.reference_value || '')
+                : '')
+            || ''
+        ).trim();
+        const referenceValue = String(
+            context.referenceValue
+            || context.reference_value
+            || paymentOrderId
+            || ''
+        ).trim();
+
+        if (window.AdminShell?.openContext) {
+            const opened = await window.AdminShell.openContext('payments', {
+                source: 'ops-alerts',
+                entity: paymentOrderId ? 'payment-order' : 'payments-overview',
+                action: paymentOrderId ? 'focus-order' : 'open-overview',
+                site: context.site,
+                focus: {
+                    paymentOrderId,
+                    payment_order_id: paymentOrderId
+                },
+                payload: {
+                    defaultTab: 'overview',
+                    tab: 'overview',
+                    focusTargetId: 'paymentsOrdersTable',
+                    focus_target_id: 'paymentsOrdersTable',
+                    search: referenceValue,
+                    searchQuery: referenceValue,
+                    referenceLabel: context.referenceLabel || context.reference_label || '',
+                    referenceValue
+                }
+            }, {
+                settleMs: 0,
+                silentDenied: true
+            });
+
+            if (opened) {
+                this.scrollToElement('paymentsOrdersTable');
+                window.showToast?.('已打开支付最近订单', 'success');
+                return true;
+            }
+        }
+
         const opened = window.switchModule?.('payments');
         if (opened === false) {
             return false;
         }
         await this.settleWorkspace(80);
 
-        await window.AdminPayments?.init?.();
-        window.AdminPayments?.switchTab?.('overview', { reload: false });
+        await window.AdminPayments?.activate?.({
+            ...context,
+            defaultTab: 'overview',
+            tab: 'overview'
+        }, {
+            defaultTab: 'overview',
+            tab: 'overview'
+        });
         await this.settleWorkspace(80);
 
         this.scrollToElement('paymentsOrdersTable');
@@ -7179,3 +8275,319 @@ class AdminChat {
 }
 
 window.AdminChat = AdminChat;
+
+function normalizeAdminChatShellContextObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function isAdminChatModuleVisible() {
+    const module = document.getElementById('module-chat');
+    return Boolean(module && module.classList.contains('active') && !module.hidden);
+}
+
+function getActiveAdminChatInstance() {
+    const instance = window.adminChatInstance;
+    if (!instance || instance.destroyed === true) {
+        return null;
+    }
+    return instance;
+}
+
+function getAdminChatCommandCenterSummary() {
+    const instance = getActiveAdminChatInstance();
+    if (!instance || typeof instance.getCommandCenterSummary !== 'function') {
+        return {
+            ready: false,
+            status: 'idle',
+            unreadMessages: 0,
+            pendingReply: 0,
+            staleReply: 0,
+            openTickets: 0,
+            verificationAlerts: 0,
+            paymentFollowups: 0,
+            systemAlerts: 0,
+            unreadSystemAlerts: 0,
+            actionableCount: 0
+        };
+    }
+    return instance.getCommandCenterSummary();
+}
+
+async function primeAdminChatCommandCenterSummary(options = {}) {
+    const instance = ensureAdminChatInstance();
+    if (!instance) {
+        return getAdminChatCommandCenterSummary();
+    }
+
+    if (options?.force === true && typeof instance.fetchSessions === 'function') {
+        await instance.fetchSessions();
+        return instance.getCommandCenterSummary();
+    }
+
+    if (!instance.hasBootstrappedSessions && typeof instance.bootstrapSessions === 'function') {
+        await instance.bootstrapSessions();
+    }
+
+    if (!instance.hasHydratedSessionSidebarData && typeof instance.hydrateSessionSidebarData === 'function') {
+        await instance.hydrateSessionSidebarData();
+    }
+
+    return instance.getCommandCenterSummary();
+}
+
+function ensureAdminChatInstance(options = {}) {
+    const existingInstance = getActiveAdminChatInstance();
+    const container = document.getElementById('chat-admin-container');
+
+    if (existingInstance) {
+        if (container && existingInstance.targetContainer !== container) {
+            existingInstance.targetContainer = container;
+        }
+
+        if (options?.ensureLayout === true && container && !container.querySelector('#chatMainContainer')) {
+            existingInstance.init();
+        }
+
+        return existingInstance;
+    }
+
+    if (typeof window.AdminChat !== 'function' || !container) {
+        return null;
+    }
+
+    return new window.AdminChat(container);
+}
+
+function resolveAdminChatContextSessionId(context = {}) {
+    const normalizedContext = normalizeAdminChatShellContextObject(context);
+    const focus = normalizeAdminChatShellContextObject(normalizedContext.focus);
+    const payload = normalizeAdminChatShellContextObject(normalizedContext.payload);
+    const raw = normalizeAdminChatShellContextObject(normalizedContext.raw);
+
+    return String(
+        focus.sessionId
+        || focus.session_id
+        || focus.chatSessionId
+        || focus.chat_session_id
+        || payload.sessionId
+        || payload.session_id
+        || payload.chatSessionId
+        || payload.chat_session_id
+        || raw.sessionId
+        || raw.session_id
+        || raw.chatSessionId
+        || raw.chat_session_id
+        || normalizedContext.sessionId
+        || normalizedContext.session_id
+        || normalizedContext.chatSessionId
+        || normalizedContext.chat_session_id
+        || ''
+    ).trim();
+}
+
+function resolveAdminChatContextSearchValue(context = {}) {
+    const normalizedContext = normalizeAdminChatShellContextObject(context);
+    const focus = normalizeAdminChatShellContextObject(normalizedContext.focus);
+    const payload = normalizeAdminChatShellContextObject(normalizedContext.payload);
+    const raw = normalizeAdminChatShellContextObject(normalizedContext.raw);
+
+    return String(
+        payload.search
+        || payload.searchQuery
+        || payload.query
+        || payload.email
+        || payload.userId
+        || payload.user_id
+        || raw.search
+        || raw.searchQuery
+        || raw.query
+        || raw.email
+        || raw.userId
+        || raw.user_id
+        || focus.userId
+        || focus.user_id
+        || normalizedContext.search
+        || normalizedContext.searchQuery
+        || normalizedContext.query
+        || normalizedContext.email
+        || normalizedContext.userId
+        || normalizedContext.user_id
+        || normalizedContext.referenceValue
+        || normalizedContext.reference_value
+        || ''
+    ).trim();
+}
+
+function resolveAdminChatContextQueueState(context = {}) {
+    const normalizedContext = normalizeAdminChatShellContextObject(context);
+    const payload = normalizeAdminChatShellContextObject(normalizedContext.payload);
+    const raw = normalizeAdminChatShellContextObject(normalizedContext.raw);
+
+    return {
+        view: String(
+            payload.queueView
+            || payload.view
+            || raw.queueView
+            || raw.view
+            || normalizedContext.queueView
+            || normalizedContext.view
+            || ''
+        ).trim(),
+        filter: String(
+            payload.queueFilter
+            || payload.filter
+            || raw.queueFilter
+            || raw.filter
+            || normalizedContext.queueFilter
+            || normalizedContext.filter
+            || ''
+        ).trim()
+    };
+}
+
+async function activateChatModule(context = {}, options = {}) {
+    const chatInstance = ensureAdminChatInstance({ ensureLayout: true });
+    if (!chatInstance) {
+        return false;
+    }
+
+    if ((!Array.isArray(chatInstance.sessions) || chatInstance.sessions.length === 0) && typeof chatInstance.bootstrapSessions === 'function') {
+        await chatInstance.bootstrapSessions();
+    }
+
+    if (options?.force === true && typeof chatInstance.fetchSessions === 'function') {
+        await chatInstance.fetchSessions();
+    }
+
+    return true;
+}
+
+async function handleChatModuleContext(context = {}, options = {}) {
+    const chatInstance = ensureAdminChatInstance({ ensureLayout: true });
+    if (!chatInstance) {
+        return false;
+    }
+
+    const normalizedContext = normalizeAdminChatShellContextObject(context);
+    const payload = normalizeAdminChatShellContextObject(normalizedContext.payload);
+    const raw = normalizeAdminChatShellContextObject(normalizedContext.raw);
+    const sessionId = resolveAdminChatContextSessionId(normalizedContext);
+    const searchValue = resolveAdminChatContextSearchValue(normalizedContext);
+    const queueState = resolveAdminChatContextQueueState(normalizedContext);
+    const shouldOpenOpsAlerts = ['ops-alerts', 'ops_alerts', 'alerts'].includes(String(
+        payload.workspace
+        || payload.mode
+        || raw.workspace
+        || raw.mode
+        || normalizedContext.workspace
+        || normalizedContext.mode
+        || ''
+    ).trim().toLowerCase());
+
+    if (typeof chatInstance.bootstrapSessions === 'function') {
+        await chatInstance.bootstrapSessions();
+    }
+
+    if (shouldOpenOpsAlerts) {
+        await chatInstance.loadSession(chatInstance.opsAlertSessionId);
+        return true;
+    }
+
+    if (sessionId) {
+        await chatInstance.loadSession(sessionId);
+        return true;
+    }
+
+    chatInstance.backToSessions?.();
+
+    if (queueState.view && typeof chatInstance.setSessionQueueView === 'function') {
+        chatInstance.setSessionQueueView(queueState.view, {
+            resetFilter: !queueState.filter
+        });
+    }
+
+    if (queueState.filter && typeof chatInstance.setSessionQueueFilter === 'function') {
+        chatInstance.setSessionQueueFilter(queueState.filter);
+    }
+
+    if (searchValue) {
+        chatInstance.filterSessions?.(searchValue);
+        const searchInput = document.getElementById('sessionSearch');
+        if (searchInput) {
+            searchInput.value = searchValue;
+        }
+        return true;
+    }
+
+    return true;
+}
+
+async function handleChatModuleSiteChange() {
+    const chatInstance = getActiveAdminChatInstance();
+    if (!chatInstance || !isAdminChatModuleVisible()) {
+        return false;
+    }
+
+    const currentSessionKey = String(chatInstance.currentSessionKey || chatInstance.currentSessionId || '').trim();
+    const currentSearchValue = String(chatInstance.searchQuery || '').trim();
+
+    chatInstance.backToSessions?.();
+    chatInstance.restoreOpsAlertReadReceipts?.();
+    await chatInstance.fetchSessions?.();
+
+    if (currentSearchValue) {
+        chatInstance.filterSessions?.(currentSearchValue);
+        const searchInput = document.getElementById('sessionSearch');
+        if (searchInput) {
+            searchInput.value = currentSearchValue;
+        }
+    }
+
+    if (!currentSessionKey || typeof chatInstance.loadSession !== 'function') {
+        return true;
+    }
+
+    const hasMatchedSession = (Array.isArray(chatInstance.sessions) ? chatInstance.sessions : []).some((session) => {
+        const normalizedSessionId = String(session?.sessionId || '').trim();
+        const sessionIds = Array.isArray(session?.sessionIds)
+            ? session.sessionIds.map((value) => String(value || '').trim()).filter(Boolean)
+            : [];
+        return normalizedSessionId === currentSessionKey || sessionIds.includes(currentSessionKey);
+    });
+
+    if (hasMatchedSession) {
+        await chatInstance.loadSession(currentSessionKey);
+    }
+
+    return true;
+}
+
+function activateVisibleChatModuleOnAccess() {
+    if (!isAdminChatModuleVisible()) {
+        return;
+    }
+
+    void activateChatModule();
+}
+
+window.ensureAdminChatInstance = ensureAdminChatInstance;
+window.getAdminChatCommandCenterSummary = getAdminChatCommandCenterSummary;
+window.primeAdminChatCommandCenterSummary = primeAdminChatCommandCenterSummary;
+window.handleAdminChatModuleSiteChange = handleChatModuleSiteChange;
+
+if (window.AdminShell?.registerModule) {
+    window.AdminShell.registerModule('chat', {
+        activate: activateChatModule,
+        handleContext: handleChatModuleContext,
+        onSiteChange: handleChatModuleSiteChange
+    });
+}
+
+document.addEventListener?.('DOMContentLoaded', () => {
+    if (window.adminStudioAccessGranted) {
+        activateVisibleChatModuleOnAccess();
+        return;
+    }
+
+    window.addEventListener?.('adminStudioAccessGranted', activateVisibleChatModuleOnAccess, { once: true });
+});

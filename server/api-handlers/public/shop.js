@@ -1710,51 +1710,38 @@ function createShopHandlers({
             throw error;
         }
 
-        let orderItems = [];
-        try {
-            const { data, error } = await dataSupabase
-                .from('shop_order_items')
-                .select('id, inventory_id, snapshot_product_name, price_paid')
-                .eq('order_id', normalizedOrderId)
-                .order('id', { ascending: true });
-
-            if (error) throw error;
-            orderItems = Array.isArray(data) ? data : [];
-        } catch (error) {
-            if (!isMissingRelationError(error, 'shop_order_items')) {
-                throw error;
-            }
-        }
-
-        const inventoryIds = [...new Set(
-            [
-                ...orderItems.map((item) => String(item?.inventory_id || '').trim()).filter(Boolean),
-                String(order?.inventory_id || '').trim()
-            ].filter(Boolean)
-        )];
-
-        const inventoryContentMap = new Map();
-        if (inventoryIds.length) {
-            const { data: inventoryRows, error: inventoryError } = await dataSupabase
-                .from('shop_inventory')
-                .select('id, content')
-                .in('id', inventoryIds);
-
-            if (inventoryError) {
-                throw inventoryError;
-            }
-
-            for (const row of inventoryRows || []) {
-                const inventoryId = String(row?.id || '').trim();
-                if (!inventoryId) continue;
-                inventoryContentMap.set(inventoryId, String(row?.content || ''));
-            }
-        }
-
-        let purchaseNotes = '';
-        let usageInstructions = '';
         const normalizedProductId = String(order?.product_id || '').trim();
-        if (isUuid(normalizedProductId)) {
+        const normalizedItemCount = Math.max(1, Number(order?.item_count || 1) || 1);
+        const needsOrderItems = normalizedItemCount > 1 || !String(order?.inventory_id || '').trim();
+
+        const orderItemsPromise = needsOrderItems
+            ? (async () => {
+                try {
+                    const { data, error } = await dataSupabase
+                        .from('shop_order_items')
+                        .select('id, inventory_id, snapshot_product_name, price_paid')
+                        .eq('order_id', normalizedOrderId)
+                        .order('id', { ascending: true });
+
+                    if (error) throw error;
+                    return Array.isArray(data) ? data : [];
+                } catch (error) {
+                    if (!isMissingRelationError(error, 'shop_order_items')) {
+                        throw error;
+                    }
+                    return [];
+                }
+            })()
+            : Promise.resolve([]);
+
+        const guidancePromise = (async () => {
+            let purchaseNotes = '';
+            let usageInstructions = '';
+
+            if (!isUuid(normalizedProductId)) {
+                return { purchaseNotes, usageInstructions };
+            }
+
             let productGuidanceRow = null;
             const { data: guidanceData, error: productGuidanceError } = await dataSupabase
                 .from('shop_products')
@@ -1790,7 +1777,42 @@ function createShopHandlers({
             usageInstructions = productGuidanceRow?.show_usage_instructions
                 ? normalizeGuidanceText(productGuidanceRow?.usage_instructions)
                 : '';
+
+            return { purchaseNotes, usageInstructions };
+        })();
+
+        const [orderItems, guidance] = await Promise.all([
+            orderItemsPromise,
+            guidancePromise
+        ]);
+
+        const inventoryIds = [...new Set(
+            [
+                ...orderItems.map((item) => String(item?.inventory_id || '').trim()).filter(Boolean),
+                String(order?.inventory_id || '').trim()
+            ].filter(Boolean)
+        )];
+
+        const inventoryContentMap = new Map();
+        if (inventoryIds.length) {
+            const { data: inventoryRows, error: inventoryError } = await dataSupabase
+                .from('shop_inventory')
+                .select('id, content')
+                .in('id', inventoryIds);
+
+            if (inventoryError) {
+                throw inventoryError;
+            }
+
+            for (const row of inventoryRows || []) {
+                const inventoryId = String(row?.id || '').trim();
+                if (!inventoryId) continue;
+                inventoryContentMap.set(inventoryId, String(row?.content || ''));
+            }
         }
+
+        const purchaseNotes = guidance?.purchaseNotes || '';
+        const usageInstructions = guidance?.usageInstructions || '';
 
         const items = orderItems.length
             ? orderItems.map((item) => {
@@ -2063,13 +2085,13 @@ function createShopHandlers({
                 );
                 const visibleUserAssets = suppressExcessPublicClaimAssets(userAssets, discountMap);
                 const scopedAssets = visibleUserAssets.filter((asset) => discountMap.has(normalizeText(asset?.discount_id, 160)));
-                const orderByAssetId = await loadShopOrdersByDiscountAssets(dataSupabase, scopedAssets);
-                const productById = await loadShopProductsByIds(
-                    dataSupabase,
-                    Array.from(discountMap.values())
-                        .filter((row) => normalizeClaimText(row?.scope_type, 40).toLowerCase() === 'product')
-                        .map((row) => row?.scope_product_id)
-                );
+                const scopedProductIds = Array.from(discountMap.values())
+                    .filter((row) => normalizeClaimText(row?.scope_type, 40).toLowerCase() === 'product')
+                    .map((row) => row?.scope_product_id);
+                const [orderByAssetId, productById] = await Promise.all([
+                    loadShopOrdersByDiscountAssets(dataSupabase, scopedAssets),
+                    loadShopProductsByIds(dataSupabase, scopedProductIds)
+                ]);
                 const scopedProductAvailabilityByAsset = await loadScopedProductAvailabilityByAsset(requestSupabase || supabase, {
                     userId: user.id,
                     site: currentSite,

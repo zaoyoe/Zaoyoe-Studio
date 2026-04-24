@@ -117,6 +117,7 @@
                         <div id="view-security" class="profile-view profile-back">
                             <div class="profile-security-desktop-layout">
                                 <aside class="profile-security-desktop-sidebar">
+                                    <span class="profile-security-desktop-indicator" aria-hidden="true"></span>
                                     <button type="button" class="profile-security-desktop-item active"
                                         data-security-panel="change-password" data-profile-action="switch-security-panel">
                                         <span class="profile-security-desktop-item-icon"><i class="fas fa-key"></i></span>

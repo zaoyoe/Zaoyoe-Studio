@@ -257,6 +257,41 @@ async function settleAdminWorkbench(delayMs = 60) {
     ]);
 }
 
+function isAdminWorkbenchRetryableFetchError(error = null) {
+    const name = String(error?.name || '').trim().toLowerCase();
+    if (name === 'aborterror') {
+        return false;
+    }
+
+    const message = String(error?.message || error || '').trim().toLowerCase();
+    const status = Number(error?.status || 0);
+    return name === 'typeerror'
+        || message.includes('fetch failed')
+        || message.includes('failed to fetch')
+        || message.includes('network')
+        || status === 408
+        || status === 429
+        || status >= 500;
+}
+
+function getAdminWorkbenchFetchRetryDelay(options = {}, attemptIndex = 0) {
+    const baseDelayMs = Math.max(0, Number(options.retryDelayMs || 0));
+    const stepDelayMs = Math.max(0, Number(options.retryBackoffMs || baseDelayMs));
+    return baseDelayMs + Math.max(0, Number(attemptIndex || 0)) * stepDelayMs;
+}
+
+function waitAdminWorkbenchFetchRetry(options = {}, attemptIndex = 0) {
+    const delayMs = getAdminWorkbenchFetchRetryDelay(options, attemptIndex);
+    if (!delayMs) {
+        return Promise.resolve();
+    }
+
+    const scheduleTimeout = typeof options.setTimeout === 'function'
+        ? options.setTimeout
+        : ((handler, delay) => window.setTimeout(handler, delay));
+    return new Promise((resolve) => scheduleTimeout(resolve, delayMs));
+}
+
 function scrollAdminWorkbenchTarget(targetId) {
     if (typeof scrollToOpsAlertWorkspaceTarget === 'function') {
         return scrollToOpsAlertWorkspaceTarget(targetId);
@@ -294,6 +329,13 @@ function normalizeOpsAlertWorkspaceContext(context = {}) {
         ticketStatus: String(context.ticketStatus || context.ticket_status || '').trim().toLowerCase(),
         userId: String(context.userId || context.user_id || context.workspaceUserId || '').trim(),
         paymentOrderId: String(context.paymentOrderId || context.payment_order_id || '').trim(),
+        providerOrderNo: String(context.providerOrderNo || context.provider_order_no || '').trim(),
+        verificationId: String(context.verificationId || context.verification_id || '').trim(),
+        productId: String(context.productId || context.product_id || '').trim(),
+        productName: String(context.productName || context.product_name || '').trim(),
+        taskId: String(context.taskId || context.task_id || '').trim(),
+        adminId: String(context.adminId || context.admin_id || '').trim(),
+        adminEmail: String(context.adminEmail || context.admin_email || '').trim(),
         clientIp: String(context.clientIp || context.client_ip || context.workspaceClientIp || '').trim(),
         discountCode: String(context.discountCode || context.discount_code || context.workspaceDiscountCode || '').trim(),
         signalType: String(context.signalType || context.signal_type || context.workspaceSignalType || '').trim().toLowerCase(),
@@ -318,7 +360,18 @@ function buildOpsAlertWorkspaceContextAttrs(context = {}) {
         'data-workspace-reference-label': normalizedContext.referenceLabel || '',
         'data-workspace-reference-value': normalizedContext.referenceValue || '',
         'data-workspace-target-id': normalizedContext.targetId || '',
+        'data-workspace-order-id': normalizedContext.orderId || '',
+        'data-workspace-ticket-id': normalizedContext.ticketId || '',
+        'data-workspace-ticket-status': normalizedContext.ticketStatus || '',
         'data-workspace-user-id': normalizedContext.userId || '',
+        'data-workspace-payment-order-id': normalizedContext.paymentOrderId || '',
+        'data-workspace-provider-order-no': normalizedContext.providerOrderNo || '',
+        'data-workspace-verification-id': normalizedContext.verificationId || '',
+        'data-workspace-product-id': normalizedContext.productId || '',
+        'data-workspace-product-name': normalizedContext.productName || '',
+        'data-workspace-task-id': normalizedContext.taskId || '',
+        'data-workspace-admin-id': normalizedContext.adminId || '',
+        'data-workspace-admin-email': normalizedContext.adminEmail || '',
         'data-workspace-client-ip': normalizedContext.clientIp || '',
         'data-workspace-discount-code': normalizedContext.discountCode || '',
         'data-workspace-signal-type': normalizedContext.signalType || '',
@@ -343,7 +396,18 @@ function readOpsAlertWorkspaceContextDataset(dataset = {}) {
         referenceLabel: dataset.workspaceReferenceLabel,
         referenceValue: dataset.workspaceReferenceValue,
         targetId: dataset.workspaceTargetId,
+        orderId: dataset.workspaceOrderId,
+        ticketId: dataset.workspaceTicketId,
+        ticketStatus: dataset.workspaceTicketStatus,
         userId: dataset.workspaceUserId,
+        paymentOrderId: dataset.workspacePaymentOrderId,
+        providerOrderNo: dataset.workspaceProviderOrderNo,
+        verificationId: dataset.workspaceVerificationId,
+        productId: dataset.workspaceProductId,
+        productName: dataset.workspaceProductName,
+        taskId: dataset.workspaceTaskId,
+        adminId: dataset.workspaceAdminId,
+        adminEmail: dataset.workspaceAdminEmail,
         clientIp: dataset.workspaceClientIp,
         discountCode: dataset.workspaceDiscountCode,
         signalType: dataset.workspaceSignalType,
@@ -519,6 +583,25 @@ function getOpsAlertWorkspaceSearchValue(context = {}) {
         return normalizedContext.referenceValue;
     }
 
+    if (normalizedContext.paymentOrderId) {
+        return normalizedContext.paymentOrderId;
+    }
+    if (normalizedContext.providerOrderNo) {
+        return normalizedContext.providerOrderNo;
+    }
+    if (normalizedContext.orderId) {
+        return normalizedContext.orderId;
+    }
+    if (normalizedContext.ticketId) {
+        return normalizedContext.ticketId;
+    }
+    if (normalizedContext.verificationId) {
+        return normalizedContext.verificationId;
+    }
+    if (normalizedContext.productId) {
+        return normalizedContext.productId;
+    }
+
     if (!normalizedContext.referenceValue && normalizedContext.targetId) {
         return normalizedContext.targetId;
     }
@@ -575,6 +658,16 @@ function getOpsAlertCaseStatusTone(status = '', options = {}) {
     if (normalizedStatus === 'resolved') return 'success';
     if (normalizedStatus === 'claimed') return 'neutral';
     return 'warning';
+}
+
+function isOpsAlertCaseUnresolved(item = {}) {
+    const status = String(
+        item?.case_status
+        || item?.caseStatus
+        || item?.caseRecord?.status
+        || ''
+    ).trim().toLowerCase() || 'open';
+    return status !== 'resolved';
 }
 
 function getOpsAlertCaseEventActionLabel(action = '') {
@@ -970,15 +1063,30 @@ function buildAdminWorkbenchOpsAlertMonitorCategoryView(category = {}, filters =
     const latestState = String(normalizedCategory.latest_state || '').trim().toLowerCase() || 'idle';
     const allItems = Array.isArray(normalizedCategory.items) ? normalizedCategory.items : [];
     const categoryMatches = normalizedFilters.category === 'all' || normalizedFilters.category === normalizedCategoryKey;
+    const hasExplicitActiveCount = normalizedCategory.active_count !== undefined
+        && normalizedCategory.active_count !== null
+        && String(normalizedCategory.active_count).trim() !== '';
+    const hasExplicitCriticalCount = normalizedCategory.critical_count !== undefined
+        && normalizedCategory.critical_count !== null
+        && String(normalizedCategory.critical_count).trim() !== '';
     const activeCount = Number(normalizedCategory.active_count || 0);
     const criticalCount = Number(normalizedCategory.critical_count || 0);
-    const isRecoveredOnly = activeCount === 0 && latestState === 'recovered';
+    const unresolvedItems = allItems.filter((item) => isOpsAlertCaseUnresolved(item));
+    const actionableActiveCount = allItems.length
+        ? (hasExplicitActiveCount ? Math.min(activeCount, unresolvedItems.length) : unresolvedItems.length)
+        : activeCount;
+    const actionableCriticalCount = allItems.length
+        ? (hasExplicitCriticalCount
+            ? Math.min(criticalCount, unresolvedItems.filter((item) => String(item?.severity || '').trim().toLowerCase() === 'critical').length)
+            : unresolvedItems.filter((item) => String(item?.severity || '').trim().toLowerCase() === 'critical').length)
+        : criticalCount;
+    const isRecoveredOnly = actionableActiveCount === 0 && latestState === 'recovered';
 
     if (!categoryMatches) {
         return null;
     }
 
-    if (normalizedFilters.scope === 'active' && activeCount <= 0) {
+    if (normalizedFilters.scope === 'active' && actionableActiveCount <= 0) {
         return null;
     }
 
@@ -1000,19 +1108,20 @@ function buildAdminWorkbenchOpsAlertMonitorCategoryView(category = {}, filters =
                 ? true
                 : String(item?.severity || '').trim().toLowerCase() === normalizedFilters.severity
         ));
+    const unresolvedVisibleItems = visibleItems.filter((item) => isOpsAlertCaseUnresolved(item));
     const previewItems = visibleItems.slice(0, 3);
     const displayActiveCount = normalizedFilters.scope === 'recovered'
         ? 0
-        : (normalizedFilters.severity === 'all' ? activeCount : visibleItems.length);
+        : (normalizedFilters.severity === 'all' ? actionableActiveCount : unresolvedVisibleItems.length);
     const displayCriticalCount = normalizedFilters.scope === 'recovered'
         ? 0
         : (normalizedFilters.severity === 'all'
-            ? criticalCount
-            : visibleItems.filter((item) => String(item?.severity || '').trim().toLowerCase() === 'critical').length);
+            ? actionableCriticalCount
+            : unresolvedVisibleItems.filter((item) => String(item?.severity || '').trim().toLowerCase() === 'critical').length);
     const filteredNote = !isRecoveredOnly
         && normalizedFilters.severity !== 'all'
-        && activeCount > visibleItems.length
-        ? `当前筛出 ${formatCount(visibleItems.length)} 项 ${normalizedFilters.severity} 告警；模块原始待关注共 ${formatCount(activeCount)} 项。`
+        && actionableActiveCount > unresolvedVisibleItems.length
+        ? `当前筛出 ${formatCount(unresolvedVisibleItems.length)} 项未关闭 ${normalizedFilters.severity} 告警；模块原始未关闭共 ${formatCount(actionableActiveCount)} 项。`
         : '';
 
     return {
@@ -5644,27 +5753,42 @@ async function fetchAdminWorkbenchOpsAlertMonitor(headers = {}, options = {}) {
     const clearScheduledTimeout = typeof options.clearTimeout === 'function'
         ? options.clearTimeout
         : ((timeoutId) => window.clearTimeout(timeoutId));
-    const controller = AbortControllerImpl ? new AbortControllerImpl() : null;
-    const timeoutId = controller && timeoutMs > 0
-        ? scheduleTimeout(() => controller.abort(), timeoutMs)
-        : 0;
+    const retryCount = Math.max(0, Math.min(3, Number(options.retryCount || 0)));
+    let lastError = null;
 
-    try {
-        const response = await fetchImpl(endpoint, {
-            method: 'GET',
-            headers,
-            signal: controller?.signal
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || payload.success === false) {
-            throw new Error(payload.message || options.errorMessage || '加载集中告警处理面板失败');
-        }
-        return payload;
-    } finally {
-        if (timeoutId) {
-            clearScheduledTimeout(timeoutId);
+    for (let attemptIndex = 0; attemptIndex <= retryCount; attemptIndex += 1) {
+        const controller = AbortControllerImpl ? new AbortControllerImpl() : null;
+        const timeoutId = controller && timeoutMs > 0
+            ? scheduleTimeout(() => controller.abort(), timeoutMs)
+            : 0;
+
+        try {
+            const response = await fetchImpl(endpoint, {
+                method: 'GET',
+                headers,
+                signal: controller?.signal
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload.success === false) {
+                const error = new Error(payload.message || options.errorMessage || '加载集中告警处理面板失败');
+                error.status = Number(response.status || 0);
+                throw error;
+            }
+            return payload;
+        } catch (error) {
+            lastError = error;
+            if (attemptIndex >= retryCount || !isAdminWorkbenchRetryableFetchError(error)) {
+                throw error;
+            }
+            await waitAdminWorkbenchFetchRetry(options, attemptIndex);
+        } finally {
+            if (timeoutId) {
+                clearScheduledTimeout(timeoutId);
+            }
         }
     }
+
+    throw lastError || new Error(options.errorMessage || '加载集中告警处理面板失败');
 }
 
 function normalizeAdminWorkbenchOpsAlertMonitorPayload(payload = {}, options = {}) {
@@ -6067,7 +6191,30 @@ function buildTicketQueueWorkbenchEntry(context = {}) {
 }
 
 function buildPaymentWorkbenchEntry(context = {}) {
-    const paymentOrderId = String(context.paymentOrderId || context.payment_order_id || context.id || '').trim();
+    const referenceLabel = String(context.referenceLabel || context.reference_label || '').trim();
+    const normalizedReferenceLabel = referenceLabel.toLowerCase();
+    const referenceValue = String(
+        context.referenceValue
+        || context.reference_value
+        || ''
+    ).trim();
+    const providerOrderNo = String(context.providerOrderNo || context.provider_order_no || '').trim();
+    const alertType = String(context.alertType || context.alert_type || '').trim().toLowerCase();
+    const rawTargetId = String(context.targetId || context.target_id || '').trim();
+    const paymentOrderId = String(
+        context.paymentOrderId
+        || context.payment_order_id
+        || providerOrderNo
+        || (
+            ['支付单', '订单号', '订单', '参考单号'].includes(referenceLabel)
+            || ['支付单', '订单号', '订单', '参考单号'].includes(normalizedReferenceLabel)
+                ? referenceValue
+                : ''
+        )
+        || (alertType.startsWith('payment_') ? rawTargetId : '')
+        || context.id
+        || ''
+    ).trim();
     const paymentLabel = String(context.packageName || context.package_name || '').trim();
     const userId = String(context.userId || context.user_id || '').trim();
     const email = String(context.email || context.userEmail || context.user_email || '').trim();
@@ -6080,10 +6227,9 @@ function buildPaymentWorkbenchEntry(context = {}) {
             paymentOrderId,
             defaultTab: 'payments',
             tab: 'payments',
-            referenceLabel: context.referenceLabel || context.reference_label || (userId ? '支付单' : '邮箱'),
-            referenceValue: context.referenceValue
-                || context.reference_value
-                || (userId ? (paymentOrderId || paymentLabel || '最近充值') : email)
+            referenceLabel: referenceLabel || (userId ? '支付单' : '邮箱'),
+            referenceValue: referenceValue
+                || (userId ? (paymentOrderId || providerOrderNo || paymentLabel || '最近充值') : email)
         });
     }
 
@@ -6091,25 +6237,19 @@ function buildPaymentWorkbenchEntry(context = {}) {
         return null;
     }
 
-    const referenceLabel = String(context.referenceLabel || context.reference_label || '').trim()
-        || (paymentOrderId ? '支付单' : '充值');
-    const referenceValue = String(
-        context.referenceValue
-        || context.reference_value
-        || paymentOrderId
-        || paymentLabel
-        || '最近充值'
-    ).trim();
-    const targetId = String(context.targetId || context.target_id || paymentOrderId || '').trim() || referenceValue;
+    const resolvedReferenceLabel = referenceLabel || (paymentOrderId ? '支付单' : '充值');
+    const resolvedReferenceValue = referenceValue || paymentOrderId || providerOrderNo || paymentLabel || '最近充值';
+    const targetId = rawTargetId || paymentOrderId || providerOrderNo || resolvedReferenceValue;
 
     return {
         workspaceKey: 'payments-overview',
         context: {
             paymentOrderId,
+            providerOrderNo,
             targetId,
             target_id: targetId,
-            referenceLabel,
-            referenceValue
+            referenceLabel: resolvedReferenceLabel,
+            referenceValue: resolvedReferenceValue
         }
     };
 }
@@ -6502,23 +6642,133 @@ async function ensureAdminWorkbenchModule(moduleName, options = {}) {
     return true;
 }
 
+async function tryOpenAdminWorkbenchShellContext(moduleName, context = {}, options = {}) {
+    const normalizedModuleName = String(moduleName || '').trim().toLowerCase();
+    if (!normalizedModuleName || !window.AdminShell?.openContext) {
+        return false;
+    }
+
+    try {
+        const opened = await window.AdminShell.openContext(normalizedModuleName, context, {
+            settleMs: 0,
+            silentDenied: true,
+            ...((options?.shellOptions && typeof options.shellOptions === 'object') ? options.shellOptions : {})
+        });
+
+        if (!opened) {
+            return false;
+        }
+
+        await settleAdminWorkbench(options?.settleMs);
+
+        if (String(options?.scrollTargetId || '').trim()) {
+            scrollAdminWorkbenchTarget(options.scrollTargetId);
+        }
+
+        return true;
+    } catch (error) {
+        console.warn(`[AdminWorkbench] Failed to open ${normalizedModuleName} through AdminShell:`, error);
+        return false;
+    }
+}
+
 async function tryOpenOpsAlertWorkspaceUserModal(userId, options = {}) {
     const normalizedUserId = String(userId || '').trim();
     const normalizedEmail = String(options?.email || options?.userEmail || '').trim();
     const silentOnNotFound = options?.silentOnNotFound === true;
     const normalizedTab = String(options?.defaultTab || options?.tab || '').trim().toLowerCase();
     const normalizedPaymentOrderId = String(options?.paymentOrderId || options?.payment_order_id || '').trim();
+    const normalizedSource = String(
+        options?.source
+        || (options?.analyticsContext && typeof options.analyticsContext === 'object' ? 'analytics' : 'ops-alerts')
+    ).trim().toLowerCase() || 'ops-alerts';
+    const analyticsContext = options?.analyticsContext && typeof options.analyticsContext === 'object'
+        ? options.analyticsContext
+        : null;
     const attemptCount = Number(options?.attemptCount || 6);
     const delayMs = Number(options?.delayMs || 140);
     if (!normalizedUserId && !normalizedEmail) {
         return { opened: false, denied: false };
     }
 
+    if (options?.skipShell !== true && window.AdminShell?.openContext) {
+        try {
+            const searchValue = normalizedUserId || normalizedEmail;
+            const opened = await window.AdminShell.openContext('users', {
+                source: normalizedSource,
+                entity: 'user',
+                action: (normalizedUserId || normalizedEmail) ? 'open-user' : 'search-users',
+                focus: {
+                    userId: normalizedUserId,
+                    user_id: normalizedUserId,
+                    paymentOrderId: normalizedPaymentOrderId,
+                    payment_order_id: normalizedPaymentOrderId
+                },
+                payload: {
+                    defaultTab: normalizedTab,
+                    tab: normalizedTab,
+                    email: normalizedEmail,
+                    fallbackEmail: normalizedEmail,
+                    paymentOrderId: normalizedPaymentOrderId,
+                    payment_order_id: normalizedPaymentOrderId,
+                    analyticsContext,
+                    search: searchValue,
+                    searchQuery: searchValue,
+                    query: searchValue
+                }
+            }, {
+                settleMs: 0,
+                silentDenied: true
+            });
+
+            if (opened) {
+                return { opened: true, denied: false };
+            }
+        } catch (error) {
+            console.warn('[AdminWorkbench] Failed to open user detail through AdminShell:', error);
+        }
+    }
+
+    const usersContext = {
+        source: normalizedSource,
+        entity: 'user',
+        action: (normalizedUserId || normalizedEmail) ? 'open-user' : 'search-users',
+        focus: {
+            userId: normalizedUserId,
+            user_id: normalizedUserId,
+            paymentOrderId: normalizedPaymentOrderId,
+            payment_order_id: normalizedPaymentOrderId
+        },
+        payload: {
+            defaultTab: normalizedTab,
+            tab: normalizedTab,
+            email: normalizedEmail,
+            fallbackEmail: normalizedEmail,
+            paymentOrderId: normalizedPaymentOrderId,
+            payment_order_id: normalizedPaymentOrderId,
+            analyticsContext,
+            search: normalizedUserId || normalizedEmail,
+            searchQuery: normalizedUserId || normalizedEmail,
+            query: normalizedUserId || normalizedEmail
+        }
+    };
+
     const usersOpened = await ensureAdminWorkbenchModule('users', {
         notifyDenied: options?.notifyDenied !== false
     });
     if (!usersOpened) {
         return { opened: false, denied: true };
+    }
+
+    if (typeof window.openAdminUsersShellContext === 'function') {
+        try {
+            const opened = await window.openAdminUsersShellContext(usersContext, {
+                silentOnNotFound
+            });
+            return { opened: Boolean(opened), denied: false };
+        } catch (error) {
+            console.warn('[AdminWorkbench] Failed to open user detail through shared users helper:', error);
+        }
     }
 
     if (typeof window.openUserModal === 'function') {
@@ -6559,19 +6809,97 @@ async function tryOpenOpsAlertWorkspaceUserModal(userId, options = {}) {
 
 async function focusOpsAlertWorkspacePaymentOrder(paymentOrderId) {
     const normalizedPaymentOrderId = String(paymentOrderId || '').trim();
+    const rawContext = arguments[1];
+    const normalizedContext = rawContext && typeof rawContext === 'object' && !Array.isArray(rawContext)
+        ? normalizeOpsAlertWorkspaceContext(rawContext)
+        : {};
     if (!normalizedPaymentOrderId) {
         return { opened: false, matched: false };
+    }
+
+    if (await tryOpenAdminWorkbenchShellContext('payments', {
+        ...normalizedContext,
+        source: 'ops-alerts',
+        entity: 'payment-order',
+        action: 'focus-order',
+        focus: {
+            paymentOrderId: normalizedPaymentOrderId,
+            payment_order_id: normalizedPaymentOrderId
+        },
+        payload: {
+            ...normalizedContext,
+            paymentOrderId: normalizedPaymentOrderId,
+            payment_order_id: normalizedPaymentOrderId,
+            defaultTab: 'ops',
+            tab: 'ops',
+            focusTargetId: 'paymentsOrdersTable',
+            focus_target_id: 'paymentsOrdersTable'
+        }
+    })) {
+        const lastFocusResult = window.AdminPayments?.getLastFocusResult?.();
+        if (lastFocusResult && typeof lastFocusResult === 'object') {
+            return {
+                opened: true,
+                matched: Boolean(lastFocusResult.matched)
+            };
+        }
+        return { opened: true, matched: true };
     }
 
     const paymentsOpened = await ensureAdminWorkbenchModule('payments');
     if (!paymentsOpened) {
         return { opened: false, matched: false, denied: true };
     }
-    await window.AdminPayments?.init?.();
+
+    const paymentsContext = {
+        ...normalizedContext,
+        source: 'ops-alerts',
+        entity: 'payment-order',
+        action: 'focus-order',
+        focus: {
+            paymentOrderId: normalizedPaymentOrderId,
+            payment_order_id: normalizedPaymentOrderId
+        },
+        payload: {
+            ...normalizedContext,
+            paymentOrderId: normalizedPaymentOrderId,
+            payment_order_id: normalizedPaymentOrderId,
+            defaultTab: 'ops',
+            tab: 'ops',
+            focusTargetId: 'paymentsOrdersTable',
+            focus_target_id: 'paymentsOrdersTable'
+        }
+    };
+
+    if (typeof window.openAdminPaymentsShellContext === 'function') {
+        await window.openAdminPaymentsShellContext(paymentsContext, {
+            defaultTab: 'ops',
+            tab: 'ops'
+        });
+        await settleAdminWorkbench();
+        const helperFocusResult = window.AdminPayments?.getLastFocusResult?.();
+        if (helperFocusResult && typeof helperFocusResult === 'object') {
+            return {
+                opened: true,
+                matched: Boolean(helperFocusResult.matched)
+            };
+        }
+        return { opened: true, matched: false };
+    }
+
+    await window.AdminPayments?.activate?.({
+        ...normalizedContext,
+        defaultTab: 'ops',
+        tab: 'ops'
+    }, {
+        defaultTab: 'ops',
+        tab: 'ops'
+    });
 
     if (window.AdminPayments?.focusOrder) {
         const result = await window.AdminPayments.focusOrder(normalizedPaymentOrderId, {
             switchTab: true,
+            focusTab: 'ops',
             reload: true
         });
         await settleAdminWorkbench();
@@ -6580,9 +6908,9 @@ async function focusOpsAlertWorkspacePaymentOrder(paymentOrderId) {
             : { opened: Boolean(result), matched: Boolean(result) };
     }
 
-    window.AdminPayments?.switchTab?.('overview', { reload: false });
+    window.AdminPayments?.switchTab?.('ops', { reload: false });
     await settleAdminWorkbench();
-    scrollAdminWorkbenchTarget('paymentsProviderStats');
+    scrollAdminWorkbenchTarget('paymentsOrdersTable');
     return { opened: true, matched: false };
 }
 
@@ -6614,14 +6942,53 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
                 || ''
             ).trim();
 
+            if (window.AdminShell?.openContext) {
+                const opened = await window.AdminShell.openContext('chat', {
+                    source: 'ops-alerts',
+                    entity: 'chat-session',
+                    action: chatSessionId ? 'focus-session' : 'search-session',
+                    site: normalizedContext.site,
+                    focus: {
+                        sessionId: chatSessionId,
+                        session_id: chatSessionId,
+                        userId: normalizedContext.userId,
+                        user_id: normalizedContext.userId
+                    },
+                    payload: {
+                        search: chatSearchValue,
+                        searchQuery: chatSearchValue,
+                        email: normalizedContext.email,
+                        referenceLabel: normalizedContext.referenceLabel,
+                        referenceValue: normalizedContext.referenceValue,
+                        ticketId: normalizedContext.ticketId,
+                        ticketStatus: normalizedContext.ticketStatus
+                    }
+                }, {
+                    settleMs: 0,
+                    silentDenied: true
+                });
+
+                if (!opened) {
+                    notifyAdminWorkbench(getAdminWorkbenchModuleAccessMessage('chat'), 'warning');
+                    return false;
+                }
+
+                await settleAdminWorkbench();
+                scrollAdminWorkbenchTarget('module-chat');
+                return true;
+            }
+
             const chatOpened = await ensureAdminWorkbenchModule('chat');
             if (!chatOpened) {
                 return false;
             }
 
             let chatInstance = window.adminChatInstance || null;
-            if (!chatInstance && typeof window.AdminChat === 'function') {
-                chatInstance = new window.AdminChat();
+            if (!chatInstance && typeof window.ensureAdminChatInstance === 'function') {
+                chatInstance = window.ensureAdminChatInstance({ ensureLayout: true });
+                await settleAdminWorkbench();
+            } else if (!chatInstance && typeof window.AdminChat === 'function') {
+                chatInstance = null;
                 await settleAdminWorkbench();
             }
 
@@ -6643,11 +7010,6 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
             await settleAdminWorkbench();
             scrollAdminWorkbenchTarget('module-chat');
         } else if (normalizedKey === 'comments') {
-            const commentsOpened = await ensureAdminWorkbenchModule('comments');
-            if (!commentsOpened) {
-                return false;
-            }
-
             const commentsContext = {
                 view: String(
                     rawContext.view
@@ -6680,7 +7042,47 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
                 site: String(rawContext.site || normalizedContext.site || '').trim().toLowerCase()
             };
 
-            if (typeof window.openAdminUserCommentContext === 'function') {
+            if (await tryOpenAdminWorkbenchShellContext('comments', {
+                ...commentsContext,
+                source: 'ops-alerts',
+                entity: 'comment',
+                action: commentsContext.focusCommentId ? 'focus-comment' : 'search-comments',
+                focus: {
+                    commentId: commentsContext.focusCommentId,
+                    comment_id: commentsContext.focusCommentId
+                },
+                payload: {
+                    ...commentsContext,
+                    commentView: commentsContext.view,
+                    focusCommentId: commentsContext.focusCommentId
+                }
+            }, {
+                scrollTargetId: 'module-comments'
+            })) {
+                return true;
+            }
+
+            const commentsOpened = await ensureAdminWorkbenchModule('comments');
+            if (!commentsOpened) {
+                return false;
+            }
+
+            if (typeof window.openAdminCommentsShellContext === 'function') {
+                await window.openAdminCommentsShellContext({
+                    source: 'ops-alerts',
+                    entity: 'comment',
+                    action: commentsContext.focusCommentId ? 'focus-comment' : 'search-comments',
+                    focus: {
+                        commentId: commentsContext.focusCommentId,
+                        comment_id: commentsContext.focusCommentId
+                    },
+                    payload: {
+                        ...commentsContext,
+                        commentView: commentsContext.view,
+                        focusCommentId: commentsContext.focusCommentId
+                    }
+                });
+            } else if (typeof window.openAdminUserCommentContext === 'function') {
                 window.openAdminUserCommentContext(commentsContext);
             } else if (typeof window.openAnalyticsCommentContext === 'function') {
                 window.openAnalyticsCommentContext(commentsContext);
@@ -6691,51 +7093,202 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
             await settleAdminWorkbench();
             scrollAdminWorkbenchTarget('module-comments');
         } else if (normalizedKey === 'verify-monitor') {
+            const verifyFocusId = String(
+                normalizedContext.targetId
+                || normalizedContext.verificationId
+                || (String(normalizedContext.referenceLabel || '').trim() === '验证单号'
+                    ? String(workspaceSearchValue || '').trim()
+                    : '')
+            ).trim();
+            if (await tryOpenAdminWorkbenchShellContext('settings', {
+                ...normalizedContext,
+                source: 'ops-alerts',
+                entity: 'verify-monitor',
+                action: verifyFocusId ? 'focus-monitor' : 'open-monitor',
+                payload: {
+                    ...normalizedContext,
+                    workspace: 'verify-monitor',
+                    defaultTab: 'google-one',
+                    tab: 'google-one',
+                    targetId: verifyFocusId,
+                    target_id: verifyFocusId,
+                    verificationId: verifyFocusId,
+                    verification_id: verifyFocusId
+                }
+            })) {
+                return true;
+            }
+
             const settingsOpened = await ensureAdminWorkbenchModule('settings');
             if (!settingsOpened) {
                 return false;
             }
-            window.switchSettingsView?.('google-one');
+            if (typeof window.openAdminSettingsShellContext === 'function') {
+                await window.openAdminSettingsShellContext({
+                    ...normalizedContext,
+                    source: 'ops-alerts',
+                    entity: 'verify-monitor',
+                    action: verifyFocusId ? 'focus-monitor' : 'open-monitor',
+                    payload: {
+                        ...normalizedContext,
+                        workspace: 'verify-monitor',
+                        defaultTab: 'google-one',
+                        tab: 'google-one',
+                        targetId: verifyFocusId,
+                        target_id: verifyFocusId,
+                        verificationId: verifyFocusId,
+                        verification_id: verifyFocusId
+                    }
+                }, {
+                    viewName: 'google-one',
+                    settingsView: 'google-one'
+                });
+            } else {
+                window.switchSettingsView?.('google-one');
+                await settleAdminWorkbench();
+                const verifyMonitorRefresh = typeof window.refreshVerifyMonitor === 'function'
+                    ? window.refreshVerifyMonitor(true).catch((error) => {
+                        console.warn('[AdminWorkbench] Verify monitor refresh failed:', error);
+                        return null;
+                    })
+                    : Promise.resolve(null);
+                await Promise.race([
+                    verifyMonitorRefresh,
+                    new Promise((resolve) => {
+                        window.setTimeout(resolve, 1200);
+                    })
+                ]);
+                window.renderVerifyMonitorWorkbenchContext?.(normalizedContext);
+                window.focusVerifyMonitorWorkspace?.(normalizedContext);
+            }
             await settleAdminWorkbench();
-            const verifyMonitorRefresh = typeof window.refreshVerifyMonitor === 'function'
-                ? window.refreshVerifyMonitor(true).catch((error) => {
-                    console.warn('[AdminWorkbench] Verify monitor refresh failed:', error);
-                    return null;
-                })
-                : Promise.resolve(null);
-            await Promise.race([
-                verifyMonitorRefresh,
-                new Promise((resolve) => {
-                    window.setTimeout(resolve, 1200);
-                })
-            ]);
             scrollAdminWorkbenchTarget('verifyMonitorPanel');
-            window.renderVerifyMonitorWorkbenchContext?.(normalizedContext);
-            window.focusVerifyMonitorWorkspace?.(normalizedContext);
         } else if (normalizedKey === 'admin-audit-monitor') {
+            const auditFocusTargetId = String(normalizedContext.category || '').trim().toLowerCase() === 'config'
+                ? 'adminAuditMonitorConfigList'
+                : (String(normalizedContext.category || '').trim().toLowerCase() === 'access'
+                    ? 'adminAuditMonitorRecentAccess'
+                    : 'adminAuditMonitorAnomalyList');
+            const shouldFocusAuditRecord = Boolean(
+                normalizedContext.targetId
+                || normalizedContext.adminId
+                || normalizedContext.adminEmail
+                || normalizedContext.clientIp
+            );
+            if (await tryOpenAdminWorkbenchShellContext('settings', {
+                ...normalizedContext,
+                source: 'ops-alerts',
+                entity: 'admin-audit-monitor',
+                action: shouldFocusAuditRecord ? 'focus-monitor' : 'open-monitor',
+                payload: {
+                    ...normalizedContext,
+                    workspace: 'admin-audit-monitor',
+                    defaultTab: 'security',
+                    tab: 'security',
+                    adminId: normalizedContext.adminId,
+                    admin_id: normalizedContext.adminId,
+                    adminEmail: normalizedContext.adminEmail,
+                    admin_email: normalizedContext.adminEmail,
+                    clientIp: normalizedContext.clientIp,
+                    client_ip: normalizedContext.clientIp,
+                    focusTargetId: auditFocusTargetId,
+                    focus_target_id: auditFocusTargetId
+                }
+            })) {
+                return true;
+            }
+
             const settingsOpened = await ensureAdminWorkbenchModule('settings');
             if (!settingsOpened) {
                 return false;
             }
-            window.switchSettingsView?.('security');
+            if (typeof window.openAdminSettingsShellContext === 'function') {
+                await window.openAdminSettingsShellContext({
+                    ...normalizedContext,
+                    source: 'ops-alerts',
+                    entity: 'admin-audit-monitor',
+                    action: shouldFocusAuditRecord ? 'focus-monitor' : 'open-monitor',
+                    payload: {
+                        ...normalizedContext,
+                        workspace: 'admin-audit-monitor',
+                        defaultTab: 'security',
+                        tab: 'security',
+                        adminId: normalizedContext.adminId,
+                        admin_id: normalizedContext.adminId,
+                        adminEmail: normalizedContext.adminEmail,
+                        admin_email: normalizedContext.adminEmail,
+                        clientIp: normalizedContext.clientIp,
+                        client_ip: normalizedContext.clientIp,
+                        focusTargetId: auditFocusTargetId,
+                        focus_target_id: auditFocusTargetId
+                    }
+                }, {
+                    viewName: 'security',
+                    settingsView: 'security'
+                });
+            } else {
+                window.switchSettingsView?.('security');
+                await settleAdminWorkbench();
+                const adminAuditMonitorRefresh = typeof window.refreshAdminAuditMonitor === 'function'
+                    ? window.refreshAdminAuditMonitor(true).catch((error) => {
+                        console.warn('[AdminWorkbench] Admin audit monitor refresh failed:', error);
+                        return null;
+                    })
+                    : Promise.resolve(null);
+                await Promise.race([
+                    adminAuditMonitorRefresh,
+                    new Promise((resolve) => {
+                        window.setTimeout(resolve, 1200);
+                    })
+                ]);
+                window.focusAdminAuditMonitorWorkspace?.(normalizedContext);
+            }
             await settleAdminWorkbench();
-            const adminAuditMonitorRefresh = typeof window.refreshAdminAuditMonitor === 'function'
-                ? window.refreshAdminAuditMonitor(true).catch((error) => {
-                    console.warn('[AdminWorkbench] Admin audit monitor refresh failed:', error);
-                    return null;
-                })
-                : Promise.resolve(null);
-            await Promise.race([
-                adminAuditMonitorRefresh,
-                new Promise((resolve) => {
-                    window.setTimeout(resolve, 1200);
-                })
-            ]);
             scrollAdminWorkbenchTarget('adminAuditMonitorSection');
-            window.focusAdminAuditMonitorWorkspace?.(normalizedContext);
         } else if (normalizedKey === 'payments-overview') {
-            if (normalizedContext.paymentOrderId) {
-                const paymentFocusResult = await focusOpsAlertWorkspacePaymentOrder(normalizedContext.paymentOrderId);
+            const paymentReferenceLabel = String(normalizedContext.referenceLabel || '').trim().toLowerCase();
+            const focusedPaymentOrderId = String(
+                normalizedContext.paymentOrderId
+                || normalizedContext.providerOrderNo
+                || (
+                    ['支付单', '订单号', '订单', '参考单号'].includes(normalizedContext.referenceLabel)
+                    || ['支付单', '订单号', '订单', '参考单号'].includes(paymentReferenceLabel)
+                        ? String(workspaceSearchValue || '').trim()
+                        : ''
+                )
+                || (String(normalizedContext.alertType || '').trim().startsWith('payment_')
+                    ? String(normalizedContext.targetId || '').trim()
+                    : '')
+            ).trim();
+            if (await tryOpenAdminWorkbenchShellContext('payments', {
+                ...normalizedContext,
+                source: 'ops-alerts',
+                entity: focusedPaymentOrderId ? 'payment-order' : 'payments-overview',
+                action: focusedPaymentOrderId ? 'focus-order' : 'open-overview',
+                focus: {
+                    paymentOrderId: focusedPaymentOrderId,
+                    payment_order_id: focusedPaymentOrderId
+                },
+                payload: {
+                    ...normalizedContext,
+                    paymentOrderId: focusedPaymentOrderId,
+                    payment_order_id: focusedPaymentOrderId,
+                    defaultTab: focusedPaymentOrderId ? 'ops' : 'overview',
+                    tab: focusedPaymentOrderId ? 'ops' : 'overview',
+                    focusTargetId: focusedPaymentOrderId ? 'paymentsOrdersTable' : 'paymentsProviderStats',
+                    focus_target_id: focusedPaymentOrderId ? 'paymentsOrdersTable' : 'paymentsProviderStats'
+                }
+            }, {
+                scrollTargetId: focusedPaymentOrderId ? '' : 'paymentsProviderStats'
+            })) {
+                return true;
+            }
+
+            if (focusedPaymentOrderId) {
+                const paymentFocusResult = await focusOpsAlertWorkspacePaymentOrder(
+                    focusedPaymentOrderId,
+                    normalizedContext
+                );
                 if (paymentFocusResult.denied) {
                     return false;
                 }
@@ -6747,34 +7300,184 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
                 if (!paymentsOpened) {
                     return false;
                 }
-                await window.AdminPayments?.init?.();
-                window.AdminPayments?.switchTab?.('overview', { reload: false });
+                if (typeof window.openAdminPaymentsShellContext === 'function') {
+                    await window.openAdminPaymentsShellContext({
+                        ...normalizedContext,
+                        source: 'ops-alerts',
+                        entity: 'payments-overview',
+                        action: 'open-overview',
+                        payload: {
+                            ...normalizedContext,
+                            defaultTab: 'overview',
+                            tab: 'overview',
+                            focusTargetId: 'paymentsProviderStats',
+                            focus_target_id: 'paymentsProviderStats'
+                        }
+                    }, {
+                        defaultTab: 'overview',
+                        tab: 'overview'
+                    });
+                } else {
+                    await window.AdminPayments?.activate?.({
+                        ...normalizedContext,
+                        defaultTab: 'overview',
+                        tab: 'overview'
+                    }, {
+                        defaultTab: 'overview',
+                        tab: 'overview'
+                    });
+                }
                 await settleAdminWorkbench();
                 scrollAdminWorkbenchTarget('paymentsProviderStats');
             }
-            window.AdminPayments?.showWorkbenchContext?.(normalizedContext);
         } else if (normalizedKey === 'payments-ops') {
+            const exceptionTopic = getOpsAlertWorkspacePaymentsTopic(normalizedContext);
+            if (await tryOpenAdminWorkbenchShellContext('payments', {
+                ...normalizedContext,
+                source: 'ops-alerts',
+                entity: 'payments-ops',
+                action: 'focus-exception-topic',
+                payload: {
+                    ...normalizedContext,
+                    workspace: 'ops',
+                    defaultTab: 'ops',
+                    tab: 'ops',
+                    exceptionTopic,
+                    exception_topic: exceptionTopic,
+                    focusTargetId: 'paymentsExceptionTopics',
+                    focus_target_id: 'paymentsExceptionTopics'
+                }
+            }, {
+                scrollTargetId: 'paymentsExceptionTopics'
+            })) {
+                return true;
+            }
+
             const paymentsOpened = await ensureAdminWorkbenchModule('payments');
             if (!paymentsOpened) {
                 return false;
             }
-            await window.AdminPayments?.init?.();
-            await window.AdminPayments?.focusExceptionTopic?.(getOpsAlertWorkspacePaymentsTopic(normalizedContext));
-            window.AdminPayments?.showWorkbenchContext?.(normalizedContext);
+            if (typeof window.openAdminPaymentsShellContext === 'function') {
+                await window.openAdminPaymentsShellContext({
+                    ...normalizedContext,
+                    source: 'ops-alerts',
+                    entity: 'payments-ops',
+                    action: 'focus-exception-topic',
+                    payload: {
+                        ...normalizedContext,
+                        workspace: 'ops',
+                        defaultTab: 'ops',
+                        tab: 'ops',
+                        exceptionTopic,
+                        exception_topic: exceptionTopic,
+                        focusTargetId: 'paymentsExceptionTopics',
+                        focus_target_id: 'paymentsExceptionTopics'
+                    }
+                }, {
+                    defaultTab: 'ops',
+                    tab: 'ops'
+                });
+            } else {
+                await window.AdminPayments?.activate?.({
+                    ...normalizedContext,
+                    workspace: 'ops',
+                    defaultTab: 'ops',
+                    tab: 'ops',
+                    exceptionTopic,
+                    exception_topic: exceptionTopic
+                }, {
+                    defaultTab: 'ops',
+                    tab: 'ops'
+                });
+                await window.AdminPayments?.focusExceptionTopic?.(exceptionTopic);
+                window.AdminPayments?.showWorkbenchContext?.(normalizedContext);
+            }
+            await settleAdminWorkbench();
+            scrollAdminWorkbenchTarget('paymentsExceptionTopics');
         } else if (normalizedKey === 'tickets-pending' || normalizedKey === 'tickets-resolved') {
             const nextStatus = normalizedKey === 'tickets-pending' ? 'pending' : 'resolved';
             const normalizedTicketId = String(normalizedContext.ticketId || '').trim()
                 || (normalizedContext.referenceLabel === '工单号' ? String(workspaceSearchValue || '').trim() : '');
+
+            if (await tryOpenAdminWorkbenchShellContext('tickets', {
+                ...normalizedContext,
+                source: 'ops-alerts',
+                entity: 'ticket',
+                action: normalizedTicketId ? 'focus-ticket' : 'open-queue',
+                focus: {
+                    ticketId: normalizedTicketId,
+                    ticket_id: normalizedTicketId
+                },
+                payload: {
+                    ...normalizedContext,
+                    workspace: 'queue',
+                    mode: nextStatus,
+                    status: normalizedContext.ticketStatus || nextStatus,
+                    searchQuery: workspaceSearchValue || normalizedTicketId,
+                    search: workspaceSearchValue || normalizedTicketId,
+                    query: workspaceSearchValue || normalizedTicketId
+                }
+            }, {
+                scrollTargetId: 'module-tickets'
+            })) {
+                return true;
+            }
+
             const ticketsOpened = await ensureAdminWorkbenchModule('tickets');
             if (!ticketsOpened) {
                 return false;
             }
-            await window.AdminTickets?.init?.();
-            if (normalizedTicketId && window.AdminTickets?.focusTicket) {
-                const ticketFocusResult = await window.AdminTickets.focusTicket(normalizedTicketId, {
-                    status: normalizedContext.ticketStatus || nextStatus
+            if (typeof window.openAdminTicketsShellContext === 'function') {
+                await window.openAdminTicketsShellContext({
+                    ...normalizedContext,
+                    source: 'ops-alerts',
+                    entity: 'ticket',
+                    action: normalizedTicketId ? 'focus-ticket' : 'open-queue',
+                    focus: {
+                        ticketId: normalizedTicketId,
+                        ticket_id: normalizedTicketId
+                    },
+                    payload: {
+                        ...normalizedContext,
+                        workspace: 'queue',
+                        mode: nextStatus,
+                        status: normalizedContext.ticketStatus || nextStatus,
+                        searchQuery: workspaceSearchValue || normalizedTicketId,
+                        search: workspaceSearchValue || normalizedTicketId,
+                        query: workspaceSearchValue || normalizedTicketId
+                    }
+                }, {
+                    workspace: 'queue'
                 });
-                if (!ticketFocusResult.matched) {
+            } else {
+                await window.AdminTickets?.activate?.({
+                    ...normalizedContext,
+                    workspace: 'queue',
+                    mode: nextStatus,
+                    status: normalizedContext.ticketStatus || nextStatus,
+                    searchQuery: workspaceSearchValue || normalizedTicketId,
+                    search: workspaceSearchValue || normalizedTicketId,
+                    query: workspaceSearchValue || normalizedTicketId
+                }, {
+                    workspace: 'queue'
+                });
+                if (normalizedTicketId && window.AdminTickets?.focusTicket) {
+                    const ticketFocusResult = await window.AdminTickets.focusTicket(normalizedTicketId, {
+                        status: normalizedContext.ticketStatus || nextStatus
+                    });
+                    if (!ticketFocusResult.matched) {
+                        const searchInput = document.getElementById('ticketSearchInput');
+                        if (searchInput) searchInput.value = workspaceSearchValue || '';
+                        if (window.AdminTickets) {
+                            window.AdminTickets.searchQuery = workspaceSearchValue || '';
+                        }
+                        const filterButton = document.querySelector(`[data-admin-action="tickets-filter"][data-ticket-status="${nextStatus}"]`);
+                        window.AdminTickets?.filter?.(nextStatus, filterButton);
+                        if (workspaceSearchValue) {
+                            window.AdminTickets?.search?.();
+                        }
+                    }
+                } else {
                     const searchInput = document.getElementById('ticketSearchInput');
                     if (searchInput) searchInput.value = workspaceSearchValue || '';
                     if (window.AdminTickets) {
@@ -6786,40 +7489,180 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
                         window.AdminTickets?.search?.();
                     }
                 }
-            } else {
-                const searchInput = document.getElementById('ticketSearchInput');
-                if (searchInput) searchInput.value = workspaceSearchValue || '';
-                if (window.AdminTickets) {
-                    window.AdminTickets.searchQuery = workspaceSearchValue || '';
-                }
-                const filterButton = document.querySelector(`[data-admin-action="tickets-filter"][data-ticket-status="${nextStatus}"]`);
-                window.AdminTickets?.filter?.(nextStatus, filterButton);
-                if (workspaceSearchValue) {
-                    window.AdminTickets?.search?.();
-                }
             }
             await settleAdminWorkbench();
             scrollAdminWorkbenchTarget('module-tickets');
-            window.AdminTickets?.showWorkbenchContext?.(normalizedContext);
         } else if (normalizedKey === 'shop-inventory') {
+            const inventoryProductId = String(normalizedContext.productId || '').trim();
+            const inventoryProductName = String(
+                normalizedContext.productName
+                || (
+                    ['商品', '商品ID'].includes(String(normalizedContext.referenceLabel || '').trim())
+                        ? normalizedContext.referenceValue
+                        : ''
+                )
+            ).trim();
+            const inventoryTab = inventoryProductId || inventoryProductName ? 'import' : 'inventory';
+            const inventoryFocusTargetId = inventoryTab === 'import' ? 'importProductTree' : 'shop-view-inventory';
+            if (await tryOpenAdminWorkbenchShellContext('shop', {
+                ...normalizedContext,
+                source: 'ops-alerts',
+                entity: 'shop-inventory',
+                action: inventoryProductId || inventoryProductName ? 'focus-import-product' : 'open-inventory',
+                focus: {
+                    productId: inventoryProductId,
+                    product_id: inventoryProductId
+                },
+                payload: {
+                    ...normalizedContext,
+                    workspace: inventoryTab,
+                    defaultTab: inventoryTab,
+                    tab: inventoryTab,
+                    productId: inventoryProductId,
+                    product_id: inventoryProductId,
+                    productName: inventoryProductName,
+                    product_name: inventoryProductName
+                }
+            }, {
+                scrollTargetId: inventoryFocusTargetId
+            })) {
+                return true;
+            }
+
             const shopOpened = await ensureAdminWorkbenchModule('shop');
             if (!shopOpened) {
                 return false;
             }
-            await window.ShopAdmin?.init?.();
-            window.ShopAdmin?.switchTab?.('inventory');
+            if (typeof window.openAdminShopShellContext === 'function') {
+                await window.openAdminShopShellContext({
+                    ...normalizedContext,
+                    source: 'ops-alerts',
+                    entity: 'shop-inventory',
+                    action: inventoryProductId || inventoryProductName ? 'focus-import-product' : 'open-inventory',
+                    focus: {
+                        productId: inventoryProductId,
+                        product_id: inventoryProductId
+                    },
+                    payload: {
+                        ...normalizedContext,
+                        workspace: inventoryTab,
+                        defaultTab: inventoryTab,
+                        tab: inventoryTab,
+                        productId: inventoryProductId,
+                        product_id: inventoryProductId,
+                        productName: inventoryProductName,
+                        product_name: inventoryProductName
+                    }
+                }, {
+                    defaultTab: inventoryTab,
+                    tab: inventoryTab
+                });
+            } else {
+                await window.ShopAdmin?.activate?.({
+                    ...normalizedContext,
+                    workspace: inventoryTab,
+                    defaultTab: inventoryTab,
+                    tab: inventoryTab,
+                    productId: inventoryProductId,
+                    product_id: inventoryProductId,
+                    productName: inventoryProductName,
+                    product_name: inventoryProductName
+                }, {
+                    defaultTab: inventoryTab,
+                    tab: inventoryTab
+                });
+                if (inventoryTab === 'import' && window.ShopAdmin?.handleShellContext) {
+                    await window.ShopAdmin.handleShellContext({
+                        ...normalizedContext,
+                        action: inventoryProductId || inventoryProductName ? 'focus-import-product' : 'open-import',
+                        focus: {
+                            productId: inventoryProductId,
+                            product_id: inventoryProductId
+                        },
+                        payload: {
+                            ...normalizedContext,
+                            workspace: 'import',
+                            defaultTab: 'import',
+                            tab: 'import',
+                            productId: inventoryProductId,
+                            product_id: inventoryProductId,
+                            productName: inventoryProductName,
+                            product_name: inventoryProductName
+                        }
+                    }, {
+                        defaultTab: 'import',
+                        tab: 'import'
+                    });
+                }
+            }
             await settleAdminWorkbench();
-            scrollAdminWorkbenchTarget('shop-view-inventory');
+            scrollAdminWorkbenchTarget(inventoryFocusTargetId);
         } else if (normalizedKey === 'shop-fulfillment') {
+            const fulfillmentOrderId = String(normalizedContext.orderId || '').trim()
+                || (normalizedContext.referenceLabel === '订单' ? String(workspaceSearchValue || '').trim() : '');
+            if (await tryOpenAdminWorkbenchShellContext('shop', {
+                ...normalizedContext,
+                source: 'ops-alerts',
+                entity: 'shop-fulfillment',
+                action: fulfillmentOrderId || workspaceSearchValue ? 'focus-fulfillment' : 'open-fulfillment',
+                focus: {
+                    orderId: fulfillmentOrderId,
+                    order_id: fulfillmentOrderId
+                },
+                payload: {
+                    ...normalizedContext,
+                    workspace: 'fulfillment',
+                    defaultTab: 'fulfillment',
+                    tab: 'fulfillment',
+                    query: workspaceSearchValue || normalizedContext.referenceValue || ''
+                }
+            }, {
+                scrollTargetId: 'deliveryDeadLetterSummary'
+            })) {
+                return true;
+            }
+
             const shopOpened = await ensureAdminWorkbenchModule('shop');
             if (!shopOpened) {
                 return false;
             }
-            await window.ShopAdmin?.init?.();
-            window.ShopAdmin?.switchTab?.('fulfillment');
+            const nextStatus = normalizedContext.alertType === 'shop_order_delivery_failed' ? 'dead_letter' : 'all';
+            if (typeof window.openAdminShopShellContext === 'function') {
+                await window.openAdminShopShellContext({
+                    ...normalizedContext,
+                    source: 'ops-alerts',
+                    entity: 'shop-fulfillment',
+                    action: fulfillmentOrderId || workspaceSearchValue ? 'focus-fulfillment' : 'open-fulfillment',
+                    focus: {
+                        orderId: fulfillmentOrderId,
+                        order_id: fulfillmentOrderId
+                    },
+                    payload: {
+                        ...normalizedContext,
+                        workspace: 'fulfillment',
+                        defaultTab: 'fulfillment',
+                        tab: 'fulfillment',
+                        query: workspaceSearchValue || normalizedContext.referenceValue || '',
+                        deliveryTaskStatus: nextStatus,
+                        delivery_task_status: nextStatus
+                    }
+                }, {
+                    defaultTab: 'fulfillment',
+                    tab: 'fulfillment'
+                });
+            } else if (window.ShopAdmin) {
+                await window.ShopAdmin.activate?.({
+                    ...normalizedContext,
+                    workspace: 'fulfillment',
+                    defaultTab: 'fulfillment',
+                    tab: 'fulfillment'
+                }, {
+                    defaultTab: 'fulfillment',
+                    tab: 'fulfillment'
+                });
+            }
             await settleAdminWorkbench();
-            if (window.ShopAdmin) {
-                const nextStatus = normalizedContext.alertType === 'shop_order_delivery_failed' ? 'dead_letter' : 'all';
+            if (typeof window.openAdminShopShellContext !== 'function' && window.ShopAdmin) {
                 window.ShopAdmin.deliveryTaskStatusFilter = nextStatus;
                 window.ShopAdmin.deliveryTaskQuery = workspaceSearchValue || '';
                 window.ShopAdmin.deliveryTaskQueryContext = workspaceSearchValue
@@ -6846,16 +7689,77 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
                 || (['订单号', '订单'].includes(normalizedContext.referenceLabel)
                     ? String(workspaceSearchValue || '').trim()
                     : '');
+
+            if (await tryOpenAdminWorkbenchShellContext('shop', {
+                ...normalizedContext,
+                source: 'ops-alerts',
+                entity: 'shop-order',
+                action: normalizedOrderId ? 'focus-order' : 'search-orders',
+                focus: {
+                    orderId: normalizedOrderId,
+                    order_id: normalizedOrderId
+                },
+                payload: {
+                    ...normalizedContext,
+                    workspace: 'orders',
+                    defaultTab: 'orders',
+                    tab: 'orders',
+                    query: normalizedOrderId || workspaceSearchValue || '',
+                    search: normalizedOrderId || workspaceSearchValue || '',
+                    searchQuery: normalizedOrderId || workspaceSearchValue || '',
+                    openDetails: true
+                }
+            }, {
+                scrollTargetId: 'shop-view-orders'
+            })) {
+                return true;
+            }
+
             const shopOpened = await ensureAdminWorkbenchModule('shop');
             if (!shopOpened) {
                 return false;
             }
-            await window.ShopAdmin?.init?.();
-            window.ShopAdmin?.switchTab?.('orders', { load: !normalizedOrderId });
-            await settleAdminWorkbench();
-            if (normalizedOrderId && window.ShopAdmin?.focusOrder) {
-                await window.ShopAdmin.focusOrder(normalizedOrderId, { openDetails: true });
+            if (typeof window.openAdminShopShellContext === 'function') {
+                await window.openAdminShopShellContext({
+                    ...normalizedContext,
+                    source: 'ops-alerts',
+                    entity: 'shop-order',
+                    action: normalizedOrderId ? 'focus-order' : 'search-orders',
+                    focus: {
+                        orderId: normalizedOrderId,
+                        order_id: normalizedOrderId
+                    },
+                    payload: {
+                        ...normalizedContext,
+                        workspace: 'orders',
+                        defaultTab: 'orders',
+                        tab: 'orders',
+                        query: normalizedOrderId || workspaceSearchValue || '',
+                        search: normalizedOrderId || workspaceSearchValue || '',
+                        searchQuery: normalizedOrderId || workspaceSearchValue || '',
+                        openDetails: true
+                    }
+                }, {
+                    defaultTab: 'orders',
+                    tab: 'orders',
+                    load: !normalizedOrderId
+                });
             } else {
+                await window.ShopAdmin?.activate?.({
+                    ...normalizedContext,
+                    workspace: 'orders',
+                    defaultTab: 'orders',
+                    tab: 'orders'
+                }, {
+                    defaultTab: 'orders',
+                    tab: 'orders',
+                    load: !normalizedOrderId
+                });
+            }
+            await settleAdminWorkbench();
+            if (typeof window.openAdminShopShellContext !== 'function' && normalizedOrderId && window.ShopAdmin?.focusOrder) {
+                await window.ShopAdmin.focusOrder(normalizedOrderId, { openDetails: true });
+            } else if (typeof window.openAdminShopShellContext !== 'function') {
                 const orderSearchInput = document.getElementById('orderSearchInput');
                 if (orderSearchInput) {
                     orderSearchInput.value = normalizedOrderId || '';
@@ -6865,37 +7769,118 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
             scrollAdminWorkbenchTarget('shop-view-orders');
         } else if (normalizedKey === 'shop-risk-discounts') {
             const discountSearchValue = getOpsAlertWorkspaceDiscountCode(normalizedContext) || workspaceSearchValue || '';
+
+            if (await tryOpenAdminWorkbenchShellContext('discounts', {
+                ...normalizedContext,
+                source: 'ops-alerts',
+                entity: 'discount',
+                action: discountSearchValue ? 'focus-discount' : 'open-discounts',
+                focus: {
+                    discountCode: discountSearchValue,
+                    discount_code: discountSearchValue
+                },
+                payload: {
+                    ...normalizedContext,
+                    workspace: 'shop-risk-discounts',
+                    discountCode: discountSearchValue,
+                    discount_code: discountSearchValue,
+                    search: discountSearchValue,
+                    searchQuery: discountSearchValue,
+                    query: discountSearchValue
+                }
+            }, {
+                scrollTargetId: 'module-discounts'
+            })) {
+                return true;
+            }
+
             const discountsOpened = await ensureAdminWorkbenchModule('discounts');
             if (!discountsOpened) {
                 return false;
             }
-            if (window.AdminDiscounts) {
+            if (typeof window.openAdminDiscountsShellContext === 'function') {
+                await window.openAdminDiscountsShellContext({
+                    ...normalizedContext,
+                    source: 'ops-alerts',
+                    entity: 'discount',
+                    action: discountSearchValue ? 'focus-discount' : 'open-discounts',
+                    focus: {
+                        discountCode: discountSearchValue,
+                        discount_code: discountSearchValue
+                    },
+                    payload: {
+                        ...normalizedContext,
+                        workspace: 'shop-risk-discounts',
+                        discountCode: discountSearchValue,
+                        discount_code: discountSearchValue,
+                        search: discountSearchValue,
+                        searchQuery: discountSearchValue,
+                        query: discountSearchValue
+                    }
+                });
+            } else if (window.AdminDiscounts) {
                 window.AdminDiscounts.filters = {
                     ...(window.AdminDiscounts.filters || {}),
                     search: String(discountSearchValue || '').trim().toLowerCase()
                 };
                 window.AdminDiscounts.currentPage = 1;
+                const discountSearchInput = document.getElementById('discountSearchInput');
+                if (discountSearchInput) {
+                    discountSearchInput.value = discountSearchValue || '';
+                }
+                await window.AdminDiscounts?.loadDiscounts?.();
+                if (discountSearchValue) {
+                    window.AdminDiscounts?.search?.();
+                }
+                window.AdminDiscounts?.showWorkbenchContext?.(normalizedContext);
             }
-            const discountSearchInput = document.getElementById('discountSearchInput');
-            if (discountSearchInput) {
-                discountSearchInput.value = discountSearchValue || '';
-            }
-            await window.AdminDiscounts?.loadDiscounts?.();
-            if (discountSearchValue) {
-                window.AdminDiscounts?.search?.();
-            }
-            window.AdminDiscounts?.showWorkbenchContext?.(normalizedContext);
+            await settleAdminWorkbench();
             scrollAdminWorkbenchTarget('module-discounts');
         } else if (normalizedKey === 'shop-risk-users') {
             const riskUserId = getOpsAlertWorkspaceRiskUserId(normalizedContext);
             const riskUserEmail = String(normalizedContext.email || '').trim();
             const userSearchValue = riskUserId || workspaceSearchValue || '';
+
+            if (riskUserId || riskUserEmail || userSearchValue) {
+                if (await tryOpenAdminWorkbenchShellContext('users', {
+                    ...normalizedContext,
+                    source: 'ops-alerts',
+                    entity: 'user',
+                    action: (riskUserId || riskUserEmail) ? 'open-user' : 'search-users',
+                    focus: {
+                        userId: riskUserId,
+                        user_id: riskUserId,
+                        email: riskUserEmail,
+                        paymentOrderId: normalizedContext.paymentOrderId,
+                        payment_order_id: normalizedContext.paymentOrderId
+                    },
+                    payload: {
+                        ...normalizedContext,
+                        defaultTab: normalizedContext.tab,
+                        tab: normalizedContext.tab,
+                        email: riskUserEmail,
+                        userId: riskUserId,
+                        user_id: riskUserId,
+                        paymentOrderId: normalizedContext.paymentOrderId,
+                        payment_order_id: normalizedContext.paymentOrderId,
+                        search: userSearchValue,
+                        searchQuery: userSearchValue,
+                        query: userSearchValue
+                    }
+                }, {
+                    scrollTargetId: (riskUserId || riskUserEmail) ? '' : 'module-users'
+                })) {
+                    return true;
+                }
+            }
+
             if (riskUserId || riskUserEmail) {
                 const modalResult = await tryOpenOpsAlertWorkspaceUserModal(riskUserId, {
                     defaultTab: normalizedContext.tab,
                     paymentOrderId: normalizedContext.paymentOrderId,
                     email: riskUserEmail,
-                    silentOnNotFound: Boolean(normalizedContext.paymentOrderId)
+                    silentOnNotFound: Boolean(normalizedContext.paymentOrderId),
+                    skipShell: true
                 });
                 if (modalResult?.denied) {
                     return false;
@@ -6903,7 +7888,10 @@ async function openAdminWorkbenchEntry(workspaceKey, context = {}) {
                 if (modalResult?.opened) {
                     await settleAdminWorkbench();
                 } else {
-                    const paymentFocusResult = await focusOpsAlertWorkspacePaymentOrder(normalizedContext.paymentOrderId);
+                    const paymentFocusResult = await focusOpsAlertWorkspacePaymentOrder(
+                        normalizedContext.paymentOrderId,
+                        normalizedContext
+                    );
                     if (paymentFocusResult.denied) {
                         return false;
                     }

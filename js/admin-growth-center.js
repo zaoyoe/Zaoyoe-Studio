@@ -5,6 +5,8 @@ const AdminGrowthCenter = {
         detailLoading: false,
         loadedSite: '',
         detailsLoaded: false,
+        skipNextActivateSync: false,
+        pendingActivationSync: false,
         requestId: 0,
         payload: null,
         error: '',
@@ -449,6 +451,7 @@ const AdminGrowthCenter = {
         this.state.loading = false;
         this.state.loadedSite = '';
         this.state.detailsLoaded = false;
+        this.state.pendingActivationSync = true;
         this.state.payload = null;
         this.state.error = '';
         this.state.detailError = '';
@@ -498,55 +501,122 @@ const AdminGrowthCenter = {
         await this.load({ force: true });
     },
 
-    openModule(moduleId = '') {
+    async openModule(moduleId = '', context = {}) {
         const normalizedModuleId = this.safeText(moduleId, 80).toLowerCase();
         if (!normalizedModuleId) {
-            return;
+            return false;
         }
-        window.switchModule?.(normalizedModuleId);
+        if (window.AdminShell?.activateModule) {
+            return window.AdminShell.activateModule(normalizedModuleId, {
+                reason: 'growth-center-open-module'
+            }) !== false;
+        }
+
+        return window.switchModule?.(normalizedModuleId) !== false;
     },
 
-    openAsset(moduleId = '', assetType = '', id = '') {
+    async openAsset(moduleId = '', assetType = '', id = '') {
         const normalizedModuleId = this.safeText(moduleId, 80).toLowerCase();
         const normalizedAssetType = this.safeText(assetType, 80).toLowerCase();
         const normalizedId = this.safeText(id, 160);
         if (!normalizedModuleId) {
-            return;
+            return false;
         }
 
-        window.switchModule?.(normalizedModuleId);
+        const openModuleOnly = async () => this.openModule(normalizedModuleId);
+
         if (!normalizedId) {
-            return;
+            return openModuleOnly();
         }
 
-        window.setTimeout(() => {
-            if (normalizedModuleId === 'discounts' && normalizedAssetType === 'discount') {
-                window.AdminDiscounts?.openDetailModal?.(normalizedId);
-                return;
+        if (normalizedModuleId === 'discounts' && normalizedAssetType === 'discount') {
+            if (!(await openModuleOnly())) {
+                return false;
             }
 
-            if (normalizedModuleId === 'points') {
-                if (normalizedAssetType === 'points_batch') {
-                    window.openAnalyticsPointsContext?.({
-                        batchId: normalizedId,
-                        view: 'batches'
-                    });
-                    return;
+            if (typeof window.openAdminDiscountsShellContext === 'function') {
+                await window.openAdminDiscountsShellContext({
+                    source: 'growth-center',
+                    entity: 'discount',
+                    action: 'open-discount',
+                    payload: {
+                        discountId: normalizedId,
+                        id: normalizedId
+                    }
+                });
+            }
+
+            await new Promise((resolve) => {
+                window.setTimeout(resolve, 120);
+            });
+            await window.AdminDiscounts?.openDetailModal?.(normalizedId);
+            return true;
+        }
+
+        if (normalizedModuleId === 'points') {
+            if (normalizedAssetType === 'points_batch') {
+                if (!(await openModuleOnly())) {
+                    return false;
                 }
 
-                if (normalizedAssetType === 'points_package') {
+                if (typeof window.openAdminPointsShellContext === 'function') {
+                    await window.openAdminPointsShellContext({
+                        source: 'growth-center',
+                        entity: 'points-batch',
+                        action: 'focus-batch',
+                        payload: {
+                            view: 'batches',
+                            batchId: normalizedId,
+                            batch_id: normalizedId
+                        }
+                    });
+                    return true;
+                }
+
+                window.openAnalyticsPointsContext?.({
+                    batchId: normalizedId,
+                    view: 'batches'
+                });
+                return true;
+            }
+
+            if (normalizedAssetType === 'points_package') {
+                if (!(await openModuleOnly())) {
+                    return false;
+                }
+
+                if (typeof window.openAdminPointsShellContext === 'function') {
+                    await window.openAdminPointsShellContext({
+                        source: 'growth-center',
+                        entity: 'points-package',
+                        action: 'open-package',
+                        payload: {
+                            view: 'catalog',
+                            packageId: normalizedId,
+                            package_id: normalizedId
+                        }
+                    });
+                    await new Promise((resolve) => {
+                        window.setTimeout(resolve, 120);
+                    });
+                    window.openPointsPackageEditor?.(normalizedId);
+                    return true;
+                }
+
+                window.switchPointsView?.('catalog');
+                window.openAnalyticsPointsContext?.({
+                    view: 'catalog',
+                    packageId: normalizedId
+                });
+                window.setTimeout(() => {
                     window.switchPointsView?.('catalog');
-                    window.openAnalyticsPointsContext?.({
-                        view: 'catalog',
-                        packageId: normalizedId
-                    });
-                    window.setTimeout(() => {
-                        window.switchPointsView?.('catalog');
-                        window.openPointsPackageEditor?.(normalizedId);
-                    }, 120);
-                }
+                    window.openPointsPackageEditor?.(normalizedId);
+                }, 120);
+                return true;
             }
-        }, 220);
+        }
+
+        return openModuleOnly();
     },
 
     bindRuntimeEvents() {
@@ -571,12 +641,12 @@ const AdminGrowthCenter = {
             }
             if (growthAction === 'open-module') {
                 event.preventDefault();
-                this.openModule(actionEl.getAttribute('data-growth-center-module') || '');
+                void this.openModule(actionEl.getAttribute('data-growth-center-module') || '');
                 return;
             }
             if (growthAction === 'open-asset') {
                 event.preventDefault();
-                this.openAsset(
+                void this.openAsset(
                     actionEl.getAttribute('data-growth-center-module') || '',
                     actionEl.getAttribute('data-growth-center-asset-type') || '',
                     actionEl.getAttribute('data-growth-center-id') || ''
@@ -592,10 +662,6 @@ const AdminGrowthCenter = {
             this.scheduleSync({ force: false });
         });
 
-        window.addEventListener('admin-site-changed', () => {
-            this.resetSiteScopedState();
-            this.scheduleSync({ force: true });
-        });
         window.addEventListener('adminStudioAccessGranted', () => {
             this.scheduleSync({ force: true });
         });
@@ -608,18 +674,190 @@ const AdminGrowthCenter = {
         }
 
         this.state.initialized = true;
+        this.state.skipNextActivateSync = true;
+        this.state.pendingActivationSync = false;
         this.bindRuntimeEvents();
         this.renderState();
         this.scheduleSync({ force: true });
+    },
+
+    activate() {
+        if (!this.state.initialized) {
+            return;
+        }
+
+        this.renderState();
+
+        if (this.state.skipNextActivateSync) {
+            this.state.skipNextActivateSync = false;
+            return;
+        }
+
+        const currentSite = this.getReadSite();
+        if (this.state.pendingActivationSync || !this.state.payload || this.state.loadedSite !== currentSite) {
+            const force = this.state.pendingActivationSync;
+            this.state.pendingActivationSync = false;
+            this.scheduleSync({ force });
+        }
+    },
+
+    handleContext(context = {}, options = {}) {
+        const normalizedContext = context && typeof context === 'object' && !Array.isArray(context) ? context : {};
+        const rawContext = normalizedContext.raw && typeof normalizedContext.raw === 'object' ? normalizedContext.raw : {};
+        const payload = normalizedContext.payload && typeof normalizedContext.payload === 'object' ? normalizedContext.payload : {};
+        const focus = normalizedContext.focus && typeof normalizedContext.focus === 'object' ? normalizedContext.focus : {};
+        const promptId = this.safeText(
+            focus.promptId
+            || rawContext.promptId
+            || rawContext.prompt_id
+            || rawContext.analyticsPromptId
+            || rawContext.analytics_prompt_id
+            || payload.promptId
+            || payload.prompt_id
+            || payload.analyticsPromptId
+            || payload.analytics_prompt_id,
+            160
+        );
+        const promptTitle = this.safeText(
+            rawContext.promptTitle
+            || rawContext.prompt_title
+            || payload.promptTitle
+            || payload.prompt_title,
+            240
+        );
+        const requestedTab = this.safeText(
+            rawContext.analyticsTab
+            || rawContext.analytics_tab
+            || rawContext.tab
+            || rawContext.view
+            || payload.analyticsTab
+            || payload.analytics_tab
+            || payload.tab
+            || payload.view
+            || (promptId ? 'content' : 'growth'),
+            80
+        ).toLowerCase() || 'growth';
+        const sectionId = this.safeText(
+            rawContext.sectionId
+            || rawContext.section_id
+            || rawContext.focusTargetId
+            || rawContext.focus_target_id
+            || payload.sectionId
+            || payload.section_id
+            || payload.focusTargetId
+            || payload.focus_target_id
+            || (requestedTab === 'content' && promptId ? 'contentCommerceDetailSection' : ''),
+            160
+        );
+
+        if (!requestedTab && !promptId) {
+            return false;
+        }
+
+        const analyticsDestination = requestedTab === 'content'
+            ? 'analytics-content'
+            : `analytics-${requestedTab}`;
+        const destinationContext = {
+            ...rawContext,
+            ...payload,
+            promptId,
+            promptTitle,
+            sectionId,
+            focusTargetId: sectionId,
+            site: normalizedContext.site
+        };
+
+        if (typeof window.openAnalyticsDestination === 'function'
+            && window.openAnalyticsDestination(analyticsDestination, destinationContext) === true) {
+            return true;
+        }
+
+        if (typeof window.syncAnalyticsRouteState === 'function') {
+            window.syncAnalyticsRouteState({
+                view: requestedTab,
+                sectionId,
+                promptId
+            }, {
+                ensureAnalyticsModule: true
+            });
+        }
+
+        if (typeof window.switchAnalyticsTab === 'function') {
+            window.switchAnalyticsTab(requestedTab, {
+                syncRoute: false,
+                sectionId
+            });
+        }
+
+        if (requestedTab === 'content' && promptId && typeof window.openAnalyticsContentCommerceDetail === 'function') {
+            window.openAnalyticsContentCommerceDetail(promptId, {
+                promptTitle,
+                focus: false,
+                syncRoute: true
+            });
+        }
+
+        return true;
     }
 };
 
 window.AdminGrowthCenter = AdminGrowthCenter;
 
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
+async function openAdminGrowthCenterShellContext(context = {}, options = {}) {
+    const normalizedContext = context && typeof context === 'object' && !Array.isArray(context) ? context : {};
+    const normalizedOptions = options && typeof options === 'object' && !Array.isArray(options) ? options : {};
+    if (window.AdminGrowthCenter?.state?.initialized) {
+        window.AdminGrowthCenter?.activate?.();
+    } else {
         window.AdminGrowthCenter?.init?.();
-    }, { once: true });
-} else {
+    }
+    return window.AdminGrowthCenter?.handleContext?.(normalizedContext, normalizedOptions) === true;
+}
+
+function activateVisibleGrowthCenterOnAccess() {
+    if (!window.AdminGrowthCenter?.shouldDisplay?.()) {
+        return;
+    }
+
+    if (window.AdminGrowthCenter?.state?.initialized) {
+        window.AdminGrowthCenter?.activate?.();
+        return;
+    }
+
     window.AdminGrowthCenter?.init?.();
 }
+
+function handleAdminGrowthCenterSiteChange() {
+    window.AdminGrowthCenter?.resetSiteScopedState?.();
+    window.AdminGrowthCenter?.scheduleSync?.({ force: true });
+    return true;
+}
+
+window.handleAdminGrowthCenterSiteChange = handleAdminGrowthCenterSiteChange;
+window.openAdminGrowthCenterShellContext = openAdminGrowthCenterShellContext;
+
+if (window.AdminShell?.registerModule) {
+    window.AdminShell.registerModule('growth-center', {
+        activate() {
+            if (window.AdminGrowthCenter?.state?.initialized) {
+                window.AdminGrowthCenter?.activate?.();
+                return;
+            }
+
+            window.AdminGrowthCenter?.init?.();
+        },
+        handleContext: (context = {}, options = {}) => window.AdminGrowthCenter?.handleContext?.(context, options),
+        onSiteChange: handleAdminGrowthCenterSiteChange
+    });
+} else {
+    window.addEventListener('admin-site-changed', handleAdminGrowthCenterSiteChange);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    if (window.adminStudioAccessGranted) {
+        activateVisibleGrowthCenterOnAccess();
+        return;
+    }
+
+    window.addEventListener('adminStudioAccessGranted', activateVisibleGrowthCenterOnAccess, { once: true });
+}, { once: true });

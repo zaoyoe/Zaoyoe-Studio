@@ -1,5 +1,7 @@
 (function initAdminApiAuth(globalScope) {
     const ACCESS_TOKEN_CACHE_TTL_MS = 10000;
+    const ADMIN_STUDIO_SESSION_CACHE_KEY = 'zaoyoe_admin_studio_session_cache_v1';
+    const ADMIN_STUDIO_SESSION_SKEW_MS = 20 * 1000;
     let cachedAccessToken = '';
     let cachedAccessTokenExpiresAt = 0;
     let inFlightAccessTokenPromise = null;
@@ -81,6 +83,56 @@
         inFlightAccessTokenPromise = null;
     }
 
+    function readAdminStudioSessionCache() {
+        try {
+            const raw = globalScope?.sessionStorage?.getItem(ADMIN_STUDIO_SESSION_CACHE_KEY);
+            if (!raw) return null;
+
+            const parsed = JSON.parse(raw);
+            const expiresAt = Number(parsed?.expiresAt || 0);
+            if (!parsed?.userId || !expiresAt) return null;
+
+            if ((expiresAt - Date.now()) <= ADMIN_STUDIO_SESSION_SKEW_MS) {
+                globalScope?.sessionStorage?.removeItem(ADMIN_STUDIO_SESSION_CACHE_KEY);
+                return null;
+            }
+
+            return parsed;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function hasActiveAdminStudioSession() {
+        if (typeof globalScope?.AdminAccess?.hasActiveAdminStudioSession === 'function') {
+            try {
+                return globalScope.AdminAccess.hasActiveAdminStudioSession();
+            } catch (_) {
+                return false;
+            }
+        }
+
+        return Boolean(readAdminStudioSessionCache());
+    }
+
+    function clearCachedAdminStudioSession() {
+        try {
+            globalScope?.AdminAccess?.clearCachedAdminStudioSession?.();
+        } catch (_) {
+            // Fall through to direct storage cleanup.
+        }
+
+        try {
+            globalScope?.sessionStorage?.removeItem(ADMIN_STUDIO_SESSION_CACHE_KEY);
+        } catch (_) {
+            // ignore cache clear failures
+        }
+
+        if (Object.prototype.hasOwnProperty.call(globalScope || {}, 'adminStudioSessionGranted')) {
+            globalScope.adminStudioSessionGranted = false;
+        }
+    }
+
     async function getAccessToken(options = {}) {
         const forceRefresh = options?.force === true;
         if (!forceRefresh) {
@@ -121,12 +173,21 @@
     }
 
     async function buildRequestInit(init = {}) {
+        const {
+            authMode = '',
+            forceBearerToken = false,
+            ...fetchInit
+        } = init || {};
         const nextInit = {
             credentials: 'include',
-            ...init
+            ...fetchInit
         };
-        const headers = new Headers(init?.headers || {});
-        if (!headers.has('Authorization')) {
+        const headers = new Headers(fetchInit?.headers || {});
+        const shouldAttachBearerToken = forceBearerToken === true
+            || String(authMode || '').trim().toLowerCase() === 'bearer'
+            || !hasActiveAdminStudioSession();
+
+        if (!headers.has('Authorization') && shouldAttachBearerToken) {
             const token = await getAccessToken();
 
             if (token) {
@@ -139,12 +200,37 @@
     }
 
     async function adminFetch(input, init = {}) {
-        return fetch(input, await buildRequestInit(init));
+        const requestInit = await buildRequestInit(init);
+        const headers = requestInit?.headers instanceof Headers
+            ? requestInit.headers
+            : new Headers(requestInit?.headers || {});
+        const explicitAuthMode = String(init?.authMode || '').trim().toLowerCase();
+        const usedBearerToken = headers.has('Authorization');
+        const usedAdminCookieSession = !usedBearerToken
+            && explicitAuthMode !== 'bearer'
+            && init?.forceBearerToken !== true;
+
+        const response = await fetch(input, requestInit);
+        const shouldRetryWithBearer = usedAdminCookieSession
+            && (Number(response?.status || 0) === 401 || Number(response?.status || 0) === 403);
+
+        if (!shouldRetryWithBearer) {
+            return response;
+        }
+
+        clearCachedAdminStudioSession();
+        clearAccessTokenCache();
+
+        return fetch(input, await buildRequestInit({
+            ...(init || {}),
+            forceBearerToken: true
+        }));
     }
 
     const api = {
         fetch: adminFetch,
         getAccessToken,
+        hasActiveAdminStudioSession,
         clearAccessTokenCache,
         buildRequestInit
     };

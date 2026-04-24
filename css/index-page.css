@@ -48,3 +48,12 @@ button.login-trigger-btn:hover #navUserAvatar,
 .index-guestbook-image-upload-hidden {
     display: none;
 }
+
+#guestbookModal {
+    display: none !important;
+}
+
+#guestbookModal.active,
+#guestbookModal.guestbook-modal-interactive {
+    display: flex !important;
+}

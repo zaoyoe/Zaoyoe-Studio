@@ -1,4 +1,4 @@
-const PROMPTS = [
+window.__STATIC_PROMPTS__ = [
     {
         "id": "prompt-1",
         "title": "3D chibi-style 微缩商店",
@@ -2570,5 +2570,7 @@ const PROMPTS = [
     }
 ];
 
-// Export to window for global access
-window.PROMPTS = PROMPTS;
+window.__STATIC_PROMPTS_READY__ = true;
+if (!Array.isArray(window.PROMPTS) || window.PROMPTS.length === 0) {
+    window.PROMPTS = window.__STATIC_PROMPTS__;
+}

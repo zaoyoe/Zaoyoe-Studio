@@ -376,9 +376,35 @@ body.ios-scroll-lock-fixed {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    min-height: 36px;
+    padding: 0 12px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
     font-family: var(--font-sans);
     font-size: 0.9rem;
     color: var(--text-dim);
+    transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+}
+
+.studio-status[data-feedback-state="loading"] {
+    border-color: rgba(125, 211, 252, 0.32);
+    background: rgba(14, 116, 144, 0.08);
+}
+
+.studio-status[data-feedback-state="partial"] {
+    border-color: rgba(245, 158, 11, 0.32);
+    background: rgba(120, 53, 15, 0.08);
+}
+
+.studio-status[data-feedback-state="failed"] {
+    border-color: rgba(251, 113, 133, 0.32);
+    background: rgba(127, 29, 29, 0.08);
+}
+
+.studio-status[data-feedback-state="saved"] {
+    border-color: rgba(132, 204, 22, 0.3);
+    background: rgba(20, 83, 45, 0.08);
 }
 
 .status-dot {
@@ -396,6 +422,10 @@ body.ios-scroll-lock-fixed {
 .studio-status .status-dot.processing {
     background: #eab308;
     animation: pulse 1.5s infinite;
+}
+
+.studio-status .status-dot.warning {
+    background: #f59e0b;
 }
 
 .studio-status .status-dot.error {
@@ -2849,64 +2879,202 @@ body.ios-scroll-lock-fixed {
 /* ========================================
    TOAST NOTIFICATIONS
    ======================================== */
-.toast-container {
+#toastContainer.toast-container {
     position: fixed;
     bottom: 24px;
     right: 24px;
     display: flex;
     flex-direction: column;
+    align-items: flex-end;
     gap: 10px;
     z-index: 1000;
 }
 
-.toast {
-    padding: 14px 20px;
+#toastContainer .toast {
+    padding: 12px 14px;
     background: #ffffff;
     /* Explicit white for Light Mode */
     border: 1px solid var(--card-border);
-    border-radius: 10px;
+    border-radius: 8px;
     color: var(--text-main);
     font-family: var(--font-sans);
     font-size: 0.9rem;
     display: flex;
-    align-items: center;
-    gap: 10px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-    animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    align-self: flex-end;
+    align-items: flex-start;
+    gap: 12px;
+    width: max-content;
+    min-width: 0;
+    max-width: min(460px, calc(100vw - 48px));
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+    opacity: 1;
+    animation: adminToastSlideIn 0.3s ease;
+    transform-origin: right bottom;
+    transition: opacity 0.3s ease, transform 0.3s ease, background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
     z-index: 1000;
 }
 
-[data-theme="dark"] .toast {
+#toastContainer .toast i,
+#toastContainer .toast span,
+#toastContainer .toast div {
+    transition: color 0.18s ease, opacity 0.18s ease, transform 0.18s ease;
+}
+
+#toastContainer .toast i {
+    margin-top: 2px;
+    font-size: 1rem;
+}
+
+#toastContainer .toast__content {
+    display: inline-block;
+    min-width: 0;
+    flex: 0 1 auto;
+    max-width: 100%;
+}
+
+#toastContainer .toast__message {
+    min-width: 0;
+    display: inline;
+    flex: none;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+[data-theme="dark"] #toastContainer .toast {
     background: #1e293b;
     /* Slate 800 for Dark Mode */
     border-color: rgba(255, 255, 255, 0.1);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.34);
 }
 
-.toast.success {
+#toastContainer .toast.success {
     border-left: 3px solid #22c55e;
 }
 
-.toast.success i {
+#toastContainer .toast.warning {
+    border-left: 3px solid #f59e0b;
+}
+
+#toastContainer .toast.info {
+    border-left: 3px solid #38bdf8;
+}
+
+#toastContainer .toast.success i {
     color: #22c55e;
 }
 
-.toast.error {
+#toastContainer .toast.warning i {
+    color: #f59e0b;
+}
+
+#toastContainer .toast.info i {
+    color: #0ea5e9;
+}
+
+#toastContainer .toast.error {
     border-left: 3px solid #ef4444;
 }
 
-.toast.error i {
+#toastContainer .toast.error i {
     color: #ef4444;
 }
 
-.toast.is-dismissing {
-    animation: slideIn 0.3s ease reverse;
+#toastContainer .toast.is-content-entering i,
+#toastContainer .toast.is-content-entering span,
+#toastContainer .toast.is-content-entering div {
+    animation: toastContentIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-@keyframes slideIn {
+#toastContainer .toast.is-dismissing {
+    animation: none;
+    opacity: 0;
+    transform: translateX(20px);
+}
+
+/* ========================================
+   ACTION BUTTON EXECUTION FEEDBACK
+   ======================================== */
+button[data-action-feedback-state] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+button[data-action-feedback-state="loading"] {
+    cursor: wait;
+    pointer-events: none;
+}
+
+button[data-action-feedback-state="saved"] {
+    box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.28), 0 12px 28px rgba(34, 197, 94, 0.16);
+}
+
+button[data-action-feedback-state="failed"] {
+    box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.28), 0 12px 28px rgba(239, 68, 68, 0.14);
+}
+
+.admin-action-feedback__spinner {
+    width: 1em;
+    height: 1em;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 999px;
+    flex: 0 0 auto;
+    opacity: 0.9;
+    animation: adminActionFeedbackSpin 0.72s linear infinite;
+}
+
+.admin-action-feedback__icon {
+    width: 1.15em;
+    height: 1.15em;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    color: #07111f;
+    font-size: 0.78em;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.admin-action-feedback__icon.is-saved {
+    background: #22c55e;
+}
+
+.admin-action-feedback__icon.is-failed {
+    background: #ef4444;
+    color: #fff;
+}
+
+.admin-action-feedback__label {
+    min-width: 0;
+}
+
+@keyframes adminActionFeedbackSpin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes toastContentIn {
     from {
         opacity: 0;
-        transform: translateX(100%);
+        transform: translateY(4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes adminToastSlideIn {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
     }
 
     to {
@@ -3099,6 +3267,59 @@ body.ios-scroll-lock-fixed {
     height: 1px;
     background: rgba(255, 255, 255, 0.08);
     margin: 6px 0;
+}
+
+@media (max-width: 768px) {
+    .batch-actions-wrapper {
+        width: 100%;
+        flex-wrap: wrap;
+        align-items: stretch;
+    }
+
+    .batch-actions-wrapper .batch-btn {
+        min-height: 40px;
+        justify-content: center;
+        border-radius: 8px;
+    }
+
+    .batch-menu-container {
+        position: static;
+    }
+
+    .batch-dropdown-menu {
+        position: fixed;
+        left: 12px;
+        right: 12px;
+        top: auto;
+        bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+        width: auto;
+        min-width: 0;
+        max-height: min(62vh, 420px);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        border-radius: 8px;
+        z-index: 10000;
+        transform: translateY(8px);
+    }
+
+    .batch-menu-container.open .batch-dropdown-menu,
+    .batch-dropdown-menu.open,
+    .batch-menu-container.is-busy .batch-dropdown-menu {
+        transform: translateY(0);
+    }
+
+    .batch-menu-item {
+        min-height: 42px;
+        padding: 10px 12px;
+        white-space: normal;
+    }
+
+    #userSelectedCountWrapper,
+    #commentsSelectionCountWrapper {
+        flex: 1 1 100%;
+        min-height: 36px;
+        align-items: center;
+    }
 }
 
 /* Selection Count Display */
@@ -4307,6 +4528,15 @@ body.ios-scroll-lock-fixed {
     background: rgba(59, 130, 246, 0.18);
     transform: translateY(-1px);
     outline: none;
+}
+
+.admin-workbench-focus-target--active {
+    border-color: rgba(110, 231, 214, 0.44) !important;
+    box-shadow:
+        0 0 0 1px rgba(110, 231, 214, 0.24),
+        0 0 0 4px rgba(45, 212, 191, 0.07),
+        0 18px 44px rgba(15, 23, 42, 0.24);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .admin-ticket-workspace-anchor--active {
@@ -21138,7 +21368,18 @@ input:checked+.toggle-slider:before {
         right: 12px;
         top: auto;
         bottom: auto;
+        width: auto;
+        min-width: 0;
+        max-height: min(62vh, 420px);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        border-radius: 8px;
         z-index: 9999;
+    }
+
+    #points-view-batches .batch-menu-item {
+        min-height: 42px;
+        white-space: normal;
     }
 
     #points-view-batches .batch-menu-popup.show {
@@ -41073,11 +41314,11 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 #module-ops-alerts .ops-alert-settings-column--main > .config-card[data-config="ops-alerts-monitor"] {
-    order: 11;
+    order: 10;
 }
 
 #module-ops-alerts .ops-alert-settings-column--main > .config-card[data-config="ops-alerts-workspace"] {
-    order: 10;
+    order: 11;
 }
 
 #ops-alerts-view-workspace [data-ops-alerts-bucket="workspace-side"]:empty {
@@ -42478,12 +42719,14 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 .discount-trigger-save-row {
+    display: flex;
     align-items: center;
+    justify-content: flex-start;
     gap: 12px;
 }
 
 .discount-trigger-save-row .btn-add-config {
-    margin-left: auto;
+    margin-left: 0;
 }
 
 .discount-trigger-save-row.is-dirty .discount-trigger-save-row__meta {
@@ -48218,7 +48461,12 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     color: var(--accent-starry);
     font-size: 0.85rem;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background 0.18s ease, border-color 0.18s ease, border-style 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease, transform 0.18s ease;
+    will-change: transform, box-shadow, background;
+}
+
+.btn-add-config i {
+    transition: transform 0.18s ease, color 0.18s ease;
 }
 
 .btn-add-config:hover {
@@ -48228,10 +48476,57 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .btn-add-config:active,
 .btn-add-config.is-pressed {
-    background: rgba(107, 158, 206, 0.24);
+    background: rgba(107, 158, 206, 0.3);
+    border-color: rgba(139, 191, 236, 0.92);
     border-style: solid;
+    color: #eef8ff;
     filter: brightness(1.12);
+    box-shadow: 0 0 0 3px rgba(107, 158, 206, 0.22), 0 12px 24px rgba(15, 23, 42, 0.18), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
     transform: translateY(1px) scale(0.98);
+}
+
+.btn-add-config.is-click-feedback {
+    animation: adminActionButtonClickFeedback 0.36s ease-out;
+}
+
+.btn-add-config.is-click-feedback i {
+    transform: translateY(-1px) scale(1.08);
+}
+
+.btn-add-config.is-running {
+    border-style: solid;
+    border-color: rgba(147, 197, 253, 0.96);
+    background: rgba(59, 130, 246, 0.18);
+    color: #f8fbff;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18), 0 14px 28px rgba(15, 23, 42, 0.18), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.btn-add-config.is-running i {
+    animation: adminActionButtonRunningIcon 0.9s linear infinite;
+}
+
+@keyframes adminActionButtonClickFeedback {
+    0% {
+        box-shadow: 0 0 0 0 rgba(107, 158, 206, 0.26);
+    }
+    48% {
+        box-shadow: 0 0 0 4px rgba(107, 158, 206, 0.24), 0 12px 24px rgba(15, 23, 42, 0.18), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(107, 158, 206, 0);
+    }
+}
+
+@keyframes adminActionButtonRunningIcon {
+    0% {
+        transform: rotate(0deg) scale(1);
+    }
+    50% {
+        transform: rotate(10deg) scale(1.06);
+    }
+    100% {
+        transform: rotate(0deg) scale(1);
+    }
 }
 
 .btn-add-config:focus-visible {
@@ -48241,7 +48536,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .btn-add-config[aria-busy="true"] {
     cursor: progress;
-    opacity: 0.84;
+    opacity: 0.92;
 }
 
 /* Channel Tags */
@@ -51445,4 +51740,336 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 .edit-modal-close,
 .batch-modal-close {
     display: none !important;
+}
+
+/* Ops alert case composer: align with the points batch workbench modal surface. */
+#shopRiskCaseComposerModal.admin-shop-risk-case-modal {
+    padding: 24px;
+    overflow: auto;
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__dialog {
+    width: min(980px, calc(100vw - 44px));
+    max-width: 980px;
+    max-height: min(88vh, 840px);
+    padding: 0;
+    gap: 0;
+    overflow: hidden;
+    border-radius: 22px;
+    border-color: rgba(148, 163, 184, 0.16);
+    background: #1c2638 !important;
+    box-shadow: 0 30px 90px rgba(2, 6, 23, 0.52);
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 22px 24px 20px;
+    background: rgba(22, 37, 53, 0.58);
+    border-bottom: 1px solid rgba(107, 158, 206, 0.14);
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__copy {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__eyebrow {
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: rgba(107, 158, 206, 0.94);
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__copy h2 {
+    margin: 0;
+    font-size: 1.22rem;
+    line-height: 1.28;
+    color: var(--text-main);
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__copy p {
+    margin: 0;
+    max-width: 720px;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    line-height: 1.65;
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__form {
+    padding: 22px 24px 24px;
+    overflow: auto;
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__layout {
+    display: grid;
+    grid-template-columns: minmax(292px, 0.9fr) minmax(0, 1.1fr);
+    gap: 18px;
+    align-items: start;
+    min-width: 0;
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__aside,
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__editor {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 14px;
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__editor {
+    padding: 16px;
+    border-radius: 17px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 34%),
+        rgba(15, 23, 42, 0.24);
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__hero {
+    padding: 16px;
+    border-radius: 17px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background:
+        linear-gradient(180deg, rgba(107, 158, 206, 0.08), transparent 58%),
+        rgba(15, 23, 42, 0.28);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__hero-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    min-width: 0;
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__hero-copy span,
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__overview-card span {
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    color: rgba(148, 163, 184, 0.88);
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__hero-copy strong {
+    color: var(--text-main);
+    font-size: 0.96rem;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__hero-copy em,
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__overview-card em {
+    color: var(--text-dim);
+    font-size: 0.78rem;
+    font-style: normal;
+    line-height: 1.5;
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__overview {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__overview-card {
+    display: flex;
+    align-items: flex-start;
+    min-height: 92px;
+    gap: 11px;
+    padding: 12px;
+    border-radius: 16px;
+    border: 1px solid rgba(148, 163, 184, 0.15);
+    background: rgba(15, 23, 42, 0.22);
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__overview-card > div:last-child {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 4px;
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__overview-card strong {
+    color: var(--text-main);
+    font-size: 0.98rem;
+    line-height: 1.42;
+    overflow-wrap: anywhere;
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__overview-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    color: #dbeafe;
+    background: rgba(107, 158, 206, 0.14);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__overview-card--accent .admin-shop-risk-case-modal__overview-icon {
+    color: rgba(233, 213, 255, 0.98);
+    background: rgba(91, 33, 182, 0.18);
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__overview-card--green .admin-shop-risk-case-modal__overview-icon {
+    color: rgba(187, 247, 208, 0.98);
+    background: rgba(22, 101, 52, 0.18);
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__overview-card--slate .admin-shop-risk-case-modal__overview-icon {
+    color: rgba(226, 232, 240, 0.98);
+    background: rgba(51, 65, 85, 0.48);
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__context-note,
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__note {
+    padding: 12px 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(148, 163, 184, 0.15);
+    background: rgba(15, 23, 42, 0.26);
+    color: var(--text-secondary);
+    font-size: 0.86rem;
+    line-height: 1.7;
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__field {
+    gap: 9px;
+    min-width: 0;
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__field[hidden] {
+    display: none !important;
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__field label {
+    color: rgba(226, 232, 240, 0.94);
+    font-size: 0.86rem;
+    font-weight: 800;
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__field select,
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__field textarea {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 46px;
+    box-sizing: border-box;
+    border-radius: 14px;
+    border-color: rgba(148, 163, 184, 0.18);
+    background: rgba(15, 23, 42, 0.26);
+    color: var(--text-main);
+    text-align: left;
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__field textarea {
+    display: block;
+    min-height: 128px;
+    max-height: 210px;
+    line-height: 1.6;
+    resize: vertical;
+}
+
+#shopRiskCaseComposerModal #shopRiskCaseComposerOwnerSelect {
+    width: min(100%, 360px);
+    max-width: 360px;
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__field .shop-custom-select {
+    width: min(100%, 360px);
+    max-width: 360px;
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__field .shop-custom-select__trigger {
+    min-height: 44px;
+    border-radius: 13px;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.025)),
+        rgba(15, 23, 42, 0.5);
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__field .shop-custom-select__menu {
+    right: auto;
+    width: 100%;
+    max-height: 190px;
+    gap: 4px;
+    padding: 6px;
+    border-radius: 14px;
+    box-shadow: 0 20px 48px rgba(2, 6, 23, 0.42);
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__field .shop-custom-select__option {
+    min-height: 38px;
+    padding: 9px 10px;
+    border-radius: 10px;
+    font-size: 0.86rem;
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__hint {
+    max-width: 460px;
+    color: var(--text-dim);
+    font-size: 0.78rem;
+    line-height: 1.55;
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__actions {
+    display: grid;
+    grid-template-columns: minmax(130px, 0.36fr) minmax(0, 0.64fr);
+    gap: 12px;
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__actions .btn-add-config {
+    min-height: 46px;
+    justify-content: center;
+    border-radius: 14px;
+    font-weight: 800;
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__actions .btn-add-config--primary {
+    background: rgba(107, 158, 206, 0.44);
+    border-color: rgba(107, 158, 206, 0.46);
+    color: #f8fbff;
+}
+
+#shopRiskCaseComposerModal .admin-shop-risk-case-modal__actions .btn-add-config--primary:hover {
+    background: rgba(107, 158, 206, 0.54);
+}
+
+@media (max-width: 900px) {
+    #shopRiskCaseComposerModal .admin-shop-risk-case-modal__dialog {
+        width: min(720px, calc(100vw - 28px));
+    }
+
+    #shopRiskCaseComposerModal .admin-shop-risk-case-modal__layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 640px) {
+    #shopRiskCaseComposerModal.admin-shop-risk-case-modal {
+        padding: 12px;
+    }
+
+    #shopRiskCaseComposerModal .admin-shop-risk-case-modal__dialog {
+        width: calc(100vw - 20px);
+        max-height: calc(100vh - 24px);
+        border-radius: 20px;
+    }
+
+    #shopRiskCaseComposerModal .admin-shop-risk-case-modal__header,
+    #shopRiskCaseComposerModal .admin-shop-risk-case-modal__form {
+        padding-left: 18px;
+        padding-right: 18px;
+    }
+
+    #shopRiskCaseComposerModal .admin-shop-risk-case-modal__overview,
+    #shopRiskCaseComposerModal .admin-shop-risk-case-modal__actions {
+        grid-template-columns: 1fr;
+    }
 }

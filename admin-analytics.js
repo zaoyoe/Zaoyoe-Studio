@@ -418,11 +418,43 @@ async function getAnalyticsAdminAuthHeaders() {
         return window.AdminAI.getAuthHeaders();
     }
 
-    const { data: { session } = {} } = await window.supabaseClient.auth.getSession();
-    return {
+    const baseHeaders = {
         'Content-Type': 'application/json',
-        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
     };
+
+    if (window.AdminApi?.buildRequestInit) {
+        try {
+            const requestInit = await window.AdminApi.buildRequestInit({
+                headers: baseHeaders
+            });
+            return requestInit?.headers || baseHeaders;
+        } catch (_) {
+            // Fall through to direct token resolution.
+        }
+    }
+
+    let accessToken = '';
+
+    try {
+        const { data: { session } = {} } = await window.supabaseClient.auth.getSession();
+        accessToken = String(session?.access_token || '').trim();
+    } catch (_) {
+        accessToken = '';
+    }
+
+    if (!accessToken && typeof window.supabaseClient?.accessToken === 'function') {
+        try {
+            accessToken = String(await window.supabaseClient.accessToken() || '').trim();
+        } catch (_) {
+            accessToken = '';
+        }
+    }
+
+    if (accessToken) {
+        baseHeaders.Authorization = `Bearer ${accessToken}`;
+    }
+
+    return baseHeaders;
 }
 
 async function ensureAnalyticsAdminCookieSession(options = {}) {
@@ -1306,6 +1338,229 @@ function getOverviewProductBundleSegmentPayload(bundle = null, key = '') {
     return segment.payload && typeof segment.payload === 'object'
         ? segment.payload
         : null;
+}
+
+function createAnalyticsCommandCenterInventorySummary() {
+    return {
+        ready: false,
+        status: 'idle',
+        lowStockCount: 0,
+        soldOutCount: 0,
+        deliveryRiskProductCount: 0,
+        purchaseConversionRate: null,
+        orderCount: 0,
+        activeProducts: 0,
+        actionableCount: 0,
+        lastMessage: ''
+    };
+}
+
+function buildAnalyticsCommandCenterInventorySummary({ productSummaryBundle = null, productHealthBundle = null } = {}) {
+    const summary = getOverviewProductBundleSegmentPayload(productSummaryBundle, 'summary');
+    const health = {
+        lowStockProducts: getOverviewProductBundleSegmentPayload(productHealthBundle, 'lowStockProducts') || [],
+        soldOutProducts: getOverviewProductBundleSegmentPayload(productHealthBundle, 'soldOutProducts') || [],
+        deliveryRiskProducts: getOverviewProductBundleSegmentPayload(productHealthBundle, 'deliveryRiskProducts') || []
+    };
+
+    if (!summary && !health.lowStockProducts.length && !health.soldOutProducts.length && !health.deliveryRiskProducts.length) {
+        return createAnalyticsCommandCenterInventorySummary();
+    }
+
+    const lowStockCount = normalizeAnalyticsCountValue(summary?.low_stock_product_count ?? health.lowStockProducts.length);
+    const soldOutCount = normalizeAnalyticsCountValue(summary?.sold_out_product_count ?? health.soldOutProducts.length);
+    const deliveryRiskProductCount = normalizeAnalyticsCountValue(summary?.delivery_risk_product_count ?? health.deliveryRiskProducts.length);
+    const recentItems = [];
+
+    if (health.lowStockProducts[0]) {
+        const product = health.lowStockProducts[0];
+        recentItems.push({
+            label: '低库存',
+            copy: `${product.product_name || '未命名商品'} · 库存 ${formatNumber(product.stock_count || 0)}`,
+            tone: 'warn',
+            moduleId: 'shop',
+            stateKey: `inventory-low-stock-${String(product.product_id || product.id || product.product_name || 'recent').trim() || 'recent'}`,
+            feedbackLabel: product.product_name || '库存导入',
+            intent: `打开商城系统导入，继续处理 ${product.product_name || '该商品'} 的补货。`,
+            context: {
+                destination: 'shop',
+                entity: 'shop-inventory',
+                action: 'focus-import-product',
+                focus: {
+                    productId: product.product_id,
+                    product_id: product.product_id
+                },
+                payload: {
+                    workspace: 'import',
+                    defaultTab: 'import',
+                    tab: 'import',
+                    productId: product.product_id,
+                    product_id: product.product_id,
+                    productName: product.product_name,
+                    product_name: product.product_name
+                }
+            },
+            options: {
+                defaultTab: 'import',
+                tab: 'import'
+            }
+        });
+    }
+
+    if (health.soldOutProducts[0]) {
+        const product = health.soldOutProducts[0];
+        recentItems.push({
+            label: '售罄商品',
+            copy: `${product.product_name || '未命名商品'} · 当前已售罄`,
+            tone: 'warn',
+            moduleId: 'shop',
+            stateKey: `inventory-sold-out-${String(product.product_id || product.id || product.product_name || 'recent').trim() || 'recent'}`,
+            feedbackLabel: product.product_name || '库存导入',
+            intent: `打开商城系统导入，继续处理 ${product.product_name || '该商品'} 的补货。`,
+            context: {
+                destination: 'shop',
+                entity: 'shop-inventory',
+                action: 'focus-import-product',
+                focus: {
+                    productId: product.product_id,
+                    product_id: product.product_id
+                },
+                payload: {
+                    workspace: 'import',
+                    defaultTab: 'import',
+                    tab: 'import',
+                    productId: product.product_id,
+                    product_id: product.product_id,
+                    productName: product.product_name,
+                    product_name: product.product_name
+                }
+            },
+            options: {
+                defaultTab: 'import',
+                tab: 'import'
+            }
+        });
+    }
+
+    if (health.deliveryRiskProducts[0]) {
+        const product = health.deliveryRiskProducts[0];
+        recentItems.push({
+            label: '履约风险',
+            copy: `${product.product_name || '未命名商品'} · 风险 ${formatNumber(product.delivery_risk_count || 0)} 单`,
+            tone: 'warn',
+            moduleId: 'commerce-center',
+            stateKey: `inventory-delivery-risk-${String(product.product_id || product.id || product.product_name || 'recent').trim() || 'recent'}`,
+            feedbackLabel: product.product_name || '商品履约风险',
+            intent: `打开 ${product.product_name || '该商品'} 的履约风险拆解。`,
+            context: {
+                payload: {
+                    view: 'product',
+                    tab: 'product',
+                    focusTargetId: 'productRiskBreakdownSection',
+                    productId: product.product_id,
+                    productName: product.product_name,
+                    detailFocus: 'delivery-risk'
+                }
+            },
+            options: {
+                viewName: 'product'
+            }
+        });
+    }
+
+    if (!recentItems.length && Number.isFinite(Number(summary?.purchase_conversion_rate))) {
+        recentItems.push({
+            label: '商品转化',
+            copy: `当前购买转化 ${formatPercent(summary.purchase_conversion_rate)}`,
+            tone: 'ok',
+            moduleId: 'commerce-center',
+            stateKey: 'inventory-conversion-overview',
+            feedbackLabel: '商品漏斗',
+            intent: '打开商品经营漏斗，查看最近转化。',
+            context: {
+                payload: {
+                    view: 'product',
+                    tab: 'product',
+                    focusTargetId: 'productFunnelSection'
+                }
+            },
+            options: {
+                viewName: 'product'
+            }
+        });
+    }
+
+    return {
+        ready: true,
+        status: 'ready',
+        lowStockCount,
+        soldOutCount,
+        deliveryRiskProductCount,
+        purchaseConversionRate: summary ? normalizeAnalyticsNumber(summary.purchase_conversion_rate) : null,
+        orderCount: normalizeAnalyticsCountValue(summary?.order_count),
+        activeProducts: normalizeAnalyticsCountValue(summary?.active_product_count),
+        actionableCount: lowStockCount + soldOutCount + deliveryRiskProductCount,
+        lastMessage: '',
+        recentItems: recentItems.slice(0, 3)
+    };
+}
+
+function getAnalyticsCommandCenterInventorySummary() {
+    if (typeof getAnalyticsDerivedStateValue !== 'function') {
+        return createAnalyticsCommandCenterInventorySummary();
+    }
+
+    return buildAnalyticsCommandCenterInventorySummary({
+        productSummaryBundle: getAnalyticsDerivedStateValue('productSummaryBundle'),
+        productHealthBundle: getAnalyticsDerivedStateValue('productHealthBundle')
+    });
+}
+
+function emitAnalyticsCommandCenterInventorySummaryUpdate(summary = null) {
+    if (typeof window.dispatchEvent !== 'function' || typeof CustomEvent !== 'function') {
+        return summary || null;
+    }
+
+    const nextSummary = summary && typeof summary === 'object'
+        ? summary
+        : getAnalyticsCommandCenterInventorySummary();
+
+    try {
+        window.dispatchEvent(new CustomEvent('admin-analytics-inventory-summary-updated', {
+            detail: nextSummary
+        }));
+    } catch (_) {
+        // Command center sync should never block analytics rendering.
+    }
+
+    return nextSummary;
+}
+
+async function primeAnalyticsCommandCenterInventorySummary(options = {}) {
+    if (typeof getAnalyticsProductSummaryBundle !== 'function' || typeof getAnalyticsProductHealthBundle !== 'function') {
+        return createAnalyticsCommandCenterInventorySummary();
+    }
+
+    try {
+        const [productSummaryBundle, productHealthBundle] = await Promise.all([
+            getAnalyticsProductSummaryBundle({ forceRefresh: options.force === true }).catch(() => null),
+            getAnalyticsProductHealthBundle({ forceRefresh: options.force === true }).catch(() => null)
+        ]);
+        return emitAnalyticsCommandCenterInventorySummaryUpdate(
+            buildAnalyticsCommandCenterInventorySummary({
+                productSummaryBundle,
+                productHealthBundle
+            })
+        );
+    } catch (error) {
+        const summary = {
+            ...createAnalyticsCommandCenterInventorySummary(),
+            ready: true,
+            status: 'error',
+            lastMessage: error?.message || '商品经营摘要同步失败'
+        };
+        return emitAnalyticsCommandCenterInventorySummaryUpdate(summary);
+    }
 }
 
 function buildOverviewBusinessMixProductSignals({
@@ -3855,6 +4110,9 @@ function setAnalyticsVisibility(element, hidden) {
 }
 
 window.toggleAnalyticsAdvancedTools = toggleAnalyticsAdvancedTools;
+window.getAnalyticsCommandCenterInventorySummary = getAnalyticsCommandCenterInventorySummary;
+window.primeAnalyticsCommandCenterInventorySummary = primeAnalyticsCommandCenterInventorySummary;
+window.emitAnalyticsCommandCenterInventorySummaryUpdate = emitAnalyticsCommandCenterInventorySummaryUpdate;
 
 // ============================================
 // ADVANCED CHARTS

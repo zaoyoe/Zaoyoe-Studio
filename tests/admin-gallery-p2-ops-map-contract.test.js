@@ -57,7 +57,7 @@ test('gallery p2 ops map adds overview, sorting, batch workflow actions, and hom
         'async function verifyPromptPersistedBilingualFields(promptId = \'\', attemptedPayload = {}, savedRow = {})',
         'function buildPromptBilingualPersistenceWarningMessage(missingFields = [])',
         "document.getElementById('batchLocalizeMenuItem')?.addEventListener('click', (e) => {",
-        "const progressToast = showToast(`正在为 ${selected.length} 条 Prompt 补全双语...`, 'info', { durationMs: 0 });",
+        "const progressToast = showAdminStudioToast(`正在为 ${selected.length} 条 Prompt 补全双语...`, 'info', { durationMs: 0 });",
         "setGalleryBatchPromptCardsPending(true, pendingLabel);",
         "countWrapper.dataset.batchBusy = 'true';",
         'function setToastContent(toast, message, type = \'info\')',

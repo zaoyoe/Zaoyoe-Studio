@@ -47,6 +47,9 @@ function loadAdminAccess(overrides = {}) {
     const originalSessionStorage = global.sessionStorage;
     const originalLocalStorage = global.localStorage;
     const originalAtob = global.atob;
+    const originalAbortController = global.AbortController;
+    const originalRequireConfig = global.requireZaoyoeSupabaseConfig;
+    const originalAccessTimeouts = global.__adminAccessTimeouts;
 
     if (Object.prototype.hasOwnProperty.call(overrides, 'location')) {
         global.location = overrides.location;
@@ -72,6 +75,18 @@ function loadAdminAccess(overrides = {}) {
         global.atob = overrides.atob;
     }
 
+    if (Object.prototype.hasOwnProperty.call(overrides, 'AbortController')) {
+        global.AbortController = overrides.AbortController;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(overrides, 'requireZaoyoeSupabaseConfig')) {
+        global.requireZaoyoeSupabaseConfig = overrides.requireZaoyoeSupabaseConfig;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(overrides, 'accessTimeouts')) {
+        global.__adminAccessTimeouts = overrides.accessTimeouts;
+    }
+
     delete require.cache[adminAccessPath];
     const api = require(adminAccessPath);
 
@@ -86,6 +101,9 @@ function loadAdminAccess(overrides = {}) {
             restoreGlobalProperty('sessionStorage', originalSessionStorage);
             restoreGlobalProperty('localStorage', originalLocalStorage);
             restoreGlobalProperty('atob', originalAtob);
+            restoreGlobalProperty('AbortController', originalAbortController);
+            restoreGlobalProperty('requireZaoyoeSupabaseConfig', originalRequireConfig);
+            restoreGlobalProperty('__adminAccessTimeouts', originalAccessTimeouts);
         }
     };
 }
@@ -215,6 +233,72 @@ test('createAdminStudioSession reuses the cached short-lived admin session for t
         assert.equal(fetchCount, 0);
         assert.equal(result.payload.granted, true);
         assert.equal(result.payload.expiresInSeconds > 0, true);
+    } finally {
+        restore();
+    }
+});
+
+test('getCurrentAdminAccess times out the persisted REST fallback instead of leaving the studio gate pending', async () => {
+    const localStorage = createStorage({
+        'sb-demo-auth-token': JSON.stringify({
+            currentSession: {
+                access_token: `header.${encodeJwtPayload({
+                    sub: 'admin-user-1',
+                    email: 'admin@example.com'
+                })}.signature`
+            }
+        })
+    });
+    let fallbackFetchCalls = 0;
+
+    const { api, restore } = loadAdminAccess({
+        localStorage,
+        atob(value) {
+            return Buffer.from(value, 'base64').toString('binary');
+        },
+        accessTimeouts: {
+            restFallbackMs: 20
+        },
+        requireZaoyoeSupabaseConfig() {
+            return {
+                url: 'https://supabase.example.test',
+                publishableKey: 'anon-key'
+            };
+        },
+        fetch() {
+            fallbackFetchCalls += 1;
+            return new Promise(() => {});
+        },
+        supabaseClient: {
+            auth: {
+                async getUser() {
+                    return {
+                        data: {
+                            user: {
+                                id: 'admin-user-1',
+                                email: 'admin@example.com'
+                            }
+                        }
+                    };
+                }
+            },
+            async rpc() {
+                return {
+                    data: null,
+                    error: new Error('rpc unavailable')
+                };
+            }
+        }
+    });
+
+    try {
+        const startedAt = Date.now();
+        const access = await api.getCurrentAdminAccess({ forceRefresh: true });
+
+        assert.equal(access.user.id, 'admin-user-1');
+        assert.equal(access.isAdmin, false);
+        assert.equal(fallbackFetchCalls, 1);
+        assert.equal(Date.now() - startedAt < 1000, true);
     } finally {
         restore();
     }

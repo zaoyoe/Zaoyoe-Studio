@@ -318,7 +318,7 @@ test('ops alert case handler falls back to legacy shop_risk_cases when ops_alert
     });
 });
 
-test('ops alert case handler requires note content when resolving a case', async () => {
+test('ops alert case handler requires resolution content when resolving a case', async () => {
     await withHandler({}, async (handler) => {
         const req = {
             method: 'POST',
@@ -416,6 +416,34 @@ test('ops alert case handler resolves an existing case while preserving owner in
         assert.equal(state.events[0].action, 'resolve');
         assert.equal(state.events[0].resolution, '已停用优惠码并完成订单复核。');
         assert.equal(state.auditLogs[0].actionType, 'admin.shop_risk_case.resolve');
+    });
+});
+
+test('ops alert case handler accepts resolution content without a separate note when resolving', async () => {
+    await withHandler({}, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'resolve',
+                category_key: 'payments',
+                target_id: 'payment_gateway:hupijiao:cn',
+                alert_type: 'payment_gateway_degraded',
+                title: '支付通道异常',
+                resolution: '已确认通道恢复，关闭本次告警。'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.case.status, 'resolved');
+        assert.equal(payload.case.resolution, '已确认通道恢复，关闭本次告警。');
+        assert.equal(state.cases[0].resolution, '已确认通道恢复，关闭本次告警。');
+        assert.equal(state.events[0].resolution, '已确认通道恢复，关闭本次告警。');
     });
 });
 

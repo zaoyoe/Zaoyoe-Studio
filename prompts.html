@@ -7,6 +7,9 @@
         content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-visual">
     <meta name="theme-color" content="#000000">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <meta name="description" content="Banana Pro Gallery 提示词图库，精选高质量 AI 提示词与作品灵感，支持分类筛选与快速检索。">
     <title>Banana Pro Gallery | Zaoyoe</title>
     <link rel="canonical" href="https://www.zaoyoe.com/prompts.html">
@@ -32,17 +35,18 @@
 
     <!-- Styles -->
     <!-- Prompts Module Styles -->
-    <link rel="stylesheet" href="prompts-poetry.css?v=20260420_PROMPT_RICH_TAGS_1">
+    <link rel="stylesheet" href="prompts-poetry.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1">
     <link rel="stylesheet" href="pagination.css?v=1">
-    <link rel="stylesheet" href="css/auth-sheet.css?v=20260324_AUTH_INJECT_RUNTIME_STYLE_HELPERS_2">
-    <link rel="stylesheet" href="css/profile-modal.css?v=20260317_PROFILE_MODAL_SUBPAGES_1">
-    <link rel="stylesheet" href="avatar-fix.css?v=20260316_AVATAR_NAV_STABLE_2">
+    <link rel="stylesheet" href="css/auth-sheet.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1" media="print" data-deferred-style="1">
+    <link rel="stylesheet" href="css/profile-modal.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1" media="print" data-deferred-style="1">
+    <link rel="stylesheet" href="avatar-fix.css?v=20260424_SOLID_GUEST_AVATAR_1">
     <!-- Unified Navigation CSS -->
-    <link rel="stylesheet" href="css/framer_home.css?v=20260415_HOME_VERIFY_DEMO_1">
+    <link rel="stylesheet" href="css/framer_home.css?v=20260423_HOME_NAV_DROPDOWN_CURSOR_4">
     <link rel="stylesheet" href="css/section-visibility.css?v=20260324_SECTION_VISIBILITY_RUNTIME_STYLE_1">
 
     <!-- Prevent flash of wrong theme - Critical CSS -->
     <script src="./js/theme-preload.js"></script>
+    <script src="./js/deferred-styles.js" defer></script>
 
     <script src="./js/prompts-head-bootstrap.js"></script>
     <script src="./js/homepage-contract.js?v=20260415_HOME_VERIFY_DEMO_1"></script>
@@ -280,11 +284,6 @@
                     Description goes here...
                 </p>
 
-                <section id="modalContentTagsSection" class="modal-content-tags" hidden>
-                    <div class="modal-content-tags-title">内容标签</div>
-                    <div id="modalContentTags" class="modal-content-tags-grid"></div>
-                </section>
-
                 <!-- Prompt Area (FLIP Animation Source) -->
                 <div id="promptArea" class="prompt-area">
                     <div class="prompt-content-wrapper">
@@ -397,29 +396,25 @@
     <script src="./js/user-event-tracker.js?v=20260405_USER_EVENT_TRACKER_2"></script>
     <script src="./js/prefetch-home.js?v=20260419_HOME_PROMPT_CACHE_INVALIDATION_2" defer></script>
     <script src="./js/section-visibility.js?v=20260411_HOMEPAGE_CONTRACT_P1_2"></script>
-    <script src="prompts-data.js?v=20260302_G_AUTH"></script>
+    <script src="./js/prompts-dataset-bootstrap.js"></script>
     <script src="starry-sky.js?v=20260302_G_AUTH"></script>
-    <script src="prompts-poetry.js?v=20260420_PROMPT_RICH_TAGS_1"></script>
-    <script src="js/services/PointsService.js?v=20260321_PAYMENT_CREATE_UNIFIED_1"></script>
-    <script src="js/components/WalletModal.js?v=20260418_WALLET_PAYMENT_QR_POLL_2"></script>
-    <script src="js/profile-modal-template.js?v=20260324_PROFILE_MODAL_RUNTIME_STYLE_1" defer></script>
+    <script src="prompts-poetry.js?v=20260420_PROMPT_DETAIL_TAGS_REMOVED_1"></script>
+    <script src="js/wallet-modal-loader.js?v=20260423_WALLET_ORDER_DETAIL_FASTPATH_1" defer></script>
     <script src="./js/avatar-uploader.js" defer></script>
-    <script src="./js/admin-access.js?v=20260403_ADMIN_ENTRY_WARMUP_1" defer></script>
-    <script src="supabase-auth-functions.js?v=20260324_AUTH_RUNTIME_STYLE_HELPERS_1" defer></script>
-    <script src="security-cards.js?v=20260317_PROFILE_MODAL_SUBPAGES_1" defer></script>
+    <script src="./js/admin-access.js?v=20260421_ADMIN_ACCESS_SESSION_PRIORITY_P0" defer></script>
+    <script src="supabase-auth-functions.js?v=20260422_AUTH_DROPDOWN_STUDIO_FIX_1" defer></script>
+    <script src="js/public-scrollbar-auto-hide.js?v=20260424_PUBLIC_SCROLLBAR_AUTO_HIDE_1" defer></script>
+    <script src="js/profile-modal-loader.js?v=20260423_PROFILE_MODAL_LAZY_BOOTSTRAP_P3" defer></script>
     <script src="js/i18n.js?v=1" defer></script>
     <script src="js/ios-scroll-lock.js?v=20260324_IOS_SCROLL_LOCK_RUNTIME_STYLE_2" defer></script>
-    <script src="inject-auth.js?v=20260413_AUTH_LOGIN_MESSAGE_HELPER_1" defer></script>
+    <script src="inject-auth.js?v=20260424_SOLID_GUEST_AVATAR_1" defer></script>
     <link rel="stylesheet" href="css/notification-client.css?v=20260331_NOTIFICATION_FILTER_MEMORY_1">
-    <script src="notification-client.js?v=20260410_NOTIFICATION_ADMIN_PERSONAL_FIX_1"></script>
+    <script src="js/engagement-runtime-loader.js?v=20260421_PUBLIC_ENGAGEMENT_LAZY_BOOTSTRAP_P1" data-load-notification="1" defer></script>
     <script src="js/heartbeat.js?v=20260404_PHASE3_EVENT_TRACKER_1"></script>
-    <script src="js/framer_home.js?v=20260419_HOME_LIVE_PROMPT_REFRESH_3"></script>
+    <script src="js/framer-nav-runtime.js?v=20260423_FRAMER_NAV_RUNTIME_DROPDOWN_CURSOR_RUNTIME_4" defer></script>
     <!-- Chat Widget -->
-    <link rel="stylesheet" href="css/chat-widget.css?v=20260324_CHAT_RUNTIME_STYLE_2">
-    <script src="js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1"></script>
-    <script src="js/admin-workbench.js?v=20260402_ADMIN_WORKBENCH_ACCESS_4"></script>
-    <script src="js/components/ChatWidget.js?v=20260402_CHAT_WIDGET_PREWARM_5"></script>
-    <script src="js/chat-widget-loader.js?v=20260323_CHAT_WIDGET_BOOTSTRAP_1"></script>
+    <link rel="stylesheet" href="css/chat-widget.css?v=20260423_CHAT_OPS_ALERT_LIGHT_GLASS_11">
+    <script src="js/chat-widget-loader.js?v=20260423_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_LOADER_11"></script>
 
 </body>
 

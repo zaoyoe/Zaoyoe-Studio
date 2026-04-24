@@ -20,7 +20,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
 
     assert.match(
         shopClientSource,
-        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260413_PURCHASE_GUIDANCE_2';/,
+        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260423_PRODUCT_DESCRIPTION_VISIBILITY_1';/,
         'shop-client.js should define a dedicated schema version for prefetched shop payloads'
     );
     assert.match(
@@ -65,7 +65,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         homeBootstrapSource,
-        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260413_PURCHASE_GUIDANCE_2';/,
+        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260423_PRODUCT_DESCRIPTION_VISIBILITY_1';/,
         'homepage shop prefetch should use the same guidance-aware schema version'
     );
     assert.match(
@@ -135,12 +135,17 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /css\/shop-page\.css\?v=20260416_SHOP_DISCOUNT_UNAVAILABLE_ACCORDION_9/,
+        /css\/shop-page\.css\?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1/,
         'shop.html should bust the shop stylesheet cache after integrating the cart drawer module'
     );
     assert.match(
+        shopCssSource,
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal,[\s\S]*?#shopCartCheckoutModal \{\s+background: transparent;\s+backdrop-filter: none;\s+-webkit-backdrop-filter: none;\s+\}[\s\S]*?#shopPurchaseModal\.active/s,
+        'light shop modals should keep a transparent non-active overlay base so closing never falls back to the global dark modal backdrop'
+    );
+    assert.match(
         shopHtmlSource,
-        /js\/shop-client\.js\?v=20260416_SHOP_MULTI_DISCOUNT_STACKING_13/,
+        /js\/shop-client\.js\?v=20260423_SHOP_SUCCESS_MODAL_FAST_FEEDBACK_1/,
         'shop.html should load the cart-enabled shop client runtime'
     );
     assert.match(

@@ -20,7 +20,9 @@ canvas#starryCanvas,
     --snow-color: #3b82f6;
     /* Vivid Blue for Light Mode */
     --modal-bg: #ffffff;
-    --modal-overlay: rgba(0, 0, 0, 0.55);
+    --modal-overlay: rgba(34, 41, 52, 0.48);
+    --public-light-modal-backdrop: rgba(34, 41, 52, 0.48);
+    --public-light-modal-backdrop-filter: blur(12px) saturate(106%);
     --footer-border: rgba(0, 0, 0, 0.05);
     --ambient-color-1: rgba(155, 93, 229, 0.15);
     --ambient-color-2: rgba(139, 92, 246, 0.12);
@@ -28,6 +30,9 @@ canvas#starryCanvas,
     --accent-gradient: linear-gradient(135deg, #9b5de5 0%, #a78bfa 100%);
     --pagination-hover-rgb: 155, 93, 229;
     /* Diamond Purple */
+    --prompt-detail-accent: #6b9ece;
+    --prompt-detail-accent-hover: #5f8fbc;
+    --prompt-detail-accent-rgb: 107, 158, 206;
     --prompts-nav-height: 64px;
     --prompts-mobile-nav-gap: 44px;
     --prompt-auth-top-bar-shield: calc(env(safe-area-inset-top, 0px) + 34px);
@@ -2584,6 +2589,9 @@ body.prompts-page .prompt-card--loading .card-fav-btn {
         linear-gradient(180deg,
             rgba(255, 255, 255, 0.92),
             rgba(241, 245, 249, 0.96));
+    background-size: 220% 100%, 100% 100%;
+    animation: promptSkeletonShimmer 1.55s ease-in-out infinite;
+    will-change: background-position;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3090,7 +3098,6 @@ body.modal-open .prompt-card {
 
 .modal-header,
 .modal-description,
-.modal-content-tags,
 .prompt-area,
 .comment-section {
     transition: opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1), transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), max-height 0.32s cubic-bezier(0.22, 1, 0.36, 1), margin 0.32s cubic-bezier(0.22, 1, 0.36, 1), padding 0.32s cubic-bezier(0.22, 1, 0.36, 1);
@@ -3236,72 +3243,6 @@ body.modal-open .prompt-card {
     display: none;
 }
 
-.modal-content-tags[hidden] {
-    display: none !important;
-}
-
-.modal-content-tags {
-    margin: -6px 0 26px;
-    padding: 16px;
-    border-radius: 18px;
-    background: color-mix(in srgb, var(--card-bg) 82%, transparent);
-    border: 1px solid var(--card-border);
-}
-
-.modal-content-tags-title {
-    margin-bottom: 12px;
-    color: var(--text-dim);
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-}
-
-.modal-content-tags-grid {
-    display: grid;
-    gap: 12px;
-}
-
-.modal-content-tag-group {
-    display: grid;
-    gap: 8px;
-}
-
-.modal-content-tag-label {
-    color: var(--text-dim);
-    font-size: 0.78rem;
-    font-weight: 700;
-}
-
-.modal-content-tag-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.modal-content-tag-chip {
-    display: inline-flex;
-    align-items: center;
-    min-height: 28px;
-    padding: 6px 10px;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--accent-purple) 10%, transparent);
-    border: 1px solid color-mix(in srgb, var(--accent-purple) 20%, transparent);
-    color: var(--text-main);
-    font-size: 0.78rem;
-    line-height: 1.25;
-}
-
-[data-theme="dark"] .modal-content-tags {
-    background: rgba(255, 255, 255, 0.04);
-    border-color: rgba(255, 255, 255, 0.09);
-}
-
-[data-theme="dark"] .modal-content-tag-chip {
-    background: rgba(107, 158, 206, 0.11);
-    border-color: rgba(107, 158, 206, 0.18);
-}
-
 .prompt-area {
     background: var(--card-bg);
     border: 1px solid var(--card-border);
@@ -3319,7 +3260,7 @@ body.modal-open .prompt-card {
     display: block;
     margin-bottom: 12px;
     letter-spacing: 0.1em;
-    color: var(--accent-purple);
+    color: var(--prompt-detail-accent);
     font-weight: 600;
 }
 
@@ -3363,7 +3304,7 @@ body.modal-open .prompt-card {
     gap: 6px;
     padding: 6px 14px;
     background: transparent;
-    color: var(--accent-purple);
+    color: var(--prompt-detail-accent);
     border: 1px solid transparent;
     border-radius: 20px;
     font-size: 0.9rem;
@@ -3373,8 +3314,8 @@ body.modal-open .prompt-card {
 }
 
 .unlock-btn:hover {
-    background: rgba(139, 92, 246, 0.1);
-    border-color: rgba(139, 92, 246, 0.2);
+    background: rgba(var(--prompt-detail-accent-rgb), 0.1);
+    border-color: rgba(var(--prompt-detail-accent-rgb), 0.2);
     transform: translateY(-1px);
 }
 
@@ -3387,7 +3328,7 @@ body.modal-open .prompt-card {
     height: 44px;
     padding: 0;
     background: transparent;
-    color: var(--accent-purple);
+    color: var(--prompt-detail-accent);
     border: none;
     border-radius: 50%;
     font-size: 1.1rem;
@@ -3402,7 +3343,7 @@ body.modal-open .prompt-card {
     content: '';
     position: absolute;
     inset: 0;
-    background: rgba(155, 93, 229, 0.1);
+    background: rgba(var(--prompt-detail-accent-rgb), 0.1);
     border-radius: 50%;
     opacity: 0;
     transform: scale(0.8);
@@ -3410,7 +3351,7 @@ body.modal-open .prompt-card {
 }
 
 .copy-btn:hover {
-    color: #8b5cf6;
+    color: var(--prompt-detail-accent-hover);
     transform: translateY(-2px) scale(1.05);
 }
 
@@ -3470,7 +3411,7 @@ body.modal-open .prompt-card {
 /* Active state - when comment section is open */
 .comment-trigger-btn.active {
     background: transparent;
-    color: #8b5cf6;
+    color: var(--prompt-detail-accent);
 }
 
 /* Hide comment count when in active/close mode */
@@ -3504,7 +3445,7 @@ body.modal-open .prompt-card {
     width: 100%;
     height: 100%;
     border-radius: 50%;
-    box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.4);
+    box-shadow: 0 0 0 0 rgba(var(--prompt-detail-accent-rgb), 0.4);
     opacity: 0;
     transition: all 0.6s ease;
     pointer-events: none;
@@ -3516,12 +3457,12 @@ body.modal-open .prompt-card {
 
 @keyframes simpleRipple {
     0% {
-        box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.4);
+        box-shadow: 0 0 0 0 rgba(var(--prompt-detail-accent-rgb), 0.4);
         opacity: 0.8;
     }
 
     100% {
-        box-shadow: 0 0 0 15px rgba(139, 92, 246, 0);
+        box-shadow: 0 0 0 15px rgba(var(--prompt-detail-accent-rgb), 0);
         opacity: 0;
     }
 }
@@ -3869,7 +3810,7 @@ body.modal-open .prompt-card {
 }
 
 [data-theme="light"] .comment-mention {
-    color: var(--accent-purple, #8b5cf6);
+    color: var(--prompt-detail-accent);
 }
 
 /* Comment Actions - Hidden by default, show on hover */
@@ -3908,8 +3849,8 @@ body.modal-open .prompt-card {
 }
 
 [data-theme="light"] .comment-action-btn:hover {
-    background: rgba(139, 92, 246, 0.1);
-    color: var(--accent-purple, #8b5cf6);
+    background: rgba(var(--prompt-detail-accent-rgb), 0.1);
+    color: var(--prompt-detail-accent);
 }
 
 .comment-action-btn i {
@@ -4191,7 +4132,7 @@ body.modal-open .prompt-card {
 
 #commentInput:focus {
     outline: none;
-    border-bottom-color: var(--accent-purple);
+    border-bottom-color: var(--prompt-detail-accent);
 }
 
 .send-comment-btn {
@@ -4208,7 +4149,7 @@ body.modal-open .prompt-card {
 
 .send-comment-btn:hover {
     opacity: 1;
-    color: var(--accent-purple);
+    color: var(--prompt-detail-accent);
 }
 
 .comment-input-area.composer-proxy #commentInput {
@@ -4339,7 +4280,7 @@ body.modal-open .prompt-card {
     height: 4px;
     margin: 0 auto 4px;
     border-radius: 999px;
-    background: rgba(155, 93, 229, 0.34);
+    background: rgba(var(--prompt-detail-accent-rgb), 0.34);
     transition: background-color 180ms ease, opacity 180ms ease, box-shadow 180ms ease;
 }
 
@@ -4348,8 +4289,8 @@ body.modal-open .prompt-card {
 }
 
 .prompt-comment-composer:focus-within .prompt-comment-composer-handle {
-    background: var(--accent-purple);
-    box-shadow: 0 0 0 1px rgba(155, 93, 229, 0.08), 0 0 18px rgba(155, 93, 229, 0.18);
+    background: var(--prompt-detail-accent);
+    box-shadow: 0 0 0 1px rgba(var(--prompt-detail-accent-rgb), 0.08), 0 0 18px rgba(var(--prompt-detail-accent-rgb), 0.18);
 }
 
 [data-theme="dark"] .prompt-comment-composer:focus-within .prompt-comment-composer-handle {
@@ -4421,7 +4362,7 @@ body.modal-open .prompt-card {
 }
 
 .prompt-comment-composer-meta.has-reply {
-    color: var(--accent-purple);
+    color: var(--prompt-detail-accent);
 }
 
 [data-theme="dark"] .prompt-comment-composer-meta.has-reply {
@@ -4551,9 +4492,9 @@ body.modal-open .prompt-card {
 }
 
 .prompt-comment-composer-upload.has-image {
-    color: var(--accent-purple);
-    border-color: rgba(155, 93, 229, 0.28);
-    background: rgba(155, 93, 229, 0.08);
+    color: var(--prompt-detail-accent);
+    border-color: rgba(var(--prompt-detail-accent-rgb), 0.28);
+    background: rgba(var(--prompt-detail-accent-rgb), 0.08);
     opacity: 1;
 }
 
@@ -4619,7 +4560,7 @@ body.modal-open .prompt-card {
 
 /* @mention styling for both themes */
 .mention {
-    color: var(--accent-purple);
+    color: var(--prompt-detail-accent);
     font-weight: 500;
 }
 
@@ -4899,7 +4840,6 @@ body.modal-open .prompt-card {
     }
 
     .modal-inner.comment-mode .modal-description,
-    .modal-inner.comment-mode .modal-content-tags,
     .modal-inner.comment-mode .prompt-area {
         opacity: 0;
         transform: none;
@@ -4912,7 +4852,6 @@ body.modal-open .prompt-card {
     }
 
     .modal-description,
-    .modal-content-tags,
     .prompt-area {
         transition-property: opacity, max-height, margin, padding;
     }
@@ -5172,7 +5111,7 @@ body.modal-open .prompt-card {
 }
 
 .comment-expand-toggle:hover {
-    color: var(--accent-purple);
+    color: var(--prompt-detail-accent);
 }
 
 [data-theme="dark"] .comment-expand-toggle:hover {
@@ -5205,7 +5144,7 @@ body.modal-open .prompt-card {
 /* Active state when image is selected */
 .comment-upload-btn.has-image {
     opacity: 1;
-    color: var(--accent-purple);
+    color: var(--prompt-detail-accent);
 }
 
 [data-theme="dark"] .comment-upload-btn.has-image {
@@ -5214,7 +5153,7 @@ body.modal-open .prompt-card {
 
 /* View Image button in comment actions */
 .view-image-btn:hover {
-    color: var(--accent-purple);
+    color: var(--prompt-detail-accent);
 }
 
 [data-theme="dark"] .view-image-btn:hover {
@@ -5635,4 +5574,24 @@ body.modal-open .prompt-card {
         transform: translateY(450px);
         opacity: 0;
     }
+}
+
+/* 20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1 */
+html[data-theme="light"] :is(
+    .poetry-modal-backdrop,
+    .announcement-modal-overlay,
+    .announcement-toast-backdrop,
+    .prompt-comment-composer
+),
+html:not([data-theme="dark"]) :is(
+    .poetry-modal-backdrop,
+    .announcement-modal-overlay,
+    .announcement-toast-backdrop,
+    .prompt-comment-composer
+) {
+    background: var(--public-light-modal-backdrop) !important;
+    backdrop-filter: var(--public-light-modal-backdrop-filter) !important;
+    -webkit-backdrop-filter: var(--public-light-modal-backdrop-filter) !important;
+    overscroll-behavior: contain !important;
+    overscroll-behavior-y: contain !important;
 }

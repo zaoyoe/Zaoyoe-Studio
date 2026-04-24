@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260419_GOOGLE_ONE_FILTER_WIDTH_1';
+    const walletCssHref = 'css/wallet.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1';
     const existingWalletCss = document.getElementById('wallet-modal-css');
     if (existingWalletCss) {
         existingWalletCss.href = walletCssHref;
@@ -932,6 +932,18 @@
         };
     }
 
+    function resetWalletSidebarIndicatorState() {
+        const sidebar = document.querySelector('.wallet-sidebar');
+        const indicator = document.querySelector('.sidebar-indicator');
+
+        sidebar?.classList.remove('wallet-sidebar--indicator-ready');
+        if (indicator) {
+            setInlineStyles(indicator, {
+                opacity: '0'
+            });
+        }
+    }
+
     const WalletModal = {
         isOpen: false,
         modalEl: null,
@@ -1473,6 +1485,55 @@
             const rawValue = totalEl?.dataset?.value || totalEl?.textContent || '';
             const normalizedText = String(rawValue).replace(/[^\d.-]/g, '');
             return this.normalizeOptionalPointValue(normalizedText);
+        },
+
+        applyWalletBalance(balance = {}, { animate = true } = {}) {
+            const normalizedBalance = {
+                ...balance,
+                total_balance: this.normalizePointValue(balance?.total_balance),
+                paid_balance: this.normalizePointValue(balance?.paid_balance),
+                bonus_balance: this.normalizePointValue(balance?.bonus_balance)
+            };
+
+            this.currentWalletBalance = normalizedBalance;
+
+            const totalEl = document.getElementById('wallet-total');
+            if (totalEl) {
+                const currentVal = this.normalizePointValue(totalEl.dataset.value || totalEl.textContent || 0);
+                const newVal = this.normalizePointValue(normalizedBalance.total_balance);
+                if (animate) {
+                    this.animateValue(totalEl, currentVal, newVal, 800);
+                } else {
+                    totalEl.textContent = this.formatPoints(newVal);
+                }
+                totalEl.dataset.value = newVal;
+            }
+
+            const paidEl = document.getElementById('wallet-paid');
+            if (paidEl) paidEl.textContent = this.formatPoints(normalizedBalance.paid_balance);
+
+            const bonusEl = document.getElementById('wallet-bonus');
+            if (bonusEl) bonusEl.textContent = this.formatPoints(normalizedBalance.bonus_balance);
+
+            this.renderBalanceContext(normalizedBalance);
+            return normalizedBalance;
+        },
+
+        restoreWalletBalanceFromCache({ animate = false } = {}) {
+            const pointsService = window.PointsService;
+            if (!pointsService?.peekWalletBalance) {
+                return false;
+            }
+
+            const cachedBalance = pointsService.peekWalletBalance({
+                site: window.SiteConfig?.site || 'cn'
+            });
+            if (!cachedBalance) {
+                return false;
+            }
+
+            this.applyWalletBalance(cachedBalance, { animate });
+            return true;
         },
 
         async ensureWalletBalanceForOrderSnapshots() {
@@ -2467,25 +2528,85 @@
          * So data is instantly available when user clicks 'My Orders'
          */
         prefetchData() {
-            if (this._prefetched || this.ordersLoaded) return;
-            this._prefetched = true;
-
             const pointsService = window.PointsService;
-            if (!pointsService?.getWalletTransactions) {
+            if (!pointsService) {
                 return;
             }
 
-            pointsService.getWalletTransactions({
-                site: window.SiteConfig?.site || 'cn',
-                limit: 100
-            }).then((result) => {
-                this._prefetchedShopOrders = result.shopOrders || [];
-                this._prefetchedLedger = result.ledgerEntries || [];
-                this._prefetchedPromptTitles = result.promptTitles || {};
-                console.log('[WalletModal] ✅ Data prefetched in background');
-            }).catch(err => {
-                console.warn('[WalletModal] Prefetch failed (non-critical):', err);
-            });
+            const site = window.SiteConfig?.site || 'cn';
+
+            if (!this._prefetched && !this.ordersLoaded && pointsService?.getWalletTransactions) {
+                this._prefetched = true;
+                pointsService.getWalletTransactions({
+                    site,
+                    limit: 100
+                }).then((result) => {
+                    this._prefetchedShopOrders = result.shopOrders || [];
+                    this._prefetchedLedger = result.ledgerEntries || [];
+                    this._prefetchedPromptTitles = result.promptTitles || {};
+                    this.prefetchShopOrderDetails(this._prefetchedShopOrders, { limit: 4 });
+                    console.log('[WalletModal] ✅ Transaction data prefetched in background');
+                }).catch(err => {
+                    console.warn('[WalletModal] Transaction prefetch failed (non-critical):', err);
+                });
+            }
+
+            if (pointsService?.getWalletDiscountAssets) {
+                pointsService.getWalletDiscountAssets({ site }).then(() => {
+                    console.log('[WalletModal] ✅ Discount assets prefetched in background');
+                }).catch((err) => {
+                    console.warn('[WalletModal] Discount assets prefetch failed (non-critical):', err);
+                });
+            }
+
+            if (pointsService?.getBalance) {
+                pointsService.getBalance({ site }).then(() => {
+                    console.log('[WalletModal] ✅ Balance data prefetched in background');
+                }).catch((err) => {
+                    console.warn('[WalletModal] Balance prefetch failed (non-critical):', err);
+                });
+            }
+        },
+
+        prefetchShopOrderDetails(orders = [], { limit = 4 } = {}) {
+            const pointsService = window.PointsService;
+            if (!pointsService?.getWalletShopOrderDetail) {
+                return;
+            }
+
+            const normalizedLimit = Math.max(0, Math.min(6, Number(limit || 0) || 0));
+            if (!normalizedLimit) {
+                return;
+            }
+
+            const candidateOrderIds = [...new Set(
+                (Array.isArray(orders) ? orders : [])
+                    .filter((order) => order?.transactionType === 'shop' && order?.isShopOrder)
+                    .map((order) => String(order?.shopOrderId || order?.id || '').trim())
+                    .filter(Boolean)
+            )].slice(0, normalizedLimit);
+
+            if (!candidateOrderIds.length) {
+                return;
+            }
+
+            const runPrefetch = () => {
+                candidateOrderIds.forEach((candidateOrderId, index) => {
+                    if (pointsService?.peekWalletShopOrderDetail?.({ orderId: candidateOrderId })) {
+                        return;
+                    }
+
+                    window.setTimeout(() => {
+                        pointsService.getWalletShopOrderDetail({
+                            orderId: candidateOrderId
+                        }).catch((error) => {
+                            console.warn('[WalletModal] Shop order detail prefetch failed (non-critical):', error);
+                        });
+                    }, index * 120);
+                });
+            };
+
+            window.setTimeout(runPrefetch, 0);
         },
 
         /**
@@ -2528,6 +2649,7 @@
             this.resetOrderSearchState();
             this.resetAffiliateState();
             this.resetDiscountAssetsState();
+            this.restoreDiscountAssetsFromCache();
 
             if (isWalletModalIOSMode()) {
                 freezeWalletModalPage();
@@ -2535,8 +2657,10 @@
 
             // Render UI immediately so there's zero delay for the user
             this.render();
+            resetWalletSidebarIndicatorState();
             this.resetOrderFilters();
             this.syncOrderSearchUi();
+            this.restoreWalletBalanceFromCache({ animate: true });
             this.renderDiscountAssetsView();
             const ordersContainer = document.getElementById('wallet-orders');
             if (ordersContainer) {
@@ -3022,6 +3146,7 @@
             }
 
             if (viewId === 'cards') {
+                this.restoreDiscountAssetsFromCache();
                 this.renderDiscountAssetsView();
                 if (!this.discountAssetsLoaded && !this.discountAssetsLoading) {
                     this.loadDiscountAssets().catch((error) => {
@@ -3058,7 +3183,11 @@
                     height: `${height}px`,
                     opacity: '1'
                 });
+                sidebar.classList.add('wallet-sidebar--indicator-ready');
+                return;
             }
+
+            sidebar?.classList.remove('wallet-sidebar--indicator-ready');
         },
 
         resetAffiliateState() {
@@ -3094,6 +3223,38 @@
             this.discountAssetsSummaryFilter = 'available';
             this.discountAssetsExpandedKey = '';
             this.discountAssetsRemovingId = '';
+        },
+
+        applyDiscountAssetsPayload(payload = {}) {
+            this.discountAssetsData = {
+                ...this.getDefaultDiscountAssetsData(),
+                ...payload
+            };
+            this.discountAssetsLoaded = true;
+            this.discountAssetsLoading = false;
+            this.discountAssetsLoadError = '';
+
+            const preferredTabs = [this.discountAssetsActiveTab, 'available', 'used', 'inactive'];
+            const nextTab = preferredTabs.find((tabId) => this.getDiscountAssetsListByTab(tabId).length > 0) || 'available';
+            this.discountAssetsActiveTab = nextTab;
+            this.discountAssetsSummaryFilter = this.discountAssetsSummaryFilter === 'expiring' ? 'expiring' : 'available';
+        },
+
+        restoreDiscountAssetsFromCache() {
+            const pointsService = window.PointsService;
+            if (!pointsService?.peekWalletDiscountAssets) {
+                return false;
+            }
+
+            const cachedPayload = pointsService.peekWalletDiscountAssets({
+                site: window.SiteConfig?.site || 'cn'
+            });
+            if (!cachedPayload) {
+                return false;
+            }
+
+            this.applyDiscountAssetsPayload(cachedPayload);
+            return true;
         },
 
         getDiscountAssetKey(asset = {}, tabId = this.discountAssetsActiveTab) {
@@ -3597,42 +3758,48 @@
                 return;
             }
 
+            if (!forceRefresh && this.restoreDiscountAssetsFromCache()) {
+                this.renderDiscountAssetsView();
+                return;
+            }
+
             this.discountAssetsLoading = true;
             this.discountAssetsLoadError = '';
             this.renderDiscountAssetsView();
 
             try {
-                const { data: { session } } = await window.supabaseClient.auth.getSession();
-                if (!session?.access_token) {
-                    throw new Error(window.i18n?.t('security.loginRequired') || '请先登录');
+                const pointsService = window.PointsService;
+                let payload = null;
+
+                if (pointsService?.getWalletDiscountAssets) {
+                    payload = await pointsService.getWalletDiscountAssets({
+                        site: window.SiteConfig?.site || 'cn',
+                        force: forceRefresh
+                    });
+                } else {
+                    const { data: { session } } = await window.supabaseClient.auth.getSession();
+                    if (!session?.access_token) {
+                        throw new Error(window.i18n?.t('security.loginRequired') || '请先登录');
+                    }
+
+                    const response = await fetch('/api/shop/my-discount-assets', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${session.access_token}`
+                        },
+                        body: JSON.stringify({
+                            site: window.SiteConfig?.site || 'cn'
+                        })
+                    });
+                    payload = await response.json().catch(() => ({}));
+
+                    if (!response.ok || payload?.success === false) {
+                        throw new Error(payload?.message || '加载卡券失败');
+                    }
                 }
 
-                const response = await fetch('/api/shop/my-discount-assets', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        Authorization: `Bearer ${session.access_token}`
-                    },
-                    body: JSON.stringify({
-                        site: window.SiteConfig?.site || 'cn'
-                    })
-                });
-                const payload = await response.json().catch(() => ({}));
-
-                if (!response.ok || payload?.success === false) {
-                    throw new Error(payload?.message || '加载卡券失败');
-                }
-
-                this.discountAssetsData = {
-                    ...this.getDefaultDiscountAssetsData(),
-                    ...payload
-                };
-                this.discountAssetsLoaded = true;
-
-                const preferredTabs = [this.discountAssetsActiveTab, 'available', 'used', 'inactive'];
-                const nextTab = preferredTabs.find((tabId) => this.getDiscountAssetsListByTab(tabId).length > 0) || 'available';
-                this.discountAssetsActiveTab = nextTab;
-                this.discountAssetsSummaryFilter = this.discountAssetsSummaryFilter === 'expiring' ? 'expiring' : 'available';
+                this.applyDiscountAssetsPayload(payload);
             } catch (error) {
                 console.error('[WalletModal] Load discount assets failed:', error);
                 this.discountAssetsData = this.getDefaultDiscountAssetsData();
@@ -3688,6 +3855,9 @@
                     throw new Error(payload?.message || '删除卡券失败');
                 }
 
+                window.PointsService?.invalidateWalletDiscountAssets?.({
+                    site: window.SiteConfig?.site || 'cn'
+                });
                 if (this.discountAssetsExpandedKey === normalizedAssetId) {
                     this.discountAssetsExpandedKey = '';
                 }
@@ -5242,47 +5412,48 @@
                     throw new Error('PointsService not available');
                 }
 
-                // 🚀 Run ALL API calls in PARALLEL
+                // Start all requests in parallel, but render the balance as soon as it is ready.
                 const paymentRuntimePromise = this.loadPaymentRuntimeConfig();
-                const [balance, packages, history] = await Promise.all([
-                    PointsService.getBalance(),
+                const balancePromise = PointsService.getBalance({
+                    site: window.SiteConfig?.site || 'cn'
+                });
+                const auxiliaryWalletDataPromise = Promise.allSettled([
                     PointsService.getPackages(),
-                    PointsService.getHistory(),
+                    PointsService.getHistory(20, {
+                        site: window.SiteConfig?.site || 'cn'
+                    }),
                     paymentRuntimePromise
                 ]);
-                const rechargeOptions = this.normalizeRechargeOptionsConfig(this.rechargeOptionsConfig);
-                const paymentChannels = this.normalizePaymentChannelsConfig(this.paymentChannelsConfig);
-                const paymentRuntime = this.normalizePaymentRuntimeConfig(this.paymentRuntimeConfig);
+                const hadCachedBalance = this.getCurrentWalletTotalBalance() !== null
+                    || this.restoreWalletBalanceFromCache({ animate: false });
+                const balance = await balancePromise;
 
-                console.log('[WalletModal] ✅ Data loaded:', { balance, packagesLength: packages.length });
-                this.currentWalletBalance = {
-                    ...balance,
-                    total_balance: this.normalizePointValue(balance.total_balance),
-                    paid_balance: this.normalizePointValue(balance.paid_balance),
-                    bonus_balance: this.normalizePointValue(balance.bonus_balance)
-                };
-
-                // Update balance with animation
-                const totalEl = document.getElementById('wallet-total');
-                if (totalEl) {
-                    const currentVal = this.normalizePointValue(totalEl.dataset.value || 0);
-                    const newVal = this.normalizePointValue(balance.total_balance);
-                    this.animateValue(totalEl, currentVal, newVal, 800);
-                    totalEl.dataset.value = newVal;
-                }
-
-                const paidEl = document.getElementById('wallet-paid');
-                if (paidEl) paidEl.textContent = this.formatPoints(balance.paid_balance);
-
-                const bonusEl = document.getElementById('wallet-bonus');
-                if (bonusEl) bonusEl.textContent = this.formatPoints(balance.bonus_balance);
-
-                this.renderBalanceContext(balance);
+                this.applyWalletBalance(balance, {
+                    animate: !hadCachedBalance
+                });
 
                 // Notify other widgets (e.g. verify-widget) that balance changed
                 window.dispatchEvent(new CustomEvent('walletBalanceUpdated', {
                     detail: { totalBalance: balance.total_balance }
                 }));
+
+                const [packagesResult, historyResult, paymentRuntimeResult] = await auxiliaryWalletDataPromise;
+                const packages = packagesResult.status === 'fulfilled' ? packagesResult.value : [];
+                const history = historyResult.status === 'fulfilled' ? historyResult.value : [];
+                if (packagesResult.status === 'rejected') {
+                    console.warn('[WalletModal] Packages load failed:', packagesResult.reason);
+                }
+                if (historyResult.status === 'rejected') {
+                    console.warn('[WalletModal] History load failed:', historyResult.reason);
+                }
+                if (paymentRuntimeResult.status === 'rejected') {
+                    console.warn('[WalletModal] Payment runtime load failed:', paymentRuntimeResult.reason);
+                }
+                const latestRechargeOptions = this.normalizeRechargeOptionsConfig(this.rechargeOptionsConfig);
+                const latestPaymentChannels = this.normalizePaymentChannelsConfig(this.paymentChannelsConfig);
+                const latestPaymentRuntime = this.normalizePaymentRuntimeConfig(this.paymentRuntimeConfig);
+
+                console.log('[WalletModal] ✅ Data loaded:', { balance, packagesLength: packages.length });
 
                 // Update packages
                 const pkgContainer = document.getElementById('wallet-packages');
@@ -5309,8 +5480,8 @@
                     requestWalletRechargeScrollCueUpdate();
                 }
 
-                this.renderCustomRechargeSection(rechargeOptions, paymentChannels, paymentRuntime);
-                this.renderPaymentOrderQuerySection(paymentChannels);
+                this.renderCustomRechargeSection(latestRechargeOptions, latestPaymentChannels, latestPaymentRuntime);
+                this.renderPaymentOrderQuerySection(latestPaymentChannels);
 
                 // Store packages & history data for reuse
                 this._packagesCache = packages;
@@ -7766,6 +7937,88 @@
                     </div>
                 `;
             }).join('');
+
+            this.prefetchShopOrderDetails(orders, { limit: 4 });
+        },
+
+        findShopOrderPreview(orderId = '') {
+            const normalizedOrderId = String(orderId || '').trim();
+            if (!normalizedOrderId) {
+                return null;
+            }
+
+            const candidatePools = [
+                this.ordersData,
+                this.browseOrdersSnapshot,
+                this._prefetchedShopOrders
+            ];
+
+            for (const pool of candidatePools) {
+                const matchedOrder = (Array.isArray(pool) ? pool : []).find((order) => {
+                    const candidateOrderId = String(order?.shopOrderId || order?.id || '').trim();
+                    return candidateOrderId === normalizedOrderId;
+                });
+                if (matchedOrder) {
+                    return matchedOrder;
+                }
+            }
+
+            return null;
+        },
+
+        buildWalletShopOrderPreviewMarkup(orderId = '', previewOrder = {}) {
+            const normalizedOrderId = String(orderId || '').trim();
+            const shortenedOrderId = normalizedOrderId
+                ? `${normalizedOrderId.split('-')[0]}...${normalizedOrderId.slice(-4)}`
+                : '--';
+            const dateStr = previewOrder?.created_at
+                ? this.formatOrderDateTime(previewOrder.created_at)
+                : (window.i18n?.t('wallet.loading') || '加载中...');
+            const totalPrice = Math.abs(this.normalizePointValue(previewOrder?.total_price ?? previewOrder?.price_paid ?? 0));
+            const productName = String(previewOrder?.snapshot_product_name || '').trim()
+                || (window.i18n?.t('wallet.unknownProduct') || '未知商品');
+            const pointsUnit = window.i18n?.t('wallet.pointsUnit') || '积分';
+            const loadingLabel = window.i18n?.t('wallet.loading') || '加载中...';
+
+            return `
+                <div class="wallet-order-modal wallet-order-modal--shop-detail">
+                    <div class="wallet-order-modal-header">
+                        <div class="wallet-order-modal-title">
+                            ${this.renderWalletInlineIcon('fa-box-open', '#6b9ece')} ${window.i18n?.t('wallet.orderDetails') || '订单详情'}
+                        </div>
+                    </div>
+                    <div class="wallet-order-modal-body wallet-order-modal-body--fade">
+                        <div class="meta-section">
+                            <div class="detail-row">
+                                <span class="detail-label">${window.i18n?.t('wallet.orderNumber') || '订单编号'}</span>
+                                <span class="detail-val mono">${this.escapeHtml(shortenedOrderId)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">${window.i18n?.t('wallet.orderTime') || '下单时间'}</span>
+                                <span class="detail-val">${this.escapeHtml(dateStr)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">${window.i18n?.t('wallet.pointsPaid') || '支付积分'}</span>
+                                <span class="detail-val highlight">-${this.formatPoints(totalPrice)} ${pointsUnit}</span>
+                            </div>
+                            <div class="detail-row wallet-detail-row--product">
+                                <span class="detail-label">${window.i18n?.t('shop.productName') || '商品名称'}</span>
+                                <span class="detail-val wallet-order-product-name">${this.escapeHtml(productName)}</span>
+                            </div>
+                        </div>
+                        <div class="content-section">
+                            <div class="content-section-title">${window.i18n?.t('wallet.purchaseContent') || '购买内容'}</div>
+                            <div class="wallet-order-loading-state" aria-label="${this.escapeAttribute(loadingLabel)}">
+                                <div class="wallet-order-loading-row">
+                                    <span class="wallet-pending-dots wallet-order-loading-dots" aria-hidden="true">
+                                        <span></span><span></span><span></span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
         },
 
         /**
@@ -7907,8 +8160,6 @@
         },
 
         async showAffiliateRewardDetail(orderId, amount, createdAt, reason = '', referenceId = '') {
-            this._ensureOrderDetailStyles();
-
             const detailOverlay = document.createElement('div');
             detailOverlay.className = 'wallet-order-modal-overlay';
             detailOverlay.id = `affiliate-reward-detail-${orderId}`;
@@ -8187,8 +8438,6 @@
          * Show Google One verify order detail modal
          */
         async showVerifyOrderDetail(orderId, referenceId, pointsPaid, createdAt, reason = '') {
-            this._ensureOrderDetailStyles();
-
             const detailOverlay = document.createElement('div');
             detailOverlay.className = 'wallet-order-modal-overlay';
             detailOverlay.id = `verify-order-detail-${orderId}`;
@@ -8372,10 +8621,7 @@
          * 🚀 OPTIMIZED: Skeleton screen shows instantly, data loads in background
          */
         async showOrderDetail(orderId) {
-            // 🚀 STEP 1: Inject styles immediately (only once)
-            this._ensureOrderDetailStyles();
-
-            // 🚀 STEP 2: Show skeleton modal INSTANTLY (no await)
+            // 🚀 STEP 1: Show skeleton modal INSTANTLY (no await)
             const detailOverlay = document.createElement('div');
             detailOverlay.className = 'wallet-order-modal-overlay';
             detailOverlay.id = `order-detail-${orderId}`;
@@ -8385,44 +8631,28 @@
 
             // Skeleton HTML - shows immediately with loading animation
             const t = (key, fallback) => window.i18n?.t(key) || fallback;
-            detailOverlay.innerHTML = this.buildWalletOrderLoadingMarkup(t('wallet.loading', '加载详情...'), {
-                modalClass: 'wallet-order-modal--shop-detail'
-            });
+            const previewOrder = this.findShopOrderPreview(orderId);
+            detailOverlay.innerHTML = previewOrder
+                ? this.buildWalletShopOrderPreviewMarkup(orderId, previewOrder)
+                : this.buildWalletOrderLoadingMarkup(t('wallet.loading', '加载详情...'), {
+                    modalClass: 'wallet-order-modal--shop-detail'
+                });
 
             // 🚀 Append skeleton immediately - user sees modal in ~0ms
             document.body.appendChild(detailOverlay);
 
-            // 🚀 STEP 3: Load data in background
+            // 🚀 STEP 2: Load data in background
             try {
-                const { data: { session } } = await window.supabaseClient.auth.getSession();
-                if (!session?.access_token) {
-                    detailOverlay.remove();
-                    this.showToast(window.i18n?.t('security.loginRequired') || '请先登录', 'error');
-                    return;
+                const pointsService = window.PointsService;
+                if (!pointsService?.getWalletShopOrderDetail) {
+                    throw new Error('PointsService shop order detail API not available');
                 }
 
-                const response = await fetch('/api/shop/order-detail', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        Authorization: `Bearer ${session.access_token}`
-                    },
-                    body: JSON.stringify({
-                        orderId
-                    })
-                });
-                const payload = await response.json().catch(() => ({}));
+                const detail = pointsService?.peekWalletShopOrderDetail?.({ orderId })
+                    || await pointsService.getWalletShopOrderDetail({ orderId });
 
                 // Check if modal was closed while loading
                 if (!document.getElementById(`order-detail-${orderId}`)) return;
-
-                if (!response.ok || payload?.success === false) {
-                    const error = new Error(payload?.message || (window.i18n?.t('wallet.orderDetailFailed') || '加载订单详情失败'));
-                    error.status = response.status;
-                    throw error;
-                }
-
-                const detail = payload?.data && typeof payload.data === 'object' ? payload.data : null;
                 const order = detail?.order && typeof detail.order === 'object' ? detail.order : null;
                 if (!order) {
                     detailOverlay.remove();
@@ -8679,370 +8909,6 @@
                 console.error("[WalletModal] Submit ticket failed:", err);
                 this.showToast((window.i18n?.t('wallet.ticketFailed') || "工单提交失败") + ": " + err.message, "error");
             }
-        },
-
-        /**
-         * Ensure order detail styles are injected (skeleton + premium styles)
-         */
-        _ensureOrderDetailStyles() {
-            const styleId = 'order-detail-premium-style';
-            if (document.getElementById(styleId)) return;
-
-            const style = document.createElement('style');
-            style.id = styleId;
-            style.innerHTML = `
-                /* Skeleton Loading Animation */
-                @keyframes skeletonPulse {
-                    0%, 100% { opacity: 0.4; }
-                    50% { opacity: 0.7; }
-                }
-                .skeleton-text {
-                    display: inline-block;
-                    height: 14px;
-                    background: linear-gradient(90deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.2) 50%, rgba(255,255,255,0.1) 100%);
-                    background-size: 200% 100%;
-                    border-radius: 6px;
-                    animation: skeletonPulse 1.5s ease-in-out infinite;
-                }
-                .skeleton-card {
-                    animation: skeletonPulse 1.5s ease-in-out infinite;
-                }
-                .skeleton-btn {
-                    opacity: 0.5 !important;
-                    cursor: not-allowed !important;
-                }
-                
-                /* Modal Styles */
-                .wallet-order-modal-overlay {
-                    position: fixed !important; top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important;
-                    background: var(--auth-sheet-overlay, rgba(7, 9, 12, 0.28)) !important;
-                    backdrop-filter: var(--auth-sheet-overlay-filter, blur(14px) saturate(108%)) !important;
-                    -webkit-backdrop-filter: var(--auth-sheet-overlay-filter, blur(14px) saturate(108%)) !important;
-                    z-index: 200000 !important;
-                    display: flex !important; justify-content: center !important; align-items: center !important;
-                    animation: fadeIn 0.3s ease-out;
-                }
-                .wallet-order-modal {
-                    width: 92% !important; max-width: 560px !important;
-                    background: var(--auth-sheet-panel, rgba(12, 14, 18, 0.98)) !important;
-                    border: 1px solid var(--auth-sheet-border, rgba(255, 255, 255, 0.08)) !important;
-                    border-radius: 22px !important;
-                    box-shadow: 0 26px 70px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
-                    overflow: hidden !important;
-                    display: flex !important; flex-direction: column !important;
-                    max-height: min(86vh, 780px) !important;
-                    color: var(--auth-sheet-text, #f2f5f8) !important;
-                    animation: walletOrderModalIn 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
-                    opacity: 1;
-                    position: relative !important;
-                    isolation: isolate !important;
-                }
-                .wallet-order-modal--compact {
-                    width: min(92vw, 420px) !important;
-                    max-width: 420px !important;
-                }
-                .wallet-order-modal--shop-detail {
-                    width: min(92vw, 560px) !important;
-                    max-width: 560px !important;
-                    min-height: min(420px, 82vh) !important;
-                    max-height: min(86vh, 620px) !important;
-                }
-                .wallet-order-modal::before {
-                    content: '' !important;
-                    position: absolute !important;
-                    inset: 0 !important;
-                    z-index: 0 !important;
-                    pointer-events: none !important;
-                    border-radius: inherit !important;
-                    background: none !important;
-                }
-                .wallet-order-modal > * {
-                    position: relative !important;
-                    z-index: 1 !important;
-                }
-                .wallet-order-modal-header {
-                    padding: 18px 24px 14px;
-                    border-bottom: 1px solid var(--auth-sheet-border, rgba(255, 255, 255, 0.08));
-                    background: transparent;
-                    display: flex; justify-content: space-between; align-items: center;
-                }
-                .wallet-order-modal-title {
-                    font-size: 18px; font-weight: 700; color: var(--auth-sheet-text, #f2f5f8);
-                    display: flex; align-items: center; gap: 8px;
-                    letter-spacing: -0.5px;
-                }
-                .wallet-order-close-btn {
-                    width: 28px; height: 28px;
-                    border-radius: 50%;
-                    border: 1px solid var(--auth-sheet-border, rgba(255, 255, 255, 0.08));
-                    background: rgba(255, 255, 255, 0.05);
-                    color: var(--auth-sheet-muted, rgba(231, 236, 242, 0.62));
-                    cursor: pointer;
-                    display: flex; align-items: center; justify-content: center;
-                    transition: all 0.2s;
-                    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-                }
-                .wallet-order-close-btn:hover {
-                    background: rgba(255, 255, 255, 0.09);
-                    border-color: rgba(255, 255, 255, 0.14);
-                    color: var(--auth-sheet-text, #f2f5f8);
-                }
-                .wallet-order-modal-body {
-                    padding: 0 20px 18px;
-                    flex: 1 1 auto;
-                    min-height: 0;
-                    overflow-y: auto;
-                    scrollbar-width: thin;
-                    scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
-                }
-                /* Webkit scrollbar for modal body */
-                .wallet-order-modal-body::-webkit-scrollbar {
-                    width: 4px;
-                }
-                .wallet-order-modal-body::-webkit-scrollbar-track {
-                    background: transparent;
-                    border-radius: 10px;
-                }
-                .wallet-order-modal-body::-webkit-scrollbar-thumb {
-                    background-color: rgba(255, 255, 255, 0.1);
-                    border-radius: 10px;
-                }
-                .wallet-order-modal-body::-webkit-scrollbar-thumb:hover {
-                    background-color: rgba(255, 255, 255, 0.2);
-                }
-                .meta-section { margin-bottom: 12px; padding-top: 10px; }
-                .detail-row {
-                    display: flex; justify-content: space-between; align-items: center;
-                    margin-bottom: 10px; font-size: 13px;
-                }
-                .detail-label { color: rgba(255, 255, 255, 0.4); }
-                .detail-val { color: rgba(255, 255, 255, 0.9); font-weight: 500; font-family: 'Outfit', sans-serif;}
-                .detail-val.mono { font-family: monospace; letter-spacing: 0.5px; opacity: 0.8; }
-                .detail-val.highlight { color: #f87171; font-weight: 700; }
-                .wallet-status-success { color: rgba(255, 255, 255, 0.9); }
-                .wallet-status-check { color: #22c55e; font-weight: 900; }
-                .wallet-detail-link {
-                    appearance: none !important;
-                    border: 0 !important;
-                    background: transparent !important;
-                    padding: 0 !important;
-                    color: rgba(255, 255, 255, 0.92) !important;
-                    cursor: pointer !important;
-                    text-decoration: none !important;
-                    transition: color 0.2s, transform 0.12s ease !important;
-                }
-                .wallet-detail-link:hover,
-                .wallet-detail-link:focus-visible {
-                    color: #FFD700 !important;
-                    text-decoration: underline !important;
-                    outline: none !important;
-                }
-                .wallet-detail-link:active {
-                    transform: scale(0.98) !important;
-                }
-                .modal-actions { display: flex; gap: 10px; margin-bottom: 20px; }
-                .wallet-order-detail-toolbar {
-                    display: flex !important;
-                    align-items: center !important;
-                    justify-content: space-between !important;
-                    gap: 16px !important;
-                    padding: 4px 0 2px !important;
-                    margin: 4px 0 10px !important;
-                }
-                .wallet-order-product-name {
-                    max-width: min(380px, 56vw) !important;
-                    text-align: right !important;
-                    overflow: hidden !important;
-                    text-overflow: ellipsis !important;
-                    white-space: nowrap !important;
-                }
-                .wallet-order-guidance-toggles {
-                    display: flex !important;
-                    align-items: center !important;
-                    gap: 8px !important;
-                    flex-wrap: wrap !important;
-                    min-height: 32px !important;
-                }
-                .wallet-order-guidance-toggle {
-                    height: 32px !important;
-                    padding: 0 12px !important;
-                    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-                    border-radius: 999px !important;
-                    background: rgba(255, 255, 255, 0.045) !important;
-                    color: rgba(255, 255, 255, 0.72) !important;
-                    font-size: 12px !important;
-                    font-weight: 600 !important;
-                    cursor: pointer !important;
-                    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease !important;
-                }
-                .wallet-order-guidance-toggle:hover,
-                .wallet-order-guidance-toggle[aria-expanded="true"] {
-                    background: rgba(107, 158, 206, 0.16) !important;
-                    border-color: rgba(107, 158, 206, 0.42) !important;
-                    color: #dbeafe !important;
-                }
-                .wallet-order-guidance-panels {
-                    margin: 0 0 12px !important;
-                }
-                .wallet-order-guidance-panel {
-                    animation: fadeIn 0.16s ease-out !important;
-                }
-                .wallet-order-guidance-panel[hidden] {
-                    display: none !important;
-                }
-                .wallet-order-guidance-panel-title {
-                    margin-bottom: 8px !important;
-                    color: rgba(255, 255, 255, 0.48) !important;
-                    font-size: 12px !important;
-                    font-weight: 700 !important;
-                }
-                .wallet-modal-actions--toolbar {
-                    gap: 8px !important;
-                    justify-content: flex-end !important;
-                    padding: 4px 0 !important;
-                    margin: 0 !important;
-                    margin-left: auto !important;
-                    flex: 0 0 auto !important;
-                }
-                .action-btn.primary {
-                    flex: 1;
-                    background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
-                    color: #052e16;
-                    border: none; padding: 10px; border-radius: 50px;
-                    font-weight: 600; font-size: 13px; cursor: pointer;
-                    display: flex; align-items: center; justify-content: center; gap: 6px;
-                    box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
-                    transition: all 0.2s;
-                }
-                .action-btn.primary:hover {
-                    transform: translateY(-1px);
-                    box-shadow: 0 6px 16px rgba(34, 197, 94, 0.4);
-                    filter: brightness(1.05);
-                }
-                .action-btn.secondary {
-                    flex: 1;
-                    background: rgba(255, 255, 255, 0.05);
-                    color: rgba(255, 255, 255, 0.8);
-                    border: 1px solid rgba(255, 255, 255, 0.1);
-                    padding: 10px; border-radius: 50px;
-                    font-weight: 500; font-size: 13px; cursor: pointer;
-                    display: flex; align-items: center; justify-content: center; gap: 6px;
-                    transition: all 0.2s;
-                }
-                .action-btn.secondary:hover {
-                    background: rgba(255, 255, 255, 0.1);
-                    color: #fff;
-                }
-                .content-section {
-                    margin-top: 0 !important;
-                    margin-bottom: 4px !important;
-                    padding: 0 !important;
-                    max-width: none !important;
-                }
-                .wallet-order-guidance-section {
-                    margin-top: 14px !important;
-                    margin-bottom: 12px !important;
-                }
-                .wallet-order-guidance-content {
-                    background: rgba(255, 255, 255, 0.05) !important;
-                    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-                    border-radius: 14px !important;
-                    padding: 14px !important;
-                    color: rgba(255, 255, 255, 0.88) !important;
-                    font-size: 13px !important;
-                    line-height: 1.8 !important;
-                    overflow-wrap: anywhere !important;
-                    word-break: break-word !important;
-                }
-                .wallet-order-guidance-content a {
-                    color: #93c5fd !important;
-                    text-decoration: underline !important;
-                }
-                .wallet-order-guidance-content ul,
-                .wallet-order-guidance-content ol {
-                    margin: 0 0 0 18px !important;
-                    padding: 0 !important;
-                }
-                .wallet-order-guidance-content p,
-                .wallet-order-guidance-content div {
-                    margin: 0 0 8px !important;
-                }
-                .wallet-order-guidance-content p:last-child,
-                .wallet-order-guidance-content div:last-child {
-                    margin-bottom: 0 !important;
-                }
-                .content-section-title {
-                    font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.3);
-                    margin-bottom: 8px; text-align: center;
-                }
-                .content-card {
-                    background: rgba(255, 255, 255, 0.05) !important;
-                    backdrop-filter: blur(12px) !important;
-                    -webkit-backdrop-filter: blur(12px) !important;
-                    border-radius: 10px !important; padding: 12px !important;
-                    margin-bottom: 8px !important;
-                    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-                    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2) !important;
-                }
-                .wallet-copy-card:hover {
-                    border-color: rgba(107, 158, 206, 0.5) !important;
-                    background: rgba(255, 255, 255, 0.08) !important;
-                }
-                .wallet-order-action-btn:hover {
-                    background: rgba(255, 255, 255, 0.1) !important;
-                }
-                .wallet-order-action-btn-copy:hover {
-                    background: rgba(107, 158, 206, 0.15) !important;
-                }
-                .wallet-order-action-btn-danger:hover {
-                    background: rgba(239, 68, 68, 0.15) !important;
-                }
-                .item-name {
-                    font-size: 13px; font-weight: 600; color: #e2e8f0;
-                    margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
-                }
-                .item-content-box {
-                    background: transparent !important;
-                    border-radius: 0 !important;
-                    padding: 0 !important;
-                }
-                .item-text {
-                    font-family: 'Monaco', monospace;
-                    font-size: 12px; color: #10b981;
-                    word-break: break-all; line-height: 1.5; opacity: 0.9;
-                }
-                .wallet-order-loading-row {
-                    display: inline-flex !important;
-                    align-items: center !important;
-                    justify-content: center !important;
-                    gap: 10px !important;
-                }
-                .wallet-order-loading-dots {
-                    color: currentColor !important;
-                    transform: translateY(1px) !important;
-                }
-                @media (max-width: 640px) {
-                    .wallet-order-modal--shop-detail {
-                        width: min(94vw, 560px) !important;
-                        min-height: min(400px, 84vh) !important;
-                        max-height: min(86vh, 620px) !important;
-                    }
-                    .wallet-order-detail-toolbar {
-                        align-items: flex-start !important;
-                        gap: 10px !important;
-                    }
-                    .wallet-order-guidance-toggle {
-                        padding: 0 10px !important;
-                    }
-                    .wallet-order-product-name {
-                        max-width: 54vw !important;
-                    }
-                }
-                @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-                @keyframes walletOrderModalIn { from { opacity: 0; transform: translateY(6px) scale(0.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
-                @keyframes slideUp { from { opacity: 0; transform: translateY(20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
-            `;
-            document.head.appendChild(style);
         },
 
         /**

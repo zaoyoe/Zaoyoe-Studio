@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260324_AUTH_INJECT_RUNTIME_STYLE_HELPERS_2';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260420_AUTH_SHEET_SCROLLBAR_1';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260314_AUTH_I18N_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
@@ -131,7 +131,11 @@
 
         return `
             <button id="authBtn" class="login-trigger-btn${isLoggedIn ? ' logged-in' : ''}" type="button" aria-label="${label}">
-                <i id="defaultAuthIcon" class="fas fa-user-circle${hasAvatar ? ' auth-display-none' : ''}"></i>
+                <span id="defaultAuthIcon" class="default-auth-icon${hasAvatar ? ' auth-display-none' : ''}" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                        <path fill="currentColor" d="M12 12.25c2.35 0 4.25-1.9 4.25-4.25S14.35 3.75 12 3.75 7.75 5.65 7.75 8s1.9 4.25 4.25 4.25Zm0 2c-3.32 0-6.25 2.03-7.5 5.07-.24.58.2 1.18.82 1.18h13.36c.62 0 1.06-.6.82-1.18-1.25-3.04-4.18-5.07-7.5-5.07Z"></path>
+                    </svg>
+                </span>
                 <img id="navUserAvatar" class="nav-user-avatar${hasAvatar ? ' show' : ' auth-display-none'}" src="${avatarUrl}" alt="Avatar">
                 <span id="authBtnText" class="auth-display-none">Sign In</span>
                 <span id="avatarUnreadBadge" class="avatar-unread-badge"></span>
@@ -215,7 +219,7 @@
 
     function buildAuthSheetHTML() {
         return `
-            <div id="loginModal" class="auth-sheet-overlay login-overlay" hidden aria-hidden="true">
+            <div id="loginModal" class="auth-sheet-overlay login-overlay" data-auth-current-view="login" hidden aria-hidden="true">
                 <div class="auth-sheet-backdrop" data-auth-backdrop></div>
                 <div class="auth-sheet-stage">
                     <section class="auth-sheet" role="dialog" aria-modal="true" aria-labelledby="authSheetTitle">
@@ -391,10 +395,61 @@
         });
     }
 
+    function findAuthSheetStylesheet() {
+        const normalizedTargetHref = AUTH_SHEET_CSS_HREF.split('?')[0].replace(/^\.\//, '');
+        return Array.from(document.querySelectorAll('link[href]')).find((link) => {
+            const href = String(link.getAttribute('href') || '').trim().replace(/^\.\//, '');
+            return href.startsWith(normalizedTargetHref);
+        }) || null;
+    }
+
+    function waitForAuthSheetStylesheet(link) {
+        if (!(link instanceof HTMLLinkElement)) {
+            return Promise.resolve(null);
+        }
+
+        if (link.dataset.authSheetReady === '1' || link.sheet) {
+            link.dataset.authSheetReady = '1';
+            return Promise.resolve(link);
+        }
+
+        return new Promise((resolve) => {
+            const markReady = () => {
+                link.dataset.authSheetReady = '1';
+                resolve(link);
+            };
+
+            link.addEventListener('load', markReady, { once: true });
+            link.addEventListener('error', markReady, { once: true });
+        });
+    }
+
+    async function ensureAuthSheetStylesReady() {
+        removeLegacyLoginStyles();
+
+        let link = findAuthSheetStylesheet();
+        if (!link) {
+            link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = AUTH_SHEET_CSS_HREF;
+            document.head.appendChild(link);
+        } else if (link.dataset.deferredStyle === '1') {
+            if (typeof window.activateDeferredStyleGroup === 'function') {
+                window.activateDeferredStyleGroup('public-auth-sheet');
+            }
+            if (link.media !== 'all') {
+                link.media = 'all';
+            }
+            link.dataset.deferredStyleActive = '1';
+        }
+
+        return waitForAuthSheetStylesheet(link);
+    }
+
     function ensureStyles() {
         removeLegacyLoginStyles();
 
-        if (!document.querySelector(`link[href^="${AUTH_SHEET_CSS_HREF.split('?')[0]}"]`)) {
+        if (!findAuthSheetStylesheet()) {
             const link = document.createElement('link');
             link.rel = 'stylesheet';
             link.href = AUTH_SHEET_CSS_HREF;
@@ -926,6 +981,7 @@
         }
 
         sheetState.view = viewId;
+        overlay.dataset.authCurrentView = viewId;
         overlay.classList.toggle('auth-sheet-primary-mode', PRIMARY_VIEWS.has(viewId));
         updateSheetCopy(viewId);
         updateTabState(viewId, { immediate: !overlay.classList.contains('active') });
@@ -1025,6 +1081,35 @@
         }
     }
 
+    async function ensureInjectedAuthWalletModal(options = {}) {
+        if (window.WalletModal) {
+            if (options.prefetch === true && typeof window.WalletModal.prefetchData === 'function') {
+                window.WalletModal.prefetchData();
+            }
+            return window.WalletModal;
+        }
+
+        const loader = window.ZaoyoeWalletModalBootstrap;
+        if (!loader) {
+            return null;
+        }
+
+        try {
+            return options.prefetch === true && typeof loader.warm === 'function'
+                ? await loader.warm({ prefetch: true })
+                : await loader.ensure();
+        } catch (error) {
+            console.warn('⚠️ Failed to load wallet modal runtime:', error?.message || error);
+            return null;
+        }
+    }
+
+    async function openInjectedAuthWalletView(view = 'balance', context = {}) {
+        const walletModal = await ensureInjectedAuthWalletModal();
+        walletModal?.open?.(view, context);
+        return walletModal;
+    }
+
     function openDropdown() {
         const dropdown = document.getElementById('userDropdown');
         const overlay = document.getElementById('dropdownOverlay');
@@ -1048,9 +1133,7 @@
         overlay?.classList.add('active');
         authBtn.setAttribute('aria-expanded', 'true');
 
-        if (window.WalletModal?.prefetchData) {
-            window.WalletModal.prefetchData();
-        }
+        void ensureInjectedAuthWalletModal({ prefetch: true });
     }
 
     function closeDropdown() {
@@ -1070,7 +1153,7 @@
 
     async function openLoginModal(viewId = sheetState.lastPrimaryView || 'login') {
         ensureMarkup();
-        ensureStyles();
+        await ensureAuthSheetStylesReady();
 
         const { overlay } = getSheetElements();
         if (!overlay) return;
@@ -1426,12 +1509,12 @@
             if (action === 'profile') {
                 window.openProfileModal?.(event);
             } else if (action === 'wallet') {
-                window.WalletModal?.open('balance', {
+                void openInjectedAuthWalletView('balance', {
                     entry: 'nav_wallet',
                     sourceModule: 'auth_dropdown'
                 });
             } else if (action === 'orders') {
-                window.WalletModal?.open('orders', {
+                void openInjectedAuthWalletView('orders', {
                     entry: 'nav_orders',
                     sourceModule: 'auth_dropdown'
                 });

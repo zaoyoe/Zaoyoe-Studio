@@ -152,6 +152,7 @@ function extractFunction(source, functionName) {
 
 test('gallery analysis toast keeps upstream HTML errors as plain text', () => {
     const source = readRepoFile('admin-studio.js');
+    const normalizeFeedbackStateSource = extractFunction(source, 'normalizeAdminStudioFeedbackState');
     const setToastContentSource = extractFunction(source, 'setToastContent');
 
     const context = {
@@ -160,13 +161,17 @@ test('gallery analysis toast keeps upstream HTML errors as plain text', () => {
                 return {
                     tagName: tag,
                     className: '',
-                    textContent: ''
+                    textContent: '',
+                    children: [],
+                    append(...nodes) {
+                        this.children.push(...nodes);
+                    }
                 };
             }
         }
     };
 
-    vm.runInNewContext(`${setToastContentSource}; globalThis.setToastContent = setToastContent;`, context);
+    vm.runInNewContext(`${normalizeFeedbackStateSource}; ${setToastContentSource}; globalThis.setToastContent = setToastContent;`, context);
 
     const toast = {
         className: '',
@@ -181,8 +186,9 @@ test('gallery analysis toast keeps upstream HTML errors as plain text', () => {
     assert.equal(toast.className, 'toast error');
     assert.equal(toast.children.length, 2);
     assert.equal(toast.children[0].tagName, 'i');
-    assert.equal(toast.children[1].tagName, 'span');
-    assert.equal(toast.children[1].textContent, '<h1>Bad gateway Error code 502</h1>');
+    assert.equal(toast.children[1].tagName, 'div');
+    assert.equal(toast.children[1].children[0].tagName, 'span');
+    assert.equal(toast.children[1].children[0].textContent, '<h1>Bad gateway Error code 502</h1>');
 });
 
 test('gallery analysis retry helper only retries gateway-like failures', () => {

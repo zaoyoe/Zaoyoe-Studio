@@ -19,6 +19,9 @@
         return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : fallback;
     }
 
+    const WALLET_DISCOUNT_ASSETS_CACHE_TTL_MS = 30_000;
+    const WALLET_SHOP_ORDER_DETAIL_CACHE_TTL_MS = 60_000;
+
     function isUnsafeDirectRechargeAllowed() {
         const host = String(window.location.hostname || '').toLowerCase();
         return host === 'localhost' || host === '127.0.0.1';
@@ -28,25 +31,111 @@
         return options?.allowSimulatedPayment === true || isUnsafeDirectRechargeAllowed();
     }
 
+    function cloneWalletDiscountAssetsPayload(payload = {}) {
+        const normalizedPayload = {
+            ...payload,
+            summary: payload?.summary && typeof payload.summary === 'object' && !Array.isArray(payload.summary)
+                ? { ...payload.summary }
+                : {},
+            available_assets: Array.isArray(payload?.available_assets) ? payload.available_assets : [],
+            used_assets: Array.isArray(payload?.used_assets) ? payload.used_assets : [],
+            inactive_assets: Array.isArray(payload?.inactive_assets) ? payload.inactive_assets : []
+        };
+
+        try {
+            return JSON.parse(JSON.stringify(normalizedPayload));
+        } catch (error) {
+            console.warn('[PointsService] Failed to clone wallet discount assets payload:', error);
+            return normalizedPayload;
+        }
+    }
+
+    function cloneWalletShopOrderDetailPayload(payload = null) {
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+            return null;
+        }
+
+        try {
+            return JSON.parse(JSON.stringify(payload));
+        } catch (error) {
+            console.warn('[PointsService] Failed to clone wallet shop order detail payload:', error);
+            return payload;
+        }
+    }
+
     const PointsService = {
         // Cached session to avoid redundant getSession() calls
         _cachedUserId: null,
         _walletOverviewCache: null,
+        _walletOverviewCacheSite: '',
         _walletOverviewCacheLimit: 0,
         _walletOverviewCacheAt: 0,
         _walletOverviewPromise: null,
+        _walletOverviewPromiseSite: '',
+        _discountAssetsCache: new Map(),
+        _discountAssetsPromises: new Map(),
+        _shopOrderDetailCache: new Map(),
+        _shopOrderDetailPromises: new Map(),
         isUnsafeDirectRechargeAllowed,
 
-        async _getAccessToken() {
+        clearWalletReadCaches() {
+            this._walletOverviewCache = null;
+            this._walletOverviewCacheSite = '';
+            this._walletOverviewCacheLimit = 0;
+            this._walletOverviewCacheAt = 0;
+            this._walletOverviewPromise = null;
+            this._walletOverviewPromiseSite = '';
+
+            if (this._discountAssetsCache instanceof Map) {
+                this._discountAssetsCache.clear();
+            } else {
+                this._discountAssetsCache = new Map();
+            }
+
+            if (this._discountAssetsPromises instanceof Map) {
+                this._discountAssetsPromises.clear();
+            } else {
+                this._discountAssetsPromises = new Map();
+            }
+
+            if (this._shopOrderDetailCache instanceof Map) {
+                this._shopOrderDetailCache.clear();
+            } else {
+                this._shopOrderDetailCache = new Map();
+            }
+
+            if (this._shopOrderDetailPromises instanceof Map) {
+                this._shopOrderDetailPromises.clear();
+            } else {
+                this._shopOrderDetailPromises = new Map();
+            }
+        },
+
+        async _getSessionContext() {
             const { data: { session } } = await supabase.auth.getSession();
-            return session?.access_token || '';
+            const nextUserId = session?.user?.id || null;
+
+            if (nextUserId !== this._cachedUserId) {
+                this.clearWalletReadCaches();
+            }
+
+            this._cachedUserId = nextUserId;
+
+            return {
+                session,
+                accessToken: session?.access_token || '',
+                userId: nextUserId
+            };
+        },
+
+        async _getAccessToken() {
+            const { accessToken } = await this._getSessionContext();
+            return accessToken;
         },
 
         async _getUserId() {
-            if (this._cachedUserId) return this._cachedUserId;
-            const { data: { session } } = await supabase.auth.getSession();
-            this._cachedUserId = session?.user?.id || null;
-            return this._cachedUserId;
+            const { userId } = await this._getSessionContext();
+            return userId;
         },
 
         async _fetchWalletJson(path, query = {}) {
@@ -89,35 +178,332 @@
             return payload;
         },
 
-        async _getWalletOverview({ historyLimit = 20, force = false } = {}) {
+        async _getWalletOverview({ historyLimit = 20, force = false, site = '' } = {}) {
             const normalizedLimit = Math.max(1, Math.min(100, Number(historyLimit || 20) || 20));
+            const currentSite = String(site || window.SiteConfig?.site || 'cn').trim().toLowerCase() || 'cn';
             const now = Date.now();
             if (
                 !force
                 && this._walletOverviewCache
+                && this._walletOverviewCacheSite === currentSite
                 && this._walletOverviewCacheLimit >= normalizedLimit
                 && (now - this._walletOverviewCacheAt) < 10_000
             ) {
                 return this._walletOverviewCache;
             }
 
-            if (!force && this._walletOverviewPromise) {
+            if (!force && this._walletOverviewPromise && this._walletOverviewPromiseSite === currentSite) {
                 return this._walletOverviewPromise;
             }
 
             this._walletOverviewPromise = this._fetchWalletJson('/api/wallet/overview', {
-                site: window.SiteConfig?.site || 'cn',
+                site: currentSite,
                 history_limit: normalizedLimit
             }).then((payload) => {
                 this._walletOverviewCache = payload;
+                this._walletOverviewCacheSite = currentSite;
                 this._walletOverviewCacheLimit = normalizedLimit;
                 this._walletOverviewCacheAt = Date.now();
                 return payload;
             }).finally(() => {
                 this._walletOverviewPromise = null;
+                this._walletOverviewPromiseSite = '';
             });
+            this._walletOverviewPromiseSite = currentSite;
 
             return this._walletOverviewPromise;
+        },
+
+        peekWalletOverview({ historyLimit = 20, site = '' } = {}) {
+            const normalizedLimit = Math.max(1, Math.min(100, Number(historyLimit || 20) || 20));
+            const currentSite = String(site || window.SiteConfig?.site || 'cn').trim().toLowerCase() || 'cn';
+            const now = Date.now();
+            if (
+                this._walletOverviewCache
+                && this._walletOverviewCacheSite === currentSite
+                && this._walletOverviewCacheLimit >= normalizedLimit
+                && (now - this._walletOverviewCacheAt) < 10_000
+            ) {
+                return this._walletOverviewCache;
+            }
+            return null;
+        },
+
+        _normalizeWalletBalancePayload(overview = {}) {
+            const data = overview?.balance || {};
+
+            return {
+                paid_balance: normalizePointValue(data.paid_balance),
+                bonus_balance: normalizePointValue(data.bonus_balance),
+                total_balance: normalizePointValue(data.total_balance),
+                site: overview?.site || window.SiteConfig?.site || 'cn',
+                current_site_has_account: overview?.current_site_has_account === true,
+                other_site_balances: Array.isArray(overview?.other_site_balances)
+                    ? overview.other_site_balances.map((item) => ({
+                        site: String(item?.site || '').trim().toLowerCase(),
+                        paid_balance: normalizePointValue(item?.paid_balance),
+                        bonus_balance: normalizePointValue(item?.bonus_balance),
+                        total_balance: normalizePointValue(item?.total_balance)
+                    }))
+                    : [],
+                _load_failed: false,
+                error_message: ''
+            };
+        },
+
+        peekWalletBalance({ site = '' } = {}) {
+            const overview = this.peekWalletOverview({ historyLimit: 20, site });
+            if (!overview) {
+                return null;
+            }
+
+            return this._normalizeWalletBalancePayload(overview);
+        },
+
+        buildWalletDiscountAssetsCacheKey({ site = '', userId = '' } = {}) {
+            const normalizedSite = String(site || window.SiteConfig?.site || 'cn').trim().toLowerCase() || 'cn';
+            const normalizedUserId = String(userId || '').trim();
+            if (!normalizedUserId) {
+                return '';
+            }
+            return `${normalizedSite}::${normalizedUserId}`;
+        },
+
+        readWalletDiscountAssetsCache({ site = '', userId = this._cachedUserId } = {}) {
+            const cacheKey = this.buildWalletDiscountAssetsCacheKey({ site, userId });
+            if (!cacheKey || !(this._discountAssetsCache instanceof Map)) {
+                return null;
+            }
+
+            const cachedEntry = this._discountAssetsCache.get(cacheKey);
+            if (!cachedEntry) {
+                return null;
+            }
+
+            const ageMs = Math.max(0, Date.now() - Number(cachedEntry.timestamp || 0));
+            if (ageMs > WALLET_DISCOUNT_ASSETS_CACHE_TTL_MS) {
+                this._discountAssetsCache.delete(cacheKey);
+                return null;
+            }
+
+            return cloneWalletDiscountAssetsPayload(cachedEntry.payload || {});
+        },
+
+        writeWalletDiscountAssetsCache({ site = '', userId = this._cachedUserId } = {}, payload = {}) {
+            const cacheKey = this.buildWalletDiscountAssetsCacheKey({ site, userId });
+            if (!cacheKey) {
+                return;
+            }
+
+            if (!(this._discountAssetsCache instanceof Map)) {
+                this._discountAssetsCache = new Map();
+            }
+
+            this._discountAssetsCache.set(cacheKey, {
+                timestamp: Date.now(),
+                payload: cloneWalletDiscountAssetsPayload(payload)
+            });
+        },
+
+        peekWalletDiscountAssets({ site = '' } = {}) {
+            return this.readWalletDiscountAssetsCache({ site, userId: this._cachedUserId });
+        },
+
+        invalidateWalletDiscountAssets({ site = '', userId = this._cachedUserId } = {}) {
+            if (!(this._discountAssetsCache instanceof Map)) {
+                this._discountAssetsCache = new Map();
+            }
+
+            const cacheKey = this.buildWalletDiscountAssetsCacheKey({ site, userId });
+            if (cacheKey) {
+                this._discountAssetsCache.delete(cacheKey);
+            }
+
+            if (!(this._discountAssetsPromises instanceof Map)) {
+                this._discountAssetsPromises = new Map();
+            }
+
+            if (cacheKey) {
+                this._discountAssetsPromises.delete(cacheKey);
+            }
+        },
+
+        async getWalletDiscountAssets({ site = '', force = false } = {}) {
+            const currentSite = String(site || window.SiteConfig?.site || 'cn').trim().toLowerCase() || 'cn';
+            const { userId } = await this._getSessionContext();
+            if (!userId) {
+                throw new Error('请先登录');
+            }
+
+            const cacheKey = this.buildWalletDiscountAssetsCacheKey({
+                site: currentSite,
+                userId
+            });
+
+            if (!force) {
+                const cachedPayload = this.readWalletDiscountAssetsCache({
+                    site: currentSite,
+                    userId
+                });
+                if (cachedPayload) {
+                    return cachedPayload;
+                }
+            }
+
+            if (!force && this._discountAssetsPromises instanceof Map && this._discountAssetsPromises.has(cacheKey)) {
+                return cloneWalletDiscountAssetsPayload(await this._discountAssetsPromises.get(cacheKey));
+            }
+
+            const request = this._postWalletJson('/api/shop/my-discount-assets', {
+                site: currentSite
+            }).then((payload) => {
+                const normalizedPayload = cloneWalletDiscountAssetsPayload(payload);
+                this.writeWalletDiscountAssetsCache({
+                    site: currentSite,
+                    userId
+                }, normalizedPayload);
+                return normalizedPayload;
+            }).finally(() => {
+                if (this._discountAssetsPromises instanceof Map) {
+                    this._discountAssetsPromises.delete(cacheKey);
+                }
+            });
+
+            if (!(this._discountAssetsPromises instanceof Map)) {
+                this._discountAssetsPromises = new Map();
+            }
+            this._discountAssetsPromises.set(cacheKey, request);
+
+            return cloneWalletDiscountAssetsPayload(await request);
+        },
+
+        buildWalletShopOrderDetailCacheKey({ orderId = '', userId = '' } = {}) {
+            const normalizedOrderId = String(orderId || '').trim();
+            const normalizedUserId = String(userId || '').trim();
+            if (!normalizedOrderId || !normalizedUserId) {
+                return '';
+            }
+            return `${normalizedUserId}::${normalizedOrderId}`;
+        },
+
+        readWalletShopOrderDetailCache({ orderId = '', userId = this._cachedUserId } = {}) {
+            const cacheKey = this.buildWalletShopOrderDetailCacheKey({ orderId, userId });
+            if (!cacheKey || !(this._shopOrderDetailCache instanceof Map)) {
+                return null;
+            }
+
+            const cachedEntry = this._shopOrderDetailCache.get(cacheKey);
+            if (!cachedEntry) {
+                return null;
+            }
+
+            const ageMs = Math.max(0, Date.now() - Number(cachedEntry.timestamp || 0));
+            if (ageMs > WALLET_SHOP_ORDER_DETAIL_CACHE_TTL_MS) {
+                this._shopOrderDetailCache.delete(cacheKey);
+                return null;
+            }
+
+            return cloneWalletShopOrderDetailPayload(cachedEntry.payload || null);
+        },
+
+        writeWalletShopOrderDetailCache({ orderId = '', userId = this._cachedUserId } = {}, payload = null) {
+            const cacheKey = this.buildWalletShopOrderDetailCacheKey({ orderId, userId });
+            if (!cacheKey || !payload || typeof payload !== 'object' || Array.isArray(payload)) {
+                return;
+            }
+
+            if (!(this._shopOrderDetailCache instanceof Map)) {
+                this._shopOrderDetailCache = new Map();
+            }
+
+            this._shopOrderDetailCache.set(cacheKey, {
+                timestamp: Date.now(),
+                payload: cloneWalletShopOrderDetailPayload(payload)
+            });
+        },
+
+        peekWalletShopOrderDetail({ orderId = '' } = {}) {
+            return this.readWalletShopOrderDetailCache({ orderId, userId: this._cachedUserId });
+        },
+
+        invalidateWalletShopOrderDetail({ orderId = '', userId = this._cachedUserId } = {}) {
+            if (!(this._shopOrderDetailCache instanceof Map)) {
+                this._shopOrderDetailCache = new Map();
+            }
+
+            const cacheKey = this.buildWalletShopOrderDetailCacheKey({ orderId, userId });
+            if (cacheKey) {
+                this._shopOrderDetailCache.delete(cacheKey);
+            }
+
+            if (!(this._shopOrderDetailPromises instanceof Map)) {
+                this._shopOrderDetailPromises = new Map();
+            }
+
+            if (cacheKey) {
+                this._shopOrderDetailPromises.delete(cacheKey);
+            }
+        },
+
+        async getWalletShopOrderDetail({ orderId = '', force = false } = {}) {
+            const normalizedOrderId = String(orderId || '').trim();
+            if (!normalizedOrderId) {
+                throw new Error('缺少订单号');
+            }
+
+            const { userId } = await this._getSessionContext();
+            if (!userId) {
+                throw new Error('请先登录');
+            }
+
+            const cacheKey = this.buildWalletShopOrderDetailCacheKey({
+                orderId: normalizedOrderId,
+                userId
+            });
+
+            if (!force) {
+                const cachedPayload = this.readWalletShopOrderDetailCache({
+                    orderId: normalizedOrderId,
+                    userId
+                });
+                if (cachedPayload) {
+                    return cachedPayload;
+                }
+            }
+
+            if (!force && this._shopOrderDetailPromises instanceof Map && this._shopOrderDetailPromises.has(cacheKey)) {
+                return cloneWalletShopOrderDetailPayload(await this._shopOrderDetailPromises.get(cacheKey));
+            }
+
+            const request = this._postWalletJson('/api/wallet/order-detail', {
+                orderId: normalizedOrderId
+            }).then((payload) => {
+                const normalizedPayload = cloneWalletShopOrderDetailPayload(
+                    payload?.data && typeof payload.data === 'object' && !Array.isArray(payload.data)
+                        ? payload.data
+                        : null
+                );
+                if (!normalizedPayload?.order) {
+                    throw new Error('加载订单详情失败');
+                }
+
+                this.writeWalletShopOrderDetailCache({
+                    orderId: normalizedOrderId,
+                    userId
+                }, normalizedPayload);
+                return normalizedPayload;
+            }).finally(() => {
+                if (this._shopOrderDetailPromises instanceof Map) {
+                    this._shopOrderDetailPromises.delete(cacheKey);
+                }
+            });
+
+            if (!(this._shopOrderDetailPromises instanceof Map)) {
+                this._shopOrderDetailPromises = new Map();
+            }
+            this._shopOrderDetailPromises.set(cacheKey, request);
+
+            return cloneWalletShopOrderDetailPayload(await request);
         },
 
         async createPaymentRequest(payload = {}) {
@@ -160,7 +546,7 @@
         /**
          * Get user's current balance
          */
-        async getBalance() {
+        async getBalance(options = {}) {
             try {
                 const userId = await this._getUserId();
                 if (!userId) {
@@ -176,26 +562,11 @@
                     };
                 }
 
-                const overview = await this._getWalletOverview({ historyLimit: 20 });
-                const data = overview?.balance || {};
-
-                return {
-                    paid_balance: normalizePointValue(data.paid_balance),
-                    bonus_balance: normalizePointValue(data.bonus_balance),
-                    total_balance: normalizePointValue(data.total_balance),
-                    site: overview?.site || window.SiteConfig?.site || 'cn',
-                    current_site_has_account: overview?.current_site_has_account === true,
-                    other_site_balances: Array.isArray(overview?.other_site_balances)
-                        ? overview.other_site_balances.map((item) => ({
-                            site: String(item?.site || '').trim().toLowerCase(),
-                            paid_balance: normalizePointValue(item?.paid_balance),
-                            bonus_balance: normalizePointValue(item?.bonus_balance),
-                            total_balance: normalizePointValue(item?.total_balance)
-                        }))
-                        : [],
-                    _load_failed: false,
-                    error_message: ''
-                };
+                const overview = await this._getWalletOverview({
+                    historyLimit: 20,
+                    site: options.site || window.SiteConfig?.site || 'cn'
+                });
+                return this._normalizeWalletBalancePayload(overview);
             } catch (e) {
                 console.error('[PointsService] Exception in getBalance:', e);
                 return {
@@ -214,9 +585,12 @@
         /**
          * Get transaction history
          */
-        async getHistory(limit = 20) {
+        async getHistory(limit = 20, options = {}) {
             try {
-                const overview = await this._getWalletOverview({ historyLimit: limit });
+                const overview = await this._getWalletOverview({
+                    historyLimit: limit,
+                    site: options.site || window.SiteConfig?.site || 'cn'
+                });
                 const history = Array.isArray(overview?.recent_history) ? overview.recent_history : [];
                 return history.map((item) => ({
                     ...item,
@@ -369,6 +743,16 @@
             };
         }
     };
+
+    if (typeof supabase.auth?.onAuthStateChange === 'function') {
+        supabase.auth.onAuthStateChange((_event, session) => {
+            const nextUserId = session?.user?.id || null;
+            if (nextUserId !== PointsService._cachedUserId) {
+                PointsService.clearWalletReadCaches();
+            }
+            PointsService._cachedUserId = nextUserId;
+        });
+    }
 
     // Export to window
     window.PointsService = PointsService;

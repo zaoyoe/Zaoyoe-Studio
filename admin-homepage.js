@@ -176,6 +176,64 @@ const HomepageAdmin = (() => {
         return rawMessage;
     }
 
+    function normalizeHomepageFeedbackState(value = '') {
+        const normalized = String(value || '').trim().toLowerCase();
+        if (normalized === 'success' || normalized === 'saved') return 'saved';
+        if (normalized === 'warning' || normalized === 'partial') return 'partial';
+        if (normalized === 'error' || normalized === 'danger' || normalized === 'failed') return 'failed';
+        if (normalized === 'info' || normalized === 'loading' || normalized === 'pending') return 'loading';
+        return 'ready';
+    }
+
+    function emitHomepageCommandFeedback(message = '', feedbackState = 'saved', options = {}) {
+        const normalizedMessage = String(message || '').trim();
+        if (!normalizedMessage) {
+            return null;
+        }
+
+        const detail = {
+            kind: 'module-result',
+            source: String(options?.source || 'homepage-draft').trim().toLowerCase() || 'homepage-draft',
+            module: 'homepage',
+            state: normalizeHomepageFeedbackState(feedbackState || options?.tone || ''),
+            tone: String(options?.tone || '').trim().toLowerCase(),
+            message: normalizedMessage,
+            persistent: options?.persistent === true,
+            timestamp: Date.now()
+        };
+
+        if (typeof window.dispatchAdminStudioFeedbackSignal === 'function') {
+            return window.dispatchAdminStudioFeedbackSignal(detail);
+        }
+
+        if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+            try {
+                window.dispatchEvent(new CustomEvent('admin-feedback-signal', { detail }));
+            } catch (_) {
+                // Homepage feedback should remain best-effort.
+            }
+        }
+
+        return detail;
+    }
+
+    function showHomepageActionToast(message = '', tone = 'success', options = {}) {
+        const normalizedMessage = String(message || '').trim();
+        if (!normalizedMessage) {
+            return null;
+        }
+
+        if (typeof showToast === 'function') {
+            showToast(normalizedMessage, tone);
+        }
+
+        if (options.feedback !== false) {
+            emitHomepageCommandFeedback(normalizedMessage, options.feedbackState || tone, options);
+        }
+
+        return normalizedMessage;
+    }
+
     function escapeHomepageHtml(value) {
         return String(value ?? '')
             .replace(/&/g, '&amp;')
@@ -3340,9 +3398,7 @@ const HomepageAdmin = (() => {
             focusPromptId
         });
 
-        if (typeof showToast === 'function') {
-            showToast(successMessage, 'success');
-        }
+        showHomepageActionToast(successMessage, 'success', { source: 'homepage-prompts' });
 
         return savedRow;
     }
@@ -3371,9 +3427,7 @@ const HomepageAdmin = (() => {
         });
 
         if (options.navigate === true) {
-            window.switchModule?.('homepage');
-            await init();
-            switchSection('prompts');
+            await openPromptSectionContext(nextItem.id, { ensureModule: true });
         }
 
         return true;
@@ -3420,9 +3474,7 @@ const HomepageAdmin = (() => {
         });
 
         if (options.navigate === true) {
-            window.switchModule?.('homepage');
-            await init();
-            switchSection('prompts');
+            await openPromptSectionContext(uniqueOrderedIds[0] || '', { ensureModule: true });
         }
 
         return true;
@@ -3517,9 +3569,7 @@ const HomepageAdmin = (() => {
             setHomepageFeaturedPromptPendingState(null);
             renderHomepageFeaturedPromptList(promptId);
             restoreHomepageFeaturedPromptListScroll(listScrollTop);
-            if (typeof showToast === 'function') {
-                showToast(`排序更新失败: ${error.message}`, 'error');
-            }
+            showHomepageActionToast(`排序更新失败: ${error.message}`, 'error', { source: 'homepage-prompts' });
             return false;
         }
     }
@@ -3673,16 +3723,14 @@ const HomepageAdmin = (() => {
             invalidateSectionVisibilityCaches();
             renderAllSections();
 
-            if (typeof showToast === 'function') {
-                showToast('草稿已保存，点击“发布当前站点”后首页才会更新', 'success');
-            }
+            showHomepageActionToast('草稿已保存，点击“发布当前站点”后首页才会更新', 'success', {
+                source: 'homepage-draft'
+            });
 
             console.log(`[Homepage] Section "${section}" saved successfully`);
         } catch (err) {
             console.error(`[Homepage] Save error for "${section}":`, err);
-            if (typeof showToast === 'function') {
-                showToast('保存失败: ' + err.message, 'error');
-            }
+            showHomepageActionToast('保存失败: ' + err.message, 'error', { source: 'homepage-draft' });
         } finally {
             // Restore save button
             if (saveBtn) {
@@ -3706,9 +3754,7 @@ const HomepageAdmin = (() => {
             invalidateSectionVisibilityCaches();
             renderAllSections();
 
-            if (typeof showToast === 'function') {
-                showToast('首页草稿已发布', 'success');
-            }
+            showHomepageActionToast('首页草稿已发布', 'success', { source: 'homepage-release' });
 
             return true;
         } catch (error) {
@@ -3723,9 +3769,9 @@ const HomepageAdmin = (() => {
                     renderAllSections();
 
                     if (refreshed?.draft?.exists === false) {
-                        if (typeof showToast === 'function') {
-                            showToast('发布已完成，刚才只是结果回传中断；当前站点状态已刷新。', 'success');
-                        }
+                        showHomepageActionToast('发布已完成，刚才只是结果回传中断；当前站点状态已刷新。', 'success', {
+                            source: 'homepage-release'
+                        });
                         return true;
                     }
                 } catch (refreshError) {
@@ -3733,9 +3779,9 @@ const HomepageAdmin = (() => {
                 }
             }
 
-            if (typeof showToast === 'function') {
-                showToast(`发布失败: ${humanizeHomepagePublishError(error)}`, 'error');
-            }
+            showHomepageActionToast(`发布失败: ${humanizeHomepagePublishError(error)}`, 'error', {
+                source: 'homepage-release'
+            });
             return false;
         }
     }
@@ -3753,16 +3799,12 @@ const HomepageAdmin = (() => {
             invalidateSectionVisibilityCaches();
             renderAllSections();
 
-            if (typeof showToast === 'function') {
-                showToast('首页已回滚到上一版', 'success');
-            }
+            showHomepageActionToast('首页已回滚到上一版', 'success', { source: 'homepage-release' });
 
             return true;
         } catch (error) {
             console.error('[Homepage] Rollback failed:', error);
-            if (typeof showToast === 'function') {
-                showToast(`回滚失败: ${error.message}`, 'error');
-            }
+            showHomepageActionToast(`回滚失败: ${error.message}`, 'error', { source: 'homepage-release' });
             return false;
         }
     }
@@ -3788,26 +3830,29 @@ const HomepageAdmin = (() => {
             return false;
         }
 
-        const name = getInputValue('hp-template-name');
-        const description = getInputValue('hp-template-description');
-        const templateType = getSelectValue('hp-template-type') || 'custom';
-        if (!name) {
-            throw new Error('请先填写模板名称');
-        }
+        try {
+            const name = getInputValue('hp-template-name');
+            const description = getInputValue('hp-template-description');
+            const templateType = getSelectValue('hp-template-type') || 'custom';
+            if (!name) {
+                throw new Error('请先填写模板名称');
+            }
 
-        const payload = await requestHomepageContextMutation({
-            action: 'save_template',
-            site: writableSite,
-            name,
-            description,
-            template_type: templateType
-        });
-        applyHomepageContextPayload(writableSite, payload);
-        await refreshHomepageSiteState(writableSite);
-        if (typeof showToast === 'function') {
-            showToast('首页模板已保存', 'success');
+            const payload = await requestHomepageContextMutation({
+                action: 'save_template',
+                site: writableSite,
+                name,
+                description,
+                template_type: templateType
+            });
+            applyHomepageContextPayload(writableSite, payload);
+            await refreshHomepageSiteState(writableSite);
+            showHomepageActionToast('首页模板已保存', 'success', { source: 'homepage-template' });
+            return true;
+        } catch (error) {
+            showHomepageActionToast(`模板保存失败: ${error.message}`, 'error', { source: 'homepage-template' });
+            return false;
         }
-        return true;
     }
 
     async function applySelectedHomepageTemplate() {
@@ -3815,22 +3860,25 @@ const HomepageAdmin = (() => {
         if (!writableSite) {
             return false;
         }
-        const templateId = Number.parseInt(getSelectValue('hp-template-select'), 10);
-        if (!Number.isFinite(templateId)) {
-            throw new Error('请先选择一个模板');
-        }
+        try {
+            const templateId = Number.parseInt(getSelectValue('hp-template-select'), 10);
+            if (!Number.isFinite(templateId)) {
+                throw new Error('请先选择一个模板');
+            }
 
-        const payload = await requestHomepageContextMutation({
-            action: 'apply_template',
-            site: writableSite,
-            template_id: templateId
-        });
-        applyHomepageContextPayload(writableSite, payload);
-        await refreshHomepageSiteState(writableSite);
-        if (typeof showToast === 'function') {
-            showToast('模板已应用到当前草稿', 'success');
+            const payload = await requestHomepageContextMutation({
+                action: 'apply_template',
+                site: writableSite,
+                template_id: templateId
+            });
+            applyHomepageContextPayload(writableSite, payload);
+            await refreshHomepageSiteState(writableSite);
+            showHomepageActionToast('模板已应用到当前草稿', 'success', { source: 'homepage-template' });
+            return true;
+        } catch (error) {
+            showHomepageActionToast(`模板应用失败: ${error.message}`, 'error', { source: 'homepage-template' });
+            return false;
         }
-        return true;
     }
 
     async function createHomepageScheduleForCurrentSite() {
@@ -3839,31 +3887,34 @@ const HomepageAdmin = (() => {
             return false;
         }
 
-        const name = getInputValue('hp-schedule-name') || '首页定时发布';
-        const note = getInputValue('hp-schedule-note');
-        const startsAt = parseHomepageLocalDatetimeToIso(getInputValue('hp-schedule-starts'));
-        const endsAt = parseHomepageLocalDatetimeToIso(getInputValue('hp-schedule-ends'));
-        if (!startsAt) {
-            throw new Error('请先选择开始时间');
-        }
+        try {
+            const name = getInputValue('hp-schedule-name') || '首页定时发布';
+            const note = getInputValue('hp-schedule-note');
+            const startsAt = parseHomepageLocalDatetimeToIso(getInputValue('hp-schedule-starts'));
+            const endsAt = parseHomepageLocalDatetimeToIso(getInputValue('hp-schedule-ends'));
+            if (!startsAt) {
+                throw new Error('请先选择开始时间');
+            }
 
-        const payload = await requestHomepageContextMutation({
-            action: 'schedule_publish',
-            site: writableSite,
-            name,
-            note,
-            starts_at: startsAt,
-            ends_at: endsAt || undefined
-        });
-        applyHomepageContextPayload(writableSite, payload);
-        if (payload.health) {
-            homepageHealthBySite[normalizeHomepageSite(writableSite)] = payload.health;
+            const payload = await requestHomepageContextMutation({
+                action: 'schedule_publish',
+                site: writableSite,
+                name,
+                note,
+                starts_at: startsAt,
+                ends_at: endsAt || undefined
+            });
+            applyHomepageContextPayload(writableSite, payload);
+            if (payload.health) {
+                homepageHealthBySite[normalizeHomepageSite(writableSite)] = payload.health;
+            }
+            renderAllSections();
+            showHomepageActionToast('首页定时发布已创建', 'success', { source: 'homepage-schedule' });
+            return true;
+        } catch (error) {
+            showHomepageActionToast(`定时发布创建失败: ${error.message}`, 'error', { source: 'homepage-schedule' });
+            return false;
         }
-        renderAllSections();
-        if (typeof showToast === 'function') {
-            showToast('首页定时发布已创建', 'success');
-        }
-        return true;
     }
 
     async function cancelHomepageScheduleForCurrentSite(scheduleId = '') {
@@ -3872,22 +3923,25 @@ const HomepageAdmin = (() => {
             return false;
         }
 
-        const numericId = Number.parseInt(scheduleId, 10);
-        if (!Number.isFinite(numericId)) {
-            throw new Error('schedule_id 无效');
-        }
+        try {
+            const numericId = Number.parseInt(scheduleId, 10);
+            if (!Number.isFinite(numericId)) {
+                throw new Error('schedule_id 无效');
+            }
 
-        const payload = await requestHomepageContextMutation({
-            action: 'cancel_schedule',
-            site: writableSite,
-            schedule_id: numericId
-        });
-        applyHomepageContextPayload(writableSite, payload);
-        renderAllSections();
-        if (typeof showToast === 'function') {
-            showToast('定时发布已取消', 'success');
+            const payload = await requestHomepageContextMutation({
+                action: 'cancel_schedule',
+                site: writableSite,
+                schedule_id: numericId
+            });
+            applyHomepageContextPayload(writableSite, payload);
+            renderAllSections();
+            showHomepageActionToast('定时发布已取消', 'success', { source: 'homepage-schedule' });
+            return true;
+        } catch (error) {
+            showHomepageActionToast(`定时发布取消失败: ${error.message}`, 'error', { source: 'homepage-schedule' });
+            return false;
         }
-        return true;
     }
 
     async function saveHomepageExperimentForCurrentSite() {
@@ -3896,29 +3950,32 @@ const HomepageAdmin = (() => {
             return false;
         }
 
-        const slotDef = getHomepageExperimentSlotDefinition(getSelectValue('hp-experiment-slot'));
-        const name = getInputValue('hp-experiment-name') || `${slotDef.label} 轻量实验`;
-        const trafficPercent = Number.parseInt(getInputValue('hp-experiment-traffic'), 10) || 50;
-        const variantInput = getInputValue('hp-experiment-variant-input');
-        if (!variantInput) {
-            throw new Error('请先填写实验版本内容');
-        }
+        try {
+            const slotDef = getHomepageExperimentSlotDefinition(getSelectValue('hp-experiment-slot'));
+            const name = getInputValue('hp-experiment-name') || `${slotDef.label} 轻量实验`;
+            const trafficPercent = Number.parseInt(getInputValue('hp-experiment-traffic'), 10) || 50;
+            const variantInput = getInputValue('hp-experiment-variant-input');
+            if (!variantInput) {
+                throw new Error('请先填写实验版本内容');
+            }
 
-        const payload = await requestHomepageContextMutation({
-            action: 'save_experiment',
-            site: writableSite,
-            section: slotDef.section,
-            field: slotDef.field,
-            name,
-            traffic_percent: trafficPercent,
-            variant_input: variantInput
-        });
-        applyHomepageContextPayload(writableSite, payload);
-        await refreshHomepageSiteState(writableSite);
-        if (typeof showToast === 'function') {
-            showToast('首页实验已保存到当前草稿', 'success');
+            const payload = await requestHomepageContextMutation({
+                action: 'save_experiment',
+                site: writableSite,
+                section: slotDef.section,
+                field: slotDef.field,
+                name,
+                traffic_percent: trafficPercent,
+                variant_input: variantInput
+            });
+            applyHomepageContextPayload(writableSite, payload);
+            await refreshHomepageSiteState(writableSite);
+            showHomepageActionToast('首页实验已保存到当前草稿', 'success', { source: 'homepage-experiment' });
+            return true;
+        } catch (error) {
+            showHomepageActionToast(`实验保存失败: ${error.message}`, 'error', { source: 'homepage-experiment' });
+            return false;
         }
-        return true;
     }
 
     async function deleteHomepageExperimentFromCurrentSite(experimentId = '') {
@@ -3927,17 +3984,20 @@ const HomepageAdmin = (() => {
             return false;
         }
 
-        const payload = await requestHomepageContextMutation({
-            action: 'delete_experiment',
-            site: writableSite,
-            experiment_id: experimentId
-        });
-        applyHomepageContextPayload(writableSite, payload);
-        await refreshHomepageSiteState(writableSite);
-        if (typeof showToast === 'function') {
-            showToast('首页实验已移除', 'success');
+        try {
+            const payload = await requestHomepageContextMutation({
+                action: 'delete_experiment',
+                site: writableSite,
+                experiment_id: experimentId
+            });
+            applyHomepageContextPayload(writableSite, payload);
+            await refreshHomepageSiteState(writableSite);
+            showHomepageActionToast('首页实验已移除', 'success', { source: 'homepage-experiment' });
+            return true;
+        } catch (error) {
+            showHomepageActionToast(`实验删除失败: ${error.message}`, 'error', { source: 'homepage-experiment' });
+            return false;
         }
-        return true;
     }
 
     async function applyHomepageExperimentWinnerForCurrentSite(experimentId = '') {
@@ -3946,17 +4006,20 @@ const HomepageAdmin = (() => {
             return false;
         }
 
-        const payload = await requestHomepageContextMutation({
-            action: 'apply_experiment_winner',
-            site: writableSite,
-            experiment_id: experimentId
-        });
-        applyHomepageContextPayload(writableSite, payload);
-        await refreshHomepageSiteState(writableSite);
-        if (typeof showToast === 'function') {
-            showToast('实验胜出版本已写入当前草稿', 'success');
+        try {
+            const payload = await requestHomepageContextMutation({
+                action: 'apply_experiment_winner',
+                site: writableSite,
+                experiment_id: experimentId
+            });
+            applyHomepageContextPayload(writableSite, payload);
+            await refreshHomepageSiteState(writableSite);
+            showHomepageActionToast('实验胜出版本已写入当前草稿', 'success', { source: 'homepage-experiment' });
+            return true;
+        } catch (error) {
+            showHomepageActionToast(`实验胜出版本应用失败: ${error.message}`, 'error', { source: 'homepage-experiment' });
+            return false;
         }
-        return true;
     }
 
     async function applyHomepageRecommendationForCurrentSite(recommendationId = '') {
@@ -3965,17 +4028,20 @@ const HomepageAdmin = (() => {
             return false;
         }
 
-        const payload = await requestHomepageContextMutation({
-            action: 'apply_recommendation',
-            site: writableSite,
-            recommendation_id: recommendationId
-        });
-        applyHomepageContextPayload(writableSite, payload);
-        await refreshHomepageSiteState(writableSite);
-        if (typeof showToast === 'function') {
-            showToast('推荐动作已应用到当前草稿', 'success');
+        try {
+            const payload = await requestHomepageContextMutation({
+                action: 'apply_recommendation',
+                site: writableSite,
+                recommendation_id: recommendationId
+            });
+            applyHomepageContextPayload(writableSite, payload);
+            await refreshHomepageSiteState(writableSite);
+            showHomepageActionToast('推荐动作已应用到当前草稿', 'success', { source: 'homepage-recommendation' });
+            return true;
+        } catch (error) {
+            showHomepageActionToast(`推荐建议应用失败: ${error.message}`, 'error', { source: 'homepage-recommendation' });
+            return false;
         }
-        return true;
     }
 
     async function applyHomepageThemePackForCurrentSite(packId = '') {
@@ -3984,47 +4050,57 @@ const HomepageAdmin = (() => {
             return false;
         }
 
-        const selectedPackId = packId || getSelectValue('hp-theme-pack-select');
-        if (!selectedPackId) {
-            throw new Error('请先选择一个主题包');
-        }
+        try {
+            const selectedPackId = packId || getSelectValue('hp-theme-pack-select');
+            if (!selectedPackId) {
+                throw new Error('请先选择一个主题包');
+            }
 
-        const sectionKeys = Array.from(document.querySelectorAll('[data-homepage-theme-pack-section]'))
-            .filter((checkbox) => checkbox.checked)
-            .map((checkbox) => checkbox.value);
+            const sectionKeys = Array.from(document.querySelectorAll('[data-homepage-theme-pack-section]'))
+                .filter((checkbox) => checkbox.checked)
+                .map((checkbox) => checkbox.value);
 
-        const payload = await requestHomepageContextMutation({
-            action: 'apply_theme_pack',
-            site: writableSite,
-            pack_id: selectedPackId,
-            section_keys: sectionKeys
-        });
-        applyHomepageContextPayload(writableSite, payload);
-        await refreshHomepageSiteState(writableSite);
-        if (typeof showToast === 'function') {
-            showToast('主题包已应用到当前草稿', 'success');
+            const payload = await requestHomepageContextMutation({
+                action: 'apply_theme_pack',
+                site: writableSite,
+                pack_id: selectedPackId,
+                section_keys: sectionKeys
+            });
+            applyHomepageContextPayload(writableSite, payload);
+            await refreshHomepageSiteState(writableSite);
+            showHomepageActionToast('主题包已应用到当前草稿', 'success', { source: 'homepage-theme-pack' });
+            return true;
+        } catch (error) {
+            showHomepageActionToast(`主题包应用失败: ${error.message}`, 'error', { source: 'homepage-theme-pack' });
+            return false;
         }
-        return true;
     }
 
     async function copyHomepageReportToClipboard(reportKey = 'daily') {
-        const reports = getHomepageContextReports(currentReadSite);
-        const report = reportKey === 'weekly' ? reports.weekly : reports.daily;
-        const text = buildHomepageReportPlainText(report, currentReadSite);
-        if (!text) {
-            throw new Error('当前没有可复制的报告内容');
-        }
+        try {
+            const reports = getHomepageContextReports(currentReadSite);
+            const report = reportKey === 'weekly' ? reports.weekly : reports.daily;
+            const text = buildHomepageReportPlainText(report, currentReadSite);
+            if (!text) {
+                throw new Error('当前没有可复制的报告内容');
+            }
 
-        if (navigator.clipboard?.writeText) {
-            await navigator.clipboard.writeText(text);
-        } else {
-            throw new Error('当前环境不支持剪贴板复制');
-        }
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(text);
+            } else {
+                throw new Error('当前环境不支持剪贴板复制');
+            }
 
-        if (typeof showToast === 'function') {
-            showToast(`${reportKey === 'weekly' ? '周报' : '日报'}已复制到剪贴板`, 'success');
+            showHomepageActionToast(`${reportKey === 'weekly' ? '周报' : '日报'}已复制到剪贴板`, 'success', {
+                source: 'homepage-report'
+            });
+            return true;
+        } catch (error) {
+            showHomepageActionToast(`${reportKey === 'weekly' ? '周报' : '日报'}复制失败: ${error.message}`, 'error', {
+                source: 'homepage-report'
+            });
+            return false;
         }
-        return true;
     }
 
     // ============================================
@@ -4069,7 +4145,14 @@ const HomepageAdmin = (() => {
         const normalizedPromptId = String(promptId || '').trim();
 
         if (options.ensureModule === true) {
-            window.switchModule?.('homepage');
+            const activated = await activateHomepageModule({}, {
+                ...options,
+                ensureModule: true,
+                reason: 'homepage-open-prompt-section'
+            });
+            if (activated === false) {
+                return false;
+            }
         }
 
         await init();
@@ -4082,6 +4165,68 @@ const HomepageAdmin = (() => {
         switchSection('prompts');
         renderHomepageFeaturedPromptList(normalizedPromptId);
         return true;
+    }
+
+    async function activateHomepageModule(context = {}, options = {}) {
+        const normalizedOptions = options && typeof options === 'object' && !Array.isArray(options) ? options : {};
+        if (normalizedOptions.ensureModule !== false && !isHomepageModuleActive()) {
+            const switched = window.AdminShell?.activateModule
+                ? window.AdminShell.activateModule('homepage', {
+                    reason: normalizedOptions.reason || 'homepage-shared-context',
+                    deferContext: true
+                })
+                : window.switchModule?.('homepage');
+            if (switched === false) {
+                return false;
+            }
+        }
+        await init();
+        return true;
+    }
+
+    async function handleHomepageShellContext(context = {}, options = {}) {
+        const normalizedContext = context && typeof context === 'object' && !Array.isArray(context) ? context : {};
+        const rawContext = normalizedContext.raw && typeof normalizedContext.raw === 'object' ? normalizedContext.raw : {};
+        const payload = normalizedContext.payload && typeof normalizedContext.payload === 'object' ? normalizedContext.payload : {};
+        const focus = normalizedContext.focus && typeof normalizedContext.focus === 'object' ? normalizedContext.focus : {};
+        const promptId = String(
+            focus.promptId
+            || rawContext.promptId
+            || rawContext.prompt_id
+            || payload.promptId
+            || payload.prompt_id
+            || ''
+        ).trim();
+        const requestedSection = normalizeHomepageAdminSection(
+            payload.section
+            || payload.homepageSection
+            || payload.homepage_section
+            || rawContext.section
+            || rawContext.homepageSection
+            || rawContext.homepage_section
+            || (promptId ? 'prompts' : currentSection || HOMEPAGE_DEFAULT_SECTION),
+            currentSection || HOMEPAGE_DEFAULT_SECTION
+        );
+
+        await init();
+
+        if (promptId) {
+            return openPromptSectionContext(promptId, { ensureModule: false });
+        }
+
+        if (requestedSection) {
+            switchSection(requestedSection);
+            return true;
+        }
+
+        return false;
+    }
+
+    async function openAdminHomepageShellContext(context = {}, options = {}) {
+        const normalizedContext = context && typeof context === 'object' && !Array.isArray(context) ? context : {};
+        const normalizedOptions = options && typeof options === 'object' && !Array.isArray(options) ? options : {};
+        await activateHomepageModule(normalizedContext, normalizedOptions);
+        return handleHomepageShellContext(normalizedContext, normalizedOptions);
     }
 
     // ============================================
@@ -4575,9 +4720,9 @@ const HomepageAdmin = (() => {
             invalidateSectionVisibilityCaches();
             renderAllSections();
 
-            if (typeof showToast === 'function') {
-                showToast('分栏草稿已保存，点击“发布当前站点”后首页才会更新', 'success');
-            }
+            showHomepageActionToast('分栏草稿已保存，点击“发布当前站点”后首页才会更新', 'success', {
+                source: 'homepage-draft'
+            });
         } catch (err) {
             cfg.is_visible = previousValue;
             setToggle(`hp-${hpSection}-visible`, previousValue);
@@ -4597,9 +4742,28 @@ const HomepageAdmin = (() => {
             await saveHomepageSectionVisibility(section, checked, site);
         } catch (err) {
             console.error('[Homepage] Failed to save homepage section visibility:', err);
-            if (typeof showToast === 'function') {
-                showToast('保存失败: ' + err.message, 'error');
+            showHomepageActionToast('保存失败: ' + err.message, 'error', { source: 'homepage-draft' });
+        }
+    }
+
+    async function handleHomepageSiteChange(detail = {}) {
+        if (!initialized) {
+            return false;
+        }
+
+        try {
+            await ensureHomepageConfigLoaded({ force: true });
+            renderCurrentSection();
+            if (isHomepageModuleActive() && !isHomepageAggregateMode()) {
+                void warmHomepageContextInBackground(currentReadSite, { force: true });
             }
+            return true;
+        } catch (err) {
+            console.error('[Homepage] Failed to reload config for new site:', err);
+            showHomepageActionToast('首页配置切站刷新失败: ' + err.message, 'error', {
+                source: 'homepage-draft'
+            });
+            return false;
         }
     }
 
@@ -4630,24 +4794,6 @@ const HomepageAdmin = (() => {
         document.querySelectorAll('.hp-section-view').forEach(view => {
             const isActive = view.classList.contains('active');
             setHomepageSectionViewState(view, isActive);
-        });
-
-        // Listen for admin site filter change to reload visibility toggles
-        window.addEventListener('admin-site-changed', async () => {
-            if (!initialized) return;
-
-            try {
-                await loadAllConfig();
-                renderCurrentSection();
-                if (isHomepageModuleActive() && !isHomepageAggregateMode()) {
-                    void warmHomepageContextInBackground(currentReadSite, { force: true });
-                }
-            } catch (err) {
-                console.error('[Homepage] Failed to reload config for new site:', err);
-                if (typeof showToast === 'function') {
-                    showToast('首页配置切站刷新失败: ' + err.message, 'error');
-                }
-            }
         });
 
         const homepageModule = document.getElementById('module-homepage');
@@ -4682,9 +4828,9 @@ const HomepageAdmin = (() => {
                         break;
                     case 'add-prompt-candidate':
                         void addHomepagePromptCandidate(actionEl.dataset.homepagePromptId).catch((error) => {
-                            if (typeof showToast === 'function') {
-                                showToast(`加入首页精选失败: ${error.message}`, 'error');
-                            }
+                            showHomepageActionToast(`加入首页精选失败: ${error.message}`, 'error', {
+                                source: 'homepage-prompts'
+                            });
                         });
                         break;
                     case 'add-shop-product':
@@ -4795,6 +4941,7 @@ const HomepageAdmin = (() => {
     return {
         init,
         prefetch,
+        activate: activateHomepageModule,
         ensureLoaded: ensureHomepageConfigLoaded,
         switchSection,
         saveSection,
@@ -4808,6 +4955,9 @@ const HomepageAdmin = (() => {
         isPromptFeatured,
         getFeaturedPromptSites: getHomepageFeaturedPromptSites,
         openPromptSectionContext,
+        openShellContext: openAdminHomepageShellContext,
+        handleShellContext: handleHomepageShellContext,
+        handleSiteChange: handleHomepageSiteChange,
         publishCurrentHomepageSite,
         rollbackCurrentHomepageSite,
         _handleScreenshotUpload
@@ -4816,3 +4966,18 @@ const HomepageAdmin = (() => {
 
 // Expose globally
 window.HomepageAdmin = HomepageAdmin;
+window.openAdminHomepageShellContext = (context = {}, options = {}) => window.HomepageAdmin?.openShellContext?.(context, options);
+window.handleAdminHomepageSiteChange = (detail = {}) => window.HomepageAdmin?.handleSiteChange?.(detail);
+
+if (window.AdminShell?.registerModule) {
+    window.AdminShell.registerModule('homepage', {
+        activate: (context = {}, options = {}) => window.HomepageAdmin?.activate?.(context, options),
+        handleContext: (context = {}, options = {}) => window.HomepageAdmin?.handleShellContext?.(context, options),
+        onSiteChange: (detail = {}) => window.HomepageAdmin?.handleSiteChange?.(detail),
+        reload: (detail = {}) => window.HomepageAdmin?.handleSiteChange?.(detail)
+    });
+} else {
+    window.addEventListener('admin-site-changed', (event) => {
+        void window.HomepageAdmin?.handleSiteChange?.(event?.detail || {});
+    });
+}

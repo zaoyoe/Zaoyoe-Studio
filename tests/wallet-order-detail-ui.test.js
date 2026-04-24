@@ -27,12 +27,9 @@ test('wallet order detail modal uses roomier sizing with bounded scrolling', () 
     assert.match(styles, /\.wallet-order-modal--shop-detail\s*\{[\s\S]*max-height:\s*min\(86vh,\s*620px\);/);
     assert.match(styles, /max-height:\s*min\(86vh,\s*780px\)/);
     assert.match(styles, /\.wallet-order-modal-body\s*\{[\s\S]*overflow-y:\s*auto;/);
-    assert.match(script, /max-width:\s*560px !important/);
-    assert.match(script, /\.wallet-order-modal--shop-detail\s*\{[\s\S]*max-width:\s*560px !important/);
-    assert.match(script, /\.wallet-order-modal--shop-detail\s*\{[\s\S]*min-height:\s*min\(420px,\s*82vh\) !important/);
+    assert.match(styles, /--wallet-scrollbar-thumb:\s*var\(--auth-sheet-scrollbar-thumb/);
+    assert.match(styles, /\.wallet-order-modal-body::-webkit-scrollbar-thumb/);
     assert.match(script, /buildWalletOrderLoadingMarkup\(t\('wallet\.loading', '加载详情\.\.\.'\), \{\s*modalClass: 'wallet-order-modal--shop-detail'\s*\}\)/);
-    assert.match(script, /max-height:\s*min\(86vh,\s*780px\) !important/);
-    assert.match(script, /\.wallet-order-modal--compact\s*\{[\s\S]*max-width:\s*420px !important/);
 });
 
 test('wallet shop order detail uses dots loading and explicit product guidance controls', () => {

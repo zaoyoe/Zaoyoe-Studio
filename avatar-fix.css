@@ -1,8 +1,47 @@
 /* Default Avatar Icon Shadow - Enhanced 3D Effect */
 #defaultAuthIcon {
     filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.4)) drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
-    font-size: 2rem !important;
-    color: rgba(255, 255, 255, 0.55) !important;
+    width: 32px !important;
+    height: 32px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+    color: rgba(255, 255, 255, 0.72) !important;
+}
+
+#defaultAuthIcon svg {
+    width: 100% !important;
+    height: 100% !important;
+    display: block !important;
+    cursor: pointer !important;
+    fill: currentColor !important;
+}
+
+#defaultAuthIcon svg * {
+    fill: currentColor !important;
+    stroke: none !important;
+}
+
+#authBtn.logged-in #defaultAuthIcon,
+.login-trigger-btn.logged-in #defaultAuthIcon,
+#authBtn.logged-in .default-auth-icon,
+.login-trigger-btn.logged-in .default-auth-icon {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+}
+
+.auth-display-none {
+    display: none !important;
 }
 
 /* Keep the auth slot size stable so logout does not reflow the nav */
@@ -41,6 +80,7 @@ button.login-trigger-btn,
     border: none !important;
     box-shadow: none !important;
     outline: none !important;
+    cursor: pointer !important;
     color: rgba(255, 255, 255, 0.92) !important;
 }
 
@@ -135,4 +175,37 @@ button.login-trigger-btn.logged-in {
     transform: scale(1.08);
     /* Keep the subtle scale */
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12) !important;
+}
+
+/* Light theme keeps the nav auth trigger visible on the bright navigation bar. */
+html[data-theme="light"] .login-trigger-btn,
+html[data-theme="light"] button.login-trigger-btn,
+html[data-theme="light"] #authBtn {
+    color: rgba(15, 23, 42, 0.82) !important;
+}
+
+html[data-theme="light"] #defaultAuthIcon {
+    color: rgba(15, 23, 42, 0.68) !important;
+    filter: drop-shadow(0 6px 12px rgba(15, 23, 42, 0.16)) !important;
+}
+
+html[data-theme="light"] #defaultAuthIcon:hover,
+html[data-theme="light"] .login-trigger-btn:hover #defaultAuthIcon {
+    filter: drop-shadow(0 0 0 3px rgba(15, 23, 42, 0.22))
+        drop-shadow(0 0 14px rgba(59, 130, 246, 0.24))
+        brightness(1.05) !important;
+}
+
+html[data-theme="light"] .login-trigger-btn.logged-in .nav-user-avatar,
+html[data-theme="light"] #navUserAvatar {
+    box-shadow: 0 5px 12px rgba(15, 23, 42, 0.13),
+        0 1px 4px rgba(15, 23, 42, 0.08) !important;
+}
+
+html[data-theme="light"] #navUserAvatar:hover,
+html[data-theme="light"] .nav-user-avatar:hover,
+html[data-theme="light"] .login-trigger-btn:hover #navUserAvatar,
+html[data-theme="light"] .login-trigger-btn:hover .nav-user-avatar,
+html[data-theme="light"] .login-trigger-btn.logged-in:hover .nav-user-avatar {
+    box-shadow: 0 7px 18px rgba(15, 23, 42, 0.16) !important;
 }

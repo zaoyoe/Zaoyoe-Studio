@@ -39,6 +39,11 @@ body.ios-scroll-lock-fixed {
     transition: opacity 0.4s ease 0.1s;
 }
 
+html.prompts-gallery-pending .gallery-container .prompt-card:not(.prompt-card--skeleton) {
+    opacity: 0 !important;
+    visibility: hidden !important;
+}
+
 body.loaded .gallery-container {
     opacity: 1;
 }

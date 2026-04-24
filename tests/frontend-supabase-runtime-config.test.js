@@ -86,6 +86,7 @@ const SHARED_PUBLIC_FUNCTION_WRAPPERS = [
     'api/shop/remove-discount-asset.js',
     'api/shop/validate-discount.js',
     'api/wallet/checkin.js',
+    'api/wallet/order-detail.js',
     'api/wallet/overview.js',
     'api/wallet/prompt-titles.js',
     'api/wallet/transactions.js',
@@ -442,6 +443,8 @@ test('guestbook render batch computes stagger delay before using it in CSS varia
 });
 
 test('public pages wire the chat widget through the shared bootstrap loader', () => {
+    const chatWidgetLoaderSource = readRepoFile('js/chat-widget-loader.js');
+    const chatWidgetRuntimeSource = readRepoFile('js/components/ChatWidget.js');
     const violations = [];
 
     for (const relativePath of CHAT_WIDGET_PAGES) {
@@ -451,12 +454,16 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
             violations.push(`${relativePath} is missing css/chat-widget.css`);
         }
 
-        if (!source.includes('js/admin-workbench.js')) {
-            violations.push(`${relativePath} is missing js/admin-workbench.js`);
+        if (source.includes('js/admin-workbench.js')) {
+            violations.push(`${relativePath} should no longer eagerly load js/admin-workbench.js`);
         }
 
-        if (!source.includes('js/components/ChatWidget.js')) {
-            violations.push(`${relativePath} is missing js/components/ChatWidget.js`);
+        if (source.includes('js/components/ChatWidget.js')) {
+            violations.push(`${relativePath} should no longer eagerly load js/components/ChatWidget.js`);
+        }
+
+        if (source.includes('js/support-bot-config.js')) {
+            violations.push(`${relativePath} should no longer eagerly load js/support-bot-config.js`);
         }
 
         if (!source.includes('js/chat-widget-loader.js')) {
@@ -470,6 +477,135 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         if (source.includes('new ChatWidget(window.supabaseClient)')) {
             violations.push(`${relativePath} should rely on js/chat-widget-loader.js instead of inline chat initialization`);
         }
+    }
+
+    const loaderMarkers = [
+        "const VERSION = '20260423_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_LOADER_11';",
+        "const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';",
+        "const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';",
+        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260423_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_11';",
+        'function getChatWidgetConstructor() {',
+        'global.ChatWidget = ChatWidget;',
+        'function isPlaceholderOpenIntent(event) {',
+        "fab.setAttribute('data-chat-widget-placeholder', '1');",
+        "Promise.all([",
+        "loadScript(SUPPORT_CONFIG_SRC),",
+        "loadScript(ADMIN_WORKBENCH_SRC),",
+        "loadScript(CHAT_WIDGET_SRC)",
+        'void ensureChatWidgetReady({ open: isPlaceholderOpenIntent(event) });',
+        "global.ZaoyoeChatWidgetBootstrap = Object.freeze({"
+    ];
+
+    for (const marker of loaderMarkers) {
+        assert.equal(chatWidgetLoaderSource.includes(marker), true, `js/chat-widget-loader.js should contain ${marker}`);
+    }
+
+    assert.equal(
+        chatWidgetRuntimeSource.includes('window.ChatWidget = ChatWidget;'),
+        true,
+        'js/components/ChatWidget.js should expose the runtime constructor for the shared lazy loader'
+    );
+
+    assert.deepEqual(violations, [], violations.join('\n'));
+});
+
+test('public pages wire wallet modal through the shared bootstrap loader', () => {
+    const walletLoaderSource = readRepoFile('js/wallet-modal-loader.js');
+    const walletPages = [
+        'index.html',
+        'shop.html',
+        'verify.html',
+        'prompts.html',
+        'guestbook.html',
+        'index_old.html'
+    ];
+    const violations = [];
+
+    for (const relativePath of walletPages) {
+        const source = readRepoFile(relativePath);
+
+        if (source.includes('js/services/PointsService.js')) {
+            violations.push(`${relativePath} should no longer eagerly load js/services/PointsService.js`);
+        }
+
+        if (source.includes('js/components/WalletModal.js')) {
+            violations.push(`${relativePath} should no longer eagerly load js/components/WalletModal.js`);
+        }
+
+        if (!source.includes('js/wallet-modal-loader.js')) {
+            violations.push(`${relativePath} is missing js/wallet-modal-loader.js`);
+        }
+    }
+
+    const loaderMarkers = [
+        "const VERSION = '20260423_WALLET_ORDER_DETAIL_FASTPATH_1';",
+        "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260423_WALLET_ORDER_DETAIL_FASTPATH_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260423_WALLET_ORDER_DETAIL_FASTPATH_1';",
+        'function ensureWalletModalReady() {',
+        'function warmWalletModal(options = {}) {',
+        "function openWalletModal(view = 'balance', context = {}) {",
+        'global.ZaoyoeWalletModalBootstrap = Object.freeze({'
+    ];
+
+    for (const marker of loaderMarkers) {
+        assert.equal(walletLoaderSource.includes(marker), true, `js/wallet-modal-loader.js should contain ${marker}`);
+    }
+
+    assert.deepEqual(violations, [], violations.join('\n'));
+});
+
+test('public pages defer notification and announcement runtimes through the shared engagement loader', () => {
+    const engagementLoaderSource = readRepoFile('js/engagement-runtime-loader.js');
+    const notificationPages = [
+        'index.html',
+        'shop.html',
+        'verify.html',
+        'prompts.html',
+        'guestbook.html',
+        'index_old.html'
+    ];
+    const announcementPages = [
+        'index.html',
+        'shop.html',
+        'verify.html',
+        'guestbook.html',
+        'index_old.html'
+    ];
+    const violations = [];
+
+    for (const relativePath of notificationPages) {
+        const source = readRepoFile(relativePath);
+        if (!source.includes('css/notification-client.css')) {
+            violations.push(`${relativePath} is missing css/notification-client.css`);
+        }
+        if (!source.includes('js/engagement-runtime-loader.js')) {
+            violations.push(`${relativePath} is missing js/engagement-runtime-loader.js`);
+        }
+        if (source.includes('notification-client.js?v=20260410_NOTIFICATION_ADMIN_PERSONAL_FIX_1')) {
+            violations.push(`${relativePath} should no longer eagerly load notification-client.js`);
+        }
+    }
+
+    for (const relativePath of announcementPages) {
+        const source = readRepoFile(relativePath);
+        if (source.includes('announcement-loader.js?v=20260410_ANNOUNCEMENT_BACKDROP_DISMISS_FIX_1')) {
+            violations.push(`${relativePath} should no longer eagerly load announcement-loader.js`);
+        }
+    }
+
+    const loaderMarkers = [
+        "const VERSION = '20260421_PUBLIC_ENGAGEMENT_LAZY_BOOTSTRAP_P1';",
+        "const NOTIFICATION_SRC = 'notification-client.js?v=20260410_NOTIFICATION_ADMIN_PERSONAL_FIX_1';",
+        "const ANNOUNCEMENT_SRC = 'announcement-loader.js?v=20260410_ANNOUNCEMENT_BACKDROP_DISMISS_FIX_1';",
+        "const shouldLoadNotification = bootstrapScript?.dataset.loadNotification !== '0';",
+        "const shouldLoadAnnouncement = bootstrapScript?.dataset.loadAnnouncement === '1';",
+        'function scheduleNotificationInit() {',
+        'function ensureEngagementRuntime() {',
+        'global.ZaoyoeEngagementRuntimeBootstrap = Object.freeze({'
+    ];
+
+    for (const marker of loaderMarkers) {
+        assert.equal(engagementLoaderSource.includes(marker), true, `js/engagement-runtime-loader.js should contain ${marker}`);
     }
 
     assert.deepEqual(violations, [], violations.join('\n'));
@@ -550,6 +686,12 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
         '.chat-file-input',
         '.session-item.session-item--hidden',
         '.mascot-wrapper--compact',
+        'html[data-theme="light"] {',
+        '--chat-shell-bg: rgba(252, 253, 255, 0.98);',
+        '--chat-overlay-bg: rgba(34, 41, 52, 0.48);',
+        '--chat-mascot-head: #6b9ece;',
+        '--chat-fab-mascot-detail: #ffffff;',
+        '--chat-support-primary-bg: rgba(107, 158, 206, 0.82);',
         '.chat-messages.chat-messages--height-locked',
         '.chat-overlay.chat-overlay--frozen',
         '.poetry-nav-container.chat-prompt-spotlight-suspended'
@@ -631,7 +773,11 @@ test('admin chat workspace vertically centers fullscreen desktop windows', () =>
         'transform: translateY(calc(-50% + 20px)) scale(0.95) !important;',
         'transform-origin: center right !important;',
         '.chat-window.admin-mode-layout.chat-window--desktop-edge-safe.active {',
-        'transform: translateY(-50%) scale(1) !important;'
+        'transform: translateY(-50%) scale(1) !important;',
+        'html[data-theme="light"] .chat-window.admin-mode-layout {',
+        '--chat-admin-light-sidebar: rgba(241, 245, 249, 0.98);',
+        'html[data-theme="light"] .chat-window.admin-mode-layout .admin-sidebar',
+        'html[data-theme="light"] .chat-window.admin-mode-layout .empty-state'
     ];
 
     for (const marker of markers) {
@@ -677,6 +823,7 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
 
     const chatWidgetMarkers = [
         'getOpsAlertCaseActions(alert = {})',
+        'formatCompactCount(value)',
         'fetchOpsAlertCasesForAlerts(alerts = [])',
         'handleOpsAlertCaseAction(alert = {}, action = \'\')',
         'ensureOpsAlertMonitorMeta(force = false)',
@@ -690,6 +837,16 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'getOpsAlertOwnerFilterOptions()',
         'setOpsAlertOwnerFilter(value = \'all\')',
         'syncOpsAlertOwnerFilter(options = [])',
+        'getOpsAlertReadReceiptStorageKey()',
+        'restoreOpsAlertReadReceipts()',
+        'persistOpsAlertReadReceipts()',
+        'getOpsAlertReadIdentity(alert = {})',
+        'isOpsAlertRead(alert = {})',
+        'getOpsAlertUnreadCount(alerts = this.opsAlertMessages)',
+        'getOpsAlertReadCategoryOptions(alerts = this.getFilteredOpsAlertMessages({ ignoreReadView: true }))',
+        'getOpsAlertReadTimeOptions()',
+        'getOpsAlertReadTargetAlerts()',
+        'markFilteredOpsAlertsRead()',
         'getBatchAssignableOpsAlerts()',
         'shouldShowOpsAlertBatchAssign()',
         'applyOpsAlertCasesToMessages(cases = [])',
@@ -730,6 +887,12 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'canCreateUserContextTicket(context = {}, { openTicket = null } = {})',
         'buildChatSessionTicketPayload(context = {}, note = \'\')',
         'handleCreateUserContextTicket(context = {})',
+        'getPendingPaymentReadReceiptStorageKey()',
+        'restorePendingPaymentReadReceipts()',
+        'getPendingPaymentReadTarget(context = {})',
+        "key: 'payment_read'",
+        "label: '待支付已读'",
+        "button.dataset.userContextAction = action.key;",
         'createUserContextActionsSection(context = {})',
         'handleUserContextAction(action = {})',
         "return this.openWorkbenchEntry('tickets-pending', context);",
@@ -792,6 +955,10 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'createUserContextTimelineSection(entries = [])',
         'session-name-row',
         'ops-alert-toolbar',
+        'top: 4px;',
+        'ops-alert-toolbar-read',
+        'ops-alert-toolbar-btn--read',
+        'ops-alert-toolbar-dropdown--compact',
         'session-queue-overview',
         'session-queue-card',
         'session-queue-snapshot',
@@ -810,6 +977,21 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'session-filter-btn',
         'chat-context-panel',
         'chat-reply-templates',
+        'has-user-context',
+        'has-reply-templates',
+        'scheduleAdminFloatingPanelOffsetSync()',
+        'updateAdminFloatingPanelOffsets()',
+        '--chat-admin-context-top',
+        'top: var(--chat-admin-context-top, 128px);',
+        'bottom: 84px;',
+        'background: var(--chat-admin-light-soft) !important;',
+        '.user-context-shell::before,',
+        'html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar {',
+        'background: rgba(255, 255, 255, 0.78);',
+        'border-color: rgba(255, 255, 255, 0.42);',
+        'background: rgba(255, 255, 255, 0.56);',
+        'color: var(--chat-admin-light-text-strong);',
+        'backdrop-filter: blur(14px) saturate(165%);',
         'chat-reply-template-btn',
         'user-context-card',
         'user-context-headline',
@@ -835,8 +1017,8 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'session-badge--danger',
         'ops-alert-toolbar-select',
         '/api/admin/tickets/create',
-        '批量接力',
-        '批量指派',
+        '接力',
+        '指派',
         '转售后',
         '转工单',
         '查看工单',
@@ -1016,8 +1198,8 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'admin-alert-history',
         'admin-alert-history-item',
         '/api/admin/tickets/create',
-        '批量接力',
-        '批量指派',
+        '接力',
+        '指派',
         '转售后',
         '转工单',
         '查看工单'
@@ -1100,26 +1282,31 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
     }
 
     assert.equal(
-        adminStudioHtml.includes('js/admin-chat.js?v=20260402_ADMIN_CHAT_INPUT_UI_13'),
+        adminStudioHtml.includes('js/admin-chat.js?v=20260421_ADMIN_CHAT_SITE_CHANGE_P2'),
         true,
         'admin-studio.html should load the latest admin chat case action runtime'
     );
     assert.equal(
-        adminStudioHtml.includes('css/admin-chat.css?v=20260402_ADMIN_CHAT_INPUT_UI_13'),
+        adminStudioHtml.includes('css/admin-chat.css?v=20260424_ADMIN_CHAT_LIGHT_THEME_FROSTED_CONTEXT_FLAT_ALERTS_1'),
         true,
         'admin-studio.html should load the latest admin chat case action stylesheet'
     );
 
     for (const source of publicPages) {
         assert.equal(
-            source.includes('js/admin-workbench.js?v=20260402_ADMIN_WORKBENCH_ACCESS_4'),
+            source.includes('js/chat-widget-loader.js?v=20260423_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_LOADER_11'),
             true,
-            'public entry pages should load the shared workbench resolver before the chat widget runtime'
+            'public entry pages should load the lazy chat widget bootstrap'
         );
         assert.equal(
-            source.includes('js/components/ChatWidget.js?v=20260402_CHAT_WIDGET_PREWARM_5'),
-            true,
-            'public entry pages should load the latest ops todo case action widget runtime'
+            source.includes('js/components/ChatWidget.js?v=20260423_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_11'),
+            false,
+            'public entry pages should no longer eagerly load the heavy chat widget runtime'
+        );
+        assert.equal(
+            source.includes('js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2'),
+            false,
+            'public entry pages should no longer eagerly load the shared workbench resolver for chat'
         );
     }
 });
@@ -1204,6 +1391,7 @@ test('vercel CSP blocks inline scripts and inline event attributes without hash 
 test('shared profile modal template no longer uses inline event handlers', () => {
     const source = readRepoFile('js/profile-modal-template.js');
     const sharedProfileStyles = readRepoFile('style.css');
+    const profileModalStyles = readRepoFile('css/profile-modal.css');
     const inlineEventAttributes = [
         'onclick=',
         'onchange=',
@@ -1227,6 +1415,44 @@ test('shared profile modal template no longer uses inline event handlers', () =>
     assert.equal(source.includes('style="flex: 1;"'), false, 'Profile modal template should not inline mobile code input sizing');
     assert.equal(sharedProfileStyles.includes('.profile-modal-file-input'), true, 'style.css should define the shared profile modal file input class');
     assert.equal(sharedProfileStyles.includes('#profileModal .profile-mobile-code-row'), true, 'style.css should define the shared profile modal mobile code row layout');
+    assert.equal(sharedProfileStyles.includes('[data-theme="light"] #profileModal .modal-content.profile-modal'), true, 'style.css should define the light-theme profile modal shell');
+    assert.equal(profileModalStyles.includes('[data-theme="light"] #profileModal .modal-content.profile-modal'), true, 'css/profile-modal.css should define the light-theme profile modal shell');
+});
+
+test('public auth entry pages defer profile modal runtime through the shared profile loader', () => {
+    const loaderSource = readRepoFile('js/profile-modal-loader.js');
+    const pages = ['index.html', 'guestbook.html', 'verify.html', 'shop.html', 'prompts.html'];
+    const violations = [];
+
+    for (const relativePath of pages) {
+        const source = readRepoFile(relativePath);
+        if (!source.includes('js/profile-modal-loader.js')) {
+            violations.push(`${relativePath} is missing js/profile-modal-loader.js`);
+        }
+        if (source.includes('js/profile-modal-template.js')) {
+            violations.push(`${relativePath} should no longer eagerly load js/profile-modal-template.js`);
+        }
+        if (source.includes('security-cards.js')) {
+            violations.push(`${relativePath} should no longer eagerly load security-cards.js`);
+        }
+    }
+
+    const loaderMarkers = [
+        "const VERSION = '20260423_PROFILE_MODAL_LAZY_BOOTSTRAP_P3';",
+        "const PROFILE_TEMPLATE_SRC = 'js/profile-modal-template.js?v=20260423_PROFILE_MODAL_SECURITY_INDICATOR_1';",
+        "const SECURITY_CARDS_SRC = 'security-cards.js?v=20260423_PROFILE_MODAL_SECURITY_INDICATOR_1';",
+        "const PROFILE_MODAL_STYLE_HREF = 'css/profile-modal.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1';",
+        'function ensureProfileModalStyles() {',
+        'return ensureProfileModalStyles().then(() => true);',
+        'function ensureProfileModalReady() {',
+        'global.ZaoyoeProfileModalBootstrap = Object.freeze({'
+    ];
+
+    for (const marker of loaderMarkers) {
+        assert.equal(loaderSource.includes(marker), true, `js/profile-modal-loader.js should contain ${marker}`);
+    }
+
+    assert.deepEqual(violations, [], violations.join('\n'));
 });
 
 test('critical auth pages consume delegated profile modal and form bindings', () => {
@@ -1234,19 +1460,53 @@ test('critical auth pages consume delegated profile modal and form bindings', ()
     const indexSource = readRepoFile('index.html');
     const resetPasswordSource = readRepoFile('reset-password.html');
 
-    assert.equal(verifySource.includes('profile-modal-template.js'), true, 'verify.html should load the shared profile modal template');
-    assert.equal(indexSource.includes('profile-modal-template.js'), true, 'index.html should load the shared profile modal template');
-    assert.equal(indexSource.includes('./js/profile-modal-template.js?v=20260324_PROFILE_MODAL_RUNTIME_STYLE_1'), true, 'index.html should load the latest profile modal runtime version');
-    assert.equal(verifySource.includes('./js/profile-modal-template.js?v=20260324_PROFILE_MODAL_RUNTIME_STYLE_1'), true, 'verify.html should load the latest profile modal runtime version');
+    assert.equal(verifySource.includes('js/profile-modal-loader.js'), true, 'verify.html should load the shared profile modal bootstrap');
+    assert.equal(indexSource.includes('js/profile-modal-loader.js'), true, 'index.html should load the shared profile modal bootstrap');
+    assert.equal(indexSource.includes('./js/profile-modal-loader.js?v=20260423_PROFILE_MODAL_LAZY_BOOTSTRAP_P3'), true, 'index.html should load the latest profile modal bootstrap version');
+    assert.equal(verifySource.includes('js/profile-modal-loader.js?v=20260423_PROFILE_MODAL_LAZY_BOOTSTRAP_P3'), true, 'verify.html should load the latest profile modal bootstrap version');
     assert.equal(verifySource.includes('id="profileModal"'), false, 'verify.html should not embed a duplicated profile modal');
     assert.equal(indexSource.includes('id="profileModal"'), false, 'index.html should not embed a duplicated profile modal');
     assert.equal(verifySource.includes('onmousedown="closeModal(event)"'), false, 'verify.html should not inline modal close handlers');
     assert.equal(verifySource.includes('onmouseup="closeModal(event)"'), false, 'verify.html should not inline modal close handlers');
     assert.equal(verifySource.includes('onclick="closeModal(event)"'), false, 'verify.html should not inline modal close handlers');
-    assert.equal(verifySource.includes('data-modal-dismiss-managed="1"'), true, 'verify.html should use managed modal dismissal for comingSoonModal');
+    const obsoleteModalId = 'id="coming' + 'SoonModal"';
+    const obsoleteCopyKey = 'common.coming' + 'SoonDesc';
+    assert.equal(verifySource.includes(obsoleteModalId), false, 'verify.html should not embed the obsolete placeholder modal');
+    assert.equal(verifySource.includes(obsoleteCopyKey), false, 'verify.html should not expose development placeholder copy');
 
     assert.equal(resetPasswordSource.includes('onsubmit="handleNewPasswordSubmit(event)"'), false, 'reset-password.html should not inline form submission');
     assert.equal(resetPasswordSource.includes('./js/reset-password-page.js'), true, 'reset-password.html should load the reset password bootstrap file');
+});
+
+test('public html, shared css, and locale files no longer ship the obsolete placeholder modal', () => {
+    const obsoleteModalId = 'coming' + 'SoonModal';
+    const obsoleteTitleKey = 'coming' + 'Soon';
+    const obsoleteCopyKey = 'coming' + 'SoonDesc';
+    const zhPlaceholder = ['该功能正在', '紧锣密鼓地开发中...'].join('');
+    const enPlaceholder = ['This feature is ', 'under development...'].join('');
+    const checkedFiles = [
+        ...collectRepositoryHtmlFiles(),
+        'style.css',
+        'css/verify-page.css',
+        'lang/zh.json',
+        'lang/en.json'
+    ];
+    const violations = [];
+
+    for (const relativePath of checkedFiles) {
+        const source = readRepoFile(relativePath);
+        if (source.includes(obsoleteModalId)) {
+            violations.push(`${relativePath} still references obsolete placeholder modal id`);
+        }
+        if (source.includes(`common.${obsoleteCopyKey}`) || source.includes(`"${obsoleteTitleKey}"`) || source.includes(`"${obsoleteCopyKey}"`)) {
+            violations.push(`${relativePath} still references obsolete placeholder locale keys`);
+        }
+        if (source.includes(zhPlaceholder) || source.includes(enPlaceholder)) {
+            violations.push(`${relativePath} still contains obsolete placeholder copy`);
+        }
+    }
+
+    assert.deepEqual(violations, [], violations.join('\n'));
 });
 
 test('auth runtime renderers centralize avatar, google loading, and profile modal style state', () => {
@@ -1305,12 +1565,12 @@ test('auth runtime renderers centralize avatar, google loading, and profile moda
 
     for (const source of pageSources) {
         assert.equal(
-            source.includes('css/auth-sheet.css?v=20260324_AUTH_INJECT_RUNTIME_STYLE_HELPERS_2'),
+            source.includes('css/auth-sheet.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1'),
             true,
             'auth entry pages should load the latest auth sheet stylesheet'
         );
         assert.equal(
-            source.includes('supabase-auth-functions.js?v=20260324_AUTH_RUNTIME_STYLE_HELPERS_1'),
+            source.includes('supabase-auth-functions.js?v=20260422_AUTH_DROPDOWN_STUDIO_FIX_1'),
             true,
             'auth entry pages should load the latest auth runtime script'
         );
@@ -1351,7 +1611,8 @@ test('injected auth runtime centralizes dropdown, drag, and badge style state', 
     const runtimeMarkers = [
         "function setInjectedAuthStyleProperty(target, name, value, priority = '')",
         "function setInjectedAuthStyleState(target, styles = {}, priority = '')",
-        `class="fas fa-user-circle\${hasAvatar ? ' auth-display-none' : ''}"`,
+        'id="defaultAuthIcon" class="default-auth-icon',
+        '<svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">',
         `class="nav-user-avatar\${hasAvatar ? ' show' : ' auth-display-none'}"`,
         'class="avatar-dropdown auth-dropdown-layer"',
         "clone.classList.add('is-active', 'auth-sheet-view-measure');",
@@ -1359,6 +1620,7 @@ test('injected auth runtime centralizes dropdown, drag, and badge style state', 
         "setInjectedAuthStyleProperty(body, '--auth-primary-view-min-height'",
         "setInjectedAuthStyleState(dropdown, {",
         "setInjectedAuthStyleProperty(sheet, 'transform', null);",
+        "overlay.dataset.authCurrentView = viewId;",
         "avatarBadge.classList.toggle('is-visible', !!hasUnread);",
         "dropdownBadge.classList.toggle('is-visible', !!hasUnread);",
         "const PERSONAL_MESSAGE_BUTTON_LABEL = '打开个人消息';",
@@ -1376,7 +1638,9 @@ test('injected auth runtime centralizes dropdown, drag, and badge style state', 
         '.auth-dropdown-layer',
         '.avatar-unread-badge',
         '.dropdown-notif-badge.is-visible',
-        '.auth-sheet-view-measure'
+        '.auth-sheet-view-measure',
+        '#loginModal[data-auth-current-view="register"] .auth-sheet-body',
+        '.auth-sheet-body::-webkit-scrollbar-thumb'
     ];
 
     for (const marker of styleMarkers) {
@@ -1385,14 +1649,71 @@ test('injected auth runtime centralizes dropdown, drag, and badge style state', 
 
     for (const source of pageSources) {
         assert.equal(
-            source.includes('css/auth-sheet.css?v=20260324_AUTH_INJECT_RUNTIME_STYLE_HELPERS_2'),
+            source.includes('css/auth-sheet.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1'),
             true,
             'auth entry pages should load the latest injected auth stylesheet'
         );
         assert.equal(
-            source.includes('inject-auth.js?v=20260413_AUTH_LOGIN_MESSAGE_HELPER_1'),
+            source.includes('inject-auth.js?v=20260424_SOLID_GUEST_AVATAR_1'),
             true,
             'auth entry pages should load the latest injected auth runtime version'
+        );
+    }
+});
+
+test('public entry pages auto-hide idle scrollbars for shared auth, profile, wallet, and history surfaces', () => {
+    const helperSource = readRepoFile('js/public-scrollbar-auto-hide.js');
+    const helperStyles = readRepoFile('css/public-scrollbar-auto-hide.css');
+    const pageSources = [
+        readRepoFile('index.html'),
+        readRepoFile('guestbook.html'),
+        readRepoFile('verify.html'),
+        readRepoFile('prompts.html'),
+        readRepoFile('shop.html'),
+        readRepoFile('index_old.html')
+    ];
+
+    const scriptMarkers = [
+        "const VERSION = '20260424_PUBLIC_SCROLLBAR_AUTO_HIDE_1';",
+        "const STYLE_HREF = 'css/public-scrollbar-auto-hide.css?v=20260424_PUBLIC_SCROLLBAR_AUTO_HIDE_1';",
+        'const PUBLIC_SCROLLBAR_AUTO_HIDE_SELECTOR = [',
+        "'.auth-sheet-body'",
+        "'#profileModal .profile-modal-scroll'",
+        "'.wallet-order-modal-body'",
+        "'.message-list'",
+        "'.comment-list:not(.collapsed)'",
+        "'.verify-history-list'",
+        'function bindPublicScrollbarAutoHide(target) {',
+        'target.classList.add(PUBLIC_SCROLLBAR_AUTO_HIDE_CLASS);',
+        "target.addEventListener('mouseenter', () => markPublicScrollbarActive(target), { passive: true });",
+        "target.addEventListener('focusin', () => markPublicScrollbarActive(target));",
+        "target.addEventListener('scroll', () => markPublicScrollbarActive(target), { passive: true });",
+        "target.addEventListener('touchstart', () => markPublicScrollbarActive(target), { passive: true });",
+        'function observePublicScrollbarAutoHide() {',
+        'global.ZaoyoePublicScrollbarAutoHide = Object.freeze({'
+    ];
+
+    for (const marker of scriptMarkers) {
+        assert.equal(helperSource.includes(marker), true, `js/public-scrollbar-auto-hide.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.public-scrollbar-auto-hide {',
+        'scrollbar-color: transparent transparent !important;',
+        'html[data-theme="light"] .public-scrollbar-auto-hide {',
+        '.public-scrollbar-auto-hide.public-scrollbar-auto-hide--visible::-webkit-scrollbar-thumb',
+        '.public-scrollbar-auto-hide:focus-within::-webkit-scrollbar-thumb:hover'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(helperStyles.includes(marker), true, `css/public-scrollbar-auto-hide.css should contain ${marker}`);
+    }
+
+    for (const source of pageSources) {
+        assert.equal(
+            source.includes('js/public-scrollbar-auto-hide.js?v=20260424_PUBLIC_SCROLLBAR_AUTO_HIDE_1'),
+            true,
+            'public entry pages should load the shared public scrollbar auto-hide helper'
         );
     }
 });
@@ -1455,14 +1776,14 @@ test('privacy page reuses the shared Supabase bootstrap instead of inlining a du
 
 test('selected runtime, preview, and tooling pages externalize page-specific style blocks into dedicated CSS files', () => {
     const expectations = new Map([
-        ['verify.html', 'css/verify-page.css?v=20260324_VERIFY_STYLE_ATTRS_1'],
+        ['verify.html', 'css/verify-page.css?v=20260423_VERIFY_WHITE_THEME_2'],
         ['prompts.html', 'css/prompts-page.css?v=20260416_PROMPTS_MODAL_SCROLL_LOCK_1'],
         ['reset-password.html', 'css/reset-password-page.css?v=20260324_RESET_PASSWORD_RUNTIME_STYLE_1'],
         ['privacy.html', 'css/privacy-page.css?v=20260324_PRIVACY_STYLES_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
-        ['shop.html', 'css/shop-page.css?v=20260416_SHOP_DISCOUNT_UNAVAILABLE_ACCORDION_9'],
-        ['admin-studio.html', 'css/admin-studio-page.css?v=20260416_DISCOUNT_TRIGGER_PRESET_BOX_FIX_10'],
+        ['shop.html', 'css/shop-page.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1'],
+        ['admin-studio.html', 'css/admin-studio-page.css?v=20260424_ADMIN_LIGHT_THEME_SETTINGS_CARDS_NO_LIFT_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
         ['debug-realtime.html', 'css/debug-realtime-page.css?v=20260324_DEBUG_REALTIME_STYLE_ATTRS_1'],
@@ -1550,7 +1871,7 @@ test('selected preview showcase pages no longer embed inline style attributes', 
 
 test('shop and archived index pages no longer embed inline style attributes', () => {
     const expectations = new Map([
-        ['shop.html', 'css/shop-page.css?v=20260416_SHOP_DISCOUNT_UNAVAILABLE_ACCORDION_9'],
+        ['shop.html', 'css/shop-page.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1'],
         ['index_old.html', 'css/index-old.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1']
     ]);
     const inlineStyleAttributePattern = /\sstyle\s*=\s*["']/i;
@@ -1587,6 +1908,7 @@ test('shared theme preload replaces duplicated inline theme bootstraps on public
         'shop.html',
         'reset-password.html',
         'prompts.html',
+        'verify.html',
         'admin-studio.html',
         'admin-studio.html.bak'
     ];
@@ -1989,7 +2311,7 @@ test('shop storefront preserves the initial skeleton layout while first-load dat
         'js/shop-client.js should keep the server-rendered shop skeleton layout stable when the first request is still pending'
     );
     assert.equal(
-        shopHtmlSource.includes('js/shop-client.js?v=20260416_SHOP_MULTI_DISCOUNT_STACKING_13'),
+        shopHtmlSource.includes('js/shop-client.js?v=20260423_SHOP_SUCCESS_MODAL_FAST_FEEDBACK_1'),
         true,
         'shop.html should reference the latest shop client runtime for the cart-enabled storefront flow'
     );
@@ -2008,16 +2330,76 @@ test('homepage entry points expose delegated guestbook triggers instead of inlin
     assert.equal(guestbookRuntimeSource.includes('imageUpload.click();'), true, 'guestbook runtime should trigger the hidden file input from the modal upload button');
 });
 
+test('hero guestbook entry activates deferred overlays and bypasses center-first gating', () => {
+    const framerHomeSource = readRepoFile('js/framer_home.js');
+
+    assert.equal(
+        framerHomeSource.includes("const HOMEPAGE_DEFERRED_OVERLAY_STYLE_GROUP = 'homepage-overlays';"),
+        true,
+        'js/framer_home.js should keep the homepage overlay deferred-style group near the hero runtime'
+    );
+    assert.equal(
+        framerHomeSource.includes("window.activateDeferredStyleGroup(HOMEPAGE_DEFERRED_OVERLAY_STYLE_GROUP);"),
+        true,
+        'js/framer_home.js should activate deferred overlay styles before opening the homepage guestbook modal'
+    );
+    assert.equal(
+        framerHomeSource.includes("const guestbookTrigger = eventTarget.closest('[data-home-open-guestbook=\"1\"]');"),
+        true,
+        'js/framer_home.js should keep delegated homepage guestbook triggers routed through the shared click delegate'
+    );
+    assert.equal(
+        framerHomeSource.includes('function centerHomepageHeroEntryCardIfNeeded(card, threshold = 50) {')
+            && framerHomeSource.includes("const heroGuestbookCard = guestbookTrigger.closest('.hero-carousel .entry-card');"),
+        true,
+        'js/framer_home.js should center off-axis hero guestbook cards before the delegated click handler opens the modal'
+    );
+    assert.equal(
+        framerHomeSource.includes('function clearHomepageHeroGuestbookArmedState(exceptCard = null) {')
+            && framerHomeSource.includes("heroGuestbookCard.setAttribute('data-home-guestbook-armed', '1');"),
+        true,
+        'js/framer_home.js should arm hero guestbook cards after the first click so the second click can open the modal'
+    );
+    assert.equal(
+        framerHomeSource.includes('const didCenterHeroGuestbookCard = centerHomepageHeroEntryCardIfNeeded(heroGuestbookCard);')
+            && framerHomeSource.includes('if (didCenterHeroGuestbookCard) {'),
+        true,
+        'js/framer_home.js should only re-arm the hero guestbook card when the click actually moved it to center'
+    );
+    assert.equal(
+        framerHomeSource.includes("if (action === 'openGuestbookModal') {"),
+        true,
+        'js/framer_home.js should special-case the guestbook hero action so it can reuse the homepage guestbook helper'
+    );
+    assert.equal(
+        framerHomeSource.includes("action: normalizedAction || (isGuestbookEntry ? 'openGuestbookModal' : ''),"),
+        true,
+        'js/framer_home.js should restore the guestbook modal action even when hero config entries omit it'
+    );
+    assert.equal(
+        framerHomeSource.includes("if (isDelegatedGuestbookTrigger) {")
+            && framerHomeSource.includes('return;'),
+        true,
+        'js/framer_home.js should keep delegated guestbook hero cards on the shared two-step flow instead of letting the carousel target handler open them directly'
+    );
+    assert.equal(
+        framerHomeSource.includes("${entry.action === 'openGuestbookModal' ? 'data-home-open-guestbook=\"1\"' : ''}"),
+        true,
+        'js/framer_home.js should render the hero guestbook entry with the delegated guestbook trigger attribute'
+    );
+});
+
 test('framer home runtime renderers externalize homepage section visibility, template styles, and runtime helpers', () => {
     const framerHomeSource = readRepoFile('js/framer_home.js');
     const framerHomeCss = readRepoFile('css/framer_home.css');
-    const pageSources = [
-        readRepoFile('index.html'),
+    const homepageSource = readRepoFile('index.html');
+    const subpageSources = [
         readRepoFile('guestbook.html'),
         readRepoFile('verify.html'),
         readRepoFile('shop.html'),
         readRepoFile('prompts.html')
     ];
+    const framerNavRuntimeSource = readRepoFile('js/framer-nav-runtime.js');
 
     const removedMarkers = [
         "element.style.transform = isHovered ? 'translateY(-2px)' : 'translateY(0)'",
@@ -2036,7 +2418,9 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         "thumb.style.left = `${thumbLeft}px`",
         "tick.style.opacity = '0'",
         "cardUi.style.transform = `scale(${scale})`",
-        "column.style.transform = `translate3d(0, ${offset}px, 0)`"
+        "column.style.transform = `translate3d(0, ${offset}px, 0)`",
+        'class="masonry-card masonry-card-link"',
+        'data-home-prompt-id="${escapeHomeHtml(promptId || \'\')}"'
     ];
 
     for (const marker of removedMarkers) {
@@ -2071,7 +2455,8 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'this.applyHomepageSectionOrder();',
         'setHomeSectionVisibility(sectionEl, true);',
         'data-home-entry-color="${entry.color}"',
-        'data-home-prompt-id="${escapeHomeHtml(promptId || \'\')}"',
+        'data-home-prompt-preview="1"',
+        'data-home-prompts-mask-link="1"',
         'data-home-shop-id="${escapeHomeHtml(productId)}"',
         ".select('id, name, name_en, description, description_en, icon_url, price_points, price_points_intl, stock_count, category, is_active, display_order')",
         'data-home-verify-cta="1"',
@@ -2125,18 +2510,48 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         assert.equal(framerHomeCss.includes(marker), true, `css/framer_home.css should contain ${marker}`);
     }
 
-    for (const source of pageSources) {
+    assert.match(
+        homepageSource,
+        /(?:\.\/)?css\/framer_home\.css\?v=[A-Za-z0-9_]+/,
+        'index.html should load the latest framer_home stylesheet version'
+    );
+    assert.equal(
+        homepageSource.includes('./js/framer_home.js?v=20260424_HOME_HERO_GUESTBOOK_TRIGGER_6'),
+        true,
+        'index.html should load the latest framer_home script version'
+    );
+
+    for (const source of subpageSources) {
         assert.match(
             source,
             /(?:\.\/)?css\/framer_home\.css\?v=[A-Za-z0-9_]+/,
-            'home-nav entry pages should load the latest framer_home stylesheet version'
+            'home-nav subpages should continue to load the shared framer_home stylesheet version'
         );
         assert.equal(
-            source.includes('js/framer_home.js?v=20260419_HOME_LIVE_PROMPT_REFRESH_3')
-                || source.includes('./js/framer_home.js?v=20260419_HOME_LIVE_PROMPT_REFRESH_3'),
+            source.includes('js/framer-nav-runtime.js?v=20260423_FRAMER_NAV_RUNTIME_DROPDOWN_CURSOR_RUNTIME_4')
+                || source.includes('./js/framer-nav-runtime.js?v=20260423_FRAMER_NAV_RUNTIME_DROPDOWN_CURSOR_RUNTIME_4'),
             true,
-            'home-nav entry pages should load the latest framer_home script version'
+            'home-nav subpages should load the dedicated lightweight nav runtime'
         );
+        assert.equal(
+            source.includes('js/framer_home.js?v=20260422_HOME_PROMPT_PREVIEW_LOCK_1')
+                || source.includes('./js/framer_home.js?v=20260422_HOME_PROMPT_PREVIEW_LOCK_1'),
+            false,
+            'home-nav subpages should no longer eagerly load the full homepage runtime'
+        );
+    }
+
+    const navRuntimeMarkers = [
+        "const VERSION = '20260423_FRAMER_NAV_RUNTIME_DROPDOWN_CURSOR_RUNTIME_4';",
+        'function setMobileMenuState(hamburger, mobileMenu, isOpen) {',
+        'async function loadNavData() {',
+        'function initNavDropdowns() {',
+        'function initStandaloneNavBar() {',
+        'global.FramerNavRuntime = Object.freeze({'
+    ];
+
+    for (const marker of navRuntimeMarkers) {
+        assert.equal(framerNavRuntimeSource.includes(marker), true, `js/framer-nav-runtime.js should contain ${marker}`);
     }
 
     assert.equal(
@@ -2326,6 +2741,12 @@ test('guestbook runtime renderers externalize loading, modal, and interaction st
         '.guestbook-loading-indicator',
         '#commentModal.comment-modal-interactive .comment-composer-sheet',
         'body.guestbook-page .message-item.comment-post-highlight',
+        'html[data-theme="light"] body.guestbook-page .message-item',
+        'aspect-ratio: 2 / 1;',
+        'body.guestbook-page .comment-item--nested.comment-item--clickable:hover > .comment-row',
+        'html[data-theme="light"] body.guestbook-page .comment-item--nested.comment-item--clickable:hover > .comment-row',
+        'html[data-theme="light"] #guestbookModal .guestbook-composer-sheet',
+        'html[data-theme="light"] #commentModal .comment-composer-sheet',
         '.message-item .action-btn.is-processing',
         '.message-item .action-btn i.like-icon-bounce'
     ];
@@ -2335,7 +2756,7 @@ test('guestbook runtime renderers externalize loading, modal, and interaction st
     }
 
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260417_GUESTBOOK_IMAGE_STABLE_1'),
+        guestbookHtml.includes('style.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1'),
         true,
         'guestbook.html should reference the updated guestbook stylesheet version'
     );
@@ -2343,6 +2764,13 @@ test('guestbook runtime renderers externalize loading, modal, and interaction st
         guestbookHtml.includes('guestbook.js?v=20260417_GUESTBOOK_IMAGE_STABLE_1'),
         true,
         'guestbook.html should reference the updated guestbook script version'
+    );
+
+    const guestbookSkeletonCards = guestbookHtml.match(/class="skeleton-message-card"/g) || [];
+    assert.equal(
+        guestbookSkeletonCards.length,
+        4,
+        'guestbook.html should render four default skeleton cards for the initial loading state'
     );
 });
 
@@ -2414,7 +2842,7 @@ test('supabase guestbook runtime renderers externalize error, empty state, delet
         assert.equal(styleSource.includes(marker), true, `style.css should contain ${marker}`);
     }
 
-    assert.match(indexSource, /style\.css\?v=[A-Za-z0-9_]+/, 'index.html should contain a cache-busted shared stylesheet reference');
+    assert.match(indexSource, /homepage-overlays\.css\?v=[A-Za-z0-9_]+/, 'index.html should contain a cache-busted homepage overlay stylesheet reference');
     assert.match(guestbookHtml, /style\.css\?v=[A-Za-z0-9_]+/, 'guestbook.html should contain a cache-busted shared stylesheet reference');
     assert.match(archivedIndexSource, /style\.css\?v=[A-Za-z0-9_]+/, 'index_old.html should contain a cache-busted shared stylesheet reference');
     assert.equal(indexSource.includes('supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index.html should contain supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1');
@@ -2424,7 +2852,7 @@ test('supabase guestbook runtime renderers externalize error, empty state, delet
 
 test('homepage guestbook modal runtime renderers externalize keyboard dock, viewport probe, and overlay state styling', () => {
     const homepageGuestbookSource = readRepoFile('js/homepage-guestbook-modal.js');
-    const styleSource = readRepoFile('style.css');
+    const homepageOverlaySource = readRepoFile('css/homepage-overlays.css');
     const indexSource = readRepoFile('index.html');
     const guestbookHtml = readRepoFile('guestbook.html');
 
@@ -2474,11 +2902,11 @@ test('homepage guestbook modal runtime renderers externalize keyboard dock, view
     ];
 
     for (const marker of cssMarkers) {
-        assert.equal(styleSource.includes(marker), true, `style.css should contain ${marker}`);
+        assert.equal(homepageOverlaySource.includes(marker), true, `css/homepage-overlays.css should contain ${marker}`);
     }
 
     assert.equal(
-        indexSource.includes('style.css?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_STYLE_1'),
+        indexSource.includes('css/homepage-overlays.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1'),
         true,
         'index.html should load the latest homepage guestbook modal stylesheet version'
     );
@@ -2488,7 +2916,7 @@ test('homepage guestbook modal runtime renderers externalize keyboard dock, view
         'index.html should load the latest homepage guestbook modal script version'
     );
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260417_GUESTBOOK_IMAGE_STABLE_1'),
+        guestbookHtml.includes('style.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1'),
         true,
         'guestbook.html should load the latest shared stylesheet version'
     );
@@ -2549,6 +2977,8 @@ test('admin studio shell tabs and dashboards route core controls through delegat
     for (const marker of delegatedMarkers) {
         assert.equal(adminStudioSource.includes(marker), true, `admin-studio.html should contain ${marker}`);
     }
+
+    assert.equal(adminStudioSource.includes('data-points-submit="generate-codes"'), true, 'admin-studio.html should mark the points generate form for module-local submit handling');
 
     assert.equal(adminStudioSource.includes('data-admin-action="analytics-load-experiments-list"'), false, 'admin-studio.html should not expose analytics experiments as a primary toolbar entry');
 
@@ -3164,6 +3594,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
     const adminStudioCss = readRepoFile('admin-studio.css');
     const adminStudioScript = readRepoFile('admin-studio.js');
     const adminWorkbenchSource = readRepoFile('js/admin-workbench.js');
+    const adminConfigOpsAlertReportsSource = readRepoFile('js/admin-config-ops-alert-reports.js');
     const rawAdminConfigSource = readRepoFile('admin-config.js');
     const adminConfigSource = (() => {
         const source = rawAdminConfigSource;
@@ -3464,6 +3895,10 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'id="opsAlertMonitorSeverityFilters"',
         'id="opsAlertMonitorCategoryFilters"',
         'id="opsAlertMonitorBatchActions"',
+        'data-admin-action="settings-batch-claim-ops-alert-monitor"',
+        'data-admin-action="settings-batch-note-ops-alert-monitor"',
+        'data-admin-action="settings-batch-resolve-ops-alert-monitor"',
+        'data-admin-action="settings-batch-mute-ops-alert-monitor"',
         'data-admin-action="settings-filter-ops-alert-monitor"',
         'data-admin-action="settings-copy-ops-alert-monitor-checklist"',
         'data-admin-action="settings-export-ops-alert-monitor-csv"',
@@ -3579,6 +4014,43 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         assert.equal(adminStudioSource.includes(marker), true, `admin-studio.html should contain ${marker}`);
     }
 
+    const caseComposerStyleMarkers = [
+        '#shopRiskCaseComposerModal .admin-shop-risk-case-modal__field[hidden]',
+        '#shopRiskCaseComposerModal #shopRiskCaseComposerOwnerSelect',
+        '#shopRiskCaseComposerModal .admin-shop-risk-case-modal__field .shop-custom-select',
+        '#shopRiskCaseComposerModal .admin-shop-risk-case-modal__field .shop-custom-select__menu',
+        'box-sizing: border-box;'
+    ];
+
+    for (const marker of caseComposerStyleMarkers) {
+        assert.equal(adminStudioCss.includes(marker), true, `admin-studio.css should contain ${marker}`);
+    }
+
+    const caseComposerRuntimeMarkers = [
+        'function getOpsAlertCaseComposerOwnerOptionLabel(admin = {})',
+        'function syncOpsAlertCaseComposerOwnerSelect(ownerSelectEl)',
+        'window.ShopAdmin?.closeShopCustomSelects?.();',
+        'syncOpsAlertCaseComposerOwnerSelect(ownerSelectEl);'
+    ];
+
+    for (const marker of caseComposerRuntimeMarkers) {
+        assert.equal(adminConfigSource.includes(marker), true, `admin-config.js should contain ${marker}`);
+    }
+
+    const opsAlertContextHelperMarkers = [
+        'async function openAdminOpsAlertsShellContext(context = {}, options = {}) {',
+        'if (!isOpsAlertsModuleVisible()) {',
+        "window.AdminShell.activateModule('ops-alerts', {",
+        "reason: 'ops-alerts-context-helper'",
+        "window.switchModule?.('ops-alerts', {",
+        'await settleOpsAlertWorkspace(80);',
+        'return handleAdminOpsAlertsShellContext(context, options);'
+    ];
+
+    for (const marker of opsAlertContextHelperMarkers) {
+        assert.equal(adminConfigSource.includes(marker), true, `admin-config.js should contain ${marker}`);
+    }
+
     const opsAlertsModuleSource = adminStudioSource.slice(
         adminStudioSource.indexOf('id="module-ops-alerts"'),
         adminStudioSource.indexOf('</div>', adminStudioSource.indexOf('id="module-ops-alerts"'))
@@ -3620,9 +4092,27 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'the standalone ops alerts module should render after the settings module closes'
     );
     assert.equal(
-        adminStudioSource.includes('js/admin-workbench.js?v=20260410_ADMIN_SHELL_CONTEXT_P1_1'),
+        adminStudioSource.includes('js/admin-workbench.js?v=20260422_OPS_ALERT_RESOLVED_COUNT_P13'),
         true,
         'admin-studio.html should load the shared admin workbench runtime before admin config'
+    );
+    const opsAlertMonitorAssignmentIndex = adminStudioScript.indexOf("{ configId: 'ops-alerts-monitor', bucket: 'workspace-main' }");
+    const opsAlertWorkspaceAssignmentIndex = adminStudioScript.indexOf("{ configId: 'ops-alerts-workspace', bucket: 'workspace-main' }");
+    assert.notEqual(opsAlertMonitorAssignmentIndex, -1, 'admin-studio.js should assign the ops alert monitor card to the workspace view');
+    assert.notEqual(opsAlertWorkspaceAssignmentIndex, -1, 'admin-studio.js should assign the ops alert workspace card to the workspace view');
+    assert.ok(
+        opsAlertMonitorAssignmentIndex < opsAlertWorkspaceAssignmentIndex,
+        'the actionable ops alert monitor panel should appear before the link-only workspace shortcuts'
+    );
+    assert.match(
+        adminStudioCss,
+        /data-config="ops-alerts-monitor"\]\s*\{\s*order:\s*10;/,
+        'admin-studio.css should keep the actionable ops alert monitor panel first in the workspace view'
+    );
+    assert.match(
+        adminStudioCss,
+        /data-config="ops-alerts-workspace"\]\s*\{\s*order:\s*11;/,
+        'admin-studio.css should keep the link-only ops alert workspace shortcuts after the monitor panel'
     );
 
     const delegatedHandlerMarkers = [
@@ -3685,6 +4175,10 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         "case 'settings-refresh-ops-alert-health':",
         "case 'settings-filter-ops-alert-monitor':",
         "case 'settings-refresh-ops-alert-monitor':",
+        "case 'settings-batch-claim-ops-alert-monitor':",
+        "case 'settings-batch-note-ops-alert-monitor':",
+        "case 'settings-batch-resolve-ops-alert-monitor':",
+        "case 'settings-batch-mute-ops-alert-monitor':",
         "case 'settings-copy-ops-alert-monitor-checklist':",
         "case 'settings-export-ops-alert-monitor-csv':",
         "case 'settings-copy-ops-alert-shift-report':",
@@ -3704,6 +4198,76 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
 
     for (const marker of delegatedHandlerMarkers) {
         assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
+    }
+
+    const opsAlertMonitorBatchMarkers = [
+        'function readOpsAlertWorkspaceContextFromActionElement(actionEl) {',
+        'function setAdminStudioDelegatedActionBusy(actionEl, busy = false) {',
+        "actionEl.classList.toggle('is-running', busy);",
+        "actionEl.dataset.adminActionRunning = 'true';",
+        'function waitForAdminStudioActionModal(modalId = \'\', options = {}) {',
+        'function runAdminStudioDelegatedAction(actionEl, runner, options = {}) {',
+        'function runOpsAlertMonitorBatchCaseAction(action) {',
+        "const canOpenBatchComposerDirectly = typeof window.openOpsAlertBatchCaseComposer === 'function';",
+        'return window.openOpsAlertBatchCaseComposer(action);',
+        "window.showToast?.('集中告警处理入口还在加载，请刷新面板后重试。', 'warning');",
+        'async function runOpsAlertCaseAction(actionEl) {',
+        "&& typeof window.openOpsAlertCaseComposer === 'function';",
+        'return window.openOpsAlertCaseComposer(caseAction, context);',
+        "window.showToast?.('集中告警动作入口还在加载，请刷新面板后重试。', 'warning');",
+        'function handleOpsAlertCaseActionElement(actionEl, event) {',
+        'function handleOpsAlertMonitorBatchActionElement(actionEl, event) {',
+        'const OPS_ALERT_DIRECT_ACTION_SELECTOR = [',
+        'function bindAdminStudioOpsAlertDirectActionButtons(root = document) {',
+        "actionEl.dataset.adminOpsAlertDirectBound = '1';",
+        'function triggerAdminStudioOpsAlertAction(actionEl, nativeEvent = null) {',
+        "window.bindAdminStudioOpsAlertDirectActionButtons = bindAdminStudioOpsAlertDirectActionButtons;",
+        "window.triggerAdminStudioOpsAlertAction = triggerAdminStudioOpsAlertAction;",
+        "'settings-batch-resolve-ops-alert-monitor': 'resolve'",
+        'bindAdminStudioDelegatedControls();',
+        'Promise.resolve(window.handleOpsAlertMonitorBatchCaseAction(action))',
+        "window.showToast?.(`集中告警批处理失败: ${error?.message || '未知错误'}`, 'error');",
+        'Promise.resolve(window.handleOpsAlertCaseAction(caseAction, context))',
+        "window.showToast?.(`集中告警动作失败: ${error?.message || '未知错误'}`, 'error');",
+        "console.warn('[AdminStudio] Delegated action returned false:', {",
+        'event?.preventDefault?.();',
+        'event?.stopPropagation?.();',
+        'handleOpsAlertCaseActionElement(actionEl, event);',
+        "document.addEventListener('pointerdown', (event) => {",
+        "'.btn-add-config[data-admin-action], .ops-alert-monitor-filter-btn[data-admin-action]'",
+        "if (handleOpsAlertMonitorBatchActionElement(actionEl, event)) {",
+        'pulseAdminStudioDelegatedAction(actionEl);',
+        "if (handleOpsAlertMonitorBatchActionElement(actionEl, event)) {",
+        "actionEl.classList.add('is-pressed', 'is-click-feedback');",
+        "showToast('集中告警处理弹窗未加载，请刷新后台后重试。', 'error');",
+        "runOpsAlertMonitorBatchCaseAction('assign');",
+        "runOpsAlertMonitorBatchCaseAction('add_note');",
+        "runOpsAlertMonitorBatchCaseAction('resolve');",
+        'function openOpsAlertMonitorBatchMuteModal() {',
+        "window.showToast?.('集中告警静默入口还在加载，请刷新面板后重试。', 'warning');",
+        'function applyOpsAlertMonitorBatchActionStates(buttonStates = [], filters = getOpsAlertMonitorViewFilters()) {',
+        'function openOpsAlertBatchCaseComposer(action, categoryKey = \'\') {',
+        'return openOpsAlertBatchCaseComposer(normalizedAction, categoryKey);',
+        'window.bindAdminStudioOpsAlertDirectActionButtons?.(panel);',
+        'const filters = getOpsAlertMonitorViewFilters();',
+        'const items = getOpsAlertMonitorBatchItems(filters, normalizedAction, categoryKey);',
+        'button.disabled = false;',
+        "button.setAttribute('aria-disabled', disabled ? 'true' : 'false');",
+        "button.dataset.opsAlertMonitorBatchDisabled = disabled ? 'true' : 'false';"
+    ];
+
+    for (const marker of opsAlertMonitorBatchMarkers) {
+        const source = marker.includes('button.')
+            || marker.includes('applyOpsAlertMonitorBatchActionStates')
+            || marker.includes('集中告警处理弹窗未加载')
+            || marker === 'function openOpsAlertBatchCaseComposer(action, categoryKey = \'\') {'
+            || marker === 'return openOpsAlertBatchCaseComposer(normalizedAction, categoryKey);'
+            || marker.includes('window.bindAdminStudioOpsAlertDirectActionButtons?.(panel);')
+            || marker.includes('getOpsAlertMonitorBatchItems(filters')
+            || marker.includes('const filters = getOpsAlertMonitorViewFilters();')
+            ? adminConfigSource
+            : adminStudioScript;
+        assert.equal(source.includes(marker), true, `ops alert monitor batch runtime should contain ${marker}`);
     }
 
     const opsAlertModuleScriptMarkers = [
@@ -4011,6 +4575,21 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'admin-config.js should keep its local case composer meta bridge under a non-shared name'
     );
     assert.equal(
+        adminConfigSource.includes('function ensureOpsAlertFloatingModal(modalOrId) {'),
+        true,
+        'admin-config.js should portal ops alert modals out of hidden legacy module containers'
+    );
+    assert.equal(
+        adminConfigSource.includes("const modal = ensureOpsAlertFloatingModal('shopRiskCaseComposerModal');"),
+        true,
+        'ops alert case composer should be mounted at document body before showing'
+    );
+    assert.equal(
+        adminConfigSource.includes("const modal = ensureOpsAlertFloatingModal('opsAlertBatchMuteModal');"),
+        true,
+        'ops alert batch mute modal should be mounted at document body before showing'
+    );
+    assert.equal(
         adminConfigSource.includes('function applyOpsAlertBatchMuteModalViewState('),
         true,
         'admin-config.js should apply ops alert batch mute modal state through a dedicated DOM applier'
@@ -4056,9 +4635,9 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'admin-config.js should derive monitor export rows through the shared workbench runtime'
     );
     assert.equal(
-        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorChecklistText(rows, filters, categoryKey, {'),
+        adminConfigOpsAlertReportsSource.includes("'buildAdminWorkbenchOpsAlertMonitorChecklistText'"),
         true,
-        'admin-config.js should build monitor checklist copy through the shared workbench runtime'
+        'ops alert report helper should build monitor checklist copy through the shared workbench runtime'
     );
     assert.equal(
         adminConfigSource.includes('window.fetchAdminWorkbenchOpsAlertSettings(headers, {'),
@@ -4426,9 +5005,9 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'admin-config.js should wrap monitor batch row derivation behind a local resolver'
     );
     assert.equal(
-        adminConfigSource.includes('function resolveOpsAlertMonitorChecklistText(rows = [], filters = getOpsAlertMonitorViewFilters(), categoryKey = \'\') {'),
+        adminConfigOpsAlertReportsSource.includes('function resolveOpsAlertMonitorChecklistText(rows = [], filters = {}, categoryKey = \'\', deps = {}) {'),
         true,
-        'admin-config.js should wrap monitor checklist text derivation behind a local resolver'
+        'ops alert report helper should wrap monitor checklist text derivation behind a local resolver'
     );
     assert.equal(
         adminConfigSource.includes('function resolveOpsAlertBatchMuteModalState(state = opsAlertBatchMuteState || getDefaultOpsAlertBatchMuteState()) {'),
@@ -4471,14 +5050,14 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'admin-config.js should wrap owned shift category derivation behind a local resolver'
     );
     assert.equal(
-        adminConfigSource.includes('function resolveOpsAlertMonitorShiftReportSummaryText(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = \'\') {'),
+        adminConfigOpsAlertReportsSource.includes('function resolveOpsAlertMonitorShiftReportSummaryText(report = {}, currentAdminLabel = \'\', deps = {}) {'),
         true,
-        'admin-config.js should wrap shift report summary export text behind a local resolver'
+        'ops alert report helper should wrap shift report summary export text behind a local resolver'
     );
     assert.equal(
-        adminConfigSource.includes('function resolveOpsAlertMonitorShiftReportCsvRows(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = \'\') {'),
+        adminConfigOpsAlertReportsSource.includes('function resolveOpsAlertMonitorShiftReportCsvRows(report = {}, currentAdminLabel = \'\', deps = {}) {'),
         true,
-        'admin-config.js should wrap shift report csv rows behind a local resolver'
+        'ops alert report helper should wrap shift report csv rows behind a local resolver'
     );
     assert.equal(
         adminConfigSource.includes('function resolveOpsAlertStrategySummaryState(normalizedConfig = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\'])) {'),
@@ -4611,14 +5190,14 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'admin-config.js should normalize ops alert health payloads through the shared workbench runtime'
     );
     assert.equal(
-        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorShiftReportSummaryText(report, shiftRuntimeState,'),
+        adminConfigOpsAlertReportsSource.includes("'buildAdminWorkbenchOpsAlertMonitorShiftReportSummaryText'"),
         true,
-        'admin-config.js should build shift report summary copy through the shared workbench runtime'
+        'ops alert report helper should build shift report summary copy through the shared workbench runtime'
     );
     assert.equal(
-        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorShiftReportCsvRows(report, shiftRuntimeState,'),
+        adminConfigOpsAlertReportsSource.includes("'buildAdminWorkbenchOpsAlertMonitorShiftReportCsvRows'"),
         true,
-        'admin-config.js should build shift report csv rows through the shared workbench runtime'
+        'ops alert report helper should build shift report csv rows through the shared workbench runtime'
     );
     assert.equal(
         adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorShiftTrendState(report, {'),
@@ -5025,6 +5604,8 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'async function copyOpsAlertMonitorShiftReportSummary()',
         'function exportOpsAlertMonitorCsv(categoryKey = \'\')',
         'function exportOpsAlertMonitorShiftReportCsv()',
+        'function requireAdminConfigOpsAlertReportsRuntime() {',
+        'function getAdminConfigOpsAlertReportsDeps() {',
         'function resolveOpsAlertSettingsSubmitter(options = {}) {',
         'function resolveOpsAlertSecretDeletionSubmitter(options = {}) {',
         "function requireOpsAlertWorkbenchMethod(methodName = '') {",
@@ -5049,8 +5630,6 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'function resolveOpsAlertMonitorShiftRenderStateBuilder() {',
         'function resolveOpsAlertMonitorShiftViewSwitchStateBuilder() {',
         'function resolveOpsAlertMonitorShiftTrendStateBuilder() {',
-        'function resolveOpsAlertMonitorShiftReportSummaryTextBuilder() {',
-        'function resolveOpsAlertMonitorShiftReportCsvRowsBuilder() {',
         'function resolveOpsAlertMonitorPanelStateBuilder() {',
         'function resolveOpsAlertMonitorCategoryRenderStateBuilder() {',
         'function resolveOpsAlertCaseMutationItemsBuilder() {',
@@ -5122,6 +5701,22 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
 
     for (const marker of runtimeMarkers) {
         assert.equal(adminConfigSource.includes(marker), true, `admin-config.js should contain ${marker}`);
+    }
+
+    const helperMarkers = [
+        "globalScope.AdminConfigOpsAlertReports = Object.freeze({",
+        'function buildOpsAlertMonitorChecklistText(rows = [], filters = {}, categoryKey = \'\', deps = {}) {',
+        'function buildOpsAlertMonitorShiftReportSummaryText(report = {}, currentAdminLabel = \'\', deps = {}) {',
+        'function buildOpsAlertMonitorShiftReportCsvRows(report = {}, currentAdminLabel = \'\', deps = {}) {',
+        'function resolveOpsAlertMonitorShiftExportState(report = {}, currentAdminLabel = \'\', deps = {}) {',
+        "source: 'ops-alerts-report'",
+        "module: 'ops-alerts'",
+        'notifyOpsAlertReportFeedback(`已导出 ${rows.length} 条集中告警清单`, \'success\', \'saved\', deps);',
+        'notifyOpsAlertReportFeedback(`已复制${exportState.currentViewLabel}交班摘要`, \'success\', \'saved\', deps);'
+    ];
+
+    for (const marker of helperMarkers) {
+        assert.equal(adminConfigOpsAlertReportsSource.includes(marker), true, `js/admin-config-ops-alert-reports.js should contain ${marker}`);
     }
 
     assert.equal(
@@ -5211,7 +5806,9 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         '.admin-shop-risk-case-modal.is-visible',
         '.admin-shop-risk-case-modal__dialog',
         '.admin-shop-risk-case-modal__actions',
-        '.btn-add-config.is-pressed'
+        '.btn-add-config.is-pressed',
+        '.btn-add-config.is-click-feedback',
+        '@keyframes adminActionButtonClickFeedback'
     ];
 
     for (const marker of workspaceCssMarkers) {
@@ -5228,6 +5825,7 @@ test('admin audit monitor exposes delegated settings actions and runtime wiring'
     const htmlMarkers = [
         'id="adminAuditMonitorLastRefresh"',
         'data-admin-action="settings-refresh-admin-audit-monitor"',
+        'id="adminAuditMonitorFocusContext"',
         'id="adminAuditMonitorAccessCard"',
         'id="adminAuditMonitorFactsPanel"',
         'id="adminAuditMonitorFactsGrid"',
@@ -5245,6 +5843,8 @@ test('admin audit monitor exposes delegated settings actions and runtime wiring'
 
     const handlerMarkers = [
         "case 'settings-refresh-admin-audit-monitor':",
+        "case 'settings-scroll-focus-target':",
+        "case 'settings-refocus-admin-audit-monitor':",
         "case 'settings-change-admin-audit-access-page':",
         "case 'settings-change-admin-audit-anomaly-page':",
         "case 'settings-change-admin-audit-config-page':"
@@ -5256,7 +5856,9 @@ test('admin audit monitor exposes delegated settings actions and runtime wiring'
 
     const runtimeMarkers = [
         'function getDefaultAdminAuditMonitorState()',
+        'function getAdminAuditMonitorFocusPanelActions(matched = null, context = {})',
         'function renderAdminAuditMonitorFacts()',
+        'function renderAdminAuditMonitorWorkbenchContext(context = adminAuditMonitorWorkbenchContext)',
         'function renderAdminAuditMonitorListPagination(target, pagination = {}, actionName = \'\', emptyText = \'\')',
         "new URL('/api/admin/settings/admin-audit-monitor', window.location.origin)",
         'window.loadAdminAuditMonitor = loadAdminAuditMonitor;',
@@ -5809,6 +6411,7 @@ test('admin points runtime renderers route batch tables and modals through deleg
         "action: 'export-batch-codes-from-modal'",
         "action: 'invalidate-batch-from-codes'",
         'data-points-action="navigate-user"',
+        "await window.AdminShell.openContext('users', {",
         "action: 'lookup-code-item'",
         "action: 'set-code-expiry'",
         "action: 'disable-code'",
@@ -5841,6 +6444,12 @@ test('admin points runtime renderers route batch tables and modals through deleg
     for (const marker of delegatedMarkers) {
         assert.equal(adminPointsSource.includes(marker), true, `admin-points.js should contain ${marker}`);
     }
+
+    assert.equal(
+        adminPointsSource.includes("switchModule('users');"),
+        false,
+        'admin-points.js should no longer switch the users module directly when opening a redeemed user'
+    );
 });
 
 test('user modal expiry picker uses a body-mounted floating flatpickr inside the permissions panel', () => {
@@ -5877,6 +6486,7 @@ test('user modal expiry picker uses a body-mounted floating flatpickr inside the
 test('admin studio centralizes module permissions and gates sidebar modules through the shared registry', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const bootstrapSource = readRepoFile('js/admin-studio-bootstrap.js');
+    const shopSource = readRepoFile('js/admin-shop.js');
     const sidebarStyles = readRepoFile('admin-sidebar.css');
 
     assert.doesNotMatch(
@@ -5896,8 +6506,8 @@ test('admin studio centralizes module permissions and gates sidebar modules thro
     );
     assert.match(
         adminStudioSource,
-        /js\/admin-studio-bootstrap\.js\?v=20260416_PRODUCT_DETAIL_TAB_1/,
-        'admin-studio.html should load the cache-busted admin studio bootstrap for the split analytics center aliases'
+        /js\/admin-studio-bootstrap\.js\?v=20260421_BOOTSTRAP_NO_CHAT_PREWARM_P2/,
+        'admin-studio.html should load the cache-busted admin studio bootstrap without legacy chat prewarm'
     );
     assert.match(
         bootstrapSource,
@@ -5914,10 +6524,10 @@ test('admin studio centralizes module permissions and gates sidebar modules thro
         /function syncAdminStudioModuleAccess\(options = \{\}\)/,
         'admin-studio-bootstrap.js should centralize sidebar permission syncing'
     );
-    assert.match(
+    assert.doesNotMatch(
         bootstrapSource,
         /function scheduleAdminChatPrewarm\(\)/,
-        'admin-studio-bootstrap.js should prewarm the admin chat module after access resolves'
+        'admin-studio-bootstrap.js should no longer keep the legacy admin chat prewarm scheduler'
     );
     assert.match(
         bootstrapSource,
@@ -5929,15 +6539,25 @@ test('admin studio centralizes module permissions and gates sidebar modules thro
         /normalizeAdminModuleId\(activeModule\) !== 'homepage'/,
         'admin-studio-bootstrap.js should skip homepage prewarm unless homepage is the active startup module'
     );
-    assert.match(
+    assert.doesNotMatch(
         bootstrapSource,
         /if \(normalizedModuleName === 'shop' && typeof window\.ShopAdmin\?\.init === 'function'\)/,
-        'admin-studio-bootstrap.js should initialize the shop workspace as soon as the shop module becomes active'
+        'admin-studio-bootstrap.js should leave shop initialization to the shell activation lifecycle'
     );
-    assert.match(
+    assert.doesNotMatch(
         bootstrapSource,
         /if \(hasModulePermission\('shop'\) && initialModule === 'shop'\)/,
-        'admin-studio-bootstrap.js should only auto-init ShopAdmin on window load when shop is the active startup module'
+        'admin-studio-bootstrap.js should no longer auto-init ShopAdmin on window load'
+    );
+    assert.match(
+        shopSource,
+        /window\.AdminShell\.registerModule\('shop', \{/,
+        'js/admin-shop.js should register the shop workspace with the shell lifecycle'
+    );
+    assert.match(
+        shopSource,
+        /document\.addEventListener\('DOMContentLoaded', \(\) => \{[\s\S]*activateVisibleShopModuleOnAccess\(\);/,
+        'js/admin-shop.js should lazily activate the visible shop module after access resolves'
     );
     assert.match(
         bootstrapSource,
@@ -6216,6 +6836,7 @@ test('admin points runtime renderers externalize tab state, panel visibility, an
         "buildAdminPointsUrl('points/manage'",
         "buildAdminPointsUrl('points/packages'",
         'async function fetchPointsCatalogSnapshot({ site = getPointsReadSite(), force = false } = {})',
+        "async function ensurePointsPackageCatalogReady(packageId = '', { site = getPointsReadSite() } = {})",
         'function renderPointsPackageCatalog(payload = {})',
         'function renderPointsPackageEditor()',
         'function getPointsWriteContextState()',
@@ -6455,8 +7076,10 @@ test('admin shell runtime centralizes module context and site-change routing', (
     const workbenchSource = readRepoFile('js/admin-workbench.js');
 
     const shellMarkers = [
-        "const ADMIN_SHELL_VERSION = '20260410_ADMIN_SHELL_P1_1'",
+        "const ADMIN_SHELL_VERSION = '20260421_ADMIN_SHELL_COMMENTS_OPS_HELPERS_P2'",
         'function normalizeContext(destination, context = {}, options = {})',
+        'function normalizeDeliveryResult(result, options = {})',
+        'async function activateLegacyModuleRuntime(moduleRuntime, context = {}, options = {})',
         'function registerModule(moduleId, lifecycle = {})',
         'function registerSiteChangeHandler(moduleId, handler)',
         'async function openContext(destination, context = {}, options = {})',
@@ -6471,22 +7094,98 @@ test('admin shell runtime centralizes module context and site-change routing', (
     }
 
     assert.equal(
-        adminStudioSource.includes('js/admin-shell.js?v=20260410_ADMIN_SHELL_P1_1'),
+        adminShellSource.includes("if (moduleId === 'shop') {"),
+        true,
+        'js/admin-shell.js should expose a default shop detail context fallback'
+    );
+    assert.equal(
+        adminShellSource.includes('await adminShop.focusOrder(orderId, {'),
+        true,
+        'js/admin-shell.js should focus shop order details through ShopAdmin when the shell handles a shop order context'
+    );
+
+    assert.equal(
+        adminStudioSource.includes('js/admin-shell.js?v=20260421_ADMIN_SHELL_COMMENTS_OPS_HELPERS_P2'),
         true,
         'admin-studio.html should load the Admin Shell after bootstrap'
     );
     assert.ok(
-        adminStudioSource.indexOf('js/admin-studio-bootstrap.js') < adminStudioSource.indexOf('js/admin-shell.js?v=20260410_ADMIN_SHELL_P1_1'),
+        adminStudioSource.indexOf('js/admin-studio-bootstrap.js') < adminStudioSource.indexOf('js/admin-shell.js?v=20260421_ADMIN_SHELL_COMMENTS_OPS_HELPERS_P2'),
         'admin-studio.html should load Admin Shell after bootstrap'
     );
     assert.ok(
-        adminStudioSource.indexOf('js/admin-shell.js?v=20260410_ADMIN_SHELL_P1_1') < adminStudioSource.indexOf('admin-comments.js?v=20260416_COMMENTS_PAGE_SIZE_15_1'),
+        adminStudioSource.indexOf('js/admin-shell.js?v=20260421_ADMIN_SHELL_COMMENTS_OPS_HELPERS_P2') < adminStudioSource.indexOf('admin-comments.js?v=20260421_COMMENTS_MODULE_BRIDGE_HELPERS_P3'),
         'admin-studio.html should load Admin Shell before feature modules register with it'
     );
     assert.equal(
         siteFilterSource.includes('window.AdminShell?.handleSiteChange?.(changeDetail)'),
         true,
         'js/admin-site-filter.js should delegate active-module reloads to Admin Shell'
+    );
+    assert.equal(
+        siteFilterSource.includes('window.handleAdminChatModuleSiteChange'),
+        true,
+        'js/admin-site-filter.js should refresh chat through the shared chat site-change helper'
+    );
+    assert.equal(
+        siteFilterSource.includes('window.handleAdminAnalyticsSiteChange'),
+        true,
+        'js/admin-site-filter.js should refresh analytics containers through the shared analytics site-change helper'
+    );
+    assert.equal(
+        siteFilterSource.includes('window.handleAdminHomepageSiteChange'),
+        true,
+        'js/admin-site-filter.js should refresh homepage through the shared homepage site-change helper'
+    );
+    assert.equal(
+        siteFilterSource.includes('window.handleAdminPointsSiteChange'),
+        true,
+        'js/admin-site-filter.js should refresh points through the shared points site-change helper'
+    );
+    assert.equal(
+        siteFilterSource.includes('window.handleAdminGrowthCenterSiteChange'),
+        true,
+        'js/admin-site-filter.js should refresh growth center through the shared growth center site-change helper'
+    );
+    assert.equal(
+        siteFilterSource.includes('window.handleAdminUsersSiteChange'),
+        true,
+        'js/admin-site-filter.js should refresh users through the shared users site-change helper'
+    );
+    assert.equal(
+        siteFilterSource.includes('window.handleAdminCommentsSiteChange'),
+        true,
+        'js/admin-site-filter.js should refresh comments through the shared comments site-change helper'
+    );
+    assert.equal(
+        siteFilterSource.includes('window.handleAdminSettingsSiteChange'),
+        true,
+        'js/admin-site-filter.js should refresh settings through the shared settings site-change helper'
+    );
+    assert.equal(
+        siteFilterSource.includes('window.handleAdminDiscountsSiteChange'),
+        true,
+        'js/admin-site-filter.js should refresh discounts through the shared discounts site-change helper'
+    );
+    assert.equal(
+        siteFilterSource.includes('window.handleAdminOpsAlertsSiteChange'),
+        true,
+        'js/admin-site-filter.js should refresh ops alerts through the shared ops alerts site-change helper'
+    );
+    assert.equal(
+        adminShellSource.includes('window.handleAdminAnalyticsSiteChange'),
+        true,
+        'js/admin-shell.js should route analytics container site changes through the shared analytics site-change helper'
+    );
+    assert.equal(
+        siteFilterSource.includes('new AdminChat(chatContainer)'),
+        false,
+        'js/admin-site-filter.js should no longer instantiate admin chat directly during site changes'
+    );
+    assert.equal(
+        adminShellSource.includes('admin-shell-site-reload-requested'),
+        false,
+        'js/admin-shell.js should no longer rely on the orphaned site reload event fallback'
     );
     assert.equal(
         adminStudioScript.includes("window.AdminShell.registerModule('gallery'"),
@@ -6582,17 +7281,35 @@ test('admin comments runtime renderers route list items, filters, and block menu
         'action-btn action-block${anyBlockState.blocked ? \' action-btn--blocked\' : \'\'}',
         "loadCommentStats(currentCommentView, { showLoading: false });",
         'function openAnalyticsCommentContext(context = {})',
+        'function ensureCommentsModuleActive(options = {}) {',
         'function handleAdminCommentsShellContext(context = {})',
         "window.AdminShell.registerModule('comments'",
         "await window.AdminShell.openContext('users'",
         "await window.AdminShell.openContext('gallery'",
         "await window.AdminShell.openContext('tickets'",
-        'window.openAnalyticsCommentContext = openAnalyticsCommentContext;'
+        'async function openAdminCommentsPromptGalleryContext() {',
+        'async function openAdminCommentsPromptHomepageContext() {',
+        'async function openAdminCommentsPromptAnalyticsContext() {',
+        'async function openAdminCommentsShellContext(context = {}, options = {}) {',
+        'window.openAdminCommentsShellContext = openAdminCommentsShellContext;',
+        "await window.AdminShell.openContext('homepage'",
+        "await window.AdminShell.openContext('growth-center'",
+        'window.openAnalyticsCommentContext = openAnalyticsCommentContext;',
+        "const showToast = (message, type = 'info') => {",
+        "if (typeof window.showToast === 'function' && window.showToast !== showToast) {",
+        "source: 'admin-comments'",
+        "module: 'comments'"
     ];
 
     for (const marker of delegatedMarkers) {
         assert.equal(adminCommentsSource.includes(marker), true, `admin-comments.js should contain ${marker}`);
     }
+
+    assert.equal(
+        adminCommentsSource.includes("window.switchModule('comments');"),
+        false,
+        'admin-comments.js should no longer switch the comments module directly inside context helpers'
+    );
 
     const removedMarkers = [
         '<div class="item-avatar" style="',
@@ -6686,17 +7403,17 @@ test('admin comments runtime renderers route list items, filters, and block menu
         'admin-studio.html should reference the updated admin comments script version'
     );
     assert.equal(
-        adminStudioSource.includes('admin-comments.js?v=20260416_COMMENTS_PAGE_SIZE_15_1'),
+        adminStudioSource.includes('admin-comments.js?v=20260421_COMMENTS_MODULE_BRIDGE_HELPERS_P3'),
         true,
         'admin-studio.html should load the cache-busted admin comments script for the comment ticket busy feedback fix'
     );
     assert.equal(
-        adminStudioSource.includes('admin-studio.js?v=20260420_ANALYTICS_USER_TREND_REQUEST_1'),
+        adminStudioSource.includes('admin-studio.js?v=20260424_ADMIN_MODAL_SCROLL_LOCK_SOFT_BACKDROP_1'),
         true,
         'admin-studio.html should load the cache-busted admin studio runtime for the comments batch feedback bridge fix'
     );
     assert.equal(
-        adminStudioSource.includes('js/admin-shell.js?v=20260410_ADMIN_SHELL_P1_1'),
+        adminStudioSource.includes('js/admin-shell.js?v=20260421_ADMIN_SHELL_COMMENTS_OPS_HELPERS_P2'),
         true,
         'admin-studio.html should load the P1 admin shell before feature modules'
     );
@@ -6826,6 +7543,7 @@ test('wallet modal runtime renderers route wallet shell, lists, filters, and ord
         'style="font-size: 10px;"',
         'toast.style.cssText =',
         'wallet-toast-style',
+        'order-detail-premium-style',
         "resultDiv.style.display = 'block'",
         'document.documentElement.style.overflow =',
         'document.body.style.position =',
@@ -6864,7 +7582,18 @@ test('wallet modal runtime renderers route wallet shell, lists, filters, and ord
         '.wallet-toast',
         '.wallet-toast--leaving',
         'body.wallet-modal-lock',
-        '.wallet-overlay[hidden]'
+        '.wallet-overlay[hidden]',
+        '--wallet-scrollbar-thumb',
+        '.wallet-order-modal-body::-webkit-scrollbar-thumb',
+        'scrollbar-color: var(--wallet-scrollbar-thumb) transparent',
+        'html[data-theme="light"] .wallet-modal',
+        '[data-theme="light"] .wallet-sidebar .wallet-menu-item.active',
+        '[data-theme="light"] .balance-card.compact-premium-card',
+        '[data-theme="light"] .wallet-order-modal-body',
+        '[data-theme="light"] .wallet-payment-qr-status {',
+        '[data-theme="light"] .affiliate-member-badge-success {',
+        '[data-theme="light"] .affiliate-reward-guide::after {',
+        '.content-card {'
     ];
 
     for (const marker of walletCssMarkers) {
@@ -7166,7 +7895,7 @@ test('homepage admin runtime renderers externalize retry, visibility, tab indica
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-homepage.js?v=20260415_HOME_VERIFY_DEMO_1'),
+        adminStudioSource.includes('admin-homepage.js?v=20260421_HOMEPAGE_FEEDBACK_BRIDGE_P4'),
         true,
         'admin-studio.html should load the latest homepage admin script version'
     );
@@ -7469,13 +8198,18 @@ test('ticket admin surfaces user email in search and list rendering', () => {
     assert.equal(adminStudioSource.includes('placeholder="搜索工单号、订单号、用户、邮箱或描述..."'), true, 'admin-studio.html should mention ticket id, user, and email in the ticket search placeholder');
     assert.equal(adminStudioSource.includes('<th>用户 / 邮箱</th>'), true, 'admin-studio.html should label the ticket user column with email support');
     assert.equal(adminStudioSource.includes('js/admin-ticket-links.js?v=20260410_ADMIN_SHELL_CONTEXT_P1_1'), true, 'admin-studio.html should load the shared ticket link protocol before the ticket runtime');
-    assert.equal(adminStudioSource.includes('admin-studio.css?v=20260420_POINTS_LEADERBOARD_AVATAR_1'), true, 'admin-studio.html should load the cache-busted admin studio stylesheet for analytics metric context states');
+    assert.equal(adminStudioSource.includes('admin-studio.css?v=20260424_ADMIN_LIGHT_FLAT_CARDS_2'), true, 'admin-studio.html should load the cache-busted admin studio stylesheet for the discount trigger save row layout');
     assert.equal(adminStudioSource.includes('analytics-advanced-entry'), false, 'admin-studio.html should keep advanced analytics out of the main toolbar flow');
-    assert.equal(adminStudioSource.includes('admin-config.js?v=20260416_PAYMENT_PROVIDER_NEUTRALITY_1'), true, 'admin-studio.html should load the cache-busted admin config script for configurable ticket reply templates');
-    assert.equal(adminStudioSource.includes('admin-discounts.js?v=20260416_DISCOUNT_STACKING_REAL_MULTI_14'), true, 'admin-studio.html should load the cache-busted discount runtime for the P1 assets and ROI workspace');
-    assert.equal(adminStudioSource.includes('js/admin-tickets.js?v=20260410_ADMIN_SHELL_CONTEXT_P1_1'), true, 'admin-studio.html should load the cache-busted ticket admin script');
+    assert.equal(adminStudioSource.includes('js/admin-config-ops-alert-reports.js?v=20260421_OPS_ALERT_REPORT_ACTIONS_P2'), true, 'admin-studio.html should load the cache-busted ops alert report helper before admin config');
+    assert.equal(adminStudioSource.includes('admin-config.js?v=20260422_OPS_ALERT_BATCH_ERROR_VISIBLE_P4'), true, 'admin-studio.html should load the cache-busted admin config script for shell-driven settings activation');
+    assert.equal(adminStudioSource.includes('admin-discounts.js?v=20260421_DISCOUNTS_CONTEXT_HELPER_P2'), true, 'admin-studio.html should load the cache-busted discount runtime for the P1 assets and ROI workspace');
+    assert.equal(adminStudioSource.includes('js/admin-tickets.js?v=20260421_TICKETS_OPS_ALERTS_HELPER_P2'), true, 'admin-studio.html should load the cache-busted ticket admin script');
     assert.equal(ticketsSource.includes("recordAnalyticsResolutionFeedback: function (ticket = {}, newStatus = '', result = {}, doRefund = false) {"), true, 'js/admin-tickets.js should record analytics resolution feedback after ticket handling succeeds');
     assert.equal(ticketsSource.includes('pageSize: 12,'), true, 'js/admin-tickets.js should paginate tickets 12 at a time');
+    assert.equal(ticketsSource.includes("handleShellContext: async function (context = {}, options = {}) {"), true, 'js/admin-tickets.js should route ticket shell context through the module runtime');
+    assert.equal(ticketsSource.includes("handleShellSiteChange: function () {"), true, 'js/admin-tickets.js should reload the active ticket workspace through the shell site-change lifecycle');
+    assert.equal(ticketsSource.includes("window.AdminShell.registerModule('tickets', {"), true, 'js/admin-tickets.js should register the tickets module with AdminShell');
+    assert.equal(ticketsSource.includes("const opened = await window.AdminShell.openContext('tickets', {"), true, 'js/admin-tickets.js should prefer AdminShell when reminder entries reopen a ticket detail');
     assert.equal(ticketLinksSource.includes('root.AdminTicketLinks = api;'), true, 'js/admin-ticket-links.js should expose a shared ticket link protocol namespace');
     assert.equal(ticketLinksSource.includes('function buildLinkedTicketDescription(body = {}, actorLabel = \'\')'), true, 'js/admin-ticket-links.js should build linked ticket descriptions through the shared protocol');
     assert.equal(ticketLinksSource.includes('function parseLinkedOpsAlertContext(description = \'\')'), true, 'js/admin-ticket-links.js should parse linked ops alert ticket descriptions');
@@ -7494,9 +8228,11 @@ test('ticket admin surfaces user email in search and list rendering', () => {
     assert.equal(ticketsSource.includes("buildAnalyticsContentCommerceReturnContext: function (context = this.analyticsWorkbenchContext) {"), true, 'js/admin-tickets.js should build content-commerce return context for content drill-down tickets');
     assert.equal(ticketsSource.includes("renderAnalyticsIssueSummary: function () {"), true, 'js/admin-tickets.js should render a ticket issue summary note for analytics drill-downs');
     assert.equal(ticketsSource.includes("focusAnalyticsIssueSummary: function (kind = '') {"), true, 'js/admin-tickets.js should let analytics issue summary chips jump into ticket subviews');
+    assert.equal(ticketsSource.includes("const issueSummaryKind = this.safeText("), true, 'js/admin-tickets.js should accept issue summary shell payloads from the shared action bus');
     assert.equal(ticketsSource.includes("buildAnalyticsPrioritySummaryState: function () {"), true, 'js/admin-tickets.js should derive prioritized ticket items for analytics drill-downs');
     assert.equal(ticketsSource.includes("renderAnalyticsPrioritySummary: function () {"), true, 'js/admin-tickets.js should render prioritized ticket items for analytics drill-downs');
     assert.equal(ticketsSource.includes("focusAnalyticsPrioritySummary: async function (action = '', ticketId = '') {"), true, 'js/admin-tickets.js should let analytics priority items jump into ticket handling actions');
+    assert.equal(ticketsSource.includes("const priorityAction = this.safeText("), true, 'js/admin-tickets.js should accept priority shell payloads from the shared action bus');
     assert.equal(ticketsSource.includes('回订单承接链'), true, 'js/admin-tickets.js should provide a return-to-orders action from analytics-driven ticket views');
     assert.equal(ticketsSource.includes('回用户承接链'), true, 'js/admin-tickets.js should provide a return-to-user action from user-commerce ticket views');
     assert.equal(ticketsSource.includes('回内容带货详情'), true, 'js/admin-tickets.js should provide a return-to-content-commerce action from content drill-down ticket views');
@@ -7609,6 +8345,18 @@ test('ticket admin surfaces user email in search and list rendering', () => {
     assert.equal(ticketsSource.includes("const workbenchEntry = this.buildTicketWorkbenchEntry(ticket, normalizedTarget);"), true, 'js/admin-tickets.js should reuse the shared ticket workbench payload for execution');
     assert.equal(adminWorkbenchSource.includes("function buildTicketWorkbenchEntry(target = 'chat', ticket = {}, options = {})"), true, 'js/admin-workbench.js should expose a shared ticket workbench payload builder');
     assert.equal(adminWorkbenchSource.includes("window.AdminTickets?.focusTicket"), true, 'js/admin-workbench.js should directly focus ticket workspaces when a ticket id is available');
+    assert.equal(adminWorkbenchSource.includes("async function tryOpenAdminWorkbenchShellContext(moduleName, context = {}, options = {}) {"), true, 'js/admin-workbench.js should expose a shared shell-context routing helper for workbench jumps');
+    assert.equal(adminWorkbenchSource.includes("if (window.AdminShell?.openContext) {"), true, 'js/admin-workbench.js should route chat session workspace jumps through AdminShell context delivery when available');
+    assert.equal(adminWorkbenchSource.includes("await window.AdminShell.openContext('chat', {"), true, 'js/admin-workbench.js should open chat workspaces through the shell context bus');
+    assert.equal(adminWorkbenchSource.includes("if (await tryOpenAdminWorkbenchShellContext('comments', {"), true, 'js/admin-workbench.js should open comments workspaces through the shared shell-context helper');
+    assert.equal(adminWorkbenchSource.includes("if (await tryOpenAdminWorkbenchShellContext('payments', {"), true, 'js/admin-workbench.js should open payments workspaces through the shared shell-context helper');
+    assert.equal(adminWorkbenchSource.includes("const lastFocusResult = window.AdminPayments?.getLastFocusResult?.();"), true, 'js/admin-workbench.js should preserve payment focus match state after shell-first jumps');
+    assert.equal(adminWorkbenchSource.includes("if (await tryOpenAdminWorkbenchShellContext('tickets', {"), true, 'js/admin-workbench.js should open ticket workspaces through the shared shell-context helper');
+    assert.equal(adminWorkbenchSource.includes("if (await tryOpenAdminWorkbenchShellContext('shop', {"), true, 'js/admin-workbench.js should open shop workspaces through the shared shell-context helper');
+    assert.equal(adminWorkbenchSource.includes("if (await tryOpenAdminWorkbenchShellContext('settings', {"), true, 'js/admin-workbench.js should open settings workspaces through the shared shell-context helper');
+    assert.equal(adminWorkbenchSource.includes("if (await tryOpenAdminWorkbenchShellContext('discounts', {"), true, 'js/admin-workbench.js should open discount workspaces through the shared shell-context helper');
+    assert.equal(adminWorkbenchSource.includes("if (await tryOpenAdminWorkbenchShellContext('users', {"), true, 'js/admin-workbench.js should open user workspaces through the shared shell-context helper');
+    assert.equal(adminWorkbenchSource.includes("chatInstance = new window.AdminChat();"), false, 'js/admin-workbench.js should no longer instantiate admin chat directly inside the workbench bridge');
 });
 
 test('discount admin runtime renderers externalize table states, copy toast, and modal visibility styling', () => {
@@ -7747,7 +8495,7 @@ test('discount admin p1 exposes asset issuance, distribution, and roi runtime ho
     const discountsSource = readRepoFile('admin-discounts.js');
 
     const adminMarkupMarkers = [
-        'admin-discounts.js?v=20260416_DISCOUNT_STACKING_REAL_MULTI_14',
+        'admin-discounts.js?v=20260421_DISCOUNTS_CONTEXT_HELPER_P2',
         'discountDistributionMode',
         'discountClaimStartsAtDate',
         'discountClaimExpiresAtDate',
@@ -7760,6 +8508,11 @@ test('discount admin p1 exposes asset issuance, distribution, and roi runtime ho
     }
 
     const runtimeMarkers = [
+        'activate: async function (context = {}, options = {}) {',
+        'handleShellContext: async function (context = {}, options = {}) {',
+        'resolveShellDiscountSearchValue: function (context = {}) {',
+        "window.AdminShell.registerModule('discounts', {",
+        'handleContext: (context = {}, options = {}) => AdminDiscounts.handleShellContext(context, options),',
         'assignDiscountAssetsViaAdminApi: async function',
         'buildDiscountAssetAssignmentMarkup: function (detail = {})',
         'buildDiscountFunnelMarkup: function (discount = {})',
@@ -7956,7 +8709,17 @@ test('admin studio security, verify, and affiliate controls route through delega
     assert.equal(adminStudioStyles.includes('.verify-monitor-pagination'), true, 'admin-studio.css should style verify monitor pagination controls');
     assert.equal(adminConfigSource.includes('focusVerifyMonitorWorkspace'), true, 'admin-config.js should expose verify monitor workspace focusing for deep-linked alerts');
     assert.equal(adminConfigSource.includes('focusAdminAuditMonitorWorkspace'), true, 'admin-config.js should expose admin audit workspace focusing for deep-linked alerts');
+    assert.equal(adminConfigSource.includes('buildSettingsWorkbenchFocusItemActionAttrs'), true, 'admin-config.js should build refocus actions for focused verify and audit summaries');
+    assert.equal(adminConfigSource.includes('buildSettingsWorkbenchFocusTargetActionAttrs'), true, 'admin-config.js should build focused summary panel shortcut actions');
+    assert.equal(adminConfigSource.includes('getVerifyMonitorFocusPanelActions'), true, 'admin-config.js should expose practical verify focus panel shortcuts');
+    assert.equal(adminStudioScript.includes("case 'settings-scroll-focus-target':"), true, 'admin-studio.js should wire focused summary panel shortcuts through delegated handlers');
+    assert.equal(adminStudioScript.includes("admin-workbench-focus-target--active"), true, 'admin-studio.js should briefly highlight focused summary shortcut targets');
+    assert.equal(adminConfigSource.includes("async function handleSettingsModuleContext(context = {}, options = {}) {"), true, 'admin-config.js should handle settings shell context for verify and audit workspace jumps');
+    assert.equal(adminConfigSource.includes('handleContext: handleSettingsModuleContext'), true, 'admin-config.js should register settings shell context delivery with AdminShell');
+    assert.equal(adminStudioScript.includes("case 'settings-refocus-verify-monitor':"), true, 'admin-studio.js should wire verify focused summary actions through delegated handlers');
+    assert.equal(adminStudioScript.includes("case 'settings-refocus-admin-audit-monitor':"), true, 'admin-studio.js should wire admin audit focused summary actions through delegated handlers');
     assert.equal(adminStudioStyles.includes('.ops-alert-monitor-item.is-focused'), true, 'admin-studio.css should highlight focused workspace alert rows');
+    assert.equal(adminStudioStyles.includes('.admin-workbench-focus-target--active'), true, 'admin-studio.css should highlight focused summary shortcut targets');
     assert.match(adminStudioStyles, /\.config-textarea\s*\{[\s\S]*box-sizing: border-box;/, 'admin-studio.css should keep config textareas inside their cards');
     assert.equal(adminConfigSource.includes('setLockedAccountsRefreshButtonState'), true, 'admin-config.js should manage locked account refresh button state');
     assert.equal(adminConfigSource.includes('showLockedAccountsRefreshIndicator'), true, 'admin-config.js should surface locked account refresh feedback');
@@ -8208,9 +8971,19 @@ test('shop admin order workflows externalize runtime table-row and modal styling
         assert.equal(shopStyles.includes(marker), true, `css/admin-studio-page.css should contain ${marker}`);
     }
 
-    assert.equal(adminStudioSource.includes('js/admin-shop.js?v=20260410_SHOP_ORDER_UUID_SEARCH_1'), true, 'admin-studio.html should load the cache-busted shop admin script');
-    assert.equal(adminStudioSource.includes('admin-config.js?v=20260416_PAYMENT_PROVIDER_NEUTRALITY_1'), true, 'admin-studio.html should load the cache-busted admin config script');
+    assert.equal(adminStudioSource.includes('js/admin-shop.js?v=20260423_SHOP_PRODUCT_DESCRIPTION_VISIBILITY_1'), true, 'admin-studio.html should load the cache-busted shop admin script');
+    assert.equal(adminStudioSource.includes('admin-config.js?v=20260422_OPS_ALERT_BATCH_ERROR_VISIBLE_P4'), true, 'admin-studio.html should load the cache-busted admin config script');
     assert.equal(adminWorkbenchSource.includes('window.ShopAdmin?.focusOrder'), true, 'js/admin-workbench.js should directly focus shop order workspaces when an order id is available');
+    assert.equal(adminWorkbenchSource.includes("const opened = await window.AdminShell.openContext('users', {"), true, 'js/admin-workbench.js should let the shared user detail helper prefer AdminShell context delivery');
+    assert.equal(adminWorkbenchSource.includes("if (typeof window.openAdminUsersShellContext === 'function') {"), true, 'js/admin-workbench.js should reuse the shared users context helper before falling back to direct modal control');
+    assert.equal(adminWorkbenchSource.includes("if (typeof window.openAdminPaymentsShellContext === 'function') {"), true, 'js/admin-workbench.js should reuse the shared payments context helper before direct payments runtime control');
+    assert.equal(adminWorkbenchSource.includes("if (typeof window.openAdminShopShellContext === 'function') {"), true, 'js/admin-workbench.js should reuse the shared shop context helper before direct shop runtime control');
+    assert.equal(adminWorkbenchSource.includes("if (typeof window.openAdminDiscountsShellContext === 'function') {"), true, 'js/admin-workbench.js should reuse the shared discounts context helper before direct discounts runtime control');
+    assert.equal(adminWorkbenchSource.includes("if (typeof window.openAdminSettingsShellContext === 'function') {"), true, 'js/admin-workbench.js should reuse the shared settings context helper before direct settings runtime control');
+    assert.equal(adminWorkbenchSource.includes("if (typeof window.openAdminTicketsShellContext === 'function') {"), true, 'js/admin-workbench.js should reuse the shared tickets context helper before direct ticket runtime control');
+    assert.equal(shopSource.includes("openOrderDetailContext: async function (orderId, options = {}) {"), true, 'js/admin-shop.js should expose a shell-first order detail opener');
+    assert.equal(shopSource.includes("await window.AdminShell.openContext('shop', {"), true, 'js/admin-shop.js should prefer AdminShell when opening order details');
+    assert.equal(shopSource.includes('void this.openOrderDetailContext(actionEl.dataset.orderId, {'), true, 'js/admin-shop.js should route order row detail opens through the shared order detail opener');
     assert.equal(adminWorkbenchSource.includes('function buildOpsAlertWorkspaceAnalyticsSignalContextState(context = {}, options = {})'), true, 'js/admin-workbench.js should build shared analytics signal context state for workbench destinations');
 });
 
@@ -8803,6 +9576,12 @@ test('analytics calendar and config poster/editor templates route through delega
         assert.equal(adminConfigSource.includes(marker), true, `admin-config.js should contain ${marker}`);
     }
 
+    assert.equal(
+        adminConfigSource.includes("return Array.isArray(systemConfigCache['channels']) ? systemConfigCache['channels'] : [];"),
+        true,
+        'admin-config.js should normalize legacy channel config into an array before rendering settings tags'
+    );
+
     const adminScriptMarkers = [
         "case 'settings-delete-channel':",
         "case 'settings-select-affiliate-poster-template':",
@@ -9172,13 +9951,14 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
 
     const htmlMarkers = [
         '<div class="anomaly-alerts-area" id="anomalyAlertsArea" hidden>',
+        'js/admin-api-auth.js?v=20260421_ADMIN_API_COOKIE_RETRY_P0',
         'js/admin-analytics-metric-context.js?v=20260405_ANALYTICS_METRIC_CONTEXT_HELPERS_6',
-        'admin-analytics.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1',
+        'admin-analytics.js?v=20260421_ANALYTICS_RUNTIME_AUTH_FALLBACK_P0',
         'js/admin-analytics-derived-bundles.js?v=20260420_DERIVED_VARIANT_CACHE_1',
         'js/admin-analytics-runtime-controls.js?v=20260420_ANALYTICS_ONLINE_USERS_RPC_1',
         'js/admin-analytics-panel-loaders.js?v=20260420_POINTS_LEADERBOARD_AVATAR_1',
-        'js/admin-analytics-lifecycle.js?v=20260420_ANALYTICS_LIFECYCLE_STALE_GUARD_1',
-        'js/admin-analytics-workbench.js?v=20260416_PRODUCT_DETAIL_WORKBENCH_1',
+        'js/admin-analytics-lifecycle.js?v=20260421_ANALYTICS_SITE_CHANGE_HELPER_P2',
+        'js/admin-analytics-workbench.js?v=20260421_ANALYTICS_DESTINATION_ACTIVATE_FALLBACKS_P4',
         'js/admin-analytics-insight-cards.js?v=20260407_ANALYTICS_INSIGHT_CARDS_HELPERS_5',
         'js/admin-analytics-ai-state.js?v=20260405_ANALYTICS_AI_STATE_1',
         'js/admin-analytics-ai-dom.js?v=20260405_ANALYTICS_AI_DOM_1',
@@ -9186,17 +9966,18 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
         'js/admin-analytics-ai-prompt-builders.js?v=20260405_ANALYTICS_AI_PROMPT_BUILDERS_1',
         'js/admin-analytics-ai-controller.js?v=20260405_ANALYTICS_AI_CONTROLLER_1',
         'js/admin-analytics-export-builders.js?v=20260405_ANALYTICS_EXPORT_BUILDERS_1',
-        'js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9',
-        'js/admin-studio-bootstrap.js?v=20260416_PRODUCT_DETAIL_TAB_1',
-        'admin-studio.css?v=20260420_POINTS_LEADERBOARD_AVATAR_1',
+        'js/admin-analytics-ai-export.js?v=20260421_ANALYTICS_AI_BUDGET_P0',
+        'js/admin-studio-bootstrap.js?v=20260421_BOOTSTRAP_NO_CHAT_PREWARM_P2',
+        'admin-studio.css?v=20260424_ADMIN_LIGHT_FLAT_CARDS_2',
         'class="charts-grid analytics-growth-insight-grid"',
         'class="chart-card glass-panel analytics-growth-card analytics-growth-card--full"',
-        'admin-points.js?v=20260418_ADMIN_POINTS_DECIMAL_PRECISION_1',
-        'admin-config.js?v=20260416_PAYMENT_PROVIDER_NEUTRALITY_1',
-        'js/admin-payments.js?v=20260419_ADMIN_PAYMENTS_SESSION_TRACE_1',
-        'js/admin-workbench.js?v=20260410_ADMIN_SHELL_CONTEXT_P1_1',
-        'js/admin-tickets.js?v=20260410_ADMIN_SHELL_CONTEXT_P1_1',
-        'js/admin-shop.js?v=20260410_SHOP_ORDER_UUID_SEARCH_1',
+        'admin-points.js?v=20260421_ADMIN_POINTS_GENERATE_SUBMIT_BRIDGE_P2',
+        'js/admin-config-ops-alert-reports.js?v=20260421_OPS_ALERT_REPORT_ACTIONS_P2',
+        'admin-config.js?v=20260422_OPS_ALERT_BATCH_ERROR_VISIBLE_P4',
+        'js/admin-payments.js?v=20260421_ADMIN_PAYMENTS_CONTEXT_HELPER_P2',
+        'js/admin-workbench.js?v=20260422_OPS_ALERT_RESOLVED_COUNT_P13',
+        'js/admin-tickets.js?v=20260421_TICKETS_OPS_ALERTS_HELPER_P2',
+        'js/admin-shop.js?v=20260423_SHOP_PRODUCT_DESCRIPTION_VISIBILITY_1',
         'data-tab="product"',
         'data-tab="ops"',
         'class="admin-tabs analytics-center-tabs"',
@@ -9274,6 +10055,7 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
         'id="commerceEventFunnelMeta"',
         'id="verifyEventFunnelMeta"',
         'id="growthEventFunnelMeta"',
+        'id="adminAuditMonitorFocusContext"',
         'id="verifyMonitorFocusContext"',
         'id="paymentsWorkbenchContext"',
         'id="paymentsIssueSummary"',
@@ -9300,7 +10082,7 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
     assert.equal(adminStudioHtml.includes('经营分层导航'), false, 'admin-studio.html should no longer render the section navigator heading');
 
     assert.equal(
-        adminStudioHtml.indexOf('admin-analytics.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1') < adminStudioHtml.indexOf('js/admin-analytics-derived-bundles.js?v=20260420_DERIVED_VARIANT_CACHE_1'),
+        adminStudioHtml.indexOf('admin-analytics.js?v=20260421_ANALYTICS_RUNTIME_AUTH_FALLBACK_P0') < adminStudioHtml.indexOf('js/admin-analytics-derived-bundles.js?v=20260420_DERIVED_VARIANT_CACHE_1'),
         true,
         'admin-studio.html should load the analytics derived-bundle helper after the main analytics runtime'
     );
@@ -9318,19 +10100,19 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
     );
 
     assert.equal(
-        adminStudioHtml.indexOf('js/admin-analytics-panel-loaders.js?v=20260420_POINTS_LEADERBOARD_AVATAR_1') < adminStudioHtml.indexOf('js/admin-analytics-lifecycle.js?v=20260420_ANALYTICS_LIFECYCLE_STALE_GUARD_1'),
+        adminStudioHtml.indexOf('js/admin-analytics-panel-loaders.js?v=20260420_POINTS_LEADERBOARD_AVATAR_1') < adminStudioHtml.indexOf('js/admin-analytics-lifecycle.js?v=20260421_ANALYTICS_SITE_CHANGE_HELPER_P2'),
         true,
         'admin-studio.html should load the analytics lifecycle helper after the panel-loader helper'
     );
 
     assert.equal(
-        adminStudioHtml.indexOf('js/admin-analytics-lifecycle.js?v=20260420_ANALYTICS_LIFECYCLE_STALE_GUARD_1') < adminStudioHtml.indexOf('js/admin-analytics-workbench.js?v=20260416_PRODUCT_DETAIL_WORKBENCH_1'),
+        adminStudioHtml.indexOf('js/admin-analytics-lifecycle.js?v=20260421_ANALYTICS_SITE_CHANGE_HELPER_P2') < adminStudioHtml.indexOf('js/admin-analytics-workbench.js?v=20260421_ANALYTICS_DESTINATION_ACTIVATE_FALLBACKS_P4'),
         true,
         'admin-studio.html should load the analytics workbench helper after the lifecycle helper'
     );
 
     assert.equal(
-        adminStudioHtml.indexOf('js/admin-analytics-workbench.js?v=20260416_PRODUCT_DETAIL_WORKBENCH_1') < adminStudioHtml.indexOf('js/admin-analytics-insight-cards.js?v=20260407_ANALYTICS_INSIGHT_CARDS_HELPERS_5'),
+        adminStudioHtml.indexOf('js/admin-analytics-workbench.js?v=20260421_ANALYTICS_DESTINATION_ACTIVATE_FALLBACKS_P4') < adminStudioHtml.indexOf('js/admin-analytics-insight-cards.js?v=20260407_ANALYTICS_INSIGHT_CARDS_HELPERS_5'),
         true,
         'admin-studio.html should load the analytics insight-card helper after the workbench helper'
     );
@@ -9378,7 +10160,7 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
     );
 
     assert.equal(
-        adminStudioHtml.indexOf('js/admin-analytics-export-builders.js?v=20260405_ANALYTICS_EXPORT_BUILDERS_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        adminStudioHtml.indexOf('js/admin-analytics-export-builders.js?v=20260405_ANALYTICS_EXPORT_BUILDERS_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-export.js?v=20260421_ANALYTICS_AI_BUDGET_P0'),
         true,
         'admin-studio.html should load the analytics ai/export helper after the main analytics runtime'
     );
@@ -9644,20 +10426,49 @@ test('analytics product tab shell adds a dedicated product analytics surface and
     assert.equal(workbenchSource.includes("case 'analytics-product-detail':"), true, 'analytics workbench routing should accept analytics-product-detail destinations');
     assert.equal(workbenchSource.includes("case 'analytics-content':"), true, 'analytics workbench routing should accept analytics-content destinations');
     assert.equal(workbenchSource.includes('window.openAnalyticsContentCommerceDetail(contentPromptId,'), true, 'analytics workbench routing should reopen analytics-side content-commerce detail drill-downs');
+    assert.equal(workbenchSource.includes("async function tryOpenAnalyticsShellContext(moduleName = '', context = {}, options = {})"), true, 'analytics workbench helper should expose a shell-first destination bridge');
+    assert.equal(workbenchSource.includes("async function openAnalyticsShopContext(tab = 'products', context = {})"), true, 'analytics workbench helper should centralize shop shell-first navigation');
+    assert.equal(workbenchSource.includes("async function openAnalyticsCommentsContext(view = 'guestbook', context = {})"), true, 'analytics workbench helper should centralize comments shell-first navigation');
+    assert.equal(workbenchSource.includes("async function openAnalyticsOpsAlertsContext(view = 'overview', context = {})"), true, 'analytics workbench helper should centralize ops alerts shell-first navigation');
+    assert.equal(workbenchSource.includes("async function openAnalyticsSettingsContext(workspace = 'verify-monitor', context = {})"), true, 'analytics workbench helper should centralize settings shell-first navigation');
+    assert.equal(workbenchSource.includes("async function openAnalyticsUsersContext(context = {})"), true, 'analytics workbench helper should centralize users shell-first navigation');
+    assert.equal(workbenchSource.includes("async function openAnalyticsPointsModuleContext(context = {})"), true, 'analytics workbench helper should centralize points shell-first navigation');
+    assert.equal(workbenchSource.includes("function activateAnalyticsDestinationModule(moduleName = '', context = {}, options = {})"), true, 'analytics workbench helper should activate fallback modules through the shell lifecycle');
     assert.equal(workbenchSource.includes("case 'shop-products':"), true, 'analytics workbench routing should accept shop-products destinations from product analytics');
     assert.equal(workbenchSource.includes("case 'shop-orders':"), true, 'analytics workbench routing should accept shop-orders destinations from product analytics');
     assert.equal(workbenchSource.includes("case 'shop-inventory':"), true, 'analytics workbench routing should accept shop-inventory destinations from product analytics');
     assert.equal(workbenchSource.includes("case 'shop-fulfillment':"), true, 'analytics workbench routing should accept shop-fulfillment destinations from product analytics');
     assert.equal(workbenchSource.includes("case 'ops-alerts-health':"), true, 'analytics workbench routing should accept ops-alert health destinations from analytics');
     assert.equal(workbenchSource.includes('window.switchOpsAlertsView?.(targetView);'), true, 'analytics workbench routing should reuse ops-alerts view switching for the ops cockpit');
-    assert.equal(workbenchSource.includes('window.ShopAdmin?.switchTab?.(requestedTab);'), true, 'analytics workbench routing should reuse ShopAdmin tab switching for product drill-down');
-    assert.equal(workbenchSource.includes('window.ShopAdmin.editProduct(normalizedContext.productId)'), true, 'analytics workbench routing should open shop product details from product analytics');
+    assert.equal(workbenchSource.includes('const opsAlertsContext = {'), true, 'analytics workbench routing should build a reusable ops alerts context before fallback');
+    assert.equal(workbenchSource.includes("const shellOpened = await tryOpenAnalyticsShellContext('ops-alerts', opsAlertsContext);"), true, 'analytics workbench routing should prefer AdminShell before direct ops alerts fallback');
+    assert.equal(workbenchSource.includes('const shopContext = {'), true, 'analytics workbench routing should build a reusable shop context before fallback');
+    assert.equal(workbenchSource.includes("const shellOpened = await tryOpenAnalyticsShellContext('shop', shopContext);"), true, 'analytics workbench routing should prefer AdminShell before direct shop module fallback');
+    assert.equal(workbenchSource.includes('const paymentsContext = {'), true, 'analytics workbench routing should build a reusable payments context before fallback');
+    assert.equal(workbenchSource.includes("const shellOpened = await tryOpenAnalyticsShellContext('payments', paymentsContext);"), true, 'analytics workbench routing should prefer AdminShell before direct payments module fallback');
+    assert.equal(workbenchSource.includes('const ticketsContext = {'), true, 'analytics workbench routing should build a reusable tickets context before fallback');
+    assert.equal(workbenchSource.includes("const shellOpened = await tryOpenAnalyticsShellContext('tickets', ticketsContext);"), true, 'analytics workbench routing should prefer AdminShell before direct ticket module fallback');
+    assert.equal(workbenchSource.includes('const pointsContext = {'), true, 'analytics workbench routing should build a reusable points context before fallback');
+    assert.equal(workbenchSource.includes("const shellOpened = await tryOpenAnalyticsShellContext('points', pointsContext);"), true, 'analytics workbench routing should prefer AdminShell before direct points module fallback');
+    assert.equal(workbenchSource.includes("void openAnalyticsShopContext(requestedTab, normalizedContext).catch((error) => {"), true, 'analytics workbench routing should route shop destinations through the shared shop destination helper');
+    assert.equal(workbenchSource.includes('window.ShopAdmin.editProduct(productId)'), true, 'analytics workbench routing should open shop product details from product analytics');
     assert.equal(workbenchSource.includes('window.ShopAdmin?.setOrderSearchContext?.(shopDrilldownContext);'), true, 'analytics workbench routing should push analytics context into shop order searches');
     assert.equal(workbenchSource.includes('context: shopDrilldownContext'), true, 'analytics workbench routing should preserve analytics context when opening exact shop orders');
+    assert.equal(workbenchSource.includes("void openAnalyticsCommentsContext('guestbook', normalizedContext).catch((error) => {"), true, 'analytics workbench routing should route guestbook destinations through the shared comments destination helper');
+    assert.equal(workbenchSource.includes("void openAnalyticsSettingsContext('verify-monitor', normalizedContext).catch((error) => {"), true, 'analytics workbench routing should route verify monitor destinations through the shared settings destination helper');
+    assert.equal(workbenchSource.includes("void openAnalyticsSettingsContext('affiliate', normalizedContext).catch((error) => {"), true, 'analytics workbench routing should route affiliate settings destinations through the shared settings destination helper');
+    assert.equal(workbenchSource.includes("if (typeof window.openAdminUsersShellContext === 'function') {"), true, 'analytics workbench routing should reuse the shared users context helper before direct modal fallback');
+    assert.equal(workbenchSource.includes("if (typeof window.openAdminCommentsShellContext === 'function') {"), true, 'analytics workbench routing should reuse the shared comments context helper before direct comments runtime fallback');
+    assert.equal(workbenchSource.includes("if (typeof window.openAdminPointsShellContext === 'function') {"), true, 'analytics workbench routing should reuse the shared points context helper before direct points runtime fallback');
+    assert.equal(workbenchSource.includes("if (typeof window.openAdminShopShellContext === 'function') {"), true, 'analytics workbench routing should reuse the shared shop context helper before direct shop runtime fallback');
+    assert.equal(workbenchSource.includes("if (typeof window.openAdminPaymentsShellContext === 'function') {"), true, 'analytics workbench routing should reuse the shared payments context helper before direct payments runtime fallback');
+    assert.equal(workbenchSource.includes("if (typeof window.openAdminTicketsShellContext === 'function') {"), true, 'analytics workbench routing should reuse the shared tickets context helper before direct tickets runtime fallback');
+    assert.equal(workbenchSource.includes("if (typeof window.openAdminOpsAlertsShellContext === 'function') {"), true, 'analytics workbench routing should reuse the shared ops alerts context helper before direct ops cockpit fallback');
+    assert.equal(workbenchSource.includes("if (typeof window.openAdminSettingsShellContext === 'function') {"), true, 'analytics workbench routing should reuse the shared settings context helper before direct settings fallback');
     assert.equal(workbenchSource.includes('window.ShopAdmin?.setDeliveryWorkbenchContext?.('), true, 'analytics workbench routing should push analytics context into fulfillment drill-downs');
     assert.equal(workbenchSource.includes('window.ShopAdmin.searchOrders(1, {'), true, 'analytics workbench routing should support product-driven order searches from analytics');
     assert.equal(workbenchSource.includes('window.ShopAdmin.loadDeliveryTasks(1)'), true, 'analytics workbench routing should support fulfillment queue drill-downs from analytics');
-    assert.equal(workbenchSource.includes('window.ShopAdmin.showInventoryDetail(normalizedContext.inventoryId)'), true, 'analytics workbench routing should open inventory details from product analytics');
+    assert.equal(workbenchSource.includes('window.ShopAdmin.showInventoryDetail(inventoryId)'), true, 'analytics workbench routing should open inventory details from product analytics');
     assert.equal(workbenchSource.includes('window.openAnalyticsProductDetail?.(normalizedContext.productId,'), true, 'analytics workbench routing should reopen analytics-side product detail drill-downs');
     assert.equal(workbenchSource.includes("detailFocus: normalizedContext.detailFocus || ''"), true, 'analytics workbench routing should preserve product detail focus context');
     assert.equal(workbenchSource.includes("focusTargetId: normalizedContext.focusTargetId || ''"), true, 'analytics workbench routing should preserve product detail focus targets');
@@ -9700,7 +10511,7 @@ test('analytics product tab shell adds a dedicated product analytics surface and
     assert.equal(adminStudioHtml.includes('id="shopOrdersIssueSummary"'), true, 'admin-studio.html should provide an order issue summary mount for analytics-driven shop drill-downs');
     assert.equal(adminStudioHtml.includes('id="deliveryIssueSummary"'), true, 'admin-studio.html should provide a fulfillment issue summary mount for analytics-driven shop drill-downs');
     assert.equal(
-        adminStudioHtml.includes('admin-analytics.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1'),
+        adminStudioHtml.includes('admin-analytics.js?v=20260421_ANALYTICS_RUNTIME_AUTH_FALLBACK_P0'),
         true,
         'admin-studio.html should reference the latest analytics product-shell runtime version'
     );
@@ -9715,7 +10526,7 @@ test('analytics product tab shell adds a dedicated product analytics surface and
         'admin-analytics.js should no longer depend on nested admin analytics paths for bundle fetches'
     );
     assert.equal(
-        adminStudioHtml.includes('js/admin-analytics-workbench.js?v=20260416_PRODUCT_DETAIL_WORKBENCH_1'),
+        adminStudioHtml.includes('js/admin-analytics-workbench.js?v=20260421_ANALYTICS_DESTINATION_ACTIVATE_FALLBACKS_P4'),
         true,
         'admin-studio.html should reference the latest analytics workbench runtime version for product routing'
     );
@@ -9928,7 +10739,7 @@ test('analytics panel loaders externalize dashboard fetch-and-render layers out 
         'admin-studio.html should load the panel-loader helper after the runtime-controls shell'
     );
     assert.equal(
-        adminStudioHtml.indexOf('js/admin-analytics-panel-loaders.js?v=20260420_POINTS_LEADERBOARD_AVATAR_1') < adminStudioHtml.indexOf('js/admin-analytics-workbench.js?v=20260416_PRODUCT_DETAIL_WORKBENCH_1'),
+        adminStudioHtml.indexOf('js/admin-analytics-panel-loaders.js?v=20260420_POINTS_LEADERBOARD_AVATAR_1') < adminStudioHtml.indexOf('js/admin-analytics-workbench.js?v=20260421_ANALYTICS_DESTINATION_ACTIVATE_FALLBACKS_P4'),
         true,
         'admin-studio.html should load the panel-loader helper before downstream analytics helpers'
     );
@@ -9998,7 +10809,7 @@ test('analytics derived bundles externalize cache state and admin bundle wrapper
         'admin-studio.html should load the analytics derived-bundle helper'
     );
     assert.equal(
-        adminStudioHtml.indexOf('admin-analytics.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1') < adminStudioHtml.indexOf('js/admin-analytics-derived-bundles.js?v=20260420_DERIVED_VARIANT_CACHE_1'),
+        adminStudioHtml.indexOf('admin-analytics.js?v=20260421_ANALYTICS_RUNTIME_AUTH_FALLBACK_P0') < adminStudioHtml.indexOf('js/admin-analytics-derived-bundles.js?v=20260420_DERIVED_VARIANT_CACHE_1'),
         true,
         'admin-studio.html should load the derived-bundle helper after the main analytics shell'
     );
@@ -10078,6 +10889,7 @@ test('analytics lifecycle helper externalizes init, tab routing, tracking, and a
 
     const helperMarkers = [
         'async function initAnalyticsModule() {',
+        'async function handleAdminAnalyticsSiteChange(detail = {}) {',
         'function setupRealtimeSubscriptions() {',
         'function teardownRealtimeSubscriptions() {',
         'function animateKPIIncrement(elementId) {',
@@ -10096,7 +10908,8 @@ test('analytics lifecycle helper externalizes init, tab routing, tracking, and a
         'productTrendChart = null;',
         'loadProductOverview(),',
         'loadProductRankings(),',
-        'loadProductHealth(),'
+        'loadProductHealth(),',
+        'window.handleAdminAnalyticsSiteChange = handleAdminAnalyticsSiteChange;'
     ];
 
     for (const marker of helperMarkers) {
@@ -10194,17 +11007,17 @@ test('analytics lifecycle helper externalizes init, tab routing, tracking, and a
         'admin-analytics.js should expose a direct advanced workspace toggle binder'
     );
     assert.equal(
-        adminStudioHtml.includes('js/admin-analytics-lifecycle.js?v=20260420_ANALYTICS_LIFECYCLE_STALE_GUARD_1'),
+        adminStudioHtml.includes('js/admin-analytics-lifecycle.js?v=20260421_ANALYTICS_SITE_CHANGE_HELPER_P2'),
         true,
         'admin-studio.html should load the analytics lifecycle helper'
     );
     assert.equal(
-        adminStudioHtml.indexOf('js/admin-analytics-panel-loaders.js?v=20260420_POINTS_LEADERBOARD_AVATAR_1') < adminStudioHtml.indexOf('js/admin-analytics-lifecycle.js?v=20260420_ANALYTICS_LIFECYCLE_STALE_GUARD_1'),
+        adminStudioHtml.indexOf('js/admin-analytics-panel-loaders.js?v=20260420_POINTS_LEADERBOARD_AVATAR_1') < adminStudioHtml.indexOf('js/admin-analytics-lifecycle.js?v=20260421_ANALYTICS_SITE_CHANGE_HELPER_P2'),
         true,
         'admin-studio.html should load the lifecycle helper after the panel-loaders helper'
     );
     assert.equal(
-        adminStudioHtml.indexOf('js/admin-analytics-lifecycle.js?v=20260420_ANALYTICS_LIFECYCLE_STALE_GUARD_1') < adminStudioHtml.indexOf('js/admin-analytics-workbench.js?v=20260416_PRODUCT_DETAIL_WORKBENCH_1'),
+        adminStudioHtml.indexOf('js/admin-analytics-lifecycle.js?v=20260421_ANALYTICS_SITE_CHANGE_HELPER_P2') < adminStudioHtml.indexOf('js/admin-analytics-workbench.js?v=20260421_ANALYTICS_DESTINATION_ACTIVATE_FALLBACKS_P4'),
         true,
         'admin-studio.html should load the lifecycle helper before downstream workbench helpers'
     );
@@ -10476,7 +11289,7 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.css?v=20260420_PROMPT_RICH_TAGS_1'),
+        promptsHtml.includes('prompts-poetry.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1'),
         true,
         'prompts.html should load the latest prompts gallery stylesheet version'
     );
@@ -10486,7 +11299,7 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'prompts.html should load the shared user event tracker'
     );
     assert.equal(
-        promptsHtml.includes('prompts-poetry.js?v=20260420_PROMPT_RICH_TAGS_1'),
+        promptsHtml.includes('prompts-poetry.js?v=20260420_PROMPT_DETAIL_TAGS_REMOVED_1'),
         true,
         'prompts.html should load the latest prompts gallery runtime version'
     );
@@ -10523,7 +11336,7 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
         "trackPromptAnalyticsEvent('prompt_view'",
         "trackPromptAnalyticsEvent('unlock_click'",
         "trackPromptAnalyticsEvent('unlock_success'",
-        "WalletModal.open('recharge', {"
+        'openPromptUnlockRecharge({'
     ];
 
     for (const marker of promptsMarkers) {
@@ -10534,7 +11347,7 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
         "trackVerifyAnalyticsEvent('verify_submit'",
         "trackVerifyAnalyticsEvent('verify_success'",
         "trackVerifyAnalyticsEvent('verify_fail'",
-        "window.WalletModal?.open?.('balance', {"
+        'openVerifyWalletBalance();'
     ];
 
     for (const marker of verifyMarkers) {
@@ -10615,9 +11428,9 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(indexSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index.html should load the latest guestbook runtime');
     assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'guestbook.html should load the latest guestbook runtime');
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index_old.html should load the latest guestbook runtime');
-    assert.equal(shopSource.includes('js/shop-client.js?v=20260416_SHOP_MULTI_DISCOUNT_STACKING_13'), true, 'shop.html should load the latest cart-aware shop runtime');
+    assert.equal(shopSource.includes('js/shop-client.js?v=20260423_SHOP_SUCCESS_MODAL_FAST_FEEDBACK_1'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260412_SHOP_CARD_IMAGE_OPT_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
-    assert.equal(verifyPageSource.includes('js/components/WalletModal.js?v=20260418_WALLET_PAYMENT_QR_POLL_2'), true, 'verify.html should load the latest tracking-aware wallet modal runtime');
+    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260423_WALLET_ORDER_DETAIL_FASTPATH_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
 });
 
 test('analytics phase 3 prefers real event rpc v2 for ai summary and conversion funnel', () => {
@@ -10738,7 +11551,7 @@ test('analytics date range alignment keeps inclusive day math and explicit start
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-analytics.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1'),
+        adminStudioHtml.includes('admin-analytics.js?v=20260421_ANALYTICS_RUNTIME_AUTH_FALLBACK_P0'),
         true,
         'admin-studio.html should reference the latest analytics range alignment runtime version'
     );
@@ -10806,7 +11619,7 @@ test('analytics site attribution alignment keeps new-user and retention semantic
 
     assert.equal(adminStudioHtml.includes('id="kpiNewUsersLabel"'), true, 'admin-studio.html should expose a dedicated new-users label hook');
     assert.equal(
-        adminStudioHtml.includes('admin-analytics.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1'),
+        adminStudioHtml.includes('admin-analytics.js?v=20260421_ANALYTICS_RUNTIME_AUTH_FALLBACK_P0'),
         true,
         'admin-studio.html should reference the latest analytics site attribution runtime version'
     );
@@ -10851,7 +11664,7 @@ test('analytics active user semantics prefer business events while preserving lo
     assert.equal(adminStudioHtml.includes('id="kpiDauLabel"'), true, 'admin-studio.html should expose a dedicated DAU label hook');
     assert.equal(adminStudioHtml.includes('id="userTrendMeta"'), true, 'admin-studio.html should expose a dedicated user trend note hook');
     assert.equal(
-        adminStudioHtml.includes('admin-analytics.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1'),
+        adminStudioHtml.includes('admin-analytics.js?v=20260421_ANALYTICS_RUNTIME_AUTH_FALLBACK_P0'),
         true,
         'admin-studio.html should reference the latest analytics active-user runtime version'
     );
@@ -10938,7 +11751,7 @@ test('analytics proxy metric annotations label real-vs-proxy reference panels ex
         'admin-studio.html should reference the latest analytics metric-context helper runtime version'
     );
     assert.equal(
-        adminStudioHtml.includes('admin-analytics.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1'),
+        adminStudioHtml.includes('admin-analytics.js?v=20260421_ANALYTICS_RUNTIME_AUTH_FALLBACK_P0'),
         true,
         'admin-studio.html should reference the latest analytics metric-context runtime version'
     );
@@ -10967,7 +11780,7 @@ test('analytics metric context reaches exports and ai prompt guardrails', () => 
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-analytics.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1'),
+        adminStudioHtml.includes('admin-analytics.js?v=20260421_ANALYTICS_RUNTIME_AUTH_FALLBACK_P0'),
         true,
         'admin-studio.html should reference the latest analytics export/ai metric context runtime version'
     );
@@ -10997,7 +11810,7 @@ test('analytics metric context reaches exports and ai prompt guardrails', () => 
         'admin-studio.html should reference the latest analytics ai-controller runtime version'
     );
     assert.equal(
-        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260421_ANALYTICS_AI_BUDGET_P0'),
         true,
         'admin-studio.html should reference the latest analytics ai/export helper runtime version'
     );
@@ -11026,7 +11839,7 @@ test('analytics metric context also constrains local insights and action cards',
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-analytics.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1'),
+        adminStudioHtml.includes('admin-analytics.js?v=20260421_ANALYTICS_RUNTIME_AUTH_FALLBACK_P0'),
         true,
         'admin-studio.html should reference the latest analytics local-insight metric-context runtime version'
     );
@@ -11092,12 +11905,12 @@ test('analytics summary context bundle reuses panel metric and comparison fetche
         'admin-studio.html should reference the latest analytics helper runtime version'
     );
     assert.equal(
-        adminStudioHtml.includes('admin-analytics.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1'),
+        adminStudioHtml.includes('admin-analytics.js?v=20260421_ANALYTICS_RUNTIME_AUTH_FALLBACK_P0'),
         true,
         'admin-studio.html should reference the latest analytics summary-context-bundle runtime version'
     );
     assert.equal(
-        adminStudioHtml.includes('js/admin-analytics-workbench.js?v=20260416_PRODUCT_DETAIL_WORKBENCH_1'),
+        adminStudioHtml.includes('js/admin-analytics-workbench.js?v=20260421_ANALYTICS_DESTINATION_ACTIVATE_FALLBACKS_P4'),
         true,
         'admin-studio.html should reference the latest analytics workbench helper runtime version'
     );
@@ -11132,22 +11945,22 @@ test('analytics summary context bundle reuses panel metric and comparison fetche
         'admin-studio.html should reference the latest analytics insight-card helper runtime version'
     );
     assert.equal(
-        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260421_ANALYTICS_AI_BUDGET_P0'),
         true,
         'admin-studio.html should reference the latest analytics ai/export helper runtime version'
     );
     assert.equal(
-        adminStudioHtml.indexOf('js/admin-analytics-metric-context.js?v=20260405_ANALYTICS_METRIC_CONTEXT_HELPERS_6') < adminStudioHtml.indexOf('admin-analytics.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1'),
+        adminStudioHtml.indexOf('js/admin-analytics-metric-context.js?v=20260405_ANALYTICS_METRIC_CONTEXT_HELPERS_6') < adminStudioHtml.indexOf('admin-analytics.js?v=20260421_ANALYTICS_RUNTIME_AUTH_FALLBACK_P0'),
         true,
         'admin-studio.html should load the analytics metric-context helpers before the main analytics runtime'
     );
     assert.equal(
-        adminStudioHtml.indexOf('admin-analytics.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1') < adminStudioHtml.indexOf('js/admin-analytics-workbench.js?v=20260416_PRODUCT_DETAIL_WORKBENCH_1'),
+        adminStudioHtml.indexOf('admin-analytics.js?v=20260421_ANALYTICS_RUNTIME_AUTH_FALLBACK_P0') < adminStudioHtml.indexOf('js/admin-analytics-workbench.js?v=20260421_ANALYTICS_DESTINATION_ACTIVATE_FALLBACKS_P4'),
         true,
         'admin-studio.html should load the analytics workbench helper after the main analytics runtime'
     );
     assert.equal(
-        adminStudioHtml.indexOf('js/admin-analytics-workbench.js?v=20260416_PRODUCT_DETAIL_WORKBENCH_1') < adminStudioHtml.indexOf('js/admin-analytics-insight-cards.js?v=20260407_ANALYTICS_INSIGHT_CARDS_HELPERS_5'),
+        adminStudioHtml.indexOf('js/admin-analytics-workbench.js?v=20260421_ANALYTICS_DESTINATION_ACTIVATE_FALLBACKS_P4') < adminStudioHtml.indexOf('js/admin-analytics-insight-cards.js?v=20260407_ANALYTICS_INSIGHT_CARDS_HELPERS_5'),
         true,
         'admin-studio.html should load the analytics insight-card helper after the workbench helper'
     );
@@ -11177,7 +11990,7 @@ test('analytics summary context bundle reuses panel metric and comparison fetche
         'admin-studio.html should load the analytics export-builder helper after the ai-controller'
     );
     assert.equal(
-        adminStudioHtml.indexOf('js/admin-analytics-export-builders.js?v=20260405_ANALYTICS_EXPORT_BUILDERS_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        adminStudioHtml.indexOf('js/admin-analytics-export-builders.js?v=20260405_ANALYTICS_EXPORT_BUILDERS_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-export.js?v=20260421_ANALYTICS_AI_BUDGET_P0'),
         true,
         'admin-studio.html should load the analytics ai/export helpers after the main analytics runtime'
     );
@@ -11206,12 +12019,12 @@ test('analytics admin snapshot bundle consolidates admin summary fetches for ope
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-analytics.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1'),
+        adminStudioHtml.includes('admin-analytics.js?v=20260421_ANALYTICS_RUNTIME_AUTH_FALLBACK_P0'),
         true,
         'admin-studio.html should reference the latest analytics snapshot-bundle runtime version'
     );
     assert.equal(
-        adminStudioHtml.includes('js/admin-analytics-workbench.js?v=20260416_PRODUCT_DETAIL_WORKBENCH_1'),
+        adminStudioHtml.includes('js/admin-analytics-workbench.js?v=20260421_ANALYTICS_DESTINATION_ACTIVATE_FALLBACKS_P4'),
         true,
         'admin-studio.html should reference the latest analytics workbench bundle runtime version'
     );
@@ -11239,7 +12052,7 @@ test('analytics summary rows bundle consolidates shared table scans across overv
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-analytics.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1'),
+        adminStudioHtml.includes('admin-analytics.js?v=20260421_ANALYTICS_RUNTIME_AUTH_FALLBACK_P0'),
         true,
         'admin-studio.html should reference the latest analytics summary-rows-bundle runtime version'
     );
@@ -11270,7 +12083,7 @@ test('analytics summary payload bundle lets overview, verify, and growth consume
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-analytics.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1'),
+        adminStudioHtml.includes('admin-analytics.js?v=20260421_ANALYTICS_RUNTIME_AUTH_FALLBACK_P0'),
         true,
         'admin-studio.html should reference the latest analytics summary-payload-bundle runtime version'
     );
@@ -11320,12 +12133,12 @@ test('analytics panel support bundle consolidates channel, content, community, p
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-analytics.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1'),
+        adminStudioHtml.includes('admin-analytics.js?v=20260421_ANALYTICS_RUNTIME_AUTH_FALLBACK_P0'),
         true,
         'admin-studio.html should reference the latest analytics panel-support-bundle runtime version'
     );
     assert.equal(
-        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260421_ANALYTICS_AI_BUDGET_P0'),
         true,
         'admin-studio.html should reference the latest analytics ai/export runtime version for panel support bundle consumers'
     );
@@ -11382,7 +12195,7 @@ test('analytics visual panel bundle consolidates heatmap, conversion, retention,
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-analytics.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1'),
+        adminStudioHtml.includes('admin-analytics.js?v=20260421_ANALYTICS_RUNTIME_AUTH_FALLBACK_P0'),
         true,
         'admin-studio.html should reference the latest analytics visual-panel-bundle runtime version'
     );
@@ -11439,12 +12252,12 @@ test('analytics trend series bundle consolidates trend fetches across charts, ai
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-analytics.js?v=20260409_ANALYTICS_PHASE_C_COCKPIT_1'),
+        adminStudioHtml.includes('admin-analytics.js?v=20260421_ANALYTICS_RUNTIME_AUTH_FALLBACK_P0'),
         true,
         'admin-studio.html should reference the latest analytics trend-series-bundle runtime version'
     );
     assert.equal(
-        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260421_ANALYTICS_AI_BUDGET_P0'),
         true,
         'admin-studio.html should reference the latest analytics ai/export runtime version for trend bundle consumers'
     );
@@ -11472,7 +12285,7 @@ test('analytics ai and export helpers reuse the shared summary payload support b
     }
 
     assert.equal(
-        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260421_ANALYTICS_AI_BUDGET_P0'),
         true,
         'admin-studio.html should reference the latest analytics ai/export shared-support runtime version'
     );
@@ -11503,12 +12316,12 @@ test('analytics ai prompt builders isolate summary enrichment and prompt assembl
         'admin-studio.html should reference the latest analytics ai-prompt-builder runtime version'
     );
     assert.equal(
-        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260421_ANALYTICS_AI_BUDGET_P0'),
         true,
         'admin-studio.html should reference the latest analytics ai shell runtime version'
     );
     assert.equal(
-        adminStudioHtml.indexOf('js/admin-analytics-ai-prompt-builders.js?v=20260405_ANALYTICS_AI_PROMPT_BUILDERS_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        adminStudioHtml.indexOf('js/admin-analytics-ai-prompt-builders.js?v=20260405_ANALYTICS_AI_PROMPT_BUILDERS_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-export.js?v=20260421_ANALYTICS_AI_BUDGET_P0'),
         true,
         'admin-studio.html should load the analytics ai-prompt builders before the ai shell runtime'
     );
@@ -11610,7 +12423,7 @@ test('analytics ai dom helpers isolate workspace queries and binding from the ai
         'admin-studio.html should load the analytics ai-dom layer before the ai-helper layer'
     );
     assert.equal(
-        adminStudioHtml.indexOf('js/admin-analytics-ai-dom.js?v=20260405_ANALYTICS_AI_DOM_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        adminStudioHtml.indexOf('js/admin-analytics-ai-dom.js?v=20260405_ANALYTICS_AI_DOM_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-export.js?v=20260421_ANALYTICS_AI_BUDGET_P0'),
         true,
         'admin-studio.html should load the analytics ai-dom layer before the ai shell runtime'
     );
@@ -11658,12 +12471,12 @@ test('analytics ai controller isolates cache, health checks, and loading state f
         'admin-studio.html should reference the latest analytics ai-controller runtime version'
     );
     assert.equal(
-        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260421_ANALYTICS_AI_BUDGET_P0'),
         true,
         'admin-studio.html should reference the latest analytics ai shell runtime version'
     );
     assert.equal(
-        adminStudioHtml.indexOf('js/admin-analytics-ai-controller.js?v=20260405_ANALYTICS_AI_CONTROLLER_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        adminStudioHtml.indexOf('js/admin-analytics-ai-controller.js?v=20260405_ANALYTICS_AI_CONTROLLER_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-export.js?v=20260421_ANALYTICS_AI_BUDGET_P0'),
         true,
         'admin-studio.html should load the analytics ai-controller before the ai shell runtime'
     );
@@ -11696,12 +12509,12 @@ test('analytics ai helpers isolate fallback insight and prediction rendering fro
         'admin-studio.html should reference the latest analytics ai-helper runtime version'
     );
     assert.equal(
-        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260421_ANALYTICS_AI_BUDGET_P0'),
         true,
         'admin-studio.html should reference the latest analytics ai shell runtime version'
     );
     assert.equal(
-        adminStudioHtml.indexOf('js/admin-analytics-ai-helpers.js?v=20260405_ANALYTICS_AI_HELPERS_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        adminStudioHtml.indexOf('js/admin-analytics-ai-helpers.js?v=20260405_ANALYTICS_AI_HELPERS_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-export.js?v=20260421_ANALYTICS_AI_BUDGET_P0'),
         true,
         'admin-studio.html should load the analytics ai helpers before the ai shell runtime'
     );
@@ -11730,12 +12543,12 @@ test('analytics export builders isolate csv and excel assembly from the ai runti
         'admin-studio.html should reference the latest analytics export-builder runtime version'
     );
     assert.equal(
-        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        adminStudioHtml.includes('js/admin-analytics-ai-export.js?v=20260421_ANALYTICS_AI_BUDGET_P0'),
         true,
         'admin-studio.html should reference the latest analytics ai shell runtime version'
     );
     assert.equal(
-        adminStudioHtml.indexOf('js/admin-analytics-export-builders.js?v=20260405_ANALYTICS_EXPORT_BUILDERS_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-export.js?v=20260405_ANALYTICS_AI_EXPORT_9'),
+        adminStudioHtml.indexOf('js/admin-analytics-export-builders.js?v=20260405_ANALYTICS_EXPORT_BUILDERS_1') < adminStudioHtml.indexOf('js/admin-analytics-ai-export.js?v=20260421_ANALYTICS_AI_BUDGET_P0'),
         true,
         'admin-studio.html should load the analytics export builders before the ai shell runtime'
     );
@@ -11765,7 +12578,7 @@ test('prompt image delivery optimizes admin previews and cacheable fallback uplo
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-studio.js?v=20260420_ANALYTICS_USER_TREND_REQUEST_1'),
+        adminStudioHtml.includes('admin-studio.js?v=20260424_ADMIN_MODAL_SCROLL_LOCK_SOFT_BACKDROP_1'),
         true,
         'admin-studio.html should reference the latest analytics action routing runtime version'
     );
@@ -11821,15 +12634,25 @@ test('analytics ui polish keeps funnel hints visible, top-content and contributo
     assert.equal(adminStudioScript.includes("case 'analytics-open-content-commerce-detail':"), true, 'admin-studio.js should delegate content-commerce detail drill-down actions');
     assert.equal(adminStudioScript.includes("case 'analytics-open-user-detail':"), true, 'admin-studio.js should delegate analytics leaderboard user drill-down actions');
     assert.equal(adminStudioScript.includes('window.tryOpenOpsAlertWorkspaceUserModal'), true, 'admin-studio.js should reuse the workbench user-detail opener for analytics drill-down');
-    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260420_POINTS_LEADERBOARD_AVATAR_1'), true, 'admin-studio.html should reference the latest analytics ui polish stylesheet version');
+    assert.equal(adminStudioScript.includes("await window.AdminShell.openContext('users', {"), true, 'admin-studio.js should prefer AdminShell when analytics opens a user detail');
+    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260424_ADMIN_LIGHT_FLAT_CARDS_2'), true, 'admin-studio.html should reference the latest analytics ui polish stylesheet version');
     assert.equal(adminStudioHtml.includes('js/admin-analytics-panel-loaders.js?v=20260420_POINTS_LEADERBOARD_AVATAR_1'), true, 'admin-studio.html should reference the latest analytics panel loader runtime version');
-    assert.equal(adminStudioHtml.includes('admin-studio.js?v=20260420_ANALYTICS_USER_TREND_REQUEST_1'), true, 'admin-studio.html should reference the latest admin studio action routing version');
+    assert.equal(adminStudioHtml.includes('admin-studio.js?v=20260424_ADMIN_MODAL_SCROLL_LOCK_SOFT_BACKDROP_1'), true, 'admin-studio.html should reference the latest admin studio action routing version');
 });
 
 test('analytics user drill-down carries commerce context into the user detail modal', () => {
     const analyticsPanelLoadersSource = readRepoFile('js/admin-analytics-panel-loaders.js');
     const adminStudioScript = readRepoFile('admin-studio.js');
+    const homepageAdminSource = readRepoFile('admin-homepage.js');
     const adminUsersSource = readRepoFile('admin-users.js');
+    const adminCommentsSource = readRepoFile('admin-comments.js');
+    const paymentsSource = readRepoFile('js/admin-payments.js');
+    const ticketsSource = readRepoFile('js/admin-tickets.js');
+    const shopSource = readRepoFile('js/admin-shop.js');
+    const pointsSource = readRepoFile('admin-points.js');
+    const growthSource = readRepoFile('js/admin-growth-center.js');
+    const adminConfigSource = readRepoFile('admin-config.js');
+    const adminDiscountsSource = readRepoFile('admin-discounts.js');
     const adminStudioStyles = readRepoFile('admin-studio.css');
     const adminStudioHtml = readRepoFile('admin-studio.html');
 
@@ -11851,10 +12674,14 @@ test('analytics user drill-down carries commerce context into the user detail mo
         "const analyticsContext = typeof parseAnalyticsActionContext === 'function'",
         "case 'users-open-analytics-destination': {",
         "case 'users-open-comment-context': {",
+        "await window.AdminShell.openContext('users', {",
         'window.openUserModal?.(userId, {',
         'analyticsContext',
         'window.openAnalyticsDestination?.(destination, analyticsContext);',
-        'window.openAdminUserCommentContext?.(commentContext);'
+        'async function openAdminStudioPromptAnalyticsContext(promptId = \'\', options = {}) {',
+        'async function openAdminStudioPromptCommentsContext(context = {}) {',
+        'await openAdminStudioPromptCommentsContext(commentContext);',
+        'return window.openAdminUserCommentContext?.({'
     ];
 
     for (const marker of studioMarkers) {
@@ -11912,12 +12739,55 @@ test('analytics user drill-down carries commerce context into the user detail mo
         assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
     }
 
-    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260420_POINTS_LEADERBOARD_AVATAR_1'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
-    assert.equal(adminStudioHtml.includes('admin-users.js?v=20260420_ADMIN_USERS_SCOPE_HINT_1'), true, 'admin-studio.html should reference the latest admin users runtime version');
+    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260424_ADMIN_LIGHT_FLAT_CARDS_2'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
+    assert.equal(adminStudioHtml.includes('admin-homepage.js?v=20260421_HOMEPAGE_FEEDBACK_BRIDGE_P4'), true, 'admin-studio.html should reference the latest homepage admin runtime version');
+    assert.equal(adminStudioHtml.includes('admin-users.js?v=20260421_ADMIN_USERS_CONTEXT_HELPER_P2'), true, 'admin-studio.html should reference the latest admin users runtime version');
+    assert.equal(adminStudioHtml.includes('admin-points.js?v=20260421_ADMIN_POINTS_GENERATE_SUBMIT_BRIDGE_P2'), true, 'admin-studio.html should reference the latest admin points runtime version');
+    assert.equal(adminStudioHtml.includes('js/admin-growth-center.js?v=20260421_GROWTH_CENTER_CONTEXT_ROUTING_P3'), true, 'admin-studio.html should reference the latest growth center runtime version');
+    assert.equal(adminStudioHtml.includes('js/admin-config-ops-alert-reports.js?v=20260421_OPS_ALERT_REPORT_ACTIONS_P2'), true, 'admin-studio.html should reference the latest ops alert report helper runtime version');
+    assert.equal(adminStudioHtml.includes('admin-config.js?v=20260422_OPS_ALERT_BATCH_ERROR_VISIBLE_P4'), true, 'admin-studio.html should reference the latest admin settings runtime version');
+    assert.equal(adminStudioHtml.includes('admin-discounts.js?v=20260421_DISCOUNTS_CONTEXT_HELPER_P2'), true, 'admin-studio.html should reference the latest admin discounts runtime version');
     assert.equal(adminStudioHtml.includes('js/admin-analytics-panel-loaders.js?v=20260420_POINTS_LEADERBOARD_AVATAR_1'), true, 'admin-studio.html should reference the latest analytics panel loader runtime version');
-    assert.equal(adminStudioHtml.includes('admin-studio.js?v=20260420_ANALYTICS_USER_TREND_REQUEST_1'), true, 'admin-studio.html should reference the latest admin studio action routing version');
+    assert.equal(adminStudioHtml.includes('admin-studio.js?v=20260424_ADMIN_MODAL_SCROLL_LOCK_SOFT_BACKDROP_1'), true, 'admin-studio.html should reference the latest admin studio action routing version');
     assert.equal(adminUsersSource.includes('const feedbackEntries = typeof window.getAnalyticsResolutionFeedbackEntries === \'function\''), true, 'admin-users.js should read analytics resolution feedback entries for commerce trace context');
     assert.equal(adminUsersSource.includes('users-commerce-trace__feedback'), true, 'admin-users.js should render a recent handling feedback block in commerce traces');
+    assert.equal(adminUsersSource.includes("function activateUsersModule(context = {}, options = {}) {"), true, 'admin-users.js should activate the users module through the shell lifecycle');
+    assert.equal(adminUsersSource.includes("async function handleAdminUsersShellContext(context = {}, options = {}) {"), true, 'admin-users.js should handle user modal context through the shell lifecycle');
+    assert.equal(adminUsersSource.includes('window.openAdminUsersShellContext = openAdminUsersShellContext;'), true, 'admin-users.js should export the shared users context helper for shell-less fallback paths');
+    assert.equal(adminUsersSource.includes('window.handleAdminUsersSiteChange = handleAdminUsersSiteChange;'), true, 'admin-users.js should expose the users site-change helper for shared fallback paths');
+    assert.equal(adminUsersSource.includes('analyticsContext: state.analyticsContext,'), true, 'admin-users.js should carry analytics context through shell-opened user details');
+    assert.equal(adminUsersSource.includes("window.AdminShell.registerModule('users', {"), true, 'admin-users.js should register the users module with AdminShell');
+    assert.equal(adminStudioScript.includes('async function openAdminGalleryShellContext(context = {}, options = {}) {'), true, 'admin-studio.js should export the shared gallery context helper for shell-less fallback paths');
+    assert.equal(adminStudioScript.includes('window.openAdminGalleryShellContext = openAdminGalleryShellContext;'), true, 'admin-studio.js should bind the shared gallery context helper on window');
+    assert.equal(adminCommentsSource.includes('async function openAdminCommentsShellContext(context = {}, options = {}) {'), true, 'admin-comments.js should export the shared comments context helper for shell-less fallback paths');
+    assert.equal(adminCommentsSource.includes('window.openAdminCommentsShellContext = openAdminCommentsShellContext;'), true, 'admin-comments.js should bind the shared comments context helper on window');
+    assert.equal(adminCommentsSource.includes("window.AdminShell.activateModule('users', { reason: 'comments-open-user', deferContext: true })"), true, 'admin-comments.js should activate users before shared helper fallback');
+    assert.equal(adminCommentsSource.includes('await window.openAdminGalleryShellContext(galleryContext);'), true, 'admin-comments.js should reuse the shared gallery context helper for prompt drill-down fallback');
+    assert.equal(adminCommentsSource.includes("window.AdminShell.activateModule('tickets', { reason: 'comments-open-ticket', deferContext: true })"), true, 'admin-comments.js should activate tickets before shared helper fallback');
+    assert.equal(homepageAdminSource.includes('async function openAdminHomepageShellContext(context = {}, options = {}) {'), true, 'admin-homepage.js should export the shared homepage context helper for shell-less fallback paths');
+    assert.equal(homepageAdminSource.includes('window.openAdminHomepageShellContext = (context = {}, options = {}) => window.HomepageAdmin?.openShellContext?.(context, options);'), true, 'admin-homepage.js should bind the shared homepage context helper on window');
+    assert.equal(homepageAdminSource.includes('window.handleAdminHomepageSiteChange = (detail = {}) => window.HomepageAdmin?.handleSiteChange?.(detail);'), true, 'admin-homepage.js should expose the shared homepage site-change helper');
+    assert.equal(pointsSource.includes('window.handleAdminPointsSiteChange = handleAdminPointsSiteChange;'), true, 'admin-points.js should expose the shared points site-change helper');
+    assert.equal(pointsSource.includes('async function openAdminPointsShellContext(context = {}, options = {}) {'), true, 'admin-points.js should export the shared points context helper for shell-less fallback paths');
+    assert.equal(pointsSource.includes('window.openAdminPointsShellContext = openAdminPointsShellContext;'), true, 'admin-points.js should bind the shared points context helper on window');
+    assert.equal(growthSource.includes('window.handleAdminGrowthCenterSiteChange = handleAdminGrowthCenterSiteChange;'), true, 'js/admin-growth-center.js should expose the shared growth center site-change helper');
+    assert.equal(growthSource.includes('async function openAdminGrowthCenterShellContext(context = {}, options = {}) {'), true, 'js/admin-growth-center.js should export the shared growth center context helper for shell-less fallback paths');
+    assert.equal(growthSource.includes('window.openAdminGrowthCenterShellContext = openAdminGrowthCenterShellContext;'), true, 'js/admin-growth-center.js should bind the shared growth center context helper on window');
+    assert.equal(adminConfigSource.includes('window.handleAdminSettingsSiteChange = handleAdminSettingsSiteChange;'), true, 'admin-config.js should expose the shared settings site-change helper');
+    assert.equal(adminConfigSource.includes('window.handleAdminOpsAlertsSiteChange = handleAdminOpsAlertsSiteChange;'), true, 'admin-config.js should expose the shared ops alerts site-change helper');
+    assert.equal(adminConfigSource.includes('async function openAdminSettingsShellContext(context = {}, options = {}) {'), true, 'admin-config.js should export the shared settings context helper for shell-less fallback paths');
+    assert.equal(adminConfigSource.includes('async function openAdminOpsAlertsShellContext(context = {}, options = {}) {'), true, 'admin-config.js should export the shared ops alerts context helper for shell-less fallback paths');
+    assert.equal(adminConfigSource.includes('window.openAdminOpsAlertsShellContext = openAdminOpsAlertsShellContext;'), true, 'admin-config.js should bind the shared ops alerts context helper on window');
+    assert.equal(adminConfigSource.includes('window.openAdminSettingsShellContext = openAdminSettingsShellContext;'), true, 'admin-config.js should bind the shared settings context helper on window');
+    assert.equal(adminConfigSource.includes("window.AdminShell.registerModule('ops-alerts', {"), true, 'admin-config.js should register the ops alerts module with AdminShell');
+    assert.equal(adminDiscountsSource.includes('window.handleAdminDiscountsSiteChange = () => AdminDiscounts.handleSiteChange();'), true, 'admin-discounts.js should expose the shared discounts site-change helper');
+    assert.equal(adminDiscountsSource.includes('window.openAdminDiscountsShellContext = async (context = {}, options = {}) => {'), true, 'admin-discounts.js should export the shared discounts context helper for shell-less fallback paths');
+    assert.equal(paymentsSource.includes('async function openAdminPaymentsShellContext(context = {}, options = {}) {'), true, 'js/admin-payments.js should export the shared payments context helper for shell-less fallback paths');
+    assert.equal(paymentsSource.includes('window.openAdminPaymentsShellContext = openAdminPaymentsShellContext;'), true, 'js/admin-payments.js should bind the shared payments context helper on window');
+    assert.equal(ticketsSource.includes('async function openAdminTicketsShellContext(context = {}, options = {}) {'), true, 'js/admin-tickets.js should export the shared tickets context helper for shell-less fallback paths');
+    assert.equal(ticketsSource.includes('window.openAdminTicketsShellContext = openAdminTicketsShellContext;'), true, 'js/admin-tickets.js should bind the shared tickets context helper on window');
+    assert.equal(shopSource.includes('async function openAdminShopShellContext(context = {}, options = {}) {'), true, 'js/admin-shop.js should export the shared shop context helper for shell-less fallback paths');
+    assert.equal(shopSource.includes('window.openAdminShopShellContext = openAdminShopShellContext;'), true, 'js/admin-shop.js should bind the shared shop context helper on window');
 });
 
 test('user detail tabs surface product commerce trace when opened from analytics commerce drill-down', () => {
@@ -11959,8 +12829,9 @@ test('user detail tabs surface product commerce trace when opened from analytics
         assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
     }
 
-    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260420_POINTS_LEADERBOARD_AVATAR_1'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
-    assert.equal(adminStudioHtml.includes('admin-users.js?v=20260420_ADMIN_USERS_SCOPE_HINT_1'), true, 'admin-studio.html should reference the latest admin users runtime version');
+    assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260424_ADMIN_LIGHT_FLAT_CARDS_2'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
+    assert.equal(adminStudioHtml.includes('admin-users.js?v=20260421_ADMIN_USERS_CONTEXT_HELPER_P2'), true, 'admin-studio.html should reference the latest admin users runtime version');
+    assert.equal(adminStudioHtml.includes('admin-config.js?v=20260422_OPS_ALERT_BATCH_ERROR_VISIBLE_P4'), true, 'admin-studio.html should reference the latest admin settings runtime version');
 });
 
 test('payments runtime controls, site filter, and admin chat menu route through delegated actions', () => {
@@ -12004,8 +12875,13 @@ test('payments runtime controls, site filter, and admin chat menu route through 
     }
 
     assert.equal(adminChatSource.includes(runtimeMarkers[5]), true, 'js/admin-chat.js should contain data-admin-action="toggle-mobile-sidebar"');
+    assert.equal(adminChatSource.includes("async function activateChatModule(context = {}, options = {}) {"), true, 'js/admin-chat.js should activate the chat module through the shell lifecycle');
+    assert.equal(adminChatSource.includes("window.AdminShell.registerModule('chat', {"), true, 'js/admin-chat.js should register the chat module with AdminShell');
 
     const adminScriptMarkers = [
+        "async function tryOpenAdminStudioShellContext(moduleName = '', context = {}, options = {}) {",
+        "async function openAdminStudioPaymentsFocusContext(action = '', value = '') {",
+        "async function openAdminStudioTicketsFocusContext(action = '', value = '') {",
         "case 'payments-handle-anomaly-action':",
         "case 'payments-go-to-page':",
         "case 'payments-set-exception-topic-filter':",
@@ -12015,6 +12891,10 @@ test('payments runtime controls, site filter, and admin chat menu route through 
         "case 'tickets-priority-open':",
         "case 'tickets-priority-resolve':",
         "case 'tickets-priority-reject':",
+        "void openAdminStudioPaymentsFocusContext('focus-exception-topic', actionEl.dataset.paymentsTopicKey);",
+        "void openAdminStudioPaymentsFocusContext('issue-summary-focus', actionEl.dataset.paymentsIssueFocus);",
+        "void openAdminStudioTicketsFocusContext('issue-summary-focus', actionEl.dataset.ticketIssueFocus);",
+        "void openAdminStudioTicketsFocusContext('open-overdue-queue');",
         "case 'site-filter-toggle-dropdown':",
         "case 'site-filter-select':"
     ];
@@ -12071,6 +12951,8 @@ test('payments runtime renderers externalize tooltip, tab, and trend styling', (
         'function renderAnalyticsPrioritySummary(data = state.summary, context = state.workbenchContext) {',
         'async function focusAnalyticsIssueSummary(kind = \'\') {',
         'async function focusAnalyticsPrioritySummary(type = \'\', targetId = \'\') {',
+        'const priorityAction = String(',
+        'getLastFocusResult: () => (state.lastFocusResult ? { ...state.lastFocusResult } : null),',
         'data-admin-action="payments-issue-summary-focus"',
         'data-admin-action="payments-priority-focus-order"',
         'data-admin-action="analytics-open-destination"',
@@ -12183,6 +13065,9 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
         "return window.resolveShopRiskWorkspace(baseContext, payload);",
         "return window.resolveOpsAlertWorkspace(alertType, payload, baseContext, entryPath);",
         "return this.openWorkbenchEntry('chat-session', context);",
+        "const opened = await window.AdminShell.openContext('chat', {",
+        "const opened = await window.AdminShell.openContext('shop', {",
+        "const opened = await window.AdminShell.openContext('payments', {",
         "return this.openWorkbenchEntry('shop-risk-orders', {",
         "return this.openWorkbenchEntry('payments-overview', context);"
     ];
@@ -12214,8 +13099,8 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
     }
 
     const htmlMarkers = [
-        'css/admin-chat.css?v=20260402_ADMIN_CHAT_INPUT_UI_13',
-        'js/admin-chat.js?v=20260402_ADMIN_CHAT_INPUT_UI_13'
+        'css/admin-chat.css?v=20260424_ADMIN_CHAT_LIGHT_THEME_FROSTED_CONTEXT_FLAT_ALERTS_1',
+        'js/admin-chat.js?v=20260421_ADMIN_CHAT_SITE_CHANGE_P2'
     ];
 
     for (const marker of htmlMarkers) {
@@ -12445,7 +13330,7 @@ test('final frontend runtime remnants route through delegated or bound listeners
 
     const notificationAssetMarkers = [
         'css/notification-client.css?v=20260331_NOTIFICATION_FILTER_MEMORY_1',
-        'notification-client.js?v=20260410_NOTIFICATION_ADMIN_PERSONAL_FIX_1'
+        'js/engagement-runtime-loader.js?v=20260421_PUBLIC_ENGAGEMENT_LAZY_BOOTSTRAP_P1'
     ];
 
     for (const marker of notificationAssetMarkers) {
@@ -12491,7 +13376,7 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         '快捷回复点击后会回填插值正文',
         '用户详情弹窗支持点击外部关闭',
         '首页模块会按站点加载配置',
-        '页脚显隐也通过 homepage_config 保存',
+        '提示词分栏显隐也通过 homepage_config 保存',
         '切换站点后首页配置不会串站',
         'Analytics 概览 KPI 已渲染',
         'Analytics 日期切换会把窗口参数传给关键 RPC',
@@ -12557,7 +13442,7 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         'js/admin-smoke-loader.js should gate the local smoke harness behind the smoke query flag'
     );
     assert.equal(
-        smokeLoaderSource.includes('js/local-smoke-fixtures.js?v=20260412_LOCAL_SMOKE_FIXTURES_PRODUCT_BUNDLES_35'),
+        smokeLoaderSource.includes('js/local-smoke-fixtures.js?v=20260421_LOCAL_SMOKE_FIXTURES_GALLERY_WAIT_STATE_38'),
         true,
         'js/admin-smoke-loader.js should inject the local smoke fixtures entry'
     );
@@ -12577,7 +13462,7 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         'admin-studio.html should load the lightweight local smoke loader'
     );
     assert.equal(
-        adminStudioHtml.includes('js/local-smoke-fixtures.js?v=20260412_LOCAL_SMOKE_FIXTURES_PRODUCT_BUNDLES_35'),
+        adminStudioHtml.includes('js/local-smoke-fixtures.js?v=20260421_LOCAL_SMOKE_FIXTURES_GALLERY_WAIT_STATE_38'),
         false,
         'admin-studio.html should not eagerly load the heavy local smoke fixtures entry'
     );
@@ -12597,7 +13482,7 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         'smoke-notifications.html should load the dedicated smoke harness stylesheet'
     );
     assert.equal(
-        smokeNotificationHtml.includes('js/local-smoke-fixtures.js?v=20260412_LOCAL_SMOKE_FIXTURES_PRODUCT_BUNDLES_35'),
+        smokeNotificationHtml.includes('js/local-smoke-fixtures.js?v=20260421_LOCAL_SMOKE_FIXTURES_GALLERY_WAIT_STATE_38'),
         true,
         'smoke-notifications.html should load the local smoke fixtures entry'
     );
@@ -12663,9 +13548,9 @@ test('shop tabs keep hidden views on demand and invalidate warm state on context
         'js/admin-shop.js should invalidate warm tab state when the admin site context changes'
     );
     assert.equal(
-        siteFilterSource.includes("if (typeof window.ShopAdmin.handleSiteChange === 'function') {"),
+        siteFilterSource.includes("if (typeof window.handleAdminShopSiteChange === 'function') {"),
         true,
-        'js/admin-site-filter.js should delegate shop site changes to the shared ShopAdmin context handler'
+        'js/admin-site-filter.js should delegate shop site changes to the shared shop site-change helper'
     );
 });
 
@@ -12717,6 +13602,48 @@ test('admin studio modal scrollers auto-hide after scroll activity settles', () 
         adminStudioHtml,
         /admin-studio\.js\?v=20\d{6}_[A-Z0-9_]+/,
         'admin-studio.html should reference a cache-busted admin-studio.js asset'
+    );
+});
+
+test('admin studio helper extends scrollbar auto-hide coverage to legacy modal body scrollers', () => {
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+    const helperSource = readRepoFile('js/admin-scrollbar-auto-hide-helper.js');
+    const adminStudioStyles = readRepoFile('admin-studio.css');
+
+    const scriptMarkers = [
+        "const VERSION = '20260424_ADMIN_SCROLLBAR_AUTO_HIDE_HELPER_1';",
+        'const ADMIN_SCROLLBAR_AUTO_HIDE_SELECTOR = [',
+        "'.modal-body'",
+        "'.batch-modal-body'",
+        "'.user-modal-body'",
+        "'.batch-export-modal-body'",
+        'function bindAdminScrollbarAutoHide(target) {',
+        'target.classList.add(ADMIN_SCROLLBAR_AUTO_HIDE_CLASS);',
+        "target.addEventListener('mouseenter', () => markAdminScrollbarActive(target), { passive: true });",
+        "target.addEventListener('focusin', () => markAdminScrollbarActive(target));",
+        "target.addEventListener('scroll', () => markAdminScrollbarActive(target), { passive: true });",
+        'function observeAdminScrollbarAutoHide() {',
+        'global.ZaoyoeAdminScrollbarAutoHideHelper = Object.freeze({'
+    ];
+
+    for (const marker of scriptMarkers) {
+        assert.equal(helperSource.includes(marker), true, `js/admin-scrollbar-auto-hide-helper.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.admin-scrollbar-auto-hide {',
+        '.admin-scrollbar-auto-hide.admin-scrollbar-auto-hide--visible::-webkit-scrollbar-thumb',
+        '.admin-scrollbar-auto-hide:focus-within::-webkit-scrollbar-thumb:hover'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('js/admin-scrollbar-auto-hide-helper.js?v=20260424_ADMIN_SCROLLBAR_AUTO_HIDE_HELPER_1'),
+        true,
+        'admin-studio.html should load the legacy scrollbar auto-hide helper'
     );
 });
 
@@ -12796,14 +13723,14 @@ test('announcement runtime renderers externalize decoration particles and physic
     }
 
     assert.equal(
-        indexSource.includes('./announcement-loader.js?v=20260410_ANNOUNCEMENT_BACKDROP_DISMISS_FIX_1'),
+        indexSource.includes('./js/engagement-runtime-loader.js?v=20260421_PUBLIC_ENGAGEMENT_LAZY_BOOTSTRAP_P1'),
         true,
-        'index.html should load the latest announcement runtime version'
+        'index.html should defer announcement loading through the shared engagement bootstrap'
     );
     assert.equal(
-        guestbookSource.includes('./announcement-loader.js?v=20260410_ANNOUNCEMENT_BACKDROP_DISMISS_FIX_1'),
+        guestbookSource.includes('js/engagement-runtime-loader.js?v=20260421_PUBLIC_ENGAGEMENT_LAZY_BOOTSTRAP_P1'),
         true,
-        'guestbook.html should load the latest announcement runtime version directly'
+        'guestbook.html should defer announcement loading through the shared engagement bootstrap'
     );
     assert.equal(
         guestbookOptionalSource.includes("loadScript('announcement-loader.js"),
@@ -12813,9 +13740,9 @@ test('announcement runtime renderers externalize decoration particles and physic
 
     for (const source of [verifySource, shopSource, legacyIndexSource]) {
         assert.equal(
-            source.includes('announcement-loader.js?v=20260410_ANNOUNCEMENT_BACKDROP_DISMISS_FIX_1'),
+            source.includes('js/engagement-runtime-loader.js?v=20260421_PUBLIC_ENGAGEMENT_LAZY_BOOTSTRAP_P1'),
             true,
-            'announcement entry pages should load the latest announcement runtime version'
+            'announcement entry pages should defer announcement loading through the shared engagement bootstrap'
         );
     }
 });
@@ -12868,4 +13795,194 @@ test('analytics admin fetch warms the admin cookie session before product bundle
             `analytics admin bundle auth flow should contain ${marker}`
         );
     }
+});
+
+test('admin studio modules emit unified command feedback for recent processing results', () => {
+    const adminStudioScript = readRepoFile('admin-studio.js');
+    const commandCenterSource = readRepoFile('js/admin-command-center.js');
+    const paymentsSource = readRepoFile('js/admin-payments.js');
+    const shopSource = readRepoFile('js/admin-shop.js');
+    const ticketsSource = readRepoFile('js/admin-tickets.js');
+    const discountsSource = readRepoFile('admin-discounts.js');
+    const usersSource = readRepoFile('admin-users.js');
+    const pointsSource = readRepoFile('admin-points.js');
+    const commentsSource = readRepoFile('admin-comments.js');
+    const adminConfigSource = readRepoFile('admin-config.js');
+    const adminConfigOpsAlertReportsSource = readRepoFile('js/admin-config-ops-alert-reports.js');
+    const homepageSource = readRepoFile('admin-homepage.js');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+    const adminStudioStyles = readRepoFile('admin-studio.css');
+    const commandCenterStyles = readRepoFile('css/admin-command-center.css');
+
+    assert.equal(adminStudioScript.includes('window.dispatchAdminStudioFeedbackSignal = dispatchAdminStudioFeedbackSignal;'), true, 'admin-studio.js should expose the unified feedback dispatcher to feature modules');
+    assert.equal(commandCenterSource.includes("'payments-batch': '支付批量'"), true, 'Command Center should localize payment batch result feedback');
+    assert.equal(commandCenterSource.includes("'shop-fulfillment': '履约处理'"), true, 'Command Center should localize shop fulfillment result feedback');
+    assert.equal(commandCenterSource.includes("'tickets-batch': '工单批量'"), true, 'Command Center should localize ticket batch result feedback');
+    assert.equal(commandCenterSource.includes("'discounts-retry': '券码重试'"), true, 'Command Center should localize discount retry result feedback');
+    assert.equal(commandCenterSource.includes("'users-access': '权限处理'"), true, 'Command Center should localize user access result feedback');
+    assert.equal(commandCenterSource.includes("'users-profile': '用户资料'"), true, 'Command Center should localize user profile result feedback');
+    assert.equal(commandCenterSource.includes("'users-coupons': '用户卡券'"), true, 'Command Center should localize user coupon result feedback');
+    assert.equal(commandCenterSource.includes("'users-danger': '危险清理'"), true, 'Command Center should localize dangerous user cleanup result feedback');
+    assert.equal(commandCenterSource.includes("'settings-config': '设置配置'"), true, 'Command Center should localize generic settings result feedback');
+    assert.equal(commandCenterSource.includes("'settings-security': '安全设置'"), true, 'Command Center should localize settings security result feedback');
+    assert.equal(commandCenterSource.includes("'settings-announcement': '公告设置'"), true, 'Command Center should localize settings announcement result feedback');
+    assert.equal(commandCenterSource.includes("'settings-payment': '支付设置'"), true, 'Command Center should localize settings payment result feedback');
+    assert.equal(commandCenterSource.includes("'settings-verify': '验证设置'"), true, 'Command Center should localize settings verify result feedback');
+    assert.equal(commandCenterSource.includes("'ops-alerts-settings': '告警配置'"), true, 'Command Center should localize ops alerts settings result feedback');
+    assert.equal(commandCenterSource.includes("'ops-alerts-case': '告警处置'"), true, 'Command Center should localize ops alerts case result feedback');
+    assert.equal(commandCenterSource.includes("'ops-alerts-mute': '告警静默'"), true, 'Command Center should localize ops alerts mute result feedback');
+    assert.equal(commandCenterSource.includes("'ops-alerts-report': '告警报表'"), true, 'Command Center should localize ops alert report result feedback');
+    assert.equal(commandCenterSource.includes("'homepage-prompts': '首页精选'"), true, 'Command Center should localize homepage prompt result feedback');
+    assert.equal(commandCenterSource.includes("'homepage-draft': '首页草稿'"), true, 'Command Center should localize homepage draft result feedback');
+    assert.equal(commandCenterSource.includes("'homepage-release': '首页发布'"), true, 'Command Center should localize homepage release result feedback');
+    assert.equal(commandCenterSource.includes("'homepage-template': '首页模板'"), true, 'Command Center should localize homepage template result feedback');
+    assert.equal(commandCenterSource.includes("'homepage-schedule': '定时发布'"), true, 'Command Center should localize homepage schedule result feedback');
+    assert.equal(commandCenterSource.includes("'homepage-experiment': '首页实验'"), true, 'Command Center should localize homepage experiment result feedback');
+    assert.equal(commandCenterSource.includes("'homepage-recommendation': '首页建议'"), true, 'Command Center should localize homepage recommendation result feedback');
+    assert.equal(commandCenterSource.includes("'homepage-theme-pack': '主题包'"), true, 'Command Center should localize homepage theme-pack result feedback');
+    assert.equal(commandCenterSource.includes("'homepage-report': '首页报表'"), true, 'Command Center should localize homepage report result feedback');
+    assert.equal(commandCenterSource.includes("'points-generate': '兑换码生成'"), true, 'Command Center should localize points generate result feedback');
+    assert.equal(commandCenterSource.includes("'points-packages': '积分套餐'"), true, 'Command Center should localize points package result feedback');
+    assert.equal(commandCenterSource.includes("'points-batch': '积分批次'"), true, 'Command Center should localize points batch result feedback');
+    assert.equal(commandCenterSource.includes("'comments-batch': '评论批量'"), true, 'Command Center should localize comment batch result feedback');
+    assert.equal(commandCenterSource.includes('quickActionState: {'), true, 'Command Center should track quick action button state');
+    assert.equal(commandCenterSource.includes('data-admin-command-state="${escapeHtml(actionState)}"'), true, 'Command Center quick buttons should expose their current state');
+    assert.equal(commandCenterSource.includes("setQuickActionState(stateKey, normalizedModuleId, 'loading');"), true, 'Command Center quick actions should enter Loading before routing');
+    assert.equal(commandCenterStyles.includes('.admin-command-center__quick-btn.is-loading'), true, 'Command Center stylesheet should style quick action loading state');
+    assert.equal(commandCenterStyles.includes('.admin-command-center__quick-btn.is-saved'), true, 'Command Center stylesheet should style quick action saved state');
+    assert.equal(commandCenterStyles.includes('.admin-command-center__quick-btn.is-failed'), true, 'Command Center stylesheet should style quick action failed state');
+
+    assert.equal(paymentsSource.includes('function emitPaymentsCommandFeedback(message = \'\', feedbackState = \'saved\', options = {})'), true, 'payments runtime should emit unified command feedback');
+    assert.equal(paymentsSource.includes("emitPaymentsCommandFeedback(resultMessage, successCount > 0 ? 'partial' : 'failed', { source: 'payments-batch' });"), true, 'payments runtime should report partial batch archive results');
+    assert.equal(paymentsSource.includes("function getPaymentsIssueSummaryFocusMessage(kind = '') {"), true, 'payments runtime should describe issue-summary focus results');
+    assert.equal(paymentsSource.includes('支付优先级已切换到运维告警队列'), true, 'payments runtime should report priority focus recovery through the unified feedback bus');
+    assert.equal(shopSource.includes("emitCommandFeedback: function (message = '', feedbackState = 'saved', options = {})"), true, 'shop runtime should expose a command feedback helper');
+    assert.equal(shopSource.includes("emitFulfillmentFocusFeedback: function (message = '', feedbackState = 'saved') {"), true, 'shop runtime should emit unified fulfillment focus feedback');
+    assert.equal(shopSource.includes("getDeliveryIssueFocusFeedbackMessage: function (focusKind = 'status', rawValue = 'all') {"), true, 'shop runtime should describe fulfillment recovery focus results');
+    assert.equal(shopSource.includes('商城履约已切换到冲突死信视角'), true, 'shop runtime should report dead-letter recovery through the unified feedback bus');
+    assert.equal(shopSource.includes("{ source: 'shop-fulfillment' }"), true, 'shop runtime should report fulfillment action results');
+    assert.equal(ticketsSource.includes("this.emitCommandFeedback(successMessage, 'success'"), false, 'tickets runtime should use canonical feedback states instead of toast tones');
+    assert.equal(ticketsSource.includes("{ source: 'tickets-batch' }"), true, 'tickets runtime should report batch assignment and processing results');
+    assert.equal(ticketsSource.includes("getIssueSummaryFocusMessage: function (kind = '') {"), true, 'tickets runtime should describe issue-summary focus results');
+    assert.equal(ticketsSource.includes('超时工单队列已打开'), true, 'tickets runtime should report overdue queue focus through the unified feedback bus');
+    assert.equal(discountsSource.includes("{ source: 'discounts-batch' }"), true, 'discount runtime should report batch restore results');
+    assert.equal(discountsSource.includes("{ source: 'discounts-generate' }"), true, 'discount runtime should report generation and assignment results');
+    assert.equal(usersSource.includes("function emitUsersCommandFeedback(message = '', feedbackState = 'saved', options = {})"), true, 'users runtime should emit unified command feedback');
+    assert.equal(usersSource.includes("function getSelectedUserIdsForBatch(source = 'users-batch', label = '用户')"), true, 'users runtime should route empty batch selections through a recovery helper');
+    assert.equal(usersSource.includes('请先选择${label}，可先开启选择模式并使用“全选当前页”。'), true, 'users runtime should guide operators to recover from empty batch selections');
+    assert.equal(usersSource.includes("{ source: 'users-access' }"), true, 'users runtime should report admin access batch results');
+    assert.equal(usersSource.includes("{ source: 'users-profile' }"), true, 'users runtime should report profile governance results');
+    assert.equal(usersSource.includes("{ source: 'users-coupons' }"), true, 'users runtime should report coupon governance results');
+    assert.equal(usersSource.includes("{ source: 'users-danger' }"), true, 'users runtime should report dangerous cleanup results');
+    assert.equal(pointsSource.includes("function emitPointsCommandFeedback(message = '', feedbackState = 'saved', options = {})"), true, 'points runtime should emit unified command feedback');
+    assert.equal(pointsSource.includes("function buildPointsGenerateFeedbackMessage({"), true, 'points runtime should build structured generate feedback copy');
+    assert.equal(pointsSource.includes('function closePointsBatchActionsMenu()'), true, 'points runtime should keep batch menu open state synchronized');
+    assert.equal(pointsSource.includes("case 'generate-codes':"), true, 'points runtime should own generate form submission delegation');
+    assert.equal(pointsSource.includes('event?.__pointsGenerateHandled === true'), true, 'points runtime should guard duplicate generate submissions across shell delegates');
+    assert.equal(pointsSource.includes('批量删除需要先在站点筛选中选择 CN 或 INTL'), true, 'points runtime should report site-scope recovery for batch deletion');
+    assert.equal(pointsSource.includes("source: 'points-generate'"), true, 'points runtime should report code generation results');
+    assert.equal(pointsSource.includes("{ source: 'points-packages' }"), true, 'points runtime should report package governance results');
+    assert.equal(pointsSource.includes("source: 'points-batch'"), true, 'points runtime should report batch list results');
+    assert.equal(adminConfigSource.includes("function emitAdminConfigCommandFeedback(message = '', feedbackState = 'saved', options = {})"), true, 'admin config runtime should emit unified command feedback');
+    assert.equal(adminConfigSource.includes("source: 'settings-security'"), true, 'admin config runtime should report security setting results');
+    assert.equal(adminConfigSource.includes("source: 'settings-announcement'"), true, 'admin config runtime should report announcement setting results');
+    assert.equal(adminConfigSource.includes("source: 'settings-payment'"), true, 'admin config runtime should report payment setting results');
+    assert.equal(adminConfigSource.includes("source: 'settings-verify'"), true, 'admin config runtime should report verify setting results');
+    assert.equal(adminConfigSource.includes("feedbackSource: 'ops-alerts-mute'"), true, 'admin config runtime should differentiate ops alerts mute feedback');
+    assert.equal(adminConfigSource.includes("source: 'ops-alerts-case'"), true, 'admin config runtime should report ops alerts case results');
+    assert.equal(adminConfigSource.includes("feedbackSource: String(options.feedbackSource || 'ops-alerts-settings')"), true, 'admin config runtime should default ops alerts settings saves into the unified feedback bus');
+    assert.equal(adminConfigSource.includes("function requireAdminConfigOpsAlertReportsRuntime() {"), true, 'admin config runtime should require the extracted ops alert report helper');
+    assert.equal(adminConfigSource.includes("function getAdminConfigOpsAlertReportsDeps() {"), true, 'admin config runtime should expose deps for the extracted ops alert report helper');
+    assert.equal(adminConfigOpsAlertReportsSource.includes("source: 'ops-alerts-report'"), true, 'ops alert report helper should emit a dedicated unified feedback source');
+    assert.equal(adminConfigOpsAlertReportsSource.includes("function exportOpsAlertMonitorShiftReportCsv(deps = {}) {"), true, 'ops alert report helper should own shift report export actions');
+    assert.equal(homepageSource.includes("function emitHomepageCommandFeedback(message = '', feedbackState = 'saved', options = {})"), true, 'homepage runtime should emit unified command feedback');
+    assert.equal(homepageSource.includes("window.AdminShell.activateModule('homepage'"), true, 'homepage runtime should prefer shell-first module activation');
+    assert.equal(homepageSource.includes("source: 'homepage-prompts'"), true, 'homepage runtime should report featured prompt results');
+    assert.equal(homepageSource.includes("source: 'homepage-draft'"), true, 'homepage runtime should report draft save results');
+    assert.equal(homepageSource.includes("source: 'homepage-release'"), true, 'homepage runtime should report release results');
+    assert.equal(homepageSource.includes("source: 'homepage-template'"), true, 'homepage runtime should report template results');
+    assert.equal(homepageSource.includes("source: 'homepage-schedule'"), true, 'homepage runtime should report schedule results');
+    assert.equal(homepageSource.includes("source: 'homepage-experiment'"), true, 'homepage runtime should report experiment results');
+    assert.equal(homepageSource.includes("source: 'homepage-recommendation'"), true, 'homepage runtime should report recommendation results');
+    assert.equal(homepageSource.includes("source: 'homepage-theme-pack'"), true, 'homepage runtime should report theme-pack results');
+    assert.equal(homepageSource.includes("source: 'homepage-report'"), true, 'homepage runtime should report report-copy results');
+    assert.equal(commentsSource.includes("function emitCommentsCommandFeedback(message = '', feedbackState = 'saved', options = {})"), true, 'comments runtime should emit unified command feedback');
+    assert.equal(commentsSource.includes("function notifyCommentsBatchRecovery(message = '', feedbackState = 'failed')"), true, 'comments runtime should emit unified recovery feedback for empty batch actions');
+    assert.equal(commentsSource.includes('请先勾选要处理的评论，或在批量菜单中使用“全选当前页”。'), true, 'comments runtime should guide operators to recover from empty batch selections');
+    assert.equal(commentsSource.includes("{ source: 'comments-batch' }"), true, 'comments runtime should report batch governance results');
+    assert.equal(commentsSource.includes("{ source: 'comments-governance' }"), true, 'comments runtime should report single governance results');
+    assert.equal(adminStudioStyles.includes('bottom: calc(16px + env(safe-area-inset-bottom, 0px));'), true, 'admin stylesheet should dock mobile batch menus above the safe area');
+    assert.equal(adminStudioStyles.includes('overscroll-behavior: contain;'), true, 'admin stylesheet should prevent mobile batch menus from rubber-banding the page');
+    assert.equal(adminStudioScript.includes('支付聚焦入口缺少目标标识，请刷新当前卡片后重试。'), true, 'admin-studio.js should surface recoverable payment focus failures');
+    assert.equal(adminStudioScript.includes('工单聚焦入口缺少目标标识，请刷新当前卡片后重试。'), true, 'admin-studio.js should surface recoverable ticket focus failures');
+
+    const versionMarkers = [
+        'css/admin-command-center.css?v=20260422_ADMIN_PULSE_DOCK_V2',
+        'js/admin-command-center.js?v=20260422_ADMIN_PULSE_DOCK_V2',
+        'js/admin-payments.js?v=20260421_ADMIN_PAYMENTS_CONTEXT_HELPER_P2',
+        'js/admin-tickets.js?v=20260421_TICKETS_OPS_ALERTS_HELPER_P2',
+        'js/admin-shop.js?v=20260423_SHOP_PRODUCT_DESCRIPTION_VISIBILITY_1',
+        'admin-discounts.js?v=20260421_DISCOUNTS_CONTEXT_HELPER_P2',
+        'js/admin-shell.js?v=20260421_ADMIN_SHELL_COMMENTS_OPS_HELPERS_P2',
+        'admin-users.js?v=20260421_ADMIN_USERS_CONTEXT_HELPER_P2',
+        'admin-homepage.js?v=20260421_HOMEPAGE_FEEDBACK_BRIDGE_P4',
+        'admin-points.js?v=20260421_ADMIN_POINTS_GENERATE_SUBMIT_BRIDGE_P2',
+        'js/admin-growth-center.js?v=20260421_GROWTH_CENTER_CONTEXT_ROUTING_P3',
+        'admin-comments.js?v=20260421_COMMENTS_MODULE_BRIDGE_HELPERS_P3',
+        'js/admin-config-ops-alert-reports.js?v=20260421_OPS_ALERT_REPORT_ACTIONS_P2',
+        'admin-config.js?v=20260422_OPS_ALERT_BATCH_ERROR_VISIBLE_P4',
+        'admin-discounts.js?v=20260421_DISCOUNTS_CONTEXT_HELPER_P2',
+        'js/admin-site-filter.js?v=20260421_ADMIN_SITE_FILTER_CONTENT_SITE_HELPERS_P2',
+        'admin-studio.js?v=20260424_ADMIN_MODAL_SCROLL_LOCK_SOFT_BACKDROP_1'
+    ];
+
+    for (const marker of versionMarkers) {
+        assert.equal(adminStudioHtml.includes(marker), true, `admin-studio.html should load ${marker}`);
+    }
+});
+
+test('public light theme modal backdrops reuse the muted blue-gray glass material', () => {
+    const files = [
+        'css/auth-sheet.css',
+        'css/homepage-overlays.css',
+        'css/profile-modal.css',
+        'prompts-poetry.css',
+        'css/shop-page.css',
+        'css/wallet.css',
+        'style.css'
+    ];
+
+    for (const file of files) {
+        const source = readRepoFile(file);
+        assert.equal(source.includes('20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1'), true, `${file} should carry the public light modal backdrop marker`);
+        assert.equal(source.includes('rgba(34, 41, 52, 0.48)'), true, `${file} should use the shared muted blue-gray backdrop`);
+        assert.equal(source.includes('blur(12px) saturate(106%)'), true, `${file} should use the shared glass blur`);
+        assert.equal(source.includes('overscroll-behavior'), true, `${file} should keep backdrop scroll chained inside the modal layer`);
+    }
+
+    const expectedHref = '20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1';
+    const pageSources = [
+        readRepoFile('index.html'),
+        readRepoFile('guestbook.html'),
+        readRepoFile('verify.html'),
+        readRepoFile('prompts.html'),
+        readRepoFile('shop.html'),
+        readRepoFile('index_old.html'),
+        readRepoFile('reset-password.html')
+    ];
+
+    for (const source of pageSources) {
+        assert.equal(source.includes(expectedHref), true, 'public pages should cache-bust the light modal backdrop material');
+    }
+
+    assert.equal(
+        readRepoFile('js/profile-modal-loader.js').includes(`css/profile-modal.css?v=${expectedHref}`),
+        true,
+        'profile modal loader should cache-bust the light backdrop material'
+    );
+    assert.equal(
+        readRepoFile('js/components/WalletModal.js').includes(`css/wallet.css?v=${expectedHref}`),
+        true,
+        'wallet modal loader should cache-bust the light backdrop material'
+    );
 });

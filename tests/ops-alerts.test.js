@@ -32,6 +32,23 @@ function formatShanghaiTimestamp(value) {
     return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second} 北京时间`;
 }
 
+test('buildOpsAlertSummaryTargetId returns a stable case target for summary alerts', () => {
+    assert.equal(
+        __testUtils.buildOpsAlertSummaryTargetId({
+            alertType: 'verify_quota_summary',
+            dedupeKey: 'dedupe-verify-1'
+        }),
+        'ops_summary:verify_quota_summary'
+    );
+    assert.equal(
+        __testUtils.buildOpsAlertSummaryTargetId({
+            alertType: 'shop_inventory_low',
+            dedupeKey: 'dedupe-inventory-1'
+        }),
+        ''
+    );
+});
+
 function createQueryBuilder(executor) {
     const state = {
         mode: 'select',
@@ -754,6 +771,7 @@ test('enqueueOpsAlertJob aggregates inventory low and empty alerts into a single
     assert.equal(state.jobs[0].payload.items[1].alert_type, 'shop_inventory_empty');
     assert.equal(state.jobs[0].payload.summary_window_minutes, 120);
     assert.equal(state.jobs[0].payload.summary_max_items, 4);
+    assert.equal(state.jobs[0].payload.target_id, 'ops_summary:shop_inventory_summary');
     assert.equal(state.jobs[0].title, '库存与补货汇总（2 条库存告警）');
     assert.match(state.jobs[0].content, /窗口：2026-03-27 14:00:00 北京时间 - 2026-03-27 16:00:00 北京时间/);
 });
@@ -800,6 +818,7 @@ test('enqueueOpsAlertJob creates the first inventory summary job when no existin
     assert.equal(result.summary, true);
     assert.equal(state.jobs.length, 1);
     assert.equal(state.jobs[0].alert_type, 'shop_inventory_summary');
+    assert.equal(state.jobs[0].payload.target_id, 'ops_summary:shop_inventory_summary');
     assert.equal(state.jobs[0].payload.item_count, 1);
     assert.equal(state.jobs[0].payload.items[0].alert_type, 'shop_inventory_empty');
 });

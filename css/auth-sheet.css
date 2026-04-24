@@ -8,6 +8,7 @@
     gap: 16px;
 }
 
+/* 20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1 */
 :root {
     --auth-sheet-overlay: rgba(7, 9, 12, 0.28);
     --auth-sheet-overlay-filter: blur(14px) saturate(108%);
@@ -21,16 +22,85 @@
     --auth-sheet-muted: rgba(231, 236, 242, 0.62);
     --auth-sheet-soft: rgba(231, 236, 242, 0.4);
     --auth-sheet-accent: #6b9ece;
-    --auth-sheet-accent-strong: #8bb8e8;
-    --auth-sheet-link-accent: #9fcaff;
+    --auth-sheet-accent-strong: #7eb8ef;
+    --auth-sheet-link-accent: #7eb8ef;
     --auth-sheet-blue-soft: rgba(107, 158, 206, 0.12);
     --auth-sheet-blue-soft-strong: rgba(107, 158, 206, 0.18);
     --auth-sheet-blue-border: rgba(107, 158, 206, 0.34);
-    --auth-sheet-blue-bright: #8bb8e8;
-    --auth-sheet-blue-bright-soft: rgba(139, 184, 232, 0.2);
+    --auth-sheet-blue-bright: #7eb8ef;
+    --auth-sheet-blue-bright-soft: rgba(126, 184, 239, 0.2);
     --auth-sheet-danger: #d48a83;
     --auth-sheet-success: #94bba8;
+    --auth-sheet-panel-shadow:
+        0 26px 70px rgba(0, 0, 0, 0.28),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    --auth-sheet-field-bg: rgba(255, 255, 255, 0.042);
+    --auth-sheet-field-bg-focus: rgba(255, 255, 255, 0.042);
+    --auth-sheet-field-placeholder: rgba(231, 236, 242, 0.28);
+    --auth-sheet-tab-bg: rgba(255, 255, 255, 0.032);
+    --auth-sheet-tab-border: rgba(255, 255, 255, 0.06);
+    --auth-sheet-tab-indicator: rgba(220, 227, 235, 0.11);
+    --auth-sheet-tab-indicator-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    --auth-sheet-divider-line: rgba(255, 255, 255, 0.08);
+    --auth-sheet-google-bg: rgba(255, 255, 255, 0.03);
+    --auth-sheet-google-bg-hover: rgba(255, 255, 255, 0.06);
+    --auth-sheet-google-border: rgba(255, 255, 255, 0.08);
+    --auth-sheet-google-border-hover: rgba(255, 255, 255, 0.14);
+    --auth-sheet-control-shadow-hover: 0 10px 22px rgba(0, 0, 0, 0.18);
+    --auth-sheet-link-hover: #f2f5f8;
+    --auth-sheet-handle-bg: rgba(107, 158, 206, 0.24);
+    --auth-sheet-portaled-field-bg: rgba(12, 14, 18, 0.015);
+    --auth-sheet-scrollbar-thumb: rgba(126, 184, 239, 0.34);
+    --auth-sheet-scrollbar-thumb-hover: rgba(126, 184, 239, 0.48);
+    --auth-sheet-scrollbar-track-border: rgba(11, 14, 20, 0.94);
     --auth-sheet-mobile-bottom-inset: max(0px, env(safe-area-inset-bottom));
+}
+
+html[data-theme="light"],
+html:not([data-theme="dark"]) {
+    --auth-sheet-overlay: rgba(34, 41, 52, 0.48);
+    --auth-sheet-overlay-filter: blur(12px) saturate(106%);
+    --auth-sheet-panel: rgba(252, 253, 255, 0.985);
+    --auth-sheet-panel-strong: #ffffff;
+    --auth-sheet-surface: rgba(248, 250, 252, 0.94);
+    --auth-sheet-surface-strong: rgba(241, 245, 249, 0.98);
+    --auth-sheet-border: rgba(148, 163, 184, 0.22);
+    --auth-sheet-text: #0f172a;
+    --auth-sheet-muted: rgba(71, 85, 105, 0.78);
+    --auth-sheet-soft: rgba(100, 116, 139, 0.72);
+    --auth-sheet-accent: #6b9ece;
+    --auth-sheet-accent-strong: #7eb8ef;
+    --auth-sheet-link-accent: #6b9ece;
+    --auth-sheet-blue-soft: rgba(107, 158, 206, 0.1);
+    --auth-sheet-blue-soft-strong: rgba(126, 184, 239, 0.14);
+    --auth-sheet-blue-border: rgba(107, 158, 206, 0.26);
+    --auth-sheet-blue-bright: #7eb8ef;
+    --auth-sheet-blue-bright-soft: rgba(126, 184, 239, 0.16);
+    --auth-sheet-danger: #b91c1c;
+    --auth-sheet-success: #15803d;
+    --auth-sheet-panel-shadow:
+        0 28px 70px rgba(148, 163, 184, 0.2),
+        0 8px 24px rgba(15, 23, 42, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.96);
+    --auth-sheet-field-bg: rgba(248, 250, 252, 0.96);
+    --auth-sheet-field-bg-focus: #ffffff;
+    --auth-sheet-field-placeholder: rgba(100, 116, 139, 0.58);
+    --auth-sheet-tab-bg: rgba(241, 245, 249, 0.94);
+    --auth-sheet-tab-border: rgba(148, 163, 184, 0.2);
+    --auth-sheet-tab-indicator: #ffffff;
+    --auth-sheet-tab-indicator-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.52);
+    --auth-sheet-divider-line: rgba(148, 163, 184, 0.2);
+    --auth-sheet-google-bg: rgba(255, 255, 255, 0.9);
+    --auth-sheet-google-bg-hover: #ffffff;
+    --auth-sheet-google-border: rgba(148, 163, 184, 0.24);
+    --auth-sheet-google-border-hover: rgba(107, 158, 206, 0.3);
+    --auth-sheet-control-shadow-hover: 0 12px 24px rgba(148, 163, 184, 0.18);
+    --auth-sheet-link-hover: #527fa8;
+    --auth-sheet-handle-bg: rgba(107, 158, 206, 0.24);
+    --auth-sheet-portaled-field-bg: rgba(255, 255, 255, 0.18);
+    --auth-sheet-scrollbar-thumb: rgba(148, 163, 184, 0.34);
+    --auth-sheet-scrollbar-thumb-hover: rgba(100, 116, 139, 0.46);
+    --auth-sheet-scrollbar-track-border: rgba(252, 253, 255, 0.98);
 }
 
 body.auth-sheet-open {
@@ -92,6 +162,8 @@ body.auth-sheet-open {
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
+    overscroll-behavior: contain;
+    overscroll-behavior-y: contain;
     transition: opacity 0.28s ease, visibility 0.28s ease;
 }
 
@@ -119,6 +191,8 @@ body.auth-sheet-open {
     background: var(--auth-sheet-overlay) !important;
     backdrop-filter: var(--auth-sheet-overlay-filter) !important;
     -webkit-backdrop-filter: var(--auth-sheet-overlay-filter) !important;
+    overscroll-behavior: contain !important;
+    overscroll-behavior-y: contain !important;
 }
 
 #loginModal.auth-sheet-overlay:not(.active):not(.closing),
@@ -179,24 +253,20 @@ body.auth-sheet-open {
     z-index: 0;
     pointer-events: none;
     border-radius: inherit;
-    background: rgba(11, 14, 20, 0.94);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: var(--auth-sheet-panel);
+    border: 1px solid var(--auth-sheet-border);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    box-shadow:
-        0 26px 70px rgba(0, 0, 0, 0.28),
-        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    box-shadow: var(--auth-sheet-panel-shadow);
 }
 
 #loginModal.auth-sheet-overlay .auth-sheet-surface,
 #loginModal.auth-sheet-overlay.login-overlay .auth-sheet-surface {
-    background: rgba(11, 14, 20, 0.94) !important;
-    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    background: var(--auth-sheet-panel) !important;
+    border: 1px solid var(--auth-sheet-border) !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
-    box-shadow:
-        0 26px 70px rgba(0, 0, 0, 0.28),
-        inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+    box-shadow: var(--auth-sheet-panel-shadow) !important;
 }
 
 .auth-sheet-motion-shell {
@@ -307,7 +377,7 @@ body.auth-sheet-open {
     width: 42px;
     height: 3px;
     border-radius: 999px;
-    background: rgba(231, 236, 242, 0.16);
+    background: var(--auth-sheet-handle-bg);
     transition: background-color 180ms ease, box-shadow 180ms ease, opacity 180ms ease;
 }
 
@@ -346,8 +416,8 @@ body.auth-sheet-open {
     margin: 0 20px;
     padding: 3px;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.032);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: var(--auth-sheet-tab-bg);
+    border: 1px solid var(--auth-sheet-tab-border);
     overflow: hidden;
     isolation: isolate;
 }
@@ -363,8 +433,8 @@ body.auth-sheet-open {
     left: 0;
     width: 0;
     border-radius: 999px;
-    background: rgba(220, 227, 235, 0.11);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    background: var(--auth-sheet-tab-indicator);
+    box-shadow: var(--auth-sheet-tab-indicator-shadow);
     transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), width 0.26s cubic-bezier(0.22, 1, 0.36, 1);
     z-index: 0;
 }
@@ -422,11 +492,42 @@ body.auth-sheet-open {
 .auth-sheet-body {
     position: relative;
     min-height: 0;
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: hidden;
     padding: 0;
     overscroll-behavior: contain;
+    scrollbar-color: var(--auth-sheet-scrollbar-thumb) transparent;
+    scrollbar-width: thin;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-y;
+}
+
+#loginModal.auth-sheet-input-active .auth-sheet-body,
+#loginModal[data-auth-current-view="register"] .auth-sheet-body,
+#loginModal[data-auth-current-view="reset"] .auth-sheet-body {
+    overflow-y: auto;
+}
+
+.auth-sheet-body::-webkit-scrollbar {
+    width: 7px;
+    height: 7px;
+}
+
+.auth-sheet-body::-webkit-scrollbar-track,
+.auth-sheet-body::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+.auth-sheet-body::-webkit-scrollbar-thumb {
+    border: 2px solid var(--auth-sheet-scrollbar-track-border);
+    border-radius: 999px;
+    background: var(--auth-sheet-scrollbar-thumb);
+    background-clip: content-box;
+}
+
+.auth-sheet-body::-webkit-scrollbar-thumb:hover {
+    background: var(--auth-sheet-scrollbar-thumb-hover);
+    background-clip: content-box;
 }
 
 .auth-sheet-view {
@@ -520,7 +621,7 @@ body.auth-sheet-open {
     padding: 11px 13px;
     border-radius: 13px;
     border: 1px solid var(--auth-sheet-border);
-    background: rgba(255, 255, 255, 0.042);
+    background: var(--auth-sheet-field-bg);
     color: var(--auth-sheet-text);
     font-size: 16px;
     line-height: 1.35;
@@ -559,7 +660,7 @@ body.auth-sheet-open {
 }
 
 .auth-sheet-input-proxy-placeholder {
-    color: rgba(231, 236, 242, 0.28);
+    color: var(--auth-sheet-field-placeholder);
     font-size: 14px;
     line-height: 1.25;
 }
@@ -576,7 +677,7 @@ body.auth-sheet-open {
     padding: 11px 13px;
     border-radius: 13px;
     border: 1px solid var(--auth-sheet-border) !important;
-    background: rgba(255, 255, 255, 0.042) !important;
+    background: var(--auth-sheet-field-bg) !important;
     color: var(--auth-sheet-text);
     font-size: 16px;
     line-height: 1.35;
@@ -631,14 +732,14 @@ body.auth-sheet-open {
 }
 
 .auth-sheet-input::placeholder {
-    color: rgba(231, 236, 242, 0.28);
+    color: var(--auth-sheet-field-placeholder);
     font-size: 14px;
 }
 
 #loginModal .auth-sheet-input:focus,
 .auth-sheet-input:focus {
     border-color: var(--auth-sheet-link-accent) !important;
-    background: rgba(255, 255, 255, 0.042) !important;
+    background: var(--auth-sheet-field-bg-focus) !important;
     box-shadow: none !important;
 }
 
@@ -651,8 +752,8 @@ body.auth-sheet-open {
     -webkit-text-fill-color: var(--auth-sheet-text) !important;
     caret-color: var(--auth-sheet-link-accent) !important;
     border-color: var(--auth-sheet-border) !important;
-    -webkit-box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.042) inset !important;
-    box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.042) inset !important;
+    -webkit-box-shadow: 0 0 0 1000px var(--auth-sheet-field-bg) inset !important;
+    box-shadow: 0 0 0 1000px var(--auth-sheet-field-bg) inset !important;
     transition:
         background-color 9999s ease-in-out 0s,
         color 9999s ease-in-out 0s;
@@ -664,11 +765,11 @@ body.auth-sheet-open {
 .auth-sheet-input:-webkit-autofill:focus-visible {
     border-color: var(--auth-sheet-link-accent) !important;
     -webkit-box-shadow:
-        0 0 0 1000px rgba(255, 255, 255, 0.042) inset,
-        0 0 0 3px rgba(159, 202, 255, 0.14) !important;
+        0 0 0 1000px var(--auth-sheet-field-bg-focus) inset,
+        0 0 0 3px rgba(126, 184, 239, 0.14) !important;
     box-shadow:
-        0 0 0 1000px rgba(255, 255, 255, 0.042) inset,
-        0 0 0 3px rgba(159, 202, 255, 0.14) !important;
+        0 0 0 1000px var(--auth-sheet-field-bg-focus) inset,
+        0 0 0 3px rgba(126, 184, 239, 0.14) !important;
 }
 
 #loginModal .auth-sheet-input:-moz-autofill,
@@ -677,7 +778,7 @@ body.auth-sheet-open {
 .auth-sheet-input:-moz-autofill:focus {
     color: var(--auth-sheet-text) !important;
     caret-color: var(--auth-sheet-link-accent) !important;
-    box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.042) inset !important;
+    box-shadow: 0 0 0 1000px var(--auth-sheet-field-bg) inset !important;
 }
 
 .auth-sheet-inline-group {
@@ -778,7 +879,7 @@ body.auth-sheet-open {
 }
 
 .auth-sheet-link:hover {
-    color: #f2f5f8;
+    color: var(--auth-sheet-link-hover);
 }
 
 .auth-sheet-submit,
@@ -788,7 +889,7 @@ body.auth-sheet-open {
     border: 1px solid transparent;
     border-radius: 15px;
     cursor: pointer;
-    transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease, background 0.22s ease;
+    transition: transform 0.22s ease, filter 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease, background 0.22s ease;
 }
 
 .auth-sheet-google-btn {
@@ -799,18 +900,19 @@ body.auth-sheet-open {
     min-height: 44px;
     width: 100%;
     padding: 10px 14px;
-    background: rgba(255, 255, 255, 0.03);
-    border-color: rgba(255, 255, 255, 0.08);
+    background: var(--auth-sheet-google-bg);
+    border-color: var(--auth-sheet-google-border);
     color: var(--auth-sheet-text);
     font-size: 13px;
     font-weight: 600;
+    overflow: hidden;
 }
 
 .auth-sheet-google-btn:hover {
-    transform: translateY(-1px);
-    background: rgba(255, 255, 255, 0.06);
-    border-color: rgba(255, 255, 255, 0.14);
-    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
+    transform: translate3d(0, -1px, 0);
+    background: var(--auth-sheet-google-bg-hover);
+    border-color: var(--auth-sheet-google-border-hover);
+    box-shadow: var(--auth-sheet-control-shadow-hover);
 }
 
 .auth-sheet-google-btn img {
@@ -857,7 +959,7 @@ body.auth-sheet-open {
     content: "";
     width: 100%;
     height: 1px;
-    background: rgba(255, 255, 255, 0.08);
+    background: var(--auth-sheet-divider-line);
 }
 
 #loginModal .auth-sheet-submit,
@@ -884,6 +986,41 @@ body.auth-sheet-open {
     box-shadow: 0 12px 24px rgba(0, 0, 0, 0.24);
 }
 
+html[data-theme="light"] #loginModal .auth-sheet-submit,
+html[data-theme="light"] #loginModal .auth-sheet-submit.login-submit-btn,
+html:not([data-theme="dark"]) #loginModal .auth-sheet-submit,
+html:not([data-theme="dark"]) #loginModal .auth-sheet-submit.login-submit-btn {
+    background: rgba(107, 158, 206, 0.96) !important;
+    border-color: rgba(82, 127, 168, 0.36) !important;
+    color: #08131f !important;
+    box-shadow: none !important;
+    filter: none;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}
+
+html[data-theme="light"] #loginModal .auth-sheet-submit:hover,
+html[data-theme="light"] #loginModal .auth-sheet-submit.login-submit-btn:hover,
+html:not([data-theme="dark"]) #loginModal .auth-sheet-submit:hover,
+html:not([data-theme="dark"]) #loginModal .auth-sheet-submit.login-submit-btn:hover {
+    transform: translate3d(0, -1px, 0);
+    background: rgba(112, 166, 216, 0.96) !important;
+    border-color: rgba(82, 127, 168, 0.5) !important;
+    box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+        inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
+    filter: none;
+}
+
+html[data-theme="light"] #loginModal .auth-sheet-google-btn:hover,
+html:not([data-theme="dark"]) #loginModal .auth-sheet-google-btn:hover {
+    transform: none;
+    background: rgba(255, 255, 255, 0.96) !important;
+    border-color: rgba(107, 158, 206, 0.34);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
 #loginModal .auth-sheet-submit:disabled,
 .auth-sheet-submit:disabled,
 .auth-sheet-secondary:disabled,
@@ -897,8 +1034,8 @@ body.auth-sheet-open {
 .auth-sheet-secondary {
     min-height: 44px;
     padding: 0 13px;
-    background: rgba(255, 255, 255, 0.03);
-    border-color: rgba(255, 255, 255, 0.08);
+    background: var(--auth-sheet-google-bg);
+    border-color: var(--auth-sheet-google-border);
     color: var(--auth-sheet-text);
     font-size: 12px;
     font-weight: 600;
@@ -908,7 +1045,7 @@ body.auth-sheet-open {
 .auth-sheet-secondary:hover {
     transform: translateY(-1px);
     background: var(--auth-sheet-blue-soft-strong);
-    border-color: rgba(139, 184, 232, 0.42);
+    border-color: rgba(126, 184, 239, 0.42);
 }
 
 #loginModal .auth-sheet-inline-group--code .verify-code-btn,
@@ -920,7 +1057,7 @@ body.auth-sheet-open {
 
 #loginModal .auth-sheet-inline-group--code .verify-code-btn:hover {
     background: var(--auth-sheet-blue-soft-strong) !important;
-    border-color: rgba(139, 184, 232, 0.42) !important;
+    border-color: rgba(126, 184, 239, 0.42) !important;
 }
 
 #loginModal .auth-sheet-inline-group--code .verify-code-btn:active,
@@ -929,7 +1066,7 @@ body.auth-sheet-open {
 .auth-sheet-inline-group--code .auth-sheet-secondary:focus-visible {
     background: var(--auth-sheet-blue-bright-soft);
     border-color: var(--auth-sheet-blue-bright);
-    box-shadow: 0 0 0 3px rgba(139, 184, 232, 0.16);
+    box-shadow: 0 0 0 3px rgba(126, 184, 239, 0.16);
 }
 
 .auth-sheet-spinner {
@@ -1000,7 +1137,7 @@ body.auth-sheet-open {
         pointer-events: auto !important;
         z-index: auto !important;
         border: 1px solid var(--auth-sheet-border) !important;
-        background: rgba(255, 255, 255, 0.042) !important;
+        background: var(--auth-sheet-field-bg) !important;
     }
 
     #loginModal .auth-sheet-input.auth-sheet-input--canonical:focus,
@@ -1012,8 +1149,8 @@ body.auth-sheet-open {
     .auth-sheet-input.auth-sheet-input--canonical.auth-sheet-input--parked:focus,
     .auth-sheet-input.auth-sheet-input--canonical.auth-sheet-input--parked:focus-visible {
         border-color: var(--auth-sheet-link-accent) !important;
-        background: rgba(255, 255, 255, 0.042) !important;
-        box-shadow: 0 0 0 3px rgba(159, 202, 255, 0.14) !important;
+        background: var(--auth-sheet-field-bg-focus) !important;
+        box-shadow: 0 0 0 3px rgba(126, 184, 239, 0.14) !important;
     }
 
     .auth-input-plane {
@@ -1021,9 +1158,15 @@ body.auth-sheet-open {
     }
 }
 
+@media (max-height: 680px) {
+    #loginModal .auth-sheet-body {
+        overflow-y: auto;
+    }
+}
+
 @media (max-width: 768px) {
     .auth-sheet-overlay.auth-sheet-input-active .auth-sheet-body {
-        padding-bottom: calc(min(360px, 42svh) + env(safe-area-inset-bottom));
+        padding-bottom: var(--auth-sheet-mobile-bottom-inset);
     }
 
     .top-right-nav {
@@ -1104,10 +1247,10 @@ body.auth-sheet-open {
     .auth-sheet-overlay.active:focus-within .auth-sheet-input.auth-sheet-input--portaled:focus,
     .auth-sheet-overlay.ios-focus-lock .auth-sheet-input.auth-sheet-input--portaled,
     .auth-sheet-overlay.ios-focus-lock .auth-sheet-input.auth-sheet-input--portaled:focus {
-        background: rgba(12, 14, 18, 0.015) !important;
+        background: var(--auth-sheet-portaled-field-bg) !important;
         opacity: 1 !important;
         color: var(--auth-sheet-text) !important;
-        caret-color: #ffffff !important;
+        caret-color: var(--auth-sheet-link-accent) !important;
         text-indent: 0 !important;
         text-align: left !important;
         text-shadow: none !important;
@@ -1119,6 +1262,12 @@ body.auth-sheet-open {
     .auth-sheet-overlay.ios-focus-lock .auth-sheet-input.auth-sheet-input--portaled::-webkit-input-placeholder {
         color: transparent !important;
         -webkit-text-fill-color: transparent !important;
+    }
+}
+
+@media (max-width: 768px) and (hover: none) and (pointer: coarse) {
+    .auth-sheet-overlay.auth-sheet-input-active .auth-sheet-body {
+        padding-bottom: calc(min(360px, 42svh) + env(safe-area-inset-bottom));
     }
 }
 

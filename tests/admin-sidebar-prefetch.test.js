@@ -59,10 +59,45 @@ test('admin sidebar modules expose warm-load hooks for sibling views', () => {
         /window\.addEventListener\('load', \(\) => \{[\s\S]*scheduleAdminChatPrewarm\(\);[\s\S]*\}\);/,
         'js/admin-studio-bootstrap.js should not eagerly prewarm chat during the window load bootstrap path'
     );
-    assert.match(
+    assert.doesNotMatch(
+        bootstrapSource,
+        /function scheduleAdminChatPrewarm\(\)/,
+        'js/admin-studio-bootstrap.js should remove the legacy admin chat prewarm scheduler entirely'
+    );
+    assert.doesNotMatch(
+        bootstrapSource,
+        /} else if \(normalizedModuleId === 'settings'\) \{\s+window\.initSettingsModule\?\.\(\);\s+}/,
+        'js/admin-studio-bootstrap.js should leave settings hydration to the shell activation lifecycle'
+    );
+    assert.doesNotMatch(
         bootstrapSource,
         /} else if \(normalizedModuleId === 'points'\) \{\s+window\.loadBatches\?\.\(\);\s+}/,
-        'js/admin-studio-bootstrap.js should avoid eagerly hydrating points generate-view data when opening the points module'
+        'js/admin-studio-bootstrap.js should leave points hydration to the shell activation lifecycle'
+    );
+    assert.doesNotMatch(
+        bootstrapSource,
+        /if \(normalizedModuleId === 'payments' && window\.AdminPayments\?\.init\) window\.AdminPayments\.init\(\);/,
+        'js/admin-studio-bootstrap.js should leave payments hydration to the shell activation lifecycle'
+    );
+    assert.doesNotMatch(
+        bootstrapSource,
+        /if \(normalizedModuleId === 'users'\) window\.initUserModule\?\.\(\);/,
+        'js/admin-studio-bootstrap.js should leave users hydration to the shell activation lifecycle'
+    );
+    assert.doesNotMatch(
+        bootstrapSource,
+        /if \(normalizedModuleId === 'shop'\) window\.ShopAdmin\?\.init\?\.\(\);/,
+        'js/admin-studio-bootstrap.js should leave shop hydration to the shell activation lifecycle'
+    );
+    assert.doesNotMatch(
+        bootstrapSource,
+        /if \(normalizedModuleName === 'tickets' && typeof window\.AdminTickets\?\.init === 'function'\) \{\s+window\.AdminTickets\.init\(\);\s+}/,
+        'js/admin-studio-bootstrap.js should leave tickets hydration to the shell activation lifecycle'
+    );
+    assert.doesNotMatch(
+        bootstrapSource,
+        /if \(normalizedModuleName === 'chat' && !window\.adminChatInstance && typeof window\.AdminChat === 'function'\) \{\s+window\.adminChatInstance = new window\.AdminChat\(\);\s+}/,
+        'js/admin-studio-bootstrap.js should leave chat hydration to the shell activation lifecycle'
     );
     assert.equal(
         bootstrapSource.includes('function warmOpsAlertsModuleData() {'),
@@ -109,7 +144,12 @@ test('admin sidebar modules expose warm-load hooks for sibling views', () => {
 
     const pointsMarkers = [
         'const POINTS_PREFETCH_VIEWS = [\'catalog\'];',
+        'function resolvePointsShellContext(context = {}) {',
         'function schedulePointsViewPrefetch(activeView = getActivePointsViewName()) {',
+        'async function openAdminPointsShellContext(context = {}, options = {}) {',
+        'window.openAdminPointsShellContext = openAdminPointsShellContext;',
+        "window.AdminShell.registerModule('points', {",
+        'activate: activatePointsModule,',
         'window.prefetchPointsModule = prefetchPointsModule;'
     ];
 
@@ -121,10 +161,70 @@ test('admin sidebar modules expose warm-load hooks for sibling views', () => {
         );
     }
 
+    const usersMarkers = [
+        'function activateUsersModule(context = {}, options = {}) {',
+        'async function handleAdminUsersShellContext(context = {}, options = {}) {',
+        'async function openAdminUsersShellContext(context = {}, options = {}) {',
+        'function activateVisibleUsersModuleOnAccess() {',
+        'window.openAdminUsersShellContext = openAdminUsersShellContext;',
+        "window.AdminShell.registerModule('users', {",
+        'activate: activateUsersModule,',
+        'handleContext: handleAdminUsersShellContext,',
+        'onSiteChange: handleAdminUsersSiteChange,'
+    ];
+
+    for (const marker of usersMarkers) {
+        assert.equal(
+            readRepoFile('admin-users.js').includes(marker),
+            true,
+            `admin-users.js should contain ${marker}`
+        );
+    }
+
+    const discountsMarkers = [
+        'activate: async function (context = {}, options = {}) {',
+        'handleShellContext: async function (context = {}, options = {}) {',
+        'window.openAdminDiscountsShellContext = async (context = {}, options = {}) => {',
+        "window.AdminShell.registerModule('discounts', {",
+        'handleContext: (context = {}, options = {}) => AdminDiscounts.handleShellContext(context, options),'
+    ];
+
+    for (const marker of discountsMarkers) {
+        assert.equal(
+            readRepoFile('admin-discounts.js').includes(marker),
+            true,
+            `admin-discounts.js should contain ${marker}`
+        );
+    }
+
+    const settingsMarkers = [
+        'async function activateSettingsModule(context = {}, options = {}) {',
+        'async function handleSettingsModuleContext(context = {}, options = {}) {',
+        'async function openAdminSettingsShellContext(context = {}, options = {}) {',
+        'async function openAdminOpsAlertsShellContext(context = {}, options = {}) {',
+        'window.openAdminOpsAlertsShellContext = openAdminOpsAlertsShellContext;',
+        'window.openAdminSettingsShellContext = openAdminSettingsShellContext;',
+        "window.AdminShell.registerModule('settings', {",
+        "window.AdminShell.registerModule('ops-alerts', {",
+        'activate: activateSettingsModule',
+        'handleContext: handleSettingsModuleContext'
+    ];
+
+    for (const marker of settingsMarkers) {
+        assert.equal(
+            readRepoFile('admin-config.js').includes(marker),
+            true,
+            `admin-config.js should contain ${marker}`
+        );
+    }
+
     const paymentsMarkers = [
         'const PAYMENTS_PREFETCH_TABS = [];',
+        "const PAYMENTS_TABS = new Set(['overview', 'finance', 'ops']);",
         'function prefetchTabData(tabId, options = {}) {',
         'function scheduleTabPrefetch(activeTab = state.activeTab) {',
+        'async function activatePaymentsModule(context = {}, options = {}) {',
+        "window.AdminShell.registerModule('payments', {",
         'scheduleTabPrefetch,',
         'getActiveTab: () => state.activeTab,'
     ];
@@ -134,6 +234,56 @@ test('admin sidebar modules expose warm-load hooks for sibling views', () => {
             paymentsSource.includes(marker),
             true,
             `js/admin-payments.js should contain ${marker}`
+        );
+    }
+
+    const chatMarkers = [
+        'function ensureAdminChatInstance(options = {}) {',
+        'async function activateChatModule(context = {}, options = {}) {',
+        'async function handleChatModuleContext(context = {}, options = {}) {',
+        "window.AdminShell.registerModule('chat', {",
+        'handleContext: handleChatModuleContext,'
+    ];
+
+    for (const marker of chatMarkers) {
+        assert.equal(
+            readRepoFile('js/admin-chat.js').includes(marker),
+            true,
+            `js/admin-chat.js should contain ${marker}`
+        );
+    }
+
+    const shopMarkers = [
+        'SHOP_TAB_PREFETCH_ALLOWLIST: [],',
+        'scheduleShopTabPrefetch: function (activeTab = this.currentTab) {',
+        'activate: async function (context = {}, options = {}) {',
+        "window.AdminShell.registerModule('shop', {",
+        'handleContext: (context = {}, options = {}) => window.ShopAdmin?.handleShellContext?.(context, options),'
+    ];
+
+    for (const marker of shopMarkers) {
+        assert.equal(
+            readRepoFile('js/admin-shop.js').includes(marker),
+            true,
+            `js/admin-shop.js should contain ${marker}`
+        );
+    }
+
+    const ticketsMarkers = [
+        'resolveActivationWorkspace: function (context = {}, options = {}) {',
+        'buildShellQueueState: function (context = {}, options = {}) {',
+        'activate: async function (context = {}, options = {}) {',
+        'async function openAdminTicketsShellContext(context = {}, options = {}) {',
+        'window.openAdminTicketsShellContext = openAdminTicketsShellContext;',
+        "window.AdminShell.registerModule('tickets', {",
+        'handleContext: (context = {}, options = {}) => window.AdminTickets?.handleShellContext?.(context, options),'
+    ];
+
+    for (const marker of ticketsMarkers) {
+        assert.equal(
+            readRepoFile('js/admin-tickets.js').includes(marker),
+            true,
+            `js/admin-tickets.js should contain ${marker}`
         );
     }
 });
