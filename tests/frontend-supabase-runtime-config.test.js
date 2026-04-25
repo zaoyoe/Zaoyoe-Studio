@@ -1570,7 +1570,7 @@ test('auth runtime renderers centralize avatar, google loading, and profile moda
             'auth entry pages should load the latest auth sheet stylesheet'
         );
         assert.equal(
-            source.includes('supabase-auth-functions.js?v=20260422_AUTH_DROPDOWN_STUDIO_FIX_1'),
+            source.includes('supabase-auth-functions.js?v=20260425_AUTH_RESET_FORM_SUBMIT_1'),
             true,
             'auth entry pages should load the latest auth runtime script'
         );
@@ -11281,6 +11281,11 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         '.prompts-theme-particle--snow',
         '.prompts-theme-particle--decor',
         '.decoration-svg',
+        '20260425_PROMPTS_MOBILE_COMMENT_LIGHT_1',
+        'html[data-theme="light"] .modal-inner.comment-mode .modal-content-col',
+        'html[data-theme="light"] .modal-inner.comment-mode .comment-sort-btn',
+        'html[data-theme="light"] .modal-inner.comment-mode .comment-input-area.composer-proxy #commentInput',
+        'html[data-theme="light"] .prompt-comment-composer-sheet',
         '.decoration-svg--overflow-visible'
     ];
 
@@ -11289,7 +11294,7 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1'),
+        promptsHtml.includes('prompts-poetry.css?v=20260425_PROMPTS_MOBILE_COMMENT_LIGHT_1'),
         true,
         'prompts.html should load the latest prompts gallery stylesheet version'
     );

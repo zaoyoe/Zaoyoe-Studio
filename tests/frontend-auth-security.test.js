@@ -40,3 +40,9 @@ test('login locale strings describe email-only remembering and IP abuse blocking
     assert.match(enLocale, /"rememberMe": "Remember email"/);
     assert.match(enLocale, /"ipBlocked": "Too many requests were sent from this network/);
 });
+
+test('password reset handler finds the auth-sheet submit button outside the form', () => {
+    assert.match(injectAuthSource, /data-auth-submit="reset" form="resetForm"/);
+    assert.match(authSource, /document\.querySelector\('\[data-auth-submit="reset"\]\[form="resetForm"\], button\[type="submit"\]\[form="resetForm"\]'\)/);
+    assert.equal(authSource.includes("document.querySelector('#resetForm button[type=\"submit\"]')"), false);
+});
