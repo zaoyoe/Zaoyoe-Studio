@@ -1316,6 +1316,8 @@
 @media (max-width: 768px) {
     #profileModal {
         align-items: center !important;
+        --profile-mobile-topbar-height: 86px;
+        --profile-mobile-topbar-inset: 0px;
         padding: calc(env(safe-area-inset-top, 0px) + 12px) 0 calc(env(safe-area-inset-bottom, 0px) + 12px) !important;
         box-sizing: border-box !important;
     }
@@ -1329,6 +1331,51 @@
         max-width: 480px !important;
         max-height: min(90svh, calc(100% - 128px)) !important;
         margin: 0 auto !important;
+        padding: 0 !important;
+    }
+
+    #profileModal .profile-modal-scroll {
+        padding: 0 12px calc(18px + env(safe-area-inset-bottom)) !important;
+        padding-top: calc(var(--profile-mobile-topbar-height) + 12px) !important;
+        scroll-padding-top: calc(var(--profile-mobile-topbar-height) + 20px) !important;
+    }
+
+    #profileModal[data-profile-tab="profile"] .profile-modal-scroll,
+    #profileModal[data-profile-tab="security"] .profile-modal-scroll {
+        padding-top: calc(var(--profile-mobile-topbar-height) + 12px) !important;
+        scroll-padding-top: calc(var(--profile-mobile-topbar-height) + 20px) !important;
+    }
+
+    #profileModal .profile-mobile-topbar {
+        top: 0 !important;
+        left: var(--profile-mobile-topbar-inset) !important;
+        right: var(--profile-mobile-topbar-inset) !important;
+        height: var(--profile-mobile-topbar-height) !important;
+        margin: 0 !important;
+        overflow: hidden !important;
+    }
+
+    #profileModal .profile-mobile-topbar-shell {
+        width: 100% !important;
+        min-width: 0 !important;
+        height: 100% !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        align-items: flex-end !important;
+        padding: 16px 18px 10px !important;
+        border-radius: var(--profile-mobile-modal-radius) var(--profile-mobile-modal-radius) 0 0 !important;
+    }
+
+    #profileModal .profile-mobile-tabs {
+        width: 100% !important;
+        align-items: flex-end !important;
+        padding-bottom: 4px !important;
+    }
+
+    #profileModal .profile-mobile-tabs .tab-item {
+        min-height: 34px !important;
+        padding-bottom: 10px !important;
+        font-size: 16px !important;
     }
 
     #profileModal input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),

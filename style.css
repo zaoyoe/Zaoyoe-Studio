@@ -2718,13 +2718,13 @@ body.guestbook-page.auth-sheet-open #ambientCanvas {
     transition: none !important;
 }
 
-body.guestbook-page.auth-sheet-open #starryCanvas {
+html[data-theme="dark"] body.guestbook-page.auth-sheet-open #starryCanvas {
     opacity: 1 !important;
     transition: none !important;
 }
 
-body.guestbook-page.auth-sheet-open::before,
-body.guestbook-page.auth-sheet-open::after {
+html[data-theme="dark"] body.guestbook-page.auth-sheet-open::before,
+html[data-theme="dark"] body.guestbook-page.auth-sheet-open::after {
     content: "";
     position: fixed;
     left: 0;
@@ -2733,13 +2733,13 @@ body.guestbook-page.auth-sheet-open::after {
     z-index: 12040;
 }
 
-body.guestbook-page.auth-sheet-open::before {
+html[data-theme="dark"] body.guestbook-page.auth-sheet-open::before {
     top: calc(-1 * env(safe-area-inset-top, 0px));
     height: calc(env(safe-area-inset-top, 0px) + 34px);
     background: linear-gradient(180deg, #000000 0%, #000000 74%, rgba(0, 0, 0, 0.94) 100%);
 }
 
-body.guestbook-page.auth-sheet-open::after {
+html[data-theme="dark"] body.guestbook-page.auth-sheet-open::after {
     bottom: calc(-1 * env(safe-area-inset-bottom, 0px));
     height: calc(env(safe-area-inset-bottom, 0px) + 96px);
     background: linear-gradient(180deg, rgba(0, 0, 0, 0.94) 0%, #000000 26px, #000000 100%);
@@ -3117,6 +3117,35 @@ body.guestbook-page.auth-sheet-open::after {
     background: rgba(255, 255, 255, 0.08);
     border-color: rgba(255, 255, 255, 0.25);
     transform: translateY(-1px);
+}
+
+#loginModal.auth-sheet-overlay .auth-sheet-google-btn.google-login-btn {
+    width: 100% !important;
+    min-height: 44px !important;
+    padding: 10px 14px !important;
+    margin: 4px 0 0 !important;
+    border-radius: 15px !important;
+    background: var(--auth-sheet-google-bg) !important;
+    border: 1px solid var(--auth-sheet-google-border) !important;
+    color: var(--auth-sheet-text) !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    gap: 10px !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+#loginModal.auth-sheet-overlay .auth-sheet-google-btn.google-login-btn:hover {
+    transform: translate3d(0, -1px, 0) !important;
+    background: var(--auth-sheet-google-bg-hover) !important;
+    border-color: var(--auth-sheet-google-border-hover) !important;
+    color: var(--auth-sheet-text) !important;
+    box-shadow: var(--auth-sheet-control-shadow-hover) !important;
+}
+
+#loginModal.auth-sheet-overlay .auth-sheet-google-btn.google-login-btn span {
+    color: inherit !important;
 }
 
 /* Divider */
@@ -9416,13 +9445,13 @@ body {
 @media (max-width: 768px) {
     #profileModal {
         --profile-mobile-modal-radius: 20px;
-        --profile-mobile-topbar-height: 56px;
+        --profile-mobile-topbar-height: 86px;
         --profile-mobile-topbar-inset: 0px;
     }
 
     #profileModal .modal-content.profile-modal {
         position: relative;
-        padding: 12px !important;
+        padding: 0 !important;
         border-radius: var(--profile-mobile-modal-radius) !important;
         background: rgba(12, 15, 19, 0.92) !important;
         border: 1px solid rgba(255, 255, 255, 0.08) !important;
@@ -9433,42 +9462,43 @@ body {
 
     #profileModal .profile-modal-scroll {
         position: relative !important;
-        padding: 0 0 calc(18px + env(safe-area-inset-bottom)) !important;
-        scroll-padding-top: 0 !important;
+        padding: 0 12px calc(18px + env(safe-area-inset-bottom)) !important;
+        padding-top: calc(var(--profile-mobile-topbar-height) + 12px) !important;
+        scroll-padding-top: calc(var(--profile-mobile-topbar-height) + 20px) !important;
         scroll-padding-bottom: 220px !important;
     }
 
     #profileModal[data-profile-tab="profile"] .profile-modal-scroll,
     #profileModal[data-profile-tab="security"] .profile-modal-scroll {
-        padding-top: 82px !important;
-        scroll-padding-top: 82px !important;
+        padding-top: calc(var(--profile-mobile-topbar-height) + 12px) !important;
+        scroll-padding-top: calc(var(--profile-mobile-topbar-height) + 20px) !important;
     }
 
     #profileModal .profile-mobile-topbar {
         display: block !important;
         position: absolute;
-        top: 12px;
-        left: 12px;
-        right: 12px;
+        top: 0;
+        left: var(--profile-mobile-topbar-inset);
+        right: var(--profile-mobile-topbar-inset);
         z-index: 30;
-        height: 0;
+        height: var(--profile-mobile-topbar-height);
         margin: 0;
-        overflow: visible;
+        overflow: hidden;
         pointer-events: none;
     }
 
     #profileModal .profile-mobile-topbar-shell {
-        margin: 0 auto;
+        margin: 0;
         position: relative;
-        height: auto;
-        min-height: 56px;
-        width: min(100%, 284px);
+        height: 100%;
+        min-height: 0;
+        width: 100%;
         min-width: 0;
         display: flex;
-        align-items: center;
+        align-items: flex-end;
         justify-content: center;
-        padding: 12px 26px 10px;
-        border-radius: 20px;
+        padding: 16px 18px 10px;
+        border-radius: var(--profile-mobile-modal-radius) var(--profile-mobile-modal-radius) 0 0;
         background: rgba(12, 15, 19, 0.56);
         border: 1px solid rgba(255, 255, 255, 0.08);
         border-top-color: rgba(255, 255, 255, 0.12);
@@ -9495,13 +9525,13 @@ body {
 
     #profileModal .profile-mobile-tabs {
         display: flex;
-        width: auto;
+        width: 100%;
         justify-content: center;
         gap: 28px;
-        align-items: center;
+        align-items: flex-end;
         position: relative;
         padding-top: 0;
-        padding-bottom: 2px;
+        padding-bottom: 4px;
     }
 
     #profileModal .profile-mobile-tabs .tab-item {
@@ -10888,21 +10918,33 @@ html[data-theme="light"] body.guestbook-page {
     --guestbook-light-card-bg-hover: rgba(255, 255, 255, 0.94);
     --guestbook-light-card-border: rgba(148, 163, 184, 0.18);
     --guestbook-light-card-border-strong: rgba(148, 163, 184, 0.26);
-    --guestbook-light-pill-bg: rgba(241, 246, 251, 0.94);
-    --guestbook-light-pill-bg-strong: rgba(234, 241, 248, 0.98);
-    --guestbook-light-pill-border: rgba(148, 163, 184, 0.16);
+    --guestbook-light-pill-bg: rgba(248, 250, 252, 0.72);
+    --guestbook-light-pill-bg-strong: rgba(250, 252, 255, 0.86);
+    --guestbook-light-pill-border: rgba(148, 163, 184, 0.12);
     --guestbook-light-text: rgba(15, 23, 42, 0.92);
     --guestbook-light-subtle-text: rgba(71, 85, 105, 0.78);
     --guestbook-light-muted-text: rgba(100, 116, 139, 0.68);
     --guestbook-light-accent: #6b9ece;
-    --guestbook-light-accent-soft: rgba(107, 158, 206, 0.12);
+    --guestbook-light-accent-soft: rgba(107, 158, 206, 0.08);
     --guestbook-light-success: #34cc68;
     --guestbook-light-success-strong: #22c55e;
     --guestbook-light-success-text: #0b2a18;
     --guestbook-light-shadow:
         0 18px 40px rgba(148, 163, 184, 0.18),
         inset 0 1px 0 rgba(255, 255, 255, 0.82);
-    background: #ffffff;
+    background: #f8fafc !important;
+}
+
+html.guestbook-document[data-theme="light"] {
+    background: #f8fafc !important;
+    background-color: #f8fafc !important;
+    color-scheme: light;
+}
+
+html.guestbook-document[data-theme="light"] body,
+html.guestbook-document[data-theme="light"] body.guestbook-page {
+    background: #f8fafc !important;
+    background-color: #f8fafc !important;
 }
 
 html[data-theme="light"] body.guestbook-page #ambientCanvas,
@@ -10920,12 +10962,13 @@ html[data-theme="light"] body.guestbook-page.auth-sheet-open #starryCanvas {
     transition: none !important;
 }
 
-html[data-theme="light"] body.guestbook-page.auth-sheet-open::before {
-    background: linear-gradient(180deg, rgba(244, 248, 255, 0.98) 0%, rgba(244, 248, 255, 0.96) 74%, rgba(244, 248, 255, 0.86) 100%);
-}
-
-html[data-theme="light"] body.guestbook-page.auth-sheet-open::after {
-    background: linear-gradient(180deg, rgba(244, 248, 255, 0.86) 0%, rgba(244, 248, 255, 0.96) 26px, rgba(244, 248, 255, 0.98) 100%);
+html[data-theme="light"] body.guestbook-page.auth-sheet-open::before,
+html[data-theme="light"] body.guestbook-page.auth-sheet-open::after,
+html:not([data-theme="dark"]) body.guestbook-page.auth-sheet-open::before,
+html:not([data-theme="dark"]) body.guestbook-page.auth-sheet-open::after {
+    content: none !important;
+    display: none !important;
+    background: transparent !important;
 }
 
 html[data-theme="light"] body.guestbook-page .guestbook-loading-state,
@@ -11014,7 +11057,7 @@ html[data-theme="light"] body.guestbook-page .message-item .like-btn.active:hove
 }
 
 html[data-theme="light"] body.guestbook-page .comment-section {
-    background: var(--guestbook-light-pill-bg) !important;
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.74), rgba(250, 252, 255, 0.66)) !important;
     border-color: var(--guestbook-light-pill-border) !important;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.76) !important;
 }
@@ -11091,7 +11134,7 @@ html[data-theme="light"] body.guestbook-page .comment-item--nested.comment-item-
 }
 
 html[data-theme="light"] body.guestbook-page .comment-item--nested .comment-row {
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.62) 0%, rgba(249, 251, 255, 0.82) 100%) !important;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, rgba(250, 251, 253, 0.84) 100%) !important;
     border: 1px solid rgba(148, 163, 184, 0.1) !important;
     border-radius: 12px;
     box-shadow:
@@ -11122,7 +11165,7 @@ html[data-theme="light"] body.guestbook-page .comment-item--clickable:hover > .c
 }
 
 html[data-theme="light"] body.guestbook-page .comment-item--nested.comment-item--clickable:hover > .comment-row {
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, rgba(247, 250, 255, 0.97) 100%) !important;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, rgba(250, 251, 253, 0.96) 100%) !important;
     border-color: rgba(107, 158, 206, 0.16) !important;
     box-shadow:
         0 10px 24px rgba(148, 163, 184, 0.12),

@@ -4366,8 +4366,10 @@
             #shopPurchaseModal .shop-purchase-stage-action {
                 position: relative;
                 z-index: 6;
-                margin: 0 -20px calc(-20px - env(safe-area-inset-bottom, 0px));
-                padding: 14px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+                box-sizing: border-box;
+                width: 100%;
+                margin: 0;
+                padding: 14px 0 0;
                 background: transparent;
                 backdrop-filter: none;
                 -webkit-backdrop-filter: none;
@@ -4376,6 +4378,8 @@
             #shopPurchaseModal .shop-purchase-stage-action .shop-purchase-actions {
                 position: relative;
                 z-index: 1;
+                width: 100%;
+                margin-inline: auto;
             }
 
             #shopPurchaseModal .modal-content.shop-purchase-sheet-animating,

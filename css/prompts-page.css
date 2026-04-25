@@ -144,12 +144,23 @@ body.loaded .gallery-container {
     justify-self: end;
 }
 
-/* Prompts page: brighter caret for better visibility */
+/* Prompts page: keep the auth caret visible in both light and dark sheets */
 #loginModal .auth-sheet-input,
 #loginModal .auth-sheet-input:focus,
 #loginModal .auth-sheet-input.auth-sheet-input--portaled,
 #loginModal .auth-sheet-input.auth-sheet-input--portaled:focus {
-    caret-color: #f4f8ff !important;
+    caret-color: var(--auth-sheet-link-accent) !important;
+}
+
+html[data-theme="light"] #loginModal .auth-sheet-input,
+html[data-theme="light"] #loginModal .auth-sheet-input:focus,
+html[data-theme="light"] #loginModal .auth-sheet-input.auth-sheet-input--portaled,
+html[data-theme="light"] #loginModal .auth-sheet-input.auth-sheet-input--portaled:focus,
+html:not([data-theme="dark"]) #loginModal .auth-sheet-input,
+html:not([data-theme="dark"]) #loginModal .auth-sheet-input:focus,
+html:not([data-theme="dark"]) #loginModal .auth-sheet-input.auth-sheet-input--portaled,
+html:not([data-theme="dark"]) #loginModal .auth-sheet-input.auth-sheet-input--portaled:focus {
+    caret-color: #527fa8 !important;
 }
 
 /* Prompts page: plain gray rectangular action button (no gradient / no 3D outline) */

@@ -52,7 +52,7 @@ test('prompts featured banner prefers homepage manual featured items before dail
     );
 
     assert.equal(
-        promptsHtml.includes('css/prompts-page.css?v=20260416_PROMPTS_MODAL_SCROLL_LOCK_1'),
+        promptsHtml.includes('css/prompts-page.css?v=20260425_PROMPTS_AUTH_LIGHT_MODAL_1'),
         true,
         'prompts.html should reference the prompt page CSS bundle with modal scroll lock styles'
     );
@@ -81,7 +81,7 @@ test('prompts mobile comment mode keeps a dedicated light theme surface', () => 
     const promptsCss = readRepoFile('prompts-poetry.css');
 
     const requiredStyleMarkers = [
-        '20260425_PROMPTS_MOBILE_COMMENT_LIGHT_1',
+        '20260425_PROMPTS_COMMENT_HOVER_LIGHT_1',
         'html[data-theme="light"] .modal-inner.comment-mode .modal-content-col',
         'html:not([data-theme="dark"]) .modal-inner.comment-mode .modal-content-col',
         'html[data-theme="light"] .modal-inner.comment-mode .comment-sort-btn',
@@ -100,7 +100,7 @@ test('prompts mobile comment mode keeps a dedicated light theme surface', () => 
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.css?v=20260425_PROMPTS_MOBILE_COMMENT_LIGHT_1'),
+        promptsHtml.includes('prompts-poetry.css?v=20260425_PROMPTS_AUTH_LIGHT_MODAL_1'),
         true,
         'prompts.html should cache-bust the mobile light comment mode stylesheet'
     );

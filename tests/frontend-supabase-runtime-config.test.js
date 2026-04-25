@@ -1438,10 +1438,10 @@ test('public auth entry pages defer profile modal runtime through the shared pro
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260423_PROFILE_MODAL_LAZY_BOOTSTRAP_P3';",
+        "const VERSION = '20260425_PROFILE_MOBILE_TOPBAR_FULL_1';",
         "const PROFILE_TEMPLATE_SRC = 'js/profile-modal-template.js?v=20260423_PROFILE_MODAL_SECURITY_INDICATOR_1';",
         "const SECURITY_CARDS_SRC = 'security-cards.js?v=20260423_PROFILE_MODAL_SECURITY_INDICATOR_1';",
-        "const PROFILE_MODAL_STYLE_HREF = 'css/profile-modal.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1';",
+        "const PROFILE_MODAL_STYLE_HREF = 'css/profile-modal.css?v=20260425_PROFILE_MOBILE_TOPBAR_FULL_1';",
         'function ensureProfileModalStyles() {',
         'return ensureProfileModalStyles().then(() => true);',
         'function ensureProfileModalReady() {',
@@ -1462,8 +1462,8 @@ test('critical auth pages consume delegated profile modal and form bindings', ()
 
     assert.equal(verifySource.includes('js/profile-modal-loader.js'), true, 'verify.html should load the shared profile modal bootstrap');
     assert.equal(indexSource.includes('js/profile-modal-loader.js'), true, 'index.html should load the shared profile modal bootstrap');
-    assert.equal(indexSource.includes('./js/profile-modal-loader.js?v=20260423_PROFILE_MODAL_LAZY_BOOTSTRAP_P3'), true, 'index.html should load the latest profile modal bootstrap version');
-    assert.equal(verifySource.includes('js/profile-modal-loader.js?v=20260423_PROFILE_MODAL_LAZY_BOOTSTRAP_P3'), true, 'verify.html should load the latest profile modal bootstrap version');
+    assert.equal(indexSource.includes('./js/profile-modal-loader.js?v=20260425_PROFILE_MOBILE_TOPBAR_FULL_1'), true, 'index.html should load the latest profile modal bootstrap version');
+    assert.equal(verifySource.includes('js/profile-modal-loader.js?v=20260425_PROFILE_MOBILE_TOPBAR_FULL_1'), true, 'verify.html should load the latest profile modal bootstrap version');
     assert.equal(verifySource.includes('id="profileModal"'), false, 'verify.html should not embed a duplicated profile modal');
     assert.equal(indexSource.includes('id="profileModal"'), false, 'index.html should not embed a duplicated profile modal');
     assert.equal(verifySource.includes('onmousedown="closeModal(event)"'), false, 'verify.html should not inline modal close handlers');
@@ -1653,9 +1653,9 @@ test('injected auth runtime centralizes dropdown, drag, and badge style state', 
             true,
             'auth entry pages should load the latest injected auth stylesheet'
         );
-        assert.equal(
-            source.includes('inject-auth.js?v=20260424_SOLID_GUEST_AVATAR_1'),
-            true,
+        assert.match(
+            source,
+            /inject-auth\.js\?v=(20260424_SOLID_GUEST_AVATAR_1|20260425_GUESTBOOK_LIGHT_BG_1)/,
             'auth entry pages should load the latest injected auth runtime version'
         );
     }
@@ -1777,12 +1777,12 @@ test('privacy page reuses the shared Supabase bootstrap instead of inlining a du
 test('selected runtime, preview, and tooling pages externalize page-specific style blocks into dedicated CSS files', () => {
     const expectations = new Map([
         ['verify.html', 'css/verify-page.css?v=20260423_VERIFY_WHITE_THEME_2'],
-        ['prompts.html', 'css/prompts-page.css?v=20260416_PROMPTS_MODAL_SCROLL_LOCK_1'],
+        ['prompts.html', 'css/prompts-page.css?v=20260425_PROMPTS_AUTH_LIGHT_MODAL_1'],
         ['reset-password.html', 'css/reset-password-page.css?v=20260324_RESET_PASSWORD_RUNTIME_STYLE_1'],
         ['privacy.html', 'css/privacy-page.css?v=20260324_PRIVACY_STYLES_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
-        ['shop.html', 'css/shop-page.css?v=20260425_SHOP_MOBILE_PURCHASE_MODAL_GAP_1'],
+        ['shop.html', 'css/shop-page.css?v=20260425_SHOP_MOBILE_PURCHASE_ACTIONS_CENTER_1'],
         ['admin-studio.html', 'css/admin-studio-page.css?v=20260424_ADMIN_LIGHT_THEME_SETTINGS_CARDS_NO_LIFT_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
@@ -1871,7 +1871,7 @@ test('selected preview showcase pages no longer embed inline style attributes', 
 
 test('shop and archived index pages no longer embed inline style attributes', () => {
     const expectations = new Map([
-        ['shop.html', 'css/shop-page.css?v=20260425_SHOP_MOBILE_PURCHASE_MODAL_GAP_1'],
+        ['shop.html', 'css/shop-page.css?v=20260425_SHOP_MOBILE_PURCHASE_ACTIONS_CENTER_1'],
         ['index_old.html', 'css/index-old.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1']
     ]);
     const inlineStyleAttributePattern = /\sstyle\s*=\s*["']/i;
@@ -2327,7 +2327,7 @@ test('shop storefront uses a 21:9 media ratio for mobile product cards', () => {
         'mobile shop product cards and loading skeletons should keep the top media area at 21:9'
     );
     assert.equal(
-        shopHtmlSource.includes('css/shop-page.css?v=20260425_SHOP_MOBILE_PURCHASE_MODAL_GAP_1'),
+        shopHtmlSource.includes('css/shop-page.css?v=20260425_SHOP_MOBILE_PURCHASE_ACTIONS_CENTER_1'),
         true,
         'shop.html should bust the shop stylesheet cache for the latest shop card sizing'
     );
@@ -2376,8 +2376,13 @@ test('shop mobile purchase actions stay visible while guidance content scrolls',
     );
     assert.match(
         shopCssSource,
-        /#shopPurchaseModal \.shop-purchase-stage-action\s*\{[\s\S]*?position:\s*relative;[\s\S]*?z-index:\s*6;[\s\S]*?background:\s*transparent;[\s\S]*?backdrop-filter:\s*none;/,
+        /#shopPurchaseModal \.shop-purchase-stage-action\s*\{[\s\S]*?position:\s*relative;[\s\S]*?z-index:\s*6;[\s\S]*?box-sizing:\s*border-box;[\s\S]*?width:\s*100%;[\s\S]*?margin:\s*0;[\s\S]*?padding:\s*14px 0 0;[\s\S]*?background:\s*transparent;[\s\S]*?backdrop-filter:\s*none;/,
         'mobile purchase action row should not paint a solid rectangular block under the buttons'
+    );
+    assert.match(
+        shopCssSource,
+        /#shopPurchaseModal \.shop-purchase-stage-action \.shop-purchase-actions\s*\{[\s\S]*?width:\s*100%;[\s\S]*?margin-inline:\s*auto;/,
+        'mobile purchase action buttons should stay centered inside the modal content width'
     );
     assert.doesNotMatch(
         shopCssSource,
@@ -2866,12 +2871,12 @@ test('guestbook runtime renderers externalize loading, modal, and interaction st
     }
 
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1'),
+        guestbookHtml.includes('style.css?v=20260425_GUESTBOOK_AUTH_BARS_LIGHT_1'),
         true,
         'guestbook.html should reference the updated guestbook stylesheet version'
     );
     assert.equal(
-        guestbookHtml.includes('guestbook.js?v=20260417_GUESTBOOK_IMAGE_STABLE_1'),
+        guestbookHtml.includes('guestbook.js?v=20260425_GUESTBOOK_LIGHT_BG_1'),
         true,
         'guestbook.html should reference the updated guestbook script version'
     );
@@ -3026,7 +3031,7 @@ test('homepage guestbook modal runtime renderers externalize keyboard dock, view
         'index.html should load the latest homepage guestbook modal script version'
     );
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1'),
+        guestbookHtml.includes('style.css?v=20260425_GUESTBOOK_AUTH_BARS_LIGHT_1'),
         true,
         'guestbook.html should load the latest shared stylesheet version'
     );
@@ -11391,7 +11396,7 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         '.prompts-theme-particle--snow',
         '.prompts-theme-particle--decor',
         '.decoration-svg',
-        '20260425_PROMPTS_MOBILE_COMMENT_LIGHT_1',
+        '20260425_PROMPTS_COMMENT_HOVER_LIGHT_1',
         'html[data-theme="light"] .modal-inner.comment-mode .modal-content-col',
         'html[data-theme="light"] .modal-inner.comment-mode .comment-sort-btn',
         'html[data-theme="light"] .modal-inner.comment-mode .comment-input-area.composer-proxy #commentInput',
@@ -11404,7 +11409,7 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.css?v=20260425_PROMPTS_MOBILE_COMMENT_LIGHT_1'),
+        promptsHtml.includes('prompts-poetry.css?v=20260425_PROMPTS_AUTH_LIGHT_MODAL_1'),
         true,
         'prompts.html should load the latest prompts gallery stylesheet version'
     );
@@ -14091,7 +14096,7 @@ test('public light theme modal backdrops reuse the muted blue-gray glass materia
     }
 
     assert.equal(
-        readRepoFile('js/profile-modal-loader.js').includes(`css/profile-modal.css?v=${expectedHref}`),
+        readRepoFile('js/profile-modal-loader.js').includes('css/profile-modal.css?v=20260425_PROFILE_MOBILE_TOPBAR_FULL_1'),
         true,
         'profile modal loader should cache-bust the light backdrop material'
     );
@@ -14104,7 +14109,7 @@ test('public light theme modal backdrops reuse the muted blue-gray glass materia
 
 test('shop page loads auth sheet after legacy shared styles', () => {
     const shopSource = readRepoFile('shop.html');
-    const sharedStyleIndex = shopSource.indexOf('style.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1');
+    const sharedStyleIndex = shopSource.indexOf('style.css?v=20260425_PROFILE_MOBILE_TOPBAR_FULL_1');
     const authSheetIndex = shopSource.indexOf('css/auth-sheet.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1');
 
     assert.notEqual(sharedStyleIndex, -1, 'shop.html should load the shared style.css bundle');
