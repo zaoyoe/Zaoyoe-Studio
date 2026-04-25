@@ -581,6 +581,7 @@ function initGuestbookPage() {
 
                 renderedCount = currentCount;
                 attachCommentHandlers();
+                syncMobileHighlightMode();
             }
         }, 200);
     });
@@ -1350,6 +1351,25 @@ function initGuestbookPage() {
     // Mobile Scroll Highlight - Optimized with IntersectionObserver
     // (Variables declared at top of file)
     let mobileHighlightObserver = null;
+    let mobileHighlightResizeTimer = null;
+
+    function clearMobileHighlight() {
+        if (mobileHighlightObserver) {
+            mobileHighlightObserver.disconnect();
+            mobileHighlightObserver = null;
+        }
+
+        mobileHighlightActive = false;
+        currentHighlightedItem = null;
+
+        document.querySelectorAll('.message-item.active-focus').forEach(item => {
+            item.classList.remove('active-focus');
+        });
+
+        document.querySelectorAll('.message-item.observed-by-highlight').forEach(item => {
+            item.classList.remove('observed-by-highlight');
+        });
+    }
 
     function initMobileHighlight() {
         if (window.innerWidth > 768) return;
@@ -1385,11 +1405,34 @@ function initGuestbookPage() {
 
         // Start observing all existing items
         const items = document.querySelectorAll('.message-item');
-        items.forEach(item => mobileHighlightObserver.observe(item));
+        items.forEach(item => {
+            mobileHighlightObserver.observe(item);
+            item.classList.add('observed-by-highlight');
+        });
 
         mobileHighlightActive = true;
         console.log('📱 [Mobile Highlight] Optimized Observer Initialized');
     }
+
+    function syncMobileHighlightMode() {
+        if (window.innerWidth <= 768) {
+            if (!mobileHighlightActive) {
+                initMobileHighlight();
+            } else {
+                observeNewItems();
+            }
+            return;
+        }
+
+        if (mobileHighlightActive || mobileHighlightObserver || currentHighlightedItem) {
+            clearMobileHighlight();
+        }
+    }
+
+    window.addEventListener('resize', () => {
+        window.clearTimeout(mobileHighlightResizeTimer);
+        mobileHighlightResizeTimer = window.setTimeout(syncMobileHighlightMode, 120);
+    }, { passive: true });
 
     function observeNewItems() {
         // For mobile, ensure highlight system is initialized

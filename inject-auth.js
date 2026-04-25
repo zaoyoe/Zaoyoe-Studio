@@ -12,6 +12,8 @@
     ];
     const LEGACY_AUTH_STYLE_IDS = ['force-auth-styles', 'force-google-btn-slim-style'];
     const PRIMARY_VIEWS = new Set(['login', 'register']);
+    const AUTH_SHEET_RESIZE_DURATION_MS = 320;
+    const AUTH_SHEET_RESIZE_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
     const PERSONAL_MESSAGE_BUTTON_LABEL = '打开个人消息';
     const PERSONAL_MESSAGE_BUTTON_UNREAD_LABEL = '打开个人消息（有未读）';
     const VIEW_META = {
@@ -49,6 +51,10 @@
         originNextSibling: null,
         layoutRafId: 0
     };
+    const resizeState = {
+        token: 0,
+        cleanupTimerId: 0
+    };
 
     function isIOSMobile() {
         return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
@@ -62,6 +68,11 @@
     function shouldUseDesktopNativeAuthInput() {
         return window.matchMedia('(min-width: 769px)').matches;
     }
+
+    function prefersReducedAuthMotion() {
+        return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+    }
+
     function t(key, fallback) {
         return window.i18n?.t(key, fallback) || fallback;
     }
@@ -946,6 +957,69 @@
         }
     }
 
+    function finishAuthSheetResizeAnimation(token) {
+        if (token !== resizeState.token) return;
+
+        const { overlay, sheet, body } = getSheetElements();
+        if (resizeState.cleanupTimerId) {
+            window.clearTimeout(resizeState.cleanupTimerId);
+            resizeState.cleanupTimerId = 0;
+        }
+
+        overlay?.classList.remove('auth-sheet-resizing');
+        setInjectedAuthStyleState(sheet, {
+            height: null,
+            transition: null,
+            willChange: null
+        });
+        setInjectedAuthStyleProperty(body, 'overflowY', null);
+    }
+
+    function animateAuthSheetResize(fromHeight) {
+        const { overlay, sheet, body } = getSheetElements();
+        if (!overlay || !sheet || !body) return;
+
+        const token = resizeState.token;
+
+        setInjectedAuthStyleProperty(sheet, 'height', 'auto');
+        const toHeight = Math.ceil(sheet.getBoundingClientRect().height);
+        setInjectedAuthStyleState(sheet, {
+            height: `${fromHeight}px`,
+            transition: 'none',
+            willChange: 'height'
+        });
+
+        void sheet.offsetHeight;
+
+        if (!toHeight || Math.abs(toHeight - fromHeight) < 1) {
+            finishAuthSheetResizeAnimation(token);
+            return;
+        }
+
+        setInjectedAuthStyleProperty(
+            sheet,
+            'transition',
+            `height ${AUTH_SHEET_RESIZE_DURATION_MS}ms ${AUTH_SHEET_RESIZE_EASING}`
+        );
+
+        const handleTransitionEnd = (event) => {
+            if (event.target !== sheet || event.propertyName !== 'height') return;
+            sheet.removeEventListener('transitionend', handleTransitionEnd);
+            finishAuthSheetResizeAnimation(token);
+        };
+
+        sheet.addEventListener('transitionend', handleTransitionEnd);
+        resizeState.cleanupTimerId = window.setTimeout(() => {
+            sheet.removeEventListener('transitionend', handleTransitionEnd);
+            finishAuthSheetResizeAnimation(token);
+        }, AUTH_SHEET_RESIZE_DURATION_MS + 80);
+
+        window.requestAnimationFrame(() => {
+            if (token !== resizeState.token) return;
+            setInjectedAuthStyleProperty(sheet, 'height', `${toHeight}px`);
+        });
+    }
+
     function updateTabState(viewId, options = {}) {
         document.querySelectorAll('#loginModal [data-auth-tab]').forEach((button) => {
             const isActive = button.dataset.authTab === viewId;
@@ -957,7 +1031,7 @@
 
     async function setAuthView(viewId, options = {}) {
         const { clearMessage = true, ensureDependencies = true } = options;
-        const { overlay, body } = getSheetElements();
+        const { overlay, sheet, body } = getSheetElements();
         if (!overlay || !body) return;
 
         if (!VIEW_META[viewId]) {
@@ -966,6 +1040,28 @@
 
         if (ensureDependencies && viewId === 'register') {
             warmRegisterDependencies();
+        }
+
+        const previousView = sheetState.view;
+        const shouldAnimateResize = !!sheet &&
+            overlay.classList.contains('active') &&
+            previousView !== viewId &&
+            !prefersReducedAuthMotion();
+        const fromHeight = shouldAnimateResize ? Math.ceil(sheet.getBoundingClientRect().height) : 0;
+
+        if (shouldAnimateResize) {
+            resizeState.token += 1;
+            if (resizeState.cleanupTimerId) {
+                window.clearTimeout(resizeState.cleanupTimerId);
+                resizeState.cleanupTimerId = 0;
+            }
+            overlay.classList.add('auth-sheet-resizing');
+            setInjectedAuthStyleState(sheet, {
+                height: `${fromHeight}px`,
+                transition: 'none',
+                willChange: 'height'
+            });
+            setInjectedAuthStyleProperty(body, 'overflowY', 'hidden', 'important');
         }
 
         document.querySelectorAll('#loginModal [data-auth-view]').forEach((view) => {
@@ -991,6 +1087,10 @@
         }
 
         body.scrollTop = 0;
+
+        if (shouldAnimateResize) {
+            animateAuthSheetResize(fromHeight);
+        }
     }
 
     function showAuthMessage(message, type = 'error', targetView) {

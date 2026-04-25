@@ -1655,7 +1655,7 @@ test('injected auth runtime centralizes dropdown, drag, and badge style state', 
         );
         assert.match(
             source,
-            /inject-auth\.js\?v=(20260424_SOLID_GUEST_AVATAR_1|20260425_GUESTBOOK_LIGHT_BG_1)/,
+            /inject-auth\.js\?v=20260425_AUTH_SHEET_RESIZE_1/,
             'auth entry pages should load the latest injected auth runtime version'
         );
     }
@@ -1781,8 +1781,8 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['reset-password.html', 'css/reset-password-page.css?v=20260324_RESET_PASSWORD_RUNTIME_STYLE_1'],
         ['privacy.html', 'css/privacy-page.css?v=20260324_PRIVACY_STYLES_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
-        ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
-        ['shop.html', 'css/shop-page.css?v=20260425_SHOP_MOBILE_PURCHASE_ACTIONS_CENTER_1'],
+        ['index.html', './css/index-page.css?v=20260425_HOME_GUESTBOOK_MODAL_HIDE_1'],
+        ['shop.html', 'css/shop-page.css?v=20260425_SHOP_CARD_BREATHE_STAGGER_1'],
         ['admin-studio.html', 'css/admin-studio-page.css?v=20260424_ADMIN_LIGHT_THEME_SETTINGS_CARDS_NO_LIFT_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
@@ -1871,7 +1871,7 @@ test('selected preview showcase pages no longer embed inline style attributes', 
 
 test('shop and archived index pages no longer embed inline style attributes', () => {
     const expectations = new Map([
-        ['shop.html', 'css/shop-page.css?v=20260425_SHOP_MOBILE_PURCHASE_ACTIONS_CENTER_1'],
+        ['shop.html', 'css/shop-page.css?v=20260425_SHOP_CARD_BREATHE_STAGGER_1'],
         ['index_old.html', 'css/index-old.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1']
     ]);
     const inlineStyleAttributePattern = /\sstyle\s*=\s*["']/i;
@@ -2311,7 +2311,7 @@ test('shop storefront preserves the initial skeleton layout while first-load dat
         'js/shop-client.js should keep the server-rendered shop skeleton layout stable when the first request is still pending'
     );
     assert.equal(
-        shopHtmlSource.includes('js/shop-client.js?v=20260425_SHOP_SUCCESS_THUMB_RESTORE_1'),
+        shopHtmlSource.includes('js/shop-client.js?v=20260425_SHOP_CARD_BREATHE_STAGGER_1'),
         true,
         'shop.html should reference the latest shop client runtime for the cart-enabled storefront flow'
     );
@@ -2327,9 +2327,45 @@ test('shop storefront uses a 21:9 media ratio for mobile product cards', () => {
         'mobile shop product cards and loading skeletons should keep the top media area at 21:9'
     );
     assert.equal(
-        shopHtmlSource.includes('css/shop-page.css?v=20260425_SHOP_MOBILE_PURCHASE_ACTIONS_CENTER_1'),
+        shopHtmlSource.includes('css/shop-page.css?v=20260425_SHOP_CARD_BREATHE_STAGGER_1'),
         true,
         'shop.html should bust the shop stylesheet cache for the latest shop card sizing'
+    );
+});
+
+test('shop initial product entrance defers idle breathe until lift animation completes', () => {
+    const shopCssSource = readRepoFile('css/shop-page.css');
+    const shopClientSource = readRepoFile('js/shop-client.js');
+
+    assert.match(
+        shopCssSource,
+        /\.shop-card\.breathing\.shop-card-breathe-deferred\s*\{[\s\S]*?animation:\s*none;[\s\S]*?--shop-card-breathe-y:\s*0px;/,
+        'initial entering cards should not run the idle breathe animation while the lift animation is active'
+    );
+    assert.match(
+        shopClientSource,
+        /getShopCardInitialBreatheDelay:\s*function \(productId = '', enterOrder = 0\) \{[\s\S]*?SHOP_CARD_INITIAL_BREATHE_JITTER_MS[\s\S]*?SHOP_CARD_INITIAL_BREATHE_MAX_DELAY_MS[\s\S]*?SHOP_CARD_INITIAL_BREATHE_SETTLE_DELAY_MS[\s\S]*?SHOP_CARD_INITIAL_BREATHE_STAGGER_MS[\s\S]*?return `\$\{Math\.round\(delayMs\)\}ms`;/,
+        'initial storefront cards should restart breathe with a wide positive stagger so no card jumps into a fast phase'
+    );
+    assert.match(
+        shopClientSource,
+        /card\.classList\.add\('shop-card-filter-enter--initial', 'shop-card-breathe-deferred'\);[\s\S]*?card\.dataset\.shopInitialBreatheDelay\s*=\s*this\.getShopCardInitialBreatheDelay\(productId, enterOrder\);/,
+        'initial storefront cards should use the staggered breathe delay when they leave the skeleton state'
+    );
+    assert.match(
+        shopClientSource,
+        /releaseDeferredShopCardBreathe:\s*function \(card\) \{[\s\S]*?card\.style\.setProperty\('--breathe-delay', deferredBreatheDelay\);[\s\S]*?card\.style\.setProperty\('--shop-card-breathe-amplitude', '0px'\);[\s\S]*?card\.classList\.remove\('shop-card-breathe-deferred'\);[\s\S]*?SHOP_CARD_INITIAL_BREATHE_RAMP_MS/,
+        'grid cleanup should restart idle breathe with a staggered delay and ramped amplitude'
+    );
+    assert.match(
+        shopClientSource,
+        /releasePayloadBreathe\(payload\);[\s\S]*?if \(payload\.enterSettlePromise\) \{/,
+        'initial storefront cards should start idle breathe at the planned entrance end instead of waiting for cleanup fallback'
+    );
+    assert.match(
+        shopCssSource,
+        /\.shop-card\.flash-sale-card\s*\{[\s\S]*?animation-delay:\s*var\(--breathe-delay,\s*0s\),\s*0s;/,
+        'flash-sale product cards should honor the same deferred breathe delay as regular product cards'
     );
 });
 
@@ -2631,7 +2667,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'index.html should load the latest framer_home stylesheet version'
     );
     assert.equal(
-        homepageSource.includes('./js/framer_home.js?v=20260424_HOME_HERO_GUESTBOOK_TRIGGER_6'),
+        homepageSource.includes('./js/framer_home.js?v=20260425_HOME_HERO_PRISM_CHRONO_10'),
         true,
         'index.html should load the latest framer_home script version'
     );
@@ -2871,12 +2907,12 @@ test('guestbook runtime renderers externalize loading, modal, and interaction st
     }
 
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260425_GUESTBOOK_AUTH_BOTTOM_CARD_FOCUS_1'),
+        guestbookHtml.includes('style.css?v=20260425_GUESTBOOK_EDITOR_BORDER_NO_SHADOW_1'),
         true,
         'guestbook.html should reference the updated guestbook stylesheet version'
     );
     assert.equal(
-        guestbookHtml.includes('guestbook.js?v=20260425_GUESTBOOK_LIGHT_BG_1'),
+        guestbookHtml.includes('guestbook.js?v=20260425_GUESTBOOK_RESIZE_FOCUS_2'),
         true,
         'guestbook.html should reference the updated guestbook script version'
     );
@@ -3031,7 +3067,7 @@ test('homepage guestbook modal runtime renderers externalize keyboard dock, view
         'index.html should load the latest homepage guestbook modal script version'
     );
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260425_GUESTBOOK_AUTH_BOTTOM_CARD_FOCUS_1'),
+        guestbookHtml.includes('style.css?v=20260425_GUESTBOOK_EDITOR_BORDER_NO_SHADOW_1'),
         true,
         'guestbook.html should load the latest shared stylesheet version'
     );
@@ -11397,10 +11433,13 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         '.prompts-theme-particle--decor',
         '.decoration-svg',
         '20260425_PROMPTS_COMMENT_HOVER_LIGHT_1',
+        '20260425_PROMPTS_COMMENT_LIGHT_CONTROLS_1',
         'html[data-theme="light"] .modal-inner.comment-mode .modal-content-col',
         'html[data-theme="light"] .modal-inner.comment-mode .comment-sort-btn',
+        'html[data-theme="light"] .modal-inner.comment-mode .comment-footer-toggle',
         'html[data-theme="light"] .modal-inner.comment-mode .comment-input-area.composer-proxy #commentInput',
         'html[data-theme="light"] .prompt-comment-composer-sheet',
+        'html[data-theme="light"] .prompt-comment-composer-send',
         '.decoration-svg--overflow-visible'
     ];
 
@@ -11409,7 +11448,7 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.css?v=20260425_PROMPTS_AUTH_LIGHT_MODAL_1'),
+        promptsHtml.includes('prompts-poetry.css?v=20260425_PROMPTS_COMMENT_LIGHT_CONTROLS_1'),
         true,
         'prompts.html should load the latest prompts gallery stylesheet version'
     );
@@ -11548,7 +11587,7 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(indexSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index.html should load the latest guestbook runtime');
     assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'guestbook.html should load the latest guestbook runtime');
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index_old.html should load the latest guestbook runtime');
-    assert.equal(shopSource.includes('js/shop-client.js?v=20260425_SHOP_SUCCESS_THUMB_RESTORE_1'), true, 'shop.html should load the latest cart-aware shop runtime');
+    assert.equal(shopSource.includes('js/shop-client.js?v=20260425_SHOP_CARD_BREATHE_STAGGER_1'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260412_SHOP_CARD_IMAGE_OPT_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
     assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260425_WALLET_MOBILE_CHECKOUT_REDIRECT_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
 });

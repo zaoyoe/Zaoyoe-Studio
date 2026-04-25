@@ -2511,6 +2511,67 @@
             modal.classList.remove('wallet-order-modal--loading');
         },
 
+        waitForWalletOrderTransition(ms = 0) {
+            return new Promise((resolve) => window.setTimeout(resolve, ms));
+        },
+
+        async replaceWalletOrderModalContent(modal, markup = '') {
+            if (!modal) return false;
+            const reduceMotion = typeof window.matchMedia === 'function'
+                && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+            if (reduceMotion) {
+                this.markWalletOrderModalReady(modal);
+                modal.innerHTML = markup;
+                return modal.isConnected;
+            }
+
+            const startHeight = modal.getBoundingClientRect().height;
+
+            modal.classList.add('wallet-order-modal--content-swapping');
+            await this.waitForWalletOrderTransition(120);
+            if (!modal.isConnected) return false;
+
+            this.markWalletOrderModalReady(modal);
+            modal.innerHTML = markup;
+
+            const body = modal.querySelector('.wallet-order-modal-body');
+            body?.classList.add('wallet-order-modal-body--entering');
+
+            const targetHeight = modal.getBoundingClientRect().height;
+            modal.classList.remove('wallet-order-modal--content-swapping');
+
+            if (
+                startHeight > 0
+                && targetHeight > 0
+                && Math.abs(targetHeight - startHeight) > 1
+                && typeof modal.animate === 'function'
+            ) {
+                modal.animate([
+                    { height: `${Math.round(startHeight)}px` },
+                    { height: `${Math.round(targetHeight)}px` }
+                ], {
+                    duration: 340,
+                    easing: 'cubic-bezier(0.22, 1, 0.36, 1)'
+                });
+            }
+
+            const requestFrame = typeof window.requestAnimationFrame === 'function'
+                ? window.requestAnimationFrame.bind(window)
+                : (callback) => window.setTimeout(callback, 16);
+
+            requestFrame(() => {
+                if (modal.isConnected) body?.classList.add('is-visible');
+            });
+
+            window.setTimeout(() => {
+                if (!modal.isConnected) return;
+                body?.classList.remove('wallet-order-modal-body--entering', 'is-visible');
+            }, 460);
+
+            return true;
+        },
+
         async fetchVerifyOrderLog(options = {}) {
             const {
                 orderId = '',
@@ -8028,13 +8089,15 @@
                                 <span class="detail-val wallet-order-product-name">${this.escapeHtml(productName)}</span>
                             </div>
                         </div>
-                        <div class="content-section">
+                        <div class="content-section wallet-order-content-section--pending">
                             <div class="content-section-title">${window.i18n?.t('wallet.purchaseContent') || '购买内容'}</div>
-                            <div class="wallet-order-loading-state" aria-label="${this.escapeAttribute(loadingLabel)}">
-                                <div class="wallet-order-loading-row">
-                                    <span class="wallet-pending-dots wallet-order-loading-dots" aria-hidden="true">
-                                        <span></span><span></span><span></span>
-                                    </span>
+                            <div class="wallet-order-content-loading-inline">
+                                <div class="wallet-order-loading-state" aria-label="${this.escapeAttribute(loadingLabel)}">
+                                    <div class="wallet-order-loading-row">
+                                        <span class="wallet-pending-dots wallet-order-loading-dots" aria-hidden="true">
+                                            <span></span><span></span><span></span>
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -8786,9 +8849,7 @@
                 // 🚀 STEP 4: Replace skeleton with real content (smooth transition)
                 const modal = detailOverlay.querySelector('.wallet-order-modal');
                 if (modal) {
-                    this.markWalletOrderModalReady(modal);
-
-                    modal.innerHTML = `
+                    const orderDetailMarkup = `
                         <div class="wallet-order-modal-header">
                             <div class="wallet-order-modal-title">
                                 ${this.renderWalletInlineIcon('fa-box-open', '#6b9ece')} ${window.i18n?.t('wallet.orderDetails') || '订单详情'}
@@ -8842,6 +8903,9 @@
                             </div>
                         </div>
                     `;
+
+                    const didRender = await this.replaceWalletOrderModalContent(modal, orderDetailMarkup);
+                    if (!didRender) return;
 
                     this.bindOverlayCloseButtons(detailOverlay);
                     modal.querySelector('.js-wallet-copy-shop-order')?.addEventListener('click', (event) => {

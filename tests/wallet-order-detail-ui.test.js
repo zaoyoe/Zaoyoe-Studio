@@ -39,6 +39,10 @@ test('wallet shop order detail uses dots loading and explicit product guidance c
 
     assert.match(script, /buildWalletOrderLoadingMarkup\(message = '', options = \{\}\)/);
     assert.match(script, /wallet-order-loading-dots/);
+    assert.match(script, /wallet-order-content-loading-inline/);
+    assert.doesNotMatch(script, /wallet-order-content-loading-card/);
+    assert.match(script, /replaceWalletOrderModalContent\(modal, markup = ''\)/);
+    assert.match(script, /waitForWalletOrderTransition\(120\)/);
     assert.match(script, /aria-label="\$\{this\.escapeAttribute\(loadingLabel\)\}"/);
     assert.doesNotMatch(script, /fa-circle-notch fa-spin wallet-order-loading-icon/);
     assert.doesNotMatch(script, /wallet-order-loading-text/);
@@ -54,6 +58,12 @@ test('wallet shop order detail uses dots loading and explicit product guidance c
     assert.match(styles, /\.wallet-modal-actions--toolbar\s*\{[\s\S]*margin-left:\s*auto;/);
     assert.match(styles, /animation:\s*walletOrderModalIn 0\.22s/);
     assert.match(styles, /@keyframes walletOrderModalIn/);
+    assert.match(styles, /\.wallet-order-content-loading-inline\s*\{/);
+    assert.doesNotMatch(styles, /\.wallet-order-content-loading-card\s*\{/);
+    assert.match(styles, /\.wallet-order-modal--content-swapping > \*\s*\{/);
+    assert.match(styles, /\.wallet-order-modal-body--entering\.is-visible\s*\{/);
+    assert.match(styles, /@keyframes walletOrderContentIn/);
+    assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
     assert.match(script, /wallet\.submitTicket'[\s\S]*提交工单/);
     assert.match(styles, /\.wallet-order-guidance-toggle\s*\{/);
     assert.match(styles, /\.wallet-order-guidance-panel\[hidden\]\s*\{[\s\S]*display:\s*none !important;/);

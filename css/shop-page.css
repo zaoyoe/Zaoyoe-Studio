@@ -18,6 +18,12 @@
             initial-value: 0px;
         }
 
+        @property --shop-card-breathe-amplitude {
+            syntax: '<length>';
+            inherits: false;
+            initial-value: -6px;
+        }
+
         @property --shop-card-shift-x {
             syntax: '<length>';
             inherits: false;
@@ -34,6 +40,18 @@
             syntax: '<length>';
             inherits: false;
             initial-value: 0px;
+        }
+
+        @property --shop-card-focus-y {
+            syntax: '<length>';
+            inherits: false;
+            initial-value: 0px;
+        }
+
+        @property --shop-card-focus-scale {
+            syntax: '<number>';
+            inherits: false;
+            initial-value: 1;
         }
 
         :root {
@@ -111,9 +129,12 @@
             --shop-card-enter-y: 0px;
             --shop-card-enter-scale: 1;
             --shop-card-breathe-y: 0px;
+            --shop-card-breathe-amplitude: -6px;
             --shop-card-shift-x: 0px;
             --shop-card-shift-y: 0px;
             --shop-card-hover-y: 0px;
+            --shop-card-focus-y: 0px;
+            --shop-card-focus-scale: 1;
             position: relative;
             border-radius: 16px;
             overflow: hidden;
@@ -121,13 +142,17 @@
             border: 1px solid var(--card-border);
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
             transform: translate3d(var(--shop-card-shift-x),
-                    calc(var(--shop-card-shift-y) + var(--shop-card-enter-y) + var(--shop-card-breathe-y) + var(--shop-card-hover-y)),
-                    0) scale(var(--shop-card-enter-scale));
+                    calc(var(--shop-card-shift-y) + var(--shop-card-enter-y) + var(--shop-card-breathe-y) + var(--shop-card-hover-y) + var(--shop-card-focus-y)),
+                    0) scale(var(--shop-card-enter-scale)) scale(var(--shop-card-focus-scale));
             transition:
                 box-shadow 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
                 border-color 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
                 background 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-                --shop-card-hover-y 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+                filter 0.42s ease,
+                --shop-card-breathe-amplitude 1.35s cubic-bezier(0.4, 0, 0.2, 1),
+                --shop-card-hover-y 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+                --shop-card-focus-y 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+                --shop-card-focus-scale 0.5s cubic-bezier(0.22, 1, 0.36, 1);
             padding: 0;
             /* Remove padding for cover image */
             display: flex;
@@ -3749,7 +3774,11 @@
                 box-shadow 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
                 border-color 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
                 background 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                filter 0.42s ease,
+                --shop-card-breathe-amplitude 1.35s cubic-bezier(0.4, 0, 0.2, 1),
                 --shop-card-hover-y 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+                --shop-card-focus-y 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+                --shop-card-focus-scale 0.5s cubic-bezier(0.22, 1, 0.36, 1),
                 --shop-card-shift-x 0.96s cubic-bezier(0.18, 0.88, 0.24, 1) var(--shop-card-filter-delay, 0ms),
                 --shop-card-shift-y 0.96s cubic-bezier(0.18, 0.88, 0.24, 1) var(--shop-card-filter-delay, 0ms);
         }
@@ -3770,7 +3799,6 @@
             --shop-card-enter-opacity-duration: 0.84s;
             --shop-card-enter-duration: 1.42s;
             --shop-card-enter-ease: cubic-bezier(0.18, 0.9, 0.2, 1);
-            animation-play-state: paused;
         }
 
         .shop-card-filter-enter.is-visible {
@@ -4913,7 +4941,7 @@
             }
 
             50% {
-                --shop-card-breathe-y: -6px;
+                --shop-card-breathe-y: var(--shop-card-breathe-amplitude);
             }
         }
 
@@ -4921,6 +4949,12 @@
             animation: breathe 5.8s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
             animation-delay: var(--breathe-delay, 0s);
             will-change: transform;
+        }
+
+        .shop-card.breathing.shop-card-breathe-deferred {
+            animation: none;
+            --shop-card-breathe-y: 0px;
+            --shop-card-breathe-amplitude: 0px;
         }
 
         /* Flash Sale Breathing Effect */
@@ -4938,6 +4972,7 @@
 
         .shop-card.flash-sale-card {
             animation: breathe 5.8s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite, flashSaleBreathe 2.4s ease-in-out infinite;
+            animation-delay: var(--breathe-delay, 0s), 0s;
             border-color: rgba(239, 68, 68, 0.3);
         }
 
@@ -5565,6 +5600,56 @@ html:not([data-theme="dark"]) body.shop-page .shop-card--in-cart {
     box-shadow:
         0 18px 44px rgba(15, 23, 42, 0.08),
         0 0 0 3px rgba(245, 158, 11, 0.08);
+}
+
+@media (max-width: 768px) {
+    body.shop-page .shop-card.user-product-card {
+        will-change: transform, filter;
+    }
+
+    html:not([data-theme="dark"]) body.shop-page .shop-card.user-product-card:not(.shop-card--active-focus) {
+        background: rgba(242, 245, 249, 0.9);
+        border-color: rgba(148, 163, 184, 0.12);
+        box-shadow:
+            0 10px 22px rgba(148, 163, 184, 0.09),
+            inset 0 1px 0 rgba(255, 255, 255, 0.72);
+        filter: grayscale(0.04) saturate(0.98) brightness(0.998);
+    }
+
+    html:not([data-theme="dark"]) body.shop-page .shop-card.user-product-card.shop-card--active-focus {
+        --shop-card-focus-y: -2px;
+        --shop-card-focus-scale: 1.01;
+        background: rgba(252, 253, 255, 0.94);
+        border-color: rgba(148, 163, 184, 0.16);
+        box-shadow:
+            0 12px 24px rgba(148, 163, 184, 0.12),
+            0 18px 32px rgba(15, 23, 42, 0.07),
+            inset 0 1px 0 rgba(255, 255, 255, 0.86);
+        filter: none;
+        z-index: 3;
+    }
+
+    [data-theme="dark"] body.shop-page .shop-card.user-product-card:not(.shop-card--active-focus) {
+        background: rgba(22, 32, 46, 0.74);
+        border-color: rgba(148, 163, 184, 0.1);
+        box-shadow:
+            0 10px 24px rgba(0, 0, 0, 0.22),
+            inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        filter: grayscale(0.04) saturate(0.96) brightness(0.94);
+    }
+
+    [data-theme="dark"] body.shop-page .shop-card.user-product-card.shop-card--active-focus {
+        --shop-card-focus-y: -2px;
+        --shop-card-focus-scale: 1.01;
+        background: rgba(30, 41, 59, 0.88);
+        border-color: rgba(125, 181, 234, 0.2);
+        box-shadow:
+            0 12px 28px rgba(0, 0, 0, 0.28),
+            0 18px 36px rgba(93, 159, 216, 0.12),
+            inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        filter: none;
+        z-index: 3;
+    }
 }
 
 html:not([data-theme="dark"]) body.shop-page .shop-card-original-price {

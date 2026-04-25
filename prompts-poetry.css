@@ -5092,6 +5092,28 @@ body.modal-open .prompt-card {
         color: rgba(30, 41, 59, 0.86);
     }
 
+    /* 20260425_PROMPTS_COMMENT_LIGHT_CONTROLS_1 */
+    html[data-theme="light"] .modal-inner.comment-mode .comment-header,
+    html:not([data-theme="dark"]) .modal-inner.comment-mode .comment-header {
+        position: relative;
+        min-height: 38px;
+        justify-content: flex-end;
+    }
+
+    html[data-theme="light"] .modal-inner.comment-mode .comment-footer-toggle,
+    html:not([data-theme="dark"]) .modal-inner.comment-mode .comment-footer-toggle {
+        top: 0;
+        right: auto;
+        bottom: auto;
+        left: 2px;
+        width: auto;
+        min-height: 38px;
+        max-width: calc(100% - 116px);
+        justify-content: flex-start;
+        text-align: left;
+        line-height: 1.2;
+    }
+
     html[data-theme="light"] .modal-inner.comment-mode .comment-header-title--expandable:hover,
     html[data-theme="light"] .modal-inner.comment-mode .comment-header-title--expandable:focus-visible,
     html:not([data-theme="dark"]) .modal-inner.comment-mode .comment-header-title--expandable:hover,
@@ -5234,6 +5256,33 @@ body.modal-open .prompt-card {
         box-shadow:
             inset 0 1px 0 rgba(255, 255, 255, 0.78),
             0 8px 20px rgba(15, 23, 42, 0.12);
+    }
+
+    html[data-theme="light"] .prompt-comment-composer-send,
+    html:not([data-theme="dark"]) .prompt-comment-composer-send {
+        background: rgba(107, 158, 206, 0.96) !important;
+        border: 1px solid rgba(82, 127, 168, 0.36) !important;
+        color: #08131f !important;
+        box-sizing: border-box;
+        box-shadow: none !important;
+        filter: none;
+        font-weight: 700;
+        transform: translateZ(0);
+        backface-visibility: hidden;
+        -webkit-backface-visibility: hidden;
+    }
+
+    html[data-theme="light"] .prompt-comment-composer-send:hover,
+    html[data-theme="light"] .prompt-comment-composer-send:focus-visible,
+    html:not([data-theme="dark"]) .prompt-comment-composer-send:hover,
+    html:not([data-theme="dark"]) .prompt-comment-composer-send:focus-visible {
+        transform: translate3d(0, -1px, 0);
+        background: rgba(112, 166, 216, 0.96) !important;
+        border-color: rgba(82, 127, 168, 0.5) !important;
+        box-shadow:
+            inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+            inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
+        filter: none;
     }
 }
 

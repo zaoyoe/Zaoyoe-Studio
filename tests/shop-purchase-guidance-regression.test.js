@@ -50,6 +50,11 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
+        /const hasRenderedCards = !!grid\?\.querySelector\('\.shop-card\[data-product-id\]'\);[\s\S]*?if \(!hasRenderedCards\) \{[\s\S]*?await this\.loadProducts\(\{ forceRefresh: true \}\);[\s\S]*?return;[\s\S]*?\}[\s\S]*?const products = await this\.getProductsForCategory\(this\.currentCategory, \{ forceRefresh: true \}\);/s,
+        'prefetched shop revalidation should refresh caches without replacing already rendered product cards'
+    );
+    assert.match(
+        shopClientSource,
         /if \(usedPrefetch\) \{\s+void this\.revalidatePrefetchedShopData\(\);\s+\}/s,
         'shop init should revalidate prefetched shop data after the instant first paint'
     );
@@ -135,7 +140,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /css\/shop-page\.css\?v=20260425_SHOP_MOBILE_PURCHASE_ACTIONS_CENTER_1/,
+        /css\/shop-page\.css\?v=20260425_SHOP_CARD_BREATHE_STAGGER_1/,
         'shop.html should bust the shop stylesheet cache after integrating the cart drawer module'
     );
     assert.match(
@@ -145,7 +150,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /js\/shop-client\.js\?v=20260425_SHOP_SUCCESS_THUMB_RESTORE_1/,
+        /js\/shop-client\.js\?v=20260425_SHOP_CARD_BREATHE_STAGGER_1/,
         'shop.html should load the cart-enabled shop client runtime'
     );
     assert.match(
