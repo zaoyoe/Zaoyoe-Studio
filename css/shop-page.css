@@ -3823,7 +3823,7 @@
             }
 
             .shop-grid {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
+                grid-template-columns: repeat(1, minmax(0, 1fr));
                 gap: 14px;
             }
 
@@ -4279,16 +4279,18 @@
                 display: flex;
                 flex-direction: column;
                 position: relative;
-                height: min(780px, calc(100dvh - 16px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))) !important;
-                max-height: calc(100dvh - 16px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+                height: auto !important;
+                min-height: 0 !important;
+                max-height: min(640px, calc(100dvh - 128px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))) !important;
                 overflow: hidden;
             }
 
             #shopSuccessModal .shop-success-scroll {
-                flex: 1;
+                flex: 0 1 auto;
                 overflow-y: auto;
                 gap: 18px;
                 min-height: 0;
+                max-height: calc(100dvh - 244px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
                 padding-right: 4px;
                 margin-right: -4px;
                 padding-bottom: 0;
@@ -4757,6 +4759,17 @@
                 --shop-success-action-clearance: 0px;
                 --shop-success-usage-gap: 12px;
                 --shop-success-usage-max-height: 320px;
+            }
+
+            #shopSuccessModal.has-usage-instructions .modal-content.shop-success-modal {
+                height: auto !important;
+                min-height: 0 !important;
+                max-height: min(640px, calc(100dvh - 128px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))) !important;
+            }
+
+            #shopSuccessModal.has-usage-instructions .shop-success-scroll {
+                flex: 0 1 auto;
+                max-height: calc(100dvh - 244px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
             }
         }
 
