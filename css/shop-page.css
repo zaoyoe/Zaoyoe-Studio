@@ -48,9 +48,9 @@
             --font-serif: 'Playfair Display', serif;
             --font-sans: 'Outfit', sans-serif;
             --accent-color: #3b82f6;
-            --shop-media-accent: #2563eb;
-            --shop-media-shell-bg: #dbeafe;
-            --shop-skeleton-shell-bg: #eaf3ff;
+            --shop-media-accent: #5f8fc7;
+            --shop-media-shell-bg: #e8f2ff;
+            --shop-skeleton-shell-bg: #f1f7ff;
         }
 
         [data-theme="dark"] {
@@ -218,7 +218,7 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            color: var(--shop-media-accent);
+            color: rgba(188, 199, 214, 0.96);
             filter: drop-shadow(0 4px 18px rgba(15, 23, 42, 0.12));
             flex: 0 0 auto;
         }
