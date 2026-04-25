@@ -1587,6 +1587,7 @@
         const nextTheme = html.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
         html.setAttribute('data-theme', nextTheme);
         localStorage.setItem('theme', nextTheme);
+        window.applySiteThemeChrome?.(nextTheme);
     };
 
     window.toggleLanguage = function (event) {
@@ -1636,7 +1637,9 @@
 
     function initTheme() {
         const savedTheme = localStorage.getItem('theme');
-        document.documentElement.setAttribute('data-theme', savedTheme === 'light' ? 'light' : 'dark');
+        const theme = savedTheme === 'light' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', theme);
+        window.applySiteThemeChrome?.(theme);
     }
 
     function getCurrentLanguageCode() {

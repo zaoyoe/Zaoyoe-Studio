@@ -172,13 +172,13 @@ body.prompts-page.auth-sheet-open #ambientCanvas {
     transition: none !important;
 }
 
-body.prompts-page.auth-sheet-open #starryCanvas {
+html[data-theme="dark"] body.prompts-page.auth-sheet-open #starryCanvas {
     opacity: 1 !important;
     transition: none !important;
 }
 
-body.prompts-page.auth-sheet-open::before,
-body.prompts-page.auth-sheet-open::after {
+html[data-theme="dark"] body.prompts-page.auth-sheet-open::before,
+html[data-theme="dark"] body.prompts-page.auth-sheet-open::after {
     content: "";
     position: fixed;
     left: 0;
@@ -187,13 +187,13 @@ body.prompts-page.auth-sheet-open::after {
     z-index: 12040;
 }
 
-body.prompts-page.auth-sheet-open::before {
+html[data-theme="dark"] body.prompts-page.auth-sheet-open::before {
     top: calc(-1 * env(safe-area-inset-top, 0px));
     height: var(--prompt-auth-top-bar-shield);
     background: linear-gradient(180deg, #000000 0%, #000000 74%, rgba(0, 0, 0, 0.94) 100%);
 }
 
-body.prompts-page.auth-sheet-open::after {
+html[data-theme="dark"] body.prompts-page.auth-sheet-open::after {
     bottom: calc(-1 * env(safe-area-inset-bottom, 0px));
     height: var(--prompt-auth-bottom-bar-shield);
     background: linear-gradient(180deg, rgba(0, 0, 0, 0.94) 0%, #000000 26px, #000000 100%);
@@ -3911,8 +3911,15 @@ body.modal-open .prompt-card {
     cursor: pointer;
 }
 
-.comment-header-title--expandable:hover {
-    color: var(--text-primary);
+.comment-header-title--expandable:hover,
+.comment-header-title--expandable:focus-visible {
+    color: var(--text-main);
+}
+
+.comment-footer-toggle.comment-header-title--expandable:focus-visible {
+    outline: 2px solid rgba(var(--prompt-detail-accent-rgb), 0.34);
+    outline-offset: 4px;
+    border-radius: 999px;
 }
 
 .comment-header-title--static {
@@ -5042,7 +5049,7 @@ body.modal-open .prompt-card {
     }
 }
 
-/* 20260425_PROMPTS_MOBILE_COMMENT_LIGHT_1 */
+/* 20260425_PROMPTS_COMMENT_HOVER_LIGHT_1 */
 @media (max-width: 768px) {
     html[data-theme="light"] .modal-inner.comment-mode,
     html:not([data-theme="dark"]) .modal-inner.comment-mode {
@@ -5083,6 +5090,13 @@ body.modal-open .prompt-card {
     html[data-theme="light"] .modal-inner.comment-mode .comment-header-title,
     html:not([data-theme="dark"]) .modal-inner.comment-mode .comment-header-title {
         color: rgba(30, 41, 59, 0.86);
+    }
+
+    html[data-theme="light"] .modal-inner.comment-mode .comment-header-title--expandable:hover,
+    html[data-theme="light"] .modal-inner.comment-mode .comment-header-title--expandable:focus-visible,
+    html:not([data-theme="dark"]) .modal-inner.comment-mode .comment-header-title--expandable:hover,
+    html:not([data-theme="dark"]) .modal-inner.comment-mode .comment-header-title--expandable:focus-visible {
+        color: #0f172a;
     }
 
     html[data-theme="light"] .modal-inner.comment-mode .comment-empty-title,
