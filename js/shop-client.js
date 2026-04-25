@@ -5153,8 +5153,19 @@ const ShopClient = {
         usageInstructions = '',
         product = null
     } = {}) {
-        const normalizedProductId = String(productId || product?.id || '').trim();
-        const resolvedProduct = product || this.getCachedProductById(normalizedProductId) || null;
+        const providedProduct = product && typeof product === 'object' && !Array.isArray(product)
+            ? product
+            : null;
+        const normalizedProductId = String(productId || providedProduct?.id || providedProduct?.product_id || '').trim();
+        const cachedProduct = this.getCachedProductById(normalizedProductId);
+        const resolvedProduct = providedProduct
+            ? {
+                ...(cachedProduct || {}),
+                ...providedProduct,
+                id: String(providedProduct.id || providedProduct.product_id || cachedProduct?.id || normalizedProductId || '').trim(),
+                icon_url: providedProduct.icon_url || cachedProduct?.icon_url || ''
+            }
+            : (cachedProduct || null);
         const productSnapshot = resolvedProduct
             ? (this.buildCartProductSnapshot(resolvedProduct) || resolvedProduct)
             : null;
@@ -5344,7 +5355,7 @@ const ShopClient = {
                         <section
                             id="${this.escapeAttribute(contentPanelId)}"
                             class="shop-cart-item__panel shop-success-item__content-panel"
-                            hidden
+                            aria-hidden="true"
                         >
                             <div class="shop-success-item__content-grid">
                                 ${contentSegments.map((segment) => this.buildSuccessContentCardMarkup(segment)).join('')}
@@ -5377,9 +5388,12 @@ const ShopClient = {
         const panel = item?.querySelector('.shop-success-item__content-panel') || null;
         if (!surface || !item || !panel) return;
 
-        const nextExpanded = panel.hidden;
-        panel.hidden = !nextExpanded;
+        const nextExpanded = surface.getAttribute('aria-expanded') !== 'true';
+        if (panel.hidden) {
+            panel.hidden = false;
+        }
         surface.setAttribute('aria-expanded', nextExpanded ? 'true' : 'false');
+        panel.setAttribute('aria-hidden', nextExpanded ? 'false' : 'true');
         item.classList.toggle('is-content-expanded', nextExpanded);
     },
 
@@ -7670,6 +7684,12 @@ const ShopClient = {
                 : (window.i18n?.t('shop.noContent') || '（无内容）');
             const cartOriginProductId = String(this.currentPurchase?.cartOrigin?.productId || '').trim();
             const cartPurchasedQuantity = Math.max(1, Number(this.currentPurchase?.quantity || 0) || 1);
+            const purchasedProduct = this.getCachedProductById(this.currentPurchase?.productId);
+            const purchasedProductSnapshot = purchasedProduct
+                ? this.buildCartProductSnapshot(purchasedProduct, {
+                    unitPrice: this.currentPurchase?.unitPrice
+                })
+                : null;
 
             // Store order ID for export
             this.currentPurchase.orderId = lastOrderId;
@@ -7751,7 +7771,7 @@ const ShopClient = {
                     content: finalContent,
                     purchaseNotes: this.currentPurchase?.purchaseNotes || '',
                     usageInstructions,
-                    product: this.getCachedProductById(this.currentPurchase?.productId)
+                    product: purchasedProductSnapshot || purchasedProduct
                 })
             ];
 

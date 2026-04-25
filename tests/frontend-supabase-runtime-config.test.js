@@ -1782,7 +1782,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['privacy.html', 'css/privacy-page.css?v=20260324_PRIVACY_STYLES_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
-        ['shop.html', 'css/shop-page.css?v=20260425_SHOP_MEDIA_PLACEHOLDER_SOFT_1'],
+        ['shop.html', 'css/shop-page.css?v=20260425_SHOP_MOBILE_PURCHASE_MODAL_GAP_1'],
         ['admin-studio.html', 'css/admin-studio-page.css?v=20260424_ADMIN_LIGHT_THEME_SETTINGS_CARDS_NO_LIFT_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
@@ -1871,7 +1871,7 @@ test('selected preview showcase pages no longer embed inline style attributes', 
 
 test('shop and archived index pages no longer embed inline style attributes', () => {
     const expectations = new Map([
-        ['shop.html', 'css/shop-page.css?v=20260425_SHOP_MEDIA_PLACEHOLDER_SOFT_1'],
+        ['shop.html', 'css/shop-page.css?v=20260425_SHOP_MOBILE_PURCHASE_MODAL_GAP_1'],
         ['index_old.html', 'css/index-old.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1']
     ]);
     const inlineStyleAttributePattern = /\sstyle\s*=\s*["']/i;
@@ -2311,9 +2311,119 @@ test('shop storefront preserves the initial skeleton layout while first-load dat
         'js/shop-client.js should keep the server-rendered shop skeleton layout stable when the first request is still pending'
     );
     assert.equal(
-        shopHtmlSource.includes('js/shop-client.js?v=20260425_SHOP_DESC_PLACEHOLDER_HEIGHT_1'),
+        shopHtmlSource.includes('js/shop-client.js?v=20260425_SHOP_SUCCESS_THUMB_RESTORE_1'),
         true,
         'shop.html should reference the latest shop client runtime for the cart-enabled storefront flow'
+    );
+});
+
+test('shop storefront uses a 21:9 media ratio for mobile product cards', () => {
+    const shopCssSource = readRepoFile('css/shop-page.css');
+    const shopHtmlSource = readRepoFile('shop.html');
+
+    assert.match(
+        shopCssSource,
+        /@media \(max-width: 768px\)[\s\S]*?\.shop-card-image\s*\{\s*aspect-ratio:\s*21 \/ 9;\s*height:\s*auto;\s*\}[\s\S]*?\.skeleton-card \.skeleton-image-shell\s*\{\s*aspect-ratio:\s*21 \/ 9;\s*height:\s*auto;\s*\}/,
+        'mobile shop product cards and loading skeletons should keep the top media area at 21:9'
+    );
+    assert.equal(
+        shopHtmlSource.includes('css/shop-page.css?v=20260425_SHOP_MOBILE_PURCHASE_MODAL_GAP_1'),
+        true,
+        'shop.html should bust the shop stylesheet cache for the latest shop card sizing'
+    );
+});
+
+test('shop purchase quantity focus highlights only the input border in light theme', () => {
+    const shopCssSource = readRepoFile('css/shop-page.css');
+    const focusRule = shopCssSource.match(
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal #purchaseQuantity\.shop-qty-input:focus\s*\{(?<body>[\s\S]*?)\n\}/
+    )?.groups?.body || '';
+
+    assert.match(
+        focusRule,
+        /border-color:\s*rgba\(107,\s*158,\s*206,\s*0\.36\)\s*!important;/,
+        'focused purchase quantity input should keep the blue border highlight'
+    );
+    assert.doesNotMatch(
+        focusRule,
+        /0\s+0\s+0\s+[34]px/,
+        'focused purchase quantity input should not draw an outer capsule focus ring'
+    );
+    assert.match(
+        focusRule,
+        /0\s+12px\s+28px\s+rgba\(15,\s*23,\s*42,\s*0\.08\)/,
+        'focused purchase quantity input should keep the same floating elevation as the resting state'
+    );
+});
+
+test('shop mobile purchase actions stay visible while guidance content scrolls', () => {
+    const shopCssSource = readRepoFile('css/shop-page.css');
+
+    assert.match(
+        shopCssSource,
+        /@media \(max-width: 768px\)[\s\S]*?#shopPurchaseModal \.modal-content\s*\{[\s\S]*?max-height:\s*min\(760px,\s*calc\(100dvh - 112px - env\(safe-area-inset-top, 0px\) - env\(safe-area-inset-bottom, 0px\)\)\)\s*!important;[\s\S]*?display:\s*flex\s*!important;[\s\S]*?flex-direction:\s*column;[\s\S]*?overflow:\s*hidden\s*!important;/,
+        'mobile purchase modal should leave a clear outside tap area while using a vertical flex layout'
+    );
+    assert.match(
+        shopCssSource,
+        /#shopPurchaseModal #purchaseNotesBox\s*\{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
+        'mobile purchase guidance stage should shrink instead of pushing the action buttons down'
+    );
+    assert.match(
+        shopCssSource,
+        /#shopPurchaseModal #purchaseNotesCard\.shop-success-usage-card\s*\{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?max-height:\s*none;[\s\S]*?overflow-y:\s*auto;/,
+        'mobile purchase guidance card should own the vertical scrolling'
+    );
+    assert.match(
+        shopCssSource,
+        /#shopPurchaseModal \.shop-purchase-stage-action\s*\{[\s\S]*?position:\s*relative;[\s\S]*?z-index:\s*6;[\s\S]*?background:\s*transparent;[\s\S]*?backdrop-filter:\s*none;/,
+        'mobile purchase action row should not paint a solid rectangular block under the buttons'
+    );
+    assert.doesNotMatch(
+        shopCssSource,
+        /#shopPurchaseModal \.shop-purchase-stage-action::before/,
+        'mobile purchase action row should not render a pseudo-element card above the buttons'
+    );
+});
+
+test('shop light success modal action buttons use softer shadows', () => {
+    const shopCssSource = readRepoFile('css/shop-page.css');
+
+    assert.match(
+        shopCssSource,
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page #shopSuccessModal \.shop-success-actions \.shop-btn\s*\{[\s\S]*?0 5px 12px rgba\(15,\s*23,\s*42,\s*0\.06\)/,
+        'light success modal action buttons should use a low-elevation base shadow'
+    );
+    assert.match(
+        shopCssSource,
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page #shopSuccessModal #copyContentBtn\s*\{[\s\S]*?0 6px 14px rgba\(34,\s*197,\s*94,\s*0\.14\)/,
+        'light success modal copy-all button should keep only a soft green glow'
+    );
+    assert.match(
+        shopCssSource,
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page #shopSuccessModal #exportContentBtn\s*\{[\s\S]*?0 5px 12px rgba\(15,\s*23,\s*42,\s*0\.06\)/,
+        'light success modal export-all button should keep only a subtle neutral shadow'
+    );
+});
+
+test('shop success item delivery content expands with animated panel state', () => {
+    const shopCssSource = readRepoFile('css/shop-page.css');
+    const shopClientSource = readRepoFile('js/shop-client.js');
+
+    assert.match(
+        shopCssSource,
+        /\.shop-success-item__content-panel\s*\{[\s\S]*?grid-template-rows:\s*0fr;[\s\S]*?opacity:\s*0;[\s\S]*?transition:[\s\S]*?grid-template-rows 0\.28s/,
+        'collapsed success delivery panels should animate from a zero-height grid row'
+    );
+    assert.match(
+        shopCssSource,
+        /\.shop-success-item\.is-content-expanded \.shop-success-item__content-panel\s*\{[\s\S]*?grid-template-rows:\s*1fr;[\s\S]*?opacity:\s*1;[\s\S]*?transform:\s*translateY\(0\);/,
+        'expanded success delivery panels should animate into the open state'
+    );
+    assert.match(
+        shopClientSource,
+        /panel\.setAttribute\('aria-hidden', nextExpanded \? 'false' : 'true'\);[\s\S]*item\.classList\.toggle\('is-content-expanded', nextExpanded\);/,
+        'success item toggles should use class state for animated expansion'
     );
 });
 
@@ -11433,7 +11543,7 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(indexSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index.html should load the latest guestbook runtime');
     assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'guestbook.html should load the latest guestbook runtime');
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index_old.html should load the latest guestbook runtime');
-    assert.equal(shopSource.includes('js/shop-client.js?v=20260425_SHOP_DESC_PLACEHOLDER_HEIGHT_1'), true, 'shop.html should load the latest cart-aware shop runtime');
+    assert.equal(shopSource.includes('js/shop-client.js?v=20260425_SHOP_SUCCESS_THUMB_RESTORE_1'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260412_SHOP_CARD_IMAGE_OPT_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
     assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260425_WALLET_MOBILE_CHECKOUT_REDIRECT_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
 });
@@ -13989,5 +14099,18 @@ test('public light theme modal backdrops reuse the muted blue-gray glass materia
         readRepoFile('js/components/WalletModal.js').includes(`css/wallet.css?v=${expectedHref}`),
         true,
         'wallet modal loader should cache-bust the light backdrop material'
+    );
+});
+
+test('shop page loads auth sheet after legacy shared styles', () => {
+    const shopSource = readRepoFile('shop.html');
+    const sharedStyleIndex = shopSource.indexOf('style.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1');
+    const authSheetIndex = shopSource.indexOf('css/auth-sheet.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1');
+
+    assert.notEqual(sharedStyleIndex, -1, 'shop.html should load the shared style.css bundle');
+    assert.notEqual(authSheetIndex, -1, 'shop.html should load the shared auth sheet stylesheet');
+    assert.ok(
+        authSheetIndex > sharedStyleIndex,
+        'shop.html should load auth-sheet.css after style.css so the mobile login sheet keeps the homepage layout'
     );
 });

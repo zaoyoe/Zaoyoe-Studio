@@ -143,6 +143,12 @@
             border-color: #5d9fd8;
         }
 
+        @media (min-width: 769px) {
+            .shop-card.user-product-card {
+                min-height: 357px;
+            }
+        }
+
         .shop-card--interactive {
             cursor: pointer;
         }
@@ -1176,6 +1182,11 @@
             flex-direction: column;
             align-items: stretch;
             gap: 6px;
+            min-height: 0;
+            overflow: hidden;
+            transform: translateY(-4px);
+            opacity: 0;
+            transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.18s ease;
         }
 
         .shop-success-item__content-card {
@@ -1223,8 +1234,27 @@
         }
 
         .shop-success-item__content-panel {
+            display: grid;
+            grid-template-rows: 0fr;
+            max-height: 0;
+            padding-top: 0;
+            padding-bottom: 0;
+            overflow: hidden;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-4px);
+            pointer-events: none;
             background: rgba(12, 18, 26, 0.26);
             border: 1px solid rgba(255, 255, 255, 0.06);
+            border-color: transparent;
+            transition:
+                grid-template-rows 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+                max-height 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+                padding 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+                opacity 0.18s ease,
+                transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+                border-color 0.22s ease,
+                visibility 0s linear 0.28s;
         }
 
         .shop-success-item__notes-panel,
@@ -1232,6 +1262,38 @@
             background: rgba(12, 18, 26, 0.26);
             border: 1px solid rgba(255, 255, 255, 0.06);
             color: rgba(226, 232, 240, 0.88);
+        }
+
+        .shop-success-item.is-content-expanded .shop-success-item__content-panel {
+            grid-template-rows: 1fr;
+            max-height: min(24vh, 210px);
+            padding-top: 9px;
+            padding-bottom: 9px;
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+            pointer-events: auto;
+            border-color: rgba(255, 255, 255, 0.06);
+            transition:
+                grid-template-rows 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+                max-height 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+                padding 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+                opacity 0.2s ease 0.04s,
+                transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+                border-color 0.22s ease,
+                visibility 0s;
+        }
+
+        .shop-success-item.is-content-expanded .shop-success-item__content-grid {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .shop-success-item:not(.is-content-expanded) .shop-success-item__content-panel {
+            max-height: 0 !important;
+            padding-top: 0 !important;
+            padding-bottom: 0 !important;
+            border-color: transparent !important;
         }
 
         .shop-success-item__content-panel[hidden],
@@ -3836,7 +3898,13 @@
             }
 
             .shop-card-image {
-                height: 120px;
+                aspect-ratio: 21 / 9;
+                height: auto;
+            }
+
+            .skeleton-card .skeleton-image-shell {
+                aspect-ratio: 21 / 9;
+                height: auto;
             }
 
             .shop-content-padding {
@@ -4243,6 +4311,10 @@
             #shopPurchaseModal .modal-content {
                 width: calc(100% - 40px) !important;
                 max-width: 620px !important;
+                max-height: min(760px, calc(100dvh - 112px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))) !important;
+                display: flex !important;
+                flex-direction: column;
+                overflow: hidden !important;
                 border-radius: 30px !important;
                 padding: 24px 20px calc(20px + env(safe-area-inset-bottom)) !important;
             }
@@ -4266,6 +4338,44 @@
                 transition: none !important;
                 will-change: transform, height !important;
                 overscroll-behavior: contain;
+            }
+
+            #shopPurchaseModal .shop-purchase-stage-header,
+            #shopPurchaseModal .shop-purchase-stage-quantity,
+            #shopPurchaseModal .shop-purchase-stage-discount,
+            #shopPurchaseModal .shop-purchase-stage-summary,
+            #shopPurchaseModal .shop-purchase-stage-action {
+                flex: 0 0 auto;
+            }
+
+            #shopPurchaseModal #purchaseNotesBox {
+                display: flex;
+                flex: 1 1 auto;
+                flex-direction: column;
+                min-height: 0;
+                overflow: hidden;
+            }
+
+            #shopPurchaseModal #purchaseNotesCard.shop-success-usage-card {
+                flex: 1 1 auto;
+                min-height: 96px;
+                max-height: none;
+                overflow-y: auto;
+            }
+
+            #shopPurchaseModal .shop-purchase-stage-action {
+                position: relative;
+                z-index: 6;
+                margin: 0 -20px calc(-20px - env(safe-area-inset-bottom, 0px));
+                padding: 14px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+                background: transparent;
+                backdrop-filter: none;
+                -webkit-backdrop-filter: none;
+            }
+
+            #shopPurchaseModal .shop-purchase-stage-action .shop-purchase-actions {
+                position: relative;
+                z-index: 1;
             }
 
             #shopPurchaseModal .modal-content.shop-purchase-sheet-animating,
@@ -5479,6 +5589,46 @@ html:not([data-theme="dark"]) body.shop-page #purchaseBackBtn:hover {
     box-shadow: 0 14px 28px rgba(15, 23, 42, 0.1);
 }
 
+html:not([data-theme="dark"]) body.shop-page #shopSuccessModal .shop-success-actions .shop-btn {
+    box-shadow:
+        0 5px 12px rgba(15, 23, 42, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+html:not([data-theme="dark"]) body.shop-page #shopSuccessModal .shop-success-actions .shop-btn:hover {
+    transform: translateY(-1px);
+    box-shadow:
+        0 7px 14px rgba(15, 23, 42, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.56);
+}
+
+html:not([data-theme="dark"]) body.shop-page #shopSuccessModal #copyContentBtn {
+    box-shadow:
+        0 6px 14px rgba(34, 197, 94, 0.14),
+        inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+html:not([data-theme="dark"]) body.shop-page #shopSuccessModal #copyContentBtn:hover {
+    box-shadow:
+        0 8px 16px rgba(34, 197, 94, 0.18),
+        inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    filter: brightness(1.04);
+}
+
+html:not([data-theme="dark"]) body.shop-page #shopSuccessModal #exportContentBtn {
+    border-color: rgba(226, 232, 240, 0.95) !important;
+    box-shadow:
+        0 5px 12px rgba(15, 23, 42, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
+html:not([data-theme="dark"]) body.shop-page #shopSuccessModal #exportContentBtn:hover {
+    background: #ffffff !important;
+    box-shadow:
+        0 7px 14px rgba(15, 23, 42, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.86);
+}
+
 html:not([data-theme="dark"]) body.shop-page .shop-status-message,
 html:not([data-theme="dark"]) body.shop-page .shop-status-message--muted {
     color: var(--shop-light-muted);
@@ -5965,8 +6115,7 @@ html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseQuantit
     border-color: rgba(107, 158, 206, 0.36) !important;
     background: #ffffff !important;
     box-shadow:
-        0 0 0 4px rgba(107, 158, 206, 0.12),
-        0 14px 30px rgba(15, 23, 42, 0.1),
+        0 12px 28px rgba(15, 23, 42, 0.08),
         inset 0 1px 0 rgba(255, 255, 255, 0.92) !important;
 }
 
