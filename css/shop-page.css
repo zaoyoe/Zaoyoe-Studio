@@ -48,9 +48,9 @@
             --font-serif: 'Playfair Display', serif;
             --font-sans: 'Outfit', sans-serif;
             --accent-color: #3b82f6;
-            --shop-media-accent: #6f95c9;
-            --shop-media-shell-bg: #f8fafc;
-            --shop-skeleton-shell-bg: #f8fafc;
+            --shop-media-accent: #2563eb;
+            --shop-media-shell-bg: #dbeafe;
+            --shop-skeleton-shell-bg: #eaf3ff;
         }
 
         [data-theme="dark"] {
@@ -218,7 +218,7 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            color: rgba(188, 199, 214, 0.96);
+            color: var(--shop-media-accent);
             filter: drop-shadow(0 4px 18px rgba(15, 23, 42, 0.12));
             flex: 0 0 auto;
         }
@@ -231,7 +231,7 @@
 
         .shop-card-icon--fallback {
             font-size: 24px;
-            color: var(--text-dim);
+            color: var(--shop-media-accent);
         }
 
         .shop-card-thumb {

@@ -135,7 +135,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /css\/shop-page\.css\?v=20260425_SHOP_DESC_PLACEHOLDER_HEIGHT_1/,
+        /css\/shop-page\.css\?v=20260425_SHOP_MEDIA_PLACEHOLDER_BLUE_1/,
         'shop.html should bust the shop stylesheet cache after integrating the cart drawer module'
     );
     assert.match(
