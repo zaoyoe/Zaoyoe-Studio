@@ -1782,7 +1782,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['privacy.html', 'css/privacy-page.css?v=20260324_PRIVACY_STYLES_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
-        ['shop.html', 'css/shop-page.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1'],
+        ['shop.html', 'css/shop-page.css?v=20260425_SHOP_MOBILE_SINGLE_COLUMN_1'],
         ['admin-studio.html', 'css/admin-studio-page.css?v=20260424_ADMIN_LIGHT_THEME_SETTINGS_CARDS_NO_LIFT_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
@@ -1871,7 +1871,7 @@ test('selected preview showcase pages no longer embed inline style attributes', 
 
 test('shop and archived index pages no longer embed inline style attributes', () => {
     const expectations = new Map([
-        ['shop.html', 'css/shop-page.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1'],
+        ['shop.html', 'css/shop-page.css?v=20260425_SHOP_MOBILE_SINGLE_COLUMN_1'],
         ['index_old.html', 'css/index-old.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1']
     ]);
     const inlineStyleAttributePattern = /\sstyle\s*=\s*["']/i;
