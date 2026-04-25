@@ -50,6 +50,11 @@ test('shop product description visibility toggle is wired through admin, storefr
         'shop product cards should keep hidden description placeholders in layout so card heights stay aligned'
     );
     assert.match(
+        shopCssSource,
+        /@media \(min-width: 769px\) \{\s*\.shop-card\.user-product-card\s*\{\s*min-height: 357px;\s*\}\s*\}/,
+        'desktop shop product cards should keep the standard with-description card height as the minimum'
+    );
+    assert.match(
         migrationSource,
         /ADD COLUMN IF NOT EXISTS show_product_description BOOLEAN DEFAULT true;/,
         'database migration helper should add the description visibility column with a true default'

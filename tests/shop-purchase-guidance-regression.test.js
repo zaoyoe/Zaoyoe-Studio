@@ -135,7 +135,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /css\/shop-page\.css\?v=20260425_SHOP_MEDIA_PLACEHOLDER_SOFT_1/,
+        /css\/shop-page\.css\?v=20260425_SHOP_MOBILE_PURCHASE_MODAL_GAP_1/,
         'shop.html should bust the shop stylesheet cache after integrating the cart drawer module'
     );
     assert.match(
@@ -145,7 +145,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /js\/shop-client\.js\?v=20260425_SHOP_DESC_PLACEHOLDER_HEIGHT_1/,
+        /js\/shop-client\.js\?v=20260425_SHOP_SUCCESS_THUMB_RESTORE_1/,
         'shop.html should load the cart-enabled shop client runtime'
     );
     assert.match(
@@ -245,6 +245,16 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
+        /const purchasedProduct = this\.getCachedProductById\(this\.currentPurchase\?\.productId\);[\s\S]*const purchasedProductSnapshot = purchasedProduct[\s\S]*this\.buildCartProductSnapshot\(purchasedProduct,[\s\S]*product: purchasedProductSnapshot \|\| purchasedProduct/s,
+        'single-item purchase success should capture the product snapshot before force refresh clears thumbnail data from caches'
+    );
+    assert.match(
+        shopClientSource,
+        /const providedProduct = product && typeof product === 'object' && !Array\.isArray\(product\)[\s\S]*const cachedProduct = this\.getCachedProductById\(normalizedProductId\);[\s\S]*icon_url: providedProduct\.icon_url \|\| cachedProduct\?\.icon_url \|\| ''/s,
+        'success modal item payloads should merge cached thumbnail data into partial product objects'
+    );
+    assert.match(
+        shopClientSource,
         /confirmCartCheckout: async function \(\) \{[\s\S]*this\.cartCheckoutProcessing = true;[\s\S]*this\.renderCartCheckoutModal\(\);[\s\S]*this\.renderCart\(\);[\s\S]*const token = await this\.getAccessToken\(\);[\s\S]*if \(!token\) \{[\s\S]*this\.cartCheckoutProcessing = false;[\s\S]*this\.renderCartCheckoutModal\(\);[\s\S]*this\.renderCart\(\);[\s\S]*this\.promptLoginForPurchase/s,
         'cart checkout should enter a guarded processing state before waiting for the auth token so backdrop closes cannot win the race'
     );
@@ -292,6 +302,16 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         shopClientSource,
         /buildSuccessItemMarkup: function \(item = \{\}, index = 0\)(?=[\s\S]*data-shop-success-action="toggle-item-content")(?=[\s\S]*data-shop-success-action="toggle-notes")(?=[\s\S]*data-shop-success-action="toggle-usage")(?=[\s\S]*data-shop-success-action="copy-item")(?=[\s\S]*class="shop-cart-item__panel shop-success-item__content-panel")(?=[\s\S]*class="shop-cart-item__panel shop-cart-item__panel--notice shop-success-item__notes-panel")(?=[\s\S]*class="shop-cart-item__panel shop-cart-item__panel--usage shop-success-item__usage-panel")/s,
         'success modal should render each purchased product as a clickable compact row with right-aligned notes and usage pills, inline copy, and collapsed delivery content'
+    );
+    assert.match(
+        shopClientSource,
+        /class="shop-cart-item__panel shop-success-item__content-panel"\s+aria-hidden="true"/,
+        'success modal delivery content panel should stay in the DOM while collapsed so CSS can animate the expansion'
+    );
+    assert.match(
+        shopClientSource,
+        /panel\.setAttribute\('aria-hidden', nextExpanded \? 'false' : 'true'\);[\s\S]*item\.classList\.toggle\('is-content-expanded', nextExpanded\);/,
+        'success modal item toggles should drive animated expansion through class state instead of toggling display immediately'
     );
     assert.match(
         shopHtmlSource,
