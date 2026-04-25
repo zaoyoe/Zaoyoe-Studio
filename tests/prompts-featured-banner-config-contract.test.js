@@ -85,9 +85,11 @@ test('prompts mobile comment mode keeps a dedicated light theme surface', () => 
         'html[data-theme="light"] .modal-inner.comment-mode .modal-content-col',
         'html:not([data-theme="dark"]) .modal-inner.comment-mode .modal-content-col',
         'html[data-theme="light"] .modal-inner.comment-mode .comment-sort-btn',
+        'html[data-theme="light"] .modal-inner.comment-mode .comment-footer-toggle',
         'html[data-theme="light"] .modal-inner.comment-mode .comment-input-area.composer-proxy #commentInput',
         'html[data-theme="light"] .modal-inner.comment-mode .close-modal-btn',
         'html[data-theme="light"] .prompt-comment-composer-sheet',
+        'html[data-theme="light"] .prompt-comment-composer-send',
         'html:not([data-theme="dark"]) .prompt-comment-composer-editor'
     ];
 
@@ -100,7 +102,7 @@ test('prompts mobile comment mode keeps a dedicated light theme surface', () => 
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.css?v=20260425_PROMPTS_AUTH_LIGHT_MODAL_1'),
+        promptsHtml.includes('prompts-poetry.css?v=20260425_PROMPTS_COMMENT_LIGHT_CONTROLS_1'),
         true,
         'prompts.html should cache-bust the mobile light comment mode stylesheet'
     );

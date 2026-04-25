@@ -675,6 +675,7 @@ function bindHomepageStaticDelegates() {
       clearHomepageHeroGuestbookArmedState();
 
       if (heroGuestbookCard) {
+        const guestbookUrl = heroGuestbookCard.getAttribute('href') || heroGuestbookCard.dataset.homeEntryLink || '/guestbook.html';
         trackHomepageAnalyticsEvent('homepage_entry_click', {
           entityType: 'hero_entry',
           entityId: heroGuestbookCard.dataset.homeEntryId || null,
@@ -687,6 +688,9 @@ function bindHomepageStaticDelegates() {
             action: heroGuestbookCard.getAttribute('data-action') || ''
           }
         });
+        event.preventDefault();
+        window.location.href = guestbookUrl && guestbookUrl !== '#' ? guestbookUrl : '/guestbook.html';
+        return;
       }
 
       if (openHomepageGuestbookModal(guestbookTrigger)) {
@@ -1586,7 +1590,7 @@ const FramerHome = {
       { id: 'gongyi', icon: 'home-entry-card-icon--gongyi', text: window.i18n?.t('home.entries.gongyi') || '公益站', link: 'https://gongyi.zaoyoe.com', color: '#5ed8f8', section: 'gongyi' },
       { id: 'shop', icon: 'fa-store', text: window.i18n?.t('home.entries.shop') || '商城', link: '/shop.html', color: '#4ade80', section: 'shop' },
       { id: 'verify', icon: 'fa-robot', text: window.i18n?.t('home.entries.verify') || '验证', link: '/verify.html', color: '#667eea', section: 'verify' },
-      { id: 'guestbook', icon: 'fa-comment-dots', text: window.i18n?.t('home.entries.guestbook') || '留言板', link: '#', color: '#f59e0b', action: 'openGuestbookModal', section: 'guestbook' }
+      { id: 'guestbook', icon: 'fa-comment-dots', text: window.i18n?.t('home.entries.guestbook') || '留言板', link: '/guestbook.html', color: '#f59e0b', section: 'guestbook' }
     ];
   },
 
@@ -1670,10 +1674,10 @@ const FramerHome = {
             id: normalizedId,
             icon: String(item?.icon || 'fa-star').trim(),
             text: this.getLocalizedField(item, 'text') || item?.text || `入口 ${index + 1}`,
-            link: normalizedLink,
+            link: isGuestbookEntry ? '/guestbook.html' : normalizedLink,
             color: String(item?.color || '#ffffff').trim() || '#ffffff',
             action: normalizedAction || (isGuestbookEntry ? 'openGuestbookModal' : ''),
-            section: normalizedSection
+            section: normalizedSection || (isGuestbookEntry ? 'guestbook' : '')
           };
         })
         .slice(0, 8)
@@ -2844,6 +2848,18 @@ const FramerHome = {
     });
 
     section.innerHTML = `
+      <div class="hero-prism-preview-bg" aria-hidden="true">
+        <div class="hero-prism-preview-effect-layer"></div>
+      </div>
+      <div class="hero-prismchrono-scene" aria-hidden="true">
+        <div class="hero-prismchrono-field">
+          <i></i><i></i><i></i>
+          <span><b></b><b></b><b></b><b></b></span>
+          <span><b></b><b></b><b></b><b></b></span>
+          <span><b></b><b></b><b></b><b></b></span>
+          <em></em><em></em><em></em><em></em>
+        </div>
+      </div>
       <div class="raycast-beams">
         <div class="ray-beam ray-1"></div>
         <div class="ray-beam ray-2"></div>
@@ -3477,10 +3493,6 @@ const FramerHome = {
                 </div>
 
                 <div class="verify-form-meta">
-                  <label class="verify-priority-pill">
-                    <input type="checkbox" tabindex="-1">
-                    <span>高优先级任务</span>
-                  </label>
                   <div class="verify-price-info verify-form-price">
                     <i class="fas fa-coins" aria-hidden="true"></i>
                     本次提交消耗 <span class="price" data-home-verify-cost>${costPoints}</span> 积分
@@ -3495,7 +3507,7 @@ const FramerHome = {
                   <button class="verify-submit-btn" data-home-verify-submit type="button" tabindex="-1">
                     <span class="spinner" aria-hidden="true"></span>
                     <i class="fas fa-paper-plane" data-home-verify-submit-icon aria-hidden="true"></i>
-                    <span data-home-verify-submit-label>提交提链任务</span>
+                    <span data-home-verify-submit-label>提交任务</span>
                   </button>
                 </div>
               </div>
@@ -3524,7 +3536,7 @@ const FramerHome = {
                       </div>
                     </div>
                   </div>
-                  <div class="verify-batch-summary" data-home-verify-summary hidden>
+                  <div class="verify-batch-summary" data-home-verify-summary data-visible="0" aria-hidden="true">
                     <div class="verify-batch-stat success">成功: <span data-home-verify-success-count>0</span></div>
                     <div class="verify-batch-stat error">失败: <span>0</span></div>
                     <div class="verify-batch-stat total">总计: <span>1</span></div>
@@ -3599,7 +3611,7 @@ const FramerHome = {
         summaryVisible: false,
         success: '0',
         icon: 'fa-paper-plane',
-        submit: '提交提链任务',
+        submit: '提交任务',
         disabled: false
       },
       {
@@ -3620,7 +3632,7 @@ const FramerHome = {
         summaryVisible: false,
         success: '0',
         icon: 'fa-paper-plane',
-        submit: '提交提链任务',
+        submit: '提交任务',
         disabled: false
       },
       {
@@ -3704,7 +3716,7 @@ const FramerHome = {
         summaryVisible: true,
         success: '1',
         icon: 'fa-paper-plane',
-        submit: '提交提链任务',
+        submit: '提交任务',
         disabled: false
       }
     ];
@@ -3712,7 +3724,9 @@ const FramerHome = {
     const runtime = {
       cancelled: false,
       timers: [],
-      bottomZoneObserver: null
+      bottomZoneObserver: null,
+      resultResizeCleanup: null,
+      resultResizeTimer: null
     };
     this.verifyDemoRuntime = runtime;
 
@@ -3720,6 +3734,70 @@ const FramerHome = {
       const timer = window.setTimeout(callback, delayMs);
       runtime.timers.push(timer);
       return timer;
+    };
+
+    const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+
+    const clearResultItemResize = () => {
+      const item = fields.resultItem;
+      if (runtime.resultResizeTimer) {
+        window.clearTimeout(runtime.resultResizeTimer);
+        runtime.resultResizeTimer = null;
+      }
+      if (runtime.resultResizeCleanup && item) {
+        item.removeEventListener('transitionend', runtime.resultResizeCleanup);
+      }
+      runtime.resultResizeCleanup = null;
+      if (item) {
+        item.style.height = '';
+        item.style.overflow = '';
+        item.classList.remove('home-verify-result-resizing');
+      }
+    };
+
+    const updateResultItemWithHeightTransition = (update) => {
+      const item = fields.resultItem;
+      if (!item || prefersReducedMotion) {
+        update();
+        return;
+      }
+
+      clearResultItemResize();
+      const previousHeight = Math.ceil(item.getBoundingClientRect().height || 0);
+      update();
+      const nextHeight = Math.ceil(item.getBoundingClientRect().height || 0);
+
+      if (!previousHeight || !nextHeight || Math.abs(previousHeight - nextHeight) < 2) {
+        return;
+      }
+
+      item.classList.add('home-verify-result-resizing');
+      item.style.overflow = 'hidden';
+      item.style.height = `${previousHeight}px`;
+      void item.offsetHeight;
+      item.style.height = `${nextHeight}px`;
+
+      const cleanup = (event) => {
+        if (event && event.target !== item) {
+          return;
+        }
+        if (event && event.propertyName !== 'height') {
+          return;
+        }
+        if (runtime.resultResizeTimer) {
+          window.clearTimeout(runtime.resultResizeTimer);
+          runtime.resultResizeTimer = null;
+        }
+        item.removeEventListener('transitionend', cleanup);
+        runtime.resultResizeCleanup = null;
+        item.style.height = '';
+        item.style.overflow = '';
+        item.classList.remove('home-verify-result-resizing');
+      };
+
+      runtime.resultResizeCleanup = cleanup;
+      item.addEventListener('transitionend', cleanup);
+      runtime.resultResizeTimer = scheduleTimer(cleanup, 460);
     };
 
     const syncBottomZoneHeight = () => {
@@ -3780,15 +3858,28 @@ const FramerHome = {
       setActiveField(phase.activeField);
 
       fields.results?.classList.toggle('show', phase.resultsOpen);
-      if (fields.summary) fields.summary.hidden = !phase.summaryVisible;
+      if (fields.summary) {
+        fields.summary.dataset.visible = phase.summaryVisible ? '1' : '0';
+        fields.summary.setAttribute('aria-hidden', phase.summaryVisible ? 'false' : 'true');
+      }
       if (fields.successCount) fields.successCount.textContent = phase.success;
       if (fields.progressCurrent) fields.progressCurrent.textContent = phase.current;
-      if (fields.resultItem) fields.resultItem.className = `verify-result-item ${phase.resultClass}`;
-      if (fields.message) fields.message.textContent = phase.message;
-      if (fields.linkRow) fields.linkRow.hidden = !phase.linkVisible;
-      if (fields.link) {
-        fields.link.href = successLinkValue;
-        fields.link.textContent = successLinkValue;
+
+      const syncResultItemContent = () => {
+        if (fields.resultItem) fields.resultItem.className = `verify-result-item ${phase.resultClass}`;
+        if (fields.message) fields.message.textContent = phase.message;
+        if (fields.linkRow) fields.linkRow.hidden = !phase.linkVisible;
+        if (fields.link) {
+          fields.link.href = successLinkValue;
+          fields.link.textContent = successLinkValue;
+        }
+      };
+
+      if (phase.phase === 'success') {
+        clearResultItemResize();
+        syncResultItemContent();
+      } else {
+        updateResultItemWithHeightTransition(syncResultItemContent);
       }
       if (fields.submit) fields.submit.disabled = phase.disabled;
       if (fields.submitIcon) {
@@ -3816,7 +3907,6 @@ const FramerHome = {
       }
     }
 
-    const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
     if (prefersReducedMotion) {
       applyPhase(phases[phases.length - 1]);
       return;
@@ -4214,11 +4304,6 @@ const FramerHome = {
 
     const updateScrollProgress = () => {
       if (!this.guestbookRuntime || this.guestbookRuntime !== runtime) {
-        return;
-      }
-
-      if (window.innerWidth <= 760) {
-        stage.style.setProperty('--home-guestbook-scroll-progress', '0');
         return;
       }
 
