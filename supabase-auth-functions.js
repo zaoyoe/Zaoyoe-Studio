@@ -1830,8 +1830,10 @@ async function handlePasswordReset(event) {
 
     clearAuthFeedback();
 
+    const resetForm = document.getElementById('resetForm');
     const emailInput = document.getElementById('reset-email');
-    const submitBtn = document.querySelector('#resetForm button[type="submit"]');
+    const submitBtn = resetForm?.querySelector('button[type="submit"]')
+        || document.querySelector('[data-auth-submit="reset"][form="resetForm"], button[type="submit"][form="resetForm"]');
 
     if (!emailInput || !submitBtn) {
         showAuthFeedback(authT('auth.resetFormMissing', '系统错误：找不到表单元素，请刷新页面重试。'), 'error', 'reset');

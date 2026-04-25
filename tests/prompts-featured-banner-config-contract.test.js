@@ -75,3 +75,33 @@ test('prompts featured banner prefers homepage manual featured items before dail
         'css/prompts-page.css should define the fixed-body scroll lock state for prompt modals'
     );
 });
+
+test('prompts mobile comment mode keeps a dedicated light theme surface', () => {
+    const promptsHtml = readRepoFile('prompts.html');
+    const promptsCss = readRepoFile('prompts-poetry.css');
+
+    const requiredStyleMarkers = [
+        '20260425_PROMPTS_MOBILE_COMMENT_LIGHT_1',
+        'html[data-theme="light"] .modal-inner.comment-mode .modal-content-col',
+        'html:not([data-theme="dark"]) .modal-inner.comment-mode .modal-content-col',
+        'html[data-theme="light"] .modal-inner.comment-mode .comment-sort-btn',
+        'html[data-theme="light"] .modal-inner.comment-mode .comment-input-area.composer-proxy #commentInput',
+        'html[data-theme="light"] .modal-inner.comment-mode .close-modal-btn',
+        'html[data-theme="light"] .prompt-comment-composer-sheet',
+        'html:not([data-theme="dark"]) .prompt-comment-composer-editor'
+    ];
+
+    for (const marker of requiredStyleMarkers) {
+        assert.equal(
+            promptsCss.includes(marker),
+            true,
+            `prompts-poetry.css should contain ${marker}`
+        );
+    }
+
+    assert.equal(
+        promptsHtml.includes('prompts-poetry.css?v=20260425_PROMPTS_MOBILE_COMMENT_LIGHT_1'),
+        true,
+        'prompts.html should cache-bust the mobile light comment mode stylesheet'
+    );
+});
