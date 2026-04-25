@@ -5751,6 +5751,9 @@ const ShopClient = {
                     : (product.description || (window.i18n?.t('shop.noDescription') || '暂无描述'))
             )
             : '';
+        const descriptionMarkup = showDescriptionOnCard
+            ? `<p class="shop-card-desc">${this.escapeHtml(displayDesc)}</p>`
+            : '<p class="shop-card-desc shop-card-desc--placeholder" aria-hidden="true"></p>';
         const safeCardImageAlt = this.escapeAttribute(displayName || (window.i18n?.t('shop.productImage') || '商品封面'));
         const safeIconUrl = this.escapeAttribute(product.icon_url || '');
         const hasCoverImage = this.isShopImageSource(product.icon_url);
@@ -5799,7 +5802,7 @@ const ShopClient = {
 
             <div class="shop-content-padding">
                 <h3 class="shop-card-title">${this.escapeHtml(displayName)}</h3>
-                ${showDescriptionOnCard ? `<p class="shop-card-desc">${this.escapeHtml(displayDesc)}</p>` : ''}
+                ${descriptionMarkup}
 
                 <div class="shop-card-footer">
                     <div class="shop-card-price">${pricingState.priceHtml}</div>

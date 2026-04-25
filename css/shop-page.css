@@ -321,6 +321,10 @@
             -webkit-box-orient: vertical;
         }
 
+        .shop-card-desc--placeholder {
+            visibility: hidden;
+        }
+
         .shop-card-price {
             font-weight: 800;
             color: #f59e0b;

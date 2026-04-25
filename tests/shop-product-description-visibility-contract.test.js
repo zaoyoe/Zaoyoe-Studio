@@ -11,6 +11,7 @@ test('shop product description visibility toggle is wired through admin, storefr
     const adminHtmlSource = readRepoFile('admin-studio.html');
     const adminShopSource = readRepoFile(path.join('js', 'admin-shop.js'));
     const shopClientSource = readRepoFile(path.join('js', 'shop-client.js'));
+    const shopCssSource = readRepoFile(path.join('css', 'shop-page.css'));
     const migrationSource = readRepoFile(path.join('supabase', 'add_product_description_visibility.sql'));
 
     assert.match(
@@ -40,8 +41,13 @@ test('shop product description visibility toggle is wired through admin, storefr
     );
     assert.match(
         shopClientSource,
-        /\$\{showDescriptionOnCard \? `<p class="shop-card-desc">/,
-        'shop product cards should only render the description paragraph when the visibility switch is on'
+        /const descriptionMarkup = showDescriptionOnCard[\s\S]*shop-card-desc--placeholder" aria-hidden="true"/,
+        'shop product cards should preserve a hidden description placeholder when the visibility switch is off'
+    );
+    assert.match(
+        shopCssSource,
+        /\.shop-card-desc--placeholder\s*\{\s*visibility: hidden;\s*\}/,
+        'shop product cards should keep hidden description placeholders in layout so card heights stay aligned'
     );
     assert.match(
         migrationSource,
