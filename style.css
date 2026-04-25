@@ -52,6 +52,24 @@
     opacity: 0 !important;
 }
 
+@media (max-width: 768px) {
+    body.guestbook-page #loginModal.auth-sheet-overlay,
+    body.guestbook-page #loginModal.auth-sheet-overlay.active,
+    body.guestbook-page #loginModal.auth-sheet-overlay.login-overlay,
+    body.guestbook-page #loginModal.auth-sheet-overlay.login-overlay.active {
+        align-items: flex-end !important;
+        justify-content: center !important;
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+        padding-bottom: var(--auth-sheet-mobile-bottom-inset) !important;
+    }
+
+    body.guestbook-page #loginModal.auth-sheet-overlay .auth-sheet-stage {
+        align-items: flex-end !important;
+        width: 100% !important;
+    }
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -10998,6 +11016,27 @@ html[data-theme="light"] body.guestbook-page .message-item:hover {
 
 html[data-theme="light"] body.guestbook-page .message-item.comment-post-highlight {
     background: rgba(107, 158, 206, 0.1) !important;
+}
+
+@media (max-width: 768px) {
+    html[data-theme="light"] body.guestbook-page .message-item:not(.active-focus):not(.comment-post-highlight) {
+        background: rgba(226, 232, 240, 0.62) !important;
+        border-color: rgba(148, 163, 184, 0.14) !important;
+        box-shadow:
+            0 10px 24px rgba(148, 163, 184, 0.12),
+            inset 0 1px 0 rgba(255, 255, 255, 0.54) !important;
+        filter: saturate(0.96) brightness(0.98);
+    }
+
+    html[data-theme="light"] body.guestbook-page .message-item.active-focus {
+        background: rgba(255, 255, 255, 0.98) !important;
+        border-color: rgba(148, 163, 184, 0.24) !important;
+        box-shadow:
+            0 12px 24px rgba(148, 163, 184, 0.18),
+            0 24px 48px rgba(15, 23, 42, 0.12),
+            inset 0 1px 0 rgba(255, 255, 255, 0.92) !important;
+        filter: none;
+    }
 }
 
 html[data-theme="light"] body.guestbook-page .message-item .author-info i,

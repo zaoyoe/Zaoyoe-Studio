@@ -2871,7 +2871,7 @@ test('guestbook runtime renderers externalize loading, modal, and interaction st
     }
 
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260425_GUESTBOOK_AUTH_BARS_LIGHT_1'),
+        guestbookHtml.includes('style.css?v=20260425_GUESTBOOK_AUTH_BOTTOM_CARD_FOCUS_1'),
         true,
         'guestbook.html should reference the updated guestbook stylesheet version'
     );
@@ -3031,7 +3031,7 @@ test('homepage guestbook modal runtime renderers externalize keyboard dock, view
         'index.html should load the latest homepage guestbook modal script version'
     );
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260425_GUESTBOOK_AUTH_BARS_LIGHT_1'),
+        guestbookHtml.includes('style.css?v=20260425_GUESTBOOK_AUTH_BOTTOM_CARD_FOCUS_1'),
         true,
         'guestbook.html should load the latest shared stylesheet version'
     );
