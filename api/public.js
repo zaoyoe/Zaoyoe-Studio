@@ -1,16 +1,11 @@
 const admin = require('./_lib/admin');
 const requestSecurity = require('./_lib/request-security');
 const { buildSupabaseRuntimeScript } = require('./_lib/public-runtime-config');
+const {
+    createWalletCheckinHandler
+} = require('../server/api-handlers/public/wallet-checkin');
 
 const ROUTE_HANDLER_CACHE = new Map();
-let walletCheckinHandler = null;
-let walletCheckinHandlerLoadError = null;
-
-try {
-    walletCheckinHandler = require('./wallet/checkin');
-} catch (error) {
-    walletCheckinHandlerLoadError = error;
-}
 
 function normalizeRouteValue(value = '') {
     return String(value || '')
@@ -144,13 +139,10 @@ function createRouteHandlersForScope(scope) {
             'order-detail': walletHandlers.orderDetail,
             'prompt-titles': walletHandlers.promptTitles,
             'verify-log': walletHandlers.verifyLog,
-            async checkin(req, res) {
-                if (!walletCheckinHandler) {
-                    return sendScopeInitializationFailure(res, 'wallet', walletCheckinHandlerLoadError);
-                }
-
-                return walletCheckinHandler(req, res);
-            }
+            checkin: createWalletCheckinHandler({
+                admin,
+                site
+            })
         };
     }
     default:

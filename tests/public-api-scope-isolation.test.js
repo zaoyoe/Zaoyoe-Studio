@@ -239,7 +239,7 @@ test('public wallet scope exposes kebab-case route aliases used by Vercel rewrit
     });
 });
 
-test('public wallet checkin returns a handled 500 when wallet checkin module fails to load', async () => {
+test('public wallet checkin is served by the shared handler instead of the API route entrypoint', async () => {
     await withPublicHandler((request, parent, isMain, originalLoad) => {
         if (request === '../server/api-handlers/public/wallet') {
             return {
@@ -253,6 +253,20 @@ test('public wallet checkin returns a handled 500 when wallet checkin module fai
             return {
                 requireSupportedSite(value) {
                     return String(value || 'cn').trim().toLowerCase() || 'cn';
+                }
+            };
+        }
+
+        if (request === '../server/api-handlers/public/wallet-checkin') {
+            return {
+                createWalletCheckinHandler() {
+                    return async (req, res) => {
+                        res.status(200).setHeader('Content-Type', 'application/json; charset=utf-8');
+                        res.end(JSON.stringify({
+                            success: true,
+                            source: 'shared-wallet-checkin-stub'
+                        }));
+                    };
                 }
             };
         }
@@ -271,10 +285,10 @@ test('public wallet checkin returns a handled 500 when wallet checkin module fai
 
         await handler(req, res);
 
-        assert.equal(res.statusCode, 500);
+        assert.equal(res.statusCode, 200);
         assert.deepEqual(res.json(), {
-            success: false,
-            message: 'Public route handler unavailable'
+            success: true,
+            source: 'shared-wallet-checkin-stub'
         });
     });
 });
