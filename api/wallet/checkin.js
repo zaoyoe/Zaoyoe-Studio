@@ -1,8 +1,26 @@
 const admin = require('../_lib/admin');
 const site = require('../_lib/site');
-const {
-    maybeIssueCheckinDiscountAssets
-} = require('../_lib/discount-trigger-linkage');
+
+let discountLinkageLoadAttempted = false;
+let maybeIssueCheckinDiscountAssets = null;
+
+function getCheckinDiscountLinkageHelper() {
+    if (discountLinkageLoadAttempted) {
+        return maybeIssueCheckinDiscountAssets;
+    }
+
+    discountLinkageLoadAttempted = true;
+    try {
+        ({
+            maybeIssueCheckinDiscountAssets
+        } = require('../_lib/discount-trigger-linkage'));
+    } catch (error) {
+        console.warn('[wallet-checkin] Discount linkage helper unavailable:', error?.message || error);
+        maybeIssueCheckinDiscountAssets = null;
+    }
+
+    return maybeIssueCheckinDiscountAssets;
+}
 
 function normalizeCheckinDate(value) {
     const normalized = String(value || '').trim();
@@ -56,16 +74,23 @@ module.exports = async function walletCheckinHandler(req, res) {
 
         let linkedDiscountSummary = null;
         if (data?.success && !data?.already_checked && (adminSupabase?.from || supabase?.from)) {
-            linkedDiscountSummary = await maybeIssueCheckinDiscountAssets({
-                supabase: adminSupabase || supabase,
-                userId: user.id,
-                site: currentSite,
-                checkinDate: normalizeCheckinDate(body?.checkin_date || body?.checkinDate || body?.local_date || body?.localDate),
-                pointsReward: data?.points,
-                baseReward: data?.base_reward,
-                bonusReward: data?.bonus_reward,
-                streakDays: data?.consecutive_days
-            });
+            const issueCheckinDiscountAssets = getCheckinDiscountLinkageHelper();
+            if (typeof issueCheckinDiscountAssets === 'function') {
+                try {
+                    linkedDiscountSummary = await issueCheckinDiscountAssets({
+                        supabase: adminSupabase || supabase,
+                        userId: user.id,
+                        site: currentSite,
+                        checkinDate: normalizeCheckinDate(body?.checkin_date || body?.checkinDate || body?.local_date || body?.localDate),
+                        pointsReward: data?.points,
+                        baseReward: data?.base_reward,
+                        bonusReward: data?.bonus_reward,
+                        streakDays: data?.consecutive_days
+                    });
+                } catch (error) {
+                    console.warn('[wallet-checkin] Discount linkage skipped:', error?.message || error);
+                }
+            }
         }
 
         return sendJson(res, 200, {
