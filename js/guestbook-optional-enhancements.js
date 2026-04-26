@@ -71,8 +71,8 @@
         }, 800);
 
         scheduleOptionalTask(2200, () => {
-            loadStylesheet('css/chat-widget.css?v=20260423_CHAT_OPS_ALERT_LIGHT_GLASS_11');
-            loadScript('js/components/ChatWidget.js?v=20260423_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_11', initChatWidgetIfReady);
+            loadStylesheet('css/chat-widget.css?v=20260426_CHAT_OPS_ALERT_LIGHT_GLASS_12');
+            loadScript('js/components/ChatWidget.js?v=20260426_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_12', initChatWidgetIfReady);
         }, 2200);
     }
 

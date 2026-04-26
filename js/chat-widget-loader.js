@@ -6,10 +6,10 @@
     }
     global.__zaoyoeChatWidgetBootstrapLoaded = true;
 
-    const VERSION = '20260423_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_LOADER_11';
+    const VERSION = '20260426_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_LOADER_12';
     const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';
     const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';
-    const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260423_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_11';
+    const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260426_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_12';
     const POLL_INTERVAL_MS = 125;
     const MAX_WAIT_MS = 10000;
     const IDLE_WARMUP_TIMEOUT_MS = 2500;
