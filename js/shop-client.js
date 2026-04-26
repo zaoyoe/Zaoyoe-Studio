@@ -197,6 +197,11 @@ const SHOP_CARD_INITIAL_BREATHE_JITTER_MS = 180;
 const SHOP_CARD_INITIAL_BREATHE_MAX_DELAY_MS = 2600;
 const SHOP_CARD_INITIAL_BREATHE_RAMP_MS = 1350;
 const SHOP_CARD_ENTER_SETTLE_FALLBACK_BUFFER_MS = 180;
+const SHOP_MOBILE_PRODUCT_FOCUS_MAX_LIFT_PX = 2;
+const SHOP_MOBILE_PRODUCT_FOCUS_SCALE_DELTA = 0.01;
+const SHOP_MOBILE_PRODUCT_FOCUS_RADIUS_RATIO = 0.38;
+const SHOP_MOBILE_PRODUCT_FOCUS_MIN_RADIUS_PX = 180;
+const SHOP_MOBILE_PRODUCT_FOCUS_ACTIVE_THRESHOLD = 0.54;
 const SHOP_PREFETCH_SCHEMA_VERSION = '20260423_PRODUCT_DESCRIPTION_VISIBILITY_1';
 const SHOP_PURCHASE_PREFILL_SCHEMA_VERSION = '20260415_SHOP_PURCHASE_PREFILL_1';
 const SHOP_PURCHASE_PREFILL_STORAGE_KEY = 'shop_purchase_prefill';
@@ -279,8 +284,10 @@ const ShopClient = {
     gridTransitionActiveUntil: 0,
     mobileProductFocusObserver: null,
     mobileProductFocusActive: false,
+    mobileProductFocusRafId: null,
     mobileProductFocusResizeTimer: null,
     mobileProductFocusResizeBound: false,
+    mobileProductFocusScrollBound: false,
     currentFocusedProductCard: null,
     purchaseGuidanceRequestToken: 0,
     cartAnchorFeedbackTimer: null,
@@ -5820,6 +5827,10 @@ const ShopClient = {
             this.mobileProductFocusObserver.disconnect();
             this.mobileProductFocusObserver = null;
         }
+        if (this.mobileProductFocusRafId) {
+            window.cancelAnimationFrame(this.mobileProductFocusRafId);
+            this.mobileProductFocusRafId = null;
+        }
 
         this.mobileProductFocusActive = false;
         this.currentFocusedProductCard = null;
@@ -5831,6 +5842,17 @@ const ShopClient = {
         document.querySelectorAll('.shop-card--observed-focus').forEach(card => {
             card.classList.remove('shop-card--observed-focus');
         });
+
+        document.querySelectorAll('.shop-card.user-product-card').forEach(card => {
+            this.resetMobileProductFocusCard(card);
+        });
+    },
+
+    resetMobileProductFocusCard: function (card) {
+        if (!(card instanceof Element)) return;
+        card.style.removeProperty('--shop-card-focus-y');
+        card.style.removeProperty('--shop-card-focus-scale');
+        card.style.removeProperty('--shop-card-mobile-focus-progress');
     },
 
     setMobileProductFocusCard: function (card) {
@@ -5844,8 +5866,56 @@ const ShopClient = {
         this.currentFocusedProductCard = card;
     },
 
+    clearCurrentMobileProductFocusCard: function () {
+        if (this.currentFocusedProductCard) {
+            this.currentFocusedProductCard.classList.remove('shop-card--active-focus');
+            this.currentFocusedProductCard = null;
+        }
+    },
+
+    getMobileProductFocusProgress: function (card, viewportCenterY = window.innerHeight / 2) {
+        if (!(card instanceof Element)) return 0;
+
+        const rect = card.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return 0;
+
+        const cardCenterY = rect.top + rect.height / 2;
+        const distance = Math.abs(cardCenterY - viewportCenterY);
+        const radius = Math.max(
+            SHOP_MOBILE_PRODUCT_FOCUS_MIN_RADIUS_PX,
+            window.innerHeight * SHOP_MOBILE_PRODUCT_FOCUS_RADIUS_RATIO
+        );
+        const rawProgress = Math.max(0, Math.min(1, 1 - distance / radius));
+        return rawProgress * rawProgress * (3 - 2 * rawProgress);
+    },
+
+    applyMobileProductFocusProgress: function (card, progress = 0) {
+        if (!(card instanceof Element)) return;
+
+        const clampedProgress = Math.max(0, Math.min(1, Number(progress) || 0));
+        const liftY = -SHOP_MOBILE_PRODUCT_FOCUS_MAX_LIFT_PX * clampedProgress;
+        const scale = 1 + SHOP_MOBILE_PRODUCT_FOCUS_SCALE_DELTA * clampedProgress;
+        card.style.setProperty('--shop-card-mobile-focus-progress', clampedProgress.toFixed(3));
+        card.style.setProperty('--shop-card-focus-y', `${liftY.toFixed(3)}px`);
+        card.style.setProperty('--shop-card-focus-scale', scale.toFixed(4));
+    },
+
+    scheduleMobileProductFocusUpdate: function () {
+        if (this.mobileProductFocusRafId) return;
+
+        this.mobileProductFocusRafId = window.requestAnimationFrame(() => {
+            this.mobileProductFocusRafId = null;
+            if (!this.mobileProductFocusActive) return;
+            this.updateMobileProductFocusFromViewport();
+        });
+    },
+
     updateMobileProductFocusFromViewport: function () {
         if (!this.isMobileProductFocusViewport()) return;
+        if (this.isProductGridTransitionActive()) {
+            this.clearMobileProductFocus();
+            return;
+        }
 
         const cards = this.getMobileProductFocusCards();
         if (!cards.length) {
@@ -5855,27 +5925,22 @@ const ShopClient = {
 
         const viewportCenterY = window.innerHeight / 2;
         let bestCard = null;
-        let bestScore = Number.POSITIVE_INFINITY;
+        let bestProgress = 0;
 
         cards.forEach(card => {
-            const rect = card.getBoundingClientRect();
-            if (rect.width <= 0 || rect.height <= 0) return;
+            const progress = this.getMobileProductFocusProgress(card, viewportCenterY);
+            this.applyMobileProductFocusProgress(card, progress);
 
-            const cardCenterY = rect.top + rect.height / 2;
-            const centerLineDistance = Math.abs(cardCenterY - viewportCenterY);
-            const edgeDistance = viewportCenterY < rect.top
-                ? rect.top - viewportCenterY
-                : (viewportCenterY > rect.bottom ? viewportCenterY - rect.bottom : 0);
-            const score = edgeDistance * 2 + centerLineDistance * 0.4;
-
-            if (score < bestScore) {
-                bestScore = score;
+            if (progress > bestProgress) {
+                bestProgress = progress;
                 bestCard = card;
             }
         });
 
-        if (bestCard) {
+        if (bestCard && bestProgress >= SHOP_MOBILE_PRODUCT_FOCUS_ACTIVE_THRESHOLD) {
             this.setMobileProductFocusCard(bestCard);
+        } else {
+            this.clearCurrentMobileProductFocusCard();
         }
     },
 
@@ -5889,43 +5954,12 @@ const ShopClient = {
             return;
         }
 
-        if ('IntersectionObserver' in window) {
-            this.mobileProductFocusObserver = new IntersectionObserver((entries) => {
-                const viewportCenterY = window.innerHeight / 2;
-                let nextFocusedCard = null;
-                let nextScore = Number.POSITIVE_INFINITY;
-
-                entries.forEach(entry => {
-                    if (!entry.isIntersecting) return;
-
-                    const rect = entry.target.getBoundingClientRect();
-                    const cardCenterY = rect.top + rect.height / 2;
-                    const score = Math.abs(cardCenterY - viewportCenterY);
-                    if (score < nextScore) {
-                        nextScore = score;
-                        nextFocusedCard = entry.target;
-                    }
-                });
-
-                if (nextFocusedCard) {
-                    this.setMobileProductFocusCard(nextFocusedCard);
-                }
-            }, {
-                root: null,
-                rootMargin: '-50% 0px -50% 0px',
-                threshold: 0
-            });
-        }
-
         cards.forEach(card => {
-            if (this.mobileProductFocusObserver) {
-                this.mobileProductFocusObserver.observe(card);
-            }
             card.classList.add('shop-card--observed-focus');
         });
 
         this.mobileProductFocusActive = true;
-        window.requestAnimationFrame(() => this.updateMobileProductFocusFromViewport());
+        this.scheduleMobileProductFocusUpdate();
     },
 
     observeNewMobileProductFocusCards: function () {
@@ -5943,13 +5977,10 @@ const ShopClient = {
         this.getMobileProductFocusCards()
             .filter(card => !card.classList.contains('shop-card--observed-focus'))
             .forEach(card => {
-                if (this.mobileProductFocusObserver) {
-                    this.mobileProductFocusObserver.observe(card);
-                }
                 card.classList.add('shop-card--observed-focus');
             });
 
-        window.requestAnimationFrame(() => this.updateMobileProductFocusFromViewport());
+        this.scheduleMobileProductFocusUpdate();
     },
 
     syncMobileProductFocusMode: function () {
@@ -5988,7 +6019,15 @@ const ShopClient = {
             this.mobileProductFocusResizeTimer = window.setTimeout(() => {
                 this.syncMobileProductFocusMode();
             }, 120);
+            this.scheduleMobileProductFocusUpdate();
         }, { passive: true });
+
+        if (!this.mobileProductFocusScrollBound) {
+            this.mobileProductFocusScrollBound = true;
+            window.addEventListener('scroll', () => {
+                this.scheduleMobileProductFocusUpdate();
+            }, { passive: true });
+        }
     },
 
     buildEmptyStateElement: function () {
