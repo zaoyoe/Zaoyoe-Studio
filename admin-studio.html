@@ -21,7 +21,7 @@
     <link rel="stylesheet" href="prompts-poetry.css?v=20260420_ADMIN_CACHE_BUST_1">
     <link rel="stylesheet" href="admin-studio.css?v=20260424_ADMIN_LIGHT_FLAT_CARDS_2">
     <link rel="stylesheet" href="admin-sidebar.css?v=20260412_SIDEBAR_HEX_182634_1">
-    <link rel="stylesheet" href="css/admin-command-center.css?v=20260422_ADMIN_PULSE_DOCK_V2">
+    <link rel="stylesheet" href="css/admin-command-center.css?v=20260426_ADMIN_PULSE_DOCK_V5">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260426_ADMIN_CHAT_LIGHT_THEME_FROSTED_CONTEXT_FLAT_ALERTS_2" media="print" data-deferred-style="1">
 
 
@@ -31,7 +31,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" media="print" data-deferred-style="1">
 
     <!-- Prevent flash of wrong theme -->
-    <link rel="stylesheet" href="css/admin-studio-page.css?v=20260424_ADMIN_LIGHT_THEME_SETTINGS_CARDS_NO_LIFT_1">
+    <link rel="stylesheet" href="css/admin-studio-page.css?v=20260426_ADMIN_DOCK_PANEL_PARITY_6">
     <script src="./js/theme-preload.js?v=20260420_ADMIN_CACHE_BUST_1"></script>
     <script src="./js/deferred-styles.js?v=20260423_ADMIN_DEFERRED_STYLES_1" defer></script>
 
@@ -45,7 +45,9 @@
             </div>
             <h1 class="admin-access-title" id="adminAccessTitle">正在校验后台访问权限</h1>
             <p class="admin-access-message" id="adminAccessMessage">请稍候，我们正在确认当前账号是否拥有 Admin Studio 访问权限。</p>
-            <div class="admin-access-spinner" id="adminAccessSpinner" aria-hidden="true"></div>
+            <div class="admin-access-spinner admin-access-spinner--dots" id="adminAccessSpinner" aria-hidden="true">
+                <span></span><span></span><span></span>
+            </div>
             <div class="admin-access-actions" id="adminAccessActions">
                 <a class="admin-access-btn primary" id="adminAccessPrimaryAction" href="index.html">返回首页</a>
                 <a class="admin-access-btn" id="adminAccessSecondaryAction" href="index.html">重新登录</a>
@@ -61,7 +63,7 @@
             <a href="index.html" class="sidebar-brand" title="返回主页">
                 <div class="sidebar-brand-icon">
                     <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg"
-                        class="admin-studio-inline-style-attr-1">
+                        class="sidebar-brand-logo admin-studio-inline-style-attr-1" aria-hidden="true">
                         <path d="M30 20 H80 L70 35 H20 Z" fill="white" />
                         <path d="M40 40 H90 L80 55 H30 Z" fill="#ccc" />
                         <path d="M20 60 H70 L60 75 H10 Z" fill="white" />
@@ -243,15 +245,12 @@
                                 <button class="analyze-btn" id="analyzeBtn" disabled>Analyze</button>
                             </h2>
 
-                            <!-- Loading State - Elegant Neural Animation -->
-                            <div class="analysis-loading admin-studio-inline-style-attr-3" id="analysisLoading">
-                                <div class="neural-loader">
-                                    <div class="neural-dot"></div>
-                                    <div class="neural-dot"></div>
-                                    <div class="neural-dot"></div>
-                                    <div class="neural-dot"></div>
-                                    <div class="neural-dot"></div>
-                                </div>
+                            <!-- Loading State -->
+                            <div class="analysis-loading admin-studio-inline-style-attr-3 admin-module-loading-host admin-module-loading-host--hero"
+                                id="analysisLoading" role="status" aria-live="polite" aria-label="AI 分析加载中..." hidden>
+                                <span class="admin-module-loading-dots admin-module-loading-dots--hero" aria-hidden="true">
+                                    <span></span><span></span><span></span>
+                                </span>
                             </div>
 
                             <!-- Results Form -->
@@ -8112,9 +8111,11 @@
                 </nav>
 
                 <!-- Loading State -->
-                <div id="hp-loading" class="admin-studio-inline-style-attr-145">
-                    <i class="fas fa-spinner fa-spin admin-studio-inline-style-attr-146"></i>
-                    <div>加载主页配置中...</div>
+                <div id="hp-loading" class="admin-studio-inline-style-attr-145 admin-module-loading-host admin-module-loading-host--hero"
+                    role="status" aria-live="polite" aria-label="加载主页配置中...">
+                    <span class="admin-module-loading-dots admin-module-loading-dots--hero" aria-hidden="true">
+                        <span></span><span></span><span></span>
+                    </span>
                 </div>
 
                 <!-- Section Content (dynamically rendered by admin-homepage.js) -->
@@ -11397,7 +11398,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="js/admin-studio-bootstrap.js?v=20260421_BOOTSTRAP_NO_CHAT_PREWARM_P2"></script>
     <script src="js/admin-vendor-loader.js?v=20260421_ADMIN_VENDOR_LOADER_P2"></script>
-    <script src="js/admin-shell.js?v=20260421_ADMIN_SHELL_COMMENTS_OPS_HELPERS_P2"></script>
+    <script src="js/admin-shell.js?v=20260426_ADMIN_SHELL_LOADING_DOTS_CENTER_P1"></script>
     <script src="js/ios-scroll-lock.js?v=20260420_ADMIN_CACHE_BUST_1"></script>
     <script src="admin-users.js?v=20260421_ADMIN_USERS_CONTEXT_HELPER_P2"></script>
     <script src="admin-points.js?v=20260421_ADMIN_POINTS_GENERATE_SUBMIT_BRIDGE_P2"></script>
@@ -11406,7 +11407,7 @@
     <script src="starry-sky.js?v=20260420_ADMIN_CACHE_BUST_1"></script>
     <script src="js/admin-api-auth.js?v=20260421_ADMIN_API_COOKIE_RETRY_P0"></script>
     <script src="js/admin-ai.js?v=20260421_ADMIN_AI_SESSION_PRIORITY_P0"></script>
-    <script src="js/admin-command-center.js?v=20260422_ADMIN_PULSE_DOCK_V2"></script>
+    <script src="js/admin-command-center.js?v=20260426_ADMIN_PULSE_DOCK_V5"></script>
     <script src="admin-comments.js?v=20260421_COMMENTS_MODULE_BRIDGE_HELPERS_P3"></script>
     <script src="js/admin-analytics-metric-context.js?v=20260405_ANALYTICS_METRIC_CONTEXT_HELPERS_6"></script>
     <script src="admin-analytics.js?v=20260421_ANALYTICS_RUNTIME_AUTH_FALLBACK_P0"></script>

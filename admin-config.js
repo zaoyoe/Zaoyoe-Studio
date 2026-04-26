@@ -436,10 +436,36 @@ function getAffiliatePosterPreviewClass(templateId) {
     return ADMIN_CONFIG_AFFILIATE_POSTER_PRESET_CLASS_MAP[templateId] || ADMIN_CONFIG_AFFILIATE_POSTER_PRESET_CLASS_MAP.midnight;
 }
 
+function shouldRenderAdminLoadingDots(message = '', iconClass = '') {
+    const normalizedMessage = String(message || '').trim();
+    const normalizedIconClass = String(iconClass || '').trim();
+    return normalizedIconClass.includes('fa-spin')
+        || (/(?:加载中|正在加载|分析中|生成中|查询中|同步中|校验中|准备中|补齐中|拉取中|获取中|刷新中)/.test(normalizedMessage)
+            && !/(?:失败|错误|异常|暂无|没有|未联动|未找到|无数据|无可用|等待加载)/.test(normalizedMessage));
+}
+
+function buildAdminLoadingDotsMarkup(message = '', options = {}) {
+    if (typeof window.AdminShell?.buildLoadingDotsMarkup === 'function') {
+        return window.AdminShell.buildLoadingDotsMarkup(message, options);
+    }
+    return '';
+}
+
 function renderVerifyQuotaState(quotaEl, tone, iconClass, message, options = {}) {
     if (!quotaEl) return;
     ADMIN_CONFIG_VERIFY_QUOTA_TONE_CLASSES.forEach((className) => quotaEl.classList.remove(className));
     quotaEl.classList.add('verify-quota-badge', `verify-quota-badge--${tone}`);
+    if (shouldRenderAdminLoadingDots(message, iconClass) && typeof window.AdminShell?.applyLoadingDotsState === 'function') {
+        quotaEl.title = String(options.title || '').trim();
+        window.AdminShell.applyLoadingDotsState(quotaEl, {
+            variant: 'inline',
+            label: message || '查询中...'
+        });
+        return;
+    }
+    if (typeof window.AdminShell?.clearLoadingDotsState === 'function') {
+        window.AdminShell.clearLoadingDotsState(quotaEl);
+    }
     const safeMessage = escapeConfigHtml(message);
     const textTag = options.emphasized ? 'strong' : 'span';
     quotaEl.title = String(options.title || '').trim();
@@ -558,6 +584,13 @@ function updateVerifyMonitorOverviewCard(panelId, valueId, metaId, tone, valueTe
 
 function renderVerifyMonitorEmptyState(target, message) {
     if (!target) return;
+    if (shouldRenderAdminLoadingDots(message)) {
+        const loadingMarkup = buildAdminLoadingDotsMarkup(message, { variant: 'block', tagName: 'div' });
+        if (loadingMarkup) {
+            target.innerHTML = loadingMarkup;
+            return;
+        }
+    }
     target.innerHTML = `<div class="verify-monitor-empty">${escapeConfigHtml(message)}</div>`;
 }
 
@@ -1262,6 +1295,13 @@ function updateAdminAuditMonitorOverviewCard(panelId, valueId, metaId, tone, val
 
 function renderAdminAuditMonitorEmptyState(target, message) {
     if (!target) return;
+    if (shouldRenderAdminLoadingDots(message)) {
+        const loadingMarkup = buildAdminLoadingDotsMarkup(message, { variant: 'block', tagName: 'div' });
+        if (loadingMarkup) {
+            target.innerHTML = loadingMarkup;
+            return;
+        }
+    }
     target.innerHTML = `<div class="admin-audit-monitor-empty">${escapeConfigHtml(message)}</div>`;
 }
 
@@ -14151,6 +14191,13 @@ function buildOpsAlertPanelMetaMarkup(panelState = {}, fallbackText = '') {
     const normalizedPanelState = panelState && typeof panelState === 'object' && !Array.isArray(panelState)
         ? panelState
         : {};
+    const metaText = normalizedPanelState.metaText || fallbackText || '暂无数据';
+    if (shouldRenderAdminLoadingDots(metaText, normalizedPanelState.metaIcon)) {
+        const loadingMarkup = buildAdminLoadingDotsMarkup(metaText, { variant: 'inline', tagName: 'span' });
+        if (loadingMarkup) {
+            return loadingMarkup;
+        }
+    }
     return `<i class="${escapeConfigHtml(normalizedPanelState.metaIcon || 'fas fa-circle-info')}"></i><span>${escapeConfigHtml(normalizedPanelState.metaText || fallbackText || '暂无数据')}</span>`;
 }
 

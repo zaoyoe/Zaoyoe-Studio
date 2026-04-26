@@ -27,6 +27,67 @@ test('admin studio keeps the website light theme as an explicit data-theme state
     );
 });
 
+test('admin studio access gate, module loaders, and sidebar reuse the shared dot loader shell', () => {
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+    const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
+
+    assert.equal(
+        adminStudioHtml.includes('class="admin-access-spinner admin-access-spinner--dots"'),
+        true,
+        'admin studio access gate should render the same three-dot loader family as order detail loading states'
+    );
+    assert.equal(
+        adminStudioHtml.includes('class="sidebar-brand-logo admin-studio-inline-style-attr-1"'),
+        true,
+        'admin studio sidebar should render the homepage logo svg instead of the old generic sidebar mark'
+    );
+    assert.equal(
+        stylesSource.includes('20260426_ADMIN_STUDIO_ACCESS_DOTS_HOME_LOGO_1'),
+        true,
+        'admin studio page styles should include the access-dot and homepage-logo bridge marker'
+    );
+    assert.equal(
+        adminStudioHtml.includes('id="analysisLoading" role="status" aria-live="polite" aria-label="AI 分析加载中..." hidden'),
+        true,
+        'admin studio gallery loading state should render the shared centered three-dot loader shell but stay hidden until analysis starts'
+    );
+    assert.equal(
+        adminStudioHtml.includes('id="hp-loading" class="admin-studio-inline-style-attr-145 admin-module-loading-host admin-module-loading-host--hero"'),
+        true,
+        'admin studio homepage loading state should render the shared centered three-dot loader shell'
+    );
+    assert.equal(
+        stylesSource.includes('20260426_ADMIN_STUDIO_LOADING_DOTS_BRIDGE_1'),
+        true,
+        'admin studio page styles should include the shared module loading-dot bridge marker'
+    );
+    assert.equal(
+        stylesSource.includes('@keyframes admin-module-loading-dots'),
+        true,
+        'admin studio module loaders should animate with the shared bouncing dot pattern'
+    );
+    assert.equal(
+        stylesSource.includes('@keyframes admin-access-pending-dots'),
+        true,
+        'admin studio access gate should animate the loader with the shared bouncing dot pattern'
+    );
+    assert.equal(
+        stylesSource.includes('.admin-module-loading-host.loading-text::before'),
+        true,
+        'admin studio loading bridge should disable legacy skeleton pseudo elements when the shared dot loader is active'
+    );
+    assert.equal(
+        stylesSource.includes('.admin-module-loading-host[hidden]'),
+        true,
+        'admin studio shared loading bridge should respect hidden states for idle shells'
+    );
+    assert.equal(
+        stylesSource.includes('.sidebar-brand-logo path:nth-child(1)'),
+        true,
+        'admin studio sidebar logo should inherit the homepage light-theme fill mapping'
+    );
+});
+
 test('admin studio has a light-theme bridge for legacy dark admin surfaces', () => {
     const adminStudioSource = readRepoFile('admin-studio.js');
     const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
@@ -51,6 +112,81 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         stylesSource.includes('.admin-command-center'),
         true,
         'admin studio light bridge should cover the command center dock and panel'
+    );
+    assert.equal(
+        stylesSource.includes('20260426_ADMIN_STUDIO_LIGHT_THEME_DOCK_FEEDBACK_1'),
+        true,
+        'admin studio styles should include the dock badge and action feedback light-theme polish layer'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #toastContainer .toast'),
+        true,
+        'admin studio light theme should explicitly restyle success and error action toasts'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] .admin-command-center__badge.is-alert'),
+        true,
+        'admin studio light theme should explicitly restyle command center alert badges'
+    );
+    assert.equal(
+        stylesSource.includes('20260426_ADMIN_STUDIO_LIGHT_THEME_DOCK_BALANCE_1'),
+        true,
+        'admin studio styles should include the dock balance polish layer for light theme'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] .admin-command-center__dock-btn.is-alert'),
+        true,
+        'admin studio light theme should soften dock alert icon color instead of relying on a saturated red bell'
+    );
+    assert.equal(
+        stylesSource.includes('20260426_ADMIN_STUDIO_LIGHT_THEME_DOCK_PANEL_POSITION_1'),
+        true,
+        'admin studio styles should include the dock panel positioning fix for light theme'
+    );
+    assert.equal(
+        stylesSource.includes('20260426_ADMIN_STUDIO_LIGHT_THEME_DOCK_PANEL_PARITY_4'),
+        true,
+        'admin studio styles should restate the shared dark dock panel geometry and animation chain at the end of the light-theme cascade'
+    );
+    assert.equal(
+        stylesSource.includes('animation: admin-command-center-panel-open 260ms var(--command-smooth) both !important;'),
+        false,
+        'admin studio light theme should not mark dock panel keyframe animations important because that suppresses the shared transform animation'
+    );
+    assert.equal(
+        stylesSource.includes('transform: translate(0, var(--admin-command-panel-open-y, -50%)) scale(1) !important;'),
+        false,
+        'admin studio light theme should not pin the shared open-state transform with !important because it blocks the opening and closing keyframes'
+    );
+    assert.equal(
+        stylesSource.includes('20260426_ADMIN_STUDIO_LIGHT_THEME_DOCK_PANEL_MOTION_2'),
+        false,
+        'admin studio light theme should not override the shared command center panel motion; it should reuse the same dock animation logic as dark mode'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] .admin-command-center__panel.is-open'),
+        true,
+        'admin studio light theme should explicitly preserve the shared open-state panel transform in the final light-theme cascade'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] :is(\n    .batch-dropdown-menu,'),
+        true,
+        'admin studio light theme should limit the generic transform reset to menu surfaces instead of the command center panel itself'
+    );
+    assert.equal(
+        stylesSource.includes('20260426_ADMIN_STUDIO_LIGHT_THEME_DOCK_PANEL_INTERACTION_EXCLUDE_1'),
+        true,
+        'admin studio light theme should mark the command center panel exclusion from broad flat hover rules'
+    );
+    assert.equal(
+        stylesSource.includes('):not(.admin-command-center__panel):not(.admin-command-center__dock-label):is(:hover, :focus-within, :active, .is-focused, .is-selected)'),
+        true,
+        'admin studio light theme should not let generic hover transform resets cancel command center panel motion'
+    );
+    assert.equal(
+        stylesSource.includes('.admin-command-center__panel,\n    .admin-command-center__dock-label,\n    .config-row'),
+        true,
+        'admin studio light theme should exclude the command center panel from the late card hover flattening cascade'
     );
     assert.equal(
         stylesSource.includes('20260424_ADMIN_STUDIO_LIGHT_THEME_POLISH_1'),
@@ -1032,7 +1168,7 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         'admin chat light theme should keep chat input placeholder text subdued'
     );
     assert.equal(
-        readRepoFile('admin-studio.html').includes('css/admin-studio-page.css?v=20260424_ADMIN_LIGHT_THEME_SETTINGS_CARDS_NO_LIFT_1'),
+        readRepoFile('admin-studio.html').includes('css/admin-studio-page.css?v=20260426_ADMIN_DOCK_PANEL_PARITY_6'),
         true,
         'admin studio should cache-bust the updated light theme stylesheet'
     );

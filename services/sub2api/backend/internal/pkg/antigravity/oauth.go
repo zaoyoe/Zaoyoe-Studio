@@ -22,9 +22,6 @@ const (
 	TokenURL     = "https://oauth2.googleapis.com/token"
 	UserInfoURL  = "https://www.googleapis.com/oauth2/v2/userinfo"
 
-	// Antigravity OAuth 客户端凭证
-	ClientID = "SET_ANTIGRAVITY_OAUTH_CLIENT_ID_VIA_ENV"
-
 	// AntigravityOAuthClientIDEnv 是 Antigravity OAuth client_id 的环境变量名。
 	AntigravityOAuthClientIDEnv = "ANTIGRAVITY_OAUTH_CLIENT_ID"
 
@@ -54,6 +51,9 @@ const (
 
 // defaultUserAgentVersion 可通过环境变量 ANTIGRAVITY_USER_AGENT_VERSION 配置，默认 1.20.5
 var defaultUserAgentVersion = "1.21.9"
+
+// ClientID 可通过环境变量 ANTIGRAVITY_OAUTH_CLIENT_ID 配置。
+var ClientID = "SET_ANTIGRAVITY_OAUTH_CLIENT_ID_VIA_ENV"
 
 // defaultClientSecret 可通过环境变量 ANTIGRAVITY_OAUTH_CLIENT_SECRET 配置
 var defaultClientSecret = "SET_ANTIGRAVITY_OAUTH_CLIENT_SECRET_VIA_ENV"

@@ -413,21 +413,7 @@ func (s *AccountTestService) testBedrockAccountConnection(c *gin.Context, ctx co
 func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account *Account, modelID string) error {
 	ctx := c.Request.Context()
 
-	// Default to openai.DefaultTestModel for OpenAI testing
-	testModelID := modelID
-	if testModelID == "" {
-		testModelID = openai.DefaultTestModel
-	}
-
-	// For API Key accounts with model mapping, map the model
-	if account.Type == "apikey" {
-		mapping := account.GetModelMapping()
-		if len(mapping) > 0 {
-			if mappedModel, exists := mapping[testModelID]; exists {
-				testModelID = mappedModel
-			}
-		}
-	}
+	testModelID := resolveOpenAITestModel(account, modelID)
 
 	// Determine authentication method and API URL
 	var authToken string
@@ -529,6 +515,25 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 
 	// Process SSE stream
 	return s.processOpenAIStream(c, resp.Body)
+}
+
+func resolveOpenAITestModel(account *Account, modelID string) string {
+	testModelID := strings.TrimSpace(modelID)
+	if testModelID == "" {
+		// ChatGPT-backed passthrough relays often reject legacy Codex-only probe
+		// models even though standard GPT models remain healthy.
+		if account != nil && account.IsOpenAIApiKey() && account.IsOpenAIPassthroughEnabled() {
+			testModelID = "gpt-5.4"
+		} else {
+			testModelID = openai.DefaultTestModel
+		}
+	}
+
+	if account != nil && account.IsOpenAIApiKey() {
+		return account.GetMappedModel(testModelID)
+	}
+
+	return testModelID
 }
 
 // testGeminiAccountConnection tests a Gemini account's connection

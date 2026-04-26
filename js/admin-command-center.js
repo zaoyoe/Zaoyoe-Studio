@@ -6,7 +6,7 @@
     }
 
     const STORAGE_KEY = 'zaoyoe_admin_command_center_collapsed';
-    const VERSION = '20260422_ADMIN_PULSE_DOCK_V2';
+    const VERSION = '20260426_ADMIN_PULSE_DOCK_V5';
     const PANEL_OPEN_ANIMATION_MS = 260;
     const PANEL_CLOSE_ANIMATION_MS = 220;
     const MODULE_LABELS = Object.freeze({

@@ -282,6 +282,9 @@ const AdminGrowthCenter = {
     },
 
     renderDeferredDetailsPlaceholder(message = '明细后台补齐中...') {
+        if (typeof window.AdminShell?.buildLoadingDotsMarkup === 'function') {
+            return window.AdminShell.buildLoadingDotsMarkup(message, { variant: 'block', tagName: 'div' });
+        }
         return `<div class="loading-text">${this.escapeHtml(message)}</div>`;
     },
 
@@ -354,7 +357,9 @@ const AdminGrowthCenter = {
         }
 
         if (this.state.loading && !this.state.payload) {
-            container.innerHTML = '<div class="loading-text">营销资产中心加载中...</div>';
+            container.innerHTML = typeof window.AdminShell?.buildLoadingDotsMarkup === 'function'
+                ? window.AdminShell.buildLoadingDotsMarkup('营销资产中心加载中...', { variant: 'block', tagName: 'div' })
+                : '<div class="loading-text">营销资产中心加载中...</div>';
             if (meta) {
                 meta.textContent = '加载中';
             }
