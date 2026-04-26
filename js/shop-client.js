@@ -5578,6 +5578,16 @@ const ShopClient = {
         });
     },
 
+    isProductGridTransitionActive: function (container = document.getElementById('userShopGrid')) {
+        if (this.gridTransitionActiveUntil > performance.now()) {
+            return true;
+        }
+
+        return !!container?.querySelector?.(
+            '.shop-card-filter-enter, .shop-card-filter-exit, .shop-card-filter-moving, .shop-card-filter-hidden'
+        );
+    },
+
     runAfterNextPaint: function (callback) {
         if (typeof callback !== 'function') return;
         window.requestAnimationFrame(() => {
@@ -5934,6 +5944,13 @@ const ShopClient = {
 
     syncMobileProductFocusMode: function () {
         if (this.isMobileProductFocusViewport()) {
+            if (this.isProductGridTransitionActive()) {
+                if (this.mobileProductFocusActive || this.mobileProductFocusObserver || this.currentFocusedProductCard) {
+                    this.clearMobileProductFocus();
+                }
+                return;
+            }
+
             if (!this.getMobileProductFocusCards().length) {
                 this.clearMobileProductFocus();
                 return;
@@ -6189,6 +6206,8 @@ const ShopClient = {
             return;
         }
 
+        this.clearMobileProductFocus();
+
         const cleanupAnimatedCards = ({ movingCards = [], enteringCards = [], overlay = null } = {}) => {
             movingCards.forEach(({ card, clone }) => {
                 card?.classList.remove('shop-card-filter-hidden', 'shop-card-filter-moving', 'shop-card-filter-motion-lock');
@@ -6221,6 +6240,7 @@ const ShopClient = {
 
             if (transitionId === this.gridTransitionSequence) {
                 this.gridTransitionActiveUntil = 0;
+                this.syncMobileProductFocusMode();
             }
         };
 
@@ -6393,7 +6413,6 @@ const ShopClient = {
 
             container.classList.remove('is-empty');
             cardElements.forEach(card => container.appendChild(card));
-            this.syncMobileProductFocusMode();
 
             const movingCards = [];
             const moveOverlay = document.createElement('div');

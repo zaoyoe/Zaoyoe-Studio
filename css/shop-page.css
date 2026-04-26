@@ -5650,6 +5650,11 @@ html:not([data-theme="dark"]) body.shop-page .shop-card--in-cart {
         filter: none;
         z-index: 3;
     }
+
+    body.shop-page .shop-card.user-product-card.shop-card-filter-enter.shop-card--active-focus {
+        --shop-card-focus-y: 0px;
+        --shop-card-focus-scale: 1;
+    }
 }
 
 html:not([data-theme="dark"]) body.shop-page .shop-card-original-price {
