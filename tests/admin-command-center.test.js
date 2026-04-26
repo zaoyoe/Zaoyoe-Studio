@@ -421,7 +421,7 @@ function loadCommandCenterRuntime() {
 test('AdminCommandCenter renders actionable dock and task-oriented pulse panels', () => {
     const { window, listeners, elements, commandSummaries } = loadCommandCenterRuntime();
 
-    assert.equal(window.AdminCommandCenter.version, '20260422_ADMIN_PULSE_DOCK_V2');
+    assert.equal(window.AdminCommandCenter.version, '20260426_ADMIN_PULSE_DOCK_V5');
     assert.match(elements.adminCommandCenter.innerHTML, /运营待处理/);
     assert.match(elements.adminCommandCenter.innerHTML, /待办总览/);
     assert.match(elements.adminCommandCenter.innerHTML, /11 项待处理/);

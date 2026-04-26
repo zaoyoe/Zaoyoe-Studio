@@ -1185,6 +1185,9 @@ function buildAnalyticsProductOrderlessMessage(summary = {}) {
 }
 
 function renderAnalyticsProductLoadingState(message = '加载中...') {
+    if (typeof window.AdminShell?.buildLoadingDotsMarkup === 'function') {
+        return window.AdminShell.buildLoadingDotsMarkup(message, { variant: 'block', tagName: 'div' });
+    }
     return `<div class="loading-text">${escapeHtml(message)}</div>`;
 }
 

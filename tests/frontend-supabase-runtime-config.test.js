@@ -1795,7 +1795,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260425_HOME_GUESTBOOK_MODAL_HIDE_1'],
         ['shop.html', 'css/shop-page.css?v=20260426_SHOP_MOBILE_FOCUS_REMOVED_1'],
-        ['admin-studio.html', 'css/admin-studio-page.css?v=20260424_ADMIN_LIGHT_THEME_SETTINGS_CARDS_NO_LIFT_1'],
+        ['admin-studio.html', 'css/admin-studio-page.css?v=20260426_ADMIN_DOCK_PANEL_PARITY_6'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
         ['debug-realtime.html', 'css/debug-realtime-page.css?v=20260324_DEBUG_REALTIME_STYLE_ATTRS_1'],
@@ -7289,7 +7289,10 @@ test('admin shell runtime centralizes module context and site-change routing', (
     const workbenchSource = readRepoFile('js/admin-workbench.js');
 
     const shellMarkers = [
-        "const ADMIN_SHELL_VERSION = '20260421_ADMIN_SHELL_COMMENTS_OPS_HELPERS_P2'",
+        "const ADMIN_SHELL_VERSION = '20260426_ADMIN_SHELL_LOADING_DOTS_CENTER_P1'",
+        'function buildLoadingDotsMarkup(message = \'\', options = {})',
+        'function applyLoadingDotsState(element, options = {})',
+        'function initializeLoadingDotsBridge()',
         'function normalizeContext(destination, context = {}, options = {})',
         'function normalizeDeliveryResult(result, options = {})',
         'async function activateLegacyModuleRuntime(moduleRuntime, context = {}, options = {})',
@@ -7318,16 +7321,16 @@ test('admin shell runtime centralizes module context and site-change routing', (
     );
 
     assert.equal(
-        adminStudioSource.includes('js/admin-shell.js?v=20260421_ADMIN_SHELL_COMMENTS_OPS_HELPERS_P2'),
+        adminStudioSource.includes('js/admin-shell.js?v=20260426_ADMIN_SHELL_LOADING_DOTS_CENTER_P1'),
         true,
         'admin-studio.html should load the Admin Shell after bootstrap'
     );
     assert.ok(
-        adminStudioSource.indexOf('js/admin-studio-bootstrap.js') < adminStudioSource.indexOf('js/admin-shell.js?v=20260421_ADMIN_SHELL_COMMENTS_OPS_HELPERS_P2'),
+        adminStudioSource.indexOf('js/admin-studio-bootstrap.js') < adminStudioSource.indexOf('js/admin-shell.js?v=20260426_ADMIN_SHELL_LOADING_DOTS_CENTER_P1'),
         'admin-studio.html should load Admin Shell after bootstrap'
     );
     assert.ok(
-        adminStudioSource.indexOf('js/admin-shell.js?v=20260421_ADMIN_SHELL_COMMENTS_OPS_HELPERS_P2') < adminStudioSource.indexOf('admin-comments.js?v=20260421_COMMENTS_MODULE_BRIDGE_HELPERS_P3'),
+        adminStudioSource.indexOf('js/admin-shell.js?v=20260426_ADMIN_SHELL_LOADING_DOTS_CENTER_P1') < adminStudioSource.indexOf('admin-comments.js?v=20260421_COMMENTS_MODULE_BRIDGE_HELPERS_P3'),
         'admin-studio.html should load Admin Shell before feature modules register with it'
     );
     assert.equal(
@@ -7626,7 +7629,7 @@ test('admin comments runtime renderers route list items, filters, and block menu
         'admin-studio.html should load the cache-busted admin studio runtime for the comments batch feedback bridge fix'
     );
     assert.equal(
-        adminStudioSource.includes('js/admin-shell.js?v=20260421_ADMIN_SHELL_COMMENTS_OPS_HELPERS_P2'),
+        adminStudioSource.includes('js/admin-shell.js?v=20260426_ADMIN_SHELL_LOADING_DOTS_CENTER_P1'),
         true,
         'admin-studio.html should load the P1 admin shell before feature modules'
     );
@@ -14138,13 +14141,13 @@ test('admin studio modules emit unified command feedback for recent processing r
     assert.equal(adminStudioScript.includes('工单聚焦入口缺少目标标识，请刷新当前卡片后重试。'), true, 'admin-studio.js should surface recoverable ticket focus failures');
 
     const versionMarkers = [
-        'css/admin-command-center.css?v=20260422_ADMIN_PULSE_DOCK_V2',
-        'js/admin-command-center.js?v=20260422_ADMIN_PULSE_DOCK_V2',
+        'css/admin-command-center.css?v=20260426_ADMIN_PULSE_DOCK_V5',
+        'js/admin-command-center.js?v=20260426_ADMIN_PULSE_DOCK_V5',
         'js/admin-payments.js?v=20260421_ADMIN_PAYMENTS_CONTEXT_HELPER_P2',
         'js/admin-tickets.js?v=20260421_TICKETS_OPS_ALERTS_HELPER_P2',
         'js/admin-shop.js?v=20260423_SHOP_PRODUCT_DESCRIPTION_VISIBILITY_1',
         'admin-discounts.js?v=20260421_DISCOUNTS_CONTEXT_HELPER_P2',
-        'js/admin-shell.js?v=20260421_ADMIN_SHELL_COMMENTS_OPS_HELPERS_P2',
+        'js/admin-shell.js?v=20260426_ADMIN_SHELL_LOADING_DOTS_CENTER_P1',
         'admin-users.js?v=20260421_ADMIN_USERS_CONTEXT_HELPER_P2',
         'admin-homepage.js?v=20260421_HOMEPAGE_FEEDBACK_BRIDGE_P4',
         'admin-points.js?v=20260421_ADMIN_POINTS_GENERATE_SUBMIT_BRIDGE_P2',

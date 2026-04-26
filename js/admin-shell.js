@@ -5,7 +5,34 @@
         return;
     }
 
-    const ADMIN_SHELL_VERSION = '20260421_ADMIN_SHELL_COMMENTS_OPS_HELPERS_P2';
+    const ADMIN_SHELL_VERSION = '20260426_ADMIN_SHELL_LOADING_DOTS_CENTER_P1';
+    const ADMIN_LOADING_BRIDGE_SELECTOR = [
+        '#analysisLoading',
+        '#hp-loading',
+        '#cfgVerifyQuota',
+        '#opsAlertMonitorMeta',
+        '#opsAlertHealthMeta',
+        '#paymentsOpsAlertQueueMeta',
+        '.loading-text',
+        '.verify-monitor-empty',
+        '.admin-audit-monitor-empty',
+        '.loading-cell',
+        '.shop-inventory-loading-cell',
+        '.ai-loading',
+        '.comment-detail-drawer__empty',
+        '.comment-detail-drawer__empty-inline',
+        '.shop-delivery-empty',
+        '.shop-delivery-table-note',
+        '.config-inline-note',
+        '.ops-alert-monitor-empty',
+        '.ops-alert-overview-empty',
+        '.session-empty-state',
+        '#importProductTree > div',
+        'td.text-center',
+        'span[id$="Meta"]'
+    ].join(', ');
+    const ADMIN_LOADING_TEXT_PATTERN = /(?:加载中|正在加载|分析中|生成中|查询中|同步中|校验中|准备中|补齐中|拉取中|获取中|刷新中)/;
+    const ADMIN_LOADING_NEGATIVE_PATTERN = /(?:失败|错误|异常|暂无|没有|未联动|未找到|无数据|无可用|等待加载)/;
     const MODULE_ALIASES = Object.freeze({
         analytics: 'analytics',
         'analytics-center': 'analytics',
@@ -25,6 +52,328 @@
 
     function sanitizeText(value, maxLength = 4000) {
         return String(value || '').trim().slice(0, Math.max(0, maxLength));
+    }
+
+    function escapeHtml(value) {
+        return String(value || '').replace(/[&<>"']/g, (char) => {
+            if (char === '&') return '&amp;';
+            if (char === '<') return '&lt;';
+            if (char === '>') return '&gt;';
+            if (char === '"') return '&quot;';
+            return '&#39;';
+        });
+    }
+
+    function isHtmlElement(value) {
+        return value instanceof window.HTMLElement;
+    }
+
+    function normalizeLoadingDotsVariant(value) {
+        const normalized = sanitizeText(value, 16).toLowerCase();
+        if (normalized === 'hero' || normalized === 'inline' || normalized === 'cell') {
+            return normalized;
+        }
+        return 'block';
+    }
+
+    function buildLoadingDotsInnerMarkup(variant = 'block') {
+        const normalizedVariant = normalizeLoadingDotsVariant(variant);
+        return `<span class="admin-module-loading-dots admin-module-loading-dots--${normalizedVariant}" aria-hidden="true"><span></span><span></span><span></span></span>`;
+    }
+
+    function buildLoadingDotsMarkup(message = '', options = {}) {
+        const variant = normalizeLoadingDotsVariant(options.variant);
+        const tagName = ['div', 'span', 'p'].includes(String(options.tagName || '').trim().toLowerCase())
+            ? String(options.tagName || '').trim().toLowerCase()
+            : variant === 'inline'
+                ? 'span'
+                : 'div';
+        const label = escapeHtml(sanitizeText(message || options.label || '加载中...', 240) || '加载中...');
+        return `<${tagName} class="admin-module-loading-host admin-module-loading-host--${variant}" role="status" aria-live="polite" aria-label="${label}">${buildLoadingDotsInnerMarkup(variant)}</${tagName}>`;
+    }
+
+    function isLoadingBridgeCandidate(element) {
+        return isHtmlElement(element) && typeof element.matches === 'function' && element.matches(ADMIN_LOADING_BRIDGE_SELECTOR);
+    }
+
+    function elementHasLoadingDots(element) {
+        if (!isHtmlElement(element)) {
+            return false;
+        }
+        return Boolean(element.firstElementChild && element.firstElementChild.classList.contains('admin-module-loading-dots'));
+    }
+
+    function getLoadingIndicatorLabel(element) {
+        if (!isHtmlElement(element)) {
+            return '加载中...';
+        }
+
+        const explicitLabel = sanitizeText(
+            element.getAttribute('aria-label')
+            || element.getAttribute('data-admin-loading-label')
+            || '',
+            240
+        );
+        if (explicitLabel) {
+            return explicitLabel;
+        }
+
+        if (element.id === 'analysisLoading') {
+            return 'AI 分析加载中...';
+        }
+        if (element.id === 'hp-loading') {
+            return '加载主页配置中...';
+        }
+        if (element.id === 'cfgVerifyQuota') {
+            return '查询中...';
+        }
+
+        const textLabel = sanitizeText(element.textContent || '', 240);
+        return textLabel || '加载中...';
+    }
+
+    function elementHasLoadingSignal(element) {
+        if (!isHtmlElement(element)) {
+            return false;
+        }
+
+        if (elementHasLoadingDots(element)) {
+            return true;
+        }
+
+        if (element.id === 'analysisLoading') {
+            return true;
+        }
+
+        if (element.querySelector('.fa-spin, .neural-loader')) {
+            return true;
+        }
+
+        const label = sanitizeText(element.textContent || '', 240);
+        return Boolean(label) && ADMIN_LOADING_TEXT_PATTERN.test(label) && !ADMIN_LOADING_NEGATIVE_PATTERN.test(label);
+    }
+
+    function resolveLoadingDotsVariant(element, options = {}) {
+        const explicitVariant = normalizeLoadingDotsVariant(options.variant);
+        if (explicitVariant !== 'block') {
+            return explicitVariant;
+        }
+
+        if (!isHtmlElement(element)) {
+            return 'block';
+        }
+
+        if (element.id === 'analysisLoading' || element.id === 'hp-loading') {
+            return 'hero';
+        }
+
+        if (element.matches('td, .loading-cell, .shop-inventory-loading-cell')) {
+            return 'cell';
+        }
+
+        if (
+            element.id === 'cfgVerifyQuota'
+            || element.matches('.config-inline-note, .shop-delivery-table-note, .comment-detail-drawer__empty-inline')
+            || (element.tagName === 'SPAN' && /Meta$/.test(element.id || ''))
+        ) {
+            return 'inline';
+        }
+
+        return 'block';
+    }
+
+    function shouldManageLoadingBridgeElement(element) {
+        if (!isLoadingBridgeCandidate(element)) {
+            return false;
+        }
+
+        const excludedAncestor = element.closest('button, [role="button"], .admin-command-center__action, .sidebar-item, .admin-tab');
+        if (excludedAncestor && excludedAncestor !== element) {
+            return false;
+        }
+
+        return elementHasLoadingSignal(element);
+    }
+
+    function applyLoadingDotsState(element, options = {}) {
+        if (!isHtmlElement(element)) {
+            return false;
+        }
+
+        const variant = resolveLoadingDotsVariant(element, options);
+        const label = sanitizeText(options.label || getLoadingIndicatorLabel(element), 240) || '加载中...';
+        const variantClasses = [
+            'admin-module-loading-host--block',
+            'admin-module-loading-host--inline',
+            'admin-module-loading-host--cell',
+            'admin-module-loading-host--hero'
+        ];
+
+        element.classList.add('admin-module-loading-host');
+        variantClasses.forEach((className) => element.classList.remove(className));
+        element.classList.add(`admin-module-loading-host--${variant}`);
+        element.dataset.adminLoadingDotsState = 'true';
+        element.dataset.adminLoadingDotsVariant = variant;
+        element.dataset.adminLoadingLabel = label;
+        element.setAttribute('role', 'status');
+        element.setAttribute('aria-live', 'polite');
+        element.setAttribute('aria-label', label);
+
+        if (!elementHasLoadingDots(element) || element.dataset.adminLoadingDotsVariant !== variant) {
+            element.innerHTML = buildLoadingDotsInnerMarkup(variant);
+        }
+        return true;
+    }
+
+    function clearLoadingDotsState(element) {
+        if (!isHtmlElement(element)) {
+            return false;
+        }
+
+        element.classList.remove(
+            'admin-module-loading-host',
+            'admin-module-loading-host--block',
+            'admin-module-loading-host--inline',
+            'admin-module-loading-host--cell',
+            'admin-module-loading-host--hero'
+        );
+        delete element.dataset.adminLoadingDotsState;
+        delete element.dataset.adminLoadingDotsVariant;
+        delete element.dataset.adminLoadingLabel;
+        element.removeAttribute('role');
+        element.removeAttribute('aria-live');
+        element.removeAttribute('aria-label');
+        return true;
+    }
+
+    function syncLoadingDotsState(element) {
+        if (!isLoadingBridgeCandidate(element)) {
+            return false;
+        }
+
+        if (shouldManageLoadingBridgeElement(element)) {
+            return applyLoadingDotsState(element);
+        }
+
+        if (element.classList.contains('admin-module-loading-host')) {
+            clearLoadingDotsState(element);
+        }
+        return false;
+    }
+
+    function collectLoadingBridgeCandidates(root, bucket = new Set()) {
+        if (!root) {
+            return bucket;
+        }
+
+        const element = root.nodeType === Node.ELEMENT_NODE
+            ? root
+            : root.parentElement;
+
+        if (!isHtmlElement(element)) {
+            return bucket;
+        }
+
+        if (typeof element.closest === 'function') {
+            const closestCandidate = element.closest(ADMIN_LOADING_BRIDGE_SELECTOR);
+            if (closestCandidate) {
+                bucket.add(closestCandidate);
+            }
+        }
+
+        if (isLoadingBridgeCandidate(element)) {
+            bucket.add(element);
+        }
+
+        if (typeof element.querySelectorAll === 'function') {
+            element.querySelectorAll(ADMIN_LOADING_BRIDGE_SELECTOR).forEach((candidate) => {
+                bucket.add(candidate);
+            });
+        }
+
+        return bucket;
+    }
+
+    let loadingDotsObserver = null;
+    let loadingDotsRefreshScheduled = false;
+    const pendingLoadingDotsRoots = new Set();
+
+    function flushLoadingDotsBridge() {
+        loadingDotsRefreshScheduled = false;
+        const candidates = new Set();
+        if (!pendingLoadingDotsRoots.size && document.body) {
+            pendingLoadingDotsRoots.add(document.body);
+        }
+
+        pendingLoadingDotsRoots.forEach((root) => collectLoadingBridgeCandidates(root, candidates));
+        pendingLoadingDotsRoots.clear();
+        candidates.forEach((candidate) => {
+            syncLoadingDotsState(candidate);
+        });
+    }
+
+    function queueLoadingDotsRefresh(root = document.body) {
+        if (root) {
+            pendingLoadingDotsRoots.add(root);
+        }
+        if (loadingDotsRefreshScheduled) {
+            return;
+        }
+
+        loadingDotsRefreshScheduled = true;
+        const schedule = typeof window.requestAnimationFrame === 'function'
+            ? window.requestAnimationFrame.bind(window)
+            : (callback) => window.setTimeout(callback, 16);
+        schedule(flushLoadingDotsBridge);
+    }
+
+    function startLoadingDotsBridgeObserver() {
+        if (loadingDotsObserver || !document.body) {
+            return;
+        }
+
+        if (typeof MutationObserver !== 'function') {
+            queueLoadingDotsRefresh(document.body);
+            return;
+        }
+
+        loadingDotsObserver = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                queueLoadingDotsRefresh(mutation.target);
+                mutation.addedNodes.forEach((node) => queueLoadingDotsRefresh(node));
+            });
+        });
+
+        loadingDotsObserver.observe(document.body, {
+            subtree: true,
+            childList: true,
+            characterData: true
+        });
+        queueLoadingDotsRefresh(document.body);
+    }
+
+    function initializeLoadingDotsBridge() {
+        if (window.__adminLoadingDotsBridgeInitialized === true) {
+            return;
+        }
+        window.__adminLoadingDotsBridgeInitialized = true;
+
+        if (typeof document !== 'object' || !document) {
+            return;
+        }
+
+        if (document.body) {
+            startLoadingDotsBridgeObserver();
+            return;
+        }
+
+        if (typeof document.addEventListener !== 'function') {
+            return;
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            startLoadingDotsBridgeObserver();
+        }, { once: true });
     }
 
     function normalizeModuleId(value) {
@@ -687,9 +1036,14 @@
         return activateModule(moduleName, normalizePayloadObject(options));
     }
 
+    initializeLoadingDotsBridge();
+
     window.AdminShell = {
         version: ADMIN_SHELL_VERSION,
         activateModule,
+        applyLoadingDotsState,
+        buildLoadingDotsMarkup,
+        clearLoadingDotsState,
         deliverModuleContext,
         getActiveModuleId,
         getContext(moduleId) {
@@ -700,6 +1054,9 @@
         normalizeDeliveryResult,
         normalizeModuleId,
         openContext,
+        refreshLoadingDots(root = document.body) {
+            queueLoadingDotsRefresh(root || document.body);
+        },
         registerModule,
         registerSiteChangeHandler,
         settle,
