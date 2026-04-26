@@ -1782,7 +1782,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['privacy.html', 'css/privacy-page.css?v=20260324_PRIVACY_STYLES_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260425_HOME_GUESTBOOK_MODAL_HIDE_1'],
-        ['shop.html', 'css/shop-page.css?v=20260426_SHOP_MOBILE_ENTER_STABLE_1'],
+        ['shop.html', 'css/shop-page.css?v=20260426_SHOP_MOBILE_ENTER_STABLE_2'],
         ['admin-studio.html', 'css/admin-studio-page.css?v=20260424_ADMIN_LIGHT_THEME_SETTINGS_CARDS_NO_LIFT_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
@@ -1871,7 +1871,7 @@ test('selected preview showcase pages no longer embed inline style attributes', 
 
 test('shop and archived index pages no longer embed inline style attributes', () => {
     const expectations = new Map([
-        ['shop.html', 'css/shop-page.css?v=20260426_SHOP_MOBILE_ENTER_STABLE_1'],
+        ['shop.html', 'css/shop-page.css?v=20260426_SHOP_MOBILE_ENTER_STABLE_2'],
         ['index_old.html', 'css/index-old.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1']
     ]);
     const inlineStyleAttributePattern = /\sstyle\s*=\s*["']/i;
@@ -2311,7 +2311,7 @@ test('shop storefront preserves the initial skeleton layout while first-load dat
         'js/shop-client.js should keep the server-rendered shop skeleton layout stable when the first request is still pending'
     );
     assert.equal(
-        shopHtmlSource.includes('js/shop-client.js?v=20260426_SHOP_MOBILE_ENTER_STABLE_1'),
+        shopHtmlSource.includes('js/shop-client.js?v=20260426_SHOP_MOBILE_ENTER_STABLE_2'),
         true,
         'shop.html should reference the latest shop client runtime for the cart-enabled storefront flow'
     );
@@ -2327,7 +2327,7 @@ test('shop storefront uses a 21:9 media ratio for mobile product cards', () => {
         'mobile shop product cards and loading skeletons should keep the top media area at 21:9'
     );
     assert.equal(
-        shopHtmlSource.includes('css/shop-page.css?v=20260426_SHOP_MOBILE_ENTER_STABLE_1'),
+        shopHtmlSource.includes('css/shop-page.css?v=20260426_SHOP_MOBILE_ENTER_STABLE_2'),
         true,
         'shop.html should bust the shop stylesheet cache for the latest shop card sizing'
     );
@@ -2346,6 +2346,16 @@ test('shop initial product entrance defers idle breathe until lift animation com
         shopCssSource,
         /body\.shop-page \.shop-card\.user-product-card\.shop-card-filter-enter\.shop-card--active-focus\s*\{[\s\S]*?--shop-card-focus-y:\s*0px;[\s\S]*?--shop-card-focus-scale:\s*1;/,
         'mobile focus lift should not add another transform while product cards are entering'
+    );
+    assert.match(
+        shopCssSource,
+        /@keyframes shopMobileInitialCardEnter\s*\{[\s\S]*?transform:\s*translate3d\(0,\s*58px,\s*0\)\s*scale\(0\.976\);[\s\S]*?transform:\s*translate3d\(0,\s*0,\s*0\)\s*scale\(1\);/,
+        'mobile initial entrance should use a compositor transform animation instead of a custom-property transition'
+    );
+    assert.match(
+        shopCssSource,
+        /body\.shop-page \.shop-card\.user-product-card\.shop-card-filter-enter--initial\.is-visible\s*\{[\s\S]*?transition:\s*none;[\s\S]*?animation:\s*shopMobileInitialCardEnter/,
+        'mobile initial entrance should not rely on transition state that can be canceled by scroll restoration'
     );
     assert.match(
         shopClientSource,
@@ -2371,6 +2381,11 @@ test('shop initial product entrance defers idle breathe until lift animation com
         shopClientSource,
         /isProductGridTransitionActive:\s*function \(container = document\.getElementById\('userShopGrid'\)\) \{[\s\S]*?gridTransitionActiveUntil > performance\.now\(\)[\s\S]*?shop-card-filter-enter/,
         'shop client should expose a transition-active guard for mobile viewport scroll events'
+    );
+    assert.match(
+        shopClientSource,
+        /stabilizeShopScrollRestoration:\s*function \(\) \{[\s\S]*?window\.history\.scrollRestoration = 'manual';[\s\S]*?\}[\s\S]*?ShopClient\.stabilizeShopScrollRestoration\(\);/,
+        'shop page should disable native scroll restoration before init so refresh cannot inject old scrollY into the entrance animation'
     );
     assert.match(
         shopClientSource,
@@ -11612,7 +11627,7 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(indexSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index.html should load the latest guestbook runtime');
     assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'guestbook.html should load the latest guestbook runtime');
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index_old.html should load the latest guestbook runtime');
-    assert.equal(shopSource.includes('js/shop-client.js?v=20260426_SHOP_MOBILE_ENTER_STABLE_1'), true, 'shop.html should load the latest cart-aware shop runtime');
+    assert.equal(shopSource.includes('js/shop-client.js?v=20260426_SHOP_MOBILE_ENTER_STABLE_2'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260412_SHOP_CARD_IMAGE_OPT_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
     assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260425_WALLET_MOBILE_CHECKOUT_REDIRECT_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
 });

@@ -5567,6 +5567,16 @@ const ShopClient = {
         return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
     },
 
+    stabilizeShopScrollRestoration: function () {
+        try {
+            if ('scrollRestoration' in window.history) {
+                window.history.scrollRestoration = 'manual';
+            }
+        } catch (_error) {
+            // Ignore browsers that expose history but block scrollRestoration writes.
+        }
+    },
+
     waitForGridTransitionIdle: function ({ maxWaitMs = 3200, extraBufferMs = 48 } = {}) {
         const remainingMs = Math.ceil(this.gridTransitionActiveUntil - performance.now());
         if (remainingMs <= 0) {
@@ -8835,6 +8845,8 @@ const ShopClient = {
         }, 2000);
     }
 };
+
+ShopClient.stabilizeShopScrollRestoration();
 
 // Auto-init if DOM ready, otherwise wait
 if (document.readyState === 'loading') {
