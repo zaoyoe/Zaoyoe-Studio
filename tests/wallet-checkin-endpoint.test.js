@@ -66,6 +66,10 @@ async function withWalletCheckinHandler(mocks, callback) {
         }
 
         if (request === '../_lib/discount-trigger-linkage') {
+            if (mocks.helperLoadError) {
+                throw mocks.helperLoadError;
+            }
+
             return {
                 async maybeIssueCheckinDiscountAssets(payload) {
                     state.helperCalls.push(payload);
@@ -86,13 +90,9 @@ async function withWalletCheckinHandler(mocks, callback) {
     let handler;
     try {
         handler = require(handlerPath);
-    } finally {
-        Module._load = originalLoad;
-    }
-
-    try {
         return await callback({ handler, state });
     } finally {
+        Module._load = originalLoad;
         delete require.cache[handlerPath];
     }
 }
@@ -143,6 +143,51 @@ test('wallet checkin endpoint proxies successful checkin data and linked discoun
         assert.equal(payload.linked_discount_summary?.issued_count, 1);
         assert.equal(state.helperCalls.length, 1);
         assert.equal(state.helperCalls[0].checkinDate, '2026-04-15');
+    });
+});
+
+test('wallet checkin endpoint keeps the checkin response when discount linkage is unavailable', async () => {
+    await withWalletCheckinHandler({
+        authResult: {
+            user: { id: 'user-checkin-linkage-missing' },
+            requestSupabase: {
+                rpc() {
+                    return Promise.resolve({
+                        data: {
+                            success: true,
+                            message: '签到成功',
+                            points: 5,
+                            base_reward: 5,
+                            bonus_reward: 0,
+                            consecutive_days: 1,
+                            new_balance: 25
+                        },
+                        error: null
+                    });
+                }
+            },
+            adminSupabase: { from() {} },
+            supabase: { from() {} }
+        },
+        helperLoadError: new Error('simulated missing optional linkage helper')
+    }, async ({ handler, state }) => {
+        const req = {
+            method: 'POST',
+            headers: {},
+            body: {
+                site: 'cn'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.points, 5);
+        assert.equal(payload.linked_discount_summary, null);
+        assert.equal(state.helperCalls.length, 0);
     });
 });
 
