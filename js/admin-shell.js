@@ -332,6 +332,11 @@
             return;
         }
 
+        if (typeof MutationObserver !== 'function') {
+            queueLoadingDotsRefresh(document.body);
+            return;
+        }
+
         loadingDotsObserver = new MutationObserver((mutations) => {
             mutations.forEach((mutation) => {
                 queueLoadingDotsRefresh(mutation.target);
@@ -353,8 +358,16 @@
         }
         window.__adminLoadingDotsBridgeInitialized = true;
 
+        if (typeof document !== 'object' || !document) {
+            return;
+        }
+
         if (document.body) {
             startLoadingDotsBridgeObserver();
+            return;
+        }
+
+        if (typeof document.addEventListener !== 'function') {
             return;
         }
 
