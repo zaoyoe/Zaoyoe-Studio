@@ -189,13 +189,8 @@ function buildShopTrackingMetadata(baseMetadata = {}, sourceContext = {}) {
 
 const SHOP_GRID_EAGER_IMAGE_COUNT = 4;
 const SHOP_PRODUCT_SKELETON_COUNT = 5;
-const SHOP_CARD_BREATHE_DURATION_MS = 5800;
-const SHOP_CARD_BREATHE_AMPLITUDE_PX = 6;
-const SHOP_CARD_INITIAL_BREATHE_SETTLE_DELAY_MS = 80;
-const SHOP_CARD_INITIAL_BREATHE_STAGGER_MS = 340;
-const SHOP_CARD_INITIAL_BREATHE_JITTER_MS = 180;
-const SHOP_CARD_INITIAL_BREATHE_MAX_DELAY_MS = 2600;
-const SHOP_CARD_INITIAL_BREATHE_RAMP_MS = 1350;
+const SHOP_CARD_BREATHE_MAX_DELAY_S = 4;
+const SHOP_CARD_BREATHE_ACTIVATE_DELAY_MS = 850;
 const SHOP_CARD_ENTER_SETTLE_FALLBACK_BUFFER_MS = 180;
 const SHOP_PREFETCH_SCHEMA_VERSION = '20260423_PRODUCT_DESCRIPTION_VISIBILITY_1';
 const SHOP_PURCHASE_PREFILL_SCHEMA_VERSION = '20260415_SHOP_PURCHASE_PREFILL_1';
@@ -285,6 +280,7 @@ const ShopClient = {
     staticUiBindingsBound: false,
     deferredUiBindingsBound: false,
     deferredUiBindingsHandle: null,
+    shopCardBreatheTimers: new WeakMap(),
     pendingProductSpotlight: null,
     productSpotlightTimer: null,
     postRenderEnhancementHandle: null,
@@ -4852,50 +4848,51 @@ const ShopClient = {
             || trimmed.startsWith('data:image/');
     },
 
-    getShopCardWaveOffsetMs: function (productId = '') {
-        const input = String(productId || '');
-        let hash = 0;
-        for (let index = 0; index < input.length; index += 1) {
-            hash = ((hash * 33) + input.charCodeAt(index)) >>> 0;
-        }
-        return (hash % 29) * 173;
-    },
-
-    getShopCardBreatheDelay: function (productId = '', timeMs = performance.now()) {
+    getShopCardBreatheDelay: function () {
         if (!this.isShopCardBreathingEnabled()) {
             return '0s';
         }
 
-        const phaseMs = (timeMs + this.getShopCardWaveOffsetMs(productId)) % SHOP_CARD_BREATHE_DURATION_MS;
-        return `-${(phaseMs / 1000).toFixed(3)}s`;
+        return `${(Math.random() * SHOP_CARD_BREATHE_MAX_DELAY_S).toFixed(2)}s`;
     },
 
     isShopCardBreathingEnabled: function () {
         return !this.prefersReducedMotion();
     },
 
-    getShopCardInitialBreatheDelay: function (productId = '', enterOrder = 0) {
-        if (!this.isShopCardBreathingEnabled()) {
-            return '0ms';
+    clearShopCardBreatheTimer: function (card) {
+        if (!(card instanceof Element)) return;
+        const timerId = this.shopCardBreatheTimers.get(card);
+        if (timerId) {
+            window.clearTimeout(timerId);
+            this.shopCardBreatheTimers.delete(card);
         }
-
-        const safeEnterOrder = Number.isFinite(enterOrder) ? Math.max(0, enterOrder) : 0;
-        const waveJitterMs = this.getShopCardWaveOffsetMs(productId) % SHOP_CARD_INITIAL_BREATHE_JITTER_MS;
-        const delayMs = Math.min(
-            SHOP_CARD_INITIAL_BREATHE_MAX_DELAY_MS,
-            SHOP_CARD_INITIAL_BREATHE_SETTLE_DELAY_MS + safeEnterOrder * SHOP_CARD_INITIAL_BREATHE_STAGGER_MS + waveJitterMs
-        );
-        return `${Math.round(delayMs)}ms`;
     },
 
-    getShopCardWaveOffsetY: function (productId = '', timeMs = performance.now()) {
-        if (!this.isShopCardBreathingEnabled()) {
+    getShopCardCurrentTranslateY: function (card) {
+        if (!(card instanceof Element)) {
             return 0;
         }
 
-        const phaseMs = (timeMs + this.getShopCardWaveOffsetMs(productId)) % SHOP_CARD_BREATHE_DURATION_MS;
-        const progress = phaseMs / SHOP_CARD_BREATHE_DURATION_MS;
-        return -0.5 * SHOP_CARD_BREATHE_AMPLITUDE_PX * (1 - Math.cos(progress * Math.PI * 2));
+        const transform = window.getComputedStyle(card).transform;
+        if (!transform || transform === 'none') {
+            return 0;
+        }
+
+        try {
+            const matrix = new window.DOMMatrixReadOnly(transform);
+            return Number.isFinite(matrix.m42) ? matrix.m42 : 0;
+        } catch (_error) {
+            const match = transform.match(/^matrix(3d)?\((.+)\)$/);
+            if (!match) {
+                return 0;
+            }
+            const values = match[2].split(',').map(value => Number.parseFloat(value.trim()));
+            if (match[1] === '3d') {
+                return Number.isFinite(values[13]) ? values[13] : 0;
+            }
+            return Number.isFinite(values[5]) ? values[5] : 0;
+        }
     },
 
     renderShopCoverIconMarkup: function (iconClass = '', safeIconClass = '') {
@@ -5740,31 +5737,42 @@ const ShopClient = {
         });
     },
 
-    releaseDeferredShopCardBreathe: function (card) {
+    releaseDeferredShopCardBreathe: function (card, { activateDelayMs = SHOP_CARD_BREATHE_ACTIVATE_DELAY_MS } = {}) {
         if (!(card instanceof Element)) return;
-        if (!card.classList.contains('shop-card-breathe-deferred') && !card.dataset.shopInitialBreatheDelay) {
+        if (!card.classList.contains('shop-card-breathe-deferred') && !card.dataset.shopBreatheDelay) {
             return;
         }
 
-        const deferredBreatheDelay = card.dataset.shopInitialBreatheDelay || '0ms';
-        card.style.setProperty('--breathe-delay', deferredBreatheDelay);
-        card.style.setProperty('--shop-card-breathe-amplitude', '0px');
-        delete card.dataset.shopInitialBreatheDelay;
-        card.classList.remove('shop-card-breathe-deferred');
-
-        window.requestAnimationFrame(() => {
-            if (!card.isConnected) return;
-            card.style.setProperty('--shop-card-breathe-amplitude', `-${SHOP_CARD_BREATHE_AMPLITUDE_PX}px`);
-            window.setTimeout(() => {
-                if (!card.isConnected || card.classList.contains('shop-card-breathe-deferred')) return;
-                card.style.removeProperty('--shop-card-breathe-amplitude');
-            }, SHOP_CARD_INITIAL_BREATHE_RAMP_MS + 120);
+        this.clearShopCardBreatheTimer(card);
+        this.setCssVariables(card, {
+            '--breathe-delay': card.dataset.shopBreatheDelay || '0s'
         });
+
+        if (!this.isShopCardBreathingEnabled()) {
+            card.classList.remove('shop-card-breathe-deferred', 'breathing');
+            return;
+        }
+
+        const activate = () => {
+            if (!card.isConnected) return;
+            card.classList.remove('shop-card-breathe-deferred');
+        };
+
+        if (activateDelayMs <= 0) {
+            activate();
+            return;
+        }
+
+        const timerId = window.setTimeout(() => {
+            this.shopCardBreatheTimers.delete(card);
+            activate();
+        }, activateDelayMs);
+        this.shopCardBreatheTimers.set(card, timerId);
     },
 
-    releaseDeferredShopCardsBreathe: function (cards = []) {
+    releaseDeferredShopCardsBreathe: function (cards = [], options = {}) {
         (Array.isArray(cards) ? cards : []).forEach(card => {
-            this.releaseDeferredShopCardBreathe(card);
+            this.releaseDeferredShopCardBreathe(card, options);
         });
     },
 
@@ -5789,7 +5797,8 @@ const ShopClient = {
                 'is-visible',
                 'is-leaving'
             );
-            this.releaseDeferredShopCardBreathe(card);
+            this.clearShopCardBreatheTimer(card);
+            this.releaseDeferredShopCardBreathe(card, { activateDelayMs: 0 });
             card.style.transition = '';
             card.style.transform = '';
             card.style.opacity = '';
@@ -5835,7 +5844,7 @@ const ShopClient = {
         return emptyState;
     },
 
-    buildProductCardElement: function (product, agentPrices = {}, index = 0, { waveTimeMs = performance.now() } = {}) {
+    buildProductCardElement: function (product, agentPrices = {}, index = 0) {
         if (!product) return null;
 
         const pricingState = this.buildProductCardPricingState(product, agentPrices);
@@ -5852,11 +5861,12 @@ const ShopClient = {
         const cartQuantity = this.getCartQuantity(productId);
 
         const el = document.createElement('div');
-        el.className = `shop-card user-product-card breathing ${cartQuantity > 0 ? 'shop-card--in-cart' : ''}`;
+        el.className = `shop-card user-product-card breathing shop-card-breathe-deferred ${cartQuantity > 0 ? 'shop-card--in-cart' : ''}`;
         el.dataset.productId = productId;
         el.dataset.productCategory = String(product.category || '');
+        el.dataset.shopBreatheDelay = this.getShopCardBreatheDelay();
         this.setCssVariables(el, {
-            '--breathe-delay': this.getShopCardBreatheDelay(productId, waveTimeMs),
+            '--breathe-delay': null,
             '--shop-card-filter-delay': null
         });
 
@@ -5901,7 +5911,7 @@ const ShopClient = {
         const displayHtml = hasCoverImage
             ? `<img class="shop-card-image-cover" alt="${safeCardImageAlt}" width="480" height="320">`
             : `<div class="shop-icon-wrapper">${coverIconMarkup}</div>`;
-        el.className = `shop-card user-product-card breathing ${pricingState.flashShadowClass} ${cartQuantity > 0 ? 'shop-card--in-cart' : ''}`.trim();
+        el.className = `shop-card user-product-card breathing shop-card-breathe-deferred ${pricingState.flashShadowClass} ${cartQuantity > 0 ? 'shop-card--in-cart' : ''}`.trim();
         if (!noStock) {
             el.classList.add('shop-card--interactive');
             el.dataset.shopAction = 'buy-product';
@@ -5988,9 +5998,8 @@ const ShopClient = {
 
     buildProductCardElements: function (products, agentPrices = {}) {
         const renderedCards = [];
-        const waveTimeMs = performance.now();
         (Array.isArray(products) ? products : []).forEach(product => {
-            const card = this.buildProductCardElement(product, agentPrices, renderedCards.length, { waveTimeMs });
+            const card = this.buildProductCardElement(product, agentPrices, renderedCards.length);
             if (card) {
                 renderedCards.push(card);
             }
@@ -6006,7 +6015,6 @@ const ShopClient = {
         const hadSkeletonCards = container.querySelectorAll('.skeleton-card').length > 0;
         const shouldAnimate = !this.prefersReducedMotion() && (existingCards.length > 0 || (!empty && cardElements.length > 0));
         const transitionId = ++this.gridTransitionSequence;
-        const transitionStartTimeMs = performance.now();
         const previousCardState = new Map(
             existingCards
                 .map(card => {
@@ -6017,7 +6025,7 @@ const ShopClient = {
                         top: card.offsetTop,
                         width: card.offsetWidth,
                         height: card.offsetHeight,
-                        waveOffsetY: this.getShopCardWaveOffsetY(productId, transitionStartTimeMs),
+                        translateY: this.getShopCardCurrentTranslateY(card),
                         card
                     }];
                 })
@@ -6043,6 +6051,7 @@ const ShopClient = {
             } else {
                 container.classList.remove('is-empty');
                 cardElements.forEach(card => container.appendChild(card));
+                this.releaseDeferredShopCardsBreathe(cardElements);
             }
             this.syncMobileProductFocusMode();
             return;
@@ -6066,7 +6075,6 @@ const ShopClient = {
 
             enteringCards.forEach(card => {
                 card.classList.remove('shop-card-filter-enter', 'shop-card-filter-enter--initial', 'shop-card-filter-motion-lock', 'is-visible');
-                this.releaseDeferredShopCardBreathe(card);
                 card.style.transition = '';
                 card.style.transform = '';
                 card.style.opacity = '';
@@ -6151,7 +6159,7 @@ const ShopClient = {
         const releasePayloadBreathe = (payload = {}) => {
             if (payload.deferredBreatheReleased) return;
             payload.deferredBreatheReleased = true;
-            this.releaseDeferredShopCardsBreathe(payload.enteringCards || []);
+            this.releaseDeferredShopCardsBreathe(payload.finalCards || payload.enteringCards || []);
         };
 
         const scheduleCleanup = (durationMs, payload = {}) => {
@@ -6223,6 +6231,7 @@ const ShopClient = {
                 clone.style.height = `${previousState.height}px`;
                 clone.style.left = `${previousState.left}px`;
                 clone.style.top = `${previousState.top}px`;
+                clone.style.transform = `translate3d(0px, ${previousState.translateY || 0}px, 0) scale(1)`;
                 this.setCssVariables(clone, {
                     '--shop-card-filter-delay': `${exitIndex * 56}ms`
                 });
@@ -6288,7 +6297,7 @@ const ShopClient = {
                 clone.style.height = `${previousState.height}px`;
                 clone.style.left = `${previousState.left}px`;
                 clone.style.top = `${previousState.top}px`;
-                clone.style.transform = `translate3d(0px, ${previousState.waveOffsetY}px, 0) scale(1)`;
+                clone.style.transform = `translate3d(0px, ${previousState.translateY || 0}px, 0) scale(1)`;
                 this.setCssVariables(clone, {
                     '--shop-card-filter-delay': `${moveOrder * 18}ms`
                 });
@@ -6316,8 +6325,7 @@ const ShopClient = {
 
                 card.classList.add('shop-card-filter-enter', 'shop-card-filter-motion-lock');
                 if (isInitialEntrance) {
-                    card.classList.add('shop-card-filter-enter--initial', 'shop-card-breathe-deferred');
-                    card.dataset.shopInitialBreatheDelay = this.getShopCardInitialBreatheDelay(productId, enterOrder);
+                    card.classList.add('shop-card-filter-enter--initial');
                 }
                 this.setCssVariables(card, {
                     '--shop-card-filter-delay': `${effectiveEnterDelayBase + (enterOrder * enterDelayStepMs)}ms`
@@ -6343,10 +6351,8 @@ const ShopClient = {
                 : 0;
             const cleanupDurationMs = Math.max(moveDurationMs, enterDurationMs);
             const enterSettlePromise = createEnteringSettlePromise(enteringCards, enterDurationMs);
-            const revealTimeMs = transitionStartTimeMs + cleanupDurationMs;
-
             movingCards.forEach((entry) => {
-                entry.targetShiftY = entry.moveY + this.getShopCardWaveOffsetY(entry.productId, revealTimeMs);
+                entry.targetShiftY = entry.moveY;
             });
 
             void container.offsetWidth;
@@ -6363,6 +6369,7 @@ const ShopClient = {
                 enteringCards,
                 cleanupDurationMs,
                 enterSettlePromise,
+                finalCards: cardElements,
                 overlay: moveOverlayNode ? [moveOverlayNode] : []
             };
         };
@@ -6375,12 +6382,14 @@ const ShopClient = {
 
         if (exitingCards.length === 0) {
             const payload = renderNextState() || {};
+            releasePayloadBreathe(payload);
             scheduleCleanup(payload.cleanupDurationMs || 0, payload);
             return;
         }
 
         if (!empty && persistentCount > 0) {
             const payload = renderNextState({ enterDelayBase: 0 }) || {};
+            releasePayloadBreathe(payload);
             const blockedPositionKeys = new Set(
                 Array.from(container.querySelectorAll('.shop-card[data-product-id]')).map(card =>
                     `${Math.round(card.offsetLeft)}:${Math.round(card.offsetTop)}`
@@ -6427,6 +6436,7 @@ const ShopClient = {
             if (transitionId !== this.gridTransitionSequence) return;
             this.gridTransitionCleanupTimer = null;
             const payload = renderNextState() || {};
+            releasePayloadBreathe(payload);
             scheduleCleanup(payload.cleanupDurationMs || 0, payload);
         }, exitDurationMs);
     },

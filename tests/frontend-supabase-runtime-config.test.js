@@ -977,13 +977,25 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'session-filter-btn',
         'chat-context-panel',
         'chat-reply-templates',
+        'chat-reply-templates__toggle',
+        'chat-user-context-inline-trigger',
+        'admin-chat-header-actions',
         'has-user-context',
         'has-reply-templates',
         'scheduleAdminFloatingPanelOffsetSync()',
         'updateAdminFloatingPanelOffsets()',
+        'getAdminResponsiveNarrowBreakpoint()',
+        'syncAdminResponsiveLayout({ force = false } = {})',
+        'setReplyTemplateBarCollapsed(collapsed = false)',
+        'setOpsAlertToolbarCollapsed(collapsed = false)',
+        'renderOpsAlertToolbarPanel()',
+        'admin-mode-layout--narrow',
         '--chat-admin-context-top',
         'top: var(--chat-admin-context-top, 128px);',
         'bottom: 84px;',
+        'right: 12px;',
+        'ops-alert-toolbar--panel',
+        'ops-alert-toolbar-trigger',
         'background: var(--chat-admin-light-soft) !important;',
         '.user-context-shell::before,',
         'html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar {',
@@ -2364,18 +2376,18 @@ test('shop initial product entrance defers idle breathe until lift animation com
     );
     assert.match(
         shopClientSource,
-        /getShopCardInitialBreatheDelay:\s*function \(productId = '', enterOrder = 0\) \{[\s\S]*?SHOP_CARD_INITIAL_BREATHE_JITTER_MS[\s\S]*?SHOP_CARD_INITIAL_BREATHE_MAX_DELAY_MS[\s\S]*?SHOP_CARD_INITIAL_BREATHE_SETTLE_DELAY_MS[\s\S]*?SHOP_CARD_INITIAL_BREATHE_STAGGER_MS[\s\S]*?return `\$\{Math\.round\(delayMs\)\}ms`;/,
-        'initial storefront cards should restart breathe with a wide positive stagger so no card jumps into a fast phase'
+        /const SHOP_CARD_BREATHE_MAX_DELAY_S = 4;[\s\S]*?const SHOP_CARD_BREATHE_ACTIVATE_DELAY_MS = 850;[\s\S]*?getShopCardBreatheDelay:\s*function \(\) \{[\s\S]*?Math\.random\(\) \* SHOP_CARD_BREATHE_MAX_DELAY_S[\s\S]*?toFixed\(2\)\}s`;/,
+        'initial storefront cards should prepare a randomized idle breathe delay instead of re-entering in a synchronized phase'
     );
     assert.match(
         shopClientSource,
-        /card\.classList\.add\('shop-card-filter-enter--initial', 'shop-card-breathe-deferred'\);[\s\S]*?card\.dataset\.shopInitialBreatheDelay\s*=\s*this\.getShopCardInitialBreatheDelay\(productId, enterOrder\);/,
-        'initial storefront cards should use the staggered breathe delay when they leave the skeleton state'
+        /el\.className = `shop-card user-product-card breathing shop-card-breathe-deferred \$\{cartQuantity > 0 \? 'shop-card--in-cart' : ''\}`;[\s\S]*?el\.dataset\.shopBreatheDelay = this\.getShopCardBreatheDelay\(\);[\s\S]*?'\-\-breathe-delay': null/,
+        'product cards should enter with breathing deferred and stash the randomized delay until the entrance flow finishes'
     );
     assert.match(
         shopClientSource,
-        /releaseDeferredShopCardBreathe:\s*function \(card\) \{[\s\S]*?card\.style\.setProperty\('--breathe-delay', deferredBreatheDelay\);[\s\S]*?card\.style\.setProperty\('--shop-card-breathe-amplitude', '0px'\);[\s\S]*?card\.classList\.remove\('shop-card-breathe-deferred'\);[\s\S]*?SHOP_CARD_INITIAL_BREATHE_RAMP_MS/,
-        'grid cleanup should restart idle breathe with a staggered delay and ramped amplitude'
+        /releaseDeferredShopCardBreathe:\s*function \(card, \{ activateDelayMs = SHOP_CARD_BREATHE_ACTIVATE_DELAY_MS \} = \{\}\) \{[\s\S]*?this\.setCssVariables\(card, \{\s*'\-\-breathe-delay': card\.dataset\.shopBreatheDelay \|\| '0s'[\s\S]*?const activate = \(\) => \{[\s\S]*?card\.classList\.remove\('shop-card-breathe-deferred'\);[\s\S]*?if \(activateDelayMs <= 0\) \{[\s\S]*?const timerId = window\.setTimeout\(\(\) => \{[\s\S]*?activate\(\);[\s\S]*?\}, activateDelayMs\);/,
+        'grid cleanup should restore the stored idle breathe delay and release the deferred class through the timed activation path'
     );
     assert.match(
         shopClientSource,

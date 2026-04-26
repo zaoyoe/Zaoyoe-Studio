@@ -41,6 +41,8 @@ class ChatWidget {
         this.userContextRecentActions = new Map();
         this.currentUserContext = null;
         this.userContextPanelCollapsed = true;
+        this.replyTemplateBarCollapsed = true;
+        this.opsAlertToolbarCollapsed = true;
         this.currentSessionInfo = null;
         this.userHistoryCache = new Map();
         this.replyTemplateConfigTemplates = null;
@@ -49,7 +51,12 @@ class ChatWidget {
         this._replyTemplateRenderToken = 0;
         this.handleOpsAlertConfigUpdated = this.handleOpsAlertConfigUpdated.bind(this);
         this._adminFloatingPanelOffsetFrame = null;
-        this._adminFloatingPanelResizeHandler = () => this.scheduleAdminFloatingPanelOffsetSync();
+        this._adminResponsiveNarrow = false;
+        this._adminLayoutResizeObserver = null;
+        this._adminFloatingPanelResizeHandler = () => {
+            this.syncAdminResponsiveLayout();
+            this.scheduleAdminFloatingPanelOffsetSync();
+        };
         this._userContextRequestId = 0;
         this._adminSessionLoadRequestId = 0;
         this._sessionLoadRequestId = 0;
@@ -2145,6 +2152,77 @@ class ChatWidget {
             : setTimeout(sync, 0);
     }
 
+    getAdminResponsiveNarrowBreakpoint() {
+        return 860;
+    }
+
+    isNarrowAdminMode() {
+        return Boolean(this._adminResponsiveNarrow);
+    }
+
+    _shouldUseNarrowAdminMode() {
+        if (!this.isAdmin || !this.chatWindow?.classList.contains('admin-mode-layout')) {
+            return false;
+        }
+
+        const viewportNarrow = typeof window.matchMedia === 'function'
+            ? window.matchMedia('(max-width: 700px)').matches
+            : window.innerWidth <= 700;
+
+        const width = Math.max(
+            Math.ceil(this.chatWindow.getBoundingClientRect?.().width || 0),
+            Math.ceil(this.chatWindow.offsetWidth || 0)
+        );
+
+        return viewportNarrow || (width > 0 && width <= this.getAdminResponsiveNarrowBreakpoint());
+    }
+
+    observeAdminLayoutSize() {
+        if (this._adminLayoutResizeObserver) {
+            this._adminLayoutResizeObserver.disconnect();
+            this._adminLayoutResizeObserver = null;
+        }
+
+        if (typeof ResizeObserver !== 'function' || !this.chatWindow) {
+            return;
+        }
+
+        this._adminLayoutResizeObserver = new ResizeObserver(() => {
+            this.syncAdminResponsiveLayout();
+            this.scheduleAdminFloatingPanelOffsetSync();
+        });
+        this._adminLayoutResizeObserver.observe(this.chatWindow);
+    }
+
+    syncAdminResponsiveLayout({ force = false } = {}) {
+        if (!this.isAdmin || !this.chatWindow?.classList.contains('admin-mode-layout')) {
+            return;
+        }
+
+        const nextNarrow = this._shouldUseNarrowAdminMode();
+        const changed = force || nextNarrow !== this._adminResponsiveNarrow;
+
+        if (changed) {
+            this._adminResponsiveNarrow = nextNarrow;
+            this._toggleElementClass(this.chatWindow, 'admin-mode-layout--narrow', nextNarrow);
+
+            if (nextNarrow) {
+                this.userContextPanelCollapsed = true;
+                this.replyTemplateBarCollapsed = true;
+                this.opsAlertToolbarCollapsed = true;
+            } else {
+                this.replyTemplateBarCollapsed = false;
+                this.opsAlertToolbarCollapsed = false;
+            }
+        }
+
+        this.syncReplyTemplateBarCollapsedState();
+        this.renderOpsAlertToolbarPanel();
+        this.syncUserContextInlineTrigger();
+        this.syncUserContextPanelVisibility();
+        this.scheduleAdminFloatingPanelOffsetSync();
+    }
+
     updateAdminFloatingPanelOffsets() {
         const chatArea = this.chatWindow?.querySelector('.admin-chat-area');
         const header = this.chatHeader || this.chatWindow?.querySelector('#adminChatHeader');
@@ -2155,6 +2233,16 @@ class ChatWidget {
             : null;
         const headerHeight = Math.max(72, Math.ceil(headerRect?.height || header.offsetHeight || 0));
         this._setRuntimeStyle(chatArea, '--chat-admin-context-top', `${headerHeight + 12}px`);
+
+        const contextHeight = this.userContextPanel && !this.userContextPanel.hidden
+            ? Math.ceil(this.userContextPanel.offsetHeight || 0) + 12
+            : 0;
+        const replyHeight = this.replyTemplateBar && !this.replyTemplateBar.hidden
+            ? Math.ceil(this.replyTemplateBar.offsetHeight || 0) + 12
+            : 0;
+
+        this._setRuntimeStyle(chatArea, '--chat-admin-context-height', `${Math.max(0, contextHeight)}px`);
+        this._setRuntimeStyle(chatArea, '--chat-admin-reply-height', `${Math.max(0, replyHeight)}px`);
     }
 
     _shouldUseDesktopEdgeSafeInset() {
@@ -2900,6 +2988,7 @@ class ChatWidget {
                         <span class="chat-user-id"></span>
                         <div class="chat-user-status-chips" id="chatUserStatusChips" hidden></div>
                     </div>
+                    <div class="admin-chat-header-actions" id="adminChatHeaderActions" hidden></div>
                 </div>
                 <div class="chat-context-panel" id="chatContextPanel" hidden></div>
                 <div class="chat-messages" id="chatMessages">
@@ -2941,6 +3030,8 @@ class ChatWidget {
         // Inject admin layout styles
         this.injectAdminLayoutStyles();
         this._syncDesktopViewportInsetMode();
+        this.syncAdminResponsiveLayout({ force: true });
+        this.observeAdminLayoutSize();
 
         // Bind events
         this.bindAdminEvents();
@@ -3866,6 +3957,73 @@ class ChatWidget {
                 font-size: 11px;
                 color: rgba(255, 255, 255, 0.5);
             }
+            .chat-user-context-inline-trigger {
+                appearance: none;
+                display: none;
+                align-items: center;
+                gap: 6px;
+                padding: 4px 10px;
+                border-radius: 999px;
+                border: 1px solid rgba(107, 158, 206, 0.22);
+                background: rgba(107, 158, 206, 0.14);
+                color: rgba(217, 232, 244, 0.92);
+                font-size: 11px;
+                line-height: 1.2;
+                cursor: pointer;
+                transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+            }
+            .chat-user-context-inline-trigger:hover {
+                background: rgba(107, 158, 206, 0.2);
+                border-color: rgba(107, 158, 206, 0.32);
+                color: #ffffff;
+            }
+            .chat-user-context-inline-trigger.is-active {
+                background: rgba(107, 158, 206, 0.24);
+                border-color: rgba(107, 158, 206, 0.38);
+            }
+            .chat-user-context-inline-trigger__label {
+                white-space: nowrap;
+            }
+            .ops-alert-toolbar-trigger {
+                appearance: none;
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                padding: 6px 12px;
+                border-radius: 999px;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                background: rgba(255, 255, 255, 0.055);
+                color: rgba(226, 232, 240, 0.92);
+                font-size: 12px;
+                font-weight: 600;
+                line-height: 1.2;
+                cursor: pointer;
+                transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+            }
+            .ops-alert-toolbar-trigger:hover {
+                background: rgba(255, 255, 255, 0.11);
+                border-color: rgba(255, 255, 255, 0.18);
+                color: #ffffff;
+            }
+            .ops-alert-toolbar-trigger.is-active {
+                background: rgba(107, 158, 206, 0.18);
+                border-color: rgba(107, 158, 206, 0.28);
+                color: #d9e8f4;
+            }
+            .ops-alert-toolbar-trigger__count {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 20px;
+                height: 20px;
+                padding: 0 6px;
+                border-radius: 999px;
+                background: rgba(107, 158, 206, 0.22);
+                color: #d9e8f4;
+                font-size: 11px;
+                font-weight: 700;
+                line-height: 1;
+            }
             .chat-user-status-chips {
                 display: flex;
                 flex-wrap: wrap;
@@ -4081,6 +4239,56 @@ class ChatWidget {
                 font-size: 11px;
                 font-weight: 600;
                 letter-spacing: 0.02em;
+            }
+            .chat-reply-templates__toggle {
+                appearance: none;
+                display: none;
+                width: 100%;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                padding: 10px 12px;
+                border-radius: 999px;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                background: rgba(255, 255, 255, 0.055);
+                color: rgba(255, 255, 255, 0.9);
+                cursor: pointer;
+            }
+            .chat-reply-templates__toggle-copy {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                min-width: 0;
+            }
+            .chat-reply-templates__toggle-label {
+                font-size: 12px;
+                font-weight: 600;
+                line-height: 1.2;
+            }
+            .chat-reply-templates__toggle-count {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 20px;
+                height: 20px;
+                padding: 0 6px;
+                border-radius: 999px;
+                background: rgba(107, 158, 206, 0.22);
+                color: #d9e8f4;
+                font-size: 11px;
+                font-weight: 700;
+                line-height: 1;
+            }
+            .chat-reply-templates__toggle-text {
+                color: rgba(217, 232, 244, 0.82);
+                font-size: 11px;
+                font-weight: 600;
+                white-space: nowrap;
+            }
+            .chat-reply-templates__content {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
             }
             .chat-reply-templates__list {
                 display: flex;
@@ -4469,10 +4677,19 @@ class ChatWidget {
             }
             
             .admin-chat-header {
+                display: flex;
+                align-items: flex-start;
+                gap: 14px;
                 padding: 15px 20px;
                 border-bottom: 1px solid rgba(255, 255, 255, 0.1);
                 background: rgba(8, 10, 16, 0.98);
                 background-image: none;
+            }
+            .chat-user-info {
+                flex: 1;
+                min-width: 0;
+                display: flex;
+                flex-direction: column;
             }
             .chat-user-name {
                 color: white;
@@ -4494,6 +4711,70 @@ class ChatWidget {
                 font-size: 12px;
                 line-height: 1.5;
             }
+            .admin-chat-header-actions {
+                display: none;
+                align-items: flex-start;
+                justify-content: flex-end;
+                gap: 8px;
+                flex-wrap: wrap;
+                margin-left: auto;
+                min-width: 0;
+            }
+            .admin-chat-header-actions[hidden] {
+                display: none !important;
+            }
+            .admin-chat-header-actions:not([hidden]) {
+                display: flex;
+            }
+            .admin-chat-header-actions .chat-user-context-inline-trigger,
+            .admin-chat-header-actions .chat-reply-templates__toggle,
+            .admin-chat-header-actions .ops-alert-toolbar-trigger {
+                display: inline-flex;
+                width: auto;
+                flex: 0 0 auto;
+                min-height: 34px;
+                white-space: nowrap;
+            }
+            .admin-chat-header-actions .chat-reply-templates__toggle {
+                align-items: center;
+                justify-content: flex-start;
+                gap: 6px;
+                padding: 4px 10px;
+                border-radius: 999px;
+                border-color: rgba(107, 158, 206, 0.22);
+                background: rgba(107, 158, 206, 0.14);
+                color: rgba(217, 232, 244, 0.92);
+                font-size: 11px;
+                font-weight: 400;
+                line-height: 1.2;
+            }
+            .admin-chat-header-actions .chat-reply-templates__toggle:hover {
+                background: rgba(107, 158, 206, 0.2);
+                border-color: rgba(107, 158, 206, 0.32);
+                color: #ffffff;
+            }
+            .admin-chat-header-actions .chat-reply-templates__toggle.is-active {
+                background: rgba(107, 158, 206, 0.24);
+                border-color: rgba(107, 158, 206, 0.38);
+            }
+            .admin-chat-header-actions .chat-reply-templates__toggle-copy {
+                flex-shrink: 0;
+                gap: 6px;
+            }
+            .admin-chat-header-actions .chat-reply-templates__toggle-label {
+                font-size: 11px;
+                font-weight: 400;
+                line-height: 1.2;
+            }
+            .admin-chat-header-actions .chat-reply-templates__toggle-count {
+                min-width: 18px;
+                height: 18px;
+                padding: 0 5px;
+                font-size: 10px;
+            }
+            .admin-chat-header-actions .chat-reply-templates__toggle-text {
+                display: none;
+            }
             
             .admin-mode-layout .chat-messages {
                 position: relative;
@@ -4510,11 +4791,11 @@ class ChatWidget {
             }
 
             .admin-chat-area.has-user-context .chat-messages {
-                padding-top: 148px;
+                padding-top: calc(20px + var(--chat-admin-context-height, 148px));
             }
 
             .admin-chat-area.has-reply-templates .chat-messages {
-                padding-bottom: 148px;
+                padding-bottom: calc(20px + var(--chat-admin-reply-height, 148px));
             }
             
             .empty-state {
@@ -4598,6 +4879,7 @@ class ChatWidget {
             .message--ops-alert {
                 max-width: min(540px, 92%);
                 width: min(540px, 92%);
+                box-sizing: border-box;
                 padding: 14px 16px;
                 border-radius: 18px;
                 border: 1px solid rgba(255, 255, 255, 0.08);
@@ -4776,6 +5058,107 @@ class ChatWidget {
                 box-shadow: 0 18px 48px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.08);
                 backdrop-filter: blur(22px) saturate(118%);
                 -webkit-backdrop-filter: blur(22px) saturate(118%);
+            }
+            .ops-alert-toolbar--panel {
+                width: 100%;
+                max-width: none;
+                margin: 0;
+                padding: 14px;
+                border-radius: 20px;
+                position: static;
+                top: auto;
+                display: flex;
+                flex-direction: column;
+                align-items: stretch;
+                justify-content: flex-start;
+                gap: 12px;
+                overflow: visible;
+            }
+            .ops-alert-toolbar__panel-header {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 12px;
+            }
+            .ops-alert-toolbar__panel-copy {
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+                min-width: 0;
+            }
+            .ops-alert-toolbar__panel-eyebrow {
+                color: rgba(226, 232, 240, 0.58);
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 0.04em;
+            }
+            .ops-alert-toolbar__panel-title {
+                color: #f8fafc;
+                font-size: 14px;
+                font-weight: 700;
+                line-height: 1.35;
+            }
+            .ops-alert-toolbar__panel-count {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 34px;
+                height: 34px;
+                padding: 0 10px;
+                border-radius: 999px;
+                background: rgba(107, 158, 206, 0.16);
+                border: 1px solid rgba(107, 158, 206, 0.24);
+                color: #d9e8f4;
+                font-size: 12px;
+                font-weight: 700;
+                line-height: 1;
+            }
+            .ops-alert-toolbar__panel-summary {
+                color: rgba(226, 232, 240, 0.66);
+                font-size: 12px;
+                line-height: 1.6;
+            }
+            .ops-alert-toolbar__panel-grid {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 10px;
+            }
+            .ops-alert-toolbar__panel-grid .ops-alert-toolbar-filter--scope,
+            .ops-alert-toolbar__panel-grid .ops-alert-toolbar-filter--owner {
+                grid-column: 1 / -1;
+            }
+            .ops-alert-toolbar--panel .ops-alert-toolbar-filter {
+                width: 100%;
+                min-height: 0;
+                padding: 12px;
+                border-radius: 16px;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                background: rgba(255, 255, 255, 0.04);
+                display: flex;
+                flex-direction: column;
+                align-items: stretch;
+                justify-content: flex-start;
+                gap: 8px;
+            }
+            .ops-alert-toolbar--panel .ops-alert-toolbar-copy {
+                color: rgba(226, 232, 240, 0.54);
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 0.02em;
+            }
+            .ops-alert-toolbar--panel .ops-alert-toolbar-dropdown,
+            .ops-alert-toolbar--panel .ops-alert-toolbar-dropdown--compact {
+                width: 100%;
+                min-width: 0;
+            }
+            .ops-alert-toolbar__panel-actions {
+                width: 100%;
+                justify-content: stretch;
+                flex-wrap: wrap;
+            }
+            .ops-alert-toolbar__panel-actions .ops-alert-toolbar-btn {
+                flex: 1 1 140px;
+                min-height: 40px;
             }
             .ops-alert-toolbar-copy {
                 color: rgba(226, 232, 240, 0.64);
@@ -5242,11 +5625,48 @@ class ChatWidget {
                 border-color: var(--chat-admin-light-border-soft);
                 box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
             }
+            html[data-theme="light"] .chat-window.admin-mode-layout .admin-sidebar-insights {
+                background: rgba(255, 255, 255, 0.38);
+                border-color: rgba(148, 163, 184, 0.16);
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.48);
+            }
+            html[data-theme="light"] .chat-window.admin-mode-layout .admin-sidebar-insights__header {
+                background: rgba(255, 255, 255, 0.16);
+            }
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-card,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-snapshot,
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-suggestion {
+                background: rgba(255, 255, 255, 0.54);
+                border-color: rgba(148, 163, 184, 0.16);
+                box-shadow: none;
+            }
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-queue-card:hover {
+                background: rgba(255, 255, 255, 0.64);
+                border-color: rgba(148, 163, 184, 0.18);
+                transform: none;
+            }
 
             html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar {
                 background: rgba(255, 255, 255, 0.78);
                 border-color: rgba(255, 255, 255, 0.42);
                 box-shadow: 0 18px 38px rgba(148, 163, 184, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.72), inset 0 -1px 0 rgba(255, 255, 255, 0.26);
+            }
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar--panel .ops-alert-toolbar-filter {
+                background: rgba(248, 250, 252, 0.82);
+                border-color: rgba(148, 163, 184, 0.16);
+                box-shadow: none;
+            }
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar__panel-title {
+                color: var(--chat-admin-light-text-strong);
+            }
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar__panel-eyebrow,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar__panel-summary {
+                color: var(--chat-admin-light-muted);
+            }
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar__panel-count {
+                background: var(--chat-admin-light-accent-soft);
+                border-color: rgba(107, 158, 206, 0.18);
+                color: var(--chat-admin-light-accent);
             }
 
             html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-filter {
@@ -5417,6 +5837,66 @@ class ChatWidget {
             html[data-theme="light"] .chat-window.admin-mode-layout .user-context-shell::before {
                 background: none;
                 opacity: 0;
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-reply-templates__toggle,
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-user-context-inline-trigger,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-trigger {
+                border-color: rgba(148, 163, 184, 0.22);
+                background: rgba(255, 255, 255, 0.9);
+                color: var(--chat-admin-light-text);
+                box-shadow: none;
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-reply-templates__toggle-count {
+                background: var(--chat-admin-light-accent-soft);
+                color: var(--chat-admin-light-accent);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-trigger__count {
+                background: var(--chat-admin-light-accent-soft);
+                color: var(--chat-admin-light-accent);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-reply-templates__toggle-text,
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-user-context-inline-trigger i,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-trigger i {
+                color: var(--chat-admin-light-accent);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-reply-templates__toggle:hover,
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-user-context-inline-trigger:hover,
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-user-context-inline-trigger.is-active,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-trigger:hover,
+            html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-toolbar-trigger.is-active {
+                background: rgba(239, 246, 255, 0.92);
+                border-color: rgba(107, 158, 206, 0.24);
+                color: var(--chat-admin-light-text-strong);
+            }
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-user-status-chip--success {
+                background: rgba(220, 252, 231, 0.78);
+                border-color: rgba(34, 197, 94, 0.2);
+            }
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-user-status-chip--success .chat-user-status-chip__label {
+                color: #4b5563;
+            }
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-user-status-chip--success .chat-user-status-chip__value {
+                color: var(--chat-admin-light-success-text);
+            }
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-user-status-chip--warning {
+                background: rgba(255, 248, 235, 0.94);
+                border-color: rgba(245, 158, 11, 0.22);
+            }
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-user-status-chip--warning .chat-user-status-chip__label {
+                color: #7c5a11;
+            }
+            html[data-theme="light"] .chat-window.admin-mode-layout .chat-user-status-chip--warning .chat-user-status-chip__value {
+                color: var(--chat-admin-light-warning-text);
+            }
+            html[data-theme="light"] .chat-window.admin-mode-layout .admin-chat-header-actions .chat-reply-templates__toggle.is-active {
+                background: rgba(239, 246, 255, 0.92);
+                border-color: rgba(107, 158, 206, 0.24);
+                color: var(--chat-admin-light-text-strong);
             }
 
             html[data-theme="light"] .chat-window.admin-mode-layout .chat-context-panel__state {
@@ -5677,10 +6157,10 @@ class ChatWidget {
             /* Mobile/Narrow: Slide Navigation Pattern */
             @media (max-width: 700px) {
                 .chat-window.admin-mode-layout {
-                    width: 380px !important;
-                    max-width: 95vw;
-                    height: 550px !important;
-                    max-height: 80vh;
+                    width: min(460px, calc(100vw - 16px)) !important;
+                    max-width: 97vw;
+                    height: min(640px, 84vh) !important;
+                    max-height: 82vh;
                     border-radius: 20px !important;
                     overflow: hidden;
                     /* Center the modal on mobile */
@@ -5826,12 +6306,276 @@ class ChatWidget {
                     background: var(--chat-admin-light-panel);
                 }
             }
+
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .admin-sidebar {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                max-width: none;
+                min-width: 0;
+                background: rgba(12, 15, 22, 0.98);
+                z-index: 2;
+                transition: transform 0.3s ease-out;
+                display: flex;
+                flex-direction: column;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .admin-sidebar-insights__body {
+                max-height: min(260px, 40vh);
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .admin-chat-area {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                transform: translateX(100%);
+                transition: transform 0.3s ease-out;
+                display: flex;
+                flex-direction: column;
+                z-index: 1;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow.chat-active .admin-sidebar {
+                transform: translateX(-100%);
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow.chat-active .admin-chat-area {
+                transform: translateX(0);
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .back-to-list-btn {
+                display: block;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .chat-close {
+                display: none;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .session-list {
+                flex: 1;
+                min-height: 0;
+                overflow-y: auto;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .admin-chat-header {
+                display: grid;
+                grid-template-columns: auto minmax(0, 1fr) auto;
+                grid-template-areas:
+                    "back name name"
+                    "back email status"
+                    "back chips chips"
+                    "back actions actions";
+                column-gap: 12px;
+                row-gap: 6px;
+                align-items: center;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .chat-user-info {
+                display: contents;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .back-to-list-btn {
+                grid-area: back;
+                align-self: start;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .chat-user-name {
+                grid-area: name;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .chat-user-id {
+                grid-area: email;
+                margin-left: 0;
+                min-width: 0;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                padding-right: 6px;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .admin-chat-header-actions {
+                grid-area: actions;
+                justify-self: start;
+                align-self: start;
+                justify-content: flex-start;
+                gap: 6px;
+                flex-wrap: nowrap;
+                max-width: none;
+                margin-top: 0;
+                margin-bottom: 1px;
+                margin-left: 0;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .user-status-indicator {
+                grid-area: status;
+                justify-self: end;
+                align-self: end;
+                gap: 8px;
+                flex-wrap: nowrap;
+                margin-top: 0;
+                min-width: 0;
+                margin-bottom: 2px;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .user-status-indicator .status-text {
+                white-space: nowrap;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .chat-user-context-inline-trigger {
+                display: inline-flex;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .chat-user-status-chips {
+                grid-area: chips;
+                margin-top: 0;
+                gap: 6px;
+                align-items: center;
+                justify-self: start;
+                width: 100%;
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                overflow-y: hidden;
+                padding-bottom: 2px;
+                scrollbar-width: none;
+                -ms-overflow-style: none;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .chat-user-status-chips::-webkit-scrollbar {
+                display: none;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .chat-user-status-chip {
+                gap: 4px;
+                min-height: 34px;
+                padding: 4px 10px;
+                max-width: none;
+                flex: 0 0 auto;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .chat-user-status-chip__label,
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .chat-user-status-chip__value {
+                font-size: 11px;
+                line-height: 1.2;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .chat-context-panel {
+                position: absolute;
+                top: var(--chat-admin-context-top, 92px);
+                left: 12px;
+                right: 12px;
+                width: auto;
+                max-width: none;
+                padding: 0;
+                z-index: 6;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .chat-context-panel--ops-filter {
+                width: auto;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .chat-reply-templates {
+                position: absolute;
+                top: var(--chat-admin-context-top, 92px);
+                left: 12px;
+                right: 12px;
+                bottom: auto;
+                width: auto;
+                max-width: none;
+                margin: 0;
+                padding: 12px;
+                gap: 10px;
+                z-index: 6;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .chat-reply-templates > .chat-reply-templates__toggle {
+                display: none;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .chat-reply-template-btn {
+                width: 100%;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .message--ops-alert {
+                width: 100%;
+                max-width: none;
+                margin-left: auto;
+                margin-right: auto;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .ops-alert-card-footer {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 12px;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .ops-alert-card-entry {
+                width: 100%;
+                min-width: 0;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .ops-alert-card-actions {
+                width: 100%;
+                justify-content: flex-start;
+                align-items: center;
+                gap: 6px;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .ops-alert-card-action {
+                padding: 8px 12px;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .ops-alert-card-action--primary {
+                margin-left: auto;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .admin-chat-area.has-user-context .chat-messages {
+                padding-top: calc(20px + var(--chat-admin-context-height, 148px));
+                padding-bottom: 20px;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .admin-chat-area.has-reply-templates .chat-messages {
+                padding-top: calc(20px + var(--chat-admin-reply-height, 148px));
+                padding-bottom: 20px;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .ops-alert-toolbar:not(.ops-alert-toolbar--panel) {
+                width: calc(100% - 24px);
+                justify-content: flex-start;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .ops-alert-toolbar:not(.ops-alert-toolbar--panel) .ops-alert-toolbar-filter,
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .ops-alert-toolbar:not(.ops-alert-toolbar--panel) .ops-alert-toolbar-read,
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .ops-alert-toolbar:not(.ops-alert-toolbar--panel) .ops-alert-toolbar-dropdown {
+                flex-wrap: wrap;
+                justify-content: flex-start;
+                width: 100%;
+                min-width: 0;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .ops-alert-toolbar:not(.ops-alert-toolbar--panel) .ops-alert-toolbar-dropdown,
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .ops-alert-toolbar:not(.ops-alert-toolbar--panel) .ops-alert-toolbar-dropdown--compact {
+                width: 100%;
+                min-width: 0;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .ops-alert-toolbar-dropdown-menu {
+                width: 100%;
+                max-width: 100%;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .ops-alert-toolbar:not(.ops-alert-toolbar--panel) .ops-alert-toolbar-filter--owner {
+                margin-left: 0;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .ops-alert-toolbar:not(.ops-alert-toolbar--panel) .ops-alert-toolbar-btn--read-standalone {
+                justify-self: stretch;
+                width: 100%;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .ops-alert-toolbar--panel {
+                width: 100%;
+                max-width: none;
+                margin: 0;
+                padding: 14px;
+                border-radius: 18px;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .ops-alert-toolbar__panel-grid {
+                grid-template-columns: minmax(0, 1fr);
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .ops-alert-toolbar__panel-grid .ops-alert-toolbar-filter--scope,
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .ops-alert-toolbar__panel-grid .ops-alert-toolbar-filter--owner {
+                grid-column: auto;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .ops-alert-toolbar__panel-actions .ops-alert-toolbar-btn {
+                width: 100%;
+                flex-basis: 100%;
+            }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .chat-input-area {
+                flex: 0 0 auto;
+                padding: 10px 12px;
+            }
+            html[data-theme="light"] .chat-window.admin-mode-layout.admin-mode-layout--narrow .admin-sidebar {
+                background: var(--chat-admin-light-sidebar);
+            }
+            html[data-theme="light"] .chat-window.admin-mode-layout.admin-mode-layout--narrow .admin-chat-area {
+                background: var(--chat-admin-light-soft);
+            }
+            html[data-theme="light"] .chat-window.admin-mode-layout.admin-mode-layout--narrow .chat-input-area {
+                background: var(--chat-admin-light-panel);
+            }
             
             /* Very narrow screens */
             @media (max-width: 480px) {
                 .chat-window.admin-mode-layout {
-                    width: 95vw;
-                    height: 75vh;
+                    width: 97vw;
+                    height: 78vh;
                     border-radius: 16px;
                 }
             }
@@ -7184,11 +7928,12 @@ class ChatWidget {
         return field;
     }
 
-    createOpsAlertToolbarElement() {
+    createOpsAlertToolbarElement({ panel = false } = {}) {
         const wrapper = document.createElement('div');
-        wrapper.className = 'ops-alert-toolbar';
+        wrapper.className = `ops-alert-toolbar${panel ? ' ops-alert-toolbar--panel' : ''}`;
 
         const unreadCount = this.getOpsAlertUnreadCount();
+        const filteredCount = this.getFilteredOpsAlertMessages().length;
         const viewOptions = [
             { key: 'all', label: '全部' },
             { key: 'active', label: '未关' },
@@ -7196,8 +7941,50 @@ class ChatWidget {
             { key: 'read', label: '已读' },
             { key: 'mine', label: '我的' }
         ];
+        const readOptions = this.getOpsAlertReadCategoryOptions();
+        this.syncOpsAlertReadCategoryFilter(readOptions);
+        const readTargetCount = this.getOpsAlertReadTargetAlerts().length;
+        const ownerOptions = this.getOpsAlertOwnerFilterOptions();
+        this.syncOpsAlertOwnerFilter(ownerOptions);
+
+        if (panel) {
+            const panelHeader = document.createElement('div');
+            panelHeader.className = 'ops-alert-toolbar__panel-header';
+            panelHeader.innerHTML = `
+                <div class="ops-alert-toolbar__panel-copy">
+                    <span class="ops-alert-toolbar__panel-eyebrow">站内代办筛选</span>
+                    <strong class="ops-alert-toolbar__panel-title">筛选范围与批量动作</strong>
+                </div>
+                <span class="ops-alert-toolbar__panel-count">${this.formatCompactCount(filteredCount)}</span>
+            `;
+            wrapper.appendChild(panelHeader);
+
+            const panelSummary = document.createElement('div');
+            panelSummary.className = 'ops-alert-toolbar__panel-summary';
+
+            const summaryParts = [];
+            const activeView = viewOptions.find((item) => item.key === this.opsAlertViewFilter)?.label || '全部';
+            summaryParts.push(`范围 ${activeView}`);
+
+            const activeReadCategory = readOptions.find((item) => item.value === this.opsAlertReadCategoryFilter)?.label || '全部分类';
+            summaryParts.push(`分类 ${activeReadCategory}`);
+
+            const activeReadTime = this.getOpsAlertReadTimeOptions()
+                .find((item) => item.value === this.opsAlertReadTimeFilter)?.label || '可见消息';
+            summaryParts.push(`时间 ${activeReadTime}`);
+
+            if (ownerOptions.length > 1) {
+                const activeOwner = ownerOptions.find((item) => item.value === this.opsAlertOwnerFilter)?.label || '全部负责人';
+                summaryParts.push(`负责人 ${activeOwner}`);
+            }
+
+            panelSummary.textContent = `${summaryParts.join(' · ')} · 当前 ${this.formatCompactCount(filteredCount)} 条`;
+            wrapper.appendChild(panelSummary);
+        }
+
+        const scopeLabel = panel ? '范围' : '';
         const scopeFilterWrap = this.createOpsAlertToolbarDropdown({
-            label: '',
+            label: scopeLabel,
             ariaLabel: '范围',
             options: viewOptions.map((item) => ({
                 value: item.key,
@@ -7208,57 +7995,72 @@ class ChatWidget {
             onChange: (nextValue) => this.setOpsAlertViewFilter(nextValue),
             fieldClassName: 'ops-alert-toolbar-filter--scope'
         });
-        wrapper.appendChild(scopeFilterWrap);
 
-        const readOptions = this.getOpsAlertReadCategoryOptions();
-        this.syncOpsAlertReadCategoryFilter(readOptions);
-        const readTargetCount = this.getOpsAlertReadTargetAlerts().length;
         const readWrap = document.createElement('div');
         readWrap.className = 'ops-alert-toolbar-read';
 
-        readWrap.appendChild(this.createOpsAlertToolbarDropdown({
-            label: '',
+        const readCategoryFilterWrap = this.createOpsAlertToolbarDropdown({
+            label: panel ? '分类' : '',
             ariaLabel: '分类',
             options: readOptions,
             value: this.opsAlertReadCategoryFilter,
             onChange: (nextValue) => this.handleOpsAlertReadCategoryChange(nextValue),
             compact: true
-        }));
+        });
+        readWrap.appendChild(readCategoryFilterWrap);
 
-        readWrap.appendChild(this.createOpsAlertToolbarDropdown({
-            label: '',
+        const readTimeFilterWrap = this.createOpsAlertToolbarDropdown({
+            label: panel ? '时间' : '',
             ariaLabel: '时间',
             options: this.getOpsAlertReadTimeOptions(),
             value: this.opsAlertReadTimeFilter,
             onChange: (nextValue) => this.handleOpsAlertReadTimeChange(nextValue),
             compact: true
-        }));
+        });
+        readWrap.appendChild(readTimeFilterWrap);
 
-        const ownerOptions = this.getOpsAlertOwnerFilterOptions();
-        this.syncOpsAlertOwnerFilter(ownerOptions);
-        wrapper.appendChild(readWrap);
+        let ownerFilterWrap = null;
 
         if (ownerOptions.length > 1) {
-            const ownerFilterWrap = this.createOpsAlertToolbarDropdown({
-                label: '',
+            ownerFilterWrap = this.createOpsAlertToolbarDropdown({
+                label: panel ? '负责人' : '',
                 ariaLabel: '负责人',
                 options: ownerOptions,
                 value: this.opsAlertOwnerFilter,
                 onChange: (nextValue) => this.setOpsAlertOwnerFilter(nextValue),
                 fieldClassName: 'ops-alert-toolbar-filter--owner'
             });
-            wrapper.appendChild(ownerFilterWrap);
+        }
+
+        if (panel) {
+            const panelGrid = document.createElement('div');
+            panelGrid.className = 'ops-alert-toolbar__panel-grid';
+            panelGrid.appendChild(scopeFilterWrap);
+            panelGrid.appendChild(readCategoryFilterWrap);
+            panelGrid.appendChild(readTimeFilterWrap);
+            if (ownerFilterWrap) {
+                panelGrid.appendChild(ownerFilterWrap);
+            }
+            wrapper.appendChild(panelGrid);
+        } else {
+            wrapper.appendChild(scopeFilterWrap);
+            wrapper.appendChild(readWrap);
+            if (ownerFilterWrap) {
+                wrapper.appendChild(ownerFilterWrap);
+            }
         }
 
         const actionsWrap = document.createElement('div');
-        actionsWrap.className = 'ops-alert-toolbar-actions';
+        actionsWrap.className = panel ? 'ops-alert-toolbar-actions ops-alert-toolbar__panel-actions' : 'ops-alert-toolbar-actions';
 
         const readButton = document.createElement('button');
         readButton.type = 'button';
         readButton.className = 'ops-alert-toolbar-btn ops-alert-toolbar-btn--read ops-alert-toolbar-btn--read-standalone';
         readButton.disabled = readTargetCount <= 0;
         readButton.setAttribute('aria-label', '已读');
-        readButton.innerHTML = `<i class="fas fa-check-double" aria-hidden="true"></i><span>${readTargetCount > 0 ? this.formatCompactCount(readTargetCount) : '0'}</span>`;
+        readButton.innerHTML = panel
+            ? `<i class="fas fa-check-double" aria-hidden="true"></i><span>标记已读 ${readTargetCount > 0 ? this.formatCompactCount(readTargetCount) : '0'}</span>`
+            : `<i class="fas fa-check-double" aria-hidden="true"></i><span>${readTargetCount > 0 ? this.formatCompactCount(readTargetCount) : '0'}</span>`;
         readButton.addEventListener('click', () => {
             this.markFilteredOpsAlertsRead();
         });
@@ -7269,7 +8071,7 @@ class ChatWidget {
             batchButton.type = 'button';
             batchButton.className = 'ops-alert-toolbar-btn ops-alert-toolbar-btn--accent';
             const count = this.getBatchAssignableOpsAlerts().length;
-            batchButton.textContent = `${this.opsAlertOwnerFilter === 'unassigned' ? '指派' : '接力'} ${this.formatCompactCount(count)}`;
+            batchButton.textContent = `${panel ? '批量' : ''}${this.opsAlertOwnerFilter === 'unassigned' ? '指派' : '接力'} ${this.formatCompactCount(count)}`;
             batchButton.disabled = this.opsAlertBatchAssignBusy;
             if (this.opsAlertBatchAssignBusy) {
                 batchButton.textContent = '处理中';
@@ -7282,6 +8084,31 @@ class ChatWidget {
         wrapper.appendChild(actionsWrap);
 
         return wrapper;
+    }
+
+    renderOpsAlertToolbarPanel() {
+        if (!this.userContextPanel) return;
+
+        const shouldRenderPanel = this.isNarrowAdminMode() && this.isOpsAlertSessionSelected();
+        const panelKind = String(this.userContextPanel.dataset.panelKind || '').trim();
+
+        if (!shouldRenderPanel) {
+            if (panelKind === 'ops-filter') {
+                this.userContextPanel.dataset.panelKind = '';
+                this.userContextPanel.className = 'chat-context-panel';
+                this.userContextPanel.hidden = true;
+                this.userContextPanel.replaceChildren();
+            }
+            this.syncUserContextPanelVisibility();
+            this.scheduleAdminFloatingPanelOffsetSync();
+            return;
+        }
+
+        this.userContextPanel.dataset.panelKind = 'ops-filter';
+        this.userContextPanel.className = 'chat-context-panel chat-context-panel--ops-filter';
+        this.userContextPanel.replaceChildren(this.createOpsAlertToolbarElement({ panel: true }));
+        this.syncUserContextPanelVisibility();
+        this.scheduleAdminFloatingPanelOffsetSync();
     }
 
     async promptOpsAlertAssignee(defaultOwnerAdminId = '') {
@@ -7724,6 +8551,8 @@ class ChatWidget {
         this.refreshOpsAlertSessionEntry();
         if (this.isOpen && this.currentSessionKey === this.opsAlertSessionId) {
             this.renderOpsAlertMessages();
+        } else {
+            this.renderOpsAlertToolbarPanel();
         }
     }
 
@@ -8410,6 +9239,8 @@ class ChatWidget {
     renderOpsAlertMessages() {
         if (!this.messagesContainer) return;
 
+        this.renderOpsAlertToolbarPanel();
+
         this.messagesContainer.innerHTML = '';
         this.lastDisplayedTime = null;
 
@@ -8418,7 +9249,7 @@ class ChatWidget {
             return;
         }
 
-        const toolbar = this.createOpsAlertToolbarElement();
+        const toolbar = !this.isNarrowAdminMode() ? this.createOpsAlertToolbarElement() : null;
         if (toolbar) {
             this.messagesContainer.appendChild(toolbar);
         }
@@ -8506,6 +9337,8 @@ class ChatWidget {
         if (emojiBtn) emojiBtn.disabled = readonly;
         if (sendBtn) sendBtn.disabled = readonly;
         if (imageInput) imageInput.disabled = readonly;
+        this.syncReplyTemplateBarCollapsedState();
+        this.scheduleAdminFloatingPanelOffsetSync();
     }
 
     normalizeOpsAlertWorkspaceForAdminStudio(workspace = {}) {
@@ -10304,6 +11137,7 @@ class ChatWidget {
         const items = context ? this.getUserContextHeaderStatusItems(context) : [];
         if (!items.length) {
             container.hidden = true;
+            this.syncUserContextInlineTrigger();
             this.scheduleAdminFloatingPanelOffsetSync();
             return;
         }
@@ -10319,6 +11153,7 @@ class ChatWidget {
         });
 
         container.hidden = false;
+        this.syncUserContextInlineTrigger();
         this.scheduleAdminFloatingPanelOffsetSync();
     }
 
@@ -10351,7 +11186,13 @@ class ChatWidget {
     }
 
     setUserContextPanelCollapsed(collapsed = false) {
-        this.userContextPanelCollapsed = Boolean(collapsed);
+        const nextCollapsed = Boolean(collapsed);
+        this.userContextPanelCollapsed = nextCollapsed;
+
+        if (!nextCollapsed && this.isNarrowAdminMode()) {
+            this.replyTemplateBarCollapsed = true;
+            this.opsAlertToolbarCollapsed = true;
+        }
 
         const shell = this.userContextPanel?.querySelector('.user-context-shell');
         const toggle = this.userContextPanel?.querySelector('#userContextPanelToggle');
@@ -10369,6 +11210,210 @@ class ChatWidget {
         if (toggleText) {
             toggleText.textContent = this.userContextPanelCollapsed ? '展开' : '收起';
         }
+
+        this.syncUserContextInlineTrigger();
+        this.syncUserContextPanelVisibility();
+        this.scheduleAdminFloatingPanelOffsetSync();
+    }
+
+    setReplyTemplateBarCollapsed(collapsed = false) {
+        const nextCollapsed = this.isNarrowAdminMode() ? Boolean(collapsed) : false;
+        this.replyTemplateBarCollapsed = nextCollapsed;
+        if (!nextCollapsed && this.isNarrowAdminMode()) {
+            this.userContextPanelCollapsed = true;
+            this.opsAlertToolbarCollapsed = true;
+        }
+        this.syncReplyTemplateBarCollapsedState();
+        this.syncUserContextInlineTrigger();
+        this.syncUserContextPanelVisibility();
+        this.scheduleAdminFloatingPanelOffsetSync();
+    }
+
+    setOpsAlertToolbarCollapsed(collapsed = false) {
+        const nextCollapsed = this.isNarrowAdminMode() ? Boolean(collapsed) : false;
+        this.opsAlertToolbarCollapsed = nextCollapsed;
+        if (!nextCollapsed && this.isNarrowAdminMode()) {
+            this.userContextPanelCollapsed = true;
+            this.replyTemplateBarCollapsed = true;
+        }
+        this.renderOpsAlertToolbarPanel();
+        this.syncUserContextInlineTrigger();
+        this.scheduleAdminFloatingPanelOffsetSync();
+    }
+
+    isOpsAlertSessionSelected() {
+        return String(this.currentSessionKey || '').trim() === this.opsAlertSessionId;
+    }
+
+    getHeaderReplyTemplateCount() {
+        return Number(this.replyTemplateBar?.dataset?.templateCount || 0) || 0;
+    }
+
+    buildHeaderActionButton({
+        className = '',
+        label = '',
+        count = 0,
+        icon = 'fa-chevron-down',
+        active = false,
+        onClick = null,
+        ariaLabel = ''
+    } = {}) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = className;
+        if (active) {
+            button.classList.add('is-active');
+        }
+        button.setAttribute('aria-label', ariaLabel || label);
+        button.setAttribute('aria-expanded', active ? 'true' : 'false');
+        if (typeof onClick === 'function') {
+            button.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onClick();
+            });
+        }
+
+        if (className.includes('chat-reply-templates__toggle')) {
+            button.innerHTML = `
+                <span class="chat-reply-templates__toggle-copy">
+                    <span class="chat-reply-templates__toggle-label">${this.escapeHtml(label)}</span>
+                    ${count > 0 ? `<span class="chat-reply-templates__toggle-count">${this.formatCompactCount(count)}</span>` : ''}
+                </span>
+                <span class="chat-reply-templates__toggle-text">展开</span>
+                <i class="fas ${this.escapeHtml(icon)}" aria-hidden="true"></i>
+            `;
+            return button;
+        }
+
+        if (className.includes('ops-alert-toolbar-trigger')) {
+            button.innerHTML = `
+                <span>${this.escapeHtml(label)}</span>
+                ${count > 0 ? `<span class="ops-alert-toolbar-trigger__count">${this.formatCompactCount(count)}</span>` : ''}
+                <i class="fas ${this.escapeHtml(icon)}" aria-hidden="true"></i>
+            `;
+            return button;
+        }
+
+        button.innerHTML = `
+            <span class="chat-user-context-inline-trigger__label">${this.escapeHtml(label)}</span>
+            <i class="fas ${this.escapeHtml(icon)}" aria-hidden="true"></i>
+        `;
+        return button;
+    }
+
+    getOpsAlertToolbarTriggerCount() {
+        if (!this.isOpsAlertSessionSelected()) {
+            return 0;
+        }
+
+        const nonDefaultFilterCount = [
+            this.opsAlertViewFilter !== 'active',
+            this.opsAlertOwnerFilter !== 'all',
+            this.opsAlertReadCategoryFilter !== 'all',
+            this.opsAlertReadTimeFilter !== 'visible'
+        ].filter(Boolean).length;
+
+        return nonDefaultFilterCount || this.getOpsAlertReadTargetAlerts().length;
+    }
+
+    syncReplyTemplateBarCollapsedState() {
+        const bar = this.replyTemplateBar;
+        if (!bar) return;
+
+        const chatArea = bar.closest('.admin-chat-area');
+        const templateCount = Number(bar.dataset.templateCount || 0) || 0;
+        const hasTemplates = templateCount > 0;
+        const expanded = hasTemplates && (!this.isNarrowAdminMode() || this.replyTemplateBarCollapsed === false);
+
+        bar.classList.toggle('is-collapsed', hasTemplates && !expanded);
+        bar.hidden = !expanded;
+        chatArea?.classList.toggle('has-reply-templates', expanded);
+    }
+
+    syncUserContextInlineTrigger() {
+        const actionsContainer = this.chatHeader?.querySelector('#adminChatHeaderActions');
+        if (!actionsContainer) {
+            return;
+        }
+
+        actionsContainer.replaceChildren();
+
+        if (!this.isNarrowAdminMode()) {
+            actionsContainer.hidden = true;
+            return;
+        }
+
+        if (this.isOpsAlertSessionSelected()) {
+            actionsContainer.appendChild(this.buildHeaderActionButton({
+                className: 'ops-alert-toolbar-trigger',
+                label: '筛选',
+                count: this.getOpsAlertToolbarTriggerCount(),
+                icon: this.opsAlertToolbarCollapsed ? 'fa-sliders' : 'fa-xmark',
+                active: !this.opsAlertToolbarCollapsed,
+                ariaLabel: '展开站内代办筛选',
+                onClick: () => {
+                    this.setOpsAlertToolbarCollapsed(!this.opsAlertToolbarCollapsed);
+                }
+            }));
+            actionsContainer.hidden = false;
+            return;
+        }
+
+        if (!this.currentSessionInfo || this.isOpsAlertSession(this.currentSessionInfo)) {
+            actionsContainer.hidden = true;
+            return;
+        }
+
+        const replyCount = this.getHeaderReplyTemplateCount();
+        if (replyCount > 0 && !this.input?.disabled) {
+            actionsContainer.appendChild(this.buildHeaderActionButton({
+                className: 'chat-reply-templates__toggle',
+                label: '快捷回复',
+                count: replyCount,
+                icon: this.replyTemplateBarCollapsed ? 'fa-chevron-down' : 'fa-chevron-up',
+                active: !this.replyTemplateBarCollapsed,
+                ariaLabel: '展开快捷回复',
+                onClick: () => {
+                    this.setReplyTemplateBarCollapsed(!this.replyTemplateBarCollapsed);
+                }
+            }));
+        }
+
+        actionsContainer.appendChild(this.buildHeaderActionButton({
+            className: 'chat-user-context-inline-trigger',
+            label: '用户 360',
+            icon: this.userContextPanelCollapsed ? 'fa-chevron-down' : 'fa-chevron-up',
+            active: !this.userContextPanelCollapsed,
+            ariaLabel: '展开用户 360',
+            onClick: () => {
+                this.setUserContextPanelCollapsed(!this.userContextPanelCollapsed);
+            }
+        }));
+
+        actionsContainer.hidden = actionsContainer.childElementCount === 0;
+    }
+
+    syncUserContextPanelVisibility() {
+        const panel = this.userContextPanel;
+        if (!panel) {
+            return;
+        }
+
+        const chatArea = panel.closest('.admin-chat-area');
+        const panelKind = String(panel.dataset.panelKind || '').trim();
+        const isNarrow = this.isNarrowAdminMode();
+        const hideCollapsedContext = isNarrow
+            && ['context', 'state'].includes(panelKind)
+            && this.userContextPanelCollapsed;
+        const hideCollapsedOpsFilter = isNarrow
+            && panelKind === 'ops-filter'
+            && this.opsAlertToolbarCollapsed;
+
+        const shouldShow = Boolean(panelKind) && !hideCollapsedContext && !hideCollapsedOpsFilter;
+        panel.hidden = !shouldShow;
+        chatArea?.classList.toggle('has-user-context', shouldShow);
+        this.syncUserContextInlineTrigger();
     }
 
     buildUserContextActionSignature(action = {}) {
@@ -10561,16 +11606,19 @@ class ChatWidget {
         if (!this.userContextPanel) return;
         const text = String(message || '').trim();
         if (!text) {
+            this.userContextPanel.dataset.panelKind = '';
             this.userContextPanel.hidden = true;
             this.userContextPanel.replaceChildren();
-            this.userContextPanel.closest('.admin-chat-area')?.classList.remove('has-user-context');
+            this.syncUserContextInlineTrigger();
+            this.syncUserContextPanelVisibility();
             this.scheduleAdminFloatingPanelOffsetSync();
             return;
         }
-        this.userContextPanel.hidden = false;
+        this.userContextPanel.dataset.panelKind = 'state';
         this.userContextPanel.className = `chat-context-panel chat-context-panel--${variant}`;
         this.userContextPanel.innerHTML = `<div class="chat-context-panel__state">${this.escapeHtml(text)}</div>`;
-        this.userContextPanel.closest('.admin-chat-area')?.classList.add('has-user-context');
+        this.syncUserContextInlineTrigger();
+        this.syncUserContextPanelVisibility();
         this.scheduleAdminFloatingPanelOffsetSync();
     }
 
@@ -11211,6 +12259,9 @@ class ChatWidget {
         this._focusInputWithoutScroll(this.input);
         this.input.setSelectionRange(this.input.value.length, this.input.value.length);
         this.input.dispatchEvent(new Event('input', { bubbles: true }));
+        if (this.isNarrowAdminMode()) {
+            this.setReplyTemplateBarCollapsed(true);
+        }
     }
 
     renderReplyTemplateBar(context = null) {
@@ -11224,13 +12275,34 @@ class ChatWidget {
         bar.replaceChildren();
 
         if (!templates.length) {
+            bar.dataset.templateCount = '0';
             bar.hidden = true;
+            bar.classList.remove('is-collapsed');
             bar.closest('.admin-chat-area')?.classList.remove('has-reply-templates');
         } else {
+            const toggle = document.createElement('button');
+            toggle.type = 'button';
+            toggle.className = 'chat-reply-templates__toggle';
+            toggle.setAttribute('data-reply-template-toggle', 'true');
+            toggle.innerHTML = `
+                <span class="chat-reply-templates__toggle-copy">
+                    <span class="chat-reply-templates__toggle-label">快捷回复</span>
+                    <span class="chat-reply-templates__toggle-count">${templates.length}</span>
+                </span>
+                <span class="chat-reply-templates__toggle-text">展开</span>
+            `;
+            toggle.addEventListener('click', () => {
+                this.setReplyTemplateBarCollapsed(!this.replyTemplateBarCollapsed);
+            });
+            bar.appendChild(toggle);
+
+            const content = document.createElement('div');
+            content.className = 'chat-reply-templates__content';
+
             const label = document.createElement('div');
             label.className = 'chat-reply-templates__label';
             label.textContent = '快捷回复';
-            bar.appendChild(label);
+            content.appendChild(label);
 
             const list = document.createElement('div');
             list.className = 'chat-reply-templates__list';
@@ -11247,10 +12319,16 @@ class ChatWidget {
                 list.appendChild(button);
             });
 
-            bar.appendChild(list);
+            content.appendChild(list);
+            bar.appendChild(content);
             bar.hidden = false;
+            bar.dataset.templateCount = String(templates.length);
             bar.closest('.admin-chat-area')?.classList.add('has-reply-templates');
         }
+
+        this.syncReplyTemplateBarCollapsedState();
+        this.syncUserContextInlineTrigger();
+        this.scheduleAdminFloatingPanelOffsetSync();
 
         this.ensureReplyTemplateConfigLoaded()
             .then((changed) => {
@@ -11589,19 +12667,20 @@ class ChatWidget {
     renderUser360Context(context = null) {
         if (!this.userContextPanel) return;
         if (!context) {
+            this.userContextPanel.dataset.panelKind = '';
             this.userContextPanel.hidden = true;
             this.userContextPanel.replaceChildren();
-            this.userContextPanel.closest('.admin-chat-area')?.classList.remove('has-user-context');
             this.renderUserContextHeaderStatus(null);
             this.renderReplyTemplateBar(null);
+            this.syncUserContextInlineTrigger();
+            this.syncUserContextPanelVisibility();
             this.scheduleAdminFloatingPanelOffsetSync();
             return;
         }
 
-        this.userContextPanel.hidden = false;
+        this.userContextPanel.dataset.panelKind = 'context';
         this.userContextPanel.className = 'chat-context-panel';
         this.userContextPanel.replaceChildren();
-        this.userContextPanel.closest('.admin-chat-area')?.classList.add('has-user-context');
         this.renderUserContextHeaderStatus(context);
         this.renderReplyTemplateBar(context);
         this.scheduleAdminFloatingPanelOffsetSync();
@@ -11696,6 +12775,8 @@ class ChatWidget {
         shellBodyInner.appendChild(card);
         this.userContextPanel.appendChild(shell);
         this.setUserContextPanelCollapsed(this.userContextPanelCollapsed);
+        this.syncUserContextInlineTrigger();
+        this.syncUserContextPanelVisibility();
     }
 
     async loadUser360Context(session = {}) {
@@ -11917,6 +12998,11 @@ class ChatWidget {
         if (this.isOpsAlertSession(sessionInfo)) {
             this.currentSessionInfo = null;
             this.currentUserContext = null;
+            if (this.isNarrowAdminMode()) {
+                this.userContextPanelCollapsed = true;
+                this.replyTemplateBarCollapsed = true;
+                this.opsAlertToolbarCollapsed = true;
+            }
             this.renderUser360Context(null);
             this.chatHeader.querySelector('.chat-user-name').textContent = '站内代办';
             this.chatHeader.querySelector('.chat-user-id').textContent = '站外告警同步 / 可认领、备注、关闭并跳转处理页';
@@ -11940,6 +13026,12 @@ class ChatWidget {
 
         this.setAdminReplyReadonly(false);
         this.currentSessionInfo = sessionInfo;
+        this.currentUserContext = null;
+        if (this.isNarrowAdminMode()) {
+            this.userContextPanelCollapsed = true;
+            this.replyTemplateBarCollapsed = true;
+            this.opsAlertToolbarCollapsed = true;
+        }
         this.renderReplyTemplateBar({
             sessionId,
             userId: sessionInfo?.userId || '',
@@ -13111,6 +14203,7 @@ class ChatWidget {
             this.chatWindow.classList.remove('chat-closing-end');
             this.chatWindow.classList.add('chat-opening');
             this._syncDesktopViewportInsetMode();
+            this.syncAdminResponsiveLayout({ force: true });
             this._primeOpeningAnimationFromFab();
             this._setChatWindowTransitionless(false);
             this._setChatWindowForceHidden(false);

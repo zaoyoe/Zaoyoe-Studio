@@ -36,12 +36,6 @@
             initial-value: 0px;
         }
 
-        @property --shop-card-hover-y {
-            syntax: '<length>';
-            inherits: false;
-            initial-value: 0px;
-        }
-
         :root {
             /* Light Mode Defaults */
             --bg-color: #ffffff;
@@ -120,7 +114,6 @@
             --shop-card-breathe-amplitude: -6px;
             --shop-card-shift-x: 0px;
             --shop-card-shift-y: 0px;
-            --shop-card-hover-y: 0px;
             position: relative;
             border-radius: 16px;
             overflow: hidden;
@@ -128,15 +121,14 @@
             border: 1px solid var(--card-border);
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
             transform: translate3d(var(--shop-card-shift-x),
-                    calc(var(--shop-card-shift-y) + var(--shop-card-enter-y) + var(--shop-card-breathe-y) + var(--shop-card-hover-y)),
+                    calc(var(--shop-card-shift-y) + var(--shop-card-enter-y) + var(--shop-card-breathe-y)),
                     0) scale(var(--shop-card-enter-scale));
             transition:
                 box-shadow 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
                 border-color 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
                 background 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
                 filter 0.42s ease,
-                --shop-card-breathe-amplitude 1.35s cubic-bezier(0.4, 0, 0.2, 1),
-                --shop-card-hover-y 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+                --shop-card-breathe-amplitude 1.35s cubic-bezier(0.4, 0, 0.2, 1);
             padding: 0;
             /* Remove padding for cover image */
             display: flex;
@@ -146,10 +138,11 @@
         }
 
         .shop-card:hover {
-            --shop-card-hover-y: -4px;
-            box-shadow: 0 12px 30px rgba(93, 159, 216, 0.2);
-            /* Starry blue glow shadow on hover */
-            border-color: #5d9fd8;
+            box-shadow:
+                0 22px 46px rgba(93, 159, 216, 0.22),
+                0 0 0 1px rgba(93, 159, 216, 0.58),
+                0 0 0 3px rgba(93, 159, 216, 0.18);
+            border-color: rgba(93, 159, 216, 0.94);
         }
 
         @media (min-width: 769px) {
@@ -175,10 +168,16 @@
                 0 18px 42px rgba(251, 191, 36, 0.16);
         }
 
+        [data-theme="dark"] .shop-card {
+            border-color: transparent;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+        }
+
         [data-theme="dark"] .shop-card:hover {
-            box-shadow: 0 12px 30px rgba(93, 159, 216, 0.25);
-            background: rgba(30, 41, 59, 0.9);
-            border-color: var(--starry-blue);
+            box-shadow:
+                0 22px 46px rgba(0, 0, 0, 0.42),
+                0 0 0 1px rgba(125, 181, 234, 0.32);
+            border-color: rgba(125, 181, 234, 0.58);
         }
 
         [data-theme="dark"] .shop-card.shop-card--spotlight {
@@ -212,6 +211,19 @@
             width: 100%;
             height: 100%;
             object-fit: cover;
+        }
+
+        .shop-card-image-cover,
+        .shop-card-thumb,
+        .shop-icon-wrapper>* {
+            transition: transform 0.6s ease, opacity 0.4s ease;
+            transform-origin: center;
+        }
+
+        .shop-card:hover .shop-card-image-cover,
+        .shop-card:hover .shop-card-thumb,
+        .shop-card:hover .shop-icon-wrapper>* {
+            transform: scale(1.09);
         }
 
         .shop-card-icon {
@@ -3760,7 +3772,6 @@
                 background 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
                 filter 0.42s ease,
                 --shop-card-breathe-amplitude 1.35s cubic-bezier(0.4, 0, 0.2, 1),
-                --shop-card-hover-y 0.42s cubic-bezier(0.22, 1, 0.36, 1),
                 --shop-card-shift-x 0.96s cubic-bezier(0.18, 0.88, 0.24, 1) var(--shop-card-filter-delay, 0ms),
                 --shop-card-shift-y 0.96s cubic-bezier(0.18, 0.88, 0.24, 1) var(--shop-card-filter-delay, 0ms);
         }
@@ -4940,15 +4951,25 @@
         }
 
         .shop-card.breathing {
-            animation: breathe 5.8s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+            animation: breathe 4s ease-in-out infinite;
             animation-delay: var(--breathe-delay, 0s);
             will-change: transform;
+        }
+
+        .shop-card.breathing:hover {
+            animation-play-state: paused;
         }
 
         .shop-card.breathing.shop-card-breathe-deferred {
             animation: none;
             --shop-card-breathe-y: 0px;
             --shop-card-breathe-amplitude: 0px;
+        }
+
+        .shop-card.shop-card-filter-enter,
+        .shop-card.shop-card-filter-exit,
+        .shop-card.shop-card-filter-moving {
+            animation: none !important;
         }
 
         /* Flash Sale Breathing Effect */
@@ -4965,7 +4986,7 @@
         }
 
         .shop-card.flash-sale-card {
-            animation: breathe 5.8s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite, flashSaleBreathe 2.4s ease-in-out infinite;
+            animation: breathe 4s ease-in-out infinite, flashSaleBreathe 2.4s ease-in-out infinite;
             animation-delay: var(--breathe-delay, 0s), 0s;
             border-color: rgba(239, 68, 68, 0.3);
         }
@@ -5605,8 +5626,7 @@ html:not([data-theme="dark"]) body.shop-page .shop-card--in-cart {
             border-color 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
             background 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
             filter 0.42s ease,
-            --shop-card-breathe-amplitude 1.35s cubic-bezier(0.4, 0, 0.2, 1),
-            --shop-card-hover-y 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+            --shop-card-breathe-amplitude 1.35s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     body.shop-page .shop-card.user-product-card.shop-card-filter-enter--initial.is-visible {

@@ -275,7 +275,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
-        /buildProductCardElement: function \(product, agentPrices = \{}, index = 0, \{ waveTimeMs = performance\.now\(\) \} = \{}\)[\s\S]*el\.dataset\.shopAction = 'buy-product';[\s\S]*class="shop-card-cart-trigger[\s\S]*data-shop-action="add-product-to-cart"/,
+        /buildProductCardElement: function \(product, agentPrices = \{}, index = 0\)[\s\S]*el\.dataset\.shopAction = 'buy-product';[\s\S]*class="shop-card-cart-trigger[\s\S]*data-shop-action="add-product-to-cart"/,
         'product cards should open purchase from the card body and use a dedicated cart icon trigger'
     );
     assert.match(
