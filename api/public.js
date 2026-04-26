@@ -3,6 +3,14 @@ const requestSecurity = require('./_lib/request-security');
 const { buildSupabaseRuntimeScript } = require('./_lib/public-runtime-config');
 
 const ROUTE_HANDLER_CACHE = new Map();
+let walletCheckinHandler = null;
+let walletCheckinHandlerLoadError = null;
+
+try {
+    walletCheckinHandler = require('./wallet/checkin');
+} catch (error) {
+    walletCheckinHandlerLoadError = error;
+}
 
 function normalizeRouteValue(value = '') {
     return String(value || '')
@@ -137,12 +145,11 @@ function createRouteHandlersForScope(scope) {
             'prompt-titles': walletHandlers.promptTitles,
             'verify-log': walletHandlers.verifyLog,
             async checkin(req, res) {
-                try {
-                    const walletCheckinHandler = require('./wallet/checkin');
-                    return walletCheckinHandler(req, res);
-                } catch (error) {
-                    return sendScopeInitializationFailure(res, 'wallet', error);
+                if (!walletCheckinHandler) {
+                    return sendScopeInitializationFailure(res, 'wallet', walletCheckinHandlerLoadError);
                 }
+
+                return walletCheckinHandler(req, res);
             }
         };
     }
