@@ -140,7 +140,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /css\/shop-page\.css\?v=20260426_SHOP_MOBILE_FOCUS_SMOOTH_1/,
+        /css\/shop-page\.css\?v=20260426_SHOP_MOBILE_FOCUS_REMOVED_1/,
         'shop.html should bust the shop stylesheet cache after integrating the cart drawer module'
     );
     assert.match(
@@ -150,7 +150,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /js\/shop-client\.js\?v=20260426_SHOP_MOBILE_FOCUS_SMOOTH_1/,
+        /js\/shop-client\.js\?v=20260426_SHOP_MOBILE_FOCUS_REMOVED_1/,
         'shop.html should load the cart-enabled shop client runtime'
     );
     assert.match(
