@@ -183,6 +183,62 @@ test('public wallet overview remains available when wallet checkin module fails 
     });
 });
 
+test('public wallet scope exposes kebab-case route aliases used by Vercel rewrites', async () => {
+    await withPublicHandler((request, parent, isMain, originalLoad) => {
+        if (request === '../server/api-handlers/public/wallet') {
+            const makeHandler = (routeName) => async (req, res) => {
+                res.status(200).setHeader('Content-Type', 'application/json; charset=utf-8');
+                res.end(JSON.stringify({
+                    success: true,
+                    route: routeName
+                }));
+            };
+
+            return {
+                createWalletHandlers() {
+                    return {
+                        orderDetail: makeHandler('orderDetail'),
+                        promptTitles: makeHandler('promptTitles'),
+                        verifyLog: makeHandler('verifyLog')
+                    };
+                }
+            };
+        }
+
+        if (request === './_lib/site') {
+            return {
+                requireSupportedSite(value) {
+                    return String(value || 'cn').trim().toLowerCase() || 'cn';
+                }
+            };
+        }
+
+        return originalLoad.call(Module, request, parent, isMain);
+    }, async (handler) => {
+        const cases = [
+            ['order-detail', 'orderDetail'],
+            ['prompt-titles', 'promptTitles'],
+            ['verify-log', 'verifyLog']
+        ];
+
+        for (const [route, expectedRoute] of cases) {
+            const req = {
+                method: 'POST',
+                url: `/api/public?scope=wallet&route=${route}`
+            };
+            const res = createMockResponse();
+
+            await handler(req, res);
+
+            assert.equal(res.statusCode, 200);
+            assert.deepEqual(res.json(), {
+                success: true,
+                route: expectedRoute
+            });
+        }
+    });
+});
+
 test('public wallet checkin returns a handled 500 when wallet checkin module fails to load', async () => {
     await withPublicHandler((request, parent, isMain, originalLoad) => {
         if (request === '../server/api-handlers/public/wallet') {

@@ -126,12 +126,16 @@ function createRouteHandlersForScope(scope) {
         const {
             createWalletHandlers
         } = require('../server/api-handlers/public/wallet');
+        const walletHandlers = createWalletHandlers({
+            admin,
+            site
+        });
 
         return {
-            ...createWalletHandlers({
-                admin,
-                site
-            }),
+            ...walletHandlers,
+            'order-detail': walletHandlers.orderDetail,
+            'prompt-titles': walletHandlers.promptTitles,
+            'verify-log': walletHandlers.verifyLog,
             async checkin(req, res) {
                 try {
                     const walletCheckinHandler = require('./wallet/checkin');
