@@ -480,10 +480,10 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260423_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_LOADER_11';",
+        "const VERSION = '20260426_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_LOADER_12';",
         "const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';",
         "const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';",
-        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260423_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_11';",
+        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260426_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_12';",
         'function getChatWidgetConstructor() {',
         'global.ChatWidget = ChatWidget;',
         'function isPlaceholderOpenIntent(event) {',
@@ -1299,19 +1299,19 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'admin-studio.html should load the latest admin chat case action runtime'
     );
     assert.equal(
-        adminStudioHtml.includes('css/admin-chat.css?v=20260424_ADMIN_CHAT_LIGHT_THEME_FROSTED_CONTEXT_FLAT_ALERTS_1'),
+        adminStudioHtml.includes('css/admin-chat.css?v=20260426_ADMIN_CHAT_LIGHT_THEME_FROSTED_CONTEXT_FLAT_ALERTS_2'),
         true,
         'admin-studio.html should load the latest admin chat case action stylesheet'
     );
 
     for (const source of publicPages) {
         assert.equal(
-            source.includes('js/chat-widget-loader.js?v=20260423_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_LOADER_11'),
+            source.includes('js/chat-widget-loader.js?v=20260426_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_LOADER_12'),
             true,
             'public entry pages should load the lazy chat widget bootstrap'
         );
         assert.equal(
-            source.includes('js/components/ChatWidget.js?v=20260423_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_11'),
+            source.includes('js/components/ChatWidget.js?v=20260426_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_12'),
             false,
             'public entry pages should no longer eagerly load the heavy chat widget runtime'
         );
@@ -13320,7 +13320,7 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
     }
 
     const htmlMarkers = [
-        'css/admin-chat.css?v=20260424_ADMIN_CHAT_LIGHT_THEME_FROSTED_CONTEXT_FLAT_ALERTS_1',
+        'css/admin-chat.css?v=20260426_ADMIN_CHAT_LIGHT_THEME_FROSTED_CONTEXT_FLAT_ALERTS_2',
         'js/admin-chat.js?v=20260421_ADMIN_CHAT_SITE_CHANGE_P2'
     ];
 
