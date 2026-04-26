@@ -5618,6 +5618,13 @@ html:not([data-theme="dark"]) body.shop-page .shop-card--in-cart {
 @media (max-width: 768px) {
     body.shop-page .shop-card.user-product-card {
         will-change: transform, filter;
+        transition:
+            box-shadow 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+            border-color 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+            background 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+            filter 0.42s ease,
+            --shop-card-breathe-amplitude 1.35s cubic-bezier(0.4, 0, 0.2, 1),
+            --shop-card-hover-y 0.42s cubic-bezier(0.22, 1, 0.36, 1);
     }
 
     body.shop-page .shop-card.user-product-card.shop-card-filter-enter--initial.is-visible {
@@ -5637,8 +5644,6 @@ html:not([data-theme="dark"]) body.shop-page .shop-card--in-cart {
     }
 
     html:not([data-theme="dark"]) body.shop-page .shop-card.user-product-card.shop-card--active-focus {
-        --shop-card-focus-y: -2px;
-        --shop-card-focus-scale: 1.01;
         background: rgba(252, 253, 255, 0.94);
         border-color: rgba(148, 163, 184, 0.16);
         box-shadow:
@@ -5659,8 +5664,6 @@ html:not([data-theme="dark"]) body.shop-page .shop-card--in-cart {
     }
 
     [data-theme="dark"] body.shop-page .shop-card.user-product-card.shop-card--active-focus {
-        --shop-card-focus-y: -2px;
-        --shop-card-focus-scale: 1.01;
         background: rgba(30, 41, 59, 0.88);
         border-color: rgba(125, 181, 234, 0.2);
         box-shadow:
