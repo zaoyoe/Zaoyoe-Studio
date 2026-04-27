@@ -151,7 +151,7 @@ test('user trend chart no longer waits for product or summary bundles before ren
         'admin-analytics.js should expose a request guard for deferred user trend panel hydration'
     );
     assert.equal(
-        html.includes('js/admin-analytics-panel-loaders.js?v=20260420_POINTS_LEADERBOARD_AVATAR_1'),
+        html.includes('js/admin-analytics-panel-loaders.js?v=20260427_ANALYTICS_USER_TREND_LOADING_DOTS_1'),
         true,
         'admin-studio.html should bump the panel-loader version for immutable cache safety'
     );

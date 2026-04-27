@@ -27,6 +27,495 @@ test('admin studio keeps the website light theme as an explicit data-theme state
     );
 });
 
+test('admin studio header exposes the transplanted theme toggle beside the site selector', () => {
+    const siteFilterSource = readRepoFile(path.join('js', 'admin-site-filter.js'));
+    const adminStudioSource = readRepoFile('admin-studio.js');
+    const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
+
+    assert.match(
+        siteFilterSource,
+        /admin-site-filter-toolbar[\s\S]*id="adminThemeToggleBtn"[\s\S]*id="adminSiteSelector"/,
+        'admin studio should render the transplanted theme toggle to the left of the site selector'
+    );
+    assert.equal(
+        siteFilterSource.includes('class="theme-toggle-btn admin-theme-toggle-btn"'),
+        true,
+        'admin studio should reuse the avatar dropdown theme toggle button shell in the header'
+    );
+    assert.equal(
+        siteFilterSource.includes('data-admin-action="toggle-theme"'),
+        true,
+        'admin studio header theme toggle should route through the delegated action system'
+    );
+    assert.equal(
+        adminStudioSource.includes("case 'toggle-theme':"),
+        true,
+        'admin studio action routing should handle the transplanted theme toggle'
+    );
+    assert.equal(
+        adminStudioSource.includes("localStorage.setItem('theme', nextTheme);"),
+        true,
+        'admin studio theme toggle should persist the shared website theme preference'
+    );
+    assert.equal(
+        adminStudioSource.includes('window.applySiteThemeChrome?.(nextTheme);'),
+        true,
+        'admin studio theme updates should refresh the shared browser chrome theme color'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_HEADER_THEME_TOGGLE_1'),
+        true,
+        'admin studio styles should include the header theme toggle marker'
+    );
+    assert.equal(
+        stylesSource.includes('.admin-theme-toggle-btn'),
+        true,
+        'admin studio styles should size and align the transplanted theme toggle for the header toolbar'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_SITE_SWITCHER_POLISH_1'),
+        true,
+        'admin studio styles should include the polished site switcher layer'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_SITE_SWITCHER_NO_HOVER_LIFT_1'),
+        true,
+        'admin studio styles should include the flat hover site switcher marker'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_SITE_SWITCHER_ACTIVE_HOVER_LOCK_1'),
+        true,
+        'admin studio styles should lock the active site option background when hovered again'
+    );
+    assert.equal(
+        stylesSource.includes('.site-selector-option:not(.active):hover'),
+        true,
+        'admin studio site switcher should only apply hover chrome to non-active site options'
+    );
+    assert.equal(
+        stylesSource.includes('.site-selector-btn,'),
+        true,
+        'admin studio site switcher should reset native button chrome before applying custom styles'
+    );
+    assert.equal(
+        stylesSource.includes('.admin-theme-toggle-btn:hover,\n                .admin-theme-toggle-btn:focus-visible {\n                    transform: none;'),
+        true,
+        'admin studio header theme toggle should not lift on hover or focus'
+    );
+    assert.equal(
+        readRepoFile(path.join('js', 'admin-site-filter.js')).includes('<span class="site-selector-kicker">站点视角</span>'),
+        false,
+        'admin site selector trigger should not render the redundant kicker copy'
+    );
+    assert.equal(
+        stylesSource.includes('.site-selector-btn:hover,\n                .admin-site-selector.is-open .site-selector-btn {\n                    transform: none;'),
+        true,
+        'admin studio site switcher should not lift on hover or open state'
+    );
+    assert.equal(
+        stylesSource.includes('box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);'),
+        true,
+        'admin studio site switcher should keep a flat base shell without a raised default outer shadow'
+    );
+    assert.equal(
+        stylesSource.includes('box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);'),
+        true,
+        'admin studio site switcher should keep the light-theme default state flat as well'
+    );
+    assert.equal(
+        stylesSource.includes('box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);'),
+        true,
+        'admin studio site switcher hover and open states should stay flat in dark mode'
+    );
+    assert.equal(
+        stylesSource.includes('box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.96);'),
+        true,
+        'admin studio site switcher hover and open states should stay flat in light mode'
+    );
+});
+
+test('admin studio gallery pagination stays visible in light theme', () => {
+    const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
+
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_GALLERY_PAGINATION_LIGHT_FIX_1'),
+        true,
+        'admin studio page styles should include the gallery pagination light-theme visibility fix marker'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-gallery .pagination-btn'),
+        true,
+        'admin studio light theme should explicitly restyle gallery pagination buttons'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-gallery .pagination-input'),
+        true,
+        'admin studio light theme should explicitly restyle the gallery pagination page input'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-gallery .pagination-total'),
+        true,
+        'admin studio light theme should explicitly restore gallery pagination copy contrast'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_GALLERY_HOVER_CLEANUP_1'),
+        true,
+        'admin studio page styles should include the gallery hover cleanup marker'
+    );
+    assert.equal(
+        stylesSource.includes('.comments-pagination-shell__inner:hover'),
+        true,
+        'admin studio should explicitly neutralize the shared pagination shell hover state for gallery'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-gallery .admin-card:hover'),
+        true,
+        'admin studio light theme should explicitly neutralize gallery card hover chrome in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_GALLERY_MODULE_SHADOW_CLEANUP_1'),
+        true,
+        'admin studio page styles should include the gallery module shadow cleanup marker'
+    );
+    assert.equal(
+        stylesSource.includes('.admin-card-context-btn:hover'),
+        true,
+        'admin studio light theme should explicitly neutralize gallery action button hover shadows'
+    );
+    assert.equal(
+        stylesSource.includes('.admin-card-site-metric.is-current'),
+        true,
+        'admin studio light theme should explicitly neutralize gallery site metric shadows'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_GALLERY_INTERNAL_HOVER_NEUTRAL_1'),
+        true,
+        'admin studio page styles should include the gallery card internal hover neutralization marker'
+    );
+    assert.equal(
+        stylesSource.includes('.admin-card-media:is(:hover, :focus, :focus-visible, :focus-within, :active)'),
+        true,
+        'admin studio should neutralize image-area hover outlines inside gallery prompt cards'
+    );
+    assert.equal(
+        stylesSource.includes('.admin-card-title,'),
+        true,
+        'admin studio should include gallery prompt title in the internal hover neutralization scope'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_GLOBAL_NONINTERACTIVE_HOVER_NEUTRAL_1'),
+        true,
+        'admin studio page styles should include a global non-interactive hover neutralization layer'
+    );
+    assert.equal(
+        stylesSource.includes('[class*="-media"],'),
+        true,
+        'admin studio global hover neutralization should cover media/image internals'
+    );
+    assert.equal(
+        stylesSource.includes(':not([data-admin-action]):not([data-action]):not([data-comments-action]):not([data-shop-action])'),
+        true,
+        'admin studio global hover neutralization should preserve delegated interactive controls'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_GALLERY_HOVER_ACTION_SOLID_BUTTONS_1'),
+        true,
+        'admin studio page styles should include a gallery quick-action solid button marker'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_GALLERY_HOVER_ACTION_EDGE_SEAM_GUARD_1'),
+        true,
+        'admin studio page styles should include a gallery quick-action edge seam guard marker'
+    );
+    assert.equal(
+        stylesSource.includes('#module-gallery .admin-card-hover-actions .hover-action-btn:is(:hover, :focus, :focus-visible, :active)'),
+        true,
+        'admin studio should neutralize gallery quick-action button transform and filter feedback on hover'
+    );
+    assert.equal(
+        stylesSource.includes('#module-gallery .admin-card:hover .admin-card-hover-actions'),
+        true,
+        'admin studio should neutralize the gallery quick-action group transform while the card is hovered'
+    );
+    assert.match(
+        stylesSource,
+        /#module-gallery \.admin-card-hover-actions \.hover-action-btn\s*\{[\s\S]*?--admin-card-hover-action-bg:\s*#273142;[\s\S]*?appearance:\s*none !important;[\s\S]*?background:\s*var\(--admin-card-hover-action-bg\) !important;[\s\S]*?border:\s*1px solid var\(--admin-card-hover-action-bg\) !important;[\s\S]*?box-shadow:\s*none !important;/m,
+        'admin studio should render gallery quick-action buttons as solid non-native surfaces with self-colored edges'
+    );
+    assert.equal(
+        stylesSource.includes('#module-gallery .admin-card-hover-actions .hover-action-btn::before'),
+        true,
+        'admin studio should clear quick-action button pseudo elements that can render hairline artifacts'
+    );
+});
+
+test('admin studio pagination controls use light-theme chrome across modules', () => {
+    const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
+
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_PAGINATION_LIGHT_SYSTEM_1'),
+        true,
+        'admin studio styles should include the systemic pagination light-theme layer'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-comments .pagination-btn'),
+        true,
+        'comments management pagination buttons should receive explicit light-theme styling'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-comments .pagination-input'),
+        true,
+        'comments management pagination page input should receive explicit light-theme styling'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-comments .pagination-total'),
+        true,
+        'comments management pagination summary should receive explicit light-theme contrast'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] .admin-main-content .pagination-btn'),
+        true,
+        'shared pagination buttons should be covered beyond the gallery and comments modules'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] .admin-main-content .admin-pagination .page-btn'),
+        true,
+        'user and payments pagers should avoid inheriting the announcement page selector button style'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] .admin-main-content :is(\n    .pagination-controls,'),
+        true,
+        'points batch pagination controls should receive the shared light-theme container treatment'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] .admin-main-content :is(\n    .comments-pagination-shell,'),
+        true,
+        'comments pagination outer shell should be included in the no-hover-frame cleanup'
+    );
+    assert.equal(
+        stylesSource.includes('border: 0 !important;\n    border-color: transparent !important;'),
+        true,
+        'pagination containers should not draw a rectangular hover or focus frame in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_PAGINATION_HOVER_FRAME_GUARD_1'),
+        true,
+        'admin studio styles should include the high-specificity pagination hover frame guard'
+    );
+    assert.equal(
+        stylesSource.includes('#adminCommentsPagination.comments-pagination-shell'),
+        true,
+        'comments pagination mount should be guarded by ID so it outranks broad shell hover rules'
+    );
+    assert.equal(
+        stylesSource.includes('#adminCommentsPagination,\n    #adminGalleryPagination,'),
+        true,
+        'pagination inner shells should inherit the same high-specificity guard from their mount IDs'
+    );
+    assert.equal(
+        stylesSource.includes(') :is(\n    .pagination-shell,\n    .pagination-control,\n    .comments-pagination-shell__inner,'),
+        true,
+        'pagination inner shell and control containers should not draw a rectangular hover frame'
+    );
+    assert.equal(
+        stylesSource.includes('):is(:hover, :focus, :focus-visible, :focus-within, :active) {\n    background: transparent !important;\n    border: 0 !important;'),
+        true,
+        'pagination mounts should stay frameless across hover and focus states'
+    );
+    assert.equal(
+        stylesSource.includes('.payments-pagination,'),
+        true,
+        'payments pagination should participate in the shared light-theme container treatment'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] .admin-main-content .tab-pagination button'),
+        true,
+        'tabbed modal pagination buttons should be covered by the same light-theme button treatment'
+    );
+    assert.equal(
+        stylesSource.includes('.verify-monitor-pagination__actions .btn-add-config'),
+        true,
+        'settings monitor pagination buttons should be covered by the systemic light-theme layer'
+    );
+    assert.equal(
+        stylesSource.includes('color-scheme: light;'),
+        true,
+        'pagination number inputs should opt into light browser form controls'
+    );
+});
+
+test('admin studio product editor modal restores light-theme contrast', () => {
+    const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
+
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_PRODUCT_MODAL_SCOPE_1'),
+        true,
+        'admin studio styles should scope product editor modal base styles to the product modal root'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_PRODUCT_MODAL_LIGHT_THEME_1'),
+        true,
+        'admin studio styles should include the product editor modal light-theme layer'
+    );
+    assert.equal(
+        stylesSource.includes('#productModal .premium-modal-layout'),
+        true,
+        'product editor modal base shell styles should stay namespaced to the product modal root'
+    );
+    assert.equal(
+        stylesSource.includes('#productModal.active .premium-modal-layout'),
+        true,
+        'product editor modal active-state shell transitions should not target every modal overlay in admin studio'
+    );
+    assert.equal(
+        stylesSource.includes('#productModal .preview-label'),
+        true,
+        'product editor preview copy styles should stay scoped to the modal instead of leaking into other preview panels'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #productModal .premium-modal-layout'),
+        true,
+        'product editor modal shell should receive an explicit light surface'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #productModal .preview-label'),
+        true,
+        'product editor preview eyebrow should not inherit low-contrast white text in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #productModal .upload-box'),
+        true,
+        'product editor image upload box should not keep dark dashed-dropzone colors in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('#productModal .upload-text'),
+        true,
+        'product editor upload copy styles should stay scoped to the modal instead of overriding gallery create dropzones globally'
+    );
+    assert.equal(
+        stylesSource.includes('#productModal .custom-category-selected'),
+        true,
+        'product editor custom category trigger chrome should stay scoped to the modal instead of leaking into unrelated selectors'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #productModal .custom-category-options'),
+        true,
+        'product editor custom dropdown menu should be remapped from dark glass to light surface'
+    );
+    assert.equal(
+        stylesSource.includes('#productModal .toggle-switch input:checked+.toggle-slider'),
+        true,
+        'product editor toggle tuning should stay scoped to the product modal instead of resizing every toggle in admin studio'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #productModal .toggle-slider'),
+        true,
+        'product editor toggle switches should keep visible off-state chrome in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #productModal .btn-cancel'),
+        true,
+        'product editor cancel button should keep readable contrast in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_PRODUCT_MODAL_EDITOR_LIGHT_THEME_1'),
+        true,
+        'product editor modal should keep a dedicated light-theme layer for rich-text and tiered-pricing chrome'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #productModal .wysiwyg-editor'),
+        true,
+        'product editor rich-text surface should explicitly remap to a readable light editor background'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_PRODUCT_MODAL_RICHTEXT_COLOR_PREVIEW_1'),
+        true,
+        'product editor modal should include a dedicated light-theme rich-text color preview marker'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #productModal .wysiwyg-editor :is(a, b, strong, i, em, u, div, p, span, font, ul, ol, li)'),
+        true,
+        'product editor rich-text content should explicitly sync WebKit text fill to each node currentColor in light mode'
+    );
+    assert.doesNotMatch(
+        stylesSource,
+        /html\[data-theme="light"\] #productModal \.wysiwyg-editor,\s*html:not\(\[data-theme="dark"\]\) #productModal \.wysiwyg-editor \{[^}]*-webkit-text-fill-color:/,
+        'product editor light-theme editor root should not flatten descendant rich-text colors with a forced WebKit text fill'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #productModal .shop-tiered-pricing-row'),
+        true,
+        'product editor tiered pricing rows should not keep dark cards in light theme'
+    );
+    assert.equal(
+        stylesSource.includes('.premium-modal-layout,\n    .admin-ticket-reply-modal'),
+        true,
+        'product editor modal should participate in shared modal hint and placeholder contrast cleanup'
+    );
+});
+
+test('admin studio rich text yellow upgrades low-contrast legacy palette values', () => {
+    const adminConfigSource = readRepoFile('admin-config.js');
+    const studioStylesSource = readRepoFile('admin-studio.css');
+
+    assert.match(
+        adminConfigSource,
+        /const ADMIN_CONFIG_RICH_TEXT_VISIBLE_YELLOW = '#f4b400';/,
+        'admin-config.js should define a richer gold token for yellow rich-text copy on light surfaces'
+    );
+    assert.equal(
+        adminConfigSource.includes('ADMIN_CONFIG_RICH_TEXT_LOW_CONTRAST_YELLOW_PATTERN'),
+        true,
+        'admin-config.js should keep a dedicated matcher for low-contrast legacy yellow rich-text colors'
+    );
+    assert.equal(
+        adminConfigSource.includes("{ value: ADMIN_CONFIG_RICH_TEXT_VISIBLE_YELLOW, label: '黄色' }"),
+        true,
+        'rich-text toolbar color choices should expose the visible gold token instead of the pale legacy yellow'
+    );
+    assert.match(
+        adminConfigSource,
+        /function normalizeStoredContent\(value\) \{[\s\S]*normalizeAdminConfigRichTextPaletteColor\(value\)/,
+        'stored rich-text content should normalize legacy pale yellow markup before the editor renders it'
+    );
+    assert.match(
+        adminConfigSource,
+        /selectColor\(key, color\) \{[\s\S]*const normalizedColor = normalizeAdminConfigRichTextPaletteColor\(color\);[\s\S]*execCommand\(key, 'foreColor', normalizedColor\);/s,
+        'toolbar color selection should normalize pale yellow into the visible gold token before applying it'
+    );
+    assert.equal(
+        studioStylesSource.includes('.color-swatch--yellow {\n    background: #f4b400;'),
+        true,
+        'admin-studio.css should render the toolbar yellow swatch with the richer gold tone'
+    );
+});
+
+test('admin studio shop product stock badges keep dedicated capsule states', () => {
+    const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
+    const shopScript = readRepoFile(path.join('js', 'admin-shop.js'));
+
+    assert.equal(
+        stylesSource.includes('.shop-admin-product-stock--empty'),
+        true,
+        'shop product cards should include an empty-stock badge tone for frosted stock capsules'
+    );
+    assert.equal(
+        stylesSource.includes('.preview-stock--unknown'),
+        true,
+        'product preview card should include an unknown-stock badge tone for new products before inventory exists'
+    );
+    assert.equal(
+        shopScript.includes('shop-admin-product-stock shop-admin-product-stock--empty'),
+        true,
+        'shop product card renderer should map zero stock into the empty-stock badge class'
+    );
+    assert.equal(
+        shopScript.includes('preview-stock--unknown'),
+        true,
+        'product preview renderer should preserve a dedicated unknown-stock state before a product is saved'
+    );
+});
+
 test('admin studio access gate, module loaders, and sidebar reuse the shared dot loader shell', () => {
     const adminStudioHtml = readRepoFile('admin-studio.html');
     const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
@@ -90,6 +579,11 @@ test('admin studio access gate, module loaders, and sidebar reuse the shared dot
 
 test('admin studio has a light-theme bridge for legacy dark admin surfaces', () => {
     const adminStudioSource = readRepoFile('admin-studio.js');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+    const analyticsPanelLoadersSource = readRepoFile(path.join('js', 'admin-analytics-panel-loaders.js'));
+    const paymentsSource = readRepoFile(path.join('js', 'admin-payments.js'));
+    const shopSource = readRepoFile(path.join('js', 'admin-shop.js'));
+    const ticketsSource = readRepoFile(path.join('js', 'admin-tickets.js'));
     const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
     const chatStylesSource = readRepoFile(path.join('css', 'admin-chat.css'));
 
@@ -244,6 +738,56 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         'admin studio light theme should cover prompt manage skeleton cards'
     );
     assert.equal(
+        stylesSource.includes('20260427_ADMIN_GALLERY_CREATE_LIGHT_THEME_1'),
+        true,
+        'admin studio styles should include the gallery create light-theme cleanup layer'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_GALLERY_CREATE_TITLEBAR_CLIP_1'),
+        true,
+        'admin studio should clip gallery create titlebars to their card radius'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-gallery #view-create :is(.upload-section.glass-panel, .analysis-section.glass-panel)'),
+        true,
+        'gallery create upload and analysis cards should clip overflowing blue titlebars'
+    );
+    assert.equal(
+        stylesSource.includes('.upload-section.glass-panel > .section-title,\n    .analysis-section.glass-panel > .section-title'),
+        true,
+        'gallery create card titlebars should be explicitly scoped to their own panels'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-gallery #view-create :is(\n    .gallery-bilingual-panel,\n    .gallery-ops-panel,\n    .gallery-ops-note\n)'),
+        true,
+        'admin studio light theme should cover gallery create nested bilingual and ops panels'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-gallery #view-create :is(.select-display, .select-options)'),
+        true,
+        'admin studio light theme should cover gallery create custom select surfaces'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_GALLERY_UPLOAD_LIGHT_COPY_1'),
+        true,
+        'admin studio styles should include the gallery create upload copy light-theme cleanup layer'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-gallery #view-create .upload-text'),
+        true,
+        'gallery create upload primary copy should keep readable contrast in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-gallery #view-create .upload-subtext'),
+        true,
+        'gallery create upload secondary copy should keep readable contrast in light mode'
+    );
+    assert.equal(
+        readRepoFile('admin-studio.html').includes('galleryCreateTitlebars=20260427_ADMIN_STUDIO_GALLERY_CREATE_TITLEBAR_CLIP_1'),
+        true,
+        'admin studio should cache-bust the gallery create titlebar clipping fix'
+    );
+    assert.equal(
         stylesSource.includes('20260424_ADMIN_STUDIO_LIGHT_THEME_SYSTEMIC_1'),
         true,
         'admin studio styles should include the systemic light theme layer for component families beyond the first screenshots'
@@ -289,9 +833,9 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         'admin studio light theme should lower the shared glass shadow scale'
     );
     assert.equal(
-        stylesSource.includes('--admin-studio-skeleton-panel-bg: rgba(255, 255, 255, 0.72);'),
+        stylesSource.includes('--admin-studio-skeleton-panel-bg: linear-gradient(135deg, rgba(248, 250, 252, 0.9), rgba(255, 255, 255, 0.8) 50%, rgba(241, 245, 249, 0.84));'),
         true,
-        'admin studio light theme should override dark skeleton panel variables'
+        'admin studio light theme should override dark skeleton panel variables with a structured neutral panel'
     );
     assert.equal(
         stylesSource.includes('html[data-theme="light"] #module-ops-alerts :is(\n    .ops-alert-channel-card'),
@@ -364,6 +908,26 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         'admin studio light theme should remove the rectangular active tab fill and keep only the indicator'
     );
     assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_NAV_HOVER_SUBTLE_1'),
+        true,
+        'admin studio styles should include a final subtle hover guard for navigation tabs'
+    );
+    assert.equal(
+        stylesSource.includes('html:not([data-theme="dark"]) :is(\n    .admin-main-content .admin-tabs .admin-tab,'),
+        true,
+        'navigation hover cleanup should also cover the non-dark theme path'
+    );
+    assert.equal(
+        stylesSource.includes('):is(:hover, :focus-visible, .active),'),
+        true,
+        'top-level navigation tabs should not draw rectangular hover or active fills'
+    );
+    assert.equal(
+        stylesSource.includes('background: transparent !important;\n    background-image: none !important;\n    box-shadow: none !important;'),
+        true,
+        'navigation hover cleanup should remove large filled hover blocks'
+    );
+    assert.equal(
         stylesSource.includes('html[data-theme="light"] #module-discounts .filter-dropdowns .filter-btn:is(:hover, :focus, :focus-visible, .active)'),
         true,
         'discount status filter chips should highlight their border when focused or selected'
@@ -387,6 +951,26 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         stylesSource.includes('html[data-theme="light"] .users-coupon-summary-card:is(:hover, :focus-visible, .is-active)'),
         true,
         'user detail coupon summary cards should focus without a lifted active card'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_USER_MODAL_LIGHT_SEMANTIC_RAILS_1'),
+        true,
+        'user detail modal light theme should preserve semantic colored rails on list cards'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] .user-modal :is(.data-list-item, .users-note-item, .users-audit-item)'),
+        true,
+        'user detail modal list cards should restate their rail color after light-theme neutral borders'
+    );
+    assert.equal(
+        stylesSource.includes('.users-payment-item--success'),
+        true,
+        'user detail modal recharge rows should have status-specific rail tokens'
+    );
+    assert.equal(
+        stylesSource.includes('.user-overview-card--warning'),
+        true,
+        'user detail modal overview cards should keep semantic borders in light mode'
     );
     assert.equal(
         stylesSource.includes('html[data-theme="light"] :is(\n    .modal-loading--skeleton,'),
@@ -594,24 +1178,292 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         'ops cockpit issue and writeback cards should be included in no-lift coverage'
     );
     assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_ANALYTICS_LIGHT_ACTION_VISIBILITY_1'),
+        true,
+        'admin studio styles should include the analytics action button light visibility layer'
+    );
+    assert.equal(
+        stylesSource.includes('    .analytics-duty-hero__cta,\n    .analytics-duty-list-item__cta,\n    .analytics-product-alert-card__actions .btn-sm.btn-secondary,'),
+        true,
+        'analytics duty and product action buttons should share readable light-theme button styling'
+    );
+    assert.equal(
+        stylesSource.includes('    .analytics-business-center-shell__primary,\n    .analytics-duty-hero__cta,'),
+        true,
+        'business center primary action buttons should keep visible button chrome in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_ANALYTICS_LIGHT_DUTY_QUEUE_READABILITY_1'),
+        true,
+        'admin studio styles should include the duty queue light readability layer'
+    );
+    assert.equal(
+        stylesSource.includes('    .analytics-duty-hero__sample-pill,\n    .analytics-duty-hero__panel,\n    .analytics-duty-list-item__panel'),
+        true,
+        'duty queue chips should not keep gray-on-white dark-theme colors in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_ANALYTICS_USER_VALUE_LIGHT_DEPTH_1'),
+        true,
+        'admin studio styles should include the user value cockpit light depth layer'
+    );
+    assert.equal(
+        stylesSource.includes(') .analytics-user-value-cockpit .analytics-product-conclusion-digest {'),
+        true,
+        'user value cockpit conclusion cards should regain visible surfaces in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('    .analytics-user-value-cockpit__stat,\n    .analytics-user-value-cockpit__panel,'),
+        true,
+        'user value cockpit metric and sample panels should regain card depth in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_ANALYTICS_MAIN_ACTION_HOVER_PARITY_1'),
+        true,
+        'business center main actions should share the same light hover treatment as watch actions'
+    );
+    assert.equal(
+        stylesSource.includes('.analytics-business-center-shell__primary,\n    .analytics-business-center-shell__watch-action'),
+        true,
+        'business center primary and watch action buttons should be covered by the same hover parity selector'
+    );
+    assert.equal(
+        stylesSource.includes('background: var(--admin-studio-subtle-block-bg-hover, rgba(118, 157, 202, 0.1)) !important;'),
+        true,
+        'business center hover parity should reuse the existing watch-action hover material'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_ANALYTICS_POINTS_LEDGER_ACTION_ORANGE_1'),
+        true,
+        'points ledger action buttons should keep the orange treatment in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('[data-analytics-destination="points"]'),
+        true,
+        'points destination action buttons should be targetable for the orange ledger style'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_ANALYTICS_DUTY_STAT_LIGHT_DEPTH_1'),
+        true,
+        'today duty stat cards should regain visible depth in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_ANALYTICS_DUTY_METRIC_STATIC_HOVER_3'),
+        true,
+        'today duty primary metric card should include a static hover override'
+    );
+    assert.equal(
+        stylesSource.indexOf('20260427_ADMIN_STUDIO_ANALYTICS_DUTY_METRIC_STATIC_HOVER_3') >
+            stylesSource.indexOf('20260427_ADMIN_STUDIO_ANALYTICS_READONLY_NAV_HOVER_LOCK_3'),
+        true,
+        'today duty primary metric hover-lock should load after shared analytics hover locks'
+    );
+    assert.equal(
+        stylesSource.includes('#overviewDutyBoard .analytics-duty-hero__metric-card:is(:hover, :focus, :focus-visible, :focus-within, :active)'),
+        true,
+        'today duty primary metric card should keep its normal treatment when hovered directly'
+    );
+    assert.equal(
+        stylesSource.includes('#overviewDutyBoard .analytics-duty-hero:is(:hover, :focus-within) .analytics-duty-hero__metric-card'),
+        true,
+        'today duty primary metric card should stay static when its hero row is hovered'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_ANALYTICS_USER_VALUE_BORDER_SAFE_AREA_1'),
+        true,
+        'user value cockpit should reserve enough bottom space for visible borders'
+    );
+    assert.equal(
+        stylesSource.includes('overflow: visible !important;\n    grid-auto-rows: minmax(236px, auto) !important;'),
+        true,
+        'user value stat rail should avoid being a clipping scroll container on desktop light mode'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_ANALYTICS_USER_VALUE_STAT_CLIP_FIX_1'),
+        true,
+        'user value stat cards should include a dedicated bottom-border clipping fix'
+    );
+    assert.equal(
+        stylesSource.includes('height: auto !important;\n    min-height: 236px !important;'),
+        true,
+        'user value stat cards should avoid the old 100% min-height that could push borders outside the rail'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_ANALYTICS_SUBCARD_HEADER_ALIGN_1'),
+        true,
+        'analytics section navigator cards should include a dedicated header alignment fix'
+    );
+    assert.equal(
+        stylesSource.includes('.analytics-section-navigator-card > .analytics-section-navigator-card__top'),
+        true,
+        'analytics section navigator card titlebars should be explicitly aligned inside their cards'
+    );
+    assert.equal(
+        stylesSource.includes('overflow: hidden !important;\n}'),
+        true,
+        'analytics section navigator cards should clip their internal titlebar to the card radius'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_TITLEBAR_EDGE_ALIGNMENT_2'),
+        true,
+        'admin studio should include the expanded titlebar edge alignment layer'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_TITLEBAR_EDGE_ALIGNMENT_3'),
+        true,
+        'admin studio should include the operating hub card titlebar completion layer'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_TITLEBAR_EDGE_ALIGNMENT_4'),
+        true,
+        'admin studio should include the overview navigator card titlebar completion layer'
+    );
+    assert.equal(
+        stylesSource.includes('.analytics-operating-focus > .analytics-operating-focus__header'),
+        true,
+        'operating focus titlebars should be aligned against their outer card border'
+    );
+    assert.equal(
+        stylesSource.includes('.analytics-ops-cockpit__panel > .analytics-ops-cockpit__panel-top'),
+        true,
+        'ops cockpit card titlebars should be covered by the same edge alignment'
+    );
+    assert.equal(
+        stylesSource.includes('.analytics-operating-hub__item > .analytics-operating-hub__item-top'),
+        true,
+        'operating hub navigation cards should stretch their blue titlebar across the full card width'
+    );
+    assert.equal(
+        stylesSource.includes('align-self: stretch !important;\n    box-sizing: border-box !important;'),
+        true,
+        'flex-column card titlebars should not shrink to their content width'
+    );
+    assert.equal(
+        stylesSource.includes('.analytics-overview-navigator-card > .analytics-overview-navigator-card__top'),
+        true,
+        'overview navigator cards should stretch their blue titlebar across the full card width'
+    );
+    assert.equal(
+        stylesSource.includes('--admin-studio-titlebar-edge-x: 20px;'),
+        true,
+        'overview navigator cards should align the titlebar to their 20px horizontal card inset'
+    );
+    assert.equal(
+        stylesSource.includes('.analytics-user-value-cockpit > .analytics-user-value-cockpit__head'),
+        true,
+        'user value cockpit titlebars should be covered by the expanded edge alignment'
+    );
+    assert.equal(
+        stylesSource.includes('.analytics-product-panel > .analytics-product-panel__head'),
+        true,
+        'product panel titlebars should be covered by the expanded edge alignment'
+    );
+    assert.equal(
+        stylesSource.includes('--admin-studio-titlebar-edge-x: calc(var(--admin-studio-panel-padding-x) + 2px);'),
+        true,
+        'glass-panel analytics shells should use their real panel padding for titlebar edge alignment'
+    );
+    assert.equal(
+        stylesSource.includes('margin: calc(-1 * var(--admin-studio-titlebar-edge-y'),
+        true,
+        'titlebar edge alignment should inherit per-card edge offsets instead of using one fixed inset'
+    );
+    assert.equal(
+        stylesSource.includes('border-radius: 0 !important;\n    background: var(--admin-studio-light-titlebar-bg) !important;'),
+        true,
+        'titlebar edge alignment should let the parent card clip the blue header to the outer radius'
+    );
+    assert.equal(
+        readRepoFile('admin-studio.html').includes('titlebars=20260427_ADMIN_STUDIO_TITLEBAR_EDGE_ALIGNMENT_4'),
+        true,
+        'admin studio should cache-bust the titlebar edge alignment stylesheet update'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_ANALYTICS_PANEL_NOTE_STATIC_HOVER_1'),
+        true,
+        'analytics read-only panel notes should include a static hover override'
+    );
+    assert.equal(
+        stylesSource.indexOf('20260427_ADMIN_STUDIO_ANALYTICS_PANEL_NOTE_STATIC_HOVER_1') >
+            stylesSource.indexOf('20260427_ADMIN_STUDIO_GLOBAL_NONINTERACTIVE_HOVER_NEUTRAL_1'),
+        true,
+        'analytics panel note static hover override should load after the global noninteractive hover cleanup'
+    );
+    assert.equal(
+        stylesSource.includes('.analytics-panel-note:is(:hover, :focus, :focus-visible, :active)'),
+        true,
+        'analytics panel notes should keep their pill treatment when hovered directly'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_ANALYTICS_READONLY_NAV_HOVER_LOCK_3'),
+        true,
+        'analytics read-only navigator headers should include a hover-lock override'
+    );
+    assert.equal(
+        stylesSource.indexOf('20260427_ADMIN_STUDIO_ANALYTICS_READONLY_NAV_HOVER_LOCK_3') >
+            stylesSource.indexOf('20260427_ADMIN_STUDIO_ANALYTICS_PANEL_NOTE_STATIC_HOVER_1'),
+        true,
+        'analytics read-only navigator hover-lock should load after the panel note static hover layer'
+    );
+    assert.equal(
+        stylesSource.includes(':is(.analytics-overview-navigator-card, .analytics-section-navigator-card):not(.analytics-section-navigator-card--active):is(:hover, :active)'),
+        true,
+        'analytics navigator cards should neutralize hover on non-clickable cards themselves'
+    );
+    assert.equal(
+        stylesSource.includes(':is(.analytics-overview-navigator-card__top, .analytics-section-navigator-card__top) .analytics-status-chip--warning:is(:hover, :focus, :focus-visible, :active)'),
+        true,
+        'analytics read-only navigator status chips should keep warning styling on direct hover'
+    );
+    assert.equal(
         stylesSource.includes('20260424_ADMIN_STUDIO_LIGHT_THEME_LOADING_SKELETON_2'),
         true,
         'admin studio styles should include the light loading skeleton layer'
     );
     assert.equal(
-        stylesSource.includes('--admin-studio-light-loading-panel-border: rgba(100, 116, 139, 0.14);'),
+        stylesSource.includes('--admin-studio-light-loading-panel-border: rgba(100, 116, 139, 0.16);'),
         true,
         'light loading skeletons should keep enough visible contrast on white cards'
     );
     assert.equal(
-        stylesSource.includes('html[data-theme="light"] .admin-main-content .chart-body .loading-text,'),
+        stylesSource.includes('20260427_ADMIN_STUDIO_LOADING_DOTS_PANEL_OVERRIDE_1'),
         true,
-        'generic chart loading text skeletons should be restyled for light mode'
+        'admin studio styles should include the panel loading override that restores centered jumping dots'
     );
     assert.equal(
-        stylesSource.includes('.analytics-operating-focus__body,\n    .analytics-chart-pane,\n    .analytics-detail-pane\n) > .loading-text'),
+        stylesSource.includes('20260427_ADMIN_STUDIO_LIGHT_LOADING_DOTS_CENTER_2'),
         true,
-        'analytics split-host loading placeholders should use the light skeleton treatment'
+        'admin studio styles should include the final light-theme loading dots centering layer'
+    );
+    assert.equal(
+        stylesSource.includes('.admin-main-content .admin-module-loading-host.loading-text:not(.admin-module-loading-host--inline):not(.admin-module-loading-host--cell)'),
+        true,
+        'all managed loading-text hosts should be centered instead of inheriting white skeleton blocks'
+    );
+    assert.equal(
+        stylesSource.includes('.loading-text:not(.admin-module-loading-host)::before'),
+        true,
+        'plain chart loading-text fallbacks should draw the dot fallback before AdminShell takes over'
+    );
+    assert.equal(
+        adminStudioHtml.includes('loadingDotsCenter=20260427_ADMIN_STUDIO_LIGHT_LOADING_DOTS_CENTER_2'),
+        true,
+        'admin studio should cache-bust the centered light loading dots stylesheet update'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-analytics-panel-loaders.js?v=20260427_ANALYTICS_USER_TREND_LOADING_DOTS_1'),
+        true,
+        'admin studio should cache-bust the user trend loading dots runtime update'
+    );
+    assert.equal(
+        analyticsPanelLoadersSource.includes("commerceImpactContainer.innerHTML = renderAnalyticsProductLoadingState('商品影响用户层加载中...');"),
+        true,
+        'user growth trend secondary panels should use the shared dot loader while details hydrate'
+    );
+    assert.equal(
+        analyticsPanelLoadersSource.includes('用户趋势已加载，商品影响用户层正在补齐'),
+        false,
+        'user growth trend secondary panels should not fall back to a static hint card while loading'
     );
     assert.equal(
         stylesSource.includes('20260424_ADMIN_STUDIO_LIGHT_THEME_POINTS_VISIBILITY_1'),
@@ -619,9 +1471,79 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         'admin studio styles should include the points management light visibility layer'
     );
     assert.equal(
-        stylesSource.includes('html[data-theme="light"] .admin-main-content .admin-tab-indicator'),
+        stylesSource.includes('20260427_ADMIN_STUDIO_NAV_INDICATOR_SLIDE_1'),
         true,
-        'light theme tabs should hide the duplicate sliding indicator and keep one active underline'
+        'admin studio styles should include the sliding navigation indicator layer'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] .admin-main-content .admin-tab-indicator {\n    display: block !important;\n    opacity: 1 !important;'),
+        true,
+        'light theme tabs should keep the shared sliding indicator visible'
+    );
+    assert.equal(
+        stylesSource.includes('.admin-main-content .admin-tabs .admin-tab.active::after,\n#module-shop .shop-tab.active::after,'),
+        true,
+        'admin studio tabs should not keep per-tab pseudo underlines that jump between tabs'
+    );
+    assert.equal(
+        stylesSource.includes('#module-shop .shop-tabs,\n#module-tickets .admin-ticket-function-nav'),
+        true,
+        'shop and ticket navigation bars should join the shared sliding indicator system'
+    );
+    assert.equal(
+        stylesSource.includes('#module-shop .shop-tabs::after,\n#module-tickets .admin-ticket-function-nav::after'),
+        true,
+        'shop and ticket navigation bars should draw their shared indicator from the nav container'
+    );
+    assert.equal(
+        stylesSource.includes('left: var(--admin-tab-indicator-left, 0px) !important;'),
+        true,
+        'the shared tab indicator should be positioned from a runtime left offset'
+    );
+    assert.equal(
+        stylesSource.includes('width: var(--admin-tab-indicator-width, 0px) !important;'),
+        true,
+        'the shared tab indicator should size itself from the active tab width'
+    );
+    assert.equal(
+        stylesSource.includes('left 0.28s cubic-bezier(0.22, 1, 0.36, 1),'),
+        true,
+        'the shared tab indicator should slide instead of jumping between navigation items'
+    );
+    assert.equal(
+        adminStudioSource.includes('20260427_ADMIN_STUDIO_NAV_INDICATOR_SLIDE_RUNTIME_1'),
+        true,
+        'admin studio runtime should include the shared tab indicator positioning marker'
+    );
+    assert.equal(
+        adminStudioSource.includes('const left = Math.max(0, Math.round(tabRect.left - navRect.left + nav.scrollLeft));'),
+        true,
+        'admin studio runtime should calculate the indicator offset from the visible tab geometry'
+    );
+    assert.equal(
+        adminStudioSource.includes('window.updateAdminTabIndicator = updateAdminTabIndicator;'),
+        true,
+        'admin studio runtime should expose the shared indicator updater for module scripts'
+    );
+    assert.equal(
+        adminStudioSource.includes('.admin-tabs .admin-tab, #module-shop .shop-tabs .shop-tab, #module-tickets .admin-ticket-function-tab, [data-admin-action="switch-module"]'),
+        true,
+        'admin studio runtime should resync sliding navigation after admin, shop, and ticket tab clicks'
+    );
+    assert.equal(
+        paymentsSource.includes('window.updateAdminTabIndicator?.(activeButton);'),
+        true,
+        'payments tabs should use the shared sliding indicator updater'
+    );
+    assert.equal(
+        shopSource.includes('window.updateAdminTabIndicator?.(el);'),
+        true,
+        'shop tabs should use the shared sliding indicator updater'
+    );
+    assert.equal(
+        ticketsSource.includes('window.updateAdminTabIndicator?.(button);'),
+        true,
+        'ticket workspace tabs should use the shared sliding indicator updater'
     );
     assert.equal(
         stylesSource.includes('html[data-theme="light"] #module-points .points-batch-quick-filter__count'),
@@ -632,6 +1554,11 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         stylesSource.includes('html[data-theme="light"] #module-points :is(#points-view-batches .admin-table, .points-catalog-table) th'),
         true,
         'points batch and package tables should restore light-theme table header contrast'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_POINTS_LIGHT_TABLE_NAV_1'),
+        true,
+        'points batch and package table headers should include the light navigation bar parity layer'
     );
     assert.equal(
         stylesSource.includes('20260424_ADMIN_STUDIO_LIGHT_THEME_SHOP_CARD_HOVER_1'),
@@ -646,7 +1573,7 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
     assert.equal(
         stylesSource.includes('html[data-theme="light"] #module-shop .shop-tab.active::after'),
         true,
-        'shop tabs should use a single active underline instead of inheriting the dark inline border'
+        'shop tabs should explicitly suppress the old per-tab underline in favor of the sliding nav indicator'
     );
     assert.equal(
         stylesSource.includes('html[data-theme="light"] #module-shop :is(.shop-card, .shop-admin-product-card):not(.shop-admin-product-card--skeleton):not(.shop-admin-product-card--skeleton-create):hover'),
@@ -662,6 +1589,46 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         stylesSource.includes('html[data-theme="light"] #module-shop :is(\n    .shop-product-toolbar-shell,'),
         true,
         'shop search and filter toolbar shells should be flattened in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_TOOLBAR_HOVER_FRAME_GUARD_1'),
+        true,
+        'admin studio styles should include a systemic toolbar hover-frame guard'
+    );
+    assert.equal(
+        stylesSource.includes('.shop-product-toolbar-shell,\n    .shop-product-toolbar-row,\n    .shop-orders-toolbar-shell,'),
+        true,
+        'shop product and order search toolbar layout containers should be guarded from rectangular hover frames'
+    );
+    assert.equal(
+        stylesSource.includes('.inv-filter-bar,'),
+        true,
+        'shop inventory filter bars should be guarded from rectangular hover frames'
+    );
+    assert.equal(
+        stylesSource.includes('.comment-toolbar-compact,'),
+        true,
+        'comments management toolbar should share the same no-frame treatment'
+    );
+    assert.equal(
+        stylesSource.includes('):is(:hover, :focus, :focus-visible, :focus-within, :active) {\n    border-color: transparent !important;\n    box-shadow: none !important;'),
+        true,
+        'toolbar layout containers should not draw border or shadow frames while hovered or focused'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_SHOP_SEARCH_BUTTON_STABLE_HOVER_1'),
+        true,
+        'admin studio styles should include a stable hover guard for shop search toolbar buttons'
+    );
+    assert.equal(
+        stylesSource.includes('.shop-product-toolbar-row,\n    .shop-orders-search-bar,\n    .shop-delivery-controls,'),
+        true,
+        'shop search and query toolbar buttons should be guarded together'
+    );
+    assert.equal(
+        stylesSource.includes('.shop-theme-primary-btn,\n    .shop-delivery-inline-btn\n):is(:hover, :focus-visible, :active) {\n    box-shadow: none !important;\n    transform: none !important;'),
+        true,
+        'shop search and query buttons should not lift or cast heavy shadows on hover'
     );
     assert.equal(
         stylesSource.includes('html[data-theme="light"] #module-shop :is(\n    .import-sidebar,'),
@@ -692,6 +1659,61 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         stylesSource.includes('html[data-theme="light"] #module-shop :is(\n    .shop-delivery-subcard-meta.shop-delivery-subcard-meta--rich,'),
         true,
         'shop fulfillment rich summaries should not inherit the blue badge panel background'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_DELIVERY_FULFILLMENT_LAYOUT_POLISH_1'),
+        true,
+        'admin studio styles should include the API fulfillment layout polish layer'
+    );
+    assert.equal(
+        stylesSource.includes('#module-shop #shop-view-fulfillment .shop-delivery-header > .shop-delivery-controls :is(\n    .shop-custom-select.shop-delivery-filter,'),
+        true,
+        'API fulfillment status filters should be scoped to a compact width instead of filling the toolbar'
+    );
+    assert.equal(
+        stylesSource.includes('width: 176px !important;\n    min-width: 176px !important;\n    max-width: 176px !important;'),
+        true,
+        'API fulfillment status filter width should stay compact'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-shop #shop-view-fulfillment :is(\n    .shop-delivery-header,\n    .shop-delivery-subcard-header\n)'),
+        true,
+        'API fulfillment headers should override the shared titlebar layer in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_DELIVERY_DARK_REFERENCE_TITLEBAR_1'),
+        true,
+        'API fulfillment should include a dark-mode-reference titlebar layer'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-shop #shop-view-fulfillment .shop-table th'),
+        true,
+        'API fulfillment table headers should keep the navigation/titlebar color used by the dark-mode table header'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-shop #shop-view-fulfillment :is(\n    .shop-delivery-filter--search,\n    .shop-custom-select__trigger\n)'),
+        true,
+        'API fulfillment search and select controls should use an explicit light surface'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-shop #shop-view-fulfillment .shop-delivery-manual-footnote'),
+        true,
+        'API fulfillment SOP recommendation footnote should have readable light-mode contrast'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_LIGHT_THEME_IMPORT_TREE_TEXTAREA_1'),
+        true,
+        'shop import view should include a focused light-theme cleanup for category tree and account textarea'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-shop #shop-view-import .import-textarea.glass-input'),
+        true,
+        'shop import account textarea should not inherit the transparent glass input background in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-shop #shop-view-import .tree-category-header'),
+        true,
+        'shop import category tree rows should get explicit light-mode surfaces and borders'
     );
     assert.equal(
         stylesSource.includes('html[data-theme="light"] #module-shop #shop-view-orders .shop-order-row--focused td'),
@@ -759,6 +1781,16 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         'admin studio styles should include the static hover flattening layer for non-interactive light surfaces'
     );
     assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_STATIC_NOTICE_HOVER_LOCK_1'),
+        true,
+        'admin studio styles should exclude surfaced static notices from the broad non-interactive hover cleanup'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_POINTS_STATIC_HOVER_FLAT_3'),
+        true,
+        'admin studio styles should include the final points management flat static-hover layer'
+    );
+    assert.equal(
         stylesSource.includes('20260424_ADMIN_STUDIO_LIGHT_THEME_CARD_TITLEBARS_3'),
         true,
         'admin studio styles should include the light card titlebar color layer'
@@ -774,6 +1806,11 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         'light cards should expose a shared hover border color'
     );
     assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_DARK_REFERENCE_TITLEBAR_SCOPE_1'),
+        true,
+        'admin studio styles should include a dark-mode-reference correction for misclassified titlebars'
+    );
+    assert.equal(
         stylesSource.includes('html[data-theme="light"] .admin-main-content :is(\n    .glass-panel > .section-title,'),
         true,
         'light card titlebar layer should start from the same titlebar scope as the dark card header definition'
@@ -781,17 +1818,27 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
     assert.equal(
         stylesSource.includes('    .ops-alert-strategy-panel__header,'),
         true,
-        'ops alert strategy titlebars should be included in the unified titlebar color layer'
+        'ops alert strategy headers should be covered by the titlebar correction scope'
     );
     assert.equal(
         stylesSource.includes('    .points-catalog-list-shell__header,'),
         true,
-        'points catalog titlebars should be included in the unified titlebar color layer'
+        'points catalog headers should be covered by the titlebar correction scope'
     );
     assert.equal(
         stylesSource.includes('    #module-homepage .hp-analytics-module-card__head,'),
         true,
         'homepage card titlebars should be included in the unified titlebar color layer'
+    );
+    assert.equal(
+        stylesSource.includes('    #module-shop .shop-delivery-header,\n    #module-shop .shop-delivery-subcard-header,'),
+        true,
+        'shop fulfillment headers should be corrected away from the shared titlebar color unless a dark table header uses it'
+    );
+    assert.equal(
+        stylesSource.includes('background: transparent !important;\n    background-image: none !important;\n    border-color: transparent !important;'),
+        true,
+        'misclassified titlebar headers should be restored to neutral transparent chrome'
     );
     assert.equal(
         stylesSource.includes('html[data-theme="light"] .admin-main-content .config-card-header[data-admin-action="settings-toggle-config-card"]:hover .config-card-arrow'),
@@ -1078,6 +2125,137 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         'affiliate poster card hover should override the id-scoped dark hover border in light mode'
     );
     assert.equal(
+        stylesSource.includes('20260427_SETTINGS_AFFILIATE_CONFIG_HOVER_STATIC_1'),
+        true,
+        'affiliate configuration cards should include a final static-hover override'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-settings #settings-view-affiliate .config-card:is(:hover, :focus-within, :active)'),
+        true,
+        'affiliate configuration cards should not gain light-theme hover shadows or lift'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-settings #settings-view-affiliate .config-row:is(:hover, :focus-within, :active)'),
+        true,
+        'affiliate configuration rows should stay flat when hovered or focused'
+    );
+    assert.equal(
+        readRepoFile('admin-studio.html').includes('affiliateHover=20260427_SETTINGS_AFFILIATE_CONFIG_HOVER_STATIC_1'),
+        true,
+        'admin studio should cache-bust the affiliate hover cleanup stylesheet'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_SETTINGS_STATIC_HOVER_AUDIT_1'),
+        true,
+        'admin studio should include a final settings-wide static hover audit layer'
+    );
+    assert.equal(
+        stylesSource.indexOf('20260427_ADMIN_STUDIO_SETTINGS_STATIC_HOVER_AUDIT_1') >
+            stylesSource.indexOf('20260427_SETTINGS_AFFILIATE_CONFIG_HOVER_STATIC_1'),
+        true,
+        'settings-wide hover audit layer should load after the affiliate-specific hover cleanup'
+    );
+    assert.equal(
+        stylesSource.includes('    .verify-monitor-fact-card,'),
+        true,
+        'settings-wide hover audit should cover Google One fact cards'
+    );
+    assert.equal(
+        stylesSource.includes('#module-settings :is(.config-row, .config-item-row):is(:hover, :focus-within, :active)'),
+        true,
+        'settings-wide hover audit should keep config rows transparent while hovered or focused'
+    );
+    assert.equal(
+        stylesSource.includes('#module-settings #settings-view-google-one #verifyMonitorFactsGrid .verify-monitor-fact-card:is(:hover, :focus-within, :active)'),
+        true,
+        'Google One fact cards should no longer gain a hover inset shadow'
+    );
+    assert.equal(
+        readRepoFile('admin-studio.html').includes('settingsHover=20260427_ADMIN_STUDIO_SETTINGS_STATIC_HOVER_AUDIT_1'),
+        true,
+        'admin studio should cache-bust the settings-wide hover audit stylesheet'
+    );
+    assert.equal(
+        readRepoFile('admin-studio.html').includes('noticeHover=20260427_ADMIN_STUDIO_STATIC_NOTICE_HOVER_LOCK_1'),
+        true,
+        'admin studio should cache-bust the static notice hover cleanup stylesheet'
+    );
+    assert.equal(
+        stylesSource.indexOf('20260427_ADMIN_STUDIO_POINTS_STATIC_HOVER_FLAT_3') >
+            stylesSource.indexOf('20260427_ADMIN_STUDIO_LIGHT_CARD_BORDER_CONTRAST_1'),
+        true,
+        'points static hover cleanup should load after the final light card border and shadow layer'
+    );
+    assert.equal(
+        stylesSource.includes('    .points-batch-overview-card,'),
+        true,
+        'points static hover audit should cover the batch overview cards'
+    );
+    assert.equal(
+        stylesSource.includes('    .points-catalog-summary-card,'),
+        true,
+        'points static hover audit should cover the catalog summary cards'
+    );
+    assert.equal(
+        stylesSource.includes('#module-points > .admin-tabs .admin-tab:not(.active):hover'),
+        true,
+        'points static hover audit should keep inactive points tabs from changing on hover'
+    );
+    assert.equal(
+        stylesSource.includes('    .points-catalog-summary-card .kpi-icon'),
+        true,
+        'points static hover cleanup should remove the reused KPI icon shadow from catalog cards'
+    );
+    assert.equal(
+        stylesSource.includes('--admin-studio-points-table-nav-bg: var(--admin-studio-light-titlebar-bg'),
+        true,
+        'points table navigation bars should reuse the light titlebar color sampled from dark table headers'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-points :is(\n    #points-view-batches .admin-table,\n    .points-catalog-table\n) th'),
+        true,
+        'points table navigation bars should cover both batch and catalog table headers'
+    );
+    assert.equal(
+        readRepoFile('admin-studio.html').includes('pointsHover=20260427_ADMIN_STUDIO_POINTS_STATIC_HOVER_FLAT_3'),
+        true,
+        'admin studio should cache-bust the points static hover audit stylesheet'
+    );
+    assert.equal(
+        readRepoFile('admin-studio.html').includes('pointsLightNav=20260427_ADMIN_STUDIO_POINTS_LIGHT_TABLE_NAV_1'),
+        true,
+        'admin studio should cache-bust the points light table navigation stylesheet'
+    );
+    const staticNoticeHoverStart = stylesSource.indexOf('20260427_ADMIN_STUDIO_STATIC_NOTICE_HOVER_LOCK_1');
+    const staticNoticeHoverEnd = stylesSource.indexOf('background-color: transparent !important;', staticNoticeHoverStart);
+    const staticNoticeHoverSelector = stylesSource.slice(staticNoticeHoverStart, staticNoticeHoverEnd);
+    assert.equal(
+        staticNoticeHoverSelector.includes(':not(:is(\n    .config-inline-note,'),
+        true,
+        'global non-interactive hover cleanup should not strip config inline note backgrounds'
+    );
+    for (const surfacedNoticeClass of [
+        '.gallery-ops-overview__hint',
+        '.admin-workbench-context-note',
+        '.admin-ticket-overview-reminder-summary-note',
+        '.analytics-proxy-hint',
+        '.analytics-secondary-note',
+        '.analytics-writeback-note',
+        '.admin-discount-scope-hint',
+        '.admin-users-scope-hint',
+        '.points-batch-edit-form-note',
+        '.hp-inline-note',
+        '.hp-aggregate-readonly-card__hint',
+        '.admin-shop-risk-case-modal__context-note',
+        '.admin-shop-risk-case-modal__note'
+    ]) {
+        assert.equal(
+            staticNoticeHoverSelector.includes(surfacedNoticeClass),
+            true,
+            `global non-interactive hover cleanup should preserve ${surfacedNoticeClass}`
+        );
+    }
+    assert.equal(
         stylesSource.includes('    .analytics-ops-cockpit__overview,'),
         true,
         'analytics cockpit panels should be covered by the legacy dark surface cleanup'
@@ -1168,12 +2346,12 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         'admin chat light theme should keep chat input placeholder text subdued'
     );
     assert.equal(
-        readRepoFile('admin-studio.html').includes('css/admin-studio-page.css?v=20260426_ADMIN_DOCK_PANEL_PARITY_6'),
+        readRepoFile('admin-studio.html').includes('css/admin-studio-page.css?v=20260427_ADMIN_SITE_SWITCHER_ACTIVE_HOVER_LOCK_1'),
         true,
         'admin studio should cache-bust the updated light theme stylesheet'
     );
     assert.equal(
-        readRepoFile('admin-studio.html').includes('admin-studio.js?v=20260424_ADMIN_MODAL_SCROLL_LOCK_SOFT_BACKDROP_1'),
+        readRepoFile('admin-studio.html').includes('admin-studio.js?v=20260427_ADMIN_GALLERY_AI_TAGS_HIDDEN_1'),
         true,
         'admin studio should cache-bust the updated scroll lock runtime'
     );
@@ -1196,5 +2374,483 @@ test('theme preload can bootstrap a saved light preference before admin studio r
         preloadSource.includes('theme = savedTheme;'),
         true,
         'theme preload should apply the saved website theme directly'
+    );
+    assert.equal(
+        preloadSource.includes('prefers-color-scheme: dark'),
+        false,
+        'theme preload should default to light mode when no explicit preference is saved'
+    );
+});
+
+test('admin studio discounts light theme keeps coupon code, search focus, and detail modal readable', () => {
+    const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
+    const adminStudioSource = readRepoFile('admin-studio.html');
+
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_DISCOUNTS_LIGHT_READABILITY_1'),
+        true,
+        'admin studio light theme should include the discounts list readability marker'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-discounts .admin-discount-code-btn'),
+        true,
+        'discount list should explicitly restyle coupon codes for light theme readability'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-discounts .search-bar:focus-within::after'),
+        true,
+        'discount search should add an explicit light-theme focus ring at the search shell level'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_DISCOUNT_DETAIL_LIGHT_POLISH_1'),
+        true,
+        'admin studio light theme should include the discount detail modal polish marker'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #discountDetailOverlay .admin-discount-detail-chip'),
+        true,
+        'discount detail modal should explicitly restyle chip copy for light theme readability'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #discountDetailOverlay .admin-discount-detail-close'),
+        true,
+        'discount detail modal should explicitly restyle the close button for light theme'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] .admin-main-content .admin-discount-toolbar-export-btn[aria-disabled="true"]'),
+        true,
+        'discount toolbar should explicitly restyle blocked batch-restore actions for light theme clarity'
+    );
+    assert.equal(
+        adminStudioSource.includes('css/admin-studio-page.css?v=20260427_ADMIN_SITE_SWITCHER_ACTIVE_HOVER_LOCK_1'),
+        true,
+        'admin studio should cache-bust the updated discounts light-theme stylesheet'
+    );
+});
+
+test('admin studio homepage content has complete light-theme coverage', () => {
+    const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
+    const adminStudioSource = readRepoFile('admin-studio.html');
+
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_HOMEPAGE_LIGHT_THEME_COMPLETE_1'),
+        true,
+        'homepage content should include a final light-theme completion layer'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-homepage .hp-control-bar,'),
+        true,
+        'homepage control bars should be reset separately so child cards provide the light surface'
+    );
+    assert.equal(
+        stylesSource.includes('.hp-theme-pack-active-preview,'),
+        true,
+        'homepage theme pack preview cards should be covered in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_HOMEPAGE_THEME_PACK_WRAP_FULL_WIDTH_1'),
+        true,
+        'homepage theme pack cards should use a full-width wrapping grid instead of a narrow column'
+    );
+    assert.equal(
+        stylesSource.includes('.hp-section-view[data-hp-view="ticker"] .hp-toggle-group,'),
+        true,
+        'homepage ticker nested toggle group should be covered in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('.hp-featured-site-group,'),
+        true,
+        'homepage featured prompt site groups should be covered in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('html:not([data-theme="dark"]) #module-homepage :is('),
+        true,
+        'homepage light coverage should also cover the non-dark fallback path'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_HOMEPAGE_LIGHT_THEME_POLISH_2'),
+        true,
+        'homepage light theme should include the final checkbox and hint polish layer'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_HOMEPAGE_LIGHT_THEME_POLISH_3'),
+        true,
+        'homepage light theme should include the publish notice, report button, and flat checkbox polish layer'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_HOMEPAGE_LIGHT_THEME_POLISH_5'),
+        true,
+        'homepage light theme should include the primary button dark-style parity layer'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-homepage .btn-sm.btn-primary:not(:disabled)'),
+        true,
+        'homepage primary buttons should keep the dark-theme primary button chrome in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('--admin-studio-save-btn-bg: var(--admin-studio-ui-blue, #769dca);'),
+        true,
+        'homepage primary buttons should now inherit the Admin Studio sidebar blue token'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-homepage .btn-sm.btn-primary:hover:not(:disabled)'),
+        true,
+        'homepage primary button hover should be covered without relying on generic light-theme button chrome'
+    );
+    assert.equal(
+        stylesSource.includes('box-shadow: var(--admin-studio-save-btn-hover-feedback, inset 0 1px 0 rgba(255, 255, 255, 0.24), inset 0 -2px 0 rgba(15, 23, 42, 0.18)) !important;'),
+        true,
+        'homepage save buttons should now use the shared non-glow hover feedback'
+    );
+    assert.equal(
+        stylesSource.includes('transform: translateY(-1px) !important;'),
+        true,
+        'homepage save buttons should now use the shared save-button hover lift'
+    );
+    assert.equal(
+        stylesSource.includes('#module-homepage .hp-report-card__head [data-homepage-report-copy]'),
+        true,
+        'homepage report copy buttons should stay on one line'
+    );
+    assert.equal(
+        stylesSource.includes('#module-homepage .hp-ops-note:is(:hover, :focus-within)'),
+        true,
+        'homepage publish notices should not gain a hover treatment in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('background: var(--admin-studio-ui-blue, #6b9ece) !important;'),
+        true,
+        'homepage custom checkboxes should use the admin sidebar blue without a 3D gradient'
+    );
+    assert.equal(
+        stylesSource.includes('#module-homepage :is(.hp-inline-checkbox, .hp-theme-pack-selector__item) input[type="checkbox"]'),
+        true,
+        'homepage inline and theme-pack checkboxes should use custom non-native chrome'
+    );
+    assert.equal(
+        stylesSource.includes('#module-homepage #hp-verify-risk-notice.config-input.hp-multiline-input'),
+        true,
+        'verify risk notice textarea should have a dedicated vertical-centering override'
+    );
+    assert.equal(
+        stylesSource.includes('.hp-analytics-module-card__head > span,'),
+        true,
+        'homepage analytics cards should explicitly restyle right-side hint text in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('.hp-recommendation-card__head > span,'),
+        true,
+        'homepage recommendation cards should explicitly restyle right-side hint text in light mode'
+    );
+    assert.equal(
+        adminStudioSource.includes('css/admin-studio-page.css?v=20260427_ADMIN_SITE_SWITCHER_ACTIVE_HOVER_LOCK_1'),
+        true,
+        'admin studio should cache-bust the completed homepage light theme stylesheet'
+    );
+});
+
+test('admin studio light theme keeps list row press feedback', () => {
+    const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
+    const adminStudioSource = readRepoFile('admin-studio.html');
+
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_LIGHT_LIST_PRESS_PARITY_1'),
+        true,
+        'admin studio should include a final light-theme list press parity layer'
+    );
+    assert.equal(
+        stylesSource.includes('--admin-studio-list-press-translate-y: 0.75px;'),
+        true,
+        'light theme should keep the downward press offset subtle for interactive list rows'
+    );
+    assert.equal(
+        stylesSource.includes('--admin-studio-list-press-scale: 0.994;'),
+        true,
+        'light theme should keep list row press scale subtle'
+    );
+    assert.equal(
+        stylesSource.includes('#module-users .users-table tbody tr.user-row:not(.selected):not(.users-table-skeleton-row)'),
+        true,
+        'user list rows should be covered by the light-theme press selector'
+    );
+    assert.equal(
+        stylesSource.includes('#module-tickets .users-table tbody tr.admin-ticket-row:not(.admin-ticket-row--focused):not(.admin-ticket-row--selected):not(.admin-ticket-table-skeleton-row)'),
+        true,
+        'ticket list rows should keep the same light-theme press selector'
+    );
+    assert.equal(
+        stylesSource.includes('#module-shop .shop-table tbody tr:not(.shop-table-skeleton-row):not(.shop-order-row--focused):not(.shop-delivery-audit-row--active):not(.shop-delivery-task-row--focused):not(.shop-delivery-linked-row--focused)'),
+        true,
+        'shop table rows should also receive the shared light-theme press selector'
+    );
+    assert.equal(
+        stylesSource.includes('):hover > td {\n    transform: translateY(var(--admin-studio-list-press-translate-y)) scale(var(--admin-studio-list-press-scale)) !important;'),
+        true,
+        'light-theme row hover should override late flattening rules and press table cells down'
+    );
+    assert.equal(
+        adminStudioSource.includes('css/admin-studio-page.css?v=20260427_ADMIN_SITE_SWITCHER_ACTIVE_HOVER_LOCK_1'),
+        true,
+        'admin studio should cache-bust the light-theme list press stylesheet update'
+    );
+});
+
+test('admin studio light theme keeps form controls and settings dropdowns flat', () => {
+    const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
+    const adminStudioSource = readRepoFile('admin-studio.html');
+
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_LIGHT_FORM_CONTROL_FLAT_1'),
+        true,
+        'admin studio should include the shared light form-control flattening layer'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_LIGHT_DROPDOWN_CONTROL_HOVER_FLAT_1'),
+        true,
+        'admin studio should include the shared light dropdown hover flattening layer'
+    );
+    assert.equal(
+        stylesSource.includes('#module-settings #settings-view-content :is(#perPageDropdown, #defaultSortDropdown) .dropdown-trigger'),
+        true,
+        'content settings gallery dropdowns should have a dedicated flat light-theme override'
+    );
+    assert.equal(
+        stylesSource.includes('.custom-dropdown.open .dropdown-trigger,\n    .custom-select.open .select-display,'),
+        true,
+        'custom dropdown open states should not reintroduce floating control shadows'
+    );
+    assert.equal(
+        stylesSource.includes('box-shadow: none !important;\n    -webkit-box-shadow: none !important;\n    filter: none !important;\n    transform: none !important;'),
+        true,
+        'light form controls should remove shadow, glow, filter, and lift treatment'
+    );
+    assert.equal(
+        adminStudioSource.includes('forms=20260427_ADMIN_STUDIO_LIGHT_FORM_CONTROL_FLAT_1'),
+        true,
+        'admin studio should cache-bust the flat form-control stylesheet update'
+    );
+    assert.equal(
+        adminStudioSource.includes('dropdowns=20260427_ADMIN_STUDIO_LIGHT_DROPDOWN_CONTROL_HOVER_FLAT_1'),
+        true,
+        'admin studio should cache-bust the flat dropdown-control stylesheet update'
+    );
+});
+
+test('admin studio light theme uses the sidebar blue for primary and save buttons', () => {
+    const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
+    const adminStudioSource = readRepoFile('admin-studio.html');
+
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_SAVE_BUTTON_SHOP_BLUE_1'),
+        true,
+        'admin studio should include a final shared save-button color layer'
+    );
+    assert.equal(
+        stylesSource.includes('--admin-studio-save-btn-bg: var(--admin-studio-ui-blue, #769dca);'),
+        true,
+        'save buttons should use the Admin Studio sidebar blue token'
+    );
+    assert.equal(
+        stylesSource.includes('--admin-studio-save-btn-hover-bg: #6f95c0;'),
+        true,
+        'save buttons should use the sidebar-blue hover tone'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_PRIMARY_BUTTON_SIDEBAR_BLUE_1'),
+        true,
+        'admin studio should include a final sidebar-blue primary button layer'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_PRIMARY_HOVER_NO_BLUE_SHADOW_1'),
+        true,
+        'admin studio should include a final primary-button hover layer without blue shadow'
+    );
+    assert.equal(
+        stylesSource.includes('--shop-solid-btn-bg: var(--admin-studio-save-btn-bg, var(--admin-studio-ui-blue, #769dca));'),
+        true,
+        'shop primary buttons should inherit the same sidebar-blue solid button token'
+    );
+    assert.equal(
+        stylesSource.includes('.shop-theme-primary-btn,\n    .btn-sm.btn-primary,\n    .btn-add-config--primary,'),
+        true,
+        'shop search, small primary, and primary config buttons should share the no-blue-shadow hover feedback'
+    );
+    assert.equal(
+        stylesSource.includes('#module-shop .btn.btn-primary,\n    .shop-theme-primary-btn,'),
+        true,
+        'the product search button should be covered by the shared primary button color layer'
+    );
+    assert.equal(
+        stylesSource.includes('button[data-admin-action*="save"],\n    button[data-shop-action*="save"],'),
+        true,
+        'save actions across admin and shop modules should be covered together'
+    );
+    assert.equal(
+        stylesSource.includes('#saveBtn.gallery-save-btn,\n    #discountTriggerRechargeSaveBtn,\n    #pointsPackageSaveBtn,\n    #shopRiskCaseComposerSubmit,\n    #opsAlertBatchMuteSubmit,\n    #productModal .btn-save,'),
+        true,
+        'save buttons without save-action attributes should be explicitly included'
+    );
+    assert.equal(
+        stylesSource.includes('background: var(--admin-studio-save-btn-bg, var(--admin-studio-ui-blue, #769dca)) !important;'),
+        true,
+        'save buttons should override late light-theme glass button chrome'
+    );
+    assert.equal(
+        stylesSource.includes('--admin-studio-save-btn-hover-feedback: inset 0 1px 0 rgba(255, 255, 255, 0.24), inset 0 -2px 0 rgba(15, 23, 42, 0.18);'),
+        true,
+        'save buttons should use inset contrast instead of a blue hover shadow'
+    );
+    assert.equal(
+        stylesSource.includes('--admin-studio-save-btn-shadow-hover'),
+        false,
+        'save buttons should not define a blue hover shadow token'
+    );
+    assert.equal(
+        stylesSource.includes('transform: translateY(-1px) !important;'),
+        true,
+        'save buttons should keep a subtle hover lift'
+    );
+    assert.equal(
+        adminStudioSource.includes('saveButtons=20260427_ADMIN_STUDIO_SAVE_BUTTON_SHOP_BLUE_1'),
+        true,
+        'admin studio should cache-bust the shared save-button stylesheet update'
+    );
+    assert.equal(
+        adminStudioSource.includes('buttonHover=20260427_ADMIN_STUDIO_PRIMARY_HOVER_NO_BLUE_SHADOW_1'),
+        true,
+        'admin studio should cache-bust the shared primary hover feedback update'
+    );
+    assert.equal(
+        adminStudioSource.includes('primaryBlue=20260427_ADMIN_STUDIO_PRIMARY_BUTTON_SIDEBAR_BLUE_1'),
+        true,
+        'admin studio should cache-bust the shared sidebar-blue primary button update'
+    );
+});
+
+test('admin studio analytics ranking lists keep title hover and row dividers in light theme', () => {
+    const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
+    const adminStudioSource = readRepoFile('admin-studio.html');
+
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_TOP_CONTENT_TITLE_TEXT_HOVER_1'),
+        true,
+        'admin studio should include the final analytics ranking title hover and divider marker'
+    );
+    assert.equal(
+        stylesSource.includes(':is(#module-analytics, #module-business-overview, #module-growth-center, #module-commerce-center) :is(#topContentList, #topContributorsList) :is(.top-content-item, .contributor-item) + :is(.top-content-item, .contributor-item)::before'),
+        true,
+        'analytics ranking list dividers should be drawn as stable row separators'
+    );
+    assert.equal(
+        stylesSource.includes(':is(#module-analytics, #module-business-overview, #module-growth-center, #module-commerce-center) #topContentList .top-content-item__title-btn {\n    display: inline-block !important;\n    width: auto !important;'),
+        true,
+        'top content title buttons should shrink the hover target to the title text width'
+    );
+    assert.equal(
+        stylesSource.includes(':is(#module-analytics, #module-business-overview, #module-growth-center, #module-commerce-center) #topContentList .top-content-item__title-btn:is(:hover, :focus, :focus-visible, :active)'),
+        true,
+        'top content titles should turn blue from direct title hover or keyboard focus'
+    );
+    assert.equal(
+        stylesSource.includes('#topContentList .top-content-item:is(:hover, :focus-within) .top-content-item__title-btn'),
+        false,
+        'top content title hover should not be inherited from the whole row'
+    );
+    assert.equal(
+        stylesSource.includes('-webkit-text-fill-color: var(--admin-studio-ui-blue, var(--accent-starry, #769dca)) !important;'),
+        true,
+        'top content hover should override webkit text fill color in the light theme'
+    );
+    assert.equal(
+        adminStudioSource.includes('topContentTitleHover=20260427_ADMIN_STUDIO_TOP_CONTENT_TITLE_TEXT_HOVER_1'),
+        true,
+        'admin studio should cache-bust the final top-content hover stylesheet update'
+    );
+});
+
+test('admin studio analytics text panels expand instead of clipping in light theme', () => {
+    const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
+    const adminStudioSource = readRepoFile('admin-studio.html');
+
+    assert.equal(
+        adminStudioSource.includes('id="module-business-overview"'),
+        true,
+        'admin studio analytics workspace should use the current business overview host'
+    );
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_ANALYTICS_CONTENT_CLIP_AUDIT_1'),
+        true,
+        'admin studio should include the analytics content clipping audit layer'
+    );
+    assert.equal(
+        stylesSource.includes('    #growthActionRecommendations,\n    #growthBreakdownList,'),
+        true,
+        'growth recommendation and breakdown panels should be covered by the unclipped layout override'
+    );
+    assert.equal(
+        stylesSource.includes('    #growthEventFunnel,\n    #marketingAssetCenterWorkspace'),
+        true,
+        'growth event and marketing asset panels should be covered by the unclipped layout override'
+    );
+    assert.equal(
+        stylesSource.includes('height: auto !important;\n    min-height: 0 !important;\n    max-height: none !important;\n    overflow: visible !important;'),
+        true,
+        'text-heavy analytics panels should no longer keep fixed chart heights with hidden overflow'
+    );
+    assert.equal(
+        stylesSource.includes('#marketingAssetCenterWorkspace :is(\n    .marketing-asset-center__summary-card,'),
+        true,
+        'marketing asset center cards should receive light-theme styling under the current analytics host'
+    );
+    assert.equal(
+        stylesSource.includes('.chart-body.analytics-compact-list > :is(\n    .analytics-compact-stack,\n    .analytics-recommendation-stack\n)'),
+        true,
+        'compact analytics stacks should stop using internal scroll clipping for these panels'
+    );
+    assert.equal(
+        stylesSource.includes('border-left: 4px solid rgba(var(--admin-studio-ui-blue-rgb, 118, 157, 202), 0.42) !important;'),
+        true,
+        'growth action cards should gain a visible light-theme module rail'
+    );
+    assert.equal(
+        adminStudioSource.includes('analyticsClip=20260427_ADMIN_STUDIO_ANALYTICS_CONTENT_CLIP_AUDIT_1'),
+        true,
+        'admin studio should cache-bust the analytics clipping audit stylesheet update'
+    );
+});
+
+test('admin studio growth breakdown uses the same compact item structure in light theme', () => {
+    const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
+    const adminStudioSource = readRepoFile('admin-studio.html');
+
+    assert.equal(
+        stylesSource.includes('20260427_ADMIN_STUDIO_GROWTH_BREAKDOWN_COMPACT_PARITY_1'),
+        true,
+        'admin studio should include the growth breakdown compact parity layer'
+    );
+    assert.equal(
+        stylesSource.includes('#growthBreakdownList .analytics-compact-item > .analytics-compact-item__top'),
+        true,
+        'growth breakdown should undo the light-theme titlebar treatment on compact item top rows'
+    );
+    assert.equal(
+        stylesSource.includes(':is(#module-analytics, #module-business-overview, #module-growth-center, #module-commerce-center) #growthBreakdownList .analytics-compact-item'),
+        true,
+        'growth breakdown compact parity should cover the current business overview host'
+    );
+    assert.equal(
+        stylesSource.includes('#growthBreakdownList .analytics-compact-item .analytics-compact-item__heading'),
+        true,
+        'growth breakdown should also neutralize the titlebar treatment on compact item headings'
+    );
+    assert.equal(
+        stylesSource.includes('growthBreakdown=20260427_ADMIN_STUDIO_GROWTH_BREAKDOWN_COMPACT_PARITY_1'),
+        false,
+        'growth breakdown cache bust should stay in html, not in the stylesheet body'
+    );
+    assert.equal(
+        adminStudioSource.includes('growthBreakdown=20260427_ADMIN_STUDIO_GROWTH_BREAKDOWN_COMPACT_PARITY_1'),
+        true,
+        'admin studio should cache-bust the growth breakdown compact parity update'
     );
 });

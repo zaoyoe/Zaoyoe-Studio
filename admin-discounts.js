@@ -1560,10 +1560,16 @@ const AdminDiscounts = {
 
         const candidates = this.getBatchRestoreCandidates();
         const count = candidates.length;
-        button.disabled = count === 0;
-        button.innerHTML = count > 0
-            ? `<i class="fas fa-shield-heart"></i> 批量恢复审批 (${this.escapeHtml(String(count))})`
-            : '<i class="fas fa-shield-heart"></i> 批量恢复审批';
+        const disabledReason = '当前筛选结果里没有可批量恢复审批的优惠券';
+        const title = count > 0
+            ? `当前筛选结果里有 ${this.escapeHtml(String(count))} 张可批量恢复审批的优惠券`
+            : disabledReason;
+
+        button.disabled = false;
+        button.classList.toggle('is-disabled', count === 0);
+        button.setAttribute('aria-disabled', count === 0 ? 'true' : 'false');
+        button.setAttribute('title', title);
+        button.innerHTML = `<i class="fas fa-shield-heart"></i> 批量恢复审批 (${this.escapeHtml(String(count))})`;
     },
 
     buildBatchRestoreItemRecord: function (discount = {}, options = {}) {
@@ -2551,7 +2557,7 @@ const AdminDiscounts = {
             <div class="admin-discount-detail-dialog custom-scrollbar">
                 <div class="admin-discount-detail-header">
                     <div>
-                        <div class="admin-discount-detail-header__eyebrow">Discount Detail</div>
+                        <div class="admin-discount-detail-header__eyebrow">优惠券详情</div>
                         <h3 class="admin-discount-detail-header__title">${this.escapeHtml(code)}</h3>
                     </div>
                 </div>
@@ -2626,7 +2632,7 @@ const AdminDiscounts = {
             <div class="admin-discount-detail-dialog custom-scrollbar">
                 <div class="admin-discount-detail-header">
                     <div>
-                        <div class="admin-discount-detail-header__eyebrow">Discount Detail</div>
+                        <div class="admin-discount-detail-header__eyebrow">优惠券详情</div>
                         <h3 class="admin-discount-detail-header__title">${this.escapeHtml(this.safeText(discount.code).toUpperCase() || '优惠券详情')}</h3>
                         <div class="admin-discount-detail-header__meta">${statusState.badgeMarkup}</div>
                     </div>
@@ -2760,7 +2766,7 @@ const AdminDiscounts = {
                     <div class="admin-discount-detail-dialog custom-scrollbar">
                         <div class="admin-discount-detail-header">
                             <div>
-                                <div class="admin-discount-detail-header__eyebrow">Discount Detail</div>
+                                <div class="admin-discount-detail-header__eyebrow">优惠券详情</div>
                                 <h3 class="admin-discount-detail-header__title">${this.escapeHtml(fallbackCode || '优惠券详情')}</h3>
                             </div>
                         </div>

@@ -1,15 +1,11 @@
 (async () => {
     'use strict';
 
-    const statusText = document.getElementById('statusText');
-    const setStatus = (text) => {
-        if (statusText) {
-            statusText.textContent = text;
-        }
-    };
+    const setStatus = () => {};
     const GOOGLE_POPUP_MESSAGE_TYPE = 'zaoyoe:google-auth-popup';
     const GOOGLE_POPUP_WINDOW_NAME = 'google_login';
     const GOOGLE_POPUP_RESULT_STORAGE_KEY = 'zaoyoe_google_popup_auth_result_v1';
+    const GOOGLE_POPUP_STATE_PREFIX = 'zaoyoe_google_popup:';
     const POST_LOGIN_REDIRECT_STORAGE_KEY = 'zaoyoe_post_login_redirect_v1';
     const POST_LOGIN_REDIRECT_TTL_MS = 15 * 60 * 1000;
     const { url: SUPABASE_URL, publishableKey: SUPABASE_KEY } = window.requireZaoyoeSupabaseConfig();
@@ -86,6 +82,10 @@
         || window.name === GOOGLE_POPUP_WINDOW_NAME
     );
 
+    const isGooglePopupState = (value) => (
+        typeof value === 'string' && value.startsWith(GOOGLE_POPUP_STATE_PREFIX)
+    );
+
     const broadcastPopupResult = (payload) => {
         try {
             const envelope = JSON.stringify({
@@ -108,16 +108,22 @@
         }
     };
 
-    const notifyOpener = (payload) => {
-        broadcastPopupResult(payload);
+    const notifyOpener = (payload, options = {}) => {
+        const { broadcast = true } = options;
+        const message = {
+            type: GOOGLE_POPUP_MESSAGE_TYPE,
+            emittedAt: Date.now(),
+            ...payload
+        };
+
+        if (broadcast) {
+            broadcastPopupResult(message);
+        }
         if (!window.opener || window.opener === window) {
             return;
         }
         try {
-            window.opener.postMessage({
-                type: GOOGLE_POPUP_MESSAGE_TYPE,
-                ...payload
-            }, window.location.origin);
+            window.opener.postMessage(message, window.location.origin);
         } catch (error) {
             console.warn('Failed to notify opener from auth callback:', error);
         }
@@ -155,29 +161,48 @@
     try {
         const url = new URL(window.location.href);
         const hash = window.location.hash || '';
-        const isPopupMode = url.searchParams.get('popup') === '1';
-        const isCloseOnlyMode = url.searchParams.get('close') === '1';
         const code = url.searchParams.get('code');
         const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
+        const popupState = hashParams.get('state') || url.searchParams.get('state') || '';
+        const isPopupMode = url.searchParams.get('popup') === '1' || isGooglePopupState(popupState);
+        const isCloseOnlyMode = url.searchParams.get('close') === '1';
         const hasAccessToken = Boolean(hashParams.get('access_token'));
         const hasRefreshToken = Boolean(hashParams.get('refresh_token'));
         const idToken = hashParams.get('id_token');
-        const hashError = hashParams.get('error');
+        const hashError = hashParams.get('error') || url.searchParams.get('error');
+        const hashErrorDescription = hashParams.get('error_description') || url.searchParams.get('error_description');
 
         if (isCloseOnlyMode) {
-            setStatus('登录已完成，正在关闭窗口...');
+            setStatus();
             attemptClosePopup();
             return;
         }
 
+        if (hashError) {
+            throw new Error(hashErrorDescription || hashError);
+        }
+
+        if (idToken && isPopupMode && window.opener && window.opener !== window) {
+            notifyOpener({
+                status: 'credential',
+                credential: idToken
+            }, {
+                broadcast: false
+            });
+            setTimeout(() => {
+                attemptClosePopup();
+            }, 0);
+            return;
+        }
+
         if (code) {
-            setStatus('正在交换登录票据...');
+            setStatus();
             const { error } = await client.auth.exchangeCodeForSession(code);
             if (error) {
                 throw error;
             }
         } else if (idToken) {
-            setStatus('正在完成 Google 登录...');
+            setStatus();
             const { error } = await client.auth.signInWithIdToken({
                 provider: 'google',
                 token: idToken
@@ -186,7 +211,7 @@
                 throw error;
             }
         } else if (hasAccessToken && hasRefreshToken) {
-            setStatus('正在恢复登录会话...');
+            setStatus();
             const access_token = hashParams.get('access_token');
             const refresh_token = hashParams.get('refresh_token');
             if (access_token && refresh_token) {
@@ -221,7 +246,7 @@
             throw new Error(`登录会话未建立 (${debugFlags})`);
         }
 
-        setStatus('登录成功，正在返回...');
+        setStatus();
         if (isPopupWindow() || isPopupMode) {
             const { data: { user } } = await client.auth.getUser().catch(() => ({ data: { user: null } }));
             notifyOpener({
@@ -249,7 +274,7 @@
             }, 200);
             return;
         }
-        setStatus(`登录失败：${error.message || '未知错误'}，正在返回主页...`);
+        setStatus();
         localStorage.removeItem('oauth_post_login_redirect');
         setTimeout(() => window.location.replace('/'), 1400);
     }

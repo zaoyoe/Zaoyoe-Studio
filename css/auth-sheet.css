@@ -8,7 +8,7 @@
     gap: 16px;
 }
 
-/* 20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1 */
+/* 20260427_AUTH_MESSAGE_CENTER_1 */
 :root {
     --auth-sheet-overlay: rgba(7, 9, 12, 0.28);
     --auth-sheet-overlay-filter: blur(14px) saturate(108%);
@@ -388,6 +388,7 @@ body.auth-sheet-open {
 
 .auth-sheet-header {
     padding: 0 20px 6px;
+    text-align: center;
 }
 
 .auth-sheet-overline {
@@ -400,7 +401,8 @@ body.auth-sheet-open {
 }
 
 .auth-sheet-title {
-    margin: 0;
+    width: 100%;
+    margin: 0 auto;
     font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
     font-size: clamp(1.56rem, 4.7vw, 1.84rem);
     line-height: 1.06;
@@ -464,11 +466,12 @@ body.auth-sheet-open {
 }
 
 .auth-sheet-message {
-    margin: 0 0 12px;
+    margin: 6px 0;
     padding: 8px 10px;
     border-radius: 12px;
     font-size: 11px;
     line-height: 1.55;
+    text-align: center;
     white-space: pre-line;
     border: 1px solid transparent;
 }
@@ -481,6 +484,16 @@ body.auth-sheet-open {
     color: #ffd7d1;
     background: rgba(216, 132, 118, 0.12);
     border-color: rgba(216, 132, 118, 0.28);
+}
+
+html[data-theme="light"] #loginModal .auth-sheet-message.is-error,
+html:not([data-theme="dark"]) #loginModal .auth-sheet-message.is-error {
+    color: #9f3029;
+    background: rgba(224, 80, 67, 0.09);
+    border-color: rgba(205, 83, 70, 0.34);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42);
+    font-weight: 600;
+    text-shadow: none;
 }
 
 .auth-sheet-message.is-success {
@@ -540,42 +553,42 @@ body.auth-sheet-open {
     gap: 12px;
 }
 
-.auth-sheet-view--primary {
-    min-height: var(--auth-primary-view-min-height, 0px);
-}
-
-.auth-sheet-view-measure {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    visibility: hidden;
-    pointer-events: none;
-    display: flex !important;
-    min-height: 0;
-}
-
 #loginView.auth-sheet-view--primary {
-    gap: 14px;
+    gap: 10px;
     padding-top: 8px;
 }
 
+#loginView .auth-sheet-login-stack {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 0;
+}
+
+#loginView .auth-sheet-login-fields-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
 #loginView .auth-sheet-google-btn {
-    margin-top: 4px;
+    margin-top: 2px;
 }
 
 #loginView .auth-sheet-form {
     gap: 10px;
-    margin-top: 6px;
+    margin-top: 0;
 }
 
 #loginView .auth-sheet-inline-row--spread {
-    margin-top: 4px;
+    margin-top: 0;
 }
 
 #loginView .auth-sheet-submit {
     width: min(100%, 82%);
-    margin: auto auto 0;
+    margin: 0 auto;
 }
 
 #registerView .auth-sheet-submit,
@@ -789,7 +802,8 @@ body.auth-sheet-open {
 }
 
 .auth-sheet-inline-group--code {
-    grid-template-columns: minmax(0, 1fr) 104px;
+    grid-template-columns: minmax(0, 1fr) 124px;
+    gap: 10px;
     align-items: stretch;
 }
 
@@ -803,13 +817,14 @@ body.auth-sheet-open {
 }
 
 .auth-sheet-inline-group--code .auth-sheet-secondary {
-    width: 104px;
+    width: 124px;
     min-height: 44px;
-    padding-left: 10px;
-    padding-right: 10px;
+    padding-left: 16px;
+    padding-right: 16px;
     align-self: stretch;
     background: var(--auth-sheet-blue-soft);
     border-color: var(--auth-sheet-blue-border);
+    font-weight: 700;
 }
 
 .auth-input-plane {
@@ -842,10 +857,12 @@ body.auth-sheet-open {
 .auth-sheet-check {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
     color: var(--auth-sheet-muted);
     font-size: 12px;
     line-height: 1.45;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .auth-sheet-check--start {
@@ -853,11 +870,93 @@ body.auth-sheet-open {
 }
 
 .auth-sheet-check input[type="checkbox"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    opacity: 0;
+}
+
+.auth-sheet-check > span {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    padding-left: 28px;
+    gap: 5px;
+    flex-wrap: wrap;
+    line-height: 22px;
+}
+
+.auth-sheet-check > span::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
     width: 18px;
     height: 18px;
-    margin: 1px 0 0;
-    accent-color: var(--auth-sheet-accent);
-    flex-shrink: 0;
+    border: 1.5px solid var(--auth-sheet-blue-border);
+    border-radius: 6px;
+    background: var(--auth-sheet-field-bg);
+    box-shadow: none;
+    transform: translateY(-50%);
+    transition:
+        background 0.18s ease,
+        border-color 0.18s ease,
+        box-shadow 0.18s ease,
+        transform 0.18s ease;
+}
+
+.auth-sheet-check > span::after {
+    content: "";
+    position: absolute;
+    left: 5px;
+    top: 50%;
+    width: 8px;
+    height: 4px;
+    border-left: 2px solid #ffffff;
+    border-bottom: 2px solid #ffffff;
+    border-radius: 1px;
+    opacity: 0;
+    transform: translateY(-62%) rotate(-45deg) scale(0.72);
+    transform-origin: center;
+    transition:
+        opacity 0.16s ease,
+        transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1.25);
+}
+
+.auth-sheet-check:hover > span::before {
+    border-color: var(--auth-sheet-accent-strong);
+    background: var(--auth-sheet-field-bg-focus);
+}
+
+.auth-sheet-check input[type="checkbox"]:checked + span::before {
+    border-color: #6b9ece;
+    background: #78acd8;
+    box-shadow: none;
+}
+
+.auth-sheet-check input[type="checkbox"]:checked + span::after {
+    opacity: 1;
+    transform: translateY(-62%) rotate(-45deg) scale(1);
+}
+
+.auth-sheet-check input[type="checkbox"]:focus-visible + span::before {
+    outline: 2px solid rgba(126, 184, 239, 0.45);
+    outline-offset: 3px;
+}
+
+.auth-sheet-check input[type="checkbox"]:active + span::before {
+    transform: translateY(-50%) scale(0.96);
+}
+
+.auth-sheet-check input[type="checkbox"]:disabled + span {
+    cursor: not-allowed;
+    opacity: 0.58;
 }
 
 .auth-sheet-check a {
@@ -979,6 +1078,52 @@ body.auth-sheet-open {
     font-weight: 700;
 }
 
+#loginModal #loginView .auth-sheet-submit,
+#loginModal #registerView .auth-sheet-submit {
+    width: min(100%, 82%);
+    max-width: 200px;
+    min-height: 44px;
+    padding: 11px 15px;
+    margin-left: auto;
+    margin-right: auto;
+    font-size: 14px;
+    line-height: 1.2;
+    border-radius: 15px;
+}
+
+#loginModal #registerView .auth-sheet-submit {
+    margin-top: auto;
+}
+
+#loginModal #registerView .auth-sheet-inline-group--code {
+    width: 100%;
+    grid-template-columns: minmax(0, 300px) 124px;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+#loginModal #registerView .auth-sheet-inline-group--code .verify-code-btn {
+    justify-self: end;
+}
+
+#loginModal .auth-sheet-input,
+#loginModal .auth-sheet-input:focus,
+#loginModal .auth-sheet-input.auth-sheet-input--portaled,
+#loginModal .auth-sheet-input.auth-sheet-input--portaled:focus {
+    caret-color: var(--auth-sheet-link-accent) !important;
+}
+
+html[data-theme="light"] #loginModal .auth-sheet-input,
+html[data-theme="light"] #loginModal .auth-sheet-input:focus,
+html[data-theme="light"] #loginModal .auth-sheet-input.auth-sheet-input--portaled,
+html[data-theme="light"] #loginModal .auth-sheet-input.auth-sheet-input--portaled:focus,
+html:not([data-theme="dark"]) #loginModal .auth-sheet-input,
+html:not([data-theme="dark"]) #loginModal .auth-sheet-input:focus,
+html:not([data-theme="dark"]) #loginModal .auth-sheet-input.auth-sheet-input--portaled,
+html:not([data-theme="dark"]) #loginModal .auth-sheet-input.auth-sheet-input--portaled:focus {
+    caret-color: #527fa8 !important;
+}
+
 #loginModal .auth-sheet-submit:hover,
 #loginModal .auth-sheet-submit.login-submit-btn:hover {
     transform: translateY(-1px);
@@ -1052,21 +1197,58 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-google-btn:hover {
 #loginModal .auth-sheet-inline-group--code .verify-code-btn:hover,
 #loginModal .auth-sheet-inline-group--code .verify-code-btn:active,
 #loginModal .auth-sheet-inline-group--code .verify-code-btn:focus-visible {
-    color: var(--auth-sheet-text) !important;
+    border-radius: 13px;
+    background: rgba(216, 224, 234, 0.12) !important;
+    border: 1px solid rgba(216, 224, 234, 0.18) !important;
+    color: #e9eef4 !important;
+    box-shadow: none !important;
+    font-size: 13px;
+    font-weight: 700;
 }
 
 #loginModal .auth-sheet-inline-group--code .verify-code-btn:hover {
-    background: var(--auth-sheet-blue-soft-strong) !important;
-    border-color: rgba(126, 184, 239, 0.42) !important;
+    transform: none;
+    background: rgba(226, 233, 242, 0.18) !important;
+    border-color: rgba(226, 233, 242, 0.24) !important;
+    box-shadow: none !important;
+}
+
+html[data-theme="light"] #loginModal .auth-sheet-inline-group--code .verify-code-btn,
+html[data-theme="light"] #loginModal .auth-sheet-inline-group--code .verify-code-btn:hover,
+html[data-theme="light"] #loginModal .auth-sheet-inline-group--code .verify-code-btn:active,
+html[data-theme="light"] #loginModal .auth-sheet-inline-group--code .verify-code-btn:focus-visible,
+html:not([data-theme="dark"]) #loginModal .auth-sheet-inline-group--code .verify-code-btn,
+html:not([data-theme="dark"]) #loginModal .auth-sheet-inline-group--code .verify-code-btn:hover,
+html:not([data-theme="dark"]) #loginModal .auth-sheet-inline-group--code .verify-code-btn:active,
+html:not([data-theme="dark"]) #loginModal .auth-sheet-inline-group--code .verify-code-btn:focus-visible {
+    background: rgba(107, 158, 206, 0.16) !important;
+    border-color: rgba(107, 158, 206, 0.38) !important;
+    color: #102033 !important;
+}
+
+html[data-theme="light"] #loginModal .auth-sheet-inline-group--code .verify-code-btn:hover:not(:disabled),
+html:not([data-theme="dark"]) #loginModal .auth-sheet-inline-group--code .verify-code-btn:hover:not(:disabled) {
+    background: rgba(107, 158, 206, 0.22) !important;
+    border-color: rgba(107, 158, 206, 0.5) !important;
+}
+
+#loginModal .auth-sheet-inline-group--code .verify-code-btn:disabled {
+    opacity: 0.84;
+}
+
+html[data-theme="light"] #loginModal .auth-sheet-inline-group--code .verify-code-btn:disabled,
+html:not([data-theme="dark"]) #loginModal .auth-sheet-inline-group--code .verify-code-btn:disabled {
+    background: rgba(107, 158, 206, 0.11) !important;
+    border-color: rgba(107, 158, 206, 0.28) !important;
+    color: rgba(15, 23, 42, 0.54) !important;
 }
 
 #loginModal .auth-sheet-inline-group--code .verify-code-btn:active,
 #loginModal .auth-sheet-inline-group--code .verify-code-btn:focus-visible,
 .auth-sheet-inline-group--code .auth-sheet-secondary:active,
 .auth-sheet-inline-group--code .auth-sheet-secondary:focus-visible {
-    background: var(--auth-sheet-blue-bright-soft);
-    border-color: var(--auth-sheet-blue-bright);
-    box-shadow: 0 0 0 3px rgba(126, 184, 239, 0.16);
+    transform: translateY(0);
+    box-shadow: none !important;
 }
 
 .auth-sheet-spinner {
@@ -1212,7 +1394,11 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-google-btn:hover {
     }
 
     .auth-sheet-inline-group--code {
-        grid-template-columns: minmax(0, 1fr) 104px;
+        grid-template-columns: minmax(0, 1fr) 124px;
+    }
+
+    #loginModal #registerView .auth-sheet-inline-group--code {
+        grid-template-columns: minmax(0, 1fr) 124px;
     }
 
     .auth-sheet-inline-row--spread {

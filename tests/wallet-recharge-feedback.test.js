@@ -18,7 +18,9 @@ test('wallet recharge UI exposes pending feedback hooks for package and custom r
     assert.match(script, /type="button" class="package-item"/);
     assert.match(script, /data-wallet-package-price/);
     assert.match(script, /id="wallet-custom-recharge-subtitle" hidden/);
+    assert.match(script, /id="wallet-custom-recharge-badge" hidden/);
     assert.match(script, /id="wallet-custom-recharge-meta" hidden/);
+    assert.match(script, /placeholder="请输入充值金额"/);
     assert.match(script, />充值<\/button>/);
     assert.doesNotMatch(script, /前往\$\{providerLabel\}/);
     assert.doesNotMatch(script, /当前按 1 积分 = 1 元结算，支持 0\.01 精度/);
@@ -26,6 +28,7 @@ test('wallet recharge UI exposes pending feedback hooks for package and custom r
     assert.match(script, /step="0\.01"/);
     assert.match(script, /inputmode="decimal"/);
     assert.match(script, /resolveCustomRechargeRequest\(rawValue, rechargeOptions = this\.rechargeOptionsConfig\)/);
+    assert.match(script, /errorMessage: `请输入\$\{inputLabel\}`/);
     assert.match(script, /tryPresentHostedPaymentQrModal\(paymentResult,\s*\{/);
     assert.match(script, /startHostedPaymentQrPolling\(detailOverlay, paymentResult, options\)/);
     assert.match(script, /PointsService\.getPaymentRequestStatus\(/);

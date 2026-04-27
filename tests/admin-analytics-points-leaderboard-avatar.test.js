@@ -68,12 +68,12 @@ test('points leaderboard avatars use escaped urls and local initials fallback', 
     }
 
     assert.equal(
-        htmlSource.includes('admin-studio.css?v=20260424_ADMIN_LIGHT_FLAT_CARDS_2'),
+        htmlSource.includes('admin-studio.css?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1'),
         true,
         'admin-studio.html should bump the stylesheet version for immutable cache safety'
     );
     assert.equal(
-        htmlSource.includes('js/admin-analytics-panel-loaders.js?v=20260420_POINTS_LEADERBOARD_AVATAR_1'),
+        htmlSource.includes('js/admin-analytics-panel-loaders.js?v=20260427_ANALYTICS_USER_TREND_LOADING_DOTS_1'),
         true,
         'admin-studio.html should bump the panel loader version for immutable cache safety'
     );

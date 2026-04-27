@@ -1903,10 +1903,8 @@ Example output format:
                     this.saveNewCategory();
                     break;
                 case 'order-show-content':
-                    void this.openOrderDetailContext(actionEl.dataset.orderId, {
-                        itemsData: actionEl.dataset.itemsData,
-                        source: 'shop'
-                    });
+                    this.focusVisibleOrderRow(actionEl.dataset.orderId, actionEl.closest('.shop-order-row'));
+                    void this.showOrderContent(actionEl.dataset.orderId, actionEl.dataset.itemsData);
                     break;
                 case 'order-close-content':
                     this.currentOrderDetailId = '';
@@ -4029,6 +4027,32 @@ Example output format:
         }
     },
 
+    focusVisibleOrderRow: function (orderId, rowElement = null) {
+        const normalizedOrderId = String(orderId || '').replace(/^SHOP_ORDER_/i, '').trim();
+        if (!normalizedOrderId) {
+            return;
+        }
+
+        this.focusedOrderId = normalizedOrderId;
+        this.pendingOpenOrderDetails = false;
+
+        if (typeof document.querySelectorAll === 'function') {
+            document.querySelectorAll('.shop-order-row--focused').forEach((row) => {
+                row.classList.remove('shop-order-row--focused');
+            });
+        }
+
+        const encodedOrderId = window.CSS?.escape
+            ? window.CSS.escape(normalizedOrderId)
+            : normalizedOrderId.replace(/"/g, '\\"');
+        const targetRow = rowElement instanceof HTMLElement
+            ? rowElement
+            : document.querySelector(`.shop-order-row[data-order-id="${encodedOrderId}"]`);
+        if (targetRow instanceof HTMLElement) {
+            targetRow.classList.add('shop-order-row--focused');
+        }
+    },
+
     focusOrder: async function (orderId, options = {}) {
         const normalizedOrderId = String(orderId || '').replace(/^SHOP_ORDER_/i, '').trim();
         if (!normalizedOrderId) {
@@ -4084,6 +4108,9 @@ Example output format:
             el.classList.toggle('active', isActive);
             el.classList.toggle('admin-studio-inline-style-attr-44', isActive);
             el.classList.toggle('admin-studio-inline-style-attr-45', !isActive);
+            if (isActive) {
+                window.updateAdminTabIndicator?.(el);
+            }
         });
 
         document.querySelectorAll('.shop-view').forEach((el) => {
@@ -4929,11 +4956,15 @@ Example output format:
 
             data.forEach(p => {
                 const statusBadge = p.is_active
-                    ? '<span class="shop-admin-status-badge shop-admin-status-badge--active">上架中</span>'
+                    ? ''
                     : '<span class="shop-admin-status-badge shop-admin-status-badge--inactive">已下架</span>';
 
-                const stock = p.stock_count || 0;
-                const stockClassName = stock < 5 ? 'shop-admin-product-stock shop-admin-product-stock--low' : 'shop-admin-product-stock shop-admin-product-stock--healthy';
+                const stock = Math.max(0, Number(p.stock_count || 0) || 0);
+                const stockClassName = stock <= 0
+                    ? 'shop-admin-product-stock shop-admin-product-stock--empty'
+                    : stock < 5
+                        ? 'shop-admin-product-stock shop-admin-product-stock--low'
+                        : 'shop-admin-product-stock shop-admin-product-stock--healthy';
                 const safeProductId = this.escapeForAttr(String(p.id || ''));
                 const safeProductName = this.escapeHtml(p.name || '未命名商品');
                 const safeProductDescription = this.escapeHtml(p.description || '暂无描述');
@@ -4972,7 +5003,7 @@ Example output format:
                             <input type="checkbox" class="inv-checkbox product-select-checkbox" data-product-id="${safeProductId}" 
                                 data-shop-change="product-selection-count">
                         </div>
-                        <div class="shop-admin-product-status-slot">${statusBadge}</div>
+                        ${statusBadge ? `<div class="shop-admin-product-status-slot">${statusBadge}</div>` : ''}
                     </div>
                     
                     <div class="shop-admin-product-body">
@@ -4983,7 +5014,7 @@ Example output format:
                     <div class="shop-admin-product-footer">
                         <div class="shop-admin-product-meta">
                             ${priceHtml}
-                            <div class="${stockClassName}">库存: ${stock}</div>
+                            <div class="${stockClassName}">库存 ${stock}</div>
                         </div>
                         
                         <div class="shop-admin-product-actions">
@@ -5260,6 +5291,17 @@ Example output format:
         const desc = document.getElementById('prodDesc').value || '无描述...';
         const showProductDescription = document.getElementById('prodShowProductDescription')?.checked !== false;
         const previewDesc = document.getElementById('previewDesc');
+        const previewStatus = document.getElementById('previewStatus');
+        const previewStock = document.getElementById('previewStock');
+        const iconMedia = document.getElementById('previewIconMedia');
+        const stockCountRaw = this.editingProductSnapshot?.stock_count;
+        const hasKnownStock = stockCountRaw !== undefined && stockCountRaw !== null && stockCountRaw !== '';
+        const normalizedStockCount = hasKnownStock
+            ? Math.max(0, Number(stockCountRaw) || 0)
+            : null;
+        const isActive = this.editingProductSnapshot
+            ? this.editingProductSnapshot.is_active !== false
+            : true;
 
         document.getElementById('previewTitle').textContent = name;
         document.getElementById('previewPrice').textContent = `${price} 积分`;
@@ -5271,12 +5313,37 @@ Example output format:
         }
 
         // Icon Logic
-        const iconBox = document.getElementById('previewIconBox');
-        if (iconInput.startsWith('http') || iconInput.startsWith('data:image')) {
-            iconBox.innerHTML = `<img src="${iconInput}" class="shop-admin-preview-icon-image" alt="商品封面预览">`;
-        } else {
-            // Assume FontAwesome class
-            iconBox.innerHTML = `<i class="${iconInput}"></i>`;
+        if (iconMedia) {
+            if (iconInput.startsWith('http') || iconInput.startsWith('data:image')) {
+                iconMedia.innerHTML = `<img src="${iconInput}" class="shop-admin-preview-icon-image" alt="商品封面预览">`;
+            } else {
+                // Assume FontAwesome class
+                iconMedia.innerHTML = `<i class="${iconInput}"></i>`;
+            }
+        }
+
+        if (previewStatus) {
+            previewStatus.hidden = isActive;
+            previewStatus.textContent = isActive ? '' : '已下架';
+            previewStatus.className = `preview-status ${isActive ? 'preview-status--active' : 'preview-status--inactive'}`;
+        }
+
+        if (previewStock) {
+            let stockVariant = 'preview-stock--unknown';
+            if (normalizedStockCount != null) {
+                if (normalizedStockCount <= 0) {
+                    stockVariant = 'preview-stock--empty';
+                } else if (normalizedStockCount < 5) {
+                    stockVariant = 'preview-stock--low';
+                } else {
+                    stockVariant = 'preview-stock--healthy';
+                }
+            }
+
+            previewStock.textContent = normalizedStockCount == null
+                ? '库存 -'
+                : `库存 ${normalizedStockCount}`;
+            previewStock.className = `preview-stock ${stockVariant}`;
         }
     },
 
@@ -11435,7 +11502,10 @@ Example output format:
                             <div class="shop-order-detail-user__copy">
                                 <div class="shop-order-detail-user__name">${this.escapeHtml(user?.username || 'Unknown')}</div>
                                 <div class="shop-order-detail-user__email">${this.escapeHtml(user?.email || order?.user_id || '—')}</div>
-                                <div class="shop-order-detail-user__id">用户 ID：<code>${this.escapeHtml(order?.user_id || '—')}</code></div>
+                                <div class="shop-order-detail-user__id">
+                                    <span class="shop-order-detail-user__id-label">用户 ID</span>
+                                    <code>${this.escapeHtml(order?.user_id || '—')}</code>
+                                </div>
                             </div>
                         </div>
                         <div class="shop-order-detail-hero__meta">
@@ -11463,7 +11533,7 @@ Example output format:
                                 </div>
                             </div>
                             <div class="shop-order-detail-list">${inventoryMarkup}</div>
-                            <div class="shop-order-content-box">${itemsMarkup}</div>
+                            <div class="shop-order-content-box shop-order-detail-content-box">${itemsMarkup}</div>
                         </div>
 
                         <div class="shop-order-detail-section">

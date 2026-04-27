@@ -2995,6 +2995,7 @@
         if (!nav) return;
         const activeButton = nav.querySelector('.admin-tab.active');
         if (!activeButton) return;
+        window.updateAdminTabIndicator?.(activeButton);
     }
 
     function switchTab(tabId, options = {}) {

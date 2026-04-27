@@ -140,8 +140,8 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /css\/shop-page\.css\?v=20260426_SHOP_MOBILE_FOCUS_REMOVED_1/,
-        'shop.html should bust the shop stylesheet cache after integrating the cart drawer module'
+        /css\/shop-page\.css\?v=20260427_SHOP_PURCHASE_GUIDANCE_VISIBLE_YELLOW_1/,
+        'shop.html should bust the shop stylesheet cache after updating purchase guidance light-theme color visibility'
     );
     assert.match(
         shopCssSource,
@@ -150,8 +150,18 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /js\/shop-client\.js\?v=20260426_SHOP_MOBILE_FOCUS_REMOVED_1/,
-        'shop.html should load the cart-enabled shop client runtime'
+        /js\/shop-client\.js\?v=20260427_SHOP_PURCHASE_GUIDANCE_VISIBLE_YELLOW_1/,
+        'shop.html should load the purchase-guidance rich-text runtime with the visible yellow normalization fix'
+    );
+    assert.match(
+        shopClientSource,
+        /normalizeRichTextPaletteColors: function \(value\) \{[\s\S]*#f4b400/s,
+        'shop-client.js should normalize legacy pale yellow rich-text colors into a visible gold on light surfaces'
+    );
+    assert.match(
+        shopCssSource,
+        /#shopPurchaseModal #purchaseNotesContent,\s+html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal #purchaseNotesContent :not\(\[style\*="color"\]\):not\(\[color\]\) \{/s,
+        'light-theme purchase notes should only force the default copy color onto nodes that do not already declare a rich-text color'
     );
     assert.match(
         shopHtmlSource,

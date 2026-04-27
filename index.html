@@ -23,6 +23,8 @@
     <meta name="twitter:description" content="AI 驱动的创意资源平台，提供 Prompt 提示词、API 验证、资源商城等服务。">
     <meta name="twitter:image" content="https://www.zaoyoe.com/assets/favicon.png">
     <link rel="icon" type="image/png" href="assets/favicon.png">
+    <link rel="stylesheet" href="./css/auth-popup-handoff.css?v=20260427_GOOGLE_POPUP_HANDOFF_1">
+    <script src="./js/auth-popup-handoff.js?v=20260427_GOOGLE_POPUP_HANDOFF_1"></script>
 
     <!-- Preconnect for performance -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -52,7 +54,7 @@
 
     <!-- Internationalization -->
     <script src="./js/i18n.js"></script>
-    <script src="./js/theme-preload.js"></script>
+    <script src="./js/theme-preload.js?v=20260427_DEFAULT_LIGHT_THEME_1"></script>
 
     <!-- Cache Utility -->
     <script src="./js/cache.js"></script>
@@ -67,7 +69,7 @@
     <!-- Core Styles (for modals, profile, etc) -->
     <link rel="stylesheet" href="./verify-widget.css?v=20260415_HOME_VERIFY_DEMO_1" media="print" data-deferred-style="1">
     <link rel="stylesheet" href="css/homepage-overlays.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1" media="print" data-deferred-style="1" data-deferred-style-mode="manual" data-deferred-style-group="homepage-overlays">
-    <link rel="stylesheet" href="css/auth-sheet.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1" media="print" data-deferred-style="1">
+    <link rel="stylesheet" href="css/auth-sheet.css?v=20260427_AUTH_MESSAGE_CENTER_1" media="print" data-deferred-style="1">
     <link rel="stylesheet" href="avatar-fix.css?v=20260424_SOLID_GUEST_AVATAR_1">
 
     <!-- Disable browser scroll restoration -->
@@ -102,7 +104,7 @@
                 <a href="https://gongyi.zaoyoe.com" data-i18n="nav.gongyi">公益站</a>
                 <a href="/shop.html" class="nav-trigger" data-dropdown="shop" data-i18n="nav.shop">商城</a>
                 <a href="/verify.html" data-i18n="nav.verify">验证</a>
-                <a href="/guestbook.html" data-i18n="nav.guestbook" data-home-open-guestbook="1">留言板</a>
+                <a href="/guestbook.html" data-i18n="nav.guestbook">留言板</a>
                 <a href="javascript:void(0)" class="nav-trigger" data-dropdown="support" data-i18n="nav.support">支持</a>
             </div>
 
@@ -152,7 +154,7 @@
 
             <div class="mobile-menu-item">
                 <a href="/guestbook.html" class="mobile-menu-link" data-i18n="nav.guestbook"
-                    data-home-open-guestbook="1" data-close-mobile-menu="1">留言板</a>
+                    data-close-mobile-menu="1">留言板</a>
             </div>
 
             <div class="mobile-menu-item">
@@ -256,10 +258,10 @@
     <!-- Auth System (integrated from inject-auth.js) -->
     <script src="./js/avatar-uploader.js" defer></script>
     <script src="./js/admin-access.js?v=20260421_ADMIN_ACCESS_SESSION_PRIORITY_P0" defer></script>
-    <script src="./supabase-auth-functions.js?v=20260425_AUTH_RESET_FORM_SUBMIT_1" defer></script>
+    <script src="./supabase-auth-functions.js?v=20260427_GOOGLE_POPUP_MODAL_CLOSE_3" defer></script>
     <script src="./js/public-scrollbar-auto-hide.js?v=20260424_PUBLIC_SCROLLBAR_AUTO_HIDE_1" defer></script>
     <script src="./js/ios-scroll-lock.js?v=20260324_IOS_SCROLL_LOCK_RUNTIME_STYLE_2" defer></script>
-    <script src="./inject-auth.js?v=20260425_AUTH_SHEET_RESIZE_1" defer></script>
+    <script src="./inject-auth.js?v=20260427_AUTH_MESSAGE_RESIZE_1" defer></script>
     <link rel="stylesheet" href="./css/notification-client.css?v=20260331_NOTIFICATION_FILTER_MEMORY_1" media="print" data-deferred-style="1" data-deferred-style-mode="manual" data-deferred-style-group="homepage-engagement">
     <script src="./js/engagement-runtime-loader.js?v=20260421_PUBLIC_ENGAGEMENT_LAZY_BOOTSTRAP_P1" data-load-notification="1" data-load-announcement="1" defer></script>
 
@@ -270,7 +272,7 @@
     <script src="./js/framer_home.js?v=20260425_HOME_HERO_PRISM_CHRONO_10" defer></script>
 
     <script src="./js/user-event-tracker.js?v=20260405_USER_EVENT_TRACKER_2" defer></script>
-    <script src="./js/wallet-modal-loader.js?v=20260425_WALLET_MOBILE_CHECKOUT_REDIRECT_1" defer></script>
+    <script src="./js/wallet-modal-loader.js?v=20260427_WALLET_THEME_DEFAULT_LIGHT_1" defer></script>
 
     <!-- Homepage Bootstrap -->
     <script src="./js/index-home-bootstrap.js" defer></script>
@@ -319,10 +321,10 @@
     <!-- Guestbook Modal Script -->
     <script src="./js/homepage-guestbook-modal.js?v=20260324_HOMEPAGE_GUESTBOOK_MODAL_RUNTIME_STYLE_2" defer></script>
     <!-- Profile Modal (for user profile/security settings) -->
-    <script src="./js/profile-modal-loader.js?v=20260425_PROFILE_MOBILE_TOPBAR_FULL_1" defer></script>
+    <script src="./js/profile-modal-loader.js?v=20260427_PROFILE_SECURITY_PLACEHOLDER_SIZE_2" defer></script>
 
     <!-- Chat Widget -->
-    <link rel="stylesheet" href="css/chat-widget.css?v=20260426_CHAT_OPS_ALERT_LIGHT_GLASS_12" media="print" data-deferred-style="1" data-deferred-style-mode="manual" data-deferred-style-group="homepage-chat">
+    <link rel="stylesheet" href="css/chat-widget.css?v=20260426_CHAT_BADGE_BORDERLESS_1" media="print" data-deferred-style="1" data-deferred-style-mode="manual" data-deferred-style-group="homepage-chat">
     <script src="js/chat-widget-loader.js?v=20260426_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_LOADER_12"></script>
 </body>
 

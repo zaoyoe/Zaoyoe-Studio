@@ -2108,6 +2108,49 @@ function closeTrackedGooglePopup() {
     googlePopupWindowRef = null;
 }
 
+function hasActiveGoogleAuthLoading() {
+    return !!(
+        window.isGoogleLoginLoading ||
+        document.querySelector('.google-login-btn.is-loading, .google-login-btn[data-google-busy="1"]')
+    );
+}
+
+function closeGoogleAuthSurfacesAfterSuccess() {
+    setGoogleButtonsLoading(false);
+
+    if (typeof window.closeAdminLoginModal === 'function') {
+        try {
+            window.closeAdminLoginModal();
+        } catch (err) {
+            console.warn('Failed to close admin login modal:', err);
+        }
+    }
+
+    if (typeof window.closeLoginModal === 'function') {
+        try {
+            window.closeLoginModal();
+        } catch (err) {
+            console.warn('Failed to close login modal:', err);
+        }
+    }
+
+    const loginModal = document.getElementById('loginModal');
+    if (!loginModal) return;
+
+    loginModal.classList.remove('active', 'auth-sheet-input-active', 'ios-focus-lock');
+    loginModal.setAttribute('aria-hidden', 'true');
+    loginModal.hidden = true;
+    document.body?.classList?.remove('auth-sheet-open');
+
+    if (window.iOSScrollLock) {
+        try {
+            window.iOSScrollLock.unlock();
+        } catch (err) {
+            console.warn('Failed to unlock auth sheet scroll state:', err);
+        }
+    }
+}
+
 function ensureGooglePopupMessageBridge() {
     if (window._googlePopupMessageBridgeBound) return;
     window._googlePopupMessageBridgeBound = true;
@@ -2119,6 +2162,7 @@ function ensureGooglePopupMessageBridge() {
             payload.status || '',
             payload.userId || '',
             payload.message || '',
+            payload.credential ? 'credential' : '',
             payload.emittedAt || ''
         ].join('|');
 
@@ -2131,19 +2175,35 @@ function ensureGooglePopupMessageBridge() {
         stopGooglePopupMonitor();
         closeTrackedGooglePopup();
         clearGooglePopupState();
+
+        if (payload.status === 'credential') {
+            if (!payload.credential) {
+                setGoogleButtonsLoading(false);
+                showAuthFeedback(
+                    formatAuthText('auth.googleLoginFailed', 'Google 登录失败: {message}', {
+                        message: authT('auth.tryAgainLater', '请稍后重试')
+                    }),
+                    'error',
+                    'login'
+                );
+                return;
+            }
+
+            clearAuthFeedback();
+            clearInlineGoogleFallbackButtons();
+            closeGoogleAuthSurfacesAfterSuccess();
+            await handleGoogleCredentialResponse({ credential: payload.credential }, {
+                fromPopupBridge: true
+            });
+            return;
+        }
+
         setGoogleButtonsLoading(false);
 
         if (payload.status === 'success') {
             clearAuthFeedback();
             clearInlineGoogleFallbackButtons();
-
-            if (typeof closeAdminLoginModal === 'function') closeAdminLoginModal();
-            if (typeof toggleLoginModal === 'function') {
-                const loginModal = document.getElementById('loginModal');
-                if (loginModal && loginModal.classList.contains('active')) {
-                    toggleLoginModal();
-                }
-            }
+            closeGoogleAuthSurfacesAfterSuccess();
 
             try {
                 await new Promise((resolve) => setTimeout(resolve, 120));
@@ -2576,13 +2636,7 @@ async function handleGoogleCredentialResponse(response, options = {}) {
             return;
         }
 
-        if (typeof closeAdminLoginModal === 'function') closeAdminLoginModal();
-        if (typeof toggleLoginModal === 'function') {
-            const loginModal = document.getElementById('loginModal');
-            if (loginModal && loginModal.classList.contains('active')) {
-                toggleLoginModal();
-            }
-        }
+        closeGoogleAuthSurfacesAfterSuccess();
         if (typeof checkAuthState === 'function') {
             await checkAuthState();
         }
@@ -2601,13 +2655,17 @@ async function handleGoogleCredentialResponse(response, options = {}) {
             }, 120);
             return;
         }
-        showAuthFeedback(
-            formatAuthText('auth.googleLoginFailed', 'Google 登录失败: {message}', {
-                message: error.message || authT('auth.tryAgainLater', '请稍后重试')
-            }),
-            'error',
-            'login'
-        );
+        const errorMessage = formatAuthText('auth.googleLoginFailed', 'Google 登录失败: {message}', {
+            message: error.message || authT('auth.tryAgainLater', '请稍后重试')
+        });
+        if (options.fromPopupBridge === true && typeof window.openLoginModalWithMessage === 'function') {
+            await window.openLoginModalWithMessage(errorMessage, {
+                type: 'error',
+                viewId: 'login'
+            });
+            return;
+        }
+        showAuthFeedback(errorMessage, 'error', 'login');
     } finally {
         setGoogleButtonsLoading(false);
     }
@@ -3152,6 +3210,10 @@ async function initializeAuthPageBoot() {
 
     window.supabaseClient.auth.onAuthStateChange((event, session) => {
         console.log('🔔 Auth state changed:', event);
+
+        if (event === 'SIGNED_IN' && session && hasActiveGoogleAuthLoading()) {
+            closeGoogleAuthSurfacesAfterSuccess();
+        }
 
         // INITIAL_SESSION fires on page load. After OAuth redirect, this is where
         // the session tokens first arrive. We must process it if a session exists.

@@ -371,9 +371,12 @@ const OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS = 20000;
 const OPS_ALERT_MONITOR_FETCH_RETRY_COUNT = 2;
 const OPS_ALERT_MONITOR_FETCH_RETRY_DELAY_MS = 450;
 const VERIFY_MONITOR_FETCH_TIMEOUT_MS = 8000;
+const ADMIN_CONFIG_RICH_TEXT_VISIBLE_YELLOW = '#f4b400';
+const ADMIN_CONFIG_RICH_TEXT_LOW_CONTRAST_YELLOW_PATTERN = /#ffeb3b|rgb\s*\(\s*255\s*,\s*235\s*,\s*59\s*\)|rgba\s*\(\s*255\s*,\s*235\s*,\s*59\s*,\s*1(?:\.0+)?\s*\)/gi;
 const ADMIN_CONFIG_RICH_TEXT_COLOR_SWATCH_CLASS_MAP = Object.freeze({
     '#ffffff': 'color-swatch--white',
     '#ffeb3b': 'color-swatch--yellow',
+    '#f4b400': 'color-swatch--yellow',
     '#ff9800': 'color-swatch--orange',
     '#4caf50': 'color-swatch--green',
     '#e57373': 'color-swatch--red',
@@ -423,13 +426,21 @@ function showAdminConfigSaveIndicator(indicator, text = '✓ 已保存', duratio
 }
 
 function getAdminConfigRichTextColorClass(color) {
-    return ADMIN_CONFIG_RICH_TEXT_COLOR_SWATCH_CLASS_MAP[color] || ADMIN_CONFIG_RICH_TEXT_COLOR_SWATCH_CLASS_MAP['#6b9ece'];
+    const normalized = normalizeAdminConfigRichTextPaletteColor(color);
+    return ADMIN_CONFIG_RICH_TEXT_COLOR_SWATCH_CLASS_MAP[normalized] || ADMIN_CONFIG_RICH_TEXT_COLOR_SWATCH_CLASS_MAP['#6b9ece'];
 }
 
 function applyAdminConfigRichTextColorSwatch(target, color, options = {}) {
     if (!target) return;
     const previewClass = options.preview ? 'preview' : '';
     target.className = ['color-swatch', previewClass, getAdminConfigRichTextColorClass(color)].filter(Boolean).join(' ');
+}
+
+function normalizeAdminConfigRichTextPaletteColor(value = '') {
+    if (typeof value !== 'string' || !value.trim()) {
+        return value;
+    }
+    return value.replace(ADMIN_CONFIG_RICH_TEXT_LOW_CONTRAST_YELLOW_PATTERN, ADMIN_CONFIG_RICH_TEXT_VISIBLE_YELLOW);
 }
 
 function getAffiliatePosterPreviewClass(templateId) {
@@ -21938,7 +21949,7 @@ const AdminRichTextEditor = (() => {
     const defaultEmojis = ['🎉', '📢', '⚠️', '✨', '🔥', '💡', '🎁', '❤️', '👍', '🚀', '🌟', '💯'];
     const defaultColors = [
         { value: '#ffffff', label: '白色' },
-        { value: '#ffeb3b', label: '黄色' },
+        { value: ADMIN_CONFIG_RICH_TEXT_VISIBLE_YELLOW, label: '黄色' },
         { value: '#ff9800', label: '橙色' },
         { value: '#4caf50', label: '绿色' },
         { value: '#e57373', label: '红色' },
@@ -21972,8 +21983,9 @@ const AdminRichTextEditor = (() => {
 
     function normalizeStoredContent(value) {
         if (typeof value !== 'string' || !value.trim()) return '';
-        if (richTextTagPattern.test(value)) return value;
-        return escapeHtml(value).replace(/\n/g, '<br>');
+        const normalizedValue = normalizeAdminConfigRichTextPaletteColor(value);
+        if (richTextTagPattern.test(normalizedValue)) return normalizedValue;
+        return escapeHtml(normalizedValue).replace(/\n/g, '<br>');
     }
 
     function placeCursorAtEnd(editor) {
@@ -22373,9 +22385,10 @@ const AdminRichTextEditor = (() => {
         },
         toggleDropdown,
         selectColor(key, color) {
-            execCommand(key, 'foreColor', color);
+            const normalizedColor = normalizeAdminConfigRichTextPaletteColor(color);
+            execCommand(key, 'foreColor', normalizedColor);
             const instance = getInstance(key);
-            updateColorUI(instance, color);
+            updateColorUI(instance, normalizedColor);
             closeDropdownElement(instance?.dropdowns?.color);
         },
         selectFontSize(key, size, sizeClass) {

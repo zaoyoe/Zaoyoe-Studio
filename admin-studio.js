@@ -361,34 +361,22 @@ function setAdminGalleryLoadingChrome() {
 function getAdminGallerySkeletonCardProfile(index = 0) {
     const profiles = [
         {
-            badges: [92, 42, 42, 78],
             title: [72, 48],
-            subtitle: [100, 78],
             meta: [58, 38],
             status: 68,
-            metrics: [[24, 70, 54], [24, 66, 48]],
-            note: 82,
-            actions: [70, 68, 78]
+            metrics: [[24, 70], [28, 66]]
         },
         {
-            badges: [96, 40, 44, 72],
             title: [66, 54],
-            subtitle: [92, 84],
             meta: [62, 42],
             status: 64,
-            metrics: [[24, 74, 50], [24, 64, 52]],
-            note: 76,
-            actions: [68, 66, 74]
+            metrics: [[24, 74], [28, 64]]
         },
         {
-            badges: [88, 44, 42, 80],
             title: [74, 52],
-            subtitle: [96, 72],
             meta: [54, 40],
             status: 72,
-            metrics: [[24, 68, 46], [24, 72, 54]],
-            note: 80,
-            actions: [72, 70, 82]
+            metrics: [[24, 68], [28, 72]]
         }
     ];
 
@@ -403,9 +391,6 @@ function createAdminGallerySkeletonCard(index = 0) {
     card.innerHTML = `
         <div class="admin-card-media">
             <div class="admin-card-media-skeleton"></div>
-            <div class="admin-card-badges admin-card-badges--overlay admin-card-badges--skeleton">
-                ${profile.badges.map((width) => `<span class="admin-skeleton-block admin-skeleton-block--pill" style="width:${width}px"></span>`).join('')}
-            </div>
         </div>
         <div class="admin-card-content">
             <div class="admin-card-header">
@@ -413,13 +398,7 @@ function createAdminGallerySkeletonCard(index = 0) {
                     <span class="admin-skeleton-block admin-skeleton-block--title" style="width:${profile.title[0]}%"></span>
                     <span class="admin-skeleton-block admin-skeleton-block--title" style="width:${profile.title[1]}%"></span>
                 </div>
-                <span class="admin-card-status admin-card-status--skeleton">
-                    <span class="admin-skeleton-block admin-skeleton-block--pill" style="width:${profile.status}px"></span>
-                </span>
-            </div>
-            <div class="admin-card-subtitle admin-card-subtitle--skeleton admin-card-skeleton-copy">
-                <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${profile.subtitle[0]}%"></span>
-                <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${profile.subtitle[1]}%"></span>
+                <span class="admin-card-status admin-card-status--skeleton" style="width:${profile.status}px"></span>
             </div>
             <div class="admin-card-meta-row admin-card-meta-row--skeleton">
                 <div class="admin-card-language-summary">
@@ -433,27 +412,16 @@ function createAdminGallerySkeletonCard(index = 0) {
                 <div class="admin-card-site-metric admin-card-site-metric--skeleton">
                     <span class="admin-skeleton-block admin-skeleton-block--tiny" style="width:${profile.metrics[0][0]}px"></span>
                     <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${profile.metrics[0][1]}%"></span>
-                    <span class="admin-skeleton-block admin-skeleton-block--tiny" style="width:${profile.metrics[0][2]}%"></span>
                 </div>
                 <div class="admin-card-site-metric admin-card-site-metric--skeleton">
                     <span class="admin-skeleton-block admin-skeleton-block--tiny" style="width:${profile.metrics[1][0]}px"></span>
                     <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${profile.metrics[1][1]}%"></span>
-                    <span class="admin-skeleton-block admin-skeleton-block--tiny" style="width:${profile.metrics[1][2]}%"></span>
                 </div>
             </div>
-            <div class="admin-card-ops-note admin-card-ops-note--skeleton admin-card-skeleton-copy admin-card-skeleton-copy--compact">
-                <span class="admin-skeleton-block admin-skeleton-block--tiny" style="width:${profile.note}%"></span>
-            </div>
             <div class="admin-card-context-actions admin-card-context-actions--skeleton">
-                <button class="admin-card-context-btn admin-card-context-btn--skeleton" type="button" tabindex="-1">
-                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${profile.actions[0]}px"></span>
-                </button>
-                <button class="admin-card-context-btn admin-card-context-btn--skeleton" type="button" tabindex="-1">
-                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${profile.actions[1]}px"></span>
-                </button>
-                <button class="admin-card-context-btn admin-card-context-btn--primary admin-card-context-btn--skeleton admin-card-context-btn--skeleton-primary" type="button" tabindex="-1">
-                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${profile.actions[2]}px"></span>
-                </button>
+                <span class="admin-card-context-btn admin-card-context-btn--skeleton"></span>
+                <span class="admin-card-context-btn admin-card-context-btn--skeleton"></span>
+                <span class="admin-card-context-btn admin-card-context-btn--primary admin-card-context-btn--skeleton admin-card-context-btn--skeleton-primary"></span>
             </div>
         </div>
     `;
@@ -1124,10 +1092,49 @@ async function deleteAdminPrompts({ site, id, ids = [] } = {}) {
 // ========================================
 // THEME INITIALIZATION - Sync with Gallery
 // ========================================
+function syncAdminStudioThemeToggle() {
+    const toggleBtn = document.getElementById('adminThemeToggleBtn');
+    if (!toggleBtn) return;
+
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const nextLabel = isDark ? '切换到亮色主题' : '切换到暗色主题';
+    toggleBtn.setAttribute('aria-label', nextLabel);
+    toggleBtn.setAttribute('title', nextLabel);
+    toggleBtn.dataset.theme = isDark ? 'dark' : 'light';
+}
+
+window.syncAdminStudioThemeToggle = syncAdminStudioThemeToggle;
+
 function applyAdminStudioThemePreference(themePreference) {
     const nextTheme = themePreference === 'dark' ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', nextTheme);
+    window.applySiteThemeChrome?.(nextTheme);
+    syncAdminStudioThemeToggle();
+    return nextTheme;
 }
+
+(function exposeAdminStudioThemeToggle() {
+    function persistAdminStudioThemePreference(themePreference) {
+        const nextTheme = applyAdminStudioThemePreference(themePreference);
+        try {
+            localStorage.setItem('theme', nextTheme);
+        } catch (error) {
+            console.warn('[AdminStudio] Failed to persist theme preference:', error);
+        }
+        return nextTheme;
+    }
+
+    window.toggleAdminStudioTheme = function toggleAdminStudioTheme(event) {
+        if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+
+        const currentTheme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+        const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        persistAdminStudioThemePreference(nextTheme);
+    };
+}());
 
 (function initTheme() {
     const savedTheme = localStorage.getItem('theme');
@@ -1476,6 +1483,9 @@ async function initializeAdminStudioShell() {
 
     // Initialize admin site filter selector
     if (window.AdminSiteFilter) window.AdminSiteFilter.renderSiteSelector();
+    if (typeof window.syncAdminStudioThemeToggle === 'function') {
+        window.syncAdminStudioThemeToggle();
+    }
 
     const galleryRouteState = getAdminGalleryRouteState();
     if (galleryRouteState.view === 'manage') {
@@ -3369,6 +3379,9 @@ function bindAdminStudioDelegatedControls() {
             case 'site-filter-select':
                 window.AdminSiteFilter?.select?.(actionEl.dataset.siteFilterValue);
                 break;
+            case 'toggle-theme':
+                window.toggleAdminStudioTheme?.(event);
+                break;
             case 'analytics-dismiss-alerts':
                 window.dismissAllAlerts?.();
                 break;
@@ -4835,8 +4848,8 @@ initOpsAlertsModule();
 // Initialize tab indicator (robust check)
 function initIndicator() {
     // Update ALL active tab indicators in all navigation bars
-    document.querySelectorAll('.admin-tabs').forEach(nav => {
-        const activeTab = nav.querySelector('.admin-tab.active');
+    document.querySelectorAll('.admin-tabs, #module-shop .shop-tabs, #module-tickets .admin-ticket-function-nav').forEach(nav => {
+        const activeTab = nav.querySelector('.admin-tab.active, .shop-tab.active, .admin-ticket-function-tab.active');
         if (activeTab) updateAdminTabIndicator(activeTab);
     });
 }
@@ -4848,12 +4861,43 @@ window.addEventListener('resize', () => {
     // Debounce slightly
     requestAnimationFrame(initIndicator);
 });
+document.addEventListener('click', (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target?.closest('.admin-tabs .admin-tab, #module-shop .shop-tabs .shop-tab, #module-tickets .admin-ticket-function-tab, [data-admin-action="switch-module"]')) {
+        return;
+    }
+
+    requestAnimationFrame(initIndicator);
+});
 
 // Update Admin Tab Indicator Position
-// Update Admin Tab Indicator Position
+// 20260427_ADMIN_STUDIO_NAV_INDICATOR_SLIDE_RUNTIME_1
 function updateAdminTabIndicator(activeTab) {
     if (!activeTab) return;
+    const nav = activeTab.closest('.admin-tabs, #module-shop .shop-tabs, #module-tickets .admin-ticket-function-nav');
+    const indicator = nav?.querySelector('.admin-tab-indicator');
+    if (!nav) return;
+
+    const navRect = nav.getBoundingClientRect();
+    const tabRect = activeTab.getBoundingClientRect();
+    const width = Math.max(0, Math.round(tabRect.width));
+    if (!width || !navRect.width) {
+        nav.style.setProperty('--admin-tab-indicator-width', '0px');
+        nav.style.setProperty('--admin-tab-indicator-left', '0px');
+        indicator?.style?.setProperty('--admin-tab-indicator-width', '0px');
+        indicator?.style?.setProperty('--admin-tab-indicator-left', '0px');
+        indicator?.classList?.remove('is-visible');
+        return;
+    }
+
+    const left = Math.max(0, Math.round(tabRect.left - navRect.left + nav.scrollLeft));
+    nav.style.setProperty('--admin-tab-indicator-width', `${width}px`);
+    nav.style.setProperty('--admin-tab-indicator-left', `${left}px`);
+    indicator?.style?.setProperty('--admin-tab-indicator-width', `${width}px`);
+    indicator?.style?.setProperty('--admin-tab-indicator-left', `${left}px`);
+    indicator?.classList?.add('is-visible');
 }
+window.updateAdminTabIndicator = updateAdminTabIndicator;
 
 function getGalleryActiveViewName() {
     return document.querySelector('#module-gallery .view-section.active')?.id === 'view-manage'
@@ -6273,7 +6317,6 @@ function renderAdminCard(prompt) {
     const checkbox = document.createElement('span');
     checkbox.className = 'select-checkbox';
     checkbox.innerHTML = '<i class="fas fa-check"></i>';
-    card.appendChild(checkbox);
 
     const media = document.createElement('div');
     media.className = 'admin-card-media';
@@ -6305,6 +6348,7 @@ function renderAdminCard(prompt) {
         image.removeAttribute('data-load-requested');
     }
     media.appendChild(image);
+    media.appendChild(checkbox);
 
     const badges = document.createElement('div');
     badges.className = 'admin-card-badges admin-card-badges--overlay';
@@ -6350,11 +6394,6 @@ function renderAdminCard(prompt) {
     statusBadge.textContent = lifecycleState.label;
     header.appendChild(statusBadge);
     content.appendChild(header);
-
-    const subtitle = document.createElement('div');
-    subtitle.className = 'admin-card-subtitle';
-    subtitle.textContent = prompt.description || prompt.description_en || prompt.description_zh || 'Global prompt asset with explicit bilingual copy coverage.';
-    content.appendChild(subtitle);
 
     const metaRow = document.createElement('div');
     metaRow.className = 'admin-card-meta-row';
@@ -6434,7 +6473,7 @@ function renderAdminCard(prompt) {
         editPrompt(prompt.id);
     });
     hoverLeft.appendChild(hoverEdit);
-    card.appendChild(hoverLeft);
+    media.appendChild(hoverLeft);
 
     const hoverRight = document.createElement('div');
     hoverRight.className = 'admin-card-hover-actions right';
@@ -6462,7 +6501,7 @@ function renderAdminCard(prompt) {
 
     hoverRight.appendChild(hoverDelete);
     hoverRight.appendChild(hoverJump);
-    card.appendChild(hoverRight);
+    media.appendChild(hoverRight);
 
     const actions = document.createElement('div');
     actions.className = 'admin-card-actions';
@@ -6606,9 +6645,9 @@ function buildGallerySaveButtonMarkup(label, iconClass = 'fas fa-save') {
 }
 
 function syncGalleryEditModePanels(mode = currentMode) {
-    const normalizedMode = mode === 'edit' ? 'edit' : 'create';
+    void mode;
     const aiTagsGroup = document.getElementById('promptAiTagsGroup');
-    setAdminStudioVisibility(aiTagsGroup, normalizedMode !== 'edit');
+    setAdminStudioVisibility(aiTagsGroup, false);
 }
 
 function syncGallerySaveButtonState(mode = currentMode) {

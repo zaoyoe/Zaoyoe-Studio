@@ -8356,9 +8356,20 @@ const ShopClient = {
         return /<\/?(?:a|b|strong|i|em|u|div|p|br|font|span|ul|ol|li)\b/i.test(content || '');
     },
 
+    normalizeRichTextPaletteColors: function (value) {
+        if (typeof value !== 'string' || !value.trim()) {
+            return value;
+        }
+
+        return value.replace(
+            /#ffeb3b|rgb\s*\(\s*255\s*,\s*235\s*,\s*59\s*\)|rgba\s*\(\s*255\s*,\s*235\s*,\s*59\s*,\s*1(?:\.0+)?\s*\)/gi,
+            '#f4b400'
+        );
+    },
+
     sanitizeRichTextHtml: function (html) {
         const template = document.createElement('template');
-        template.innerHTML = html;
+        template.innerHTML = this.normalizeRichTextPaletteColors(html);
 
         const allowedTags = new Set(['A', 'B', 'STRONG', 'I', 'EM', 'U', 'BR', 'DIV', 'P', 'SPAN', 'FONT', 'UL', 'OL', 'LI']);
         const allowedTextAlign = /^(left|center|right|justify)$/i;
@@ -8378,7 +8389,7 @@ const ShopClient = {
                     safeRules.push(`text-align: ${value.toLowerCase()}`);
                 }
                 if (prop === 'color' && allowedColor.test(value)) {
-                    safeRules.push(`color: ${value}`);
+                    safeRules.push(`color: ${this.normalizeRichTextPaletteColors(value)}`);
                 }
                 if (prop === 'font-size' && allowedFontSize.test(value)) {
                     safeRules.push(`font-size: ${value}`);
@@ -8427,7 +8438,7 @@ const ShopClient = {
                 }
 
                 if (child.tagName === 'FONT') {
-                    const color = (attrs.color || '').trim();
+                    const color = this.normalizeRichTextPaletteColors((attrs.color || '').trim());
                     const size = (attrs.size || '').trim();
                     if (allowedColor.test(color)) {
                         child.setAttribute('color', color);

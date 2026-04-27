@@ -1482,15 +1482,81 @@
     background: transparent;
     position: relative;
     min-height: 60px;
+    isolation: isolate;
+    outline: 1px solid transparent;
+    outline-offset: -1px;
+}
+
+.comment-list-admin.list-view .comment-admin-item::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 10px;
+    bottom: 10px;
+    width: 2px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, rgba(125, 211, 252, 0.92), rgba(107, 158, 206, 0.58));
+    opacity: 0;
+    transform: scaleY(0.72);
+    transform-origin: center;
+    transition: opacity 0.18s ease, transform 0.18s ease;
+    pointer-events: none;
 }
 
 .comment-list-admin.list-view .comment-admin-item:hover {
     background: rgba(128, 128, 128, 0.03);
-    transform: translateY(-2px);
-    /* Adjusted lift */
-    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.07);
-    /* Slightly stronger shadow */
-    z-index: 5;
+    transform: none;
+    box-shadow: none;
+    z-index: 1;
+}
+
+.comment-list-admin.list-view .comment-admin-item.selected {
+    background: rgba(107, 158, 206, 0.05);
+    border-bottom-color: rgba(107, 158, 206, 0.18);
+}
+
+.comment-list-admin.list-view .comment-admin-item.is-batch-pending,
+.comment-list-admin.list-view .comment-admin-item.is-batch-pending:hover {
+    background: rgba(96, 165, 250, 0.06);
+    border-bottom-color: rgba(96, 165, 250, 0.22);
+    transform: none;
+    box-shadow: none;
+}
+
+.comment-list-admin.list-view .comment-admin-item.comment-admin-item--focused {
+    background: rgba(107, 158, 206, 0.08);
+    border-bottom-color: rgba(107, 158, 206, 0.24);
+    box-shadow: none;
+}
+
+[data-theme="dark"] .comment-list-admin.list-view .comment-admin-item:is(:hover, :focus-within) {
+    background: linear-gradient(90deg, rgba(107, 158, 206, 0.12) 0%, rgba(107, 158, 206, 0.05) 28%, rgba(255, 255, 255, 0.015) 100%);
+    border-bottom-color: rgba(107, 158, 206, 0.2);
+    outline-color: rgba(125, 211, 252, 0.16);
+}
+
+[data-theme="dark"] .comment-list-admin.list-view .comment-admin-item.selected {
+    background: linear-gradient(90deg, rgba(107, 158, 206, 0.16) 0%, rgba(107, 158, 206, 0.06) 32%, rgba(255, 255, 255, 0.02) 100%);
+    border-bottom-color: rgba(125, 211, 252, 0.24);
+    outline-color: rgba(125, 211, 252, 0.2);
+}
+
+[data-theme="dark"] .comment-list-admin.list-view .comment-admin-item.is-batch-pending,
+[data-theme="dark"] .comment-list-admin.list-view .comment-admin-item.is-batch-pending:hover {
+    background: linear-gradient(90deg, rgba(96, 165, 250, 0.18) 0%, rgba(96, 165, 250, 0.08) 32%, rgba(255, 255, 255, 0.02) 100%);
+    border-bottom-color: rgba(96, 165, 250, 0.28);
+    outline-color: rgba(96, 165, 250, 0.22);
+}
+
+[data-theme="dark"] .comment-list-admin.list-view .comment-admin-item.comment-admin-item--focused {
+    background: linear-gradient(90deg, rgba(107, 158, 206, 0.2) 0%, rgba(107, 158, 206, 0.09) 34%, rgba(255, 255, 255, 0.025) 100%);
+    border-bottom-color: rgba(125, 211, 252, 0.28);
+    outline-color: rgba(125, 211, 252, 0.24);
+}
+
+[data-theme="dark"] .comment-list-admin.list-view .comment-admin-item:is(:hover, :focus-within, .selected, .is-batch-pending, .comment-admin-item--focused)::before {
+    opacity: 1;
+    transform: scaleY(1);
 }
 
 /* Avatar - spans 2 rows */
@@ -2466,6 +2532,8 @@
     position: absolute;
     inset: 0;
     background: rgba(6, 10, 18, 0.58);
+    backdrop-filter: blur(12px) saturate(118%);
+    -webkit-backdrop-filter: blur(12px) saturate(118%);
     opacity: 0;
     transition: opacity 0.2s ease;
 }

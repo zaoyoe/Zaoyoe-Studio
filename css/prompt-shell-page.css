@@ -1,0 +1,107 @@
+html {
+    background-color: #ffffff;
+}
+
+html[data-theme="dark"] {
+    background-color: #000000;
+}
+
+body.prompt-shell-page {
+    --bg-color: #ffffff;
+    --text-main: #1e293b;
+    --text-dim: #64748b;
+    --text-muted: rgba(30, 41, 59, 0.62);
+    --shell-panel-bg: rgba(255, 255, 255, 0.78);
+    --shell-panel-border: rgba(15, 23, 42, 0.08);
+    --shell-panel-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
+    --shell-accent: #6b9ece;
+    --shell-accent-soft: rgba(107, 158, 206, 0.12);
+    --font-serif: 'Playfair Display', serif;
+    --font-sans: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+    min-height: 100vh;
+    margin: 0;
+    overflow-x: hidden;
+    background-color: var(--bg-color);
+    color: var(--text-main);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+html[data-theme="dark"] body.prompt-shell-page {
+    --bg-color: #000000;
+    --text-main: #e2e8f0;
+    --text-dim: #94a3b8;
+    --text-muted: rgba(226, 232, 240, 0.64);
+    --shell-panel-bg: rgba(15, 23, 42, 0.58);
+    --shell-panel-border: rgba(255, 255, 255, 0.10);
+    --shell-panel-shadow: 0 26px 70px rgba(0, 0, 0, 0.38);
+    --shell-accent: #6b9ece;
+    --shell-accent-soft: rgba(107, 158, 206, 0.16);
+}
+
+body.prompt-shell-page #ambientCanvas,
+body.prompt-shell-page #starryCanvas {
+    pointer-events: none;
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+    will-change: transform, opacity;
+}
+
+body.prompt-shell-page #ambientCanvas {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    opacity: 0.6;
+    transition: opacity 0.5s ease;
+}
+
+html[data-theme="dark"] body.prompt-shell-page #ambientCanvas {
+    opacity: 0.4;
+}
+
+body.prompt-shell-page #starryCanvas {
+    position: fixed;
+    top: -10vh;
+    left: -10vw;
+    width: 120vw;
+    height: 120vh;
+    z-index: 0;
+    opacity: 0;
+    transition: opacity 1.5s ease;
+}
+
+html[data-theme="dark"] body.prompt-shell-page #starryCanvas {
+    opacity: 1;
+}
+
+body.prompt-shell-page.auth-sheet-open #ambientCanvas {
+    opacity: 0.4 !important;
+    transition: none !important;
+}
+
+html[data-theme="dark"] body.prompt-shell-page.auth-sheet-open #starryCanvas {
+    opacity: 1 !important;
+    transition: none !important;
+}
+
+body.prompt-shell-page #main-content {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+}
+
+body.prompt-shell-page .visually-hidden-h1 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
