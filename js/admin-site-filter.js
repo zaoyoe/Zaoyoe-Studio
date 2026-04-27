@@ -11,11 +11,33 @@
     // Current admin site filter: 'all' | 'cn' | 'intl'
     let currentFilter = normalizeSiteFilterValue(localStorage.getItem('admin_site_filter'));
 
-    const SITE_LABELS = {
-        all: '🌐 全部',
-        cn: 'CN',
-        intl: 'EN'
-    };
+    const SITE_OPTIONS = Object.freeze({
+        all: {
+            label: '全部站点',
+            shortLabel: 'ALL',
+            menuLabel: '全部站点',
+            hint: '聚合查看',
+            icon: 'fas fa-globe'
+        },
+        cn: {
+            label: 'CN',
+            shortLabel: 'CN',
+            menuLabel: 'CN 站',
+            hint: '中文运营',
+            icon: 'fas fa-location-dot'
+        },
+        intl: {
+            label: 'EN',
+            shortLabel: 'EN',
+            menuLabel: 'EN 站',
+            hint: '国际运营',
+            icon: 'fas fa-earth-americas'
+        }
+    });
+    const SITE_LABELS = Object.freeze(Object.fromEntries(
+        Object.entries(SITE_OPTIONS).map(([key, option]) => [key, option.label])
+    ));
+    const SITE_OPTION_ORDER = Object.freeze(['all', 'cn', 'intl']);
     const WRITABLE_ACTION_LABELS = Object.freeze({
         'comments-batch-delete': '批量删除评论',
         'gallery-batch-add-homepage': '批量加入首页精选',
@@ -105,6 +127,10 @@
         return currentFilter;
     }
 
+    function getSiteOption(value = currentFilter) {
+        return SITE_OPTIONS[normalizeSiteFilterValue(value)] || SITE_OPTIONS.all;
+    }
+
     /**
      * Apply site filter to a Supabase query builder
      * If filter is 'all', no filter is applied (returns original query)
@@ -141,28 +167,77 @@
         const container = document.getElementById('adminSiteFilter');
         if (!container) return;
 
+        const currentOption = getSiteOption(currentFilter);
+
         container.innerHTML = `
-            <div class="admin-site-selector" id="adminSiteSelector">
-                <button class="site-selector-btn" type="button" data-admin-action="site-filter-toggle-dropdown">
-                    <span class="site-selector-label">${SITE_LABELS[currentFilter]}</span>
-                    <i class="fas fa-chevron-down"></i>
+            <div class="admin-site-filter-toolbar">
+                <button
+                    class="theme-toggle-btn admin-theme-toggle-btn"
+                    type="button"
+                    id="adminThemeToggleBtn"
+                    data-admin-action="toggle-theme"
+                    aria-label="切换亮暗主题"
+                    title="切换亮暗主题">
+                    <span class="theme-icon sun-icon" aria-hidden="true">☀️</span>
+                    <span class="theme-icon moon-icon" aria-hidden="true">🌙</span>
                 </button>
-                <div class="site-selector-menu" id="siteSelectorMenu">
-                    ${Object.entries(SITE_LABELS).map(([key, label]) => `
-                        <button type="button" class="site-selector-option ${key === currentFilter ? 'active' : ''}" 
-                             data-admin-action="site-filter-select"
-                             data-site-filter-value="${key}">
-                            ${label}
-                        </button>
-                    `).join('')}
+                <div class="admin-site-selector" id="adminSiteSelector">
+                    <button
+                        class="site-selector-btn"
+                        type="button"
+                        data-admin-action="site-filter-toggle-dropdown"
+                        aria-haspopup="listbox"
+                        aria-expanded="false"
+                        aria-label="切换站点视角">
+                        <span class="site-selector-btn__mark site-selector-btn__mark--${currentFilter}" aria-hidden="true">
+                            <i class="${currentOption.icon}"></i>
+                        </span>
+                        <span class="site-selector-btn__copy">
+                            <span class="site-selector-label">${currentOption.label}</span>
+                        </span>
+                        <span class="site-selector-chevron" aria-hidden="true">
+                            <i class="fas fa-chevron-down"></i>
+                        </span>
+                    </button>
+                    <div class="site-selector-menu" id="siteSelectorMenu" role="listbox" aria-label="站点视角">
+                        ${SITE_OPTION_ORDER.map((key) => {
+                            const option = getSiteOption(key);
+                            return `
+                            <button type="button" class="site-selector-option ${key === currentFilter ? 'active' : ''}"
+                                 data-admin-action="site-filter-select"
+                                 data-site-filter-value="${key}"
+                                 role="option"
+                                 aria-selected="${key === currentFilter ? 'true' : 'false'}">
+                                <span class="site-selector-option__mark site-selector-option__mark--${key}" aria-hidden="true">
+                                    <i class="${option.icon}"></i>
+                                </span>
+                                <span class="site-selector-option__copy">
+                                    <span class="site-selector-option__label">${option.menuLabel}</span>
+                                    <span class="site-selector-option__hint">${option.hint}</span>
+                                </span>
+                                <span class="site-selector-option__check" aria-hidden="true">
+                                    <i class="fas fa-check"></i>
+                                </span>
+                            </button>
+                        `;
+                        }).join('')}
+                    </div>
                 </div>
             </div>
         `;
+
+        window.syncAdminStudioThemeToggle?.();
     }
 
     function toggleDropdown() {
         const menu = document.getElementById('siteSelectorMenu');
-        if (menu) menu.classList.toggle('show');
+        const selector = document.getElementById('adminSiteSelector');
+        const trigger = selector?.querySelector('.site-selector-btn');
+        if (!menu) return;
+
+        const isOpen = menu.classList.toggle('show');
+        selector?.classList.toggle('is-open', isOpen);
+        trigger?.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
     }
 
     function select(value) {
@@ -179,18 +254,7 @@
             window.__pointsSiteChangeClosedBatchDetail = false;
         }
 
-        // Close dropdown
-        const menu = document.getElementById('siteSelectorMenu');
-        if (menu) menu.classList.remove('show');
-
-        // Update button label
-        const label = document.querySelector('.site-selector-label');
-        if (label) label.textContent = SITE_LABELS[currentFilter];
-
-        // Update active state
-        document.querySelectorAll('.site-selector-option').forEach(opt => {
-            opt.classList.toggle('active', opt.textContent.trim() === SITE_LABELS[currentFilter].trim());
-        });
+        renderSiteSelector();
 
         const changeDetail = {
             site: currentFilter,
@@ -359,6 +423,9 @@
         if (!e.target.closest('#adminSiteSelector')) {
             const menu = document.getElementById('siteSelectorMenu');
             if (menu) menu.classList.remove('show');
+            const selector = document.getElementById('adminSiteSelector');
+            selector?.classList.remove('is-open');
+            selector?.querySelector('.site-selector-btn')?.setAttribute('aria-expanded', 'false');
         }
     });
 

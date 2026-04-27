@@ -10720,13 +10720,13 @@ function renderAnalyticsUserTrendValuePanelsLoading() {
     const userValueStandaloneMeta = document.getElementById('userValueCockpitStandaloneMeta');
 
     if (commerceImpactContainer) {
-        commerceImpactContainer.innerHTML = renderHintState('fas fa-users-viewfinder', '用户趋势已加载，商品影响用户层正在补齐...');
+        commerceImpactContainer.innerHTML = renderAnalyticsProductLoadingState('商品影响用户层加载中...');
     }
     if (userValueContainer) {
-        userValueContainer.innerHTML = renderHintState('fas fa-user-group', '用户趋势已加载，用户价值驾驶舱正在补齐...');
+        userValueContainer.innerHTML = renderAnalyticsProductLoadingState('用户价值驾驶舱加载中...');
     }
     if (userValueStandaloneContainer) {
-        userValueStandaloneContainer.innerHTML = renderHintState('fas fa-user-group', '用户趋势已加载，用户价值驾驶舱正在补齐...');
+        userValueStandaloneContainer.innerHTML = renderAnalyticsProductLoadingState('用户价值驾驶舱加载中...');
     }
     if (userValueStandaloneMeta) {
         userValueStandaloneMeta.textContent = '用户价值驾驶舱正在补齐...';

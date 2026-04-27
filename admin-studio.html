@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css?v=20260420_ADMIN_CACHE_BUST_1">
-    <link rel="stylesheet" href="admin-studio.css?v=20260424_ADMIN_LIGHT_FLAT_CARDS_2">
+    <link rel="stylesheet" href="admin-studio.css?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1&googleOneCaseButtons=20260427_GOOGLE_ONE_CASE_BUTTONS_1&gallerySkeleton=20260427_GALLERY_SKELETON_BADGES_REMOVED_1&lightCardBorders=20260427_ADMIN_STUDIO_LIGHT_CARD_BORDER_CONTRAST_1">
     <link rel="stylesheet" href="admin-sidebar.css?v=20260412_SIDEBAR_HEX_182634_1">
     <link rel="stylesheet" href="css/admin-command-center.css?v=20260426_ADMIN_PULSE_DOCK_V5">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260426_ADMIN_CHAT_LIGHT_THEME_FROSTED_CONTEXT_FLAT_ALERTS_2" media="print" data-deferred-style="1">
@@ -31,8 +31,8 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" media="print" data-deferred-style="1">
 
     <!-- Prevent flash of wrong theme -->
-    <link rel="stylesheet" href="css/admin-studio-page.css?v=20260426_ADMIN_DOCK_PANEL_PARITY_6">
-    <script src="./js/theme-preload.js?v=20260420_ADMIN_CACHE_BUST_1"></script>
+    <link rel="stylesheet" href="css/admin-studio-page.css?v=20260427_ADMIN_SITE_SWITCHER_ACTIVE_HOVER_LOCK_1&announcement=20260427_ADMIN_ANNOUNCEMENT_PREVIEW_STATIC_HOVER_1&staticPreview=20260427_ADMIN_STATIC_PREVIEW_HOVER_LOCK_1&status=20260427_ADMIN_STUDIO_ANALYTICS_SUCCESS_CHIP_CONTRAST_1&panelNoteStatic=20260427_ADMIN_STUDIO_ANALYTICS_PANEL_NOTE_STATIC_HOVER_1&readonlyNav=20260427_ADMIN_STUDIO_ANALYTICS_READONLY_NAV_HOVER_LOCK_3&titlebars=20260427_ADMIN_STUDIO_TITLEBAR_EDGE_ALIGNMENT_4&dutyMetricStatic=20260427_ADMIN_STUDIO_ANALYTICS_DUTY_METRIC_STATIC_HOVER_3&content=20260427_SETTINGS_CONTENT_SENSITIVE_TEXTAREA_LIGHT_FLAT_1&googleOne=20260427_GOOGLE_ONE_VERIFY_FACT_BOUNDARIES_1&googleOneCaseButtons=20260427_GOOGLE_ONE_CASE_BUTTONS_1&googleOneRail=20260427_GOOGLE_ONE_FACT_RAIL_FULL_HEIGHT_1&forms=20260427_ADMIN_STUDIO_LIGHT_FORM_CONTROL_FLAT_1&dropdowns=20260427_ADMIN_STUDIO_LIGHT_DROPDOWN_CONTROL_HOVER_FLAT_1&googleOneRows=20260427_GOOGLE_ONE_CONFIG_ROWS_FLAT_DIVIDERS_1&saveButtons=20260427_ADMIN_STUDIO_SAVE_BUTTON_SHOP_BLUE_1&buttonHover=20260427_ADMIN_STUDIO_PRIMARY_HOVER_NO_BLUE_SHADOW_1&primaryBlue=20260427_ADMIN_STUDIO_PRIMARY_BUTTON_SIDEBAR_BLUE_1&affiliateHover=20260427_SETTINGS_AFFILIATE_CONFIG_HOVER_STATIC_1&settingsHover=20260427_ADMIN_STUDIO_SETTINGS_STATIC_HOVER_AUDIT_1&noticeHover=20260427_ADMIN_STUDIO_STATIC_NOTICE_HOVER_LOCK_1&pointsBatchDetail=20260427_ADMIN_STUDIO_POINTS_BATCH_DETAIL_LIGHT_PALETTE_1&pointsHover=20260427_ADMIN_STUDIO_POINTS_STATIC_HOVER_FLAT_3&lightCardBorders=20260427_ADMIN_STUDIO_LIGHT_CARD_BORDER_CONTRAST_1&pointsBatchInteractions=20260427_ADMIN_STUDIO_POINTS_BATCH_DETAIL_INTERACTIONS_2&pointsLightNav=20260427_ADMIN_STUDIO_POINTS_LIGHT_TABLE_NAV_1&topContentTitleHover=20260427_ADMIN_STUDIO_TOP_CONTENT_TITLE_TEXT_HOVER_1&growthBreakdown=20260427_ADMIN_STUDIO_GROWTH_BREAKDOWN_COMPACT_PARITY_1&analyticsClip=20260427_ADMIN_STUDIO_ANALYTICS_CONTENT_CLIP_AUDIT_1&galleryCreateTitlebars=20260427_ADMIN_STUDIO_GALLERY_CREATE_TITLEBAR_CLIP_1&loadingDots=20260427_ADMIN_STUDIO_LOADING_DOTS_PANEL_OVERRIDE_1&loadingDotsCenter=20260427_ADMIN_STUDIO_LIGHT_LOADING_DOTS_CENTER_2">
+    <script src="./js/theme-preload.js?v=20260427_DEFAULT_LIGHT_THEME_1"></script>
     <script src="./js/deferred-styles.js?v=20260423_ADMIN_DEFERRED_STYLES_1" defer></script>
 
 </head>
@@ -409,7 +409,7 @@
                                 </div>
 
                                 <!-- AI Tags Display -->
-                                <div class="form-group" id="promptAiTagsGroup">
+                                <div class="form-group admin-studio-inline-style-attr-3" id="promptAiTagsGroup" hidden>
                                     <label>
                                         <i class="fas fa-tags"></i>
                                         AI Tags
@@ -11124,8 +11124,11 @@
                 <div class="preview-card" id="previewCard">
                     <!-- Cover Image Area -->
                     <div class="preview-icon-box" id="previewIconBox">
-                        <i class="fas fa-box"></i>
-                        <span class="preview-status" id="previewStatus">上架中</span>
+                        <div class="preview-icon-media" id="previewIconMedia">
+                            <i class="fas fa-box"></i>
+                        </div>
+                        <span class="preview-stock preview-stock--unknown" id="previewStock">库存 -</span>
+                        <span class="preview-status preview-status--inactive" id="previewStatus" hidden>已下架</span>
                     </div>
 
                     <!-- Content Area -->
@@ -11137,7 +11140,6 @@
                     <!-- Footer Area -->
                     <div class="preview-footer">
                         <div class="preview-price" id="previewPrice">0 积分</div>
-                        <div class="preview-stock" id="previewStock">库存: -</div>
                     </div>
                 </div>
             </div>
@@ -11401,8 +11403,8 @@
     <script src="js/admin-shell.js?v=20260426_ADMIN_SHELL_LOADING_DOTS_CENTER_P1"></script>
     <script src="js/ios-scroll-lock.js?v=20260420_ADMIN_CACHE_BUST_1"></script>
     <script src="admin-users.js?v=20260421_ADMIN_USERS_CONTEXT_HELPER_P2"></script>
-    <script src="admin-points.js?v=20260421_ADMIN_POINTS_GENERATE_SUBMIT_BRIDGE_P2"></script>
-    <script src="admin-discounts.js?v=20260421_DISCOUNTS_CONTEXT_HELPER_P2"></script>
+    <script src="admin-points.js?v=20260427_ADMIN_POINTS_BATCH_DETAIL_CUSTOM_STATUS_2"></script>
+    <script src="admin-discounts.js?v=20260427_DISCOUNTS_BATCH_RESTORE_HINT_1"></script>
     <script src="js/admin-growth-center.js?v=20260421_GROWTH_CENTER_CONTEXT_ROUTING_P3"></script>
     <script src="starry-sky.js?v=20260420_ADMIN_CACHE_BUST_1"></script>
     <script src="js/admin-api-auth.js?v=20260421_ADMIN_API_COOKIE_RETRY_P0"></script>
@@ -11413,7 +11415,7 @@
     <script src="admin-analytics.js?v=20260421_ANALYTICS_RUNTIME_AUTH_FALLBACK_P0"></script>
     <script src="js/admin-analytics-derived-bundles.js?v=20260420_DERIVED_VARIANT_CACHE_1"></script>
     <script src="js/admin-analytics-runtime-controls.js?v=20260420_ANALYTICS_ONLINE_USERS_RPC_1"></script>
-    <script src="js/admin-analytics-panel-loaders.js?v=20260420_POINTS_LEADERBOARD_AVATAR_1"></script>
+    <script src="js/admin-analytics-panel-loaders.js?v=20260427_ANALYTICS_USER_TREND_LOADING_DOTS_1"></script>
     <script src="js/admin-analytics-lifecycle.js?v=20260421_ANALYTICS_SITE_CHANGE_HELPER_P2"></script>
     <script src="js/admin-analytics-workbench.js?v=20260421_ANALYTICS_DESTINATION_ACTIVATE_FALLBACKS_P4"></script>
     <script src="js/admin-analytics-insight-cards.js?v=20260407_ANALYTICS_INSIGHT_CARDS_HELPERS_5"></script>
@@ -11429,16 +11431,16 @@
     <script src="js/admin-workbench.js?v=20260422_OPS_ALERT_RESOLVED_COUNT_P13"></script>
     <script src="js/admin-ticket-links.js?v=20260410_ADMIN_SHELL_CONTEXT_P1_1"></script>
     <script src="js/admin-config-ops-alert-reports.js?v=20260421_OPS_ALERT_REPORT_ACTIONS_P2"></script>
-    <script src="admin-config.js?v=20260422_OPS_ALERT_BATCH_ERROR_VISIBLE_P4"></script>
+    <script src="admin-config.js?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1"></script>
     <script src="js/homepage-contract.js?v=20260415_HOME_VERIFY_DEMO_1"></script>
     <script src="admin-homepage.js?v=20260421_HOMEPAGE_FEEDBACK_BRIDGE_P4"></script>
     <script src="js/admin-studio-translate.js?v=20260421_TRANSLATE_BUDGET_P0"></script>
-    <script src="js/admin-site-filter.js?v=20260421_ADMIN_SITE_FILTER_CONTENT_SITE_HELPERS_P2"></script>
+    <script src="js/admin-site-filter.js?v=20260427_ADMIN_SITE_SELECTOR_NO_KICKER_1"></script>
     <script src="js/admin-tickets.js?v=20260421_TICKETS_OPS_ALERTS_HELPER_P2"></script>
     <script src="js/admin-access.js?v=20260421_ADMIN_ACCESS_TIMEOUT_P0"></script>
-<script src="admin-studio.js?v=20260424_ADMIN_MODAL_SCROLL_LOCK_SOFT_BACKDROP_1"></script>
+	<script src="admin-studio.js?v=20260427_ADMIN_GALLERY_AI_TAGS_HIDDEN_1&gallerySkeleton=20260427_GALLERY_SKELETON_BADGES_REMOVED_1"></script>
     <script src="js/admin-scrollbar-auto-hide-helper.js?v=20260424_ADMIN_SCROLLBAR_AUTO_HIDE_HELPER_1"></script>
-    <script src="js/admin-shop.js?v=20260423_SHOP_PRODUCT_DESCRIPTION_VISIBILITY_1"></script>
+    <script src="js/admin-shop.js?v=20260427_SHOP_ORDER_USER_ID_LAYOUT_1"></script>
 </body>
 
 <!-- Admin Chat Script -->

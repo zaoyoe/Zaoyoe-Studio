@@ -7017,7 +7017,7 @@ function renderPaymentItems(data) {
         const isFocused = focusOrderId && String(order.id || '').trim() === focusOrderId;
 
         return `
-            <div class="data-list-item users-payment-item${isFocused ? ' is-focused' : ''}">
+            <div class="data-list-item users-payment-item users-payment-item--${escapeHtml(statusMeta.tone)}${isFocused ? ' is-focused' : ''}">
                 <div class="users-tab-item-icon ${toneClass}">
                     <i class="fas fa-wallet users-tab-item-icon-glyph"></i>
                 </div>
@@ -8549,9 +8549,11 @@ function renderActivityItems(data) {
     if (data.length === 0) {
         return buildUsersTabEmptyState('暂无内容记录');
     }
-    return data.map(item => `
+    return data.map(item => {
+        const activityTone = item.type === 'comment' ? 'comment' : 'content';
+        return `
         <div
-            class="data-list-item users-activity-item${item.commentId ? ' users-activity-item--link' : ''}"
+            class="data-list-item users-activity-item users-activity-item--${activityTone}${item.commentId ? ' users-activity-item--link' : ''}"
             ${item.commentId ? 'data-admin-action="users-open-comment-context"' : ''}
             ${item.view ? `data-comment-view="${escapeHtml(String(item.view || 'guestbook'))}"` : ''}
             ${item.commentId ? `data-comment-id="${encodeURIComponent(String(item.commentId || ''))}"` : ''}
@@ -8566,7 +8568,8 @@ function renderActivityItems(data) {
             </div>
             ${item.commentId ? '<i class="fas fa-arrow-up-right-from-square users-related-arrow"></i>' : ''}
         </div>
-    `).join('');
+    `;
+    }).join('');
 }
 
 // Render Blocks Tab

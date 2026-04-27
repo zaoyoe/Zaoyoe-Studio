@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260420_AUTH_SHEET_SCROLLBAR_1';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260427_AUTH_MESSAGE_CENTER_1';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260314_AUTH_I18N_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
@@ -258,45 +258,49 @@
 
                             <div class="auth-sheet-body">
                                 <section id="loginView" class="auth-sheet-view auth-sheet-view--primary is-active" data-auth-view="login">
-                                    <button type="button" class="auth-sheet-google-btn google-login-btn" data-auth-google>
-                                        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width="18" height="18">
-                                        <span data-i18n="auth.googleLogin">使用 Google 登录</span>
-                                    </button>
+                                    <div class="auth-sheet-login-stack">
+                                        <button type="button" class="auth-sheet-google-btn google-login-btn" data-auth-google>
+                                            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width="18" height="18">
+                                            <span data-i18n="auth.googleLogin">使用 Google 登录</span>
+                                        </button>
 
-                                    <div class="auth-sheet-divider">
-                                        <span data-i18n="auth.or">或者</span>
-                                    </div>
+                                        <div class="auth-sheet-login-fields-stack">
+                                            <div class="auth-sheet-divider">
+                                                <span data-i18n="auth.or">或者</span>
+                                            </div>
 
-                                    <form id="loginForm" class="auth-sheet-form" autocomplete="off" novalidate>
-                                        <div class="auth-sheet-field">
-                                            <span class="auth-sheet-label" data-i18n="auth.emailLabel">邮箱</span>
-                                            ${buildPortaledInputControlHTML({
-                                                id: 'login-email',
-                                                type: 'email',
-                                                placeholder: t('auth.emailPlaceholder', '邮箱地址'),
-                                                placeholderKey: 'auth.emailPlaceholder',
-                                                inputAttributes: 'autocomplete="username email" autocapitalize="off" autocorrect="off" spellcheck="false" data-auth-form="loginForm" required'
-                                            })}
+                                            <form id="loginForm" class="auth-sheet-form" autocomplete="off" novalidate>
+                                                <div class="auth-sheet-field">
+                                                    <span class="auth-sheet-label" data-i18n="auth.emailLabel">邮箱</span>
+                                                    ${buildPortaledInputControlHTML({
+                                                        id: 'login-email',
+                                                        type: 'email',
+                                                        placeholder: t('auth.emailPlaceholder', '邮箱地址'),
+                                                        placeholderKey: 'auth.emailPlaceholder',
+                                                        inputAttributes: 'autocomplete="username email" autocapitalize="off" autocorrect="off" spellcheck="false" data-auth-form="loginForm" required'
+                                                    })}
+                                                </div>
+
+                                                <div class="auth-sheet-field">
+                                                    <span class="auth-sheet-label" data-i18n="auth.passwordPlaceholder">密码</span>
+                                                    ${buildPortaledInputControlHTML({
+                                                        id: 'login-password',
+                                                        type: 'password',
+                                                        placeholder: t('auth.passwordPlaceholder', '密码'),
+                                                        placeholderKey: 'auth.passwordPlaceholder',
+                                                        inputAttributes: 'autocomplete="current-password" data-auth-form="loginForm" required'
+                                                    })}
+                                                </div>
+                                            </form>
+
+                                            <div class="auth-sheet-inline-row auth-sheet-inline-row--spread">
+                                                <label class="auth-sheet-check">
+                                                    <input type="checkbox" id="rememberMe">
+                                                    <span data-i18n="auth.rememberMe">记住邮箱</span>
+                                                </label>
+                                                <button type="button" class="auth-sheet-link" data-auth-reset data-i18n="auth.forgotPassword">忘记密码？</button>
+                                            </div>
                                         </div>
-
-                                        <div class="auth-sheet-field">
-                                            <span class="auth-sheet-label" data-i18n="auth.passwordPlaceholder">密码</span>
-                                            ${buildPortaledInputControlHTML({
-                                                id: 'login-password',
-                                                type: 'password',
-                                                placeholder: t('auth.passwordPlaceholder', '密码'),
-                                                placeholderKey: 'auth.passwordPlaceholder',
-                                                inputAttributes: 'autocomplete="current-password" data-auth-form="loginForm" required'
-                                            })}
-                                        </div>
-                                    </form>
-
-                                    <div class="auth-sheet-inline-row auth-sheet-inline-row--spread">
-                                        <label class="auth-sheet-check">
-                                            <input type="checkbox" id="rememberMe">
-                                            <span data-i18n="auth.rememberMe">记住邮箱</span>
-                                        </label>
-                                        <button type="button" class="auth-sheet-link" data-auth-reset data-i18n="auth.forgotPassword">忘记密码？</button>
                                     </div>
 
                                     <button type="submit" class="auth-sheet-submit login-submit-btn" data-auth-submit="login" form="loginForm" data-i18n="common.login">登录</button>
@@ -934,29 +938,6 @@
         window.requestAnimationFrame(applyPosition);
     }
 
-    function syncPrimaryViewHeights() {
-        const { overlay, body } = getSheetElements();
-        if (!overlay || !body) return;
-
-        const primaryViews = Array.from(overlay.querySelectorAll('.auth-sheet-view--primary'));
-        if (!primaryViews.length) return;
-
-        let maxHeight = 0;
-        primaryViews.forEach((view) => {
-            const clone = view.cloneNode(true);
-            clone.hidden = false;
-            clone.classList.add('is-active', 'auth-sheet-view-measure');
-            clone.querySelectorAll('[id]').forEach((node) => node.removeAttribute('id'));
-            body.appendChild(clone);
-            maxHeight = Math.max(maxHeight, Math.ceil(clone.getBoundingClientRect().height));
-            clone.remove();
-        });
-
-        if (maxHeight > 0) {
-            setInjectedAuthStyleProperty(body, '--auth-primary-view-min-height', `${maxHeight + 12}px`);
-        }
-    }
-
     function finishAuthSheetResizeAnimation(token) {
         if (token !== resizeState.token) return;
 
@@ -975,11 +956,35 @@
         setInjectedAuthStyleProperty(body, 'overflowY', null);
     }
 
+    function mutateAuthSheetLayout(mutator, options = {}) {
+        const { animate = true } = options;
+        const { overlay, sheet } = getSheetElements();
+        const shouldAnimateResize = animate &&
+            !!sheet &&
+            overlay?.classList.contains('active') &&
+            !prefersReducedAuthMotion();
+        const fromHeight = shouldAnimateResize ? Math.ceil(sheet.getBoundingClientRect().height) : 0;
+
+        mutator();
+
+        if (shouldAnimateResize) {
+            animateAuthSheetResize(fromHeight);
+        }
+    }
+
     function animateAuthSheetResize(fromHeight) {
         const { overlay, sheet, body } = getSheetElements();
         if (!overlay || !sheet || !body) return;
 
+        resizeState.token += 1;
         const token = resizeState.token;
+
+        if (resizeState.cleanupTimerId) {
+            window.clearTimeout(resizeState.cleanupTimerId);
+            resizeState.cleanupTimerId = 0;
+        }
+
+        overlay.classList.add('auth-sheet-resizing');
 
         setInjectedAuthStyleProperty(sheet, 'height', 'auto');
         const toHeight = Math.ceil(sheet.getBoundingClientRect().height);
@@ -988,6 +993,7 @@
             transition: 'none',
             willChange: 'height'
         });
+        setInjectedAuthStyleProperty(body, 'overflowY', 'hidden', 'important');
 
         void sheet.offsetHeight;
 
@@ -1049,21 +1055,6 @@
             !prefersReducedAuthMotion();
         const fromHeight = shouldAnimateResize ? Math.ceil(sheet.getBoundingClientRect().height) : 0;
 
-        if (shouldAnimateResize) {
-            resizeState.token += 1;
-            if (resizeState.cleanupTimerId) {
-                window.clearTimeout(resizeState.cleanupTimerId);
-                resizeState.cleanupTimerId = 0;
-            }
-            overlay.classList.add('auth-sheet-resizing');
-            setInjectedAuthStyleState(sheet, {
-                height: `${fromHeight}px`,
-                transition: 'none',
-                willChange: 'height'
-            });
-            setInjectedAuthStyleProperty(body, 'overflowY', 'hidden', 'important');
-        }
-
         document.querySelectorAll('#loginModal [data-auth-view]').forEach((view) => {
             const isActive = view.dataset.authView === viewId;
             view.hidden = !isActive;
@@ -1083,7 +1074,7 @@
         updateTabState(viewId, { immediate: !overlay.classList.contains('active') });
 
         if (clearMessage) {
-            clearAuthMessage();
+            clearAuthMessage({ animate: false });
         }
 
         body.scrollTop = 0;
@@ -1101,19 +1092,28 @@
             setAuthView(targetView, { clearMessage: false }).catch(() => { /* ignore */ });
         }
 
-        messageBox.hidden = false;
-        messageBox.textContent = message;
-        messageBox.classList.remove('is-error', 'is-success');
-        messageBox.classList.add(type === 'success' ? 'is-success' : 'is-error');
+        mutateAuthSheetLayout(() => {
+            messageBox.hidden = false;
+            messageBox.textContent = message;
+            messageBox.classList.remove('is-error', 'is-success');
+            messageBox.classList.add(type === 'success' ? 'is-success' : 'is-error');
+        });
         return true;
     }
 
-    function clearAuthMessage() {
+    function clearAuthMessage(options = {}) {
+        const { animate = true } = options;
         const { message } = getSheetElements();
         if (!message) return;
-        message.hidden = true;
-        message.textContent = '';
-        message.classList.remove('is-error', 'is-success');
+        if (message.hidden && !message.textContent && !message.classList.contains('is-error') && !message.classList.contains('is-success')) {
+            return;
+        }
+
+        mutateAuthSheetLayout(() => {
+            message.hidden = true;
+            message.textContent = '';
+            message.classList.remove('is-error', 'is-success');
+        }, { animate });
     }
 
     function resetAuthSheetFields(options = {}) {
@@ -1265,7 +1265,6 @@
         overlay.classList.remove('auth-sheet-input-active');
         await setAuthView(viewId, { clearMessage: true });
         syncAllInputProxyDisplays();
-        syncPrimaryViewHeights();
         syncTabIndicator(sheetState.view, { immediate: true });
 
         window.requestAnimationFrame(() => {
@@ -1571,7 +1570,6 @@
             if (!overlay.classList.contains('active')) return;
             syncAuthInputInteractionMode();
             scheduleActivePortaledInputPosition();
-            syncPrimaryViewHeights();
             syncTabIndicator(sheetState.view);
         });
 

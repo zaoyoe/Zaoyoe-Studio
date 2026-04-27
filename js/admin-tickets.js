@@ -1728,6 +1728,9 @@ const AdminTickets = {
                 button.setAttribute('aria-selected', isActive ? 'true' : 'false');
                 button.setAttribute('tabindex', isActive ? '0' : '-1');
             }
+            if (isActive) {
+                window.updateAdminTabIndicator?.(button);
+            }
         });
 
         if (titleNode) {

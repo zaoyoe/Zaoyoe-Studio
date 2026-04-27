@@ -315,6 +315,77 @@ test('gallery admin form exposes explicit bilingual editing controls', () => {
     for (const marker of styleMarkers) {
         assert.equal(adminStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
     }
+
+    assert.match(
+        adminStyles,
+        /\.admin-card-context-actions\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);[\s\S]*?margin-top:\s*auto;/m,
+        'manage prompt cards should keep 评论, 分析, and 去首页 in a single three-column action row'
+    );
+    assert.match(
+        adminStyles,
+        /\.admin-card-site-metric\s*\{[\s\S]*?padding:\s*7px 9px;[\s\S]*?min-height:\s*50px;/m,
+        'manage prompt site metric cards should use a shorter metric block height'
+    );
+    assert.match(
+        adminStyles,
+        /\.admin-card-site-metrics\s*\{[\s\S]*?gap:\s*8px;[\s\S]*?padding-top:\s*0;/m,
+        'manage prompt cards should remove the spacer above site metrics instead of pushing them down with auto margin'
+    );
+    assert.match(
+        adminStyles,
+        /\.admin-card-image\s*\{[\s\S]*?aspect-ratio:\s*16 \/ 10;[\s\S]*?min-height:\s*136px;/m,
+        'manage prompt cards should reduce cover image height to keep the overall card denser'
+    );
+    assert.match(
+        adminStyles,
+        /\.admin-card\s*\{[\s\S]*?cursor:\s*default;/m,
+        'manage prompt cards should keep non-interactive hover surfaces on the default arrow cursor'
+    );
+    assert.equal(
+        adminStyles.includes('.admin-card:hover .admin-card-hover-actions'),
+        true,
+        'manage prompt cards should reveal top quick actions when hovering anywhere on the card'
+    );
+    assert.equal(
+        adminStyles.includes('.admin-card-media:hover .admin-card-hover-actions'),
+        false,
+        'manage prompt cards should not limit top quick actions to only the cover media area'
+    );
+    assert.match(
+        adminStyles,
+        /\.admin-card-context-btn\s*\{[\s\S]*?transition:\s*border-color 0\.2s ease, background 0\.2s ease, color 0\.2s ease;/m,
+        'manage prompt card action buttons should not animate with vertical hover lift anymore'
+    );
+    assert.doesNotMatch(
+        adminStyles,
+        /\.admin-card-context-btn:hover\s*\{[^}]*transform:/m,
+        'manage prompt card action buttons should not apply a hover translate transform'
+    );
+    assert.match(
+        adminStyles,
+        /\.admin-card-hover-actions\s*\{[\s\S]*?transition:\s*opacity 0\.2s ease;/m,
+        'manage prompt card top quick actions should fade without transform compositing over the cover image'
+    );
+    assert.match(
+        adminStyles,
+        /\.hover-action-btn\s*\{[\s\S]*?--admin-card-hover-action-bg:\s*#273142;[\s\S]*?border:\s*1px solid var\(--admin-card-hover-action-bg\);[\s\S]*?appearance:\s*none;[\s\S]*?background:\s*var\(--admin-card-hover-action-bg\);[\s\S]*?box-shadow:\s*none;[\s\S]*?transition:\s*color 0\.2s ease, background 0\.2s ease;/m,
+        'manage prompt card top quick action buttons should render as solid independent button surfaces with self-colored edges'
+    );
+    assert.doesNotMatch(
+        adminStyles,
+        /\.hover-action-btn:hover\s*\{[^}]*transform:/m,
+        'manage prompt card top quick action buttons should not scale or lift on hover'
+    );
+    assert.match(
+        adminStyles,
+        /\.hover-action-btn i\s*\{[\s\S]*?line-height:\s*1;/m,
+        'manage prompt card top quick action icons should keep their own line box tight'
+    );
+    assert.match(
+        adminStyles,
+        /\.hover-action-btn i::before\s*\{[\s\S]*?line-height:\s*1;/m,
+        'manage prompt card top quick action icon glyphs should not leak font line boxes outside the button surface'
+    );
 });
 
 test('gallery admin runtime populates and saves bilingual fields explicitly', () => {
@@ -379,16 +450,18 @@ test('gallery admin runtime populates and saves bilingual fields explicitly', ()
         "document.getElementById('promptTextEn').value = data.prompt_text_en || '';",
         'setPromptBilingualFieldsOpen(hasPromptBilingualContent(nextBilingualValues));',
         "media.className = 'admin-card-media';",
+        "media.appendChild(checkbox);",
         "badges.className = 'admin-card-badges admin-card-badges--overlay';",
         "globalBadge.textContent = 'Global Asset';",
         "zhBadge.textContent = 'ZH';",
         "enBadge.textContent = 'EN';",
         "statusBadge.className = `admin-card-status admin-card-status--${lifecycleState.key}`;",
-        "subtitle.className = 'admin-card-subtitle';",
         "contextActions.className = 'admin-card-context-actions';",
         "commentsBtn.setAttribute('data-admin-action', 'gallery-open-prompt-comments');",
         "analyticsBtn.setAttribute('data-admin-action', 'gallery-open-prompt-analytics');",
         "homepageBtn.setAttribute('data-admin-action', featureState.currentSite ? 'gallery-open-prompt-homepage' : 'gallery-add-prompt-homepage');",
+        'media.appendChild(hoverLeft);',
+        'media.appendChild(hoverRight);',
         "metrics.className = 'admin-card-site-metrics';",
         "metricCounts.textContent = `解锁 ${siteMetrics.unlock_count} · 评论 ${siteMetrics.comment_count}`;",
         'const container = document.getElementById(\'adminGalleryPagination\');',
@@ -432,6 +505,22 @@ test('gallery admin runtime populates and saves bilingual fields explicitly', ()
     for (const marker of requiredMarkers) {
         assert.equal(adminSource.includes(marker), true, `admin-studio.js should contain ${marker}`);
     }
+
+    assert.equal(
+        adminSource.includes("subtitle.textContent = prompt.description || prompt.description_en || prompt.description_zh || 'Global prompt asset with explicit bilingual copy coverage.';"),
+        false,
+        'manage prompt cards should not fall back to the English description field for subtitle copy'
+    );
+    assert.equal(
+        adminSource.includes("subtitle.className = 'admin-card-subtitle';"),
+        false,
+        'manage prompt cards should not render a subtitle block at all'
+    );
+    assert.equal(
+        adminSource.includes('card.appendChild(hoverLeft);'),
+        false,
+        'manage prompt card hover actions should not attach to the full card container anymore'
+    );
 });
 
 test('gallery smoke harness covers manual prompt fields in create analyze flow', () => {

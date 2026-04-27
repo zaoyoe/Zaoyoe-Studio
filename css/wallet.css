@@ -2425,27 +2425,47 @@ body.wallet-modal-lock {
 
 /* States */
 .calendar-day.checked {
-    background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(16, 185, 129, 0.15));
-    border: 1px solid rgba(34, 197, 94, 0.4);
-    color: #22c55e;
-    box-shadow: inset 0 0 10px rgba(34, 197, 94, 0.1);
+    justify-content: flex-start;
+    align-items: flex-start;
+    padding: 8px 9px;
+    background: linear-gradient(180deg, rgba(17, 24, 39, 0.32), rgba(22, 101, 52, 0.16));
+    border: 1px solid rgba(74, 222, 128, 0.2);
+    color: rgba(226, 232, 240, 0.96);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-.calendar-day.checked .check-icon {
+.calendar-day-number {
+    position: relative;
+    z-index: 1;
+    line-height: 1;
+}
+
+.calendar-check-badge {
+    position: absolute;
+    top: 6px;
+    right: 6px;
     width: 16px;
     height: 16px;
-    stroke: #22c55e;
-    filter: drop-shadow(0 2px 4px rgba(34, 197, 94, 0.22));
-    animation: bounceIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    border-radius: 999px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: rgba(74, 222, 128, 0.16);
+    border: 1px solid rgba(74, 222, 128, 0.18);
+    color: #4ade80;
 }
 
-.calendar-day.checked .check-icon path {
+.calendar-check-badge svg {
+    width: 10px;
+    height: 10px;
+    display: block;
+}
+
+.calendar-check-badge path {
     stroke: currentColor !important;
-    stroke-width: 3;
-}
-
-.calendar-day.checked>span {
-    display: none;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
 .calendar-day.today {
@@ -2645,31 +2665,38 @@ body.wallet-modal-lock {
 }
 
 [data-theme="light"] .calendar-day.checked {
-    background: linear-gradient(135deg, rgba(253, 230, 138, 0.78), rgba(254, 243, 199, 0.92));
-    border-color: rgba(217, 119, 6, 0.28);
-    color: #9a3412;
+    background: linear-gradient(180deg, rgba(248, 255, 251, 0.98) 0%, rgba(236, 253, 245, 0.96) 100%);
+    border-color: rgba(74, 222, 128, 0.24);
+    color: #475569;
     box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.76),
-        0 8px 18px rgba(217, 119, 6, 0.12);
+        inset 0 1px 0 rgba(255, 255, 255, 0.94),
+        0 8px 18px rgba(34, 197, 94, 0.08);
 }
 
-[data-theme="light"] .calendar-day.checked .check-icon {
-    width: 19px;
-    height: 19px;
-    color: #9a3412;
-    stroke: #9a3412;
-    filter: drop-shadow(0 2px 3px rgba(154, 52, 18, 0.22));
+[data-theme="light"] .calendar-day.checked .calendar-day-number {
+    color: #334155;
 }
 
-[data-theme="light"] .calendar-day.checked .check-icon path {
-    stroke: #9a3412 !important;
-    stroke-width: 3.2;
+[data-theme="light"] .calendar-check-badge {
+    background: rgba(34, 197, 94, 0.14);
+    border-color: rgba(34, 197, 94, 0.18);
+    color: #15803d;
 }
 
 [data-theme="light"] .calendar-day.today {
-    background: rgba(66, 153, 225, 0.1);
-    color: #1d4ed8;
-    border-color: #63b3ed;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(107, 158, 206, 0.12) 100%);
+    color: #6b9ece;
+    border-color: rgba(82, 127, 168, 0.36);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.95),
+        0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+[data-theme="light"] .calendar-day.today:hover {
+    background: linear-gradient(180deg, #ffffff 0%, rgba(112, 166, 216, 0.18) 100%);
+    border-color: rgba(82, 127, 168, 0.5);
+    transform: translateY(-1px);
+    box-shadow: 0 10px 18px rgba(107, 158, 206, 0.12);
 }
 
 [data-theme="light"] .calendar-day.missed {

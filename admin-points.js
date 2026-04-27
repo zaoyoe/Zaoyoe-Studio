@@ -3787,7 +3787,7 @@ function buildPointsBatchCodesTableSection(codes = pointsBatchCodesUiState.codes
     const allCounts = getPointsBatchCodeStatusCounts(sourceRows);
     pointsBatchCodesUiState.visibleCodes = visibleRows;
 
-    const statusOptions = [
+    const statusItems = [
         ['all', '全部状态'],
         ['pending', '待使用'],
         ['used', '已使用'],
@@ -3795,9 +3795,25 @@ function buildPointsBatchCodesTableSection(codes = pointsBatchCodesUiState.codes
         ['disabled', '已禁用'],
         ['locked', '已锁定'],
         ['expired', '已过期']
-    ].map(([value, label]) => `
-        <option value="${escapePointsHtml(value)}" ${pointsBatchCodesUiState.status === value ? 'selected' : ''}>${escapePointsHtml(label)}</option>
-    `).join('');
+    ];
+    const activeStatus = String(pointsBatchCodesUiState.status || 'all').trim() || 'all';
+    const activeStatusLabel = statusItems.find(([value]) => value === activeStatus)?.[1] || '全部状态';
+    const statusOptions = statusItems.map(([value, label]) => {
+        const isSelected = activeStatus === value;
+        return `
+            <button
+                class="points-batch-codes-select-option ${isSelected ? 'is-selected' : ''}"
+                type="button"
+                role="option"
+                aria-selected="${isSelected ? 'true' : 'false'}"
+                data-points-action="set-batch-code-status"
+                data-status="${escapePointsHtml(value)}"
+            >
+                <i class="fas fa-check" aria-hidden="true"></i>
+                <span>${escapePointsHtml(label)}</span>
+            </button>
+        `;
+    }).join('');
 
     const toolbarHtml = `
         <div class="points-batch-codes-toolbar">
@@ -3810,10 +3826,22 @@ function buildPointsBatchCodesTableSection(codes = pointsBatchCodesUiState.codes
                     value="${escapePointsHtml(pointsBatchCodesUiState.search || '')}"
                 >
             </label>
-            <label class="points-batch-codes-filter" for="pointsBatchCodesStatusFilter">
-                <span>状态</span>
-                <select id="pointsBatchCodesStatusFilter">${statusOptions}</select>
-            </label>
+            <div class="points-batch-codes-filter points-batch-codes-filter--custom" data-points-dropdown="batch-code-status">
+                <button
+                    class="points-batch-codes-select-trigger"
+                    id="pointsBatchCodesStatusFilter"
+                    type="button"
+                    aria-haspopup="listbox"
+                    aria-expanded="false"
+                    data-points-action="toggle-batch-code-status-menu"
+                >
+                    <span class="points-batch-codes-select-trigger__value">${escapePointsHtml(activeStatusLabel)}</span>
+                    <i class="fas fa-chevron-down" aria-hidden="true"></i>
+                </button>
+                <div class="points-batch-codes-select-menu" role="listbox" aria-labelledby="pointsBatchCodesStatusFilter">
+                    ${statusOptions}
+                </div>
+            </div>
             <div class="points-batch-codes-toolbar__meta">${escapePointsHtml(visibleRows.length)} / ${escapePointsHtml(sourceRows.length)} 个结果</div>
             <div class="points-batch-codes-toolbar__actions">
                 <button
@@ -3988,7 +4016,6 @@ function buildPointsBatchCodesTableSection(codes = pointsBatchCodesUiState.codes
 
 function bindPointsBatchCodesTableControls() {
     const searchInput = document.getElementById('pointsBatchCodesSearchInput');
-    const statusInput = document.getElementById('pointsBatchCodesStatusFilter');
 
     if (searchInput) {
         searchInput.addEventListener('input', (event) => {
@@ -3996,13 +4023,35 @@ function bindPointsBatchCodesTableControls() {
             refreshPointsBatchCodesTableSection();
         });
     }
+}
 
-    if (statusInput) {
-        statusInput.addEventListener('change', (event) => {
-            pointsBatchCodesUiState.status = String(event.target?.value || 'all');
-            refreshPointsBatchCodesTableSection();
-        });
+function closePointsBatchCodeStatusMenu() {
+    const root = document.querySelector('[data-points-dropdown="batch-code-status"]');
+    if (!root) {
+        return;
     }
+
+    root.classList.remove('is-open');
+    root.querySelector('#pointsBatchCodesStatusFilter')?.setAttribute('aria-expanded', 'false');
+}
+
+function togglePointsBatchCodeStatusMenu(trigger = null) {
+    const root = trigger?.closest?.('[data-points-dropdown="batch-code-status"]')
+        || document.querySelector('[data-points-dropdown="batch-code-status"]');
+    if (!root) {
+        return;
+    }
+
+    const willOpen = !root.classList.contains('is-open');
+    root.classList.toggle('is-open', willOpen);
+    root.querySelector('#pointsBatchCodesStatusFilter')?.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+}
+
+function setPointsBatchCodeStatusFilter(status = 'all') {
+    pointsBatchCodesUiState.status = String(status || 'all').trim() || 'all';
+    pointsBatchCodesUiState.focusCode = '';
+    closePointsBatchCodeStatusMenu();
+    refreshPointsBatchCodesTableSection();
 }
 
 function refreshPointsBatchCodesTableSection() {
@@ -4086,6 +4135,10 @@ function bindAdminPointsRuntimeDelegates() {
         const target = event.target instanceof Element ? event.target : event.target?.parentElement;
         if (!target) {
             return;
+        }
+
+        if (!target.closest('[data-points-dropdown="batch-code-status"]')) {
+            closePointsBatchCodeStatusMenu();
         }
 
         if (target.matches('[data-points-overlay-close="delete-options"]')) {
@@ -4202,6 +4255,16 @@ function bindAdminPointsRuntimeDelegates() {
             case 'clear-batch-code-filters':
                 event.stopPropagation();
                 clearPointsBatchCodeFilters();
+                break;
+            case 'toggle-batch-code-status-menu':
+                event.preventDefault();
+                event.stopPropagation();
+                togglePointsBatchCodeStatusMenu(actionEl);
+                break;
+            case 'set-batch-code-status':
+                event.preventDefault();
+                event.stopPropagation();
+                setPointsBatchCodeStatusFilter(actionEl.dataset.status || 'all');
                 break;
             case 'copy-code-item':
                 copySingleCode(actionEl, decodeURIComponent(actionEl.dataset.code || ''));

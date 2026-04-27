@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1';
+    const walletCssHref = 'css/wallet.css?v=20260427_WALLET_THEME_DEFAULT_LIGHT_1';
     const existingWalletCss = document.getElementById('wallet-modal-css');
     if (existingWalletCss) {
         existingWalletCss.href = walletCssHref;
@@ -2267,40 +2267,42 @@
             const pointsPerCny = Math.max(0.01, this.normalizePointValue(rechargeOptions?.custom_amount_points_per_cny, 1));
             const normalizedPoints = this.normalizePointValue(numericValue, 0);
             const estimatedPaidAmount = Math.ceil((normalizedPoints / pointsPerCny) * 100) / 100;
+            const inputMode = Math.abs(pointsPerCny - 1) < 0.0001 ? 'unified' : 'points';
+            const inputLabel = inputMode === 'unified' ? '充值金额' : '充值积分';
 
             if (!normalizedRaw) {
                 return {
                     ok: false,
-                    errorMessage: '请输入充值积分或金额，例如 0.01'
+                    errorMessage: `请输入${inputLabel}`
                 };
             }
 
             if (!Number.isFinite(numericValue) || numericValue <= 0) {
                 return {
                     ok: false,
-                    errorMessage: '请输入大于 0 的充值积分或金额'
+                    errorMessage: `请输入大于 0 的${inputLabel}`
                 };
             }
 
             if (normalizedPoints < minPoints || normalizedPoints > maxPoints) {
                 return {
                     ok: false,
-                    errorMessage: `请输入 ${this.formatPoints(minPoints)} 到 ${this.formatPoints(maxPoints)} 之间的积分/金额`
+                    errorMessage: `请输入 ${this.formatPoints(minPoints)} 到 ${this.formatPoints(maxPoints)} 之间的${inputLabel}`
                 };
             }
 
             if (!this.isPointStepAligned(normalizedPoints, stepPoints)) {
                 return {
                     ok: false,
-                    errorMessage: `请输入 ${this.formatPoints(stepPoints)} 的整数倍积分/金额`
+                    errorMessage: `请输入 ${this.formatPoints(stepPoints)} 的整数倍${inputLabel}`
                 };
             }
 
             return {
                 ok: true,
-                inputMode: Math.abs(pointsPerCny - 1) < 0.0001 ? 'unified' : 'points',
+                inputMode,
                 normalizedPoints,
-                enteredAmountCny: Math.abs(pointsPerCny - 1) < 0.0001 ? normalizedPoints : null,
+                enteredAmountCny: inputMode === 'unified' ? normalizedPoints : null,
                 estimatedPaidAmount,
                 pointsPerCny
             };
@@ -2946,7 +2948,7 @@
                                             <div class="custom-recharge-title">自定义充值</div>
                                             <div class="custom-recharge-subtitle" id="wallet-custom-recharge-subtitle" hidden></div>
                                         </div>
-                                        <span class="custom-recharge-badge" id="wallet-custom-recharge-badge">按需充值</span>
+                                        <span class="custom-recharge-badge" id="wallet-custom-recharge-badge" hidden></span>
                                     </div>
                                     <div class="custom-recharge-row">
                                         <input type="number"
@@ -2955,7 +2957,7 @@
                                                min="0.01"
                                                step="0.01"
                                                inputmode="decimal"
-                                               placeholder="例如 1 或 0.01"
+                                               placeholder="请输入充值金额"
                                                ${this.buildDataAttributes({ 'wallet-enter-action': 'custom-recharge' })} />
                                         <button class="custom-recharge-btn" id="wallet-custom-recharge-btn"${this.buildDataAttributes({ 'wallet-action': 'custom-recharge' })}>充值</button>
                                     </div>
@@ -4442,11 +4444,10 @@
             });
             const isSimulationEnabled = mockPayment.activeProviderRequested && mockPayment.allowed;
             const isSimulationBlocked = activeProvider.key === 'mock' && mockPayment.blocked;
-            const isDirectRechargeAllowed = isSimulationEnabled;
-            const providerLabel = activeProvider.display_name || '当前通道';
-            const minPoints = Math.max(0.01, Number(normalizedConfig.custom_amount_min_points) || 0.01);
-            const maxPoints = Math.max(minPoints, Number(normalizedConfig.custom_amount_max_points) || minPoints);
-            const stepPoints = Math.max(0.01, Number(normalizedConfig.custom_amount_step) || 0.01);
+            const pointsPerCny = Math.max(0.01, Number(normalizedConfig.custom_amount_points_per_cny) || 1);
+            const inputPlaceholder = Math.abs(pointsPerCny - 1) < 0.0001
+                ? '请输入充值金额'
+                : '请输入充值积分';
 
             section.toggleAttribute('hidden', !isFeatureEnabled);
 
@@ -4455,7 +4456,7 @@
                 input.min = '0.01';
                 input.step = '0.01';
                 input.inputMode = 'decimal';
-                input.placeholder = `例如 ${this.formatPoints(Math.max(minPoints, stepPoints))}`;
+                input.placeholder = inputPlaceholder;
                 if (!isFeatureEnabled) input.value = '';
             }
 
@@ -4472,11 +4473,16 @@
             }
 
             if (badge) {
-                badge.textContent = isSimulationBlocked
-                    ? '模拟支付受限'
-                    : (isDirectRechargeAllowed
-                    ? (isSimulationEnabled ? '模拟支付' : '按需充值')
-                    : providerLabel);
+                if (isSimulationBlocked) {
+                    badge.hidden = false;
+                    badge.textContent = '模拟支付受限';
+                } else if (isSimulationEnabled) {
+                    badge.hidden = false;
+                    badge.textContent = '模拟支付';
+                } else {
+                    badge.textContent = '';
+                    badge.hidden = true;
+                }
             }
 
             if (meta) {
@@ -6201,9 +6207,12 @@
                     dayClass += ' checked';
                     // SVG Checkmark or Coin
                     innerHtml = `
-                        <svg class="check-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M20 6L9 17L4 12" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
+                        <span class="calendar-day-number">${i}</span>
+                        <span class="calendar-check-badge" aria-hidden="true">
+                            <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M3.5 8.4L6.6 11.3L12.5 5.1"/>
+                            </svg>
+                        </span>
                     `;
                 } else if (isToday) {
                     dayClass += ' today';

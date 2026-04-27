@@ -22,6 +22,8 @@ test('gallery p1 workflow and cross-module linkage surfaces prompt ops, homepage
         'id="promptOpsStatus"',
         'id="promptOpsNote"',
         'id="promptAiTagsGroup"',
+        'class="form-group admin-studio-inline-style-attr-3" id="promptAiTagsGroup" hidden',
+        'id="promptAiTagsGroup" hidden',
         'id="tagUseCasePlatform"',
         'id="tagUseCasePurpose"',
         'id="tagUseCaseFormat"',
@@ -38,6 +40,12 @@ test('gallery p1 workflow and cross-module linkage surfaces prompt ops, homepage
         assert.equal(adminHtml.includes(marker), true, `admin-studio.html should contain ${marker}`);
     }
 
+    assert.equal(
+        readRepoFile(path.join('css', 'admin-studio-page.css')).includes('20260427_ADMIN_GALLERY_AI_TAGS_HARD_HIDE_1'),
+        true,
+        'admin studio page styles should force-hide gallery AI tags even when form-group display rules would override [hidden]'
+    );
+
     const studioMarkers = [
         'let currentEditingPromptAiTags = null;',
         'const PROMPT_ADMIN_STATUS_LABELS = Object.freeze({',
@@ -49,6 +57,7 @@ test('gallery p1 workflow and cross-module linkage surfaces prompt ops, homepage
         'function collectPromptOpsFieldValues()',
         'function resetPromptOpsFields()',
         'function syncGalleryEditModePanels(mode = currentMode)',
+        'setAdminStudioVisibility(aiTagsGroup, false);',
         'function syncGalleryAnalyzeButtonLabel(mode = currentMode)',
         'function hydrateEditingImagesForAnalysis()',
         'function buildPromptAiTagsPayload(existingAiTags = {}, options = {})',

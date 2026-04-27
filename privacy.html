@@ -3,101 +3,267 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-visual">
+    <meta name="theme-color" content="#000000">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="description" content="Zaoyoe 隐私政策，说明个人信息收集、使用、存储与保护方式。">
     <title>隐私政策 - Zaoyoe</title>
+    <link rel="canonical" href="https://www.zaoyoe.com/privacy.html">
     <link rel="icon" type="image/png" href="assets/favicon.png">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Outfit:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="css/auth-sheet.css?v=20260427_AUTH_MESSAGE_CENTER_1">
+    <link rel="stylesheet" href="css/profile-modal.css?v=20260427_PROFILE_SECURITY_PLACEHOLDER_SIZE_2">
+    <link rel="stylesheet" href="avatar-fix.css?v=20260424_SOLID_GUEST_AVATAR_1">
+    <link rel="stylesheet" href="css/framer_home.css?v=20260423_HOME_NAV_DROPDOWN_CURSOR_4">
+    <link rel="stylesheet" href="css/prompt-shell-page.css?v=20260427_PROMPT_SHELL_1">
     <link rel="stylesheet" href="css/privacy-page.css?v=20260324_PRIVACY_STYLES_1">
+
+    <!-- Prevent flash of wrong theme -->
+    <script src="./js/theme-preload.js?v=20260427_DEFAULT_LIGHT_THEME_1"></script>
 </head>
 
-<body>
-    <div class="container">
-        <a href="index.html" class="back-link">
-            <i class="fas fa-arrow-left"></i>
-            返回首页
-        </a>
+<body class="privacy-page prompt-shell-page">
+    <!-- Ambient Light Canvas (Prompt Page Background System) -->
+    <canvas id="ambientCanvas"></canvas>
+    <!-- Starry Sky Canvas (Dark Mode Only) -->
+    <canvas id="starryCanvas"></canvas>
 
-        <h1>隐私政策</h1>
-        <div class="update-date">最后更新: 2024年12月26日</div>
+    <!-- Dropdown Blur Overlay -->
+    <div class="dropdown-overlay" id="dropdownOverlay"></div>
 
-        <div class="content">
-            <h2>1. 概述</h2>
-            <p>欢迎使用 Zaoyoe（以下简称"我们"）。我们深知个人信息对您的重要性，并会尽全力保护您的个人信息安全。本隐私政策旨在向您说明我们如何收集、使用、存储和保护您的信息。</p>
+    <!-- Unified Navigation Bar -->
+    <nav class="framer-nav">
+        <div class="nav-container">
+            <!-- Logo -->
+            <a href="/index.html" class="nav-logo">
+                <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M30 20 H80 L70 35 H20 Z" fill="white" />
+                    <path d="M40 40 H90 L80 55 H30 Z" fill="#ccc" />
+                    <path d="M20 60 H70 L60 75 H10 Z" fill="white" />
+                    <path d="M80 20 L90 15 L80 30" fill="#333" />
+                    <path d="M90 40 L100 35 L90 50" fill="#333" />
+                    <path d="M70 60 L80 55 L70 70" fill="#333" />
+                </svg>
+            </a>
 
-            <h2>2. 我们收集的信息</h2>
-            <p>在您使用我们的服务时，我们可能会收集以下信息：</p>
-            <ul>
-                <li><strong>账户信息</strong>：用户名、邮箱地址、密码（加密存储）</li>
-                <li><strong>个人资料</strong>：头像、昵称（可选）</li>
-                <li><strong>设备信息</strong>：IP 地址、浏览器类型、操作系统（用于账户安全）</li>
-                <li><strong>使用数据</strong>：访问时间、浏览记录、互动行为</li>
-            </ul>
+            <!-- Desktop Menu -->
+            <div class="nav-menu">
+                <a href="/prompts.html" class="nav-trigger" data-dropdown="prompts" data-i18n="nav.prompts">提示词</a>
+                <a href="https://gongyi.zaoyoe.com" data-i18n="nav.gongyi">公益站</a>
+                <a href="/shop.html" class="nav-trigger" data-dropdown="shop" data-i18n="nav.shop">商城</a>
+                <a href="/verify.html" data-i18n="nav.verify">验证</a>
+                <a href="/guestbook.html" data-i18n="nav.guestbook">留言板</a>
+                <a href="javascript:void(0)" class="nav-trigger" data-dropdown="support" data-i18n="nav.support">支持</a>
+            </div>
 
-            <h2>3. 信息的使用方式</h2>
-            <p>我们收集的信息将用于：</p>
-            <ul>
-                <li>提供、维护和改进我们的服务</li>
-                <li>处理您的注册和登录请求</li>
-                <li>发送重要通知（如服务变更、安全提醒）</li>
-                <li>检测和防止欺诈、滥用行为</li>
-                <li><span class="highlight">多账号关联检测</span>（基于 IP 地址识别可疑行为）</li>
-            </ul>
+            <!-- Actions -->
+            <div class="nav-actions">
+                <div id="auth-container"></div>
+                <button class="nav-hamburger">
+                    <span></span>
+                    <span></span>
+                </button>
+            </div>
+        </div>
+    </nav>
 
-            <h2>4. 信息的存储与保护</h2>
-            <p>我们采用行业标准的安全措施保护您的信息：</p>
-            <ul>
-                <li>数据传输使用 HTTPS 加密</li>
-                <li>密码使用不可逆加密算法存储</li>
-                <li>定期审查访问权限和安全策略</li>
-            </ul>
+    <!-- Mobile Menu Overlay -->
+    <div class="mobile-menu">
+        <div class="mobile-menu-items">
+            <div class="mobile-menu-item">
+                <button class="mobile-menu-trigger" data-submenu="prompts-mobile">
+                    <span data-i18n="nav.prompts">提示词</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div class="mobile-submenu" id="prompts-mobile">
+                    <!-- Will be populated dynamically from desktop dropdown -->
+                </div>
+            </div>
+            <div class="mobile-menu-item">
+                <a href="https://gongyi.zaoyoe.com" class="mobile-menu-link" data-i18n="nav.gongyi">公益站</a>
+            </div>
+            <div class="mobile-menu-item">
+                <button class="mobile-menu-trigger" data-submenu="shop-mobile">
+                    <span data-i18n="nav.shop">商城</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div class="mobile-submenu" id="shop-mobile">
+                    <!-- Will be populated dynamically from desktop dropdown -->
+                </div>
+            </div>
+            <div class="mobile-menu-item">
+                <a href="/verify.html" class="mobile-menu-link" data-i18n="nav.verify">验证</a>
+            </div>
+            <div class="mobile-menu-item">
+                <a href="/guestbook.html" class="mobile-menu-link" data-i18n="nav.guestbook">留言板</a>
+            </div>
 
-            <h2>5. 信息的分享</h2>
-            <p>我们不会将您的个人信息出售给第三方。但在以下情况下，我们可能会分享您的信息：</p>
-            <ul>
-                <li>获得您的明确同意</li>
-                <li>遵守法律法规或响应执法部门的合法请求</li>
-                <li>保护我们的合法权益或用户安全</li>
-            </ul>
-
-            <h2>6. Cookie 使用</h2>
-            <p>我们使用 Cookie 和类似技术来：</p>
-            <ul>
-                <li>保持您的登录状态</li>
-                <li>记住您的偏好设置</li>
-                <li>分析网站使用情况以改进服务</li>
-            </ul>
-
-            <h2>7. 您的权利</h2>
-            <p>您对您的个人信息享有以下权利：</p>
-            <ul>
-                <li>访问和获取您的个人信息副本</li>
-                <li>更正不准确的个人信息</li>
-                <li>删除您的账户和相关数据</li>
-                <li>撤回您曾给予的同意</li>
-            </ul>
-
-            <h2>8. 未成年人保护</h2>
-            <p>我们的服务不面向 16 周岁以下的未成年人。如果我们发现未经父母同意收集了未成年人的信息，将会尽快删除。</p>
-
-            <h2>9. 政策更新</h2>
-            <p>我们可能会不时更新本隐私政策。更新后的政策将在本页面发布，并更新"最后更新"日期。</p>
-
-            <h2>10. 联系我们</h2>
-            <div class="contact-box">
-                <p>如果您对本隐私政策有任何疑问或建议，请通过以下方式联系我们：</p>
-                <p><strong>邮箱</strong>：<a href="mailto:zaoyoe@gmail.com">zaoyoe@gmail.com</a></p>
+            <div class="mobile-menu-item">
+                <button class="mobile-menu-trigger" data-submenu="support-mobile">
+                    <span data-i18n="nav.support">支持</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div class="mobile-submenu" id="support-mobile">
+                    <a href="https://status.zaoyoe.com" class="mobile-menu-link" data-i18n="nav.status">状态页</a>
+                    <a href="https://t.me/zaoyoe" target="_blank" rel="noopener noreferrer"
+                        class="mobile-menu-link">TG</a>
+                    <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" rel="noopener noreferrer"
+                        class="mobile-menu-link"><span data-i18n="nav.tgGroup">TG群组</span></a>
+                </div>
             </div>
         </div>
     </div>
+
+    <main id="main-content" role="main">
+        <section class="privacy-container">
+            <p class="privacy-eyebrow">Zaoyoe Studio</p>
+            <h1>隐私政策</h1>
+            <div class="update-date">最后更新: 2026年4月27日</div>
+
+            <div class="content">
+                <h2>1. 概述</h2>
+                <p>欢迎使用 Zaoyoe（以下简称“我们”或“本站”）。我们深知个人信息、账号安全、数字资源合规使用与知识产权保护的重要性。本隐私政策旨在说明我们如何收集、使用、存储、保护您的信息，并同步说明本站提示词、数字商品、账号、卡密等内容的使用范围与免责声明。</p>
+                <p>本站现阶段主要提供 AI 提示词展示与参考、资源商城、积分/充值、订单与自动发货、账号登录、留言互动、客服支持、验证与后台管理等功能。您访问、注册、登录、兑换、购买、下载、复制或使用本站内容，即表示您已阅读并理解本政策。</p>
+
+                <h2>2. 我们收集的信息</h2>
+                <p>在您使用我们的服务时，我们可能会收集以下信息：</p>
+                <ul>
+                    <li><strong>账户信息</strong>：邮箱地址、用户 ID、昵称、头像、注册时间、登录方式及必要的账号安全状态。密码由认证服务加密或哈希处理，我们不会以明文保存您的密码。</li>
+                    <li><strong>个人资料</strong>：您主动填写或上传的昵称、头像、联系方式、留言内容、客服沟通内容、售后说明等。</li>
+                    <li><strong>订单与交易信息</strong>：商品 ID、商品名称快照、购买数量、积分或支付记录、优惠券/卡券使用记录、订单状态、发货状态、退款状态、充值记录、支付渠道回调状态等。</li>
+                    <li><strong>数字商品交付信息</strong>：购买后向您展示或交付的账号、卡密、兑换码、API 类资源、使用说明、注意事项、库存批次与交付日志。普通用户仅能查看自己订单对应的交付内容。</li>
+                    <li><strong>设备与安全信息</strong>：IP 地址、浏览器类型、操作系统、语言、访问时间、请求来源、会话标识、异常请求记录、登录与支付风控信号等。</li>
+                    <li><strong>使用数据</strong>：提示词浏览、搜索、解锁、评论、收藏、商城浏览、购物车、兑换、客服与站内互动行为等。</li>
+                </ul>
+
+                <h2>3. 信息的使用方式</h2>
+                <p>我们收集的信息将用于：</p>
+                <ul>
+                    <li>提供、维护和改进我们的服务</li>
+                    <li>处理您的注册和登录请求</li>
+                    <li>完成积分、充值、商品兑换、订单履约、自动发货、售后核验与退款处理</li>
+                    <li>向您展示订单、余额、优惠、提示词解锁、客服工单等与账号相关的状态</li>
+                    <li>发送重要通知（如服务变更、安全提醒）</li>
+                    <li>检测和防止欺诈、滥用行为</li>
+                    <li><span class="highlight">多账号关联检测</span>、批量注册识别、支付异常识别、库存滥用识别与其他必要的安全风控</li>
+                    <li>在法律法规允许或要求的范围内，配合公安机关、网警、法院、仲裁机构、监管部门等依法开展调查、取证或处置</li>
+                </ul>
+
+                <h2>4. 信息的存储与保护</h2>
+                <p>我们采用行业标准的安全措施保护您的信息：</p>
+                <ul>
+                    <li>数据传输使用 HTTPS 加密</li>
+                    <li>密码、会话、支付与关键凭证采用认证服务、访问控制、权限隔离等方式保护</li>
+                    <li>账号、卡密、订单、库存与发货内容按最小必要原则限制访问，管理端访问会保留必要审计记录</li>
+                    <li>定期审查访问权限、安全策略、支付配置、库存风险与异常订单</li>
+                    <li>如发生或可能发生个人信息泄露、毁损、丢失，我们将依法采取补救措施，并在必要时通知用户或主管部门</li>
+                </ul>
+
+                <h2>5. 第三方服务与信息共享</h2>
+                <p>我们不会出售您的个人信息。但为了实现本站功能，部分服务可能由第三方基础设施或服务商提供，例如账号认证、数据库、文件存储、支付接口、邮件通知、统计分析、客服支持、公益站或外部交流群链接等。</p>
+                <ul>
+                    <li>在获得您的明确同意，或为完成您主动请求的交易、支付、发货、售后、客服处理时，我们可能向必要第三方传递最小必要信息。</li>
+                    <li>支付、充值、回调、订单核验等环节可能由支付渠道、收款平台或相关服务商处理，具体以对应页面和渠道规则为准。</li>
+                    <li>当法律法规、司法机关、行政机关或监管要求需要时，我们可能依法提供必要信息。</li>
+                    <li>为保护本站、用户或公众的合法权益与安全，我们可能在合理必要范围内使用或披露相关信息。</li>
+                </ul>
+
+                <h2>6. Cookie 使用</h2>
+                <p>我们使用 Cookie 和类似技术来：</p>
+                <ul>
+                    <li>保持您的登录状态</li>
+                    <li>记住您的偏好设置</li>
+                    <li>分析网站使用情况以改进服务</li>
+                </ul>
+
+                <h2>7. 数字商品、账号与卡密的使用范围</h2>
+                <p>本站资源商城中可能提供账号、卡密、兑换码、API 类资源、教程资料、提示词包、数字素材或其他虚拟商品。除商品页面另有明确说明外，这些内容仅供学习、研究、测试体验、个人参考、非商业演示等合法用途使用。</p>
+                <ul>
+                    <li>您不得将本站交付的账号、卡密、兑换码或其他凭证用于违法犯罪、侵权、诈骗、洗钱、攻击、爬取、刷量、绕过风控、批量注册、垃圾信息、侵犯他人隐私、破坏平台规则或其他违反法律法规及第三方服务条款的行为。</li>
+                    <li>学习、研究或测试完成后，请及时退出、删除或妥善处置不再需要的账号、卡密、凭证、下载内容与缓存信息，避免继续占用、泄露或造成不必要风险。</li>
+                    <li>如您需要长期、商业、生产环境或高稳定性使用相关服务，我们提倡并建议您通过官方渠道自行申请、注册、购买、订阅、支付或获取权利人许可。</li>
+                    <li>虚拟商品具有即时交付、可复制、可查看等特性。除商品说明、售后规则或法律法规另有要求外，购买后退款、换货、补发、封禁处理等以订单状态、商品说明和客服核验结果为准。</li>
+                    <li>因用户超出商品说明、本政策或合法用途范围使用而造成的账号封禁、服务中断、权益损失、第三方索赔、行政处罚或法律纠纷，由用户自行承担相应责任。</li>
+                </ul>
+
+                <h2>8. 提示词、AI 内容与知识产权声明</h2>
+                <p>本站展示的提示词、图片、案例、标题、分类、说明文字及相关灵感内容，可能由 AI 生成、人工整理、用户投稿、公开网络资料启发或二次编辑形成。我们尊重并严格遵守知识产权相关法律法规，不主动复制、搬运、售卖或规避原作者授权。</p>
+                <ul>
+                    <li>提示词与展示图片主要用于学习、研究、参考、审美探索、创作启发与个人非商业使用，不构成对任何特定效果、可商用性、权利完整性或第三方平台审核结果的承诺。</li>
+                    <li>如果您将本站提示词、图片、商品说明或其他内容用于商业项目、广告投放、出版发行、客户交付、模型训练、二次分发或其他公开用途，请自行确认版权、商标、肖像、模型输出、素材授权、第三方平台规则及适用法律风险。</li>
+                    <li>因用户自行商用、再分发、改编、训练、公开传播或用于第三方平台而引发的侵权、合同、平台处罚或其他法律纠纷，由用户自行承担相应责任。</li>
+                    <li>如权利人认为本站内容侵犯其合法权益，请通过本页联系方式提交权属证明、侵权链接、初步证据和处理诉求。我们将在核验后依法采取删除、屏蔽、断开链接、下架、停止交易或补充署名等必要措施。</li>
+                </ul>
+
+                <h2>9. 禁止用途与违规处理</h2>
+                <p>任何本站内容、商品、账号、卡密、接口、积分、优惠、提示词或自动化功能均不得用于非法用途。一经发现存在违法违规、侵权、滥用、恶意套取、破坏系统、攻击他人、倒卖凭证、传播违法信息、危害网络安全或损害第三方权益等行为，我们有权视情况采取必要措施。</p>
+                <ul>
+                    <li>限制、暂停或终止相关账号、订单、商品、积分、优惠、评论、留言或客服服务</li>
+                    <li>撤回、冻结、作废、补充核验或拒绝交付存在风险的卡密、账号、订单或优惠权益</li>
+                    <li>保存必要日志、证据与交易记录，用于安全审计、售后争议、风控核验或依法维权</li>
+                    <li>对涉嫌违法犯罪或严重侵害他人权益的行为，我们将依法配合公安机关、网警、法院、监管部门等司法或行政机关调查处理</li>
+                </ul>
+
+                <h2>10. 您的权利</h2>
+                <p>您对您的个人信息享有以下权利：</p>
+                <ul>
+                    <li>访问、更正、补充您的账号资料、订单记录或其他个人信息</li>
+                    <li>在符合法律法规和平台安全要求的前提下，申请删除您的账户和相关个人信息</li>
+                    <li>撤回您曾给予的同意，或关闭部分非必要功能授权</li>
+                    <li>咨询个人信息处理规则、投诉处理结果、商品交付记录或售后核验依据</li>
+                    <li>如涉及订单、支付、库存、发货、退款、违法违规调查、争议解决或法定义务，我们可能依法保留必要记录至合理期限届满</li>
+                </ul>
+
+                <h2>11. 未成年人保护</h2>
+                <p>我们的服务不面向 16 周岁以下的未成年人。未成年人应在监护人同意和指导下使用互联网服务，不应购买、兑换或使用不适合其年龄、身份或法律能力的数字商品。如我们发现未经监护人同意收集了未成年人的个人信息，将会依法尽快删除或采取其他必要措施。</p>
+
+                <h2>12. 政策更新</h2>
+                <p>我们可能会根据服务功能、商品类型、支付流程、法律法规或安全策略变化更新本隐私政策。更新后的政策将在本页面发布，并更新“最后更新”日期。若涉及重大变更，我们会尽合理努力通过站内提示、公告或其他适当方式通知您。</p>
+
+                <h2>13. 联系我们</h2>
+                <div class="contact-box">
+                    <p>如果您对本隐私政策、个人信息处理、商品使用范围、知识产权投诉、违法违规线索或售后争议有任何疑问，请通过以下方式联系我们：</p>
+                    <p><strong>邮箱</strong>：<a href="mailto:zaoyoe@gmail.com">zaoyoe@gmail.com</a></p>
+                </div>
+            </div>
+        </section>
+    </main>
 
     <!-- Supabase Client -->
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="/api/runtime/supabase-config"></script>
     <script src="./js/runtime-supabase-config.js"></script>
     <script src="./supabase-client.js"></script>
+    <script src="./js/site-config.js"></script>
+    <script src="js/ambient-light.js?v=20260427_PROMPT_SHELL_1"></script>
+    <script src="starry-sky.js?v=20260427_PROMPT_SHELL_1"></script>
+
+    <!-- Auth Injection & Navigation -->
+    <script src="js/i18n.js?v=1" defer></script>
+    <script src="./js/avatar-uploader.js" defer></script>
+    <script src="./js/admin-access.js?v=20260421_ADMIN_ACCESS_SESSION_PRIORITY_P0" defer></script>
+    <script src="supabase-auth-functions.js?v=20260427_GOOGLE_POPUP_MODAL_CLOSE_3" defer></script>
+    <script src="js/public-scrollbar-auto-hide.js?v=20260424_PUBLIC_SCROLLBAR_AUTO_HIDE_1" defer></script>
+    <script src="js/profile-modal-loader.js?v=20260427_PROFILE_SECURITY_PLACEHOLDER_SIZE_2" defer></script>
+    <script src="js/ios-scroll-lock.js?v=20260324_IOS_SCROLL_LOCK_RUNTIME_STYLE_2" defer></script>
+    <script src="inject-auth.js?v=20260427_AUTH_MESSAGE_RESIZE_1" defer></script>
+    <script src="js/framer-nav-runtime.js?v=20260423_FRAMER_NAV_RUNTIME_DROPDOWN_CURSOR_RUNTIME_4" defer></script>
+    <script src="js/wallet-modal-loader.js?v=20260427_WALLET_THEME_DEFAULT_LIGHT_1" defer></script>
+    <link rel="stylesheet" href="css/notification-client.css?v=20260331_NOTIFICATION_FILTER_MEMORY_1">
+    <script src="js/engagement-runtime-loader.js?v=20260421_PUBLIC_ENGAGEMENT_LAZY_BOOTSTRAP_P1" data-load-notification="1" defer></script>
 
     <!-- Chat Widget -->
-    <link rel="stylesheet" href="css/chat-widget.css?v=20260426_CHAT_OPS_ALERT_LIGHT_GLASS_12">
+    <link rel="stylesheet" href="css/chat-widget.css?v=20260426_CHAT_BADGE_BORDERLESS_1">
     <script src="js/chat-widget-loader.js?v=20260426_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_LOADER_12"></script>
 
 </body>

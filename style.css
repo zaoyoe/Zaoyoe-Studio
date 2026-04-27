@@ -3162,6 +3162,15 @@ html[data-theme="dark"] body.guestbook-page.auth-sheet-open::after {
     box-shadow: var(--auth-sheet-control-shadow-hover) !important;
 }
 
+html[data-theme="light"] #loginModal.auth-sheet-overlay .auth-sheet-google-btn.google-login-btn:hover,
+html:not([data-theme="dark"]) #loginModal.auth-sheet-overlay .auth-sheet-google-btn.google-login-btn:hover {
+    transform: none !important;
+    background: rgba(255, 255, 255, 0.96) !important;
+    border-color: rgba(107, 158, 206, 0.34) !important;
+    color: var(--auth-sheet-text) !important;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05) !important;
+}
+
 #loginModal.auth-sheet-overlay .auth-sheet-google-btn.google-login-btn span {
     color: inherit !important;
 }
@@ -5444,6 +5453,44 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     box-shadow: none !important;
 }
 
+#profileModal .security-input::placeholder {
+    color: rgba(225, 232, 240, 0.22) !important;
+    -webkit-text-fill-color: rgba(225, 232, 240, 0.22) !important;
+    opacity: 1 !important;
+    font-size: 13px !important;
+    font-weight: 400 !important;
+    letter-spacing: 0 !important;
+    line-height: 1.2 !important;
+}
+
+#profileModal .security-input::-webkit-input-placeholder {
+    color: rgba(225, 232, 240, 0.22) !important;
+    -webkit-text-fill-color: rgba(225, 232, 240, 0.22) !important;
+    opacity: 1 !important;
+    font-size: 13px !important;
+    font-weight: 400 !important;
+    letter-spacing: 0 !important;
+    line-height: 1.2 !important;
+}
+
+#profileModal .security-input::-moz-placeholder {
+    color: rgba(225, 232, 240, 0.22) !important;
+    opacity: 1 !important;
+    font-size: 13px !important;
+    font-weight: 400 !important;
+    letter-spacing: 0 !important;
+    line-height: 1.2 !important;
+}
+
+#profileModal .security-input:-ms-input-placeholder {
+    color: rgba(225, 232, 240, 0.22) !important;
+    opacity: 1 !important;
+    font-size: 13px !important;
+    font-weight: 400 !important;
+    letter-spacing: 0 !important;
+    line-height: 1.2 !important;
+}
+
 #profileModal .mobile-security-layout .security-mobile-code-btn {
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -6392,20 +6439,48 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     box-shadow: 0 0 0 3px rgba(107, 158, 206, 0.16) !important;
 }
 
-[data-theme="light"] #profileModal :is(
-    .security-input::placeholder,
-    .security-input::-webkit-input-placeholder,
-    .security-input::-moz-placeholder,
-    .security-input:-ms-input-placeholder,
-    .security-input.glass-input::placeholder,
-    .security-input.glass-input::-webkit-input-placeholder,
-    .security-input.glass-input::-moz-placeholder,
-    .security-input.glass-input:-ms-input-placeholder,
-    .profile-mobile-inline-input::placeholder,
-    .profile-mobile-inline-input::-webkit-input-placeholder,
-    .profile-mobile-inline-input::-moz-placeholder,
-    .profile-mobile-inline-input:-ms-input-placeholder
-) {
+[data-theme="light"] #profileModal .security-input::placeholder {
+    color: rgba(100, 116, 139, 0.45) !important;
+    -webkit-text-fill-color: rgba(100, 116, 139, 0.45) !important;
+    opacity: 1 !important;
+    font-size: 13px !important;
+    font-weight: 400 !important;
+    letter-spacing: 0 !important;
+    line-height: 1.2 !important;
+}
+
+[data-theme="light"] #profileModal .security-input::-webkit-input-placeholder {
+    color: rgba(100, 116, 139, 0.45) !important;
+    -webkit-text-fill-color: rgba(100, 116, 139, 0.45) !important;
+    opacity: 1 !important;
+    font-size: 13px !important;
+    font-weight: 400 !important;
+    letter-spacing: 0 !important;
+    line-height: 1.2 !important;
+}
+
+[data-theme="light"] #profileModal .security-input::-moz-placeholder {
+    color: rgba(100, 116, 139, 0.45) !important;
+    opacity: 1 !important;
+    font-size: 13px !important;
+    font-weight: 400 !important;
+    letter-spacing: 0 !important;
+    line-height: 1.2 !important;
+}
+
+[data-theme="light"] #profileModal .security-input:-ms-input-placeholder {
+    color: rgba(100, 116, 139, 0.45) !important;
+    opacity: 1 !important;
+    font-size: 13px !important;
+    font-weight: 400 !important;
+    letter-spacing: 0 !important;
+    line-height: 1.2 !important;
+}
+
+[data-theme="light"] #profileModal .profile-mobile-inline-input::placeholder,
+[data-theme="light"] #profileModal .profile-mobile-inline-input::-webkit-input-placeholder,
+[data-theme="light"] #profileModal .profile-mobile-inline-input::-moz-placeholder,
+[data-theme="light"] #profileModal .profile-mobile-inline-input:-ms-input-placeholder {
     color: #64748b !important;
     -webkit-text-fill-color: #64748b !important;
     opacity: 1 !important;
@@ -6492,6 +6567,22 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     color: #5a86b3;
 }
 
+[data-theme="light"] #profileModal .profile-security-desktop-item-icon {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(244, 248, 252, 0.96) 100%);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    color: #475569;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.96),
+        0 8px 18px rgba(148, 163, 184, 0.1);
+}
+
+[data-theme="light"] #profileModal .profile-security-desktop-item:hover .profile-security-desktop-item-icon,
+[data-theme="light"] #profileModal .profile-security-desktop-item.active .profile-security-desktop-item-icon {
+    background: #ffffff;
+    border-color: rgba(107, 158, 206, 0.22);
+    color: #5f8fbc;
+}
+
 [data-theme="light"] #profileModal .profile-security-desktop-indicator {
     background: rgba(107, 158, 206, 0.18);
     border-color: rgba(107, 158, 206, 0.3);
@@ -6513,6 +6604,12 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 [data-theme="light"] #profileModal .profile-security-desktop-item--danger.active {
     background: rgba(254, 242, 242, 0.96);
     border-color: rgba(248, 113, 113, 0.24);
+    color: #dc2626;
+}
+
+[data-theme="light"] #profileModal .profile-security-desktop-item--danger .profile-security-desktop-item-icon,
+[data-theme="light"] #profileModal .profile-security-desktop-item--danger.active .profile-security-desktop-item-icon {
+    border-color: rgba(248, 113, 113, 0.18);
     color: #dc2626;
 }
 

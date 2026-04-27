@@ -6300,7 +6300,7 @@ html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseNotesCa
 }
 
 html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseNotesContent,
-html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseNotesContent * {
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseNotesContent :not([style*="color"]):not([color]) {
     color: rgba(23, 32, 51, 0.74) !important;
     -webkit-text-fill-color: rgba(23, 32, 51, 0.74) !important;
 }
