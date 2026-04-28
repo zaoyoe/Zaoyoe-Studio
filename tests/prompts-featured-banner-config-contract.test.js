@@ -46,13 +46,13 @@ test('prompts featured banner prefers homepage manual featured items before dail
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.js?v=20260420_PROMPT_DETAIL_TAGS_REMOVED_1'),
+        promptsHtml.includes('prompts-poetry.js?v=20260428_PROMPTS_SKELETON_CACHE_1'),
         true,
         'prompts.html should reference the featured-banner homepage-config bundle version'
     );
 
     assert.equal(
-        promptsHtml.includes('css/prompts-page.css?v=20260425_PROMPTS_AUTH_LIGHT_MODAL_1'),
+        promptsHtml.includes('css/prompts-page.css?v=20260428_PROMPTS_SKELETON_CACHE_1'),
         true,
         'prompts.html should reference the prompt page CSS bundle with modal scroll lock styles'
     );
@@ -102,7 +102,7 @@ test('prompts mobile comment mode keeps a dedicated light theme surface', () => 
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.css?v=20260425_PROMPTS_COMMENT_LIGHT_CONTROLS_1'),
+        promptsHtml.includes('prompts-poetry.css?v=20260428_PROMPTS_SKELETON_CACHE_1'),
         true,
         'prompts.html should cache-bust the mobile light comment mode stylesheet'
     );

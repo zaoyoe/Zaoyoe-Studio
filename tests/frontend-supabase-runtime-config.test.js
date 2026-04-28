@@ -1897,7 +1897,7 @@ test('privacy page reuses the shared Supabase bootstrap instead of inlining a du
 test('selected runtime, preview, and tooling pages externalize page-specific style blocks into dedicated CSS files', () => {
     const expectations = new Map([
         ['verify.html', 'css/verify-page.css?v=20260423_VERIFY_WHITE_THEME_2'],
-        ['prompts.html', 'css/prompts-page.css?v=20260425_PROMPTS_AUTH_LIGHT_MODAL_1'],
+        ['prompts.html', 'css/prompts-page.css?v=20260428_PROMPTS_SKELETON_CACHE_1'],
         ['reset-password.html', 'css/reset-password-page.css?v=20260324_RESET_PASSWORD_RUNTIME_STYLE_1'],
         ['privacy.html', 'css/privacy-page.css?v=20260324_PRIVACY_STYLES_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
@@ -11651,7 +11651,7 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.css?v=20260425_PROMPTS_COMMENT_LIGHT_CONTROLS_1'),
+        promptsHtml.includes('prompts-poetry.css?v=20260428_PROMPTS_SKELETON_CACHE_1'),
         true,
         'prompts.html should load the latest prompts gallery stylesheet version'
     );
@@ -11661,7 +11661,7 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'prompts.html should load the shared user event tracker'
     );
     assert.equal(
-        promptsHtml.includes('prompts-poetry.js?v=20260420_PROMPT_DETAIL_TAGS_REMOVED_1'),
+        promptsHtml.includes('prompts-poetry.js?v=20260428_PROMPTS_SKELETON_CACHE_1'),
         true,
         'prompts.html should load the latest prompts gallery runtime version'
     );
