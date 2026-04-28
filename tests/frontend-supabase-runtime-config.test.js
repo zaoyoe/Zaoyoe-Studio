@@ -1592,12 +1592,12 @@ test('auth runtime renderers centralize avatar, google loading, and profile moda
 
     for (const source of pageSources) {
         assert.equal(
-            source.includes('css/auth-sheet.css?v=20260427_AUTH_MESSAGE_CENTER_1'),
+            source.includes('css/auth-sheet.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
             true,
             'auth entry pages should load the latest auth sheet stylesheet'
         );
         assert.equal(
-            source.includes('supabase-auth-functions.js?v=20260427_GOOGLE_POPUP_MODAL_CLOSE_3'),
+            source.includes('supabase-auth-functions.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
             true,
             'auth entry pages should load the latest auth runtime script'
         );
@@ -1769,7 +1769,7 @@ test('injected auth runtime centralizes dropdown, drag, and badge style state', 
 
     for (const source of pageSources) {
         assert.equal(
-            source.includes('css/auth-sheet.css?v=20260427_AUTH_MESSAGE_CENTER_1'),
+            source.includes('css/auth-sheet.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
             true,
             'auth entry pages should load the latest injected auth stylesheet'
         );
@@ -1896,13 +1896,13 @@ test('privacy page reuses the shared Supabase bootstrap instead of inlining a du
 
 test('selected runtime, preview, and tooling pages externalize page-specific style blocks into dedicated CSS files', () => {
     const expectations = new Map([
-        ['verify.html', 'css/verify-page.css?v=20260423_VERIFY_WHITE_THEME_2'],
+        ['verify.html', 'css/verify-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
         ['prompts.html', 'css/prompts-page.css?v=20260428_PROMPTS_SKELETON_CACHE_1'],
-        ['reset-password.html', 'css/reset-password-page.css?v=20260324_RESET_PASSWORD_RUNTIME_STYLE_1'],
-        ['privacy.html', 'css/privacy-page.css?v=20260324_PRIVACY_STYLES_1'],
+        ['reset-password.html', 'css/reset-password-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
+        ['privacy.html', 'css/privacy-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260425_HOME_GUESTBOOK_MODAL_HIDE_1'],
-        ['shop.html', 'css/shop-page.css?v=20260427_SHOP_PURCHASE_GUIDANCE_VISIBLE_YELLOW_1'],
+        ['shop.html', 'css/shop-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
         ['admin-studio.html', 'css/admin-studio-page.css?v=20260427_ADMIN_SITE_SWITCHER_ACTIVE_HOVER_LOCK_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260427_AUTH_CALLBACK_SILENT_2'],
@@ -1991,7 +1991,7 @@ test('selected preview showcase pages no longer embed inline style attributes', 
 
 test('shop and archived index pages no longer embed inline style attributes', () => {
     const expectations = new Map([
-        ['shop.html', 'css/shop-page.css?v=20260427_SHOP_PURCHASE_GUIDANCE_VISIBLE_YELLOW_1'],
+        ['shop.html', 'css/shop-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
         ['index_old.html', 'css/index-old.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1']
     ]);
     const inlineStyleAttributePattern = /\sstyle\s*=\s*["']/i;
@@ -2090,7 +2090,7 @@ test('reset password runtime bootstrap externalizes status visibility state', ()
     }
 
     assert.equal(
-        resetPasswordSource.includes('./js/reset-password-page.js?v=20260324_RESET_PASSWORD_RUNTIME_STYLE_1'),
+        resetPasswordSource.includes('./js/reset-password-page.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
         true,
         'reset-password.html should load the latest reset password runtime-style bootstrap'
     );
@@ -2431,7 +2431,7 @@ test('shop storefront preserves the initial skeleton layout while first-load dat
         'js/shop-client.js should keep the server-rendered shop skeleton layout stable when the first request is still pending'
     );
     assert.equal(
-        shopHtmlSource.includes('js/shop-client.js?v=20260427_SHOP_PURCHASE_GUIDANCE_VISIBLE_YELLOW_1'),
+        shopHtmlSource.includes('js/shop-client.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
         true,
         'shop.html should reference the latest shop client runtime for the cart-enabled storefront flow'
     );
@@ -2447,7 +2447,7 @@ test('shop storefront uses a 21:9 media ratio for mobile product cards', () => {
         'mobile shop product cards and loading skeletons should keep the top media area at 21:9'
     );
     assert.equal(
-        shopHtmlSource.includes('css/shop-page.css?v=20260427_SHOP_PURCHASE_GUIDANCE_VISIBLE_YELLOW_1'),
+        shopHtmlSource.includes('css/shop-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
         true,
         'shop.html should bust the shop stylesheet cache for the latest shop card sizing'
     );
@@ -2922,7 +2922,7 @@ test('homepage subpages load the latest prefetch-home runtime script version', (
 
     for (const source of subpageSources) {
         assert.equal(
-            source.includes('./js/prefetch-home.js?v=20260419_HOME_PROMPT_CACHE_INVALIDATION_2'),
+            source.includes('./js/prefetch-home.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
             true,
             'subpages should load the latest prefetch-home script version'
         );
@@ -3096,7 +3096,7 @@ test('guestbook runtime renderers externalize loading, modal, and interaction st
     }
 
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260427_PROFILE_SECURITY_PLACEHOLDER_SIZE_2'),
+        guestbookHtml.includes('style.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
         true,
         'guestbook.html should reference the updated guestbook stylesheet version'
     );
@@ -3185,8 +3185,8 @@ test('supabase guestbook runtime renderers externalize error, empty state, delet
     assert.match(indexSource, /homepage-overlays\.css\?v=[A-Za-z0-9_]+/, 'index.html should contain a cache-busted homepage overlay stylesheet reference');
     assert.match(guestbookHtml, /style\.css\?v=[A-Za-z0-9_]+/, 'guestbook.html should contain a cache-busted shared stylesheet reference');
     assert.match(archivedIndexSource, /style\.css\?v=[A-Za-z0-9_]+/, 'index_old.html should contain a cache-busted shared stylesheet reference');
-    assert.equal(indexSource.includes('supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index.html should contain supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1');
-    assert.equal(guestbookHtml.includes('supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'guestbook.html should contain supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1');
+    assert.equal(indexSource.includes('supabase-guestbook-functions.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), true, 'index.html should contain supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1');
+    assert.equal(guestbookHtml.includes('supabase-guestbook-functions.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), true, 'guestbook.html should contain supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1');
     assert.equal(archivedIndexSource.includes('supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index_old.html should contain supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1');
 });
 
@@ -3251,12 +3251,12 @@ test('homepage guestbook modal runtime renderers externalize keyboard dock, view
         'index.html should load the latest homepage guestbook modal stylesheet version'
     );
     assert.equal(
-        indexSource.includes('./js/homepage-guestbook-modal.js?v=20260324_HOMEPAGE_GUESTBOOK_MODAL_RUNTIME_STYLE_2'),
+        indexSource.includes('./js/homepage-guestbook-modal.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
         true,
         'index.html should load the latest homepage guestbook modal script version'
     );
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260427_PROFILE_SECURITY_PLACEHOLDER_SIZE_2'),
+        guestbookHtml.includes('style.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
         true,
         'guestbook.html should load the latest shared stylesheet version'
     );
@@ -8058,17 +8058,17 @@ test('verify widget runtime renderers externalize progress, visibility, history 
     }
 
     assert.equal(
-        verifyPageSource.includes('verify-widget.css?v=20260324_VERIFY_WIDGET_RUNTIME_STYLE_1'),
+        verifyPageSource.includes('verify-widget.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
         true,
         'verify.html should load the latest verify-widget stylesheet version'
     );
     assert.equal(
-        verifyPageSource.includes('./js/user-event-tracker.js?v=20260405_USER_EVENT_TRACKER_2'),
+        verifyPageSource.includes('./js/user-event-tracker.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
         true,
         'verify.html should load the shared user event tracker before the verify widget runtime'
     );
     assert.equal(
-        verifyPageSource.includes('./verify-widget.js?v=20260411_VERIFY_POLL_RESILIENCE_1'),
+        verifyPageSource.includes('./verify-widget.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
         true,
         'verify.html should load the latest verify-widget script version'
     );
@@ -11656,7 +11656,7 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'prompts.html should load the latest prompts gallery stylesheet version'
     );
     assert.equal(
-        promptsHtml.includes('./js/user-event-tracker.js?v=20260405_USER_EVENT_TRACKER_2'),
+        promptsHtml.includes('./js/user-event-tracker.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
         true,
         'prompts.html should load the shared user event tracker'
     );
@@ -11784,13 +11784,13 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     }
 
     assert.equal(injectAuthSource.includes("entry: 'nav_wallet'"), true, 'inject-auth.js should tag wallet opens from the auth dropdown');
-    assert.equal(indexSource.includes('./js/user-event-tracker.js?v=20260405_USER_EVENT_TRACKER_2'), true, 'index.html should load the shared user event tracker');
-    assert.equal(guestbookSource.includes('js/user-event-tracker.js?v=20260405_USER_EVENT_TRACKER_2'), true, 'guestbook.html should load the shared user event tracker');
-    assert.equal(shopSource.includes('js/user-event-tracker.js?v=20260405_USER_EVENT_TRACKER_2'), true, 'shop.html should load the shared user event tracker');
-    assert.equal(indexSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index.html should load the latest guestbook runtime');
-    assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'guestbook.html should load the latest guestbook runtime');
+    assert.equal(indexSource.includes('./js/user-event-tracker.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), true, 'index.html should load the shared user event tracker');
+    assert.equal(guestbookSource.includes('js/user-event-tracker.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), true, 'guestbook.html should load the shared user event tracker');
+    assert.equal(shopSource.includes('js/user-event-tracker.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), true, 'shop.html should load the shared user event tracker');
+    assert.equal(indexSource.includes('./supabase-guestbook-functions.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), true, 'index.html should load the latest guestbook runtime');
+    assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), true, 'guestbook.html should load the latest guestbook runtime');
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index_old.html should load the latest guestbook runtime');
-    assert.equal(shopSource.includes('js/shop-client.js?v=20260427_SHOP_PURCHASE_GUIDANCE_VISIBLE_YELLOW_1'), true, 'shop.html should load the latest cart-aware shop runtime');
+    assert.equal(shopSource.includes('js/shop-client.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260412_SHOP_CARD_IMAGE_OPT_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
     assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260428_WALLET_MOBILE_NAV_STABLE_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
 });
@@ -13527,7 +13527,7 @@ test('section visibility runtime externalizes element hiding and blocked overlay
 
     const sharedMarkers = [
         'css/section-visibility.css?v=20260324_SECTION_VISIBILITY_RUNTIME_STYLE_1',
-        'js/section-visibility.js?v=20260411_HOMEPAGE_CONTRACT_P1_2'
+        'js/section-visibility.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'
     ];
 
     for (const pageSource of pageSources) {
@@ -13692,7 +13692,7 @@ test('final frontend runtime remnants route through delegated or bound listeners
 
     const notificationAssetMarkers = [
         'css/notification-client.css?v=20260331_NOTIFICATION_FILTER_MEMORY_1',
-        'js/engagement-runtime-loader.js?v=20260421_PUBLIC_ENGAGEMENT_LAZY_BOOTSTRAP_P1'
+        'js/engagement-runtime-loader.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'
     ];
 
     for (const marker of notificationAssetMarkers) {
@@ -14085,12 +14085,12 @@ test('announcement runtime renderers externalize decoration particles and physic
     }
 
     assert.equal(
-        indexSource.includes('./js/engagement-runtime-loader.js?v=20260421_PUBLIC_ENGAGEMENT_LAZY_BOOTSTRAP_P1'),
+        indexSource.includes('./js/engagement-runtime-loader.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
         true,
         'index.html should defer announcement loading through the shared engagement bootstrap'
     );
     assert.equal(
-        guestbookSource.includes('js/engagement-runtime-loader.js?v=20260421_PUBLIC_ENGAGEMENT_LAZY_BOOTSTRAP_P1'),
+        guestbookSource.includes('js/engagement-runtime-loader.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
         true,
         'guestbook.html should defer announcement loading through the shared engagement bootstrap'
     );
@@ -14102,7 +14102,7 @@ test('announcement runtime renderers externalize decoration particles and physic
 
     for (const source of [verifySource, shopSource, legacyIndexSource]) {
         assert.equal(
-            source.includes('js/engagement-runtime-loader.js?v=20260421_PUBLIC_ENGAGEMENT_LAZY_BOOTSTRAP_P1'),
+            source.includes('js/engagement-runtime-loader.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
             true,
             'announcement entry pages should defer announcement loading through the shared engagement bootstrap'
         );
@@ -14325,7 +14325,7 @@ test('public light theme modal backdrops reuse the muted blue-gray glass materia
         assert.equal(source.includes('overscroll-behavior'), true, `${file} should keep backdrop scroll chained inside the modal layer`);
     }
 
-    const expectedHref = '20260427_AUTH_MESSAGE_CENTER_1';
+    const expectedHref = '20260428_PUBLIC_ASSET_CACHE_SWEEP_1';
     const pageSources = [
         readRepoFile('index.html'),
         readRepoFile('guestbook.html'),
@@ -14354,8 +14354,8 @@ test('public light theme modal backdrops reuse the muted blue-gray glass materia
 
 test('shop page loads auth sheet after legacy shared styles', () => {
     const shopSource = readRepoFile('shop.html');
-    const sharedStyleIndex = shopSource.indexOf('style.css?v=20260427_PROFILE_SECURITY_PLACEHOLDER_SIZE_2');
-    const authSheetIndex = shopSource.indexOf('css/auth-sheet.css?v=20260427_AUTH_MESSAGE_CENTER_1');
+    const sharedStyleIndex = shopSource.indexOf('style.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1');
+    const authSheetIndex = shopSource.indexOf('css/auth-sheet.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1');
 
     assert.notEqual(sharedStyleIndex, -1, 'shop.html should load the shared style.css bundle');
     assert.notEqual(authSheetIndex, -1, 'shop.html should load the shared auth sheet stylesheet');

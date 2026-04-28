@@ -140,7 +140,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /css\/shop-page\.css\?v=20260427_SHOP_PURCHASE_GUIDANCE_VISIBLE_YELLOW_1/,
+        /css\/shop-page\.css\?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1/,
         'shop.html should bust the shop stylesheet cache after updating purchase guidance light-theme color visibility'
     );
     assert.match(
@@ -150,7 +150,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /js\/shop-client\.js\?v=20260427_SHOP_PURCHASE_GUIDANCE_VISIBLE_YELLOW_1/,
+        /js\/shop-client\.js\?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1/,
         'shop.html should load the purchase-guidance rich-text runtime with the visible yellow normalization fix'
     );
     assert.match(
