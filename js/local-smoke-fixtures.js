@@ -9157,7 +9157,7 @@
             Boolean(
                 promptCard?.querySelector('.admin-card-badge--global')
                 && promptCard?.querySelector('.admin-card-badge--lang.is-ready')
-                && promptCard?.querySelector('.admin-card-subtitle')
+                && promptCard?.querySelector('.admin-card-language-summary')
             ),
             promptCard?.textContent?.trim()?.slice(0, 160) || '<empty>'
         );

@@ -129,6 +129,8 @@ const ShopAdmin = {
     purchaseNotesSchemaAvailable: null, // null = unknown, false = remote DB not migrated yet
     richTextEditorsReady: false,
     shopCustomSelectBridgeReady: false,
+    productDeliveryFilterPlacementBound: false,
+    productDeliveryFilterPlacementFrame: 0,
 
     // ==================== Site-Context Editing ====================
     SITE_FIELD_MAP: {
@@ -1103,6 +1105,75 @@ Example output format:
         this.getManagedShopSelects(root).forEach((select) => {
             this.syncShopCustomSelect(select);
         });
+    },
+
+    getProductDeliveryFilterSlot: function (slotName = 'toolbar') {
+        return document.querySelector(`[data-product-delivery-filter-slot="${slotName}"]`);
+    },
+
+    isProductDeliveryFilterCompactLayout: function () {
+        return window.matchMedia?.('(max-width: 768px)')?.matches === true;
+    },
+
+    syncProductDeliveryFilterPlacement: function () {
+        const select = document.getElementById('productDeliveryFilter');
+        if (!this.isManagedShopSelect(select)) {
+            return;
+        }
+
+        const compact = this.isProductDeliveryFilterCompactLayout();
+        const targetSlot = this.getProductDeliveryFilterSlot(compact ? 'status' : 'toolbar');
+        if (!(targetSlot instanceof HTMLElement)) {
+            return;
+        }
+
+        const wrapper = this.createShopCustomSelectWrapper(select);
+        if (select.parentElement !== targetSlot) {
+            targetSlot.appendChild(select);
+        }
+        if (wrapper instanceof HTMLElement && wrapper.parentElement !== targetSlot) {
+            targetSlot.appendChild(wrapper);
+        }
+
+        select.classList.toggle('shop-product-toolbar-select--status', compact);
+        wrapper?.classList.toggle('shop-product-toolbar-select--status', compact);
+        this.syncShopCustomSelect(select);
+    },
+
+    scheduleProductDeliveryFilterPlacement: function () {
+        if (this.productDeliveryFilterPlacementFrame) {
+            window.cancelAnimationFrame?.(this.productDeliveryFilterPlacementFrame);
+        }
+
+        const run = () => {
+            this.productDeliveryFilterPlacementFrame = 0;
+            this.syncProductDeliveryFilterPlacement();
+        };
+
+        if (typeof window.requestAnimationFrame === 'function') {
+            this.productDeliveryFilterPlacementFrame = window.requestAnimationFrame(run);
+        } else {
+            window.setTimeout(run, 0);
+        }
+    },
+
+    bindProductDeliveryFilterPlacement: function () {
+        if (this.productDeliveryFilterPlacementBound) {
+            this.syncProductDeliveryFilterPlacement();
+            return;
+        }
+        this.productDeliveryFilterPlacementBound = true;
+
+        const syncPlacement = () => this.scheduleProductDeliveryFilterPlacement();
+        const mediaQuery = window.matchMedia?.('(max-width: 768px)');
+        if (mediaQuery?.addEventListener) {
+            mediaQuery.addEventListener('change', syncPlacement);
+        } else if (mediaQuery?.addListener) {
+            mediaQuery.addListener(syncPlacement);
+        }
+        window.addEventListener('resize', syncPlacement, { passive: true });
+        window.addEventListener('orientationchange', syncPlacement, { passive: true });
+        this.syncProductDeliveryFilterPlacement();
     },
 
     normalizeShopTabName: function (tabName) {
@@ -2328,6 +2399,7 @@ Example output format:
         this.bindStaticOverlayDismisses();
         this.bindShopContextListeners();
         this.enhanceShopCustomSelects();
+        this.bindProductDeliveryFilterPlacement();
         this.ensureRichTextEditors();
         this.ensureDeliveryWorkspaceMounted();
 

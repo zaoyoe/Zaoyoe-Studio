@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260427_WALLET_THEME_DEFAULT_LIGHT_1';
+    const walletCssHref = 'css/wallet.css?v=20260428_WALLET_MOBILE_NAV_STABLE_1';
     const existingWalletCss = document.getElementById('wallet-modal-css');
     if (existingWalletCss) {
         existingWalletCss.href = walletCssHref;
@@ -1006,6 +1006,29 @@
                 }
 
                 this.handleDelegatedAction(actionEl.dataset.walletAction, actionEl, event);
+            });
+
+            overlay.addEventListener('focusin', (event) => {
+                const menuItem = event.target.closest('.wallet-menu-item');
+                if (!menuItem || !overlay.contains(menuItem)) {
+                    return;
+                }
+
+                this.updateIndicatorPosition(menuItem);
+            });
+
+            overlay.addEventListener('focusout', (event) => {
+                const menuItem = event.target.closest('.wallet-menu-item');
+                if (!menuItem || !overlay.contains(menuItem)) {
+                    return;
+                }
+
+                requestAnimationFrame(() => {
+                    const sidebar = menuItem.closest('.wallet-sidebar');
+                    if (sidebar && !sidebar.contains(document.activeElement)) {
+                        this.updateIndicatorPosition();
+                    }
+                });
             });
 
             overlay.addEventListener('input', (event) => {
@@ -2863,36 +2886,36 @@
                         
                         <div class="wallet-layout">
                             <!-- Left Sidebar Menu -->
-                            <div class="wallet-sidebar">
+                            <div class="wallet-sidebar" aria-label="${this.escapeAttribute(window.i18n?.t('wallet.title') || '我的钱包')}">
                                 <div class="sidebar-indicator"></div>
-                                <div class="wallet-menu-item active" data-view="balance"${this.buildDataAttributes({ 'wallet-action': 'switch-view', 'wallet-view-id': 'balance' })}>
+                                <button type="button" class="wallet-menu-item active" data-view="balance" aria-current="page" aria-controls="view-balance"${this.buildDataAttributes({ 'wallet-action': 'switch-view', 'wallet-view-id': 'balance' })}>
                                     <span class="menu-icon">💳</span>
                                     <span class="menu-text">${window.i18n?.t('wallet.balance') || '余额'}</span>
-                                </div>
-                                <div class="wallet-menu-item" data-view="cards"${this.buildDataAttributes({ 'wallet-action': 'switch-view', 'wallet-view-id': 'cards' })}>
+                                </button>
+                                <button type="button" class="wallet-menu-item" data-view="cards" aria-controls="view-cards"${this.buildDataAttributes({ 'wallet-action': 'switch-view', 'wallet-view-id': 'cards' })}>
                                     <span class="menu-icon">${this.renderWalletInlineIcon('fa-ticket-alt', '#f472b6', 'wallet-inline-icon--compact')}</span>
                                     <span class="menu-text">${window.i18n?.t('wallet.cards') || '卡券'}</span>
                                     <span class="wallet-menu-badge" id="wallet-menu-cards-badge" hidden>0</span>
-                                </div>
-                                <div class="wallet-menu-item" data-view="recharge"${this.buildDataAttributes({ 'wallet-action': 'switch-view', 'wallet-view-id': 'recharge' })}>
+                                </button>
+                                <button type="button" class="wallet-menu-item" data-view="recharge" aria-controls="view-recharge"${this.buildDataAttributes({ 'wallet-action': 'switch-view', 'wallet-view-id': 'recharge' })}>
                                     <span class="menu-icon">${this.renderWalletInlineIcon('fa-bolt', '#fbbf24', 'wallet-inline-icon--compact')}</span>
                                     <span class="menu-text">${window.i18n?.t('wallet.recharge') || '充值'}</span>
-                                </div>
+                                </button>
 
-                                <div class="wallet-menu-item" data-view="orders"${this.buildDataAttributes({ 'wallet-action': 'switch-view', 'wallet-view-id': 'orders' })}>
+                                <button type="button" class="wallet-menu-item" data-view="orders" aria-controls="view-orders"${this.buildDataAttributes({ 'wallet-action': 'switch-view', 'wallet-view-id': 'orders' })}>
                                     <span class="menu-icon">📋</span>
                                     <span class="menu-text">${window.i18n?.t('wallet.records') || '记录'}</span>
-                                </div>
+                                </button>
 
-                                <div class="wallet-menu-item" data-view="affiliate"${this.buildDataAttributes({ 'wallet-action': 'switch-view', 'wallet-view-id': 'affiliate' })}>
+                                <button type="button" class="wallet-menu-item" data-view="affiliate" aria-controls="view-affiliate"${this.buildDataAttributes({ 'wallet-action': 'switch-view', 'wallet-view-id': 'affiliate' })}>
                                     <span class="menu-icon">${this.renderWalletInlineIcon('fa-share-alt', '#10b981', 'wallet-inline-icon--compact')}</span>
                                     <span class="menu-text">${window.i18n?.t('wallet.affiliate') || '推广'}</span>
-                                </div>
+                                </button>
 
-                                <div class="wallet-menu-item" data-view="checkin"${this.buildDataAttributes({ 'wallet-action': 'switch-view', 'wallet-view-id': 'checkin' })}>
+                                <button type="button" class="wallet-menu-item" data-view="checkin" aria-controls="view-checkin"${this.buildDataAttributes({ 'wallet-action': 'switch-view', 'wallet-view-id': 'checkin' })}>
                                     <span class="menu-icon">🔖</span>
                                     <span class="menu-text">${window.i18n?.t('wallet.checkin') || '签到'}</span>
-                                </div>
+                                </button>
                             </div>
                             
                             <!-- Right Content Area -->
@@ -3208,7 +3231,13 @@
         switchView(viewId) {
             // Update menu items
             document.querySelectorAll('.wallet-menu-item').forEach(item => {
-                item.classList.toggle('active', item.dataset.view === viewId);
+                const isActive = item.dataset.view === viewId;
+                item.classList.toggle('active', isActive);
+                if (isActive) {
+                    item.setAttribute('aria-current', 'page');
+                } else {
+                    item.removeAttribute('aria-current');
+                }
             });
 
             // Update Sidebar Indicator
@@ -3253,30 +3282,60 @@
         /**
          * Update the position of the sliding sidebar indicator
          */
-        updateIndicatorPosition() {
+        updateIndicatorPosition(targetItem = null) {
             const sidebar = document.querySelector('.wallet-sidebar');
-            const activeItem = document.querySelector('.wallet-menu-item.active');
+            const activeItem = targetItem?.classList?.contains('wallet-menu-item')
+                ? targetItem
+                : document.querySelector('.wallet-menu-item.active');
             const indicator = document.querySelector('.sidebar-indicator');
 
-            if (sidebar && activeItem && indicator) {
-                // Calculate relative position
-                const sidebarRect = sidebar.getBoundingClientRect();
-                const itemRect = activeItem.getBoundingClientRect();
-
-                // 16 is container padding top
-                const top = itemRect.top - sidebarRect.top;
-                const height = itemRect.height;
-
-                setInlineStyles(indicator, {
-                    top: `${top}px`,
-                    height: `${height}px`,
-                    opacity: '1'
-                });
-                sidebar.classList.add('wallet-sidebar--indicator-ready');
+            if (!sidebar || !activeItem || !indicator || !sidebar.contains(activeItem)) {
+                sidebar?.classList.remove('wallet-sidebar--indicator-ready');
                 return;
             }
 
-            sidebar?.classList.remove('wallet-sidebar--indicator-ready');
+            const left = activeItem.offsetLeft;
+            const top = activeItem.offsetTop;
+            const width = activeItem.offsetWidth;
+            const height = activeItem.offsetHeight;
+            const isCompactMobile = isWalletModalCompactMobile();
+            const minReadyWidth = isCompactMobile ? 48 : 1;
+            const minReadyHeight = isCompactMobile ? 48 : 1;
+
+            if (width < minReadyWidth || height < minReadyHeight) {
+                setInlineStyles(indicator, {
+                    opacity: '0'
+                });
+                sidebar.classList.remove('wallet-sidebar--indicator-ready');
+                if (isCompactMobile && indicator.dataset.walletPendingRetry !== '1') {
+                    indicator.dataset.walletPendingRetry = '1';
+                    requestAnimationFrame(() => {
+                        delete indicator.dataset.walletPendingRetry;
+                        this.updateIndicatorPosition(activeItem);
+                    });
+                }
+                return;
+            }
+
+            const wasIndicatorReady = sidebar.classList.contains('wallet-sidebar--indicator-ready');
+            if (!wasIndicatorReady) {
+                indicator.classList.add('sidebar-indicator--settling');
+            }
+
+            setInlineStyles(indicator, {
+                left: `${left}px`,
+                top: `${top}px`,
+                width: `${width}px`,
+                height: `${height}px`,
+                opacity: '1'
+            });
+            sidebar.classList.add('wallet-sidebar--indicator-ready');
+
+            if (!wasIndicatorReady) {
+                requestAnimationFrame(() => {
+                    indicator.classList.remove('sidebar-indicator--settling');
+                });
+            }
         },
 
         resetAffiliateState() {
@@ -9038,7 +9097,6 @@
 
             const allowedTags = new Set(['A', 'B', 'STRONG', 'I', 'EM', 'U', 'BR', 'DIV', 'P', 'SPAN', 'FONT', 'UL', 'OL', 'LI']);
             const allowedTextAlign = /^(left|center|right|justify)$/i;
-            const allowedColor = /^(#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})|rgba?\([^)]*\))$/i;
             const allowedFontSize = /^([1-7]|\d+(\.\d+)?(px|em|rem|%)|xx-small|x-small|small|medium|large|x-large|xx-large)$/i;
 
             const sanitizeStyle = (styleText = '') => {
@@ -9052,9 +9110,6 @@
 
                     if (prop === 'text-align' && allowedTextAlign.test(value)) {
                         safeRules.push(`text-align: ${value.toLowerCase()}`);
-                    }
-                    if (prop === 'color' && allowedColor.test(value)) {
-                        safeRules.push(`color: ${value}`);
                     }
                     if (prop === 'font-size' && allowedFontSize.test(value)) {
                         safeRules.push(`font-size: ${value}`);
@@ -9103,11 +9158,7 @@
                     }
 
                     if (child.tagName === 'FONT') {
-                        const color = String(attrs.color || '').trim();
                         const size = String(attrs.size || '').trim();
-                        if (allowedColor.test(color)) {
-                            child.setAttribute('color', color);
-                        }
                         if (allowedFontSize.test(size)) {
                             child.setAttribute('size', size);
                         }

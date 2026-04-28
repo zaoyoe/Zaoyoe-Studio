@@ -2975,12 +2975,32 @@
 
 @media (max-width: 640px) {
     .comment-queue-bar {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 8px;
     }
 
     .comment-queue-btn {
         width: 100%;
+        min-width: 0;
         justify-content: space-between;
+        gap: 6px;
+        padding: 8px 10px;
+    }
+
+    .comment-queue-btn__label {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 0.8rem;
+    }
+
+    .comment-queue-btn__count {
+        flex-shrink: 0;
+        min-width: 24px;
+        padding-left: 6px;
+        padding-right: 6px;
     }
 
     .comment-detail-drawer__panel {
@@ -3117,8 +3137,10 @@
 
     /* Batch action menu: Position fix */
     .batch-dropdown-menu {
-        right: -50%;
-        min-width: 140px;
+        left: 0;
+        right: auto;
+        min-width: 184px;
+        max-width: calc(100vw - 32px);
     }
 
     /* User modal: Full screen on mobile */
@@ -3205,19 +3227,25 @@
     }
 
     .batch-dropdown-menu {
-        position: fixed;
-        top: auto;
-        bottom: 0;
+        position: absolute;
+        top: calc(100% + 8px);
+        bottom: auto;
         left: 0;
-        right: 0;
-        width: 100%;
-        border-radius: 16px 16px 0 0;
-        padding: 12px;
+        right: auto;
+        width: max-content;
+        min-width: 184px;
+        max-width: calc(100vw - 24px);
+        max-height: min(38vh, 280px);
+        border-radius: 8px;
+        padding: 5px;
+        overflow-y: auto;
     }
 
     .batch-menu-item {
-        padding: 14px;
-        font-size: 0.95rem;
+        min-height: 34px;
+        padding: 7px 10px;
+        font-size: 0.84rem;
+        line-height: 1.25;
     }
 }
 
@@ -3244,7 +3272,26 @@
 
     .comment-toolbar-compact .toolbar-right {
         width: 100%;
-        justify-content: center;
+        justify-content: space-between;
+    }
+
+    #module-comments .comment-toolbar-compact .comments-batch-actions-wrapper {
+        order: 1;
+        width: auto;
+        flex: 0 0 auto;
+        justify-content: flex-start;
+    }
+
+    #module-comments .comment-toolbar-compact .view-toggle {
+        order: 2;
+        margin-left: auto;
+    }
+
+    #module-comments .comment-toolbar-compact .comments-selection-count {
+        order: 3;
+        width: 100%;
+        margin-left: 0;
+        justify-content: flex-start;
     }
 
     .comment-list-admin {

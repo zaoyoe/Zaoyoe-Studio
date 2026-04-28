@@ -94,6 +94,31 @@ const AdminDiscounts = {
         return Boolean(module && module.classList.contains('active') && !module.hidden);
     },
 
+    enableTableHorizontalScroll: function () {
+        const container = document.querySelector('#module-discounts .admin-discount-table-scroll');
+        if (!container || container._discountsHorizontalScrollEnabled) {
+            return;
+        }
+
+        container.addEventListener('wheel', (event) => {
+            if (container.scrollWidth <= container.clientWidth) {
+                return;
+            }
+
+            const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY)
+                ? event.deltaX
+                : event.deltaY;
+            if (!delta) {
+                return;
+            }
+
+            event.preventDefault();
+            container.scrollLeft += delta;
+        }, { passive: false });
+
+        container._discountsHorizontalScrollEnabled = true;
+    },
+
     normalizeShellContextObject: function (value) {
         return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
     },
@@ -1334,8 +1359,8 @@ const AdminDiscounts = {
             { label: '近 7 天风控', value: counts.riskAlerted }
         ].map((item) => `
             <span class="admin-discount-toolbar-chip${item.accent ? ' admin-discount-toolbar-chip--accent' : ''}">
-                <span>${this.escapeHtml(item.label)}</span>
-                <strong>${this.escapeHtml(String(item.value))}</strong>
+                <span class="admin-discount-toolbar-chip__label">${this.escapeHtml(item.label)}</span>
+                <strong class="admin-discount-toolbar-chip__value">${this.escapeHtml(String(item.value))}</strong>
             </span>
         `).join('');
         target.hidden = false;
@@ -2556,7 +2581,7 @@ const AdminDiscounts = {
         return `
             <div class="admin-discount-detail-dialog custom-scrollbar">
                 <div class="admin-discount-detail-header">
-                    <div>
+                    <div class="admin-discount-detail-header__copy">
                         <div class="admin-discount-detail-header__eyebrow">优惠券详情</div>
                         <h3 class="admin-discount-detail-header__title">${this.escapeHtml(code)}</h3>
                     </div>
@@ -2631,7 +2656,7 @@ const AdminDiscounts = {
         return `
             <div class="admin-discount-detail-dialog custom-scrollbar">
                 <div class="admin-discount-detail-header">
-                    <div>
+                    <div class="admin-discount-detail-header__copy">
                         <div class="admin-discount-detail-header__eyebrow">优惠券详情</div>
                         <h3 class="admin-discount-detail-header__title">${this.escapeHtml(this.safeText(discount.code).toUpperCase() || '优惠券详情')}</h3>
                         <div class="admin-discount-detail-header__meta">${statusState.badgeMarkup}</div>
@@ -2765,7 +2790,7 @@ const AdminDiscounts = {
                 overlay.innerHTML = `
                     <div class="admin-discount-detail-dialog custom-scrollbar">
                         <div class="admin-discount-detail-header">
-                            <div>
+                            <div class="admin-discount-detail-header__copy">
                                 <div class="admin-discount-detail-header__eyebrow">优惠券详情</div>
                                 <h3 class="admin-discount-detail-header__title">${this.escapeHtml(fallbackCode || '优惠券详情')}</h3>
                             </div>
@@ -4459,6 +4484,7 @@ const AdminDiscounts = {
     activate: async function (context = {}, options = {}) {
         console.log('🎟️ Initializing Discounts Module...');
         this.bindStaticControls();
+        this.enableTableHorizontalScroll();
         void this.ensureRestrictionOptionsLoaded();
         const shouldReload = this.shouldReloadListOnActivate({
             force: options?.force === true
@@ -4816,6 +4842,7 @@ const AdminDiscounts = {
     loadDiscounts: async function (options = {}) {
         const tableBody = document.getElementById('discountsTableBody');
         if (!tableBody) return;
+        this.enableTableHorizontalScroll();
 
         if (this.listLoadPromise && options?.force !== true) {
             return this.listLoadPromise;
@@ -4960,6 +4987,7 @@ const AdminDiscounts = {
             const pContainer = document.getElementById('discountsPagination');
             if (pContainer) pContainer.innerHTML = '';
             this.updateBatchRestoreButtonState();
+            this.enableTableHorizontalScroll();
             return;
         }
 
@@ -4988,7 +5016,7 @@ const AdminDiscounts = {
 
             return `
             <tr class="${statusState.isPracticallyUsed ? 'opacity-70' : ''}">
-                <td>
+                <td data-label="优惠码">
                     <div class="admin-discount-code-cell">
                         <button type="button"
                             class="admin-discount-code-btn"
@@ -5002,18 +5030,18 @@ const AdminDiscounts = {
                         ${latestRiskLabel ? `<div class="admin-discount-code-meta">${this.escapeHtml(latestRiskLabel)}</div>` : ''}
                     </div>
                 </td>
-                <td>${typeLabel}</td>
-                <td>
+                <td data-label="类型与面额">${typeLabel}</td>
+                <td data-label="使用限制">
                     ${this.getDiscountUsageMarkup(d)}
                 </td>
-                <td>
+                <td data-label="状态/有效期">
                     <div class="admin-discount-status-stack">
                         <div>${statusState.badgeMarkup}</div>
                         <div class="admin-discount-expiry-meta">${this.escapeHtml(statusState.detailText)}</div>
                     </div>
                 </td>
-                <td>${this.getDiscountPolicyMarkup(d)}</td>
-                <td>
+                <td data-label="策略">${this.getDiscountPolicyMarkup(d)}</td>
+                <td data-label="操作">
                     <div class="action-buttons admin-discount-action-wrap">
                         <button class="action-btn"
                                 type="button"
@@ -5057,6 +5085,7 @@ const AdminDiscounts = {
         });
         this.updateBatchRestoreButtonState();
         this.renderPagination(totalPages);
+        this.enableTableHorizontalScroll();
     },
 
     goToPage: function (page) {

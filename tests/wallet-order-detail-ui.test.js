@@ -165,6 +165,11 @@ test('wallet product and order detail modals omit top-right close buttons consis
 test('wallet order usage instructions render through local sanitizer instead of leaking raw rich text', () => {
     const script = fs.readFileSync(walletScriptPath, 'utf8');
     const styles = fs.readFileSync(walletStylesPath, 'utf8');
+    const sanitizerSource = sliceSourceBetween(
+        script,
+        'sanitizeWalletOrderRichTextHtml(html)',
+        'renderStoredWalletOrderRichText(content)'
+    );
 
     assert.match(script, /renderStoredWalletOrderRichText\(item\.content\)/);
     assert.match(script, /sanitizeWalletOrderRichTextHtml\(html\)/);
@@ -173,8 +178,14 @@ test('wallet order usage instructions render through local sanitizer instead of 
     assert.match(script, /lt\|gt\|quot\|amp\|#39\|apos/);
     assert.match(script, /linkifyWalletOrderRichText\(this\.escapeHtml\(normalized\)\)/);
     assert.doesNotMatch(script, /window\.ShopClient\.renderStoredRichText\(normalized\)/);
+    assert.doesNotMatch(sanitizerSource, /allowedColor/);
+    assert.doesNotMatch(sanitizerSource, /prop === 'color'/);
+    assert.doesNotMatch(sanitizerSource, /setAttribute\('color'/);
     assert.match(styles, /\.wallet-order-guidance-content\s*\{[\s\S]*overflow-wrap:\s*anywhere;/);
     assert.match(styles, /\.wallet-order-guidance-content\s*\{[\s\S]*word-break:\s*break-word;/);
+    assert.match(styles, /20260428_WALLET_ORDER_GUIDANCE_LIGHT_TEXT_1/);
+    assert.match(styles, /html:not\(\[data-theme="dark"\]\) \.wallet-order-guidance-content :not\(a\)[\s\S]*-webkit-text-fill-color:\s*#334155 !important;/);
+    assert.match(styles, /html:not\(\[data-theme="dark"\]\) \.wallet-order-guidance-content a \*[\s\S]*-webkit-text-fill-color:\s*#2563eb !important;/);
 });
 
 test('wallet ledger details map check-in and rewards by reason instead of positive amount as recharge', () => {

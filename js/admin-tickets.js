@@ -1290,6 +1290,16 @@ const AdminTickets = {
         return row;
     },
 
+    syncTicketsTableScroller: function () {
+        let tablePanel = document.querySelector('#ticketsListSection .admin-ticket-table-panel');
+        if (!tablePanel) {
+            tablePanel = document.querySelector('#ticketsListSection .users-table-panel');
+        }
+        if (tablePanel && window.enableHorizontalScroll) {
+            window.enableHorizontalScroll(tablePanel);
+        }
+    },
+
     buildTableLoadingSkeleton: function (rowCount = 6, sampleTickets = []) {
         const rows = Math.max(4, Number.parseInt(rowCount, 10) || 6);
         const includeSelection = this.selectionMode === true;
@@ -1750,10 +1760,29 @@ const AdminTickets = {
     },
 
     setWorkspaceView: function (view = '', options = {}) {
+        const shouldPreserveScroll = options?.scroll === false;
+        const preservedScrollX = shouldPreserveScroll ? Number(window.scrollX || window.pageXOffset || 0) : 0;
+        const preservedScrollY = shouldPreserveScroll ? Number(window.scrollY || window.pageYOffset || 0) : 0;
+        const restoreScrollPosition = () => {
+            if (!shouldPreserveScroll || typeof window.scrollTo !== 'function') {
+                return;
+            }
+            const currentScrollY = Number(window.scrollY || window.pageYOffset || 0);
+            if (Math.abs(currentScrollY - preservedScrollY) > 1) {
+                window.scrollTo(preservedScrollX, preservedScrollY);
+            }
+        };
         const normalizedView = this.syncTicketWorkspaceView(view);
         const targetId = this.safeText(options?.targetId || this.getTicketWorkspaceTargetId(normalizedView)).trim();
         const shouldScroll = options?.scroll !== false;
         const shouldHighlight = options?.highlight !== false;
+
+        if (shouldPreserveScroll) {
+            window.requestAnimationFrame(() => {
+                restoreScrollPosition();
+                window.requestAnimationFrame(restoreScrollPosition);
+            });
+        }
 
         if (!targetId || (!shouldScroll && !shouldHighlight)) {
             return normalizedView;
@@ -8241,6 +8270,7 @@ const AdminTickets = {
                 icon: 'fa-inbox',
                 variant: 'empty'
             }));
+            this.syncTicketsTableScroller();
             this.renderPagination(totalPages);
             this.syncSelectionControls();
             this.renderAnalyticsIssueSummary();
@@ -8271,6 +8301,7 @@ const AdminTickets = {
 
             const selectionCell = document.createElement('td');
             selectionCell.className = 'admin-ticket-selection-cell';
+            selectionCell.dataset.label = '选择';
             if (this.isTicketSelectable(ticket)) {
                 const selectionLabel = document.createElement('label');
                 selectionLabel.className = 'custom-checkbox admin-ticket-selection-control';
@@ -8296,6 +8327,7 @@ const AdminTickets = {
 
             const metaCell = document.createElement('td');
             metaCell.className = 'admin-ticket-nowrap-cell';
+            metaCell.dataset.label = '工单号/时间';
             const idDiv = document.createElement('div');
             idDiv.className = 'admin-ticket-meta-id';
             idDiv.textContent = `${this.safeText(ticket.id).substring(0, 8)}...`;
@@ -8307,6 +8339,7 @@ const AdminTickets = {
 
             const orderCell = document.createElement('td');
             orderCell.className = 'admin-ticket-nowrap-cell';
+            orderCell.dataset.label = '关联订单号';
             const orderDiv = document.createElement('div');
             orderDiv.className = 'admin-ticket-copyable admin-ticket-copyable--order';
             orderDiv.title = '点击复制';
@@ -8317,6 +8350,7 @@ const AdminTickets = {
 
             const userCell = document.createElement('td');
             userCell.className = 'admin-ticket-nowrap-cell';
+            userCell.dataset.label = '用户 / 邮箱';
             const userDiv = document.createElement('div');
             userDiv.className = 'admin-ticket-copyable admin-ticket-copyable--user';
             userDiv.title = '点击复制';
@@ -8337,6 +8371,7 @@ const AdminTickets = {
             userCell.appendChild(emailDiv);
 
             const reasonCell = document.createElement('td');
+            reasonCell.dataset.label = '问题描述';
             const metaCluster = document.createElement('div');
             metaCluster.className = 'admin-ticket-meta-cluster';
             metaCluster.appendChild(this.createSecondaryBadge(ticket.source_label || '用户提交', this.safeText(ticket.source_type, 'default').toLowerCase() || 'default'));
@@ -8363,6 +8398,7 @@ const AdminTickets = {
 
             const statusCell = document.createElement('td');
             statusCell.className = 'ticket-status-cell';
+            statusCell.dataset.label = '分类/状态';
             statusCell.appendChild(this.createStatusBadge(status));
 
             const slaDiv = document.createElement('div');
@@ -8381,6 +8417,7 @@ const AdminTickets = {
             statusCell.appendChild(assigneeDiv);
 
             const actionCell = document.createElement('td');
+            actionCell.dataset.label = '操作';
             const actionWrap = document.createElement('div');
             actionWrap.className = 'admin-ticket-action-wrap';
 
@@ -8425,6 +8462,7 @@ const AdminTickets = {
             tbody.appendChild(row);
         });
 
+        this.syncTicketsTableScroller();
         this.renderPagination(totalPages);
         this.syncSelectionControls();
         this.renderAnalyticsIssueSummary();

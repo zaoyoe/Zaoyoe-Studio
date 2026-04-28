@@ -86,7 +86,7 @@ function extractFunction(source, functionName) {
     throw new Error(`Failed to extract function ${functionName}`);
 }
 
-test('user trend chart no longer waits for product or summary bundles before rendering the trend line', () => {
+test('user trend chart renders the trend line before awaiting hydration completion', () => {
     const source = readRepoFile('js/admin-analytics-panel-loaders.js');
     const analyticsShell = readRepoFile('admin-analytics.js');
     const html = readRepoFile('admin-studio.html');
@@ -116,12 +116,17 @@ test('user trend chart no longer waits for product or summary bundles before ren
         'loadUserTrendChart should wait only for the trend series before rendering the chart'
     );
     assert.equal(
-        loadUserTrendChart.includes('void hydrateAnalyticsUserTrendSummaryWindow({ trendRows: data, requestId });'),
+        loadUserTrendChart.includes('const summaryHydrationPromise = hydrateAnalyticsUserTrendSummaryWindow({ trendRows: data, requestId });'),
         true,
         'loadUserTrendChart should hydrate summary-window KPI details after the chart render path starts'
     );
     assert.equal(
-        loadUserTrendChart.includes('void hydrateAnalyticsUserTrendValuePanels({ days, trendRows: data, requestId });'),
+        loadUserTrendChart.includes('await Promise.allSettled(['),
+        true,
+        'loadUserTrendChart should let the refresh lifecycle wait until follow-up hydration has settled'
+    );
+    assert.equal(
+        loadUserTrendChart.includes('hydrateAnalyticsUserTrendValuePanels({ days, trendRows: data, requestId })'),
         true,
         'loadUserTrendChart should hydrate user-value panels after the chart render path'
     );

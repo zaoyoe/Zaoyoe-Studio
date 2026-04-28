@@ -4708,6 +4708,36 @@ body.modal-open .prompt-card {
         justify-content: center;
     }
 
+    .nav-items.nav-items--skeleton {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        column-gap: clamp(10px, 3vw, 16px);
+        row-gap: 24px;
+        min-height: 96px;
+    }
+
+    .nav-items.nav-items--skeleton .nav-item.nav-item--skeleton {
+        width: auto;
+        min-width: 0;
+    }
+
+    body.prompts-page .nav-items.nav-items--skeleton .nav-item-skeleton--title,
+    body.prompts-page .nav-items.nav-items--skeleton .nav-item-skeleton--subtitle {
+        max-width: 100%;
+    }
+
+    body.prompts-page .nav-items.nav-items--skeleton .nav-item-skeleton--title-wide {
+        width: min(100%, 92px);
+    }
+
+    body.prompts-page .nav-items.nav-items--skeleton .nav-item-skeleton--title-medium {
+        width: min(100%, 78px);
+    }
+
+    body.prompts-page .nav-items.nav-items--skeleton .nav-item-skeleton--title-short {
+        width: min(100%, 68px);
+    }
+
     .nav-item {
         min-width: 0;
         width: 24%;

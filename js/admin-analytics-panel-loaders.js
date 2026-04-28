@@ -8701,7 +8701,7 @@ function renderAnalyticsBusinessCenterShell(cards = null) {
                     >
                         <div class="analytics-business-center-shell__card-top">
                             <span class="analytics-business-center-shell__card-label" data-analytics-center-badge>当前经营线</span>
-                            <span class="analytics-business-center-shell__card-meta">${escapeHtml(state.routeLabel || '当前经营线')}</span>
+                            <div class="analytics-business-center-shell__card-meta">${escapeHtml(state.routeLabel || '当前经营线')}</div>
                         </div>
                         <strong class="analytics-business-center-shell__card-title">${escapeHtml(state.activeCard?.title || state.routeLabel || '当前经营入口')}</strong>
                         ${state.activeCard?.summary ? `<p class="analytics-business-center-shell__card-summary">${escapeHtml(state.activeCard.summary)}</p>` : ''}
@@ -8732,7 +8732,7 @@ function renderAnalyticsBusinessCenterShell(cards = null) {
                     <article class="analytics-business-center-shell__card analytics-business-center-shell__card--route">
                         <div class="analytics-business-center-shell__card-top">
                             <span class="analytics-business-center-shell__card-label">最近查看</span>
-                            <span class="analytics-business-center-shell__card-meta">${escapeHtml(state.deepLinkItem?.badge || '常用入口')}</span>
+                            <div class="analytics-business-center-shell__card-meta">${escapeHtml(state.deepLinkItem?.badge || '常用入口')}</div>
                         </div>
                         <strong class="analytics-business-center-shell__card-title">${escapeHtml(state.deepLinkItem?.title || '回当前经营入口')}</strong>
                         ${state.deepLinkItem?.summary ? `<p class="analytics-business-center-shell__card-summary">${escapeHtml(state.deepLinkItem.summary)}</p>` : ''}
@@ -8751,7 +8751,7 @@ function renderAnalyticsBusinessCenterShell(cards = null) {
                 <article class="analytics-business-center-shell__card analytics-business-center-shell__card--watch">
                     <div class="analytics-business-center-shell__card-top">
                         <span class="analytics-business-center-shell__card-label">继续关注</span>
-                        <span class="analytics-business-center-shell__card-meta">${escapeHtml(`${state.watchCards.length} 条经营线`)}</span>
+                        <div class="analytics-business-center-shell__card-meta">${escapeHtml(`${state.watchCards.length} 条经营线`)}</div>
                     </div>
                     <strong class="analytics-business-center-shell__card-title">继续关注</strong>
                     ${renderAnalyticsBusinessCenterWatchItems(state.watchCards)}
@@ -10811,7 +10811,7 @@ async function loadUserTrendChart(days = 30) {
         syncAnalyticsGrowthNewUsersTodayFromSources({
             trendRows: data
         });
-        void hydrateAnalyticsUserTrendSummaryWindow({ trendRows: data, requestId });
+        const summaryHydrationPromise = hydrateAnalyticsUserTrendSummaryWindow({ trendRows: data, requestId });
 
         const theme = getChartTheme();
         const activeUserLabels = getAnalyticsActiveUserLabels();
@@ -10888,7 +10888,10 @@ async function loadUserTrendChart(days = 30) {
             }
         });
 
-        void hydrateAnalyticsUserTrendValuePanels({ days, trendRows: data, requestId });
+        await Promise.allSettled([
+            summaryHydrationPromise,
+            hydrateAnalyticsUserTrendValuePanels({ days, trendRows: data, requestId })
+        ]);
     } catch (err) {
         console.error('[Analytics] Failed to load user trend:', err);
         syncAnalyticsGrowthNewUsersTodayDisplays({
@@ -16070,37 +16073,42 @@ function scheduleGrowthSummaryProductSignalsWarm(summary = {}, options = {}) {
         ? options.summaryWindow
         : {};
 
-    window.setTimeout(() => {
-        void (async () => {
-            if (requestId !== analyticsGrowthSummaryRequestId) {
-                return;
-            }
-
-            const productSummaryBundle = await getAnalyticsProductSummaryBundle().catch(() => null);
-            if (requestId !== analyticsGrowthSummaryRequestId || !productSummaryBundle) {
-                return;
-            }
-
-            try {
-                const productSummary = getAnalyticsProductBundlePayloadOrThrow(
-                    productSummaryBundle,
-                    'summary',
-                    'Product summary unavailable'
-                ) || {};
+    return new Promise((resolve) => {
+        window.setTimeout(() => {
+            void (async () => {
                 if (requestId !== analyticsGrowthSummaryRequestId) {
-                    return;
+                    return false;
                 }
-                applyGrowthSummaryPanelState(
-                    enrichAnalyticsGrowthSummaryWithProductSignals(summary, productSummary),
-                    { summaryWindow }
-                );
-            } catch (error) {
-                console.warn('[Analytics] Failed to read product summary for growth summary:', error);
-            }
-        })().catch((error) => {
-            console.warn('[Analytics] Growth summary product warm failed:', error);
-        });
-    }, 0);
+
+                const productSummaryBundle = await getAnalyticsProductSummaryBundle().catch(() => null);
+                if (requestId !== analyticsGrowthSummaryRequestId || !productSummaryBundle) {
+                    return false;
+                }
+
+                try {
+                    const productSummary = getAnalyticsProductBundlePayloadOrThrow(
+                        productSummaryBundle,
+                        'summary',
+                        'Product summary unavailable'
+                    ) || {};
+                    if (requestId !== analyticsGrowthSummaryRequestId) {
+                        return false;
+                    }
+                    applyGrowthSummaryPanelState(
+                        enrichAnalyticsGrowthSummaryWithProductSignals(summary, productSummary),
+                        { summaryWindow }
+                    );
+                    return true;
+                } catch (error) {
+                    console.warn('[Analytics] Failed to read product summary for growth summary:', error);
+                    return false;
+                }
+            })().then(resolve).catch((error) => {
+                console.warn('[Analytics] Growth summary product warm failed:', error);
+                resolve(false);
+            });
+        }, 0);
+    });
 }
 
 async function loadGrowthSummary() {
@@ -16117,7 +16125,7 @@ async function loadGrowthSummary() {
             return;
         }
         applyGrowthSummaryPanelState(summary, { summaryWindow });
-        scheduleGrowthSummaryProductSignalsWarm(summary, { requestId, summaryWindow });
+        await scheduleGrowthSummaryProductSignalsWarm(summary, { requestId, summaryWindow });
     } catch (err) {
         console.error('[Analytics] Failed to load growth summary:', err);
         try {
@@ -16133,7 +16141,7 @@ async function loadGrowthSummary() {
                 commentsSummary
             });
             applyGrowthSummaryPanelState(fallbackSummary, { summaryWindow });
-            scheduleGrowthSummaryProductSignalsWarm(fallbackSummary, { requestId, summaryWindow });
+            await scheduleGrowthSummaryProductSignalsWarm(fallbackSummary, { requestId, summaryWindow });
         } catch (fallbackErr) {
             if (requestId !== analyticsGrowthSummaryRequestId) {
                 return;

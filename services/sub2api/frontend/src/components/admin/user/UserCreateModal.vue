@@ -5,7 +5,7 @@
     width="normal"
     @close="$emit('close')"
   >
-    <form id="create-user-form" @submit.prevent="submit" class="space-y-5">
+    <form id="create-user-form" @submit.prevent="submit" class="space-y-3 sm:space-y-5">
       <div>
         <label class="input-label">{{ t('admin.users.email') }}</label>
         <input v-model="form.email" type="email" required class="input" :placeholder="t('admin.users.enterEmail')" />
@@ -16,7 +16,7 @@
           <div class="relative flex-1">
             <input v-model="form.password" type="text" required class="input pr-10" :placeholder="t('admin.users.enterPassword')" />
           </div>
-          <button type="button" @click="generateRandomPassword" class="btn btn-secondary px-3">
+          <button type="button" @click="generateRandomPassword" class="btn btn-secondary shrink-0 px-3">
             <Icon name="refresh" size="md" />
           </button>
         </div>
@@ -25,7 +25,7 @@
         <label class="input-label">{{ t('admin.users.username') }}</label>
         <input v-model="form.username" type="text" class="input" :placeholder="t('admin.users.enterUsername')" />
       </div>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
         <div>
           <label class="input-label">{{ t('admin.users.columns.balance') }}</label>
           <input v-model.number="form.balance" type="number" step="any" class="input" />
@@ -37,7 +37,7 @@
       </div>
     </form>
     <template #footer>
-      <div class="flex justify-end gap-3">
+      <div class="grid w-full grid-cols-2 gap-2 sm:flex sm:justify-end sm:gap-3">
         <button @click="$emit('close')" type="button" class="btn btn-secondary">{{ t('common.cancel') }}</button>
         <button type="submit" form="create-user-form" :disabled="loading" class="btn btn-primary">
           {{ loading ? t('admin.users.creating') : t('common.create') }}

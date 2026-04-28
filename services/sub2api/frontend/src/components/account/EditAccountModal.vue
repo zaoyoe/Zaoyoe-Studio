@@ -2004,9 +2004,14 @@ const {
 } = useQuotaNotifyState()
 
 // Load global feature states once
-adminAPI.settings.getWebSearchEmulationConfig().then(cfg => {
-  webSearchGlobalEnabled.value = cfg?.enabled === true && (cfg?.providers?.length ?? 0) > 0
-}).catch(() => { webSearchGlobalEnabled.value = false })
+const loadWebSearchEmulationConfig = adminAPI.settings?.getWebSearchEmulationConfig
+if (typeof loadWebSearchEmulationConfig === 'function') {
+  loadWebSearchEmulationConfig().then(cfg => {
+    webSearchGlobalEnabled.value = cfg?.enabled === true && (cfg?.providers?.length ?? 0) > 0
+  }).catch(() => { webSearchGlobalEnabled.value = false })
+} else {
+  webSearchGlobalEnabled.value = false
+}
 
 loadQuotaNotifyGlobal()
 const editQuotaLimit = ref<number | null>(null)
@@ -2433,7 +2438,7 @@ watch(
   { immediate: true }
 )
 
-const loadTLSProfiles = async () => {
+async function loadTLSProfiles() {
   try {
     const profiles = await adminAPI.tlsFingerprintProfiles.list()
     tlsFingerprintProfiles.value = profiles.map(p => ({ id: p.id, name: p.name }))

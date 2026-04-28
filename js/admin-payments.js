@@ -5599,7 +5599,7 @@
                         return `
                         <div class="payments-order-card${isFocusedOrder ? ' payments-order-card--focused' : ''}" data-payments-focused-order="${isFocusedOrder ? '1' : '0'}">
                             <div class="payments-order-card-top">
-                                <div>
+                                <div class="payments-order-card-primary">
                                     <div class="payments-order-user">${renderPaymentsOrderUser(order)}</div>
                                     ${renderPaymentsOrderNo(order)}
                                     <div class="payments-order-provider">${escapeHtml(getProviderLabel(order.provider))} · ${(order.site || 'cn').toUpperCase()}</div>
@@ -5607,27 +5607,27 @@
                                 <span class="payments-status-badge status-${escapeHtml(order.status || 'pending')}">${escapeHtml(getStatusLabel(order.status))}</span>
                             </div>
                             <div class="payments-order-card-grid">
-                                <div>
+                                <div class="payments-order-card-field">
                                     <label>套餐</label>
                                     <strong>${escapeHtml(order.package_name || '未匹配套餐')}</strong>
                                 </div>
-                                <div>
+                                <div class="payments-order-card-field">
                                     <label>金额</label>
                                     <strong>${escapeHtml(formatCurrency(order.paid_amount))}</strong>
                                 </div>
-                                <div>
+                                <div class="payments-order-card-field">
                                     <label>积分</label>
                                     <span>${escapeHtml(formatNumber(order.points_amount))}</span>
                                 </div>
-                                <div>
+                                <div class="payments-order-card-field">
                                     <label>创建时间</label>
                                     <span>${escapeHtml(formatDateTime(order.created_at))}</span>
                                 </div>
-                                <div>
+                                <div class="payments-order-card-field payments-order-card-field--match">
                                     <label>意图匹配</label>
                                     <span>${renderOrderMatchBadge(order)}</span>
                                 </div>
-                                <div>
+                                <div class="payments-order-card-field">
                                     <label>认领时间</label>
                                     <span>${escapeHtml(formatDateTime(order.claimed_at))}</span>
                                 </div>
