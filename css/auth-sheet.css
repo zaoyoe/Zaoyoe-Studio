@@ -1449,11 +1449,36 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-inline-group--code .verify
         color: transparent !important;
         -webkit-text-fill-color: transparent !important;
     }
+
+    #loginModal.auth-sheet-submit-active.auth-sheet-input-active .auth-sheet-body,
+    #loginModal.auth-sheet-submitting.auth-sheet-input-active .auth-sheet-body {
+        padding-bottom: var(--auth-sheet-mobile-bottom-inset) !important;
+    }
+
+    #loginModal.auth-sheet-submit-active .auth-sheet-motion-shell,
+    #loginModal.auth-sheet-submit-active .auth-sheet-form-core,
+    #loginModal.auth-sheet-submitting .auth-sheet-motion-shell,
+    #loginModal.auth-sheet-submitting .auth-sheet-form-core {
+        transform: none !important;
+        opacity: 1 !important;
+        transition: none !important;
+        will-change: auto !important;
+    }
 }
 
 @media (max-width: 768px) and (hover: none) and (pointer: coarse) {
     .auth-sheet-overlay.auth-sheet-input-active .auth-sheet-body {
         padding-bottom: calc(min(360px, 42svh) + env(safe-area-inset-bottom));
+    }
+
+    #loginModal .auth-sheet-submit:hover,
+    #loginModal .auth-sheet-submit.login-submit-btn:hover,
+    html[data-theme="light"] #loginModal .auth-sheet-submit:hover,
+    html[data-theme="light"] #loginModal .auth-sheet-submit.login-submit-btn:hover,
+    html:not([data-theme="dark"]) #loginModal .auth-sheet-submit:hover,
+    html:not([data-theme="dark"]) #loginModal .auth-sheet-submit.login-submit-btn:hover {
+        transform: none !important;
+        box-shadow: none !important;
     }
 }
 

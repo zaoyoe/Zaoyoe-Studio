@@ -454,6 +454,10 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
             violations.push(`${relativePath} is missing css/chat-widget.css`);
         }
 
+        if (!source.includes('css/chat-widget.css?v=20260428_PUBLIC_TOUCH_PAN_LOCK_1')) {
+            violations.push(`${relativePath} should cache-bust the mobile touch pan lock chat stylesheet`);
+        }
+
         if (source.includes('js/admin-workbench.js')) {
             violations.push(`${relativePath} should no longer eagerly load js/admin-workbench.js`);
         }
@@ -538,9 +542,9 @@ test('public pages wire wallet modal through the shared bootstrap loader', () =>
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260428_WALLET_MOBILE_NAV_STABLE_1';",
-        "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260428_WALLET_MOBILE_NAV_STABLE_1';",
-        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260428_WALLET_MOBILE_NAV_STABLE_1';",
+        "const VERSION = '20260428_WALLET_RECORDS_BOTTOM_EDGE_1';",
+        "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260428_WALLET_RECORDS_BOTTOM_EDGE_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260428_WALLET_RECORDS_BOTTOM_EDGE_1';",
         'function ensureWalletModalReady() {',
         'function warmWalletModal(options = {}) {',
         "function openWalletModal(view = 'balance', context = {}) {",
@@ -581,7 +585,7 @@ test('public pages defer notification and announcement runtimes through the shar
         if (!source.includes('js/engagement-runtime-loader.js')) {
             violations.push(`${relativePath} is missing js/engagement-runtime-loader.js`);
         }
-        if (source.includes('notification-client.js?v=20260410_NOTIFICATION_ADMIN_PERSONAL_FIX_1')) {
+        if (source.includes('notification-client.js?v=')) {
             violations.push(`${relativePath} should no longer eagerly load notification-client.js`);
         }
     }
@@ -594,8 +598,8 @@ test('public pages defer notification and announcement runtimes through the shar
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260421_PUBLIC_ENGAGEMENT_LAZY_BOOTSTRAP_P1';",
-        "const NOTIFICATION_SRC = 'notification-client.js?v=20260410_NOTIFICATION_ADMIN_PERSONAL_FIX_1';",
+        "const VERSION = '20260428_NOTIFICATION_FIRST_OPEN_SYNC_1';",
+        "const NOTIFICATION_SRC = 'notification-client.js?v=20260428_NOTIFICATION_FIRST_OPEN_SYNC_1';",
         "const ANNOUNCEMENT_SRC = 'announcement-loader.js?v=20260410_ANNOUNCEMENT_BACKDROP_DISMISS_FIX_1';",
         "const shouldLoadNotification = bootstrapScript?.dataset.loadNotification !== '0';",
         "const shouldLoadAnnouncement = bootstrapScript?.dataset.loadAnnouncement === '1';",
@@ -692,6 +696,7 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
         '--chat-mascot-head: #6b9ece;',
         '--chat-fab-mascot-detail: #ffffff;',
         '--chat-support-primary-bg: rgba(107, 158, 206, 0.82);',
+        '/* 20260428_PUBLIC_TOUCH_PAN_LOCK_1 */',
         '.chat-messages.chat-messages--height-locked',
         '.chat-overlay.chat-overlay--frozen',
         '.poetry-nav-container.chat-prompt-spotlight-suspended'
@@ -700,6 +705,65 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
     for (const marker of cssMarkers) {
         assert.equal(chatWidgetCss.includes(marker), true, `css/chat-widget.css should contain ${marker}`);
     }
+});
+
+test('public chat and shop scroll panels clamp accidental horizontal pan', () => {
+    const chatWidgetCss = readRepoFile('css/chat-widget.css');
+    const shopCssSource = readRepoFile('css/shop-page.css');
+    const shopHtmlSource = readRepoFile('shop.html');
+    const optionalEnhancementsSource = readRepoFile('js/guestbook-optional-enhancements.js');
+
+    assert.match(
+        chatWidgetCss,
+        /\.chat-messages\s*\{[\s\S]*?overflow-y:\s*auto;[\s\S]*?overflow-x:\s*hidden;[\s\S]*?touch-action:\s*pan-y;[\s\S]*?overscroll-behavior-x:\s*none;/,
+        'chat message scrollback should remain vertical-only on touch devices'
+    );
+    assert.match(
+        chatWidgetCss,
+        /\.chat-support-panel\s*\{[\s\S]*?overflow-y:\s*auto;[\s\S]*?overflow-x:\s*hidden;[\s\S]*?overscroll-behavior-x:\s*none;[\s\S]*?touch-action:\s*pan-y;/,
+        'chat support panel should not horizontally rubber-band while vertically scrolling'
+    );
+    assert.match(
+        chatWidgetCss,
+        /\.message\s*\{[\s\S]*?max-width:\s*min\(80%,\s*100%\);[\s\S]*?min-width:\s*0;[\s\S]*?overflow-wrap:\s*anywhere;/,
+        'long chat messages should wrap instead of widening the chat pane'
+    );
+    assert.equal(
+        optionalEnhancementsSource.includes('css/chat-widget.css?v=20260428_PUBLIC_TOUCH_PAN_LOCK_1'),
+        true,
+        'optional guestbook chat loader should request the horizontal pan lock stylesheet'
+    );
+
+    assert.match(
+        shopCssSource,
+        /\.shop-cart-drawer__body\s*\{[\s\S]*?overflow-y:\s*auto;[\s\S]*?overflow-x:\s*hidden;[\s\S]*?overscroll-behavior-x:\s*none;[\s\S]*?touch-action:\s*pan-y;/,
+        'shop cart drawer body should keep touch scrolling vertical'
+    );
+    assert.match(
+        shopCssSource,
+        /\.shop-cart-item__panel\s*\{[\s\S]*?overflow-y:\s*auto;[\s\S]*?overflow-x:\s*hidden;[\s\S]*?overscroll-behavior-x:\s*none;[\s\S]*?touch-action:\s*pan-y;/,
+        'cart disclosure panels should not expose a horizontal scroll channel'
+    );
+    assert.match(
+        shopCssSource,
+        /\.shop-success-scroll\s*\{[\s\S]*?overflow-y:\s*auto;[\s\S]*?overflow-x:\s*hidden;[\s\S]*?overscroll-behavior-x:\s*none;[\s\S]*?touch-action:\s*pan-y;/,
+        'shop success modal scroller should be locked to vertical pan'
+    );
+    assert.match(
+        shopCssSource,
+        /#shopPurchaseModal \.shop-success-usage-card\s*\{[\s\S]*?overflow-y:\s*auto;[\s\S]*?overflow-x:\s*hidden;[\s\S]*?overscroll-behavior-x:\s*none;[\s\S]*?touch-action:\s*pan-y;/,
+        'shop purchase guidance card should not wobble sideways while scrolling'
+    );
+    assert.match(
+        shopCssSource,
+        /#shopSuccessModal\.has-usage-instructions \.shop-success-usage-card\s*\{[\s\S]*?overflow-y:\s*auto;[\s\S]*?overflow-x:\s*hidden;[\s\S]*?overscroll-behavior-x:\s*none;[\s\S]*?touch-action:\s*pan-y;/,
+        'shop usage instruction card should keep long content from causing lateral wobble'
+    );
+    assert.equal(
+        shopHtmlSource.includes('css/shop-page.css?v=20260428_PUBLIC_TOUCH_PAN_LOCK_1'),
+        true,
+        'shop.html should cache-bust the shop touch pan lock stylesheet'
+    );
 });
 
 test('user chat widget keeps a top safety gap on narrow desktop windows', () => {
@@ -1597,7 +1661,7 @@ test('auth runtime renderers centralize avatar, google loading, and profile moda
             'auth entry pages should load the latest auth sheet stylesheet'
         );
         assert.equal(
-            source.includes('supabase-auth-functions.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
+            source.includes('supabase-auth-functions.js?v=20260428_PROFILE_TOUCH_FOCUS_GUARD_1'),
             true,
             'auth entry pages should load the latest auth runtime script'
         );
@@ -1902,7 +1966,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['privacy.html', 'css/privacy-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260425_HOME_GUESTBOOK_MODAL_HIDE_1'],
-        ['shop.html', 'css/shop-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
+        ['shop.html', 'css/shop-page.css?v=20260428_PUBLIC_TOUCH_PAN_LOCK_1'],
         ['admin-studio.html', 'css/admin-studio-page.css?v=20260427_ADMIN_SITE_SWITCHER_ACTIVE_HOVER_LOCK_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260427_AUTH_CALLBACK_SILENT_2'],
@@ -1991,7 +2055,7 @@ test('selected preview showcase pages no longer embed inline style attributes', 
 
 test('shop and archived index pages no longer embed inline style attributes', () => {
     const expectations = new Map([
-        ['shop.html', 'css/shop-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
+        ['shop.html', 'css/shop-page.css?v=20260428_PUBLIC_TOUCH_PAN_LOCK_1'],
         ['index_old.html', 'css/index-old.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1']
     ]);
     const inlineStyleAttributePattern = /\sstyle\s*=\s*["']/i;
@@ -2447,7 +2511,7 @@ test('shop storefront uses a 21:9 media ratio for mobile product cards', () => {
         'mobile shop product cards and loading skeletons should keep the top media area at 21:9'
     );
     assert.equal(
-        shopHtmlSource.includes('css/shop-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
+        shopHtmlSource.includes('css/shop-page.css?v=20260428_PUBLIC_TOUCH_PAN_LOCK_1'),
         true,
         'shop.html should bust the shop stylesheet cache for the latest shop card sizing'
     );
@@ -7818,6 +7882,8 @@ test('wallet modal runtime renderers route wallet shell, lists, filters, and ord
 
     const delegatedMarkers = [
         'bindDelegatedHandlers(overlay = this.modalEl)',
+        'bindWalletContentTouchLock(overlay)',
+        'bindWalletRecordsTouchLock(overlay)',
         'handleOpenOrderDetailAction(actionEl)',
         'setInlineStyles(target, styles)',
         'setCssVariables(target, variables)',
@@ -7873,6 +7939,17 @@ test('wallet modal runtime renderers route wallet shell, lists, filters, and ord
     for (const marker of delegatedMarkers) {
         assert.equal(walletModalSource.includes(marker), true, `js/components/WalletModal.js should contain ${marker}`);
     }
+
+    assert.equal(
+        walletModalSource.includes('<button class="affiliate-member-summary" type="button"'),
+        false,
+        'affiliate journey cards should not make the whole summary the expansion button'
+    );
+    assert.equal(
+        walletModalSource.includes('class="affiliate-member-chevron affiliate-member-toggle" type="button"'),
+        true,
+        'affiliate journey cards should expose only the bottom-right chevron as the expansion button'
+    );
 
     const removedInlineMarkers = [
         'style="max-width: 360px;"',
@@ -7930,11 +8007,27 @@ test('wallet modal runtime renderers route wallet shell, lists, filters, and ord
         'body.wallet-modal-lock',
         '.wallet-overlay[hidden]',
         '--wallet-scrollbar-thumb',
+        '/* 20260428_AFFILIATE_ARROW_TOGGLE_1 */',
+        '.affiliate-member-toggle:hover',
+        '/* 20260428_AFFILIATE_MOBILE_SCROLL_1 */',
+        '.wallet-affiliate-shell {\n        overflow: visible;',
+        '/* 20260428_AFFILIATE_STATS_GRID_1 */',
+        '.wallet-affiliate-stats {\n        grid-template-columns: repeat(2, minmax(0, 1fr));',
+        '/* 20260428_AFFILIATE_COMPACT_DETAILS_1 */',
+        '.affiliate-stage-track {\n        grid-template-columns: repeat(2, minmax(0, 1fr));',
+        '/* 20260428_DISCOUNT_ASSETS_SUMMARY_2COL_1 */',
+        '.wallet-discount-assets-summary {\n        grid-template-columns: repeat(2, minmax(0, 1fr));',
         '.wallet-order-modal-body::-webkit-scrollbar-thumb',
         'scrollbar-color: var(--wallet-scrollbar-thumb) transparent',
         'html[data-theme="light"] .wallet-modal',
         '[data-theme="light"] .wallet-sidebar .wallet-menu-item.active',
-        '/* 20260428_WALLET_MOBILE_NAV_STABLE_1 */',
+        '/* 20260428_WALLET_MOBILE_LIGHT_CUE_1 */',
+        '/* 20260428_WALLET_MOBILE_PAN_CLAMP_1 */',
+        '/* 20260428_WALLET_RECORDS_BOTTOM_EDGE_1 */',
+        '#view-orders .orders-container {\n        max-height: 220px;',
+        '.wallet-order-modal-body {\n    padding: 24px;',
+        'html[data-theme="light"] .wallet-recharge-scroll-cue::before',
+        'html:not([data-theme="dark"]) .wallet-recharge-scroll-cue-icon #walletScrollCueGradient stop:last-child',
         'html[data-theme="light"] .wallet-sidebar .sidebar-indicator',
         'html[data-theme="light"] .wallet-sidebar:focus-within .sidebar-indicator',
         '[data-theme="light"] .balance-card.compact-premium-card',
@@ -8057,8 +8150,19 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         assert.equal(verifyWidgetCss.includes(marker), true, `verify-widget.css should contain ${marker}`);
     }
 
+    assert.match(
+        verifyWidgetCss,
+        /\.verify-batch-results\.show\s*\{[\s\S]*?overflow-y:\s*auto;[\s\S]*?overflow-x:\s*hidden;[\s\S]*?overscroll-behavior-x:\s*none;[\s\S]*?touch-action:\s*pan-y;/,
+        'batch verification results should scroll vertically without horizontal rubber-banding'
+    );
+    assert.match(
+        verifyWidgetCss,
+        /\.verify-history-list\s*\{[\s\S]*?overflow-y:\s*auto;[\s\S]*?overflow-x:\s*hidden;[\s\S]*?overscroll-behavior-x:\s*none;[\s\S]*?touch-action:\s*pan-y;/,
+        'verification history should keep touch scrolling vertical'
+    );
+
     assert.equal(
-        verifyPageSource.includes('verify-widget.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
+        verifyPageSource.includes('verify-widget.css?v=20260428_PUBLIC_TOUCH_PAN_LOCK_1'),
         true,
         'verify.html should load the latest verify-widget stylesheet version'
     );
@@ -11792,7 +11896,7 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index_old.html should load the latest guestbook runtime');
     assert.equal(shopSource.includes('js/shop-client.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260412_SHOP_CARD_IMAGE_OPT_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
-    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260428_WALLET_MOBILE_NAV_STABLE_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
+    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260428_WALLET_RECORDS_BOTTOM_EDGE_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
 });
 
 test('analytics phase 3 prefers real event rpc v2 for ai summary and conversion funnel', () => {
@@ -13641,6 +13745,16 @@ test('final frontend runtime remnants route through delegated or bound listeners
         'function getSortedNotifications(sourceNotifications = notifications) {',
         'function buildNotificationReadFilterStrip(sourceNotifications = notifications) {',
         'function getFilteredNotifications(sourceNotifications = notifications) {',
+        'const NOTIFICATION_CHROME_REPAINT_FALLBACK_MS = 96;',
+        'const NOTIFICATION_CHROME_REPAINT_LATE_MS = 220;',
+        'function refreshSafariChromeAfterNotificationClose() {',
+        'function detachNotificationBackdropFromChrome(backdrop,',
+        'function detachNotificationDrawerFromChrome(drawer,',
+        'function detachNotificationChromeLayers(drawer, backdrop) {',
+        'function scheduleSafariChromeRefreshAfterNotificationClose() {',
+        'window.syntheticThemeChromeMenuTap(theme);',
+        'function renderOpenNotificationDrawer() {',
+        'renderOpenNotificationDrawer();',
         'class="notif-filter-chip${currentAdminNotificationFilter === filterKey ? \' is-active\' : \'\'}"',
         'class="notif-filter-chip${currentNotificationReadFilter === filterKey ? \' is-active\' : \'\'}"',
         'class="notif-card-pin${n.is_pinned ? \' is-active\' : \'\'}"',
@@ -13679,6 +13793,7 @@ test('final frontend runtime remnants route through delegated or bound listeners
         '.notif-expand-wrapper',
         '#navNotifWrapper[hidden]',
         '.notif-drawer',
+        '.notif-drawer-list',
         '.notif-card.exit',
         '.notif-card.is-pinned',
         '.notif-card-pin',
@@ -13690,9 +13805,20 @@ test('final frontend runtime remnants route through delegated or bound listeners
         assert.equal(notificationStyles.includes(marker), true, `css/notification-client.css should contain ${marker}`);
     }
 
+    assert.match(
+        notificationStyles,
+        /\.notif-drawer-list\s*\{[\s\S]*?overflow-y:\s*auto;[\s\S]*?overflow-x:\s*hidden;[\s\S]*?overscroll-behavior-x:\s*none;[\s\S]*?touch-action:\s*pan-y;/,
+        'notification drawer list should not allow horizontal touch wobble'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-card\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;[\s\S]*?overflow-wrap:\s*anywhere;/,
+        'notification cards should wrap long text inside the drawer width'
+    );
+
     const notificationAssetMarkers = [
-        'css/notification-client.css?v=20260331_NOTIFICATION_FILTER_MEMORY_1',
-        'js/engagement-runtime-loader.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'
+        'css/notification-client.css?v=20260428_PUBLIC_TOUCH_PAN_LOCK_1',
+        'js/engagement-runtime-loader.js?v=20260428_NOTIFICATION_FIRST_OPEN_SYNC_1'
     ];
 
     for (const marker of notificationAssetMarkers) {
@@ -13849,7 +13975,7 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         'smoke-notifications.html should load the local smoke fixtures entry'
     );
     assert.equal(
-        smokeNotificationHtml.includes('notification-client.js?v=20260410_NOTIFICATION_ADMIN_PERSONAL_FIX_1'),
+        smokeNotificationHtml.includes('notification-client.js?v=20260428_NOTIFICATION_FIRST_OPEN_SYNC_1'),
         true,
         'smoke-notifications.html should load the current notification runtime'
     );
@@ -14085,12 +14211,12 @@ test('announcement runtime renderers externalize decoration particles and physic
     }
 
     assert.equal(
-        indexSource.includes('./js/engagement-runtime-loader.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
+        indexSource.includes('./js/engagement-runtime-loader.js?v=20260428_NOTIFICATION_FIRST_OPEN_SYNC_1'),
         true,
         'index.html should defer announcement loading through the shared engagement bootstrap'
     );
     assert.equal(
-        guestbookSource.includes('js/engagement-runtime-loader.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
+        guestbookSource.includes('js/engagement-runtime-loader.js?v=20260428_NOTIFICATION_FIRST_OPEN_SYNC_1'),
         true,
         'guestbook.html should defer announcement loading through the shared engagement bootstrap'
     );
@@ -14102,7 +14228,7 @@ test('announcement runtime renderers externalize decoration particles and physic
 
     for (const source of [verifySource, shopSource, legacyIndexSource]) {
         assert.equal(
-            source.includes('js/engagement-runtime-loader.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
+            source.includes('js/engagement-runtime-loader.js?v=20260428_NOTIFICATION_FIRST_OPEN_SYNC_1'),
             true,
             'announcement entry pages should defer announcement loading through the shared engagement bootstrap'
         );
@@ -14346,7 +14472,7 @@ test('public light theme modal backdrops reuse the muted blue-gray glass materia
         'profile modal loader should cache-bust the light backdrop material'
     );
     assert.equal(
-        readRepoFile('js/components/WalletModal.js').includes('css/wallet.css?v=20260428_WALLET_MOBILE_NAV_STABLE_1'),
+        readRepoFile('js/components/WalletModal.js').includes('css/wallet.css?v=20260428_WALLET_RECORDS_BOTTOM_EDGE_1'),
         true,
         'wallet modal loader should cache-bust the latest wallet surface stylesheet'
     );

@@ -71,7 +71,7 @@
         }, 800);
 
         scheduleOptionalTask(2200, () => {
-            loadStylesheet('css/chat-widget.css?v=20260426_CHAT_BADGE_BORDERLESS_1');
+            loadStylesheet('css/chat-widget.css?v=20260428_PUBLIC_TOUCH_PAN_LOCK_1');
             loadScript('js/components/ChatWidget.js?v=20260426_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_12', initChatWidgetIfReady);
         }, 2200);
     }

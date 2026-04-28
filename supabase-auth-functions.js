@@ -3656,6 +3656,8 @@ function bindProfileModalInputBehavior(input) {
         startX: 0,
         startY: 0,
         startScrollTop: 0,
+        lastX: 0,
+        lastY: 0,
         mode: 'idle'
     };
 
@@ -3695,21 +3697,23 @@ function bindProfileModalInputBehavior(input) {
         const touch = event.touches[0];
         gesture.startX = touch?.clientX || 0;
         gesture.startY = touch?.clientY || 0;
+        gesture.lastX = gesture.startX;
+        gesture.lastY = gesture.startY;
         gesture.startScrollTop = scrollHost.scrollTop;
         gesture.mode = 'pending';
-        markProfileModalFocusTransfer(input);
     }, { passive: true });
 
     input.addEventListener('touchmove', (event) => {
         const { overlay, card, scroller } = getProfileModalElements();
         const scrollHost = scroller || card;
         if (!overlay?.classList.contains('active') || !scrollHost) return;
-        if (document.activeElement !== input) return;
         cancelProfileModalScrollAnimation();
 
         const touch = event.touches[0];
-        const deltaX = (touch?.clientX || 0) - gesture.startX;
-        const deltaY = (touch?.clientY || 0) - gesture.startY;
+        gesture.lastX = touch?.clientX || gesture.lastX;
+        gesture.lastY = touch?.clientY || gesture.lastY;
+        const deltaX = gesture.lastX - gesture.startX;
+        const deltaY = gesture.lastY - gesture.startY;
 
         if (gesture.mode === 'pending') {
             if (Math.abs(deltaY) < 8 || Math.abs(deltaY) <= Math.abs(deltaX)) {
@@ -3719,6 +3723,7 @@ function bindProfileModalInputBehavior(input) {
         }
 
         if (gesture.mode !== 'scroll') return;
+        if (document.activeElement !== input) return;
 
         const maxScrollTop = Math.max(0, scrollHost.scrollHeight - scrollHost.clientHeight);
         const nextScrollTop = Math.max(0, Math.min(gesture.startScrollTop - deltaY, maxScrollTop));
@@ -3733,10 +3738,20 @@ function bindProfileModalInputBehavior(input) {
     }, { passive: false });
 
     input.addEventListener('touchend', (event) => {
-        if (isProfileModalIOSMode() && gesture.mode === 'pending' && document.activeElement !== input) {
+        const { card, scroller } = getProfileModalElements();
+        const scrollHost = scroller || card;
+        const touch = event.changedTouches?.[0];
+        const endX = touch?.clientX ?? gesture.lastX;
+        const endY = touch?.clientY ?? gesture.lastY;
+        const movedDistance = Math.hypot(endX - gesture.startX, endY - gesture.startY);
+        const scrollMoved = scrollHost ? Math.abs(scrollHost.scrollTop - gesture.startScrollTop) : 0;
+        const isTap = gesture.mode === 'pending' && movedDistance < 8 && scrollMoved < 3;
+
+        if (isProfileModalIOSMode() && isTap && document.activeElement !== input) {
             if (event.cancelable) {
                 event.preventDefault();
             }
+            markProfileModalFocusTransfer(input);
             try {
                 input.focus({ preventScroll: true });
             } catch (_) {

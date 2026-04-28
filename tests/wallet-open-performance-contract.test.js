@@ -12,9 +12,9 @@ test('wallet loader and auth runtime prewarm the balance overview before modal o
     const authSource = readRepoFile('supabase-auth-functions.js');
 
     const loaderMarkers = [
-        "const VERSION = '20260428_WALLET_MOBILE_NAV_STABLE_1';",
-        "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260428_WALLET_MOBILE_NAV_STABLE_1';",
-        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260428_WALLET_MOBILE_NAV_STABLE_1';",
+        "const VERSION = '20260428_WALLET_RECORDS_BOTTOM_EDGE_1';",
+        "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260428_WALLET_RECORDS_BOTTOM_EDGE_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260428_WALLET_RECORDS_BOTTOM_EDGE_1';",
         'function ensurePointsServiceReady() {',
         'function warmWalletOverview(options = {}) {',
         'warmOverview: warmWalletOverview'
@@ -37,7 +37,7 @@ test('wallet loader and auth runtime prewarm the balance overview before modal o
     }
 });
 
-test('wallet sidebar highlight keeps mobile tab measurements stable while sliding the indicator', () => {
+test('wallet sidebar highlight keeps mobile tabs instant while preserving desktop indicator', () => {
     const walletModalSource = readRepoFile('js/components/WalletModal.js');
     const walletCssSource = readRepoFile('css/wallet.css');
 
@@ -45,8 +45,10 @@ test('wallet sidebar highlight keeps mobile tab measurements stable while slidin
         'function resetWalletSidebarIndicatorState() {',
         "sidebar?.classList.remove('wallet-sidebar--indicator-ready');",
         'const isCompactMobile = isWalletModalCompactMobile();',
-        'const minReadyWidth = isCompactMobile ? 48 : 1;',
-        "indicator.dataset.walletPendingRetry = '1';",
+        'if (isCompactMobile) {',
+        "left: '',",
+        "height: '',",
+        'const minReadyWidth = 1;',
         "indicator.classList.add('sidebar-indicator--settling');",
         "indicator.classList.remove('sidebar-indicator--settling');",
         "sidebar.classList.add('wallet-sidebar--indicator-ready');"
@@ -60,11 +62,22 @@ test('wallet sidebar highlight keeps mobile tab measurements stable while slidin
         '.wallet-sidebar.wallet-sidebar--indicator-ready .wallet-menu-item.active {',
         '[data-theme="light"] .wallet-sidebar.wallet-sidebar--indicator-ready .wallet-menu-item.active {',
         '.sidebar-indicator.sidebar-indicator--settling {',
-        '/* 20260428_WALLET_MOBILE_NAV_STABLE_1 */',
-        '.sidebar-indicator {\n        display: block;',
+        '/* 20260428_WALLET_MOBILE_LIGHT_CUE_1 */',
+        '.sidebar-indicator {\n        display: none;',
         'width: clamp(58px, 14.5vw, 76px);',
         'height: 70px;',
         'flex: 0 0 clamp(58px, 14.5vw, 76px);',
+        'html[data-theme="light"] .wallet-recharge-scroll-cue::before',
+        'html:not([data-theme="dark"]) .wallet-recharge-scroll-cue::before',
+        'html[data-theme="light"] .wallet-recharge-scroll-cue-icon #walletScrollCueGradient stop:first-child',
+        '/* 20260428_AFFILIATE_MOBILE_SCROLL_1 */',
+        '.wallet-affiliate-shell {\n        overflow: visible;',
+        '/* 20260428_AFFILIATE_STATS_GRID_1 */',
+        '.wallet-affiliate-stats {\n        grid-template-columns: repeat(2, minmax(0, 1fr));',
+        '/* 20260428_AFFILIATE_COMPACT_DETAILS_1 */',
+        '.affiliate-stage-track {\n        grid-template-columns: repeat(2, minmax(0, 1fr));',
+        '/* 20260428_DISCOUNT_ASSETS_SUMMARY_2COL_1 */',
+        '.wallet-discount-assets-summary {\n        grid-template-columns: repeat(2, minmax(0, 1fr));',
         'html[data-theme="light"] .wallet-sidebar .sidebar-indicator',
         'html[data-theme="light"] .wallet-sidebar:focus-within .sidebar-indicator',
         'html[data-theme="light"] .wallet-sidebar.wallet-sidebar--indicator-ready .wallet-menu-item:focus-visible',
@@ -76,7 +89,7 @@ test('wallet sidebar highlight keeps mobile tab measurements stable while slidin
     }
 
     assert.ok(
-        walletCssSource.indexOf('/* 20260428_WALLET_MOBILE_NAV_STABLE_1 */') >
+        walletCssSource.indexOf('/* 20260428_WALLET_MOBILE_LIGHT_CUE_1 */') >
         walletCssSource.indexOf('[data-theme="light"] .wallet-sidebar.wallet-sidebar--indicator-ready .wallet-menu-item.active {'),
         'mobile light focus frame override should be defined after the desktop light indicator handoff'
     );
@@ -93,5 +106,45 @@ test('wallet sidebar highlight keeps mobile tab measurements stable while slidin
 
     for (const marker of menuMarkers) {
         assert.equal(walletModalSource.includes(marker), true, `js/components/WalletModal.js should contain ${marker}`);
+    }
+});
+
+test('wallet records view clamps mobile horizontal motion', () => {
+    const walletModalSource = readRepoFile('js/components/WalletModal.js');
+    const walletCssSource = readRepoFile('css/wallet.css');
+
+    const touchLockMarkers = [
+        'function bindWalletHorizontalPanGuard(host, {',
+        'function bindWalletContentTouchLock(overlay) {',
+        'function bindWalletRecordsTouchLock(overlay) {',
+        "dataKey: 'walletContentTouchLock'",
+        "return Boolean(target?.closest?.('.orders-container'));",
+        'horizontalLocked = absX > 8 && absX > absY * 1.2;',
+        'event.preventDefault();',
+        "dataKey: 'walletRecordsTouchLock'",
+        'bindWalletContentTouchLock(overlay);',
+        'bindWalletRecordsTouchLock(overlay);'
+    ];
+
+    for (const marker of touchLockMarkers) {
+        assert.equal(walletModalSource.includes(marker), true, `js/components/WalletModal.js should contain ${marker}`);
+    }
+
+    const recordsCssMarkers = [
+        '/* 20260428_WALLET_MOBILE_PAN_CLAMP_1 */',
+        '/* 20260428_WALLET_RECORDS_BOTTOM_EDGE_1 */',
+        '.wallet-discount-assets-shell,',
+        '.wallet-affiliate-panel,',
+        '#view-orders .orders-container {\n        max-height: 220px;',
+        '.history-container {\n        overflow-x: hidden;',
+        '.wallet-order-modal-body {\n    padding: 24px;',
+        'overscroll-behavior-x: none;',
+        'touch-action: pan-y;',
+        '#view-orders .order-product {\n        display: -webkit-box;',
+        '#view-orders .order-right {\n        max-width: 40%;'
+    ];
+
+    for (const marker of recordsCssMarkers) {
+        assert.equal(walletCssSource.includes(marker), true, `css/wallet.css should contain ${marker}`);
     }
 });

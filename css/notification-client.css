@@ -31,6 +31,7 @@ body.notif-scroll-locked {
     top: 70px;
     right: -400px;
     width: 380px;
+    max-width: calc(100vw - 24px);
     max-height: calc(100vh - 100px);
     z-index: 2200;
     background: transparent;
@@ -150,6 +151,10 @@ body.notif-scroll-locked {
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
+    overscroll-behavior: contain;
+    overscroll-behavior-x: none;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
     padding: 8px 12px;
     scrollbar-width: none;
 }
@@ -230,6 +235,9 @@ body.notif-scroll-locked {
     margin-bottom: 8px;
     cursor: pointer;
     overflow: visible;
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
     transition: background 0.2s, transform 0.2s, z-index 0s;
 }
 
