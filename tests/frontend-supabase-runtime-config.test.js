@@ -1775,7 +1775,7 @@ test('injected auth runtime centralizes dropdown, drag, and badge style state', 
         );
         assert.match(
             source,
-            /inject-auth\.js\?v=20260427_AUTH_MESSAGE_RESIZE_1/,
+            /inject-auth\.js\?v=20260428_IOS_SAFARI_SYNTH_MENU_TAP_6/,
             'auth entry pages should load the latest injected auth runtime version'
         );
     }
@@ -2856,7 +2856,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'index.html should load the latest framer_home stylesheet version'
     );
     assert.equal(
-        homepageSource.includes('./js/framer_home.js?v=20260425_HOME_HERO_PRISM_CHRONO_10'),
+        homepageSource.includes('./js/framer_home.js?v=20260428_IOS_SAFARI_THEME_CHROME_2'),
         true,
         'index.html should load the latest framer_home script version'
     );
@@ -2868,8 +2868,8 @@ test('framer home runtime renderers externalize homepage section visibility, tem
             'home-nav subpages should continue to load the shared framer_home stylesheet version'
         );
         assert.equal(
-            source.includes('js/framer-nav-runtime.js?v=20260423_FRAMER_NAV_RUNTIME_DROPDOWN_CURSOR_RUNTIME_4')
-                || source.includes('./js/framer-nav-runtime.js?v=20260423_FRAMER_NAV_RUNTIME_DROPDOWN_CURSOR_RUNTIME_4'),
+            source.includes('js/framer-nav-runtime.js?v=20260428_IOS_SAFARI_THEME_CHROME_2')
+                || source.includes('./js/framer-nav-runtime.js?v=20260428_IOS_SAFARI_THEME_CHROME_2'),
             true,
             'home-nav subpages should load the dedicated lightweight nav runtime'
         );
@@ -2882,7 +2882,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
     }
 
     const navRuntimeMarkers = [
-        "const VERSION = '20260423_FRAMER_NAV_RUNTIME_DROPDOWN_CURSOR_RUNTIME_4';",
+        "const VERSION = '20260428_IOS_SAFARI_THEME_CHROME_2';",
         'function setMobileMenuState(hamburger, mobileMenu, isOpen) {',
         'async function loadNavData() {',
         'function initNavDropdowns() {',

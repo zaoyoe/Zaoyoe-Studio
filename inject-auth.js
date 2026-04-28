@@ -1686,6 +1686,7 @@
         html.setAttribute('data-theme', nextTheme);
         localStorage.setItem('theme', nextTheme);
         window.applySiteThemeChrome?.(nextTheme);
+        window.syntheticThemeChromeMenuTap?.(nextTheme);
     };
 
     window.toggleLanguage = function (event) {

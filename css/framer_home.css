@@ -5062,6 +5062,30 @@ html[data-theme="light"] .framer-nav:has(.nav-hamburger.active) {
     background-color: #ffffff !important;
 }
 
+html.site-theme-synthetic-menu-tap .mobile-menu,
+body.site-theme-synthetic-menu-tap .mobile-menu {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    transition: none !important;
+}
+
+html.site-theme-synthetic-menu-tap .nav-hamburger span,
+body.site-theme-synthetic-menu-tap .nav-hamburger span {
+    transition: none !important;
+    animation: none !important;
+}
+
+html.site-theme-synthetic-menu-tap .nav-hamburger.active span:nth-child(1),
+body.site-theme-synthetic-menu-tap .nav-hamburger.active span:nth-child(1) {
+    transform: translateY(-5px) !important;
+}
+
+html.site-theme-synthetic-menu-tap .nav-hamburger.active span:nth-child(2),
+body.site-theme-synthetic-menu-tap .nav-hamburger.active span:nth-child(2) {
+    transform: translateY(5px) !important;
+}
+
 html[data-theme="light"] .nav-logo svg path:nth-child(1),
 html[data-theme="light"] .nav-logo svg path:nth-child(3) {
     fill: #0f172a;
